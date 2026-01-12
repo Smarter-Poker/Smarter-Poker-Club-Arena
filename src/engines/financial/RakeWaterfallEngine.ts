@@ -31,7 +31,7 @@ export class RakeWaterfallEngine {
         console.log(`🌊 WATERFALL: Processing Hand ${ctx.handId}`);
 
         // 1. CALCULATE RAKE & BBJ
-        // Standard: 5% up to Cap (e.g. 3bb)
+        // Standard: 10% up to Cap (e.g. 3bb)
         // Union Tax is calculated LATER during weekly settlement
 
         const rakePercent = 0.10; // From Club Settings

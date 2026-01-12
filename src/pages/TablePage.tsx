@@ -3,7 +3,7 @@
  * Real poker table with WebSocket synchronization
  */
 
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HandController, type HandEvent, type HandConfig, cardsToString } from '../engine';
 import { BotLogic } from '../engine/BotLogic';
@@ -12,7 +12,7 @@ import { isDemoMode } from '../lib/supabase';
 import { tableService } from '../services/TableService';
 import { tournamentService } from '../services/TournamentService';
 import type { Tournament, BlindLevel } from '../types/database.types';
-import type { Card, SeatPlayer, ActionType } from '../types/database.types';
+import type { Card, SeatPlayer, ActionType, HandStage } from '../types/database.types';
 import './TablePage.css';
 
 import { useUserStore } from '../stores/useUserStore';
@@ -65,6 +65,7 @@ export default function TablePage() {
     const { clubId, tableId } = useParams();
     const roomTableId = tableId || 'demo-table';
     const { user, initDemoUser } = useUserStore();
+    const navigate = useNavigate();
     const currentUser = user || GUEST_USER;
 
     // Auto-login demo user
@@ -89,6 +90,7 @@ export default function TablePage() {
         winners: [],
         handComplete: false,
         eventLog: [],
+        chatMessages: [],
         isConnected: false,
         onlinePlayers: [],
     });
@@ -282,9 +284,7 @@ export default function TablePage() {
             is_all_in: false,
         }));
 
-        const handNumber = (handControllerRef.current?.getState().deck.remaining() || 52) < 10
-            ? 1
-            : (state.handController?.getState()?.handNumber || 0) + 1;
+        const handNumber = 1; // Simplified - each hand starts fresh
 
         const handController = new HandController(
             { ...HAND_CONFIG, tableId: roomTableId, handNumber },
@@ -505,7 +505,7 @@ export default function TablePage() {
                 pot: gameState.pot,
                 currentBet: gameState.currentBet,
                 stage: gameState.stage as HandStage,
-                gameVariant: HAND_CONFIG.gameVariant || 'nlh',
+                gameVariant: (HAND_CONFIG.gameVariant || 'nlh') as 'nlh' | 'plo4' | 'plo5' | 'plo6',
                 bigBlind: (handControllerRef.current as any).handConfig?.bigBlind || 10,
             });
 

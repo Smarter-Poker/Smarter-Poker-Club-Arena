@@ -14,7 +14,7 @@ interface CreateUnionModalProps {
 }
 
 export default function CreateUnionModal({ onClose, onSuccess }: CreateUnionModalProps) {
-    const { profile } = useUserStore();
+    const { user } = useUserStore();
     const [name, setName] = useState('');
     const [description, setDescription] = useState('');
     const [loading, setLoading] = useState(false);
@@ -23,7 +23,7 @@ export default function CreateUnionModal({ onClose, onSuccess }: CreateUnionModa
         e.preventDefault();
 
         // In a real app we'd check permissions, but for demo we assume logged in user can create
-        const ownerId = profile?.id || 'demo_user';
+        const ownerId = user?.id || 'demo_user';
 
         setLoading(true);
         try {

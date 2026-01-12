@@ -3,8 +3,8 @@
  * Decision making for AI opponents
  */
 
-import { Card, ActionType, SeatPlayer, HandStage } from '../types/database.types';
-import { evaluateHand, evaluateOmahaHand, RANKS } from './PokerEngine';
+import type { Card, ActionType, SeatPlayer, HandStage } from '../types/database.types';
+import { evaluateHand } from './PokerEngine';
 
 interface BotDecision {
     action: ActionType;
@@ -63,7 +63,6 @@ export class BotLogic {
         player: SeatPlayer,
         toCall: number,
         currentBet: number,
-        pot: number,
         pot: number,
         strength: number,
         bb: number

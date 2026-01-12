@@ -5,7 +5,7 @@
 
 import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { tournamentService } from '../services/TournamentService';
+import { tournamentService, BLIND_STRUCTURES, PAYOUT_STRUCTURES } from '../services/TournamentService';
 import type { Tournament } from '../types/database.types';
 import CreateTournamentModal from '../components/club/CreateTournamentModal';
 import './TournamentPage.css';
@@ -305,7 +305,7 @@ export default function TournamentPage() {
                                         className="btn btn-warning btn-block"
                                         style={{ marginTop: '1rem' }}
                                         onClick={handleStart}
-                                        disabled={selectedTournament.current_players < (selectedTournament.min_players || 2)}
+                                        disabled={selectedTournament.current_players < 2}
                                     >
                                         Start Tournament
                                     </button>

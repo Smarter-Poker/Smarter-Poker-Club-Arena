@@ -21,7 +21,7 @@ export default function UnionDetailPage() {
     const [loading, setLoading] = useState(true);
 
     // Application State
-    const { profile } = useUserStore();
+    const { user } = useUserStore();
     const [ownedClubs, setOwnedClubs] = useState<Club[]>([]);
     const [showClubSelector, setShowClubSelector] = useState(false);
     const [applying, setApplying] = useState(false);
@@ -49,13 +49,13 @@ export default function UnionDetailPage() {
     }, [unionId]);
 
     const handleApplyClick = async () => {
-        if (!profile) return;
+        if (!user) return;
 
         try {
             // Get user's clubs
-            const myClubs = await clubService.getMyClubs(profile.id);
+            const myClubs = await clubService.getMyClubs(user.id);
             // Filter for owned clubs
-            const owned = myClubs.filter(c => c.owner_id === profile.id || isDemoMode);
+            const owned = myClubs.filter(c => c.owner_id === user.id || isDemoMode);
 
             if (owned.length === 0) {
                 alert("You must own a club to join a union.");

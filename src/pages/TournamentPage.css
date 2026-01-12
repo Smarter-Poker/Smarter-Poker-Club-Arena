@@ -1,0 +1,343 @@
+/**
+ * ♠ CLUB ARENA — Tournament Page Styles
+ */
+
+.tournament-page {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-6);
+}
+
+.tournament-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-4);
+}
+
+.tournament-header .header-left {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+}
+
+.tournament-header h1 {
+    margin: 0;
+    font-size: var(--text-2xl);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   CONTENT LAYOUT
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.tournament-content {
+    display: grid;
+    grid-template-columns: 1fr 2fr;
+    gap: var(--space-6);
+    min-height: 500px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   TOURNAMENT LIST
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.tournament-list {
+    background: var(--elevated-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-xl);
+    padding: var(--space-5);
+}
+
+.tournament-list h2 {
+    font-size: var(--text-lg);
+    margin: 0 0 var(--space-4);
+}
+
+.tournament-card {
+    padding: var(--space-3);
+    background: var(--dark-surface);
+    border: 2px solid transparent;
+    border-radius: var(--radius-lg);
+    cursor: pointer;
+    margin-bottom: var(--space-2);
+    transition: all var(--duration-fast) var(--ease-out);
+}
+
+.tournament-card:hover {
+    background: var(--royal-blue-dim);
+    border-color: var(--royal-blue-muted);
+}
+
+.tournament-card.selected {
+    background: var(--royal-blue-dim);
+    border-color: var(--royal-blue);
+}
+
+.tourn-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--space-2);
+}
+
+.tourn-name {
+    font-weight: 600;
+}
+
+.tourn-status {
+    font-size: var(--text-xs);
+    padding: 2px 8px;
+    border-radius: var(--radius-full);
+    background: var(--elevated-surface);
+}
+
+.tourn-status.registering {
+    color: var(--success);
+}
+
+.tourn-status.running {
+    color: var(--danger);
+}
+
+.tourn-info {
+    display: flex;
+    justify-content: space-between;
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    margin-bottom: var(--space-2);
+}
+
+.tourn-type {
+    font-weight: 600;
+    color: var(--royal-blue-light);
+}
+
+.tourn-buyin {
+    font-family: var(--font-mono);
+}
+
+.tourn-meta {
+    display: flex;
+    gap: var(--space-4);
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   TOURNAMENT DETAILS
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.tournament-details {
+    background: var(--elevated-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-xl);
+    padding: var(--space-6);
+}
+
+.detail-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--space-6);
+}
+
+.detail-header h2 {
+    margin: 0;
+    font-size: var(--text-xl);
+}
+
+.status-badge {
+    padding: var(--space-1) var(--space-3);
+    border-radius: var(--radius-full);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    text-transform: capitalize;
+    background: var(--dark-surface);
+}
+
+.status-badge.registering {
+    background: rgba(16, 185, 129, 0.2);
+    color: var(--success);
+}
+
+.status-badge.running {
+    background: rgba(244, 63, 94, 0.2);
+    color: var(--danger);
+}
+
+.detail-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: var(--space-4);
+    margin-bottom: var(--space-6);
+}
+
+.detail-stats .stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-4);
+    background: var(--dark-surface);
+    border-radius: var(--radius-lg);
+}
+
+.detail-stats .stat.highlight {
+    background: rgba(255, 215, 0, 0.1);
+    border: 1px solid rgba(255, 215, 0, 0.3);
+}
+
+.stat-label {
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    text-transform: uppercase;
+}
+
+.stat-value {
+    font-size: var(--text-lg);
+    font-weight: 700;
+    font-family: var(--font-mono);
+}
+
+.stat-value.gold {
+    color: #FFD700;
+}
+
+/* Blind Structure */
+.blind-structure {
+    margin-bottom: var(--space-6);
+}
+
+.blind-structure h3 {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    margin-bottom: var(--space-3);
+    text-transform: uppercase;
+}
+
+.blind-structure table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.blind-structure th,
+.blind-structure td {
+    padding: var(--space-2);
+    text-align: left;
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.blind-structure th {
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    text-transform: uppercase;
+}
+
+.blind-structure td {
+    font-size: var(--text-sm);
+    font-family: var(--font-mono);
+}
+
+.more-row td {
+    text-align: center;
+    font-style: italic;
+    color: var(--text-muted);
+}
+
+/* Payout Structure */
+.payout-structure {
+    margin-bottom: var(--space-6);
+}
+
+.payout-structure h3 {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    margin-bottom: var(--space-3);
+    text-transform: uppercase;
+}
+
+.payout-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+}
+
+.payout-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    padding: var(--space-2);
+    background: var(--dark-surface);
+    border-radius: var(--radius-md);
+}
+
+.payout-place {
+    font-size: var(--text-lg);
+    min-width: 40px;
+}
+
+.payout-percent {
+    flex: 1;
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+}
+
+.payout-amount {
+    font-weight: 700;
+    font-family: var(--font-mono);
+    color: #FFD700;
+}
+
+/* Actions */
+.detail-actions {
+    margin-top: var(--space-6);
+}
+
+.detail-actions .btn-block {
+    width: 100%;
+}
+
+/* Empty State */
+.empty-detail {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    gap: var(--space-3);
+    text-align: center;
+    color: var(--text-muted);
+}
+
+.empty-icon {
+    font-size: 48px;
+    opacity: 0.5;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   CREATE MODAL
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-4);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   RESPONSIVE
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 768px) {
+    .tournament-content {
+        grid-template-columns: 1fr;
+    }
+
+    .detail-stats {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .form-row {
+        grid-template-columns: 1fr;
+    }
+}

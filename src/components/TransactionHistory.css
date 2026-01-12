@@ -1,0 +1,101 @@
+/**
+ * ♠ CLUB ARENA — Transaction History Styles
+ */
+
+.transaction-history {
+    width: 100%;
+    overflow-x: auto;
+}
+
+.tx-loading,
+.tx-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    padding: var(--space-8);
+    text-align: center;
+    color: var(--text-muted);
+}
+
+.tx-empty-icon {
+    font-size: 32px;
+    opacity: 0.5;
+}
+
+.tx-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.tx-table th {
+    padding: var(--space-3);
+    text-align: left;
+    font-size: var(--text-xs);
+    font-weight: 600;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.tx-table td {
+    padding: var(--space-3);
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.tx-row:hover {
+    background: var(--elevated-surface);
+}
+
+.tx-type-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--text-sm);
+    font-weight: 500;
+}
+
+.tx-amount {
+    font-weight: 600;
+    font-family: var(--font-mono);
+}
+
+.tx-amount.positive {
+    color: var(--success);
+}
+
+.tx-amount.negative {
+    color: var(--danger);
+}
+
+.tx-parties {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+}
+
+.tx-notes {
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tx-date {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+/* Compact mode */
+.transaction-history.compact .tx-table th,
+.transaction-history.compact .tx-table td {
+    padding: var(--space-2);
+    font-size: var(--text-xs);
+}
+
+.transaction-history.compact .tx-type-badge {
+    font-size: var(--text-xs);
+}

@@ -32,7 +32,7 @@ const HAND_CONFIG: HandConfig = {
     gameVariant: 'nlh',
     smallBlind: 5,
     bigBlind: 10,
-    rakeConfig: { percent: 5, cap: 15, noFlop: true },
+    rakeConfig: { percent: 10, cap: 15, noFlop: true },
 };
 
 // Bot players for demo

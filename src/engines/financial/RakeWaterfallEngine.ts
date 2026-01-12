@@ -34,7 +34,7 @@ export class RakeWaterfallEngine {
         // Standard: 5% up to Cap (e.g. 3bb)
         // Union Tax is calculated LATER during weekly settlement
 
-        const rakePercent = 0.05; // From Club Settings
+        const rakePercent = 0.10; // From Club Settings
         const rakeCap = 5.00;     // From Club Settings
 
         let grossRake = Math.min(ctx.totalPot * rakePercent, rakeCap);

@@ -158,7 +158,11 @@ export interface Agent {
     user_id: string;
     member_id: string; // Link to club_members
     name: string;
-    chip_balance: number;
+    agent_wallet_balance: number;
+    player_wallet_balance: number;
+    promo_wallet_balance: number;
+    credit_limit: number;
+    is_prepaid: boolean;
     commission_rate: number; // % of rake returned to players
     player_count: number;
     is_active: boolean;

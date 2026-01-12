@@ -128,7 +128,7 @@ const DEMO_TOURNAMENTS: Tournament[] = [
     {
         id: 'tourn-1',
         club_id: '1',
-        name: '$10 Turbo SNG',
+        name: '10 Chip Turbo SNG',
         type: 'sng',
         buy_in: 10,
         rake: 1,
@@ -144,7 +144,7 @@ const DEMO_TOURNAMENTS: Tournament[] = [
     {
         id: 'tourn-2',
         club_id: '1',
-        name: 'Sunday $50 GTD',
+        name: 'Sunday 50K GTD',
         type: 'mtt',
         buy_in: 5,
         rake: 0.5,

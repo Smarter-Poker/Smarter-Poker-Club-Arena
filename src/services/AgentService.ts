@@ -14,7 +14,11 @@ const DEMO_AGENTS: Agent[] = [
         user_id: 'user-2',
         member_id: 'mem-user-2',
         name: 'AceMaster',
-        chip_balance: 100000,
+        agent_wallet_balance: 100000,
+        player_wallet_balance: 5000,
+        promo_wallet_balance: 2000,
+        credit_limit: 500000,
+        is_prepaid: false,
         commission_rate: 10,
         player_count: 15,
         is_active: true,
@@ -39,7 +43,8 @@ class AgentService {
             .from('agents')
             .select('*')
             .eq('club_id', clubId)
-            .eq('is_active', true);
+            .eq('is_active', true)
+            .order('name');
 
         if (error) throw error;
         return data || [];
@@ -61,7 +66,11 @@ class AgentService {
                 user_id: userId,
                 member_id: `mem-${userId}`,
                 name,
-                chip_balance: 0,
+                agent_wallet_balance: 0,
+                player_wallet_balance: 0,
+                promo_wallet_balance: 0,
+                credit_limit: 0,
+                is_prepaid: false,
                 commission_rate: commissionRate,
                 player_count: 0,
                 is_active: true,
@@ -88,7 +97,11 @@ class AgentService {
                 member_id: member.id,
                 name,
                 commission_rate: commissionRate,
-                chip_balance: 0,
+                agent_wallet_balance: 0,
+                player_wallet_balance: 0,
+                promo_wallet_balance: 0,
+                credit_limit: 0,
+                is_prepaid: false,
                 player_count: 0,
                 is_active: true,
             })
@@ -186,7 +199,7 @@ class AgentService {
     // ═══════════════════════════════════════════════════════════════════════════════
 
     /**
-     * Transfer chips from club owner to agent
+     * Transfer chips from club owner to agent (Business Wallet)
      */
     async transferToAgent(
         clubId: string,
@@ -211,7 +224,7 @@ class AgentService {
         // Start transaction
         const { data: agent } = await supabase
             .from('agents')
-            .select('chip_balance')
+            .select('agent_wallet_balance')
             .eq('id', agentId)
             .single();
 
@@ -220,7 +233,7 @@ class AgentService {
         // Update agent balance
         await supabase
             .from('agents')
-            .update({ chip_balance: agent.chip_balance + amount })
+            .update({ agent_wallet_balance: (agent.agent_wallet_balance || 0) + amount })
             .eq('id', agentId);
 
         // Record transaction
@@ -242,7 +255,7 @@ class AgentService {
     }
 
     /**
-     * Transfer chips from agent to player
+     * Transfer chips from agent (Business) to player
      */
     async transferToPlayer(
         clubId: string,
@@ -267,17 +280,18 @@ class AgentService {
 
         // Get agent and player balances
         const [{ data: agent }, { data: member }] = await Promise.all([
-            supabase.from('agents').select('chip_balance').eq('id', agentId).single(),
+            supabase.from('agents').select('agent_wallet_balance').eq('id', agentId).single(),
             supabase.from('club_members').select('chip_balance').eq('user_id', playerId).eq('club_id', clubId).single(),
         ]);
 
         if (!agent) throw new Error('Agent not found');
         if (!member) throw new Error('Player not found in club');
-        if (agent.chip_balance < amount) throw new Error('Insufficient agent balance');
+
+        if ((agent.agent_wallet_balance || 0) < amount) throw new Error('Insufficient agent balance');
 
         // Update balances
         await Promise.all([
-            supabase.from('agents').update({ chip_balance: agent.chip_balance - amount }).eq('id', agentId),
+            supabase.from('agents').update({ agent_wallet_balance: (agent.agent_wallet_balance || 0) - amount }).eq('id', agentId),
             supabase.from('club_members').update({ chip_balance: member.chip_balance + amount }).eq('user_id', playerId).eq('club_id', clubId),
         ]);
 
@@ -300,7 +314,7 @@ class AgentService {
     }
 
     /**
-     * Player cashes out chips back to agent
+     * Player cashes out chips back to agent (Business)
      */
     async cashOutToAgent(
         clubId: string,
@@ -325,7 +339,7 @@ class AgentService {
         // Get balances
         const [{ data: member }, { data: agent }] = await Promise.all([
             supabase.from('club_members').select('chip_balance').eq('user_id', playerId).eq('club_id', clubId).single(),
-            supabase.from('agents').select('chip_balance').eq('id', agentId).single(),
+            supabase.from('agents').select('agent_wallet_balance').eq('id', agentId).single(),
         ]);
 
         if (!member) throw new Error('Player not found in club');
@@ -335,7 +349,7 @@ class AgentService {
         // Update balances
         await Promise.all([
             supabase.from('club_members').update({ chip_balance: member.chip_balance - amount }).eq('user_id', playerId).eq('club_id', clubId),
-            supabase.from('agents').update({ chip_balance: agent.chip_balance + amount }).eq('id', agentId),
+            supabase.from('agents').update({ agent_wallet_balance: (agent.agent_wallet_balance || 0) + amount }).eq('id', agentId),
         ]);
 
         // Record transaction
@@ -382,6 +396,53 @@ class AgentService {
         const { data, error } = await query;
         if (error) throw error;
         return data || [];
+    }
+
+    /**
+     * Self-Transfer between Agent Wallets
+     * e.g. Business -> Player
+     */
+    async selfTransfer(
+        agentId: string,
+        amount: number,
+        fromWallet: 'agent' | 'player' | 'promo',
+        toWallet: 'agent' | 'player' | 'promo'
+    ): Promise<boolean> {
+        if (isDemoMode) return true;
+
+        const map: Record<string, keyof Agent> = {
+            agent: 'agent_wallet_balance',
+            player: 'player_wallet_balance',
+            promo: 'promo_wallet_balance'
+        };
+
+        const fromCol = map[fromWallet];
+        const toCol = map[toWallet];
+
+        if (!fromCol || !toCol) throw new Error('Invalid wallet type');
+
+        // 1. Get balance
+        // We need to cast as any because types might be strict until generation logic runs
+        const { data: agent } = await supabase.from('agents').select('*').eq('id', agentId).single();
+        if (!agent) throw new Error('Agent not found');
+
+        // Type assertion for dynamically accessed properties
+        const currentBal = (agent as any)[fromCol];
+        const targetBal = (agent as any)[toCol];
+
+        if (currentBal < amount) throw new Error('Insufficient funds');
+
+        // 2. Transact
+        const { error } = await supabase
+            .from('agents')
+            .update({
+                [fromCol]: currentBal - amount,
+                [toCol]: targetBal + amount
+            } as any)
+            .eq('id', agentId);
+
+        if (error) throw error;
+        return true;
     }
 }
 

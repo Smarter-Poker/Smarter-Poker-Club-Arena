@@ -93,8 +93,8 @@ export default function HomePage() {
                     <div className="stat-label">Tables Running</div>
                 </div>
                 <div className="stat-card">
-                    <div className="stat-value">$12.5M</div>
-                    <div className="stat-label">In Play Today</div>
+                    <div className="stat-value">12.5M</div>
+                    <div className="stat-label">Chips In Play</div>
                 </div>
             </section>
         </div>

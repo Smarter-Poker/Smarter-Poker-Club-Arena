@@ -10,10 +10,13 @@ import { tableService } from '../services/TableService';
 import { tournamentService } from '../services/TournamentService';
 import CreateTableModal from '../components/club/CreateTableModal';
 import CreateTournamentModal from '../components/club/CreateTournamentModal';
+import { ClubFinancialDashboard } from '../components/dashboard/ClubFinancialDashboard';
+import { AgentFinancialPortal } from '../components/dashboard/AgentFinancialPortal';
+import { supabase } from '../lib/supabase';
 import type { Club, ClubMember, PokerTable, Tournament } from '../types/database.types';
 import './ClubDetailPage.css';
 
-type TabType = 'tables' | 'members' | 'tournaments' | 'settings';
+type TabType = 'tables' | 'members' | 'tournaments' | 'settings' | 'finance' | 'agent_portal';
 
 export default function ClubDetailPage() {
     const { clubId } = useParams();
@@ -27,6 +30,27 @@ export default function ClubDetailPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [isCreatingTable, setIsCreatingTable] = useState(false);
     const [isCreatingTournament, setIsCreatingTournament] = useState(false);
+    const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+    const [myAgentId, setMyAgentId] = useState<string | null>(null);
+
+    useEffect(() => {
+        supabase.auth.getUser().then(async ({ data }) => {
+            const uid = data.user?.id;
+            setCurrentUserId(uid || null);
+
+            // Check if I am an agent in this club
+            if (uid && clubId) {
+                const { data: agent } = await supabase
+                    .from('agents')
+                    .select('id')
+                    .eq('user_id', uid)
+                    .eq('club_id', clubId)
+                    .maybeSingle(); // specific to this club
+
+                if (agent) setMyAgentId(agent.id);
+            }
+        });
+    }, [clubId]);
 
     // Load club data
     const loadClubData = async () => {
@@ -89,7 +113,7 @@ export default function ClubDetailPage() {
         );
     }
 
-    const isOwner = true; // Demo: assume current user is owner
+    const isOwner = club && currentUserId && club.owner_id === currentUserId;
     const onlineCount = Math.floor(members.length * 0.3);
 
     return (
@@ -157,11 +181,27 @@ export default function ClubDetailPage() {
                     🏆 Tournaments ({tournaments.length})
                 </button>
                 {isOwner && (
+                    <>
+                        <button
+                            className={`tab ${activeTab === 'finance' ? 'active' : ''}`}
+                            onClick={() => setActiveTab('finance')}
+                        >
+                            💰 Finance
+                        </button>
+                        <button
+                            className={`tab ${activeTab === 'settings' ? 'active' : ''}`}
+                            onClick={() => setActiveTab('settings')}
+                        >
+                            ⚙️ Settings
+                        </button>
+                    </>
+                )}
+                {myAgentId && (
                     <button
-                        className={`tab ${activeTab === 'settings' ? 'active' : ''}`}
-                        onClick={() => setActiveTab('settings')}
+                        className={`tab ${activeTab === 'agent_portal' ? 'active' : ''}`}
+                        onClick={() => setActiveTab('agent_portal')}
                     >
-                        ⚙️ Settings
+                        👔 Portal
                     </button>
                 )}
             </div>
@@ -212,7 +252,7 @@ export default function ClubDetailPage() {
                                                 {getVariantName(table.game_variant)}
                                             </div>
                                             <div className="table-stakes">
-                                                ${table.small_blind}/${table.big_blind}
+                                                {table.small_blind}/{table.big_blind}
                                             </div>
                                         </div>
 
@@ -281,7 +321,7 @@ export default function ClubDetailPage() {
                                         </div>
                                     </div>
                                     <div className="member-balance">
-                                        ${member.chip_balance.toLocaleString()}
+                                        {member.chip_balance.toLocaleString()} chips
                                     </div>
                                     <div className={`member-status ${member.status}`}>
                                         {member.status === 'active' ? '🟢' : '⏳'}
@@ -316,7 +356,7 @@ export default function ClubDetailPage() {
                                         </div>
                                         <div className="card-details" style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
                                             <p>Type: {t.type.toUpperCase()}</p>
-                                            <p>Buy-in: ${t.buy_in} + ${t.rake}</p>
+                                            <p>Buy-in: {t.buy_in} + {t.rake} chips</p>
                                             <p>Players: {t.current_players}/{t.max_players}</p>
                                             <p>Start: {t.start_time ? new Date(t.start_time).toLocaleString() : 'On Demand'}</p>
                                         </div>
@@ -327,6 +367,19 @@ export default function ClubDetailPage() {
                                 ))}
                             </div>
                         )}
+                    </div>
+                )}
+
+                {/* Agent Portal Tab */}
+                {activeTab === 'agent_portal' && myAgentId && (
+                    <div className="agent-section">
+                        <AgentFinancialPortal agentId={myAgentId} />
+                    </div>
+                )}
+
+                {activeTab === 'finance' && isOwner && (
+                    <div className="finance-section">
+                        <ClubFinancialDashboard clubId={clubId!} />
                     </div>
                 )}
 

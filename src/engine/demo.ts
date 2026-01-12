@@ -85,18 +85,18 @@ export function runEngineDemo(): void {
                 console.log(`   🃏 Seat ${event.seat} dealt cards`);
                 break;
             case 'PLAYER_ACTION':
-                console.log(`   ▶️ Seat ${event.seat}: ${event.action}${event.amount ? ` $${event.amount}` : ''}`);
+                console.log(`   ▶️ Seat ${event.seat}: ${event.action}${event.amount ? ` ${event.amount} chips` : ''}`);
                 break;
             case 'COMMUNITY_CARDS':
                 console.log(`   📋 ${event.stage.toUpperCase()}: ${cardsToString(event.cards)}`);
                 break;
             case 'WINNERS':
                 for (const w of event.winners) {
-                    console.log(`   🏆 ${w.userId} wins $${w.amount}${w.hand ? ` (${w.hand.name})` : ''}`);
+                    console.log(`   🏆 ${w.userId} wins ${w.amount} chips${w.hand ? ` (${w.hand.name})` : ''}`);
                 }
                 break;
             case 'HAND_COMPLETE':
-                console.log(`   ✅ Hand complete, rake: $${event.rake}`);
+                console.log(`   ✅ Hand complete, rake: ${event.rake} chips`);
                 break;
         }
     });

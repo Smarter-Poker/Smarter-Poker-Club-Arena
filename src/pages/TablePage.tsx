@@ -12,6 +12,7 @@ import { isDemoMode } from '../lib/supabase';
 import { tableService } from '../services/TableService';
 import { tournamentService } from '../services/TournamentService';
 import type { Tournament, BlindLevel } from '../types/database.types';
+import { RakeWaterfallEngine } from '../engines/financial/RakeWaterfallEngine';
 import type { Card, SeatPlayer, ActionType, HandStage } from '../types/database.types';
 import './TablePage.css';
 
@@ -442,7 +443,37 @@ export default function TablePage() {
                     return prev;
             }
         });
-    }, []);
+
+
+        // 💰 RAKE WATERFALL INTEGRATION 💰
+        if (event.type === 'HAND_COMPLETE' && clubId && handControllerRef.current) {
+            const gameState = handControllerRef.current.getState();
+
+            // Only if we are the "host" or it's a demo. 
+            // In a real app, this logic runs on the server.
+            // For now, we simulate it here.
+
+            const context = {
+                tableId: roomTableId,
+                handId: crypto.randomUUID(), // New Hand ID
+                clubId: clubId,
+                totalPot: gameState.pot,
+                players: gameState.players.map(p => ({
+                    userId: p.user_id,
+                    hasCards: !p.is_sitting_out, // Simple approximation
+                    isSittingOut: p.is_sitting_out
+                }))
+            };
+
+            console.log('🌊 Triggering Rake Waterfall...', context);
+            RakeWaterfallEngine.processHand(context).then(res => {
+                console.log('✅ Waterfall Complete:', res);
+            }).catch(err => {
+                console.error('❌ Waterfall Failed:', err);
+            });
+        }
+
+    }, [clubId, roomTableId]);
 
     // ─────────────────────────────────────────────────────────────────────────────
     // Perform Action

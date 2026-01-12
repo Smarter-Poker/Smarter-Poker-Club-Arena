@@ -1,0 +1,258 @@
+/**
+ * ♠ CLUB ARENA — Action Panel Styles
+ * PokerBros-inspired action buttons
+ */
+
+.action-panel {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: var(--space-3) var(--space-4);
+    padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 0));
+    background: linear-gradient(180deg, rgba(20, 25, 35, 0.95) 0%, rgba(15, 20, 30, 1) 100%);
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    z-index: 100;
+}
+
+.action-panel.raise-mode {
+    background: linear-gradient(180deg, rgba(30, 40, 55, 0.98) 0%, rgba(20, 28, 40, 1) 100%);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ACTION BUTTONS
+   ═══════════════════════════════════════════════════════════════ */
+
+.action-buttons {
+    display: flex;
+    gap: var(--space-2);
+}
+
+.action-btn {
+    flex: 1;
+    padding: var(--space-3) var(--space-4);
+    font-size: var(--fs-md);
+    font-weight: var(--fw-bold);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border: none;
+    border-radius: var(--radius-lg);
+    cursor: pointer;
+    transition: all var(--transition-base);
+}
+
+.action-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.action-btn:active:not(:disabled) {
+    transform: scale(0.97);
+}
+
+/* Fold Button */
+.action-btn.fold {
+    background: linear-gradient(180deg, #e74c3c 0%, #c0392b 100%);
+    color: white;
+    box-shadow: 0 4px 0 #922b21;
+}
+
+.action-btn.fold:hover:not(:disabled) {
+    background: linear-gradient(180deg, #ec7063 0%, #e74c3c 100%);
+}
+
+/* Check Button */
+.action-btn.check {
+    background: linear-gradient(180deg, var(--fb-blue) 0%, var(--fb-blue-dark) 100%);
+    color: white;
+    box-shadow: 0 4px 0 #0a4690;
+}
+
+.action-btn.check:hover:not(:disabled) {
+    background: linear-gradient(180deg, var(--fb-blue-light) 0%, var(--fb-blue) 100%);
+}
+
+/* Call Button */
+.action-btn.call {
+    background: linear-gradient(180deg, var(--fb-blue) 0%, var(--fb-blue-dark) 100%);
+    color: white;
+    box-shadow: 0 4px 0 #0a4690;
+}
+
+.action-btn.call:hover:not(:disabled) {
+    background: linear-gradient(180deg, var(--fb-blue-light) 0%, var(--fb-blue) 100%);
+}
+
+/* Raise Button */
+.action-btn.raise {
+    background: linear-gradient(180deg, #f39c12 0%, #e67e22 100%);
+    color: white;
+    box-shadow: 0 4px 0 #b9770e;
+}
+
+.action-btn.raise:hover:not(:disabled) {
+    background: linear-gradient(180deg, #f5b041 0%, #f39c12 100%);
+}
+
+/* Preset Buttons */
+.action-btn.preset {
+    background: linear-gradient(180deg, #3498db 0%, #2980b9 100%);
+    color: white;
+    box-shadow: 0 3px 0 #1f618d;
+    padding: var(--space-3);
+    font-size: var(--fs-base);
+}
+
+.action-btn.preset:hover:not(:disabled) {
+    background: linear-gradient(180deg, #5dade2 0%, #3498db 100%);
+}
+
+/* All-In Button */
+.action-btn.allin {
+    background: linear-gradient(180deg, #9b59b6 0%, #8e44ad 100%);
+    color: white;
+    box-shadow: 0 3px 0 #6c3483;
+    padding: var(--space-3);
+    font-size: var(--fs-base);
+}
+
+.action-btn.allin:hover {
+    background: linear-gradient(180deg, #af7ac5 0%, #9b59b6 100%);
+}
+
+/* Confirm Button */
+.action-btn.confirm {
+    background: linear-gradient(180deg, #f39c12 0%, #e67e22 100%);
+    color: white;
+    box-shadow: 0 4px 0 #b9770e;
+}
+
+.action-btn.confirm:hover {
+    background: linear-gradient(180deg, #f5b041 0%, #f39c12 100%);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   RAISE DISPLAY
+   ═══════════════════════════════════════════════════════════════ */
+
+.raise-display {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-3);
+    margin-bottom: var(--space-3);
+}
+
+.adjust-btn {
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--fb-blue);
+    border: none;
+    border-radius: var(--radius-md);
+    color: white;
+    font-size: 1.5rem;
+    font-weight: var(--fw-bold);
+    cursor: pointer;
+    transition: all var(--transition-base);
+}
+
+.adjust-btn:hover {
+    background: var(--fb-blue-hover);
+    transform: scale(1.05);
+}
+
+.adjust-btn:active {
+    transform: scale(0.95);
+}
+
+.raise-amount {
+    min-width: 100px;
+    padding: var(--space-2) var(--space-4);
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: var(--radius-md);
+    text-align: center;
+}
+
+.amount-value {
+    font-size: var(--fs-2xl);
+    font-weight: var(--fw-bold);
+    color: var(--accent-gold);
+    font-family: var(--font-mono);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   RAISE SLIDER
+   ═══════════════════════════════════════════════════════════════ */
+
+.raise-slider-container {
+    padding: 0 var(--space-4);
+    margin-bottom: var(--space-3);
+}
+
+.raise-slider {
+    width: 100%;
+    height: 8px;
+    background: var(--bg-tertiary);
+    border-radius: 4px;
+    outline: none;
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+.raise-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 28px;
+    height: 28px;
+    background: linear-gradient(180deg, var(--fb-blue) 0%, var(--fb-blue-dark) 100%);
+    border-radius: var(--radius-full);
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    transition: transform var(--transition-base);
+}
+
+.raise-slider::-webkit-slider-thumb:hover {
+    transform: scale(1.1);
+}
+
+.raise-slider::-moz-range-thumb {
+    width: 28px;
+    height: 28px;
+    background: linear-gradient(180deg, var(--fb-blue) 0%, var(--fb-blue-dark) 100%);
+    border-radius: var(--radius-full);
+    cursor: pointer;
+    border: none;
+}
+
+/* Progress fill */
+.raise-slider {
+    background: linear-gradient(90deg,
+            var(--fb-blue) 0%,
+            var(--fb-blue) var(--slider-progress, 50%),
+            var(--bg-tertiary) var(--slider-progress, 50%),
+            var(--bg-tertiary) 100%);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   RESPONSIVE
+   ═══════════════════════════════════════════════════════════════ */
+
+@media (max-width: 400px) {
+    .action-btn {
+        padding: var(--space-2) var(--space-3);
+        font-size: var(--fs-base);
+    }
+
+    .adjust-btn {
+        width: 40px;
+        height: 40px;
+        font-size: 1.25rem;
+    }
+
+    .amount-value {
+        font-size: var(--fs-xl);
+    }
+}

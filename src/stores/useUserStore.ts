@@ -22,6 +22,7 @@ interface UserState {
     // Auth actions
     login: (user: UserProfile) => void;
     logout: () => void;
+    setUser: (user: Partial<UserProfile> & { id: string }) => void;
     updateProfile: (updates: Partial<UserProfile>) => void;
 
     // Club context
@@ -100,6 +101,32 @@ export const useUserStore = create<UserState>()(
                 set((state) => ({
                     user: state.user ? { ...state.user, ...updates } : null,
                 }));
+            },
+
+            setUser: (userData: Partial<UserProfile> & { id: string }) => {
+                const user: UserProfile = {
+                    id: userData.id,
+                    username: userData.username || 'Player',
+                    display_name: userData.display_name || userData.username || 'Player',
+                    avatar_url: userData.avatar_url || null,
+                    vip_level: userData.vip_level || 'bronze',
+                    stats: userData.stats || {
+                        total_hands: 0,
+                        vpip: 0,
+                        pfr: 0,
+                        aggression_factor: 0,
+                        bb_per_100: 0,
+                        biggest_pot: 0,
+                        total_profit: 0,
+                        games_played: 0,
+                    },
+                    created_at: userData.created_at || new Date().toISOString(),
+                };
+                set({
+                    user,
+                    isAuthenticated: true,
+                    totalChips: (userData as any).chip_balance || 0,
+                });
             },
 
             setCurrentClub: (clubId: string | null) => {

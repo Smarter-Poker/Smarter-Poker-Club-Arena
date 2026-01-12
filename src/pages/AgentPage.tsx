@@ -81,7 +81,7 @@ export default function AgentPage() {
     }, [selectedAgent]);
 
     // Calculate totals
-    const totalAgentChips = agents.reduce((sum, a) => sum + a.chip_balance, 0);
+    const totalAgentChips = agents.reduce((sum, a) => sum + a.agent_wallet_balance, 0);
     const totalPlayerChips = members.reduce((sum, m) => sum + m.chip_balance, 0);
 
     // Create agent
@@ -141,7 +141,7 @@ export default function AgentPage() {
                 // Update agent balance locally
                 setAgents(agents.map(a =>
                     a.id === transferForm.targetId
-                        ? { ...a, chip_balance: a.chip_balance + amount }
+                        ? { ...a, agent_wallet_balance: a.agent_wallet_balance + amount }
                         : a
                 ));
             } else if (transferType === 'to_player' && selectedAgent) {
@@ -155,7 +155,7 @@ export default function AgentPage() {
                 // Update balances locally
                 setSelectedAgent({
                     ...selectedAgent,
-                    chip_balance: selectedAgent.chip_balance - amount,
+                    agent_wallet_balance: selectedAgent.agent_wallet_balance - amount,
                 });
             }
             setShowTransferModal(false);
@@ -245,7 +245,7 @@ export default function AgentPage() {
                                         </div>
                                     </div>
                                     <div className="agent-balance">
-                                        ${agent.chip_balance.toLocaleString()}
+                                        ${agent.agent_wallet_balance.toLocaleString()}
                                     </div>
                                 </div>
                             ))
@@ -280,7 +280,7 @@ export default function AgentPage() {
 
                             <div className="agent-balance-display">
                                 <span className="balance-label">Available Balance:</span>
-                                <span className="balance-amount">${selectedAgent.chip_balance.toLocaleString()}</span>
+                                <span className="balance-amount">${selectedAgent.agent_wallet_balance.toLocaleString()}</span>
                             </div>
 
                             <div className="player-list">

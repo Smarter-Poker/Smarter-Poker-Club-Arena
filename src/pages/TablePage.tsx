@@ -456,8 +456,9 @@ export default function TablePage() {
             const context = {
                 tableId: roomTableId,
                 handId: crypto.randomUUID(), // New Hand ID
-                clubId: clubId,
+                clubId: clubId!,
                 totalPot: gameState.pot,
+                bigBlind: HAND_CONFIG.bigBlind,
                 players: gameState.players.map(p => ({
                     userId: p.user_id,
                     hasCards: !p.is_sitting_out, // Simple approximation

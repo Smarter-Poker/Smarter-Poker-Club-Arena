@@ -7,6 +7,7 @@ interface HandContext {
     handId: string;
     clubId: string;
     totalPot: number;
+    bigBlind: number; // For scaling caps
     players: any[]; // Dealt-in players
 }
 
@@ -34,14 +35,14 @@ export class RakeWaterfallEngine {
         // Standard: 10% up to Cap (e.g. 3bb)
         // Union Tax is calculated LATER during weekly settlement
 
-        const rakePercent = 0.10; // From Club Settings
-        const rakeCap = 5.00;     // From Club Settings
+        const rakePercent = 0.10;
+        const rakeCap = ctx.bigBlind * 2.5; // Cap is 2.5 BB (5 chips at 1/2)
 
         let grossRake = Math.min(ctx.totalPot * rakePercent, rakeCap);
 
         // 2. BBJ DROP
-        // E.g. 1bb if Pot > 10bb
-        const bbjDrop = 1.00; // Simplified rule
+        // 0.5 BB (1 chip at 1/2)
+        const bbjDrop = ctx.bigBlind * 0.5;
 
         // 3. EXECUTE POT DEDUCTION (Move Chips to Union/Club/BBJ Wallets)
         // This is the "Physical" movement of chips from the table

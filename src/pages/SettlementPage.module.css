@@ -1,0 +1,563 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * 🎰 SETTLEMENT PAGE — Styles
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+
+.page {
+    min-height: 100vh;
+    padding: 2rem;
+    background: linear-gradient(180deg, var(--bg-darker) 0%, var(--bg-dark) 100%);
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+/* Header */
+.header {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.backButton {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: color 0.2s;
+}
+
+.backButton:hover {
+    color: #fff;
+}
+
+.headerContent {
+    flex: 1;
+}
+
+.header h1 {
+    margin: 0;
+    font-size: 1.5rem;
+    color: #fff;
+}
+
+.subtitle {
+    margin: 0.25rem 0 0;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.statusBadge {
+    padding: 0.5rem 1rem;
+    border-radius: 0.75rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.statusBadge.open {
+    background: rgba(16, 185, 129, 0.2);
+    color: #10b981;
+}
+
+.statusBadge.processing {
+    background: rgba(245, 158, 11, 0.2);
+    color: #f59e0b;
+}
+
+.statusBadge.settled {
+    background: rgba(99, 102, 241, 0.2);
+    color: #818cf8;
+}
+
+/* Metrics Grid */
+.metricsGrid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+.metricCard {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.25rem;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.metricIcon {
+    font-size: 1.75rem;
+}
+
+.metricValue {
+    display: block;
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #fff;
+}
+
+.metricLabel {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+}
+
+/* Settlement Summary */
+.settlementSummary {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1.5rem;
+    padding: 1.5rem;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    margin-bottom: 2rem;
+}
+
+.summaryBox {
+    text-align: center;
+}
+
+.summaryLabel {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    margin-bottom: 0.5rem;
+}
+
+.summaryValue {
+    font-size: 1.5rem;
+    font-weight: 700;
+}
+
+.summaryValue.positive {
+    color: #10b981;
+}
+
+.summaryValue.negative {
+    color: #ef4444;
+}
+
+.summaryDivider {
+    font-size: 1.5rem;
+    color: var(--text-muted);
+}
+
+/* Tab Navigation */
+.tabNav {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 2rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    padding-bottom: 0.5rem;
+}
+
+.tabButton {
+    padding: 0.75rem 1.25rem;
+    background: transparent;
+    border: none;
+    border-radius: 0.5rem;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.tabButton:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: #fff;
+}
+
+.tabButton.active {
+    background: rgba(var(--accent-rgb), 0.15);
+    color: var(--accent);
+}
+
+/* Content */
+.content {
+    min-height: 400px;
+}
+
+/* Overview Section */
+.overviewSection {
+    display: grid;
+    gap: 1.5rem;
+}
+
+.formulaCard {
+    background: rgba(139, 92, 246, 0.1);
+    border: 1px solid rgba(139, 92, 246, 0.3);
+    border-radius: 1rem;
+    padding: 1.5rem;
+}
+
+.formulaCard h3 {
+    margin: 0 0 1rem;
+    color: #fff;
+}
+
+.formula {
+    background: rgba(0, 0, 0, 0.3);
+    padding: 1rem;
+    border-radius: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.formula code {
+    color: var(--accent);
+    font-size: 0.95rem;
+}
+
+.formulaNote {
+    margin: 0;
+    font-size: 0.85rem;
+    color: rgba(255, 255, 255, 0.7);
+    line-height: 1.6;
+}
+
+.timelineCard {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 1.5rem;
+}
+
+.timelineCard h3 {
+    margin: 0 0 1.5rem;
+    color: #fff;
+}
+
+.timeline {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    position: relative;
+    padding-left: 2rem;
+}
+
+.timeline::before {
+    content: '';
+    position: absolute;
+    left: 7px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.timelineItem {
+    display: flex;
+    gap: 1rem;
+    position: relative;
+}
+
+.timelineDot {
+    position: absolute;
+    left: -2rem;
+    width: 16px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+}
+
+.timelineItem.completed .timelineDot {
+    color: #10b981;
+}
+
+.timelineItem.active .timelineDot {
+    color: var(--accent);
+}
+
+.timelineItem strong {
+    display: block;
+    color: #fff;
+    margin-bottom: 0.25rem;
+}
+
+.timelineItem p {
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.actionBar {
+    text-align: center;
+    padding: 2rem;
+    background: rgba(16, 185, 129, 0.1);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    border-radius: 1rem;
+}
+
+.executeButton {
+    padding: 1rem 2.5rem;
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    border: none;
+    border-radius: 0.75rem;
+    color: #fff;
+    font-size: 1.1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.executeButton:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 20px rgba(16, 185, 129, 0.4);
+}
+
+.executeButton:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+}
+
+.actionNote {
+    margin: 1rem 0 0;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+/* Wire Table */
+.wiresSection {
+    overflow-x: auto;
+}
+
+.wireTable {
+    width: 100%;
+    border-collapse: collapse;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 1rem;
+    overflow: hidden;
+}
+
+.wireTable th,
+.wireTable td {
+    padding: 1rem;
+    text-align: left;
+}
+
+.wireTable th {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+}
+
+.wireTable td {
+    color: rgba(255, 255, 255, 0.8);
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.clubCell {
+    font-weight: 600;
+    color: #fff !important;
+}
+
+.positive {
+    color: #10b981 !important;
+}
+
+.negative {
+    color: #ef4444 !important;
+}
+
+.muted {
+    color: var(--text-muted) !important;
+}
+
+.wireAmount {
+    font-weight: 600;
+}
+
+.wireDirection {
+    display: block;
+    font-size: 0.7rem;
+    font-weight: 400;
+    color: var(--text-muted);
+    margin-top: 0.25rem;
+}
+
+.badge {
+    padding: 0.25rem 0.6rem;
+    border-radius: 0.5rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.badge.pending {
+    background: rgba(245, 158, 11, 0.2);
+    color: #f59e0b;
+}
+
+.badge.approved {
+    background: rgba(59, 130, 246, 0.2);
+    color: #3b82f6;
+}
+
+.badge.paid,
+.badge.processed {
+    background: rgba(16, 185, 129, 0.2);
+    color: #10b981;
+}
+
+/* Agent Payouts */
+.payoutsSection {
+    padding: 0;
+}
+
+.payoutSummary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 1.5rem;
+    background: rgba(16, 185, 129, 0.1);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    border-radius: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.payoutSummary span {
+    color: var(--text-muted);
+}
+
+.payoutSummary strong {
+    font-size: 1.25rem;
+}
+
+.payoutTable {
+    width: 100%;
+    border-collapse: collapse;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 1rem;
+    overflow: hidden;
+}
+
+.payoutTable th,
+.payoutTable td {
+    padding: 1rem;
+    text-align: left;
+}
+
+.payoutTable th {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+}
+
+.payoutTable td {
+    color: rgba(255, 255, 255, 0.8);
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.agentCell {
+    font-weight: 600;
+    color: #fff !important;
+}
+
+.netAmount {
+    font-weight: 600;
+}
+
+.payoutNote {
+    margin-top: 1.5rem;
+    padding: 1rem;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 0.75rem;
+}
+
+.payoutNote p {
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+/* History Section */
+.historySection {
+    padding: 0;
+}
+
+.periodList {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1rem;
+}
+
+.periodCard {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 1rem;
+    padding: 1.25rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.periodCard:hover {
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.periodCard.selected {
+    border-color: var(--accent);
+    background: rgba(var(--accent-rgb), 0.1);
+}
+
+.periodHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+.periodNumber {
+    font-weight: 600;
+    color: #fff;
+}
+
+.periodDates {
+    margin: 0 0 0.5rem;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.periodStats {
+    display: flex;
+    gap: 0.5rem;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+    .metricsGrid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .settlementSummary {
+        flex-wrap: wrap;
+    }
+}
+
+@media (max-width: 600px) {
+    .header {
+        flex-wrap: wrap;
+    }
+
+    .metricsGrid {
+        grid-template-columns: 1fr;
+    }
+
+    .tabNav {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+}

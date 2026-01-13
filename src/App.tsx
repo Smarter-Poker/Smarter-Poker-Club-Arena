@@ -24,6 +24,7 @@ const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const UnionsPage = lazy(() => import('./pages/UnionsPage'));
 const UnionDetailPage = lazy(() => import('./pages/UnionDetailPage'));
 const CreateUnionPage = lazy(() => import('./pages/CreateUnionPage'));
+const SettlementPage = lazy(() => import('./pages/SettlementPage'));
 
 // Loading fallback
 function LoadingSpinner() {
@@ -52,6 +53,7 @@ export default function App() {
                     <Route path="unions" element={<UnionsPage />} />
                     <Route path="unions/create" element={<CreateUnionPage />} />
                     <Route path="unions/:unionId" element={<UnionDetailPage />} />
+                    <Route path="unions/:unionId/settlement" element={<SettlementPage />} />
 
                     {/* Table */}
                     <Route path="table/:tableId" element={<TablePage />} />

@@ -1,0 +1,337 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * 🏦 CASHIER MODAL — Styles
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+
+.cashier-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.8);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 950;
+    padding: 20px;
+}
+
+.cashier-modal {
+    width: 100%;
+    max-width: 420px;
+    background: #1C2128;
+    border-radius: 20px;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    overflow: hidden;
+    animation: scaleIn 0.2s ease;
+}
+
+@keyframes scaleIn {
+    from {
+        transform: scale(0.95);
+        opacity: 0;
+    }
+
+    to {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+/* Header */
+.cashier-modal__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    background: #161B22;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.cashier-modal__title-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.cashier-modal__icon {
+    font-size: 1.5rem;
+}
+
+.cashier-modal__title {
+    font-size: 1.125rem;
+    font-weight: 700;
+    color: #E4E6EB;
+    margin: 0;
+}
+
+.cashier-modal__close {
+    width: 32px;
+    height: 32px;
+    border: none;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    color: #8B949E;
+    font-size: 1.5rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Balance Card */
+.cashier-balance-card {
+    margin: 20px;
+    padding: 20px;
+    background: linear-gradient(135deg, #1877F2 0%, #166CD5 100%);
+    border-radius: 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    box-shadow: 0 4px 12px rgba(24, 119, 242, 0.3);
+}
+
+.cashier-balance-label {
+    font-size: 0.8125rem;
+    color: rgba(255, 255, 255, 0.8);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.cashier-balance-value {
+    font-size: 2rem;
+    font-weight: 800;
+    color: #FFF;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+/* Tabs */
+.cashier-tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    padding: 0 20px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.cashier-tab {
+    padding: 12px;
+    background: none;
+    border: none;
+    color: #8B949E;
+    font-weight: 600;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s;
+}
+
+.cashier-tab.active {
+    color: #E4E6EB;
+    border-bottom-color: #1877F2;
+}
+
+/* Form */
+.cashier-content {
+    padding: 24px 20px;
+    min-height: 250px;
+}
+
+.cashier-form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.cashier-label {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #8B949E;
+}
+
+.cashier-input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.cashier-currency {
+    position: absolute;
+    left: 16px;
+    color: #8B949E;
+    font-weight: 700;
+}
+
+.cashier-input {
+    width: 100%;
+    padding: 14px 16px 14px 36px;
+    background: #0D1117;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 12px;
+    color: #E4E6EB;
+    font-size: 1.125rem;
+    font-weight: 700;
+    outline: none;
+}
+
+.cashier-input:focus {
+    border-color: #1877F2;
+}
+
+.cashier-presets {
+    display: flex;
+    gap: 8px;
+}
+
+.cashier-presets button {
+    flex: 1;
+    padding: 8px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    color: #E4E6EB;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.1s;
+}
+
+.cashier-presets button:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.cashier-submit-btn {
+    width: 100%;
+    padding: 14px;
+    border-radius: 12px;
+    border: none;
+    font-size: 1rem;
+    font-weight: 700;
+    color: #FFF;
+    cursor: pointer;
+    margin-top: 8px;
+    transition: opacity 0.2s;
+}
+
+.cashier-submit-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.cashier-submit-btn.deposit {
+    background: #238636;
+}
+
+.cashier-submit-btn.deposit:hover {
+    background: #2EA043;
+}
+
+.cashier-submit-btn.withdraw {
+    background: #DA3633;
+}
+
+.cashier-submit-btn.withdraw:hover {
+    background: #F85149;
+}
+
+.cashier-note {
+    font-size: 0.75rem;
+    color: #6E7681;
+    text-align: center;
+    margin: 0;
+}
+
+/* History */
+.cashier-history {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.tx-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px;
+    background: rgba(255, 255, 255, 0.02);
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.tx-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.tx-type {
+    font-size: 0.8125rem;
+    font-weight: 700;
+    text-transform: capitalize;
+}
+
+.tx-type--deposit {
+    color: #3FB950;
+}
+
+.tx-type--withdrawal {
+    color: #F85149;
+}
+
+.tx-type--winnings {
+    color: #FFD700;
+}
+
+.tx-type--rake {
+    color: #8B949E;
+}
+
+.tx-date {
+    font-size: 0.6875rem;
+    color: #6E7681;
+}
+
+.tx-amount-group {
+    text-align: right;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.tx-amount {
+    font-weight: 700;
+    font-size: 0.9375rem;
+}
+
+.tx-amount.pos {
+    color: #E4E6EB;
+}
+
+.tx-amount.neg {
+    color: #8B949E;
+}
+
+.tx-status {
+    font-size: 0.625rem;
+    text-transform: uppercase;
+    font-weight: 700;
+}
+
+.tx-status--completed {
+    color: #3FB950;
+}
+
+.tx-status--pending {
+    color: #A371F7;
+}
+
+.tx-status--failed {
+    color: #F85149;
+}
+
+.tx-empty {
+    text-align: center;
+    color: #6E7681;
+    font-style: italic;
+    padding: 20px;
+}

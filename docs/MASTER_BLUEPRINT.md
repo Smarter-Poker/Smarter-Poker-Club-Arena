@@ -175,8 +175,8 @@ HydraService.ts
 | `HoleCards.tsx` | ✅ | Card container (NLH/PLO) |
 | `RealTimeResults.tsx` | ✅ | Session stats panel |
 | `HandHistory.tsx` | ✅ | Hand detail/replay panel |
-| `ChipStack.tsx` | ❌ | Animated chip display |
-| `TimerBar.tsx` | ❌ | Action clock |
+| `ChipStack.tsx` | ✅ | Animated chip display |
+| `TimerBar.tsx` | ✅ | Action clock |
 
 ### Replay System
 | Component | Status | Purpose |
@@ -556,14 +556,15 @@ const clubs = await ClubsService.discoverNearby({
 12. ~~**Build `HandHistory.tsx`**~~ ✅ DONE — Hand detail/replay panel
 
 ### Next Priority:
-13. **Build `ChipStack.tsx`** — Animated chip display for betting
-14. **Build `TimerBar.tsx`** — Action clock progress bar
+13. ~~**Build `ChipStack.tsx`**~~ ✅ DONE — Animated chip display for betting
+14. ~~**Build `TimerBar.tsx`**~~ ✅ DONE — Action clock progress bar
 15. **Add Socket.io client** — Real-time game state sync
 16. **Test BBJ migration** — Apply to Supabase production
 17. **Add hand replay scrubber** — Enhanced timeline with action log
 18. **Integrate BuyInModal** — Connect to TablePage state
+19. **Build QuickSeat component** — One-click buy-in button
+20. **Enhance lobby filters** — Stakes/variant filtering
 
 ---
 
 *This blueprint is the single source of truth for Club Arena development. Update as components are completed.*
-

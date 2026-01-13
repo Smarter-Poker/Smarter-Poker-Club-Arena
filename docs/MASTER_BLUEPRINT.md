@@ -595,9 +595,12 @@ const clubs = await ClubsService.discoverNearby({
 47. ~~**Build ClubSettings**~~ ✅ DONE — Settings for club customization
 48. ~~**Add CashierModal**~~ ✅ DONE — Player chip management
 49. ~~**Build AdminReports**~~ ✅ DONE — Club performance statistics
-50. **Build HandHistoryModal** — Detailed hand history viewer
-51. **Add SecurityAuditLog** — Security and fair play logs
-52. **Build AgentManager** — Agent hierarchy and commission
+50. ~~**Build HandHistoryModal**~~ ✅ DONE — Detailed hand history viewer
+51. ~~**Add SecurityAuditLog**~~ ✅ DONE — Security and fair play logs
+52. ~~**Build AgentManager**~~ ✅ DONE — Agent hierarchy and commission
+53. **Build PrivateChat** — Private messages between friends
+54. **Add FriendsList** — Social features for players
+55. **Build NotificationCenter** — Global notification system
 
 
 ---

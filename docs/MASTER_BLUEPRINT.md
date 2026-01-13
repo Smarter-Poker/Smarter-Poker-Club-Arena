@@ -162,7 +162,7 @@ HydraService.ts
 | `UnionDetailPage` | 🔧 | `/unions/:id` | Financial dashboard |
 | `AgentPage` | ✅ | `/agent` | Triple-wallet UI |
 | `ProfilePage` | ✅ | `/profile` | XP progression, achievements, stats |
-| `SettingsPage` | 🔧 | `/settings` | Sound, display |
+| `SettingsPage` | ✅ | `/settings` | Audio, display, gameplay, privacy |
 
 ### Table Components
 | Component | Status | Purpose |

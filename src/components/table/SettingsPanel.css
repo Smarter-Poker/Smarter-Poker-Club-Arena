@@ -1,0 +1,297 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * ⚙️ SETTINGS PANEL — Styles
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   OVERLAY
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.settings-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: flex-end;
+    z-index: 600;
+    animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   PANEL
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.settings-panel {
+    width: 380px;
+    max-width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    background: linear-gradient(180deg, #1C2128 0%, #161B22 100%);
+    border-left: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: -10px 0 40px rgba(0, 0, 0, 0.4);
+    animation: slideIn 0.25s ease;
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateX(100%);
+    }
+
+    to {
+        transform: translateX(0);
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   HEADER
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.settings-panel__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px;
+    background: rgba(0, 0, 0, 0.3);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.settings-panel__title {
+    font-size: 1.125rem;
+    font-weight: 700;
+    color: #E4E6EB;
+    margin: 0;
+}
+
+.settings-panel__close {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    border-radius: 8px;
+    color: #8B949E;
+    font-size: 1.5rem;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.settings-panel__close:hover {
+    background: rgba(248, 81, 73, 0.3);
+    color: #F85149;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   BODY
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.settings-panel__body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   SECTION
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.settings-section {
+    margin-bottom: 24px;
+}
+
+.settings-section__title {
+    padding: 0 20px;
+    margin: 0 0 12px;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #1877F2;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   SETTING ITEM
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.settings-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 20px;
+    transition: background 0.15s ease;
+}
+
+.settings-item:hover {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.settings-item--toggle {
+    cursor: pointer;
+}
+
+.settings-item__info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    margin-right: 16px;
+}
+
+.settings-item__label {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: #E4E6EB;
+}
+
+.settings-item__description {
+    font-size: 0.75rem;
+    color: #6E7681;
+}
+
+.settings-item__value {
+    font-size: 0.8125rem;
+    font-family: 'JetBrains Mono', monospace;
+    color: #8B949E;
+}
+
+/* Slider */
+.settings-item__slider {
+    width: 100%;
+    height: 6px;
+    margin-top: 8px;
+    -webkit-appearance: none;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+    outline: none;
+}
+
+.settings-item__slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 18px;
+    height: 18px;
+    background: #1877F2;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.settings-item__slider::-webkit-slider-thumb:hover {
+    background: #3591FF;
+    transform: scale(1.1);
+}
+
+.settings-item__slider:disabled {
+    opacity: 0.3;
+}
+
+/* Select */
+.settings-item__select select {
+    padding: 8px 12px;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 6px;
+    color: #E4E6EB;
+    cursor: pointer;
+    outline: none;
+}
+
+.settings-item__select select:focus {
+    border-color: #1877F2;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   TOGGLE
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.settings-toggle {
+    position: relative;
+    flex-shrink: 0;
+}
+
+.settings-toggle input {
+    display: none;
+}
+
+.settings-toggle__slider {
+    display: block;
+    width: 44px;
+    height: 24px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 12px;
+    position: relative;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.settings-toggle__slider::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 20px;
+    height: 20px;
+    background: #FFFFFF;
+    border-radius: 50%;
+    transition: all 0.2s ease;
+}
+
+.settings-toggle input:checked+.settings-toggle__slider {
+    background: #3FB950;
+}
+
+.settings-toggle input:checked+.settings-toggle__slider::after {
+    left: 22px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   FOOTER
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.settings-panel__footer {
+    padding: 16px 20px;
+    background: rgba(0, 0, 0, 0.3);
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.settings-panel__reset {
+    width: 100%;
+    padding: 12px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    color: #8B949E;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.settings-panel__reset:hover {
+    border-color: #F85149;
+    color: #F85149;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   RESPONSIVE
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 480px) {
+    .settings-panel {
+        width: 100%;
+    }
+}

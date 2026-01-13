@@ -61,3 +61,11 @@ export type { SitOutModalProps } from './SitOutModal';
 // Cashier Modal
 export { CashierModal } from './CashierModal';
 export type { CashierModalProps, CashierTransaction, CashierTab } from './CashierModal';
+
+// Settings Panel
+export { SettingsPanel, DEFAULT_TABLE_SETTINGS } from './SettingsPanel';
+export type { SettingsPanelProps, TableSettings } from './SettingsPanel';
+
+// Leaderboard Panel
+export { LeaderboardPanel } from './LeaderboardPanel';
+export type { LeaderboardPanelProps, LeaderboardPlayer, LeaderboardPeriod } from './LeaderboardPanel';

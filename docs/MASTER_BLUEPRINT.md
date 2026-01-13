@@ -572,12 +572,13 @@ const clubs = await ClubsService.discoverNearby({
 24. ~~**Build WaitListModal**~~ ✅ DONE — Manage wait list position
 25. ~~**Add SitOutModal**~~ ✅ DONE — Sit-out timer and controls
 26. ~~**Build CashierModal**~~ ✅ DONE — Add/withdraw chips at table
-27. **Add SettingsPanel** — Table preferences (auto-muck, sounds)
-28. **Build LeaderboardPanel** — Club/table rankings display
+27. ~~**Add SettingsPanel**~~ ✅ DONE — Table preferences (auto-muck, sounds)
+28. ~~**Build LeaderboardPanel**~~ ✅ DONE — Club/table rankings display
 29. **Add EmotePanel** — Emoji reactions at table
 30. **Build TournamentBreakScreen** — Break timer overlay
+31. **Add RabbitHunt feature** — See what cards would have come
+32. **Build HandNotation** — Hand history notation export
 
 ---
 
 *This blueprint is the single source of truth for Club Arena development. Update as components are completed.*
-

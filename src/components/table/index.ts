@@ -69,3 +69,11 @@ export type { SettingsPanelProps, TableSettings } from './SettingsPanel';
 // Leaderboard Panel
 export { LeaderboardPanel } from './LeaderboardPanel';
 export type { LeaderboardPanelProps, LeaderboardPlayer, LeaderboardPeriod } from './LeaderboardPanel';
+
+// Emote Panel
+export { EmotePanel, DEFAULT_EMOTES, QUICK_TEXT_EMOTES } from './EmotePanel';
+export type { EmotePanelProps, Emote } from './EmotePanel';
+
+// Tournament Break Screen
+export { TournamentBreakScreen } from './TournamentBreakScreen';
+export type { TournamentBreakScreenProps, TournamentPlayer, BlindLevel } from './TournamentBreakScreen';

@@ -1,0 +1,177 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * 🎭 EMOTE PANEL — Styles
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   OVERLAY
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.emote-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 500;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   PANEL
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.emote-panel {
+    position: absolute;
+    bottom: 100px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 280px;
+    background: linear-gradient(180deg, #1C2128 0%, #161B22 100%);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 16px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+    overflow: hidden;
+    animation: popIn 0.2s ease;
+}
+
+@keyframes popIn {
+    from {
+        opacity: 0;
+        transform: translateX(-50%) scale(0.9);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(-50%) scale(1);
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   HEADER
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.emote-panel__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    background: rgba(0, 0, 0, 0.3);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.emote-panel__title {
+    font-size: 0.8125rem;
+    font-weight: 700;
+    color: #E4E6EB;
+}
+
+.emote-panel__cooldown {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+    padding: 4px 8px;
+    background: rgba(255, 184, 0, 0.2);
+    border-radius: 4px;
+    color: #FFB800;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   GRID
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.emote-panel__grid {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 4px;
+    padding: 12px;
+}
+
+.emote-panel__emote {
+    aspect-ratio: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.25rem;
+    background: rgba(255, 255, 255, 0.05);
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.emote-panel__emote:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.15);
+    transform: scale(1.15);
+}
+
+.emote-panel__emote--animating {
+    animation: emoteClick 0.3s ease;
+}
+
+@keyframes emoteClick {
+    0% {
+        transform: scale(1);
+    }
+
+    50% {
+        transform: scale(1.4);
+    }
+
+    100% {
+        transform: scale(1);
+    }
+}
+
+.emote-panel__emote--disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   QUICK TEXT
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.emote-panel__quick-text {
+    display: flex;
+    gap: 6px;
+    padding: 12px;
+    background: rgba(0, 0, 0, 0.2);
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.emote-panel__text {
+    flex: 1;
+    padding: 8px 6px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: lowercase;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    color: #8B949E;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.emote-panel__text:hover:not(:disabled) {
+    background: rgba(24, 119, 242, 0.2);
+    border-color: #1877F2;
+    color: #1877F2;
+}
+
+.emote-panel__text--disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   RESPONSIVE
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 480px) {
+    .emote-panel {
+        width: 260px;
+    }
+
+    .emote-panel__grid {
+        grid-template-columns: repeat(6, 1fr);
+    }
+}

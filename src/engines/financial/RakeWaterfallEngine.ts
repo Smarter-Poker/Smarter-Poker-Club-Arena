@@ -32,16 +32,15 @@ export class RakeWaterfallEngine {
         console.log(`🌊 WATERFALL: Processing Hand ${ctx.handId}`);
 
         // 1. CALCULATE RAKE & BBJ
-        // Standard: 10% up to Cap (e.g. 3bb)
-        // Union Tax is calculated LATER during weekly settlement
+        // LAW: 10% Rate | Cap 2.5BB | BBJ 0.5BB (LOCKED)
 
         const rakePercent = 0.10;
-        const rakeCap = ctx.bigBlind * 2.5; // Cap is 2.5 BB (5 chips at 1/2)
+        const rakeCap = ctx.bigBlind * 2.5; // 🔒 LOCKED: 2.5x Big Blind
 
         let grossRake = Math.min(ctx.totalPot * rakePercent, rakeCap);
 
         // 2. BBJ DROP
-        // 0.5 BB (1 chip at 1/2)
+        // 🔒 LOCKED: 0.5x Big Blind
         const bbjDrop = ctx.bigBlind * 0.5;
 
         // 3. EXECUTE POT DEDUCTION (Move Chips to Union/Club/BBJ Wallets)

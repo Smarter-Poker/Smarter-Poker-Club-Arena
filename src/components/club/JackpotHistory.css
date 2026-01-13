@@ -1,0 +1,187 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * 💰 JACKPOT HISTORY — Styles
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+
+.jackpot-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.8);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 950;
+    padding: 20px;
+}
+
+.jackpot-modal {
+    width: 100%;
+    max-width: 900px;
+    max-height: 80vh;
+    background: #161B22;
+    border-radius: 16px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: scale(0.98);
+    }
+
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+/* Header */
+.jackpot-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 24px;
+    background: linear-gradient(90deg, #2D1B4E 0%, #161B22 100%);
+    border-bottom: 1px solid rgba(163, 113, 247, 0.2);
+}
+
+.jackpot-title-group {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.jackpot-icon {
+    font-size: 1.75rem;
+}
+
+.jackpot-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #E4E6EB;
+    margin: 0;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.jackpot-close {
+    width: 32px;
+    height: 32px;
+    background: rgba(255, 255, 255, 0.05);
+    border: none;
+    border-radius: 8px;
+    color: #8B949E;
+    font-size: 1.5rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.jackpot-close:hover {
+    background: rgba(248, 81, 73, 0.2);
+    color: #F85149;
+}
+
+/* Content */
+.jackpot-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0;
+}
+
+.jackpot-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.jackpot-table th {
+    position: sticky;
+    top: 0;
+    background: #0D1117;
+    padding: 12px 24px;
+    text-align: left;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #A371F7;
+    /* Purple accent */
+    text-transform: uppercase;
+    border-bottom: 2px solid rgba(163, 113, 247, 0.1);
+}
+
+.jackpot-table td {
+    padding: 16px 24px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    font-size: 0.875rem;
+    color: #E4E6EB;
+    vertical-align: middle;
+}
+
+.jackpot-table tr:hover {
+    background: rgba(163, 113, 247, 0.05);
+}
+
+.col-date {
+    white-space: nowrap;
+    color: #8B949E;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+}
+
+.col-player {
+    display: flex;
+    flex-direction: column;
+}
+
+.player-highlight {
+    font-weight: 700;
+    color: #FFB800;
+    /* Gold */
+}
+
+.sub-text {
+    font-size: 0.75rem;
+    color: #8B949E;
+}
+
+.col-hand {
+    font-weight: 600;
+    color: #E4E6EB;
+}
+
+.col-amount {
+    font-weight: 700;
+    color: #3FB950;
+    font-family: 'JetBrains Mono', monospace;
+}
+
+.replay-btn {
+    padding: 6px 12px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    color: #E4E6EB;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 0.75rem;
+}
+
+.replay-btn:hover {
+    background: #1877F2;
+    border-color: #1877F2;
+    color: #FFF;
+}
+
+.table-empty {
+    text-align: center;
+    padding: 40px;
+    color: #6E7681;
+    font-style: italic;
+}

@@ -28,3 +28,13 @@ export type { SecurityAuditLogProps, AuditLogEntry, LogSeverity } from './Securi
 
 export { AgentManager } from './AgentManager';
 export type { AgentManagerProps, AgentNode } from './AgentManager';
+
+// Features
+export { MissionPanel } from './MissionPanel';
+export type { MissionPanelProps, Mission } from './MissionPanel';
+
+export { JackpotHistory } from './JackpotHistory';
+export type { JackpotHistoryProps, JackpotHit } from './JackpotHistory';
+
+export { ClubAnnouncements } from './ClubAnnouncements';
+export type { ClubAnnouncementsProps, Announcement } from './ClubAnnouncements';

@@ -13,6 +13,10 @@ export { default as QuickActions } from './QuickActions';
 // Table Card (Preview of a table in lobby)
 export { default as TableCard } from './TableCard';
 
+// Tournament Detail
+export { default as TournamentDetail } from './TournamentDetail';
+export type { TournamentDetailProps, TournamentInfo, PlayerEntry } from './TournamentDetail';
+
 // Quick Seat (One-click buy-in)
 export { default as QuickSeat } from './QuickSeat';
 export type { QuickSeatProps } from './QuickSeat';

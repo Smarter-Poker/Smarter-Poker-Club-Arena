@@ -3,118 +3,14 @@
  * 🎰 CLUB ENGINE — Agent Management Page
  * ═══════════════════════════════════════════════════════════════════════════════
  * Admin dashboard for managing agents, commissions, and credit lines
+ * Real Supabase integration — no demo data
  */
 
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import styles from './AgentManagementPage.module.css';
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// TYPES
-// ═══════════════════════════════════════════════════════════════════════════════
-
-interface Agent {
-    id: string;
-    displayName: string;
-    avatarUrl?: string;
-    role: 'agent' | 'sub_agent';
-    status: 'active' | 'suspended' | 'frozen';
-    parentAgentId?: string;
-    parentAgentName?: string;
-
-    // Commission rates
-    commissionRate: number;      // Rate they receive from club
-    playerRakebackRate: number;  // Rate they give to players
-
-    // Wallets
-    businessBalance: number;
-    playerBalance: number;
-    promoBalance: number;
-
-    // Credit (assigned directly by hierarchy)
-    creditLimit: number;
-    creditUsed: number;
-    isPrepaid: boolean;
-
-    // Stats
-    totalPlayers: number;
-    activePlayerCount: number;
-    weeklyRakeGenerated: number;
-    lifetimeEarnings: number;
-
-    // Dates
-    joinedAt: string;
-    lastActiveAt: string;
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// DEMO DATA
-// ═══════════════════════════════════════════════════════════════════════════════
-
-const DEMO_AGENTS: Agent[] = [
-    {
-        id: 'a1',
-        displayName: 'AgentAce',
-        role: 'agent',
-        status: 'active',
-        commissionRate: 0.50,
-        playerRakebackRate: 0.30,
-        businessBalance: 12500,
-        playerBalance: 5000,
-        promoBalance: 500,
-        creditLimit: 25000,
-        creditUsed: 8500,
-        isPrepaid: false,
-        totalPlayers: 48,
-        activePlayerCount: 23,
-        weeklyRakeGenerated: 4200,
-        lifetimeEarnings: 185000,
-        joinedAt: '2024-06-15',
-        lastActiveAt: new Date().toISOString(),
-    },
-    {
-        id: 'a2',
-        displayName: 'PokerPro',
-        role: 'agent',
-        status: 'active',
-        commissionRate: 0.45,
-        playerRakebackRate: 0.25,
-        businessBalance: 8200,
-        playerBalance: 3500,
-        promoBalance: 200,
-        creditLimit: 15000,
-        creditUsed: 3200,
-        isPrepaid: false,
-        totalPlayers: 32,
-        activePlayerCount: 15,
-        weeklyRakeGenerated: 2800,
-        lifetimeEarnings: 95000,
-        joinedAt: '2024-09-01',
-        lastActiveAt: new Date().toISOString(),
-    },
-    {
-        id: 'a3',
-        displayName: 'SharkAgent',
-        role: 'sub_agent',
-        status: 'suspended',
-        parentAgentId: 'a1',
-        parentAgentName: 'AgentAce',
-        commissionRate: 0.35,
-        playerRakebackRate: 0.20,
-        businessBalance: 1500,
-        playerBalance: 800,
-        promoBalance: 0,
-        creditLimit: 5000,
-        creditUsed: 4800,
-        isPrepaid: false,
-        totalPlayers: 12,
-        activePlayerCount: 4,
-        weeklyRakeGenerated: 650,
-        lifetimeEarnings: 22000,
-        joinedAt: '2025-01-01',
-        lastActiveAt: new Date(Date.now() - 86400000 * 3).toISOString(),
-    },
-];
+import { AgentService, type Agent } from '@/services/AgentService';
+import { useUserStore } from '@/stores/useUserStore';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENT
@@ -125,12 +21,28 @@ type TabType = 'agents' | 'credit-limits' | 'commissions' | 'payouts';
 export default function AgentManagementPage() {
     const { clubId } = useParams<{ clubId: string }>();
     const navigate = useNavigate();
+    const { user } = useUserStore();
     const [activeTab, setActiveTab] = useState<TabType>('agents');
-    const [agents, setAgents] = useState<Agent[]>(DEMO_AGENTS);
+    const [agents, setAgents] = useState<Agent[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
     const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
     const [showAddModal, setShowAddModal] = useState(false);
     const [editingLimit, setEditingLimit] = useState<string | null>(null);
     const [newLimit, setNewLimit] = useState<number>(0);
+
+    // Load agents from Supabase
+    useEffect(() => {
+        if (!clubId) return;
+
+        setIsLoading(true);
+        setError(null);
+
+        AgentService.getAgents(clubId)
+            .then(setAgents)
+            .catch(err => setError(err.message))
+            .finally(() => setIsLoading(false));
+    }, [clubId]);
 
     // Stats summary
     const totalAgents = agents.length;
@@ -151,25 +63,56 @@ export default function AgentManagementPage() {
         return 'healthy';
     };
 
-    // Direct credit limit assignment
-    const handleSetCreditLimit = (agentId: string, limit: number) => {
-        setAgents(prev => prev.map(a =>
-            a.id === agentId ? { ...a, creditLimit: limit } : a
-        ));
+    // Direct credit limit assignment (real Supabase call)
+    const handleSetCreditLimit = async (agentId: string, limit: number) => {
+        if (!user?.id) return;
+
+        const success = await AgentService.setCreditLimit(agentId, limit, user.id);
+        if (success) {
+            setAgents(prev => prev.map(a =>
+                a.id === agentId ? { ...a, creditLimit: limit } : a
+            ));
+        }
         setEditingLimit(null);
     };
 
-    const handleSuspendAgent = (agentId: string) => {
-        setAgents(prev => prev.map(a =>
-            a.id === agentId ? { ...a, status: 'suspended' } : a
-        ));
+    // Suspend agent (real Supabase call)
+    const handleSuspendAgent = async (agentId: string) => {
+        const success = await AgentService.updateAgentStatus(agentId, 'suspended');
+        if (success) {
+            setAgents(prev => prev.map(a =>
+                a.id === agentId ? { ...a, status: 'suspended' } : a
+            ));
+        }
     };
 
-    const handleReinstateAgent = (agentId: string) => {
-        setAgents(prev => prev.map(a =>
-            a.id === agentId ? { ...a, status: 'active' } : a
-        ));
+    // Reinstate agent (real Supabase call)
+    const handleReinstateAgent = async (agentId: string) => {
+        const success = await AgentService.updateAgentStatus(agentId, 'active');
+        if (success) {
+            setAgents(prev => prev.map(a =>
+                a.id === agentId ? { ...a, status: 'active' } : a
+            ));
+        }
     };
+
+    // Loading state
+    if (isLoading) {
+        return (
+            <div className={styles.page}>
+                <div className={styles.loading}>Loading agents...</div>
+            </div>
+        );
+    }
+
+    // Error state
+    if (error) {
+        return (
+            <div className={styles.page}>
+                <div className={styles.error}>Error: {error}</div>
+            </div>
+        );
+    }
 
     return (
         <div className={styles.page}>
@@ -249,13 +192,13 @@ export default function AgentManagementPage() {
                             >
                                 <div className={styles.agentHeader}>
                                     <div className={styles.agentAvatar}>
-                                        {agent.displayName.charAt(0).toUpperCase()}
+                                        {(agent.displayName || '?').charAt(0).toUpperCase()}
                                     </div>
                                     <div className={styles.agentInfo}>
-                                        <h3>{agent.displayName}</h3>
+                                        <h3>{agent.displayName || 'Unknown Agent'}</h3>
                                         <div className={styles.agentMeta}>
                                             <span className={`${styles.badge} ${styles[agent.role]}`}>
-                                                {agent.role === 'agent' ? 'Agent' : 'Sub-Agent'}
+                                                {agent.role === 'super_agent' ? 'Super Agent' : agent.role === 'agent' ? 'Agent' : 'Sub-Agent'}
                                             </span>
                                             <span className={`${styles.badge} ${styles[agent.status]}`}>
                                                 {agent.status}

@@ -1,449 +1,492 @@
 /**
- * ♠ CLUB ARENA — Agent Service
- * PokerBros-style agent/chip distribution system
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * 🎰 CLUB ENGINE — Agent Service
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * Full agent management with hierarchy, credit, and commission tracking
+ * 
+ * HIERARCHY:
+ * - Club assigns: rakeback % + credit limit → Agent
+ * - Super Agent assigns: credit limit → Agent
+ * - Agent assigns: credit limit → Sub-Agent
  */
 
-import { supabase, isDemoMode } from '../lib/supabase';
-import type { Agent, AgentPlayer, ChipTransaction } from '../types/database.types';
+import { supabase } from '../lib/supabase';
 
-// Demo agents
-const DEMO_AGENTS: Agent[] = [
-    {
-        id: 'agent-1',
-        club_id: '1',
-        user_id: 'user-2',
-        member_id: 'mem-user-2',
-        name: 'AceMaster',
-        agent_wallet_balance: 100000,
-        player_wallet_balance: 5000,
-        promo_wallet_balance: 2000,
-        credit_limit: 500000,
-        is_prepaid: false,
-        commission_rate: 10,
-        player_count: 15,
-        is_active: true,
-        created_at: new Date().toISOString(),
-    },
-];
+// ═══════════════════════════════════════════════════════════════════════════════
+// TYPES
+// ═══════════════════════════════════════════════════════════════════════════════
 
-class AgentService {
-    // ═══════════════════════════════════════════════════════════════════════════════
-    // Agent Operations
-    // ═══════════════════════════════════════════════════════════════════════════════
+export type AgentRole = 'super_agent' | 'agent' | 'sub_agent';
+export type AgentStatus = 'active' | 'suspended' | 'frozen';
+
+export interface Agent {
+    id: string;
+    userId: string;
+    clubId: string;
+    membershipId?: string;
+
+    // Role & Status
+    role: AgentRole;
+    status: AgentStatus;
+
+    // Hierarchy
+    parentAgentId?: string;
+    parentAgentName?: string;
+
+    // Commission Rates (MANDATORY when creating)
+    commissionRate: number;      // Rate they receive from club/parent (max 70%)
+    playerRakebackRate: number;  // Rate they give to players (max 50%)
+
+    // Credit (MANDATORY when creating)
+    creditLimit: number;
+    creditUsed: number;
+    isPrepaid: boolean;
+
+    // Triple Wallet
+    businessBalance: number;
+    playerBalance: number;
+    promoBalance: number;
+
+    // Stats
+    totalPlayers: number;
+    activePlayerCount: number;
+    subAgentCount: number;
+    weeklyRakeGenerated: number;
+    lifetimeEarnings: number;
+
+    // Display
+    displayName?: string;
+    avatarUrl?: string;
+
+    // Timestamps
+    joinedAt: string;
+    lastActiveAt?: string;
+}
+
+export interface CreateAgentInput {
+    userId: string;
+    clubId: string;
+    role: AgentRole;
+    parentAgentId?: string;
+    commissionRate: number;      // MANDATORY
+    playerRakebackRate: number;  // MANDATORY
+    creditLimit: number;         // MANDATORY
+    isPrepaid?: boolean;
+}
+
+export interface AgentPlayer {
+    id: string;
+    userId: string;
+    displayName: string;
+    avatarUrl?: string;
+    chipBalance: number;
+    rakebackPercent: number;
+    joinedAt: string;
+    isOnline: boolean;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SERVICE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+class AgentServiceClass {
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // AGENT CRUD
+    // ─────────────────────────────────────────────────────────────────────────────
 
     /**
      * Get all agents for a club
      */
     async getAgents(clubId: string): Promise<Agent[]> {
-        if (isDemoMode) {
-            return DEMO_AGENTS.filter((a) => a.club_id === clubId);
-        }
-
         const { data, error } = await supabase
             .from('agents')
-            .select('*')
+            .select(`
+                *,
+                parent:parent_agent_id (
+                    id,
+                    user_id,
+                    profiles:user_id (
+                        display_name
+                    )
+                ),
+                profiles:user_id (
+                    display_name,
+                    avatar_url
+                )
+            `)
             .eq('club_id', clubId)
-            .eq('is_active', true)
-            .order('name');
+            .order('joined_at', { ascending: false });
 
         if (error) throw error;
-        return data || [];
+
+        return (data || []).map(a => ({
+            id: a.id,
+            userId: a.user_id,
+            clubId: a.club_id,
+            membershipId: a.membership_id,
+            role: a.role as AgentRole,
+            status: a.status as AgentStatus,
+            parentAgentId: a.parent_agent_id,
+            parentAgentName: (a.parent as any)?.profiles?.display_name,
+            commissionRate: Number(a.commission_rate),
+            playerRakebackRate: Number(a.player_rakeback_rate),
+            creditLimit: Number(a.credit_limit),
+            creditUsed: Number(a.credit_used),
+            isPrepaid: a.is_prepaid,
+            businessBalance: Number(a.business_balance),
+            playerBalance: Number(a.player_balance),
+            promoBalance: Number(a.promo_balance),
+            totalPlayers: a.total_players,
+            activePlayerCount: a.active_player_count,
+            subAgentCount: a.sub_agent_count,
+            weeklyRakeGenerated: Number(a.weekly_rake_generated),
+            lifetimeEarnings: Number(a.lifetime_earnings),
+            displayName: (a.profiles as any)?.display_name,
+            avatarUrl: (a.profiles as any)?.avatar_url,
+            joinedAt: a.joined_at,
+            lastActiveAt: a.last_active_at,
+        }));
     }
 
     /**
-     * Create a new agent
+     * Get a single agent by ID
      */
-    async createAgent(
-        clubId: string,
-        userId: string,
-        name: string,
-        commissionRate: number = 10
-    ): Promise<Agent> {
-        if (isDemoMode) {
-            const newAgent: Agent = {
-                id: crypto.randomUUID(),
-                club_id: clubId,
-                user_id: userId,
-                member_id: `mem-${userId}`,
-                name,
-                agent_wallet_balance: 0,
-                player_wallet_balance: 0,
-                promo_wallet_balance: 0,
-                credit_limit: 0,
-                is_prepaid: false,
-                commission_rate: commissionRate,
-                player_count: 0,
-                is_active: true,
-                created_at: new Date().toISOString(),
-            };
-            DEMO_AGENTS.push(newAgent);
-            return newAgent;
-        }
-
-        const { data: member } = await supabase
-            .from('club_members')
-            .select('id')
-            .eq('club_id', clubId)
-            .eq('user_id', userId)
+    async getAgent(agentId: string): Promise<Agent | null> {
+        const { data, error } = await supabase
+            .from('agents')
+            .select(`
+                *,
+                parent:parent_agent_id (
+                    id,
+                    profiles:user_id (
+                        display_name
+                    )
+                ),
+                profiles:user_id (
+                    display_name,
+                    avatar_url
+                )
+            `)
+            .eq('id', agentId)
             .single();
 
-        if (!member) throw new Error('User is not a member');
+        if (error || !data) return null;
+
+        return {
+            id: data.id,
+            userId: data.user_id,
+            clubId: data.club_id,
+            membershipId: data.membership_id,
+            role: data.role as AgentRole,
+            status: data.status as AgentStatus,
+            parentAgentId: data.parent_agent_id,
+            parentAgentName: (data.parent as any)?.profiles?.display_name,
+            commissionRate: Number(data.commission_rate),
+            playerRakebackRate: Number(data.player_rakeback_rate),
+            creditLimit: Number(data.credit_limit),
+            creditUsed: Number(data.credit_used),
+            isPrepaid: data.is_prepaid,
+            businessBalance: Number(data.business_balance),
+            playerBalance: Number(data.player_balance),
+            promoBalance: Number(data.promo_balance),
+            totalPlayers: data.total_players,
+            activePlayerCount: data.active_player_count,
+            subAgentCount: data.sub_agent_count,
+            weeklyRakeGenerated: Number(data.weekly_rake_generated),
+            lifetimeEarnings: Number(data.lifetime_earnings),
+            displayName: (data.profiles as any)?.display_name,
+            avatarUrl: (data.profiles as any)?.avatar_url,
+            joinedAt: data.joined_at,
+            lastActiveAt: data.last_active_at,
+        };
+    }
+
+    /**
+     * Create a new agent (promote player to agent)
+     * REQUIRES: commissionRate, playerRakebackRate, creditLimit
+     */
+    async createAgent(input: CreateAgentInput): Promise<Agent> {
+        // Validate mandatory fields
+        if (input.commissionRate === undefined) throw new Error('Commission rate is required');
+        if (input.playerRakebackRate === undefined) throw new Error('Rakeback rate is required');
+        if (input.creditLimit === undefined) throw new Error('Credit limit is required');
+
+        // Validate caps
+        if (input.commissionRate > 0.70) throw new Error('Commission rate cannot exceed 70%');
+        if (input.playerRakebackRate > 0.50) throw new Error('Rakeback rate cannot exceed 50%');
+
+        // Get or create membership
+        const { data: membership } = await supabase
+            .from('club_members')
+            .select('id')
+            .eq('club_id', input.clubId)
+            .eq('user_id', input.userId)
+            .single();
+
+        // If sub-agent, verify parent exists and has capacity
+        if (input.parentAgentId) {
+            const parent = await this.getAgent(input.parentAgentId);
+            if (!parent) throw new Error('Parent agent not found');
+            if (parent.role === 'sub_agent') throw new Error('Sub-agents cannot have sub-agents');
+        }
 
         const { data, error } = await supabase
             .from('agents')
             .insert({
-                club_id: clubId,
-                user_id: userId,
-                member_id: member.id,
-                name,
-                commission_rate: commissionRate,
-                agent_wallet_balance: 0,
-                player_wallet_balance: 0,
-                promo_wallet_balance: 0,
-                credit_limit: 0,
-                is_prepaid: false,
-                player_count: 0,
-                is_active: true,
+                user_id: input.userId,
+                club_id: input.clubId,
+                membership_id: membership?.id,
+                role: input.role,
+                parent_agent_id: input.parentAgentId,
+                commission_rate: input.commissionRate,
+                player_rakeback_rate: input.playerRakebackRate,
+                credit_limit: input.creditLimit,
+                is_prepaid: input.isPrepaid || false,
             })
             .select()
             .single();
 
         if (error) throw error;
-        return data;
+
+        // Update membership role
+        if (membership?.id) {
+            await supabase
+                .from('club_members')
+                .update({ role: input.role })
+                .eq('id', membership.id);
+        }
+
+        return this.getAgent(data.id) as Promise<Agent>;
     }
 
     /**
-     * Get players under an agent
+     * Update agent status
      */
-    async getAgentPlayers(agentId: string): Promise<AgentPlayer[]> {
-        if (isDemoMode) {
-            // Mock data...
-            return [
-                {
-                    id: 'ap-1',
-                    agent_id: agentId,
-                    user_id: 'player-1',
-                    nickname: 'CardShark',
-                    chip_balance: 5000,
-                    rakeback_percent: 15,
-                    joined_at: new Date().toISOString(),
-                },
-                {
-                    id: 'ap-2',
-                    agent_id: agentId,
-                    user_id: 'player-2',
-                    nickname: 'PokerPro',
-                    chip_balance: 10000,
-                    rakeback_percent: 20,
-                    joined_at: new Date().toISOString(),
-                },
-            ];
-        }
+    async updateAgentStatus(agentId: string, status: AgentStatus): Promise<boolean> {
+        const { error } = await supabase
+            .from('agents')
+            .update({ status })
+            .eq('id', agentId);
 
-        // 1. Get the member_id of this agent
+        return !error;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // CREDIT MANAGEMENT
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Set credit limit (Club → Agent, Agent → Sub-Agent)
+     */
+    async setCreditLimit(agentId: string, newLimit: number, assignedBy: string, reason?: string): Promise<boolean> {
+        // Get current limit for logging
         const { data: agent } = await supabase
             .from('agents')
-            .select('member_id')
+            .select('credit_limit')
             .eq('id', agentId)
             .single();
 
         if (!agent) throw new Error('Agent not found');
 
-        // 2. Get players linked to this agent (via member_id)
-        const { data: members, error } = await supabase
+        const oldLimit = Number(agent.credit_limit);
+
+        // Update limit
+        const { error } = await supabase
+            .from('agents')
+            .update({ credit_limit: newLimit })
+            .eq('id', agentId);
+
+        if (error) return false;
+
+        // Log the assignment
+        await supabase.from('credit_assignments').insert({
+            agent_id: agentId,
+            assigned_by: assignedBy,
+            old_limit: oldLimit,
+            new_limit: newLimit,
+            reason,
+        });
+
+        return true;
+    }
+
+    /**
+     * Update commission/rakeback rates
+     */
+    async updateRates(
+        agentId: string,
+        commissionRate?: number,
+        playerRakebackRate?: number
+    ): Promise<boolean> {
+        const updates: any = {};
+
+        if (commissionRate !== undefined) {
+            if (commissionRate > 0.70) throw new Error('Commission rate cannot exceed 70%');
+            updates.commission_rate = commissionRate;
+        }
+
+        if (playerRakebackRate !== undefined) {
+            if (playerRakebackRate > 0.50) throw new Error('Rakeback rate cannot exceed 50%');
+            updates.player_rakeback_rate = playerRakebackRate;
+        }
+
+        if (Object.keys(updates).length === 0) return true;
+
+        const { error } = await supabase
+            .from('agents')
+            .update(updates)
+            .eq('id', agentId);
+
+        return !error;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // PLAYER MANAGEMENT
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Get players under an agent
+     */
+    async getAgentPlayers(agentId: string): Promise<AgentPlayer[]> {
+        const { data: agent } = await supabase
+            .from('agents')
+            .select('membership_id')
+            .eq('id', agentId)
+            .single();
+
+        if (!agent) return [];
+
+        const { data, error } = await supabase
             .from('club_members')
-            .select('*')
-            .eq('agent_id', agent.member_id);
+            .select(`
+                id,
+                user_id,
+                chip_balance,
+                rakeback_percent,
+                joined_at,
+                profiles:user_id (
+                    display_name,
+                    avatar_url,
+                    is_online
+                )
+            `)
+            .eq('agent_id', agent.membership_id);
 
         if (error) throw error;
 
-        // Map to AgentPlayer type
-        return (members || []).map(m => ({
+        return (data || []).map(m => ({
             id: m.id,
-            agent_id: agentId,
-            user_id: m.user_id,
-            nickname: m.nickname || 'Unknown',
-            chip_balance: m.chip_balance,
-            rakeback_percent: 0, // Not in schema yet
-            joined_at: m.joined_at
+            userId: m.user_id,
+            displayName: (m.profiles as any)?.display_name || 'Unknown',
+            avatarUrl: (m.profiles as any)?.avatar_url,
+            chipBalance: m.chip_balance || 0,
+            rakebackPercent: m.rakeback_percent || 0,
+            joinedAt: m.joined_at,
+            isOnline: (m.profiles as any)?.is_online || false,
         }));
     }
 
     /**
      * Assign a player to an agent
      */
-    async assignPlayer(clubId: string, memberId: string, agentId: string): Promise<void> {
-        if (isDemoMode) return;
-
-        // 1. Get member_id of the agent
-        const { data: agent } = await supabase
-            .from('agents')
-            .select('member_id')
-            .eq('id', agentId)
-            .single();
-
-        if (!agent) throw new Error('Agent not found');
-
-        // 2. Update player's agent_id
+    async assignPlayer(memberId: string, agentMembershipId: string): Promise<boolean> {
         const { error } = await supabase
             .from('club_members')
-            .update({ agent_id: agent.member_id })
-            .eq('id', memberId)
-            .eq('club_id', clubId);
+            .update({ agent_id: agentMembershipId })
+            .eq('id', memberId);
 
-        if (error) throw error;
+        return !error;
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════════
-    // Chip Transfers (Agent System)
-    // ═══════════════════════════════════════════════════════════════════════════════
+    // ─────────────────────────────────────────────────────────────────────────────
+    // WALLET OPERATIONS
+    // ─────────────────────────────────────────────────────────────────────────────
 
     /**
-     * Transfer chips from club owner to agent (Business Wallet)
-     */
-    async transferToAgent(
-        clubId: string,
-        agentId: string,
-        amount: number,
-        notes?: string
-    ): Promise<ChipTransaction> {
-        if (isDemoMode) {
-            return {
-                id: crypto.randomUUID(),
-                club_id: clubId,
-                from_user_id: null,
-                to_user_id: agentId,
-                amount,
-                type: 'agent_transfer',
-                reference_id: null,
-                notes: notes || null,
-                created_at: new Date().toISOString(),
-            };
-        }
-
-        // Start transaction
-        const { data: agent } = await supabase
-            .from('agents')
-            .select('agent_wallet_balance')
-            .eq('id', agentId)
-            .single();
-
-        if (!agent) throw new Error('Agent not found');
-
-        // Update agent balance
-        await supabase
-            .from('agents')
-            .update({ agent_wallet_balance: (agent.agent_wallet_balance || 0) + amount })
-            .eq('id', agentId);
-
-        // Record transaction
-        const { data, error } = await supabase
-            .from('chip_transactions')
-            .insert({
-                club_id: clubId,
-                from_user_id: null,
-                to_user_id: agentId,
-                amount,
-                type: 'agent_transfer',
-                notes,
-            })
-            .select()
-            .single();
-
-        if (error) throw error;
-        return data;
-    }
-
-    /**
-     * Transfer chips from agent (Business) to player
-     */
-    async transferToPlayer(
-        clubId: string,
-        agentId: string,
-        playerId: string,
-        amount: number,
-        notes?: string
-    ): Promise<ChipTransaction> {
-        if (isDemoMode) {
-            return {
-                id: crypto.randomUUID(),
-                club_id: clubId,
-                from_user_id: agentId,
-                to_user_id: playerId,
-                amount,
-                type: 'deposit',
-                reference_id: null,
-                notes: notes || null,
-                created_at: new Date().toISOString(),
-            };
-        }
-
-        // Get agent and player balances
-        const [{ data: agent }, { data: member }] = await Promise.all([
-            supabase.from('agents').select('agent_wallet_balance').eq('id', agentId).single(),
-            supabase.from('club_members').select('chip_balance').eq('user_id', playerId).eq('club_id', clubId).single(),
-        ]);
-
-        if (!agent) throw new Error('Agent not found');
-        if (!member) throw new Error('Player not found in club');
-
-        if ((agent.agent_wallet_balance || 0) < amount) throw new Error('Insufficient agent balance');
-
-        // Update balances
-        await Promise.all([
-            supabase.from('agents').update({ agent_wallet_balance: (agent.agent_wallet_balance || 0) - amount }).eq('id', agentId),
-            supabase.from('club_members').update({ chip_balance: member.chip_balance + amount }).eq('user_id', playerId).eq('club_id', clubId),
-        ]);
-
-        // Record transaction
-        const { data, error } = await supabase
-            .from('chip_transactions')
-            .insert({
-                club_id: clubId,
-                from_user_id: agentId,
-                to_user_id: playerId,
-                amount,
-                type: 'deposit',
-                notes,
-            })
-            .select()
-            .single();
-
-        if (error) throw error;
-        return data;
-    }
-
-    /**
-     * Player cashes out chips back to agent (Business)
-     */
-    async cashOutToAgent(
-        clubId: string,
-        playerId: string,
-        agentId: string,
-        amount: number
-    ): Promise<ChipTransaction> {
-        if (isDemoMode) {
-            return {
-                id: crypto.randomUUID(),
-                club_id: clubId,
-                from_user_id: playerId,
-                to_user_id: agentId,
-                amount,
-                type: 'withdrawal',
-                reference_id: null,
-                notes: 'Cash out to agent',
-                created_at: new Date().toISOString(),
-            };
-        }
-
-        // Get balances
-        const [{ data: member }, { data: agent }] = await Promise.all([
-            supabase.from('club_members').select('chip_balance').eq('user_id', playerId).eq('club_id', clubId).single(),
-            supabase.from('agents').select('agent_wallet_balance').eq('id', agentId).single(),
-        ]);
-
-        if (!member) throw new Error('Player not found in club');
-        if (!agent) throw new Error('Agent not found');
-        if (member.chip_balance < amount) throw new Error('Insufficient player balance');
-
-        // Update balances
-        await Promise.all([
-            supabase.from('club_members').update({ chip_balance: member.chip_balance - amount }).eq('user_id', playerId).eq('club_id', clubId),
-            supabase.from('agents').update({ agent_wallet_balance: (agent.agent_wallet_balance || 0) + amount }).eq('id', agentId),
-        ]);
-
-        // Record transaction
-        const { data, error } = await supabase
-            .from('chip_transactions')
-            .insert({
-                club_id: clubId,
-                from_user_id: playerId,
-                to_user_id: agentId,
-                amount,
-                type: 'withdrawal',
-                notes: 'Cash out to agent',
-            })
-            .select()
-            .single();
-
-        if (error) throw error;
-        return data;
-    }
-
-    /**
-     * Get transaction history
-     */
-    async getTransactionHistory(
-        clubId: string,
-        userId?: string,
-        limit: number = 50
-    ): Promise<ChipTransaction[]> {
-        if (isDemoMode) {
-            return [];
-        }
-
-        let query = supabase
-            .from('chip_transactions')
-            .select('*')
-            .eq('club_id', clubId)
-            .order('created_at', { ascending: false })
-            .limit(limit);
-
-        if (userId) {
-            query = query.or(`from_user_id.eq.${userId},to_user_id.eq.${userId}`);
-        }
-
-        const { data, error } = await query;
-        if (error) throw error;
-        return data || [];
-    }
-
-    /**
-     * Self-Transfer between Agent Wallets
-     * e.g. Business -> Player
+     * Self-transfer between agent wallets
      */
     async selfTransfer(
         agentId: string,
         amount: number,
-        fromWallet: 'agent' | 'player' | 'promo',
-        toWallet: 'agent' | 'player' | 'promo'
+        fromWallet: 'business' | 'player' | 'promo',
+        toWallet: 'business' | 'player' | 'promo'
     ): Promise<boolean> {
-        if (isDemoMode) return true;
-
-        const map: Record<string, keyof Agent> = {
-            agent: 'agent_wallet_balance',
-            player: 'player_wallet_balance',
-            promo: 'promo_wallet_balance'
+        const walletMap = {
+            business: 'business_balance',
+            player: 'player_balance',
+            promo: 'promo_balance',
         };
 
-        const fromCol = map[fromWallet];
-        const toCol = map[toWallet];
+        const fromCol = walletMap[fromWallet];
+        const toCol = walletMap[toWallet];
 
-        if (!fromCol || !toCol) throw new Error('Invalid wallet type');
+        const { data: agent } = await supabase
+            .from('agents')
+            .select('business_balance, player_balance, promo_balance')
+            .eq('id', agentId)
+            .single();
 
-        // 1. Get balance
-        // We need to cast as any because types might be strict until generation logic runs
-        const { data: agent } = await supabase.from('agents').select('*').eq('id', agentId).single();
         if (!agent) throw new Error('Agent not found');
 
-        // Type assertion for dynamically accessed properties
-        const currentBal = (agent as any)[fromCol];
-        const targetBal = (agent as any)[toCol];
+        const currentFrom = Number((agent as any)[fromCol]);
+        const currentTo = Number((agent as any)[toCol]);
 
-        if (currentBal < amount) throw new Error('Insufficient funds');
+        if (currentFrom < amount) throw new Error('Insufficient balance');
 
-        // 2. Transact
         const { error } = await supabase
             .from('agents')
             .update({
-                [fromCol]: currentBal - amount,
-                [toCol]: targetBal + amount
-            } as any)
+                [fromCol]: currentFrom - amount,
+                [toCol]: currentTo + amount,
+            })
             .eq('id', agentId);
 
-        if (error) throw error;
-        return true;
+        return !error;
+    }
+
+    /**
+     * Transfer chips to a player
+     */
+    async transferToPlayer(
+        agentId: string,
+        playerId: string,
+        clubId: string,
+        amount: number
+    ): Promise<boolean> {
+        // Get agent's business balance
+        const { data: agent } = await supabase
+            .from('agents')
+            .select('business_balance')
+            .eq('id', agentId)
+            .single();
+
+        if (!agent) throw new Error('Agent not found');
+        if (Number(agent.business_balance) < amount) throw new Error('Insufficient balance');
+
+        // Get player's chip balance
+        const { data: member } = await supabase
+            .from('club_members')
+            .select('chip_balance')
+            .eq('user_id', playerId)
+            .eq('club_id', clubId)
+            .single();
+
+        if (!member) throw new Error('Player not found');
+
+        // Execute transfer
+        const [agentResult, memberResult] = await Promise.all([
+            supabase.from('agents').update({
+                business_balance: Number(agent.business_balance) - amount
+            }).eq('id', agentId),
+            supabase.from('club_members').update({
+                chip_balance: (member.chip_balance || 0) + amount
+            }).eq('user_id', playerId).eq('club_id', clubId),
+        ]);
+
+        return !agentResult.error && !memberResult.error;
     }
 }
 
-export const agentService = new AgentService();
+export const AgentService = new AgentServiceClass();
+export default AgentService;

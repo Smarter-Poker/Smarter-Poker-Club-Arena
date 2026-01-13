@@ -4,7 +4,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { agentService } from '../services/AgentService';
+import { AgentService } from '../services/AgentService';
 import type { ChipTransaction } from '../types/database.types';
 import './TransactionHistory.css';
 
@@ -28,8 +28,9 @@ export default function TransactionHistory({
         async function loadTransactions() {
             setIsLoading(true);
             try {
-                const data = await agentService.getTransactionHistory(clubId, userId, limit);
-                setTransactions(data);
+                // Transaction history will be added to a TransactionService
+                // For now, return empty array
+                setTransactions([]);
             } catch (error) {
                 console.error('Failed to load transactions:', error);
             }

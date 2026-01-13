@@ -6,13 +6,15 @@
  * 
  * ROLE HIERARCHY (Descending Authority):
  * 1. PLATFORM_ADMIN  → God mode (Smarter.Poker staff)
- * 2. UNION_LEAD      → Union owner, can manage all member clubs
- * 3. CLUB_OWNER      → Club creator with full club authority
- * 4. CLUB_ADMIN      → Delegated admin (can manage members, settings)
- * 5. AGENT           → Player referrer with commission tracking
- * 6. SUB_AGENT       → Under an agent, limited referral scope
- * 7. MEMBER          → Regular club member (can play)
- * 8. GUEST           → Trial access, limited features
+ * 2. UNION_LEAD      → Union owner, full union authority
+ * 3. UNION_ADMIN     → Delegated union management
+ * 4. CLUB_OWNER      → Club creator with full club authority
+ * 5. CLUB_ADMIN      → Delegated club admin (manage members, settings)
+ * 6. SUPER_AGENT     → Agent with other agents under them
+ * 7. AGENT           → Player referrer with commission tracking
+ * 8. SUB_AGENT       → Under an agent/super_agent, limited scope
+ * 9. MEMBER          → Regular club member (can play)
+ * 10. GUEST          → Trial access, limited features
  */
 
 import { supabase, isDemoMode } from '../lib/supabase';
@@ -24,8 +26,10 @@ import { supabase, isDemoMode } from '../lib/supabase';
 export type MemberRole =
     | 'platform_admin'
     | 'union_lead'
+    | 'union_admin'
     | 'club_owner'
     | 'club_admin'
+    | 'super_agent'
     | 'agent'
     | 'sub_agent'
     | 'member'
@@ -42,6 +46,7 @@ export interface ClubMembership {
     joinedAt: string;
     invitedBy?: string;
     agentId?: string;
+    parentAgentId?: string; // For sub-agents under super_agent or agent
     notes?: string;
 
     // Computed
@@ -76,22 +81,40 @@ export interface RoleChange {
 // Role hierarchy for permission checks (higher = more authority)
 const ROLE_HIERARCHY: Record<MemberRole, number> = {
     platform_admin: 100,
-    union_lead: 80,
-    club_owner: 70,
-    club_admin: 60,
-    agent: 40,
-    sub_agent: 30,
+    union_lead: 90,
+    union_admin: 85,
+    club_owner: 80,
+    club_admin: 70,
+    super_agent: 55,
+    agent: 50,
+    sub_agent: 40,
     member: 20,
     guest: 10,
+};
+
+// Role display names
+export const ROLE_DISPLAY_NAMES: Record<MemberRole, string> = {
+    platform_admin: 'Platform Admin',
+    union_lead: 'Union Lead',
+    union_admin: 'Union Admin',
+    club_owner: 'Club Owner',
+    club_admin: 'Club Admin',
+    super_agent: 'Super Agent',
+    agent: 'Agent',
+    sub_agent: 'Sub-Agent',
+    member: 'Member',
+    guest: 'Guest',
 };
 
 // Demo members
 const DEMO_MEMBERS: ClubMembership[] = [
     { id: 'm1', clubId: 'club_1', userId: 'user_1', role: 'club_owner', status: 'active', joinedAt: '2025-01-01', displayName: 'ClubOwner', isOnline: true },
     { id: 'm2', clubId: 'club_1', userId: 'user_2', role: 'club_admin', status: 'active', joinedAt: '2025-01-05', displayName: 'AdminBob', isOnline: true },
-    { id: 'm3', clubId: 'club_1', userId: 'user_3', role: 'agent', status: 'active', joinedAt: '2025-01-10', displayName: 'AgentAce', agentId: 'agent_1', isOnline: false },
-    { id: 'm4', clubId: 'club_1', userId: 'user_4', role: 'member', status: 'active', joinedAt: '2025-01-15', displayName: 'PlayerOne', agentId: 'agent_1', isOnline: true },
-    { id: 'm5', clubId: 'club_1', userId: 'user_5', role: 'member', status: 'pending', joinedAt: '2025-01-20', displayName: 'NewPlayer', isOnline: false },
+    { id: 'm3', clubId: 'club_1', userId: 'user_3', role: 'super_agent', status: 'active', joinedAt: '2025-01-08', displayName: 'SuperAgentX', isOnline: true },
+    { id: 'm4', clubId: 'club_1', userId: 'user_4', role: 'agent', status: 'active', joinedAt: '2025-01-10', displayName: 'AgentAce', parentAgentId: 'user_3', isOnline: false },
+    { id: 'm5', clubId: 'club_1', userId: 'user_5', role: 'sub_agent', status: 'active', joinedAt: '2025-01-12', displayName: 'SubAgentPro', parentAgentId: 'user_4', isOnline: false },
+    { id: 'm6', clubId: 'club_1', userId: 'user_6', role: 'member', status: 'active', joinedAt: '2025-01-15', displayName: 'PlayerOne', agentId: 'user_4', isOnline: true },
+    { id: 'm7', clubId: 'club_1', userId: 'user_7', role: 'member', status: 'pending', joinedAt: '2025-01-20', displayName: 'NewPlayer', isOnline: false },
 ];
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -475,15 +498,31 @@ export const MembershipService = {
     /**
      * Check if a role can perform a specific action
      */
-    canPerformAction(role: MemberRole, action: 'manage_members' | 'change_settings' | 'create_tables' | 'view_financials'): boolean {
+    canPerformAction(role: MemberRole, action: 'manage_members' | 'change_settings' | 'create_tables' | 'view_financials' | 'manage_agents' | 'assign_credit'): boolean {
         const permissions: Record<string, MemberRole[]> = {
-            manage_members: ['platform_admin', 'union_lead', 'club_owner', 'club_admin'],
-            change_settings: ['platform_admin', 'union_lead', 'club_owner', 'club_admin'],
-            create_tables: ['platform_admin', 'union_lead', 'club_owner', 'club_admin', 'agent'],
-            view_financials: ['platform_admin', 'union_lead', 'club_owner', 'club_admin', 'agent'],
+            manage_members: ['platform_admin', 'union_lead', 'union_admin', 'club_owner', 'club_admin'],
+            change_settings: ['platform_admin', 'union_lead', 'union_admin', 'club_owner', 'club_admin'],
+            create_tables: ['platform_admin', 'union_lead', 'union_admin', 'club_owner', 'club_admin', 'super_agent', 'agent'],
+            view_financials: ['platform_admin', 'union_lead', 'union_admin', 'club_owner', 'club_admin', 'super_agent', 'agent'],
+            manage_agents: ['platform_admin', 'union_lead', 'union_admin', 'club_owner', 'club_admin', 'super_agent'],
+            assign_credit: ['platform_admin', 'union_lead', 'union_admin', 'club_owner', 'club_admin', 'super_agent', 'agent'],
         };
 
         return permissions[action]?.includes(role) ?? false;
+    },
+
+    /**
+     * Check if a role is an agent-level role
+     */
+    isAgentRole(role: MemberRole): boolean {
+        return ['super_agent', 'agent', 'sub_agent'].includes(role);
+    },
+
+    /**
+     * Check if a role can have sub-agents under them
+     */
+    canHaveSubAgents(role: MemberRole): boolean {
+        return ['super_agent', 'agent'].includes(role);
     },
 
     /**

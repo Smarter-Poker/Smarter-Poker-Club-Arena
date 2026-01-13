@@ -12,6 +12,21 @@
     margin: 0 auto;
 }
 
+/* Loading & Error States */
+.loading,
+.error {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 400px;
+    font-size: 1.1rem;
+    color: var(--text-muted);
+}
+
+.error {
+    color: #ef4444;
+}
+
 /* Header */
 .header {
     display: flex;
@@ -204,6 +219,11 @@
     font-size: 0.7rem;
     font-weight: 600;
     text-transform: uppercase;
+}
+
+.badge.super_agent {
+    background: rgba(251, 191, 36, 0.2);
+    color: #fbbf24;
 }
 
 .badge.agent {

@@ -53,8 +53,9 @@ Club Arena (Orb #2) is the social poker layer of the Smarter.Poker ecosystem. It
 | `003_financial_functions.sql` | ✅ | `transfer_chips`, `get_club_stats` |
 | `004_rake_waterfall_logic.sql` | ✅ | Rake calculation, pot drops |
 | `005_bbj_triple_bank.sql` | ✅ | Bad Beat Jackpot pools |
-| `006_tournament_expansion.sql` | ❌ | Prize pool, rebuy/addon tracking |
-| `007_union_settlement.sql` | ❌ | Weekly settlement cycles |
+| `006_settlement_cycle.sql` | ✅ | Weekly settlement cycles |
+| `007_tournament_expansion.sql` | ✅ | Prize pool, rebuy/addon, table balancing |
+| `008_hydra_horse_fleet.sql` | ✅ | 300 bot accounts (#101-#400) |
 
 ### Tables Needed
 ```sql
@@ -101,15 +102,16 @@ leaderboards (club_id, period, user_id, metric, value, rank)
 | **RoomService** | ✅ | Multiplayer sync, presence | Supabase Channels |
 | **TournamentService** | ✅ | SNG/MTT creation, registration | — |
 | **AgentService** | ✅ | Triple-wallet, transfers | — |
-| **WalletService** | 🚧 | Basic structure only | Needs full ledger |
+| **WalletService** | ✅ | Full triple-wallet, ledger, locks | Diamond minting |
 | **RakeService** | ✅ | Full waterfall engine | BBJ integration |
-| **CommissionService** | 🚧 | Hierarchy calcs | Needs settlement |
-| **SettlementService** | 🚧 | Basic structure | Needs full cycle |
+| **CommissionService** | ✅ | Cascading hierarchy | Settlement integration |
+| **SettlementService** | ✅ | Weekly cycles, payouts | Full automation |
 | **CreditService** | 🔧 | Debt/invoice logic | — |
-| **UnionService** | 🔧 | Union CRUD | — |
+| **UnionService** | ✅ | CRUD + consolidation | Settlement reports |
 | **BBJService** | ✅ | Triple-Bank, payouts | Full implementation |
 | **LeaderboardService** | ✅ | Rankings, XP rewards | Multi-period |
 | **HydraService** | ✅ | Bot fleet management | Organic recede |
+| **PermissionService** | ✅ | Multi-level admin (Platform/Union/Club/Agent) | Access control |
 | **ArenaLobbyEngine** | ✅ | Lobby orchestration | — |
 | **ArenaTrainingController** | ✅ | GTO integration | Orb #4 |
 | **SoundService** | ✅ | Audio effects | — |

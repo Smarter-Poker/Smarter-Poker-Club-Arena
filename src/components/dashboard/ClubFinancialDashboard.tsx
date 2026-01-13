@@ -46,7 +46,8 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
 
     const handleSetCommission = async () => {
         try {
-            await CommissionService.setRate(clubId, agentId, 'AGENT', commissionRate);
+            // TODO: Get actual current user ID from auth context
+            await CommissionService.setRate(clubId, agentId, 'AGENT', commissionRate, 'current_user');
             alert('Commission Limit set successfully');
         } catch (error) {
             alert('Error: ' + (error as Error).message);

@@ -48,6 +48,10 @@ export * from './ArenaTrainingController';
 // Audio
 export * from './SoundService';
 
+// Permissions & Admin
+export { PermissionService } from './PermissionService';
+export type { AdminLevel, Permission, UserPermissions, PermissionCheck } from './PermissionService';
+
 // WebSocket / Real-Time
 export { TableWebSocket, useTableWebSocket } from './TableWebSocket';
 export type {

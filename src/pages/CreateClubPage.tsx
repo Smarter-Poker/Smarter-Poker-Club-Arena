@@ -10,6 +10,7 @@ import { useNavigate } from 'react-router-dom';
 import styles from './CreateClubPage.module.css';
 import { supabase, isDemoMode } from '../lib/supabase';
 import { useUserStore } from '../stores/useUserStore';
+import ClubPromotionRulesModal from '../components/modals/ClubPromotionRulesModal';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -18,6 +19,7 @@ import { useUserStore } from '../stores/useUserStore';
 interface ClubFormData {
     name: string;
     description: string;
+    iconId: string;
     isPublic: boolean;
     requiresApproval: boolean;
     gpsRestricted: boolean;
@@ -42,9 +44,22 @@ interface ClubFormData {
     variants: string[];
 }
 
+// Club icon options
+const CLUB_ICONS = [
+    { id: 'eagle', emoji: '🦅', name: 'Eagle' },
+    { id: 'dragon', emoji: '🐉', name: 'Dragon' },
+    { id: 'shark', emoji: '🦈', name: 'Shark' },
+    { id: 'lion', emoji: '🦁', name: 'Lion' },
+    { id: 'phoenix', emoji: '🔥', name: 'Phoenix' },
+    { id: 'diamond', emoji: '💎', name: 'Diamond' },
+    { id: 'crown', emoji: '👑', name: 'Crown' },
+    { id: 'ace', emoji: '🂡', name: 'Ace' },
+];
+
 const DEFAULT_FORM: ClubFormData = {
     name: '',
     description: '',
+    iconId: 'eagle',
     isPublic: true,
     requiresApproval: true,
     gpsRestricted: false,
@@ -99,6 +114,22 @@ const Step1Basics = ({ form, updateForm }: StepProps) => (
                 maxLength={50}
             />
             <span className={styles.charCount}>{form.name.length}/50</span>
+        </div>
+
+        <div className={styles.formGroup}>
+            <label>Select Icon</label>
+            <div className={styles.iconGrid}>
+                {CLUB_ICONS.map(icon => (
+                    <button
+                        key={icon.id}
+                        type="button"
+                        className={`${styles.iconOption} ${form.iconId === icon.id ? styles.selected : ''}`}
+                        onClick={() => updateForm({ iconId: icon.id })}
+                    >
+                        <span className={styles.iconEmoji}>{icon.emoji}</span>
+                    </button>
+                ))}
+            </div>
         </div>
 
         <div className={styles.formGroup}>
@@ -350,63 +381,98 @@ const Step4Games = ({ form, updateForm }: StepProps) => (
     </div>
 );
 
-const Step5Preview = ({ form }: { form: ClubFormData }) => (
-    <div className={styles.stepContent}>
-        <h2>✨ Preview & Create</h2>
-        <p className={styles.stepDesc}>Review your club settings before creating.</p>
+interface Step5Props {
+    form: ClubFormData;
+    hasAgreed: boolean;
+    setHasAgreed: (v: boolean) => void;
+    onShowRules: () => void;
+}
 
-        <div className={styles.previewCard}>
-            <div className={styles.previewHeader}>
-                <div className={styles.previewAvatar}>
-                    {form.name.charAt(0).toUpperCase() || '?'}
+const Step5Preview = ({ form, hasAgreed, setHasAgreed, onShowRules }: Step5Props) => {
+    const icon = CLUB_ICONS.find(i => i.id === form.iconId);
+    return (
+        <div className={styles.stepContent}>
+            <h2>✨ Preview & Create</h2>
+            <p className={styles.stepDesc}>Review your club settings before creating.</p>
+
+            <div className={styles.previewCard}>
+                <div className={styles.previewHeader}>
+                    <div className={styles.previewAvatar}>
+                        {icon?.emoji || form.name.charAt(0).toUpperCase() || '?'}
+                    </div>
+                    <div>
+                        <h3>{form.name || 'Unnamed Club'}</h3>
+                        <p>{form.isPublic ? '🌍 Public' : '🔒 Private'} • {form.requiresApproval ? 'Approval Required' : 'Open Join'}</p>
+                    </div>
                 </div>
-                <div>
-                    <h3>{form.name || 'Unnamed Club'}</h3>
-                    <p>{form.isPublic ? '🌍 Public' : '🔒 Private'} • {form.requiresApproval ? 'Approval Required' : 'Open Join'}</p>
+
+                {form.description && (
+                    <p className={styles.previewDesc}>{form.description}</p>
+                )}
+
+                <div className={styles.previewStats}>
+                    <div>
+                        <strong>{form.defaultRakePercent}%</strong>
+                        <span>Rake</span>
+                    </div>
+                    <div>
+                        <strong>{form.rakeCap} BB</strong>
+                        <span>Cap</span>
+                    </div>
+                    <div>
+                        <strong>{form.minBuyInBB}-{form.maxBuyInBB}</strong>
+                        <span>Buy-in (BB)</span>
+                    </div>
+                    <div>
+                        <strong>{form.timeBankSeconds}s</strong>
+                        <span>Time Bank</span>
+                    </div>
+                </div>
+
+                <div className={styles.previewTags}>
+                    {form.offerCash && <span>💵 Cash</span>}
+                    {form.offerTournaments && <span>🏆 MTTs</span>}
+                    {form.offerSNG && <span>🎰 SNGs</span>}
+                    {form.allowStraddle && <span>Straddle ✓</span>}
+                    {form.allowRunItTwice && <span>RIT ✓</span>}
+                </div>
+
+                <div className={styles.previewVariants}>
+                    <strong>Variants:</strong>
+                    {form.variants.map(v => {
+                        const variant = GAME_VARIANTS.find(gv => gv.id === v);
+                        return <span key={v}>{variant?.icon} {variant?.name}</span>;
+                    })}
                 </div>
             </div>
 
-            {form.description && (
-                <p className={styles.previewDesc}>{form.description}</p>
-            )}
-
-            <div className={styles.previewStats}>
-                <div>
-                    <strong>{form.defaultRakePercent}%</strong>
-                    <span>Rake</span>
-                </div>
-                <div>
-                    <strong>{form.rakeCap} BB</strong>
-                    <span>Cap</span>
-                </div>
-                <div>
-                    <strong>{form.minBuyInBB}-{form.maxBuyInBB}</strong>
-                    <span>Buy-in (BB)</span>
-                </div>
-                <div>
-                    <strong>{form.timeBankSeconds}s</strong>
-                    <span>Time Bank</span>
-                </div>
+            {/* First-time bonus notice */}
+            <div className={styles.bonusNotice}>
+                <span className={styles.bonusIcon}>🎉</span>
+                <p>If this is the first club that you are creating you will receive a bonus of <strong>10,000 club chips</strong>. Congratulations!</p>
             </div>
 
-            <div className={styles.previewTags}>
-                {form.offerCash && <span>💵 Cash</span>}
-                {form.offerTournaments && <span>🏆 MTTs</span>}
-                {form.offerSNG && <span>🎰 SNGs</span>}
-                {form.allowStraddle && <span>Straddle ✓</span>}
-                {form.allowRunItTwice && <span>RIT ✓</span>}
-            </div>
-
-            <div className={styles.previewVariants}>
-                <strong>Variants:</strong>
-                {form.variants.map(v => {
-                    const variant = GAME_VARIANTS.find(gv => gv.id === v);
-                    return <span key={v}>{variant?.icon} {variant?.name}</span>;
-                })}
+            {/* Legal Agreement */}
+            <div className={styles.legalSection}>
+                <label className={styles.legalCheckbox}>
+                    <input
+                        type="checkbox"
+                        checked={hasAgreed}
+                        onChange={(e) => setHasAgreed(e.target.checked)}
+                    />
+                    <span className={styles.checkmark} />
+                    <span>
+                        By clicking "Create", you confirm you are 18+ years old, and that you understand and accept our{' '}
+                        <button type="button" className={styles.rulesLink} onClick={onShowRules}>
+                            Club Promotion Rules
+                        </button>{' '}
+                        and Media Guidelines.
+                    </span>
+                </label>
             </div>
         </div>
-    </div>
-);
+    );
+};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
@@ -419,6 +485,8 @@ export default function CreateClubPage() {
     const [form, setForm] = useState<ClubFormData>(DEFAULT_FORM);
     const [creating, setCreating] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [hasAgreed, setHasAgreed] = useState(false);
+    const [showRulesModal, setShowRulesModal] = useState(false);
 
     const totalSteps = 5;
 
@@ -534,7 +602,14 @@ export default function CreateClubPage() {
             case 2: return <Step2Rake {...props} />;
             case 3: return <Step3Tables {...props} />;
             case 4: return <Step4Games {...props} />;
-            case 5: return <Step5Preview form={form} />;
+            case 5: return (
+                <Step5Preview
+                    form={form}
+                    hasAgreed={hasAgreed}
+                    setHasAgreed={setHasAgreed}
+                    onShowRules={() => setShowRulesModal(true)}
+                />
+            );
             default: return null;
         }
     };
@@ -600,13 +675,23 @@ export default function CreateClubPage() {
                         <button
                             className={styles.createBtn}
                             onClick={handleCreate}
-                            disabled={creating}
+                            disabled={creating || !hasAgreed}
                         >
                             {creating ? 'Creating...' : '🎉 Create Club'}
                         </button>
                     )}
                 </div>
             </div>
+
+            {/* Club Promotion Rules Modal */}
+            <ClubPromotionRulesModal
+                isOpen={showRulesModal}
+                onClose={() => setShowRulesModal(false)}
+                onAccept={() => {
+                    setHasAgreed(true);
+                    setShowRulesModal(false);
+                }}
+            />
         </div>
     );
 }

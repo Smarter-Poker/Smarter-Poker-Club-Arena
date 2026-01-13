@@ -633,3 +633,109 @@
         gap: 1rem;
     }
 }
+
+/* Icon Grid */
+.iconGrid {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 0.5rem;
+}
+
+.iconOption {
+    aspect-ratio: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.05);
+    border: 2px solid rgba(255, 255, 255, 0.1);
+    border-radius: 0.75rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.iconOption:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.iconOption.selected {
+    background: rgba(var(--accent-rgb), 0.2);
+    border-color: var(--accent);
+    box-shadow: 0 0 12px rgba(var(--accent-rgb), 0.4);
+}
+
+.iconEmoji {
+    font-size: 1.5rem;
+}
+
+/* Bonus Notice */
+.bonusNotice {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 1rem;
+    background: rgba(16, 185, 129, 0.1);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    border-radius: 0.75rem;
+    margin-top: 1.5rem;
+}
+
+.bonusIcon {
+    font-size: 1.5rem;
+    flex-shrink: 0;
+}
+
+.bonusNotice p {
+    margin: 0;
+    font-size: 0.85rem;
+    color: rgba(255, 255, 255, 0.8);
+    line-height: 1.5;
+}
+
+.bonusNotice strong {
+    color: #10b981;
+}
+
+/* Legal Section */
+.legalSection {
+    margin-top: 1.5rem;
+    padding: 1rem;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 0.75rem;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.legalCheckbox {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    cursor: pointer;
+    font-size: 0.85rem;
+    color: rgba(255, 255, 255, 0.7);
+    line-height: 1.5;
+}
+
+.legalCheckbox input {
+    display: none;
+}
+
+.rulesLink {
+    background: none;
+    border: none;
+    color: #60a5fa;
+    font-size: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 0;
+    text-decoration: underline;
+}
+
+.rulesLink:hover {
+    color: #93c5fd;
+}
+
+@media (max-width: 600px) {
+    .iconGrid {
+        grid-template-columns: repeat(4, 1fr);
+    }
+}

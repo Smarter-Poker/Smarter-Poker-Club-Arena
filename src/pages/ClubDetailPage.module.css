@@ -1,0 +1,11 @@
+.page {
+    padding: var(--space-8);
+}
+
+.header {
+    margin-bottom: var(--space-8);
+}
+
+.content {
+    color: var(--text-secondary);
+}

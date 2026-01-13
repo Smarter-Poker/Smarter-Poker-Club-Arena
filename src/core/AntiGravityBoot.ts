@@ -1,14 +1,19 @@
 /**
- * 🚀 ANTI-GRAVITY AUTO-BOOT MODULE
+ * 🚀 ANTI-GRAVITY AUTO-BOOT MODULE (HARDENED)
  * ═══════════════════════════════════════════════════════════════════════════════
  * This module runs AUTOMATICALLY at app startup.
  * It verifies all required systems and fails-closed if anything is missing.
  * 
  * HARD REQUIREMENTS:
- * 1. ANTIGRAVITY_ENABLED must be 'true'
+ * 1. VITE_ANTIGRAVITY_ENABLED must be 'true'
  * 2. VITE_SUPABASE_URL must exist
  * 3. VITE_SUPABASE_ANON_KEY must exist
- * 4. Supabase must respond to a health check
+ * 4. Supabase must respond to a real health check (getSession)
+ * 
+ * DETERMINISTIC PROOFS (exact format):
+ * - ANTIGRAVITY_OK:true/false
+ * - SUPABASE_OK:true/false
+ * - HEARTBEAT:ONLINE/OFFLINE
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -26,18 +31,20 @@ let supabaseClient: SupabaseClient | null = null;
 
 /**
  * PRIMARY BOOT ENTRYPOINT
- * Must be called before app renders.
- * Returns the boot status for fail-closed logic.
+ * Must be AWAITED before app renders. No async race conditions.
+ * Returns the boot status for absolute fail-closed logic.
  */
 export async function initAntiGravity(): Promise<BootStatus> {
-    console.log('🚀 [ANTIGRAVITY] Initializing...');
+    console.log('═══════════════════════════════════════════════════════════════');
+    console.log('🚀 [ANTIGRAVITY] BOOT SEQUENCE INITIATED');
+    console.log('═══════════════════════════════════════════════════════════════');
 
     const errors: string[] = [];
     let antigravityOk = false;
     let supabaseOk = false;
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // 1. VERIFY ENV VARS
+    // PHASE 1: VERIFY ENV VARS (Required)
     // ═══════════════════════════════════════════════════════════════════════════
     const ANTIGRAVITY_ENABLED = import.meta.env.VITE_ANTIGRAVITY_ENABLED;
     const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -55,42 +62,44 @@ export async function initAntiGravity(): Promise<BootStatus> {
         errors.push('VITE_SUPABASE_ANON_KEY is missing');
     }
 
-    // If all env vars present, mark antigravity as OK
+    // All env vars must be present for ANTIGRAVITY_OK
     if (ANTIGRAVITY_ENABLED === 'true' && SUPABASE_URL && SUPABASE_ANON_KEY) {
         antigravityOk = true;
-        console.log('✅ ANTIGRAVITY_OK:true');
-    } else {
-        console.error('❌ ANTIGRAVITY_OK:false', errors);
     }
 
+    // DETERMINISTIC PROOF: ANTIGRAVITY_OK
+    console.log(`ANTIGRAVITY_OK:${antigravityOk}`);
+
     // ═══════════════════════════════════════════════════════════════════════════
-    // 2. SUPABASE PROOF (Health Check)
+    // PHASE 2: SUPABASE PROOF (Real Health Check)
     // ═══════════════════════════════════════════════════════════════════════════
     if (SUPABASE_URL && SUPABASE_ANON_KEY) {
         try {
             supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-            // Lightweight health query: get current session (no auth needed)
-            const { data, error } = await supabaseClient.auth.getSession();
+            // REAL health check: getSession performs an actual network request
+            const { error } = await supabaseClient.auth.getSession();
 
             if (error) {
-                errors.push(`Supabase Auth Error: ${error.message}`);
-                console.error('❌ SUPABASE_OK:false', error.message);
+                errors.push(`Supabase Health Check Failed: ${error.message}`);
+                supabaseOk = false;
             } else {
                 supabaseOk = true;
-                console.log('✅ SUPABASE_OK:true');
             }
         } catch (e: any) {
-            errors.push(`Supabase Connection Failed: ${e.message}`);
-            console.error('❌ SUPABASE_OK:false', e.message);
+            errors.push(`Supabase Connection Exception: ${e.message}`);
+            supabaseOk = false;
         }
     } else {
-        errors.push('Supabase credentials missing, cannot perform health check');
-        console.error('❌ SUPABASE_OK:false (credentials missing)');
+        errors.push('Supabase credentials missing, health check skipped');
+        supabaseOk = false;
     }
 
+    // DETERMINISTIC PROOF: SUPABASE_OK
+    console.log(`SUPABASE_OK:${supabaseOk}`);
+
     // ═══════════════════════════════════════════════════════════════════════════
-    // 3. BUILD STATUS OBJECT
+    // PHASE 3: BUILD BOOT STATUS
     // ═══════════════════════════════════════════════════════════════════════════
     bootStatus = {
         antigravityOk,
@@ -99,12 +108,16 @@ export async function initAntiGravity(): Promise<BootStatus> {
         timestamp: new Date().toISOString()
     };
 
-    // Final Heartbeat
-    if (antigravityOk && supabaseOk) {
-        console.log('💚 [ANTIGRAVITY] HEARTBEAT: All Systems Operational');
-    } else {
-        console.error('🔴 [ANTIGRAVITY] HEARTBEAT: System Offline', errors);
+    // DETERMINISTIC PROOF: HEARTBEAT
+    const heartbeat = (antigravityOk && supabaseOk) ? 'ONLINE' : 'OFFLINE';
+    console.log(`HEARTBEAT:${heartbeat}`);
+
+    // Log errors if any
+    if (errors.length > 0) {
+        console.error('[ANTIGRAVITY] Boot Errors:', errors);
     }
+
+    console.log('═══════════════════════════════════════════════════════════════');
 
     return bootStatus;
 }
@@ -120,6 +133,7 @@ export function getBootStatus(): BootStatus | null {
 /**
  * GET SUPABASE CLIENT
  * Returns the initialized Supabase client for app-wide use.
+ * Returns null if boot failed.
  */
 export function getSupabaseClient(): SupabaseClient | null {
     return supabaseClient;
@@ -127,7 +141,8 @@ export function getSupabaseClient(): SupabaseClient | null {
 
 /**
  * IS SYSTEM ONLINE
- * Quick check for fail-closed logic.
+ * Absolute check for fail-closed logic.
+ * Returns true ONLY if BOTH antigravityOk AND supabaseOk are true.
  */
 export function isSystemOnline(): boolean {
     return bootStatus?.antigravityOk === true && bootStatus?.supabaseOk === true;

@@ -1,161 +1,218 @@
 /**
- * ♠ CLUB ARENA — Cash Game Buy-In Modal
- * PokerBros-style buy-in with slider (PLAY CHIPS ONLY)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * 💰 BUY-IN MODAL — Table Buy-In Interface
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * PokerBros-style buy-in modal with:
+ * - Min/Max slider
+ * - Quick amount buttons
+ * - Auto rebuy toggle
+ * - Account balance display
  */
 
-import { useState, useEffect } from 'react';
-import { useUserStore } from '../../stores/useUserStore';
+import React, { useState, useCallback, useMemo } from 'react';
 import './BuyInModal.css';
 
-interface BuyInModalProps {
+// ═══════════════════════════════════════════════════════════════════════════════
+// TYPES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export interface BuyInModalProps {
     isOpen: boolean;
     onClose: () => void;
     onConfirm: (amount: number, autoRebuy: boolean) => void;
+    tableName?: string;
     minBuyIn: number;
     maxBuyIn: number;
-    tableName: string;
-    stakes: string;
+    defaultBuyIn?: number;
+    accountBalance: number;
+    bigBlind: number;
+    currency?: string;
+    countdown?: number; // Seconds remaining to buy in
 }
 
-export default function BuyInModal({
+// ═══════════════════════════════════════════════════════════════════════════════
+// UTILITIES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function formatAmount(amount: number, currency: string = ''): string {
+    if (amount >= 1000) {
+        return `${currency}${(amount / 1000).toFixed(1)}K`;
+    }
+    return `${currency}${amount.toLocaleString()}`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// COMPONENT
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export function BuyInModal({
     isOpen,
     onClose,
     onConfirm,
+    tableName,
     minBuyIn,
     maxBuyIn,
-    tableName,
-    stakes,
+    defaultBuyIn,
+    accountBalance,
+    bigBlind,
+    currency = '',
+    countdown,
 }: BuyInModalProps) {
-    const { user, totalChips } = useUserStore();
-    const [buyInAmount, setBuyInAmount] = useState(minBuyIn);
+    // State
+    const [buyInAmount, setBuyInAmount] = useState(defaultBuyIn || Math.min(minBuyIn * 2, maxBuyIn));
     const [autoRebuy, setAutoRebuy] = useState(false);
-    const [countdownSeconds, setCountdownSeconds] = useState(60);
+    const [rebuyThreshold, setRebuyThreshold] = useState(0);
 
-    const userBalance = totalChips || 0;
-    const effectiveMax = Math.min(maxBuyIn, userBalance);
+    // Clamp buy-in to valid range
+    const clampedBuyIn = useMemo(() => {
+        return Math.max(minBuyIn, Math.min(maxBuyIn, buyInAmount));
+    }, [buyInAmount, minBuyIn, maxBuyIn]);
 
-    useEffect(() => {
-        if (isOpen) {
-            setBuyInAmount(minBuyIn);
-            setCountdownSeconds(60);
+    // Calculate slider percentage
+    const sliderPercent = useMemo(() => {
+        return ((clampedBuyIn - minBuyIn) / (maxBuyIn - minBuyIn)) * 100;
+    }, [clampedBuyIn, minBuyIn, maxBuyIn]);
 
-            // Start countdown
-            const timer = setInterval(() => {
-                setCountdownSeconds((prev) => {
-                    if (prev <= 1) {
-                        clearInterval(timer);
-                        onClose();
-                        return 0;
-                    }
-                    return prev - 1;
-                });
-            }, 1000);
+    // Check if user has enough balance
+    const hasEnoughBalance = accountBalance >= clampedBuyIn;
 
-            return () => clearInterval(timer);
-        }
-    }, [isOpen, minBuyIn, onClose]);
-
-    const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // Handle slider change
+    const handleSliderChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
         setBuyInAmount(Number(e.target.value));
-    };
+    }, []);
 
-    const handleConfirm = () => {
-        if (buyInAmount >= minBuyIn && buyInAmount <= effectiveMax) {
-            onConfirm(buyInAmount, autoRebuy);
+    // Handle quick amount buttons
+    const handleQuickAmount = useCallback((multiplier: number) => {
+        const amount = Math.min(minBuyIn * multiplier, maxBuyIn);
+        setBuyInAmount(amount);
+    }, [minBuyIn, maxBuyIn]);
+
+    // Handle confirm
+    const handleConfirm = useCallback(() => {
+        if (hasEnoughBalance) {
+            onConfirm(clampedBuyIn, autoRebuy);
         }
-    };
-
-    const sliderProgress = ((buyInAmount - minBuyIn) / (effectiveMax - minBuyIn)) * 100;
+    }, [clampedBuyIn, autoRebuy, hasEnoughBalance, onConfirm]);
 
     if (!isOpen) return null;
 
     return (
-        <div className="modal-overlay" onClick={onClose}>
-            <div className="buyin-modal" onClick={(e) => e.stopPropagation()}>
-                {/* Countdown Header */}
-                <div className="buyin-countdown">
-                    <span>{countdownSeconds}s</span>
-                    <span className="countdown-label">(Close)</span>
+        <div className="buy-in-modal__overlay" onClick={onClose}>
+            <div className="buy-in-modal" onClick={(e) => e.stopPropagation()}>
+                {/* Header */}
+                <div className="buy-in-modal__header">
+                    {countdown !== undefined && (
+                        <span className="buy-in-modal__countdown">{countdown}s (Close)</span>
+                    )}
+                    <h2 className="buy-in-modal__title">BUY-IN</h2>
+                    <button className="buy-in-modal__close" onClick={onClose}>
+                        ×
+                    </button>
                 </div>
 
-                {/* Title */}
-                <h2 className="buyin-title">BUY-IN</h2>
-
-                {/* Close Button */}
-                <button className="modal-close" onClick={onClose}>✕</button>
-
                 {/* Amount Display */}
-                <div className="amount-display">
-                    <div className="amount-min">
-                        <span className="amount-value">{minBuyIn}</span>
-                        <span className="amount-label">Min</span>
+                <div className="buy-in-modal__amount-display">
+                    <span className="buy-in-modal__min-label">{formatAmount(minBuyIn, currency)}</span>
+                    <div className="buy-in-modal__current-amount">
+                        <span className="buy-in-modal__amount-value">{clampedBuyIn}</span>
+                        <span className="buy-in-modal__chip-icon">🪙</span>
                     </div>
-                    <div className="amount-current">
-                        <span className="amount-value">{buyInAmount}</span>
-                    </div>
-                    <div className="amount-max">
-                        <span className="amount-value">{effectiveMax}</span>
-                        <span className="amount-label">Max</span>
-                    </div>
+                    <span className="buy-in-modal__max-label">{formatAmount(maxBuyIn, currency)}</span>
                 </div>
 
                 {/* Slider */}
-                <div className="buyin-slider-container">
-                    <span className="slider-chip">♠</span>
+                <div className="buy-in-modal__slider-container">
                     <input
                         type="range"
-                        className="buyin-slider"
+                        className="buy-in-modal__slider"
                         min={minBuyIn}
-                        max={effectiveMax}
-                        value={buyInAmount}
+                        max={maxBuyIn}
+                        value={clampedBuyIn}
                         onChange={handleSliderChange}
-                        style={{ '--progress': `${sliderProgress}%` } as React.CSSProperties}
+                        step={bigBlind}
+                        style={{
+                            '--slider-percent': `${sliderPercent}%`,
+                        } as React.CSSProperties}
                     />
+                    <div className="buy-in-modal__slider-labels">
+                        <span>Min</span>
+                        <span>Max</span>
+                    </div>
+                </div>
+
+                {/* Quick Amounts */}
+                <div className="buy-in-modal__quick-amounts">
+                    <button
+                        className="buy-in-modal__quick-btn"
+                        onClick={() => handleQuickAmount(1)}
+                    >
+                        20BB
+                    </button>
+                    <button
+                        className="buy-in-modal__quick-btn"
+                        onClick={() => handleQuickAmount(2)}
+                    >
+                        40BB
+                    </button>
+                    <button
+                        className="buy-in-modal__quick-btn"
+                        onClick={() => handleQuickAmount(5)}
+                    >
+                        100BB
+                    </button>
+                    <button
+                        className="buy-in-modal__quick-btn buy-in-modal__quick-btn--max"
+                        onClick={() => setBuyInAmount(maxBuyIn)}
+                    >
+                        MAX
+                    </button>
                 </div>
 
                 {/* Balance Display */}
-                <div className="balance-display">
-                    <span>( Account Balance: </span>
-                    <span className="balance-value">{userBalance.toFixed(2)}</span>
-                    <span> )</span>
+                <div className="buy-in-modal__balance">
+                    <span className="buy-in-modal__balance-label">( Account Balance:</span>
+                    <span className={`buy-in-modal__balance-value ${!hasEnoughBalance ? 'buy-in-modal__balance-value--insufficient' : ''}`}>
+                        {formatAmount(accountBalance, currency)}
+                    </span>
+                    <span className="buy-in-modal__balance-label">)</span>
                 </div>
 
-                {/* Auto Rebuy Toggle */}
-                <div className="auto-rebuy">
-                    <label className="toggle-label">
+                {/* Auto Rebuy */}
+                <div className="buy-in-modal__auto-rebuy">
+                    <label className="buy-in-modal__toggle">
                         <input
                             type="checkbox"
                             checked={autoRebuy}
                             onChange={(e) => setAutoRebuy(e.target.checked)}
                         />
-                        <span className="toggle-switch" />
-                        <span className="toggle-text">Auto Rebuy</span>
+                        <span className="buy-in-modal__toggle-slider" />
+                        <span className="buy-in-modal__toggle-label">Auto Rebuy</span>
                     </label>
-                    <p className="rebuy-note">
-                        When your stack drops to <span className="highlight">0%</span> of the initial buy-in,
+                    <p className="buy-in-modal__auto-rebuy-info">
+                        When your stack drops to <strong>{rebuyThreshold}%</strong> of the initial buy-in,
                         it will be automatically replenished.
                     </p>
                 </div>
 
                 {/* Confirm Button */}
                 <button
-                    className="btn buyin-confirm"
+                    className={`buy-in-modal__confirm ${!hasEnoughBalance ? 'buy-in-modal__confirm--disabled' : ''}`}
                     onClick={handleConfirm}
-                    disabled={buyInAmount < minBuyIn || buyInAmount > effectiveMax}
+                    disabled={!hasEnoughBalance}
                 >
-                    Buy Chips
+                    {hasEnoughBalance ? 'Buy Chips' : 'Insufficient Balance'}
                 </button>
 
-                {/* Insufficient Balance Warning */}
-                {userBalance < minBuyIn && (
-                    <div className="insufficient-balance">
-                        <p>Insufficient balance. Please add more chips.</p>
-                        <button className="btn btn-add-chips">Add Chips</button>
-                    </div>
+                {/* Top Up Link */}
+                {!hasEnoughBalance && (
+                    <button className="buy-in-modal__top-up">
+                        💎 Top Up Account
+                    </button>
                 )}
             </div>
         </div>
     );
 }
 
-export { BuyInModal };
+export default BuyInModal;

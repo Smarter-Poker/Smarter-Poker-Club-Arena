@@ -1,0 +1,50 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * 🎰 SERVICES — Index Exports
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+
+// Club & Union Management
+export { ClubsService } from './ClubsService';
+// ClubService uses named export as object
+export * from './ClubService';
+// UnionService uses named export as object
+export * from './UnionService';
+
+// Table & Room Management
+export * from './TableService';
+export * from './RoomService';
+
+// Tournament System
+export { tournamentService, BLIND_STRUCTURES, PAYOUT_STRUCTURES } from './TournamentService';
+
+// Agent & Financial Services
+export * from './AgentService';
+export * from './WalletService';
+
+// Rake & Commissions
+export { RakeService } from './RakeService';
+export type { RakeCalculation, RakeAttribution, WaterfallResult, DealtInPlayer } from './RakeService';
+export * from './CommissionService';
+export * from './SettlementService';
+export * from './CreditService';
+
+// BBJ & Jackpots
+export { BBJService } from './BBJService';
+export type { BBJPool, BBJContribution, BBJPayout, BBJTriggerResult } from './BBJService';
+
+// Leaderboards & Stats
+export { LeaderboardService } from './LeaderboardService';
+export type { LeaderboardEntry, PlayerStats, LeaderboardPeriod, LeaderboardMetric } from './LeaderboardService';
+
+// Bot Liquidity (Hydra)
+export { HydraService } from './HydraService';
+export type { HorsePlayer, HydraConfig, BotProfile, TableLiquidityStatus } from './HydraService';
+
+// Arena & Training
+export * from './ArenaLobbyEngine';
+export * from './ArenaTrainingController';
+
+// Audio
+export * from './SoundService';
+

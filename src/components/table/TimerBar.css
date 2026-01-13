@@ -1,0 +1,277 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * ⏱️ TIMER BAR — Styles
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   CONTAINER
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.timer-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.timer-bar--horizontal {
+    flex-direction: row;
+    width: 100%;
+}
+
+.timer-bar--circular {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   HORIZONTAL TRACK
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.timer-bar__track {
+    flex: 1;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.timer-bar--small .timer-bar__track {
+    height: 4px;
+}
+
+.timer-bar--large .timer-bar__track {
+    height: 8px;
+}
+
+.timer-bar__fill {
+    height: 100%;
+    background: var(--progress-color, #3FB950);
+    border-radius: 3px;
+    transition: width 0.1s linear, background-color 0.3s ease;
+    box-shadow: 0 0 8px var(--progress-color);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   CIRCULAR TIMER
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.timer-bar__circle {
+    transform: rotate(-90deg);
+}
+
+.timer-bar--small .timer-bar__circle {
+    width: 48px;
+    height: 48px;
+}
+
+.timer-bar--medium .timer-bar__circle {
+    width: 64px;
+    height: 64px;
+}
+
+.timer-bar--large .timer-bar__circle {
+    width: 80px;
+    height: 80px;
+}
+
+.timer-bar__circle-bg {
+    fill: none;
+    stroke: rgba(255, 255, 255, 0.15);
+    stroke-width: 4;
+}
+
+.timer-bar__circle-progress {
+    fill: none;
+    stroke: var(--progress-color, #3FB950);
+    stroke-width: 4;
+    stroke-linecap: round;
+    transition: stroke-dashoffset 0.1s linear, stroke 0.3s ease;
+    filter: drop-shadow(0 0 4px var(--progress-color));
+}
+
+.timer-bar--circular .timer-bar__countdown {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 1rem;
+    font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+    color: #FFFFFF;
+}
+
+.timer-bar--small .timer-bar__countdown {
+    font-size: 0.75rem;
+}
+
+.timer-bar--large .timer-bar__countdown {
+    font-size: 1.25rem;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   INFO DISPLAY
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.timer-bar__info {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 50px;
+}
+
+.timer-bar__time {
+    font-size: 0.875rem;
+    font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+    color: #FFFFFF;
+}
+
+.timer-bar--small .timer-bar__time {
+    font-size: 0.75rem;
+}
+
+.timer-bar--large .timer-bar__time {
+    font-size: 1rem;
+}
+
+.timer-bar__time-bank {
+    font-size: 0.625rem;
+    font-weight: 600;
+    color: #6E7681;
+    padding: 2px 6px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    transition: all 0.3s ease;
+}
+
+.timer-bar__time-bank--active {
+    color: #1877F2;
+    background: rgba(24, 119, 242, 0.2);
+    animation: timeBankPulse 1s ease-in-out infinite;
+}
+
+@keyframes timeBankPulse {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.6;
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   COLOR STATES
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.timer-bar--normal .timer-bar__time {
+    color: #3FB950;
+}
+
+.timer-bar--warning .timer-bar__time {
+    color: #FFB800;
+}
+
+.timer-bar--critical .timer-bar__time {
+    color: #F85149;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   PULSING ANIMATION
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.timer-bar--pulsing .timer-bar__fill {
+    animation: fillPulse 0.5s ease-in-out infinite;
+}
+
+.timer-bar--pulsing .timer-bar__circle-progress {
+    animation: circlePulse 0.5s ease-in-out infinite;
+}
+
+.timer-bar--pulsing .timer-bar__time {
+    animation: textPulse 0.5s ease-in-out infinite;
+}
+
+@keyframes fillPulse {
+
+    0%,
+    100% {
+        opacity: 1;
+        box-shadow: 0 0 8px var(--progress-color);
+    }
+
+    50% {
+        opacity: 0.7;
+        box-shadow: 0 0 20px var(--progress-color);
+    }
+}
+
+@keyframes circlePulse {
+
+    0%,
+    100% {
+        stroke-width: 4;
+        filter: drop-shadow(0 0 4px var(--progress-color));
+    }
+
+    50% {
+        stroke-width: 6;
+        filter: drop-shadow(0 0 12px var(--progress-color));
+    }
+}
+
+@keyframes textPulse {
+
+    0%,
+    100% {
+        opacity: 1;
+        transform: translate(-50%, -50%) scale(1);
+    }
+
+    50% {
+        opacity: 0.8;
+        transform: translate(-50%, -50%) scale(1.1);
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   TIME BANK MODE
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.timer-bar--time-bank .timer-bar__fill {
+    background: linear-gradient(90deg, #1877F2 0%, #4599FF 100%);
+    --progress-color: #1877F2;
+}
+
+.timer-bar--time-bank .timer-bar__circle-progress {
+    stroke: #1877F2;
+    --progress-color: #1877F2;
+}
+
+.timer-bar--time-bank .timer-bar__time {
+    color: #1877F2;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   RESPONSIVE
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 480px) {
+    .timer-bar__info {
+        min-width: 40px;
+    }
+
+    .timer-bar--medium .timer-bar__circle {
+        width: 52px;
+        height: 52px;
+    }
+
+    .timer-bar--medium .timer-bar__countdown {
+        font-size: 0.875rem;
+    }
+}

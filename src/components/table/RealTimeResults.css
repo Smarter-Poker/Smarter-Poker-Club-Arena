@@ -1,0 +1,297 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * 📊 REAL-TIME RESULTS — Styles
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   OVERLAY
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.rtr-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 500;
+    animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   PANEL
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.rtr-panel {
+    width: 90%;
+    max-width: 380px;
+    max-height: 80vh;
+    overflow-y: auto;
+    background: linear-gradient(180deg, #1C2128 0%, #161B22 100%);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    animation: slideUp 0.25s ease;
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   HEADER
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.rtr-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    background: rgba(0, 0, 0, 0.3);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.rtr-duration {
+    font-size: 0.875rem;
+    font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+    color: #3FB950;
+}
+
+.rtr-title {
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: #E4E6EB;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.rtr-close {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    border-radius: 50%;
+    color: #8B949E;
+    font-size: 1.25rem;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.rtr-close:hover {
+    background: #F85149;
+    color: #FFFFFF;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   SECTIONS
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.rtr-section {
+    padding: 12px 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.rtr-section-header {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #1877F2;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 10px;
+    text-align: center;
+}
+
+.rtr-section--observers {
+    flex: 1;
+    min-height: 100px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   ROWS
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.rtr-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 0;
+}
+
+.rtr-label {
+    font-size: 0.8125rem;
+    color: #8B949E;
+}
+
+.rtr-value {
+    font-size: 0.8125rem;
+    color: #E4E6EB;
+    font-weight: 500;
+    text-align: right;
+    max-width: 60%;
+}
+
+.rtr-value--mono {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+}
+
+.rtr-value--truncate {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.rtr-value--positive {
+    color: #3FB950;
+}
+
+.rtr-value--negative {
+    color: #F85149;
+}
+
+.rtr-value--badge {
+    padding: 2px 8px;
+    background: rgba(24, 119, 242, 0.2);
+    border-radius: 4px;
+    font-size: 0.6875rem;
+    color: #1877F2;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   SUMMARY
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.rtr-summary {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 16px;
+    background: rgba(0, 0, 0, 0.2);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.rtr-summary-label {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #8B949E;
+}
+
+.rtr-summary-value {
+    font-size: 1.25rem;
+    font-weight: 800;
+    font-family: 'JetBrains Mono', monospace;
+}
+
+.rtr-summary-value--positive {
+    color: #3FB950;
+}
+
+.rtr-summary-value--negative {
+    color: #F85149;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   OBSERVERS
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.rtr-observers {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.rtr-no-observers {
+    font-size: 0.8125rem;
+    color: #6E7681;
+    text-align: center;
+    padding: 12px;
+}
+
+.rtr-observer {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 0;
+}
+
+.rtr-observer-avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: rgba(24, 119, 242, 0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #1877F2;
+    overflow: hidden;
+}
+
+.rtr-observer-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.rtr-observer-name {
+    font-size: 0.8125rem;
+    color: #E4E6EB;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   SCROLLBAR
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.rtr-panel::-webkit-scrollbar {
+    width: 4px;
+}
+
+.rtr-panel::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.rtr-panel::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 2px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   RESPONSIVE
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 400px) {
+    .rtr-panel {
+        max-width: 100%;
+        margin: 0 10px;
+        max-height: 90vh;
+    }
+
+    .rtr-title {
+        font-size: 0.75rem;
+    }
+}

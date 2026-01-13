@@ -1,0 +1,262 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * 🏆 POT DISPLAY — Styles
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   CONTAINER
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.pot-display {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -30%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    z-index: 50;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   CHIP STACKS
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.pot-display__chips {
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    height: 50px;
+    margin-bottom: 4px;
+}
+
+.pot-display__chip-stack {
+    position: relative;
+    display: flex;
+    flex-direction: column-reverse;
+    align-items: center;
+}
+
+.pot-display__chip {
+    width: 28px;
+    height: 8px;
+    border-radius: 50%;
+    position: absolute;
+    bottom: 0;
+    box-shadow:
+        0 2px 4px rgba(0, 0, 0, 0.3),
+        inset 0 -2px 4px rgba(0, 0, 0, 0.2),
+        inset 0 2px 4px rgba(255, 255, 255, 0.1);
+    animation: chipDrop 0.4s ease-out forwards;
+    opacity: 0;
+}
+
+@keyframes chipDrop {
+    0% {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+
+    50% {
+        opacity: 1;
+    }
+
+    100% {
+        opacity: 1;
+        transform: translateY(var(--chip-offset, 0));
+    }
+}
+
+.pot-display__chip-inner {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 16px;
+    height: 16px;
+    border: 2px dashed rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   MAIN POT DISPLAY
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.pot-display__main {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: linear-gradient(135deg, rgba(0, 0, 0, 0.8) 0%, rgba(0, 0, 0, 0.6) 100%);
+    backdrop-filter: blur(10px);
+    border-radius: 12px;
+    padding: 8px 20px;
+    border: 1px solid rgba(255, 215, 0, 0.3);
+    box-shadow:
+        0 4px 20px rgba(0, 0, 0, 0.4),
+        0 0 30px rgba(255, 215, 0, 0.1);
+    transition: all 0.3s ease;
+}
+
+.pot-display__main--animating {
+    transform: scale(1.05);
+    border-color: rgba(255, 215, 0, 0.6);
+    box-shadow:
+        0 4px 20px rgba(0, 0, 0, 0.4),
+        0 0 40px rgba(255, 215, 0, 0.3);
+}
+
+.pot-display__label {
+    font-size: 0.625rem;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.6);
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    margin-bottom: 2px;
+}
+
+.pot-display__amount {
+    font-size: 1.25rem;
+    font-weight: 800;
+    color: var(--ca-gold, #FFD700);
+    font-family: 'JetBrains Mono', monospace;
+    text-shadow: 0 2px 10px rgba(255, 215, 0, 0.3);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   SIDE POTS
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.pot-display__side-pots {
+    display: flex;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.pot-display__side-pot {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: rgba(65, 105, 225, 0.2);
+    border: 1px solid rgba(65, 105, 225, 0.4);
+    border-radius: 8px;
+    padding: 4px 12px;
+    animation: sidePotSlideIn 0.3s ease forwards;
+    opacity: 0;
+}
+
+@keyframes sidePotSlideIn {
+    0% {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    100% {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.pot-display__side-pot-label {
+    font-size: 0.5625rem;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.5);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+}
+
+.pot-display__side-pot-amount {
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: var(--ca-primary-light, #5B7FEE);
+    font-family: 'JetBrains Mono', monospace;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   TOTAL
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.pot-display__total {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+    padding: 4px 10px;
+    background: rgba(16, 185, 129, 0.15);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    border-radius: 6px;
+}
+
+.pot-display__total-label {
+    font-size: 0.5625rem;
+    font-weight: 600;
+    color: rgba(16, 185, 129, 0.8);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+}
+
+.pot-display__total-amount {
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: var(--ca-success, #10B981);
+    font-family: 'JetBrains Mono', monospace;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   INCREASE INDICATOR
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.pot-display__increase {
+    position: absolute;
+    top: -20px;
+    right: -20px;
+    padding: 2px 8px;
+    background: rgba(16, 185, 129, 0.9);
+    color: #FFFFFF;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+    animation: increaseFloat 1s ease-out forwards;
+    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.4);
+}
+
+@keyframes increaseFloat {
+    0% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+
+    100% {
+        opacity: 0;
+        transform: translateY(-30px) scale(0.8);
+    }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   RESPONSIVE
+   ───────────────────────────────────────────────────────────────────────────── */
+
+@media (max-width: 768px) {
+    .pot-display {
+        transform: translate(-50%, -20%);
+    }
+
+    .pot-display__main {
+        padding: 6px 16px;
+    }
+
+    .pot-display__amount {
+        font-size: 1rem;
+    }
+
+    .pot-display__chips {
+        height: 40px;
+    }
+
+    .pot-display__chip {
+        width: 22px;
+        height: 6px;
+    }
+}

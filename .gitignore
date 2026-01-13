@@ -1,2 +1,23 @@
-.vercel
+# Dependencies
 node_modules
+
+# Build
+dist
+
+# Vercel
+.vercel
+
+# Supabase
+supabase/.temp
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+.DS_Store

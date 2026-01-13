@@ -5,15 +5,18 @@
  * Connects to PokerIQ-Production (kuklfnapbkmacvwxktbh)
  */
 
-import { createClient } from '@supabase/supabase-js';
+import { createClient, RealtimeChannel } from '@supabase/supabase-js';
 
 // Environment validation - follows VITE_ prefix law
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 
-if (!supabaseUrl || !supabaseAnonKey) {
+// Demo mode flag - enables offline/mock data when Supabase not configured
+export const isDemoMode = !supabaseUrl || !supabaseAnonKey || supabaseAnonKey === 'placeholder-key';
+
+if (isDemoMode) {
     console.warn(
-        '⚠️ Supabase credentials not configured. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env'
+        '⚠️ Running in DEMO MODE. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env to connect to production.'
     );
 }
 
@@ -34,6 +37,40 @@ export const supabase = createClient(
         },
     }
 );
+
+// Filter options for realtime subscriptions
+interface SubscribeFilter {
+    column: string;
+    value: string;
+}
+
+// Subscribe to realtime changes on a database table
+export function subscribeToTable<T>(
+    tableName: string,
+    callback: (data: T) => void,
+    filter?: SubscribeFilter
+): () => void {
+    const channelName = filter
+        ? `${tableName}:${filter.column}:${filter.value}`
+        : tableName;
+
+    const channel: RealtimeChannel = supabase
+        .channel(channelName)
+        .on('postgres_changes', {
+            event: '*',
+            schema: 'public',
+            table: tableName,
+            filter: filter ? `${filter.column}=eq.${filter.value}` : undefined
+        }, (payload) => {
+            callback(payload.new as T);
+        })
+        .subscribe();
+
+    // Return unsubscribe function
+    return () => {
+        supabase.removeChannel(channel);
+    };
+}
 
 // Export type-safe database interface
 export type SupabaseClient = typeof supabase;

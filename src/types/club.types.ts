@@ -506,3 +506,130 @@ export interface BadBeatJackpot {
     last_winner_id?: string;
     last_amount_won?: number;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 🌡️ ARENA TRAFFIC & HEAT
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export interface ClubTrafficData {
+    club_id: string;
+    active_tables: number;
+    active_players: number;
+    waiting_players: number;
+    waiting_list_total?: number;
+    avg_pot_size: number;
+    heat_level: HeatLevel;
+}
+
+export interface StakeInfo {
+    stake_level?: number;
+    small_blind: number;
+    big_blind: number;
+    label: string; // e.g., "1/2", "2/5"
+}
+
+// Heat level is numeric 0-5 for granular control
+export type HeatLevel = 0 | 1 | 2 | 3 | 4 | 5;
+
+export interface HeatConfig {
+    level: number;
+    name: string;
+    minPlayers: number;
+    minWaiting: number;
+    color: string;
+}
+
+export const HEAT_LEVELS: HeatConfig[] = [
+    { level: 0, name: 'COLD', color: '#4A5568', minPlayers: 0, minWaiting: 0 },
+    { level: 1, name: 'WARM', color: '#48BB78', minPlayers: 10, minWaiting: 2 },
+    { level: 2, name: 'ACTIVE', color: '#ECC94B', minPlayers: 25, minWaiting: 5 },
+    { level: 3, name: 'HOT', color: '#ED8936', minPlayers: 50, minWaiting: 10 },
+    { level: 4, name: 'VERY HOT', color: '#F56565', minPlayers: 75, minWaiting: 15 },
+    { level: 5, name: 'RED HOT', color: '#E53E3E', minPlayers: 100, minWaiting: 20 },
+];
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 📍 CLUB LOCATION
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export interface ClubLocation {
+    club_id: string;
+    latitude: number;
+    longitude: number;
+    city?: string;
+    country?: string;
+    timezone?: string;
+}
+
+export interface ClubChallenge {
+    id: string;
+    club_id: string;
+    title: string;
+    description: string;
+    reward_chips: number;
+    reward_diamonds?: number;
+    starts_at: string;
+    ends_at: string;
+    is_active: boolean;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 🎓 TRAINING SYSTEM
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export interface TrainingSession {
+    id: string;
+    user_id: string;
+    club_id?: string;
+    level: number;
+    status: TrainingStatus;
+    score: number;
+    questions_attempted: number;
+    correct_answers: number;
+    time_remaining?: number;
+    created_at?: string;
+    completed_at?: string;
+}
+
+export type TrainingStatus = 'active' | 'paused' | 'complete' | 'failed' | 'abandoned' | 'idle';
+
+export type TrainingDifficulty = 'easy' | 'medium' | 'hard' | 'expert' | 'master';
+
+export interface TrainingLevel {
+    level: number;
+    name: string;
+    description: string;
+    timer_seconds: number;
+    difficulty: TrainingDifficulty;
+    min_questions: number;
+    mastery_threshold: number;
+}
+
+export const TRAINING_LEVELS: TrainingLevel[] = [
+    { level: 1, name: 'Foundations', description: 'Basic pre-flop scenarios', timer_seconds: 30, difficulty: 'easy', min_questions: 20, mastery_threshold: 0.85 },
+    { level: 2, name: 'Position Play', description: 'Positional awareness', timer_seconds: 28, difficulty: 'easy', min_questions: 20, mastery_threshold: 0.85 },
+    { level: 3, name: 'Bet Sizing', description: 'Optimal bet sizes', timer_seconds: 25, difficulty: 'medium', min_questions: 20, mastery_threshold: 0.85 },
+    { level: 4, name: 'C-Bet Strategy', description: 'Continuation betting', timer_seconds: 22, difficulty: 'medium', min_questions: 20, mastery_threshold: 0.85 },
+    { level: 5, name: 'Turn Decisions', description: 'Complex turn strategy', timer_seconds: 20, difficulty: 'medium', min_questions: 20, mastery_threshold: 0.85 },
+    { level: 6, name: 'River Play', description: 'River value & bluffs', timer_seconds: 18, difficulty: 'hard', min_questions: 20, mastery_threshold: 0.85 },
+    { level: 7, name: '3-Bet Pots', description: 'Navigating 3-bet pots', timer_seconds: 15, difficulty: 'hard', min_questions: 20, mastery_threshold: 0.85 },
+    { level: 8, name: 'Multi-Way Pots', description: 'Multi-way dynamics', timer_seconds: 12, difficulty: 'expert', min_questions: 20, mastery_threshold: 0.85 },
+    { level: 9, name: 'MTT Strategy', description: 'Tournament ICM', timer_seconds: 10, difficulty: 'expert', min_questions: 20, mastery_threshold: 0.85 },
+    { level: 10, name: 'Elite GTO', description: 'Solver-level play', timer_seconds: 8, difficulty: 'master', min_questions: 20, mastery_threshold: 0.85 },
+];
+
+export const MASTERY_GATE_THRESHOLD = 0.85; // 85% accuracy to unlock next level
+export const MASTERY_MIN_QUESTIONS = 20; // Minimum questions to evaluate mastery
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 📊 ARENA STATS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export interface ArenaStats {
+    total_clubs: number;
+    active_tables: number;
+    active_players: number;
+    total_hands_24h: number;
+    biggest_pot_24h: number;
+    training_sessions_active: number;
+}

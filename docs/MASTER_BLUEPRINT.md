@@ -188,9 +188,9 @@ HydraService.ts
 ### Lobby Components
 | Component | Status | Purpose |
 |-----------|--------|---------|
-| `CashTableList.tsx` | 🔧 | Available cash games |
-| `TournamentList.tsx` | 🔧 | Scheduled tournaments |
-| `RingGameFilter.tsx` | ❌ | Stakes/variant filter |
+| `CashTableList.tsx` | ✅ | Available cash games |
+| `TournamentList.tsx` | ✅ | Scheduled tournaments |
+| `RingGameFilter.tsx` | ✅ | Stakes/variant filter |
 | `QuickSeat.tsx` | ✅ | One-click buy-in |
 
 ---

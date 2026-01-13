@@ -277,7 +277,7 @@ export interface Tournament {
     created_at: string;
 }
 
-export type TournamentType = 'sng' | 'mtt' | 'satellite';
+export type TournamentType = 'sng' | 'mtt' | 'satellite' | 'spin' | 'bounty' | 'mystery_bounty' | 'progressive_bounty';
 export type TournamentStatus = 'scheduled' | 'registering' | 'running' | 'paused' | 'finished' | 'cancelled';
 
 export interface BlindLevel {

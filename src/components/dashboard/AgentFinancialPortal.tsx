@@ -39,7 +39,7 @@ export const AgentFinancialPortal: React.FC<AgentPortalProps> = ({ agentId }) =>
             playerBal: data.player_wallet_balance,
             promoBal: data.promo_wallet_balance,
             creditLimit: data.credit_limit,
-            debt: calculatedDebt
+            debt: calculatedDebt.debtOwed
         });
     };
 

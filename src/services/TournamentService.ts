@@ -23,9 +23,55 @@ export interface PayoutStructure {
     percentage: number;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// TOURNAMENT TYPES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Tournament Types:
+ * - sng: Sit & Go (starts when full)
+ * - mtt: Multi-Table Tournament (scheduled start)
+ * - satellite: Wins seats to bigger tournaments
+ * - spin: Spin & Go (random multiplier prize pools)
+ * - bounty: Fixed bounty per knockout
+ * - mystery_bounty: Hidden bounty revealed on knockout
+ * - progressive_bounty: Half bounty to knocker, half added to their head
+ */
+export type TournamentType =
+    | 'sng'
+    | 'mtt'
+    | 'satellite'
+    | 'spin'
+    | 'bounty'
+    | 'mystery_bounty'
+    | 'progressive_bounty';
+
+export interface BountyConfig {
+    bountyType: 'fixed' | 'mystery' | 'progressive';
+    baseBounty: number; // Starting bounty per player
+    mysteryTiers?: MysteryBountyTier[]; // For mystery bounties
+    progressiveStartLevel?: number; // When progressive bounties start
+}
+
+export interface MysteryBountyTier {
+    minMultiplier: number;
+    maxMultiplier: number;
+    probability: number; // Percentage chance
+}
+
+export interface SpinConfig {
+    possibleMultipliers: SpinMultiplier[];
+}
+
+export interface SpinMultiplier {
+    multiplier: number; // e.g., 2, 3, 5, 10, 25, 120, 10000
+    probability: number; // Percentage chance
+    isPremium?: boolean; // Special handling for huge multipliers
+}
+
 export interface TournamentConfig {
     name: string;
-    type: 'sng' | 'mtt' | 'satellite';
+    type: TournamentType;
     buyIn: number;
     rake: number;
     startingStack: number;
@@ -35,6 +81,8 @@ export interface TournamentConfig {
     payoutStructure: PayoutStructure[];
     lateRegistrationLevels: number;
     startTime?: Date;
+
+    // Rebuy/Add-on
     isRebuy: boolean;
     rebuyLevels?: number;
     rebuyChips?: number;
@@ -42,6 +90,18 @@ export interface TournamentConfig {
     addOnAvailable: boolean;
     addOnChips?: number;
     addOnCost?: number;
+
+    // Bounty Configuration
+    bountyConfig?: BountyConfig;
+
+    // Spin Configuration
+    spinConfig?: SpinConfig;
+
+    // Satellite Target
+    satelliteTarget?: {
+        tournamentId: string;
+        seatsAwarded: number;
+    };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -122,6 +182,74 @@ export const PAYOUT_STRUCTURES = {
         { place: 10, percentage: 3.5 },
     ],
 };
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SPIN CONFIGURATIONS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export const SPIN_MULTIPLIERS: Record<string, SpinMultiplier[]> = {
+    standard: [
+        { multiplier: 2, probability: 75.0 },
+        { multiplier: 3, probability: 15.0 },
+        { multiplier: 5, probability: 7.0 },
+        { multiplier: 10, probability: 2.5 },
+        { multiplier: 25, probability: 0.4 },
+        { multiplier: 120, probability: 0.09, isPremium: true },
+        { multiplier: 10000, probability: 0.01, isPremium: true },
+    ],
+    hyper: [
+        { multiplier: 2, probability: 65.0 },
+        { multiplier: 4, probability: 20.0 },
+        { multiplier: 6, probability: 10.0 },
+        { multiplier: 12, probability: 4.0 },
+        { multiplier: 50, probability: 0.9 },
+        { multiplier: 240, probability: 0.09, isPremium: true },
+        { multiplier: 12000, probability: 0.01, isPremium: true },
+    ],
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// BOUNTY CONFIGURATIONS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export const BOUNTY_PRESETS: Record<string, BountyConfig> = {
+    fixed: {
+        bountyType: 'fixed',
+        baseBounty: 5, // 50% of buy-in typically goes to bounty
+    },
+    progressive: {
+        bountyType: 'progressive',
+        baseBounty: 2.5, // 25% of buy-in as starting bounty
+        progressiveStartLevel: 1,
+    },
+    mystery: {
+        bountyType: 'mystery',
+        baseBounty: 10,
+        mysteryTiers: [
+            { minMultiplier: 1, maxMultiplier: 1, probability: 60 },
+            { minMultiplier: 2, maxMultiplier: 2, probability: 25 },
+            { minMultiplier: 5, maxMultiplier: 5, probability: 10 },
+            { minMultiplier: 10, maxMultiplier: 10, probability: 4 },
+            { minMultiplier: 50, maxMultiplier: 50, probability: 0.9 },
+            { minMultiplier: 500, maxMultiplier: 500, probability: 0.1 },
+        ],
+    },
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// HYPER-TURBO STRUCTURE (for Spins)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export const SPIN_BLIND_STRUCTURE: BlindLevel[] = [
+    { level: 1, smallBlind: 10, bigBlind: 20, ante: 0, durationMinutes: 2 },
+    { level: 2, smallBlind: 20, bigBlind: 40, ante: 0, durationMinutes: 2 },
+    { level: 3, smallBlind: 30, bigBlind: 60, ante: 0, durationMinutes: 2 },
+    { level: 4, smallBlind: 50, bigBlind: 100, ante: 0, durationMinutes: 2 },
+    { level: 5, smallBlind: 75, bigBlind: 150, ante: 0, durationMinutes: 2 },
+    { level: 6, smallBlind: 100, bigBlind: 200, ante: 0, durationMinutes: 2 },
+    { level: 7, smallBlind: 150, bigBlind: 300, ante: 0, durationMinutes: 2 },
+    { level: 8, smallBlind: 250, bigBlind: 500, ante: 0, durationMinutes: 2 },
+];
 
 // Demo tournaments
 const DEMO_TOURNAMENTS: Tournament[] = [
@@ -944,6 +1072,207 @@ class TournamentService {
         // via the tournament_payouts table populated during eliminations
 
         return { success: true };
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // SPIN & GO
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Spin the multiplier wheel for a Spin & Go
+     */
+    spinMultiplier(config: SpinMultiplier[]): { multiplier: number; isPremium: boolean } {
+        const random = Math.random() * 100;
+        let cumulative = 0;
+
+        for (const tier of config) {
+            cumulative += tier.probability;
+            if (random <= cumulative) {
+                return {
+                    multiplier: tier.multiplier,
+                    isPremium: tier.isPremium || false,
+                };
+            }
+        }
+
+        // Fallback to lowest multiplier
+        return { multiplier: config[0].multiplier, isPremium: false };
+    }
+
+    /**
+     * Create and start a Spin & Go
+     */
+    async createSpin(clubId: string, buyIn: number, rake: number): Promise<Tournament> {
+        const spinResult = this.spinMultiplier(SPIN_MULTIPLIERS.standard);
+        const prizePool = (buyIn - rake) * 3 * spinResult.multiplier;
+
+        const config: TournamentConfig = {
+            name: `Spin & Go ${buyIn}`,
+            type: 'spin',
+            buyIn,
+            rake,
+            startingStack: 500,
+            maxPlayers: 3,
+            minPlayers: 3,
+            blindStructure: SPIN_BLIND_STRUCTURE,
+            payoutStructure: [{ place: 1, percentage: 100 }], // Winner takes all
+            lateRegistrationLevels: 0,
+            isRebuy: false,
+            addOnAvailable: false,
+            spinConfig: {
+                possibleMultipliers: SPIN_MULTIPLIERS.standard,
+            },
+        };
+
+        const tournament = await this.createTournament(clubId, config);
+
+        // Update with actual prize pool
+        if (!isDemoMode) {
+            await supabase
+                .from('tournaments')
+                .update({
+                    prize_pool: prizePool,
+                    spin_multiplier: spinResult.multiplier,
+                    is_premium_spin: spinResult.isPremium,
+                })
+                .eq('id', tournament.id);
+        }
+
+        return { ...tournament, prize_pool: prizePool };
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // BOUNTY TOURNAMENTS
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Process bounty collection on elimination
+     */
+    async collectBounty(
+        tournamentId: string,
+        eliminatedPlayerId: string,
+        collectorPlayerId: string
+    ): Promise<{ bountyAmount: number; collectorNewBounty?: number }> {
+        const tournament = await this.getTournament(tournamentId);
+        if (!tournament) throw new Error('Tournament not found');
+
+        // @ts-ignore - Get bounty config
+        const bountyConfig = tournament.bounty_config as BountyConfig | undefined;
+        if (!bountyConfig) {
+            return { bountyAmount: 0 };
+        }
+
+        // Get eliminated player's bounty
+        const { data: eliminatedPlayer } = await supabase
+            .from('tournament_players')
+            .select('current_bounty')
+            .eq('tournament_id', tournamentId)
+            .eq('user_id', eliminatedPlayerId)
+            .single();
+
+        const bountyAmount = eliminatedPlayer?.current_bounty || bountyConfig.baseBounty;
+
+        if (bountyConfig.bountyType === 'progressive') {
+            // Progressive: 50% to collector, 50% added to collector's head
+            const collectorPortion = Math.floor(bountyAmount / 2);
+            const addedToHead = bountyAmount - collectorPortion;
+
+            // Get collector's current bounty
+            const { data: collector } = await supabase
+                .from('tournament_players')
+                .select('current_bounty')
+                .eq('tournament_id', tournamentId)
+                .eq('user_id', collectorPlayerId)
+                .single();
+
+            const newCollectorBounty = (collector?.current_bounty || bountyConfig.baseBounty) + addedToHead;
+
+            // Update collector's bounty
+            await supabase
+                .from('tournament_players')
+                .update({ current_bounty: newCollectorBounty })
+                .eq('tournament_id', tournamentId)
+                .eq('user_id', collectorPlayerId);
+
+            // Record bounty payout
+            await supabase
+                .from('tournament_bounties')
+                .insert({
+                    tournament_id: tournamentId,
+                    eliminated_player_id: eliminatedPlayerId,
+                    collector_player_id: collectorPlayerId,
+                    bounty_amount: collectorPortion,
+                    added_to_collector_bounty: addedToHead,
+                });
+
+            return { bountyAmount: collectorPortion, collectorNewBounty: newCollectorBounty };
+        } else if (bountyConfig.bountyType === 'mystery') {
+            // Mystery: Reveal hidden bounty value
+            const mysteryValue = this.rollMysteryBounty(bountyConfig);
+
+            await supabase
+                .from('tournament_bounties')
+                .insert({
+                    tournament_id: tournamentId,
+                    eliminated_player_id: eliminatedPlayerId,
+                    collector_player_id: collectorPlayerId,
+                    bounty_amount: mysteryValue,
+                    is_mystery_revealed: true,
+                });
+
+            return { bountyAmount: mysteryValue };
+        } else {
+            // Fixed bounty
+            await supabase
+                .from('tournament_bounties')
+                .insert({
+                    tournament_id: tournamentId,
+                    eliminated_player_id: eliminatedPlayerId,
+                    collector_player_id: collectorPlayerId,
+                    bounty_amount: bountyAmount,
+                });
+
+            return { bountyAmount };
+        }
+    }
+
+    /**
+     * Roll mystery bounty value
+     */
+    rollMysteryBounty(config: BountyConfig): number {
+        if (!config.mysteryTiers) return config.baseBounty;
+
+        const random = Math.random() * 100;
+        let cumulative = 0;
+
+        for (const tier of config.mysteryTiers) {
+            cumulative += tier.probability;
+            if (random <= cumulative) {
+                // Random value within the tier range
+                const multiplier = tier.minMultiplier === tier.maxMultiplier
+                    ? tier.minMultiplier
+                    : Math.floor(Math.random() * (tier.maxMultiplier - tier.minMultiplier + 1)) + tier.minMultiplier;
+                return config.baseBounty * multiplier;
+            }
+        }
+
+        return config.baseBounty;
+    }
+
+    /**
+     * Get total bounties won by a player in a tournament
+     */
+    async getPlayerBounties(tournamentId: string, playerId: string): Promise<number> {
+        if (isDemoMode) return 50;
+
+        const { data, error } = await supabase
+            .from('tournament_bounties')
+            .select('bounty_amount')
+            .eq('tournament_id', tournamentId)
+            .eq('collector_player_id', playerId);
+
+        if (error) return 0;
+        return (data || []).reduce((sum, b) => sum + b.bounty_amount, 0);
     }
 }
 

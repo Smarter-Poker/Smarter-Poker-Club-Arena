@@ -288,19 +288,32 @@ interface CreditAccount {
 
 ## 🏆 TIER 8: TOURNAMENT SYSTEM
 
+### Tournament Types
+| Type | Description | Status |
+|------|-------------|--------|
+| `sng` | Sit & Go (starts when full) | ✅ |
+| `mtt` | Multi-Table Tournament | ✅ |
+| `satellite` | Wins seats to bigger events | ✅ |
+| `spin` | Spin & Go (random multiplier) | ✅ |
+| `bounty` | Fixed bounty per knockout | ✅ |
+| `mystery_bounty` | Hidden bounty revealed on KO | ✅ |
+| `progressive_bounty` | 50/50 split on bounties | ✅ |
+
 ### Current Status
-- ✅ Tournament creation (SNG, MTT)
-- ✅ Blind structures (Turbo, Regular, Deep)
+- ✅ Tournament creation (all 7 types)
+- ✅ Blind structures (Turbo, Regular, Deep, Hyper for Spins)
 - ✅ Payout structures (6, 9, 18+ player)
 - ✅ Player registration/unregistration
 - ✅ Tournament start logic
 - ✅ Late registration timer
 - ✅ Rebuy/Add-on execution
-- ✅ Table balancing
+- ✅ Table balancing & merging
 - ✅ Final table consolidation
 - ✅ Real-time event broadcasting
-- 🚧 In-tournament chat
-- 🚧 Elimination animations
+- ✅ Elimination animations (EliminationOverlay)
+- ✅ Spin multiplier wheel
+- ✅ Bounty collection (fixed/mystery/progressive)
+- ❌ No tournament chat (cash games only)
 
 ### Tournament Flow
 ```

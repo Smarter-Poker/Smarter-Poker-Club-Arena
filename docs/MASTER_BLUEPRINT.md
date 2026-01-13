@@ -161,7 +161,7 @@ HydraService.ts
 | `UnionsPage` | ✅ | `/unions` | Settlement view |
 | `UnionDetailPage` | 🔧 | `/unions/:id` | Financial dashboard |
 | `AgentPage` | ✅ | `/agent` | Triple-wallet UI |
-| `ProfilePage` | 🔧 | `/profile` | XP integration |
+| `ProfilePage` | ✅ | `/profile` | XP progression, achievements, stats |
 | `SettingsPage` | 🔧 | `/settings` | Sound, display |
 
 ### Table Components

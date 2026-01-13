@@ -1,127 +1,413 @@
 /**
- * 🎰 CLUB ENGINE — Profile Page Styles
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * 🎰 PROFILE PAGE — Premium Styles
+ * ═══════════════════════════════════════════════════════════════════════════════
  */
 
 .page {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-8);
+    min-height: 100vh;
+    padding: 2rem;
+    background: linear-gradient(180deg, var(--bg-darker) 0%, var(--bg-dark) 100%);
 }
 
-/* Profile Header */
+/* ─────────────────────────────────────────────────────────────────────────────
+   PROFILE HEADER
+   ───────────────────────────────────────────────────────────────────────────── */
+
 .profileHeader {
     display: flex;
     align-items: center;
-    gap: var(--space-6);
-    padding: var(--space-8);
-    background: var(--gradient-card);
-    border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-2xl);
+    gap: 2rem;
+    padding: 2rem;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.02) 100%);
+    border-radius: 1.5rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    margin-bottom: 2rem;
 }
 
-.avatar {
+.avatarContainer {
+    position: relative;
+    flex-shrink: 0;
+}
+
+.avatar,
+.avatarDefault {
     width: 100px;
     height: 100px;
-    font-size: 48px;
+    border-radius: 50%;
+    border: 3px solid var(--accent);
+    box-shadow: 0 0 30px rgba(var(--accent-rgb), 0.4);
+}
+
+.avatarDefault {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: var(--club-blue-dim);
-    border: 3px solid var(--club-blue);
-    border-radius: 50%;
-    position: relative;
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: #fff;
 }
 
 .vipBadge {
     position: absolute;
-    bottom: -8px;
+    bottom: -0.5rem;
     left: 50%;
     transform: translateX(-50%);
-    font-size: var(--text-xs);
+    padding: 0.25rem 0.75rem;
+    border-radius: 1rem;
+    font-size: 0.65rem;
     font-weight: 700;
-    padding: var(--space-1) var(--space-2);
-    background: var(--vip-gold-gradient);
-    color: var(--club-black);
-    border-radius: var(--radius-full);
-    white-space: nowrap;
+    letter-spacing: 0.1em;
+    color: #000;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
 }
 
 .userInfo {
     flex: 1;
 }
 
-.username {
-    font-size: var(--text-3xl);
-    margin-bottom: var(--space-1);
+.displayName {
+    font-size: 1.75rem;
+    font-weight: 700;
+    margin: 0 0 0.25rem;
+    color: #fff;
+}
+
+.playerNumber {
+    font-size: 0.875rem;
+    color: var(--accent);
+    font-weight: 600;
+    margin: 0 0 0.5rem;
 }
 
 .memberSince {
-    color: var(--text-tertiary);
+    font-size: 0.8rem;
+    color: var(--text-muted);
     margin: 0;
 }
 
-/* Stats Section */
-.statsSection {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-4);
+.headerActions {
+    flex-shrink: 0;
 }
 
-.sectionTitle {
-    font-size: var(--text-xl);
+.editButton {
+    padding: 0.75rem 1.5rem;
+    background: transparent;
+    border: 1px solid var(--accent);
+    border-radius: 0.5rem;
+    color: var(--accent);
     font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.editButton:hover {
+    background: var(--accent);
+    color: #000;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   XP SECTION
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.xpSection {
+    margin-bottom: 2rem;
+}
+
+.xpContainer {
+    padding: 1.5rem 2rem;
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(16, 185, 129, 0.05) 100%);
+    border-radius: 1rem;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.xpHeader {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 0.75rem;
+}
+
+.xpLevel {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #10b981;
+}
+
+.xpTier {
+    padding: 0.25rem 0.75rem;
+    background: rgba(16, 185, 129, 0.2);
+    border-radius: 1rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #10b981;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+}
+
+.xpCount {
+    margin-left: auto;
+    font-size: 0.875rem;
+    color: var(--text-muted);
+}
+
+.xpBar {
+    height: 8px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.xpFill {
+    height: 100%;
+    background: linear-gradient(90deg, #10b981 0%, #34d399 100%);
+    border-radius: 4px;
+    transition: width 0.5s ease;
+}
+
+.streakInfo {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+    font-size: 0.875rem;
+    color: #fbbf24;
+}
+
+.streakIcon {
+    font-size: 1rem;
+}
+
+.streakMultiplier {
+    margin-left: auto;
+    font-weight: 700;
+    color: #f59e0b;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   TAB NAVIGATION
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.tabNav {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.tab {
+    flex: 1;
+    padding: 1rem;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 0.75rem;
+    color: var(--text-muted);
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.tab:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: #fff;
+}
+
+.activeTab {
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
+    border-color: var(--accent);
+    color: #000;
+}
+
+.tabContent {
+    min-height: 400px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   STATS
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.statsContainer {
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+}
+
+.statsGroup h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    margin: 0 0 1rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
 }
 
 .statsGrid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: var(--space-4);
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 1rem;
 }
 
 .statCard {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: var(--space-2);
-    padding: var(--space-6);
-    background: var(--club-surface);
-    border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-xl);
+    gap: 0.5rem;
+    padding: 1.25rem;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.08);
     text-align: center;
+    transition: all 0.2s ease;
+}
+
+.statCard:hover {
+    background: rgba(255, 255, 255, 0.08);
+    transform: translateY(-2px);
 }
 
 .statValue {
-    font-size: var(--text-2xl);
+    font-size: 1.5rem;
     font-weight: 700;
-    font-family: var(--font-mono);
-    color: var(--text-primary);
+    color: #fff;
 }
 
 .statValue.positive {
-    color: var(--success-green);
+    color: #10b981;
 }
 
 .statValue.negative {
-    color: var(--danger-red);
+    color: #ef4444;
 }
 
 .statLabel {
-    font-size: var(--text-xs);
-    font-weight: 600;
+    font-size: 0.75rem;
+    color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: var(--text-tertiary);
 }
 
-/* History Section */
-.historySection {
+/* ─────────────────────────────────────────────────────────────────────────────
+   ACHIEVEMENTS
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.achievementsContainer {
     display: flex;
     flex-direction: column;
-    gap: var(--space-4);
+    gap: 1.5rem;
 }
 
-.historyList {
-    min-height: 200px;
+.achievementsSummary {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    font-size: 1.25rem;
+    color: var(--text-muted);
+}
+
+.achievementsSummary span:first-child {
+    font-size: 2rem;
+    font-weight: 700;
+    color: #fbbf24;
+}
+
+.achievementsGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1rem;
+}
+
+.achievementCard {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 1rem 1.25rem;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    transition: all 0.2s ease;
+}
+
+.achievementCard.unlocked {
+    background: linear-gradient(135deg, rgba(251, 191, 36, 0.1) 0%, rgba(251, 191, 36, 0.05) 100%);
+    border-color: rgba(251, 191, 36, 0.3);
+}
+
+.achievementCard.locked {
+    opacity: 0.5;
+}
+
+.achievementIcon {
+    font-size: 2rem;
+    flex-shrink: 0;
+}
+
+.achievementInfo {
+    flex: 1;
+    min-width: 0;
+}
+
+.achievementInfo h4 {
+    margin: 0 0 0.25rem;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #fff;
+}
+
+.achievementInfo p {
+    margin: 0;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.achievementProgress {
+    position: relative;
+    height: 6px;
+    margin-top: 0.5rem;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.achievementProgressFill {
+    height: 100%;
+    background: linear-gradient(90deg, #fbbf24 0%, #f59e0b 100%);
+    border-radius: 3px;
+}
+
+.achievementProgress span {
+    position: absolute;
+    right: 0;
+    top: -1.25rem;
+    font-size: 0.65rem;
+    color: var(--text-muted);
+}
+
+.achievementDate {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+.achievementComplete {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    background: #10b981;
+    border-radius: 50%;
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: #fff;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   HISTORY
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.historyContainer {
+    min-height: 300px;
 }
 
 .emptyHistory {
@@ -129,32 +415,72 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: var(--space-3);
-    padding: var(--space-12);
-    background: var(--club-surface);
-    border: 1px dashed var(--border-subtle);
-    border-radius: var(--radius-xl);
+    gap: 1rem;
+    padding: 4rem 2rem;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 1rem;
+    border: 1px dashed rgba(255, 255, 255, 0.1);
     text-align: center;
 }
 
-.emptyHistory span {
-    font-size: 48px;
+.emptyIcon {
+    font-size: 4rem;
     opacity: 0.5;
 }
 
 .emptyHistory p {
-    color: var(--text-tertiary);
+    color: var(--text-muted);
     margin: 0;
 }
 
-/* Responsive */
-@media (max-width: 640px) {
+.playButton {
+    padding: 0.75rem 2rem;
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
+    border: none;
+    border-radius: 0.5rem;
+    color: #000;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.playButton:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 20px rgba(var(--accent-rgb), 0.4);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   RESPONSIVE
+   ───────────────────────────────────────────────────────────────────────────── */
+
+@media (max-width: 768px) {
+    .page {
+        padding: 1rem;
+    }
+
     .profileHeader {
         flex-direction: column;
         text-align: center;
+        gap: 1.5rem;
+    }
+
+    .userInfo {
+        text-align: center;
+    }
+
+    .tabNav {
+        flex-wrap: wrap;
+    }
+
+    .tab {
+        flex: 1 1 calc(33% - 0.5rem);
     }
 
     .statsGrid {
         grid-template-columns: repeat(2, 1fr);
+    }
+
+    .achievementsGrid {
+        grid-template-columns: 1fr;
     }
 }

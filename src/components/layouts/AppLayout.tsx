@@ -6,12 +6,22 @@
 import { Outlet, NavLink } from 'react-router-dom';
 import { useState } from 'react';
 import styles from './AppLayout.module.css';
+import ClubArenaWelcomeModal, { useClubArenaWelcome } from '../modals/ClubArenaWelcomeModal';
 
 export default function AppLayout() {
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+    const { showWelcome, isReady, acceptWelcome } = useClubArenaWelcome();
 
     return (
         <div className={styles.layout}>
+            {/* First-time Welcome Modal */}
+            {isReady && (
+                <ClubArenaWelcomeModal
+                    isOpen={showWelcome}
+                    onAccept={acceptWelcome}
+                />
+            )}
+
             {/* Header */}
             <header className={styles.header}>
                 <div className={styles.headerContent}>
@@ -110,3 +120,4 @@ export default function AppLayout() {
         </div>
     );
 }
+

@@ -1,0 +1,216 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * 🎰 CLUB ARENA WELCOME MODAL — Styles
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+
+.overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.9);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 1rem;
+}
+
+.modal {
+    width: 100%;
+    max-width: 480px;
+    background: linear-gradient(180deg, #1a1a2e 0%, #16162a 100%);
+    border-radius: 1.5rem;
+    border: 2px solid rgba(139, 92, 246, 0.5);
+    overflow: hidden;
+}
+
+.header {
+    padding: 1.5rem;
+    text-align: center;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.header h2 {
+    margin: 0;
+    font-size: 1.5rem;
+    color: #fff;
+    background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.content {
+    padding: 1.5rem;
+}
+
+.heroSection {
+    text-align: center;
+    margin-bottom: 1.5rem;
+}
+
+.heroIcon {
+    display: block;
+    font-size: 3rem;
+    margin-bottom: 0.5rem;
+}
+
+.heroSection h3 {
+    margin: 0;
+    font-size: 1.25rem;
+    color: #fff;
+}
+
+.disclaimer {
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.2) 0%, rgba(185, 28, 28, 0.2) 100%);
+    border: 1px solid rgba(239, 68, 68, 0.4);
+    border-radius: 0.75rem;
+    padding: 1rem;
+    margin-bottom: 1.5rem;
+    text-align: center;
+}
+
+.disclaimer p {
+    margin: 0;
+    color: #fca5a5;
+    font-size: 0.95rem;
+    line-height: 1.5;
+}
+
+.rules {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 0.75rem;
+    padding: 1.25rem;
+    margin-bottom: 1.5rem;
+}
+
+.rules h4 {
+    margin: 0 0 1rem;
+    color: #fff;
+    font-size: 0.95rem;
+}
+
+.rules ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.rules li {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.5rem 0;
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 0.85rem;
+    line-height: 1.5;
+}
+
+.bullet {
+    color: #10b981;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+.rules li strong {
+    color: #fff;
+}
+
+.infoBox {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    background: rgba(59, 130, 246, 0.1);
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    border-radius: 0.5rem;
+}
+
+.infoIcon {
+    font-size: 1.25rem;
+    flex-shrink: 0;
+}
+
+.infoBox p {
+    margin: 0;
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.infoBox a {
+    color: #60a5fa;
+    text-decoration: none;
+}
+
+.infoBox a:hover {
+    text-decoration: underline;
+}
+
+.footer {
+    padding: 1.5rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.checkbox {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    cursor: pointer;
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 0.9rem;
+}
+
+.checkbox input {
+    display: none;
+}
+
+.checkmark {
+    width: 22px;
+    height: 22px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-radius: 4px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.checkbox input:checked+.checkmark {
+    background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+    border-color: #8b5cf6;
+}
+
+.checkbox input:checked+.checkmark::after {
+    content: '✓';
+    color: #fff;
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+.enterButton {
+    width: 100%;
+    padding: 1rem;
+    background: linear-gradient(135deg, #4b5563 0%, #374151 100%);
+    border: none;
+    border-radius: 0.75rem;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 1.1rem;
+    font-weight: 700;
+    cursor: not-allowed;
+    transition: all 0.2s ease;
+}
+
+.enterButton:not(:disabled) {
+    background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+    color: #fff;
+    cursor: pointer;
+}
+
+.enterButton:not(:disabled):hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 24px rgba(139, 92, 246, 0.5);
+}

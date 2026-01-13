@@ -87,7 +87,7 @@ leaderboards (club_id, period, user_id, metric, value, rank)
 | **Rake Logic** | ✅ | `PokerEngine.ts` | % + cap, no-flop-no-drop |
 | **Hand Controller** | ✅ | `HandController.ts` | Full betting rounds |
 | **Bot Logic** | 🔧 | `BotLogic.ts` | Needs Hydra integration |
-| **OFC Pineapple** | ❌ | — | Open Face Chinese variant |
+| **OFC Pineapple** | ✅ | `OFCPineappleEngine.ts` | Full engine with Fantasyland |
 | **BBJ Detection** | ✅ | `BBJService.ts` | Quad 2s+ beaten trigger |
 
 ---
@@ -106,7 +106,7 @@ leaderboards (club_id, period, user_id, metric, value, rank)
 | **RakeService** | ✅ | Full waterfall engine | BBJ integration |
 | **CommissionService** | ✅ | Cascading hierarchy | Settlement integration |
 | **SettlementService** | ✅ | Weekly cycles, payouts | Full automation |
-| **CreditService** | 🔧 | Debt/invoice logic | — |
+| **CreditService** | ✅ | Full invoicing, payments, suspension | Auto-reinstatement |
 | **UnionService** | ✅ | CRUD + consolidation | Settlement reports |
 | **BBJService** | ✅ | Triple-Bank, payouts | Full implementation |
 | **LeaderboardService** | ✅ | Rankings, XP rewards | Multi-period |

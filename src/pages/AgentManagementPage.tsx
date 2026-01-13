@@ -31,7 +31,7 @@ interface Agent {
     playerBalance: number;
     promoBalance: number;
 
-    // Credit
+    // Credit (assigned directly by hierarchy)
     creditLimit: number;
     creditUsed: number;
     isPrepaid: boolean;
@@ -45,17 +45,6 @@ interface Agent {
     // Dates
     joinedAt: string;
     lastActiveAt: string;
-}
-
-interface CreditRequest {
-    id: string;
-    agentId: string;
-    agentName: string;
-    currentLimit: number;
-    requestedLimit: number;
-    reason: string;
-    status: 'pending' | 'approved' | 'rejected';
-    createdAt: string;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -127,40 +116,28 @@ const DEMO_AGENTS: Agent[] = [
     },
 ];
 
-const DEMO_CREDIT_REQUESTS: CreditRequest[] = [
-    {
-        id: 'cr1',
-        agentId: 'a2',
-        agentName: 'PokerPro',
-        currentLimit: 15000,
-        requestedLimit: 25000,
-        reason: 'Growing player base, need more liquidity for settlements',
-        status: 'pending',
-        createdAt: new Date(Date.now() - 86400000).toISOString(),
-    },
-];
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
 
-type TabType = 'agents' | 'credit-requests' | 'commissions' | 'payouts';
+type TabType = 'agents' | 'credit-limits' | 'commissions' | 'payouts';
 
 export default function AgentManagementPage() {
     const { clubId } = useParams<{ clubId: string }>();
     const navigate = useNavigate();
     const [activeTab, setActiveTab] = useState<TabType>('agents');
     const [agents, setAgents] = useState<Agent[]>(DEMO_AGENTS);
-    const [creditRequests, setCreditRequests] = useState<CreditRequest[]>(DEMO_CREDIT_REQUESTS);
     const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
     const [showAddModal, setShowAddModal] = useState(false);
+    const [editingLimit, setEditingLimit] = useState<string | null>(null);
+    const [newLimit, setNewLimit] = useState<number>(0);
 
     // Stats summary
     const totalAgents = agents.length;
     const activeAgents = agents.filter(a => a.status === 'active').length;
     const totalPlayers = agents.reduce((sum, a) => sum + a.totalPlayers, 0);
     const weeklyRake = agents.reduce((sum, a) => sum + a.weeklyRakeGenerated, 0);
-    const pendingRequests = creditRequests.filter(r => r.status === 'pending').length;
+    const totalCreditExtended = agents.reduce((sum, a) => sum + a.creditLimit, 0);
 
     // Format helpers
     const formatMoney = (amount: number) => amount.toLocaleString('en-US', { minimumFractionDigits: 2 });
@@ -174,23 +151,12 @@ export default function AgentManagementPage() {
         return 'healthy';
     };
 
-    const handleApproveRequest = (requestId: string) => {
-        setCreditRequests(prev => prev.map(r =>
-            r.id === requestId ? { ...r, status: 'approved' } : r
+    // Direct credit limit assignment
+    const handleSetCreditLimit = (agentId: string, limit: number) => {
+        setAgents(prev => prev.map(a =>
+            a.id === agentId ? { ...a, creditLimit: limit } : a
         ));
-        // Update agent's credit limit
-        const request = creditRequests.find(r => r.id === requestId);
-        if (request) {
-            setAgents(prev => prev.map(a =>
-                a.id === request.agentId ? { ...a, creditLimit: request.requestedLimit } : a
-            ));
-        }
-    };
-
-    const handleRejectRequest = (requestId: string) => {
-        setCreditRequests(prev => prev.map(r =>
-            r.id === requestId ? { ...r, status: 'rejected' } : r
-        ));
+        setEditingLimit(null);
     };
 
     const handleSuspendAgent = (agentId: string) => {
@@ -244,25 +210,25 @@ export default function AgentManagementPage() {
                         <span className={styles.summaryLabel}>Weekly Rake</span>
                     </div>
                 </div>
-                <div className={`${styles.summaryCard} ${pendingRequests > 0 ? styles.attention : ''}`}>
-                    <span className={styles.summaryIcon}>📋</span>
+                <div className={styles.summaryCard}>
+                    <span className={styles.summaryIcon}>💳</span>
                     <div>
-                        <span className={styles.summaryValue}>{pendingRequests}</span>
-                        <span className={styles.summaryLabel}>Pending Requests</span>
+                        <span className={styles.summaryValue}>${formatMoney(totalCreditExtended)}</span>
+                        <span className={styles.summaryLabel}>Credit Extended</span>
                     </div>
                 </div>
             </div>
 
             {/* Tab Navigation */}
             <nav className={styles.tabNav}>
-                {(['agents', 'credit-requests', 'commissions', 'payouts'] as TabType[]).map(tab => (
+                {(['agents', 'credit-limits', 'commissions', 'payouts'] as TabType[]).map(tab => (
                     <button
                         key={tab}
                         className={`${styles.tabButton} ${activeTab === tab ? styles.active : ''}`}
                         onClick={() => setActiveTab(tab)}
                     >
                         {tab === 'agents' && '👥 Agents'}
-                        {tab === 'credit-requests' && `📋 Credit Requests ${pendingRequests > 0 ? `(${pendingRequests})` : ''}`}
+                        {tab === 'credit-limits' && '💳 Credit Limits'}
                         {tab === 'commissions' && '💵 Commissions'}
                         {tab === 'payouts' && '📤 Payouts'}
                     </button>
@@ -376,51 +342,100 @@ export default function AgentManagementPage() {
                 )}
 
                 {/* ═══════════════════════════════════════════════════════════════════════════════ */}
-                {/* CREDIT REQUESTS TAB */}
+                {/* CREDIT LIMITS TAB — Direct Assignment */}
                 {/* ═══════════════════════════════════════════════════════════════════════════════ */}
-                {activeTab === 'credit-requests' && (
-                    <div className={styles.requestsList}>
-                        {creditRequests.length === 0 ? (
-                            <div className={styles.emptyState}>
-                                <span className={styles.emptyIcon}>📋</span>
-                                <p>No credit requests</p>
-                            </div>
-                        ) : (
-                            creditRequests.map(request => (
-                                <div key={request.id} className={`${styles.requestCard} ${styles[request.status]}`}>
-                                    <div className={styles.requestHeader}>
-                                        <h3>{request.agentName}</h3>
-                                        <span className={`${styles.badge} ${styles[request.status]}`}>
-                                            {request.status}
-                                        </span>
-                                    </div>
-                                    <div className={styles.requestDetails}>
-                                        <div className={styles.requestAmount}>
-                                            <span className={styles.currentLimit}>${formatMoney(request.currentLimit)}</span>
-                                            <span className={styles.arrow}>→</span>
-                                            <span className={styles.requestedLimit}>${formatMoney(request.requestedLimit)}</span>
-                                        </div>
-                                        <p className={styles.requestReason}>"{request.reason}"</p>
-                                    </div>
-                                    {request.status === 'pending' && (
-                                        <div className={styles.requestActions}>
-                                            <button
-                                                className={`${styles.actionBtn} ${styles.approve}`}
-                                                onClick={() => handleApproveRequest(request.id)}
-                                            >
-                                                ✓ Approve
-                                            </button>
-                                            <button
-                                                className={`${styles.actionBtn} ${styles.reject}`}
-                                                onClick={() => handleRejectRequest(request.id)}
-                                            >
-                                                ✗ Reject
-                                            </button>
-                                        </div>
-                                    )}
-                                </div>
-                            ))
-                        )}
+                {activeTab === 'credit-limits' && (
+                    <div className={styles.creditLimitsSection}>
+                        <div className={styles.creditHierarchy}>
+                            <h2>💳 Credit Limit Assignment</h2>
+                            <p>Assign credit limits directly. Clubs set limits for Agents. Agents set limits for Sub-Agents.</p>
+                        </div>
+
+                        <table className={styles.creditTable}>
+                            <thead>
+                                <tr>
+                                    <th>Agent</th>
+                                    <th>Role</th>
+                                    <th>Assigned By</th>
+                                    <th>Credit Limit</th>
+                                    <th>Used</th>
+                                    <th>Utilization</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {agents.map(agent => (
+                                    <tr key={agent.id} className={agent.status !== 'active' ? styles.inactive : ''}>
+                                        <td className={styles.agentCell}>{agent.displayName}</td>
+                                        <td>
+                                            <span className={`${styles.badge} ${styles[agent.role]}`}>
+                                                {agent.role === 'agent' ? 'Agent' : 'Sub-Agent'}
+                                            </span>
+                                        </td>
+                                        <td className={styles.assignedBy}>
+                                            {agent.role === 'agent' ? '🏛️ Club' : `👤 ${agent.parentAgentName || 'Agent'}`}
+                                        </td>
+                                        <td>
+                                            {editingLimit === agent.id ? (
+                                                <input
+                                                    type="number"
+                                                    className={styles.limitInput}
+                                                    value={newLimit}
+                                                    onChange={(e) => setNewLimit(Number(e.target.value))}
+                                                    autoFocus
+                                                />
+                                            ) : (
+                                                <span className={styles.limitAmount}>${formatMoney(agent.creditLimit)}</span>
+                                            )}
+                                        </td>
+                                        <td>${formatMoney(agent.creditUsed)}</td>
+                                        <td>
+                                            <span className={`${styles.utilBadge} ${styles[getUtilizationStatus(agent)]}`}>
+                                                {getCreditUtilization(agent).toFixed(0)}%
+                                            </span>
+                                        </td>
+                                        <td>
+                                            {editingLimit === agent.id ? (
+                                                <div className={styles.editActions}>
+                                                    <button
+                                                        className={`${styles.actionBtn} ${styles.approve}`}
+                                                        onClick={() => handleSetCreditLimit(agent.id, newLimit)}
+                                                    >
+                                                        ✓ Save
+                                                    </button>
+                                                    <button
+                                                        className={styles.actionBtn}
+                                                        onClick={() => setEditingLimit(null)}
+                                                    >
+                                                        ✗
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <button
+                                                    className={styles.actionBtn}
+                                                    onClick={() => {
+                                                        setEditingLimit(agent.id);
+                                                        setNewLimit(agent.creditLimit);
+                                                    }}
+                                                >
+                                                    ✏️ Edit
+                                                </button>
+                                            )}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+
+                        <div className={styles.creditNote}>
+                            <h3>📋 Credit Assignment Rules</h3>
+                            <ul>
+                                <li><strong>Club → Agent:</strong> Club Owner assigns credit limits when creating an agent</li>
+                                <li><strong>Agent → Sub-Agent:</strong> Agents assign limits to their sub-agents (cannot exceed their own limit)</li>
+                                <li><strong>Adjustable:</strong> Limits can be changed anytime by the assigning level</li>
+                                <li><strong>Suspension:</strong> Agents at 90%+ utilization should be reviewed</li>
+                            </ul>
+                        </div>
                     </div>
                 )}
 

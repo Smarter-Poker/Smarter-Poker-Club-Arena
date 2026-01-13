@@ -1,6 +1,8 @@
 /**
- * ♠ CLUB ARENA — Union Detail Page
- * Detailed view of a poker union network
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * 🎰 CLUB ENGINE — Union Detail Page
+ * Complete union management with financials and settlements
+ * ═══════════════════════════════════════════════════════════════════════════════
  */
 
 import { useEffect, useState } from 'react';
@@ -11,17 +13,69 @@ import { clubService } from '../services/ClubService';
 import { useUserStore } from '../stores/useUserStore';
 import { isDemoMode } from '../lib/supabase';
 import type { PokerTable, Club } from '../types/database.types';
-import './UnionDetailPage.css';
+import styles from './UnionDetailPage.module.css';
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TYPES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+interface SettlementRecord {
+    id: string;
+    periodStart: string;
+    periodEnd: string;
+    clubId: string;
+    clubName: string;
+    rakeGenerated: number;
+    unionShare: number;
+    status: 'pending' | 'paid' | 'overdue';
+    paidAt?: string;
+}
+
+interface FinancialSummary {
+    totalRakeThisPeriod: number;
+    unionRevenue: number;
+    pendingSettlements: number;
+    overdueAmount: number;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DEMO DATA
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const DEMO_SETTLEMENTS: SettlementRecord[] = [
+    { id: '1', periodStart: '2025-01-01', periodEnd: '2025-01-07', clubId: 'c1', clubName: 'Ace High Club', rakeGenerated: 2500, unionShare: 250, status: 'paid', paidAt: '2025-01-09' },
+    { id: '2', periodStart: '2025-01-01', periodEnd: '2025-01-07', clubId: 'c2', clubName: 'Royal Flush', rakeGenerated: 1800, unionShare: 180, status: 'paid', paidAt: '2025-01-08' },
+    { id: '3', periodStart: '2025-01-08', periodEnd: '2025-01-14', clubId: 'c1', clubName: 'Ace High Club', rakeGenerated: 3200, unionShare: 320, status: 'pending' },
+    { id: '4', periodStart: '2025-01-08', periodEnd: '2025-01-14', clubId: 'c2', clubName: 'Royal Flush', rakeGenerated: 2100, unionShare: 210, status: 'pending' },
+    { id: '5', periodStart: '2025-01-08', periodEnd: '2025-01-14', clubId: 'c3', clubName: 'Diamond Dogs', rakeGenerated: 950, unionShare: 95, status: 'overdue' },
+];
+
+const DEMO_SUMMARY: FinancialSummary = {
+    totalRakeThisPeriod: 6250,
+    unionRevenue: 625,
+    pendingSettlements: 530,
+    overdueAmount: 95,
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MAIN COMPONENT
+// ═══════════════════════════════════════════════════════════════════════════════
 
 export default function UnionDetailPage() {
     const { unionId } = useParams<{ unionId: string }>();
+    const { user } = useUserStore();
+
     const [union, setUnion] = useState<Union | null>(null);
     const [clubs, setClubs] = useState<UnionClub[]>([]);
     const [tables, setTables] = useState<PokerTable[]>([]);
     const [loading, setLoading] = useState(true);
+    const [activeTab, setActiveTab] = useState<'overview' | 'clubs' | 'tables' | 'financials'>('overview');
 
-    // Application State
-    const { user } = useUserStore();
+    // Financial state
+    const [settlements, setSettlements] = useState<SettlementRecord[]>([]);
+    const [financialSummary, setFinancialSummary] = useState<FinancialSummary | null>(null);
+
+    // Application state
     const [ownedClubs, setOwnedClubs] = useState<Club[]>([]);
     const [showClubSelector, setShowClubSelector] = useState(false);
     const [applying, setApplying] = useState(false);
@@ -35,9 +89,14 @@ export default function UnionDetailPage() {
                 const unionData = await unionService.getUnionById(unionId);
                 const clubsData = await unionService.getUnionClubs(unionId);
                 const tablesData = await tableService.getUnionTables(unionId);
+
                 setUnion(unionData);
                 setClubs(clubsData);
                 setTables(tablesData);
+
+                // Demo financial data
+                setSettlements(DEMO_SETTLEMENTS);
+                setFinancialSummary(DEMO_SUMMARY);
             } catch (err) {
                 console.error(err);
             } finally {
@@ -52,9 +111,7 @@ export default function UnionDetailPage() {
         if (!user) return;
 
         try {
-            // Get user's clubs
             const myClubs = await clubService.getMyClubs(user.id);
-            // Filter for owned clubs
             const owned = myClubs.filter(c => c.owner_id === user.id || isDemoMode);
 
             if (owned.length === 0) {
@@ -94,71 +151,66 @@ export default function UnionDetailPage() {
     };
 
     if (loading) {
-        return <div className="loader-container"><div className="loader-spinner" /></div>;
+        return (
+            <div className={styles.loading}>
+                <div className={styles.spinner} />
+                <p>Loading union...</p>
+            </div>
+        );
     }
 
     if (!union) {
         return (
-            <div className="error-container">
+            <div className={styles.error}>
                 <h2>Union Not Found</h2>
-                <Link to="/unions" className="btn btn-ghost">← Back to Unions</Link>
+                <Link to="/unions" className={styles.backLink}>← Back to Unions</Link>
             </div>
         );
     }
 
     return (
-        <div className="union-detail-page">
-            <Link to="/unions" className="back-link" style={{ display: 'block', marginBottom: '1rem' }}>
-                ← Back to Unions
-            </Link>
+        <div className={styles.page}>
+            <Link to="/unions" className={styles.backLink}>← Back to Unions</Link>
 
             {/* Hero Section */}
-            <header className="union-hero">
-                <div className="union-logo-large">{union.logo_url}</div>
-                <div className="union-hero-content">
+            <header className={styles.header}>
+                <div className={styles.unionAvatar}>
+                    {union.logo_url || union.name.charAt(0)}
+                </div>
+                <div className={styles.unionInfo}>
                     <h1>{union.name}</h1>
                     <p>{union.description}</p>
                 </div>
-                <div className="union-actions">
+                <div className={styles.headerActions}>
                     <button
-                        className="btn btn-primary btn-lg"
+                        className={styles.applyButton}
                         onClick={handleApplyClick}
                         disabled={applying}
                     >
                         {applying ? 'Applying...' : 'Apply to Join'}
                     </button>
-                    <button className="btn btn-ghost btn-lg">Contact Admin</button>
                 </div>
             </header>
 
             {/* Club Selector Modal */}
             {showClubSelector && (
-                <div className="modal-overlay" style={{
-                    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100
-                }} onClick={(e) => e.target === e.currentTarget && setShowClubSelector(false)}>
-                    <div className="modal-content" style={{ maxWidth: '400px', padding: '2rem', background: 'var(--surface-card)', borderRadius: '1rem', width: '90%' }}>
-                        <h2 style={{ marginTop: 0 }}>Select Club</h2>
-                        <p style={{ marginBottom: '1rem', color: 'var(--text-secondary)' }}>Which club would you like to apply with?</p>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <div className={styles.modalOverlay} onClick={(e) => e.target === e.currentTarget && setShowClubSelector(false)}>
+                    <div className={styles.modal}>
+                        <h2>Select Club</h2>
+                        <p>Which club would you like to apply with?</p>
+                        <div className={styles.clubList}>
                             {ownedClubs.map(c => (
                                 <button
                                     key={c.id}
-                                    className="btn btn-secondary"
-                                    style={{ justifyContent: 'flex-start', textAlign: 'left', padding: '1rem' }}
+                                    className={styles.clubOption}
                                     onClick={() => applyWithClub(c.id)}
                                 >
-                                    <span style={{ fontWeight: 'bold' }}>{c.name}</span>
-                                    <br />
-                                    <span style={{ fontSize: '0.8rem', opacity: 0.7 }}>ID: {c.club_id}</span>
+                                    <strong>{c.name}</strong>
+                                    <span>ID: {c.club_id}</span>
                                 </button>
                             ))}
                         </div>
-                        <button
-                            className="btn btn-ghost"
-                            style={{ marginTop: '1rem', width: '100%' }}
-                            onClick={() => setShowClubSelector(false)}
-                        >
+                        <button className={styles.cancelButton} onClick={() => setShowClubSelector(false)}>
                             Cancel
                         </button>
                     </div>
@@ -166,83 +218,219 @@ export default function UnionDetailPage() {
             )}
 
             {/* Stats Row */}
-            <div className="union-stats-row">
-                <div className="stat-box">
-                    <span className="value">{union.club_count}</span>
-                    <span className="label">Member Clubs</span>
+            <div className={styles.statsRow}>
+                <div className={styles.statCard}>
+                    <span className={styles.statValue}>{union.club_count}</span>
+                    <span className={styles.statLabel}>Member Clubs</span>
                 </div>
-                <div className="stat-box">
-                    <span className="value">{union.member_count.toLocaleString()}</span>
-                    <span className="label">Total Players</span>
+                <div className={styles.statCard}>
+                    <span className={styles.statValue}>{union.member_count.toLocaleString()}</span>
+                    <span className={styles.statLabel}>Total Players</span>
                 </div>
-                <div className="stat-box">
-                    <span className="value" style={{ color: 'var(--success)' }}>{union.online_count.toLocaleString()}</span>
-                    <span className="label">Online Now</span>
+                <div className={styles.statCard}>
+                    <span className={`${styles.statValue} ${styles.online}`}>{union.online_count.toLocaleString()}</span>
+                    <span className={styles.statLabel}>Online Now</span>
                 </div>
+                {financialSummary && (
+                    <div className={styles.statCard}>
+                        <span className={styles.statValue}>${financialSummary.unionRevenue.toLocaleString()}</span>
+                        <span className={styles.statLabel}>This Period</span>
+                    </div>
+                )}
             </div>
 
-            {/* Live Tables */}
-            <section className="union-section">
-                <div className="section-header">
-                    <h2>Live Action</h2>
-                    <span className="badge badge-success">{tables.length} Active Tables</span>
-                </div>
+            {/* Tab Navigation */}
+            <nav className={styles.tabNav}>
+                <button className={`${styles.tab} ${activeTab === 'overview' ? styles.active : ''}`} onClick={() => setActiveTab('overview')}>
+                    📊 Overview
+                </button>
+                <button className={`${styles.tab} ${activeTab === 'clubs' ? styles.active : ''}`} onClick={() => setActiveTab('clubs')}>
+                    🏛️ Clubs
+                </button>
+                <button className={`${styles.tab} ${activeTab === 'tables' ? styles.active : ''}`} onClick={() => setActiveTab('tables')}>
+                    🎲 Tables
+                </button>
+                <button className={`${styles.tab} ${activeTab === 'financials' ? styles.active : ''}`} onClick={() => setActiveTab('financials')}>
+                    💰 Financials
+                </button>
+            </nav>
 
-                {tables.length === 0 ? (
-                    <div className="empty-state">No active tables right now.</div>
-                ) : (
-                    <div className="tables-grid">
-                        {tables.map(table => (
-                            <div key={table.id} className="table-card">
-                                <div className="table-header">
-                                    <span className="table-name">{table.name}</span>
-                                    <span className={`status-dot ${table.status}`} />
+            {/* Tab Content */}
+            <section className={styles.tabContent}>
+                {/* Overview Tab */}
+                {activeTab === 'overview' && (
+                    <div className={styles.overviewGrid}>
+                        <div className={styles.card}>
+                            <h3>🎯 Live Tables</h3>
+                            {tables.length === 0 ? (
+                                <p className={styles.emptyText}>No active tables</p>
+                            ) : (
+                                <div className={styles.tableList}>
+                                    {tables.slice(0, 5).map(table => (
+                                        <Link key={table.id} to={`/table/${table.id}`} className={styles.tableRow}>
+                                            <span>{table.name}</span>
+                                            <span className={styles.stakes}>${table.small_blind}/${table.big_blind}</span>
+                                            <span>{table.current_players}/{table.max_players}</span>
+                                        </Link>
+                                    ))}
                                 </div>
-                                <div className="table-details">
-                                    <div className="detail-row">
-                                        <span className="label">Stakes</span>
-                                        <span className="value">${table.small_blind}/${table.big_blind}</span>
+                            )}
+                        </div>
+
+                        <div className={styles.card}>
+                            <h3>🏛️ Top Clubs</h3>
+                            <div className={styles.clubList}>
+                                {clubs.slice(0, 5).map(club => (
+                                    <div key={club.club_id} className={styles.clubRow}>
+                                        <div className={styles.clubAvatar}>🏛️</div>
+                                        <div className={styles.clubInfo}>
+                                            <strong>{club.club_name}</strong>
+                                            <span>{club.member_count} members</span>
+                                        </div>
                                     </div>
-                                    <div className="detail-row">
-                                        <span className="label">Game</span>
-                                        <span className="value uppercase">{table.game_variant}</span>
+                                ))}
+                            </div>
+                        </div>
+
+                        {financialSummary && (
+                            <div className={styles.card}>
+                                <h3>💰 Quick Financials</h3>
+                                <div className={styles.financialQuick}>
+                                    <div>
+                                        <span>Total Rake</span>
+                                        <strong>${financialSummary.totalRakeThisPeriod.toLocaleString()}</strong>
                                     </div>
-                                    <div className="detail-row">
-                                        <span className="label">Players</span>
-                                        <span className="value">{table.current_players}/{table.max_players}</span>
+                                    <div>
+                                        <span>Union Revenue</span>
+                                        <strong className={styles.positive}>${financialSummary.unionRevenue.toLocaleString()}</strong>
                                     </div>
+                                    <div>
+                                        <span>Pending</span>
+                                        <strong>${financialSummary.pendingSettlements.toLocaleString()}</strong>
+                                    </div>
+                                    {financialSummary.overdueAmount > 0 && (
+                                        <div>
+                                            <span>Overdue</span>
+                                            <strong className={styles.negative}>${financialSummary.overdueAmount.toLocaleString()}</strong>
+                                        </div>
+                                    )}
                                 </div>
-                                <Link to={`/table/${table.id}`} className="btn btn-sm btn-primary play-btn">
-                                    Join Table
-                                </Link>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* Clubs Tab */}
+                {activeTab === 'clubs' && (
+                    <div className={styles.clubsGrid}>
+                        {clubs.map(club => (
+                            <div key={club.club_id} className={styles.clubCard}>
+                                <div className={styles.clubCardAvatar}>🏛️</div>
+                                <div className={styles.clubCardInfo}>
+                                    <h4>{club.club_name}</h4>
+                                    <p>Owner: {club.club_owner}</p>
+                                    <span>{club.member_count} members</span>
+                                </div>
                             </div>
                         ))}
                     </div>
                 )}
-            </section>
 
-            {/* Member Clubs */}
-            <section className="union-section">
-                <div className="section-header">
-                    <h2>Member Clubs</h2>
-                    <span className="badge badge-blue">{clubs.length} Visible</span>
-                </div>
+                {/* Tables Tab */}
+                {activeTab === 'tables' && (
+                    <div className={styles.tablesGrid}>
+                        {tables.length === 0 ? (
+                            <p className={styles.emptyText}>No active tables right now.</p>
+                        ) : (
+                            tables.map(table => (
+                                <div key={table.id} className={styles.tableCard}>
+                                    <div className={styles.tableCardHeader}>
+                                        <h4>{table.name}</h4>
+                                        <span className={`${styles.statusDot} ${styles[table.status]}`} />
+                                    </div>
+                                    <div className={styles.tableCardDetails}>
+                                        <span>${table.small_blind}/${table.big_blind}</span>
+                                        <span className={styles.variant}>{table.game_variant}</span>
+                                        <span>{table.current_players}/{table.max_players}</span>
+                                    </div>
+                                    <Link to={`/table/${table.id}`} className={styles.joinButton}>
+                                        Join Table
+                                    </Link>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                )}
 
-                <div className="clubs-grid">
-                    {clubs.map(club => (
-                        <div key={club.club_id} className="club-card">
-                            <div className="club-avatar">🏛️</div>
-                            <div className="club-info">
-                                <h3>{club.club_name}</h3>
-                                <div className="club-meta">
-                                    <span>Owner: {club.club_owner}</span>
-                                    <span>•</span>
-                                    <span>{club.member_count} Members</span>
+                {/* Financials Tab */}
+                {activeTab === 'financials' && financialSummary && (
+                    <div className={styles.financialsContainer}>
+                        {/* Summary Cards */}
+                        <div className={styles.financialCards}>
+                            <div className={styles.financialCard}>
+                                <span className={styles.financialIcon}>📈</span>
+                                <div>
+                                    <span className={styles.financialValue}>${financialSummary.totalRakeThisPeriod.toLocaleString()}</span>
+                                    <span className={styles.financialLabel}>Total Rake This Period</span>
                                 </div>
                             </div>
+                            <div className={styles.financialCard}>
+                                <span className={styles.financialIcon}>💵</span>
+                                <div>
+                                    <span className={`${styles.financialValue} ${styles.positive}`}>${financialSummary.unionRevenue.toLocaleString()}</span>
+                                    <span className={styles.financialLabel}>Union Revenue (10%)</span>
+                                </div>
+                            </div>
+                            <div className={styles.financialCard}>
+                                <span className={styles.financialIcon}>⏳</span>
+                                <div>
+                                    <span className={styles.financialValue}>${financialSummary.pendingSettlements.toLocaleString()}</span>
+                                    <span className={styles.financialLabel}>Pending Settlements</span>
+                                </div>
+                            </div>
+                            {financialSummary.overdueAmount > 0 && (
+                                <div className={`${styles.financialCard} ${styles.overdue}`}>
+                                    <span className={styles.financialIcon}>⚠️</span>
+                                    <div>
+                                        <span className={`${styles.financialValue} ${styles.negative}`}>${financialSummary.overdueAmount.toLocaleString()}</span>
+                                        <span className={styles.financialLabel}>Overdue</span>
+                                    </div>
+                                </div>
+                            )}
                         </div>
-                    ))}
-                </div>
+
+                        {/* Settlement History */}
+                        <div className={styles.settlementSection}>
+                            <h3>📋 Settlement History</h3>
+                            <table className={styles.settlementTable}>
+                                <thead>
+                                    <tr>
+                                        <th>Period</th>
+                                        <th>Club</th>
+                                        <th>Rake</th>
+                                        <th>Union Share</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {settlements.map(s => (
+                                        <tr key={s.id}>
+                                            <td>{new Date(s.periodStart).toLocaleDateString()} - {new Date(s.periodEnd).toLocaleDateString()}</td>
+                                            <td>{s.clubName}</td>
+                                            <td>${s.rakeGenerated.toLocaleString()}</td>
+                                            <td className={styles.positive}>${s.unionShare.toLocaleString()}</td>
+                                            <td>
+                                                <span className={`${styles.statusBadge} ${styles[s.status]}`}>
+                                                    {s.status}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                )}
             </section>
         </div>
     );

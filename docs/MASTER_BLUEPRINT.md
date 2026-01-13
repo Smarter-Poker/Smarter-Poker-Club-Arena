@@ -161,7 +161,7 @@ HydraService.ts
 | `TournamentPage` | ✅ | `/tournament/:id` | Late reg timer |
 | `UnionsPage` | ✅ | `/unions` | Settlement view |
 | `CreateUnionPage` | ✅ | `/unions/create` | 3-step wizard, requires club |
-| `UnionDetailPage` | 🔧 | `/unions/:id` | Financial dashboard |
+| `UnionDetailPage` | ✅ | `/unions/:id` | Financials, settlements, tabs |
 | `AgentPage` | ✅ | `/agent` | Triple-wallet UI |
 | `ProfilePage` | ✅ | `/profile` | XP progression, achievements, stats |
 | `SettingsPage` | ✅ | `/settings` | Audio, display, gameplay, privacy |

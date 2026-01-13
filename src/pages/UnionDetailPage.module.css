@@ -1,0 +1,634 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * 🎰 UNION DETAIL PAGE — Styles
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+
+.page {
+    min-height: 100vh;
+    padding: 2rem;
+    background: linear-gradient(180deg, var(--bg-darker) 0%, var(--bg-dark) 100%);
+}
+
+.loading,
+.error {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 60vh;
+    gap: 1rem;
+    color: var(--text-muted);
+}
+
+.spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid rgba(255, 255, 255, 0.1);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.backLink {
+    display: inline-block;
+    color: var(--text-muted);
+    text-decoration: none;
+    margin-bottom: 1rem;
+    transition: color 0.2s;
+}
+
+.backLink:hover {
+    color: #fff;
+}
+
+/* Header */
+.header {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    padding: 2rem;
+    background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(139, 92, 246, 0.05) 100%);
+    border-radius: 1.5rem;
+    border: 1px solid rgba(139, 92, 246, 0.3);
+    margin-bottom: 2rem;
+}
+
+.unionAvatar {
+    width: 80px;
+    height: 80px;
+    border-radius: 1rem;
+    background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2rem;
+    color: #fff;
+    flex-shrink: 0;
+}
+
+.unionInfo {
+    flex: 1;
+}
+
+.unionInfo h1 {
+    margin: 0 0 0.5rem;
+    color: #fff;
+    font-size: 1.5rem;
+}
+
+.unionInfo p {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
+.headerActions {
+    flex-shrink: 0;
+}
+
+.applyButton {
+    padding: 0.875rem 1.5rem;
+    background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+    border: none;
+    border-radius: 0.75rem;
+    color: #fff;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.applyButton:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 20px rgba(139, 92, 246, 0.4);
+}
+
+.applyButton:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* Modal */
+.modalOverlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+}
+
+.modal {
+    max-width: 400px;
+    width: 90%;
+    padding: 2rem;
+    background: var(--bg-dark);
+    border-radius: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.modal h2 {
+    margin: 0 0 0.5rem;
+    color: #fff;
+}
+
+.modal p {
+    margin: 0 0 1.5rem;
+    color: var(--text-muted);
+}
+
+.modal .clubList {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.clubOption {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25rem;
+    padding: 1rem;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 0.75rem;
+    color: #fff;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.clubOption:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: var(--accent);
+}
+
+.clubOption span {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+.cancelButton {
+    width: 100%;
+    margin-top: 1rem;
+    padding: 0.75rem;
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 0.5rem;
+    color: var(--text-muted);
+    cursor: pointer;
+}
+
+/* Stats Row */
+.statsRow {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+.statCard {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 1.25rem;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    text-align: center;
+}
+
+.statValue {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #fff;
+}
+
+.statValue.online {
+    color: #10b981;
+}
+
+.statLabel {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+}
+
+/* Tabs */
+.tabNav {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.tab {
+    flex: 1;
+    padding: 1rem;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 0.75rem;
+    color: var(--text-muted);
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.tab:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: #fff;
+}
+
+.tab.active {
+    background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+    border-color: #8b5cf6;
+    color: #fff;
+}
+
+.tabContent {
+    min-height: 400px;
+}
+
+/* Overview Grid */
+.overviewGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.5rem;
+}
+
+.card {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 1.5rem;
+}
+
+.card h3 {
+    margin: 0 0 1rem;
+    color: #fff;
+    font-size: 1rem;
+}
+
+.emptyText {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    margin: 0;
+}
+
+/* Table List */
+.tableList {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.tableRow {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.75rem;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 0.5rem;
+    text-decoration: none;
+    color: #fff;
+    transition: background 0.2s;
+}
+
+.tableRow:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.tableRow .stakes {
+    color: var(--accent);
+    font-size: 0.875rem;
+}
+
+.tableRow span:first-child {
+    flex: 1;
+}
+
+/* Club List */
+.clubRow {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 0;
+}
+
+.clubAvatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 0.5rem;
+    background: rgba(139, 92, 246, 0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+}
+
+.clubInfo {
+    display: flex;
+    flex-direction: column;
+}
+
+.clubInfo strong {
+    color: #fff;
+    font-size: 0.9rem;
+}
+
+.clubInfo span {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+}
+
+/* Financial Quick */
+.financialQuick {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+}
+
+.financialQuick>div {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.financialQuick span {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.financialQuick strong {
+    font-size: 1.1rem;
+    color: #fff;
+}
+
+.financialQuick strong.positive {
+    color: #10b981;
+}
+
+.financialQuick strong.negative {
+    color: #ef4444;
+}
+
+/* Clubs Grid */
+.clubsGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 1rem;
+}
+
+.clubCard {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.25rem;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.clubCardAvatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 0.75rem;
+    background: linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(139, 92, 246, 0.1) 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+}
+
+.clubCardInfo {
+    flex: 1;
+}
+
+.clubCardInfo h4 {
+    margin: 0 0 0.25rem;
+    color: #fff;
+    font-size: 1rem;
+}
+
+.clubCardInfo p {
+    margin: 0 0 0.25rem;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+}
+
+.clubCardInfo span {
+    color: var(--accent);
+    font-size: 0.75rem;
+}
+
+/* Tables Grid */
+.tablesGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 1rem;
+}
+
+.tableCard {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.tableCardHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.tableCardHeader h4 {
+    margin: 0;
+    color: #fff;
+    font-size: 1rem;
+}
+
+.statusDot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #6b7280;
+}
+
+.statusDot.running {
+    background: #10b981;
+}
+
+.statusDot.waiting {
+    background: #f59e0b;
+}
+
+.tableCardDetails {
+    display: flex;
+    gap: 1rem;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.tableCardDetails .variant {
+    text-transform: uppercase;
+    color: var(--accent);
+    font-weight: 500;
+}
+
+.joinButton {
+    padding: 0.5rem;
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
+    border: none;
+    border-radius: 0.5rem;
+    color: #000;
+    font-weight: 600;
+    text-align: center;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+/* Financials */
+.financialsContainer {
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+}
+
+.financialCards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+}
+
+.financialCard {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.5rem;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.financialCard.overdue {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: rgba(239, 68, 68, 0.3);
+}
+
+.financialIcon {
+    font-size: 2rem;
+}
+
+.financialValue {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #fff;
+}
+
+.financialValue.positive {
+    color: #10b981;
+}
+
+.financialValue.negative {
+    color: #ef4444;
+}
+
+.financialLabel {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+/* Settlement Table */
+.settlementSection {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 1.5rem;
+}
+
+.settlementSection h3 {
+    margin: 0 0 1.5rem;
+    color: #fff;
+}
+
+.settlementTable {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.settlementTable th,
+.settlementTable td {
+    padding: 1rem;
+    text-align: left;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.settlementTable th {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    font-weight: 500;
+}
+
+.settlementTable td {
+    color: #fff;
+    font-size: 0.9rem;
+}
+
+.settlementTable .positive {
+    color: #10b981;
+}
+
+.statusBadge {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    border-radius: 1rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.statusBadge.paid {
+    background: rgba(16, 185, 129, 0.2);
+    color: #10b981;
+}
+
+.statusBadge.pending {
+    background: rgba(245, 158, 11, 0.2);
+    color: #f59e0b;
+}
+
+.statusBadge.overdue {
+    background: rgba(239, 68, 68, 0.2);
+    color: #ef4444;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .header {
+        flex-direction: column;
+        text-align: center;
+    }
+
+    .statsRow {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .tabNav {
+        flex-wrap: wrap;
+    }
+
+    .settlementTable {
+        display: block;
+        overflow-x: auto;
+    }
+}

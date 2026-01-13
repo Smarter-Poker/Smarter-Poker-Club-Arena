@@ -1,0 +1,664 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * 🎰 AGENT MANAGEMENT PAGE — Styles
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+
+.page {
+    min-height: 100vh;
+    padding: 2rem;
+    background: linear-gradient(180deg, var(--bg-darker) 0%, var(--bg-dark) 100%);
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+/* Header */
+.header {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.backButton {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: color 0.2s;
+}
+
+.backButton:hover {
+    color: #fff;
+}
+
+.header h1 {
+    margin: 0;
+    font-size: 1.5rem;
+    color: #fff;
+}
+
+.subtitle {
+    margin: 0.25rem 0 0;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.addButton {
+    margin-left: auto;
+    padding: 0.75rem 1.5rem;
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
+    border: none;
+    border-radius: 0.75rem;
+    color: #000;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.addButton:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 20px rgba(var(--accent-rgb), 0.4);
+}
+
+/* Summary Cards */
+.summaryGrid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+.summaryCard {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.25rem;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.summaryCard.attention {
+    border-color: #f59e0b;
+    background: rgba(245, 158, 11, 0.1);
+}
+
+.summaryIcon {
+    font-size: 1.75rem;
+}
+
+.summaryValue {
+    display: block;
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #fff;
+}
+
+.summaryLabel {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+}
+
+/* Tab Navigation */
+.tabNav {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 2rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    padding-bottom: 0.5rem;
+}
+
+.tabButton {
+    padding: 0.75rem 1.25rem;
+    background: transparent;
+    border: none;
+    border-radius: 0.5rem;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.tabButton:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: #fff;
+}
+
+.tabButton.active {
+    background: rgba(var(--accent-rgb), 0.15);
+    color: var(--accent);
+}
+
+/* Content */
+.content {
+    min-height: 400px;
+}
+
+/* Agent Cards */
+.agentsList {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.agentCard {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 1.5rem;
+    transition: border-color 0.2s;
+}
+
+.agentCard:hover {
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.agentCard.inactive {
+    opacity: 0.6;
+}
+
+.agentHeader {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+}
+
+.agentAvatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #fff;
+}
+
+.agentInfo {
+    flex: 1;
+}
+
+.agentInfo h3 {
+    margin: 0;
+    font-size: 1.1rem;
+    color: #fff;
+}
+
+.agentMeta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.25rem;
+}
+
+.badge {
+    padding: 0.2rem 0.6rem;
+    border-radius: 0.5rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.badge.agent {
+    background: rgba(139, 92, 246, 0.2);
+    color: #a78bfa;
+}
+
+.badge.sub_agent {
+    background: rgba(99, 102, 241, 0.2);
+    color: #818cf8;
+}
+
+.badge.active {
+    background: rgba(16, 185, 129, 0.2);
+    color: #10b981;
+}
+
+.badge.suspended {
+    background: rgba(239, 68, 68, 0.2);
+    color: #ef4444;
+}
+
+.badge.frozen {
+    background: rgba(59, 130, 246, 0.2);
+    color: #3b82f6;
+}
+
+.badge.pending {
+    background: rgba(245, 158, 11, 0.2);
+    color: #f59e0b;
+}
+
+.badge.approved {
+    background: rgba(16, 185, 129, 0.2);
+    color: #10b981;
+}
+
+.badge.rejected {
+    background: rgba(239, 68, 68, 0.2);
+    color: #ef4444;
+}
+
+.parentAgent {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.agentActions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.actionBtn {
+    padding: 0.5rem 1rem;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 0.5rem;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.actionBtn:hover {
+    background: rgba(255, 255, 255, 0.15);
+    color: #fff;
+}
+
+.actionBtn.primary {
+    background: rgba(16, 185, 129, 0.2);
+    border-color: #10b981;
+    color: #10b981;
+}
+
+.actionBtn.approve {
+    background: rgba(16, 185, 129, 0.2);
+    border-color: #10b981;
+    color: #10b981;
+}
+
+.actionBtn.reject {
+    background: rgba(239, 68, 68, 0.2);
+    border-color: #ef4444;
+    color: #ef4444;
+}
+
+/* Agent Stats */
+.agentStats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+    padding: 1rem 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    margin-bottom: 1rem;
+}
+
+.statItem {
+    text-align: center;
+}
+
+.statLabel {
+    display: block;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    margin-bottom: 0.25rem;
+}
+
+.statValue {
+    display: block;
+    font-size: 1rem;
+    font-weight: 600;
+    color: #fff;
+}
+
+/* Wallet Row */
+.walletRow {
+    display: flex;
+    gap: 2rem;
+    margin-bottom: 1rem;
+}
+
+.walletItem {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+    color: var(--text-muted);
+}
+
+.walletIcon {
+    font-size: 1rem;
+}
+
+/* Credit Bar */
+.creditBar {
+    margin-top: 0.5rem;
+}
+
+.creditHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+.utilBadge {
+    padding: 0.2rem 0.5rem;
+    border-radius: 0.25rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+}
+
+.utilBadge.healthy {
+    background: rgba(16, 185, 129, 0.2);
+    color: #10b981;
+}
+
+.utilBadge.warning {
+    background: rgba(245, 158, 11, 0.2);
+    color: #f59e0b;
+}
+
+.utilBadge.critical {
+    background: rgba(239, 68, 68, 0.2);
+    color: #ef4444;
+}
+
+.creditProgress {
+    height: 6px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.creditFill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.3s ease;
+}
+
+.creditFill.healthy {
+    background: #10b981;
+}
+
+.creditFill.warning {
+    background: #f59e0b;
+}
+
+.creditFill.critical {
+    background: #ef4444;
+}
+
+/* Credit Requests */
+.requestsList {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.requestCard {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 1.5rem;
+}
+
+.requestCard.pending {
+    border-color: rgba(245, 158, 11, 0.3);
+}
+
+.requestHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.requestHeader h3 {
+    margin: 0;
+    color: #fff;
+}
+
+.requestDetails {
+    margin-bottom: 1rem;
+}
+
+.requestAmount {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    font-size: 1.25rem;
+    margin-bottom: 0.5rem;
+}
+
+.currentLimit {
+    color: var(--text-muted);
+}
+
+.arrow {
+    color: var(--text-muted);
+}
+
+.requestedLimit {
+    color: var(--accent);
+    font-weight: 600;
+}
+
+.requestReason {
+    margin: 0;
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+.requestActions {
+    display: flex;
+    gap: 0.75rem;
+}
+
+/* Empty State */
+.emptyState {
+    text-align: center;
+    padding: 4rem 2rem;
+    color: var(--text-muted);
+}
+
+.emptyIcon {
+    font-size: 3rem;
+    display: block;
+    margin-bottom: 1rem;
+}
+
+/* Commissions Section */
+.commissionsSection {
+    padding: 1rem;
+}
+
+.commissionHeader {
+    margin-bottom: 2rem;
+}
+
+.commissionHeader h2 {
+    margin: 0;
+    color: #fff;
+}
+
+.commissionHeader p {
+    margin: 0.5rem 0 0;
+    color: var(--text-muted);
+}
+
+.rateTable {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 1rem;
+    overflow: hidden;
+    margin-bottom: 2rem;
+}
+
+.rateRow {
+    display: flex;
+    justify-content: space-between;
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.rateRow:last-child {
+    border-bottom: none;
+}
+
+.rateLabel {
+    color: var(--text-muted);
+}
+
+.rateValue {
+    font-weight: 600;
+    color: var(--accent);
+}
+
+.spreadExample {
+    background: rgba(139, 92, 246, 0.1);
+    border: 1px solid rgba(139, 92, 246, 0.3);
+    border-radius: 1rem;
+    padding: 1.5rem;
+}
+
+.spreadExample h3 {
+    margin: 0 0 0.5rem;
+    color: #fff;
+}
+
+.spreadExample p {
+    margin: 0;
+    color: rgba(255, 255, 255, 0.8);
+    line-height: 1.6;
+}
+
+.highlight {
+    color: #10b981;
+}
+
+/* Payouts Section */
+.payoutsSection {
+    padding: 1rem;
+}
+
+.payoutSchedule {
+    margin-bottom: 2rem;
+}
+
+.payoutSchedule h2 {
+    margin: 0 0 1rem;
+    color: #fff;
+}
+
+.scheduleGrid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+}
+
+.scheduleItem {
+    display: flex;
+    gap: 1rem;
+    padding: 1.25rem;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.scheduleIcon {
+    font-size: 1.5rem;
+}
+
+.scheduleItem strong {
+    display: block;
+    color: #fff;
+    margin-bottom: 0.25rem;
+}
+
+.scheduleItem p {
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.upcomingPayouts h3 {
+    margin: 0 0 1rem;
+    color: #fff;
+}
+
+.payoutTable {
+    width: 100%;
+    border-collapse: collapse;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 1rem;
+    overflow: hidden;
+}
+
+.payoutTable th,
+.payoutTable td {
+    padding: 1rem;
+    text-align: left;
+}
+
+.payoutTable th {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+}
+
+.payoutTable td {
+    color: rgba(255, 255, 255, 0.8);
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.netPayout {
+    color: #10b981 !important;
+    font-weight: 600;
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+    .summaryGrid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .agentStats {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .scheduleGrid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 600px) {
+    .header {
+        flex-wrap: wrap;
+    }
+
+    .addButton {
+        width: 100%;
+        margin-top: 1rem;
+    }
+
+    .summaryGrid {
+        grid-template-columns: 1fr;
+    }
+
+    .tabNav {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+}

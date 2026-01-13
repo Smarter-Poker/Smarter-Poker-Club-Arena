@@ -17,6 +17,7 @@ const LobbyPage = lazy(() => import('./pages/LobbyPage'));
 const ClubsPage = lazy(() => import('./pages/ClubsPage'));
 const ClubDetailPage = lazy(() => import('./pages/ClubDetailPage'));
 const CreateClubPage = lazy(() => import('./pages/CreateClubPage'));
+const AgentManagementPage = lazy(() => import('./pages/AgentManagementPage'));
 const TablePage = lazy(() => import('./pages/TablePage'));
 const ProfilePage = lazy(() => import('./pages/ProfilePage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
@@ -45,6 +46,7 @@ export default function App() {
                     <Route path="clubs" element={<ClubsPage />} />
                     <Route path="clubs/create" element={<CreateClubPage />} />
                     <Route path="clubs/:clubId" element={<ClubDetailPage />} />
+                    <Route path="clubs/:clubId/agents" element={<AgentManagementPage />} />
 
                     {/* Unions */}
                     <Route path="unions" element={<UnionsPage />} />

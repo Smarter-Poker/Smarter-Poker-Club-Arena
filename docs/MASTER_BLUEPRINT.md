@@ -608,9 +608,9 @@ const clubs = await ClubsService.discoverNearby({
 60. ~~**Build ReferralModal**~~ ✅ DONE — Invite friends via code/link
 61. ~~**Build FAQPanel**~~ ✅ DONE — In-app help and rules
 62. ~~**Build FeedbackForm**~~ ✅ DONE — User feedback submission
-63. **Build UserProfileEdit** — Deep profile customization (Bio, Tags)
-64. **Build CurrencyStore** — Purchase diamonds/gold (Mock)
-65. **Build SystemStatus** — Server health/maintenance indicator
+63. ~~**Build UserProfileEdit**~~ ✅ DONE — Deep profile customization (Bio, Tags)
+64. ~~**Build CurrencyStore**~~ ✅ DONE — Purchase diamonds/gold (Mock)
+65. ~~**Build SystemStatus**~~ ✅ DONE — Server health/maintenance indicator
 
 ---
 

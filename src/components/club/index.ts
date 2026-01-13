@@ -38,3 +38,6 @@ export type { JackpotHistoryProps, JackpotHit } from './JackpotHistory';
 
 export { ClubAnnouncements } from './ClubAnnouncements';
 export type { ClubAnnouncementsProps, Announcement } from './ClubAnnouncements';
+
+export { CurrencyStore } from './CurrencyStore';
+export type { CurrencyStoreProps, ProductItem } from './CurrencyStore';

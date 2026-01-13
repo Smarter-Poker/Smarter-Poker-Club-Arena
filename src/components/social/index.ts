@@ -10,3 +10,6 @@ export type { NotificationCenterProps, NotificationItem, NotificationType } from
 
 export { ReferralModal } from './ReferralModal';
 export type { ReferralModalProps } from './ReferralModal';
+
+export { UserProfileEdit } from './UserProfileEdit';
+export type { UserProfileEditProps, UserProfileData } from './UserProfileEdit';

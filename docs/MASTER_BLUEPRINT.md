@@ -578,11 +578,14 @@ const clubs = await ClubsService.discoverNearby({
 30. ~~**Build TournamentBreakScreen**~~ ✅ DONE — Break timer overlay
 31. ~~**Add RabbitHunt feature**~~ ✅ DONE — See what cards would have come
 32. ~~**Build HandNotation**~~ ✅ DONE — Hand history notation export
-33. **Add TableMenu** — Hamburger menu for table actions
-34. **Build PlayerStats popup** — Click on player to see stats
-35. **Add RunItTwice feature** — Deal remaining cards twice
-36. **Build InsuranceModal** — All-in insurance options
+33. ~~**Build ShareHand**~~ ✅ DONE — PokerBros-style shareable links
+34. ~~**Add HandReplayPlayer**~~ ✅ DONE — Visual hand replay with playback
+35. **Add TableMenu** — Hamburger menu for table actions
+36. **Build PlayerStats popup** — Click on player to see stats
+37. **Add RunItTwice feature** — Deal remaining cards twice
+38. **Build InsuranceModal** — All-in insurance options
 
 ---
 
 *This blueprint is the single source of truth for Club Arena development. Update as components are completed.*
+

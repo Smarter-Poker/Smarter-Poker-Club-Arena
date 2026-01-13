@@ -1,0 +1,374 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * 🎬 HAND REPLAY PLAYER — Styles
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+
+.replay-player {
+    position: relative;
+    width: 100%;
+    max-width: 600px;
+    aspect-ratio: 16 / 10;
+    background: radial-gradient(ellipse at center, #1E6E3E 0%, #0A3D1F 70%, #052412 100%);
+    border-radius: 20px;
+    overflow: hidden;
+    cursor: pointer;
+    user-select: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   TABLE
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.replay-player__table {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   SEATS
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.replay-player__seats {
+    position: absolute;
+    inset: 0;
+}
+
+.replay-player__seat {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: rotate(var(--angle)) translateY(-110px) rotate(calc(-1 * var(--angle)));
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    transition: all 0.3s ease;
+}
+
+.replay-player__seat--active {
+    transform: rotate(var(--angle)) translateY(-115px) rotate(calc(-1 * var(--angle))) scale(1.1);
+}
+
+.replay-player__seat--winner {
+    animation: winnerPulse 0.6s ease infinite;
+}
+
+@keyframes winnerPulse {
+
+    0%,
+    100% {
+        filter: drop-shadow(0 0 8px rgba(255, 215, 0, 0.8));
+    }
+
+    50% {
+        filter: drop-shadow(0 0 16px rgba(255, 215, 0, 1));
+    }
+}
+
+.replay-player__player-info {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 4px 10px;
+    background: rgba(0, 0, 0, 0.7);
+    border-radius: 8px;
+    min-width: 60px;
+}
+
+.replay-player__name {
+    font-size: 0.625rem;
+    font-weight: 600;
+    color: #E4E6EB;
+    white-space: nowrap;
+    max-width: 70px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.replay-player__stack {
+    font-size: 0.5625rem;
+    font-family: 'JetBrains Mono', monospace;
+    color: #8B949E;
+}
+
+/* Hole Cards */
+.replay-player__hole-cards {
+    display: flex;
+    gap: 2px;
+    animation: dealCards 0.3s ease;
+}
+
+@keyframes dealCards {
+    from {
+        opacity: 0;
+        transform: translateY(-20px) scale(0.5);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.replay-player__card {
+    padding: 2px 4px;
+    font-size: 0.6875rem;
+    font-weight: 800;
+    background: linear-gradient(180deg, #FFFFFF 0%, #E8E8E8 100%);
+    border-radius: 3px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+/* Action Chip */
+.replay-player__action-chip {
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 3px 8px;
+    font-size: 0.5625rem;
+    font-weight: 700;
+    background: linear-gradient(135deg, #FFB800 0%, #FF8A00 100%);
+    border-radius: 10px;
+    color: #000;
+    white-space: nowrap;
+    animation: actionPop 0.2s ease;
+}
+
+@keyframes actionPop {
+    from {
+        transform: translateX(-50%) scale(0);
+    }
+
+    to {
+        transform: translateX(-50%) scale(1);
+    }
+}
+
+/* Winner Badge */
+.replay-player__winner-badge {
+    position: absolute;
+    top: -16px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 1.25rem;
+    animation: winnerBadge 0.5s ease;
+}
+
+@keyframes winnerBadge {
+    0% {
+        transform: translateX(-50%) translateY(-20px) scale(0);
+    }
+
+    60% {
+        transform: translateX(-50%) translateY(5px) scale(1.2);
+    }
+
+    100% {
+        transform: translateX(-50%) translateY(0) scale(1);
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   BOARD
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.replay-player__board {
+    display: flex;
+    gap: 6px;
+    z-index: 10;
+}
+
+.replay-player__board-card {
+    padding: 8px 10px;
+    font-size: 1rem;
+    font-weight: 800;
+    background: linear-gradient(180deg, #FFFFFF 0%, #E8E8E8 100%);
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    animation: boardDeal 0.4s ease;
+}
+
+@keyframes boardDeal {
+    from {
+        opacity: 0;
+        transform: translateY(-30px) rotateY(90deg);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) rotateY(0);
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   POT
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.replay-player__pot {
+    position: absolute;
+    bottom: 35%;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 6px 14px;
+    font-size: 0.875rem;
+    font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+    background: rgba(0, 0, 0, 0.7);
+    border-radius: 16px;
+    color: #FFB800;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   CONTROLS OVERLAY
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.replay-player__controls {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    background: linear-gradient(180deg,
+            rgba(0, 0, 0, 0.6) 0%,
+            transparent 30%,
+            transparent 70%,
+            rgba(0, 0, 0, 0.6) 100%);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    pointer-events: none;
+}
+
+.replay-player__controls--visible {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* Header */
+.replay-player__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+}
+
+.replay-player__game-info {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #FFFFFF;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+}
+
+.replay-player__share-btn {
+    padding: 6px 12px;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    background: rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(4px);
+    border: none;
+    border-radius: 12px;
+    color: #FFFFFF;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.replay-player__share-btn:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+/* Bottom Controls */
+.replay-player__bottom {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+}
+
+.replay-player__play-btn {
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.25rem;
+    background: rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(4px);
+    border: none;
+    border-radius: 50%;
+    color: #FFFFFF;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.replay-player__play-btn:hover {
+    background: rgba(255, 255, 255, 0.3);
+    transform: scale(1.1);
+}
+
+.replay-player__scrubber {
+    flex: 1;
+    height: 4px;
+    -webkit-appearance: none;
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 2px;
+    cursor: pointer;
+}
+
+.replay-player__scrubber::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    background: #FFFFFF;
+    border-radius: 50%;
+    cursor: pointer;
+}
+
+.replay-player__speed {
+    display: flex;
+    gap: 4px;
+}
+
+.replay-player__speed-btn {
+    padding: 4px 8px;
+    font-size: 0.625rem;
+    font-weight: 600;
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    border-radius: 4px;
+    color: rgba(255, 255, 255, 0.6);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.replay-player__speed-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.replay-player__speed-btn--active {
+    background: rgba(255, 255, 255, 0.3);
+    color: #FFFFFF;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   RESPONSIVE
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 480px) {
+    .replay-player__seat {
+        transform: rotate(var(--angle)) translateY(-80px) rotate(calc(-1 * var(--angle)));
+    }
+
+    .replay-player__board-card {
+        padding: 6px 8px;
+        font-size: 0.875rem;
+    }
+
+    .replay-player__pot {
+        font-size: 0.75rem;
+        padding: 4px 10px;
+    }
+}

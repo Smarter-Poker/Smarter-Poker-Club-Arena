@@ -85,3 +85,11 @@ export type { RabbitHuntProps, Card as RabbitCard } from './RabbitHunt';
 // Hand Notation (Export format)
 export { HandNotation } from './HandNotation';
 export type { HandNotationProps, NotationHand, NotationPlayer, NotationAction } from './HandNotation';
+
+// Share Hand (PokerBros-style sharing)
+export { ShareHand, encodeHand, decodeHandFromUrl } from './ShareHand';
+export type { ShareHandProps, ShareableHand, ShareablePlayer, ShareableCard, ShareableAction } from './ShareHand';
+
+// Hand Replay Player (Visual replayer)
+export { HandReplayPlayer } from './HandReplayPlayer';
+export type { HandReplayPlayerProps, ReplayState, ReplaySpeed } from './HandReplayPlayer';

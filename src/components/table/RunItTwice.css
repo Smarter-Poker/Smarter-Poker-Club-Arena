@@ -1,0 +1,280 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * 🎲 RUN IT TWICE — Styles
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   OVERLAY
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.rit-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 600;
+    animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   PROMPT
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.rit-prompt {
+    width: 90%;
+    max-width: 340px;
+    padding: 24px;
+    background: linear-gradient(180deg, #1C2128 0%, #161B22 100%);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 20px;
+    text-align: center;
+    animation: popIn 0.25s ease;
+}
+
+@keyframes popIn {
+    from {
+        opacity: 0;
+        transform: scale(0.9);
+    }
+
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+.rit-prompt__icon {
+    font-size: 3rem;
+    margin-bottom: 12px;
+}
+
+.rit-prompt__title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #E4E6EB;
+    margin: 0 0 8px;
+}
+
+.rit-prompt__text {
+    font-size: 0.875rem;
+    color: #8B949E;
+    line-height: 1.5;
+    margin: 0 0 16px;
+}
+
+/* Timer */
+.rit-prompt__timer {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.rit-prompt__timer-bar {
+    flex: 1;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.rit-prompt__timer-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #FFB800 0%, #FF8A00 100%);
+    border-radius: 3px;
+    transition: width 1s linear;
+}
+
+.rit-prompt__timer-text {
+    font-size: 0.875rem;
+    font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+    color: #FFB800;
+    min-width: 28px;
+}
+
+/* Actions */
+.rit-prompt__actions {
+    display: flex;
+    gap: 12px;
+}
+
+.rit-prompt__btn {
+    flex: 1;
+    padding: 14px 16px;
+    font-size: 0.9375rem;
+    font-weight: 700;
+    border: none;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.rit-prompt__btn--decline {
+    background: rgba(255, 255, 255, 0.1);
+    color: #8B949E;
+}
+
+.rit-prompt__btn--decline:hover {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.rit-prompt__btn--accept {
+    background: linear-gradient(135deg, #3FB950 0%, #2EA043 100%);
+    color: #FFFFFF;
+}
+
+.rit-prompt__btn--accept:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(63, 185, 80, 0.4);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   BOARD
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.rit-board {
+    padding: 16px;
+    background: linear-gradient(180deg, #1C2128 0%, #161B22 100%);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 16px;
+}
+
+.rit-board__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+}
+
+.rit-board__badge {
+    padding: 6px 12px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    background: rgba(255, 184, 0, 0.2);
+    border-radius: 8px;
+    color: #FFB800;
+}
+
+.rit-board__pot {
+    font-size: 0.875rem;
+    font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+    color: #E4E6EB;
+}
+
+/* Run Row */
+.rit-board__run {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 10px;
+    margin-bottom: 8px;
+}
+
+.rit-board__run--won {
+    background: rgba(63, 185, 80, 0.15);
+    border: 1px solid rgba(63, 185, 80, 0.3);
+}
+
+.rit-board__run--lost {
+    background: rgba(248, 81, 73, 0.1);
+    opacity: 0.7;
+}
+
+.rit-board__run-label {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #6E7681;
+    min-width: 40px;
+}
+
+.rit-board__cards {
+    flex: 1;
+    display: flex;
+    gap: 4px;
+}
+
+.rit-board__card {
+    padding: 4px 6px;
+    font-size: 0.875rem;
+    font-weight: 800;
+    background: linear-gradient(180deg, #FFFFFF 0%, #E8E8E8 100%);
+    border-radius: 4px;
+}
+
+.rit-board__card--base {
+    opacity: 0.5;
+}
+
+.rit-board__card--new {
+    animation: cardPop 0.3s ease;
+}
+
+@keyframes cardPop {
+    from {
+        transform: scale(0.8);
+        opacity: 0;
+    }
+
+    to {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+.rit-board__run-result {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: #8B949E;
+    white-space: nowrap;
+}
+
+.rit-board__run--won .rit-board__run-result {
+    color: #3FB950;
+}
+
+/* Summary */
+.rit-board__summary {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.rit-board__summary-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 6px 0;
+}
+
+.rit-board__summary-name {
+    font-size: 0.8125rem;
+    color: #8B949E;
+}
+
+.rit-board__summary-amount {
+    font-size: 0.8125rem;
+    font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+    color: #E4E6EB;
+}
+
+.rit-board__summary-amount--positive {
+    color: #3FB950;
+}

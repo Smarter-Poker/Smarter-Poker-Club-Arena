@@ -1,0 +1,230 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * ☰ TABLE MENU — Styles
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+
+.table-menu {
+    position: relative;
+    z-index: 100;
+}
+
+/* Position variants */
+.table-menu--top-left {
+    /* default positioning */
+}
+
+.table-menu--top-right {
+    /* default positioning */
+}
+
+.table-menu--bottom-left .table-menu__dropdown {
+    top: auto;
+    bottom: 100%;
+    margin-bottom: 8px;
+}
+
+.table-menu--bottom-right .table-menu__dropdown {
+    top: auto;
+    bottom: 100%;
+    margin-bottom: 8px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   TRIGGER BUTTON
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.table-menu__trigger {
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.table-menu__trigger:hover {
+    background: rgba(0, 0, 0, 0.7);
+    border-color: rgba(255, 255, 255, 0.25);
+}
+
+.table-menu__trigger--active {
+    background: rgba(24, 119, 242, 0.3);
+    border-color: #1877F2;
+}
+
+/* Hamburger Icon */
+.table-menu__hamburger {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    width: 18px;
+}
+
+.table-menu__hamburger span {
+    display: block;
+    height: 2px;
+    background: #E4E6EB;
+    border-radius: 1px;
+    transition: all 0.2s ease;
+}
+
+.table-menu__trigger--active .table-menu__hamburger span:nth-child(1) {
+    transform: translateY(6px) rotate(45deg);
+}
+
+.table-menu__trigger--active .table-menu__hamburger span:nth-child(2) {
+    opacity: 0;
+}
+
+.table-menu__trigger--active .table-menu__hamburger span:nth-child(3) {
+    transform: translateY(-6px) rotate(-45deg);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   DROPDOWN
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.table-menu__dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 8px;
+    min-width: 220px;
+    background: linear-gradient(180deg, #1C2128 0%, #161B22 100%);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 16px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+    overflow: hidden;
+    animation: menuSlide 0.2s ease;
+}
+
+@keyframes menuSlide {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   HEADER
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.table-menu__header {
+    padding: 12px 16px;
+    background: rgba(0, 0, 0, 0.3);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.table-menu__table-name {
+    font-size: 0.8125rem;
+    font-weight: 700;
+    color: #E4E6EB;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   BODY
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.table-menu__body {
+    padding: 8px 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   SECTION
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.table-menu__section {
+    padding: 4px 0;
+}
+
+.table-menu__section:not(:last-child) {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    margin-bottom: 4px;
+}
+
+.table-menu__section-title {
+    display: block;
+    padding: 4px 16px 8px;
+    font-size: 0.625rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #6E7681;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   ACTION ITEM
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.table-menu__action {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    text-align: left;
+    background: none;
+    border: none;
+    color: #E4E6EB;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.table-menu__action:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.table-menu__action--danger {
+    color: #F85149;
+}
+
+.table-menu__action--danger:hover {
+    background: rgba(248, 81, 73, 0.1);
+}
+
+.table-menu__action--disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.table-menu__action-icon {
+    font-size: 1.125rem;
+    width: 24px;
+    text-align: center;
+}
+
+.table-menu__action-label {
+    flex: 1;
+}
+
+.table-menu__action-badge {
+    padding: 2px 8px;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    background: rgba(24, 119, 242, 0.2);
+    border-radius: 10px;
+    color: #1877F2;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   RESPONSIVE
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 480px) {
+    .table-menu__dropdown {
+        min-width: 200px;
+    }
+}

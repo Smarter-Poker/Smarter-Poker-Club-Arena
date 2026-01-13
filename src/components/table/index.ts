@@ -93,3 +93,19 @@ export type { ShareHandProps, ShareableHand, ShareablePlayer, ShareableCard, Sha
 // Hand Replay Player (Visual replayer)
 export { HandReplayPlayer } from './HandReplayPlayer';
 export type { HandReplayPlayerProps, ReplayState, ReplaySpeed } from './HandReplayPlayer';
+
+// Table Menu (Hamburger menu)
+export { TableMenu, createDefaultMenuSections } from './TableMenu';
+export type { TableMenuProps, MenuSection, MenuAction } from './TableMenu';
+
+// Player Stats Popup
+export { PlayerStats } from './PlayerStats';
+export type { PlayerStatsProps, PlayerStatistics, PlayerSessionStats, PlayerNote } from './PlayerStats';
+
+// Run It Twice
+export { RunItTwicePrompt, RunItTwiceBoard } from './RunItTwice';
+export type { RunItTwicePromptProps, RunItTwiceBoardProps } from './RunItTwice';
+
+// Insurance Modal
+export { InsuranceModal } from './InsuranceModal';
+export type { InsuranceModalProps, InsuranceOffer } from './InsuranceModal';

@@ -1,0 +1,350 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * 🛡️ INSURANCE MODAL — Styles
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   OVERLAY
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.insurance-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 600;
+    animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   MODAL
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.insurance-modal {
+    width: 95%;
+    max-width: 400px;
+    background: linear-gradient(180deg, #1C2128 0%, #161B22 100%);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 20px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    overflow: hidden;
+    animation: slideUp 0.3s ease;
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   HEADER
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.insurance-modal__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    background: rgba(0, 0, 0, 0.4);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.insurance-modal__title-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.insurance-modal__icon {
+    font-size: 1.5rem;
+}
+
+.insurance-modal__title {
+    font-size: 1.125rem;
+    font-weight: 700;
+    color: #E4E6EB;
+    margin: 0;
+}
+
+.insurance-modal__timer {
+    padding: 6px 12px;
+    font-size: 0.875rem;
+    font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+    background: rgba(255, 184, 0, 0.2);
+    border-radius: 8px;
+    color: #FFB800;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   CARDS DISPLAY
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.insurance-modal__cards {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 20px;
+    padding: 20px;
+}
+
+.insurance-modal__hand {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+}
+
+.insurance-modal__hand-label {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #6E7681;
+}
+
+.insurance-modal__hand-cards {
+    display: flex;
+    gap: 6px;
+}
+
+.insurance-modal__card {
+    padding: 10px 12px;
+    font-size: 1.25rem;
+    font-weight: 800;
+    background: linear-gradient(180deg, #FFFFFF 0%, #E8E8E8 100%);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.insurance-modal__card--hidden {
+    background: linear-gradient(180deg, #2D333B 0%, #1C2128 100%);
+    color: #6E7681;
+}
+
+.insurance-modal__vs {
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: #6E7681;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   BOARD
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.insurance-modal__board {
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+    padding: 0 20px 16px;
+}
+
+.insurance-modal__board-card {
+    padding: 8px 10px;
+    font-size: 1rem;
+    font-weight: 800;
+    background: linear-gradient(180deg, #FFFFFF 0%, #E8E8E8 100%);
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   EQUITY BAR
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.insurance-modal__equity {
+    padding: 0 20px 16px;
+}
+
+.insurance-modal__equity-bar {
+    height: 8px;
+    background: rgba(248, 81, 73, 0.3);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 8px;
+}
+
+.insurance-modal__equity-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #3FB950 0%, #2EA043 100%);
+    border-radius: 4px;
+    transition: width 0.3s ease;
+}
+
+.insurance-modal__equity-text {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #8B949E;
+    text-align: center;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   COVERAGE SLIDER
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.insurance-modal__coverage {
+    padding: 16px 20px;
+    background: rgba(0, 0, 0, 0.2);
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.insurance-modal__coverage-label {
+    display: block;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #6E7681;
+    margin-bottom: 10px;
+}
+
+.insurance-modal__slider {
+    width: 100%;
+    height: 6px;
+    -webkit-appearance: none;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+    margin-bottom: 12px;
+}
+
+.insurance-modal__slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 20px;
+    height: 20px;
+    background: #1877F2;
+    border-radius: 50%;
+    cursor: pointer;
+}
+
+.insurance-modal__presets {
+    display: flex;
+    gap: 8px;
+}
+
+.insurance-modal__preset {
+    flex: 1;
+    padding: 8px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    color: #8B949E;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.insurance-modal__preset:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.insurance-modal__preset--active {
+    background: rgba(24, 119, 242, 0.2);
+    border-color: #1877F2;
+    color: #1877F2;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   SUMMARY
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.insurance-modal__summary {
+    padding: 16px 20px;
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.insurance-modal__summary-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 6px 0;
+}
+
+.insurance-modal__summary-row--total {
+    padding-top: 12px;
+    margin-top: 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.insurance-modal__summary-label {
+    font-size: 0.8125rem;
+    color: #8B949E;
+}
+
+.insurance-modal__summary-value {
+    font-size: 0.875rem;
+    font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+    color: #E4E6EB;
+}
+
+.insurance-modal__summary-value--negative {
+    color: #F85149;
+}
+
+.insurance-modal__summary-value--highlight {
+    font-size: 1rem;
+    color: #3FB950;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   ACTIONS
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.insurance-modal__actions {
+    display: flex;
+    gap: 12px;
+    padding: 16px 20px;
+    background: rgba(0, 0, 0, 0.3);
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.insurance-modal__btn {
+    flex: 1;
+    padding: 14px 16px;
+    font-size: 0.9375rem;
+    font-weight: 700;
+    border: none;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.insurance-modal__btn--decline {
+    background: rgba(255, 255, 255, 0.1);
+    color: #8B949E;
+}
+
+.insurance-modal__btn--decline:hover {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.insurance-modal__btn--accept {
+    background: linear-gradient(135deg, #1877F2 0%, #0D5CB8 100%);
+    color: #FFFFFF;
+}
+
+.insurance-modal__btn--accept:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(24, 119, 242, 0.4);
+}

@@ -182,8 +182,10 @@ HydraService.ts
 | Component | Status | Purpose |
 |-----------|--------|---------|
 | `HandHistory.tsx` | ✅ | Player results, timeline |
-| `ReplayTimeline.tsx` | 🔧 | Part of HandHistory |
-| `ReplayActions.tsx` | ❌ | Action log display |
+| `ReplayTimeline.tsx` | ✅ | Part of HandHistory |
+| `ReplayActions.tsx` | ✅ | Action log display |
+| `TableChat.tsx` | ✅ | In-game chat |
+| `WaitListModal.tsx` | ✅ | Queue management |
 
 ### Lobby Components
 | Component | Status | Purpose |
@@ -558,12 +560,20 @@ const clubs = await ClubsService.discoverNearby({
 ### Next Priority:
 13. ~~**Build `ChipStack.tsx`**~~ ✅ DONE — Animated chip display for betting
 14. ~~**Build `TimerBar.tsx`**~~ ✅ DONE — Action clock progress bar
-15. **Add Socket.io client** — Real-time game state sync
+15. ~~**Add TableWebSocket**~~ ✅ DONE — Supabase Realtime integration
 16. **Test BBJ migration** — Apply to Supabase production
-17. **Add hand replay scrubber** — Enhanced timeline with action log
-18. **Integrate BuyInModal** — Connect to TablePage state
-19. **Build QuickSeat component** — One-click buy-in button
-20. **Enhance lobby filters** — Stakes/variant filtering
+17. ~~**Build QuickSeat component**~~ ✅ DONE — One-click buy-in button
+18. ~~**Enhance lobby filters**~~ ✅ DONE — Stakes/variant filtering
+19. ~~**Build CashTableList**~~ ✅ DONE — Sortable cash game list
+20. ~~**Build TournamentList**~~ ✅ DONE — Tournament list with countdowns
+21. **Integrate BuyInModal** — Connect to TablePage state
+22. ~~**Build ReplayActions**~~ ✅ DONE — Action log display for hand history
+23. ~~**Add TableChat component**~~ ✅ DONE — Table chat with history
+24. ~~**Build WaitListModal**~~ ✅ DONE — Manage wait list position
+25. **Add SitOutModal** — Sit-out timer and controls
+26. **Build CashierModal** — Add/withdraw chips at table
+27. **Add SettingsPanel** — Table preferences (auto-muck, sounds)
+28. **Build LeaderboardPanel** — Club/table rankings display
 
 ---
 

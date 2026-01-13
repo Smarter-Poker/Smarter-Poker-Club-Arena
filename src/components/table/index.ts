@@ -42,3 +42,14 @@ export type { ChipStackProps } from './ChipStack';
 export { TimerBar } from './TimerBar';
 export type { TimerBarProps } from './TimerBar';
 
+// Replay Actions (Hand History Action Log)
+export { ReplayActions } from './ReplayActions';
+export type { ReplayActionsProps, PlayerAction, StreetActions, ActionType, Street } from './ReplayActions';
+
+// Table Chat
+export { TableChat } from './TableChat';
+export type { TableChatProps, ChatMessage, ChatMessageType } from './TableChat';
+
+// Wait List Modal
+export { WaitListModal } from './WaitListModal';
+export type { WaitListModalProps, WaitListPlayer } from './WaitListModal';

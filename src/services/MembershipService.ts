@@ -3,6 +3,7 @@
  * 🎰 CLUB ENGINE — Membership Service
  * ═══════════════════════════════════════════════════════════════════════════════
  * Manages club memberships, roles, and hierarchical permissions
+ * Real Supabase integration — no demo mode
  * 
  * ROLE HIERARCHY (Descending Authority):
  * 1. PLATFORM_ADMIN  → God mode (Smarter.Poker staff)
@@ -17,7 +18,7 @@
  * 10. GUEST          → Trial access, limited features
  */
 
-import { supabase, isDemoMode } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -46,40 +47,18 @@ export interface ClubMembership {
     joinedAt: string;
     invitedBy?: string;
     agentId?: string;
-    parentAgentId?: string; // For sub-agents under super_agent or agent
+    parentAgentId?: string;
     notes?: string;
-
-    // Computed
     displayName?: string;
     avatarUrl?: string;
     isOnline?: boolean;
-    lastActiveAt?: string;
-}
-
-export interface MemberStats {
-    handsPlayed: number;
-    rakeGenerated: number;
-    sessionsPlayed: number;
-    biggestWin: number;
-    biggestLoss: number;
-    lastPlayedAt: string;
-}
-
-export interface RoleChange {
-    memberId: string;
-    oldRole: MemberRole;
-    newRole: MemberRole;
-    changedBy: string;
-    changedAt: string;
-    reason?: string;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// Role hierarchy for permission checks (higher = more authority)
-const ROLE_HIERARCHY: Record<MemberRole, number> = {
+export const ROLE_HIERARCHY: Record<MemberRole, number> = {
     platform_admin: 100,
     union_lead: 90,
     union_admin: 85,
@@ -92,7 +71,6 @@ const ROLE_HIERARCHY: Record<MemberRole, number> = {
     guest: 10,
 };
 
-// Role display names
 export const ROLE_DISPLAY_NAMES: Record<MemberRole, string> = {
     platform_admin: 'Platform Admin',
     union_lead: 'Union Lead',
@@ -105,17 +83,6 @@ export const ROLE_DISPLAY_NAMES: Record<MemberRole, string> = {
     member: 'Member',
     guest: 'Guest',
 };
-
-// Demo members
-const DEMO_MEMBERS: ClubMembership[] = [
-    { id: 'm1', clubId: 'club_1', userId: 'user_1', role: 'club_owner', status: 'active', joinedAt: '2025-01-01', displayName: 'ClubOwner', isOnline: true },
-    { id: 'm2', clubId: 'club_1', userId: 'user_2', role: 'club_admin', status: 'active', joinedAt: '2025-01-05', displayName: 'AdminBob', isOnline: true },
-    { id: 'm3', clubId: 'club_1', userId: 'user_3', role: 'super_agent', status: 'active', joinedAt: '2025-01-08', displayName: 'SuperAgentX', isOnline: true },
-    { id: 'm4', clubId: 'club_1', userId: 'user_4', role: 'agent', status: 'active', joinedAt: '2025-01-10', displayName: 'AgentAce', parentAgentId: 'user_3', isOnline: false },
-    { id: 'm5', clubId: 'club_1', userId: 'user_5', role: 'sub_agent', status: 'active', joinedAt: '2025-01-12', displayName: 'SubAgentPro', parentAgentId: 'user_4', isOnline: false },
-    { id: 'm6', clubId: 'club_1', userId: 'user_6', role: 'member', status: 'active', joinedAt: '2025-01-15', displayName: 'PlayerOne', agentId: 'user_4', isOnline: true },
-    { id: 'm7', clubId: 'club_1', userId: 'user_7', role: 'member', status: 'pending', joinedAt: '2025-01-20', displayName: 'NewPlayer', isOnline: false },
-];
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SERVICE
@@ -130,11 +97,7 @@ export const MembershipService = {
     /**
      * Get all members of a club
      */
-    async getClubMembers(clubId: string, includeStats = false): Promise<ClubMembership[]> {
-        if (isDemoMode) {
-            return DEMO_MEMBERS.filter(m => m.clubId === clubId);
-        }
-
+    async getClubMembers(clubId: string): Promise<ClubMembership[]> {
         const { data, error } = await supabase
             .from('club_members')
             .select(`
@@ -176,10 +139,6 @@ export const MembershipService = {
      * Get a user's membership in a specific club
      */
     async getMembership(clubId: string, userId: string): Promise<ClubMembership | null> {
-        if (isDemoMode) {
-            return DEMO_MEMBERS.find(m => m.clubId === clubId && m.userId === userId) || null;
-        }
-
         const { data, error } = await supabase
             .from('club_members')
             .select('*')
@@ -203,74 +162,22 @@ export const MembershipService = {
     },
 
     /**
-     * Get all clubs a user is a member of
-     */
-    async getUserMemberships(userId: string): Promise<ClubMembership[]> {
-        if (isDemoMode) {
-            return DEMO_MEMBERS.filter(m => m.userId === userId);
-        }
-
-        const { data, error } = await supabase
-            .from('club_members')
-            .select(`
-                *,
-                clubs:club_id (
-                    id,
-                    name,
-                    avatar_url
-                )
-            `)
-            .eq('user_id', userId)
-            .eq('status', 'active');
-
-        if (error) throw error;
-
-        return (data || []).map(m => ({
-            id: m.id,
-            clubId: m.club_id,
-            userId: m.user_id,
-            role: m.role as MemberRole,
-            status: m.status as MemberStatus,
-            joinedAt: m.joined_at,
-            invitedBy: m.invited_by,
-            agentId: m.agent_id,
-        }));
-    },
-
-    /**
      * Add a new member to a club
      */
     async addMember(
         clubId: string,
         userId: string,
         role: MemberRole = 'member',
-        invitedBy?: string,
-        agentId?: string
+        invitedBy?: string
     ): Promise<ClubMembership> {
-        if (isDemoMode) {
-            const newMember: ClubMembership = {
-                id: `m_${Date.now()}`,
-                clubId,
-                userId,
-                role,
-                status: 'active',
-                joinedAt: new Date().toISOString(),
-                invitedBy,
-                agentId,
-            };
-            DEMO_MEMBERS.push(newMember);
-            return newMember;
-        }
-
         const { data, error } = await supabase
             .from('club_members')
             .insert({
                 club_id: clubId,
                 user_id: userId,
                 role,
-                status: 'active',
+                status: 'pending',
                 invited_by: invitedBy,
-                agent_id: agentId,
             })
             .select()
             .single();
@@ -285,178 +192,37 @@ export const MembershipService = {
             status: data.status as MemberStatus,
             joinedAt: data.joined_at,
             invitedBy: data.invited_by,
-            agentId: data.agent_id,
         };
     },
 
     /**
-     * Request to join a club (creates pending membership)
+     * Update member role
      */
-    async requestJoin(clubId: string, userId: string, message?: string): Promise<ClubMembership> {
-        if (isDemoMode) {
-            const newRequest: ClubMembership = {
-                id: `m_${Date.now()}`,
-                clubId,
-                userId,
-                role: 'guest',
-                status: 'pending',
-                joinedAt: new Date().toISOString(),
-                notes: message,
-            };
-            DEMO_MEMBERS.push(newRequest);
-            return newRequest;
-        }
-
-        const { data, error } = await supabase
-            .from('club_members')
-            .insert({
-                club_id: clubId,
-                user_id: userId,
-                role: 'guest',
-                status: 'pending',
-                notes: message,
-            })
-            .select()
-            .single();
-
-        if (error) throw error;
-
-        return {
-            id: data.id,
-            clubId: data.club_id,
-            userId: data.user_id,
-            role: data.role as MemberRole,
-            status: data.status as MemberStatus,
-            joinedAt: data.joined_at,
-            notes: data.notes,
-        };
-    },
-
-    // ─────────────────────────────────────────────────────────────────────────────
-    // MEMBERSHIP ACTIONS
-    // ─────────────────────────────────────────────────────────────────────────────
-
-    /**
-     * Approve a pending membership request
-     */
-    async approveMembership(memberId: string, approvedBy: string): Promise<boolean> {
-        if (isDemoMode) {
-            const member = DEMO_MEMBERS.find(m => m.id === memberId);
-            if (member) {
-                member.status = 'active';
-                member.role = 'member';
-            }
-            return true;
-        }
-
-        const { error } = await supabase
-            .from('club_members')
-            .update({ status: 'active', role: 'member' })
-            .eq('id', memberId)
-            .eq('status', 'pending');
-
-        return !error;
-    },
-
-    /**
-     * Reject a pending membership request
-     */
-    async rejectMembership(memberId: string, rejectedBy: string, reason?: string): Promise<boolean> {
-        if (isDemoMode) {
-            const idx = DEMO_MEMBERS.findIndex(m => m.id === memberId);
-            if (idx !== -1) DEMO_MEMBERS.splice(idx, 1);
-            return true;
-        }
-
-        const { error } = await supabase
-            .from('club_members')
-            .delete()
-            .eq('id', memberId)
-            .eq('status', 'pending');
-
-        return !error;
-    },
-
-    /**
-     * Change a member's role
-     */
-    async changeRole(memberId: string, newRole: MemberRole, changedBy: string, reason?: string): Promise<boolean> {
-        if (isDemoMode) {
-            const member = DEMO_MEMBERS.find(m => m.id === memberId);
-            if (member) member.role = newRole;
-            return true;
-        }
-
+    async updateRole(memberId: string, newRole: MemberRole): Promise<boolean> {
         const { error } = await supabase
             .from('club_members')
             .update({ role: newRole })
             .eq('id', memberId);
 
-        if (error) return false;
-
-        // Log the role change
-        await supabase.from('role_changes').insert({
-            member_id: memberId,
-            new_role: newRole,
-            changed_by: changedBy,
-            reason,
-        });
-
-        return true;
+        return !error;
     },
 
     /**
-     * Suspend a member (temporary ban)
+     * Update member status
      */
-    async suspendMember(memberId: string, suspendedBy: string, reason: string, durationDays?: number): Promise<boolean> {
-        if (isDemoMode) {
-            const member = DEMO_MEMBERS.find(m => m.id === memberId);
-            if (member) member.status = 'suspended';
-            return true;
-        }
-
+    async updateStatus(memberId: string, status: MemberStatus): Promise<boolean> {
         const { error } = await supabase
             .from('club_members')
-            .update({
-                status: 'suspended',
-                notes: reason,
-            })
+            .update({ status })
             .eq('id', memberId);
 
         return !error;
     },
 
     /**
-     * Ban a member (permanent)
+     * Remove member from club
      */
-    async banMember(memberId: string, bannedBy: string, reason: string): Promise<boolean> {
-        if (isDemoMode) {
-            const member = DEMO_MEMBERS.find(m => m.id === memberId);
-            if (member) member.status = 'banned';
-            return true;
-        }
-
-        const { error } = await supabase
-            .from('club_members')
-            .update({
-                status: 'banned',
-                notes: reason,
-            })
-            .eq('id', memberId);
-
-        return !error;
-    },
-
-    /**
-     * Remove a member from the club
-     */
-    async removeMember(memberId: string, removedBy: string): Promise<boolean> {
-        if (isDemoMode) {
-            const idx = DEMO_MEMBERS.findIndex(m => m.id === memberId);
-            if (idx !== -1) DEMO_MEMBERS.splice(idx, 1);
-            return true;
-        }
-
+    async removeMember(memberId: string): Promise<boolean> {
         const { error } = await supabase
             .from('club_members')
             .delete()
@@ -466,39 +232,60 @@ export const MembershipService = {
     },
 
     /**
-     * Member leaves club voluntarily
+     * Get members eligible for promotion to agent
      */
-    async leaveClub(clubId: string, userId: string): Promise<boolean> {
-        if (isDemoMode) {
-            const idx = DEMO_MEMBERS.findIndex(m => m.clubId === clubId && m.userId === userId);
-            if (idx !== -1) DEMO_MEMBERS.splice(idx, 1);
-            return true;
-        }
-
-        const { error } = await supabase
+    async getEligibleForPromotion(clubId: string): Promise<ClubMembership[]> {
+        const { data, error } = await supabase
             .from('club_members')
-            .delete()
+            .select(`
+                id,
+                club_id,
+                user_id,
+                role,
+                status,
+                joined_at,
+                profiles:user_id (
+                    display_name,
+                    avatar_url
+                )
+            `)
             .eq('club_id', clubId)
-            .eq('user_id', userId);
+            .eq('status', 'active')
+            .in('role', ['member', 'guest'])
+            .order('joined_at', { ascending: false });
 
-        return !error;
+        if (error) throw error;
+
+        return (data || []).map(m => ({
+            id: m.id,
+            clubId: m.club_id,
+            userId: m.user_id,
+            role: m.role as MemberRole,
+            status: m.status as MemberStatus,
+            joinedAt: m.joined_at,
+            displayName: (m.profiles as any)?.display_name || 'Unknown',
+            avatarUrl: (m.profiles as any)?.avatar_url,
+        }));
     },
 
     // ─────────────────────────────────────────────────────────────────────────────
-    // PERMISSION HELPERS
+    // ROLE UTILITIES
     // ─────────────────────────────────────────────────────────────────────────────
 
     /**
-     * Check if a role has authority over another role
+     * Check if role A has higher authority than role B
      */
-    hasAuthorityOver(actorRole: MemberRole, targetRole: MemberRole): boolean {
-        return ROLE_HIERARCHY[actorRole] > ROLE_HIERARCHY[targetRole];
+    hasHigherAuthority(roleA: MemberRole, roleB: MemberRole): boolean {
+        return ROLE_HIERARCHY[roleA] > ROLE_HIERARCHY[roleB];
     },
 
     /**
-     * Check if a role can perform a specific action
+     * Check if user can perform action based on role
      */
-    canPerformAction(role: MemberRole, action: 'manage_members' | 'change_settings' | 'create_tables' | 'view_financials' | 'manage_agents' | 'assign_credit'): boolean {
+    canPerformAction(
+        role: MemberRole,
+        action: 'manage_members' | 'change_settings' | 'create_tables' | 'view_financials' | 'manage_agents' | 'assign_credit'
+    ): boolean {
         const permissions: Record<string, MemberRole[]> = {
             manage_members: ['platform_admin', 'union_lead', 'union_admin', 'club_owner', 'club_admin'],
             change_settings: ['platform_admin', 'union_lead', 'union_admin', 'club_owner', 'club_admin'],
@@ -512,33 +299,34 @@ export const MembershipService = {
     },
 
     /**
-     * Check if a role is an agent-level role
+     * Check if role is an agent role
      */
     isAgentRole(role: MemberRole): boolean {
         return ['super_agent', 'agent', 'sub_agent'].includes(role);
     },
 
     /**
-     * Check if a role can have sub-agents under them
+     * Check if role can have sub-agents
      */
     canHaveSubAgents(role: MemberRole): boolean {
         return ['super_agent', 'agent'].includes(role);
     },
 
     /**
+     * Get display name for role
+     */
+    getRoleDisplayName(role: MemberRole): string {
+        return ROLE_DISPLAY_NAMES[role] || role;
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // MEMBER COUNTS
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    /**
      * Get member count by status
      */
     async getMemberCounts(clubId: string): Promise<{ total: number; active: number; pending: number; online: number }> {
-        if (isDemoMode) {
-            const members = DEMO_MEMBERS.filter(m => m.clubId === clubId);
-            return {
-                total: members.length,
-                active: members.filter(m => m.status === 'active').length,
-                pending: members.filter(m => m.status === 'pending').length,
-                online: members.filter(m => m.isOnline).length,
-            };
-        }
-
         const { count: total } = await supabase
             .from('club_members')
             .select('*', { count: 'exact', head: true })
@@ -562,44 +350,6 @@ export const MembershipService = {
             pending: pending || 0,
             online: 0, // Would come from presence system
         };
-    },
-
-    /**
-     * Get members eligible for promotion to agent
-     * Returns active members who are not already agents
-     */
-    async getEligibleForPromotion(clubId: string): Promise<ClubMembership[]> {
-        const { data, error } = await supabase
-            .from('club_members')
-            .select(`
-                id,
-                club_id,
-                user_id,
-                role,
-                status,
-                joined_at,
-                profiles:user_id (
-                    display_name,
-                    avatar_url
-                )
-            `)
-            .eq('club_id', clubId)
-            .eq('status', 'active')
-            .in('role', ['member', 'guest'])  // Only members/guests can be promoted
-            .order('joined_at', { ascending: false });
-
-        if (error) throw error;
-
-        return (data || []).map(m => ({
-            id: m.id,
-            clubId: m.club_id,
-            userId: m.user_id,
-            role: m.role as MemberRole,
-            status: m.status as MemberStatus,
-            joinedAt: m.joined_at,
-            displayName: (m.profiles as any)?.display_name || 'Unknown',
-            avatarUrl: (m.profiles as any)?.avatar_url,
-        }));
     },
 };
 

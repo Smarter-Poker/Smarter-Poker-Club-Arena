@@ -11,8 +11,8 @@ export * from './ClubService';
 // UnionService uses named export as object
 export * from './UnionService';
 // MembershipService for member management & permissions
-export { MembershipService } from './MembershipService';
-export type { ClubMembership, MemberRole, MemberStatus, MemberStats, RoleChange } from './MembershipService';
+export { MembershipService, ROLE_HIERARCHY, ROLE_DISPLAY_NAMES } from './MembershipService';
+export type { ClubMembership, MemberRole, MemberStatus } from './MembershipService';
 
 // Table & Room Management
 export * from './TableService';

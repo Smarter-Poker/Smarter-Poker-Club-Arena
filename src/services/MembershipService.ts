@@ -563,6 +563,44 @@ export const MembershipService = {
             online: 0, // Would come from presence system
         };
     },
+
+    /**
+     * Get members eligible for promotion to agent
+     * Returns active members who are not already agents
+     */
+    async getEligibleForPromotion(clubId: string): Promise<ClubMembership[]> {
+        const { data, error } = await supabase
+            .from('club_members')
+            .select(`
+                id,
+                club_id,
+                user_id,
+                role,
+                status,
+                joined_at,
+                profiles:user_id (
+                    display_name,
+                    avatar_url
+                )
+            `)
+            .eq('club_id', clubId)
+            .eq('status', 'active')
+            .in('role', ['member', 'guest'])  // Only members/guests can be promoted
+            .order('joined_at', { ascending: false });
+
+        if (error) throw error;
+
+        return (data || []).map(m => ({
+            id: m.id,
+            clubId: m.club_id,
+            userId: m.user_id,
+            role: m.role as MemberRole,
+            status: m.status as MemberStatus,
+            joinedAt: m.joined_at,
+            displayName: (m.profiles as any)?.display_name || 'Unknown',
+            avatarUrl: (m.profiles as any)?.avatar_url,
+        }));
+    },
 };
 
 export default MembershipService;

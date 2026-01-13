@@ -883,6 +883,22 @@
     border-color: var(--accent);
 }
 
+.loadingSelect,
+.emptySelect {
+    padding: 1rem;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 0.5rem;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    text-align: center;
+}
+
+.emptySelect {
+    color: rgba(239, 68, 68, 0.8);
+    border-color: rgba(239, 68, 68, 0.3);
+}
+
 /* Slider Group */
 .sliderGroup {
     display: flex;

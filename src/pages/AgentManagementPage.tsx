@@ -10,6 +10,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import styles from './AgentManagementPage.module.css';
 import { AgentService, type Agent } from '@/services/AgentService';
+import { MembershipService, type ClubMembership } from '@/services/MembershipService';
 import { useUserStore } from '@/stores/useUserStore';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -32,7 +33,8 @@ export default function AgentManagementPage() {
     const [newLimit, setNewLimit] = useState<number>(0);
 
     // Create Agent Form State
-    const [availableMembers, setAvailableMembers] = useState<{ id: string; userId: string; displayName: string }[]>([]);
+    const [availableMembers, setAvailableMembers] = useState<ClubMembership[]>([]);
+    const [isLoadingMembers, setIsLoadingMembers] = useState(false);
     const [isCreating, setIsCreating] = useState(false);
     const [newAgentForm, setNewAgentForm] = useState({
         userId: '',
@@ -60,9 +62,16 @@ export default function AgentManagementPage() {
     useEffect(() => {
         if (!showAddModal || !clubId) return;
 
-        // TODO: Fetch non-agent members from MembershipService
-        // For now, this will be populated when we integrate
-        setAvailableMembers([]);
+        setIsLoadingMembers(true);
+        MembershipService.getEligibleForPromotion(clubId)
+            .then(members => {
+                setAvailableMembers(members);
+            })
+            .catch(err => {
+                console.error('Failed to load eligible members:', err);
+                setAvailableMembers([]);
+            })
+            .finally(() => setIsLoadingMembers(false));
     }, [showAddModal, clubId]);
 
     // Stats summary
@@ -577,6 +586,31 @@ export default function AgentManagementPage() {
                         </div>
 
                         <div className={styles.modalBody}>
+                            {/* Member Selection */}
+                            <div className={styles.formGroup}>
+                                <label>Select Member to Promote *</label>
+                                {isLoadingMembers ? (
+                                    <div className={styles.loadingSelect}>Loading members...</div>
+                                ) : availableMembers.length === 0 ? (
+                                    <div className={styles.emptySelect}>
+                                        No eligible members found. Members must be active and not already agents.
+                                    </div>
+                                ) : (
+                                    <select
+                                        value={newAgentForm.userId}
+                                        onChange={e => setNewAgentForm({ ...newAgentForm, userId: e.target.value })}
+                                        className={styles.formSelect}
+                                    >
+                                        <option value="">Choose a member to promote...</option>
+                                        {availableMembers.map(m => (
+                                            <option key={m.id} value={m.userId}>
+                                                {m.displayName || 'Unknown'}
+                                            </option>
+                                        ))}
+                                    </select>
+                                )}
+                            </div>
+
                             {/* Role Selection */}
                             <div className={styles.formGroup}>
                                 <label>Agent Role *</label>
@@ -702,7 +736,7 @@ export default function AgentManagementPage() {
                             <button
                                 className={styles.createBtn}
                                 onClick={handleCreateAgent}
-                                disabled={isCreating || newAgentForm.creditLimit <= 0}
+                                disabled={isCreating || !newAgentForm.userId || newAgentForm.creditLimit <= 0}
                             >
                                 {isCreating ? 'Creating...' : '✅ Create Agent'}
                             </button>

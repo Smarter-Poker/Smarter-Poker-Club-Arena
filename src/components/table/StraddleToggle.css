@@ -1,0 +1,84 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * 🔘 STRADDLE TOGGLE — Styles
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+
+.straddle-toggle {
+    display: inline-block;
+}
+
+.straddle-toggle__wrapper {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(0, 0, 0, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 20px;
+    padding: 6px 12px 6px 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.straddle-toggle__wrapper:hover {
+    background: rgba(0, 0, 0, 0.8);
+    border-color: rgba(255, 255, 255, 0.3);
+}
+
+.straddle-toggle__input {
+    display: none;
+}
+
+/* Switch */
+.straddle-toggle__switch {
+    width: 40px;
+    height: 24px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    position: relative;
+    transition: background 0.3s ease;
+}
+
+.straddle-toggle__knob {
+    width: 20px;
+    height: 20px;
+    background: #FFF;
+    border-radius: 50%;
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    transition: transform 0.3s ease;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+/* Active State */
+.straddle-toggle__input:checked+.straddle-toggle__switch {
+    background: #3FB950;
+}
+
+.straddle-toggle__input:checked+.straddle-toggle__switch .straddle-toggle__knob {
+    transform: translateX(16px);
+}
+
+/* Info */
+.straddle-toggle__info {
+    display: flex;
+    flex-direction: column;
+}
+
+.straddle-toggle__label {
+    font-size: 0.625rem;
+    font-weight: 700;
+    color: #8B949E;
+    letter-spacing: 0.05em;
+}
+
+.straddle-toggle__amount {
+    font-size: 0.8125rem;
+    font-weight: 700;
+    color: #E4E6EB;
+}
+
+.straddle-toggle__input:checked~.straddle-toggle__info .straddle-toggle__amount {
+    color: #3FB950;
+}

@@ -1,0 +1,147 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * 💸 TIP DEALER — Styles
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+
+.tip-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 600;
+    animation: fadeIn 0.2s ease;
+}
+
+.tip-modal {
+    width: 90%;
+    max-width: 320px;
+    background: linear-gradient(180deg, #1C2128 0%, #161B22 100%);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 20px;
+    padding: 20px;
+    text-align: center;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+    animation: popIn 0.2s ease;
+}
+
+.tip-modal__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.tip-modal__icon {
+    font-size: 1.5rem;
+}
+
+.tip-modal__title {
+    font-size: 1.125rem;
+    font-weight: 700;
+    color: #E4E6EB;
+    margin: 0;
+}
+
+.tip-modal__close {
+    width: 28px;
+    height: 28px;
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    border-radius: 6px;
+    color: #8B949E;
+    font-size: 1.25rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.tip-modal__presets {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.tip-modal__preset-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    transition: transform 0.1s;
+}
+
+.tip-modal__preset-btn:hover {
+    transform: scale(1.1);
+}
+
+.tip-modal__preset-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    filter: grayscale(1);
+}
+
+.tip-modal__chip {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 30% 30%, #FFB800, #E6A700);
+    border: 4px dashed #FFF;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    color: #8A6300;
+    font-size: 0.875rem;
+}
+
+.tip-modal__chip-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #E4E6EB;
+}
+
+.tip-modal__custom {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.tip-modal__input {
+    flex: 1;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(0, 0, 0, 0.3);
+    color: #fff;
+    font-family: 'JetBrains Mono', monospace;
+}
+
+.tip-modal__submit {
+    padding: 0 16px;
+    background: #1877F2;
+    border: none;
+    border-radius: 8px;
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.tip-modal__submit:disabled {
+    background: rgba(255, 255, 255, 0.1);
+    color: #8B949E;
+    cursor: not-allowed;
+}
+
+.tip-modal__balance {
+    font-size: 0.75rem;
+    color: #8B949E;
+    margin: 0;
+}

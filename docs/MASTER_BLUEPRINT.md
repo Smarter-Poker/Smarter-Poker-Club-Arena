@@ -584,10 +584,14 @@ const clubs = await ClubsService.discoverNearby({
 36. ~~**Build PlayerStats popup**~~ ✅ DONE — Click on player to see stats
 37. ~~**Add RunItTwice feature**~~ ✅ DONE — Deal remaining cards twice
 38. ~~**Build InsuranceModal**~~ ✅ DONE — All-in insurance options
-39. **Build GameRulesModal** — Display game rules and variant info
-40. **Add TipDealer feature** — Tip dealer after winning pot
-41. **Build TimeBank component** — Extra time bank for decisions
-42. **Add StradleToggle** — Enable/disable straddle option
+39. ~~**Build GameRulesModal**~~ ✅ DONE — Display game rules and variant info
+40. ~~**Add TipDealer feature**~~ ✅ DONE — Tip dealer after winning pot
+41. ~~**Build TimeBank component**~~ ✅ DONE — Extra time bank for decisions
+42. ~~**Add StradleToggle**~~ ✅ DONE — Enable/disable straddle option
+43. **Build VoiceChatPanel** — Real-time voice chat controls
+44. **Add BadBeatJackpot** — Jackpot display and trigger animation
+45. **Build ClubHome** — Club management dashboard
+46. **Add MemberList** — Club member management
 
 ---
 

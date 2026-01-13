@@ -109,3 +109,19 @@ export type { RunItTwicePromptProps, RunItTwiceBoardProps } from './RunItTwice';
 // Insurance Modal
 export { InsuranceModal } from './InsuranceModal';
 export type { InsuranceModalProps, InsuranceOffer } from './InsuranceModal';
+
+// Game Rules Modal
+export { GameRulesModal } from './GameRulesModal';
+export type { GameRulesModalProps, TableRule } from './GameRulesModal';
+
+// Tip Dealer
+export { TipDealer } from './TipDealer';
+export type { TipDealerProps } from './TipDealer';
+
+// Time Bank
+export { TimeBank } from './TimeBank';
+export type { TimeBankProps } from './TimeBank';
+
+// Straddle Toggle
+export { StraddleToggle } from './StraddleToggle';
+export type { StraddleToggleProps } from './StraddleToggle';

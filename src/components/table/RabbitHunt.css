@@ -1,0 +1,184 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * 🐰 RABBIT HUNT — Styles
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+
+.rabbit-hunt {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   BUTTON
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.rabbit-hunt__button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    background: linear-gradient(135deg, rgba(255, 184, 0, 0.2) 0%, rgba(255, 138, 0, 0.2) 100%);
+    border: 1px solid rgba(255, 184, 0, 0.4);
+    border-radius: 20px;
+    color: #FFB800;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.rabbit-hunt__button:hover:not(:disabled) {
+    background: linear-gradient(135deg, rgba(255, 184, 0, 0.3) 0%, rgba(255, 138, 0, 0.3) 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(255, 184, 0, 0.3);
+}
+
+.rabbit-hunt__button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.rabbit-hunt__button--loading {
+    animation: pulse 1s ease-in-out infinite;
+}
+
+@keyframes pulse {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.6;
+    }
+}
+
+.rabbit-hunt__icon {
+    font-size: 1.25rem;
+}
+
+.rabbit-hunt__label {
+    white-space: nowrap;
+}
+
+.rabbit-hunt__cost {
+    padding: 4px 8px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 10px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   REVEAL
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.rabbit-hunt__reveal {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 16px 20px;
+    background: linear-gradient(135deg, rgba(255, 184, 0, 0.1) 0%, rgba(255, 138, 0, 0.05) 100%);
+    border: 1px solid rgba(255, 184, 0, 0.2);
+    border-radius: 12px;
+    animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.rabbit-hunt__reveal-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #FFB800;
+}
+
+.rabbit-hunt__cards {
+    display: flex;
+    gap: 8px;
+}
+
+.rabbit-hunt__card {
+    width: 48px;
+    height: 64px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(180deg, #FFFFFF 0%, #F0F0F0 100%);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    animation: cardReveal 0.5s ease;
+}
+
+@keyframes cardReveal {
+    0% {
+        transform: rotateY(90deg) scale(0.8);
+        opacity: 0;
+    }
+
+    50% {
+        transform: rotateY(0deg) scale(1.05);
+    }
+
+    100% {
+        transform: rotateY(0deg) scale(1);
+        opacity: 1;
+    }
+}
+
+.rabbit-hunt__rank {
+    font-size: 1.25rem;
+    font-weight: 800;
+    line-height: 1;
+}
+
+.rabbit-hunt__suit {
+    font-size: 1rem;
+}
+
+.rabbit-hunt__card--pending {
+    background: linear-gradient(180deg, #2D333B 0%, #1C2128 100%);
+    border: 1px dashed rgba(255, 255, 255, 0.2);
+    box-shadow: none;
+    animation: none;
+}
+
+.rabbit-hunt__pending-icon {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #6E7681;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   RESPONSIVE
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 480px) {
+    .rabbit-hunt__card {
+        width: 40px;
+        height: 56px;
+    }
+
+    .rabbit-hunt__rank {
+        font-size: 1rem;
+    }
+
+    .rabbit-hunt__suit {
+        font-size: 0.875rem;
+    }
+}

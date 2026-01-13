@@ -1,0 +1,160 @@
+/**
+ * ♠ CLUB ARENA — Terms Gate Styles
+ */
+
+.terms-gate {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #0a0e1a 0%, #141828 50%, #0a0e1a 100%);
+    padding: var(--space-4);
+}
+
+.terms-gate.loading {
+    flex-direction: column;
+    gap: var(--space-4);
+    color: var(--text-secondary);
+}
+
+/* Auth Required Card */
+.auth-card {
+    text-align: center;
+    padding: var(--space-8);
+    background: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-xl);
+    max-width: 400px;
+}
+
+.auth-card .club-logo {
+    font-size: 4rem;
+    color: var(--fb-blue);
+    margin-bottom: var(--space-4);
+}
+
+.auth-card h2 {
+    margin-bottom: var(--space-3);
+}
+
+.auth-card p {
+    margin-bottom: var(--space-6);
+    color: var(--text-secondary);
+}
+
+/* Terms Modal */
+.terms-modal {
+    width: 100%;
+    max-width: 600px;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-xl);
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.terms-header {
+    padding: var(--space-6);
+    text-align: center;
+    background: linear-gradient(180deg, rgba(24, 119, 242, 0.1) 0%, transparent 100%);
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.terms-header .club-logo {
+    font-size: 3rem;
+    color: var(--fb-blue);
+    margin-bottom: var(--space-3);
+}
+
+.terms-header h1 {
+    font-size: var(--fs-2xl);
+    margin-bottom: var(--space-2);
+}
+
+.terms-header .subtitle {
+    color: var(--text-secondary);
+    margin: 0;
+}
+
+.terms-content {
+    flex: 1;
+    padding: var(--space-6);
+    overflow: hidden;
+}
+
+.terms-content h3 {
+    margin-bottom: var(--space-4);
+    color: var(--fb-blue);
+}
+
+.terms-scroll {
+    max-height: 300px;
+    overflow-y: auto;
+    padding-right: var(--space-4);
+}
+
+.terms-scroll h4 {
+    font-size: var(--fs-base);
+    color: var(--text-primary);
+    margin: var(--space-4) 0 var(--space-2);
+}
+
+.terms-scroll h4:first-child {
+    margin-top: 0;
+}
+
+.terms-scroll p {
+    font-size: var(--fs-sm);
+    color: var(--text-secondary);
+    line-height: 1.6;
+}
+
+.terms-scroll strong {
+    color: var(--accent-gold);
+}
+
+.terms-footer {
+    padding: var(--space-4) var(--space-6);
+    background: rgba(0, 0, 0, 0.2);
+    border-top: 1px solid var(--border-subtle);
+}
+
+.agreement-text {
+    font-size: var(--fs-sm);
+    color: var(--text-muted);
+    text-align: center;
+    margin-bottom: var(--space-4);
+}
+
+.terms-actions {
+    display: flex;
+    gap: var(--space-3);
+    justify-content: center;
+}
+
+.terms-actions .btn {
+    min-width: 140px;
+}
+
+/* Responsive */
+@media (max-width: 480px) {
+    .terms-modal {
+        max-height: 100vh;
+        border-radius: 0;
+    }
+
+    .terms-header {
+        padding: var(--space-4);
+    }
+
+    .terms-content {
+        padding: var(--space-4);
+    }
+
+    .terms-scroll {
+        max-height: 200px;
+    }
+}

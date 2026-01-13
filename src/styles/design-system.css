@@ -1,0 +1,572 @@
+/**
+ * ♠ CLUB ARENA — Design System
+ * Facebook-inspired color scheme with PokerBros layout
+ */
+
+:root {
+    /* ═══════════════════════════════════════════════════════════════
+     FACEBOOK COLOR PALETTE
+     ═══════════════════════════════════════════════════════════════ */
+
+    /* Primary Blues */
+    --fb-blue: #1877F2;
+    --fb-blue-hover: #166FE5;
+    --fb-blue-light: #4599FF;
+    --fb-blue-dark: #0D5DC7;
+
+    /* Dark Mode Backgrounds */
+    --bg-primary: #18191A;
+    --bg-secondary: #242526;
+    --bg-tertiary: #3A3B3C;
+    --bg-elevated: #303132;
+    --bg-card: rgba(36, 37, 38, 0.95);
+
+    /* Text Colors */
+    --text-primary: #E4E6EB;
+    --text-secondary: #B0B3B8;
+    --text-tertiary: #8A8D91;
+    --text-muted: #606770;
+
+    /* Accent Colors */
+    --accent-gold: #FFD700;
+    --accent-gold-dark: #B8860B;
+    --accent-orange: #F7931A;
+    --accent-green: #31A24C;
+    --accent-red: #F02849;
+    --accent-purple: #8B5CF6;
+
+    /* Poker Specific */
+    --chip-gold: linear-gradient(135deg, #FFD700 0%, #B8860B 100%);
+    --table-felt: linear-gradient(180deg, #1a3a2a 0%, #0f251a 100%);
+    --table-rim: linear-gradient(180deg, #B8860B 0%, #8B6914 50%, #B8860B 100%);
+
+    /* Status Colors */
+    --status-online: #31A24C;
+    --status-away: #F7931A;
+    --status-offline: #606770;
+
+    /* Borders */
+    --border-subtle: rgba(255, 255, 255, 0.1);
+    --border-medium: rgba(255, 255, 255, 0.2);
+    --border-strong: rgba(255, 255, 255, 0.3);
+
+    /* Shadows */
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
+    --shadow-glow: 0 0 20px rgba(24, 119, 242, 0.3);
+
+    /* ═══════════════════════════════════════════════════════════════
+     TYPOGRAPHY
+     ═══════════════════════════════════════════════════════════════ */
+
+    --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    --font-mono: 'SF Mono', Monaco, 'Courier New', monospace;
+
+    --fs-xs: 0.6875rem;
+    /* 11px */
+    --fs-sm: 0.75rem;
+    /* 12px */
+    --fs-base: 0.875rem;
+    /* 14px */
+    --fs-md: 1rem;
+    /* 16px */
+    --fs-lg: 1.125rem;
+    /* 18px */
+    --fs-xl: 1.25rem;
+    /* 20px */
+    --fs-2xl: 1.5rem;
+    /* 24px */
+    --fs-3xl: 2rem;
+    /* 32px */
+
+    --fw-normal: 400;
+    --fw-medium: 500;
+    --fw-semibold: 600;
+    --fw-bold: 700;
+
+    /* ═══════════════════════════════════════════════════════════════
+     SPACING
+     ═══════════════════════════════════════════════════════════════ */
+
+    --space-1: 0.25rem;
+    /* 4px */
+    --space-2: 0.5rem;
+    /* 8px */
+    --space-3: 0.75rem;
+    /* 12px */
+    --space-4: 1rem;
+    /* 16px */
+    --space-5: 1.25rem;
+    /* 20px */
+    --space-6: 1.5rem;
+    /* 24px */
+    --space-8: 2rem;
+    /* 32px */
+    --space-10: 2.5rem;
+    /* 40px */
+    --space-12: 3rem;
+    /* 48px */
+
+    /* ═══════════════════════════════════════════════════════════════
+     BORDER RADIUS
+     ═══════════════════════════════════════════════════════════════ */
+
+    --radius-sm: 4px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --radius-xl: 16px;
+    --radius-2xl: 24px;
+    --radius-full: 9999px;
+
+    /* ═══════════════════════════════════════════════════════════════
+     LAYOUT
+     ═══════════════════════════════════════════════════════════════ */
+
+    --header-height: 56px;
+    --bottom-nav-height: 60px;
+    --sidebar-width: 280px;
+    --max-width-mobile: 480px;
+    --max-width-tablet: 768px;
+    --max-width-desktop: 1200px;
+
+    /* ═══════════════════════════════════════════════════════════════
+     TRANSITIONS
+     ═══════════════════════════════════════════════════════════════ */
+
+    --transition-fast: 150ms ease;
+    --transition-base: 200ms ease;
+    --transition-slow: 300ms ease;
+    --transition-spring: 400ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   GLOBAL RESETS
+   ═══════════════════════════════════════════════════════════════ */
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html {
+    font-size: 16px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+    font-family: var(--font-family);
+    font-size: var(--fs-base);
+    line-height: 1.5;
+    color: var(--text-primary);
+    background: var(--bg-primary);
+    min-height: 100vh;
+    overflow-x: hidden;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   UTILITY CLASSES
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Text */
+.text-primary {
+    color: var(--text-primary);
+}
+
+.text-secondary {
+    color: var(--text-secondary);
+}
+
+.text-muted {
+    color: var(--text-muted);
+}
+
+.text-gold {
+    color: var(--accent-gold);
+}
+
+.text-blue {
+    color: var(--fb-blue);
+}
+
+.text-green {
+    color: var(--accent-green);
+}
+
+.text-red {
+    color: var(--accent-red);
+}
+
+/* Backgrounds */
+.bg-primary {
+    background: var(--bg-primary);
+}
+
+.bg-secondary {
+    background: var(--bg-secondary);
+}
+
+.bg-card {
+    background: var(--bg-card);
+}
+
+.bg-blue {
+    background: var(--fb-blue);
+}
+
+/* Flex */
+.flex {
+    display: flex;
+}
+
+.flex-col {
+    flex-direction: column;
+}
+
+.items-center {
+    align-items: center;
+}
+
+.justify-center {
+    justify-content: center;
+}
+
+.justify-between {
+    justify-content: space-between;
+}
+
+.gap-1 {
+    gap: var(--space-1);
+}
+
+.gap-2 {
+    gap: var(--space-2);
+}
+
+.gap-3 {
+    gap: var(--space-3);
+}
+
+.gap-4 {
+    gap: var(--space-4);
+}
+
+/* Grid */
+.grid {
+    display: grid;
+}
+
+.grid-cols-2 {
+    grid-template-columns: repeat(2, 1fr);
+}
+
+.grid-cols-3 {
+    grid-template-columns: repeat(3, 1fr);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   BUTTON STYLES
+   ═══════════════════════════════════════════════════════════════ */
+
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-4);
+    font-size: var(--fs-base);
+    font-weight: var(--fw-semibold);
+    border: none;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: all var(--transition-base);
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.btn-primary {
+    background: var(--fb-blue);
+    color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+    background: var(--fb-blue-hover);
+}
+
+.btn-gold {
+    background: var(--chip-gold);
+    color: #000;
+}
+
+.btn-green {
+    background: var(--accent-green);
+    color: white;
+}
+
+.btn-red {
+    background: var(--accent-red);
+    color: white;
+}
+
+.btn-ghost {
+    background: transparent;
+    color: var(--text-primary);
+    border: 1px solid var(--border-medium);
+}
+
+.btn-ghost:hover:not(:disabled) {
+    background: var(--bg-tertiary);
+}
+
+/* Action Button Sizes (for poker actions) */
+.btn-action {
+    flex: 1;
+    padding: var(--space-3) var(--space-4);
+    font-size: var(--fs-md);
+    font-weight: var(--fw-bold);
+    border-radius: var(--radius-lg);
+    text-transform: uppercase;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   CARD STYLES
+   ═══════════════════════════════════════════════════════════════ */
+
+.card {
+    background: var(--bg-card);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-subtle);
+    overflow: hidden;
+}
+
+.card-header {
+    padding: var(--space-3) var(--space-4);
+    border-bottom: 1px solid var(--border-subtle);
+    font-weight: var(--fw-semibold);
+}
+
+.card-body {
+    padding: var(--space-4);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   INPUT STYLES
+   ═══════════════════════════════════════════════════════════════ */
+
+.input {
+    width: 100%;
+    padding: var(--space-3) var(--space-4);
+    font-size: var(--fs-base);
+    color: var(--text-primary);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    outline: none;
+    transition: border-color var(--transition-base);
+}
+
+.input:focus {
+    border-color: var(--fb-blue);
+    box-shadow: 0 0 0 2px rgba(24, 119, 242, 0.2);
+}
+
+.input::placeholder {
+    color: var(--text-muted);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   AVATAR STYLES
+   ═══════════════════════════════════════════════════════════════ */
+
+.avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: var(--radius-full);
+    background: var(--bg-tertiary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: var(--fs-lg);
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.avatar-sm {
+    width: 32px;
+    height: 32px;
+    font-size: var(--fs-base);
+}
+
+.avatar-lg {
+    width: 56px;
+    height: 56px;
+    font-size: var(--fs-2xl);
+}
+
+.avatar-xl {
+    width: 72px;
+    height: 72px;
+    font-size: var(--fs-3xl);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   BADGE STYLES
+   ═══════════════════════════════════════════════════════════════ */
+
+.badge {
+    display: inline-flex;
+    align-items: center;
+    padding: var(--space-1) var(--space-2);
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-semibold);
+    border-radius: var(--radius-sm);
+    text-transform: uppercase;
+}
+
+.badge-blue {
+    background: var(--fb-blue);
+    color: white;
+}
+
+.badge-gold {
+    background: var(--accent-gold);
+    color: #000;
+}
+
+.badge-green {
+    background: var(--accent-green);
+    color: white;
+}
+
+.badge-red {
+    background: var(--accent-red);
+    color: white;
+}
+
+.badge-purple {
+    background: var(--accent-purple);
+    color: white;
+}
+
+/* Position Badges (D, SB, BB) */
+.position-badge {
+    width: 24px;
+    height: 24px;
+    border-radius: var(--radius-full);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-bold);
+}
+
+.position-dealer {
+    background: var(--accent-gold);
+    color: #000;
+}
+
+.position-sb {
+    background: var(--fb-blue);
+    color: white;
+}
+
+.position-bb {
+    background: var(--accent-orange);
+    color: white;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   TAB STYLES
+   ═══════════════════════════════════════════════════════════════ */
+
+.tabs {
+    display: flex;
+    gap: var(--space-1);
+    background: var(--bg-tertiary);
+    padding: var(--space-1);
+    border-radius: var(--radius-xl);
+}
+
+.tab {
+    flex: 1;
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-medium);
+    color: var(--text-secondary);
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-lg);
+    cursor: pointer;
+    transition: all var(--transition-base);
+    text-align: center;
+}
+
+.tab:hover {
+    color: var(--text-primary);
+}
+
+.tab.active {
+    background: var(--fb-blue);
+    color: white;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   CHIP DISPLAY
+   ═══════════════════════════════════════════════════════════════ */
+
+.chip-amount {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    color: var(--accent-gold);
+    font-weight: var(--fw-bold);
+    font-feature-settings: 'tnum';
+}
+
+.chip-icon {
+    width: 20px;
+    height: 20px;
+    background: var(--chip-gold);
+    border-radius: var(--radius-full);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: var(--fs-xs);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   SCROLLBAR
+   ═══════════════════════════════════════════════════════════════ */
+
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--bg-secondary);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--bg-tertiary);
+    border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--text-muted);
+}

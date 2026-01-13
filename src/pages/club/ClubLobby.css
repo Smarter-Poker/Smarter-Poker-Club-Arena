@@ -1,0 +1,548 @@
+/**
+ * ♠ CLUB ARENA — Club Lobby Styles
+ * PokerBros-inspired dark theme with Facebook blues
+ */
+
+.club-lobby {
+    min-height: 100vh;
+    background: linear-gradient(180deg, #0a0e1a 0%, #141828 50%, #0a0e1a 100%);
+    padding-bottom: calc(var(--bottom-nav-height) + var(--space-4));
+}
+
+.club-lobby.loading,
+.club-lobby.error {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    gap: var(--space-4);
+}
+
+.loader {
+    color: var(--text-secondary);
+    font-size: var(--fs-lg);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   HEADER
+   ═══════════════════════════════════════════════════════════════ */
+
+.lobby-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-3) var(--space-4);
+    background: rgba(10, 14, 26, 0.9);
+    position: sticky;
+    top: 0;
+    z-index: 50;
+}
+
+.header-left {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.back-btn {
+    color: var(--fb-blue);
+    font-size: var(--fs-2xl);
+    font-weight: var(--fw-bold);
+    text-decoration: none;
+    padding: var(--space-1);
+}
+
+.header-icons {
+    display: flex;
+    gap: var(--space-1);
+}
+
+.icon-btn {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    border-radius: var(--radius-md);
+    font-size: var(--fs-lg);
+    cursor: pointer;
+}
+
+.vip-badge {
+    background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
+    color: #000;
+    padding: var(--space-1) var(--space-3);
+    border-radius: var(--radius-lg);
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-bold);
+}
+
+.jackpot-display {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+}
+
+.jackpot-label {
+    font-size: var(--fs-xs);
+    color: #FF4444;
+    font-weight: var(--fw-bold);
+    text-transform: uppercase;
+}
+
+.jackpot-amount {
+    font-size: var(--fs-md);
+    color: var(--accent-gold);
+    font-weight: var(--fw-bold);
+    font-family: var(--font-mono);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   CLUB CARD
+   ═══════════════════════════════════════════════════════════════ */
+
+.club-card {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    margin: var(--space-3) var(--space-4);
+    padding: var(--space-3) var(--space-4);
+    background: linear-gradient(135deg, rgba(30, 40, 60, 0.8) 0%, rgba(20, 30, 50, 0.9) 100%);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: var(--radius-lg);
+}
+
+.club-avatar {
+    width: 56px;
+    height: 56px;
+    background: linear-gradient(135deg, var(--bg-tertiary) 0%, var(--bg-secondary) 100%);
+    border: 2px solid var(--fb-blue);
+    border-radius: var(--radius-md);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.club-logo {
+    font-size: 2rem;
+    color: var(--fb-blue);
+}
+
+.club-info {
+    flex: 1;
+}
+
+.club-name {
+    font-size: var(--fs-lg);
+    font-weight: var(--fw-bold);
+    color: var(--text-primary);
+    margin-bottom: var(--space-1);
+}
+
+.club-meta {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    font-size: var(--fs-sm);
+    color: var(--text-secondary);
+}
+
+.club-balances {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    align-items: flex-end;
+}
+
+.balance-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.chip-icon {
+    font-size: var(--fs-lg);
+}
+
+.balance-amount {
+    font-size: var(--fs-base);
+    font-weight: var(--fw-bold);
+    color: var(--accent-gold);
+    font-family: var(--font-mono);
+}
+
+.add-btn {
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--accent-green);
+    border: none;
+    border-radius: var(--radius-full);
+    color: white;
+    font-size: var(--fs-lg);
+    font-weight: var(--fw-bold);
+    cursor: pointer;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   CONTACT BANNER
+   ═══════════════════════════════════════════════════════════════ */
+
+.contact-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 0 var(--space-4) var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    background: rgba(24, 119, 242, 0.1);
+    border: 1px solid rgba(24, 119, 242, 0.3);
+    border-radius: var(--radius-md);
+    font-size: var(--fs-sm);
+    color: var(--text-secondary);
+}
+
+.union-badge {
+    background: linear-gradient(135deg, #8B5CF6 0%, #6366F1 100%);
+    color: white;
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-sm);
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-bold);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   FILTER TABS
+   ═══════════════════════════════════════════════════════════════ */
+
+.filter-tabs {
+    display: flex;
+    gap: var(--space-1);
+    padding: 0 var(--space-4);
+    margin-bottom: var(--space-4);
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+
+.filter-tabs::-webkit-scrollbar {
+    display: none;
+}
+
+.filter-tab {
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-medium);
+    color: var(--text-secondary);
+    background: transparent;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-full);
+    white-space: nowrap;
+    cursor: pointer;
+    transition: all var(--transition-base);
+}
+
+.filter-tab:hover {
+    color: var(--text-primary);
+    border-color: var(--border-medium);
+}
+
+.filter-tab.active {
+    background: var(--fb-blue);
+    color: white;
+    border-color: var(--fb-blue);
+}
+
+.filter-more {
+    padding: var(--space-2);
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   TOURNAMENT GRID
+   ═══════════════════════════════════════════════════════════════ */
+
+.tournament-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--space-3);
+    padding: 0 var(--space-4);
+}
+
+@media (max-width: 400px) {
+    .tournament-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.empty-state {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-10);
+    gap: var(--space-3);
+    color: var(--text-muted);
+}
+
+.empty-icon {
+    font-size: 3rem;
+    opacity: 0.5;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   TOURNAMENT CARD
+   ═══════════════════════════════════════════════════════════════ */
+
+.tournament-card,
+.table-card {
+    display: flex;
+    flex-direction: column;
+    background: linear-gradient(180deg, rgba(40, 50, 70, 0.8) 0%, rgba(25, 35, 55, 0.9) 100%);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    text-decoration: none;
+    transition: all var(--transition-base);
+}
+
+.tournament-card:hover,
+.table-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--fb-blue);
+    box-shadow: 0 4px 20px rgba(24, 119, 242, 0.2);
+}
+
+.tournament-card .card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-2) var(--space-3);
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.trophy-icon {
+    font-size: 1.5rem;
+}
+
+.seats-badge {
+    background: rgba(24, 119, 242, 0.3);
+    color: var(--fb-blue-light);
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-sm);
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-bold);
+}
+
+.tournament-card .card-body {
+    padding: var(--space-3);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+}
+
+.buyin-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+}
+
+.buyin-label {
+    font-size: var(--fs-xs);
+    color: var(--text-muted);
+}
+
+.buyin-amount {
+    font-size: var(--fs-2xl);
+    font-weight: var(--fw-bold);
+    color: var(--text-primary);
+}
+
+.timer-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    font-size: var(--fs-sm);
+    color: var(--text-secondary);
+}
+
+.tournament-card .card-footer {
+    display: flex;
+    gap: var(--space-1);
+    padding: 0 var(--space-3) var(--space-2);
+}
+
+.type-badge {
+    padding: var(--space-1) var(--space-2);
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-bold);
+    border-radius: var(--radius-sm);
+}
+
+.type-badge.mtt {
+    background: #FF6B35;
+    color: white;
+}
+
+.type-badge.sng {
+    background: #8B5CF6;
+    color: white;
+}
+
+.variant-badge {
+    background: var(--fb-blue);
+    color: white;
+    padding: var(--space-1) var(--space-2);
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-bold);
+    border-radius: var(--radius-sm);
+}
+
+.card-name {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: 0 var(--space-3);
+    font-size: var(--fs-sm);
+    color: var(--text-primary);
+}
+
+.prize-icon {
+    font-size: var(--fs-base);
+}
+
+.tournament-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.card-date {
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--fs-xs);
+    color: var(--text-muted);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   TABLE CARD
+   ═══════════════════════════════════════════════════════════════ */
+
+.table-card .card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-2) var(--space-3);
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.table-icon {
+    font-size: 1.5rem;
+}
+
+.table-card .card-body {
+    padding: var(--space-3);
+}
+
+.table-name {
+    font-size: var(--fs-md);
+    font-weight: var(--fw-bold);
+    color: var(--text-primary);
+    margin-bottom: var(--space-1);
+}
+
+.stakes {
+    font-size: var(--fs-lg);
+    font-weight: var(--fw-bold);
+    color: var(--accent-gold);
+    margin-bottom: var(--space-1);
+}
+
+.players-count {
+    font-size: var(--fs-sm);
+    color: var(--text-secondary);
+}
+
+.table-card .card-footer {
+    display: flex;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    background: rgba(0, 0, 0, 0.1);
+}
+
+.status-badge {
+    padding: var(--space-1) var(--space-2);
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-medium);
+    border-radius: var(--radius-sm);
+}
+
+.status-badge.active {
+    background: var(--accent-green);
+    color: white;
+}
+
+.status-badge.waiting {
+    background: var(--accent-orange);
+    color: white;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   BOTTOM NAVIGATION
+   ═══════════════════════════════════════════════════════════════ */
+
+.bottom-nav {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: var(--bottom-nav-height);
+    background: linear-gradient(180deg, rgba(30, 35, 50, 0.98) 0%, rgba(20, 25, 40, 1) 100%);
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    display: flex;
+    align-items: stretch;
+    z-index: 100;
+    padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+.nav-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    color: var(--text-secondary);
+    background: none;
+    border: none;
+    cursor: pointer;
+    transition: color var(--transition-base);
+}
+
+.nav-item:hover,
+.nav-item.active {
+    color: var(--fb-blue);
+}
+
+.nav-icon {
+    font-size: 1.25rem;
+}
+
+.nav-label {
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-medium);
+}
+
+.nav-item.close {
+    color: var(--text-muted);
+}
+
+.nav-item.close:hover {
+    color: var(--accent-red);
+}

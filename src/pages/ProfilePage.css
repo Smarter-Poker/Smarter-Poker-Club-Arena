@@ -1,0 +1,217 @@
+/**
+ * ♠ CLUB ARENA — Profile Page Styles
+ */
+
+.profile-page {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-8);
+}
+
+/* Header */
+.profile-header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-6);
+    padding: var(--space-8);
+    background: var(--gradient-card);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-2xl);
+}
+
+.profile-avatar {
+    width: 100px;
+    height: 100px;
+    font-size: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--royal-blue-dim);
+    border: 3px solid var(--royal-blue);
+    border-radius: 50%;
+    position: relative;
+}
+
+.vip-badge {
+    position: absolute;
+    bottom: -8px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: var(--text-xs);
+    font-weight: 700;
+    padding: var(--space-1) var(--space-2);
+    background: var(--gold-gradient);
+    color: var(--near-black);
+    border-radius: var(--radius-full);
+}
+
+.profile-info {
+    flex: 1;
+}
+
+.profile-info h1 {
+    font-size: var(--text-3xl);
+    margin-bottom: var(--space-1);
+}
+
+.profile-info p {
+    color: var(--text-muted);
+}
+
+.profile-chips {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-1);
+    padding: var(--space-4) var(--space-6);
+    background: var(--elevated-surface);
+    border-radius: var(--radius-xl);
+}
+
+.chips-icon {
+    font-size: var(--text-2xl);
+}
+
+.chips-amount {
+    font-size: var(--text-3xl);
+    font-weight: 700;
+    font-family: var(--font-mono);
+    color: var(--warning);
+}
+
+.chips-label {
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    text-transform: uppercase;
+}
+
+/* Stats Section */
+.stats-section h2 {
+    font-size: var(--text-xl);
+    margin-bottom: var(--space-4);
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: var(--space-4);
+}
+
+.stat-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-6);
+    background: var(--elevated-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-xl);
+}
+
+.stat-card .stat-value {
+    font-size: var(--text-2xl);
+    font-weight: 700;
+    font-family: var(--font-mono);
+    color: var(--text-primary);
+}
+
+.stat-card .stat-value.positive {
+    color: var(--success);
+}
+
+.stat-card .stat-value.negative {
+    color: var(--danger);
+}
+
+.stat-card .stat-label {
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    text-transform: uppercase;
+}
+
+/* Quick Stats */
+.quick-stats {
+    display: flex;
+    gap: var(--space-4);
+}
+
+.quick-stat {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    padding: var(--space-5);
+    background: var(--elevated-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-xl);
+}
+
+.quick-icon {
+    font-size: 32px;
+}
+
+.quick-value {
+    font-size: var(--text-3xl);
+    font-weight: 700;
+    font-family: var(--font-mono);
+    color: var(--royal-blue-light);
+}
+
+.quick-label {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+}
+
+/* Settings */
+.settings-section {
+    padding: var(--space-6);
+    background: var(--elevated-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-xl);
+}
+
+.settings-section h2 {
+    font-size: var(--text-lg);
+    margin-bottom: var(--space-4);
+    padding-bottom: var(--space-3);
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.settings-list {
+    display: flex;
+    flex-direction: column;
+}
+
+.setting-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-4) 0;
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.setting-item:last-child {
+    border-bottom: none;
+}
+
+.setting-item span {
+    color: var(--text-secondary);
+}
+
+.setting-item input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    accent-color: var(--royal-blue);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .profile-header {
+        flex-direction: column;
+        text-align: center;
+    }
+
+    .quick-stats {
+        flex-direction: column;
+    }
+}

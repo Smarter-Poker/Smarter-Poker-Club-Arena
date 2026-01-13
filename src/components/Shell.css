@@ -1,0 +1,226 @@
+/**
+ * ♠ CLUB ARENA — Shell Styles
+ */
+
+.shell {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   HEADER
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.shell-header {
+    position: sticky;
+    top: 0;
+    z-index: var(--z-sticky);
+    background: rgba(5, 5, 7, 0.95);
+    backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.shell-header-content {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: var(--space-4) var(--space-6);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-8);
+}
+
+/* Logo */
+.shell-logo {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    text-decoration: none;
+    color: var(--text-primary);
+}
+
+.shell-logo-icon {
+    font-size: var(--text-3xl);
+    color: var(--royal-blue);
+    text-shadow: 0 0 20px var(--royal-blue-glow);
+}
+
+.shell-logo-text {
+    font-size: var(--text-xl);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+}
+
+/* Nav */
+.shell-nav {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.shell-nav-link {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-4);
+    font-size: var(--text-sm);
+    font-weight: 500;
+    color: var(--text-secondary);
+    text-decoration: none;
+    border-radius: var(--radius-lg);
+    transition: all var(--duration-fast) var(--ease-out);
+}
+
+.shell-nav-link:hover {
+    color: var(--text-primary);
+    background: var(--elevated-surface);
+}
+
+.shell-nav-link.active {
+    color: var(--royal-blue-light);
+    background: var(--royal-blue-dim);
+}
+
+/* User */
+.shell-user {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+}
+
+.shell-chips {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-4);
+    background: var(--elevated-surface);
+    border-radius: var(--radius-full);
+    border: 1px solid var(--border-subtle);
+}
+
+.chip-icon {
+    font-size: var(--text-lg);
+}
+
+.chip-amount {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    font-family: var(--font-mono);
+    color: var(--warning);
+}
+
+.shell-avatar {
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--royal-blue-dim);
+    border: 2px solid var(--royal-blue);
+    border-radius: 50%;
+    font-size: var(--text-lg);
+    cursor: pointer;
+    transition: all var(--duration-fast) var(--ease-out);
+}
+
+.shell-avatar:hover {
+    border-color: var(--royal-blue-light);
+    box-shadow: var(--shadow-glow-blue);
+}
+
+/* Mobile Toggle */
+.shell-mobile-toggle {
+    display: none;
+    width: 40px;
+    height: 40px;
+    align-items: center;
+    justify-content: center;
+    font-size: var(--text-xl);
+    color: var(--text-primary);
+    background: transparent;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    cursor: pointer;
+}
+
+/* Mobile Nav */
+.shell-mobile-nav {
+    display: none;
+    flex-direction: column;
+    padding: var(--space-4) var(--space-6);
+    border-top: 1px solid var(--border-subtle);
+    background: var(--dark-surface);
+}
+
+.shell-mobile-nav a {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-4);
+    font-size: var(--text-base);
+    font-weight: 500;
+    color: var(--text-secondary);
+    text-decoration: none;
+    border-radius: var(--radius-lg);
+}
+
+.shell-mobile-nav a:hover,
+.shell-mobile-nav a:active {
+    color: var(--text-primary);
+    background: var(--elevated-surface);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   MAIN
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.shell-main {
+    flex: 1;
+    max-width: 1400px;
+    width: 100%;
+    margin: 0 auto;
+    padding: var(--space-8) var(--space-6);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   FOOTER
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.shell-footer {
+    padding: var(--space-6);
+    text-align: center;
+    border-top: 1px solid var(--border-subtle);
+    background: var(--dark-surface);
+}
+
+.shell-footer p {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   RESPONSIVE
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 768px) {
+    .shell-nav {
+        display: none;
+    }
+
+    .shell-user {
+        display: none;
+    }
+
+    .shell-mobile-toggle {
+        display: flex;
+    }
+
+    .shell-mobile-nav {
+        display: flex;
+    }
+
+    .shell-main {
+        padding: var(--space-4);
+    }
+}

@@ -1,0 +1,471 @@
+/**
+ * ♠ CLUB ARENA — Club Detail Page Styles
+ */
+
+.club-detail-page {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-6);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   HEADER
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.club-header {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+}
+
+.club-header-content {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-6);
+    padding: var(--space-6);
+    background: var(--elevated-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-xl);
+}
+
+.club-avatar {
+    width: 80px;
+    height: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--royal-blue-dim);
+    border: 2px solid var(--royal-blue);
+    border-radius: var(--radius-lg);
+    font-size: 40px;
+    flex-shrink: 0;
+}
+
+.club-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: var(--radius-lg);
+}
+
+.club-header-info {
+    flex: 1;
+}
+
+.club-header-info h1 {
+    font-size: var(--text-2xl);
+    margin: 0 0 var(--space-1);
+}
+
+.club-id {
+    font-size: var(--text-sm);
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+    margin: 0 0 var(--space-2);
+}
+
+.club-description {
+    color: var(--text-secondary);
+    margin: 0;
+}
+
+.club-header-stats {
+    display: flex;
+    gap: var(--space-6);
+}
+
+.header-stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-1);
+}
+
+.header-stat .stat-value {
+    font-size: var(--text-2xl);
+    font-weight: 700;
+    font-family: var(--font-mono);
+}
+
+.header-stat .stat-value.green {
+    color: var(--success);
+}
+
+.header-stat .stat-label {
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    text-transform: uppercase;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   TABS
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.club-tabs {
+    display: flex;
+    gap: var(--space-2);
+    padding: var(--space-2);
+    background: var(--dark-surface);
+    border-radius: var(--radius-lg);
+}
+
+.tab {
+    flex: 1;
+    padding: var(--space-3) var(--space-4);
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-md);
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--duration-fast) var(--ease-out);
+}
+
+.tab:hover {
+    background: var(--elevated-surface);
+    color: var(--text-primary);
+}
+
+.tab.active {
+    background: var(--royal-blue);
+    color: white;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   CONTENT
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.club-content {
+    min-height: 400px;
+}
+
+.section-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: var(--space-4);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   TABLES
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.tables-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: var(--space-4);
+}
+
+.table-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-4);
+    background: var(--elevated-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    transition: all var(--duration-fast) var(--ease-out);
+}
+
+.table-card:hover {
+    border-color: var(--royal-blue-muted);
+    transform: translateY(-2px);
+}
+
+.table-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.table-name {
+    font-weight: 600;
+    font-size: var(--text-base);
+}
+
+.table-status {
+    font-size: var(--text-xs);
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-full);
+    background: var(--dark-surface);
+}
+
+.table-status.running {
+    color: var(--success);
+}
+
+.table-status.waiting {
+    color: var(--warning);
+}
+
+.table-info {
+    display: flex;
+    justify-content: space-between;
+}
+
+.table-variant {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+}
+
+.table-stakes {
+    font-weight: 700;
+    font-family: var(--font-mono);
+    color: #FFD700;
+}
+
+.table-players {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.player-count {
+    font-family: var(--font-mono);
+}
+
+.player-count .current {
+    font-size: var(--text-lg);
+    font-weight: 700;
+}
+
+.player-count .divider {
+    color: var(--text-muted);
+    margin: 0 2px;
+}
+
+.player-count .max {
+    color: var(--text-muted);
+}
+
+.seats-visual {
+    display: flex;
+    gap: 4px;
+}
+
+.seat-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--dark-surface);
+    border: 1px solid var(--border-subtle);
+}
+
+.seat-dot.filled {
+    background: var(--success);
+    border-color: var(--success);
+}
+
+.table-features {
+    display: flex;
+    gap: var(--space-2);
+}
+
+.feature-tag {
+    font-size: var(--text-xs);
+    padding: var(--space-1) var(--space-2);
+    background: var(--royal-blue-dim);
+    color: var(--royal-blue-light);
+    border-radius: var(--radius-full);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   MEMBERS
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.members-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+}
+
+.member-card {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    background: var(--elevated-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+}
+
+.member-avatar {
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--dark-surface);
+    border-radius: 50%;
+    font-size: var(--text-lg);
+}
+
+.member-info {
+    flex: 1;
+}
+
+.member-name {
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.role-badge {
+    font-size: var(--text-xs);
+    padding: 2px 8px;
+    border-radius: var(--radius-full);
+    text-transform: capitalize;
+}
+
+.role-badge.owner {
+    background: rgba(255, 215, 0, 0.2);
+    color: #FFD700;
+}
+
+.role-badge.admin {
+    background: var(--royal-blue-dim);
+    color: var(--royal-blue-light);
+}
+
+.role-badge.agent {
+    background: rgba(16, 185, 129, 0.2);
+    color: var(--success);
+}
+
+.member-meta {
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+}
+
+.member-balance {
+    font-weight: 600;
+    font-family: var(--font-mono);
+    color: var(--success);
+}
+
+.member-status.active {
+    color: var(--success);
+}
+
+.member-status.pending {
+    color: var(--warning);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   SETTINGS
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.settings-section {
+    max-width: 600px;
+}
+
+.settings-group {
+    background: var(--elevated-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    padding: var(--space-4);
+    margin-bottom: var(--space-4);
+}
+
+.settings-group h3 {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    margin: 0 0 var(--space-4);
+    text-transform: uppercase;
+}
+
+.settings-group.danger {
+    border-color: rgba(244, 63, 94, 0.3);
+}
+
+.setting-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-3) 0;
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.setting-item:last-of-type {
+    border-bottom: none;
+}
+
+.setting-info {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+}
+
+.setting-label {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+}
+
+.setting-value {
+    font-weight: 500;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   EMPTY STATE
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-3);
+    padding: var(--space-12);
+    text-align: center;
+}
+
+.empty-icon {
+    font-size: 48px;
+    opacity: 0.5;
+}
+
+.empty-state h3 {
+    margin: 0;
+}
+
+.empty-state p {
+    color: var(--text-muted);
+    margin: 0;
+    max-width: 300px;
+}
+
+.error-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-4);
+    padding: var(--space-12);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   RESPONSIVE
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 768px) {
+    .club-header-content {
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+    }
+
+    .club-header-stats {
+        justify-content: center;
+    }
+
+    .club-tabs {
+        flex-wrap: wrap;
+    }
+
+    .tab {
+        flex: none;
+        padding: var(--space-2) var(--space-3);
+        font-size: var(--text-xs);
+    }
+}

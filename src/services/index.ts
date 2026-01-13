@@ -48,3 +48,12 @@ export * from './ArenaTrainingController';
 // Audio
 export * from './SoundService';
 
+// WebSocket / Real-Time
+export { TableWebSocket, useTableWebSocket } from './TableWebSocket';
+export type {
+    GameEventType,
+    GameEvent,
+    PlayerPresence,
+    TablePresenceState,
+    UseTableWebSocketResult,
+} from './TableWebSocket';

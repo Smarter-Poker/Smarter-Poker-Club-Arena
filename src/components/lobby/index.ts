@@ -12,3 +12,8 @@ export { default as QuickActions } from './QuickActions';
 
 // Table Card (Preview of a table in lobby)
 export { default as TableCard } from './TableCard';
+
+// Quick Seat (One-click buy-in)
+export { default as QuickSeat } from './QuickSeat';
+export type { QuickSeatProps } from './QuickSeat';
+

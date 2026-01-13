@@ -10,6 +10,9 @@ export { ClubsService } from './ClubsService';
 export * from './ClubService';
 // UnionService uses named export as object
 export * from './UnionService';
+// MembershipService for member management & permissions
+export { MembershipService } from './MembershipService';
+export type { ClubMembership, MemberRole, MemberStatus, MemberStats, RoleChange } from './MembershipService';
 
 // Table & Room Management
 export * from './TableService';

@@ -125,3 +125,7 @@ export type { TimeBankProps } from './TimeBank';
 // Straddle Toggle
 export { StraddleToggle } from './StraddleToggle';
 export type { StraddleToggleProps } from './StraddleToggle';
+
+// Bad Beat Jackpot
+export { BadBeatJackpot } from './BadBeatJackpot';
+export type { BadBeatJackpotProps } from './BadBeatJackpot';

@@ -588,10 +588,14 @@ const clubs = await ClubsService.discoverNearby({
 40. ~~**Add TipDealer feature**~~ ✅ DONE — Tip dealer after winning pot
 41. ~~**Build TimeBank component**~~ ✅ DONE — Extra time bank for decisions
 42. ~~**Add StradleToggle**~~ ✅ DONE — Enable/disable straddle option
-43. **Build VoiceChatPanel** — Real-time voice chat controls
-44. **Add BadBeatJackpot** — Jackpot display and trigger animation
-45. **Build ClubHome** — Club management dashboard
-46. **Add MemberList** — Club member management
+43. ~~**Build VoiceChatPanel**~~ ⏭️ SKIPPED — Real-time voice chat controls
+44. ~~**Add BadBeatJackpot**~~ ✅ DONE — Jackpot display and trigger animation
+45. ~~**Build ClubHome**~~ ✅ DONE — Club management dashboard
+46. ~~**Add MemberList**~~ ✅ DONE — Club member management
+47. **Build ClubSettings** — Settings for club customization
+48. **Add CashierModal** — Player chip management
+49. **Build AdminReports** — Club performance statistics
+
 
 ---
 

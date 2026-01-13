@@ -53,3 +53,11 @@ export type { TableChatProps, ChatMessage, ChatMessageType } from './TableChat';
 // Wait List Modal
 export { WaitListModal } from './WaitListModal';
 export type { WaitListModalProps, WaitListPlayer } from './WaitListModal';
+
+// Sit Out Modal
+export { SitOutModal } from './SitOutModal';
+export type { SitOutModalProps } from './SitOutModal';
+
+// Cashier Modal
+export { CashierModal } from './CashierModal';
+export type { CashierModalProps, CashierTransaction, CashierTab } from './CashierModal';

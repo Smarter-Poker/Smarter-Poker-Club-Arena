@@ -39,7 +39,7 @@ export type { LeaderboardEntry, PlayerStats, LeaderboardPeriod, LeaderboardMetri
 
 // Bot Liquidity (Hydra)
 export { HydraService } from './HydraService';
-export type { HorsePlayer, HydraConfig, BotProfile, TableLiquidityStatus } from './HydraService';
+export type { HorsePlayer, HydraConfig, BotProfile, TableLiquidityStatus, BotDecision, HandContext } from './HydraService';
 
 // Arena & Training
 export * from './ArenaLobbyEngine';
@@ -61,3 +61,13 @@ export type {
     TablePresenceState,
     UseTableWebSocketResult,
 } from './TableWebSocket';
+
+// Real-Time Channels (Club, Tournament, Hand)
+export { realtimeChannelService, RealtimeChannelService } from './RealtimeChannelService';
+export type {
+    ChannelType,
+    ClubPresence,
+    ClubEvent,
+    TournamentEvent,
+    HandEvent
+} from './RealtimeChannelService';

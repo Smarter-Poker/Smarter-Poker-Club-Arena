@@ -562,6 +562,390 @@ class TournamentService {
             levelIndex: tournament.blind_structure.length - 1
         };
     }
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Rebuy / Add-on
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Check if rebuy is available for a player
+     */
+    async canRebuy(tournamentId: string, userId: string): Promise<{ allowed: boolean; reason?: string }> {
+        const tournament = await this.getTournament(tournamentId);
+        if (!tournament) return { allowed: false, reason: 'Tournament not found' };
+
+        // @ts-ignore - Check if rebuy is configured
+        if (!tournament.is_rebuy) return { allowed: false, reason: 'Rebuys not available' };
+
+        const levelState = this.getCurrentLevelState(tournament);
+        // @ts-ignore
+        if (levelState.levelIndex >= (tournament.rebuy_levels || 4)) {
+            return { allowed: false, reason: 'Rebuy period has ended' };
+        }
+
+        // Check current stack (must be at or below starting stack)
+        const { data: player } = await supabase
+            .from('tournament_players')
+            .select('chips')
+            .eq('tournament_id', tournamentId)
+            .eq('user_id', userId)
+            .single();
+
+        if (!player) return { allowed: false, reason: 'Player not found' };
+        if (player.chips > tournament.starting_chips) {
+            return { allowed: false, reason: 'Stack too high for rebuy' };
+        }
+
+        return { allowed: true };
+    }
+
+    /**
+     * Process a rebuy for a player
+     */
+    async processRebuy(tournamentId: string, userId: string): Promise<{ success: boolean; newStack?: number }> {
+        const canRebuyResult = await this.canRebuy(tournamentId, userId);
+        if (!canRebuyResult.allowed) {
+            throw new Error(canRebuyResult.reason || 'Rebuy not allowed');
+        }
+
+        const tournament = await this.getTournament(tournamentId);
+        if (!tournament) throw new Error('Tournament not found');
+
+        // @ts-ignore
+        const rebuyChips = tournament.rebuy_chips || tournament.starting_chips;
+        // @ts-ignore
+        const rebuyCost = tournament.rebuy_cost || tournament.buy_in;
+
+        if (isDemoMode) {
+            return { success: true, newStack: rebuyChips };
+        }
+
+        // Process rebuy via RPC
+        const { data, error } = await supabase.rpc('process_tournament_rebuy', {
+            p_tournament_id: tournamentId,
+            p_player_id: userId,
+            p_rebuy_type: 'rebuy',
+            p_cost: rebuyCost,
+            p_chips: rebuyChips,
+            p_current_level: this.getCurrentLevelState(tournament).levelIndex,
+        });
+
+        if (error) throw error;
+
+        // Broadcast rebuy event
+        try {
+            const { realtimeChannelService } = await import('./RealtimeChannelService');
+            await realtimeChannelService.broadcastTournamentEvent(tournamentId, {
+                type: 'player_registered', // Using existing event type
+                payload: { type: 'rebuy', userId, chips: rebuyChips },
+            });
+        } catch (e) {
+            console.warn('Failed to broadcast rebuy event:', e);
+        }
+
+        return { success: true, newStack: data?.new_stack || rebuyChips };
+    }
+
+    /**
+     * Check if add-on is available
+     */
+    async canAddOn(tournamentId: string): Promise<{ allowed: boolean; reason?: string }> {
+        const tournament = await this.getTournament(tournamentId);
+        if (!tournament) return { allowed: false, reason: 'Tournament not found' };
+
+        // @ts-ignore
+        if (!tournament.addon_available) return { allowed: false, reason: 'Add-ons not available' };
+
+        const levelState = this.getCurrentLevelState(tournament);
+        // Add-on typically available at end of rebuy period
+        // @ts-ignore
+        const addonLevel = tournament.rebuy_levels || 4;
+        if (levelState.levelIndex !== addonLevel) {
+            return { allowed: false, reason: 'Add-on period not active' };
+        }
+
+        return { allowed: true };
+    }
+
+    /**
+     * Process an add-on for a player
+     */
+    async processAddOn(tournamentId: string, userId: string): Promise<{ success: boolean; newStack?: number }> {
+        const canAddOnResult = await this.canAddOn(tournamentId);
+        if (!canAddOnResult.allowed) {
+            throw new Error(canAddOnResult.reason || 'Add-on not allowed');
+        }
+
+        const tournament = await this.getTournament(tournamentId);
+        if (!tournament) throw new Error('Tournament not found');
+
+        // @ts-ignore
+        const addonChips = tournament.addon_chips || tournament.starting_chips;
+        // @ts-ignore
+        const addonCost = tournament.addon_cost || tournament.buy_in;
+
+        if (isDemoMode) {
+            return { success: true, newStack: addonChips };
+        }
+
+        const { data, error } = await supabase.rpc('process_tournament_rebuy', {
+            p_tournament_id: tournamentId,
+            p_player_id: userId,
+            p_rebuy_type: 'addon',
+            p_cost: addonCost,
+            p_chips: addonChips,
+            p_current_level: this.getCurrentLevelState(tournament).levelIndex,
+        });
+
+        if (error) throw error;
+
+        return { success: true, newStack: data?.new_stack };
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Table Balancing
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Balance tables in a multi-table tournament
+     */
+    async balanceTables(tournamentId: string): Promise<{ movesMade: number }> {
+        if (isDemoMode) {
+            return { movesMade: 0 };
+        }
+
+        const { data, error } = await supabase.rpc('balance_tournament_tables', {
+            p_tournament_id: tournamentId,
+        });
+
+        if (error) {
+            console.error('Table balancing error:', error);
+            return { movesMade: 0 };
+        }
+
+        return { movesMade: data || 0 };
+    }
+
+    /**
+     * Check if tables need balancing
+     */
+    async checkBalanceNeeded(tournamentId: string): Promise<boolean> {
+        // Get all active tables and their player counts
+        const { data: tables } = await supabase
+            .from('tournament_tables')
+            .select('id, current_players')
+            .eq('tournament_id', tournamentId)
+            .eq('status', 'active');
+
+        if (!tables || tables.length < 2) return false;
+
+        const counts = tables.map(t => t.current_players);
+        const max = Math.max(...counts);
+        const min = Math.min(...counts);
+
+        // Balance needed if difference is more than 1
+        return (max - min) > 1;
+    }
+
+    /**
+     * Merge tables when player count drops
+     */
+    async checkTableMerge(tournamentId: string): Promise<{ tableMerged: boolean }> {
+        const { data: tables } = await supabase
+            .from('tournament_tables')
+            .select('id, current_players')
+            .eq('tournament_id', tournamentId)
+            .eq('status', 'active')
+            .order('current_players', { ascending: true });
+
+        if (!tables || tables.length < 2) return { tableMerged: false };
+
+        // Get total remaining players
+        const totalPlayers = tables.reduce((sum, t) => sum + t.current_players, 0);
+        const playersPerTable = 9;
+        const neededTables = Math.ceil(totalPlayers / playersPerTable);
+
+        if (tables.length > neededTables) {
+            // Break the smallest table
+            const tableToBreak = tables[0];
+
+            await supabase
+                .from('tournament_tables')
+                .update({ status: 'breaking' })
+                .eq('id', tableToBreak.id);
+
+            // Balance will move players
+            await this.balanceTables(tournamentId);
+
+            await supabase
+                .from('tournament_tables')
+                .update({ status: 'broken' })
+                .eq('id', tableToBreak.id);
+
+            return { tableMerged: true };
+        }
+
+        return { tableMerged: false };
+    }
+
+    /**
+     * Create final table (consolidate to 1 table when 9 or fewer players remain)
+     */
+    async createFinalTable(tournamentId: string): Promise<{ finalTableId: string | null }> {
+        const { data: activePlayers, count } = await supabase
+            .from('tournament_players')
+            .select('*', { count: 'exact' })
+            .eq('tournament_id', tournamentId)
+            .eq('status', 'playing');
+
+        if (!count || count > 9) return { finalTableId: null };
+
+        // Get or create final table
+        let { data: finalTable } = await supabase
+            .from('tournament_tables')
+            .select('id')
+            .eq('tournament_id', tournamentId)
+            .eq('is_final_table', true)
+            .single();
+
+        if (!finalTable) {
+            const tournament = await this.getTournament(tournamentId);
+            if (!tournament) return { finalTableId: null };
+
+            const { data: newTable } = await supabase
+                .from('tables')
+                .insert({
+                    club_id: tournament.club_id,
+                    tournament_id: tournamentId,
+                    name: `${tournament.name} - Final Table`,
+                    game_type: 'tournament',
+                    game_variant: 'nlh',
+                    stakes: 'Final Table',
+                    small_blind: tournament.blind_structure[0].smallBlind,
+                    big_blind: tournament.blind_structure[0].bigBlind,
+                    min_buy_in: 0,
+                    max_buy_in: 0,
+                    max_players: 9,
+                    status: 'running',
+                    settings: { auto_muck: true, time_bank_seconds: 45 }
+                })
+                .select()
+                .single();
+
+            if (newTable) {
+                await supabase
+                    .from('tournament_tables')
+                    .insert({
+                        tournament_id: tournamentId,
+                        table_number: 0,
+                        is_final_table: true,
+                    });
+
+                finalTable = { id: newTable.id };
+            }
+        }
+
+        if (finalTable) {
+            // Broadcast final table event
+            try {
+                const { realtimeChannelService } = await import('./RealtimeChannelService');
+                await realtimeChannelService.broadcastTournamentEvent(tournamentId, {
+                    type: 'final_table',
+                    payload: { tableId: finalTable.id, playerCount: count },
+                });
+            } catch (e) {
+                console.warn('Failed to broadcast final table event:', e);
+            }
+        }
+
+        return { finalTableId: finalTable?.id || null };
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Tournament Lifecycle Events
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Broadcast level up event
+     */
+    async broadcastLevelUp(tournamentId: string, newLevel: BlindLevel): Promise<void> {
+        try {
+            const { realtimeChannelService } = await import('./RealtimeChannelService');
+            await realtimeChannelService.broadcastTournamentEvent(tournamentId, {
+                type: 'level_up',
+                payload: {
+                    level: newLevel.level,
+                    smallBlind: newLevel.smallBlind,
+                    bigBlind: newLevel.bigBlind,
+                    ante: newLevel.ante,
+                },
+            });
+        } catch (e) {
+            console.warn('Failed to broadcast level up:', e);
+        }
+    }
+
+    /**
+     * Broadcast player elimination
+     */
+    async broadcastElimination(
+        tournamentId: string,
+        eliminatedPlayer: { id: string; name: string; position: number; prize: number }
+    ): Promise<void> {
+        try {
+            const { realtimeChannelService } = await import('./RealtimeChannelService');
+            await realtimeChannelService.broadcastTournamentEvent(tournamentId, {
+                type: 'player_eliminated',
+                payload: eliminatedPlayer,
+            });
+        } catch (e) {
+            console.warn('Failed to broadcast elimination:', e);
+        }
+    }
+
+    /**
+     * Broadcast tournament winner
+     */
+    async broadcastWinner(
+        tournamentId: string,
+        winner: { id: string; name: string; prize: number }
+    ): Promise<void> {
+        try {
+            const { realtimeChannelService } = await import('./RealtimeChannelService');
+            await realtimeChannelService.broadcastTournamentEvent(tournamentId, {
+                type: 'winner',
+                payload: winner,
+            });
+        } catch (e) {
+            console.warn('Failed to broadcast winner:', e);
+        }
+    }
+
+    /**
+     * Finalize tournament (process payouts)
+     */
+    async finalizeTournament(tournamentId: string): Promise<{ success: boolean }> {
+        if (isDemoMode) {
+            const tournament = DEMO_TOURNAMENTS.find(t => t.id === tournamentId);
+            if (tournament) tournament.status = 'finished';
+            return { success: true };
+        }
+
+        // Update tournament status
+        await supabase
+            .from('tournaments')
+            .update({
+                status: 'finished',
+                finished_at: new Date().toISOString(),
+            })
+            .eq('id', tournamentId);
+
+        // Payouts are processed automatically by the settlement system
+        // via the tournament_payouts table populated during eliminations
+
+        return { success: true };
+    }
 }
 
 export const tournamentService = new TournamentService();
+

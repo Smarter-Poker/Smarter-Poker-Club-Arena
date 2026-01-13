@@ -205,9 +205,10 @@ HydraService.ts
 | Channel | Events | Status |
 |---------|--------|--------|
 | `table:{id}` | seat_taken, seat_left, action, cards | ✅ |
-| `hand:{id}` | stage_change, pot_update, showdown | 🔧 |
-| `club:{id}` | member_joined, table_created | ❌ |
-| `tournament:{id}` | registration, elimination, payout | ❌ |
+| `hand:{id}` | stage_change, pot_update, showdown | ✅ |
+| `club:{id}` | member_joined, table_created, announcements | ✅ |
+| `tournament:{id}` | registration, elimination, payout, level_up | ✅ |
+| `lobby:global` | club_activity, tournament_starting, jackpot_hit | ✅ |
 
 ### Presence Tracking
 ```typescript
@@ -293,12 +294,13 @@ interface CreditAccount {
 - ✅ Payout structures (6, 9, 18+ player)
 - ✅ Player registration/unregistration
 - ✅ Tournament start logic
-- 🚧 Late registration timer
-- ❌ Rebuy/Add-on execution
-- ❌ Table balancing
-- ❌ Final table consolidation
-- ❌ In-tournament chat
-- ❌ Elimination animations
+- ✅ Late registration timer
+- ✅ Rebuy/Add-on execution
+- ✅ Table balancing
+- ✅ Final table consolidation
+- ✅ Real-time event broadcasting
+- 🚧 In-tournament chat
+- 🚧 Elimination animations
 
 ### Tournament Flow
 ```

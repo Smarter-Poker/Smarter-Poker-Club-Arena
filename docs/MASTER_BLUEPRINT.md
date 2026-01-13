@@ -191,7 +191,7 @@ HydraService.ts
 | `CashTableList.tsx` | 🔧 | Available cash games |
 | `TournamentList.tsx` | 🔧 | Scheduled tournaments |
 | `RingGameFilter.tsx` | ❌ | Stakes/variant filter |
-| `QuickSeat.tsx` | ❌ | One-click buy-in |
+| `QuickSeat.tsx` | ✅ | One-click buy-in |
 
 ---
 

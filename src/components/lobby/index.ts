@@ -17,3 +17,6 @@ export { default as TableCard } from './TableCard';
 export { default as QuickSeat } from './QuickSeat';
 export type { QuickSeatProps } from './QuickSeat';
 
+// Ring Game Filter (Stakes/Variant)
+export { default as RingGameFilter } from './RingGameFilter';
+export type { RingGameFilterProps, RingGameFilterState, GameVariant, TableSize, StakesRange } from './RingGameFilter';

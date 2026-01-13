@@ -1,0 +1,366 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * 🎮 RING GAME FILTER — Styles
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+
+.ring-filter {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 12px 16px;
+    background: rgba(22, 27, 34, 0.95);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   MAIN BAR
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.ring-filter__bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+/* Search Input */
+.ring-filter__search {
+    flex: 1;
+    max-width: 280px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 8px;
+    transition: all 0.15s ease;
+}
+
+.ring-filter__search:focus-within {
+    border-color: #1877F2;
+    box-shadow: 0 0 0 2px rgba(24, 119, 242, 0.2);
+}
+
+.ring-filter__search-icon {
+    font-size: 0.875rem;
+    opacity: 0.5;
+}
+
+.ring-filter__search-input {
+    flex: 1;
+    background: none;
+    border: none;
+    outline: none;
+    font-size: 0.875rem;
+    color: #E4E6EB;
+}
+
+.ring-filter__search-input::placeholder {
+    color: #6E7681;
+}
+
+.ring-filter__search-clear {
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.15);
+    border: none;
+    border-radius: 50%;
+    color: #8B949E;
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.ring-filter__search-clear:hover {
+    background: #F85149;
+    color: #FFFFFF;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   VARIANT PILLS
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.ring-filter__pills {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    padding: 4px 0;
+}
+
+.ring-filter__pills::-webkit-scrollbar {
+    display: none;
+}
+
+.ring-filter__pill {
+    padding: 6px 14px;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    white-space: nowrap;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 20px;
+    color: #8B949E;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.ring-filter__pill:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: #E4E6EB;
+}
+
+.ring-filter__pill--active {
+    background: #1877F2;
+    border-color: #1877F2;
+    color: #FFFFFF;
+}
+
+.ring-filter__pill--active:hover {
+    background: #3591FF;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   FILTER TOGGLE
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.ring-filter__toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 8px;
+    color: #8B949E;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.ring-filter__toggle:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: #E4E6EB;
+}
+
+.ring-filter__toggle--active {
+    border-color: #1877F2;
+    color: #1877F2;
+}
+
+.ring-filter__badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    background: #1877F2;
+    border-radius: 9px;
+    color: #FFFFFF;
+}
+
+.ring-filter__arrow {
+    font-size: 0.625rem;
+    transition: transform 0.15s ease;
+}
+
+.ring-filter__arrow--up {
+    transform: rotate(180deg);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   EXPANDED FILTERS
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.ring-filter__expanded {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    animation: expandIn 0.2s ease;
+}
+
+@keyframes expandIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.ring-filter__group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.ring-filter__group-label {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: #6E7681;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.ring-filter__options {
+    display: flex;
+    gap: 6px;
+}
+
+.ring-filter__option {
+    padding: 6px 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    color: #8B949E;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.ring-filter__option:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #E4E6EB;
+}
+
+.ring-filter__option--active {
+    background: rgba(24, 119, 242, 0.2);
+    border-color: #1877F2;
+    color: #1877F2;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   TOGGLES & CHECKBOXES
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.ring-filter__toggles {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-left: auto;
+}
+
+.ring-filter__checkbox {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.8125rem;
+    color: #8B949E;
+    cursor: pointer;
+    transition: color 0.15s ease;
+}
+
+.ring-filter__checkbox:hover {
+    color: #E4E6EB;
+}
+
+.ring-filter__checkbox input {
+    display: none;
+}
+
+.ring-filter__checkmark {
+    width: 16px;
+    height: 16px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
+    position: relative;
+    transition: all 0.15s ease;
+}
+
+.ring-filter__checkbox input:checked+.ring-filter__checkmark {
+    background: #1877F2;
+    border-color: #1877F2;
+}
+
+.ring-filter__checkbox input:checked+.ring-filter__checkmark::after {
+    content: '✓';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 0.625rem;
+    color: #FFFFFF;
+}
+
+.ring-filter__reset {
+    padding: 6px 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    background: rgba(248, 81, 73, 0.1);
+    border: 1px solid rgba(248, 81, 73, 0.3);
+    border-radius: 6px;
+    color: #F85149;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.ring-filter__reset:hover {
+    background: rgba(248, 81, 73, 0.2);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   COMPACT MODE
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.ring-filter--compact {
+    padding: 8px 12px;
+}
+
+.ring-filter--compact .ring-filter__bar {
+    gap: 8px;
+}
+
+.ring-filter--compact .ring-filter__search {
+    max-width: 200px;
+    padding: 6px 10px;
+}
+
+.ring-filter--compact .ring-filter__pill {
+    padding: 4px 10px;
+    font-size: 0.75rem;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   RESPONSIVE
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 768px) {
+    .ring-filter__bar {
+        flex-wrap: wrap;
+    }
+
+    .ring-filter__search {
+        flex: 1 1 100%;
+        max-width: none;
+        order: -1;
+    }
+
+    .ring-filter__pills {
+        flex: 1;
+    }
+
+    .ring-filter__expanded {
+        flex-direction: column;
+    }
+
+    .ring-filter__toggles {
+        margin-left: 0;
+        flex-wrap: wrap;
+    }
+}

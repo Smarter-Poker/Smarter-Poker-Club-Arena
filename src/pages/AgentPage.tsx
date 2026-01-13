@@ -431,7 +431,7 @@ export default function AgentPage() {
                                 {transferType === 'to_agent' ? (
                                     agents.map(a => (
                                         <option key={a.id} value={a.id}>
-                                            {a.name} (${a.chip_balance.toLocaleString()})
+                                            {a.name} (${a.agent_wallet_balance.toLocaleString()})
                                         </option>
                                     ))
                                 ) : (

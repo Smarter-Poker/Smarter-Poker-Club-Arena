@@ -1,88 +1,82 @@
 -- ═══════════════════════════════════════════════════════════════════════════════
--- 🎰 CLUB ENGINE — Agents & Memberships Schema
+-- 🎰 CLUB ENGINE — Agent Hierarchy & Credit System UPDATE
 -- ═══════════════════════════════════════════════════════════════════════════════
--- Full schema for club memberships, agent hierarchy, and credit management
-
--- ═══════════════════════════════════════════════════════════════════════════════
--- ENUMS
--- ═══════════════════════════════════════════════════════════════════════════════
-
-CREATE TYPE member_role AS ENUM (
-    'platform_admin',
-    'union_lead',
-    'union_admin',
-    'club_owner',
-    'club_admin',
-    'super_agent',
-    'agent',
-    'sub_agent',
-    'member',
-    'guest'
-);
-
-CREATE TYPE member_status AS ENUM (
-    'active',
-    'pending',
-    'suspended',
-    'banned'
-);
-
-CREATE TYPE agent_status AS ENUM (
-    'active',
-    'suspended',
-    'frozen'
-);
+-- This is an UPDATE migration for existing schema
+-- Run AFTER 001_club_arena_schema.sql is applied
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- CLUB MEMBERS TABLE
+-- 1. DROP OLD ENUMS AND RECREATE WITH EXPANDED VALUES
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-CREATE TABLE IF NOT EXISTS club_members (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    club_id UUID NOT NULL REFERENCES clubs(id) ON DELETE CASCADE,
-    user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-    role member_role NOT NULL DEFAULT 'member',
-    status member_status NOT NULL DEFAULT 'pending',
-    
-    -- Agent relationship
-    agent_id UUID REFERENCES club_members(id),           -- The agent who recruited this member
-    parent_agent_id UUID REFERENCES club_members(id),   -- For sub-agents: their parent agent
-    
-    -- Metadata
-    invited_by UUID REFERENCES profiles(id),
-    notes TEXT,
-    
-    -- Timestamps
-    joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    last_active_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    
-    -- Constraints
-    UNIQUE(club_id, user_id)
-);
+-- We need to drop dependent objects first, then recreate
 
--- Indexes
-CREATE INDEX idx_club_members_club ON club_members(club_id);
-CREATE INDEX idx_club_members_user ON club_members(user_id);
-CREATE INDEX idx_club_members_agent ON club_members(agent_id);
-CREATE INDEX idx_club_members_parent_agent ON club_members(parent_agent_id);
-CREATE INDEX idx_club_members_role ON club_members(role);
-CREATE INDEX idx_club_members_status ON club_members(status);
+-- Create new role enum with all 10 levels
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'member_role_v2') THEN
+        CREATE TYPE member_role_v2 AS ENUM (
+            'platform_admin',
+            'union_lead',
+            'union_admin',
+            'club_owner',
+            'club_admin',
+            'super_agent',
+            'agent',
+            'sub_agent',
+            'member',
+            'guest'
+        );
+    END IF;
+END $$;
+
+-- Create agent status enum
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'agent_status') THEN
+        CREATE TYPE agent_status AS ENUM (
+            'active',
+            'suspended',
+            'frozen'
+        );
+    END IF;
+END $$;
+
+-- Migrate club_members.role to use the table format (text) for now
+-- This avoids ENUM migration complexity
+ALTER TABLE club_members 
+    ALTER COLUMN role TYPE TEXT USING role::TEXT;
+
+-- Migrate agents table - drop and recreate with new schema
+DROP TABLE IF EXISTS agents CASCADE;
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- AGENTS TABLE (Extended Agent Data)
+-- 2. ENHANCED CLUB_MEMBERS TABLE
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+-- Add new columns to club_members
+ALTER TABLE club_members 
+    ADD COLUMN IF NOT EXISTS parent_agent_id UUID REFERENCES club_members(id),
+    ADD COLUMN IF NOT EXISTS invited_by UUID,
+    ADD COLUMN IF NOT EXISTS notes TEXT,
+    ADD COLUMN IF NOT EXISTS last_active_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW(),
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+-- Additional indexes
+CREATE INDEX IF NOT EXISTS idx_club_members_parent_agent ON club_members(parent_agent_id);
+CREATE INDEX IF NOT EXISTS idx_club_members_role_text ON club_members(role);
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- 3. NEW AGENTS TABLE (Full Schema)
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 CREATE TABLE IF NOT EXISTS agents (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
     club_id UUID NOT NULL REFERENCES clubs(id) ON DELETE CASCADE,
     membership_id UUID REFERENCES club_members(id) ON DELETE CASCADE,
     
-    -- Role & Status
-    role member_role NOT NULL CHECK (role IN ('super_agent', 'agent', 'sub_agent')),
-    status agent_status NOT NULL DEFAULT 'active',
+    -- Role & Status (using TEXT for flexibility)
+    role TEXT NOT NULL CHECK (role IN ('super_agent', 'agent', 'sub_agent')),
+    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'suspended', 'frozen')),
     
     -- Parent Agent (for agent/sub_agent hierarchy)
     parent_agent_id UUID REFERENCES agents(id),
@@ -96,7 +90,7 @@ CREATE TABLE IF NOT EXISTS agents (
     credit_used DECIMAL(15,2) NOT NULL DEFAULT 0 CHECK (credit_used >= 0),
     is_prepaid BOOLEAN NOT NULL DEFAULT FALSE,
     
-    -- Triple Wallet (from wallets table, cached here)
+    -- Triple Wallet
     business_balance DECIMAL(15,2) NOT NULL DEFAULT 0,
     player_balance DECIMAL(15,2) NOT NULL DEFAULT 0,
     promo_balance DECIMAL(15,2) NOT NULL DEFAULT 0,
@@ -120,46 +114,77 @@ CREATE TABLE IF NOT EXISTS agents (
 );
 
 -- Indexes
-CREATE INDEX idx_agents_club ON agents(club_id);
-CREATE INDEX idx_agents_user ON agents(user_id);
-CREATE INDEX idx_agents_parent ON agents(parent_agent_id);
-CREATE INDEX idx_agents_status ON agents(status);
-CREATE INDEX idx_agents_role ON agents(role);
+CREATE INDEX IF NOT EXISTS idx_agents_club ON agents(club_id);
+CREATE INDEX IF NOT EXISTS idx_agents_user ON agents(user_id);
+CREATE INDEX IF NOT EXISTS idx_agents_parent ON agents(parent_agent_id);
+CREATE INDEX IF NOT EXISTS idx_agents_status ON agents(status);
+CREATE INDEX IF NOT EXISTS idx_agents_role ON agents(role);
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- ROLE CHANGES LOG (Audit Trail)
+-- 4. ROLE CHANGES LOG (Audit Trail)
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 CREATE TABLE IF NOT EXISTS role_changes (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     member_id UUID NOT NULL REFERENCES club_members(id) ON DELETE CASCADE,
-    old_role member_role,
-    new_role member_role NOT NULL,
-    changed_by UUID NOT NULL REFERENCES profiles(id),
+    old_role TEXT,
+    new_role TEXT NOT NULL,
+    changed_by UUID NOT NULL,
     reason TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_role_changes_member ON role_changes(member_id);
+CREATE INDEX IF NOT EXISTS idx_role_changes_member ON role_changes(member_id);
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- CREDIT ASSIGNMENTS LOG
+-- 5. CREDIT ASSIGNMENTS LOG
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 CREATE TABLE IF NOT EXISTS credit_assignments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     agent_id UUID NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
-    assigned_by UUID NOT NULL REFERENCES profiles(id),
+    assigned_by UUID NOT NULL,
     old_limit DECIMAL(15,2) NOT NULL,
     new_limit DECIMAL(15,2) NOT NULL,
     reason TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_credit_assignments_agent ON credit_assignments(agent_id);
+CREATE INDEX IF NOT EXISTS idx_credit_assignments_agent ON credit_assignments(agent_id);
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- FUNCTIONS
+-- 6. ENHANCED UNIONS TABLE
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+-- Add union_id to clubs for union membership
+ALTER TABLE clubs 
+    ADD COLUMN IF NOT EXISTS union_id UUID REFERENCES unions(id);
+
+-- Enhance unions table
+ALTER TABLE unions
+    ADD COLUMN IF NOT EXISTS avatar_url TEXT,
+    ADD COLUMN IF NOT EXISTS is_public BOOLEAN DEFAULT TRUE,
+    ADD COLUMN IF NOT EXISTS member_count INTEGER DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS club_count INTEGER DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS total_rake DECIMAL(15,2) DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+-- Add union admins table
+CREATE TABLE IF NOT EXISTS union_admins (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    union_id UUID NOT NULL REFERENCES unions(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    role TEXT NOT NULL DEFAULT 'union_admin' CHECK (role IN ('union_lead', 'union_admin')),
+    permissions JSONB DEFAULT '{"manage_clubs": true, "manage_settlements": true}',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(union_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_union_admins_union ON union_admins(union_id);
+CREATE INDEX IF NOT EXISTS idx_union_admins_user ON union_admins(user_id);
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- 7. TRIGGERS
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 -- Update sub_agent_count for parent agents
@@ -188,58 +213,33 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trg_update_sub_agent_count ON agents;
 CREATE TRIGGER trg_update_sub_agent_count
     AFTER INSERT OR UPDATE OR DELETE ON agents
     FOR EACH ROW EXECUTE FUNCTION update_sub_agent_count();
 
--- Auto-update updated_at
-CREATE OR REPLACE FUNCTION update_updated_at()
-RETURNS TRIGGER AS $$
-BEGIN
-    NEW.updated_at = NOW();
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trg_club_members_updated_at
-    BEFORE UPDATE ON club_members
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at();
-
+-- Auto-update updated_at for agents
+DROP TRIGGER IF EXISTS trg_agents_updated_at ON agents;
 CREATE TRIGGER trg_agents_updated_at
     BEFORE UPDATE ON agents
     FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
+-- Auto-update updated_at for club_members
+DROP TRIGGER IF EXISTS trg_club_members_updated_at ON club_members;
+CREATE TRIGGER trg_club_members_updated_at
+    BEFORE UPDATE ON club_members
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
 -- ═══════════════════════════════════════════════════════════════════════════════
--- RLS POLICIES
+-- 8. ROW LEVEL SECURITY
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-ALTER TABLE club_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE agents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE role_changes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE credit_assignments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE union_admins ENABLE ROW LEVEL SECURITY;
 
--- Club members: Viewable by club members, editable by admins
-CREATE POLICY "Club members viewable by members"
-    ON club_members FOR SELECT
-    USING (
-        club_id IN (
-            SELECT club_id FROM club_members 
-            WHERE user_id = auth.uid() AND status = 'active'
-        )
-    );
-
-CREATE POLICY "Club members manageable by admins"
-    ON club_members FOR ALL
-    USING (
-        club_id IN (
-            SELECT club_id FROM club_members 
-            WHERE user_id = auth.uid() 
-            AND role IN ('platform_admin', 'union_lead', 'union_admin', 'club_owner', 'club_admin')
-            AND status = 'active'
-        )
-    );
-
--- Agents: Viewable by club members, editable by admins
+-- Agents: Viewable by club members
 CREATE POLICY "Agents viewable by club members"
     ON agents FOR SELECT
     USING (
@@ -249,6 +249,7 @@ CREATE POLICY "Agents viewable by club members"
         )
     );
 
+-- Agents: Manageable by admins and super_agents
 CREATE POLICY "Agents manageable by admins"
     ON agents FOR ALL
     USING (
@@ -260,14 +261,66 @@ CREATE POLICY "Agents manageable by admins"
         )
     );
 
+-- Role changes: Viewable by admins
+CREATE POLICY "Role changes viewable by admins"
+    ON role_changes FOR SELECT
+    USING (
+        member_id IN (
+            SELECT id FROM club_members cm
+            WHERE cm.club_id IN (
+                SELECT club_id FROM club_members 
+                WHERE user_id = auth.uid() 
+                AND role IN ('platform_admin', 'union_lead', 'union_admin', 'club_owner', 'club_admin')
+            )
+        )
+    );
+
+-- Credit assignments: Viewable by admins
+CREATE POLICY "Credit assignments viewable by admins"
+    ON credit_assignments FOR SELECT
+    USING (
+        agent_id IN (
+            SELECT id FROM agents a
+            WHERE a.club_id IN (
+                SELECT club_id FROM club_members 
+                WHERE user_id = auth.uid() 
+                AND role IN ('platform_admin', 'union_lead', 'union_admin', 'club_owner', 'club_admin', 'super_agent')
+            )
+        )
+    );
+
+-- Union admins: Members can view their union's admins
+CREATE POLICY "Union admins viewable by members"
+    ON union_admins FOR SELECT
+    USING (
+        union_id IN (
+            SELECT union_id FROM clubs c
+            JOIN club_members cm ON cm.club_id = c.id
+            WHERE cm.user_id = auth.uid()
+        )
+    );
+
 -- ═══════════════════════════════════════════════════════════════════════════════
--- COMMENTS
+-- 9. COMMENTS
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-COMMENT ON TABLE club_members IS 'Club membership records linking users to clubs';
-COMMENT ON TABLE agents IS 'Extended agent data with commission rates and credit limits';
+COMMENT ON TABLE agents IS 'Extended agent data with commission rates, credit limits, and triple wallet';
 COMMENT ON TABLE role_changes IS 'Audit log of role changes for compliance';
 COMMENT ON TABLE credit_assignments IS 'Audit log of credit limit changes';
+COMMENT ON TABLE union_admins IS 'Union administrators with specified roles and permissions';
+
 COMMENT ON COLUMN agents.commission_rate IS 'Rate agent receives from club (max 70%)';
 COMMENT ON COLUMN agents.player_rakeback_rate IS 'Rate agent gives to players (max 50%)';
 COMMENT ON COLUMN agents.credit_limit IS 'Credit limit assigned by hierarchy (club→agent→sub-agent)';
+COMMENT ON COLUMN agents.business_balance IS 'Wallet for commission earnings';
+COMMENT ON COLUMN agents.player_balance IS 'Wallet for player chips';
+COMMENT ON COLUMN agents.promo_balance IS 'Wallet for promotional funds';
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- SUCCESS
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+DO $$ 
+BEGIN 
+    RAISE NOTICE '✅ Agent Hierarchy & Credit System UPDATE applied successfully';
+END $$;

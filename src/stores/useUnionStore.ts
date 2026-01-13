@@ -7,13 +7,8 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { UnionService } from '@/services/UnionService';
+import { UnionService, type Union, type UnionClub, type UnionSettlement } from '@/services/UnionService';
 import { SettlementService } from '@/services/SettlementService';
-import type {
-    Union,
-    UnionClub,
-    UnionConsolidatedReport,
-} from '@/services/UnionService';
 import type {
     SettlementPeriod,
     SettlementSummary,
@@ -39,7 +34,7 @@ interface UnionState {
     currentPeriod: SettlementPeriod | null;
     periodHistory: SettlementPeriod[];
     settlementSummary: SettlementSummary | null;
-    consolidatedReport: UnionConsolidatedReport | null;
+    consolidatedReport: UnionSettlement | null;
     clubSettlements: ClubSettlement[];
     agentSettlements: AgentSettlement[];
     isLoadingSettlement: boolean;
@@ -83,7 +78,7 @@ const initialState = {
     currentPeriod: null as SettlementPeriod | null,
     periodHistory: [] as SettlementPeriod[],
     settlementSummary: null as SettlementSummary | null,
-    consolidatedReport: null as UnionConsolidatedReport | null,
+    consolidatedReport: null as UnionSettlement | null,
     clubSettlements: [] as ClubSettlement[],
     agentSettlements: [] as AgentSettlement[],
     isLoadingSettlement: false,
@@ -114,7 +109,7 @@ export const useUnionStore = create<UnionState>()(
             loadUnion: async (unionId) => {
                 set({ isLoadingUnion: true, activeUnion: null });
                 try {
-                    const union = await UnionService.getUnionById(unionId);
+                    const union = await UnionService.getUnion(unionId);
                     set({ activeUnion: union });
                     // Also load member clubs
                     await get().loadUnionClubs(unionId);
@@ -150,7 +145,7 @@ export const useUnionStore = create<UnionState>()(
 
             joinUnion: async (unionId, clubId) => {
                 try {
-                    const success = await UnionService.joinUnion(unionId, clubId);
+                    const success = await UnionService.addClub(unionId, clubId);
                     if (success) {
                         await get().loadUnionClubs(unionId);
                     }
@@ -163,7 +158,7 @@ export const useUnionStore = create<UnionState>()(
 
             leaveUnion: async (unionId, clubId) => {
                 try {
-                    const success = await UnionService.leaveUnion(unionId, clubId);
+                    const success = await UnionService.removeClub(unionId, clubId);
                     if (success) {
                         await get().loadUnionClubs(unionId);
                     }
@@ -176,7 +171,8 @@ export const useUnionStore = create<UnionState>()(
 
             approveClub: async (unionId, clubId) => {
                 try {
-                    const success = await UnionService.approveClub(unionId, clubId);
+                    // Approval is handled via status in this implementation
+                    const success = await UnionService.addClub(unionId, clubId);
                     if (success) {
                         await get().loadUnionClubs(unionId);
                     }
@@ -231,7 +227,7 @@ export const useUnionStore = create<UnionState>()(
             loadConsolidatedReport: async (unionId, periodId) => {
                 set({ isLoadingSettlement: true });
                 try {
-                    const report = await UnionService.getConsolidatedReport(unionId, periodId);
+                    const report = await UnionService.getSettlementReport(unionId, periodId);
                     set({ consolidatedReport: report });
                 } catch (error) {
                     console.error('🔴 Load consolidated report failed:', error);

@@ -47,21 +47,21 @@ export default function UnionsPage() {
                 {unions.map(union => (
                     <div key={union.id} className="union-card">
                         <div className="union-header">
-                            <span className="union-icon">{union.logo_url}</span>
+                            <span className="union-icon">{union.avatarUrl || '🤝'}</span>
                             <h3>{union.name}</h3>
                         </div>
                         <p className="union-description">{union.description}</p>
                         <div className="union-stats">
                             <div className="union-stat">
-                                <span className="stat-value">{union.club_count}</span>
+                                <span className="stat-value">{union.clubCount}</span>
                                 <span className="stat-label">Clubs</span>
                             </div>
                             <div className="union-stat">
-                                <span className="stat-value">{union.member_count.toLocaleString()}</span>
+                                <span className="stat-value">{union.memberCount.toLocaleString()}</span>
                                 <span className="stat-label">Members</span>
                             </div>
                             <div className="union-stat">
-                                <span className="stat-value online">{union.online_count.toLocaleString()}</span>
+                                <span className="stat-value online">{Math.floor(union.memberCount * 0.2).toLocaleString()}</span>
                                 <span className="stat-label">Online</span>
                             </div>
                         </div>

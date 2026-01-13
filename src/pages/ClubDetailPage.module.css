@@ -1,11 +1,574 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * 🎰 CLUB DETAIL PAGE — Styles
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+
 .page {
-    padding: var(--space-8);
+    min-height: 100vh;
+    padding: 2rem;
+    background: linear-gradient(180deg, var(--bg-darker) 0%, var(--bg-dark) 100%);
 }
 
+/* Loading & Error */
+.loading,
+.error {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 60vh;
+    gap: 1rem;
+    color: var(--text-muted);
+}
+
+.spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid rgba(255, 255, 255, 0.1);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.backLink {
+    color: var(--accent);
+    text-decoration: none;
+}
+
+/* Header */
 .header {
-    margin-bottom: var(--space-8);
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    padding: 2rem;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.02) 100%);
+    border-radius: 1.5rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    margin-bottom: 2rem;
 }
 
-.content {
-    color: var(--text-secondary);
+.clubAvatar {
+    width: 80px;
+    height: 80px;
+    border-radius: 1rem;
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2rem;
+    font-weight: 700;
+    color: #000;
+    flex-shrink: 0;
+}
+
+.clubAvatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 1rem;
+}
+
+.clubInfo {
+    flex: 1;
+}
+
+.clubInfo h1 {
+    margin: 0 0 0.25rem;
+    color: #fff;
+    font-size: 1.5rem;
+}
+
+.clubId {
+    color: var(--accent);
+    font-size: 0.8rem;
+    margin: 0 0 0.5rem;
+    font-weight: 600;
+}
+
+.clubDesc {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    margin: 0;
+}
+
+.headerActions {
+    display: flex;
+    gap: 0.75rem;
+}
+
+.inviteButton,
+.createTableButton {
+    padding: 0.75rem 1.25rem;
+    border-radius: 0.5rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.inviteButton {
+    background: transparent;
+    border: 1px solid var(--accent);
+    color: var(--accent);
+}
+
+.inviteButton:hover {
+    background: var(--accent);
+    color: #000;
+}
+
+.createTableButton {
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
+    border: none;
+    color: #000;
+}
+
+/* Stats Row */
+.statsRow {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+.statCard {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.25rem;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.statIcon {
+    font-size: 1.5rem;
+}
+
+.statInfo {
+    display: flex;
+    flex-direction: column;
+}
+
+.statValue {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #fff;
+}
+
+.statLabel {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+/* Tabs */
+.tabNav {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.tab {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 1rem;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 0.75rem;
+    color: var(--text-muted);
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.tab:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: #fff;
+}
+
+.activeTab {
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
+    border-color: var(--accent);
+    color: #000;
+}
+
+/* Overview Grid */
+.overviewGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 1.5rem;
+}
+
+.card {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 1.5rem;
+}
+
+.card h3 {
+    margin: 0 0 1rem;
+    font-size: 1rem;
+    color: #fff;
+}
+
+.emptyText {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
+/* Table List */
+.tableList {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.tableRow {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.75rem 1rem;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 0.5rem;
+    text-decoration: none;
+    color: #fff;
+    transition: background 0.2s;
+}
+
+.tableRow:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.tableName {
+    flex: 1;
+    font-weight: 500;
+}
+
+.tableVariant {
+    color: var(--accent);
+    font-size: 0.8rem;
+}
+
+.tableStakes {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+}
+
+.tablePlayers {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+/* Member List */
+.memberList {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.memberRow {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 0;
+}
+
+.memberAvatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #4b5563 0%, #1f2937 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #fff;
+}
+
+.memberName {
+    flex: 1;
+    color: #fff;
+    font-size: 0.9rem;
+}
+
+/* Badges */
+.roleBadge,
+.statusBadge {
+    padding: 0.2rem 0.5rem;
+    border-radius: 0.25rem;
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: #fff;
+    text-transform: uppercase;
+}
+
+/* Rules */
+.rulesList {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    font-size: 0.9rem;
+    color: var(--text-muted);
+}
+
+.rulesList li {
+    padding: 0.5rem 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Tables Tab */
+.tablesContainer {}
+
+.tablesHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+}
+
+.tablesHeader h3 {
+    margin: 0;
+    color: #fff;
+}
+
+.createButton {
+    padding: 0.5rem 1rem;
+    background: var(--accent);
+    border: none;
+    border-radius: 0.5rem;
+    color: #000;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.tablesGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 1rem;
+}
+
+.tableCard {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.tableCardHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.tableCardHeader h4 {
+    margin: 0;
+    color: #fff;
+    font-size: 1rem;
+}
+
+.tableCardBody {
+    display: flex;
+    justify-content: space-between;
+    color: var(--text-muted);
+    font-size: 0.875rem;
+}
+
+.joinButton {
+    padding: 0.5rem;
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
+    border: none;
+    border-radius: 0.5rem;
+    color: #000;
+    font-weight: 600;
+    text-align: center;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+/* Members Tab */
+.membersHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+}
+
+.membersHeader h3 {
+    margin: 0;
+    color: #fff;
+}
+
+.searchInput {
+    padding: 0.5rem 1rem;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 0.5rem;
+    color: #fff;
+    font-size: 0.875rem;
+    width: 200px;
+}
+
+.membersTable {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.membersTable th,
+.membersTable td {
+    padding: 1rem;
+    text-align: left;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.membersTable th {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+}
+
+.membersTable td {
+    color: #fff;
+    font-size: 0.9rem;
+}
+
+.memberCell {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.memberAvatarSmall {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #4b5563 0%, #1f2937 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #fff;
+}
+
+.balanceCell {
+    font-family: monospace;
+}
+
+.dateCell {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+}
+
+.actionBtn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 1.25rem;
+}
+
+/* Settings Tab */
+.settingsContainer {
+    max-width: 600px;
+}
+
+.settingsSection {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.settingsSection h3 {
+    margin: 0 0 1rem;
+    color: #fff;
+    font-size: 1rem;
+}
+
+.settingRow {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.settingRow:last-child {
+    border-bottom: none;
+}
+
+.settingRow label {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
+.textInput,
+.textArea,
+.numberInput {
+    padding: 0.5rem;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 0.5rem;
+    color: #fff;
+    font-size: 0.875rem;
+}
+
+.textInput {
+    width: 200px;
+}
+
+.textArea {
+    width: 300px;
+    resize: vertical;
+}
+
+.numberInput {
+    width: 80px;
+    text-align: center;
+}
+
+.saveButton {
+    padding: 0.75rem 2rem;
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
+    border: none;
+    border-radius: 0.5rem;
+    color: #000;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .header {
+        flex-direction: column;
+        text-align: center;
+    }
+
+    .statsRow {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .tabNav {
+        flex-wrap: wrap;
+    }
+
+    .membersTable {
+        display: block;
+        overflow-x: auto;
+    }
 }

@@ -155,10 +155,12 @@ HydraService.ts
 |------|--------|-------|-----------------|
 | `LobbyPage` | ✅ | `/` | Cash/Tournament tabs |
 | `ClubsPage` | ✅ | `/clubs` | My/Discover/Create |
-| `ClubDetailPage` | 🔧 | `/clubs/:id` | Settings panel |
+| `CreateClubPage` | ✅ | `/clubs/create` | 5-step wizard with preview |
+| `ClubDetailPage` | ✅ | `/clubs/:id` | Tables, members, settings tabs |
 | `TablePage` | ✅ | `/table/:id` | Premium PokerBros UI |
 | `TournamentPage` | ✅ | `/tournament/:id` | Late reg timer |
 | `UnionsPage` | ✅ | `/unions` | Settlement view |
+| `CreateUnionPage` | ✅ | `/unions/create` | 3-step wizard, requires club |
 | `UnionDetailPage` | 🔧 | `/unions/:id` | Financial dashboard |
 | `AgentPage` | ✅ | `/agent` | Triple-wallet UI |
 | `ProfilePage` | ✅ | `/profile` | XP progression, achievements, stats |

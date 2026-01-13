@@ -1,0 +1,635 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * 🎰 CREATE CLUB PAGE — Styles
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+
+.page {
+    min-height: 100vh;
+    padding: 2rem;
+    background: linear-gradient(180deg, var(--bg-darker) 0%, var(--bg-dark) 100%);
+}
+
+.container {
+    max-width: 700px;
+    margin: 0 auto;
+}
+
+/* Header */
+.header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+.backButton {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: color 0.2s;
+}
+
+.backButton:hover {
+    color: #fff;
+}
+
+.header h1 {
+    flex: 1;
+    font-size: 1.5rem;
+    color: #fff;
+    margin: 0;
+}
+
+/* Progress */
+.progress {
+    display: flex;
+    justify-content: space-between;
+    position: relative;
+    margin-bottom: 3rem;
+    padding: 0 1rem;
+}
+
+.progressLine {
+    position: absolute;
+    top: 12px;
+    left: 2rem;
+    right: 2rem;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 2px;
+    z-index: 0;
+}
+
+.progressFill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 2px;
+    transition: width 0.3s ease;
+}
+
+.progressStep {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    z-index: 1;
+}
+
+.progressDot {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.1);
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    transition: all 0.3s ease;
+}
+
+.progressStep.active .progressDot {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #000;
+    transform: scale(1.1);
+}
+
+.progressStep.completed .progressDot {
+    background: rgba(var(--accent-rgb), 0.2);
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.progressLabel {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.progressStep.active .progressLabel {
+    color: #fff;
+}
+
+/* Step Container */
+.stepContainer {
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.02) 100%);
+    border-radius: 1.5rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 2rem;
+    margin-bottom: 1.5rem;
+}
+
+.stepContent h2 {
+    font-size: 1.25rem;
+    color: #fff;
+    margin: 0 0 0.5rem;
+}
+
+.stepDesc {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    margin: 0 0 2rem;
+}
+
+.subheading {
+    font-size: 1rem;
+    color: #fff;
+    margin: 2rem 0 1rem;
+}
+
+/* Form Elements */
+.formGroup {
+    margin-bottom: 1.5rem;
+    position: relative;
+}
+
+.formGroup label {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: #fff;
+    margin-bottom: 0.5rem;
+}
+
+.textInput,
+.textArea,
+.numberInput {
+    width: 100%;
+    padding: 0.875rem 1rem;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 0.75rem;
+    color: #fff;
+    font-size: 1rem;
+    transition: all 0.2s ease;
+}
+
+.textInput:focus,
+.textArea:focus,
+.numberInput:focus {
+    outline: none;
+    border-color: var(--accent);
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.textArea {
+    resize: vertical;
+}
+
+.numberInput {
+    width: 80px;
+    text-align: center;
+    padding: 0.75rem;
+}
+
+.charCount {
+    position: absolute;
+    right: 0.75rem;
+    bottom: -1.25rem;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+}
+
+.hint {
+    display: block;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    margin-top: 0.25rem;
+}
+
+.inputWithUnit {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.inputWithUnit span {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
+/* Checkbox */
+.checkboxGrid {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.checkbox {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 1rem;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 0.75rem;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.checkbox:hover {
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.checkbox input {
+    display: none;
+}
+
+.checkmark {
+    width: 20px;
+    height: 20px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-radius: 4px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.checkbox input:checked+.checkmark {
+    background: var(--accent);
+    border-color: var(--accent);
+}
+
+.checkbox input:checked+.checkmark::after {
+    content: '✓';
+    color: #000;
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+
+.checkbox strong {
+    display: block;
+    color: #fff;
+    font-size: 0.9rem;
+    margin-bottom: 0.25rem;
+}
+
+.checkbox p {
+    margin: 0;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+/* Settings Grid */
+.settingsGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1.5rem;
+}
+
+/* Toggle */
+.toggleGrid {
+    display: flex;
+    gap: 2rem;
+    margin-top: 1.5rem;
+}
+
+.toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    cursor: pointer;
+}
+
+.toggle input {
+    display: none;
+}
+
+.toggleSlider {
+    width: 44px;
+    height: 24px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    position: relative;
+    transition: background 0.2s;
+}
+
+.toggleSlider::after {
+    content: '';
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 18px;
+    height: 18px;
+    background: #fff;
+    border-radius: 50%;
+    transition: transform 0.2s;
+}
+
+.toggle input:checked+.toggleSlider {
+    background: var(--accent);
+}
+
+.toggle input:checked+.toggleSlider::after {
+    transform: translateX(20px);
+}
+
+.toggle span:last-child {
+    color: #fff;
+    font-size: 0.9rem;
+}
+
+/* Info Card */
+.infoCard {
+    display: flex;
+    gap: 1rem;
+    padding: 1rem;
+    background: rgba(16, 185, 129, 0.1);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    border-radius: 0.75rem;
+    margin-top: 1.5rem;
+}
+
+.infoIcon {
+    font-size: 1.5rem;
+}
+
+.infoCard strong {
+    display: block;
+    color: #10b981;
+    font-size: 0.9rem;
+    margin-bottom: 0.25rem;
+}
+
+.infoCard p {
+    margin: 0;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+/* Game Types */
+.gameTypes {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+}
+
+.gameTypeCard {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1.5rem;
+    background: rgba(255, 255, 255, 0.03);
+    border: 2px solid rgba(255, 255, 255, 0.1);
+    border-radius: 1rem;
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.2s ease;
+}
+
+.gameTypeCard:hover {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.gameTypeCard.selected {
+    background: rgba(var(--accent-rgb), 0.1);
+    border-color: var(--accent);
+}
+
+.gameTypeCard input {
+    display: none;
+}
+
+.gameTypeIcon {
+    font-size: 2rem;
+}
+
+.gameTypeCard strong {
+    color: #fff;
+    font-size: 0.9rem;
+}
+
+.gameTypeCard p {
+    margin: 0;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+/* Variants */
+.variantsGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 0.75rem;
+}
+
+.variantCard {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.875rem 1rem;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 0.75rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.variantCard:hover {
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.variantCard.selected {
+    background: rgba(var(--accent-rgb), 0.1);
+    border-color: var(--accent);
+}
+
+.variantCard input {
+    display: none;
+}
+
+.variantIcon {
+    font-size: 1.25rem;
+}
+
+.variantCard span:last-child {
+    color: #fff;
+    font-size: 0.85rem;
+}
+
+/* Preview */
+.previewCard {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 1.5rem;
+}
+
+.previewHeader {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.previewAvatar {
+    width: 56px;
+    height: 56px;
+    border-radius: 0.75rem;
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #000;
+}
+
+.previewHeader h3 {
+    margin: 0;
+    color: #fff;
+    font-size: 1.25rem;
+}
+
+.previewHeader p {
+    margin: 0.25rem 0 0;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+.previewDesc {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    margin: 0 0 1.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.previewStats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.previewStats>div {
+    text-align: center;
+}
+
+.previewStats strong {
+    display: block;
+    color: #fff;
+    font-size: 1.1rem;
+}
+
+.previewStats span {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+}
+
+.previewTags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.previewTags span {
+    padding: 0.25rem 0.75rem;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 1rem;
+    font-size: 0.75rem;
+    color: #fff;
+}
+
+.previewVariants {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.previewVariants strong {
+    color: #fff;
+    margin-right: 0.5rem;
+}
+
+.previewVariants span {
+    margin-right: 1rem;
+}
+
+/* Error */
+.error {
+    padding: 1rem;
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 0.75rem;
+    color: #ef4444;
+    font-size: 0.9rem;
+    margin-bottom: 1.5rem;
+}
+
+/* Navigation */
+.navigation {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.spacer {
+    flex: 1;
+}
+
+.backBtn,
+.nextBtn,
+.createBtn {
+    padding: 0.875rem 2rem;
+    border-radius: 0.75rem;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.backBtn {
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: var(--text-muted);
+}
+
+.backBtn:hover {
+    border-color: rgba(255, 255, 255, 0.4);
+    color: #fff;
+}
+
+.nextBtn,
+.createBtn {
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
+    border: none;
+    color: #000;
+}
+
+.nextBtn:hover,
+.createBtn:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 20px rgba(var(--accent-rgb), 0.4);
+}
+
+.createBtn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .gameTypes {
+        grid-template-columns: 1fr;
+    }
+
+    .previewStats {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .toggleGrid {
+        flex-direction: column;
+        gap: 1rem;
+    }
+}

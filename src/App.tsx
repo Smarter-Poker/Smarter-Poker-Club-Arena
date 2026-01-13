@@ -16,9 +16,13 @@ import AppLayout from './components/layouts/AppLayout';
 const LobbyPage = lazy(() => import('./pages/LobbyPage'));
 const ClubsPage = lazy(() => import('./pages/ClubsPage'));
 const ClubDetailPage = lazy(() => import('./pages/ClubDetailPage'));
+const CreateClubPage = lazy(() => import('./pages/CreateClubPage'));
 const TablePage = lazy(() => import('./pages/TablePage'));
 const ProfilePage = lazy(() => import('./pages/ProfilePage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
+const UnionsPage = lazy(() => import('./pages/UnionsPage'));
+const UnionDetailPage = lazy(() => import('./pages/UnionDetailPage'));
+const CreateUnionPage = lazy(() => import('./pages/CreateUnionPage'));
 
 // Loading fallback
 function LoadingSpinner() {
@@ -36,9 +40,21 @@ export default function App() {
             <Routes>
                 <Route path="/" element={<AppLayout />}>
                     <Route index element={<LobbyPage />} />
+
+                    {/* Clubs */}
                     <Route path="clubs" element={<ClubsPage />} />
+                    <Route path="clubs/create" element={<CreateClubPage />} />
                     <Route path="clubs/:clubId" element={<ClubDetailPage />} />
+
+                    {/* Unions */}
+                    <Route path="unions" element={<UnionsPage />} />
+                    <Route path="unions/create" element={<CreateUnionPage />} />
+                    <Route path="unions/:unionId" element={<UnionDetailPage />} />
+
+                    {/* Table */}
                     <Route path="table/:tableId" element={<TablePage />} />
+
+                    {/* User */}
                     <Route path="profile" element={<ProfilePage />} />
                     <Route path="settings" element={<SettingsPage />} />
                 </Route>

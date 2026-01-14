@@ -13,6 +13,7 @@ import { Suspense, lazy } from 'react';
 import AppLayout from './components/layouts/AppLayout';
 
 // Pages (lazy loaded for performance)
+const HomePage = lazy(() => import('./pages/HomePage'));
 const LobbyPage = lazy(() => import('./pages/LobbyPage'));
 const ClubsPage = lazy(() => import('./pages/ClubsPage'));
 const ClubDetailPage = lazy(() => import('./pages/ClubDetailPage'));
@@ -41,7 +42,8 @@ export default function App() {
         <Suspense fallback={<LoadingSpinner />}>
             <Routes>
                 <Route path="/" element={<AppLayout />}>
-                    <Route index element={<LobbyPage />} />
+                    <Route index element={<HomePage />} />
+                    <Route path="lobby" element={<LobbyPage />} />
 
                     {/* Clubs */}
                     <Route path="clubs" element={<ClubsPage />} />

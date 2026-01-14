@@ -1,124 +1,380 @@
 """
-Seed GTO Scenarios to Supabase
-Populates the solve queue with priority scenarios
+GTO Scenario Queue Seeder with Round-Robin Bucket Rotation
+Seeds scenarios from all formats equally - 100 per bucket, then rotate
 """
 
 import os
 import hashlib
 from datetime import datetime
+from typing import List, Dict
 from supabase import create_client, Client
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# CONFIG - Set these environment variables
+# CONFIG
 # ═══════════════════════════════════════════════════════════════════════════════
 
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://xyzcompanyref.supabase.co")
-SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "your-service-role-key")
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://your-project.supabase.co")
+SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "your-key")
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
+BATCH_SIZE = 100  # Hands per bucket before rotating
+
 # ═══════════════════════════════════════════════════════════════════════════════
-# SCENARIO DEFINITIONS
+# BUCKET DEFINITIONS (All formats with priority weights)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def compute_hash(position, pot_type, street, board, action_facing, stack_depth):
-    raw = f"{position}|{pot_type}|{street}|{','.join(board or [])}|{action_facing}|{stack_depth}"
+BUCKETS = {
+    # Cash Games - HIGH PRIORITY
+    "6max_cash_100bb": {
+        "format": "6max_cash",
+        "stack_depths": [100],
+        "priority": 10,
+        "target_count": 2000,
+    },
+    "6max_cash_50bb": {
+        "format": "6max_cash",
+        "stack_depths": [50],
+        "priority": 9,
+        "target_count": 1000,
+    },
+    "hu_cash_100bb": {
+        "format": "hu_cash",
+        "stack_depths": [100],
+        "priority": 8,
+        "target_count": 1000,
+    },
+    
+    # Spins - HIGH PRIORITY (popular format)
+    "spin_3max_15bb": {
+        "format": "spin_3max_icm",
+        "stack_depths": [12, 15, 18],
+        "priority": 10,
+        "target_count": 1500,
+    },
+    "spin_3max_shallow": {
+        "format": "spin_3max_icm",
+        "stack_depths": [8, 10],
+        "priority": 9,
+        "target_count": 1000,
+    },
+    "spin_hu_icm": {
+        "format": "spin_hu_icm",
+        "stack_depths": [10, 12, 15],
+        "priority": 9,
+        "target_count": 800,
+    },
+    
+    # MTT 6-Max - HIGH PRIORITY
+    "mtt_6max_mid": {
+        "format": "mtt_6max_chipev",
+        "stack_depths": [20, 25, 30],
+        "priority": 9,
+        "target_count": 1500,
+    },
+    "mtt_6max_short": {
+        "format": "mtt_6max_icm",
+        "stack_depths": [10, 15],
+        "priority": 9,
+        "target_count": 1000,
+    },
+    "mtt_6max_icm_bubble": {
+        "format": "mtt_6max_icm",
+        "stack_depths": [15, 20, 25],
+        "priority": 10,
+        "target_count": 1200,
+    },
+    
+    # MTT 9-Max
+    "mtt_9max_mid": {
+        "format": "mtt_9max_chipev",
+        "stack_depths": [25, 30, 40],
+        "priority": 7,
+        "target_count": 1000,
+    },
+    "mtt_9max_icm": {
+        "format": "mtt_9max_icm",
+        "stack_depths": [15, 20],
+        "priority": 8,
+        "target_count": 800,
+    },
+    
+    # Final Tables (3-max, HU)
+    "mtt_3max_ft": {
+        "format": "mtt_3max_icm",
+        "stack_depths": [15, 20, 25],
+        "priority": 9,
+        "target_count": 600,
+    },
+    "mtt_hu_ft": {
+        "format": "mtt_hu_icm",
+        "stack_depths": [15, 20, 25],
+        "priority": 8,
+        "target_count": 400,
+    },
+    
+    # SNG
+    "sng_9max_icm": {
+        "format": "sng_9max_icm",
+        "stack_depths": [15, 20],
+        "priority": 7,
+        "target_count": 600,
+    },
+    "sng_6max_icm": {
+        "format": "sng_6max_icm",
+        "stack_depths": [15, 20],
+        "priority": 7,
+        "target_count": 500,
+    },
+    
+    # Full Ring Cash (lower priority)
+    "9max_cash": {
+        "format": "9max_cash",
+        "stack_depths": [100],
+        "priority": 5,
+        "target_count": 500,
+    },
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BOARD TEXTURES
+# ═══════════════════════════════════════════════════════════════════════════════
+
+BOARD_LIBRARY = [
+    # Dry High
+    "AsKd2c", "KsQc3d", "QhJd4c", "AhTc5d",
+    # Dry Low
+    "7s4d2c", "8c5d3s", "6h4c2d",
+    # Wet Broadway
+    "KsQdJc", "QcJdTh", "JsTc9d",
+    # Wet Connected
+    "9s8d7c", "8h7c6d", "7s6d5c",
+    # Monotone
+    "As9s4s", "Kh8h3h",
+    # Paired
+    "AsAd5c", "KsKc7d",
+    # Two-tone
+    "AsKd5s", "KhQc3h",
+]
+
+POSITIONS_BY_FORMAT = {
+    "hu": [("BTN", "BB")],
+    "3max": [("BTN", "BB"), ("BTN", "SB"), ("SB", "BB")],
+    "6max": [
+        ("BTN", "BB"), ("CO", "BB"), ("MP", "BB"), ("UTG", "BB"),
+        ("BTN", "SB"), ("CO", "SB"),
+    ],
+    "9max": [
+        ("BTN", "BB"), ("CO", "BB"), ("HJ", "BB"), ("MP", "BB"),
+        ("UTG+2", "BB"), ("UTG+1", "BB"), ("UTG", "BB"),
+    ],
+}
+
+POT_TYPES = ["srp", "3bet"]
+ACTIONS = ["check", "bet_33", "bet_50"]
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# HASH FUNCTION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def compute_hash(format_code, hero, villain, pot_type, street, board, action, stack, is_icm):
+    raw = f"{format_code}|{hero}|{villain}|{pot_type}|{street}|{board}|{action}|{stack}|{is_icm}"
     return hashlib.md5(raw.encode()).hexdigest()
 
 
-# Priority scenarios to queue for solving
-PRIORITY_SCENARIOS = [
-    # BTN vs BB SRP - Flop spots (most common)
-    {"position": "BTN", "villain": "BB", "pot_type": "srp", "street": "flop", "board": ["As", "Kd", "2c"], "action": "check", "stack": 100, "priority": 10},
-    {"position": "BTN", "villain": "BB", "pot_type": "srp", "street": "flop", "board": ["As", "Kd", "2c"], "action": "bet_33", "stack": 100, "priority": 10},
-    {"position": "BTN", "villain": "BB", "pot_type": "srp", "street": "flop", "board": ["7s", "4d", "2c"], "action": "check", "stack": 100, "priority": 10},
-    {"position": "BTN", "villain": "BB", "pot_type": "srp", "street": "flop", "board": ["7s", "4d", "2c"], "action": "bet_33", "stack": 100, "priority": 10},
-    {"position": "BTN", "villain": "BB", "pot_type": "srp", "street": "flop", "board": ["9s", "8d", "7c"], "action": "check", "stack": 100, "priority": 10},
-    {"position": "BTN", "villain": "BB", "pot_type": "srp", "street": "flop", "board": ["Ks", "Qd", "Jc"], "action": "check", "stack": 100, "priority": 10},
-    {"position": "BTN", "villain": "BB", "pot_type": "srp", "street": "flop", "board": ["As", "5s", "4s"], "action": "check", "stack": 100, "priority": 9},
-    {"position": "BTN", "villain": "BB", "pot_type": "srp", "street": "flop", "board": ["Qh", "Jd", "4c"], "action": "check", "stack": 100, "priority": 9},
+# ═══════════════════════════════════════════════════════════════════════════════
+# BUCKET STATUS TRACKER
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class BucketTracker:
+    def __init__(self):
+        self.counts = {}  # bucket_name -> current count
+        self.targets = {}  # bucket_name -> target count
+        
+    def load_from_db(self):
+        """Load current solved counts from database"""
+        for bucket_name, config in BUCKETS.items():
+            # Count existing solutions for this bucket
+            result = supabase.table("gto_solutions") \
+                .select("id", count="exact") \
+                .eq("format_code", config["format"]) \
+                .in_("stack_depth_bb", config["stack_depths"]) \
+                .execute()
+            
+            self.counts[bucket_name] = result.count or 0
+            self.targets[bucket_name] = config["target_count"]
     
-    # CO vs BB SRP
-    {"position": "CO", "villain": "BB", "pot_type": "srp", "street": "flop", "board": ["As", "Kd", "2c"], "action": "check", "stack": 100, "priority": 8},
-    {"position": "CO", "villain": "BB", "pot_type": "srp", "street": "flop", "board": ["7s", "4d", "2c"], "action": "check", "stack": 100, "priority": 8},
+    def get_incomplete_buckets(self) -> List[str]:
+        """Get buckets that haven't reached their target, sorted by priority"""
+        incomplete = []
+        for bucket_name in self.counts:
+            if self.counts[bucket_name] < self.targets[bucket_name]:
+                incomplete.append((bucket_name, BUCKETS[bucket_name]["priority"]))
+        
+        # Sort by priority (highest first)
+        incomplete.sort(key=lambda x: -x[1])
+        return [b[0] for b in incomplete]
     
-    # 3bet pots
-    {"position": "BTN", "villain": "BB", "pot_type": "3bet", "street": "flop", "board": ["As", "Kd", "2c"], "action": "check", "stack": 100, "priority": 7},
-    {"position": "BTN", "villain": "BB", "pot_type": "3bet", "street": "flop", "board": ["Ks", "Qd", "Jc"], "action": "check", "stack": 100, "priority": 7},
-    
-    # Turn spots (after flop bet/call)
-    {"position": "BTN", "villain": "BB", "pot_type": "srp", "street": "turn", "board": ["As", "Kd", "2c", "7h"], "action": "check", "stack": 100, "priority": 6},
-    {"position": "BTN", "villain": "BB", "pot_type": "srp", "street": "turn", "board": ["7s", "4d", "2c", "Ks"], "action": "check", "stack": 100, "priority": 6},
-    
-    # River spots
-    {"position": "BTN", "villain": "BB", "pot_type": "srp", "street": "river", "board": ["As", "Kd", "2c", "7h", "3d"], "action": "check", "stack": 100, "priority": 5},
-]
+    def increment(self, bucket_name):
+        self.counts[bucket_name] = self.counts.get(bucket_name, 0) + 1
 
 
-def seed_scenarios():
-    """Push all priority scenarios to the solve queue"""
-    print("🎯 Seeding GTO Scenarios to Supabase...")
+# ═══════════════════════════════════════════════════════════════════════════════
+# ROUND-ROBIN QUEUE SEEDER
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def generate_scenarios_for_bucket(bucket_name: str, count: int) -> List[Dict]:
+    """Generate `count` scenarios for a specific bucket"""
+    config = BUCKETS[bucket_name]
+    format_code = config["format"]
+    stack_depths = config["stack_depths"]
+    is_icm = "icm" in format_code
     
-    for scenario in PRIORITY_SCENARIOS:
+    # Determine position pairs based on format
+    if "hu" in format_code:
+        positions = POSITIONS_BY_FORMAT["hu"]
+    elif "3max" in format_code:
+        positions = POSITIONS_BY_FORMAT["3max"]
+    elif "6max" in format_code:
+        positions = POSITIONS_BY_FORMAT["6max"]
+    else:
+        positions = POSITIONS_BY_FORMAT["9max"]
+    
+    scenarios = []
+    idx = 0
+    
+    while len(scenarios) < count:
+        # Rotate through all combinations
+        stack = stack_depths[idx % len(stack_depths)]
+        hero, villain = positions[idx % len(positions)]
+        board = BOARD_LIBRARY[idx % len(BOARD_LIBRARY)]
+        pot_type = POT_TYPES[idx % len(POT_TYPES)]
+        action = ACTIONS[idx % len(ACTIONS)]
+        
         scenario_hash = compute_hash(
-            scenario["position"],
-            scenario["pot_type"],
-            scenario["street"],
-            scenario["board"],
-            scenario["action"],
-            scenario["stack"]
+            format_code, hero, villain, pot_type, "flop", board, action, stack, is_icm
         )
         
-        # Check if already exists
-        existing = supabase.table("gto_solve_queue") \
-            .select("id") \
-            .eq("scenario_hash", scenario_hash) \
+        scenarios.append({
+            "scenario_hash": scenario_hash,
+            "format_code": format_code,
+            "hero_position": hero,
+            "villain_position": villain,
+            "pot_type": pot_type,
+            "street": "flop",
+            "board": list(board),  # Convert to array
+            "action_facing": action,
+            "stack_depth_bb": stack,
+            "is_icm": is_icm,
+            "priority": config["priority"],
+            "status": "pending",
+        })
+        
+        idx += 1
+    
+    return scenarios
+
+
+def seed_round_robin():
+    """
+    Main seeding function - Round Robin approach
+    Seeds BATCH_SIZE scenarios per bucket, rotates through all buckets
+    """
+    print("🎯 Round-Robin GTO Scenario Seeder")
+    print(f"📦 Batch size: {BATCH_SIZE} per bucket")
+    print(f"🪣 Total buckets: {len(BUCKETS)}")
+    print("")
+    
+    tracker = BucketTracker()
+    tracker.load_from_db()
+    
+    total_seeded = 0
+    round_num = 0
+    
+    while True:
+        incomplete = tracker.get_incomplete_buckets()
+        
+        if not incomplete:
+            print("\n✅ All buckets complete!")
+            break
+        
+        round_num += 1
+        print(f"\n═══ Round {round_num} ═══")
+        
+        for bucket_name in incomplete:
+            config = BUCKETS[bucket_name]
+            current = tracker.counts[bucket_name]
+            target = tracker.targets[bucket_name]
+            remaining = target - current
+            
+            # Seed up to BATCH_SIZE or remaining, whichever is smaller
+            to_seed = min(BATCH_SIZE, remaining)
+            
+            print(f"  🪣 {bucket_name}: {current}/{target} (+{to_seed})")
+            
+            scenarios = generate_scenarios_for_bucket(bucket_name, to_seed)
+            
+            # Insert to queue (skip duplicates)
+            for scenario in scenarios:
+                try:
+                    supabase.table("gto_solve_queue").upsert(
+                        scenario,
+                        on_conflict="scenario_hash"
+                    ).execute()
+                    tracker.increment(bucket_name)
+                    total_seeded += 1
+                except Exception as e:
+                    pass  # Skip duplicates
+        
+        # Progress summary
+        print(f"\n  📊 Total seeded this round: {total_seeded}")
+        
+        # Safety limit - don't seed infinite scenarios
+        if total_seeded > 50000:
+            print("\n⚠️ Hit 50K limit, stopping.")
+            break
+    
+    print(f"\n🎯 Seeding complete! Total: {total_seeded} scenarios queued")
+
+
+def show_bucket_status():
+    """Display current bucket completion status"""
+    print("\n📊 Bucket Status")
+    print("=" * 60)
+    
+    total_solved = 0
+    total_target = 0
+    
+    for bucket_name, config in sorted(BUCKETS.items(), key=lambda x: -x[1]["priority"]):
+        result = supabase.table("gto_solutions") \
+            .select("id", count="exact") \
+            .eq("format_code", config["format"]) \
+            .in_("stack_depth_bb", config["stack_depths"]) \
             .execute()
         
-        if existing.data:
-            print(f"⏭️  Already queued: {scenario_hash[:8]}")
-            continue
+        solved = result.count or 0
+        target = config["target_count"]
+        pct = (solved / target * 100) if target > 0 else 0
         
-        # Insert to queue
-        supabase.table("gto_solve_queue").insert({
-            "scenario_hash": scenario_hash,
-            "position": scenario["position"],
-            "villain_position": scenario.get("villain"),
-            "pot_type": scenario["pot_type"],
-            "street": scenario["street"],
-            "board": scenario["board"],
-            "action_facing": scenario["action"],
-            "stack_depth_bb": scenario["stack"],
-            "priority": scenario["priority"],
-            "status": "pending"
-        }).execute()
+        bar_len = 20
+        filled = int(bar_len * pct / 100)
+        bar = "█" * filled + "░" * (bar_len - filled)
         
-        print(f"✅ Queued: {scenario['position']} vs {scenario['villain']} | {scenario['pot_type']} | {''.join(scenario['board'])}")
+        status = "✅" if pct >= 100 else "🔄" if pct > 0 else "⏳"
+        print(f"{status} {bucket_name:25} [{bar}] {solved:5}/{target:5} ({pct:5.1f}%)")
+        
+        total_solved += solved
+        total_target += target
     
-    print(f"\n🎯 Seeded {len(PRIORITY_SCENARIOS)} scenarios to solve queue")
-
-
-def check_queue_status():
-    """Check current queue status"""
-    result = supabase.table("gto_solve_queue") \
-        .select("status") \
-        .execute()
-    
-    if not result.data:
-        print("📭 Queue is empty")
-        return
-    
-    statuses = {}
-    for row in result.data:
-        status = row["status"]
-        statuses[status] = statuses.get(status, 0) + 1
-    
-    print("\n📊 Queue Status:")
-    for status, count in statuses.items():
-        emoji = {"pending": "⏳", "solving": "🔄", "completed": "✅", "failed": "❌"}.get(status, "❓")
-        print(f"   {emoji} {status}: {count}")
+    print("=" * 60)
+    pct = (total_solved / total_target * 100) if total_target > 0 else 0
+    print(f"   TOTAL: {total_solved}/{total_target} ({pct:.1f}%)")
 
 
 if __name__ == "__main__":
-    seed_scenarios()
-    check_queue_status()
+    import sys
+    
+    if len(sys.argv) > 1 and sys.argv[1] == "status":
+        show_bucket_status()
+    else:
+        seed_round_robin()

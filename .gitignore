@@ -21,3 +21,5 @@ supabase/.temp
 *.swp
 *.swo
 .DS_Store
+# Generated PioSolver trees (regeneratable)
+scripts/trees/

@@ -41,8 +41,11 @@ export default function App() {
     return (
         <Suspense fallback={<LoadingSpinner />}>
             <Routes>
-                <Route path="/" element={<AppLayout />}>
-                    <Route index element={<HomePage />} />
+                {/* HomePage - Standalone without Shell */}
+                <Route path="/" element={<HomePage />} />
+
+                {/* Other routes with AppLayout shell */}
+                <Route element={<AppLayout />}>
                     <Route path="lobby" element={<LobbyPage />} />
 
                     {/* Clubs */}

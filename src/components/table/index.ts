@@ -38,6 +38,10 @@ export type { HandHistoryProps, HandHistoryData, PlayerHandResult, PositionName 
 export { ChipStack } from './ChipStack';
 export type { ChipStackProps } from './ChipStack';
 
+// Premium Card (3D Cards with deck themes)
+export { default as PremiumCard, CardPlaceholder, DECK_THEMES } from './PremiumCard';
+export type { DeckTheme, PremiumCardType } from './PremiumCard';
+
 // Timer Bar (Action Clock)
 export { TimerBar } from './TimerBar';
 export type { TimerBarProps } from './TimerBar';

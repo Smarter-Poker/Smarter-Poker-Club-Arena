@@ -1,0 +1,224 @@
+/**
+ * 🃏 PREMIUM CARD STYLES
+ * High-end video game aesthetic with 3D effects, gradients, and animations
+ */
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   CARD WRAPPER - Handles perspective and deal animation
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.premium-card-wrapper {
+    perspective: 1000px;
+    cursor: pointer;
+    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.premium-card-wrapper:hover {
+    transform: translateY(-8px) scale(1.05);
+    z-index: 10;
+}
+
+.premium-card-wrapper.dealing {
+    opacity: 0;
+    transform: translateX(-100px) translateY(-50px) rotate(-20deg) scale(0.5);
+}
+
+.premium-card-wrapper.dealt {
+    opacity: 1;
+    transform: translateX(0) translateY(0) rotate(0) scale(1);
+    transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.premium-card-wrapper.highlighted {
+    animation: card-glow 1.5s ease-in-out infinite;
+}
+
+@keyframes card-glow {
+
+    0%,
+    100% {
+        filter: drop-shadow(0 0 8px rgba(255, 215, 0, 0.6));
+    }
+
+    50% {
+        filter: drop-shadow(0 0 20px rgba(255, 215, 0, 0.9));
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   PREMIUM CARD - 3D flip container
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.premium-card {
+    width: 100%;
+    height: 100%;
+    position: relative;
+    transform-style: preserve-3d;
+    transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.premium-card.flipped {
+    transform: rotateY(180deg);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   CARD FRONT - Premium white gradient with subtle texture
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.card-front {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(145deg,
+            #ffffff 0%,
+            #f8f9fa 50%,
+            #eef0f2 100%);
+    border-radius: 8px;
+    backface-visibility: hidden;
+    box-shadow:
+        0 2px 4px rgba(0, 0, 0, 0.1),
+        0 8px 16px rgba(0, 0, 0, 0.15),
+        0 16px 32px rgba(0, 0, 0, 0.1),
+        inset 0 1px 0 rgba(255, 255, 255, 0.8);
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    overflow: hidden;
+}
+
+/* Card corners */
+.card-corner {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    line-height: 1;
+}
+
+.card-corner.top-left {
+    top: 4px;
+    left: 5px;
+}
+
+.card-corner.bottom-right {
+    bottom: 4px;
+    right: 5px;
+    transform: rotate(180deg);
+}
+
+.card-rank {
+    font-family: 'Georgia', serif;
+    font-weight: 700;
+    font-size: 14px;
+    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.1);
+}
+
+.card-suit-mini {
+    font-size: 12px;
+    margin-top: -2px;
+}
+
+/* Center suit - large and prominent */
+.card-center {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.card-suit-main {
+    font-size: 28px;
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.15));
+}
+
+/* Shine effect overlay */
+.card-shine {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg,
+            rgba(255, 255, 255, 0.4) 0%,
+            rgba(255, 255, 255, 0) 50%,
+            rgba(0, 0, 0, 0.02) 100%);
+    pointer-events: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   CARD BACK - Custom image design
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.card-back {
+    position: absolute;
+    inset: 0;
+    border-radius: 8px;
+    backface-visibility: hidden;
+    transform: rotateY(180deg);
+    box-shadow:
+        0 2px 4px rgba(0, 0, 0, 0.2),
+        0 8px 16px rgba(0, 0, 0, 0.2);
+    overflow: hidden;
+}
+
+.card-back-image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 8px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   CARD PLACEHOLDER
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.card-placeholder {
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 2px dashed rgba(255, 255, 255, 0.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.placeholder-inner {
+    width: 50%;
+    height: 50%;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.03);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   SIZE VARIANTS
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+/* Small cards */
+.premium-card-wrapper[style*="width: 44"] .card-rank {
+    font-size: 11px;
+}
+
+.premium-card-wrapper[style*="width: 44"] .card-suit-mini {
+    font-size: 9px;
+}
+
+.premium-card-wrapper[style*="width: 44"] .card-suit-main {
+    font-size: 20px;
+}
+
+/* Large cards */
+.premium-card-wrapper[style*="width: 72"] .card-rank {
+    font-size: 18px;
+}
+
+.premium-card-wrapper[style*="width: 72"] .card-suit-mini {
+    font-size: 14px;
+}
+
+.premium-card-wrapper[style*="width: 72"] .card-suit-main {
+    font-size: 36px;
+}
+
+.premium-card-wrapper[style*="width: 72"] .card-corner.top-left {
+    top: 6px;
+    left: 8px;
+}
+
+.premium-card-wrapper[style*="width: 72"] .card-corner.bottom-right {
+    bottom: 6px;
+    right: 8px;
+}

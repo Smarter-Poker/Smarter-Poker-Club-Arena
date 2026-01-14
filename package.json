@@ -13,15 +13,17 @@
         "types:generate": "npx supabase gen types typescript --project-id kuklfnapbkmacvwxktbh --schema public > src/types/supabase.ts"
     },
     "dependencies": {
+        "@react-three/drei": "^10.0.0",
+        "@react-three/fiber": "^9.0.0",
         "@supabase/supabase-js": "^2.49.0",
+        "@types/md5": "^2.3.6",
         "framer-motion": "^11.18.0",
+        "md5": "^2.3.0",
         "react": "^19.0.0",
         "react-dom": "^19.0.0",
         "react-router-dom": "^7.1.1",
-        "zustand": "^5.0.3",
         "three": "^0.172.0",
-        "@react-three/fiber": "^9.0.0",
-        "@react-three/drei": "^10.0.0"
+        "zustand": "^5.0.3"
     },
     "devDependencies": {
         "@eslint/js": "^9.18.0",

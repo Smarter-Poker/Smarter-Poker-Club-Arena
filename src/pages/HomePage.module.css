@@ -1,17 +1,21 @@
 /**
  * ♠ CLUB ARENA — Pixel Perfect PokerBros Clone
- * Pure CSS implementation matching the design exactly
+ * CSS Module matching the uploaded reference design
  */
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   CONTAINER
+   CONTAINER & LAYOUT
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .container {
     min-height: 100vh;
-    background: linear-gradient(180deg, #0a1628 0%, #0d1e3a 40%, #0a1a30 100%);
     display: flex;
     flex-direction: column;
+    background: linear-gradient(180deg,
+            #0a1628 0%,
+            #0d1e3a 30%,
+            #0f2440 60%,
+            #0a1830 100%);
     overflow-x: hidden;
 }
 
@@ -23,9 +27,12 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 12px 20px;
-    background: linear-gradient(180deg, rgba(10, 22, 40, 0.98) 0%, rgba(12, 28, 50, 0.95) 100%);
-    border-bottom: 1px solid rgba(100, 180, 255, 0.15);
+    padding: 12px 16px;
+    background: linear-gradient(180deg, rgba(8, 18, 35, 0.98) 0%, rgba(10, 22, 40, 0.95) 100%);
+    border-bottom: 1px solid rgba(80, 140, 200, 0.15);
+    position: sticky;
+    top: 0;
+    z-index: 100;
 }
 
 .headerLeft {
@@ -36,17 +43,25 @@
 .logo {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
 }
 
-.logoImg {
+.logoIcon {
     width: 32px;
     height: 32px;
+    background: linear-gradient(135deg, #c0392b 0%, #8b0000 100%);
     border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    color: #fff;
+    font-weight: bold;
+    box-shadow: 0 2px 8px rgba(192, 57, 43, 0.4);
 }
 
 .logoText {
-    font-size: 18px;
+    font-size: 17px;
     font-weight: 700;
     color: #fff;
     letter-spacing: 0.3px;
@@ -55,65 +70,65 @@
 .headerRight {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
 }
 
 .statBadge {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 6px 14px;
-    background: linear-gradient(180deg, rgba(40, 80, 120, 0.6) 0%, rgba(30, 60, 100, 0.6) 100%);
-    border: 1px solid rgba(100, 180, 255, 0.25);
-    border-radius: 20px;
-    font-size: 13px;
+    gap: 5px;
+    padding: 6px 12px;
+    background: linear-gradient(180deg, rgba(40, 75, 110, 0.7) 0%, rgba(30, 55, 85, 0.8) 100%);
+    border: 1px solid rgba(100, 160, 220, 0.3);
+    border-radius: 18px;
+    font-size: 12px;
     font-weight: 600;
     color: #fff;
 }
 
-.xpIcon {
-    color: #ffd700;
+.badgeIcon {
+    font-size: 12px;
 }
 
-.diamondIcon {
-    color: #00bcd4;
+.badgeValue {
+    color: #fff;
 }
 
-.iconBtn {
-    width: 38px;
-    height: 38px;
+.headerIcon {
+    width: 36px;
+    height: 36px;
     display: flex;
     align-items: center;
     justify-content: center;
     background: rgba(255, 255, 255, 0.08);
-    border: 1px solid rgba(255, 255, 255, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 50%;
-    color: rgba(255, 255, 255, 0.9);
+    color: rgba(255, 255, 255, 0.85);
     cursor: pointer;
     position: relative;
     transition: all 0.2s;
 }
 
-.iconBtn svg {
+.headerIcon svg {
     width: 18px;
     height: 18px;
 }
 
-.iconBtn:hover {
+.headerIcon:hover {
     background: rgba(255, 255, 255, 0.15);
-    border-color: rgba(255, 255, 255, 0.3);
+    border-color: rgba(255, 255, 255, 0.25);
 }
 
-.badge {
+.notificationBadge {
     position: absolute;
-    top: -4px;
-    right: -4px;
-    min-width: 18px;
-    height: 18px;
-    padding: 0 5px;
+    top: -3px;
+    right: -3px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
     background: #e53935;
-    border-radius: 10px;
-    font-size: 11px;
+    border-radius: 8px;
+    font-size: 10px;
     font-weight: 700;
     color: #fff;
     display: flex;
@@ -122,59 +137,122 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   TITLE
+   MAIN CONTENT
    ═══════════════════════════════════════════════════════════════════════════════ */
 
+.main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px 16px;
+}
+
 .title {
-    text-align: center;
-    font-size: 26px;
+    font-size: 24px;
     font-weight: 600;
     color: #fff;
-    margin: 24px 0 20px;
-    text-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
+    text-align: center;
+    margin: 0 0 24px 0;
+    text-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   CAROUSEL SECTION
+   CAROUSEL
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .carouselSection {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 12px;
-    padding: 0 16px;
-    flex: 1;
+    gap: 8px;
+    width: 100%;
+    max-width: 700px;
 }
 
-.arrow {
-    width: 44px;
-    height: 44px;
-    background: rgba(0, 0, 0, 0.5);
-    border: 1px solid rgba(255, 255, 255, 0.25);
+.carouselArrow {
+    width: 40px;
+    height: 40px;
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.2);
     border-radius: 50%;
     color: #fff;
-    font-size: 32px;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
     transition: all 0.2s;
     flex-shrink: 0;
-    line-height: 1;
-    padding-bottom: 4px;
 }
 
-.arrow:hover {
+.carouselArrow svg {
+    width: 24px;
+    height: 24px;
+}
+
+.carouselArrow:hover {
     background: rgba(255, 255, 255, 0.15);
     border-color: rgba(255, 255, 255, 0.4);
-    transform: scale(1.08);
+    transform: scale(1.05);
 }
 
-.cardsContainer {
+.cardsWrapper {
     display: flex;
     align-items: center;
-    gap: 16px;
+    gap: 12px;
+    perspective: 1000px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   PREVIEW CARDS (Left/Right)
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.previewCard {
+    width: 70px;
+    height: 200px;
+    background: linear-gradient(180deg, rgba(20, 45, 80, 0.7) 0%, rgba(12, 30, 55, 0.8) 100%);
+    border: 1px solid rgba(80, 140, 200, 0.25);
+    border-radius: 12px;
+    overflow: hidden;
+    opacity: 0.6;
+    transition: all 0.3s;
+}
+
+.leftCard {
+    transform: perspective(500px) rotateY(8deg);
+}
+
+.rightCard {
+    transform: perspective(500px) rotateY(-8deg);
+}
+
+.previewCardInner {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 12px 6px;
+}
+
+.previewName {
+    font-size: 11px;
+    font-weight: 600;
+    color: #fff;
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+    transform: rotate(180deg);
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+    max-height: 120px;
+    overflow: hidden;
+}
+
+.previewStats {
+    margin-top: auto;
+    font-size: 9px;
+    color: rgba(255, 255, 255, 0.7);
+    text-align: center;
+    line-height: 1.4;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -183,208 +261,189 @@
 
 .mainCard {
     position: relative;
-    width: 340px;
-    height: 280px;
+    width: 320px;
+    height: 240px;
     border-radius: 16px;
     overflow: hidden;
-    border: 2px solid rgba(100, 200, 255, 0.35);
+    border: 2px solid rgba(80, 160, 240, 0.4);
     box-shadow:
-        0 0 40px rgba(0, 150, 255, 0.2),
-        0 0 80px rgba(0, 100, 200, 0.1),
-        inset 0 0 60px rgba(0, 150, 255, 0.08);
+        0 0 30px rgba(0, 120, 200, 0.25),
+        0 0 60px rgba(0, 80, 160, 0.15),
+        inset 0 0 50px rgba(0, 100, 180, 0.1);
 }
 
-.cardBg {
+.cardBackground {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg,
+            rgba(15, 40, 75, 0.92) 0%,
+            rgba(10, 30, 55, 0.95) 100%);
+}
+
+.pokerTableBg {
     position: absolute;
     inset: 0;
     background:
-        radial-gradient(ellipse 120% 60% at 50% 100%, rgba(0, 80, 140, 0.5) 0%, transparent 70%),
-        radial-gradient(ellipse 100% 50% at 50% 0%, rgba(0, 60, 120, 0.4) 0%, transparent 60%),
-        linear-gradient(180deg, #0f3050 0%, #082035 50%, #0a1a2a 100%);
-}
-
-.cardBg::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background:
-        radial-gradient(circle at 20% 30%, rgba(200, 50, 50, 0.15) 0%, transparent 25%),
-        radial-gradient(circle at 80% 40%, rgba(50, 50, 200, 0.15) 0%, transparent 25%),
-        radial-gradient(circle at 50% 70%, rgba(50, 150, 50, 0.12) 0%, transparent 30%),
-        radial-gradient(circle at 35% 60%, rgba(200, 150, 50, 0.1) 0%, transparent 20%),
-        radial-gradient(circle at 65% 25%, rgba(100, 100, 200, 0.1) 0%, transparent 20%);
-    opacity: 0.8;
+        /* Poker table felt gradient */
+        radial-gradient(ellipse 100% 80% at 50% 100%, rgba(0, 60, 100, 0.3) 0%, transparent 60%),
+        /* Poker chips scattered */
+        radial-gradient(circle at 15% 30%, rgba(200, 50, 50, 0.12) 0%, transparent 15%),
+        radial-gradient(circle at 85% 25%, rgba(50, 50, 200, 0.12) 0%, transparent 15%),
+        radial-gradient(circle at 50% 75%, rgba(50, 150, 50, 0.1) 0%, transparent 20%),
+        radial-gradient(circle at 25% 60%, rgba(200, 180, 50, 0.08) 0%, transparent 12%),
+        radial-gradient(circle at 75% 55%, rgba(100, 100, 180, 0.08) 0%, transparent 12%),
+        radial-gradient(circle at 35% 40%, rgba(180, 80, 80, 0.08) 0%, transparent 10%),
+        radial-gradient(circle at 65% 35%, rgba(80, 80, 180, 0.08) 0%, transparent 10%);
 }
 
 .cardContent {
     position: relative;
     z-index: 1;
+    height: 100%;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    height: 100%;
-    padding: 24px;
+    padding: 20px;
     text-align: center;
 }
 
 .clubName {
-    font-size: 30px;
+    font-size: 26px;
     font-weight: 700;
     color: #fff;
-    margin-bottom: 20px;
-    text-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
+    margin: 0 0 16px 0;
+    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
 }
 
-.stats {
+.clubStats {
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    margin-bottom: 24px;
+    gap: 6px;
+    margin-bottom: 20px;
 }
 
-.statRow {
+.stat {
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 8px;
-    font-size: 14px;
-    color: rgba(255, 255, 255, 0.92);
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.9);
 }
 
-.enterBtn {
-    padding: 14px 72px;
-    background: linear-gradient(180deg, #4caf50 0%, #388e3c 50%, #2e7d32 100%);
+.statIcon {
+    font-size: 14px;
+}
+
+.enterButton {
+    padding: 12px 64px;
+    background: linear-gradient(180deg,
+            #5cb85c 0%,
+            #4cae4c 40%,
+            #449d44 100%);
     border: none;
-    border-radius: 28px;
+    border-radius: 24px;
     color: #fff;
-    font-size: 20px;
+    font-size: 18px;
     font-weight: 700;
     cursor: pointer;
     text-transform: capitalize;
-    letter-spacing: 0.5px;
     box-shadow:
-        0 4px 20px rgba(76, 175, 80, 0.45),
-        inset 0 2px 0 rgba(255, 255, 255, 0.15),
+        0 4px 16px rgba(76, 175, 80, 0.4),
+        inset 0 1px 0 rgba(255, 255, 255, 0.2),
         inset 0 -2px 0 rgba(0, 0, 0, 0.1);
     transition: all 0.2s;
 }
 
-.enterBtn:hover {
-    background: linear-gradient(180deg, #66bb6a 0%, #43a047 50%, #388e3c 100%);
+.enterButton:hover {
+    background: linear-gradient(180deg,
+            #6ec96e 0%,
+            #5cb85c 40%,
+            #4cae4c 100%);
     transform: translateY(-2px);
     box-shadow:
-        0 6px 28px rgba(76, 175, 80, 0.55),
-        inset 0 2px 0 rgba(255, 255, 255, 0.2);
+        0 6px 24px rgba(76, 175, 80, 0.5),
+        inset 0 1px 0 rgba(255, 255, 255, 0.25);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   SIDE CARDS
+   CAROUSEL DOTS
    ═══════════════════════════════════════════════════════════════════════════════ */
 
-.sideCard {
-    width: 80px;
-    height: 220px;
-    background: linear-gradient(180deg, rgba(20, 50, 90, 0.7) 0%, rgba(10, 30, 60, 0.8) 100%);
-    border: 1px solid rgba(100, 180, 255, 0.2);
-    border-radius: 12px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 16px 8px;
-    opacity: 0.65;
-}
-
-.sideCardName {
-    font-size: 13px;
-    font-weight: 600;
-    color: #fff;
-    writing-mode: vertical-rl;
-    text-orientation: mixed;
-    transform: rotate(180deg);
-    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
-}
-
-.sideCardStats {
-    margin-top: auto;
-    font-size: 10px;
-    color: rgba(255, 255, 255, 0.7);
-    text-align: center;
-    line-height: 1.4;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════════
-   DOTS
-   ═══════════════════════════════════════════════════════════════════════════════ */
-
-.dots {
+.carouselDots {
     display: flex;
     justify-content: center;
-    gap: 10px;
-    padding: 20px 0;
+    gap: 8px;
+    margin-top: 20px;
 }
 
 .dot {
-    width: 10px;
-    height: 10px;
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
-    background: rgba(255, 255, 255, 0.35);
+    background: rgba(255, 255, 255, 0.3);
     border: none;
     cursor: pointer;
     transition: all 0.2s;
+    padding: 0;
 }
 
 .dot:hover {
-    background: rgba(255, 255, 255, 0.6);
+    background: rgba(255, 255, 255, 0.5);
 }
 
 .dotActive {
     background: #fff;
-    box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+    box-shadow: 0 0 8px rgba(255, 255, 255, 0.5);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   ACTION BAR
+   BOTTOM ACTION BAR
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .actionBar {
     display: flex;
     justify-content: center;
-    gap: 28px;
-    padding: 24px 20px 32px;
-    background: linear-gradient(180deg, rgba(15, 35, 65, 0.95) 0%, rgba(10, 25, 50, 0.98) 100%);
-    border-top: 1px solid rgba(100, 180, 255, 0.15);
-    border-radius: 28px 28px 0 0;
+    align-items: flex-start;
+    gap: 20px;
+    padding: 24px 16px 32px;
+    background: linear-gradient(180deg,
+            rgba(12, 28, 55, 0.95) 0%,
+            rgba(8, 20, 40, 0.98) 100%);
+    border-top: 1px solid rgba(80, 140, 200, 0.15);
+    border-radius: 24px 24px 0 0;
     margin-top: auto;
 }
 
-.actionItem {
+.actionButton {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     background: transparent;
     border: none;
     cursor: pointer;
     transition: all 0.2s;
+    padding: 0;
+    width: 70px;
 }
 
-.actionItem:hover {
+.actionButton:hover {
     transform: translateY(-4px);
 }
 
-.actionItem:hover .actionIcon {
-    background: rgba(100, 180, 255, 0.25);
-    border-color: rgba(100, 180, 255, 0.5);
-    box-shadow: 0 0 20px rgba(100, 180, 255, 0.25);
+.actionButton:hover .actionIconWrapper {
+    background: linear-gradient(180deg, rgba(60, 100, 160, 0.8) 0%, rgba(40, 70, 120, 0.9) 100%);
+    border-color: rgba(100, 160, 220, 0.5);
+    box-shadow: 0 0 20px rgba(80, 140, 200, 0.3);
 }
 
-.actionIcon {
-    width: 60px;
-    height: 60px;
+.actionIconWrapper {
+    width: 56px;
+    height: 56px;
     background: linear-gradient(180deg, rgba(30, 60, 100, 0.8) 0%, rgba(20, 45, 80, 0.9) 100%);
-    border: 2px solid rgba(100, 180, 255, 0.3);
+    border: 2px solid rgba(80, 140, 200, 0.35);
     border-radius: 16px;
     display: flex;
     align-items: center;
@@ -392,122 +451,95 @@
     transition: all 0.2s;
 }
 
-.actionIcon svg {
-    width: 28px;
-    height: 28px;
+.actionIconWrapper svg {
+    width: 26px;
+    height: 26px;
     color: rgba(255, 255, 255, 0.9);
 }
 
 .actionLabel {
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 500;
-    color: rgba(255, 255, 255, 0.85);
+    color: rgba(255, 255, 255, 0.8);
     text-align: center;
-    max-width: 72px;
     line-height: 1.3;
+    max-width: 65px;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    RESPONSIVE
    ═══════════════════════════════════════════════════════════════════════════════ */
 
-@media (max-width: 768px) {
-    .sideCard {
+@media (max-width: 600px) {
+    .previewCard {
         display: none;
     }
 
     .mainCard {
-        width: 300px;
-        height: 260px;
+        width: 280px;
+        height: 220px;
     }
 
     .clubName {
-        font-size: 24px;
-    }
-
-    .enterBtn {
-        padding: 12px 56px;
-        font-size: 18px;
-    }
-
-    .actionBar {
-        gap: 18px;
-        padding: 20px 16px 28px;
-    }
-
-    .actionIcon {
-        width: 52px;
-        height: 52px;
-    }
-
-    .actionLabel {
-        font-size: 10px;
-    }
-}
-
-@media (max-width: 480px) {
-    .header {
-        padding: 10px 12px;
-    }
-
-    .statBadge {
-        padding: 5px 10px;
-        font-size: 11px;
-    }
-
-    .iconBtn {
-        width: 32px;
-        height: 32px;
-    }
-
-    .title {
         font-size: 22px;
-        margin: 16px 0 14px;
     }
 
-    .mainCard {
-        width: 260px;
-        height: 230px;
-    }
-
-    .clubName {
-        font-size: 20px;
-        margin-bottom: 14px;
-    }
-
-    .statRow {
-        font-size: 12px;
-    }
-
-    .enterBtn {
-        padding: 10px 44px;
+    .enterButton {
+        padding: 10px 50px;
         font-size: 16px;
-    }
-
-    .arrow {
-        width: 36px;
-        height: 36px;
-        font-size: 26px;
     }
 
     .actionBar {
         gap: 12px;
-        padding: 16px 10px 24px;
+        padding: 20px 12px 28px;
     }
 
-    .actionIcon {
-        width: 46px;
-        height: 46px;
-        border-radius: 12px;
+    .actionIconWrapper {
+        width: 48px;
+        height: 48px;
     }
 
-    .actionIcon svg {
+    .actionIconWrapper svg {
         width: 22px;
         height: 22px;
     }
 
     .actionLabel {
         font-size: 9px;
-        max-width: 58px;
+    }
+
+    .statBadge {
+        padding: 4px 8px;
+        font-size: 11px;
+    }
+}
+
+@media (max-width: 400px) {
+    .headerIcon {
+        width: 32px;
+        height: 32px;
+    }
+
+    .headerIcon svg {
+        width: 16px;
+        height: 16px;
+    }
+
+    .logoText {
+        font-size: 15px;
+    }
+
+    .actionBar {
+        gap: 8px;
+    }
+
+    .actionIconWrapper {
+        width: 42px;
+        height: 42px;
+        border-radius: 12px;
+    }
+
+    .actionButton {
+        width: 58px;
     }
 }

@@ -25,115 +25,153 @@ BATCH_SIZE = 100  # Hands per bucket before rotating
 # ═══════════════════════════════════════════════════════════════════════════════
 
 BUCKETS = {
-    # Cash Games - HIGH PRIORITY
-    "6max_cash_100bb": {
-        "format": "6max_cash",
-        "stack_depths": [100],
-        "priority": 10,
-        "target_count": 2000,
-    },
-    "6max_cash_50bb": {
-        "format": "6max_cash",
-        "stack_depths": [50],
-        "priority": 9,
-        "target_count": 1000,
-    },
-    "hu_cash_100bb": {
-        "format": "hu_cash",
-        "stack_depths": [100],
-        "priority": 8,
-        "target_count": 1000,
-    },
+    # ═══════════════════════════════════════════════════════════════════
+    # CASH GAMES - ALL BB DEPTHS (20, 40, 60, 80, 100, 200)
+    # ═══════════════════════════════════════════════════════════════════
     
-    # Spins - HIGH PRIORITY (popular format)
-    "spin_3max_15bb": {
-        "format": "spin_3max_icm",
-        "stack_depths": [12, 15, 18],
-        "priority": 10,
-        "target_count": 1500,
-    },
-    "spin_3max_shallow": {
-        "format": "spin_3max_icm",
-        "stack_depths": [8, 10],
-        "priority": 9,
-        "target_count": 1000,
-    },
-    "spin_hu_icm": {
-        "format": "spin_hu_icm",
-        "stack_depths": [10, 12, 15],
-        "priority": 9,
-        "target_count": 800,
-    },
+    # 6-MAX CASH (HIGHEST PRIORITY)
+    "6max_cash_200bb": {"format": "6max_cash", "stack_depths": [200], "priority": 9, "target_count": 1000},
+    "6max_cash_100bb": {"format": "6max_cash", "stack_depths": [100], "priority": 10, "target_count": 2000},
+    "6max_cash_80bb": {"format": "6max_cash", "stack_depths": [80], "priority": 9, "target_count": 1000},
+    "6max_cash_60bb": {"format": "6max_cash", "stack_depths": [60], "priority": 9, "target_count": 1000},
+    "6max_cash_40bb": {"format": "6max_cash", "stack_depths": [40], "priority": 9, "target_count": 1000},
+    "6max_cash_20bb": {"format": "6max_cash", "stack_depths": [20], "priority": 8, "target_count": 800},
     
-    # MTT 6-Max - HIGH PRIORITY
-    "mtt_6max_mid": {
-        "format": "mtt_6max_chipev",
-        "stack_depths": [20, 25, 30],
-        "priority": 9,
-        "target_count": 1500,
-    },
-    "mtt_6max_short": {
-        "format": "mtt_6max_icm",
-        "stack_depths": [10, 15],
-        "priority": 9,
-        "target_count": 1000,
-    },
-    "mtt_6max_icm_bubble": {
-        "format": "mtt_6max_icm",
-        "stack_depths": [15, 20, 25],
-        "priority": 10,
-        "target_count": 1200,
-    },
+    # HEADS UP CASH (HIGH PRIORITY)
+    "hu_cash_200bb": {"format": "hu_cash", "stack_depths": [200], "priority": 8, "target_count": 800},
+    "hu_cash_100bb": {"format": "hu_cash", "stack_depths": [100], "priority": 9, "target_count": 1000},
+    "hu_cash_80bb": {"format": "hu_cash", "stack_depths": [80], "priority": 8, "target_count": 800},
+    "hu_cash_60bb": {"format": "hu_cash", "stack_depths": [60], "priority": 8, "target_count": 800},
+    "hu_cash_40bb": {"format": "hu_cash", "stack_depths": [40], "priority": 8, "target_count": 800},
+    "hu_cash_20bb": {"format": "hu_cash", "stack_depths": [20], "priority": 7, "target_count": 600},
     
-    # MTT 9-Max
-    "mtt_9max_mid": {
-        "format": "mtt_9max_chipev",
-        "stack_depths": [25, 30, 40],
-        "priority": 7,
-        "target_count": 1000,
-    },
-    "mtt_9max_icm": {
-        "format": "mtt_9max_icm",
-        "stack_depths": [15, 20],
-        "priority": 8,
-        "target_count": 800,
-    },
+    # FULL RING (9-MAX) CASH
+    "9max_cash_200bb": {"format": "9max_cash", "stack_depths": [200], "priority": 6, "target_count": 600},
+    "9max_cash_100bb": {"format": "9max_cash", "stack_depths": [100], "priority": 7, "target_count": 800},
+    "9max_cash_80bb": {"format": "9max_cash", "stack_depths": [80], "priority": 6, "target_count": 600},
+    "9max_cash_60bb": {"format": "9max_cash", "stack_depths": [60], "priority": 6, "target_count": 600},
+    "9max_cash_40bb": {"format": "9max_cash", "stack_depths": [40], "priority": 6, "target_count": 600},
+    "9max_cash_20bb": {"format": "9max_cash", "stack_depths": [20], "priority": 5, "target_count": 400},
     
-    # Final Tables (3-max, HU)
-    "mtt_3max_ft": {
-        "format": "mtt_3max_icm",
-        "stack_depths": [15, 20, 25],
-        "priority": 9,
-        "target_count": 600,
-    },
-    "mtt_hu_ft": {
-        "format": "mtt_hu_icm",
-        "stack_depths": [15, 20, 25],
-        "priority": 8,
-        "target_count": 400,
-    },
+    # ═══════════════════════════════════════════════════════════════════
+    # SPINS - ALL BB DEPTHS (8, 10, 12, 15, 18, 20, 25)
+    # ═══════════════════════════════════════════════════════════════════
     
-    # SNG
-    "sng_9max_icm": {
-        "format": "sng_9max_icm",
-        "stack_depths": [15, 20],
-        "priority": 7,
-        "target_count": 600,
-    },
-    "sng_6max_icm": {
-        "format": "sng_6max_icm",
-        "stack_depths": [15, 20],
-        "priority": 7,
-        "target_count": 500,
-    },
+    # Spin 3-Max ChipEV
+    "spin_3max_chipev_25bb": {"format": "spin_3max_chipev", "stack_depths": [25], "priority": 8, "target_count": 600},
+    "spin_3max_chipev_20bb": {"format": "spin_3max_chipev", "stack_depths": [20], "priority": 9, "target_count": 800},
+    "spin_3max_chipev_18bb": {"format": "spin_3max_chipev", "stack_depths": [18], "priority": 9, "target_count": 800},
+    "spin_3max_chipev_15bb": {"format": "spin_3max_chipev", "stack_depths": [15], "priority": 10, "target_count": 1000},
+    "spin_3max_chipev_12bb": {"format": "spin_3max_chipev", "stack_depths": [12], "priority": 10, "target_count": 1000},
+    "spin_3max_chipev_10bb": {"format": "spin_3max_chipev", "stack_depths": [10], "priority": 9, "target_count": 800},
+    "spin_3max_chipev_8bb": {"format": "spin_3max_chipev", "stack_depths": [8], "priority": 8, "target_count": 600},
     
-    # Full Ring Cash (lower priority)
-    "9max_cash": {
-        "format": "9max_cash",
-        "stack_depths": [100],
-        "priority": 5,
-        "target_count": 500,
-    },
+    # Spin 3-Max ICM
+    "spin_3max_icm_25bb": {"format": "spin_3max_icm", "stack_depths": [25], "priority": 8, "target_count": 600},
+    "spin_3max_icm_20bb": {"format": "spin_3max_icm", "stack_depths": [20], "priority": 9, "target_count": 800},
+    "spin_3max_icm_18bb": {"format": "spin_3max_icm", "stack_depths": [18], "priority": 9, "target_count": 800},
+    "spin_3max_icm_15bb": {"format": "spin_3max_icm", "stack_depths": [15], "priority": 10, "target_count": 1000},
+    "spin_3max_icm_12bb": {"format": "spin_3max_icm", "stack_depths": [12], "priority": 10, "target_count": 1000},
+    "spin_3max_icm_10bb": {"format": "spin_3max_icm", "stack_depths": [10], "priority": 9, "target_count": 800},
+    "spin_3max_icm_8bb": {"format": "spin_3max_icm", "stack_depths": [8], "priority": 8, "target_count": 600},
+    
+    # Spin HU
+    "spin_hu_chipev_15bb": {"format": "spin_hu_chipev", "stack_depths": [15], "priority": 9, "target_count": 600},
+    "spin_hu_chipev_10bb": {"format": "spin_hu_chipev", "stack_depths": [10], "priority": 9, "target_count": 600},
+    "spin_hu_icm_15bb": {"format": "spin_hu_icm", "stack_depths": [15], "priority": 9, "target_count": 600},
+    "spin_hu_icm_10bb": {"format": "spin_hu_icm", "stack_depths": [10], "priority": 9, "target_count": 600},
+    
+    # ═══════════════════════════════════════════════════════════════════
+    # MTT 6-MAX - ALL BB DEPTHS (8, 10, 12, 15, 20, 25, 30, 40, 50)
+    # ═══════════════════════════════════════════════════════════════════
+    
+    # MTT 6-Max ChipEV
+    "mtt_6max_chipev_50bb": {"format": "mtt_6max_chipev", "stack_depths": [50], "priority": 7, "target_count": 600},
+    "mtt_6max_chipev_40bb": {"format": "mtt_6max_chipev", "stack_depths": [40], "priority": 8, "target_count": 800},
+    "mtt_6max_chipev_30bb": {"format": "mtt_6max_chipev", "stack_depths": [30], "priority": 9, "target_count": 1000},
+    "mtt_6max_chipev_25bb": {"format": "mtt_6max_chipev", "stack_depths": [25], "priority": 9, "target_count": 1000},
+    "mtt_6max_chipev_20bb": {"format": "mtt_6max_chipev", "stack_depths": [20], "priority": 10, "target_count": 1200},
+    "mtt_6max_chipev_15bb": {"format": "mtt_6max_chipev", "stack_depths": [15], "priority": 10, "target_count": 1200},
+    "mtt_6max_chipev_12bb": {"format": "mtt_6max_chipev", "stack_depths": [12], "priority": 9, "target_count": 1000},
+    "mtt_6max_chipev_10bb": {"format": "mtt_6max_chipev", "stack_depths": [10], "priority": 9, "target_count": 1000},
+    "mtt_6max_chipev_8bb": {"format": "mtt_6max_chipev", "stack_depths": [8], "priority": 8, "target_count": 800},
+    
+    # MTT 6-Max ICM
+    "mtt_6max_icm_30bb": {"format": "mtt_6max_icm", "stack_depths": [30], "priority": 9, "target_count": 800},
+    "mtt_6max_icm_25bb": {"format": "mtt_6max_icm", "stack_depths": [25], "priority": 10, "target_count": 1000},
+    "mtt_6max_icm_20bb": {"format": "mtt_6max_icm", "stack_depths": [20], "priority": 10, "target_count": 1200},
+    "mtt_6max_icm_15bb": {"format": "mtt_6max_icm", "stack_depths": [15], "priority": 10, "target_count": 1200},
+    "mtt_6max_icm_12bb": {"format": "mtt_6max_icm", "stack_depths": [12], "priority": 9, "target_count": 1000},
+    "mtt_6max_icm_10bb": {"format": "mtt_6max_icm", "stack_depths": [10], "priority": 9, "target_count": 1000},
+    "mtt_6max_icm_8bb": {"format": "mtt_6max_icm", "stack_depths": [8], "priority": 8, "target_count": 800},
+    
+    # ═══════════════════════════════════════════════════════════════════
+    # MTT 9-MAX - ALL BB DEPTHS
+    # ═══════════════════════════════════════════════════════════════════
+    
+    # MTT 9-Max ChipEV
+    "mtt_9max_chipev_50bb": {"format": "mtt_9max_chipev", "stack_depths": [50], "priority": 6, "target_count": 500},
+    "mtt_9max_chipev_40bb": {"format": "mtt_9max_chipev", "stack_depths": [40], "priority": 7, "target_count": 600},
+    "mtt_9max_chipev_30bb": {"format": "mtt_9max_chipev", "stack_depths": [30], "priority": 8, "target_count": 800},
+    "mtt_9max_chipev_25bb": {"format": "mtt_9max_chipev", "stack_depths": [25], "priority": 8, "target_count": 800},
+    "mtt_9max_chipev_20bb": {"format": "mtt_9max_chipev", "stack_depths": [20], "priority": 9, "target_count": 1000},
+    "mtt_9max_chipev_15bb": {"format": "mtt_9max_chipev", "stack_depths": [15], "priority": 9, "target_count": 1000},
+    "mtt_9max_chipev_10bb": {"format": "mtt_9max_chipev", "stack_depths": [10], "priority": 8, "target_count": 800},
+    
+    # MTT 9-Max ICM
+    "mtt_9max_icm_25bb": {"format": "mtt_9max_icm", "stack_depths": [25], "priority": 9, "target_count": 800},
+    "mtt_9max_icm_20bb": {"format": "mtt_9max_icm", "stack_depths": [20], "priority": 9, "target_count": 1000},
+    "mtt_9max_icm_15bb": {"format": "mtt_9max_icm", "stack_depths": [15], "priority": 9, "target_count": 1000},
+    "mtt_9max_icm_10bb": {"format": "mtt_9max_icm", "stack_depths": [10], "priority": 8, "target_count": 800},
+    
+    # ═══════════════════════════════════════════════════════════════════
+    # MTT FINAL TABLE (3-Max, HU)
+    # ═══════════════════════════════════════════════════════════════════
+    
+    "mtt_3max_chipev_25bb": {"format": "mtt_3max_chipev", "stack_depths": [25], "priority": 8, "target_count": 500},
+    "mtt_3max_chipev_20bb": {"format": "mtt_3max_chipev", "stack_depths": [20], "priority": 9, "target_count": 600},
+    "mtt_3max_chipev_15bb": {"format": "mtt_3max_chipev", "stack_depths": [15], "priority": 9, "target_count": 600},
+    "mtt_3max_chipev_10bb": {"format": "mtt_3max_chipev", "stack_depths": [10], "priority": 8, "target_count": 500},
+    
+    "mtt_3max_icm_25bb": {"format": "mtt_3max_icm", "stack_depths": [25], "priority": 9, "target_count": 600},
+    "mtt_3max_icm_20bb": {"format": "mtt_3max_icm", "stack_depths": [20], "priority": 10, "target_count": 800},
+    "mtt_3max_icm_15bb": {"format": "mtt_3max_icm", "stack_depths": [15], "priority": 10, "target_count": 800},
+    "mtt_3max_icm_10bb": {"format": "mtt_3max_icm", "stack_depths": [10], "priority": 9, "target_count": 600},
+    
+    "mtt_hu_chipev_25bb": {"format": "mtt_hu_chipev", "stack_depths": [25], "priority": 8, "target_count": 400},
+    "mtt_hu_chipev_20bb": {"format": "mtt_hu_chipev", "stack_depths": [20], "priority": 8, "target_count": 400},
+    "mtt_hu_chipev_15bb": {"format": "mtt_hu_chipev", "stack_depths": [15], "priority": 8, "target_count": 400},
+    "mtt_hu_chipev_10bb": {"format": "mtt_hu_chipev", "stack_depths": [10], "priority": 8, "target_count": 400},
+    
+    "mtt_hu_icm_25bb": {"format": "mtt_hu_icm", "stack_depths": [25], "priority": 9, "target_count": 500},
+    "mtt_hu_icm_20bb": {"format": "mtt_hu_icm", "stack_depths": [20], "priority": 9, "target_count": 500},
+    "mtt_hu_icm_15bb": {"format": "mtt_hu_icm", "stack_depths": [15], "priority": 9, "target_count": 500},
+    "mtt_hu_icm_10bb": {"format": "mtt_hu_icm", "stack_depths": [10], "priority": 8, "target_count": 400},
+    
+    # ═══════════════════════════════════════════════════════════════════
+    # SNG - ALL BB DEPTHS
+    # ═══════════════════════════════════════════════════════════════════
+    
+    # SNG 9-Max
+    "sng_9max_chipev_30bb": {"format": "sng_9max_chipev", "stack_depths": [30], "priority": 6, "target_count": 400},
+    "sng_9max_chipev_20bb": {"format": "sng_9max_chipev", "stack_depths": [20], "priority": 7, "target_count": 500},
+    "sng_9max_chipev_15bb": {"format": "sng_9max_chipev", "stack_depths": [15], "priority": 7, "target_count": 500},
+    "sng_9max_icm_25bb": {"format": "sng_9max_icm", "stack_depths": [25], "priority": 8, "target_count": 500},
+    "sng_9max_icm_20bb": {"format": "sng_9max_icm", "stack_depths": [20], "priority": 8, "target_count": 600},
+    "sng_9max_icm_15bb": {"format": "sng_9max_icm", "stack_depths": [15], "priority": 8, "target_count": 600},
+    "sng_9max_icm_10bb": {"format": "sng_9max_icm", "stack_depths": [10], "priority": 7, "target_count": 500},
+    
+    # SNG 6-Max
+    "sng_6max_icm_25bb": {"format": "sng_6max_icm", "stack_depths": [25], "priority": 7, "target_count": 400},
+    "sng_6max_icm_20bb": {"format": "sng_6max_icm", "stack_depths": [20], "priority": 8, "target_count": 500},
+    "sng_6max_icm_15bb": {"format": "sng_6max_icm", "stack_depths": [15], "priority": 8, "target_count": 500},
+    "sng_6max_icm_10bb": {"format": "sng_6max_icm", "stack_depths": [10], "priority": 7, "target_count": 400},
+    
+    # SNG HU
+    "sng_hu_25bb": {"format": "sng_hu", "stack_depths": [25], "priority": 7, "target_count": 300},
+    "sng_hu_20bb": {"format": "sng_hu", "stack_depths": [20], "priority": 7, "target_count": 400},
+    "sng_hu_15bb": {"format": "sng_hu", "stack_depths": [15], "priority": 7, "target_count": 400},
+    "sng_hu_10bb": {"format": "sng_hu", "stack_depths": [10], "priority": 6, "target_count": 300},
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════

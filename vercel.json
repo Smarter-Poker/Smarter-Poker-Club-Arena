@@ -5,8 +5,8 @@
     "framework": "vite",
     "rewrites": [
         {
-            "source": "/hub/club-arena/((?!assets/).*)",
-            "destination": "/hub/club-arena/index.html"
+            "source": "/((?!assets/).*)",
+            "destination": "/index.html"
         }
     ],
     "headers": [

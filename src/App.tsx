@@ -3,7 +3,7 @@
  * 🎰 CLUB ENGINE — App Component
  * ═══════════════════════════════════════════════════════════════════════════════
  * PokerBros Clone — Better
- * Root application with routing and global providers
+ * Root application with routing, auth guards, and global providers
  */
 
 import { Routes, Route } from 'react-router-dom';
@@ -12,7 +12,11 @@ import { Suspense, lazy } from 'react';
 // Layouts
 import AppLayout from './components/layouts/AppLayout';
 
+// Auth Guards
+import { AuthGuard, GuestGuard } from './components/auth/AuthGuard';
+
 // Pages (lazy loaded for performance)
+const AuthPage = lazy(() => import('./pages/AuthPage'));
 const HomePage = lazy(() => import('./pages/HomePage'));
 const LobbyPage = lazy(() => import('./pages/LobbyPage'));
 const ClubsPage = lazy(() => import('./pages/ClubsPage'));
@@ -41,31 +45,141 @@ export default function App() {
     return (
         <Suspense fallback={<LoadingSpinner />}>
             <Routes>
-                {/* HomePage - Standalone without Shell */}
-                <Route path="/" element={<HomePage />} />
+                {/* ═══════════════════════════════════════════════════════════════
+                    PUBLIC ROUTES (No Auth Required)
+                ═══════════════════════════════════════════════════════════════ */}
 
-                {/* Other routes with AppLayout shell */}
+                {/* Auth Page - Only accessible when NOT logged in */}
+                <Route
+                    path="/auth"
+                    element={
+                        <GuestGuard>
+                            <AuthPage />
+                        </GuestGuard>
+                    }
+                />
+
+                {/* ═══════════════════════════════════════════════════════════════
+                    PROTECTED ROUTES (Auth Required)
+                ═══════════════════════════════════════════════════════════════ */}
+
+                {/* HomePage - Standalone without Shell, requires auth */}
+                <Route
+                    path="/"
+                    element={
+                        <AuthGuard>
+                            <HomePage />
+                        </AuthGuard>
+                    }
+                />
+
+                {/* Protected routes with AppLayout shell */}
                 <Route element={<AppLayout />}>
-                    <Route path="lobby" element={<LobbyPage />} />
+                    {/* Lobby */}
+                    <Route
+                        path="lobby"
+                        element={
+                            <AuthGuard>
+                                <LobbyPage />
+                            </AuthGuard>
+                        }
+                    />
 
                     {/* Clubs */}
-                    <Route path="clubs" element={<ClubsPage />} />
-                    <Route path="clubs/create" element={<CreateClubPage />} />
-                    <Route path="clubs/:clubId" element={<ClubDetailPage />} />
-                    <Route path="clubs/:clubId/agents" element={<AgentManagementPage />} />
+                    <Route
+                        path="clubs"
+                        element={
+                            <AuthGuard>
+                                <ClubsPage />
+                            </AuthGuard>
+                        }
+                    />
+                    <Route
+                        path="clubs/create"
+                        element={
+                            <AuthGuard>
+                                <CreateClubPage />
+                            </AuthGuard>
+                        }
+                    />
+                    <Route
+                        path="clubs/:clubId"
+                        element={
+                            <AuthGuard>
+                                <ClubDetailPage />
+                            </AuthGuard>
+                        }
+                    />
+                    <Route
+                        path="clubs/:clubId/agents"
+                        element={
+                            <AuthGuard>
+                                <AgentManagementPage />
+                            </AuthGuard>
+                        }
+                    />
 
                     {/* Unions */}
-                    <Route path="unions" element={<UnionsPage />} />
-                    <Route path="unions/create" element={<CreateUnionPage />} />
-                    <Route path="unions/:unionId" element={<UnionDetailPage />} />
-                    <Route path="unions/:unionId/settlement" element={<SettlementPage />} />
+                    <Route
+                        path="unions"
+                        element={
+                            <AuthGuard>
+                                <UnionsPage />
+                            </AuthGuard>
+                        }
+                    />
+                    <Route
+                        path="unions/create"
+                        element={
+                            <AuthGuard>
+                                <CreateUnionPage />
+                            </AuthGuard>
+                        }
+                    />
+                    <Route
+                        path="unions/:unionId"
+                        element={
+                            <AuthGuard>
+                                <UnionDetailPage />
+                            </AuthGuard>
+                        }
+                    />
+                    <Route
+                        path="unions/:unionId/settlement"
+                        element={
+                            <AuthGuard>
+                                <SettlementPage />
+                            </AuthGuard>
+                        }
+                    />
 
                     {/* Table */}
-                    <Route path="table/:tableId" element={<TablePage />} />
+                    <Route
+                        path="table/:tableId"
+                        element={
+                            <AuthGuard>
+                                <TablePage />
+                            </AuthGuard>
+                        }
+                    />
 
                     {/* User */}
-                    <Route path="profile" element={<ProfilePage />} />
-                    <Route path="settings" element={<SettingsPage />} />
+                    <Route
+                        path="profile"
+                        element={
+                            <AuthGuard>
+                                <ProfilePage />
+                            </AuthGuard>
+                        }
+                    />
+                    <Route
+                        path="settings"
+                        element={
+                            <AuthGuard>
+                                <SettingsPage />
+                            </AuthGuard>
+                        }
+                    />
                 </Route>
             </Routes>
         </Suspense>

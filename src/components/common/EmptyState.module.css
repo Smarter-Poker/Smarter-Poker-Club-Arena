@@ -1,0 +1,88 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * 🎭 CLUB ARENA — Empty State Styles
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+
+.container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 300px;
+    padding: 2rem;
+}
+
+.content {
+    text-align: center;
+    max-width: 400px;
+}
+
+.icon {
+    font-size: 4rem;
+    display: block;
+    margin-bottom: 1rem;
+    opacity: 0.8;
+}
+
+.title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #FFFFFF;
+    margin: 0 0 0.5rem 0;
+}
+
+.description {
+    font-size: 0.9rem;
+    color: #8888AA;
+    margin: 0 0 1.5rem 0;
+    line-height: 1.5;
+}
+
+.actionButton {
+    padding: 0.75rem 1.5rem;
+    background: linear-gradient(135deg, #4169E1 0%, #5B7FEE 100%);
+    border: none;
+    border-radius: 8px;
+    color: #FFFFFF;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 4px 15px rgba(65, 105, 225, 0.3);
+}
+
+.actionButton:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(65, 105, 225, 0.4);
+}
+
+/* Loading State */
+.loadingContainer {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 200px;
+    gap: 1rem;
+}
+
+.spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid rgba(65, 105, 225, 0.2);
+    border-top-color: #4169E1;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.loadingText {
+    color: #8888AA;
+    font-size: 0.9rem;
+    margin: 0;
+}

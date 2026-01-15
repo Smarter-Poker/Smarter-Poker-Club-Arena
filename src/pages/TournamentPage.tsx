@@ -9,7 +9,7 @@ import { tournamentService, BLIND_STRUCTURES, PAYOUT_STRUCTURES } from '../servi
 import type { Tournament } from '../types/database.types';
 import CreateTournamentModal from '../components/club/CreateTournamentModal';
 import './TournamentPage.css';
-import { supabase, isDemoMode } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
 import { useUserStore } from '../stores/useUserStore';
 
 // Default fallback for unauthed (shouldn't happen in real app)
@@ -18,16 +18,10 @@ const GUEST_USER = { id: 'guest', username: 'Guest' };
 export default function TournamentPage() {
     const { clubId, tournamentId } = useParams();
     const navigate = useNavigate();
-    const { user, initDemoUser } = useUserStore();
+    const { user } = useUserStore();
     const currentUser = user || GUEST_USER;
-    const isOwner = true; // Demo logic
+    const isOwner = true; // TODO: Check actual club ownership
 
-    // Auto-login demo user
-    useEffect(() => {
-        if (!user && isDemoMode) {
-            initDemoUser();
-        }
-    }, [user]);
 
     const [tournaments, setTournaments] = useState<Tournament[]>([]);
     const [selectedTournament, setSelectedTournament] = useState<Tournament | null>(null);

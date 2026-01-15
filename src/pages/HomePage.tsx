@@ -1,11 +1,17 @@
 /**
- * ♠ CLUB ARENA — Pixel Perfect PokerBros Clone
- * Matches uploaded reference design exactly
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * ♠ CLUB ARENA — Home Page
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * Main landing page with club carousel and navigation
+ * 
+ * NO HARDCODED DATA - All data comes from Supabase
  */
 
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { useUserStore } from '../stores/useUserStore';
+import { NoClubsEmpty, LoadingState } from '../components/common/EmptyState';
 import styles from './HomePage.module.css';
 
 interface Club {
@@ -17,19 +23,27 @@ interface Club {
     image_url?: string;
 }
 
+interface UserStats {
+    xp: number;
+    diamonds: number;
+    messages: number;
+}
+
 export default function HomePage() {
     const navigate = useNavigate();
-    const [clubs, setClubs] = useState<Club[]>([
-        { id: '1', name: 'Featured Club', member_count: 68, online_count: 15, table_count: 4 },
-        { id: '2', name: 'Diamond Club', member_count: 999, online_count: 206, table_count: 13 },
-        { id: '3', name: 'Elite Club', member_count: 245, online_count: 42, table_count: 6 },
-    ]);
+    const { user } = useUserStore();
+
+    // Real data states - NO DEFAULTS
+    const [clubs, setClubs] = useState<Club[]>([]);
+    const [isLoadingClubs, setIsLoadingClubs] = useState(true);
     const [currentIndex, setCurrentIndex] = useState(0);
-    const [userStats, setUserStats] = useState({ xp: 2350, diamonds: 126, messages: 3 });
+    const [userStats, setUserStats] = useState<UserStats>({ xp: 0, diamonds: 0, messages: 0 });
+    const [isLoadingStats, setIsLoadingStats] = useState(true);
 
     // Fetch clubs from Supabase
     useEffect(() => {
         async function fetchClubs() {
+            setIsLoadingClubs(true);
             try {
                 const { data, error } = await supabase
                     .from('clubs')
@@ -37,42 +51,47 @@ export default function HomePage() {
                     .order('member_count', { ascending: false })
                     .limit(10);
 
-                if (!error && data && data.length > 0) {
-                    setClubs(data.map(c => ({
-                        ...c,
-                        online_count: c.online_count || Math.floor(c.member_count * 0.22),
-                        table_count: c.table_count || Math.floor(Math.random() * 10) + 1
-                    })));
+                if (error) {
+                    console.error('🔴 [HOME] Failed to fetch clubs:', error);
+                    setClubs([]);
+                } else {
+                    setClubs(data || []);
                 }
             } catch (err) {
-                console.error('Error fetching clubs:', err);
+                console.error('🔴 [HOME] Error fetching clubs:', err);
+                setClubs([]);
+            } finally {
+                setIsLoadingClubs(false);
             }
         }
         fetchClubs();
     }, []);
 
-    // Fetch user stats
+    // Fetch user stats from profile
     useEffect(() => {
         async function fetchUserStats() {
+            setIsLoadingStats(true);
             try {
-                const { data: { user } } = await supabase.auth.getUser();
-                if (user) {
-                    const { data: profile } = await supabase
+                const { data: { user: authUser } } = await supabase.auth.getUser();
+                if (authUser) {
+                    const { data: profile, error } = await supabase
                         .from('profiles')
                         .select('xp, diamonds')
-                        .eq('id', user.id)
+                        .eq('id', authUser.id)
                         .single();
 
-                    if (profile) {
-                        setUserStats(prev => ({
-                            ...prev,
-                            xp: profile.xp || prev.xp,
-                            diamonds: profile.diamonds || prev.diamonds
-                        }));
+                    if (!error && profile) {
+                        setUserStats({
+                            xp: profile.xp || 0,
+                            diamonds: profile.diamonds || 0,
+                            messages: 0, // TODO: Wire to unread messages count
+                        });
                     }
                 }
             } catch (err) {
-                // Use defaults
+                console.error('🔴 [HOME] Error fetching user stats:', err);
+            } finally {
+                setIsLoadingStats(false);
             }
         }
         fetchUserStats();
@@ -80,11 +99,15 @@ export default function HomePage() {
 
     const nextClub = () => setCurrentIndex((prev) => (prev + 1) % clubs.length);
     const prevClub = () => setCurrentIndex((prev) => (prev - 1 + clubs.length) % clubs.length);
-    const enterClub = () => navigate(`/clubs/${clubs[currentIndex]?.id || '1'}`);
+    const enterClub = () => {
+        if (clubs[currentIndex]) {
+            navigate(`/clubs/${clubs[currentIndex].id}`);
+        }
+    };
 
     const currentClub = clubs[currentIndex];
-    const prevClubData = clubs[(currentIndex - 1 + clubs.length) % clubs.length];
-    const nextClubData = clubs[(currentIndex + 1) % clubs.length];
+    const prevClubData = clubs.length > 1 ? clubs[(currentIndex - 1 + clubs.length) % clubs.length] : null;
+    const nextClubData = clubs.length > 1 ? clubs[(currentIndex + 1) % clubs.length] : null;
 
     return (
         <div className={styles.container}>
@@ -103,13 +126,17 @@ export default function HomePage() {
                     {/* XP Badge */}
                     <div className={styles.statBadge}>
                         <span className={styles.badgeIcon}>💎</span>
-                        <span className={styles.badgeValue}>{userStats.xp.toLocaleString()} XP</span>
+                        <span className={styles.badgeValue}>
+                            {isLoadingStats ? '...' : `${userStats.xp.toLocaleString()} XP`}
+                        </span>
                     </div>
 
                     {/* Diamond Badge */}
                     <div className={styles.statBadge}>
                         <span className={styles.badgeIcon}>💜</span>
-                        <span className={styles.badgeValue}>{userStats.diamonds}</span>
+                        <span className={styles.badgeValue}>
+                            {isLoadingStats ? '...' : userStats.diamonds}
+                        </span>
                     </div>
 
                     {/* Profile */}
@@ -146,80 +173,104 @@ export default function HomePage() {
                 {/* Title */}
                 <h1 className={styles.title}>Club Arena</h1>
 
-                {/* Carousel Section */}
-                <div className={styles.carouselSection}>
-                    {/* Left Arrow */}
-                    <button className={styles.carouselArrow} onClick={prevClub}>
-                        <svg viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" />
-                        </svg>
-                    </button>
+                {/* Loading State */}
+                {isLoadingClubs && <LoadingState message="Loading clubs..." />}
 
-                    {/* Cards Container */}
-                    <div className={styles.cardsWrapper}>
-                        {/* Left Preview Card */}
-                        <div className={styles.previewCard + ' ' + styles.leftCard}>
-                            <div className={styles.previewCardInner}>
-                                <span className={styles.previewName}>{prevClubData?.name}</span>
-                            </div>
-                        </div>
+                {/* Empty State - No Clubs */}
+                {!isLoadingClubs && clubs.length === 0 && (
+                    <NoClubsEmpty onCreate={() => navigate('/clubs/create')} />
+                )}
 
-                        {/* Main Featured Card */}
-                        <div className={styles.mainCard}>
-                            <div className={styles.cardBackground}>
-                                <div className={styles.pokerTableBg}></div>
-                            </div>
-                            <div className={styles.cardContent}>
-                                <h2 className={styles.clubName}>{currentClub?.name || 'Featured Club'}</h2>
-
-                                <div className={styles.clubStats}>
-                                    <div className={styles.stat}>
-                                        <span className={styles.statIcon}>👥</span>
-                                        <span>{currentClub?.online_count} / {currentClub?.member_count} Members Online</span>
-                                    </div>
-                                    <div className={styles.stat}>
-                                        <span className={styles.statIcon}>🎴</span>
-                                        <span>{currentClub?.table_count} Live Tables</span>
-                                    </div>
-                                </div>
-
-                                <button className={styles.enterButton} onClick={enterClub}>
-                                    Enter
+                {/* Carousel Section - Only show if clubs exist */}
+                {!isLoadingClubs && clubs.length > 0 && (
+                    <>
+                        <div className={styles.carouselSection}>
+                            {/* Left Arrow */}
+                            {clubs.length > 1 && (
+                                <button className={styles.carouselArrow} onClick={prevClub}>
+                                    <svg viewBox="0 0 24 24" fill="currentColor">
+                                        <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" />
+                                    </svg>
                                 </button>
-                            </div>
-                        </div>
+                            )}
 
-                        {/* Right Preview Card */}
-                        <div className={styles.previewCard + ' ' + styles.rightCard}>
-                            <div className={styles.previewCardInner}>
-                                <span className={styles.previewName}>{nextClubData?.name}</span>
-                                <div className={styles.previewStats}>
-                                    <div>{nextClubData?.online_count} / {nextClubData?.member_count} M...</div>
-                                    <div>🎴 {nextClubData?.table_count} Li...</div>
+                            {/* Cards Container */}
+                            <div className={styles.cardsWrapper}>
+                                {/* Left Preview Card */}
+                                {prevClubData && (
+                                    <div className={styles.previewCard + ' ' + styles.leftCard}>
+                                        <div className={styles.previewCardInner}>
+                                            <span className={styles.previewName}>{prevClubData.name}</span>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Main Featured Card */}
+                                <div className={styles.mainCard}>
+                                    <div className={styles.cardBackground}>
+                                        <div className={styles.pokerTableBg}></div>
+                                    </div>
+                                    <div className={styles.cardContent}>
+                                        <h2 className={styles.clubName}>{currentClub?.name}</h2>
+
+                                        <div className={styles.clubStats}>
+                                            <div className={styles.stat}>
+                                                <span className={styles.statIcon}>👥</span>
+                                                <span>
+                                                    {currentClub?.online_count || 0} / {currentClub?.member_count || 0} Members Online
+                                                </span>
+                                            </div>
+                                            <div className={styles.stat}>
+                                                <span className={styles.statIcon}>🎴</span>
+                                                <span>{currentClub?.table_count || 0} Live Tables</span>
+                                            </div>
+                                        </div>
+
+                                        <button className={styles.enterButton} onClick={enterClub}>
+                                            Enter
+                                        </button>
+                                    </div>
                                 </div>
+
+                                {/* Right Preview Card */}
+                                {nextClubData && (
+                                    <div className={styles.previewCard + ' ' + styles.rightCard}>
+                                        <div className={styles.previewCardInner}>
+                                            <span className={styles.previewName}>{nextClubData.name}</span>
+                                            <div className={styles.previewStats}>
+                                                <div>{nextClubData.online_count} / {nextClubData.member_count} M...</div>
+                                                <div>🎴 {nextClubData.table_count} Li...</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
+
+                            {/* Right Arrow */}
+                            {clubs.length > 1 && (
+                                <button className={styles.carouselArrow} onClick={nextClub}>
+                                    <svg viewBox="0 0 24 24" fill="currentColor">
+                                        <path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z" />
+                                    </svg>
+                                </button>
+                            )}
                         </div>
-                    </div>
 
-                    {/* Right Arrow */}
-                    <button className={styles.carouselArrow} onClick={nextClub}>
-                        <svg viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z" />
-                        </svg>
-                    </button>
-                </div>
-
-                {/* Carousel Dots */}
-                <div className={styles.carouselDots}>
-                    {clubs.slice(0, Math.min(clubs.length, 5)).map((_, i) => (
-                        <button
-                            key={i}
-                            className={`${styles.dot} ${i === currentIndex % clubs.length ? styles.dotActive : ''}`}
-                            onClick={() => setCurrentIndex(i)}
-                            aria-label={`Go to club ${i + 1}`}
-                        />
-                    ))}
-                </div>
+                        {/* Carousel Dots */}
+                        {clubs.length > 1 && (
+                            <div className={styles.carouselDots}>
+                                {clubs.slice(0, Math.min(clubs.length, 5)).map((_, i) => (
+                                    <button
+                                        key={i}
+                                        className={`${styles.dot} ${i === currentIndex % clubs.length ? styles.dotActive : ''}`}
+                                        onClick={() => setCurrentIndex(i)}
+                                        aria-label={`Go to club ${i + 1}`}
+                                    />
+                                ))}
+                            </div>
+                        )}
+                    </>
+                )}
             </main>
 
             {/* ═══════════════════════════════════════════════════════════════
@@ -245,7 +296,7 @@ export default function HomePage() {
                 </button>
 
                 <button className={styles.actionButton} onClick={() => {
-                    navigator.clipboard.writeText('https://smarter.poker/hub/club-arena');
+                    navigator.clipboard.writeText(`${window.location.origin}/clubs`);
                     alert('Invite link copied!');
                 }}>
                     <div className={styles.actionIconWrapper}>
@@ -258,7 +309,6 @@ export default function HomePage() {
 
                 <button className={styles.actionButton} onClick={() => navigate('/lobby')}>
                     <div className={styles.actionIconWrapper}>
-                        {/* Poker chips stack icon */}
                         <svg viewBox="0 0 24 24" fill="currentColor">
                             <ellipse cx="12" cy="6" rx="8" ry="3" />
                             <path d="M4 6v4c0 1.66 3.58 3 8 3s8-1.34 8-3V6c0 1.66-3.58 3-8 3S4 7.66 4 6z" />

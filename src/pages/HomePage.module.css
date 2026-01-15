@@ -49,15 +49,15 @@
 .logoIcon {
     width: 36px;
     height: 36px;
-    background: linear-gradient(135deg, #c0392b 0%, #922b21 100%);
-    border-radius: 8px;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 20px;
-    color: #fff;
-    font-weight: bold;
-    box-shadow: 0 2px 8px rgba(192, 57, 43, 0.4);
+}
+
+.logoImg {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
 }
 
 .logoText {
@@ -287,26 +287,23 @@
 .cardBackground {
     position: absolute;
     inset: 0;
-    background: linear-gradient(180deg,
-            rgba(12, 35, 65, 0.95) 0%,
-            rgba(8, 25, 50, 0.98) 100%);
+    overflow: hidden;
 }
 
-.pokerTableBg {
+.tableBgImage {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center;
+}
+
+.cardOverlay {
     position: absolute;
     inset: 0;
-    background:
-        /* Poker table felt with chips scattered */
-        radial-gradient(ellipse 100% 80% at 50% 100%, rgba(0, 60, 100, 0.4) 0%, transparent 60%),
-        radial-gradient(circle at 15% 25%, rgba(200, 50, 50, 0.2) 0%, transparent 12%),
-        radial-gradient(circle at 85% 20%, rgba(50, 50, 200, 0.2) 0%, transparent 12%),
-        radial-gradient(circle at 50% 75%, rgba(50, 150, 50, 0.15) 0%, transparent 18%),
-        radial-gradient(circle at 20% 55%, rgba(200, 180, 50, 0.12) 0%, transparent 10%),
-        radial-gradient(circle at 80% 50%, rgba(100, 100, 180, 0.12) 0%, transparent 10%),
-        radial-gradient(circle at 30% 35%, rgba(180, 80, 80, 0.1) 0%, transparent 8%),
-        radial-gradient(circle at 70% 30%, rgba(80, 80, 180, 0.1) 0%, transparent 8%),
-        radial-gradient(circle at 40% 65%, rgba(50, 120, 50, 0.08) 0%, transparent 8%),
-        radial-gradient(circle at 60% 60%, rgba(120, 50, 50, 0.08) 0%, transparent 8%);
+    background: linear-gradient(180deg,
+            rgba(8, 20, 45, 0.6) 0%,
+            rgba(5, 15, 35, 0.4) 50%,
+            rgba(8, 20, 45, 0.7) 100%);
 }
 
 .cardContent {

@@ -21,10 +21,194 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-start;
     position: relative;
     overflow: hidden;
     background: #030a14;
+    padding-top: 20px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   TOP FLOATING ICON BAR
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.topBar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    max-width: 1200px;
+    padding: 12px 24px;
+    z-index: 50;
+    position: relative;
+}
+
+.logoSection {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.logoIcon {
+    font-size: 24px;
+    color: #00d4ff;
+    text-shadow: 0 0 10px rgba(0, 212, 255, 0.5);
+}
+
+.logoText {
+    font-size: 14px;
+    font-weight: 700;
+    color: #fff;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+}
+
+.statsSection {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.statBadge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(0, 30, 60, 0.7);
+    border: 1px solid rgba(0, 180, 255, 0.3);
+    border-radius: 20px;
+    padding: 6px 14px;
+}
+
+.statIcon {
+    font-size: 16px;
+}
+
+.statLabel {
+    font-size: 10px;
+    font-weight: 600;
+    color: rgba(0, 200, 255, 0.9);
+    text-transform: uppercase;
+}
+
+.statValue {
+    font-size: 14px;
+    font-weight: 700;
+    color: #fff;
+}
+
+.addButton {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 1px solid rgba(0, 200, 255, 0.5);
+    background: rgba(0, 180, 255, 0.2);
+    color: #00d4ff;
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.addButton:hover {
+    background: rgba(0, 200, 255, 0.4);
+    box-shadow: 0 0 10px rgba(0, 200, 255, 0.5);
+}
+
+.levelBadge {
+    font-size: 10px;
+    font-weight: 600;
+    color: #030a14;
+    background: linear-gradient(135deg, #00d4ff, #0080ff);
+    padding: 2px 8px;
+    border-radius: 10px;
+}
+
+.iconsSection {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.iconButton {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 1px solid rgba(0, 180, 255, 0.3);
+    background: rgba(0, 30, 60, 0.6);
+    color: rgba(0, 200, 255, 0.9);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.iconButton:hover {
+    background: rgba(0, 180, 255, 0.3);
+    border-color: rgba(0, 220, 255, 0.7);
+    box-shadow: 0 0 15px rgba(0, 200, 255, 0.4);
+}
+
+.iconButton svg {
+    width: 20px;
+    height: 20px;
+}
+
+.profileButton {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 2px solid rgba(0, 200, 255, 0.5);
+    background: rgba(0, 30, 60, 0.6);
+    cursor: pointer;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    transition: all 0.2s;
+}
+
+.profileButton:hover {
+    border-color: #00d4ff;
+    box-shadow: 0 0 15px rgba(0, 200, 255, 0.5);
+}
+
+.profileAvatar {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.helpButton {
+    padding: 8px 16px;
+    border-radius: 20px;
+    border: 1px solid rgba(0, 180, 255, 0.5);
+    background: rgba(0, 30, 60, 0.6);
+    color: #00d4ff;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.helpButton:hover {
+    background: rgba(0, 180, 255, 0.3);
+    box-shadow: 0 0 15px rgba(0, 200, 255, 0.4);
+}
+
+/* Welcome Message */
+.welcomeMessage {
+    font-size: 22px;
+    font-weight: 400;
+    color: #fff;
+    text-align: center;
+    margin: 20px 0 30px 0;
+    z-index: 10;
+    letter-spacing: 1px;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════

@@ -364,10 +364,15 @@ export default function AntiCheatPage() {
     const unsubKick = masterBus.subscribe('PLAYER_KICKED', () => {
       loadStats(clubId);
     });
+    // Phase 4: Cross-page sync (ported from World Hub anti-cheat.js)
+    const unsubTable = masterBus.subscribe('TABLE_CREATED', () => loadStats(clubId));
+    const unsubChips = masterBus.subscribe('CHIPS_DISTRIBUTED', () => loadStats(clubId));
 
     return () => {
       unsubFlag();
       unsubKick();
+      unsubTable();
+      unsubChips();
     };
   }, [clubId, loadStats]);
 

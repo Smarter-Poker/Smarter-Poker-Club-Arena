@@ -645,6 +645,23 @@ export default function CashierPage() {
     setIsProcessing(true);
     setMessage(null);
 
+    // SETTLEMENT FREEZE CHECK — Block all chip movements during settlement
+    if (clubId) {
+      try {
+        const lockResult = await checkSettlementLock(clubId);
+        if (lockResult.locked) {
+          setMessage({
+            type: 'error',
+            text: `🔒 Chip movements are frozen during settlement (${lockResult.reason || 'Monday 4AM payout in progress'}). Please try again after settlement completes.`,
+          });
+          setIsProcessing(false);
+          return;
+        }
+      } catch {
+        // Non-blocking: if settlement check fails, allow the action to proceed
+      }
+    }
+
     try {
       if (action === 'send') {
         // ─── SEND CHIPS ───

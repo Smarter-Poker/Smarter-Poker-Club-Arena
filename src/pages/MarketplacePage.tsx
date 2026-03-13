@@ -165,6 +165,8 @@ export default function MarketplacePage() {
     const unsubs = [
       masterBus.subscribe('CHIPS_DISTRIBUTED', refresh),
       masterBus.subscribe('BALANCE_UPDATED', refresh),
+      // Phase 4: Cross-page sync (ported from World Hub marketplace.js)
+      masterBus.subscribe('CASHIER_BALANCE_CHANGED', refresh),
     ];
     return () => unsubs.forEach((u) => u());
   }, [clubId, loadMarketplace]);

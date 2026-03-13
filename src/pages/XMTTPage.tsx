@@ -195,6 +195,9 @@ export default function XMTTPage() {
       masterBus.subscribe('TOURNAMENT_REGISTERED', refresh),
       masterBus.subscribe('TOURNAMENT_STARTED', refresh),
       masterBus.subscribe('TOURNAMENT_COMPLETE', refresh),
+      // Phase 4: Cross-page sync (ported from World Hub xmtt.js)
+      masterBus.subscribe('TOURNAMENT_CANCELLED', refresh),
+      masterBus.subscribe('TOURNAMENT_LEVEL_CHANGE', refresh),
     ];
     return () => unsubs.forEach((u) => u());
   }, [clubId, selectedTournament, loadTournaments, loadDetail]);

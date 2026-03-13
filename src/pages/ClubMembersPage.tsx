@@ -507,6 +507,9 @@ export default function ClubMembersPage() {
       masterBus.subscribeDebounced('BALANCE_UPDATED', reload, 500),
       masterBus.subscribeDebounced('CHIPS_ADDED', reload, 500),
       masterBus.subscribeDebounced('CHIPS_WITHDRAWN', reload, 500),
+      // Phase 4: Cross-page sync (ported from World Hub players.js)
+      masterBus.subscribeDebounced('CHIPS_DISTRIBUTED', reload, 500),
+      masterBus.subscribeDebounced('CASHOUT_APPROVED', reload, 500),
     ];
 
     return () => {

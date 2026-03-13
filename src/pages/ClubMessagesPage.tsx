@@ -151,8 +151,17 @@ export default function ClubMessagesPage() {
     const unsubNotif = masterBus.subscribe('NOTIFICATION_READ', () => {
       loadClubConversations();
     });
+    // Phase 4: Cross-page sync (ported from World Hub messages.js)
+    const unsubAnnounce = masterBus.subscribe('ANNOUNCEMENT_CHANGED', () =>
+      loadClubConversations()
+    );
+    const unsubMsg = masterBus.subscribe('MESSAGE_RECEIVED', () => loadClubConversations());
+    const unsubKick = masterBus.subscribe('PLAYER_KICKED', () => loadClubConversations());
     return () => {
       unsubNotif();
+      unsubAnnounce();
+      unsubMsg();
+      unsubKick();
     };
   }, [loadClubConversations]);
 

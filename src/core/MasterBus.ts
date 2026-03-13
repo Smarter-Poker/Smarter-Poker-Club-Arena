@@ -338,7 +338,7 @@ export interface BusPayloadMap {
   // Settings sync
   SETTINGS_UPDATED: { settings: Record<string, unknown> };
   // Club data mutations (cross-page sync)
-  CLUB_UPDATED: { clubId: string };
+  CLUB_UPDATED: { clubId: string; action?: string };
   UNION_UPDATED: { unionId: string };
   ANNOUNCEMENT_CHANGED: { clubId: string; action: 'created' | 'deleted' };
   // Financial events

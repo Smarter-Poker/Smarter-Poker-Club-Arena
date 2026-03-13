@@ -11,6 +11,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
+import { masterBus } from '../../core/MasterBus';
 
 const TABS = [
   { id: 'all', label: 'ALL' },
@@ -80,13 +81,6 @@ function sortGames(games: GameRow[]) {
     );
   });
 }
-
-const TABS = [
-  { key: 'all', label: '♠ All' },
-  { key: 'cash', label: '💰 Cash' },
-  { key: 'tourn', label: '🏆 MTT' },
-  { key: 'sng', label: '⚡ SNG' },
-];
 
 interface GameLobbyGridProps {
   clubId: string;

@@ -258,6 +258,11 @@ export default function RakebackPage() {
       loadRakebackData();
       // Notify other pages that wallet balance changed
       masterBus.emit('WALLET_REFRESHED', { walletType: 'PLAYER', available: 0, total: 0 });
+      masterBus.emit('RAKEBACK_CLAIMED', {
+        clubId: targetClubId,
+        amount: totalToClaim,
+        userId: user.id,
+      });
       if (claimTimerRef.current) clearTimeout(claimTimerRef.current);
       claimTimerRef.current = setTimeout(() => {
         setClaimStatus('idle');

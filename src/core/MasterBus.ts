@@ -286,7 +286,8 @@ export type BusEventType =
   | 'MYSTERY_BOUNTY_REVEALED'
   | 'UI_THEME_CHANGED'
   // Phase 8 Deep Sweep: flash pool game state event
-  | 'GAME_STATE_UPDATED';
+  | 'GAME_STATE_UPDATED'
+  | 'FLASH_POOL_JOINED';
 
 // #13: Type-safe payload map — compile-time enforcement of correct payloads
 export interface BusPayloadMap {
@@ -868,6 +869,7 @@ export interface BusPayloadMap {
   UI_THEME_CHANGED: { key: string; value?: unknown };
   // Phase 8 Deep Sweep: flash pool game state event
   GAME_STATE_UPDATED: { tableId?: string; state?: string; poolId?: string };
+  FLASH_POOL_JOINED: { poolId: string; userId: string; buyIn: number };
 }
 
 export interface BusEvent<T = unknown> {

@@ -1059,6 +1059,10 @@ class TournamentService {
     console.debug(
       `[TournamentService] Cancelled tournament ${tournament.name}: refunded ${playersRefunded} players, ${refunded} chips`
     );
+
+    // Emit completion event (cancelled = complete from a lifecycle perspective)
+    masterBus.emit('TOURNAMENT_COMPLETE', { tournamentId, clubId: tournament.club_id });
+
     return { refunded: refunded, playersRefunded };
   }
 

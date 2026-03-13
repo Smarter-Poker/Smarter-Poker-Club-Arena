@@ -144,7 +144,7 @@ export default function FlashPoolPage() {
 
   // ── Bus listener for pool updates ──
   useEffect(() => {
-    const unsub = masterBus.subscribe('GAME_STATE_UPDATED' as any, (event: any) => {
+    const unsub = masterBus.subscribe('GAME_STATE_UPDATED', (event) => {
       const data = event.payload;
       if (!data) return;
       setPools((prev) =>
@@ -173,7 +173,7 @@ export default function FlashPoolPage() {
         const buyIn = buyInAmount || pool.buyInMin;
         flashPoolEngine.joinPool(pool.poolId, user.id, buyIn);
         toast.success(`Joining ${pool.stakes} flash pool...`);
-        (masterBus as any).emit('FLASH_POOL_JOINED', {
+        masterBus.emit('FLASH_POOL_JOINED', {
           poolId: pool.poolId,
           userId: user.id,
           buyIn,

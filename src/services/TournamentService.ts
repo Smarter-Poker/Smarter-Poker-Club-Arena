@@ -633,6 +633,7 @@ class TournamentService {
     }
 
     masterBus.emit('BALANCE_UPDATED', { source: 'tournament_buyin', userId });
+    masterBus.emit('TOURNAMENT_REGISTERED', { tournamentId, userId, clubId: tournament.club_id });
 
     // Log rake/fee separately for clean audit trail
     if (rake > 0) {
@@ -1178,6 +1179,8 @@ class TournamentService {
       })
       .eq('tournament_id', tournamentId)
       .eq('status', 'registered');
+
+    masterBus.emit('TOURNAMENT_STARTED', { tournamentId, clubId: tournament.club_id });
 
     return data;
   }

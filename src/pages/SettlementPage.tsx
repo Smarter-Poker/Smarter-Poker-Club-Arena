@@ -564,6 +564,12 @@ export default function SettlementPage() {
 
       setAutoSettlement(newValue);
       toast.success(`Auto-settlement ${newValue ? 'enabled' : 'disabled'}`);
+      // Notify other pages about the settings change
+      masterBus.emit('CLUB_SETTINGS_UPDATED', {
+        clubId: targetId,
+        setting: 'auto_settlement',
+        value: newValue,
+      });
     } catch (err: any) {
       toast.error(err.message || 'Failed to toggle auto-settlement');
     } finally {

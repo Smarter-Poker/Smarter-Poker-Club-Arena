@@ -833,7 +833,12 @@ export interface BusPayloadMap {
     messageId?: string;
   };
   // Q4: Backported page events (Hub → Club Arena)
-  TOURNAMENT_REGISTERED: { tournamentId: string; clubId?: string; unionId?: string };
+  TOURNAMENT_REGISTERED: {
+    tournamentId: string;
+    clubId?: string;
+    unionId?: string;
+    userId?: string;
+  };
   TOURNAMENT_STARTED: { tournamentId: string; clubId?: string };
   TOURNAMENT_COMPLETE: { tournamentId: string; clubId?: string };
   ANTI_CHEAT_FLAG_CREATED: { clubId: string; flagId?: string; severity?: string };
@@ -846,7 +851,7 @@ export interface BusPayloadMap {
   HAND_COMPLETE: { tableId?: string; clubId?: string; handNumber?: number };
   PLAYER_LEFT: { clubId: string; userId?: string; tableId?: string };
   RAKEBACK_CLAIMED: { clubId: string; amount?: number; userId?: string };
-  CLUB_SETTINGS_UPDATED: { clubId?: string };
+  CLUB_SETTINGS_UPDATED: { clubId?: string; setting?: string; value?: unknown };
 }
 
 export interface BusEvent<T = unknown> {

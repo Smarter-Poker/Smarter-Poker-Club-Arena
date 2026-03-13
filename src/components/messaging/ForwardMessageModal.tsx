@@ -6,6 +6,7 @@
 
 import { useState, useEffect } from 'react';
 import { messagingService, type Conversation } from '../../services/MessagingService';
+import { masterBus } from '../../core/MasterBus';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
 import styles from './ForwardMessageModal.module.css';
@@ -49,6 +50,11 @@ export default function ForwardMessageModal({
       );
       if (result) {
         toast.success('Message forwarded!');
+        // Q3: Emit bus event so conversation lists update instantly
+        masterBus.emit('MESSAGE_SENT', {
+          message: { content: messageContent, forwarded: true } as Record<string, unknown>,
+          conversationId: targetConversationId,
+        });
         onForwarded?.();
         onClose();
       } else {

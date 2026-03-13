@@ -263,7 +263,15 @@ export type BusEventType =
   | 'CASHOUT_CANCELLED'
   | 'CASHIER_BALANCE_CHANGED'
   | 'AGENT_UPDATED'
-  | 'PLAYER_KICKED';
+  | 'PLAYER_KICKED'
+  // Q4: Backported page events (Hub → Club Arena)
+  | 'DATA_MUTATED'
+  | 'CHAT_MESSAGE_RECEIVED'
+  | 'TOURNAMENT_REGISTERED'
+  | 'TOURNAMENT_STARTED'
+  | 'TOURNAMENT_COMPLETE'
+  | 'ANTI_CHEAT_FLAG_CREATED'
+  | 'ANNOUNCEMENT_CREATED';
 
 // #13: Type-safe payload map — compile-time enforcement of correct payloads
 export interface BusPayloadMap {
@@ -804,6 +812,21 @@ export interface BusPayloadMap {
   CASHIER_BALANCE_CHANGED: { clubId: string; balance?: number };
   AGENT_UPDATED: { clubId: string; agentId?: string };
   PLAYER_KICKED: { clubId: string; userId?: string };
+  // Ported from World Hub: cross-page data mutation sync + chat badge sync
+  DATA_MUTATED: { table: string; action: string; [key: string]: unknown };
+  CHAT_MESSAGE_RECEIVED: {
+    clubId?: string;
+    tableId?: string;
+    senderId?: string;
+    message?: string;
+    messageId?: string;
+  };
+  // Q4: Backported page events (Hub → Club Arena)
+  TOURNAMENT_REGISTERED: { tournamentId: string; clubId?: string; unionId?: string };
+  TOURNAMENT_STARTED: { tournamentId: string; clubId?: string };
+  TOURNAMENT_COMPLETE: { tournamentId: string; clubId?: string };
+  ANTI_CHEAT_FLAG_CREATED: { clubId: string; flagId?: string; severity?: string };
+  ANNOUNCEMENT_CREATED: { clubId: string; action?: string };
 }
 
 export interface BusEvent<T = unknown> {

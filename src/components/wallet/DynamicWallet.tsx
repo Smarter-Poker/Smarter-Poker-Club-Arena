@@ -206,14 +206,15 @@ export default function DynamicWallet({
 
   // ── MasterBus: Refresh on balance changes ──────────────────────────────────
   useEffect(() => {
-    const handler = () => {
+    const unsubBalance = masterBus.subscribe('BALANCE_UPDATED', () => {
       fetchData();
-    };
-    masterBus.on('BALANCE_UPDATED', handler);
-    masterBus.on('DIAMOND_BALANCE_CHANGED', handler);
+    });
+    const unsubDiamond = masterBus.subscribe('DIAMOND_BALANCE_CHANGED', () => {
+      fetchData();
+    });
     return () => {
-      masterBus.off('BALANCE_UPDATED', handler);
-      masterBus.off('DIAMOND_BALANCE_CHANGED', handler);
+      unsubBalance();
+      unsubDiamond();
     };
   }, [fetchData]);
 

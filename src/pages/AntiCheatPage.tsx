@@ -6,7 +6,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -422,7 +422,7 @@ export default function AntiCheatPage() {
       });
 
       toast.success('Player removed.');
-      masterBus.emit('PLAYER_KICKED', { clubId, playerId, tableId });
+      masterBus.emit('PLAYER_KICKED', { clubId: clubId ?? '', userId: playerId });
     } catch (err: any) {
       toast.error(err.message);
     } finally {

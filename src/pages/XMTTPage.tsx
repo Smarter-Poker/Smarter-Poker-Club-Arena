@@ -117,7 +117,7 @@ export default function XMTTPage() {
     [clubId]
   );
 
-  const loadDetail = useCallback(async (tournamentId: string, cId?: string) => {
+  const loadDetail = useCallback(async (tournamentId: string, _cId?: string) => {
     try {
       setDetailLoading(true);
       const [{ data: tourn }, { data: regs }] = await Promise.all([
@@ -216,7 +216,7 @@ export default function XMTTPage() {
         status: 'registered',
       });
       if (error) throw error;
-      masterBus.emit('TOURNAMENT_REGISTERED', { tournamentId, clubId });
+      masterBus.emit('TOURNAMENT_REGISTERED', { tournamentId, clubId: clubId || undefined });
       loadTournaments(clubId);
       if (selectedTournament === tournamentId) loadDetail(tournamentId);
     } catch (err: any) {
@@ -234,7 +234,7 @@ export default function XMTTPage() {
         .eq('tournament_id', tournamentId)
         .eq('user_id', user.id);
       if (error) throw error;
-      masterBus.emit('TOURNAMENT_REGISTERED', { tournamentId, clubId });
+      masterBus.emit('TOURNAMENT_REGISTERED', { tournamentId, clubId: clubId || undefined });
       loadTournaments(clubId);
       if (selectedTournament === tournamentId) loadDetail(tournamentId);
     } catch (err: any) {

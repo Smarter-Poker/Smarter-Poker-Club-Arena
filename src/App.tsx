@@ -109,6 +109,14 @@ const SettlementHistoryPage = lazy(() => import('./pages/SettlementHistoryPage')
 const FlashPoolPage = lazy(() => import('./pages/FlashPoolPage'));
 const SessionHistoryPage = lazy(() => import('./pages/SessionHistoryPage'));
 
+// Q4: New Backported Pages (Hub → Club Arena)
+const AntiCheatPage = lazy(() => import('./pages/AntiCheatPage'));
+const XMTTPage = lazy(() => import('./pages/XMTTPage'));
+const MarketplacePage = lazy(() => import('./pages/MarketplacePage'));
+const UnionGamesPage = lazy(() => import('./pages/UnionGamesPage'));
+const AdminDashboardPage = lazy(() => import('./pages/AdminDashboardPage'));
+const PlayerSessionsPage = lazy(() => import('./pages/PlayerSessionsPage'));
+
 // Q3: Social, Messaging & Discovery Pages
 const PublicProfilePage = lazy(() => import('./pages/PublicProfilePage'));
 const NewConversationPage = lazy(() => import('./pages/NewConversationPage'));
@@ -833,8 +841,18 @@ export default function App() {
                   path="admin"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Club Settings">
-                        <ClubSettingsPage />
+                      <PageErrorBoundary pageName="Admin Dashboard">
+                        <AdminDashboardPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="players"
+                  element={
+                    <AuthGuard>
+                      <PageErrorBoundary pageName="Players">
+                        <PlayerSessionsPage />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }
@@ -1235,6 +1253,58 @@ export default function App() {
                     <AuthGuard>
                       <PageErrorBoundary pageName="Table Creation">
                         <TableCreationPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }
+                />
+
+                {/* Q4: Backported Pages (Hub → Club Arena) */}
+                <Route
+                  path="anti-cheat"
+                  element={
+                    <AuthGuard>
+                      <PageErrorBoundary pageName="Anti-Cheat">
+                        <AntiCheatPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="xmtt"
+                  element={
+                    <AuthGuard>
+                      <PageErrorBoundary pageName="XMTT">
+                        <XMTTPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="marketplace"
+                  element={
+                    <AuthGuard>
+                      <PageErrorBoundary pageName="Marketplace">
+                        <MarketplacePage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="unions/:unionId/games"
+                  element={
+                    <AuthGuard>
+                      <PageErrorBoundary pageName="Union Games">
+                        <UnionGamesPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="union-games"
+                  element={
+                    <AuthGuard>
+                      <PageErrorBoundary pageName="Union Games">
+                        <UnionGamesPage />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }

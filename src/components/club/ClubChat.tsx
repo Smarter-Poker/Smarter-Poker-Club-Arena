@@ -1,0 +1,319 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  ClubChat — Club-Wide Group Chat Panel
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  Ported from World Hub → Club Arena (March 2026)
+ *
+ *  Collapsible panel in the lobby with realtime message updates.
+ *  Uses Supabase postgres_changes for live message subscription.
+ */
+
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { supabase } from '../../lib/supabase';
+
+const FB = {
+  bg: '#1c1c1e',
+  card: '#242526',
+  text: '#E4E6EB',
+  dim: '#B0B3B8',
+  border: '#3E4042',
+  primary: '#1877F2',
+  success: '#31A24C',
+};
+
+function timeShort(date: string): string {
+  const d = new Date(date);
+  const now = new Date();
+  const diff = now.getTime() - d.getTime();
+  if (diff < 60000) return 'now';
+  if (diff < 3600000) return `${Math.floor(diff / 60000)}m`;
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h`;
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+interface ClubChatMessage {
+  id: string;
+  user_id: string;
+  message: string;
+  display_name?: string;
+  message_type: string;
+  created_at: string;
+}
+
+interface ClubChatProps {
+  clubId: string;
+  userId: string;
+  userName?: string;
+}
+
+export default function ClubChat({ clubId, userId, userName }: ClubChatProps) {
+  const [messages, setMessages] = useState<ClubChatMessage[]>([]);
+  const [text, setText] = useState('');
+  const [expanded, setExpanded] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [unread, setUnread] = useState(0);
+  const listRef = useRef<HTMLDivElement>(null);
+  const lastSeenRef = useRef(0);
+
+  const loadMessages = useCallback(async () => {
+    if (!clubId) return;
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const { data, error } = await supabase
+        .from('club_chat')
+        .select('*')
+        .eq('club_id', clubId)
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (!error && data) {
+        const msgs = (data as ClubChatMessage[]).reverse();
+        setMessages(msgs);
+        if (expanded) {
+          lastSeenRef.current = msgs.length;
+          setUnread(0);
+        }
+      }
+    } catch {
+      /* silent */
+    }
+  }, [clubId, expanded]);
+
+  // Initial load
+  useEffect(() => {
+    loadMessages();
+  }, [loadMessages]);
+
+  // Realtime subscription
+  useEffect(() => {
+    if (!clubId) return;
+    const channel = supabase
+      .channel(`club-chat:${clubId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'club_chat',
+          filter: `club_id=eq.${clubId}`,
+        },
+        (payload) => {
+          const newMsg = payload.new as ClubChatMessage;
+          setMessages((prev) => [...prev.slice(-99), newMsg]);
+          if (!expanded) setUnread((prev) => prev + 1);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [clubId, expanded]);
+
+  // Auto-scroll on new messages
+  useEffect(() => {
+    if (listRef.current && expanded) {
+      listRef.current.scrollTop = listRef.current.scrollHeight;
+    }
+  }, [messages, expanded]);
+
+  // Clear unread when expanding
+  useEffect(() => {
+    if (expanded) {
+      setUnread(0);
+      lastSeenRef.current = messages.length;
+    }
+  }, [expanded, messages.length]);
+
+  const sendMessage = async () => {
+    if (!text.trim() || sending) return;
+    setSending(true);
+    try {
+      // Optimistic add
+      const optimistic: ClubChatMessage = {
+        id: `temp-${Date.now()}`,
+        user_id: userId,
+        message: text.trim(),
+        display_name: userName || 'You',
+        message_type: 'message',
+        created_at: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev.slice(-99), optimistic]);
+      setText('');
+
+      const { error } = await supabase.from('club_chat').insert({
+        club_id: clubId,
+        user_id: userId,
+        message: optimistic.message,
+        display_name: userName || 'Player',
+        message_type: 'message',
+      });
+      if (error) console.error('[ClubChat] Send error:', error);
+    } catch {
+      /* silent */
+    } finally {
+      setSending(false);
+    }
+  };
+
+  if (!clubId) return null;
+
+  return (
+    <div
+      style={{
+        margin: '0 0 12px',
+        borderRadius: 12,
+        overflow: 'hidden',
+        border: `1px solid ${FB.border}`,
+        background: FB.card,
+      }}
+    >
+      {/* Header — always visible */}
+      <button
+        onClick={() => setExpanded((p) => !p)}
+        style={{
+          width: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '10px 14px',
+          background: 'none',
+          border: 'none',
+          cursor: 'pointer',
+        }}
+      >
+        <span style={{ color: FB.text, fontSize: 13, fontWeight: 700 }}>💬 Club Chat</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          {unread > 0 && (
+            <span
+              style={{
+                background: FB.primary,
+                color: '#fff',
+                fontSize: 10,
+                fontWeight: 800,
+                minWidth: 18,
+                height: 18,
+                borderRadius: 9,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '0 5px',
+              }}
+            >
+              {unread > 99 ? '99+' : unread}
+            </span>
+          )}
+          <span style={{ color: FB.dim, fontSize: 12 }}>{expanded ? '▼' : '▶'}</span>
+        </div>
+      </button>
+
+      {/* Chat body — collapsible */}
+      {expanded && (
+        <div>
+          <div
+            ref={listRef}
+            style={{
+              height: 200,
+              overflowY: 'auto',
+              padding: '4px 12px',
+              borderTop: `1px solid ${FB.border}`,
+            }}
+          >
+            {messages.length === 0 ? (
+              <div style={{ textAlign: 'center', color: FB.dim, fontSize: 12, padding: '40px 0' }}>
+                No messages yet. Say hello!
+              </div>
+            ) : (
+              messages.map((m, i) => {
+                const isMe = String(m.user_id) === String(userId);
+                const isSystem = m.message_type === 'system' || m.message_type === 'announcement';
+                return (
+                  <div key={m.id || i} style={{ marginBottom: 6 }}>
+                    {isSystem ? (
+                      <div
+                        style={{
+                          textAlign: 'center',
+                          color: '#F5A623',
+                          fontSize: 11,
+                          fontStyle: 'italic',
+                          padding: '2px 0',
+                        }}
+                      >
+                        {m.message}
+                      </div>
+                    ) : (
+                      <div>
+                        <span
+                          style={{
+                            color: isMe ? FB.primary : FB.success,
+                            fontSize: 11,
+                            fontWeight: 700,
+                          }}
+                        >
+                          {isMe ? 'You' : m.display_name || 'Player'}
+                        </span>
+                        <span style={{ color: FB.dim, fontSize: 9, marginLeft: 6 }}>
+                          {timeShort(m.created_at)}
+                        </span>
+                        <div
+                          style={{ color: FB.text, fontSize: 12, lineHeight: 1.4, marginTop: 1 }}
+                        >
+                          {m.message}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* Input */}
+          <div style={{ display: 'flex', borderTop: `1px solid ${FB.border}`, padding: 6, gap: 6 }}>
+            <input
+              type="text"
+              value={text}
+              onChange={(e) => setText(e.target.value.slice(0, 500))}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && text.trim()) sendMessage();
+              }}
+              placeholder="Type a message..."
+              maxLength={500}
+              style={{
+                flex: 1,
+                background: FB.bg,
+                border: `1px solid ${FB.border}`,
+                borderRadius: 8,
+                padding: '8px 12px',
+                color: FB.text,
+                fontSize: 13,
+                outline: 'none',
+              }}
+            />
+            <button
+              onClick={sendMessage}
+              disabled={!text.trim() || sending}
+              style={{
+                background: text.trim() ? FB.primary : FB.border,
+                color: '#fff',
+                border: 'none',
+                borderRadius: 8,
+                padding: '8px 14px',
+                fontSize: 13,
+                fontWeight: 700,
+                cursor: text.trim() ? 'pointer' : 'default',
+                opacity: sending ? 0.5 : 1,
+              }}
+            >
+              Send
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

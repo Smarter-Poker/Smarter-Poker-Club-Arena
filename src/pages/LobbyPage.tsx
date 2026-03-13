@@ -132,6 +132,7 @@ export default function LobbyPage() {
     };
     const LOBBY_REFRESH_EVENTS = [
       'TABLE_CREATED',
+      'TABLE_UPDATED',
       'ANNOUNCEMENT_CHANGED',
       'PLAYER_KICKED',
       'CHIPS_DISTRIBUTED',

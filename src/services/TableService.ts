@@ -213,6 +213,7 @@ class TableService {
       // Emit for ALL players who were seated — the RPC refunds them atomically
       masterBus.emit('BALANCE_UPDATED', { source: 'table_force_close_refund' });
     }
+    masterBus.emit('TABLE_CLOSED', { tableId });
   }
 
   /**

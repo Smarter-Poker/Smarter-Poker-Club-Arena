@@ -171,7 +171,8 @@ export default function TableCard({ table }: TableCardProps) {
             success = await tableService.resumeTable(table.id);
             break;
           case 'close':
-            success = await tableService.closeTable(table.id);
+            await tableService.closeTable(table.id);
+            success = true; // closeTable throws on failure
             break;
           case 'delete':
             if (!table.club_id) break;

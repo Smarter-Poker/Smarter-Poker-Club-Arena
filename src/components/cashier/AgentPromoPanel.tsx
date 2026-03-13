@@ -125,14 +125,15 @@ export default function AgentPromoPanel({
 
   // ── MasterBus: Auto-refresh on financial events ─────────────────────────────
   useEffect(() => {
-    const handler = () => {
+    const unsubBalance = masterBus.subscribe('BALANCE_UPDATED', () => {
       loadData();
-    };
-    masterBus.on('BALANCE_UPDATED', handler);
-    masterBus.on('PROMO_DISTRIBUTED', handler);
+    });
+    const unsubChipsDistributed = masterBus.subscribe('CHIPS_DISTRIBUTED', () => {
+      loadData();
+    });
     return () => {
-      masterBus.off('BALANCE_UPDATED', handler);
-      masterBus.off('PROMO_DISTRIBUTED', handler);
+      unsubBalance();
+      unsubChipsDistributed();
     };
   }, [loadData]);
 
@@ -205,10 +206,10 @@ export default function AgentPromoPanel({
 
       showToast(`🎉 ${amt.toLocaleString()} promo chips sent!`);
       masterBus.emit('BALANCE_UPDATED', { source: 'promo_distributed', userId: selectedPlayer });
-      masterBus.emit('PROMO_DISTRIBUTED', {
-        agentId: userId,
-        playerId: selectedPlayer,
+      masterBus.emit('CHIPS_DISTRIBUTED', {
+        clubId,
         amount: amt,
+        userId: selectedPlayer,
       });
 
       if (isMounted.current) {

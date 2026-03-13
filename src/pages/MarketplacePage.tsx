@@ -125,7 +125,7 @@ export default function MarketplacePage() {
       }
     },
     [clubId, user]
-  );  
+  );
 
   // Init
   useEffect(() => {
@@ -189,7 +189,11 @@ export default function MarketplacePage() {
 
       toast.success(`Successfully purchased ${buyTarget.name}!`);
       setBalance((prev) => prev - buyTarget.price);
-      masterBus.emit('BALANCE_UPDATED', { clubId, balance: balance - buyTarget.price });
+      masterBus.emit('BALANCE_UPDATED', {
+        source: 'marketplace_purchase',
+        clubId,
+        balance: balance - buyTarget.price,
+      });
       setBuyTarget(null);
       loadMarketplace(clubId);
     } catch (err: any) {

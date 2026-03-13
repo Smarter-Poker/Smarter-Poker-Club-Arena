@@ -523,6 +523,9 @@ export default function LobbyPage() {
         <span className={styles.sessionStat}>{totalPlaying} now playing</span>
       </div>
 
+      {/* Lobby Stats Bar — styled stat pills */}
+      <LobbyStatsBar games={tables as any} />
+
       {/* Promotional Banner Carousel */}
       <LobbyHeroBanner />
 

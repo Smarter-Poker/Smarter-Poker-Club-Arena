@@ -142,7 +142,6 @@ export default function CreditAdminPanel() {
       setEditingAgent(null);
       setNewLimit('');
       masterBus.emit('BALANCE_UPDATED', { source: 'credit_limit_change', agentId });
-      await loadAgents();
     } catch (err) {
       toast.error('Failed to update credit limit');
     }

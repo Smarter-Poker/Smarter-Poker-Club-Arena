@@ -164,7 +164,6 @@ export default function AgentPortalPage() {
         toast.success(`Transferred ${amount.toLocaleString()} chips to Play Wallet`);
         setTransferModalOpen(false);
         setTransferAmount('');
-        await loadWallet();
         masterBus.emit('BALANCE_UPDATED', { source: 'agent_transfer', userId: user.id });
       } else {
         toast.error('Transfer failed');

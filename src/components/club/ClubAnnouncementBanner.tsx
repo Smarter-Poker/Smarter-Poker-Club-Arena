@@ -13,6 +13,7 @@ import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
+import { masterBus } from '../../core/MasterBus';
 import styles from './ClubAnnouncementBanner.module.css';
 
 interface Announcement {
@@ -64,6 +65,19 @@ export default function ClubAnnouncementBanner({
         localStorage.removeItem(`dismissed_announcements_${clubId}`);
       }
     }
+
+    // 🔴 Bus Listener: refresh announcements when one is created/updated/deleted
+    const unsub = masterBus.subscribeDebounced(
+      'ANNOUNCEMENT_CHANGED',
+      () => {
+        loadAnnouncements();
+      },
+      500
+    );
+
+    return () => {
+      unsub();
+    };
   }, [clubId]);
 
   const loadAnnouncements = async () => {

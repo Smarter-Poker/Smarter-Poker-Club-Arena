@@ -82,7 +82,6 @@ function ensureKeyframes() {
 }
 
 function fireConfetti(isJackpot: boolean) {
-  // @ts-expect-error canvas-confetti may not be installed, handled by .catch()
   import('canvas-confetti')
     .then((mod) => {
       const confetti = mod.default;

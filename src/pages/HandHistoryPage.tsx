@@ -101,8 +101,11 @@ export default function HandHistoryPage() {
       },
       1000
     );
+    // Phase 4: Cross-page sync (ported from World Hub hand-histories.js)
+    const unsub2 = masterBus.subscribeDebounced('TABLE_CREATED', () => loadHands(true), 500);
     return () => {
       unsub();
+      unsub2();
     };
   }, []);
 

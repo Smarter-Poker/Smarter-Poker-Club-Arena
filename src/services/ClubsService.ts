@@ -211,24 +211,108 @@ export async function joinClub(clubId: string, role: MemberRole = 'member'): Pro
 }
 
 /**
- * Leave a club
+ * Leave a club — comprehensive safe-leave flow (ported from Hub leave-club.js).
+ *  1. Validate membership exists
+ *  2. Block if owner (must transfer ownership first)
+ *  3. Cancel any pending cashout requests
+ *  4. Return chip_balance to club treasury via atomic RPC
+ *  5. If agent, clean up downline
+ *  6. Delete membership record
+ *  7. Decrement club member count
+ *  8. Emit CLUB_UPDATED for real-time sync
  */
 export async function leaveClub(clubId: string): Promise<void> {
   const { data: user } = await supabase.auth.getUser();
   if (!user.user) throw new Error('Authentication required');
 
   const resolvedId = await resolveClubUUID(clubId);
+  const userId = user.user.id;
 
+  // 1. Get membership record
+  const { data: member, error: memErr } = await supabase
+    .from('club_members')
+    .select('id, role, chip_balance, credit_used')
+    .eq('club_id', resolvedId)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (memErr || !member) {
+    throw new Error('You are not a member of this club');
+  }
+
+  // 2. Block owners — must transfer ownership first
+  if (member.role === 'owner') {
+    throw new Error('Club owners cannot leave. Transfer ownership first.');
+  }
+
+  // 3. Cancel any pending cashout requests
+  try {
+    await supabase
+      .from('cashout_requests')
+      .update({ status: 'cancelled', resolved_at: new Date().toISOString() })
+      .eq('club_id', resolvedId)
+      .eq('user_id', userId)
+      .eq('status', 'pending');
+  } catch {
+    // Non-critical — continue even if cashout cancel fails
+  }
+
+  // 4. Return chip_balance to club treasury (if any)
+  const balance = member.chip_balance || 0;
+  if (balance > 0) {
+    try {
+      await retryAsync(
+        () =>
+          supabase.rpc('atomic_deduct_wallet_and_log', {
+            p_user_id: userId,
+            p_club_id: resolvedId,
+            p_amount: balance,
+            p_action_type: 'leave_club_refund',
+            p_note: 'Chips returned to treasury on club departure',
+          }),
+        2
+      );
+    } catch (err: any) {
+      console.error('[ClubsService] Failed to refund chips on leave:', err.message);
+      // Continue — we don't want to trap members in clubs due to refund failures
+    }
+  }
+
+  // 5. If agent, clear downline references
+  if (['agent', 'super_agent', 'sub_agent'].includes(member.role)) {
+    try {
+      await supabase
+        .from('club_members')
+        .update({ parent_agent_id: null })
+        .eq('club_id', resolvedId)
+        .eq('parent_agent_id', userId);
+    } catch {
+      // Non-critical
+    }
+  }
+
+  // 6. Delete membership record
   const { error } = await supabase
     .from('club_members')
     .delete()
     .eq('club_id', resolvedId)
-    .eq('user_id', user.user.id);
+    .eq('user_id', userId);
 
   if (error) {
     console.error('[ClubsService] Leave club failed:', error);
     throw new Error('Failed to leave club');
   }
+
+  // 7. Decrement club member count (fire-and-forget)
+  try {
+    await supabase.rpc('decrement_club_member_count', { p_club_id: resolvedId });
+  } catch {
+    // Non-critical — count will self-correct on next query
+  }
+
+  // 8. Real-time sync
+  const { masterBus } = await import('../core/MasterBus');
+  masterBus.emit('CLUB_UPDATED', { clubId: resolvedId, action: 'member_left' });
 }
 
 /**

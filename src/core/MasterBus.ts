@@ -272,7 +272,15 @@ export type BusEventType =
   | 'TOURNAMENT_COMPLETE'
   | 'ANTI_CHEAT_FLAG_CREATED'
   | 'ANNOUNCEMENT_CREATED'
-  | 'CREDIT_UPDATED';
+  | 'CREDIT_UPDATED'
+  // Phase 4: Remaining native page event types (Hub → Club Arena)
+  | 'TOURNAMENT_CANCELLED'
+  | 'TOURNAMENT_LEVEL_CHANGE'
+  | 'MEMBER_UPDATED'
+  | 'HAND_REPLAYED'
+  | 'HAND_COMPLETE'
+  | 'PLAYER_LEFT'
+  | 'RAKEBACK_CLAIMED';
 
 // #13: Type-safe payload map — compile-time enforcement of correct payloads
 export interface BusPayloadMap {
@@ -829,6 +837,14 @@ export interface BusPayloadMap {
   TOURNAMENT_COMPLETE: { tournamentId: string; clubId?: string };
   ANTI_CHEAT_FLAG_CREATED: { clubId: string; flagId?: string; severity?: string };
   ANNOUNCEMENT_CREATED: { clubId: string; action?: string };
+  // Phase 4: Remaining native page event payloads
+  TOURNAMENT_CANCELLED: { tournamentId: string; clubId?: string };
+  TOURNAMENT_LEVEL_CHANGE: { tournamentId: string; level?: number };
+  MEMBER_UPDATED: { clubId: string; userId?: string; role?: string };
+  HAND_REPLAYED: { handId: string; clubId?: string };
+  HAND_COMPLETE: { tableId?: string; clubId?: string; handNumber?: number };
+  PLAYER_LEFT: { clubId: string; userId?: string; tableId?: string };
+  RAKEBACK_CLAIMED: { clubId: string; amount?: number; userId?: string };
 }
 
 export interface BusEvent<T = unknown> {

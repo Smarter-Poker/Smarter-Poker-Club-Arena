@@ -132,10 +132,29 @@ export default function LeaderboardPage() {
           loadTournamentStatsRef.current();
         }
       },
-      2000
-    ); // debounce 2s to batch rapid hand completions
+      500
+    );
+    // Phase 4: Cross-page sync events (ported from World Hub leaderboard.js)
+    const unsub2 = masterBus.subscribeDebounced(
+      'CHIPS_DISTRIBUTED',
+      () => loadLeaderboardRef.current(true),
+      500
+    );
+    const unsub3 = masterBus.subscribeDebounced(
+      'CASHOUT_APPROVED',
+      () => loadLeaderboardRef.current(true),
+      500
+    );
+    const unsub4 = masterBus.subscribeDebounced(
+      'BALANCE_UPDATED',
+      () => loadLeaderboardRef.current(true),
+      500
+    );
     return () => {
       unsub();
+      unsub2();
+      unsub3();
+      unsub4();
     };
   }, []);
 

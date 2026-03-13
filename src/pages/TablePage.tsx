@@ -35,6 +35,7 @@ import { waitlistService } from '../services/WaitlistService';
 import { roomService, type RoomMessage } from '../services/RoomService';
 import { HydraService } from '../services/HydraService';
 import TableChat, { type ChatMessage } from '../components/table/TableChat';
+import TableChatHUD from '../components/table/TableChatHUD';
 import InsuranceModal, { type InsuranceOffer } from '../components/table/InsuranceModal';
 import { RunItTwicePrompt } from '../components/table/RunItTwice';
 import BadBeatJackpot from '../components/table/BadBeatJackpot';
@@ -4406,6 +4407,11 @@ export default function TablePage({
         placeholder="Say something..."
         isMuted={isChatMuted}
       />
+
+      {/* Compact Chat HUD — visible when main chat is collapsed */}
+      {isChatCollapsed && tableId && (
+        <TableChatHUD tableId={tableId} userId={userId} isMuted={isChatMuted} />
+      )}
 
       {/* Table Reactions — floating emoji picker + active reactions */}
       <TableReactions

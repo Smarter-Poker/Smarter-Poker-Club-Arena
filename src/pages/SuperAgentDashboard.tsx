@@ -121,9 +121,46 @@ export default function SuperAgentDashboard() {
       },
       300
     );
+    // Phase 4: Cross-page sync events (ported from World Hub agent-dashboard.js)
+    const unsubCashoutApproved = masterBus.subscribeDebounced(
+      'CASHOUT_APPROVED',
+      () => loadDashboardData(),
+      300
+    );
+    const unsubCashoutCancelled = masterBus.subscribeDebounced(
+      'CASHOUT_CANCELLED',
+      () => loadDashboardData(),
+      300
+    );
+    const unsubCashoutReq = masterBus.subscribeDebounced(
+      'CASHOUT_REQUESTED',
+      () => loadDashboardData(),
+      300
+    );
+    const unsubChips = masterBus.subscribeDebounced(
+      'CHIPS_DISTRIBUTED',
+      () => loadDashboardData(),
+      300
+    );
+    const unsubAgent = masterBus.subscribeDebounced(
+      'AGENT_UPDATED',
+      () => loadDashboardData(),
+      300
+    );
+    const unsubCredit = masterBus.subscribeDebounced(
+      'CREDIT_UPDATED',
+      () => loadDashboardData(),
+      300
+    );
     return () => {
       unsubWallet();
       unsubBalance();
+      unsubCashoutApproved();
+      unsubCashoutCancelled();
+      unsubCashoutReq();
+      unsubChips();
+      unsubAgent();
+      unsubCredit();
     };
   }, [clubId, user?.id]);
 

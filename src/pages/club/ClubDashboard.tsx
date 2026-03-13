@@ -27,6 +27,7 @@ import ClubMemberManagement from '../../components/admin/ClubMemberManagement';
 import { useVisibilityRefresh } from '../../hooks/useVisibilityRefresh';
 import { resolveClubIdFilter } from '../../utils/clubIdResolver';
 import { getClubLevel } from '../../utils/clubLevels';
+import ClubChat from '../../components/club/ClubChat';
 import styles from './ClubDashboard.module.css';
 
 interface ClubInfo {
@@ -589,6 +590,17 @@ export default function ClubDashboard() {
       </div>
 
       {clubId && <ClubBottomNav clubId={clubId} userRole={userRole} />}
+
+      {/* Club-Wide Chat Panel (floating, collapsible) */}
+      {clubId && user?.id && (
+        <div style={{ padding: '0 16px 80px', maxWidth: '100%' }}>
+          <ClubChat
+            clubId={clubId}
+            userId={user.id}
+            userName={user.display_name || user.username || 'Player'}
+          />
+        </div>
+      )}
     </div>
   );
 }

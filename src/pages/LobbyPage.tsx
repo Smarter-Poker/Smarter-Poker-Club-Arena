@@ -24,6 +24,8 @@ import { useToast } from '../components/common/Toast';
 import OnlineFriendsPill from '../components/social/OnlineFriendsPill';
 import PromotionCarousel from '../components/promotions/PromotionCarousel';
 import NotificationBell from '../components/common/NotificationBell';
+import { BBJBanner, BBJModal, useBBJ } from '../components/bbj/BBJDisplay';
+import LiveActionTicker from '../components/lobby/LiveActionTicker';
 type GameFilter = 'all' | 'nlh' | 'plo' | 'ofc' | 'tournaments' | 'favorites';
 
 export default function LobbyPage() {
@@ -37,6 +39,11 @@ export default function LobbyPage() {
   const [loading, setLoading] = useState(true);
   const [onlinePlayers, setOnlinePlayers] = useState(0);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Club ID for BBJ and LiveActionTicker
+  const [userClubId, setUserClubId] = useState<string | null>(null);
+  const [showBBJModal, setShowBBJModal] = useState(false);
+  const { bbjData } = useBBJ(userClubId);
 
   // Gamification overlays
   const [showDailyReward, setShowDailyReward] = useState(false);
@@ -175,6 +182,11 @@ export default function LobbyPage() {
           // User's club is in a union — redirect to union lobby
           navigate(`/unions/${unionClub.union_id}`, { replace: true });
           return;
+        }
+
+        // Store clubId for BBJ and LiveActionTicker
+        if (clubIds.length > 0 && isMounted.current) {
+          setUserClubId(clubIds[0]);
         }
       } catch (err) {
         if (!isMounted.current) return;
@@ -318,6 +330,14 @@ export default function LobbyPage() {
             <span>{totalPlaying} playing</span>
             <span className={styles.divider}>•</span>
             <span>{tables.length} tables</span>
+            {bbjData && bbjData.pool.amount > 0 && (
+              <>
+                <span className={styles.divider}>•</span>
+                <span style={{ color: '#FFD700', fontWeight: 700 }}>
+                  🏆 BBJ: {bbjData.pool.amount.toLocaleString()}
+                </span>
+              </>
+            )}
           </div>
         </div>
         <QuickActions />
@@ -390,6 +410,20 @@ export default function LobbyPage() {
 
       {/* Active Promotions Carousel */}
       <PromotionCarousel />
+
+      {/* BBJ Banner (clickable → opens modal) */}
+      {bbjData && bbjData.pool.amount > 0 && (
+        <div style={{ padding: '0 16px' }}>
+          <BBJBanner
+            amount={bbjData.pool.amount}
+            hourlyRate={bbjData.hourlyRate || 0}
+            onClick={() => setShowBBJModal(true)}
+          />
+        </div>
+      )}
+
+      {/* Live Action Ticker */}
+      <LiveActionTicker clubId={userClubId} />
 
       {/* Online Friends Quick-Invite */}
       {user?.id && (
@@ -582,6 +616,9 @@ export default function LobbyPage() {
           onClose={() => setShowLuckyWheel(false)}
         />
       )}
+
+      {/* BBJ Full Modal */}
+      {showBBJModal && <BBJModal data={bbjData} onClose={() => setShowBBJModal(false)} />}
     </div>
   );
 }

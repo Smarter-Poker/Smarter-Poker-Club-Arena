@@ -271,7 +271,8 @@ export type BusEventType =
   | 'TOURNAMENT_STARTED'
   | 'TOURNAMENT_COMPLETE'
   | 'ANTI_CHEAT_FLAG_CREATED'
-  | 'ANNOUNCEMENT_CREATED';
+  | 'ANNOUNCEMENT_CREATED'
+  | 'CREDIT_UPDATED';
 
 // #13: Type-safe payload map — compile-time enforcement of correct payloads
 export interface BusPayloadMap {
@@ -812,6 +813,7 @@ export interface BusPayloadMap {
   CASHIER_BALANCE_CHANGED: { clubId: string; balance?: number };
   AGENT_UPDATED: { clubId: string; agentId?: string };
   PLAYER_KICKED: { clubId: string; userId?: string };
+  CREDIT_UPDATED: { clubId: string; userId?: string; amount?: number };
   // Ported from World Hub: cross-page data mutation sync + chat badge sync
   DATA_MUTATED: { table: string; action: string; [key: string]: unknown };
   CHAT_MESSAGE_RECEIVED: {

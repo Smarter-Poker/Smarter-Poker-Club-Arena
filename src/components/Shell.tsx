@@ -13,6 +13,7 @@ import { notificationService } from '../services/NotificationService';
 import { supabase } from '../lib/supabase';
 import { VIPProvider, useVIPStatus } from '../hooks/useVIP';
 import { InAppAlerts, useAlerts } from './notifications/InAppAlerts';
+import { useClubTheme } from '../utils/clubThemeEngine';
 import './Shell.css';
 
 // VIP Badge Component
@@ -51,9 +52,20 @@ function ShellContent() {
   // Global alerts
   const { alerts, dismissAlert } = useAlerts();
 
+  // Club Theme Engine — apply per-club CSS custom properties
+  const { theme: clubTheme } = useClubTheme(null);
+
   // Sync Theme
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
+    // Apply club theme CSS variables
+    if (clubTheme) {
+      const root = document.documentElement;
+      root.style.setProperty('--club-bg', clubTheme.pageBg);
+      root.style.setProperty('--club-card-bg', clubTheme.cardBg);
+      root.style.setProperty('--club-primary', clubTheme.primary);
+      root.style.setProperty('--club-accent', clubTheme.accent);
+    }
   }, [theme]);
 
   // Real-time notifications

@@ -23,6 +23,7 @@ import { tableService } from '../services/TableService';
 import { useToast } from '../components/common/Toast';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import ClubBottomNav from '../components/club/ClubBottomNav';
+import MysteryBountyReveal from '../components/tournament/MysteryBountyReveal';
 
 type TournFilter = 'all' | 'freeroll' | 'micro' | 'highroller';
 
@@ -1094,6 +1095,9 @@ export default function TournamentPage() {
           }}
         />
       )}
+
+      {/* Mystery Bounty Reveal Overlay — auto-listens via masterBus */}
+      <MysteryBountyReveal />
 
       {/* Bottom Navigation */}
       {clubId && <ClubBottomNav clubId={clubId} />}

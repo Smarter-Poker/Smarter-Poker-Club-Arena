@@ -26,6 +26,8 @@ import PromotionCarousel from '../components/promotions/PromotionCarousel';
 import NotificationBell from '../components/common/NotificationBell';
 import { BBJBanner, BBJModal, useBBJ } from '../components/bbj/BBJDisplay';
 import LiveActionTicker from '../components/lobby/LiveActionTicker';
+import LobbyStatsBar from '../components/lobby/LobbyStatsBar';
+import CreateGameModal from '../components/lobby/CreateGameModal';
 type GameFilter = 'all' | 'nlh' | 'plo' | 'ofc' | 'tournaments' | 'favorites';
 
 export default function LobbyPage() {
@@ -39,6 +41,14 @@ export default function LobbyPage() {
   const [loading, setLoading] = useState(true);
   const [onlinePlayers, setOnlinePlayers] = useState(0);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Waitlist state (ported from WH lobby.js)
+  const [waitlistPositions, setWaitlistPositions] = useState<Record<string, number>>({});
+  const [waitlistProcessing, setWaitlistProcessing] = useState<string | null>(null);
+
+  // Admin table controls state
+  const [userRole, setUserRole] = useState<string | null>(null);
+  const [tableActionProcessing, setTableActionProcessing] = useState<string | null>(null);
 
   // Club ID for BBJ and LiveActionTicker
   const [userClubId, setUserClubId] = useState<string | null>(null);
@@ -54,6 +64,7 @@ export default function LobbyPage() {
   } | null>(null);
   const [showLuckyWheel, setShowLuckyWheel] = useState(false);
   const [canSpin, setCanSpin] = useState(false);
+  const [showCreateGame, setShowCreateGame] = useState(false);
   const [wheelStats, setWheelStats] = useState({ totalSpins: 0, streakMultiplier: 1 });
 
   // Favorite Tables (stored in localStorage)
@@ -155,6 +166,113 @@ export default function LobbyPage() {
       unsubEvents.forEach((unsub) => unsub());
     };
   }, [user?.id]);
+
+  // ── Detect user role for admin controls ──
+  useEffect(() => {
+    if (!user?.id || !userClubId) return;
+    (async () => {
+      try {
+        const { data: mem } = await supabase
+          .from('club_members')
+          .select('role')
+          .eq('user_id', user.id)
+          .eq('club_id', userClubId)
+          .maybeSingle();
+        if (isMounted.current && mem?.role) setUserRole(mem.role);
+      } catch {
+        /* non-critical */
+      }
+    })();
+  }, [user?.id, userClubId]);
+
+  // ── Waitlist position loader ──
+  const loadWaitlistPositions = async (tableIds: string[]) => {
+    if (!user?.id) return;
+    const positions: Record<string, number> = {};
+    for (const tid of tableIds) {
+      try {
+        const { data } = await supabase
+          .from('table_waitlist')
+          .select('position')
+          .eq('table_id', tid)
+          .eq('user_id', user.id)
+          .maybeSingle();
+        if (data?.position) positions[tid] = data.position;
+      } catch {
+        /* non-critical */
+      }
+    }
+    if (isMounted.current) setWaitlistPositions(positions);
+  };
+
+  // Load waitlist positions when tables change
+  useEffect(() => {
+    if (!user?.id || !tables.length) return;
+    const fullTables = tables.filter((t) => t.current_players >= (t.max_players || 9));
+    if (fullTables.length > 0) loadWaitlistPositions(fullTables.map((t) => t.id));
+  }, [tables, user?.id]);
+
+  // ── Waitlist Join/Leave handlers ──
+  const handleWaitlistJoin = async (tableId: string) => {
+    if (!user?.id) return;
+    setWaitlistProcessing(tableId);
+    try {
+      const { data, error: wErr } = await supabase
+        .from('table_waitlist')
+        .insert({ table_id: tableId, user_id: user.id })
+        .select('position')
+        .single();
+      if (wErr) throw wErr;
+      setWaitlistPositions((prev) => ({ ...prev, [tableId]: data?.position || 1 }));
+      masterBus.emit('WAITLIST_POSITION_CHANGED', {
+        tableId,
+        position: data?.position || 1,
+        tableName: '',
+      });
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to join waitlist');
+    } finally {
+      setWaitlistProcessing(null);
+    }
+  };
+
+  const handleWaitlistLeave = async (tableId: string) => {
+    if (!user?.id) return;
+    setWaitlistProcessing(tableId);
+    try {
+      await supabase.from('table_waitlist').delete().eq('table_id', tableId).eq('user_id', user.id);
+      setWaitlistPositions((prev) => {
+        const n = { ...prev };
+        delete n[tableId];
+        return n;
+      });
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to leave waitlist');
+    } finally {
+      setWaitlistProcessing(null);
+    }
+  };
+
+  // ── Admin Table Actions ──
+  const isAdmin = userRole === 'owner' || userRole === 'admin';
+  const handleTableAction = async (tableId: string, action: 'pause' | 'resume' | 'close') => {
+    setTableActionProcessing(tableId);
+    try {
+      const statusMap: Record<string, string> = {
+        pause: 'paused',
+        resume: 'active',
+        close: 'closed',
+      };
+      await supabase.from('tables').update({ status: statusMap[action] }).eq('id', tableId);
+      if (action === 'close') {
+        masterBus.emit('TABLE_CLOSED', { tableId, clubId: userClubId || undefined });
+      }
+    } catch (err: any) {
+      toast.error(err.message || `Failed to ${action} table`);
+    } finally {
+      setTableActionProcessing(null);
+    }
+  };
 
   // UNION-FIRST: Check if user belongs to a union and redirect to union lobby
   useEffect(() => {
@@ -541,6 +659,156 @@ export default function LobbyPage() {
                   />
                 )}
                 <TableCard table={table} />
+
+                {/* Waitlist controls for full tables */}
+                {table.current_players >= (table.max_players || 9) && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      bottom: 8,
+                      left: 8,
+                      right: 8,
+                      zIndex: 10,
+                      display: 'flex',
+                      justifyContent: 'center',
+                      gap: 6,
+                    }}
+                  >
+                    {waitlistPositions[table.id] ? (
+                      <>
+                        <span
+                          style={{
+                            fontSize: '11px',
+                            color: '#F5A623',
+                            fontWeight: 600,
+                            padding: '4px 8px',
+                            background: 'rgba(245,166,35,0.15)',
+                            borderRadius: 6,
+                          }}
+                        >
+                          📋 #{waitlistPositions[table.id]}
+                        </span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            handleWaitlistLeave(table.id);
+                          }}
+                          disabled={waitlistProcessing === table.id}
+                          style={{
+                            fontSize: '10px',
+                            padding: '3px 8px',
+                            borderRadius: 6,
+                            background: 'rgba(250,56,62,0.15)',
+                            border: '1px solid rgba(250,56,62,0.3)',
+                            color: '#FA383E',
+                            cursor: 'pointer',
+                            fontWeight: 600,
+                          }}
+                        >
+                          {waitlistProcessing === table.id ? '...' : '✕ Leave'}
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          handleWaitlistJoin(table.id);
+                        }}
+                        disabled={waitlistProcessing === table.id}
+                        style={{
+                          fontSize: '10px',
+                          padding: '3px 10px',
+                          borderRadius: 6,
+                          background: 'rgba(49,162,76,0.15)',
+                          border: '1px solid rgba(49,162,76,0.3)',
+                          color: '#31A24C',
+                          cursor: 'pointer',
+                          fontWeight: 600,
+                        }}
+                      >
+                        {waitlistProcessing === table.id ? 'Joining...' : '📋 Join Waitlist'}
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* Admin table controls (owner/admin only) */}
+                {isAdmin && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: 36,
+                      right: 8,
+                      zIndex: 10,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 3,
+                    }}
+                  >
+                    {(table as any).status !== 'paused' ? (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleTableAction(table.id, 'pause');
+                        }}
+                        disabled={tableActionProcessing === table.id}
+                        style={{
+                          fontSize: '9px',
+                          padding: '2px 6px',
+                          borderRadius: 4,
+                          background: 'rgba(245,166,35,0.15)',
+                          border: '1px solid rgba(245,166,35,0.25)',
+                          color: '#F5A623',
+                          cursor: 'pointer',
+                          fontWeight: 600,
+                        }}
+                      >
+                        {tableActionProcessing === table.id ? '...' : '⏸'}
+                      </button>
+                    ) : (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleTableAction(table.id, 'resume');
+                        }}
+                        disabled={tableActionProcessing === table.id}
+                        style={{
+                          fontSize: '9px',
+                          padding: '2px 6px',
+                          borderRadius: 4,
+                          background: 'rgba(49,162,76,0.15)',
+                          border: '1px solid rgba(49,162,76,0.25)',
+                          color: '#31A24C',
+                          cursor: 'pointer',
+                          fontWeight: 600,
+                        }}
+                      >
+                        {tableActionProcessing === table.id ? '...' : '▶'}
+                      </button>
+                    )}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleTableAction(table.id, 'close');
+                      }}
+                      disabled={tableActionProcessing === table.id}
+                      style={{
+                        fontSize: '9px',
+                        padding: '2px 6px',
+                        borderRadius: 4,
+                        background: 'rgba(250,56,62,0.1)',
+                        border: '1px solid rgba(250,56,62,0.2)',
+                        color: '#FA383E',
+                        cursor: 'pointer',
+                        fontWeight: 600,
+                      }}
+                    >
+                      {tableActionProcessing === table.id ? '...' : '✕'}
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -619,6 +887,15 @@ export default function LobbyPage() {
 
       {/* BBJ Full Modal */}
       {showBBJModal && <BBJModal data={bbjData} onClose={() => setShowBBJModal(false)} />}
+
+      {/* Create Game Modal (unified table + tournament creation) */}
+      {showCreateGame && userClubId && (
+        <CreateGameModal
+          clubId={userClubId}
+          onClose={() => setShowCreateGame(false)}
+          onCreated={() => setShowCreateGame(false)}
+        />
+      )}
     </div>
   );
 }

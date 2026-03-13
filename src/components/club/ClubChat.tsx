@@ -10,6 +10,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
+import { masterBus } from '../../core/MasterBus';
 
 const FB = {
   bg: '#1c1c1e',
@@ -105,6 +106,16 @@ export default function ClubChat({ clubId, userId, userName }: ClubChatProps) {
           const newMsg = payload.new as ClubChatMessage;
           setMessages((prev) => [...prev.slice(-99), newMsg]);
           if (!expanded) setUnread((prev) => prev + 1);
+          // Notify other components about incoming chat
+          try {
+            masterBus.emit('CHAT_MESSAGE_RECEIVED', {
+              clubId,
+              senderId: newMsg.user_id,
+              message: newMsg.message,
+            });
+          } catch {
+            /* silent */
+          }
         }
       )
       .subscribe();

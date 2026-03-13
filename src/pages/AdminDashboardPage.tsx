@@ -15,6 +15,7 @@ import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import ArenaLedger from '../components/admin/ArenaLedger';
+import AdminTableHeatmap from '../components/admin/AdminTableHeatmap';
 import './AdminDashboardPage.css';
 
 // ── Helpers ─────────────────────────────────────────────────
@@ -2207,7 +2208,17 @@ export default function AdminDashboardPage() {
         {activeTab === 'recommendations' && <RecommendationsTab clubId={clubId} />}
         {activeTab === 'announcements' && <AnnouncementsTab clubId={clubId} />}
         {activeTab === 'templates' && <TemplatesTab clubId={clubId} />}
-        {activeTab === 'analytics' && <AnalyticsTab clubId={clubId} />}
+        {activeTab === 'analytics' && (
+          <>
+            <AnalyticsTab clubId={clubId} />
+            <div style={{ marginTop: '24px' }}>
+              <h3 style={{ color: 'var(--text-primary)', marginBottom: '12px' }}>
+                🗺️ Table Heatmap — God View
+              </h3>
+              <AdminTableHeatmap clubId={clubId} />
+            </div>
+          </>
+        )}
         {activeTab === 'mint' && <MintChipsTab clubId={clubId} />}
         {activeTab === 'settings' && <SettingsTab clubId={clubId} />}
       </div>

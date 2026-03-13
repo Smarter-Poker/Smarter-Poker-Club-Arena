@@ -252,7 +252,18 @@ export type BusEventType =
   // Session lifecycle
   | 'SESSION_ENDED'
   // Table creation event
-  | 'TABLE_CREATED';
+  | 'TABLE_CREATED'
+  // Table lifecycle admin events
+  | 'TABLE_DELETED'
+  | 'TABLE_CLOSED'
+  // Cross-page coordination events (ported from World Hub native pages)
+  | 'CHIPS_DISTRIBUTED'
+  | 'CASHOUT_REQUESTED'
+  | 'CASHOUT_APPROVED'
+  | 'CASHOUT_CANCELLED'
+  | 'CASHIER_BALANCE_CHANGED'
+  | 'AGENT_UPDATED'
+  | 'PLAYER_KICKED';
 
 // #13: Type-safe payload map — compile-time enforcement of correct payloads
 export interface BusPayloadMap {
@@ -782,6 +793,17 @@ export interface BusPayloadMap {
   SESSION_ENDED: { tableId: string; sessionId?: string; userId?: string };
   // Table creation
   TABLE_CREATED: { tableId: string; clubId?: string; table?: Record<string, unknown> };
+  // Table lifecycle admin events
+  TABLE_DELETED: { tableId: string; clubId?: string };
+  TABLE_CLOSED: { tableId: string; clubId?: string };
+  // Cross-page coordination events (ported from World Hub native pages)
+  CHIPS_DISTRIBUTED: { clubId: string; amount?: number; userId?: string };
+  CASHOUT_REQUESTED: { clubId: string; amount?: number; userId?: string };
+  CASHOUT_APPROVED: { cashoutId: string; clubId: string };
+  CASHOUT_CANCELLED: { cashoutId: string; clubId: string };
+  CASHIER_BALANCE_CHANGED: { clubId: string; balance?: number };
+  AGENT_UPDATED: { clubId: string; agentId?: string };
+  PLAYER_KICKED: { clubId: string; userId?: string };
 }
 
 export interface BusEvent<T = unknown> {

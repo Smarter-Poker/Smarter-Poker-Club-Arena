@@ -432,35 +432,117 @@ class TableService {
 
   /**
    * Pause a running table (stops new hands from being dealt)
+   * Uses atomic conditional update — only pauses if currently running/active
    */
   async pauseTable(tableId: string): Promise<boolean> {
-    const { error } = await supabase
+    const { data: updated, error } = await supabase
       .from('tables')
-      .update({ status: 'paused' })
+      .update({ status: 'paused', updated_at: new Date().toISOString() })
       .eq('id', tableId)
-      .in('status', ['running', 'waiting']);
+      .in('status', ['running', 'active', 'waiting'])
+      .select('id')
+      .maybeSingle();
 
     if (error) {
       console.error('[TableService] Error pausing table:', error);
       return false;
     }
+    if (!updated) {
+      console.warn('[TableService] Pause conflict — table status already changed');
+      return false;
+    }
+    masterBus.emit('TABLE_UPDATED', { tableId, status: 'paused' });
     return true;
   }
 
   /**
    * Resume a paused table
+   * Uses atomic conditional update — only resumes if currently paused
    */
   async resumeTable(tableId: string): Promise<boolean> {
-    const { error } = await supabase
+    const { data: updated, error } = await supabase
       .from('tables')
-      .update({ status: 'running' })
+      .update({ status: 'running', updated_at: new Date().toISOString() })
       .eq('id', tableId)
-      .eq('status', 'paused');
+      .eq('status', 'paused')
+      .select('id')
+      .maybeSingle();
 
     if (error) {
       console.error('[TableService] Error resuming table:', error);
       return false;
     }
+    if (!updated) {
+      console.warn('[TableService] Resume conflict — table is not paused');
+      return false;
+    }
+    masterBus.emit('TABLE_UPDATED', { tableId, status: 'running' });
+    return true;
+  }
+
+  /**
+   * Delete a table — marks as deleted + decrements club table count
+   * Blocks deletion of running/active tables (must close first)
+   */
+  async deleteTable(tableId: string, clubId: string): Promise<boolean> {
+    // Pre-check: get current status
+    const table = await this.getTable(tableId);
+    if (!table) {
+      console.error('[TableService] Table not found for delete');
+      return false;
+    }
+    if (['running', 'active'].includes(table.status)) {
+      console.error('[TableService] Cannot delete running/active table — close first');
+      return false;
+    }
+    if (table.status === 'deleted') {
+      return true; // already deleted
+    }
+
+    // Atomic conditional update
+    const { data: updated, error } = await supabase
+      .from('tables')
+      .update({ status: 'deleted', is_deleted: true, updated_at: new Date().toISOString() })
+      .eq('id', tableId)
+      .in('status', ['waiting', 'paused', 'closed'])
+      .select('id')
+      .maybeSingle();
+
+    if (error) {
+      console.error('[TableService] Error deleting table:', error);
+      return false;
+    }
+    if (!updated) {
+      console.warn('[TableService] Delete conflict — table status changed concurrently');
+      return false;
+    }
+
+    // Decrement club table count (fire-and-forget)
+    (async () => {
+      try {
+        const { error: rpcErr } = await supabase.rpc('decrement_club_table_count', {
+          p_club_id: clubId,
+        });
+        if (rpcErr) {
+          // Fallback: manual decrement
+          const { data: club } = await supabase
+            .from('clubs')
+            .select('table_count')
+            .eq('id', clubId)
+            .maybeSingle();
+          if (club) {
+            await supabase
+              .from('clubs')
+              .update({ table_count: Math.max(0, (club.table_count || 1) - 1) })
+              .eq('id', clubId);
+          }
+        }
+      } catch {
+        // Silent — fire-and-forget
+      }
+    })();
+
+    masterBus.emit('TABLE_DELETED', { tableId, clubId });
     return true;
   }
 

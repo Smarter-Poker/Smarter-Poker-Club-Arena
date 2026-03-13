@@ -111,7 +111,7 @@ export type GameVariant =
   | 'short_deck'
   | 'ofc'
   | 'ofc_pineapple';
-export type TableStatus = 'waiting' | 'running' | 'paused' | 'closed';
+export type TableStatus = 'waiting' | 'running' | 'active' | 'paused' | 'closed' | 'deleted';
 
 export interface TableSettings {
   // ── Core Features ──

@@ -239,7 +239,18 @@ export default function RakebackPage() {
         .update({ status: 'paid' })
         .in('id', pendingIds);
 
-      if (updateError) console.warn('[Rakeback] Period status update failed:', updateError.message);
+      if (updateError) {
+        // Credit succeeded but period marking failed — surface error to prevent confusion
+        // The chips are already credited, but user might see stale "pending" status
+        console.error('[Rakeback] Period status update failed:', updateError.message);
+        setClaimStatus('success');
+        setClaimMessage(
+          `Claimed ${totalToClaim.toLocaleString()} chips! (Status update pending — please refresh)`
+        );
+        loadRakebackData();
+        masterBus.emit('WALLET_REFRESHED', { walletType: 'PLAYER', available: 0, total: 0 });
+        return;
+      }
 
       setClaimStatus('success');
       setClaimMessage(`Claimed ${totalToClaim.toLocaleString()} chips!`);

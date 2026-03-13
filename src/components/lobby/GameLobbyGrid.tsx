@@ -58,21 +58,35 @@ function matchesTab(game: GameRow, tabId: string): boolean {
       return gt === 'spin' || v === 'spin';
     case 'sng':
       return gt === 'sng';
+    // New tab logic based on the provided diff's TABS array
+    case 'cash':
+      return (gt === 'cash' || gt === 'ring') && !['mtt', 'sng', 'spin'].includes(gt);
+    case 'tourn':
+      return gt === 'mtt' || gt === 'tournament';
     default:
       return true;
   }
 }
 
-function sortGames(games: GameRow[]): GameRow[] {
-  return [...games].sort((a, b) => {
-    const aActive = a.status === 'active' ? 1 : 0;
-    const bActive = b.status === 'active' ? 1 : 0;
-    if (bActive !== aActive) return bActive - aActive;
-    const aPlayers = a.current_players ?? a.registered_count ?? 0;
-    const bPlayers = b.current_players ?? b.registered_count ?? 0;
-    return bPlayers - aPlayers;
+function sortGames(games: GameRow[]) {
+  return games.sort((a, b) => {
+    const statusOrder = { running: 0, active: 0, waiting: 1, REGISTERING: 1, RUNNING: 0 };
+    const sa = (statusOrder as any)[a.status || ''] ?? 2;
+    const sb = (statusOrder as any)[b.status || ''] ?? 2;
+    if (sa !== sb) return sa - sb;
+    return (
+      (b.current_players || b.registered_count || 0) -
+      (a.current_players || a.registered_count || 0)
+    );
   });
 }
+
+const TABS = [
+  { key: 'all', label: '♠ All' },
+  { key: 'cash', label: '💰 Cash' },
+  { key: 'tourn', label: '🏆 MTT' },
+  { key: 'sng', label: '⚡ SNG' },
+];
 
 interface GameLobbyGridProps {
   clubId: string;
@@ -80,12 +94,18 @@ interface GameLobbyGridProps {
   pollMs?: number;
 }
 
-export default function GameLobbyGrid({ clubId, onGamePress, pollMs = 15000 }: GameLobbyGridProps) {
+export default function GameLobbyGrid({ clubId, onGamePress }: GameLobbyGridProps) {
   const [activeTab, setActiveTab] = useState('all');
   const [games, setGames] = useState<GameRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const isMounted = useRef(true);
+
+  useEffect(() => {
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
 
   const loadGames = useCallback(async () => {
     if (!clubId) return;
@@ -96,22 +116,65 @@ export default function GameLobbyGrid({ clubId, onGamePress, pollMs = 15000 }: G
       ]);
       const tables = tablesRes.data || [];
       const tournaments = tourneysRes.data || [];
-      setGames(sortGames([...tables, ...tournaments]));
-      setError(null);
+      if (isMounted.current) {
+        setGames(sortGames([...tables, ...tournaments]));
+        setError(null);
+      }
     } catch (e: any) {
-      setError(e.message || 'Failed to load games');
+      if (isMounted.current) setError(e.message || 'Failed to load games');
     } finally {
-      setLoading(false);
+      if (isMounted.current) setLoading(false);
     }
   }, [clubId]);
 
+  // Initial load + realtime subscriptions
   useEffect(() => {
     loadGames();
-    pollRef.current = setInterval(loadGames, pollMs);
+
+    // Realtime: postgres_changes for tables + tournaments
+    const channelKey = `game-grid-${clubId}`;
+    const channel = masterBus.getOrCreateChannel(channelKey);
+    channel
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'tables',
+          filter: `club_id=eq.${clubId}`,
+        },
+        () => {
+          loadGames();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'tournaments',
+          filter: `club_id=eq.${clubId}`,
+        },
+        () => {
+          loadGames();
+        }
+      )
+      .subscribe();
+
+    // MasterBus listeners for cross-page events
+    const unsubs = [
+      masterBus.subscribeDebounced('TABLE_CREATED', loadGames, 500),
+      masterBus.subscribeDebounced('TABLE_UPDATED', loadGames, 500),
+      masterBus.subscribeDebounced('TABLE_DELETED', loadGames, 500),
+      masterBus.subscribeDebounced('TOURNAMENT_UPDATED', loadGames, 500),
+      masterBus.subscribeDebounced('CHIPS_DISTRIBUTED', loadGames, 500),
+    ];
+
     return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
+      masterBus.removeRegisteredChannel(channelKey);
+      unsubs.forEach((u) => u());
     };
-  }, [loadGames, pollMs]);
+  }, [loadGames, clubId]);
 
   const visible = games.filter((g) => matchesTab(g, activeTab));
   const countForTab = (id: string) =>

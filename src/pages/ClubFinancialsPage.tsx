@@ -67,6 +67,27 @@ export default function ClubFinancialsPage() {
     if (clubId) loadFinancials();
   }, [clubId, period]);
 
+  // Hydrate userRole from club_members so DynamicWallet/BottomNav show correct variant
+  useEffect(() => {
+    if (!clubId || !user?.id) return;
+    (async () => {
+      try {
+        const resolvedId = await resolveClubUUID(clubId);
+        const { data } = await supabase
+          .from('club_members')
+          .select('role')
+          .eq('club_id', resolvedId)
+          .eq('user_id', user.id)
+          .maybeSingle();
+        if (data?.role && isMounted.current) {
+          setUserRole(data.role as 'owner' | 'admin' | 'agent' | 'member');
+        }
+      } catch {
+        // Non-blocking — default to 'member'
+      }
+    })();
+  }, [clubId, user?.id]);
+
   // Stagger animation for transactions
   useEffect(() => {
     if (transactions.length === 0) return;

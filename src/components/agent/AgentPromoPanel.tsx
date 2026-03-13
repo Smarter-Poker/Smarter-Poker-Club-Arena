@@ -172,6 +172,7 @@ export default function AgentPromoPanel({
 
       showToast(`🎉 ${amt.toLocaleString()} promo chips sent!`);
       masterBus.emit('DATA_MUTATED', { table: 'agents', action: 'promo_distributed' });
+      masterBus.emit('BALANCE_UPDATED', { source: 'promo_distributed', userId: selectedPlayer });
       if (isMounted.current) {
         setAmount('');
         setSelectedPlayer(null);

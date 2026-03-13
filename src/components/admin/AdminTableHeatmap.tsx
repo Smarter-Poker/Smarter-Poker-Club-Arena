@@ -7,7 +7,9 @@
  * Supports 3 view modes: Density, Stakes, Variant
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { supabase } from '../../lib/supabase';
+import { masterBus } from '../../core/MasterBus';
 
 interface TableRow {
   id: string;
@@ -46,8 +48,76 @@ interface AdminTableHeatmapProps {
 
 type ViewMode = 'density' | 'stakes' | 'variant';
 
-export default function AdminTableHeatmap({ tables = [], onAction }: AdminTableHeatmapProps) {
+export default function AdminTableHeatmap({
+  clubId,
+  tables: propTables,
+  onAction,
+}: AdminTableHeatmapProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('density');
+  const [fetchedTables, setFetchedTables] = useState<TableRow[]>([]);
+  const isMounted = useRef(true);
+
+  // Self-fetch tables when clubId is provided but tables prop is not
+  useEffect(() => {
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (propTables && propTables.length > 0) return; // Use prop data if provided
+    if (!clubId) return;
+
+    const fetchTables = async () => {
+      try {
+        const { data } = await supabase
+          .from('tables')
+          .select(
+            'id, name, status, current_players, max_players, small_blind, big_blind, game_variant'
+          )
+          .eq('club_id', clubId)
+          .eq('is_deleted', false);
+        if (isMounted.current && data) setFetchedTables(data);
+      } catch {
+        /* silent */
+      }
+    };
+
+    fetchTables();
+
+    // Realtime subscription for live updates
+    const channelKey = `heatmap-${clubId}`;
+    const channel = masterBus.getOrCreateChannel(channelKey);
+    channel
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'tables',
+          filter: `club_id=eq.${clubId}`,
+        },
+        () => {
+          fetchTables(); // Re-fetch on any change
+        }
+      )
+      .subscribe();
+
+    // Bus listeners for cross-page events
+    const unsubs = [
+      masterBus.subscribeDebounced('TABLE_CREATED', fetchTables, 500),
+      masterBus.subscribeDebounced('TABLE_UPDATED', fetchTables, 500),
+      masterBus.subscribeDebounced('TABLE_DELETED', fetchTables, 500),
+      masterBus.subscribeDebounced('TABLE_CLOSED', fetchTables, 500),
+    ];
+
+    return () => {
+      masterBus.removeRegisteredChannel(channelKey);
+      unsubs.forEach((u) => u());
+    };
+  }, [clubId, propTables]);
+
+  const tables = propTables && propTables.length > 0 ? propTables : fetchedTables;
 
   if (!tables || tables.length === 0) {
     return (

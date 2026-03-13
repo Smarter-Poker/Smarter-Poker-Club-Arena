@@ -196,6 +196,9 @@ function DashboardTab({ clubId }: { clubId: string }) {
   useEffect(() => {
     const unsubs = [
       masterBus.subscribe('TABLE_CREATED', load),
+      masterBus.subscribe('TABLE_UPDATED', load),
+      masterBus.subscribe('TABLE_DELETED', load),
+      masterBus.subscribe('TABLE_CLOSED', load),
       masterBus.subscribe('CHIPS_DISTRIBUTED', load),
       masterBus.subscribe('AGENT_UPDATED', load),
       masterBus.subscribe('ANNOUNCEMENT_CHANGED', load),
@@ -204,6 +207,10 @@ function DashboardTab({ clubId }: { clubId: string }) {
       masterBus.subscribe('CREDIT_UPDATED', load),
       masterBus.subscribe('CASHOUT_REQUESTED', load),
       masterBus.subscribe('CASHOUT_APPROVED', load),
+      masterBus.subscribe('BALANCE_UPDATED', load),
+      masterBus.subscribe('TOURNAMENT_REGISTERED', load),
+      masterBus.subscribe('TOURNAMENT_STARTED', load),
+      masterBus.subscribe('TOURNAMENT_COMPLETE', load),
     ];
     return () => unsubs.forEach((u) => u());
   }, [load]);

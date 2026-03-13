@@ -356,31 +356,28 @@ export default function ClubHomePage() {
         if (getIsMounted && !getIsMounted()) return;
         setIsOwner(clubData.owner_id === authUser.id);
 
-        // Load user's wallet and role for this club
-        // resolvedId is the UUID from clubs query — clubId from URL may be integer
-        const { data: memberData } = await supabase
-          .from('club_members')
-          .select('chip_balance, role')
-          .eq('club_id', resolvedId)
-          .eq('user_id', authUser.id)
-          .maybeSingle();
-
-        if (memberData) {
-          // Load diamond balance from diamond_wallets table
-          let diamondBal = 0;
-          const { data: diamondData } = await supabase
+        // ── Batch: member data + diamond wallet in parallel ──
+        const [memberResult, diamondResult] = await Promise.all([
+          supabase
+            .from('club_members')
+            .select('chip_balance, role')
+            .eq('club_id', resolvedId)
+            .eq('user_id', authUser.id)
+            .maybeSingle(),
+          supabase
             .from('diamond_wallets')
             .select('balance')
             .eq('user_id', authUser.id)
-            .maybeSingle();
-          if (diamondData) diamondBal = diamondData.balance || 0;
+            .maybeSingle(),
+        ]);
 
+        if (memberResult.data) {
           if (getIsMounted && !getIsMounted()) return;
           setWallet({
-            gold: memberData.chip_balance || 0,
-            diamonds: diamondBal,
+            gold: memberResult.data.chip_balance || 0,
+            diamonds: diamondResult.data?.balance || 0,
           });
-          setUserRole(memberData.role || 'member');
+          setUserRole(memberResult.data.role || 'member');
         }
       }
 
@@ -398,101 +395,112 @@ export default function ClubHomePage() {
           setIsInUnion(true);
           unionId = ucRow.union_id;
 
-          // Get ALL club IDs in this union for aggregated queries
-          const { data: allUcRows } = await supabase
-            .from('union_clubs')
-            .select('club_id')
-            .eq('union_id', unionId);
-          if (allUcRows && allUcRows.length > 0) {
-            unionClubIds = allUcRows.map((r) => r.club_id);
-          }
-
-          // Aggregate member counts across ALL union clubs
-          try {
-            const { count: totalMembers } = await supabase
+          // Get ALL club IDs in this union + member count in parallel
+          const [allUcResult, memberCountResult] = await Promise.all([
+            supabase.from('union_clubs').select('club_id').eq('union_id', unionId),
+            supabase
               .from('club_members')
               .select('*', { count: 'exact', head: true })
-              .in('club_id', unionClubIds)
-              .in('status', ['active', 'approved']);
+              .eq('club_id', resolvedId) // Will be updated below if union has multiple clubs
+              .in('status', ['active', 'approved']),
+          ]);
 
-            // No need to query `is_online` on club_members since the column is on profiles.
+          if (allUcResult.data && allUcResult.data.length > 0) {
+            unionClubIds = allUcResult.data.map((r) => r.club_id);
 
-            // Override club display with union-wide aggregated counts
-            setClub((prev) =>
-              prev
-                ? {
-                    ...prev,
-                    member_count: totalMembers || prev.member_count || 0,
-                  }
-                : prev
-            );
-          } catch {
-            // is_online column may not exist — fall back to club-level counts
+            // If union has multiple clubs, re-query with all club IDs
+            if (unionClubIds.length > 1) {
+              try {
+                const { count: totalMembers } = await supabase
+                  .from('club_members')
+                  .select('*', { count: 'exact', head: true })
+                  .in('club_id', unionClubIds)
+                  .in('status', ['active', 'approved']);
+
+                setClub((prev) =>
+                  prev ? { ...prev, member_count: totalMembers || prev.member_count || 0 } : prev
+                );
+              } catch {
+                // Fall back to club-level counts
+              }
+            } else {
+              // Single club — use the result from the parallel batch
+              if (memberCountResult.count != null) {
+                setClub((prev) =>
+                  prev
+                    ? { ...prev, member_count: memberCountResult.count || prev.member_count || 0 }
+                    : prev
+                );
+              }
+            }
           }
         }
       } catch {
         // Query error — fail-open for standalone clubs
       }
 
-      // Load tables — union clubs get ALL union member tables
-      const { data: tableData } = await supabase
-        .from('tables')
-        .select('*')
-        .in('club_id', unionClubIds)
-        .eq('is_deleted', false)
-        .order('created_at', { ascending: false });
-
-      if (tableData) {
-        if (getIsMounted && !getIsMounted()) return;
-        setTables(tableData);
-      }
-
-      // Load tournaments — union clubs get ALL union member tournaments + XMTT
-      let allTournaments: TournamentData[] = [];
-
-      // Club/union member tournaments
-      const { data: clubTournamentData } = await supabase
-        .from('tournaments')
-        .select('*')
-        .in('club_id', unionClubIds)
-        .neq('status', 'COMPLETED')
-        .order('start_time', { ascending: true });
-
-      if (clubTournamentData) {
-        allTournaments = [...clubTournamentData];
-      }
-
-      // If in union, also fetch XMTT (union-wide) tournaments
-      if (unionId) {
-        const { data: xmttData } = await supabase
+      // ── Batch: tables + tournaments + BBJ in parallel ──
+      const [tableResult, clubTournamentResult, bbjResult, ...xmttResults] = await Promise.all([
+        supabase
+          .from('tables')
+          .select('*')
+          .in('club_id', unionClubIds)
+          .eq('is_deleted', false)
+          .order('created_at', { ascending: false }),
+        supabase
           .from('tournaments')
           .select('*')
-          .eq('union_id', unionId)
-          .eq('is_xmtt', true)
+          .in('club_id', unionClubIds)
           .neq('status', 'COMPLETED')
-          .order('start_time', { ascending: true });
+          .order('start_time', { ascending: true }),
+        (async () => {
+          try {
+            return await supabase.from('bbj_pools').select('main_balance').limit(1).maybeSingle();
+          } catch {
+            return { data: null, error: null };
+          }
+        })(),
+        // Conditionally fetch XMTT tournaments if in a union
+        ...(unionId
+          ? [
+              supabase
+                .from('tournaments')
+                .select('*')
+                .eq('union_id', unionId)
+                .eq('is_xmtt', true)
+                .neq('status', 'COMPLETED')
+                .order('start_time', { ascending: true }),
+            ]
+          : []),
+      ]);
 
-        if (xmttData) {
-          // Merge and deduplicate by id
-          const existingIds = new Set(allTournaments.map((t) => t.id));
-          for (const xmtt of xmttData) {
-            if (!existingIds.has(xmtt.id)) {
-              allTournaments.push(xmtt);
-            }
+      if (getIsMounted && !getIsMounted()) return;
+
+      const tableData = tableResult.data;
+      if (tableData) setTables(tableData);
+
+      // Merge club tournaments + XMTT tournaments
+      const allTournaments: TournamentData[] = clubTournamentResult.data
+        ? [...clubTournamentResult.data]
+        : [];
+      if (xmttResults.length > 0 && xmttResults[0]?.data) {
+        const existingIds = new Set(allTournaments.map((t) => t.id));
+        for (const xmtt of xmttResults[0].data) {
+          if (!existingIds.has(xmtt.id)) {
+            allTournaments.push(xmtt);
           }
         }
       }
-
-      if (getIsMounted && !getIsMounted()) return;
       setTournaments(allTournaments);
+
+      // BBJ jackpot
+      if (bbjResult?.data && !(bbjResult as any).error) {
+        setJackpotAmount((bbjResult.data as any)?.main_balance || 0);
+      }
 
       // Calculate Club Level from live metrics
       const activeTables = tableData
-        ? tableData.filter((t) => t.status === 'running' || t.current_players > 0).length
-        : 0;
-      const tournamentsHosted = allTournaments.length;
-      const clubAgeDays = clubData.created_at
-        ? Math.floor((Date.now() - new Date(clubData.created_at).getTime()) / 86400000)
+        ? tableData.filter((t: any) => t.status === 'running' || t.current_players > 0).length
         : 0;
 
       const levelInfo = getClubLevel({
@@ -506,21 +514,6 @@ export default function ClubHomePage() {
       });
       if (getIsMounted && !getIsMounted()) return;
       setClubLevel(levelInfo);
-
-      // Load BBJ amount (bbj_pools table may not exist yet — graceful fallback)
-      try {
-        const { data: bbjData, error: bbjError } = await supabase
-          .from('bbj_pools')
-          .select('main_balance')
-          .limit(1)
-          .maybeSingle();
-
-        if (!bbjError && bbjData) {
-          setJackpotAmount(bbjData.main_balance || 0);
-        }
-      } catch {
-        // BBJ table doesn't exist yet — show 0
-      }
     } catch (error: any) {
       console.error('Error loading club data:', error);
       toast.error(error.message || 'Failed to load club data');

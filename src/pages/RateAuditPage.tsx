@@ -38,6 +38,7 @@ export default function RateAuditPage() {
   const [changes, setChanges] = useState<RateChange[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<FilterType>('all');
+  const [dateRange, setDateRange] = useState<'all' | '7d' | '30d' | '90d'>('all');
   const [visibleRows, setVisibleRows] = useState<Set<number>>(new Set());
 
   useEffect(() => {
@@ -155,10 +156,18 @@ export default function RateAuditPage() {
     setLoading(false);
   };
 
-  const filtered = useMemo(() => {
-    if (filter === 'all') return changes;
-    return changes.filter((c) => c.source === filter);
-  }, [changes, filter]);
+  const getDateCutoff = (): number => {
+    if (dateRange === '7d') return Date.now() - 7 * 86400000;
+    if (dateRange === '30d') return Date.now() - 30 * 86400000;
+    if (dateRange === '90d') return Date.now() - 90 * 86400000;
+    return 0; // 'all'
+  };
+
+  const filteredByType = filter === 'all' ? changes : changes.filter((c) => c.source === filter);
+  const filtered =
+    dateRange === 'all'
+      ? filteredByType
+      : filteredByType.filter((c) => new Date(c.createdAt).getTime() >= getDateCutoff());
 
   const formatRate = (rate: number, source: string): string => {
     if (source === 'rake') return `${(rate * 10000).toFixed(1)}‱`; // basis points for rake

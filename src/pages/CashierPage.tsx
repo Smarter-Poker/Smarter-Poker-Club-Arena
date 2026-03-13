@@ -18,12 +18,12 @@
  *  Every single chip transaction is recorded with full audit trail.
  */
 
-import { useState, useEffect, useCallback, useMemo, useRef, ReactNode } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams, useParams } from 'react-router-dom';
 import { masterBus } from '../core/MasterBus';
 import { useWalletStore } from '../stores/useWalletStore';
 import { useAuthUser } from '../hooks/useAuthUser';
-import { WalletService } from '../services/WalletService';
+import { WalletService as _WalletService } from '../services/WalletService';
 import { ChipFlowService } from '../services/ChipFlowService';
 import { cashoutService } from '../services/CashoutService';
 import { supabase } from '../lib/supabase';
@@ -36,6 +36,7 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { resolveClubIdFilter, resolveClubUUID } from '../utils/clubIdResolver';
 import { checkSettlementLock } from '../utils/settlementLock';
 import AgentPromoPanel from '../components/agent/AgentPromoPanel';
+import CashoutRequestModal from '../components/wallet/CashoutRequestModal';
 import './CashierPage.css';
 
 type CashierAction = 'send' | 'buyin' | 'cashout' | 'mint' | 'history';
@@ -145,9 +146,10 @@ export default function CashierPage() {
     type: 'success' | 'error' | 'info';
     text: string;
   } | null>(null);
-  const [recipientsLoading, setRecipientsLoading] = useState(false);
+  const [_recipientsLoading, setRecipientsLoading] = useState(false);
   const [cashoutConfirm, setCashoutConfirm] = useState({ show: false, value: 0 });
-  const [recipientConfirm, setRecipientConfirm] = useState<{
+  const [showCashoutModal, setShowCashoutModal] = useState(false);
+  const [_recipientConfirm, setRecipientConfirm] = useState<{
     show: boolean;
     recipientId: string;
     amount: number;
@@ -210,7 +212,7 @@ export default function CashierPage() {
   const [pendingCashouts, setPendingCashouts] = useState<
     { id: string; amount: number; status: string; created_at: string }[]
   >([]);
-  const [loadingContext, setLoadingContext] = useState(true); // U-01 FIX: loading skeleton
+  const [_loadingContext, setLoadingContext] = useState(true); // U-01 FIX: loading skeleton
 
   // ─────────────────────────────────────────────────────────────────────────────
   // LOAD ROLE, UNION STATUS, AND RECIPIENTS
@@ -470,7 +472,7 @@ export default function CashierPage() {
           table: 'cashout_requests',
           filter: `player_id=eq.${user.id}`,
         },
-        (payload) => {
+        (_payload) => {
           // Auto-refresh pending cashouts when status changes
           loadPendingCashouts();
         }
@@ -681,7 +683,7 @@ export default function CashierPage() {
 
         const recipient = selectedRecipientData;
         const recipientIsAgent = recipient?.role === 'agent' || recipient?.role === 'super_agent';
-        const recipientIsSubAgent = recipient?.role === 'sub_agent';
+        const _recipientIsSubAgent = recipient?.role === 'sub_agent';
 
         if (userRole === 'owner' && recipientIsAgent) {
           await ChipFlowService.clubToAgent(
@@ -1341,6 +1343,26 @@ export default function CashierPage() {
                 </div>
               )}
 
+              {/* Open full CashoutRequestModal for premium step-tracker experience */}
+              {action === 'cashout' && !tableId && clubId && user?.id && (
+                <button
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    background: 'rgba(16, 185, 129, 0.1)',
+                    border: '1px solid rgba(16, 185, 129, 0.3)',
+                    borderRadius: '8px',
+                    color: '#10b981',
+                    fontSize: '0.8rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                  onClick={() => setShowCashoutModal(true)}
+                >
+                  📋 Manage Cashout Requests
+                </button>
+              )}
+
               {/* Cashout context info */}
               {action === 'cashout' && !tableId && (
                 <div className="cashier-message info">
@@ -1522,6 +1544,21 @@ export default function CashierPage() {
         <ClubBottomNav
           clubId={clubId}
           userRole={userRole as 'owner' | 'admin' | 'agent' | 'member'}
+        />
+      )}
+
+      {/* Cashout Request Modal — Full step tracker UX */}
+      {clubId && user?.id && (
+        <CashoutRequestModal
+          isOpen={showCashoutModal}
+          onClose={() => setShowCashoutModal(false)}
+          playerId={user.id}
+          clubId={clubId}
+          currentBalance={balances.PLAYER.available}
+          onComplete={() => {
+            loadBalances(user.id);
+            loadPendingCashouts();
+          }}
         />
       )}
     </div>

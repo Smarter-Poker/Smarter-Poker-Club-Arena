@@ -117,6 +117,7 @@ const UnionGamesPage = lazy(() => import('./pages/UnionGamesPage'));
 const AdminDashboardPage = lazy(() => import('./pages/AdminDashboardPage'));
 const PlayerSessionsPage = lazy(() => import('./pages/PlayerSessionsPage'));
 const AgentDashboardPage = lazy(() => import('./pages/AgentDashboardPage'));
+const UnionDashboardPage = lazy(() => import('./pages/UnionDashboardPage'));
 
 // Q3: Social, Messaging & Discovery Pages
 const PublicProfilePage = lazy(() => import('./pages/PublicProfilePage'));
@@ -1286,6 +1287,16 @@ export default function App() {
                     <AuthGuard>
                       <PageErrorBoundary pageName="XMTT">
                         <XMTTPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="union-dashboard"
+                  element={
+                    <AuthGuard>
+                      <PageErrorBoundary pageName="Union Dashboard">
+                        <UnionDashboardPage />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }

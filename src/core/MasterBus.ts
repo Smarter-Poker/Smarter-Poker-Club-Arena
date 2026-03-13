@@ -280,7 +280,8 @@ export type BusEventType =
   | 'HAND_REPLAYED'
   | 'HAND_COMPLETE'
   | 'PLAYER_LEFT'
-  | 'RAKEBACK_CLAIMED';
+  | 'RAKEBACK_CLAIMED'
+  | 'CLUB_SETTINGS_UPDATED';
 
 // #13: Type-safe payload map — compile-time enforcement of correct payloads
 export interface BusPayloadMap {
@@ -845,6 +846,7 @@ export interface BusPayloadMap {
   HAND_COMPLETE: { tableId?: string; clubId?: string; handNumber?: number };
   PLAYER_LEFT: { clubId: string; userId?: string; tableId?: string };
   RAKEBACK_CLAIMED: { clubId: string; amount?: number; userId?: string };
+  CLUB_SETTINGS_UPDATED: { clubId?: string };
 }
 
 export interface BusEvent<T = unknown> {

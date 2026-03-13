@@ -10,7 +10,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { supabase } from '../../core/supabase';
+import { supabase } from '../../lib/supabase';
 
 const TABS = [
   { id: 'all', label: 'ALL' },

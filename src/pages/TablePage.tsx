@@ -2019,7 +2019,7 @@ export default function TablePage({
       const payload = (event as any)?.payload || event;
       if (payload.tableId !== tableId || payload.playerId !== userId) return;
       setTimeBankActive(true);
-      setTimeBankTimeRemaining(payload.secondsGranted || payload.timeAdded || 15);
+      setTimeBankTimeRemaining(payload.secondsGranted ?? 15);
       setTimeBanksRemaining(payload.usesRemaining ?? 0);
     });
 

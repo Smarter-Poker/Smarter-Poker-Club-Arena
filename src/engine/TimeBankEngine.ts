@@ -57,6 +57,7 @@ export interface PlayerTimeBank {
 class TimeBankEngineClass {
   private tableConfigs: Map<string, TimeBankConfig> = new Map();
   private playerBanks: Map<string, PlayerTimeBank> = new Map();
+  private extensionPending: Set<string> = new Set(); // lock per-player to prevent double-charge
 
   private readonly DEFAULT_CONFIG: TimeBankConfig = {
     totalBankSeconds: 30,
@@ -274,6 +275,10 @@ class TimeBankEngineClass {
 
     if (!bank) return false;
 
+    // Prevent double-charge from rapid clicks
+    if (this.extensionPending.has(key)) return false;
+    this.extensionPending.add(key);
+
     try {
       // vipService.useFeature handles the full flow:
       // 1. VIP with quota → consume quota (free)
@@ -313,6 +318,8 @@ class TimeBankEngineClass {
         reason: 'error',
       });
       return false;
+    } finally {
+      this.extensionPending.delete(key);
     }
   }
 
@@ -325,6 +332,7 @@ class TimeBankEngineClass {
       if (key.startsWith(`${tableId}:`)) {
         if (bank.activeTimer) clearTimeout(bank.activeTimer);
         this.playerBanks.delete(key);
+        this.extensionPending.delete(key);
       }
     }
     this.tableConfigs.delete(tableId);

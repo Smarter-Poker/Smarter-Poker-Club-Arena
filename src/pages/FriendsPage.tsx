@@ -151,11 +151,12 @@ export default function FriendsPage() {
     if (!user?.id) return;
     setLoading(true);
     try {
-      // Load accepted friendships (where user initiated)
-      const { data: sentFriendships } = await supabase
-        .from('friendships')
-        .select(
-          `
+      // ── Batch: sent + received friendships + pending requests in parallel ──
+      const [sentResult, receivedResult, pendingResult] = await Promise.all([
+        supabase
+          .from('friendships')
+          .select(
+            `
                     id,
                     friend:profiles!friendships_friend_id_fkey (
                         id,
@@ -164,17 +165,15 @@ export default function FriendsPage() {
                     ),
                     status
                 `
-        )
-        .eq('user_id', user?.id)
-        .eq('status', 'accepted')
-        .order('created_at', { ascending: false })
-        .limit(200);
-
-      // Load accepted friendships (where user received)
-      const { data: receivedFriendships } = await supabase
-        .from('friendships')
-        .select(
-          `
+          )
+          .eq('user_id', user?.id)
+          .eq('status', 'accepted')
+          .order('created_at', { ascending: false })
+          .limit(200),
+        supabase
+          .from('friendships')
+          .select(
+            `
                     id,
                     friend:profiles!friendships_user_id_fkey (
                         id,
@@ -183,13 +182,30 @@ export default function FriendsPage() {
                     ),
                     status
                 `
-        )
-        .eq('friend_id', user?.id)
-        .eq('status', 'accepted')
-        .order('created_at', { ascending: false })
-        .limit(200);
+          )
+          .eq('friend_id', user?.id)
+          .eq('status', 'accepted')
+          .order('created_at', { ascending: false })
+          .limit(200),
+        supabase
+          .from('friendships')
+          .select(
+            `
+                    id,
+                    user:profiles!friendships_user_id_fkey (
+                        id,
+                        username,
+                        avatar_url
+                    )
+                `
+          )
+          .eq('friend_id', user?.id)
+          .eq('status', 'pending')
+          .order('created_at', { ascending: false })
+          .limit(100),
+      ]);
 
-      const allFriendships = [...(sentFriendships || []), ...(receivedFriendships || [])];
+      const allFriendships = [...(sentResult.data || []), ...(receivedResult.data || [])];
 
       if (getIsMounted && !getIsMounted()) return;
 
@@ -233,23 +249,8 @@ export default function FriendsPage() {
         setFriends([]);
       }
 
-      // Load pending requests
-      const { data: pending } = await supabase
-        .from('friendships')
-        .select(
-          `
-                    id,
-                    user:profiles!friendships_user_id_fkey (
-                        id,
-                        username,
-                        avatar_url
-                    )
-                `
-        )
-        .eq('friend_id', user?.id)
-        .eq('status', 'pending')
-        .order('created_at', { ascending: false })
-        .limit(100);
+      // Use pending results from the parallel batch
+      const pending = pendingResult.data;
 
       if (getIsMounted && !getIsMounted()) return;
 

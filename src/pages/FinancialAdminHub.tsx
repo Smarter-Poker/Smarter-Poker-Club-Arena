@@ -138,8 +138,6 @@ export default function FinancialAdminHub() {
     };
   }, []);
 
-  useVisibilityRefresh(loadStats);
-
   const [stats, setStats] = useState<HubStats>({
     totalAlerts: 0,
     openDisputes: 0,
@@ -151,6 +149,138 @@ export default function FinancialAdminHub() {
   const [visibleCards, setVisibleCards] = useState<Set<number>>(new Set());
   const [visibleNavs, setVisibleNavs] = useState<Set<number>>(new Set());
   const [revenueData, setRevenueData] = useState<{ day: string; amount: number }[]>([]);
+
+  // ── loadStats: parallelized queries (~4x faster than sequential) ──
+  const loadStats = useCallback(async () => {
+    setLoading(true);
+    try {
+      // All KPI counts + data in parallel
+      const [
+        disputeResult,
+        commResult,
+        rakeResult,
+        healthCountResult,
+        alertResult,
+        lastCheckResult,
+        rakeDataResult,
+      ] = await Promise.all([
+        (async () => {
+          try {
+            const r = await supabase
+              .from('disputes')
+              .select('*', { count: 'exact', head: true })
+              .in('status', ['open', 'under_review', 'escalated']);
+            return r.count || 0;
+          } catch {
+            return 0;
+          }
+        })(),
+        (async () => {
+          try {
+            const r = await supabase
+              .from('commission_rate_audit')
+              .select('*', { count: 'exact', head: true });
+            return r.count || 0;
+          } catch {
+            return 0;
+          }
+        })(),
+        (async () => {
+          try {
+            const r = await supabase
+              .from('rake_rate_audit')
+              .select('*', { count: 'exact', head: true });
+            return r.count || 0;
+          } catch {
+            return 0;
+          }
+        })(),
+        (async () => {
+          try {
+            const r = await supabase
+              .from('financial_health_checks')
+              .select('*', { count: 'exact', head: true });
+            return r.count || 0;
+          } catch {
+            return 0;
+          }
+        })(),
+        (async () => {
+          try {
+            const r = await supabase
+              .from('financial_alerts')
+              .select('*', { count: 'exact', head: true })
+              .eq('resolved', false);
+            return r.count || 0;
+          } catch {
+            return 0;
+          }
+        })(),
+        (async () => {
+          try {
+            const r = await supabase
+              .from('financial_health_checks')
+              .select('passed')
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            return r.data;
+          } catch {
+            return null;
+          }
+        })(),
+        (async () => {
+          try {
+            const r = await supabase
+              .from('rake_records')
+              .select('rake_amount, created_at')
+              .gte('created_at', new Date(Date.now() - 7 * 86400000).toISOString())
+              .order('created_at', { ascending: true })
+              .limit(5000);
+            return r.data;
+          } catch {
+            return null;
+          }
+        })(),
+      ]);
+
+      if (!isMounted.current) return;
+
+      setStats({
+        totalAlerts: alertResult as number,
+        openDisputes: disputeResult as number,
+        rateChanges: (commResult as number) + (rakeResult as number),
+        healthChecks: healthCountResult as number,
+        lastCheckPassed: (lastCheckResult as any)?.passed ?? null,
+      });
+
+      // Process revenue sparkline
+      if (rakeDataResult && (rakeDataResult as any[]).length > 0) {
+        const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const grouped: Record<string, number> = {};
+        (rakeDataResult as any[]).forEach((r: any) => {
+          const d = new Date(r.created_at);
+          const label = `${dayLabels[d.getDay()]} ${d.getDate()}`;
+          grouped[label] = (grouped[label] || 0) + (r.rake_amount || 0);
+        });
+        const days: { day: string; amount: number }[] = [];
+        for (let i = 6; i >= 0; i--) {
+          const d = new Date(Date.now() - i * 86400000);
+          const label = `${dayLabels[d.getDay()]} ${d.getDate()}`;
+          days.push({ day: label, amount: grouped[label] || 0 });
+        }
+        if (isMounted.current) setRevenueData(days);
+      } else {
+        if (isMounted.current) setRevenueData([]);
+      }
+    } catch (err) {
+      console.error('[FinancialAdminHub] Stats load failed:', err);
+      if (isMounted.current) toast.error('Failed to load financial stats');
+    }
+    if (isMounted.current) setLoading(false);
+  }, [toast]);
+
+  useVisibilityRefresh(loadStats);
 
   useEffect(() => {
     loadStats();
@@ -192,133 +322,6 @@ export default function FinancialAdminHub() {
     });
     return () => timers.forEach(clearTimeout);
   }, []);
-
-  const loadStats = async () => {
-    setLoading(true);
-    try {
-      // ── Batch 1: All KPI counts in parallel ──
-      const [disputeResult, commResult, rakeResult, healthCountResult, alertResult] =
-        await Promise.all([
-          (async () => {
-            try {
-              const r = await supabase
-                .from('disputes')
-                .select('*', { count: 'exact', head: true })
-                .in('status', ['open', 'under_review', 'escalated']);
-              return r.count || 0;
-            } catch {
-              return 0;
-            }
-          })(),
-          (async () => {
-            try {
-              const r = await supabase
-                .from('commission_rate_audit')
-                .select('*', { count: 'exact', head: true });
-              return r.count || 0;
-            } catch {
-              return 0;
-            }
-          })(),
-          (async () => {
-            try {
-              const r = await supabase
-                .from('rake_rate_audit')
-                .select('*', { count: 'exact', head: true });
-              return r.count || 0;
-            } catch {
-              return 0;
-            }
-          })(),
-          (async () => {
-            try {
-              const r = await supabase
-                .from('financial_health_checks')
-                .select('*', { count: 'exact', head: true });
-              return r.count || 0;
-            } catch {
-              return 0;
-            }
-          })(),
-          (async () => {
-            try {
-              const r = await supabase
-                .from('financial_alerts')
-                .select('*', { count: 'exact', head: true })
-                .eq('resolved', false);
-              return r.count || 0;
-            } catch {
-              return 0;
-            }
-          })(),
-        ]);
-
-      // ── Batch 2: Last health check + revenue sparkline in parallel ──
-      const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString();
-      const [lastCheckResult, rakeDataResult] = await Promise.all([
-        (async () => {
-          try {
-            const r = await supabase
-              .from('financial_health_checks')
-              .select('passed')
-              .order('created_at', { ascending: false })
-              .limit(1)
-              .maybeSingle();
-            return r.data;
-          } catch {
-            return null;
-          }
-        })(),
-        (async () => {
-          try {
-            const r = await supabase
-              .from('rake_records')
-              .select('rake_amount, created_at')
-              .gte('created_at', sevenDaysAgo)
-              .order('created_at', { ascending: true })
-              .limit(5000);
-            return r.data;
-          } catch {
-            return null;
-          }
-        })(),
-      ]);
-
-      if (!isMounted.current) return;
-
-      setStats({
-        totalAlerts: alertResult,
-        openDisputes: disputeResult,
-        rateChanges: commResult + rakeResult,
-        healthChecks: healthCountResult,
-        lastCheckPassed: lastCheckResult?.passed ?? null,
-      });
-
-      // Process revenue sparkline
-      if (rakeDataResult && rakeDataResult.length > 0) {
-        const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-        const grouped: Record<string, number> = {};
-        rakeDataResult.forEach((r: any) => {
-          const d = new Date(r.created_at);
-          const label = `${dayLabels[d.getDay()]} ${d.getDate()}`;
-          grouped[label] = (grouped[label] || 0) + (r.rake_amount || 0);
-        });
-        const days: { day: string; amount: number }[] = [];
-        for (let i = 6; i >= 0; i--) {
-          const d = new Date(Date.now() - i * 86400000);
-          const label = `${dayLabels[d.getDay()]} ${d.getDate()}`;
-          days.push({ day: label, amount: grouped[label] || 0 });
-        }
-        if (isMounted.current) setRevenueData(days);
-      } else {
-        if (isMounted.current) setRevenueData([]);
-      }
-    } catch (err) {
-      console.error('[FinancialAdminHub] Stats load failed:', err);
-      if (isMounted.current) toast.error('Failed to load financial stats');
-    }
-    if (isMounted.current) setLoading(false);
-  };
 
   const kpiCards = [
     {

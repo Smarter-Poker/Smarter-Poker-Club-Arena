@@ -144,6 +144,9 @@ class CashoutServiceClass {
       amount: -amount,
     });
 
+    // Emit CASHOUT_REQUESTED so admin dashboard refreshes in real-time
+    masterBus.emit('CASHOUT_REQUESTED', { clubId: resolvedClubId, amount, userId: playerId });
+
     return cashout;
   }
 
@@ -207,6 +210,10 @@ class CashoutServiceClass {
       console.error('[Cashout] Failed to approve cashout:', error);
       throw new Error(error.message || 'Failed to approve cashout');
     }
+
+    // Emit CASHOUT_APPROVED so admin dashboard and cashier pages refresh
+    const cashout = await this.getCashout(cashoutId);
+    masterBus.emit('CASHOUT_APPROVED', { cashoutId, clubId: cashout?.clubId || '' });
 
     return data === true;
   }

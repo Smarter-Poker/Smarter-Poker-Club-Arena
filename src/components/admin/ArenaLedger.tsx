@@ -79,16 +79,16 @@ export default function ArenaLedger({ clubId, maxEntries = 200 }: ArenaLedgerPro
     try {
       // Fetch audit logs
       const { data: auditData } = await supabase
-        .from('club_arena_audit_logs')
-        .select('id, action, user_id, user_name, metadata, created_at')
+        .from('audit_logs')
+        .select('id, action, actor_id, details, created_at')
         .eq('club_id', clubId)
         .order('created_at', { ascending: false })
         .limit(maxEntries);
 
       // Fetch messages
       const { data: msgData } = await supabase
-        .from('club_arena_messages')
-        .select('id, content, user_id, user_name, created_at')
+        .from('messages')
+        .select('id, content, sender_id, created_at')
         .eq('club_id', clubId)
         .order('created_at', { ascending: false })
         .limit(50);
@@ -97,9 +97,9 @@ export default function ArenaLedger({ clubId, maxEntries = 200 }: ArenaLedgerPro
         id: `audit-${a.id}`,
         type: 'audit' as const,
         action: a.action,
-        userId: a.user_id,
-        userName: a.user_name,
-        metadata: a.metadata,
+        userId: a.actor_id,
+        metadata:
+          typeof a.details === 'object' ? (a.details as Record<string, unknown>) : undefined,
         createdAt: a.created_at,
       }));
 
@@ -107,8 +107,7 @@ export default function ArenaLedger({ clubId, maxEntries = 200 }: ArenaLedgerPro
         id: `msg-${m.id}`,
         type: 'message' as const,
         content: m.content,
-        userId: m.user_id,
-        userName: m.user_name,
+        userId: m.sender_id,
         createdAt: m.created_at,
       }));
 
@@ -140,7 +139,7 @@ export default function ArenaLedger({ clubId, maxEntries = 200 }: ArenaLedgerPro
         {
           event: 'INSERT',
           schema: 'public',
-          table: 'club_arena_audit_logs',
+          table: 'audit_logs',
           filter: `club_id=eq.${clubId}`,
         },
         (payload) => {
@@ -150,9 +149,9 @@ export default function ArenaLedger({ clubId, maxEntries = 200 }: ArenaLedgerPro
             id: `audit-${a.id}`,
             type: 'audit',
             action: a.action,
-            userId: a.user_id,
-            userName: a.user_name,
-            metadata: a.metadata,
+            userId: a.actor_id,
+            metadata:
+              typeof a.details === 'object' ? (a.details as Record<string, unknown>) : undefined,
             createdAt: a.created_at,
           };
           setEntries((prev) => [entry, ...prev].slice(0, maxEntries));
@@ -163,7 +162,7 @@ export default function ArenaLedger({ clubId, maxEntries = 200 }: ArenaLedgerPro
         {
           event: 'INSERT',
           schema: 'public',
-          table: 'club_arena_messages',
+          table: 'messages',
           filter: `club_id=eq.${clubId}`,
         },
         (payload) => {
@@ -173,8 +172,7 @@ export default function ArenaLedger({ clubId, maxEntries = 200 }: ArenaLedgerPro
             id: `msg-${m.id}`,
             type: 'message',
             content: m.content,
-            userId: m.user_id,
-            userName: m.user_name,
+            userId: m.sender_id,
             createdAt: m.created_at,
           };
           setEntries((prev) => [entry, ...prev].slice(0, maxEntries));

@@ -162,11 +162,9 @@ export default function AgentPromoPanel({
     try {
       // Direct Supabase RPC for distribution
       const { error } = await supabase.rpc('distribute_promo_chips', {
-        p_club_id: clubId,
         p_agent_id: userId,
-        p_to_user_id: selectedPlayer,
+        p_player_id: selectedPlayer,
         p_amount: amt,
-        p_notes: 'Agent promo distribution',
       });
       if (error) throw error;
 

@@ -34,6 +34,8 @@ import { useVIPStatus } from '../hooks/useVIP';
 import { useToast } from '../components/common/Toast';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { resolveClubIdFilter, resolveClubUUID } from '../utils/clubIdResolver';
+import { checkSettlementLock } from '../utils/settlementLock';
+import AgentPromoPanel from '../components/agent/AgentPromoPanel';
 import './CashierPage.css';
 
 type CashierAction = 'send' | 'buyin' | 'cashout' | 'mint' | 'history';
@@ -1025,6 +1027,18 @@ export default function CashierPage() {
           </a>
         </div>
       )}
+
+      {/* Agent Promo Panel — visible to agents only */}
+      {(userRole === 'agent' || userRole === 'super_agent' || userRole === 'sub_agent') &&
+        clubId &&
+        user?.id && (
+          <AgentPromoPanel
+            clubId={clubId}
+            userId={user.id}
+            role={userRole}
+            onDistribute={() => loadBalances(user.id)}
+          />
+        )}
 
       {/* ═══ SEND CHIPS ═══ */}
       {action === 'send' && (

@@ -21,6 +21,7 @@ import { VIPBenefitsGrid } from '../components/vip/VIPBenefitsGrid';
 import { RewardsMarketplace, Reward } from '../components/vip/RewardsMarketplace';
 import { VIPActivityHistory, VIPActivity } from '../components/vip/VIPActivityHistory';
 import { useToast } from '../components/common/Toast';
+import DiamondWalletModal from '../components/wallet/DiamondWalletModal';
 import './VIPPage.css';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
@@ -37,6 +38,7 @@ export default function VIPPage() {
   const [loading, setLoading] = useState(true);
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [showTopUpModal, setShowTopUpModal] = useState(false);
+  const [showDiamondHistory, setShowDiamondHistory] = useState(false);
   const [purchasing, setPurchasing] = useState<string | null>(null);
   const [vipEntranceComplete, setVIPEntranceComplete] = useState(false);
 
@@ -381,6 +383,13 @@ export default function VIPPage() {
           <button className="diamond-buy-btn" onClick={() => setShowTopUpModal(true)}>
             + Buy Diamonds
           </button>
+          <button
+            className="diamond-buy-btn"
+            style={{ background: 'rgba(255,255,255,0.08)', marginLeft: '6px' }}
+            onClick={() => setShowDiamondHistory(true)}
+          >
+            📜 History
+          </button>
         </div>
       </section>
 
@@ -425,6 +434,16 @@ export default function VIPPage() {
         isOpen={showTopUpModal}
         onClose={() => setShowTopUpModal(false)}
         onPurchaseComplete={(newBal) => setDiamonds(newBal)}
+      />
+
+      {/* Diamond Wallet History Modal */}
+      <DiamondWalletModal
+        isOpen={showDiamondHistory}
+        onClose={() => setShowDiamondHistory(false)}
+        onBuyClick={() => {
+          setShowDiamondHistory(false);
+          setShowTopUpModal(true);
+        }}
       />
     </div>
   );

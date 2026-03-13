@@ -92,11 +92,20 @@ export default function PlayerSessionsPage() {
   const [notes, setNotes] = useState<Record<string, PlayerNote>>({});
   const [notesLoaded, setNotesLoaded] = useState(false);
   const [noteTarget, setNoteTarget] = useState<any>(null);
-  const [noteData, setNoteData] = useState<PlayerNote>({ player_type: 'unknown', color_label: 'none', notes: '' });
+  const [noteData, setNoteData] = useState<PlayerNote>({
+    player_type: 'unknown',
+    color_label: 'none',
+    notes: '',
+  });
   const [savingNote, setSavingNote] = useState(false);
 
   const mountedRef = useRef(true);
-  useEffect(() => () => { mountedRef.current = false; }, []);
+  useEffect(
+    () => () => {
+      mountedRef.current = false;
+    },
+    []
+  );
 
   // Auto-clear success
   useEffect(() => {
@@ -106,165 +115,196 @@ export default function PlayerSessionsPage() {
   }, [success]);
 
   // ── Load Sessions (Primary Data) ──────────────────────────
-  const loadSessions = useCallback(async (cId: string | null, silent = false) => {
-    try {
-      if (!silent) { setLoading(true); setError(null); }
-      const targetClubId = cId || clubId;
-      if (!targetClubId) { setError('No club selected.'); setLoading(false); return; }
-
-      const uuid = await resolveClubUUID(targetClubId);
-
-      // Load members with basic info
-      const { data: members, error: memErr } = await supabase
-        .from('club_members')
-        .select('user_id, role, is_active, chip_balance, created_at')
-        .eq('club_id', uuid);
-      if (memErr) throw memErr;
-
-      // Get profiles for display names
-      const userIds = (members || []).map((m: any) => m.user_id).filter(Boolean);
-      const profileMap: Record<string, any> = {};
-      if (userIds.length > 0) {
-        const { data: profiles } = await supabase
-          .from('profiles')
-          .select('id, username, display_name, avatar_url, last_seen_at')
-          .in('id', userIds);
-        if (profiles) {
-          profiles.forEach((p: any) => { profileMap[p.id] = p; });
+  const loadSessions = useCallback(
+    async (cId: string | null, silent = false) => {
+      try {
+        if (!silent) {
+          setLoading(true);
+          setError(null);
         }
-      }
+        const targetClubId = cId || clubId;
+        if (!targetClubId) {
+          setError('No club selected.');
+          setLoading(false);
+          return;
+        }
 
-      // Get active tables
-      const { data: activeTables } = await supabase
-        .from('tables')
-        .select('id, name, current_players, max_players, status')
-        .eq('club_id', uuid)
-        .eq('status', 'active');
+        const uuid = await resolveClubUUID(targetClubId);
 
-      if (!mountedRef.current) return;
+        // Load members with basic info
+        const { data: members, error: memErr } = await supabase
+          .from('club_members')
+          .select('user_id, role, is_active, chip_balance, created_at')
+          .eq('club_id', uuid);
+        if (memErr) throw memErr;
 
-      const now = Date.now();
-      const sessionData: PlayerSession[] = (members || []).map((m: any) => {
-        const profile = profileMap[m.user_id] || {};
-        const lastSeen = profile.last_seen_at ? new Date(profile.last_seen_at).getTime() : 0;
-        const minutesSince = lastSeen ? (now - lastSeen) / 60000 : 99999;
-        let status: PlayerSession['status'] = 'offline';
-        if (minutesSince < 5) status = 'online';
-        else if (minutesSince < 30) status = 'idle';
-        else if (minutesSince < 60) status = 'away';
-
-        return {
-          userId: m.user_id,
-          displayName: profile.display_name || profile.username || m.user_id?.substring(0, 8) || 'Unknown',
-          avatarUrl: profile.avatar_url,
-          status,
-          role: m.role || 'player',
-          chipBalance: m.chip_balance || 0,
-          lastActive: profile.last_seen_at || m.created_at,
-          txCount24h: 0,
-          volume24h: 0,
-          is_active: m.is_active,
-        };
-      });
-
-      // Sort: online first, then by last active
-      sessionData.sort((a, b) => {
-        const order = { online: 0, idle: 1, away: 2, offline: 3 };
-        return (order[a.status] || 3) - (order[b.status] || 3);
-      });
-
-      setSessions(sessionData);
-      setTables(activeTables || []);
-      setSummary({
-        totalMembers: sessionData.length,
-        online: sessionData.filter(s => s.status === 'online').length,
-        idle: sessionData.filter(s => s.status === 'idle').length,
-        activeTables: (activeTables || []).length,
-        totalSeated: (activeTables || []).reduce((sum: number, t: any) => sum + (t.current_players || 0), 0),
-      });
-
-      // Load notes in background
-      if (!notesLoaded && userIds.length > 0) {
-        try {
-          const { data: notesData } = await supabase
-            .from('player_notes')
-            .select('target_user_id, player_type, color_label, notes')
-            .eq('club_id', uuid)
-            .in('target_user_id', userIds);
-          if (mountedRef.current && notesData) {
-            const noteMap: Record<string, PlayerNote> = {};
-            notesData.forEach((n: any) => {
-              noteMap[n.target_user_id] = { player_type: n.player_type || 'unknown', color_label: n.color_label || 'none', notes: n.notes || '' };
+        // Get profiles for display names
+        const userIds = (members || []).map((m: any) => m.user_id).filter(Boolean);
+        const profileMap: Record<string, any> = {};
+        if (userIds.length > 0) {
+          const { data: profiles } = await supabase
+            .from('profiles')
+            .select('id, username, display_name, avatar_url, last_seen_at')
+            .in('id', userIds);
+          if (profiles) {
+            profiles.forEach((p: any) => {
+              profileMap[p.id] = p;
             });
-            setNotes(noteMap);
-            setNotesLoaded(true);
           }
-        } catch {
-          if (mountedRef.current) setNotesLoaded(true);
         }
+
+        // Get active tables
+        const { data: activeTables } = await supabase
+          .from('tables')
+          .select('id, name, current_players, max_players, status')
+          .eq('club_id', uuid)
+          .eq('status', 'active');
+
+        if (!mountedRef.current) return;
+
+        const now = Date.now();
+        const sessionData: PlayerSession[] = (members || []).map((m: any) => {
+          const profile = profileMap[m.user_id] || {};
+          const lastSeen = profile.last_seen_at ? new Date(profile.last_seen_at).getTime() : 0;
+          const minutesSince = lastSeen ? (now - lastSeen) / 60000 : 99999;
+          let status: PlayerSession['status'] = 'offline';
+          if (minutesSince < 5) status = 'online';
+          else if (minutesSince < 30) status = 'idle';
+          else if (minutesSince < 60) status = 'away';
+
+          return {
+            userId: m.user_id,
+            displayName:
+              profile.display_name || profile.username || m.user_id?.substring(0, 8) || 'Unknown',
+            avatarUrl: profile.avatar_url,
+            status,
+            role: m.role || 'player',
+            chipBalance: m.chip_balance || 0,
+            lastActive: profile.last_seen_at || m.created_at,
+            txCount24h: 0,
+            volume24h: 0,
+            is_active: m.is_active,
+          };
+        });
+
+        // Sort: online first, then by last active
+        sessionData.sort((a, b) => {
+          const order = { online: 0, idle: 1, away: 2, offline: 3 };
+          return (order[a.status] || 3) - (order[b.status] || 3);
+        });
+
+        setSessions(sessionData);
+        setTables(activeTables || []);
+        setSummary({
+          totalMembers: sessionData.length,
+          online: sessionData.filter((s) => s.status === 'online').length,
+          idle: sessionData.filter((s) => s.status === 'idle').length,
+          activeTables: (activeTables || []).length,
+          totalSeated: (activeTables || []).reduce(
+            (sum: number, t: any) => sum + (t.current_players || 0),
+            0
+          ),
+        });
+
+        // Load notes in background
+        if (!notesLoaded && userIds.length > 0) {
+          try {
+            const { data: notesData } = await supabase
+              .from('player_notes')
+              .select('target_user_id, player_type, color_label, notes')
+              .eq('club_id', uuid)
+              .in('target_user_id', userIds);
+            if (mountedRef.current && notesData) {
+              const noteMap: Record<string, PlayerNote> = {};
+              notesData.forEach((n: any) => {
+                noteMap[n.target_user_id] = {
+                  player_type: n.player_type || 'unknown',
+                  color_label: n.color_label || 'none',
+                  notes: n.notes || '',
+                };
+              });
+              setNotes(noteMap);
+              setNotesLoaded(true);
+            }
+          } catch {
+            if (mountedRef.current) setNotesLoaded(true);
+          }
+        }
+      } catch (err: any) {
+        if (mountedRef.current) setError(err.message);
+      } finally {
+        if (mountedRef.current) setLoading(false);
       }
-    } catch (err: any) {
-      if (mountedRef.current) setError(err.message);
-    } finally {
-      if (mountedRef.current) setLoading(false);
-    }
-  }, [clubId, notesLoaded]);
+    },
+    [clubId, notesLoaded]
+  );
 
   // ── Load Retention (Lazy) ─────────────────────────────────
-  const loadRetention = useCallback(async (force = false) => {
-    if (!force && retentionLoaded) return;
-    if (!clubId) return;
-    try {
-      const uuid = await resolveClubUUID(clubId);
-      const { data: members } = await supabase
-        .from('club_members')
-        .select('user_id, chip_balance, created_at')
-        .eq('club_id', uuid);
+  const loadRetention = useCallback(
+    async (force = false) => {
+      if (!force && retentionLoaded) return;
+      if (!clubId) return;
+      try {
+        const uuid = await resolveClubUUID(clubId);
+        const { data: members } = await supabase
+          .from('club_members')
+          .select('user_id, chip_balance, created_at')
+          .eq('club_id', uuid);
 
-      const userIds = (members || []).map((m: any) => m.user_id).filter(Boolean);
-      const profileMap: Record<string, any> = {};
-      if (userIds.length > 0) {
-        const { data: profiles } = await supabase
-          .from('profiles')
-          .select('id, display_name, username, last_seen_at')
-          .in('id', userIds);
-        if (profiles) profiles.forEach((p: any) => { profileMap[p.id] = p; });
+        const userIds = (members || []).map((m: any) => m.user_id).filter(Boolean);
+        const profileMap: Record<string, any> = {};
+        if (userIds.length > 0) {
+          const { data: profiles } = await supabase
+            .from('profiles')
+            .select('id, display_name, username, last_seen_at')
+            .in('id', userIds);
+          if (profiles)
+            profiles.forEach((p: any) => {
+              profileMap[p.id] = p;
+            });
+        }
+
+        if (!mountedRef.current) return;
+
+        const now = Date.now();
+        const atRisk: any[] = [];
+        const churned: any[] = [];
+        let active = 0;
+
+        (members || []).forEach((m: any) => {
+          const profile = profileMap[m.user_id] || {};
+          const lastSeen = profile.last_seen_at ? new Date(profile.last_seen_at).getTime() : 0;
+          const daysSince = lastSeen ? Math.floor((now - lastSeen) / 86400000) : 999;
+
+          const playerInfo = {
+            userId: m.user_id,
+            name: profile.display_name || profile.username || m.user_id?.substring(0, 8),
+            chipBalance: m.chip_balance || 0,
+            daysSinceActive: daysSince,
+          };
+
+          if (daysSince <= 5) active++;
+          else if (daysSince <= 14) atRisk.push(playerInfo);
+          else churned.push(playerInfo);
+        });
+
+        setRetention({
+          summary: {
+            total: (members || []).length,
+            active,
+            atRisk: atRisk.length,
+            churned: churned.length,
+          },
+          atRisk: atRisk.sort((a, b) => a.daysSinceActive - b.daysSinceActive),
+          churned: churned.sort((a, b) => a.daysSinceActive - b.daysSinceActive),
+        });
+        setRetentionLoaded(true);
+      } catch (err: any) {
+        console.warn('[Players] Retention scan failed:', err.message);
       }
-
-      if (!mountedRef.current) return;
-
-      const now = Date.now();
-      const atRisk: any[] = [];
-      const churned: any[] = [];
-      let active = 0;
-
-      (members || []).forEach((m: any) => {
-        const profile = profileMap[m.user_id] || {};
-        const lastSeen = profile.last_seen_at ? new Date(profile.last_seen_at).getTime() : 0;
-        const daysSince = lastSeen ? Math.floor((now - lastSeen) / 86400000) : 999;
-
-        const playerInfo = {
-          userId: m.user_id,
-          name: profile.display_name || profile.username || m.user_id?.substring(0, 8),
-          chipBalance: m.chip_balance || 0,
-          daysSinceActive: daysSince,
-        };
-
-        if (daysSince <= 5) active++;
-        else if (daysSince <= 14) atRisk.push(playerInfo);
-        else churned.push(playerInfo);
-      });
-
-      setRetention({
-        summary: { total: (members || []).length, active, atRisk: atRisk.length, churned: churned.length },
-        atRisk: atRisk.sort((a, b) => a.daysSinceActive - b.daysSinceActive),
-        churned: churned.sort((a, b) => a.daysSinceActive - b.daysSinceActive),
-      });
-      setRetentionLoaded(true);
-    } catch (err: any) {
-      console.warn('[Players] Retention scan failed:', err.message);
-    }
-  }, [clubId, retentionLoaded]);
+    },
+    [clubId, retentionLoaded]
+  );
 
   // ── Load Chip Flow (Lazy) ─────────────────────────────────
   const loadChipFlow = useCallback(async () => {
@@ -328,7 +368,9 @@ export default function PlayerSessionsPage() {
     };
 
     init();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [user?.id, searchParams]);
 
   // ── Lazy Tab Loading ───────────────────────────────────────
@@ -347,7 +389,7 @@ export default function PlayerSessionsPage() {
       masterBus.subscribe('CASHOUT_APPROVED', refresh),
       masterBus.subscribe('CASHOUT_REQUESTED', refresh),
     ];
-    return () => unsubs.forEach(u => u());
+    return () => unsubs.forEach((u) => u());
   }, [clubId, loadSessions]);
 
   // ── Visibility Refresh ─────────────────────────────────────
@@ -361,15 +403,22 @@ export default function PlayerSessionsPage() {
   }, [clubId, loadSessions]);
 
   // ── Derived Data ───────────────────────────────────────────
-  const filtered = useMemo(() => sessions.filter(p => {
-    if (statusFilter !== 'all' && p.status !== statusFilter) return false;
-    if (roleFilter !== 'all' && p.role !== roleFilter) return false;
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      return (p.displayName || '').toLowerCase().includes(q) || (p.userId || '').toLowerCase().includes(q);
-    }
-    return true;
-  }), [sessions, statusFilter, roleFilter, searchQuery]);
+  const filtered = useMemo(
+    () =>
+      sessions.filter((p) => {
+        if (statusFilter !== 'all' && p.status !== statusFilter) return false;
+        if (roleFilter !== 'all' && p.role !== roleFilter) return false;
+        if (searchQuery) {
+          const q = searchQuery.toLowerCase();
+          return (
+            (p.displayName || '').toLowerCase().includes(q) ||
+            (p.userId || '').toLowerCase().includes(q)
+          );
+        }
+        return true;
+      }),
+    [sessions, statusFilter, roleFilter, searchQuery]
+  );
 
   const retSummary = retention?.summary || {};
   const atRisk = retention?.atRisk || [];
@@ -378,12 +427,16 @@ export default function PlayerSessionsPage() {
   const chipFlowEntries = useMemo(() => {
     if (!chipFlow) return [];
     const nameMap: Record<string, string> = {};
-    sessions.forEach(p => { nameMap[p.userId] = p.displayName; });
-    return Object.entries(chipFlow).map(([userId, flow]) => ({
-      userId,
-      name: nameMap[userId] || userId.substring(0, 8),
-      ...flow,
-    })).sort((a: any, b: any) => Math.abs(b.net) - Math.abs(a.net));
+    sessions.forEach((p) => {
+      nameMap[p.userId] = p.displayName;
+    });
+    return Object.entries(chipFlow)
+      .map(([userId, flow]) => ({
+        userId,
+        name: nameMap[userId] || userId.substring(0, 8),
+        ...flow,
+      }))
+      .sort((a: any, b: any) => Math.abs(b.net) - Math.abs(a.net));
   }, [chipFlow, sessions]);
 
   // ── Welcome Back Action ────────────────────────────────────
@@ -406,8 +459,11 @@ export default function PlayerSessionsPage() {
       setWbTarget(null);
       setWbAmount('');
       loadRetention(true);
-    } catch (err: any) { setError(err.message); }
-    finally { setProcessing(false); }
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setProcessing(false);
+    }
   };
 
   // ── Save Player Note ───────────────────────────────────────
@@ -416,20 +472,26 @@ export default function PlayerSessionsPage() {
     setSavingNote(true);
     try {
       const uuid = await resolveClubUUID(clubId);
-      const { error: upsertErr } = await supabase.from('player_notes').upsert({
-        club_id: uuid,
-        target_user_id: noteTarget.userId,
-        user_id: user?.id,
-        player_type: noteData.player_type,
-        color_label: noteData.color_label,
-        notes: noteData.notes,
-      }, { onConflict: 'club_id,target_user_id,user_id' });
+      const { error: upsertErr } = await supabase.from('player_notes').upsert(
+        {
+          club_id: uuid,
+          target_user_id: noteTarget.userId,
+          user_id: user?.id,
+          player_type: noteData.player_type,
+          color_label: noteData.color_label,
+          notes: noteData.notes,
+        },
+        { onConflict: 'club_id,target_user_id,user_id' }
+      );
       if (upsertErr) throw upsertErr;
-      setNotes(prev => ({ ...prev, [noteTarget.userId]: noteData }));
+      setNotes((prev) => ({ ...prev, [noteTarget.userId]: noteData }));
       setSuccess('Note saved!');
       setNoteTarget(null);
-    } catch (err: any) { setError(err.message); }
-    finally { setSavingNote(false); }
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setSavingNote(false);
+    }
   };
 
   // ── Loading State ──────────────────────────────────────────
@@ -439,16 +501,30 @@ export default function PlayerSessionsPage() {
         <div className="admin-container">
           <div className="admin-skeleton" style={{ height: '48px', marginBottom: '16px' }} />
           <div style={{ display: 'flex', gap: '8px' }}>
-            {[1, 2, 3].map(i => <div key={i} className="admin-skeleton" style={{ height: '36px', flex: 1 }} />)}
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="admin-skeleton" style={{ height: '36px', flex: 1 }} />
+            ))}
           </div>
-          {[1, 2, 3, 4, 5, 6].map(i => <div key={i} className="admin-skeleton" style={{ height: '52px', marginTop: '8px' }} />)}
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <div key={i} className="admin-skeleton" style={{ height: '52px', marginTop: '8px' }} />
+          ))}
         </div>
       </div>
     );
   }
 
-  const statusColors: Record<string, string> = { online: '#31A24C', idle: '#F7C52A', away: '#4599FF', offline: '#6B7280' };
-  const statusEmoji: Record<string, string> = { online: '🟢', idle: '🟡', away: '🔵', offline: '⚫' };
+  const statusColors: Record<string, string> = {
+    online: '#31A24C',
+    idle: '#F7C52A',
+    away: '#4599FF',
+    offline: '#6B7280',
+  };
+  const statusEmoji: Record<string, string> = {
+    online: '🟢',
+    idle: '🟡',
+    away: '🔵',
+    offline: '⚫',
+  };
 
   return (
     <div className="admin-page">
@@ -460,19 +536,39 @@ export default function PlayerSessionsPage() {
         {/* Welcome-Back Modal */}
         {wbTarget && (
           <div className="admin-modal-overlay" onClick={() => setWbTarget(null)}>
-            <div className="admin-card" style={{ maxWidth: '420px', margin: '60px auto' }} onClick={e => e.stopPropagation()}>
+            <div
+              className="admin-card"
+              style={{ maxWidth: '420px', margin: '60px auto' }}
+              onClick={(e) => e.stopPropagation()}
+            >
               <h3 className="admin-card-title">🎁 Send Welcome-Back Chips</h3>
               <p className="admin-text-secondary" style={{ marginBottom: '12px', lineHeight: 1.5 }}>
-                Send promo chips to <strong style={{ color: 'var(--text-primary)' }}>{wbTarget.name}</strong> to encourage them to return.
-                They&apos;ve been inactive for <strong style={{ color: '#F7C52A' }}>{wbTarget.daysSinceActive} days</strong>.
+                Send promo chips to{' '}
+                <strong style={{ color: 'var(--text-primary)' }}>{wbTarget.name}</strong> to
+                encourage them to return. They&apos;ve been inactive for{' '}
+                <strong style={{ color: '#F7C52A' }}>{wbTarget.daysSinceActive} days</strong>.
               </p>
               <div style={{ marginBottom: '16px' }}>
                 <label className="admin-label">Chip Amount</label>
-                <input className="admin-input" type="number" placeholder="500" value={wbAmount} onChange={e => setWbAmount(e.target.value)} />
+                <input
+                  className="admin-input"
+                  type="number"
+                  placeholder="500"
+                  value={wbAmount}
+                  onChange={(e) => setWbAmount(e.target.value)}
+                />
               </div>
               <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                <button onClick={() => setWbTarget(null)} className="admin-btn admin-btn-ghost">Cancel</button>
-                <button onClick={sendWelcomeBack} className="admin-btn admin-btn-success" disabled={processing}>{processing ? 'Sending...' : '🎁 Send Chips'}</button>
+                <button onClick={() => setWbTarget(null)} className="admin-btn admin-btn-ghost">
+                  Cancel
+                </button>
+                <button
+                  onClick={sendWelcomeBack}
+                  className="admin-btn admin-btn-success"
+                  disabled={processing}
+                >
+                  {processing ? 'Sending...' : '🎁 Send Chips'}
+                </button>
               </div>
             </div>
           </div>
@@ -481,29 +577,81 @@ export default function PlayerSessionsPage() {
         {/* Player Note Modal */}
         {noteTarget && (
           <div className="admin-modal-overlay" onClick={() => !savingNote && setNoteTarget(null)}>
-            <div className="admin-card" style={{ maxWidth: '420px', margin: '60px auto' }} onClick={e => e.stopPropagation()}>
-              <h3 className="admin-card-title">📝 Note: {noteTarget.displayName || noteTarget.userId?.substring(0, 8)}</h3>
+            <div
+              className="admin-card"
+              style={{ maxWidth: '420px', margin: '60px auto' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="admin-card-title">
+                📝 Note: {noteTarget.displayName || noteTarget.userId?.substring(0, 8)}
+              </h3>
               <div style={{ marginBottom: '12px' }}>
                 <label className="admin-label">Player Type</label>
-                <select className="admin-input" value={noteData.player_type} onChange={e => setNoteData(d => ({ ...d, player_type: e.target.value }))}>
-                  {['unknown', 'fish', 'reg', 'shark', 'whale', 'nit', 'lag', 'tag'].map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
+                <select
+                  className="admin-input"
+                  value={noteData.player_type}
+                  onChange={(e) => setNoteData((d) => ({ ...d, player_type: e.target.value }))}
+                >
+                  {['unknown', 'fish', 'reg', 'shark', 'whale', 'nit', 'lag', 'tag'].map((t) => (
+                    <option key={t} value={t}>
+                      {t.charAt(0).toUpperCase() + t.slice(1)}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div style={{ marginBottom: '12px' }}>
                 <label className="admin-label">Color Label</label>
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                  {[['none', '#6B7280'], ['red', '#FA383E'], ['orange', '#F5A623'], ['yellow', '#F7C52A'], ['green', '#31A24C'], ['blue', '#4599FF'], ['purple', '#C084FC']].map(([c, hex]) => (
-                    <button key={c} onClick={() => setNoteData(d => ({ ...d, color_label: c }))} style={{ width: '28px', height: '28px', borderRadius: '50%', background: hex, border: noteData.color_label === c ? '3px solid #E4E6EB' : '2px solid #3A3B3C', cursor: 'pointer' }} />
+                  {[
+                    ['none', '#6B7280'],
+                    ['red', '#FA383E'],
+                    ['orange', '#F5A623'],
+                    ['yellow', '#F7C52A'],
+                    ['green', '#31A24C'],
+                    ['blue', '#4599FF'],
+                    ['purple', '#C084FC'],
+                  ].map(([c, hex]) => (
+                    <button
+                      key={c}
+                      onClick={() => setNoteData((d) => ({ ...d, color_label: c }))}
+                      style={{
+                        width: '28px',
+                        height: '28px',
+                        borderRadius: '50%',
+                        background: hex,
+                        border:
+                          noteData.color_label === c ? '3px solid #E4E6EB' : '2px solid #3A3B3C',
+                        cursor: 'pointer',
+                      }}
+                    />
                   ))}
                 </div>
               </div>
               <div style={{ marginBottom: '16px' }}>
                 <label className="admin-label">Notes</label>
-                <textarea className="admin-input admin-textarea" rows={4} placeholder="Add notes about this player..." value={noteData.notes} onChange={e => setNoteData(d => ({ ...d, notes: e.target.value }))} />
+                <textarea
+                  className="admin-input admin-textarea"
+                  rows={4}
+                  placeholder="Add notes about this player..."
+                  value={noteData.notes}
+                  onChange={(e) => setNoteData((d) => ({ ...d, notes: e.target.value }))}
+                />
               </div>
               <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                <button onClick={() => setNoteTarget(null)} className="admin-btn admin-btn-ghost" disabled={savingNote}>Cancel</button>
-                <button className="admin-btn admin-btn-primary" disabled={savingNote} onClick={saveNote}>{savingNote ? 'Saving...' : '💾 Save Note'}</button>
+                <button
+                  onClick={() => setNoteTarget(null)}
+                  className="admin-btn admin-btn-ghost"
+                  disabled={savingNote}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="admin-btn admin-btn-primary"
+                  disabled={savingNote}
+                  onClick={saveNote}
+                >
+                  {savingNote ? 'Saving...' : '💾 Save Note'}
+                </button>
               </div>
             </div>
           </div>
@@ -513,32 +661,77 @@ export default function PlayerSessionsPage() {
         <div className="admin-page-header">
           <div className="admin-page-title">
             👥 Players
-            {summary && <span style={{ fontSize: '14px', color: 'var(--text-secondary)', marginLeft: '12px', fontWeight: 400 }}>{fmt(summary.totalMembers)} members</span>}
+            {summary && (
+              <span
+                style={{
+                  fontSize: '14px',
+                  color: 'var(--text-secondary)',
+                  marginLeft: '12px',
+                  fontWeight: 400,
+                }}
+              >
+                {fmt(summary.totalMembers)} members
+              </span>
+            )}
           </div>
           <div className="admin-header-actions">
-            <button onClick={() => navigate('/lobby')} className="admin-btn admin-btn-ghost">🏠 Lobby</button>
-            <button onClick={() => loadSessions(clubId)} className="admin-btn admin-btn-ghost">↻ Refresh</button>
+            <button onClick={() => navigate('/lobby')} className="admin-btn admin-btn-ghost">
+              🏠 Lobby
+            </button>
+            <button onClick={() => loadSessions(clubId)} className="admin-btn admin-btn-ghost">
+              ↻ Refresh
+            </button>
           </div>
         </div>
 
         {/* Retention Alert Banner */}
-        {retentionLoaded && (retSummary.atRisk > 0 || retSummary.churned > 0) && tab !== 'retention' && (
-          <div className="admin-error-banner" style={{ background: 'rgba(245,166,35,0.1)', borderColor: 'rgba(245,166,35,0.3)', color: '#F5A623', cursor: 'pointer', marginBottom: '16px' }} onClick={() => setTab('retention')}>
-            <strong>{retSummary.atRisk + retSummary.churned}</strong> player{(retSummary.atRisk + retSummary.churned) !== 1 ? 's' : ''} need attention — {retSummary.atRisk} at-risk, {retSummary.churned} churned
-          </div>
-        )}
+        {retentionLoaded &&
+          (retSummary.atRisk > 0 || retSummary.churned > 0) &&
+          tab !== 'retention' && (
+            <div
+              className="admin-error-banner"
+              style={{
+                background: 'rgba(245,166,35,0.1)',
+                borderColor: 'rgba(245,166,35,0.3)',
+                color: '#F5A623',
+                cursor: 'pointer',
+                marginBottom: '16px',
+              }}
+              onClick={() => setTab('retention')}
+            >
+              <strong>{retSummary.atRisk + retSummary.churned}</strong> player
+              {retSummary.atRisk + retSummary.churned !== 1 ? 's' : ''} need attention —{' '}
+              {retSummary.atRisk} at-risk, {retSummary.churned} churned
+            </div>
+          )}
 
         {/* Tabs */}
         <div className="admin-tabs">
-          {([
+          {[
             { id: 'members' as PlayersTab, label: 'Members', badge: summary?.totalMembers },
             { id: 'sessions' as PlayersTab, label: 'Sessions', badge: summary?.online },
             { id: 'retention' as PlayersTab, label: 'Retention' },
             { id: 'chipflow' as PlayersTab, label: 'Chip Flow' },
-          ]).map(t => (
-            <button key={t.id} className={`admin-tab ${tab === t.id ? 'active' : ''}`} onClick={() => setTab(t.id)}>
+          ].map((t) => (
+            <button
+              key={t.id}
+              className={`admin-tab ${tab === t.id ? 'active' : ''}`}
+              onClick={() => setTab(t.id)}
+            >
               {t.label}
-              {t.badge ? <span style={{ marginLeft: '6px', background: 'rgba(69,153,255,0.15)', padding: '2px 6px', borderRadius: '8px', fontSize: '11px' }}>{t.badge}</span> : null}
+              {t.badge ? (
+                <span
+                  style={{
+                    marginLeft: '6px',
+                    background: 'rgba(69,153,255,0.15)',
+                    padding: '2px 6px',
+                    borderRadius: '8px',
+                    fontSize: '11px',
+                  }}
+                >
+                  {t.badge}
+                </span>
+              ) : null}
             </button>
           ))}
         </div>
@@ -549,25 +742,64 @@ export default function PlayerSessionsPage() {
             {/* Summary */}
             {summary && (
               <div className="admin-stats-grid" style={{ marginBottom: '16px' }}>
-                <div className="admin-stat-card"><div className="admin-stat-value" style={{ color: '#4599FF' }}>{fmt(summary.totalMembers)}</div><div className="admin-stat-label">Total Members</div></div>
-                <div className="admin-stat-card"><div className="admin-stat-value" style={{ color: '#31A24C' }}>{fmt(summary.online)}</div><div className="admin-stat-label">Online Now</div></div>
-                <div className="admin-stat-card"><div className="admin-stat-value" style={{ color: '#F7C52A' }}>{fmt(summary.idle)}</div><div className="admin-stat-label">Idle</div></div>
-                <div className="admin-stat-card"><div className="admin-stat-value" style={{ color: '#4599FF' }}>{fmt(summary.activeTables)}</div><div className="admin-stat-label">Active Tables</div></div>
-                <div className="admin-stat-card"><div className="admin-stat-value">{fmt(summary.totalSeated)}</div><div className="admin-stat-label">Players Seated</div></div>
+                <div className="admin-stat-card">
+                  <div className="admin-stat-value" style={{ color: '#4599FF' }}>
+                    {fmt(summary.totalMembers)}
+                  </div>
+                  <div className="admin-stat-label">Total Members</div>
+                </div>
+                <div className="admin-stat-card">
+                  <div className="admin-stat-value" style={{ color: '#31A24C' }}>
+                    {fmt(summary.online)}
+                  </div>
+                  <div className="admin-stat-label">Online Now</div>
+                </div>
+                <div className="admin-stat-card">
+                  <div className="admin-stat-value" style={{ color: '#F7C52A' }}>
+                    {fmt(summary.idle)}
+                  </div>
+                  <div className="admin-stat-label">Idle</div>
+                </div>
+                <div className="admin-stat-card">
+                  <div className="admin-stat-value" style={{ color: '#4599FF' }}>
+                    {fmt(summary.activeTables)}
+                  </div>
+                  <div className="admin-stat-label">Active Tables</div>
+                </div>
+                <div className="admin-stat-card">
+                  <div className="admin-stat-value">{fmt(summary.totalSeated)}</div>
+                  <div className="admin-stat-label">Players Seated</div>
+                </div>
               </div>
             )}
 
             {/* Filters */}
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
-              <input className="admin-input" style={{ flex: '1 1 200px' }} placeholder="Search by name or ID..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
-              <select className="admin-input" style={{ flex: '0 0 140px' }} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+              <input
+                className="admin-input"
+                style={{ flex: '1 1 200px' }}
+                placeholder="Search by name or ID..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+              <select
+                className="admin-input"
+                style={{ flex: '0 0 140px' }}
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+              >
                 <option value="all">All Status</option>
                 <option value="online">🟢 Online</option>
                 <option value="idle">🟡 Idle</option>
                 <option value="away">🔵 Away</option>
                 <option value="offline">⚫ Offline</option>
               </select>
-              <select className="admin-input" style={{ flex: '0 0 140px' }} value={roleFilter} onChange={e => setRoleFilter(e.target.value)}>
+              <select
+                className="admin-input"
+                style={{ flex: '0 0 140px' }}
+                value={roleFilter}
+                onChange={(e) => setRoleFilter(e.target.value)}
+              >
                 <option value="all">All Roles</option>
                 <option value="owner">Owner</option>
                 <option value="admin">Admin</option>
@@ -579,38 +811,110 @@ export default function PlayerSessionsPage() {
 
             {/* Member Cards */}
             {filtered.length === 0 ? (
-              <div className="admin-empty-state"><span className="admin-empty-icon">👥</span><span>{searchQuery || statusFilter !== 'all' ? 'No players match your filters' : 'No members found'}</span></div>
+              <div className="admin-empty-state">
+                <span className="admin-empty-icon">👥</span>
+                <span>
+                  {searchQuery || statusFilter !== 'all'
+                    ? 'No players match your filters'
+                    : 'No members found'}
+                </span>
+              </div>
             ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '12px' }}>
-                {filtered.map(p => (
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+                  gap: '12px',
+                }}
+              >
+                {filtered.map((p) => (
                   <div key={p.userId} className="admin-card" style={{ padding: '14px 16px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        marginBottom: '8px',
+                      }}
+                    >
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         {p.avatarUrl ? (
-                          <img src={p.avatarUrl} alt="" style={{ width: '32px', height: '32px', borderRadius: '50%', border: `2px solid ${statusColors[p.status]}` }} />
+                          <img
+                            src={p.avatarUrl}
+                            alt=""
+                            style={{
+                              width: '32px',
+                              height: '32px',
+                              borderRadius: '50%',
+                              border: `2px solid ${statusColors[p.status]}`,
+                            }}
+                          />
                         ) : (
-                          <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#3A3B3C', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', border: `2px solid ${statusColors[p.status]}` }}>
+                          <div
+                            style={{
+                              width: '32px',
+                              height: '32px',
+                              borderRadius: '50%',
+                              background: '#3A3B3C',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: '14px',
+                              border: `2px solid ${statusColors[p.status]}`,
+                            }}
+                          >
                             {(p.displayName || '?')[0].toUpperCase()}
                           </div>
                         )}
                         <div>
                           <div style={{ fontWeight: 600, fontSize: '14px' }}>{p.displayName}</div>
-                          <div style={{ fontSize: '11px', color: statusColors[p.status] }}>{statusEmoji[p.status]} {p.status}</div>
+                          <div style={{ fontSize: '11px', color: statusColors[p.status] }}>
+                            {statusEmoji[p.status]} {p.status}
+                          </div>
                         </div>
                       </div>
-                      <span className="admin-badge" style={p.role === 'agent' || p.role === 'super_agent' ? { background: 'rgba(168,85,247,0.15)', color: '#C084FC' } : undefined}>{p.role}</span>
+                      <span
+                        className="admin-badge"
+                        style={
+                          p.role === 'agent' || p.role === 'super_agent'
+                            ? { background: 'rgba(168,85,247,0.15)', color: '#C084FC' }
+                            : undefined
+                        }
+                      >
+                        {p.role}
+                      </span>
                     </div>
-                    <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                    <div
+                      style={{
+                        display: 'flex',
+                        gap: '12px',
+                        flexWrap: 'wrap',
+                        alignItems: 'center',
+                        fontSize: '12px',
+                        color: 'var(--text-secondary)',
+                      }}
+                    >
                       <span>💰 {fmtChips(p.chipBalance)}</span>
                       <span>⏱ {timeAgo(p.lastActive)}</span>
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           const existing = notes[p.userId];
-                          setNoteData(existing || { player_type: 'unknown', color_label: 'none', notes: '' });
+                          setNoteData(
+                            existing || { player_type: 'unknown', color_label: 'none', notes: '' }
+                          );
                           setNoteTarget(p);
                         }}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px', fontSize: '14px', color: notes[p.userId] ? '#F7C52A' : '#6B7280' }} title={notes[p.userId] ? 'Edit note' : 'Add note'}>
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          padding: '2px 6px',
+                          fontSize: '14px',
+                          color: notes[p.userId] ? '#F7C52A' : '#6B7280',
+                        }}
+                        title={notes[p.userId] ? 'Edit note' : 'Add note'}
+                      >
                         {notes[p.userId] ? '📝' : '✏️'}
                       </button>
                     </div>
@@ -630,7 +934,9 @@ export default function PlayerSessionsPage() {
                 <div className="admin-stats-grid">
                   {tables.map((t: any) => (
                     <div key={t.id} className="admin-stat-card">
-                      <div className="admin-stat-value" style={{ color: '#4599FF' }}>{t.current_players}/{t.max_players}</div>
+                      <div className="admin-stat-value" style={{ color: '#4599FF' }}>
+                        {t.current_players}/{t.max_players}
+                      </div>
                       <div className="admin-stat-label">{t.name || 'Table'}</div>
                     </div>
                   ))}
@@ -640,7 +946,10 @@ export default function PlayerSessionsPage() {
 
             <h3 className="admin-section-title">Player Sessions</h3>
             {sessions.length === 0 ? (
-              <div className="admin-empty-state"><span className="admin-empty-icon">📊</span><span>No session data available</span></div>
+              <div className="admin-empty-state">
+                <span className="admin-empty-icon">📊</span>
+                <span>No session data available</span>
+              </div>
             ) : (
               <div className="admin-table-scroll">
                 <table className="admin-data-table">
@@ -654,16 +963,39 @@ export default function PlayerSessionsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {sessions.map(p => (
+                    {sessions.map((p) => (
                       <tr key={p.userId}>
                         <td>
-                          <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: statusColors[p.status], marginRight: '6px', boxShadow: p.status === 'online' ? '0 0 6px rgba(49,162,76,0.5)' : 'none' }} />
+                          <span
+                            style={{
+                              display: 'inline-block',
+                              width: '8px',
+                              height: '8px',
+                              borderRadius: '50%',
+                              background: statusColors[p.status],
+                              marginRight: '6px',
+                              boxShadow:
+                                p.status === 'online' ? '0 0 6px rgba(49,162,76,0.5)' : 'none',
+                            }}
+                          />
                           {p.status}
                         </td>
                         <td style={{ fontWeight: 600 }}>{p.displayName}</td>
-                        <td><span style={{ fontSize: '11px', color: 'var(--text-secondary)', textTransform: 'uppercase' as const }}>{p.role}</span></td>
+                        <td>
+                          <span
+                            style={{
+                              fontSize: '11px',
+                              color: 'var(--text-secondary)',
+                              textTransform: 'uppercase' as const,
+                            }}
+                          >
+                            {p.role}
+                          </span>
+                        </td>
                         <td>{fmtChips(p.chipBalance)}</td>
-                        <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{timeAgo(p.lastActive)}</td>
+                        <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                          {timeAgo(p.lastActive)}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -677,30 +1009,78 @@ export default function PlayerSessionsPage() {
         {tab === 'retention' && (
           <div className="admin-tab-content">
             {!retentionLoaded ? (
-              <div className="admin-empty-state"><span className="admin-empty-icon">⏳</span><span>Scanning player activity...</span></div>
+              <div className="admin-empty-state">
+                <span className="admin-empty-icon">⏳</span>
+                <span>Scanning player activity...</span>
+              </div>
             ) : (
               <>
                 <div className="admin-stats-grid" style={{ marginBottom: '16px' }}>
-                  <div className="admin-stat-card"><div className="admin-stat-value" style={{ color: '#4599FF' }}>{fmt(retSummary.total)}</div><div className="admin-stat-label">Total</div></div>
-                  <div className="admin-stat-card"><div className="admin-stat-value" style={{ color: '#31A24C' }}>{fmt(retSummary.active)}</div><div className="admin-stat-label">Active</div></div>
-                  <div className="admin-stat-card"><div className="admin-stat-value" style={{ color: '#F7C52A' }}>{fmt(retSummary.atRisk)}</div><div className="admin-stat-label">At-Risk</div></div>
-                  <div className="admin-stat-card"><div className="admin-stat-value" style={{ color: '#FA383E' }}>{fmt(retSummary.churned)}</div><div className="admin-stat-label">Churned</div></div>
+                  <div className="admin-stat-card">
+                    <div className="admin-stat-value" style={{ color: '#4599FF' }}>
+                      {fmt(retSummary.total)}
+                    </div>
+                    <div className="admin-stat-label">Total</div>
+                  </div>
+                  <div className="admin-stat-card">
+                    <div className="admin-stat-value" style={{ color: '#31A24C' }}>
+                      {fmt(retSummary.active)}
+                    </div>
+                    <div className="admin-stat-label">Active</div>
+                  </div>
+                  <div className="admin-stat-card">
+                    <div className="admin-stat-value" style={{ color: '#F7C52A' }}>
+                      {fmt(retSummary.atRisk)}
+                    </div>
+                    <div className="admin-stat-label">At-Risk</div>
+                  </div>
+                  <div className="admin-stat-card">
+                    <div className="admin-stat-value" style={{ color: '#FA383E' }}>
+                      {fmt(retSummary.churned)}
+                    </div>
+                    <div className="admin-stat-label">Churned</div>
+                  </div>
                 </div>
 
                 {atRisk.length > 0 && (
                   <div style={{ marginBottom: '24px' }}>
                     <h3 className="admin-section-title">⚠️ At-Risk Players ({atRisk.length})</h3>
-                    <div className="admin-text-secondary" style={{ marginBottom: '8px', fontSize: '12px' }}>Inactive for 5-14 days — reach out before they churn</div>
+                    <div
+                      className="admin-text-secondary"
+                      style={{ marginBottom: '8px', fontSize: '12px' }}
+                    >
+                      Inactive for 5-14 days — reach out before they churn
+                    </div>
                     <div className="admin-table-scroll">
                       <table className="admin-data-table">
-                        <thead><tr><th>Player</th><th>Chips</th><th>Days Inactive</th><th>Action</th></tr></thead>
+                        <thead>
+                          <tr>
+                            <th>Player</th>
+                            <th>Chips</th>
+                            <th>Days Inactive</th>
+                            <th>Action</th>
+                          </tr>
+                        </thead>
                         <tbody>
                           {atRisk.map((p: any) => (
                             <tr key={p.userId}>
                               <td style={{ fontWeight: 600 }}>{p.name}</td>
                               <td>{fmtChips(p.chipBalance)}</td>
-                              <td style={{ color: '#F7C52A', fontWeight: 600 }}>{p.daysSinceActive}d</td>
-                              <td><button onClick={() => { setWbTarget(p); setWbAmount('500'); }} className="admin-btn admin-btn-ghost admin-btn-sm" style={{ borderColor: '#F7C52A', color: '#F7C52A' }}>🎁 Welcome Back</button></td>
+                              <td style={{ color: '#F7C52A', fontWeight: 600 }}>
+                                {p.daysSinceActive}d
+                              </td>
+                              <td>
+                                <button
+                                  onClick={() => {
+                                    setWbTarget(p);
+                                    setWbAmount('500');
+                                  }}
+                                  className="admin-btn admin-btn-ghost admin-btn-sm"
+                                  style={{ borderColor: '#F7C52A', color: '#F7C52A' }}
+                                >
+                                  🎁 Welcome Back
+                                </button>
+                              </td>
                             </tr>
                           ))}
                         </tbody>
@@ -712,17 +1092,42 @@ export default function PlayerSessionsPage() {
                 {churned.length > 0 && (
                   <div style={{ marginBottom: '24px' }}>
                     <h3 className="admin-section-title">🔴 Churned Players ({churned.length})</h3>
-                    <div className="admin-text-secondary" style={{ marginBottom: '8px', fontSize: '12px' }}>Inactive for 14+ days</div>
+                    <div
+                      className="admin-text-secondary"
+                      style={{ marginBottom: '8px', fontSize: '12px' }}
+                    >
+                      Inactive for 14+ days
+                    </div>
                     <div className="admin-table-scroll">
                       <table className="admin-data-table">
-                        <thead><tr><th>Player</th><th>Chips</th><th>Days Inactive</th><th>Action</th></tr></thead>
+                        <thead>
+                          <tr>
+                            <th>Player</th>
+                            <th>Chips</th>
+                            <th>Days Inactive</th>
+                            <th>Action</th>
+                          </tr>
+                        </thead>
                         <tbody>
                           {churned.map((p: any) => (
                             <tr key={p.userId}>
                               <td style={{ fontWeight: 600 }}>{p.name}</td>
                               <td>{fmtChips(p.chipBalance)}</td>
-                              <td style={{ color: '#FA383E', fontWeight: 600 }}>{p.daysSinceActive}d</td>
-                              <td><button onClick={() => { setWbTarget(p); setWbAmount('1000'); }} className="admin-btn admin-btn-ghost admin-btn-sm" style={{ borderColor: '#F7C52A', color: '#F7C52A' }}>🎁 Re-engage</button></td>
+                              <td style={{ color: '#FA383E', fontWeight: 600 }}>
+                                {p.daysSinceActive}d
+                              </td>
+                              <td>
+                                <button
+                                  onClick={() => {
+                                    setWbTarget(p);
+                                    setWbAmount('1000');
+                                  }}
+                                  className="admin-btn admin-btn-ghost admin-btn-sm"
+                                  style={{ borderColor: '#F7C52A', color: '#F7C52A' }}
+                                >
+                                  🎁 Re-engage
+                                </button>
+                              </td>
                             </tr>
                           ))}
                         </tbody>
@@ -732,7 +1137,10 @@ export default function PlayerSessionsPage() {
                 )}
 
                 {atRisk.length === 0 && churned.length === 0 && (
-                  <div className="admin-empty-state"><span className="admin-empty-icon">✅</span><span>All players are actively engaged!</span></div>
+                  <div className="admin-empty-state">
+                    <span className="admin-empty-icon">✅</span>
+                    <span>All players are actively engaged!</span>
+                  </div>
                 )}
               </>
             )}
@@ -744,35 +1152,85 @@ export default function PlayerSessionsPage() {
           <div className="admin-tab-content">
             {!chipFlowLoaded ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {[1, 2, 3, 4].map(i => <div key={i} className="admin-skeleton" style={{ height: '50px' }} />)}
+                {[1, 2, 3, 4].map((i) => (
+                  <div key={i} className="admin-skeleton" style={{ height: '50px' }} />
+                ))}
               </div>
             ) : chipFlowEntries.length === 0 ? (
-              <div className="admin-empty-state"><span className="admin-empty-icon">💸</span><span>No chip flow data for the last 7 days</span></div>
+              <div className="admin-empty-state">
+                <span className="admin-empty-icon">💸</span>
+                <span>No chip flow data for the last 7 days</span>
+              </div>
             ) : (
               <>
                 <div className="admin-stats-grid" style={{ marginBottom: '16px' }}>
-                  <div className="admin-stat-card"><div className="admin-stat-value" style={{ color: '#31A24C' }}>{fmtChips(chipFlowEntries.reduce((sum: number, e: any) => sum + (e.in || 0), 0))}</div><div className="admin-stat-label">Total Inflow</div></div>
-                  <div className="admin-stat-card"><div className="admin-stat-value" style={{ color: '#FA383E' }}>{fmtChips(chipFlowEntries.reduce((sum: number, e: any) => sum + (e.out || 0), 0))}</div><div className="admin-stat-label">Total Outflow</div></div>
                   <div className="admin-stat-card">
-                    <div className="admin-stat-value" style={{ color: chipFlowEntries.reduce((sum: number, e: any) => sum + (e.net || 0), 0) >= 0 ? '#31A24C' : '#FA383E' }}>
-                      {fmtChips(chipFlowEntries.reduce((sum: number, e: any) => sum + (e.net || 0), 0))}
+                    <div className="admin-stat-value" style={{ color: '#31A24C' }}>
+                      {fmtChips(
+                        chipFlowEntries.reduce((sum: number, e: any) => sum + (e.in || 0), 0)
+                      )}
+                    </div>
+                    <div className="admin-stat-label">Total Inflow</div>
+                  </div>
+                  <div className="admin-stat-card">
+                    <div className="admin-stat-value" style={{ color: '#FA383E' }}>
+                      {fmtChips(
+                        chipFlowEntries.reduce((sum: number, e: any) => sum + (e.out || 0), 0)
+                      )}
+                    </div>
+                    <div className="admin-stat-label">Total Outflow</div>
+                  </div>
+                  <div className="admin-stat-card">
+                    <div
+                      className="admin-stat-value"
+                      style={{
+                        color:
+                          chipFlowEntries.reduce((sum: number, e: any) => sum + (e.net || 0), 0) >=
+                          0
+                            ? '#31A24C'
+                            : '#FA383E',
+                      }}
+                    >
+                      {fmtChips(
+                        chipFlowEntries.reduce((sum: number, e: any) => sum + (e.net || 0), 0)
+                      )}
                     </div>
                     <div className="admin-stat-label">Net Flow</div>
                   </div>
-                  <div className="admin-stat-card"><div className="admin-stat-value" style={{ color: '#4599FF' }}>{fmt(chipFlowEntries.length)}</div><div className="admin-stat-label">Active Players</div></div>
+                  <div className="admin-stat-card">
+                    <div className="admin-stat-value" style={{ color: '#4599FF' }}>
+                      {fmt(chipFlowEntries.length)}
+                    </div>
+                    <div className="admin-stat-label">Active Players</div>
+                  </div>
                 </div>
 
                 <h3 className="admin-section-title">7-Day Player Chip Flow</h3>
                 <div className="admin-table-scroll">
                   <table className="admin-data-table">
-                    <thead><tr><th>Player</th><th>Chips In</th><th>Chips Out</th><th>Net</th></tr></thead>
+                    <thead>
+                      <tr>
+                        <th>Player</th>
+                        <th>Chips In</th>
+                        <th>Chips Out</th>
+                        <th>Net</th>
+                      </tr>
+                    </thead>
                     <tbody>
                       {chipFlowEntries.map((e: any) => (
                         <tr key={e.userId}>
                           <td style={{ fontWeight: 600 }}>{e.name}</td>
                           <td style={{ color: '#31A24C' }}>+{fmtChips(e.in)}</td>
                           <td style={{ color: '#FA383E' }}>-{fmtChips(e.out)}</td>
-                          <td style={{ fontWeight: 700, color: (e.net || 0) >= 0 ? '#31A24C' : '#FA383E' }}>{(e.net || 0) >= 0 ? '+' : ''}{fmtChips(e.net)}</td>
+                          <td
+                            style={{
+                              fontWeight: 700,
+                              color: (e.net || 0) >= 0 ? '#31A24C' : '#FA383E',
+                            }}
+                          >
+                            {(e.net || 0) >= 0 ? '+' : ''}
+                            {fmtChips(e.net)}
+                          </td>
                         </tr>
                       ))}
                     </tbody>

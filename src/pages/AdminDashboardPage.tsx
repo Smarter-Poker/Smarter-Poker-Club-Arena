@@ -14,6 +14,7 @@ import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { resolveClubUUID } from '../utils/clubIdResolver';
+import ArenaLedger from '../components/admin/ArenaLedger';
 import './AdminDashboardPage.css';
 
 // ── Helpers ─────────────────────────────────────────────────
@@ -190,13 +191,18 @@ function DashboardTab({ clubId }: { clubId: string }) {
     load();
   }, [load]);
 
-  // Bus listener for cross-page sync
+  // Bus listener for cross-page sync (ported from World Hub admin.js)
   useEffect(() => {
     const unsubs = [
       masterBus.subscribe('TABLE_CREATED', load),
       masterBus.subscribe('CHIPS_DISTRIBUTED', load),
       masterBus.subscribe('AGENT_UPDATED', load),
       masterBus.subscribe('ANNOUNCEMENT_CHANGED', load),
+      masterBus.subscribe('CLUB_UPDATED', load),
+      masterBus.subscribe('SETTINGS_CHANGED', load),
+      masterBus.subscribe('CREDIT_UPDATED', load),
+      masterBus.subscribe('CASHOUT_REQUESTED', load),
+      masterBus.subscribe('CASHOUT_APPROVED', load),
     ];
     return () => unsubs.forEach((u) => u());
   }, [load]);
@@ -656,6 +662,39 @@ function AuditLogTab({ clubId }: { clubId: string }) {
       <div className="admin-section-title">
         <h3>Security Audit Trail</h3>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <button
+            onClick={async () => {
+              try {
+                const uuid = await resolveClubUUID(clubId);
+                const { data, error } = await supabase
+                  .from('audit_logs')
+                  .select('*')
+                  .eq('club_id', uuid)
+                  .order('created_at', { ascending: false })
+                  .limit(5000);
+                if (error) throw error;
+                if (!data || data.length === 0) return;
+                const headers = Object.keys(data[0]);
+                const csv = [
+                  headers.join(','),
+                  ...data.map((r: any) => headers.map((h) => JSON.stringify(r[h] ?? '')).join(',')),
+                ].join('\n');
+                const blob = new Blob([csv], { type: 'text/csv' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `audit-log-${clubId.substring(0, 8)}.csv`;
+                a.click();
+                URL.revokeObjectURL(url);
+              } catch (e: any) {
+                console.error('[AuditLog] CSV export failed:', e.message);
+              }
+            }}
+            className="admin-btn admin-btn-ghost admin-btn-sm"
+            title="Export audit log as CSV"
+          >
+            📥 Export
+          </button>
           <span className="admin-text-secondary" style={{ fontSize: '13px' }}>
             Total: {fmt(total)}
           </span>
@@ -1382,6 +1421,71 @@ function BrandingTab({ clubId }: { clubId: string }) {
           </button>
         </div>
       </div>
+
+      {/* Ownership Transfer — Danger Zone */}
+      <div
+        className="admin-card"
+        style={{
+          marginTop: '24px',
+          borderColor: 'rgba(250,56,62,0.3)',
+          background: 'rgba(250,56,62,0.04)',
+        }}
+      >
+        <h4
+          style={{
+            margin: '0 0 12px',
+            fontSize: '15px',
+            color: '#FA383E',
+          }}
+        >
+          ⚠️ Danger Zone — Transfer Ownership
+        </h4>
+        <p
+          className="admin-text-secondary"
+          style={{ fontSize: '12px', marginBottom: '12px', lineHeight: 1.6 }}
+        >
+          Transfer complete ownership of this club to another member. This action is irreversible —
+          you will be demoted to admin.
+        </p>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <input
+            id="ownership-target"
+            placeholder="New owner's User ID (UUID)"
+            className="admin-input"
+            style={{ flex: 1 }}
+          />
+          <button
+            className="admin-btn admin-btn-ghost"
+            style={{ color: '#FA383E', borderColor: '#FA383E' }}
+            onClick={async () => {
+              const target = (document.getElementById('ownership-target') as HTMLInputElement)
+                ?.value;
+              if (!target) return;
+              if (
+                !confirm(
+                  `⚠️ IRREVERSIBLE: Transfer ownership to ${target.substring(0, 8)}...? You will be demoted to admin.`
+                )
+              )
+                return;
+              if (!confirm('Are you absolutely sure? This cannot be undone.')) return;
+              try {
+                const uuid = await resolveClubUUID(clubId);
+                const { error } = await supabase.rpc('transfer_club_ownership', {
+                  p_club_id: uuid,
+                  p_new_owner_id: target,
+                });
+                if (error) throw error;
+                setMsg('Ownership transferred! Reloading...');
+                setTimeout(() => window.location.reload(), 1500);
+              } catch (e: any) {
+                setErr('Transfer failed: ' + e.message);
+              }
+            }}
+          >
+            🔑 Transfer
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -2088,7 +2192,17 @@ export default function AdminDashboardPage() {
         {activeTab === 'hierarchy' && <HierarchyTab clubId={clubId} />}
         {activeTab === 'settlements' && <SettlementsTab clubId={clubId} />}
         {activeTab === 'history' && <SettlementHistoryTab clubId={clubId} />}
-        {activeTab === 'audit' && <AuditLogTab clubId={clubId} />}
+        {activeTab === 'audit' && (
+          <>
+            <AuditLogTab clubId={clubId} />
+            <div style={{ marginTop: '24px' }}>
+              <h3 style={{ color: 'var(--text-primary)', marginBottom: '12px' }}>
+                📡 Live Activity Stream
+              </h3>
+              <ArenaLedger clubId={clubId} maxEntries={100} />
+            </div>
+          </>
+        )}
         {activeTab === 'branding' && <BrandingTab clubId={clubId} />}
         {activeTab === 'recommendations' && <RecommendationsTab clubId={clubId} />}
         {activeTab === 'announcements' && <AnnouncementsTab clubId={clubId} />}

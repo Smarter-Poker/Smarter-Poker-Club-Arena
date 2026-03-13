@@ -996,6 +996,270 @@ class AgentServiceClass {
       createdAt: t.created_at,
     }));
   }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // TREASURY DISTRIBUTION (Owner/Admin → Player)
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Distribute chips from club treasury to a member.
+   * Uses the `distribute_chips` Supabase RPC for atomic wallet transfer.
+   * Only club owners and admins can use this (agents use transferToPlayer instead).
+   */
+  async distributeFromTreasury(
+    clubId: string,
+    toUserId: string,
+    amount: number,
+    distributedBy: string,
+    notes?: string
+  ): Promise<{
+    success: boolean;
+    treasuryBefore?: number;
+    treasuryAfter?: number;
+    memberBefore?: number;
+    memberAfter?: number;
+    error?: string;
+  }> {
+    if (amount <= 0 || !Number.isFinite(amount) || amount > 100_000_000) {
+      return { success: false, error: 'Amount must be a positive integer (max 100M)' };
+    }
+
+    const sanitizedAmount = Math.floor(amount);
+
+    const { data: result, error: rpcErr } = await retryAsync(
+      () =>
+        supabase.rpc('distribute_chips', {
+          p_club_id: clubId,
+          p_to_user_id: toUserId,
+          p_amount: sanitizedAmount,
+          p_distributed_by: distributedBy,
+        }),
+      3
+    );
+
+    if (rpcErr) {
+      console.error('[AgentService] Treasury distribution RPC error:', rpcErr);
+      return { success: false, error: rpcErr.message || 'Distribution failed' };
+    }
+
+    if (!result?.success) {
+      return { success: false, error: result?.error || 'Distribution failed' };
+    }
+
+    masterBus.emit('BALANCE_UPDATED', { source: 'treasury_distribution' });
+
+    return {
+      success: true,
+      treasuryBefore: result.treasury_before,
+      treasuryAfter: result.treasury_after,
+      memberBefore: result.member_before,
+      memberAfter: result.member_after,
+    };
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // CLAWBACK — Reverse a chip distribution within 10-minute window
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /** Time window (ms) within which clawback is allowed */
+  private static readonly CLAWBACK_WINDOW_MS = 10 * 60 * 1000;
+
+  /**
+   * Clawback (reverse) a chip distribution within the 10-minute security window.
+   *
+   * RULES:
+   *   - Must be within 10 minutes of the original distribution
+   *   - Can only clawback your own distributions
+   *   - Can clawback full or partial amount (up to original)
+   *   - After 10 minutes, the only recourse is a player cashout request
+   */
+  async clawbackDistribution(
+    transactionId: string,
+    clubId: string,
+    agentUserId: string,
+    requestedAmount?: number
+  ): Promise<{
+    success: boolean;
+    partial?: boolean;
+    recovered?: number;
+    originalAmount?: number;
+    playerNewBalance?: number;
+    agentNewBalance?: number;
+    windowRemaining?: string;
+    error?: string;
+  }> {
+    // 1. Get the original transaction
+    const { data: txn, error: txnErr } = await supabase
+      .from('chip_transactions')
+      .select('id, from_user_id, to_user_id, amount, club_id, created_at, transaction_type, notes')
+      .eq('id', transactionId)
+      .maybeSingle();
+
+    if (txnErr || !txn) {
+      return { success: false, error: 'Transaction not found' };
+    }
+
+    // 2. Verify caller is the agent who sent the chips
+    if (txn.from_user_id !== agentUserId) {
+      return { success: false, error: 'You can only clawback your own distributions' };
+    }
+
+    if (txn.club_id !== clubId) {
+      return { success: false, error: 'Club ID mismatch' };
+    }
+
+    // Must be an agent→player distribution
+    const clawbackableTypes = ['agent_to_player', 'promo_agent_to_player', 'send'];
+    if (!clawbackableTypes.includes(txn.transaction_type) || txn.from_user_id === txn.to_user_id) {
+      return { success: false, error: 'Can only clawback agent→player distributions' };
+    }
+
+    // Check if already clawed back
+    if (txn.notes?.includes('[CLAWED BACK]')) {
+      return { success: false, error: 'This transaction has already been clawed back' };
+    }
+
+    // 3. Check the 10-minute window
+    const txnTime = new Date(txn.created_at).getTime();
+    const elapsed = Date.now() - txnTime;
+
+    if (elapsed > AgentServiceClass.CLAWBACK_WINDOW_MS) {
+      const minutesAgo = Math.floor(elapsed / 60000);
+      return {
+        success: false,
+        error: `Clawback window expired. Distribution was ${minutesAgo} minutes ago (limit: 10 min). The player must submit a cashout request instead.`,
+      };
+    }
+
+    const remainingSeconds = Math.ceil((AgentServiceClass.CLAWBACK_WINDOW_MS - elapsed) / 1000);
+
+    // 4. Determine clawback amount
+    let clawbackAmount: number;
+    if (requestedAmount != null) {
+      clawbackAmount = Math.floor(Number(requestedAmount));
+      if (!Number.isFinite(clawbackAmount) || clawbackAmount <= 0 || clawbackAmount > 100_000_000) {
+        return { success: false, error: 'Amount must be a positive integer (max 100M)' };
+      }
+      clawbackAmount = Math.min(clawbackAmount, txn.amount); // cap at original
+    } else {
+      clawbackAmount = txn.amount; // default to full
+    }
+
+    // 5. Atomically claim the transaction (prevents double-clawback)
+    const clawbackNote = `${txn.notes || ''} [CLAWED BACK: ${clawbackAmount} at ${new Date().toISOString()}]`;
+    const { data: claimed, error: claimErr } = await supabase
+      .from('chip_transactions')
+      .update({ notes: clawbackNote })
+      .eq('id', transactionId)
+      .not('notes', 'like', '%[CLAWED BACK]%')
+      .select('id')
+      .maybeSingle();
+
+    if (claimErr || !claimed) {
+      return { success: false, error: 'Transaction already clawed back or claim failed' };
+    }
+
+    // 6. Execute atomic clawback via RPC
+    const { data: rpcResult, error: rpcErr } = await retryAsync(
+      () =>
+        supabase.rpc('fn_clawback_chips_atomic', {
+          p_transaction_id: transactionId,
+          p_club_id: clubId,
+          p_agent_id: agentUserId,
+          p_amount: clawbackAmount,
+        }),
+      3
+    );
+
+    if (rpcErr || !rpcResult?.success) {
+      // Revert claim note on failure
+      await supabase
+        .from('chip_transactions')
+        .update({ notes: txn.notes || '' })
+        .eq('id', transactionId);
+
+      return {
+        success: rpcResult?.partial || false,
+        partial: rpcResult?.partial || false,
+        recovered: rpcResult?.recovered || 0,
+        playerNewBalance: rpcResult?.player_new_balance || 0,
+        error: rpcResult?.error || 'Clawback RPC failed',
+        windowRemaining: `${remainingSeconds}s`,
+      };
+    }
+
+    masterBus.emit('BALANCE_UPDATED', { source: 'clawback', userId: agentUserId });
+
+    return {
+      success: true,
+      partial: rpcResult.partial,
+      recovered: rpcResult.recovered,
+      originalAmount: txn.amount,
+      playerNewBalance: rpcResult.player_new_balance,
+      agentNewBalance: rpcResult.agent_new_balance,
+      windowRemaining: `${remainingSeconds}s`,
+    };
+  }
+
+  /**
+   * Get recent distributions (for showing clawback-eligible items in the UI).
+   * Returns only distributions within the clawback window (10 minutes).
+   */
+  async getRecentDistributions(
+    agentUserId: string,
+    clubId: string,
+    limit = 20
+  ): Promise<
+    {
+      id: string;
+      toUserId: string;
+      toDisplayName: string;
+      amount: number;
+      createdAt: string;
+      canClawback: boolean;
+      minutesRemaining: number;
+    }[]
+  > {
+    const cutoff = new Date(Date.now() - AgentServiceClass.CLAWBACK_WINDOW_MS).toISOString();
+
+    const { data, error } = await supabase
+      .from('chip_transactions')
+      .select('id, to_user_id, amount, created_at, notes, transaction_type')
+      .eq('from_user_id', agentUserId)
+      .eq('club_id', clubId)
+      .in('transaction_type', ['agent_to_player', 'promo_agent_to_player', 'send'])
+      .gte('created_at', cutoff)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (error || !data?.length) return [];
+
+    // Fetch display names for recipients
+    const toUserIds = [...new Set(data.map((t) => t.to_user_id))];
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, display_name')
+      .in('id', toUserIds);
+
+    const nameMap = new Map(profiles?.map((p) => [p.id, p.display_name || 'Unknown']) || []);
+
+    return data.map((t) => {
+      const elapsed = Date.now() - new Date(t.created_at).getTime();
+      const minutesRemaining = Math.max(
+        0,
+        Math.ceil((AgentServiceClass.CLAWBACK_WINDOW_MS - elapsed) / 60000)
+      );
+      return {
+        id: t.id,
+        toUserId: t.to_user_id,
+        toDisplayName: nameMap.get(t.to_user_id) || 'Unknown',
+        amount: t.amount,
+        createdAt: t.created_at,
+        canClawback: !t.notes?.includes('[CLAWED BACK]') && minutesRemaining > 0,
+        minutesRemaining,
+      };
+    });
+  }
 }
 
 export const AgentService = new AgentServiceClass();

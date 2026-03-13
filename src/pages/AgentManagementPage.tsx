@@ -239,12 +239,45 @@ export default function AgentManagementPage() {
       },
       300
     );
+    // ── Ported from World Hub agent-dashboard.js: cross-page sync ──
+    const unsubChipsDistributed = masterBus.subscribeDebounced(
+      'CHIPS_DISTRIBUTED',
+      () => {
+        loadAgentsData();
+      },
+      300
+    );
+    const unsubCashoutApproved = masterBus.subscribeDebounced(
+      'CASHOUT_APPROVED',
+      () => {
+        loadAgentsData();
+      },
+      300
+    );
+    const unsubCashoutCancelled = masterBus.subscribeDebounced(
+      'CASHOUT_CANCELLED',
+      () => {
+        loadAgentsData();
+      },
+      300
+    );
+    const unsubAgentUpdated = masterBus.subscribeDebounced(
+      'AGENT_UPDATED',
+      () => {
+        loadAgentsData();
+      },
+      300
+    );
 
     return () => {
       masterBus.removeRegisteredChannel(channelKey);
       unsubWallet();
       unsubBalance();
       unsubClub();
+      unsubChipsDistributed();
+      unsubCashoutApproved();
+      unsubCashoutCancelled();
+      unsubAgentUpdated();
     };
   }, [clubId]);
 

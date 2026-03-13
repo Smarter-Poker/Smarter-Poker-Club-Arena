@@ -521,12 +521,47 @@ export default function CashierPage() {
       },
       500
     );
+    // ── Ported from World Hub cashier.js: cross-page refresh on admin actions ──
+    const unsubChipsDistributed = masterBus.subscribeDebounced(
+      'CHIPS_DISTRIBUTED',
+      () => {
+        loadBalances(user.id);
+        loadPendingCashouts();
+      },
+      500
+    );
+    const unsubCashoutRequested = masterBus.subscribeDebounced(
+      'CASHOUT_REQUESTED',
+      () => {
+        loadPendingCashouts();
+      },
+      500
+    );
+    const unsubCashoutCancelled = masterBus.subscribeDebounced(
+      'CASHOUT_CANCELLED',
+      () => {
+        loadBalances(user.id);
+        loadPendingCashouts();
+      },
+      500
+    );
+    const unsubCashierBalance = masterBus.subscribeDebounced(
+      'CASHIER_BALANCE_CHANGED',
+      () => {
+        loadBalances(user.id);
+      },
+      500
+    );
     return () => {
       unsubBalance();
       unsubWallet();
       unsubHand();
       unsubChipsAdded();
       unsubChipsWithdrawn();
+      unsubChipsDistributed();
+      unsubCashoutRequested();
+      unsubCashoutCancelled();
+      unsubCashierBalance();
     };
   }, [user?.id, loadBalances, loadTransactions]);
 

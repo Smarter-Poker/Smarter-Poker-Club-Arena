@@ -3,9 +3,10 @@
  * Displays a single table in the lobby grid
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { waitlistService } from '../../services/WaitlistService';
+import { tableService } from '../../services/TableService';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { supabase } from '../../lib/supabase';
 import { PlayerAvatar } from '../avatars/PlayerAvatar';
@@ -56,6 +57,8 @@ export default function TableCard({ table }: TableCardProps) {
   const toast = useToast();
   const [isJoiningWaitlist, setIsJoiningWaitlist] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [adminRole, setAdminRole] = useState<string | null>(null);
+  const [adminProcessing, setAdminProcessing] = useState(false);
 
   useEffect(() => {
     setTimeout(() => setMounted(true), 50);
@@ -131,6 +134,63 @@ export default function TableCard({ table }: TableCardProps) {
       isMounted = false;
     };
   }, [table.id]);
+
+  // Check admin role for this table's club
+  useEffect(() => {
+    if (!user?.id || !table.club_id) return;
+    let cancelled = false;
+    supabase
+      .from('club_members')
+      .select('role')
+      .eq('club_id', table.club_id)
+      .eq('user_id', user.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!cancelled && data && ['owner', 'admin'].includes(data.role)) {
+          setAdminRole(data.role);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, table.club_id]);
+
+  // ── Admin table management handlers ──
+  const handleAdminAction = useCallback(
+    async (action: 'pause' | 'resume' | 'close' | 'delete') => {
+      if (adminProcessing) return;
+      setAdminProcessing(true);
+      haptic.light();
+      try {
+        let success = false;
+        switch (action) {
+          case 'pause':
+            success = await tableService.pauseTable(table.id);
+            break;
+          case 'resume':
+            success = await tableService.resumeTable(table.id);
+            break;
+          case 'close':
+            success = await tableService.closeTable(table.id);
+            break;
+          case 'delete':
+            if (!table.club_id) break;
+            success = await tableService.deleteTable(table.id, table.club_id);
+            break;
+        }
+        if (success) {
+          toast.success(`Table ${action}d successfully`);
+        } else {
+          toast.error(`Failed to ${action} table — may have changed status`);
+        }
+      } catch (err: any) {
+        toast.error(err.message || `Failed to ${action} table`);
+      } finally {
+        setAdminProcessing(false);
+      }
+    },
+    [adminProcessing, table.id, table.club_id, toast]
+  );
 
   const handleJoin = async () => {
     haptic.medium();
@@ -244,6 +304,65 @@ export default function TableCard({ table }: TableCardProps) {
       >
         {isJoiningWaitlist ? 'Joining...' : isFull ? 'Join Waitlist' : 'Join Table'}
       </button>
+
+      {/* Admin Controls — visible to owner/admin only */}
+      {adminRole && (
+        <div className={styles.adminControls}>
+          {table.status === 'running' || table.status === 'active' || table.status === 'waiting' ? (
+            <button
+              className={styles.adminBtn}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleAdminAction('pause');
+              }}
+              disabled={adminProcessing}
+              title="Pause table"
+            >
+              ⏸ Pause
+            </button>
+          ) : table.status === 'paused' ? (
+            <button
+              className={styles.adminBtn}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleAdminAction('resume');
+              }}
+              disabled={adminProcessing}
+              title="Resume table"
+            >
+              ▶ Resume
+            </button>
+          ) : null}
+          {table.status !== 'closed' && table.status !== 'deleted' && (
+            <button
+              className={`${styles.adminBtn} ${styles.adminBtnDanger}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleAdminAction('close');
+              }}
+              disabled={adminProcessing}
+              title="Close table"
+            >
+              ✕ Close
+            </button>
+          )}
+          {(table.status === 'closed' ||
+            table.status === 'paused' ||
+            table.status === 'waiting') && (
+            <button
+              className={`${styles.adminBtn} ${styles.adminBtnDanger}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleAdminAction('delete');
+              }}
+              disabled={adminProcessing}
+              title="Delete table permanently"
+            >
+              🗑 Delete
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

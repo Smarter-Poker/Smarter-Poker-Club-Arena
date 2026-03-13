@@ -183,9 +183,39 @@ export default function TournamentPage() {
       masterBus.emit('PROFILE_UPDATED', { userId: currentUser.id, updates: {} });
     });
 
+    // ── Ported from World Hub tournaments.js: refresh on cross-page actions ──
+    const unsubChipsDistributed = masterBus.subscribeDebounced(
+      'CHIPS_DISTRIBUTED',
+      async () => {
+        try {
+          const data = await tournamentService.getTournaments(clubId);
+          setTournaments(data);
+        } catch {
+          /* silent */
+        }
+      },
+      500
+    );
+    const unsubTournamentUpdated = masterBus.subscribeDebounced(
+      'TOURNAMENT_UPDATED',
+      async () => {
+        try {
+          const data = await tournamentService.getTournaments(clubId);
+          setTournaments(data);
+          const updated = data.find((t) => t.id === selectedTournamentRef.current?.id);
+          if (updated) setSelectedTournament(updated);
+        } catch {
+          /* silent */
+        }
+      },
+      500
+    );
+
     return () => {
       masterBus.removeRegisteredChannel(channelKey);
       unsubBalance();
+      unsubChipsDistributed();
+      unsubTournamentUpdated();
     };
   }, [clubId, currentUser.id]);
 

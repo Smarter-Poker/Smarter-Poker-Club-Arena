@@ -119,8 +119,32 @@ export default function LobbyPage() {
       masterBus.emit('PROFILE_UPDATED', { userId: user.id || '', updates: {} });
     });
 
+    // ── EventBus listeners ported from World Hub lobby.js ──
+    // These cross-page events trigger a lobby refresh when admin/cashier actions
+    // occur elsewhere in the app (table created, chips distributed, etc.)
+    const refreshTables = () => {
+      tableService
+        .getActiveTables()
+        .then((t) => {
+          if (isMounted.current) setTables(t);
+        })
+        .catch(() => {});
+    };
+    const LOBBY_REFRESH_EVENTS = [
+      'TABLE_CREATED',
+      'ANNOUNCEMENT_CHANGED',
+      'PLAYER_KICKED',
+      'CHIPS_DISTRIBUTED',
+      'TABLE_DELETED',
+      'TABLE_CLOSED',
+    ] as const;
+    const unsubEvents = LOBBY_REFRESH_EVENTS.map((ev) =>
+      masterBus.subscribeDebounced(ev, refreshTables, 500)
+    );
+
     return () => {
       unsubBalance();
+      unsubEvents.forEach((unsub) => unsub());
     };
   }, [user?.id]);
 

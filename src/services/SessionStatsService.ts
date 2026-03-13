@@ -239,9 +239,7 @@ class SessionStatsServiceClass {
         .then(({ error }) => {
           if (error) {
             console.error('[SessionStats] Failed to persist session:', error.message);
-            // Enhancement #8: Queue to localStorage for later retry
             this.queueOfflineSession(insertPayload);
-          } else {
           }
         });
     }
@@ -293,6 +291,7 @@ class SessionStatsServiceClass {
 
       queue.forEach((payload) => {
         // Remove tracking fields before inserting
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { queued_at: _queued_at, retry_count: _retry_count, ...insertData } = payload;
         supabase
           .from('session_history')
@@ -302,7 +301,6 @@ class SessionStatsServiceClass {
               console.error('[SessionStats] Offline flush failed:', error.message);
               // Re-queue if still failing (tracks retry_count natively)
               this.queueOfflineSession(payload);
-            } else {
             }
           });
       });

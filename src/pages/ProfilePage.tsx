@@ -335,75 +335,73 @@ export default function ProfilePage() {
           }
         }
 
-        // Load achievements if table exists
-        try {
-          const { data: userAchievements } = await supabase
+        // ── Batch: achievements + missions + transactions in parallel ──
+        const [achievementsResult, missionsResult, transactionsResult] = await Promise.allSettled([
+          // Achievements
+          supabase
             .from('user_achievements')
             .select('*, achievement:achievements(*)')
             .eq('user_id', authUser.id)
-            .limit(200);
-
-          if (userAchievements && isMounted) {
-            setAchievements(
-              userAchievements.map((ua) => ({
-                id: ua.achievement?.id || ua.id,
-                name: ua.achievement?.name || 'Achievement',
-                description: ua.achievement?.description || '',
-                icon: ua.achievement?.icon || '',
-                unlockedAt: ua.unlocked_at,
-                progress: ua.progress,
-                maxProgress: ua.achievement?.max_progress,
-              }))
-            );
-          }
-        } catch {
-          // Achievements table may not exist yet
-          setAchievements([]);
-        }
-
-        // Load all gamified missions (Daily, Weekly, Monthly)
-        try {
-          const [daily, weekly, monthly] = await Promise.all([
+            .limit(200),
+          // Missions (daily + weekly + monthly)
+          Promise.all([
             dailyChallengeService.getTodaysChallenges(authUser.id),
             dailyChallengeService.getWeeklyChallenges(authUser.id),
             dailyChallengeService.getMonthlyChallenges(authUser.id),
-          ]);
-
-          const allMissions = [...daily, ...weekly, ...monthly];
-
-          if (isMounted) {
-            setMissions(
-              allMissions.map((mc) => ({
-                id: mc.id,
-                tier: ('tier' in mc ? mc.tier : 'daily') as 'daily' | 'weekly' | 'monthly',
-                title: mc.challenge.name,
-                description: mc.challenge.description,
-                icon: mc.challenge.icon,
-                current: mc.progress,
-                target: mc.challenge.requirement,
-                rewardAmount: mc.challenge.chipReward,
-                rewardType: 'chips' as const,
-                completed: mc.completed,
-                claimed: mc.claimed,
-              }))
-            );
-          }
-        } catch (err: any) {
-          console.error('[PROFILE] Failed to load missions:', err);
-          toast.error('Failed to load daily missions');
-        }
-
-        // Load transaction history for profit graph
-        try {
-          const { data: txns } = await supabase
+          ]),
+          // Transaction history
+          supabase
             .from('wallet_transactions')
             .select('id, type, amount, created_at, description')
             .eq('user_id', authUser.id)
             .order('created_at', { ascending: true })
-            .limit(200);
+            .limit(200),
+        ]);
 
-          if (txns && isMounted) setTransactions(txns);
-        } catch {
+        if (!isMounted) return;
+
+        // Process achievements
+        if (achievementsResult.status === 'fulfilled' && achievementsResult.value.data) {
+          setAchievements(
+            achievementsResult.value.data.map((ua: any) => ({
+              id: ua.achievement?.id || ua.id,
+              name: ua.achievement?.name || 'Achievement',
+              description: ua.achievement?.description || '',
+              icon: ua.achievement?.icon || '',
+              unlockedAt: ua.unlocked_at,
+              progress: ua.progress,
+              maxProgress: ua.achievement?.max_progress,
+            }))
+          );
+        } else {
+          setAchievements([]);
+        }
+
+        // Process missions
+        if (missionsResult.status === 'fulfilled') {
+          const [daily, weekly, monthly] = missionsResult.value;
+          const allMissions = [...daily, ...weekly, ...monthly];
+          setMissions(
+            allMissions.map((mc) => ({
+              id: mc.id,
+              tier: ('tier' in mc ? mc.tier : 'daily') as 'daily' | 'weekly' | 'monthly',
+              title: mc.challenge.name,
+              description: mc.challenge.description,
+              icon: mc.challenge.icon,
+              current: mc.progress,
+              target: mc.challenge.requirement,
+              rewardAmount: mc.challenge.chipReward,
+              rewardType: 'chips' as const,
+              completed: mc.completed,
+              claimed: mc.claimed,
+            }))
+          );
+        }
+
+        // Process transactions
+        if (transactionsResult.status === 'fulfilled' && transactionsResult.value.data) {
+          setTransactions(transactionsResult.value.data);
+        } else {
           setTransactions([]);
         }
 

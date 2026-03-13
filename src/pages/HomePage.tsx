@@ -801,38 +801,38 @@ function HomePageInner() {
             /* quota */
           }
 
-          // Phase 7 #1: Fetch unread notification count for tile badges
-          try {
-            const { count } = await supabase
+          // ── Batch: notification badges + card color sync in parallel ──
+          const [notifResult, colorResult] = await Promise.allSettled([
+            supabase
               .from('notifications')
               .select('*', { count: 'exact', head: true })
               .eq('user_id', authUser.id)
-              .eq('is_read', false);
-            if (getIsMounted && !getIsMounted()) return;
-            if (count && count > 0) {
-              setTileBadges({ 'Player Stats': count });
-            }
-          } catch {
-            /* silent -- table may not exist yet */
-          }
-
-          // Phase 7 #2: Card color sync from Supabase (new device recovery)
-          try {
-            const { data: profile } = await supabase
+              .eq('is_read', false),
+            supabase
               .from('profiles')
               .select('card_color_preset')
               .eq('id', authUser.id)
-              .maybeSingle();
-            if (
-              profile?.card_color_preset &&
-              profile.card_color_preset !== localStorage.getItem(CARD_COLOR_KEY)
-            ) {
-              localStorage.setItem(CARD_COLOR_KEY, profile.card_color_preset);
-              if (getIsMounted && !getIsMounted()) return;
-              setCardColorPreset(profile.card_color_preset);
+              .maybeSingle(),
+          ]);
+
+          if (getIsMounted && !getIsMounted()) return;
+
+          // Process notification badges
+          if (
+            notifResult.status === 'fulfilled' &&
+            notifResult.value.count &&
+            notifResult.value.count > 0
+          ) {
+            setTileBadges({ 'Player Stats': notifResult.value.count });
+          }
+
+          // Process card color sync
+          if (colorResult.status === 'fulfilled' && colorResult.value.data?.card_color_preset) {
+            const preset = colorResult.value.data.card_color_preset;
+            if (preset !== localStorage.getItem(CARD_COLOR_KEY)) {
+              localStorage.setItem(CARD_COLOR_KEY, preset);
+              setCardColorPreset(preset);
             }
-          } catch {
-            /* silent */
           }
         } else {
           if (getIsMounted && !getIsMounted()) return;

@@ -273,8 +273,51 @@ export default function UnionDashboardPage() {
       masterBus.subscribe('CLUB_UPDATED', refresh),
       masterBus.subscribe('CHIPS_DISTRIBUTED', refresh),
       masterBus.subscribe('AGENT_UPDATED', refresh),
+      masterBus.subscribe('CASHOUT_APPROVED', refresh),
+      masterBus.subscribe('CASHOUT_REQUESTED', refresh),
+      masterBus.subscribe('TABLE_CREATED', refresh),
     ];
     return () => unsubs.forEach((u) => u());
+  }, [unionId, loadDashboard]);
+
+  // ── Supabase Realtime — cross-user WebSocket updates ──
+  useEffect(() => {
+    if (!unionId) return;
+    const channelKey = `union-dashboard-${unionId}`;
+    const channel = masterBus.getOrCreateChannel(channelKey);
+    channel
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'union_clubs', filter: `union_id=eq.${unionId}` },
+        () => loadDashboard(unionId)
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'union_applications',
+          filter: `union_id=eq.${unionId}`,
+        },
+        () => loadDashboard(unionId)
+      )
+      .subscribe();
+    return () => {
+      masterBus.removeRegisteredChannel(channelKey);
+    };
+  }, [unionId, loadDashboard]);
+
+  // ── Visibility Refresh — refresh on tab focus after 30s ──
+  useEffect(() => {
+    let lastFetch = Date.now();
+    const handleVis = () => {
+      if (document.visibilityState === 'visible' && Date.now() - lastFetch > 30_000) {
+        lastFetch = Date.now();
+        loadDashboard(unionId);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVis);
+    return () => document.removeEventListener('visibilitychange', handleVis);
   }, [unionId, loadDashboard]);
 
   // ── Computed ───────────────────────────────────────────────

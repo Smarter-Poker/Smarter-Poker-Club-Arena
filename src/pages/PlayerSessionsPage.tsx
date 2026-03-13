@@ -392,6 +392,28 @@ export default function PlayerSessionsPage() {
     return () => unsubs.forEach((u) => u());
   }, [clubId, loadSessions]);
 
+  // ── Supabase Realtime — cross-user WebSocket updates ──
+  useEffect(() => {
+    if (!clubId) return;
+    const channelKey = `player-sessions-${clubId}`;
+    const channel = masterBus.getOrCreateChannel(channelKey);
+    channel
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'club_members', filter: `club_id=eq.${clubId}` },
+        () => loadSessions(clubId, true)
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'cashout_requests', filter: `club_id=eq.${clubId}` },
+        () => loadSessions(clubId, true)
+      )
+      .subscribe();
+    return () => {
+      masterBus.removeRegisteredChannel(channelKey);
+    };
+  }, [clubId, loadSessions]);
+
   // ── Visibility Refresh ─────────────────────────────────────
   useEffect(() => {
     if (!clubId) return;

@@ -208,6 +208,46 @@ function DashboardTab({ clubId }: { clubId: string }) {
     return () => unsubs.forEach((u) => u());
   }, [load]);
 
+  // ── Supabase Realtime — cross-user WebSocket updates ──
+  useEffect(() => {
+    if (!clubId) return;
+    const channelKey = `admin-dashboard-${clubId}`;
+    const channel = masterBus.getOrCreateChannel(channelKey);
+    channel
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'tables', filter: `club_id=eq.${clubId}` },
+        () => load()
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'club_members', filter: `club_id=eq.${clubId}` },
+        () => load()
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'cashout_requests', filter: `club_id=eq.${clubId}` },
+        () => load()
+      )
+      .subscribe();
+    return () => {
+      masterBus.removeRegisteredChannel(channelKey);
+    };
+  }, [clubId, load]);
+
+  // ── Visibility Refresh — refresh on tab focus after 30s ──
+  useEffect(() => {
+    let lastFetch = Date.now();
+    const handleVis = () => {
+      if (document.visibilityState === 'visible' && Date.now() - lastFetch > 30_000) {
+        lastFetch = Date.now();
+        load();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVis);
+    return () => document.removeEventListener('visibilitychange', handleVis);
+  }, [load]);
+
   if (loading)
     return (
       <div className="admin-tab-content">

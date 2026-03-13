@@ -248,6 +248,46 @@ export default function AgentDashboardPage() {
     return () => unsubs.forEach((u) => u());
   }, [clubId, loadDashboard]);
 
+  // ── Supabase Realtime — cross-user WebSocket updates ──
+  useEffect(() => {
+    if (!clubId) return;
+    const channelKey = `agent-dashboard-${clubId}`;
+    const channel = masterBus.getOrCreateChannel(channelKey);
+    channel
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'cashout_requests', filter: `club_id=eq.${clubId}` },
+        () => loadDashboard(clubId)
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'chip_transactions',
+          filter: `club_id=eq.${clubId}`,
+        },
+        () => loadDashboard(clubId)
+      )
+      .subscribe();
+    return () => {
+      masterBus.removeRegisteredChannel(channelKey);
+    };
+  }, [clubId, loadDashboard]);
+
+  // ── Visibility Refresh — refresh on tab focus after 30s ──
+  useEffect(() => {
+    let lastFetch = Date.now();
+    const handleVis = () => {
+      if (document.visibilityState === 'visible' && Date.now() - lastFetch > 30_000) {
+        lastFetch = Date.now();
+        loadDashboard(clubId);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVis);
+    return () => document.removeEventListener('visibilitychange', handleVis);
+  }, [clubId, loadDashboard]);
+
   // ── Cashout Actions ────────────────────────────────────────
   const approveCashout = async (cashoutId: string) => {
     if (!confirm('Approve this cashout request?')) return;

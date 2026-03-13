@@ -189,9 +189,16 @@ export default function PlayerStatsPage() {
       },
       1000
     );
+    // Phase 5: Cross-page sync (ported from World Hub player-stats.js)
+    const unsubChips = masterBus.subscribeDebounced('CHIPS_DISTRIBUTED', () => loadStats(), 1000);
+    const unsubCashout = masterBus.subscribeDebounced('CASHOUT_APPROVED', () => loadStats(), 1000);
+    const unsubCredit = masterBus.subscribeDebounced('CREDIT_UPDATED', () => loadStats(), 1000);
     return () => {
       unsubHand();
       unsubBalance();
+      unsubChips();
+      unsubCashout();
+      unsubCredit();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

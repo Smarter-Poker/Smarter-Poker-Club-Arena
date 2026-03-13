@@ -200,16 +200,13 @@ export default function RakebackPage() {
     setClaimStatus('claiming');
     setClaimMessage('');
     try {
-      const session = await supabase.auth.getSession();
-      const token = session?.data?.session?.access_token;
-      if (!token) {
+      if (!user?.id) {
         setClaimStatus('error');
         setClaimMessage('Authentication error. Please refresh.');
         return;
       }
 
-      // Claims via the rakeback API
-      // Backend claims ALL pending periods for this club
+      // Find all pending periods for this club
       const targetClubId = periods.find((p) => p.status === 'pending')?.club_id;
       if (!targetClubId) {
         setClaimStatus('error');
@@ -217,51 +214,49 @@ export default function RakebackPage() {
         return;
       }
 
-      // Abort any in-flight claim requests
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-      abortControllerRef.current = new AbortController();
+      const pendingPeriods = periods.filter((p) => p.status === 'pending');
+      const totalToClaim = pendingPeriods.reduce((sum, p) => sum + p.rakeback_earned, 0);
 
-      const res = await fetch('/api/club-arena/rakeback', {
-        method: 'POST',
-        signal: abortControllerRef.current.signal,
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-          'X-Idempotency-Key': crypto.randomUUID(),
-        },
-        body: JSON.stringify({
-          action: 'claim',
-          clubId: targetClubId,
-        }),
-      });
-      if (!res.ok) {
-        throw new Error(`Server error (${res.status})`);
-      }
-      const data = await res.json();
-
-      if (data.success) {
-        setClaimStatus('success');
-        setClaimMessage(`Claimed ${(data.claimed || pendingAmount).toLocaleString()} chips!`);
-        // Reload data to reflect changed status
-        loadRakebackData();
-        // Notify other pages that wallet balance changed
-        masterBus.emit('WALLET_REFRESHED', { walletType: 'PLAYER', available: 0, total: 0 });
-        if (claimTimerRef.current) clearTimeout(claimTimerRef.current);
-        claimTimerRef.current = setTimeout(() => {
-          setClaimStatus('idle');
-          setClaimMessage('');
-          claimTimerRef.current = null;
-        }, 3000);
-      } else {
+      if (totalToClaim <= 0) {
         setClaimStatus('error');
-        setClaimMessage(data.error || 'Claim failed. Try again.');
+        setClaimMessage('No rakeback to claim.');
+        return;
       }
+
+      // Direct Supabase: credit the player's wallet via RPC
+      const { error: rpcError } = await supabase.rpc('credit_player_rakeback', {
+        p_user_id: user.id,
+        p_amount: totalToClaim,
+        p_club_id: targetClubId,
+      });
+
+      if (rpcError) throw new Error(rpcError.message);
+
+      // Mark all pending periods as paid
+      const pendingIds = pendingPeriods.map((p) => p.id);
+      const { error: updateError } = await supabase
+        .from('rakeback_periods')
+        .update({ status: 'paid' })
+        .in('id', pendingIds);
+
+      if (updateError) console.warn('[Rakeback] Period status update failed:', updateError.message);
+
+      setClaimStatus('success');
+      setClaimMessage(`Claimed ${totalToClaim.toLocaleString()} chips!`);
+      // Reload data to reflect changed status
+      loadRakebackData();
+      // Notify other pages that wallet balance changed
+      masterBus.emit('WALLET_REFRESHED', { walletType: 'PLAYER', available: 0, total: 0 });
+      if (claimTimerRef.current) clearTimeout(claimTimerRef.current);
+      claimTimerRef.current = setTimeout(() => {
+        setClaimStatus('idle');
+        setClaimMessage('');
+        claimTimerRef.current = null;
+      }, 3000);
     } catch (err: any) {
       if (err.name === 'AbortError') return; // Ignore voluntary aborts
       setClaimStatus('error');
-      setClaimMessage('Network error. Please try again.');
+      setClaimMessage(err.message || 'Claim failed. Please try again.');
     }
   };
 

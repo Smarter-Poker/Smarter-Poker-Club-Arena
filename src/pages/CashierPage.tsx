@@ -824,43 +824,22 @@ export default function CashierPage() {
         setIsProcessing(false);
         return;
       }
-      const token = (await supabase.auth.getSession())?.data?.session?.access_token;
-      if (!token) {
-        setMessage({ type: 'error', text: 'Authentication error. Please refresh.' });
+      if (!clubId) {
+        setMessage({ type: 'error', text: 'Club ID is missing' });
         setIsProcessing(false);
         return;
       }
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-      abortControllerRef.current = new AbortController();
 
-      const cashoutRes = await fetch('/api/club-arena/request-cashout', {
-        method: 'POST',
-        signal: abortControllerRef.current.signal,
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-          'X-Idempotency-Key': crypto.randomUUID(),
-        },
-        body: JSON.stringify({ clubId, amount: value }),
+      // Use CashoutService directly (same as normal cashout path) — no World Hub API dependency
+      await cashoutService.requestCashout(user.id, clubId, value);
+      setMessage({
+        type: 'success',
+        text: `Cashout request submitted! ${value.toLocaleString()} chips are now held in escrow. Your agent will review shortly.`,
       });
-      if (!cashoutRes.ok) {
-        throw new Error(`Server error (${cashoutRes.status})`);
-      }
-      const cashoutData = await cashoutRes.json();
-      if (cashoutData.success) {
-        setMessage({
-          type: 'success',
-          text: `Cashout request submitted! ${value.toLocaleString()} chips are now held in escrow. Your agent will review shortly.`,
-        });
-        loadBalances(user.id);
-        loadPendingCashouts();
-        notifyWalletChange(user.id, value);
-        setAmount('');
-      } else {
-        setMessage({ type: 'error', text: cashoutData.error || 'Cashout request failed.' });
-      }
+      loadBalances(user.id);
+      loadPendingCashouts();
+      notifyWalletChange(user.id, value);
+      setAmount('');
     } catch (error: any) {
       setMessage({ type: 'error', text: error.message || 'Cashout failed. Please try again.' });
     }

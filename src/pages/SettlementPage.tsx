@@ -538,44 +538,34 @@ export default function SettlementPage() {
   const handleToggleAutoSettlement = async () => {
     setTogglingAutoSettle(true);
     try {
-      const session = await supabase.auth.getSession();
-      const token = session?.data?.session?.access_token;
-      if (!token) {
-        toast.error('Auth error');
+      const targetId = clubId || unionId;
+      if (!targetId) {
+        toast.error('No club or union ID');
         return;
       }
 
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-      abortControllerRef.current = new AbortController();
+      const newValue = !autoSettlement;
 
-      const res = await fetch('/api/club-arena/settlement-history', {
-        method: 'POST',
-        signal: abortControllerRef.current.signal,
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          action: 'auto_schedule',
-          clubId: clubId || unionId,
-          enabled: !autoSettlement,
-        }),
-      });
-      if (!res.ok) {
-        throw new Error(`Server error (${res.status})`);
+      // Direct Supabase update — no World Hub API dependency
+      // Detect if targetId refers to a union or club and update accordingly
+      if (unionId) {
+        const { error } = await supabase
+          .from('unions')
+          .update({ auto_settlement: newValue })
+          .eq('id', unionId);
+        if (error) throw error;
+      } else if (clubId) {
+        const { error } = await supabase
+          .from('clubs')
+          .update({ auto_settlement: newValue })
+          .eq('id', clubId);
+        if (error) throw error;
       }
-      const data = await res.json();
-      if (data.success) {
-        setAutoSettlement(data.autoSettlement);
-        toast.success(`Auto-settlement ${data.autoSettlement ? 'enabled' : 'disabled'}`);
-      } else {
-        toast.error(data.error || 'Toggle failed');
-      }
+
+      setAutoSettlement(newValue);
+      toast.success(`Auto-settlement ${newValue ? 'enabled' : 'disabled'}`);
     } catch (err: any) {
-      if (err.name === 'AbortError') return; // Ignore voluntary aborts
-      toast.error('Failed to toggle auto-settlement');
+      toast.error(err.message || 'Failed to toggle auto-settlement');
     } finally {
       setTogglingAutoSettle(false);
     }

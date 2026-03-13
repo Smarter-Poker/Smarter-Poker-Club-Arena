@@ -36,6 +36,7 @@ export default function TableChatHUD({ tableId, userId, isMuted = false }: Table
   const [mutedPlayers, setMutedPlayers] = useState<string[]>([]);
   const chatRef = useRef<HTMLDivElement>(null);
   const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
+  const isOpenRef = useRef(isOpen);
 
   useEffect(() => {
     const loadMutes = () => {
@@ -86,7 +87,7 @@ export default function TableChatHUD({ tableId, userId, isMuted = false }: Table
           } catch {
             /* */
           }
-          if (!isOpen) {
+          if (!isOpenRef.current) {
             setUnreadCount((c) => c + 1);
             triggerHaptic(
               msg.message_type === 'dealer' || msg.message_type === 'system' ? 'warning' : 'light'
@@ -104,9 +105,10 @@ export default function TableChatHUD({ tableId, userId, isMuted = false }: Table
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [tableId, isOpen]);
+  }, [tableId]);
 
   useEffect(() => {
+    isOpenRef.current = isOpen;
     if (isOpen && chatRef.current) {
       chatRef.current.scrollTop = chatRef.current.scrollHeight;
       setUnreadCount(0);

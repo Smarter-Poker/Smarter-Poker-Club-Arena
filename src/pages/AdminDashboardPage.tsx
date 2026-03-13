@@ -236,6 +236,21 @@ function DashboardTab({ clubId }: { clubId: string }) {
         { event: '*', schema: 'public', table: 'cashout_requests', filter: `club_id=eq.${clubId}` },
         () => load()
       )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'tournaments', filter: `club_id=eq.${clubId}` },
+        () => load()
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'settlement_periods',
+          filter: `club_id=eq.${clubId}`,
+        },
+        () => load()
+      )
       .subscribe();
     return () => {
       masterBus.removeRegisteredChannel(channelKey);

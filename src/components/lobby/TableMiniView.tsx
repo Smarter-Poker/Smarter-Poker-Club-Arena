@@ -143,7 +143,7 @@ export default function TableMiniView({
   const [themeIdx, setThemeIdx] = useState(0);
 
   useEffect(() => {
-    const unsub = masterBus.subscribe('UI_THEME_CHANGED' as any, (payload: any) => {
+    const unsub = masterBus.subscribe('UI_THEME_CHANGED', (payload: any) => {
       if (payload?.key === 'miniViewTheme' && payload.value !== undefined) {
         setThemeIdx(payload.value);
       }

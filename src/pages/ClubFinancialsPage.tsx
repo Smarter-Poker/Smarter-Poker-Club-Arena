@@ -344,7 +344,7 @@ export default function ClubFinancialsPage() {
           clubId={clubId}
           variant={userRole === 'owner' ? 'owner' : 'player'}
           onBuyDiamonds={() => navigate('/vip')}
-          onOpenBBJ={() => navigate('/bbj')}
+          onOpenBBJ={() => navigate(`/clubs/${clubId}/jackpot`)}
         />
       )}
       {/* Period Selector */}

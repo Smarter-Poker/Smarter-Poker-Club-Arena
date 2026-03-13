@@ -66,7 +66,7 @@ function ShellContent() {
       root.style.setProperty('--club-primary', clubTheme.primary);
       root.style.setProperty('--club-accent', clubTheme.accent);
     }
-  }, [theme]);
+  }, [theme, clubTheme]);
 
   // Real-time notifications
   useEffect(() => {

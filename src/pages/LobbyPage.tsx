@@ -4,7 +4,7 @@
  * WITH REAL-TIME UPDATES
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styles from './LobbyPage.module.css';
 import TableCard from '../components/lobby/TableCard';
@@ -186,31 +186,37 @@ export default function LobbyPage() {
   }, [user?.id, userClubId]);
 
   // ── Waitlist position loader ──
-  const loadWaitlistPositions = async (tableIds: string[]) => {
-    if (!user?.id) return;
-    const positions: Record<string, number> = {};
-    for (const tid of tableIds) {
-      try {
-        const { data } = await supabase
-          .from('table_waitlist')
-          .select('position')
-          .eq('table_id', tid)
-          .eq('user_id', user.id)
-          .maybeSingle();
-        if (data?.position) positions[tid] = data.position;
-      } catch {
-        /* non-critical */
+  const loadWaitlistPositions = useCallback(
+    async (tableIds: string[]) => {
+      if (!user?.id) return;
+      const results = await Promise.allSettled(
+        tableIds.map(async (tid) => {
+          const { data } = await supabase
+            .from('table_waitlist')
+            .select('position')
+            .eq('table_id', tid)
+            .eq('user_id', user.id)
+            .maybeSingle();
+          return { tid, position: data?.position };
+        })
+      );
+      const positions: Record<string, number> = {};
+      for (const r of results) {
+        if (r.status === 'fulfilled' && r.value.position) {
+          positions[r.value.tid] = r.value.position;
+        }
       }
-    }
-    if (isMounted.current) setWaitlistPositions(positions);
-  };
+      if (isMounted.current) setWaitlistPositions(positions);
+    },
+    [user?.id]
+  );
 
   // Load waitlist positions when tables change
   useEffect(() => {
     if (!user?.id || !tables.length) return;
     const fullTables = tables.filter((t) => t.current_players >= (t.max_players || 9));
     if (fullTables.length > 0) loadWaitlistPositions(fullTables.map((t) => t.id));
-  }, [tables, user?.id]);
+  }, [tables, user?.id, loadWaitlistPositions]);
 
   // ── Waitlist Join/Leave handlers ──
   const handleWaitlistJoin = async (tableId: string) => {
@@ -266,6 +272,8 @@ export default function LobbyPage() {
       await supabase.from('tables').update({ status: statusMap[action] }).eq('id', tableId);
       if (action === 'close') {
         masterBus.emit('TABLE_CLOSED', { tableId, clubId: userClubId || undefined });
+      } else {
+        masterBus.emit('TABLE_UPDATED', { tableId, status: statusMap[action] });
       }
     } catch (err: any) {
       toast.error(err.message || `Failed to ${action} table`);

@@ -141,6 +141,11 @@ export default function CashoutRequestModal({
       timer = setTimeout(() => setMounted(true), 50);
     } else {
       setMounted(false);
+      // Reset form state so reopening shows fresh form, not stale success/error
+      setSuccess(false);
+      setError(null);
+      setAmount('');
+      setNote('');
       // Clear auto-close timer if modal is closed externally
       if (autoCloseTimer.current) {
         clearTimeout(autoCloseTimer.current);

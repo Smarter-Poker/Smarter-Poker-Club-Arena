@@ -281,7 +281,12 @@ export type BusEventType =
   | 'HAND_COMPLETE'
   | 'PLAYER_LEFT'
   | 'RAKEBACK_CLAIMED'
-  | 'CLUB_SETTINGS_UPDATED';
+  | 'CLUB_SETTINGS_UPDATED'
+  // Phase 4 deep-sweep: Backported overlay + theme events
+  | 'MYSTERY_BOUNTY_REVEALED'
+  | 'UI_THEME_CHANGED'
+  // Phase 8 Deep Sweep: flash pool game state event
+  | 'GAME_STATE_UPDATED';
 
 // #13: Type-safe payload map — compile-time enforcement of correct payloads
 export interface BusPayloadMap {
@@ -852,6 +857,17 @@ export interface BusPayloadMap {
   PLAYER_LEFT: { clubId: string; userId?: string; tableId?: string };
   RAKEBACK_CLAIMED: { clubId: string; amount?: number; userId?: string };
   CLUB_SETTINGS_UPDATED: { clubId?: string; setting?: string; value?: unknown };
+  // Phase 4 deep-sweep: overlay + theme payloads
+  MYSTERY_BOUNTY_REVEALED: {
+    playerName: string;
+    amount: number;
+    tierLabel?: string;
+    isJackpot?: boolean;
+    avgBounty?: number;
+  };
+  UI_THEME_CHANGED: { key: string; value?: unknown };
+  // Phase 8 Deep Sweep: flash pool game state event
+  GAME_STATE_UPDATED: { tableId?: string; state?: string; poolId?: string };
 }
 
 export interface BusEvent<T = unknown> {

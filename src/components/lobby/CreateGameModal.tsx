@@ -338,6 +338,7 @@ function ConfigModal({
           .single();
 
         if (error) throw error;
+        masterBus.emit('TABLE_CREATED', { tableId: data.id, clubId });
         masterBus.emit('DATA_MUTATED', { table: 'tables', action: 'created' });
         onCreated?.(data);
       } else {
@@ -365,6 +366,7 @@ function ConfigModal({
           .single();
 
         if (error) throw error;
+        masterBus.emit('TOURNAMENT_UPDATED', { tournamentId: data.id, status: 'registering' });
         masterBus.emit('DATA_MUTATED', { table: 'tournaments', action: 'created' });
         onCreated?.(data);
       }

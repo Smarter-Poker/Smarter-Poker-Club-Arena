@@ -245,6 +245,14 @@ export async function leaveClub(clubId: string): Promise<void> {
     throw new Error('Club owners cannot leave. Transfer ownership first.');
   }
 
+  // 2b. Block members with outstanding credit (IOUs)
+  const creditUsed = member.credit_used || 0;
+  if (creditUsed > 0) {
+    throw new Error(
+      `Cannot leave with outstanding credit of ${creditUsed.toLocaleString()} chips. Repay credit first.`
+    );
+  }
+
   // 3. Cancel any pending cashout requests
   try {
     await supabase

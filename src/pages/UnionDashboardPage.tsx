@@ -236,12 +236,15 @@ export default function UnionDashboardPage() {
   const loadApps = async () => {
     if (!unionId) return;
     try {
-      const { data } = await supabase
+      let query = supabase
         .from('union_applications')
         .select('*')
         .eq('union_id', unionId)
-        .eq('status', appsFilter === 'all' ? (undefined as any) : appsFilter)
         .order('created_at', { ascending: false });
+      if (appsFilter !== 'all') {
+        query = query.eq('status', appsFilter);
+      }
+      const { data } = await query;
       if (mountedRef.current) {
         setApps(data || []);
         setAppsLoaded(true);

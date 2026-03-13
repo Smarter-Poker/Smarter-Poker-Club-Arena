@@ -55,6 +55,7 @@ export default function ClubChat({ clubId, userId, userName }: ClubChatProps) {
   const [unread, setUnread] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
   const lastSeenRef = useRef(0);
+  const expandedRef = useRef(expanded);
 
   const loadMessages = useCallback(async () => {
     if (!clubId) return;
@@ -74,7 +75,7 @@ export default function ClubChat({ clubId, userId, userName }: ClubChatProps) {
       if (!error && data) {
         const msgs = (data as ClubChatMessage[]).reverse();
         setMessages(msgs);
-        if (expanded) {
+        if (expandedRef.current) {
           lastSeenRef.current = msgs.length;
           setUnread(0);
         }
@@ -82,7 +83,7 @@ export default function ClubChat({ clubId, userId, userName }: ClubChatProps) {
     } catch {
       /* silent */
     }
-  }, [clubId, expanded]);
+  }, [clubId]);
 
   // Initial load
   useEffect(() => {
@@ -105,7 +106,7 @@ export default function ClubChat({ clubId, userId, userName }: ClubChatProps) {
         (payload) => {
           const newMsg = payload.new as ClubChatMessage;
           setMessages((prev) => [...prev.slice(-99), newMsg]);
-          if (!expanded) setUnread((prev) => prev + 1);
+          if (!expandedRef.current) setUnread((prev) => prev + 1);
           // Notify other components about incoming chat
           try {
             masterBus.emit('CHAT_MESSAGE_RECEIVED', {
@@ -123,7 +124,7 @@ export default function ClubChat({ clubId, userId, userName }: ClubChatProps) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [clubId, expanded]);
+  }, [clubId]);
 
   // Auto-scroll on new messages
   useEffect(() => {
@@ -134,6 +135,7 @@ export default function ClubChat({ clubId, userId, userName }: ClubChatProps) {
 
   // Clear unread when expanding
   useEffect(() => {
+    expandedRef.current = expanded;
     if (expanded) {
       setUnread(0);
       lastSeenRef.current = messages.length;

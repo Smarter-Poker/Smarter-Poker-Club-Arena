@@ -2004,6 +2004,8 @@ class TournamentService {
       console.error('[TournamentService] Failed to submit to POY:', e);
     }
 
+    masterBus.emit('TOURNAMENT_COMPLETE', { tournamentId, clubId: tournament.club_id });
+
     return { success: true };
   }
 

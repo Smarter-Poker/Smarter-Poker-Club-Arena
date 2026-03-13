@@ -868,7 +868,13 @@ export interface BusPayloadMap {
   };
   UI_THEME_CHANGED: { key: string; value?: unknown };
   // Phase 8 Deep Sweep: flash pool game state event
-  GAME_STATE_UPDATED: { tableId?: string; state?: string; poolId?: string };
+  GAME_STATE_UPDATED: {
+    tableId?: string;
+    state?: string;
+    poolId?: string;
+    activePlayers?: number;
+    tablesRunning?: number;
+  };
   FLASH_POOL_JOINED: { poolId: string; userId: string; buyIn: number };
 }
 

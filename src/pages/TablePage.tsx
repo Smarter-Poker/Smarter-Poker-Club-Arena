@@ -2050,6 +2050,27 @@ export default function TablePage({
     const unsubTimeBankDepleted = masterBus.subscribe('TIME_BANK_DEPLETED', persistTimeBankState);
     const unsubTimeBankExpired = masterBus.subscribe('TIME_BANK_EXPIRED', persistTimeBankState);
 
+    // TIME_BANK_EXTENDED: VIP/diamond extension purchased — update UI state
+    const unsubTimeBankExtended = masterBus.subscribe('TIME_BANK_EXTENDED', (event) => {
+      const payload = (event as any)?.payload || event;
+      if (payload.tableId !== tableId || payload.playerId !== userId) return;
+      setTimeBanksRemaining(payload.usesRemaining ?? 0);
+      setTimeBankTimeRemaining(payload.remainingSeconds ?? 0);
+      setShowTimeBank(true);
+      const msg =
+        payload.diamondsCharged > 0
+          ? `Time Bank Extended! (${payload.diamondsCharged} 💎)`
+          : 'Time Bank Extended! (VIP)';
+      toast?.success?.(msg);
+    });
+
+    // TIME_BANK_EXTENSION_DENIED: Show error toast
+    const unsubTimeBankDenied = masterBus.subscribe('TIME_BANK_EXTENSION_DENIED', (event) => {
+      const payload = (event as any)?.payload || event;
+      if (payload.tableId !== tableId || payload.playerId !== userId) return;
+      toast?.error?.('Not enough Diamonds for Time Bank extension');
+    });
+
     // STRADDLE_TOGGLED: Update straddle toggle UI
     const unsubStraddle = masterBus.subscribe('STRADDLE_TOGGLED', (event) => {
       const payload = (event as any)?.payload || event;
@@ -2085,6 +2106,8 @@ export default function TablePage({
       unsubTimeBankStopped();
       unsubTimeBankDepleted();
       unsubTimeBankExpired();
+      unsubTimeBankExtended();
+      unsubTimeBankDenied();
       unsubStraddle();
       unsubRakeback();
       unsubBalance();

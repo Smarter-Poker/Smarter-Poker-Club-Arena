@@ -158,7 +158,7 @@ export default function PageSkeleton({ variant = 'default' }: PageSkeletonProps)
 
   // Default variant
   return (
-    <div style={containerStyle}>
+    <div style={containerStyle} {...statusAttrs}>
       <ShimmerBar width="50%" height={20} />
       <ShimmerCard height={120} />
       <ShimmerCard height={80} />

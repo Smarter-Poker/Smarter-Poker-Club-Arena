@@ -116,6 +116,7 @@ const MarketplacePage = lazy(() => import('./pages/MarketplacePage'));
 const UnionGamesPage = lazy(() => import('./pages/UnionGamesPage'));
 const AdminDashboardPage = lazy(() => import('./pages/AdminDashboardPage'));
 const PlayerSessionsPage = lazy(() => import('./pages/PlayerSessionsPage'));
+const AgentDashboardPage = lazy(() => import('./pages/AgentDashboardPage'));
 
 // Q3: Social, Messaging & Discovery Pages
 const PublicProfilePage = lazy(() => import('./pages/PublicProfilePage'));
@@ -853,6 +854,16 @@ export default function App() {
                     <AuthGuard>
                       <PageErrorBoundary pageName="Players">
                         <PlayerSessionsPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="agent-dashboard"
+                  element={
+                    <AuthGuard>
+                      <PageErrorBoundary pageName="Agent Dashboard">
+                        <AgentDashboardPage />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }

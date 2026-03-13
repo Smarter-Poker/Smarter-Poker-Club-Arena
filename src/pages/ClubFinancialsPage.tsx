@@ -15,6 +15,7 @@ import RakeReports from '../components/admin/RakeReports';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { FinancialExportService } from '../services/FinancialExportService';
+import DynamicWallet from '../components/wallet/DynamicWallet';
 import './ClubFinancialsPage.css';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 
@@ -315,6 +316,16 @@ export default function ClubFinancialsPage() {
 
   return (
     <div className="financials-page">
+      {/* Real-Time Wallet Overview */}
+      {clubId && user?.id && (
+        <DynamicWallet
+          userId={user.id}
+          clubId={clubId}
+          variant={userRole === 'owner' ? 'owner' : 'player'}
+          onBuyDiamonds={() => navigate('/vip')}
+          onOpenBBJ={() => navigate('/bbj')}
+        />
+      )}
       {/* Period Selector */}
       <div className="period-selector">
         {(['week', 'month', 'all'] as const).map((p) => (

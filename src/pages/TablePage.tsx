@@ -3322,6 +3322,12 @@ export default function TablePage({
     }
   }, [tableId, userId, handleTimerAutoFold]);
 
+  // Handle buying a time bank extension (VIP quota or diamond purchase)
+  const handleBuyTimeBank = useCallback(async () => {
+    if (!tableId || !userId) return;
+    await timeBankEngine.requestExtension(tableId, userId);
+  }, [tableId, userId]);
+
   // Action handlers — LOCAL engine is authoritative → broadcast via Supabase Realtime (PRIMARY)
   // → fire-and-forget server call (SECONDARY, for when game server is deployed)
   const validateAndExecuteAction = (

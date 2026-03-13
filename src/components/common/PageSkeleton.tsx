@@ -23,6 +23,9 @@ const containerStyle: React.CSSProperties = {
   gap: 16,
 };
 
+// Common a11y attributes for all skeleton containers
+const statusAttrs = { role: 'status' as const, 'aria-label': 'Loading content' };
+
 function ShimmerBar({ width = '100%', height = 14 }: { width?: string | number; height?: number }) {
   return <div style={{ ...shimmerStyle, width, height }} />;
 }
@@ -43,7 +46,7 @@ interface PageSkeletonProps {
 export default function PageSkeleton({ variant = 'default' }: PageSkeletonProps) {
   if (variant === 'settings') {
     return (
-      <div style={containerStyle}>
+      <div style={containerStyle} {...statusAttrs}>
         <ShimmerBar width="40%" height={24} />
         <ShimmerCard height={60} />
         <ShimmerBar width="35%" height={24} />
@@ -56,7 +59,7 @@ export default function PageSkeleton({ variant = 'default' }: PageSkeletonProps)
 
   if (variant === 'dashboard') {
     return (
-      <div style={containerStyle}>
+      <div style={containerStyle} {...statusAttrs}>
         {/* Stats row */}
         <div style={{ display: 'flex', gap: 12 }}>
           {[1, 2, 3, 4].map((i) => (
@@ -83,7 +86,7 @@ export default function PageSkeleton({ variant = 'default' }: PageSkeletonProps)
 
   if (variant === 'list') {
     return (
-      <div style={containerStyle}>
+      <div style={containerStyle} {...statusAttrs}>
         <ShimmerBar width="50%" height={20} />
         {[1, 2, 3, 4, 5].map((i) => (
           <div key={i} style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
@@ -101,7 +104,7 @@ export default function PageSkeleton({ variant = 'default' }: PageSkeletonProps)
 
   if (variant === 'stats') {
     return (
-      <div style={containerStyle}>
+      <div style={containerStyle} {...statusAttrs}>
         {/* Header */}
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
           <ShimmerCircle size={56} />
@@ -124,7 +127,7 @@ export default function PageSkeleton({ variant = 'default' }: PageSkeletonProps)
 
   if (variant === 'financial') {
     return (
-      <div style={containerStyle}>
+      <div style={containerStyle} {...statusAttrs}>
         {/* Period tabs */}
         <div style={{ display: 'flex', gap: 8 }}>
           {[1, 2, 3].map((i) => (

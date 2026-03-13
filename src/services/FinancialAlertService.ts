@@ -12,6 +12,7 @@
 
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
+import { retryAsync } from '../utils/retryAsync';
 
 export type AlertSeverity = 'critical' | 'warning' | 'info';
 
@@ -121,12 +122,14 @@ export const FinancialAlertService = {
    * Get unresolved alerts (for admin dashboard)
    */
   async getUnresolved(limit = 50): Promise<FinancialAlert[]> {
-    const { data } = await supabase
-      .from('financial_alerts')
-      .select('*')
-      .eq('resolved', false)
-      .order('created_at', { ascending: false })
-      .limit(limit);
+    const { data } = await retryAsync(() =>
+      supabase
+        .from('financial_alerts')
+        .select('*')
+        .eq('resolved', false)
+        .order('created_at', { ascending: false })
+        .limit(limit)
+    );
 
     return (data || []).map((a: any) => ({
       id: a.id,
@@ -143,10 +146,12 @@ export const FinancialAlertService = {
    * Resolve an alert (mark as handled)
    */
   async resolve(alertId: string): Promise<void> {
-    const { error } = await supabase
-      .from('financial_alerts')
-      .update({ resolved: true, resolved_at: new Date().toISOString() })
-      .eq('id', alertId);
+    const { error } = await retryAsync(() =>
+      supabase
+        .from('financial_alerts')
+        .update({ resolved: true, resolved_at: new Date().toISOString() })
+        .eq('id', alertId)
+    );
 
     if (error) {
       console.error('[FinancialAlert] Failed to resolve alert:', alertId, error);

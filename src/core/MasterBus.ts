@@ -207,6 +207,8 @@ export type BusEventType =
   | 'TIME_BANK_REFILLED'
   | 'TIME_BANK_DEPLETED'
   | 'TIME_BANK_EXPIRED'
+  | 'TIME_BANK_EXTENDED'
+  | 'TIME_BANK_EXTENSION_DENIED'
   // Phase Q1: Insurance engine events
   | 'INSURANCE_OFFERED'
   | 'INSURANCE_ACCEPTED'
@@ -660,6 +662,19 @@ export interface BusPayloadMap {
     playerId: string;
     remainingSeconds: number;
     usesRemaining: number;
+  };
+  TIME_BANK_EXTENDED: {
+    tableId: string;
+    playerId: string;
+    secondsAdded: number;
+    diamondsCharged: number;
+    usesRemaining: number;
+    remainingSeconds: number;
+  };
+  TIME_BANK_EXTENSION_DENIED: {
+    tableId: string;
+    playerId: string;
+    reason: string;
   };
   // Phase Q1: Insurance engine payloads
   INSURANCE_OFFERED: {

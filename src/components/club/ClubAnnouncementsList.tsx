@@ -8,6 +8,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useToast } from '../common/Toast';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
+import { masterBus } from '../../core/MasterBus';
 import './ClubAnnouncementsList.css';
 
 interface ClubAnnouncementsListProps {
@@ -41,6 +42,18 @@ export function ClubAnnouncementsList({ clubId, isAdmin, limit = 10 }: ClubAnnou
 
   useEffect(() => {
     loadAnnouncements();
+
+    const unsub = masterBus.subscribeDebounced(
+      'ANNOUNCEMENT_CHANGED',
+      () => {
+        loadAnnouncements();
+      },
+      500
+    );
+
+    return () => {
+      unsub();
+    };
   }, [clubId]);
 
   const loadAnnouncements = async () => {

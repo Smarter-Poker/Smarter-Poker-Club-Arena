@@ -8,6 +8,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useToast } from '../common/Toast';
 import { resolveClubIdFilter } from '../../utils/clubIdResolver';
+import { masterBus } from '../../core/MasterBus';
 import './ClubSettingsPanel.css';
 
 interface ClubSettingsPanelProps {
@@ -132,6 +133,8 @@ export function ClubSettingsPanel({ clubId, isOpen, onClose, onSave }: ClubSetti
 
       if (error) throw error;
 
+      // Emit CLUB_UPDATED so all live components refresh with new settings
+      masterBus.emit('CLUB_UPDATED', { clubId });
       toast.success('Settings saved');
       onSave?.();
       onClose();

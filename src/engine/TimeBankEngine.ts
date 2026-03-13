@@ -256,6 +256,67 @@ class TimeBankEngineClass {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // VIP TIME BANK EXTENSIONS
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Request a time bank extension via VIP quota or diamond purchase.
+   * - VIP: consumes from monthly 120s allotment (free)
+   * - Non-VIP: charges 5 diamonds per extension
+   * - VIP exhausted: charges 5 diamonds (same as non-VIP)
+   *
+   * Returns true if extension was granted, false if denied.
+   */
+  async requestExtension(tableId: string, playerId: string): Promise<boolean> {
+    const config = this.tableConfigs.get(tableId) || this.DEFAULT_CONFIG;
+    const key = `${tableId}:${playerId}`;
+    const bank = this.playerBanks.get(key);
+
+    if (!bank) return false;
+
+    try {
+      // vipService.useFeature handles the full flow:
+      // 1. VIP with quota → consume quota (free)
+      // 2. VIP exhausted → charge diamonds
+      // 3. Non-VIP → charge diamonds
+      const { vipService } = await import('../services/VIPService');
+      const result = await vipService.useFeature(playerId, 'time_bank_seconds');
+
+      if (!result.success) {
+        masterBus.emit('TIME_BANK_EXTENSION_DENIED', {
+          tableId,
+          playerId,
+          reason: result.charged === 0 ? 'insufficient_diamonds' : 'unknown',
+        });
+        return false;
+      }
+
+      // Grant the extension
+      bank.usesRemaining += 1;
+      bank.remainingSeconds += config.secondsPerUse;
+
+      masterBus.emit('TIME_BANK_EXTENDED', {
+        tableId,
+        playerId,
+        secondsAdded: config.secondsPerUse,
+        diamondsCharged: result.charged,
+        usesRemaining: bank.usesRemaining,
+        remainingSeconds: bank.remainingSeconds,
+      });
+
+      return true;
+    } catch (err) {
+      console.error('[TimeBankEngine] Extension request failed:', err);
+      masterBus.emit('TIME_BANK_EXTENSION_DENIED', {
+        tableId,
+        playerId,
+        reason: 'error',
+      });
+      return false;
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // CLEANUP
   // ═══════════════════════════════════════════════════════════════════════════
 

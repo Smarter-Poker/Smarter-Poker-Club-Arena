@@ -4621,6 +4621,8 @@ export default function TablePage({
         totalTime={30}
         timeRemaining={timeBankTimeRemaining}
         onActivate={handleActivateTimeBank}
+        onBuyMore={handleBuyTimeBank}
+        diamondCost={5}
       />
 
       {/* Leave Table Notice (non-blocking replacement for alert()) */}

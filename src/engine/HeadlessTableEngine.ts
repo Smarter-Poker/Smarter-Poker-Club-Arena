@@ -135,6 +135,7 @@ export class HeadlessTableEngine {
       masterBus.subscribe('TIME_BANK_STOPPED', handleTimeBankChange),
       masterBus.subscribe('TIME_BANK_DEPLETED', handleTimeBankChange),
       masterBus.subscribe('TIME_BANK_EXPIRED', handleTimeBankChange),
+      masterBus.subscribe('TIME_BANK_EXTENDED', handleTimeBankChange),
       masterBus.subscribe('TIME_BANK_REFILLED', handleTimeBankChange)
     );
   }

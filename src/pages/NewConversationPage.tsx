@@ -9,6 +9,7 @@ import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { messagingService } from '../services/MessagingService';
+import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import { PlayerAvatar } from '../components/avatars/PlayerAvatar';
@@ -104,6 +105,7 @@ export default function NewConversationPage() {
           name
         );
         if (conv) {
+          masterBus.emit('CONVERSATION_UPDATED', { conversationId: conv.id });
           navigate(`/messages/${conv.id}`, { replace: true });
         } else {
           toast.error('Failed to create group');
@@ -112,6 +114,7 @@ export default function NewConversationPage() {
         // 1:1 DM
         const conv = await messagingService.startConversation(user.id, selectedUsers[0].id);
         if (conv) {
+          masterBus.emit('CONVERSATION_UPDATED', { conversationId: conv.id });
           navigate(`/messages/${conv.id}`, { replace: true });
         } else {
           toast.error('Failed to start conversation');

@@ -218,6 +218,10 @@ export default function ConversationList({
     const unsubSent = masterBus.subscribe('MESSAGE_SENT', () => {
       loadConversations(true);
     });
+    const unsubReceived = masterBus.subscribe('MESSAGE_RECEIVED', () => {
+      loadConversations(true);
+      loadClubMessagesCount();
+    });
     const unsubDeleted = masterBus.subscribe('MESSAGE_DELETED', () => {
       loadConversations(true);
     });
@@ -230,6 +234,7 @@ export default function ConversationList({
       if (heartbeatRef.current) clearInterval(heartbeatRef.current);
       masterBus.removeRegisteredChannel(channelKey);
       unsubSent();
+      unsubReceived();
       unsubDeleted();
       unsubUpdated();
     };

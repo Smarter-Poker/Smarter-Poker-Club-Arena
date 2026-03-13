@@ -130,11 +130,20 @@ export default function FriendsPage() {
     const unsubProfile = masterBus.subscribe('PROFILE_UPDATED', () => {
       if (isMounted && loadFriendsRef.current) loadFriendsRef.current();
     });
+    // Q3: Reactively update when a user is blocked/unblocked
+    const unsubBlocked = masterBus.subscribe('USER_BLOCKED', () => {
+      if (isMounted && loadFriendsRef.current) loadFriendsRef.current();
+    });
+    const unsubUnblocked = masterBus.subscribe('USER_UNBLOCKED', () => {
+      if (isMounted && loadFriendsRef.current) loadFriendsRef.current();
+    });
     return () => {
       isMounted = false;
       unsubAccepted();
       unsubSent();
       unsubProfile();
+      unsubBlocked();
+      unsubUnblocked();
     };
   }, []);
 

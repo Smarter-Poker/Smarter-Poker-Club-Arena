@@ -7,6 +7,7 @@
  * - Shows available time banks
  * - Progress bar / Countdown
  * - Activation button
+ * - Extension purchase button (VIP/diamonds)
  */
 
 import React from 'react';
@@ -19,6 +20,8 @@ export interface TimeBankProps {
   totalTime: number; // total seconds provided by one bank
   timeRemaining?: number; // current countdown if active
   onActivate: () => void;
+  onBuyMore?: () => void; // VIP/diamond extension purchase
+  diamondCost?: number; // cost per extension (default: 5)
   autoActivate?: boolean;
 }
 
@@ -29,8 +32,10 @@ export function TimeBank({
   totalTime,
   timeRemaining,
   onActivate,
+  onBuyMore,
+  diamondCost = 5,
 }: TimeBankProps) {
-  if (!isVisible && banksRemaining === 0) return null;
+  if (!isVisible && banksRemaining === 0 && !onBuyMore) return null;
 
   return (
     <div className={`time-bank ${isActive ? 'time-bank--active' : ''}`}>
@@ -45,8 +50,8 @@ export function TimeBank({
           </div>
           <span className="time-bank__countdown">{timeRemaining}s</span>
         </div>
-      ) : (
-        <button className="time-bank__trigger" onClick={onActivate} disabled={banksRemaining === 0}>
+      ) : banksRemaining > 0 ? (
+        <button className="time-bank__trigger" onClick={onActivate}>
           <span className="time-bank__label">TIME BANK</span>
           <div className="time-bank__chips">
             {Array.from({ length: Math.min(5, banksRemaining) }).map((_, i) => (
@@ -55,7 +60,12 @@ export function TimeBank({
             {banksRemaining > 5 && <span className="time-bank__count">+{banksRemaining - 5}</span>}
           </div>
         </button>
-      )}
+      ) : onBuyMore ? (
+        <button className="time-bank__trigger time-bank__buy-ext" onClick={onBuyMore}>
+          <span className="time-bank__label">⏱ +EXTENSION</span>
+          <span className="time-bank__diamond-cost">{diamondCost} 💎</span>
+        </button>
+      ) : null}
     </div>
   );
 }

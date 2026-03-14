@@ -14,6 +14,9 @@ import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { cashoutService } from '../services/CashoutService';
+import { WalletService } from '../services/WalletService';
+import { WalletService } from '../services/WalletService';
+import { CreditService } from '../services/CreditService';
 import './AdminDashboardPage.css';
 
 // ── Helpers ─────────────────────────────────────────────────
@@ -1029,21 +1032,12 @@ export default function AgentDashboardPage() {
                   onClick={async () => {
                     setProcessing(true);
                     try {
-                      const uuid = await resolveClubUUID(clubId!);
-                      const { error: promoErr } = await supabase.from('chip_transactions').insert({
-                        club_id: uuid,
-                        to_user_id: creditTarget,
-                        from_user_id: user?.id,
-                        amount: Number(creditAmount),
-                        type: 'promo_grant',
-                        notes: 'Promo chips granted',
-                      });
-                      if (promoErr) throw promoErr;
+                      await WalletService.distributePromo(
+                        user?.id || '',
+                        creditTarget,
+                        Number(creditAmount)
+                      );
                       setSuccess(`Granted ${fmtChips(Number(creditAmount))} promo chips!`);
-                      masterBus.emit('CHIPS_DISTRIBUTED', {
-                        clubId: uuid,
-                        amount: Number(creditAmount),
-                      });
                       setCreditTarget('');
                       setCreditAmount('');
                       loadDashboard(clubId);
@@ -1169,25 +1163,24 @@ export default function AgentDashboardPage() {
                     setProcessing(true);
                     setError(null);
                     try {
-                      const uuid = await resolveClubUUID(clubId!);
-                      const { error: credErr } = await supabase.from('chip_transactions').insert({
-                        club_id: uuid,
-                        to_user_id: creditTarget,
-                        from_user_id: user?.id,
-                        amount: Number(creditAmount),
-                        type: creditAction,
-                        notes: creditNotes || `${creditAction} for agent`,
-                      });
-                      if (credErr) throw credErr;
+                      const amt = Number(creditAmount);
+                      if (creditAction === 'issue_credit' || creditAction === 'add_prepaid') {
+                        await CreditService.setCreditLine(
+                          creditTarget,
+                          amt,
+                          creditAction === 'add_prepaid'
+                        );
+                      } else {
+                        // revoke_credit: use atomic wallet deduction
+                        await WalletService.transferToUser(creditTarget, user?.id || '', amt);
+                      }
                       const labels: Record<string, string> = {
                         issue_credit: 'Credit issued',
                         add_prepaid: 'Prepaid added',
                         revoke_credit: 'Credit revoked',
                       };
-                      setSuccess(
-                        `${labels[creditAction] || 'Done'} — ${fmtChips(Number(creditAmount))} chips`
-                      );
-                      masterBus.emit('AGENT_UPDATED', { clubId: uuid, agentId: creditTarget });
+                      setSuccess(`${labels[creditAction] || 'Done'} — ${fmtChips(amt)} chips`);
+                      masterBus.emit('CREDIT_UPDATED', { userId: creditTarget });
                       setCreditAmount('');
                       setCreditNotes('');
                       loadDashboard(clubId);

@@ -247,7 +247,12 @@ export default function LobbyPage() {
     if (!user?.id) return;
     setWaitlistProcessing(tableId);
     try {
-      await supabase.from('table_waitlist').delete().eq('table_id', tableId).eq('user_id', user.id);
+      const { error: wlErr } = await supabase
+        .from('table_waitlist')
+        .delete()
+        .eq('table_id', tableId)
+        .eq('user_id', user.id);
+      if (wlErr) throw wlErr;
       setWaitlistPositions((prev) => {
         const n = { ...prev };
         delete n[tableId];

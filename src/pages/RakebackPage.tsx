@@ -223,44 +223,67 @@ export default function RakebackPage() {
         return;
       }
 
-      // Direct Supabase: credit the player's wallet via RPC
-      // RPC signature: credit_player_rakeback(p_user_id UUID, p_amount NUMERIC, p_period_id UUID DEFAULT NULL)
-      const { error: rpcError } = await supabase.rpc('credit_player_rakeback', {
-        p_user_id: user.id,
-        p_amount: totalToClaim,
-      });
-
-      if (rpcError) throw new Error(rpcError.message);
-
-      // Mark all pending periods as paid
-      const pendingIds = pendingPeriods.map((p) => p.id);
-      const { error: updateError } = await supabase
+      // ═══ ATOMIC CLAIM PATTERN ═══
+      // Step 1: Re-fetch pending periods from DB to prevent double-claim race condition
+      const { data: freshPeriods, error: fetchError } = await supabase
         .from('rakeback_periods')
-        .update({ status: 'paid' })
-        .in('id', pendingIds);
-
-      if (updateError) {
-        // Credit succeeded but period marking failed — surface error to prevent confusion
-        // The chips are already credited, but user might see stale "pending" status
-        console.error('[Rakeback] Period status update failed:', updateError.message);
-        setClaimStatus('success');
-        setClaimMessage(
-          `Claimed ${totalToClaim.toLocaleString()} chips! (Status update pending — please refresh)`
+        .select('id, rakeback_earned')
+        .eq('user_id', user.id)
+        .eq('status', 'pending')
+        .in(
+          'id',
+          pendingPeriods.map((p) => p.id)
         );
+
+      if (fetchError) throw new Error(fetchError.message);
+      if (!freshPeriods || freshPeriods.length === 0) {
+        setClaimStatus('error');
+        setClaimMessage('These periods have already been claimed.');
         loadRakebackData();
-        masterBus.emit('WALLET_REFRESHED', { walletType: 'PLAYER', available: 0, total: 0 });
         return;
       }
 
+      // Recalculate from fresh DB data (prevents stale UI amount)
+      const verifiedAmount = freshPeriods.reduce((sum, p) => sum + (p.rakeback_earned || 0), 0);
+      const verifiedIds = freshPeriods.map((p) => p.id);
+
+      if (verifiedAmount <= 0) {
+        setClaimStatus('error');
+        setClaimMessage('No rakeback to claim.');
+        return;
+      }
+
+      // Step 2: Mark periods as 'paid' FIRST (idempotency — prevents double-claim)
+      const { error: updateError } = await supabase
+        .from('rakeback_periods')
+        .update({ status: 'paid' })
+        .in('id', verifiedIds)
+        .eq('status', 'pending'); // Extra guard: only update if still pending
+
+      if (updateError) throw new Error('Failed to lock periods: ' + updateError.message);
+
+      // Step 3: Credit chips (if this fails, periods are already marked paid — safe)
+      const { error: rpcError } = await supabase.rpc('credit_player_rakeback', {
+        p_user_id: user.id,
+        p_amount: verifiedAmount,
+      });
+
+      if (rpcError) {
+        // Rollback: restore periods to 'pending' since credit failed
+        console.error('[Rakeback] Credit failed, rolling back period status:', rpcError);
+        await supabase.from('rakeback_periods').update({ status: 'pending' }).in('id', verifiedIds);
+        throw new Error(rpcError.message);
+      }
+
       setClaimStatus('success');
-      setClaimMessage(`Claimed ${totalToClaim.toLocaleString()} chips!`);
+      setClaimMessage(`Claimed ${verifiedAmount.toLocaleString()} chips!`);
       // Reload data to reflect changed status
       loadRakebackData();
       // Notify other pages that wallet balance changed
       masterBus.emit('WALLET_REFRESHED', { walletType: 'PLAYER', available: 0, total: 0 });
       masterBus.emit('RAKEBACK_CLAIMED', {
         clubId: targetClubId,
-        amount: totalToClaim,
+        amount: verifiedAmount,
         userId: user.id,
       });
       if (claimTimerRef.current) clearTimeout(claimTimerRef.current);

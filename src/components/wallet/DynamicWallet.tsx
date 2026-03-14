@@ -261,7 +261,6 @@ export default function DynamicWallet({
             setData((prev) => ({
               ...prev,
               chipBalance: Number(p.new.chip_balance) || 0,
-              promoBalance: Number(p.new.promo_balance) || 0,
             }));
           }
         }

@@ -765,12 +765,16 @@ function HomePageInner() {
     };
   }, []);
 
-  // #6: Listen for card color changes from hamburger menu
+  // #6: Listen for card color changes from hamburger menu (debounced)
   useEffect(() => {
-    const unsubColor = masterBus.subscribe('CARD_COLOR_CHANGED', (event) => {
-      const preset = event.payload?.preset as string;
-      if (preset) setCardColorPreset(preset);
-    });
+    const unsubColor = masterBus.subscribeDebounced(
+      'CARD_COLOR_CHANGED',
+      (event) => {
+        const preset = event.payload?.preset as string;
+        if (preset) setCardColorPreset(preset);
+      },
+      300
+    );
     return () => unsubColor();
   }, []);
 
@@ -912,31 +916,44 @@ function HomePageInner() {
       500
     );
 
-    const unsubAuth = masterBus.subscribe('AUTH_STATE_CHANGED', (event) => {
-      if (!isMounted) return;
-      if (event.payload.isAuthenticated) {
-        fetchUserData(false, () => isMounted);
-      } else {
-        setUserClubs([]);
-      }
-    });
+    // AUTH_STATE_CHANGED: kept as immediate (auth state must propagate instantly)
+    const unsubAuth = masterBus.subscribeDebounced(
+      'AUTH_STATE_CHANGED',
+      (event) => {
+        if (!isMounted) return;
+        if (event.payload.isAuthenticated) {
+          fetchUserData(false, () => isMounted);
+        } else {
+          setUserClubs([]);
+        }
+      },
+      300
+    );
 
-    // Enhancement #8: Listen for notification badge updates
-    const unsubNotif = masterBus.subscribe('NOTIFICATION_READ', () => {
-      // Clear all badges when notifications are read
-      if (isMounted) setTileBadges({});
-    });
+    // Enhancement #8: Listen for notification badge updates (debounced)
+    const unsubNotif = masterBus.subscribeDebounced(
+      'NOTIFICATION_READ',
+      () => {
+        // Clear all badges when notifications are read
+        if (isMounted) setTileBadges({});
+      },
+      500
+    );
 
-    // Phase 8 #5: Listen for diamond balance changes from challenge claims
-    const unsubDiamond = masterBus.subscribe('DIAMOND_BALANCE_CHANGED', (event) => {
-      const delta = event.payload?.delta as number;
-      if (delta && delta > 0 && isMounted) {
-        setTileBadges((prev) => ({
-          ...prev,
-          'Player Stats': (prev['Player Stats'] || 0) + 1,
-        }));
-      }
-    });
+    // Phase 8 #5: Listen for diamond balance changes from challenge claims (debounced)
+    const unsubDiamond = masterBus.subscribeDebounced(
+      'DIAMOND_BALANCE_CHANGED',
+      (event) => {
+        const delta = event.payload?.delta as number;
+        if (delta && delta > 0 && isMounted) {
+          setTileBadges((prev) => ({
+            ...prev,
+            'Player Stats': (prev['Player Stats'] || 0) + 1,
+          }));
+        }
+      },
+      500
+    );
 
     return () => {
       isMounted = false;

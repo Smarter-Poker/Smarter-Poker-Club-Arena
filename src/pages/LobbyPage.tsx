@@ -132,10 +132,14 @@ export default function LobbyPage() {
     // Trigger push notification event if daily reset is available
     dailyChallengeService.emitDailyResetReminder();
 
-    // Listen for balance updates (e.g., from wheel spins or daily claims) to force profile refresh
-    const unsubBalance = masterBus.subscribe('BALANCE_UPDATED', () => {
-      masterBus.emit('PROFILE_UPDATED', { userId: user.id || '', updates: {} });
-    });
+    // Listen for balance updates (e.g., from wheel spins or daily claims) to force profile refresh (debounced)
+    const unsubBalance = masterBus.subscribeDebounced(
+      'BALANCE_UPDATED',
+      () => {
+        masterBus.emit('PROFILE_UPDATED', { userId: user.id || '', updates: {} });
+      },
+      500
+    );
 
     // ── EventBus listeners ported from World Hub lobby.js ──
     // These cross-page events trigger a lobby refresh when admin/cashier actions

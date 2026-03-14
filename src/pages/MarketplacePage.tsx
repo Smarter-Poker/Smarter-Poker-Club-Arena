@@ -487,7 +487,7 @@ export default function MarketplacePage() {
             />
             <button
               className={styles.btnPrimary}
-              disabled={processing || !newItemName || !newItemPrice}
+              disabled={processing || !newItemName.trim() || !newItemPrice}
               onClick={async () => {
                 const price = Math.floor(Number(newItemPrice));
                 if (!price || !Number.isFinite(price) || price <= 0) {

@@ -256,39 +256,41 @@ export default function ClubHomePage() {
     };
   }, [clubId]);
 
-  // ── Bus Listeners: cross-page event reactivity (consolidated + debounced) ──
+  // ── Bus Listeners: cross-page event reactivity (subscribeDebounced) ──
   useEffect(() => {
     let isMounted = true;
-    // Debounce: if multiple events fire within 300ms, only one reload fires
-    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-    const debouncedReload = () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        if (isMounted) loadClubData(() => isMounted);
-      }, 300);
+    const reload = () => {
+      if (isMounted) loadClubData(() => isMounted);
     };
 
     const unsubs = [
-      masterBus.subscribe('CLUB_JOINED', debouncedReload),
-      masterBus.subscribe('CLUB_LEFT', debouncedReload),
-      masterBus.subscribe('TABLE_SEATED', debouncedReload),
-      masterBus.subscribe('TABLE_LEFT', debouncedReload),
-      masterBus.subscribe('BALANCE_UPDATED', debouncedReload),
-      masterBus.subscribe('ANNOUNCEMENT_CHANGED', debouncedReload),
+      masterBus.subscribeDebounced('CLUB_JOINED', reload, 300),
+      masterBus.subscribeDebounced('CLUB_LEFT', reload, 300),
+      masterBus.subscribeDebounced('TABLE_SEATED', reload, 300),
+      masterBus.subscribeDebounced('TABLE_LEFT', reload, 300),
+      masterBus.subscribeDebounced('BALANCE_UPDATED', reload, 300),
+      masterBus.subscribeDebounced('ANNOUNCEMENT_CHANGED', reload, 300),
       // Phase 11: Only reload for OUR club's updates (not every club in the platform)
-      masterBus.subscribe('CLUB_UPDATED', (event) => {
-        if (!clubIdRef.current || event.payload?.clubId === clubIdRef.current) {
-          debouncedReload();
-        }
-      }),
-      masterBus.subscribe('TABLE_UPDATED', (event) => {
-        // Reload when any table linked to this club changes
-        debouncedReload();
-      }),
+      masterBus.subscribeDebounced(
+        'CLUB_UPDATED',
+        (event) => {
+          if (!clubIdRef.current || event.payload?.clubId === clubIdRef.current) {
+            reload();
+          }
+        },
+        300
+      ),
+      masterBus.subscribeDebounced(
+        'TABLE_UPDATED',
+        () => {
+          // Reload when any table linked to this club changes
+          reload();
+        },
+        300
+      ),
     ];
     return () => {
       isMounted = false;
-      if (debounceTimer) clearTimeout(debounceTimer);
       unsubs.forEach((u) => u());
     };
   }, []);

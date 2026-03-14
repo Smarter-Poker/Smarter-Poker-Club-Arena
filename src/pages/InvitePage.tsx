@@ -54,7 +54,11 @@ export default function InvitePage() {
     let isMounted = true;
     loadClubInfo(() => isMounted);
 
-    const unsubJoined = masterBus.subscribe('CLUB_JOINED', () => loadClubInfo(() => isMounted));
+    const unsubJoined = masterBus.subscribeDebounced(
+      'CLUB_JOINED',
+      () => loadClubInfo(() => isMounted),
+      500
+    );
     return () => {
       isMounted = false;
       unsubJoined();

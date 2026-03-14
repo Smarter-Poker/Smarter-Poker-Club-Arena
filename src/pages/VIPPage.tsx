@@ -106,29 +106,37 @@ export default function VIPPage() {
     };
   }, [user?.id]);
 
-  // Bus listener: update diamond balance when changed from other pages (e.g. diamond purchase, feature buy)
+  // Bus listener: update diamond balance when changed from other pages (debounced)
   useEffect(() => {
     if (!user?.id) return;
-    const unsubDiamond = masterBus.subscribe('DIAMOND_BALANCE_CHANGED', (event: any) => {
-      if (event?.payload?.newBalance !== undefined) {
-        setDiamonds(event.payload.newBalance);
-      }
-    });
+    const unsubDiamond = masterBus.subscribeDebounced(
+      'DIAMOND_BALANCE_CHANGED',
+      (event: any) => {
+        if (event?.payload?.newBalance !== undefined) {
+          setDiamonds(event.payload.newBalance);
+        }
+      },
+      500
+    );
     return unsubDiamond;
   }, [user?.id]);
 
-  // Bus listener: update VIP points when awarded locally (e.g. per hand played)
+  // Bus listener: update VIP points when awarded locally (debounced)
   useEffect(() => {
     if (!user?.id) return;
-    const unsubVIP = masterBus.subscribe('VIP_POINTS_UPDATED', (event: any) => {
-      if (event?.payload?.added && event.payload.userId === user.id) {
-        setVipPoints((prev) => ({
-          ...prev,
-          current: prev.current + event.payload.added,
-          lifetime: prev.lifetime + event.payload.added,
-        }));
-      }
-    });
+    const unsubVIP = masterBus.subscribeDebounced(
+      'VIP_POINTS_UPDATED',
+      (event: any) => {
+        if (event?.payload?.added && event.payload.userId === user.id) {
+          setVipPoints((prev) => ({
+            ...prev,
+            current: prev.current + event.payload.added,
+            lifetime: prev.lifetime + event.payload.added,
+          }));
+        }
+      },
+      500
+    );
     return unsubVIP;
   }, [user?.id]);
 

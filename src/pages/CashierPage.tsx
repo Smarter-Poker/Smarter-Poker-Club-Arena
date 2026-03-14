@@ -234,9 +234,13 @@ export default function CashierPage() {
   useEffect(() => {
     if (!user?.id) return;
 
-    const unsubscribe2 = masterBus.subscribe('WALLET_REFRESHED', () => {
-      loadBalances(user.id);
-    });
+    const unsubscribe2 = masterBus.subscribeDebounced(
+      'WALLET_REFRESHED',
+      () => {
+        loadBalances(user.id);
+      },
+      500
+    );
 
     return () => {
       unsubscribe2?.();

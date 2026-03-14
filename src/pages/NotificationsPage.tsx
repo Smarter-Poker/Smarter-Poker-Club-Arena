@@ -128,19 +128,28 @@ export default function NotificationsPage() {
     }
   }, [user?.id]);
 
-  // ── Bus Listeners: cross-page notification reactivity ──
+  // ── Bus Listeners: cross-page notification reactivity (debounced) ──
   useEffect(() => {
     let isMounted = true;
-    const unsubReceived = masterBus.subscribe('NOTIFICATION_RECEIVED', () => {
-      if (isMounted) loadNotifications(() => isMounted);
-    });
-    const unsubCount = masterBus.subscribe('NOTIFICATION_COUNT_CHANGED', () => {
-      if (isMounted) loadNotifications(() => isMounted);
-    });
+    const unsubs = [
+      masterBus.subscribeDebounced(
+        'NOTIFICATION_RECEIVED',
+        () => {
+          if (isMounted) loadNotifications(() => isMounted);
+        },
+        500
+      ),
+      masterBus.subscribeDebounced(
+        'NOTIFICATION_COUNT_CHANGED',
+        () => {
+          if (isMounted) loadNotifications(() => isMounted);
+        },
+        500
+      ),
+    ];
     return () => {
       isMounted = false;
-      unsubReceived();
-      unsubCount();
+      unsubs.forEach((u) => u());
     };
   }, []);
 

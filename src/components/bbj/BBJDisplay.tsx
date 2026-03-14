@@ -709,6 +709,7 @@ export function useBBJ(clubId: string | null) {
           filter: `club_id=eq.${clubId}`,
         },
         (payload) => {
+          if (!payload.new) return;
           setBbjData((prev) =>
             prev
               ? {

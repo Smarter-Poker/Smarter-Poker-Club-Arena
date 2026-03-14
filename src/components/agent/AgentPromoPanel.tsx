@@ -129,7 +129,7 @@ export default function AgentPromoPanel({
         { event: 'UPDATE', schema: 'public', table: 'agents', filter: `user_id=eq.${userId}` },
         (payload) => {
           if (payload.new?.club_id === clubId && isMounted.current)
-            setPromoBalance(Number(payload.new.promo_wallet_balance) || 0);
+            setPromoBalance(Number(payload.new?.promo_wallet_balance) || 0);
         }
       )
       .on(

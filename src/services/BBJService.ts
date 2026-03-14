@@ -351,8 +351,8 @@ export const BBJService = {
             error: error.message,
           }
         );
-      } catch {
-        /* best effort */
+      } catch (alertErr: unknown) {
+        console.warn('[BBJService] FinancialAlertService logging also failed:', alertErr);
       }
       return null;
     }

@@ -41,21 +41,6 @@ export default function PlayerStyleRadar({ userId }: PlayerStyleRadarProps) {
     };
   }, []);
 
-  useEffect(() => {
-    if (!userId) return;
-    loadData();
-  }, [userId]);
-
-  // Bus listeners for live stat updates
-  useEffect(() => {
-    const unsubs = [
-      masterBus.subscribeDebounced('HAND_COMPLETED', () => loadData(), 2000),
-      masterBus.subscribeDebounced('SESSION_ENDED', () => loadData(), 1000),
-      masterBus.subscribeDebounced('DATA_MUTATED', () => loadData(), 3000),
-    ];
-    return () => unsubs.forEach((u) => u());
-  }, []);
-
   const loadData = useCallback(async () => {
     if (!userId) return;
     setLoading(true);
@@ -141,6 +126,21 @@ export default function PlayerStyleRadar({ userId }: PlayerStyleRadarProps) {
       if (isMounted.current) setLoading(false);
     }
   }, [userId]);
+
+  useEffect(() => {
+    if (!userId) return;
+    loadData();
+  }, [userId, loadData]);
+
+  // Bus listeners for live stat updates
+  useEffect(() => {
+    const unsubs = [
+      masterBus.subscribeDebounced('HAND_COMPLETED', () => loadData(), 2000),
+      masterBus.subscribeDebounced('SESSION_ENDED', () => loadData(), 1000),
+      masterBus.subscribeDebounced('DATA_MUTATED', () => loadData(), 3000),
+    ];
+    return () => unsubs.forEach((u) => u());
+  }, [loadData]);
 
   // SVG radar chart
   const chartSVG = useMemo(() => {

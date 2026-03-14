@@ -61,10 +61,29 @@ async function boot() {
   console.log('[BOOT] System online:', systemOnline, 'Bus online:', busOnline);
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // ABSOLUTE FAIL-CLOSED DECISION
+  // ZERO-TOLERANCE RENDERING DECISION
   // ═══════════════════════════════════════════════════════════════════════════
-  if (systemOnline && busOnline) {
-    //  ALL SYSTEMS GO — Render the full app
+  // The app must ALWAYS render. The ONLY exception is if environment variables
+  // are completely missing (antigravityOk=false), which is a build/deploy
+  // configuration error — not a runtime/connectivity issue.
+  //
+  // Transient Supabase connectivity issues are handled by:
+  // - AuthGuard (redirects unauthenticated users to /auth)
+  // - Connection Watchdog (monitors and auto-reconnects)
+  // - Offline Banner (visible warning to users)
+  // - Offline Queue (queues mutations for replay)
+  //
+  // Showing SystemOffline for a connectivity blip is CATASTROPHIC and must
+  // never happen. Only a true misconfiguration should trigger it.
+  // ═══════════════════════════════════════════════════════════════════════════
+  const envVarsOk = status.antigravityOk;
+
+  if (envVarsOk) {
+    // ALWAYS render the app if env vars are configured correctly.
+    // Supabase connectivity and auth are handled at the app layer.
+    if (!systemOnline || !busOnline) {
+      console.warn('[BOOT] Degraded mode — rendering app anyway (connectivity will auto-recover)');
+    }
     root.render(
       <ErrorBoundary>
         <BrowserRouter basename="/hub/club-arena">
@@ -73,8 +92,8 @@ async function boot() {
       </ErrorBoundary>
     );
   } else {
-    //  FAIL-CLOSED — Only render diagnostic screen
-    console.error('[BOOT] System offline — rendering diagnostic screen');
+    // ONLY show SystemOffline for missing env vars (build/deploy misconfiguration)
+    console.error('[BOOT] Missing environment variables — rendering diagnostic screen');
     root.render(<SystemOffline status={status} />);
   }
 }
@@ -82,22 +101,28 @@ async function boot() {
 // Execute the boot sequence with top-level error catch
 boot().catch((err) => {
   console.error('[BOOT] FATAL: boot() threw an unhandled error:', err);
-  // Render a minimal error page so the user sees SOMETHING
+  // ZERO TOLERANCE: Even if the boot sequence throws, try to render the app.
+  // The app has its own ErrorBoundary, AuthGuard, and Connection Watchdog that
+  // can handle degraded state far better than a dead "Boot Failed" screen.
   try {
     const root = ReactDOM.createRoot(document.getElementById('root')!);
     root.render(
-      <div style={{ color: '#fff', padding: '2rem', fontFamily: 'monospace' }}>
-        <h1>Boot Failed</h1>
-        <p>{String(err?.message || err)}</p>
-        <button
-          onClick={() => window.location.reload()}
-          style={{ padding: '0.5rem 1rem', marginTop: '1rem' }}
-        >
+      <ErrorBoundary>
+        <BrowserRouter basename="/hub/club-arena">
+          <App />
+        </BrowserRouter>
+      </ErrorBoundary>
+    );
+  } catch {
+    // Absolute last resort — show retry button
+    document.body.innerHTML = `
+      <div style="color:#fff;padding:2rem;text-align:center;font-family:system-ui">
+        <h1>Loading Club Arena...</h1>
+        <p style="color:#aaa">Temporary issue — please retry</p>
+        <button onclick="window.location.reload()" style="padding:0.75rem 1.5rem;margin-top:1rem;background:#667eea;color:#fff;border:none;border-radius:8px;font-size:1rem;cursor:pointer">
           Retry
         </button>
       </div>
-    );
-  } catch {
-    document.body.innerHTML = `<div style="color:#fff;padding:2rem">Boot failed: ${String(err)}</div>`;
+    `;
   }
 });

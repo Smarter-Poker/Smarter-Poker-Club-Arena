@@ -265,8 +265,8 @@ export async function leaveClub(clubId: string): Promise<void> {
       .eq('club_id', resolvedId)
       .eq('user_id', userId)
       .eq('status', 'pending');
-  } catch {
-    // Non-critical — continue even if cashout cancel fails
+  } catch (e: unknown) {
+    console.warn('[ClubsService] leaveClub: cashout cancel failed (non-critical):', e);
   }
 
   // 4. Return chip_balance to club treasury (if any)
@@ -298,8 +298,8 @@ export async function leaveClub(clubId: string): Promise<void> {
         .update({ parent_agent_id: null })
         .eq('club_id', resolvedId)
         .eq('parent_agent_id', userId);
-    } catch {
-      // Non-critical
+    } catch (e: unknown) {
+      console.warn('[ClubsService] leaveClub: agent hierarchy cleanup failed (non-critical):', e);
     }
   }
 
@@ -318,8 +318,8 @@ export async function leaveClub(clubId: string): Promise<void> {
   // 7. Decrement club member count (fire-and-forget)
   try {
     await supabase.rpc('decrement_club_member_count', { p_club_id: resolvedId });
-  } catch {
-    // Non-critical — count will self-correct on next query
+  } catch (e: unknown) {
+    console.warn('[ClubsService] leaveClub: member count decrement failed (non-critical):', e);
   }
 
   // 8. Real-time sync

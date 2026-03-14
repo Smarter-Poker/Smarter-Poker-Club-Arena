@@ -128,7 +128,7 @@ export default function TournamentLobbyPage() {
           table: 'tournaments',
         },
         (payload) => {
-          if (payload.eventType === 'UPDATE') {
+          if (payload.eventType === 'UPDATE' && payload.new) {
             // Update tournament in list
             setTournaments((prev) =>
               prev.map((t) =>
@@ -151,26 +151,38 @@ export default function TournamentLobbyPage() {
       .subscribe();
 
     // ── Bus event subscriptions for faster local updates ──
-    const unsubElim = masterBus.subscribeDebounced('PLAYER_ELIMINATED', (event) => {
-      // Decrement player count for the specific tournament
-      setTournaments((prev) =>
-        prev.map((t) =>
-          t.id === event.payload.tournamentId
-            ? { ...t, currentPlayers: Math.max(0, t.currentPlayers - 1) }
-            : t
-        )
-      );
-    }, 300);
+    const unsubElim = masterBus.subscribeDebounced(
+      'PLAYER_ELIMINATED',
+      (event) => {
+        // Decrement player count for the specific tournament
+        setTournaments((prev) =>
+          prev.map((t) =>
+            t.id === event.payload.tournamentId
+              ? { ...t, currentPlayers: Math.max(0, t.currentPlayers - 1) }
+              : t
+          )
+        );
+      },
+      300
+    );
 
-    const unsubMerge = masterBus.subscribeDebounced('TABLE_MERGED', () => {
-      // Refresh tournament list to reflect table changes
-      loadTournamentsRef.current();
-    }, 500);
+    const unsubMerge = masterBus.subscribeDebounced(
+      'TABLE_MERGED',
+      () => {
+        // Refresh tournament list to reflect table changes
+        loadTournamentsRef.current();
+      },
+      500
+    );
 
     // Refresh profile/wallet when balance changes (e.g., after register/unregister)
-    const unsubBalance = masterBus.subscribeDebounced('BALANCE_UPDATED', () => {
-      masterBus.emit('PROFILE_UPDATED', { userId: user?.id || '', updates: {} });
-    }, 500);
+    const unsubBalance = masterBus.subscribeDebounced(
+      'BALANCE_UPDATED',
+      () => {
+        masterBus.emit('PROFILE_UPDATED', { userId: user?.id || '', updates: {} });
+      },
+      500
+    );
 
     return () => {
       masterBus.removeRegisteredChannel(channelKey);

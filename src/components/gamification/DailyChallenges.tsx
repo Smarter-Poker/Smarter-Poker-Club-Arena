@@ -1,14 +1,22 @@
 /**
  * ♠ CLUB ARENA — Daily Challenges System
  * Gamification 2.0 with streak rewards and chip progression
+ *
+ * Items 2,4,7,9,10 improvements:
+ * - Debounced BALANCE_UPDATED listener (prevents double-fetch on claim)
+ * - loadChallenges wrapped in useCallback for stable reference
+ * - Supabase Realtime subscription for cross-tab sync
+ * - setTimeout animation refs cleaned up on unmount
+ * - Loading skeleton shown during initial data fetch
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
 import dailyChallengeService from '../../services/DailyChallengeService';
 import { masterBus } from '../../core/MasterBus';
+import { supabase } from '../../lib/supabase';
 import './DailyChallenges.css';
 
 interface Challenge {
@@ -37,6 +45,7 @@ export const DailyChallenges: React.FC = () => {
   const { user } = useAuthUser();
   const toast = useToast();
   const [challenges, setChallenges] = useState<Challenge[]>([]);
+  const [loading, setLoading] = useState(true);
   const [streak, setStreak] = useState<StreakInfo>({
     currentStreak: 0,
     longestStreak: 0,
@@ -50,32 +59,14 @@ export const DailyChallenges: React.FC = () => {
   const [visibleWeekly, setVisibleWeekly] = useState<Set<number>>(new Set());
   const isMounted = useRef(true);
 
-  useEffect(() => {
-    isMounted.current = true;
-    if (user?.id) {
-      loadChallenges();
-    }
+  // Item 9: Track animation timeouts for cleanup
+  const animTimers = useRef<number[]>([]);
 
-    // Bus listeners for real-time progress sync
-    const unsubHand = masterBus.subscribe('HAND_COMPLETED', () => {
-      if (isMounted.current && user?.id) loadChallenges();
-    });
-    const unsubBalance = masterBus.subscribe('BALANCE_UPDATED', () => {
-      if (isMounted.current && user?.id) loadChallenges();
-    });
-    const unsubReset = masterBus.subscribe('DAILY_RESET_AVAILABLE', () => {
-      if (isMounted.current && user?.id) loadChallenges();
-    });
+  // Item 2: Debounce ref to coalesce rapid BALANCE_UPDATED events
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    return () => {
-      isMounted.current = false;
-      unsubHand();
-      unsubBalance();
-      unsubReset();
-    };
-  }, [user?.id]);
-
-  const loadChallenges = async () => {
+  // Item 4: Stable loadChallenges via useCallback
+  const loadChallenges = useCallback(async () => {
     if (!user?.id) return;
     try {
       const [userChallenges, weeklyChallenges, stats] = await Promise.all([
@@ -83,6 +74,8 @@ export const DailyChallenges: React.FC = () => {
         dailyChallengeService.getWeeklyChallenges(user.id),
         dailyChallengeService.getStats(user.id),
       ]);
+
+      if (!isMounted.current) return;
 
       const mappedDaily: Challenge[] = userChallenges.map((uc: any) => ({
         id: uc.id,
@@ -117,19 +110,85 @@ export const DailyChallenges: React.FC = () => {
         ...prev,
         currentStreak: stats.currentStreak,
       }));
+      setLoading(false);
+
+      // Item 9: Clear old timers before setting new ones
+      animTimers.current.forEach(clearTimeout);
+      animTimers.current = [];
 
       setVisibleDaily(new Set());
       mappedDaily.forEach((_, i) => {
-        setTimeout(() => setVisibleDaily((prev) => new Set(prev).add(i)), i * 60);
+        const t = window.setTimeout(() => setVisibleDaily((prev) => new Set(prev).add(i)), i * 60);
+        animTimers.current.push(t);
       });
       setVisibleWeekly(new Set());
       mappedWeekly.forEach((_, i) => {
-        setTimeout(() => setVisibleWeekly((prev) => new Set(prev).add(i)), i * 60);
+        const t = window.setTimeout(() => setVisibleWeekly((prev) => new Set(prev).add(i)), i * 60);
+        animTimers.current.push(t);
       });
     } catch (error) {
       console.error('Failed to load daily challenges:', error);
+      if (isMounted.current) setLoading(false);
     }
-  };
+  }, [user?.id]);
+
+  // Item 2: Debounced refresh — coalesces rapid bus events into single fetch
+  const debouncedRefresh = useCallback(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      if (isMounted.current && user?.id) loadChallenges();
+    }, 150);
+  }, [loadChallenges, user?.id]);
+
+  useEffect(() => {
+    isMounted.current = true;
+    if (user?.id) {
+      loadChallenges();
+    }
+
+    // Bus listeners for real-time progress sync
+    const unsubHand = masterBus.subscribe('HAND_COMPLETED', () => {
+      if (isMounted.current && user?.id) loadChallenges();
+    });
+    // Item 2: BALANCE_UPDATED is debounced (fires twice per claim — once from RPC, once from WalletService)
+    const unsubBalance = masterBus.subscribe('BALANCE_UPDATED', debouncedRefresh);
+    const unsubReset = masterBus.subscribe('DAILY_RESET_AVAILABLE', () => {
+      if (isMounted.current && user?.id) loadChallenges();
+    });
+
+    // Item 7: Supabase Realtime subscription for cross-tab sync
+    let realtimeChannel: ReturnType<typeof supabase.channel> | null = null;
+    if (user?.id) {
+      realtimeChannel = supabase
+        .channel(`daily-challenges-${user.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'user_daily_challenges',
+            filter: `user_id=eq.${user.id}`,
+          },
+          () => {
+            if (isMounted.current) debouncedRefresh();
+          }
+        )
+        .subscribe();
+    }
+
+    return () => {
+      isMounted.current = false;
+      unsubHand();
+      unsubBalance();
+      unsubReset();
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      // Item 9: Clear animation timers
+      animTimers.current.forEach(clearTimeout);
+      animTimers.current = [];
+      // Item 7: Unsubscribe Realtime
+      if (realtimeChannel) supabase.removeChannel(realtimeChannel);
+    };
+  }, [user?.id, loadChallenges, debouncedRefresh]);
 
   // Guard against double-claim — Set tracks in-flight claims before React state updates
   const claimingRef = useRef<Set<string>>(new Set());
@@ -163,8 +222,75 @@ export const DailyChallenges: React.FC = () => {
   const dailyChallenges = challenges.filter((c) => c.type === 'daily');
   const weeklyChallenges = challenges.filter((c) => c.type === 'weekly');
 
+  // Item 10: Loading skeleton
+  if (loading) {
+    return (
+      <div className="daily-challenges">
+        <div className="streak-card" style={{ opacity: 0.5 }}>
+          <div className="streak-flame">🔥</div>
+          <div className="streak-info">
+            <span
+              className="streak-count"
+              style={{
+                background: 'rgba(255,255,255,0.1)',
+                borderRadius: 4,
+                display: 'inline-block',
+                width: 120,
+                height: 20,
+              }}
+            >
+              &nbsp;
+            </span>
+          </div>
+        </div>
+        <section className="challenges-section">
+          <h3>📅 Daily Challenges</h3>
+          <div className="challenges-list">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="challenge-card" style={{ opacity: 0.4 }}>
+                <span className="challenge-icon">⏳</span>
+                <div className="challenge-content">
+                  <span
+                    className="challenge-title"
+                    style={{
+                      background: 'rgba(255,255,255,0.08)',
+                      borderRadius: 4,
+                      display: 'inline-block',
+                      width: '60%',
+                      height: 14,
+                    }}
+                  >
+                    &nbsp;
+                  </span>
+                  <span
+                    className="challenge-desc"
+                    style={{
+                      background: 'rgba(255,255,255,0.05)',
+                      borderRadius: 4,
+                      display: 'inline-block',
+                      width: '80%',
+                      height: 12,
+                      marginTop: 4,
+                    }}
+                  >
+                    &nbsp;
+                  </span>
+                  <div className="progress-bar">
+                    <div className="progress-fill" style={{ width: '0%' }} />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
+    );
+  }
+
   return (
     <div className="daily-challenges">
+      {showAnimation && <div className="claim-animation">✨</div>}
+
       {/* Streak Display */}
       <div className="streak-card">
         <div className="streak-flame">🔥</div>

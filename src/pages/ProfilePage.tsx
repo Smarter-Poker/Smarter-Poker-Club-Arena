@@ -432,72 +432,80 @@ export default function ProfilePage() {
   useEffect(() => {
     let isMounted = true;
 
-    const unsubProfile = masterBus.subscribeDebounced('PROFILE_UPDATED', () => {
-      // Re-load profile when updated from settings or other pages
-      supabase.auth
-        .getUser()
-        .then(({ data: { user: authUser } }) => {
-          if (authUser && isMounted) {
-            supabase
-              .from('profiles')
-              .select(
-                'id, username, display_name, player_number, avatar_url, vip_level, created_at, diamonds, is_vip, daily_streak, stats'
-              )
-              .eq('id', authUser.id)
-              .maybeSingle()
-              .then(({ data: profile }) => {
-                if (profile && isMounted) {
-                  setUser({
-                    id: profile.id,
-                    username: profile.username || 'Player',
-                    displayName: profile.display_name || profile.username || 'Player',
-                    playerNumber: profile.player_number || 0,
-                    avatarUrl: profile.avatar_url || '',
-                    vipLevel: profile.vip_level || 'bronze',
-                    memberSince: profile.created_at,
-                  });
-                  setDiamonds(profile.diamonds || 0);
-                  setIsVIP(profile.is_vip || false);
-                }
-              });
-          }
-        })
-        .catch(() => {});
-    }, 500);
-    const unsubHand = masterBus.subscribeDebounced('HAND_COMPLETED', () => {
-      // Refresh stats after a hand is completed
-      supabase.auth
-        .getUser()
-        .then(({ data: { user: authUser } }) => {
-          if (authUser && isMounted) {
-            supabase
-              .from('profiles')
-              .select('stats')
-              .eq('id', authUser.id)
-              .maybeSingle()
-              .then(({ data: profile }) => {
-                if (profile?.stats && isMounted) {
-                  setStats({
-                    totalHands: profile.stats.total_hands || 0,
-                    vpip: profile.stats.vpip || 0,
-                    pfr: profile.stats.pfr || 0,
-                    threeBet: profile.stats.three_bet || 0,
-                    aggression: profile.stats.aggression_factor || 0,
-                    bbPer100: profile.stats.bb_per_100 || 0,
-                    biggestPot: profile.stats.biggest_pot || 0,
-                    totalProfit: profile.stats.total_profit || 0,
-                    winRate: profile.stats.win_rate || 0,
-                    tournamentsPlayed: profile.stats.tournaments_played || 0,
-                    tournamentsWon: profile.stats.tournaments_won || 0,
-                    bountyKOs: profile.stats.bounty_kos || 0,
-                    roi: profile.stats.roi || 0,
-                  });
-                }
-              });
-          }
-        })
-        .catch(() => {});
-    }, 2000);
+    const unsubProfile = masterBus.subscribeDebounced(
+      'PROFILE_UPDATED',
+      () => {
+        // Re-load profile when updated from settings or other pages
+        supabase.auth
+          .getUser()
+          .then(({ data: { user: authUser } }) => {
+            if (authUser && isMounted) {
+              supabase
+                .from('profiles')
+                .select(
+                  'id, username, display_name, player_number, avatar_url, vip_level, created_at, diamonds, is_vip, daily_streak, stats'
+                )
+                .eq('id', authUser.id)
+                .maybeSingle()
+                .then(({ data: profile }) => {
+                  if (profile && isMounted) {
+                    setUser({
+                      id: profile.id,
+                      username: profile.username || 'Player',
+                      displayName: profile.display_name || profile.username || 'Player',
+                      playerNumber: profile.player_number || 0,
+                      avatarUrl: profile.avatar_url || '',
+                      vipLevel: profile.vip_level || 'bronze',
+                      memberSince: profile.created_at,
+                    });
+                    setDiamonds(profile.diamonds || 0);
+                    setIsVIP(profile.is_vip || false);
+                  }
+                });
+            }
+          })
+          .catch(() => {});
+      },
+      500
+    );
+    const unsubHand = masterBus.subscribeDebounced(
+      'HAND_COMPLETED',
+      () => {
+        // Refresh stats after a hand is completed
+        supabase.auth
+          .getUser()
+          .then(({ data: { user: authUser } }) => {
+            if (authUser && isMounted) {
+              supabase
+                .from('profiles')
+                .select('stats')
+                .eq('id', authUser.id)
+                .maybeSingle()
+                .then(({ data: profile }) => {
+                  if (profile?.stats && isMounted) {
+                    setStats({
+                      totalHands: profile.stats.total_hands || 0,
+                      vpip: profile.stats.vpip || 0,
+                      pfr: profile.stats.pfr || 0,
+                      threeBet: profile.stats.three_bet || 0,
+                      aggression: profile.stats.aggression_factor || 0,
+                      bbPer100: profile.stats.bb_per_100 || 0,
+                      biggestPot: profile.stats.biggest_pot || 0,
+                      totalProfit: profile.stats.total_profit || 0,
+                      winRate: profile.stats.win_rate || 0,
+                      tournamentsPlayed: profile.stats.tournaments_played || 0,
+                      tournamentsWon: profile.stats.tournaments_won || 0,
+                      bountyKOs: profile.stats.bounty_kos || 0,
+                      roi: profile.stats.roi || 0,
+                    });
+                  }
+                });
+            }
+          })
+          .catch(() => {});
+      },
+      2000
+    );
     const unsubBalance = masterBus.subscribeDebounced(
       'BALANCE_UPDATED',
       () => {
@@ -521,103 +529,119 @@ export default function ProfilePage() {
       500
     );
     // Gamification bus listeners: refresh balance when rewards earned on other pages
-    const unsubDailyReward = masterBus.subscribeDebounced('DAILY_REWARD_CLAIMED', (payload: any) => {
-      if (!isMounted) return;
-      if (payload?.rewardType === 'diamonds') setShowDiamondRain(true);
-      supabase.auth
-        .getUser()
-        .then(({ data: { user: authUser } }) => {
-          if (authUser && isMounted) {
-            supabase
-              .from('profiles')
-              .select('diamonds, daily_streak')
-              .eq('id', authUser.id)
-              .maybeSingle()
-              .then(({ data }) => {
-                if (data && isMounted) {
-                  setDiamonds(data.diamonds || 0);
-                  setDailyStreak(data.daily_streak || 0);
-                }
-              });
-          }
-        })
-        .catch(() => {});
-    }, 500);
-    const unsubMissionClaim = masterBus.subscribeDebounced('MISSION_CLAIMED', (payload: any) => {
-      if (!isMounted) return;
-      if (payload?.rewardType === 'diamonds') setShowDiamondRain(true);
-      supabase.auth
-        .getUser()
-        .then(({ data: { user: authUser } }) => {
-          if (authUser && isMounted) {
-            supabase
-              .from('profiles')
-              .select('diamonds')
-              .eq('id', authUser.id)
-              .maybeSingle()
-              .then(({ data }) => {
-                if (data && isMounted) setDiamonds(data.diamonds || 0);
-              });
-          }
-        })
-        .catch(() => {});
-    }, 500);
-    const unsubWheelSpin = masterBus.subscribeDebounced('WHEEL_SPIN_RESULT', (payload: any) => {
-      if (!isMounted) return;
-      if (payload?.type === 'diamonds') setShowDiamondRain(true);
-      supabase.auth
-        .getUser()
-        .then(({ data: { user: authUser } }) => {
-          if (authUser && isMounted) {
-            supabase
-              .from('profiles')
-              .select('diamonds')
-              .eq('id', authUser.id)
-              .maybeSingle()
-              .then(({ data }) => {
-                if (data && isMounted) setDiamonds(data.diamonds || 0);
-              });
-          }
-        })
-        .catch(() => {});
-    }, 500);
+    const unsubDailyReward = masterBus.subscribeDebounced(
+      'DAILY_REWARD_CLAIMED',
+      (payload: any) => {
+        if (!isMounted) return;
+        if (payload?.rewardType === 'diamonds') setShowDiamondRain(true);
+        supabase.auth
+          .getUser()
+          .then(({ data: { user: authUser } }) => {
+            if (authUser && isMounted) {
+              supabase
+                .from('profiles')
+                .select('diamonds, daily_streak')
+                .eq('id', authUser.id)
+                .maybeSingle()
+                .then(({ data }) => {
+                  if (data && isMounted) {
+                    setDiamonds(data.diamonds || 0);
+                    setDailyStreak(data.daily_streak || 0);
+                  }
+                });
+            }
+          })
+          .catch(() => {});
+      },
+      500
+    );
+    const unsubMissionClaim = masterBus.subscribeDebounced(
+      'MISSION_CLAIMED',
+      (payload: any) => {
+        if (!isMounted) return;
+        if (payload?.rewardType === 'diamonds') setShowDiamondRain(true);
+        supabase.auth
+          .getUser()
+          .then(({ data: { user: authUser } }) => {
+            if (authUser && isMounted) {
+              supabase
+                .from('profiles')
+                .select('diamonds')
+                .eq('id', authUser.id)
+                .maybeSingle()
+                .then(({ data }) => {
+                  if (data && isMounted) setDiamonds(data.diamonds || 0);
+                });
+            }
+          })
+          .catch(() => {});
+      },
+      500
+    );
+    const unsubWheelSpin = masterBus.subscribeDebounced(
+      'WHEEL_SPIN_RESULT',
+      (payload: any) => {
+        if (!isMounted) return;
+        if (payload?.type === 'diamonds') setShowDiamondRain(true);
+        supabase.auth
+          .getUser()
+          .then(({ data: { user: authUser } }) => {
+            if (authUser && isMounted) {
+              supabase
+                .from('profiles')
+                .select('diamonds')
+                .eq('id', authUser.id)
+                .maybeSingle()
+                .then(({ data }) => {
+                  if (data && isMounted) setDiamonds(data.diamonds || 0);
+                });
+            }
+          })
+          .catch(() => {});
+      },
+      500
+    );
 
     // Auto-refresh missions when progress is updated in-game
-    const unsubChallengeProgress = masterBus.subscribeDebounced('CHALLENGE_PROGRESS_UPDATED', () => {
-      if (!isMounted) return;
-      supabase.auth
-        .getUser()
-        .then(({ data: { user: authUser } }) => {
-          if (authUser && isMounted) {
-            Promise.all([
-              dailyChallengeService.getTodaysChallenges(authUser.id),
-              dailyChallengeService.getWeeklyChallenges(authUser.id),
-              dailyChallengeService.getMonthlyChallenges(authUser.id),
-            ])
-              .then(([daily, weekly, monthly]) => {
-                if (!isMounted) return;
-                const allMissions = [...daily, ...weekly, ...monthly];
-                setMissions(
-                  allMissions.map((mc) => ({
-                    id: mc.id,
-                    tier: ('tier' in mc ? mc.tier : 'daily') as 'daily' | 'weekly' | 'monthly',
-                    title: mc.challenge.name,
-                    description: mc.challenge.description,
-                    icon: mc.challenge.icon,
-                    current: mc.progress,
-                    target: mc.challenge.requirement,
-                    rewardAmount: mc.challenge.chipReward,
-                    rewardType: 'chips' as const,
-                    completed: mc.completed,
-                    claimed: mc.claimed,
-                  }))
-                );
-              })
-              .catch(() => {});
-          }
-        })
-        .catch(() => {});
-    }, 1000);
+    const unsubChallengeProgress = masterBus.subscribeDebounced(
+      'CHALLENGE_PROGRESS_UPDATED',
+      () => {
+        if (!isMounted) return;
+        supabase.auth
+          .getUser()
+          .then(({ data: { user: authUser } }) => {
+            if (authUser && isMounted) {
+              Promise.all([
+                dailyChallengeService.getTodaysChallenges(authUser.id),
+                dailyChallengeService.getWeeklyChallenges(authUser.id),
+                dailyChallengeService.getMonthlyChallenges(authUser.id),
+              ])
+                .then(([daily, weekly, monthly]) => {
+                  if (!isMounted) return;
+                  const allMissions = [...daily, ...weekly, ...monthly];
+                  setMissions(
+                    allMissions.map((mc) => ({
+                      id: mc.id,
+                      tier: ('tier' in mc ? mc.tier : 'daily') as 'daily' | 'weekly' | 'monthly',
+                      title: mc.challenge.name,
+                      description: mc.challenge.description,
+                      icon: mc.challenge.icon,
+                      current: mc.progress,
+                      target: mc.challenge.requirement,
+                      rewardAmount: mc.challenge.chipReward,
+                      rewardType: 'chips' as const,
+                      completed: mc.completed,
+                      claimed: mc.claimed,
+                    }))
+                  );
+                })
+                .catch(() => {});
+            }
+          })
+          .catch(() => {});
+      },
+      1000
+    );
 
     return () => {
       isMounted = false;

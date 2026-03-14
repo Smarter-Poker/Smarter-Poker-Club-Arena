@@ -345,8 +345,11 @@ class TournamentService {
 
         xmttTournaments = xmttData || [];
       }
-    } catch {
-      // Union lookup failed — return club tournaments only
+    } catch (e: unknown) {
+      console.warn(
+        '[TournamentService] Union XMTT lookup failed — returning club tournaments only:',
+        e
+      );
     }
 
     // Merge and deduplicate by id

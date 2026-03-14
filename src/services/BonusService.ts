@@ -211,8 +211,8 @@ class BonusServiceClass {
       if (ud) {
         loginStreak = ud.current_streak;
       }
-    } catch {
-      // Ignore
+    } catch (e: unknown) {
+      console.warn('[BonusService] Login streak lookup failed — defaulting to 1:', e);
     }
 
     if (loginStreak >= 3 && loginStreak <= 6) {

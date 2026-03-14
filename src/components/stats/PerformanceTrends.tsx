@@ -51,7 +51,7 @@ export default function PerformanceTrends({ userId }: PerformanceTrendsProps) {
       masterBus.subscribeDebounced('DATA_MUTATED', () => loadSessions(), 3000),
     ];
     return () => unsubs.forEach((u) => u());
-  }, []);
+  }, [loadSessions]);
 
   const loadSessions = useCallback(async () => {
     if (!userId) return;

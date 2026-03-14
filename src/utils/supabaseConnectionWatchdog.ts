@@ -107,9 +107,19 @@ class SupabaseConnectionWatchdog {
       this.isConnected = true;
       masterBus.emit('WS_CONNECTED', { url: import.meta.env.VITE_SUPABASE_URL || '' });
       masterBus.emit('REALTIME_CONNECTED', { channelName: 'watchdog' });
+      masterBus.emit('CONNECTION_RESTORED', { timestamp: Date.now() });
 
       // Force realtime channels to reconnect
       this.reconnectRealtimeChannels();
+
+      // Replay any queued offline mutations now that Supabase is reachable.
+      // This is more reliable than the navigator.onLine event because the
+      // watchdog verifies actual Supabase connectivity, not just network.
+      import('../utils/offlineQueue').then(({ replayOfflineQueue }) => {
+        replayOfflineQueue().catch((err) => {
+          console.warn('[Watchdog] Offline queue replay failed:', err);
+        });
+      });
     }
     this.consecutiveFailures = 0;
   }

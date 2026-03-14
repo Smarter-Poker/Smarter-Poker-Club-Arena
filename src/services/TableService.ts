@@ -546,8 +546,11 @@ class TableService {
               .eq('id', clubId);
           }
         }
-      } catch {
-        // Silent — fire-and-forget
+      } catch (e: unknown) {
+        console.warn(
+          '[TableService] deleteTable: club table count decrement failed (fire-and-forget):',
+          e
+        );
       }
     })();
 

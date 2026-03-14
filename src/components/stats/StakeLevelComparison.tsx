@@ -65,7 +65,7 @@ export default function StakeLevelComparison({ userId }: StakeLevelComparisonPro
       masterBus.subscribeDebounced('DATA_MUTATED', () => loadRecords(), 3000),
     ];
     return () => unsubs.forEach((u) => u());
-  }, []);
+  }, [loadRecords]);
 
   const loadRecords = useCallback(async () => {
     if (!userId) return;

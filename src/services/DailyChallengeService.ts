@@ -475,35 +475,6 @@ class DailyChallengeServiceClass {
   }
 
   /**
-   * Award rewards for completing a challenge
-   */
-  private async awardRewards(userId: string, challenge: DailyChallenge): Promise<void> {
-    // Award chips via proper wallet system with ATOMIC audit trail
-    if (challenge.chipReward > 0) {
-      const amt = Math.trunc(challenge.chipReward * 100) / 100;
-      const { error: chipError } = await retryAsync(
-        () =>
-          supabase.rpc('atomic_credit_wallet_and_log', {
-            p_user_id: userId,
-            p_amount: amt,
-            p_category: 'bonus',
-            p_description: `Daily challenge reward: ${challenge.name}`,
-            p_table_id: null,
-            p_hand_id: null,
-            p_related_entity_id: null,
-          }),
-        3
-      );
-      if (chipError) {
-        console.error('[DailyChallenge] Failed to atomic award chips:', chipError);
-        return;
-      }
-
-      masterBus.emit('BALANCE_UPDATED', { source: 'daily_challenge_reward', userId });
-    }
-  }
-
-  /**
    * Get challenge completion stats for a user
    */
   async getStats(userId: string): Promise<{
@@ -527,7 +498,10 @@ class DailyChallengeServiceClass {
     let totalChipsEarned = 0;
 
     for (const uc of data) {
-      const challenge = CHALLENGE_POOL.find((c) => c.id === uc.challenge_id);
+      const challenge =
+        CHALLENGE_POOL.find((c) => c.id === uc.challenge_id) ||
+        WEEKLY_CHALLENGE_POOL.find((c) => c.id === uc.challenge_id) ||
+        MONTHLY_CHALLENGE_POOL.find((c) => c.id === uc.challenge_id);
       if (challenge) {
         totalChipsEarned += challenge.chipReward;
       }

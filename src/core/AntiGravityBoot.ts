@@ -120,9 +120,15 @@ export async function initAntiGravity(): Promise<BootStatus> {
       // inform users of degraded state. This is infinitely better than a dead screen.
       supabaseOk = true;
       if (hasCachedSession) {
-        console.warn('[ANTIGRAVITY] getSession timed out, proceeding with cached session:', e.message);
+        console.warn(
+          '[ANTIGRAVITY] getSession timed out, proceeding with cached session:',
+          e.message
+        );
       } else {
-        console.warn('[ANTIGRAVITY] getSession timed out, proceeding in degraded mode — AuthGuard handles auth:', e.message);
+        console.warn(
+          '[ANTIGRAVITY] getSession timed out, proceeding in degraded mode — AuthGuard handles auth:',
+          e.message
+        );
       }
     }
   } else {

@@ -18,6 +18,8 @@ import { masterBus } from '../core/MasterBus';
 import ChipTransferModal from '@/components/agent/ChipTransferModal';
 import AgentTree from '@/components/agent/AgentTree';
 import CommissionHistoryModal from '@/components/agent/CommissionHistoryModal';
+import DistributionHistory from '@/components/agent/DistributionHistory';
+import AgentAnalyticsDashboard from '@/components/agent/AgentAnalyticsDashboard';
 import PlayerInviteModal from '@/components/agent/PlayerInviteModal';
 import { CreditService } from '@/services/CreditService';
 import AgentManager from '@/components/club/AgentManager';
@@ -926,6 +928,16 @@ export default function AgentManagementPage() {
               </div>
             )}
           </div>
+        )}
+
+        {/* ═══════════════════════════════════════════════════════════════════════════════ */}
+        {/* DISTRIBUTION HISTORY + AGENT ANALYTICS (Phase 4 — New Features) */}
+        {/* ═══════════════════════════════════════════════════════════════════════════════ */}
+        {activeTab === 'players' && user && clubId && (
+          <>
+            <DistributionHistory userId={user.id} clubId={clubId} />
+            <AgentAnalyticsDashboard userId={user.id} clubId={clubId} />
+          </>
         )}
 
         {/* ═══════════════════════════════════════════════════════════════════════════════ */}

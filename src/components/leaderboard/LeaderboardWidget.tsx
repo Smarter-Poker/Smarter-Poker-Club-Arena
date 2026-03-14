@@ -3,9 +3,10 @@
  * Compact leaderboard for dashboard display
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { LeaderboardService } from '../../services/LeaderboardService';
 import type { LeaderboardMetric, LeaderboardPeriod } from '../../services/LeaderboardService';
+import { masterBus } from '../../core/MasterBus';
 import './LeaderboardWidget.css';
 
 interface LeaderboardEntry {
@@ -39,10 +40,9 @@ export const LeaderboardWidget: React.FC<LeaderboardWidgetProps> = ({
   const [timeframe, setTimeframe] = useState<'daily' | 'weekly' | 'monthly' | 'alltime'>('weekly');
   const [loading, setLoading] = useState(true);
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
-
-  useEffect(() => {
-    loadLeaderboard();
-  }, [clubId, selectedType, timeframe]);
+  const isMounted = useRef(true);
+  const animTimers = useRef<number[]>([]);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Map widget timeframe to service period type
   const periodMap: Record<string, LeaderboardPeriod> = {
@@ -57,12 +57,12 @@ export const LeaderboardWidget: React.FC<LeaderboardWidgetProps> = ({
     profit: 'profit',
     hands: 'hands_played',
     tournaments: 'tournaments_won',
-    streak: 'profit', // fallback — streak uses profit as proxy
+    streak: 'profit',
   };
 
-  const loadLeaderboard = async () => {
-    if (!clubId) {
-      setLoading(false);
+  const loadLeaderboard = useCallback(async () => {
+    if (!clubId || !isMounted.current) {
+      if (isMounted.current) setLoading(false);
       return;
     }
     setLoading(true);
@@ -75,6 +75,7 @@ export const LeaderboardWidget: React.FC<LeaderboardWidgetProps> = ({
         servicePeriod,
         limit
       );
+      if (!isMounted.current) return;
       const mapped: LeaderboardEntry[] = data.map((entry) => ({
         rank: entry.rank,
         userId: entry.userId,
@@ -84,16 +85,44 @@ export const LeaderboardWidget: React.FC<LeaderboardWidgetProps> = ({
         change: entry.change,
       }));
       setEntries(mapped);
+      // Staggered reveal — track timers for cleanup
+      animTimers.current.forEach(clearTimeout);
+      animTimers.current = [];
       setVisibleItems(new Set());
       mapped.forEach((_, i) => {
-        setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60);
+        const t = window.setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60);
+        animTimers.current.push(t);
       });
     } catch (error) {
       console.error('Failed to load leaderboard:', error);
     } finally {
-      setLoading(false);
+      if (isMounted.current) setLoading(false);
     }
-  };
+  }, [clubId, selectedType, timeframe, limit]);
+
+  const debouncedRefresh = useCallback(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      if (isMounted.current) loadLeaderboard();
+    }, 2000);
+  }, [loadLeaderboard]);
+
+  useEffect(() => {
+    isMounted.current = true;
+    loadLeaderboard();
+
+    const unsubHand = masterBus.subscribe('HAND_COMPLETED', debouncedRefresh);
+    const unsubBalance = masterBus.subscribe('BALANCE_UPDATED', debouncedRefresh);
+
+    return () => {
+      isMounted.current = false;
+      unsubHand();
+      unsubBalance();
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      animTimers.current.forEach(clearTimeout);
+      animTimers.current = [];
+    };
+  }, [loadLeaderboard, debouncedRefresh]);
 
   const formatValue = (value: number) => {
     if (selectedType === 'profit') {

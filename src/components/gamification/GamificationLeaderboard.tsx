@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import './GamificationLeaderboard.css';
@@ -84,8 +84,18 @@ export default function GamificationLeaderboard() {
 
     fetchLeaderboard();
 
+    // Bus listeners — auto-refresh when relevant events fire
+    const unsubWheel = masterBus.subscribe('WHEEL_SPIN_RESULT', () => {
+      if (isMounted) setTimeout(fetchLeaderboard, 1500);
+    });
+    const unsubMission = masterBus.subscribe('MISSION_CLAIMED', () => {
+      if (isMounted) setTimeout(fetchLeaderboard, 1500);
+    });
+
     return () => {
       isMounted = false;
+      unsubWheel();
+      unsubMission();
     };
   }, [activeTab]);
 

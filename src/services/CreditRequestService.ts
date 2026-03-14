@@ -269,7 +269,15 @@ class CreditRequestServiceClass {
     }
 
     // Update request status to executed
-    await supabase.from('credit_requests').update({ status: 'executed' }).eq('id', requestId);
+    const { error: statusErr } = await supabase
+      .from('credit_requests')
+      .update({ status: 'executed' })
+      .eq('id', requestId);
+    if (statusErr)
+      console.error(
+        '[CreditRequest] WARN: Transfer succeeded but status update to executed failed:',
+        statusErr
+      );
   }
 
   private async notifyApprover(

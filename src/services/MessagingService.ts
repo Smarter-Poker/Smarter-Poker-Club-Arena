@@ -551,7 +551,17 @@ class MessagingServiceClass {
       role: uid === creatorId ? 'admin' : 'member',
     }));
 
-    await supabase.from('conversation_participants').insert(participantInserts);
+    const { error: participantErr } = await supabase
+      .from('conversation_participants')
+      .insert(participantInserts);
+    if (participantErr) {
+      console.error(
+        '[Messaging] Failed to insert group participants, cleaning up:',
+        participantErr
+      );
+      await supabase.from('conversations').delete().eq('id', data.id);
+      return null;
+    }
 
     masterBus.emit('CONVERSATION_CREATED', {
       conversationId: data.id,
@@ -587,11 +597,12 @@ class MessagingServiceClass {
       if (error) return false;
 
       // Create conversation_participants entry
-      await supabase.from('conversation_participants').insert({
+      const { error: partErr } = await supabase.from('conversation_participants').insert({
         conversation_id: conversationId,
         user_id: userId,
         role: 'member',
       });
+      if (partErr) console.error('[Messaging] Failed to insert participant entry:', partErr);
 
       return true;
     } catch {
@@ -928,7 +939,7 @@ class MessagingServiceClass {
 
   /** Mark message as seen with timestamp and reader identity */
   async markSeenWithDetail(messageId: string, userId: string): Promise<void> {
-    await supabase.from('message_read_receipts').upsert(
+    const { error: receiptErr } = await supabase.from('message_read_receipts').upsert(
       {
         message_id: messageId,
         user_id: userId,
@@ -936,6 +947,7 @@ class MessagingServiceClass {
       },
       { onConflict: 'message_id,user_id' }
     );
+    if (receiptErr) console.warn('[Messaging] Read receipt upsert failed:', receiptErr);
   }
 
   /** Get detailed read receipts for a message (for group conversations) */

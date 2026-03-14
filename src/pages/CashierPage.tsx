@@ -734,7 +734,12 @@ export default function CashierPage() {
         notifyWalletChange(selectedRecipient, value);
       } else if (action === 'mint') {
         // ─── MINT CHIPS ───
-        await mintChips(clubId!, value);
+        const mintResult = await mintChips(clubId!, value);
+        if (!mintResult.success) {
+          setMessage({ type: 'error', text: 'Minting failed. Please try again.' });
+          setIsProcessing(false);
+          return;
+        }
         setMessage({ type: 'success', text: `Minted ${value.toLocaleString()} chips` });
         loadBalances(user.id);
         notifyWalletChange(user.id, value);

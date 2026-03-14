@@ -314,7 +314,7 @@ class VIPServiceClass {
     startOfMonth.setDate(1);
     startOfMonth.setHours(0, 0, 0, 0);
 
-    await supabase.from('vip_monthly_usage').upsert(
+    const { error: upsertErr } = await supabase.from('vip_monthly_usage').upsert(
       {
         user_id: userId,
         feature,
@@ -326,6 +326,7 @@ class VIPServiceClass {
         ignoreDuplicates: false,
       }
     );
+    if (upsertErr) console.error('[VIPService] VIP quota upsert failed:', upsertErr);
 
     // Increment count
     await retryAsync(

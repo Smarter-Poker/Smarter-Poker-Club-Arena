@@ -349,7 +349,7 @@ export default function SettlementPage() {
     } finally {
       if (isMounted.current) setIsLoading(false);
     }
-  }, []);
+  }, [unionId, clubId]);
 
   useEffect(() => {
     loadSettlementData();

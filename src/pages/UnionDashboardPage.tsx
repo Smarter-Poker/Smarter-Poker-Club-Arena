@@ -261,15 +261,15 @@ export default function UnionDashboardPage() {
     if (!unionId) return;
     const refresh = () => loadDashboard(unionId);
     const unsubs = [
-      masterBus.subscribe('CLUB_UPDATED', refresh),
-      masterBus.subscribe('CHIPS_DISTRIBUTED', refresh),
-      masterBus.subscribe('AGENT_UPDATED', refresh),
-      masterBus.subscribe('CASHOUT_APPROVED', refresh),
-      masterBus.subscribe('CASHOUT_REQUESTED', refresh),
-      masterBus.subscribe('TABLE_CREATED', refresh),
-      masterBus.subscribe('BALANCE_UPDATED', refresh),
-      masterBus.subscribe('CREDIT_UPDATED', refresh),
-      masterBus.subscribe('SETTLEMENT_COMPLETED', refresh),
+      masterBus.subscribeDebounced('CLUB_UPDATED', refresh, 300),
+      masterBus.subscribeDebounced('CHIPS_DISTRIBUTED', refresh, 300),
+      masterBus.subscribeDebounced('AGENT_UPDATED', refresh, 300),
+      masterBus.subscribeDebounced('CASHOUT_APPROVED', refresh, 300),
+      masterBus.subscribeDebounced('CASHOUT_REQUESTED', refresh, 300),
+      masterBus.subscribeDebounced('TABLE_CREATED', refresh, 300),
+      masterBus.subscribeDebounced('BALANCE_UPDATED', refresh, 300),
+      masterBus.subscribeDebounced('CREDIT_UPDATED', refresh, 300),
+      masterBus.subscribeDebounced('SETTLEMENT_COMPLETED', refresh, 300),
     ];
     return () => unsubs.forEach((u) => u());
   }, [unionId, loadDashboard]);

@@ -353,27 +353,32 @@ export default function AntiCheatPage() {
     loadStats(clubId);
   });
 
-  // ── Realtime Listeners ────────────────────────────────────
+  // ── Realtime Listeners (debounced) ─────────────────────────
   useEffect(() => {
     if (!clubId) return;
 
-    const unsubFlag = masterBus.subscribe('ANTI_CHEAT_FLAG_CREATED', () => {
-      loadStats(clubId);
-      setFlagsLoaded(false);
-    });
-    const unsubKick = masterBus.subscribe('PLAYER_KICKED', () => {
-      loadStats(clubId);
-    });
-    // Phase 4: Cross-page sync (ported from World Hub anti-cheat.js)
-    const unsubTable = masterBus.subscribe('TABLE_CREATED', () => loadStats(clubId));
-    const unsubChips = masterBus.subscribe('CHIPS_DISTRIBUTED', () => loadStats(clubId));
+    const unsubs = [
+      masterBus.subscribeDebounced(
+        'ANTI_CHEAT_FLAG_CREATED',
+        () => {
+          loadStats(clubId);
+          setFlagsLoaded(false);
+        },
+        500
+      ),
+      masterBus.subscribeDebounced(
+        'PLAYER_KICKED',
+        () => {
+          loadStats(clubId);
+        },
+        500
+      ),
+      // Phase 4: Cross-page sync (ported from World Hub anti-cheat.js)
+      masterBus.subscribeDebounced('TABLE_CREATED', () => loadStats(clubId), 500),
+      masterBus.subscribeDebounced('CHIPS_DISTRIBUTED', () => loadStats(clubId), 500),
+    ];
 
-    return () => {
-      unsubFlag();
-      unsubKick();
-      unsubTable();
-      unsubChips();
-    };
+    return () => unsubs.forEach((u) => u());
   }, [clubId, loadStats]);
 
   // ── Actions ────────────────────────────────────────────────

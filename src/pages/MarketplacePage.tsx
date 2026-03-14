@@ -97,13 +97,15 @@ export default function MarketplacePage() {
           await Promise.all([
             supabase
               .from('marketplace_items')
-              .select('*')
+              .select(
+                'id, club_id, name, description, price, image_url, category, is_active, purchase_count'
+              )
               .eq('club_id', targetClub)
               .eq('is_active', true)
               .order('created_at', { ascending: false }),
             supabase
               .from('marketplace_purchases')
-              .select('*')
+              .select('id, item_id, price_paid, created_at')
               .eq('user_id', user.id)
               .order('created_at', { ascending: false }),
             supabase
@@ -159,15 +161,15 @@ export default function MarketplacePage() {
     };
   }, [user, searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Realtime bus listeners
+  // Realtime bus listeners (debounced)
   useEffect(() => {
     if (!clubId) return;
     const refresh = () => loadMarketplace(clubId, true);
     const unsubs = [
-      masterBus.subscribe('CHIPS_DISTRIBUTED', refresh),
-      masterBus.subscribe('BALANCE_UPDATED', refresh),
+      masterBus.subscribeDebounced('CHIPS_DISTRIBUTED', refresh, 500),
+      masterBus.subscribeDebounced('BALANCE_UPDATED', refresh, 500),
       // Phase 4: Cross-page sync (ported from World Hub marketplace.js)
-      masterBus.subscribe('CASHIER_BALANCE_CHANGED', refresh),
+      masterBus.subscribeDebounced('CASHIER_BALANCE_CHANGED', refresh, 500),
     ];
     return () => unsubs.forEach((u) => u());
   }, [clubId, loadMarketplace]);
@@ -241,7 +243,9 @@ export default function MarketplacePage() {
     try {
       const { data } = await supabase
         .from('marketplace_items')
-        .select('*')
+        .select(
+          'id, club_id, name, description, price, image_url, category, is_active, purchase_count'
+        )
         .eq('club_id', clubId)
         .order('created_at', { ascending: false });
       if (mountedRef.current) {

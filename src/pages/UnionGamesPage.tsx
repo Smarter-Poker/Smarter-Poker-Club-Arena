@@ -127,7 +127,11 @@ export default function UnionGamesPage() {
 
         // Load union info + clubs
         const [{ data: unionData }, { data: unionClubs }] = await Promise.all([
-          supabase.from('unions').select('*').eq('id', targetUnion).maybeSingle(),
+          supabase
+            .from('unions')
+            .select('id, name, code, status, description, owner_id, created_at')
+            .eq('id', targetUnion)
+            .maybeSingle(),
           supabase.from('union_clubs').select('club_id').eq('union_id', targetUnion),
         ]);
 
@@ -151,7 +155,9 @@ export default function UnionGamesPage() {
             .limit(50),
           supabase
             .from('poker_tables')
-            .select('*')
+            .select(
+              'id, name, status, game_type, game_variant, small_blind, big_blind, max_players, current_players, club_id'
+            )
             .in('club_id', cIds)
             .order('current_players', { ascending: false }),
           supabase.rpc('get_bbj_pool', { p_union_id: targetUnion }).maybeSingle(),
@@ -226,15 +232,15 @@ export default function UnionGamesPage() {
     };
   }, [user, paramUnionId, searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Realtime
+  // Realtime (debounced)
   useEffect(() => {
     if (!unionId) return;
     const refresh = () => loadUnionData(unionId);
     const unsubs = [
-      masterBus.subscribe('TOURNAMENT_REGISTERED', refresh),
-      masterBus.subscribe('TOURNAMENT_STARTED', refresh),
-      masterBus.subscribe('TOURNAMENT_COMPLETE', refresh),
-      masterBus.subscribe('TABLE_UPDATED', refresh),
+      masterBus.subscribeDebounced('TOURNAMENT_REGISTERED', refresh, 500),
+      masterBus.subscribeDebounced('TOURNAMENT_STARTED', refresh, 500),
+      masterBus.subscribeDebounced('TOURNAMENT_COMPLETE', refresh, 500),
+      masterBus.subscribeDebounced('TABLE_UPDATED', refresh, 500),
     ];
     return () => unsubs.forEach((u) => u());
   }, [unionId, loadUnionData]);

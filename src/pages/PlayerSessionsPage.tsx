@@ -390,15 +390,15 @@ export default function PlayerSessionsPage() {
     if (tab === 'chipflow') loadChipFlow();
   }, [tab, loadRetention, loadChipFlow]);
 
-  // ── Bus Listeners ─────────────────────────────────────────
+  // ── Bus Listeners (debounced) ──────────────────────────────
   useEffect(() => {
     if (!clubId) return;
     const refresh = () => loadSessions(clubId, true);
     const unsubs = [
-      masterBus.subscribe('CHIPS_DISTRIBUTED', refresh),
-      masterBus.subscribe('PLAYER_JOINED', refresh),
-      masterBus.subscribe('CASHOUT_APPROVED', refresh),
-      masterBus.subscribe('CASHOUT_REQUESTED', refresh),
+      masterBus.subscribeDebounced('CHIPS_DISTRIBUTED', refresh, 500),
+      masterBus.subscribeDebounced('PLAYER_JOINED', refresh, 500),
+      masterBus.subscribeDebounced('CASHOUT_APPROVED', refresh, 500),
+      masterBus.subscribeDebounced('CASHOUT_REQUESTED', refresh, 500),
     ];
     return () => unsubs.forEach((u) => u());
   }, [clubId, loadSessions]);

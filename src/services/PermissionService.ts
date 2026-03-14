@@ -236,68 +236,101 @@ export const PermissionService = {
    * Get user's permissions and contexts
    */
   async getUserPermissions(userId: string): Promise<UserPermissions> {
-    // 1. Check if platform admin
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', userId)
-      .maybeSingle();
+    try {
+      // 1. Check if platform admin
+      const { data: profile, error: profileErr } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', userId)
+        .maybeSingle();
 
-    if (profile?.role === 'super_admin' || profile?.role === 'admin') {
+      if (profileErr) {
+        console.warn('[PermissionService] Failed to fetch profile role:', profileErr.message);
+      }
+
+      if (profile?.role === 'super_admin' || profile?.role === 'admin') {
+        return {
+          userId,
+          level: 'PLATFORM_ADMIN',
+          permissions: LEVEL_PERMISSIONS.PLATFORM_ADMIN,
+          contexts: { platformAdmin: true },
+        };
+      }
+
+      // 2. Check if union admin
+      const { data: ownedUnions, error: unionErr } = await supabase
+        .from('unions')
+        .select('id')
+        .eq('owner_id', userId);
+
+      if (unionErr) {
+        console.warn('[PermissionService] Failed to fetch unions:', unionErr.message);
+      }
+
+      if (ownedUnions && ownedUnions.length > 0) {
+        return {
+          userId,
+          level: 'UNION_ADMIN',
+          permissions: LEVEL_PERMISSIONS.UNION_ADMIN,
+          contexts: { unionIds: ownedUnions.map((u) => u.id) },
+        };
+      }
+
+      // 3. Check if club owner
+      const { data: ownedClubs, error: clubErr } = await supabase
+        .from('clubs')
+        .select('id')
+        .eq('owner_id', userId);
+
+      if (clubErr) {
+        console.warn('[PermissionService] Failed to fetch owned clubs:', clubErr.message);
+      }
+
+      if (ownedClubs && ownedClubs.length > 0) {
+        return {
+          userId,
+          level: 'CLUB_OWNER',
+          permissions: LEVEL_PERMISSIONS.CLUB_OWNER,
+          contexts: { clubIds: ownedClubs.map((c) => c.id) },
+        };
+      }
+
+      // 4. Check if agent
+      const { data: agentRecords, error: agentErr } = await supabase
+        .from('agents')
+        .select('club_id')
+        .eq('user_id', userId);
+
+      if (agentErr) {
+        console.warn('[PermissionService] Failed to fetch agent records:', agentErr.message);
+      }
+
+      if (agentRecords && agentRecords.length > 0) {
+        return {
+          userId,
+          level: 'AGENT',
+          permissions: LEVEL_PERMISSIONS.AGENT,
+          contexts: { agentForClubIds: agentRecords.map((a) => a.club_id) },
+        };
+      }
+
+      // 5. Default to player
       return {
         userId,
-        level: 'PLATFORM_ADMIN',
-        permissions: LEVEL_PERMISSIONS.PLATFORM_ADMIN,
-        contexts: { platformAdmin: true },
+        level: 'PLAYER',
+        permissions: LEVEL_PERMISSIONS.PLAYER,
+        contexts: {},
       };
-    }
-
-    // 2. Check if union admin
-    const { data: ownedUnions } = await supabase.from('unions').select('id').eq('owner_id', userId);
-
-    if (ownedUnions && ownedUnions.length > 0) {
+    } catch (err: any) {
+      console.error('[PermissionService] getUserPermissions crashed:', err.message);
+      // Safe fallback — PLAYER level. Callers should handle gracefully.
       return {
         userId,
-        level: 'UNION_ADMIN',
-        permissions: LEVEL_PERMISSIONS.UNION_ADMIN,
-        contexts: { unionIds: ownedUnions.map((u) => u.id) },
+        level: 'PLAYER',
+        permissions: LEVEL_PERMISSIONS.PLAYER,
+        contexts: {},
       };
     }
-
-    // 3. Check if club owner
-    const { data: ownedClubs } = await supabase.from('clubs').select('id').eq('owner_id', userId);
-
-    if (ownedClubs && ownedClubs.length > 0) {
-      return {
-        userId,
-        level: 'CLUB_OWNER',
-        permissions: LEVEL_PERMISSIONS.CLUB_OWNER,
-        contexts: { clubIds: ownedClubs.map((c) => c.id) },
-      };
-    }
-
-    // 4. Check if agent
-    const { data: agentRecords } = await supabase
-      .from('agents')
-      .select('club_id')
-      .eq('user_id', userId);
-
-    if (agentRecords && agentRecords.length > 0) {
-      return {
-        userId,
-        level: 'AGENT',
-        permissions: LEVEL_PERMISSIONS.AGENT,
-        contexts: { agentForClubIds: agentRecords.map((a) => a.club_id) },
-      };
-    }
-
-    // 5. Default to player
-    return {
-      userId,
-      level: 'PLAYER',
-      permissions: LEVEL_PERMISSIONS.PLAYER,
-      contexts: {},
-    };
   },
 
   // ─────────────────────────────────────────────────────────────────────────────

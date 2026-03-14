@@ -1482,7 +1482,17 @@ class MasterBusCore {
       this.debouncedTimers.set(
         timerKey,
         setTimeout(() => {
-          (handler as EventHandler)(event);
+          try {
+            const result: any = (handler as EventHandler)(event);
+            // If handler returns a promise, catch its rejection too
+            if (result && typeof result.catch === 'function') {
+              result.catch((err: unknown) => {
+                console.warn(`[MasterBus] Async handler error for ${eventType}:`, err);
+              });
+            }
+          } catch (err) {
+            console.warn(`[MasterBus] Handler error for ${eventType}:`, err);
+          }
           this.debouncedTimers.delete(timerKey);
         }, debounceMs)
       );

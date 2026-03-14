@@ -154,9 +154,11 @@ class SupabaseConnectionWatchdog {
         channels.forEach((channel) => {
           const state = (channel as any).state;
           if (state === 'closed' || state === 'errored') {
-            channel.subscribe().catch((err: unknown) => {
+            try {
+              channel.subscribe();
+            } catch (err: unknown) {
               console.warn('[Watchdog] Channel re-subscribe failed:', err);
-            });
+            }
           }
         });
       }

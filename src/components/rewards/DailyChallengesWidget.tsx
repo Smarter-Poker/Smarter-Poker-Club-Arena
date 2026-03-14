@@ -44,6 +44,9 @@ export const DailyChallengesWidget: React.FC = () => {
     const unsubHand = masterBus.subscribe('HAND_COMPLETED', () => {
       if (isMounted.current && user?.id) loadChallenges();
     });
+    const unsubBalance = masterBus.subscribe('BALANCE_UPDATED', () => {
+      if (isMounted.current && user?.id) loadChallenges();
+    });
     const unsubReset = masterBus.subscribe('DAILY_RESET_AVAILABLE', () => {
       if (isMounted.current && user?.id) loadChallenges();
     });
@@ -51,6 +54,7 @@ export const DailyChallengesWidget: React.FC = () => {
     return () => {
       isMounted.current = false;
       unsubHand();
+      unsubBalance();
       unsubReset();
     };
   }, [user?.id]);

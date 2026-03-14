@@ -4,6 +4,9 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  * When the user switches back to the tab after being away for 30+ seconds,
  * calls the provided refresh function. Deduplicates concurrent calls.
+ *
+ * Performance: Uses useRef to store the callback so the event listener is
+ * registered ONCE on mount, not re-registered on every render.
  */
 
 import { useEffect, useRef, useCallback } from 'react';
@@ -11,8 +14,12 @@ import { useEffect, useRef, useCallback } from 'react';
 const STALE_THRESHOLD_MS = 30_000; // 30 seconds
 
 export function useVisibilityRefresh(refreshFn: () => void | Promise<void>) {
+  const refreshFnRef = useRef(refreshFn);
   const lastFetchRef = useRef(Date.now());
   const isRefreshingRef = useRef(false);
+
+  // Always keep ref in sync with latest callback (no effect re-run needed)
+  refreshFnRef.current = refreshFn;
 
   // Track when data was last fetched
   const markFresh = useCallback(() => {
@@ -32,7 +39,7 @@ export function useVisibilityRefresh(refreshFn: () => void | Promise<void>) {
 
       isRefreshingRef.current = true;
       try {
-        await refreshFn();
+        await refreshFnRef.current();
         lastFetchRef.current = Date.now();
       } catch (err) {
         console.warn('[useVisibilityRefresh] Refresh failed:', err);
@@ -45,7 +52,7 @@ export function useVisibilityRefresh(refreshFn: () => void | Promise<void>) {
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [refreshFn]);
+  }, []); // Mount-only — callback accessed via ref
 
   return { markFresh };
 }

@@ -3,7 +3,7 @@
  * PokerBros-style club interface with tournaments, tables, and navigation
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { clubService } from '../../services/ClubService';
 import { tableService } from '../../services/TableService';
@@ -15,6 +15,7 @@ import type { Club, PokerTable, Tournament } from '../../types/database.types';
 import ClubBottomNav from '../../components/club/ClubBottomNav';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { useVisibilityRefresh } from '../../hooks/useVisibilityRefresh';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import PageSkeleton from '../../components/common/PageSkeleton';
 import './ClubLobby.css';
 
@@ -40,13 +41,7 @@ export default function ClubLobby() {
   const [chipBalance, setChipBalance] = useState(0);
   const [diamondBalance, setDiamondBalance] = useState(0);
   const currentUser = useUserStore((s) => s.user);
-  const isMountedRef = useRef(true);
-  useEffect(() => {
-    isMountedRef.current = true;
-    return () => {
-      isMountedRef.current = false;
-    };
-  }, []);
+  const isMountedRef = useIsMounted();
 
   // UNION-FIRST: Check if this club is in a union and redirect
   useEffect(() => {
@@ -130,55 +125,66 @@ export default function ClubLobby() {
   // ── Realtime subscription: live table and tournament updates ──
   useEffect(() => {
     if (!clubId) return;
+    let cancelled = false;
+    let activeChannelKey: string | null = null;
 
-    const channelKey = `club-lobby-${clubId}`;
+    const setup = async () => {
+      // Resolve to UUID so the WS filter works even when clubId is a short code
+      const resolvedId = await resolveClubUUID(clubId);
+      if (cancelled) return;
 
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'tables',
-          filter: `club_id=eq.${clubId}`,
-        },
-        (payload) => {
-          if (payload.eventType === 'UPDATE' && payload.new) {
-            setTables((prev) =>
-              prev.map((t) => (t.id === payload.new.id ? { ...t, ...payload.new } : t))
-            );
-          } else if (payload.eventType === 'INSERT' && payload.new) {
-            setTables((prev) => [payload.new as any, ...prev]);
-          } else if (payload.eventType === 'DELETE' && payload.old) {
-            setTables((prev) => prev.filter((t) => t.id !== (payload.old as any).id));
+      const channelKey = `club-lobby-${resolvedId}`;
+      activeChannelKey = channelKey;
+      const channel = masterBus.getOrCreateChannel(channelKey);
+      channel
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'tables',
+            filter: `club_id=eq.${resolvedId}`,
+          },
+          (payload) => {
+            if (payload.eventType === 'UPDATE' && payload.new) {
+              setTables((prev) =>
+                prev.map((t) => (t.id === payload.new.id ? { ...t, ...payload.new } : t))
+              );
+            } else if (payload.eventType === 'INSERT' && payload.new) {
+              setTables((prev) => [payload.new as any, ...prev]);
+            } else if (payload.eventType === 'DELETE' && payload.old) {
+              setTables((prev) => prev.filter((t) => t.id !== (payload.old as any).id));
+            }
           }
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'tournaments',
-          filter: `club_id=eq.${clubId}`,
-        },
-        (payload) => {
-          if (payload.eventType === 'UPDATE' && payload.new) {
-            setTournaments((prev) =>
-              prev.map((t) => (t.id === payload.new.id ? { ...t, ...payload.new } : t))
-            );
-          } else if (payload.eventType === 'INSERT' && payload.new) {
-            setTournaments((prev) => [payload.new as any, ...prev]);
-          } else if (payload.eventType === 'DELETE' && payload.old) {
-            setTournaments((prev) => prev.filter((t) => t.id !== (payload.old as any).id));
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'tournaments',
+            filter: `club_id=eq.${resolvedId}`,
+          },
+          (payload) => {
+            if (payload.eventType === 'UPDATE' && payload.new) {
+              setTournaments((prev) =>
+                prev.map((t) => (t.id === payload.new.id ? { ...t, ...payload.new } : t))
+              );
+            } else if (payload.eventType === 'INSERT' && payload.new) {
+              setTournaments((prev) => [payload.new as any, ...prev]);
+            } else if (payload.eventType === 'DELETE' && payload.old) {
+              setTournaments((prev) => prev.filter((t) => t.id !== (payload.old as any).id));
+            }
           }
-        }
-      )
-      .subscribe();
+        )
+        .subscribe();
+    };
+
+    setup();
 
     return () => {
-      masterBus.removeRegisteredChannel(channelKey);
+      cancelled = true;
+      if (activeChannelKey) masterBus.removeRegisteredChannel(activeChannelKey);
     };
   }, [clubId]);
 

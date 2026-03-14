@@ -15,6 +15,7 @@ import { useToast } from '../components/common/Toast';
 import CreditRequestWidget from '../components/agent/CreditRequestWidget';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
+import ClubBottomNav from '../components/club/ClubBottomNav';
 import './SuperAgentDashboard.css';
 
 type DashboardTab = 'overview' | 'agents' | 'players' | 'commissions' | 'transfers';

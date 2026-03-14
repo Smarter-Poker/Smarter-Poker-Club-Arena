@@ -3,11 +3,12 @@
  * Gamification 2.0 with streak rewards and chip progression
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
 import dailyChallengeService from '../../services/DailyChallengeService';
+import { masterBus } from '../../core/MasterBus';
 import './DailyChallenges.css';
 
 interface Challenge {
@@ -47,11 +48,31 @@ export const DailyChallenges: React.FC = () => {
   const [showAnimation, setShowAnimation] = useState(false);
   const [visibleDaily, setVisibleDaily] = useState<Set<number>>(new Set());
   const [visibleWeekly, setVisibleWeekly] = useState<Set<number>>(new Set());
+  const isMounted = useRef(true);
 
   useEffect(() => {
+    isMounted.current = true;
     if (user?.id) {
       loadChallenges();
     }
+
+    // Bus listeners for real-time progress sync
+    const unsubHand = masterBus.subscribe('HAND_COMPLETED', () => {
+      if (isMounted.current && user?.id) loadChallenges();
+    });
+    const unsubBalance = masterBus.subscribe('BALANCE_UPDATED', () => {
+      if (isMounted.current && user?.id) loadChallenges();
+    });
+    const unsubReset = masterBus.subscribe('DAILY_RESET_AVAILABLE', () => {
+      if (isMounted.current && user?.id) loadChallenges();
+    });
+
+    return () => {
+      isMounted.current = false;
+      unsubHand();
+      unsubBalance();
+      unsubReset();
+    };
   }, [user?.id]);
 
   const loadChallenges = async () => {
@@ -98,16 +119,22 @@ export const DailyChallenges: React.FC = () => {
   const claimReward = async (challenge: Challenge) => {
     if (!challenge.completed || challenge.claimed || !user?.id) return;
 
-    setShowAnimation(true);
+    try {
+      // Claim via service → writes to Supabase + credits chips
+      await dailyChallengeService.claimChallenge(user.id, challenge.id, challenge.chipReward);
 
-    // Mark as claimed
-    setChallenges((prev) => prev.map((c) => (c.id === challenge.id ? { ...c, claimed: true } : c)));
-
-    toast.success(
-      `+${challenge.chipReward} Chips${challenge.diamondReward ? ` +${challenge.diamondReward} 💎` : ''}`
-    );
-
-    setTimeout(() => setShowAnimation(false), 2000);
+      // Optimistic local update AFTER successful Supabase write
+      setChallenges((prev) =>
+        prev.map((c) => (c.id === challenge.id ? { ...c, claimed: true } : c))
+      );
+      setShowAnimation(true);
+      toast.success(
+        `+${challenge.chipReward} Chips${challenge.diamondReward ? ` +${challenge.diamondReward} 💎` : ''}`
+      );
+      setTimeout(() => setShowAnimation(false), 2000);
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to claim reward');
+    }
   };
 
   const dailyChallenges = challenges.filter((c) => c.type === 'daily');

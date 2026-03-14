@@ -422,7 +422,7 @@ function SettlementsTab({ clubId }: { clubId: string }) {
       const uuid = await resolveClubUUID(clubId);
       const { data: periods, error: pErr } = await supabase
         .from('settlement_periods')
-        .select('*')
+        .select('id, club_id, status, start_at, end_at, period_number, year, created_at')
         .eq('club_id', uuid)
         .order('created_at', { ascending: false })
         .limit(1);
@@ -434,7 +434,7 @@ function SettlementsTab({ clubId }: { clubId: string }) {
       if (currentPeriod) {
         const { data: comms } = await supabase
           .from('agent_commissions')
-          .select('*')
+          .select('id, user_id, total_rake_generated, fee_percent, amount, status, period_id')
           .eq('period_id', currentPeriod.id)
           .eq('status', 'pending');
         commissions = comms || [];
@@ -745,7 +745,9 @@ function AuditLogTab({ clubId }: { clubId: string }) {
                 const uuid = await resolveClubUUID(clubId);
                 const { data, error } = await supabase
                   .from('audit_logs')
-                  .select('*')
+                  .select(
+                    'id, action_type, user_id, target_user_id, amount, ip_address, metadata, created_at'
+                  )
                   .eq('club_id', uuid)
                   .order('created_at', { ascending: false })
                   .limit(5000);
@@ -868,7 +870,7 @@ function AnnouncementsTab({ clubId }: { clubId: string }) {
       const uuid = await resolveClubUUID(clubId);
       const { data, error } = await supabase
         .from('club_announcements')
-        .select('*')
+        .select('id, title, content, pinned, is_active, created_at')
         .eq('club_id', uuid)
         .order('pinned', { ascending: false })
         .order('created_at', { ascending: false });
@@ -1338,7 +1340,7 @@ function SettlementHistoryTab({ clubId }: { clubId: string }) {
       const uuid = await resolveClubUUID(clubId);
       const { data, error } = await supabase
         .from('settlement_periods')
-        .select('*')
+        .select('id, club_id, status, start_at, end_at, period_number, year, created_at')
         .eq('club_id', uuid)
         .order('created_at', { ascending: false })
         .limit(50);
@@ -1744,7 +1746,7 @@ function TemplatesTab({ clubId }: { clubId: string }) {
       const uuid = await resolveClubUUID(clubId);
       const { data, error } = await supabase
         .from('table_templates')
-        .select('*')
+        .select('id, name, game_type, game_mode, config, club_id, created_at')
         .eq('club_id', uuid)
         .order('created_at', { ascending: false });
       if (error) throw error;

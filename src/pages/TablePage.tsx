@@ -1450,7 +1450,9 @@ export default function TablePage({
 
       const { data: table, error } = await supabase
         .from('tables')
-        .select('*')
+        .select(
+          'id, name, game_variant, game_type, tournament_id, stakes, small_blind, big_blind, max_players, club_id, action_time_seconds'
+        )
         .eq('id', tableId)
         .maybeSingle();
 

@@ -297,7 +297,9 @@ export default function ProfilePage() {
         // Fetch basic profile and stats
         const { data: profile } = await supabase
           .from('profiles')
-          .select('*')
+          .select(
+            'id, username, display_name, player_number, avatar_url, vip_level, created_at, diamonds, is_vip, daily_streak, stats'
+          )
           .eq('id', authUser.id)
           .maybeSingle();
 
@@ -438,7 +440,9 @@ export default function ProfilePage() {
           if (authUser && isMounted) {
             supabase
               .from('profiles')
-              .select('*')
+              .select(
+                'id, username, display_name, player_number, avatar_url, vip_level, created_at, diamonds, is_vip, daily_streak, stats'
+              )
               .eq('id', authUser.id)
               .maybeSingle()
               .then(({ data: profile }) => {
@@ -657,7 +661,9 @@ export default function ProfilePage() {
             async (payload) => {
               const { data: updatedProfile } = await supabase
                 .from('profiles')
-                .select('*')
+                .select(
+                  'id, username, display_name, player_number, avatar_url, vip_level, created_at, diamonds, is_vip, daily_streak, stats'
+                )
                 .eq('id', authUser.id)
                 .maybeSingle();
 

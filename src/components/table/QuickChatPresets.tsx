@@ -71,6 +71,12 @@ export const QuickChatPresets: React.FC<QuickChatPresetsProps> = ({
         playerName: playerName || 'Player',
         emoji,
       });
+      masterBus.emit('TABLE_EMOTE' as any, {
+        tableId,
+        userId,
+        playerName: playerName || 'Player',
+        emoji,
+      });
       setShowReactions(false);
       haptic.light(); // Tactile feedback on reaction
     },

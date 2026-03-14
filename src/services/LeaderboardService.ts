@@ -260,7 +260,12 @@ export const LeaderboardService = {
    * Get player's detailed stats
    */
   async getPlayerStats(userId: string, clubId?: string): Promise<PlayerStats | null> {
-    let query = supabase.from('player_stats').select('*').eq('user_id', userId);
+    let query = supabase
+      .from('player_stats')
+      .select(
+        'user_id, club_id, hands_played, total_winnings, total_losses, total_rake, vpip, pfr, three_bet, wtsd, wsd, agg_factor, tournament_roi, tournaments_played, tournaments_won, updated_at'
+      )
+      .eq('user_id', userId);
 
     if (clubId) {
       query = query.eq('club_id', await resolveClubUUID(clubId));

@@ -226,6 +226,8 @@ export const BBJService = {
       return null;
     }
 
+    if (!data) return null;
+
     // Map DB columns to service interface
     // DB has: main_balance, backup_balance, promo_balance, total_contributed
     const mapped: BBJPool = {

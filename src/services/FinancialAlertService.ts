@@ -125,7 +125,7 @@ export const FinancialAlertService = {
     const { data } = await retryAsync(() =>
       supabase
         .from('financial_alerts')
-        .select('*')
+        .select('id, severity, source, message, context, resolved, created_at')
         .eq('resolved', false)
         .order('created_at', { ascending: false })
         .limit(limit)

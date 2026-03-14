@@ -243,7 +243,7 @@ class MessagingServiceClass {
     // Check if conversation already exists
     const { data: existing } = await supabase
       .from('conversations')
-      .select('*')
+      .select('id, participant_ids, updated_at')
       .contains('participant_ids', [userId, otherUserId])
       .maybeSingle();
 
@@ -290,7 +290,7 @@ class MessagingServiceClass {
     // Check if club conversation already exists between these users
     const { data: existing } = await supabase
       .from('conversations')
-      .select('*')
+      .select('id, participant_ids, club_id, category, updated_at')
       .contains('participant_ids', [userId, otherUserId])
       .eq('club_id', await resolveClubUUID(clubId))
       .eq('category', 'club')

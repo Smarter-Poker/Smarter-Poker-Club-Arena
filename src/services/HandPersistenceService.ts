@@ -452,7 +452,9 @@ class HandPersistenceServiceClass extends HandPersistence {
   async getTableHandHistory(tableId: string, limit = 20): Promise<HandRecord[]> {
     const { data, error } = await supabase
       .from('hands')
-      .select('*')
+      .select(
+        'id, table_id, club_id, hand_number, game_variant, stakes, pot, rake, community_cards, board, winner_ids, players, actions, street, status, dealer_position, started_at, ended_at, created_at'
+      )
       .eq('table_id', tableId)
       .order('ended_at', { ascending: false })
       .limit(limit);
@@ -470,7 +472,9 @@ class HandPersistenceServiceClass extends HandPersistence {
   async getPlayerHandHistory(playerId: string, limit = 50): Promise<HandRecord[]> {
     const { data, error } = await supabase
       .from('hands')
-      .select('*')
+      .select(
+        'id, table_id, club_id, hand_number, game_variant, stakes, pot, rake, community_cards, board, winner_ids, players, actions, street, status, dealer_position, started_at, ended_at, created_at'
+      )
       .contains('players', { [playerId]: {} })
       .order('ended_at', { ascending: false })
       .limit(limit);

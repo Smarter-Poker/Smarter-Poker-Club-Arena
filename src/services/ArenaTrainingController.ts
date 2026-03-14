@@ -208,7 +208,9 @@ export async function recordAnswer(
 ): Promise<{ masteryRate: number; passed: boolean }> {
   const { data: session, error: fetchError } = await supabase
     .from('arena_sessions')
-    .select('*')
+    .select(
+      'id, user_id, club_id, level, status, questions_attempted, correct_answers, score, time_remaining, created_at, completed_at'
+    )
     .eq('id', sessionId)
     .maybeSingle();
 
@@ -309,7 +311,9 @@ export async function getTrainingHistory(
 ): Promise<TrainingSession[]> {
   const { data, error } = await supabase
     .from('arena_sessions')
-    .select('*')
+    .select(
+      'id, user_id, club_id, level, status, questions_attempted, correct_answers, score, time_remaining, created_at, completed_at'
+    )
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
     .limit(limit);

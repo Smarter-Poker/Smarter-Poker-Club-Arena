@@ -338,8 +338,8 @@ export async function getUserMemberships(): Promise<(ClubMember & { club: Club }
     .from('club_members')
     .select(
       `
-      *,
-      club:clubs(*)
+      id, club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, reputation_xp, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, parent_agent_id,
+      club:clubs(id, club_id, name, slug, description, logo_url, banner_url, color_theme, theme, member_count, table_count, total_chips, is_public, requires_approval, owner_id, city, country, settings, created_at, updated_at)
     `
     )
     .eq('user_id', user.user.id);
@@ -361,7 +361,7 @@ export async function getClubMembers(clubId: string): Promise<ClubMember[]> {
     .from('club_members')
     .select(
       `
-      *,
+      id, club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, reputation_xp, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, parent_agent_id,
       profile:profiles(username, avatar_url)
     `
     )
@@ -388,7 +388,9 @@ export async function getClubChallenges(clubId: string): Promise<ClubChallenge[]
   const resolvedId = await resolveClubUUID(clubId);
   const { data, error } = await supabase
     .from('club_challenges')
-    .select('*')
+    .select(
+      'id, club_id, title, description, type, target_value, current_value, reward_type, reward_amount, starts_at, ends_at, status, created_at'
+    )
     .eq('club_id', resolvedId)
     .eq('status', 'active')
     .order('ends_at', { ascending: true });
@@ -417,7 +419,7 @@ export async function getClubLeaderboard(
     .from('club_members')
     .select(
       `
-      *,
+      id, club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, reputation_xp, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, parent_agent_id,
       profile:profiles(username, avatar_url)
     `
     )

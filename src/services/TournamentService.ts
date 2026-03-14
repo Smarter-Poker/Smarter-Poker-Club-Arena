@@ -2220,6 +2220,14 @@ class TournamentService {
       if (mysteryInsErr)
         console.error('[TournamentService] Failed to record mystery bounty:', mysteryInsErr);
 
+      // Notify UI to show mystery bounty reveal animation
+      masterBus.emit('MYSTERY_BOUNTY_REVEALED' as any, {
+        tournamentId,
+        eliminatedPlayerId,
+        collectorPlayerId,
+        amount: mysteryValue,
+      });
+
       return { bountyAmount: mysteryValue };
     } else {
       // Fixed bounty

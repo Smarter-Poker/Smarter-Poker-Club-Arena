@@ -268,7 +268,7 @@ export const AntiCollusionService = {
     // Query both directions of the player pair safely (no string interpolation)
     const { data: dataAB } = await supabase
       .from('collusion_tracking')
-      .select('*')
+      .select('player_a, player_b, pattern_type, suspicion_score, evidence, created_at')
       .eq('player_a', sorted[0])
       .eq('player_b', sorted[1])
       .order('created_at', { ascending: false })
@@ -276,7 +276,7 @@ export const AntiCollusionService = {
 
     const { data: dataBA } = await supabase
       .from('collusion_tracking')
-      .select('*')
+      .select('player_a, player_b, pattern_type, suspicion_score, evidence, created_at')
       .eq('player_a', sorted[1])
       .eq('player_b', sorted[0])
       .order('created_at', { ascending: false })

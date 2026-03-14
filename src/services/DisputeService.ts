@@ -124,7 +124,9 @@ export const DisputeService = {
   async getClubDisputes(clubId: string, status?: DisputeStatus): Promise<Dispute[]> {
     let query = supabase
       .from('disputes')
-      .select('*')
+      .select(
+        'id, submitted_by, submitter_name, target_type, target_id, club_id, amount, reason, status, assigned_to, resolution, created_at, updated_at, resolved_at'
+      )
       .eq('club_id', await resolveClubUUID(clubId))
       .order('created_at', { ascending: false })
       .limit(200);
@@ -142,7 +144,9 @@ export const DisputeService = {
   async getMyDisputes(userId: string): Promise<Dispute[]> {
     const { data, error } = await supabase
       .from('disputes')
-      .select('*')
+      .select(
+        'id, submitted_by, submitter_name, target_type, target_id, club_id, amount, reason, status, assigned_to, resolution, created_at, updated_at, resolved_at'
+      )
       .eq('submitted_by', userId)
       .order('created_at', { ascending: false })
       .limit(200);

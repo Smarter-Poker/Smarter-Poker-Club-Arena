@@ -289,7 +289,7 @@ class AchievementServiceClass {
   async getUserAchievements(userId: string): Promise<UserAchievement[]> {
     const { data, error } = await supabase
       .from('user_achievements')
-      .select('*')
+      .select('id, achievement_id, user_id, progress, unlocked_at')
       .eq('user_id', userId)
       .limit(500);
 

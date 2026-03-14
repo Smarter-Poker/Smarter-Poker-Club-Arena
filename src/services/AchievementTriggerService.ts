@@ -211,7 +211,7 @@ class AchievementTriggerServiceClass {
     // Use upsert to handle both new and existing users
     const { data: existing } = await supabase
       .from('player_stats')
-      .select('*')
+      .select('user_id, hands_played, total_wins, tournaments_played, tournament_wins')
       .eq('user_id', userId)
       .maybeSingle();
 

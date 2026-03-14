@@ -131,7 +131,7 @@ class NotificationServiceClass {
   ): Promise<Notification[]> {
     let query = supabase
       .from('notifications')
-      .select('*')
+      .select('id, user_id, type, title, message, metadata, is_read, action_url, created_at')
       .eq('user_id', userId)
       .order('created_at', { ascending: false });
 

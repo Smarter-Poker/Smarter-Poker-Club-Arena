@@ -104,6 +104,8 @@ export const ChipFlowService = {
       amount: -amt,
     });
     masterBus.emit('BALANCE_UPDATED', { source: 'chip_transfer', userId: toUserId, amount: amt });
+    // CASHIER_BALANCE_CHANGED: Specific event for MarketplacePage and cashier-aware components
+    masterBus.emit('CASHIER_BALANCE_CHANGED' as any, { clubId: relatedEntityId || '' });
 
     // 5. Get final balances
     const { data: fromWallet } = await supabase
@@ -358,7 +360,9 @@ export const ChipFlowService = {
   async getChipTrail(userId: string): Promise<any[]> {
     const { data, error } = await supabase
       .from('wallet_transactions')
-      .select('*')
+      .select(
+        'id, user_id, wallet_type, amount, type, category, description, table_id, hand_id, related_entity_id, created_at'
+      )
       .eq('user_id', userId)
       .order('created_at', { ascending: true })
       .limit(1000);

@@ -368,7 +368,9 @@ export const CreditService = {
     // Get current invoice
     const { data: invoice, error: fetchError } = await supabase
       .from('credit_invoices')
-      .select('*')
+      .select(
+        'id, agent_id, period_start, period_end, debt_owed, amount_paid, amount_remaining, status, due_date, created_at, paid_at'
+      )
       .eq('id', invoiceId)
       .maybeSingle();
 

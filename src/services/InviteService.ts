@@ -141,7 +141,7 @@ export const InviteService = {
   async getClubInvites(clubId: string): Promise<ClubInvite[]> {
     const { data, error } = await supabase
       .from('club_invites')
-      .select('*')
+      .select('id, club_id, invitee_email, invite_code, inviter_id, status, created_at, expires_at')
       .eq('club_id', await resolveClubUUID(clubId))
       .eq('status', 'pending')
       .order('created_at', { ascending: false })
@@ -167,7 +167,7 @@ export const InviteService = {
   async validateCode(code: string): Promise<ClubInvite | null> {
     const { data, error } = await supabase
       .from('club_invites')
-      .select('*')
+      .select('id, club_id, invitee_email, invite_code, inviter_id, status, created_at, expires_at')
       .eq('invite_code', code)
       .eq('status', 'pending')
       .gt('expires_at', new Date().toISOString())

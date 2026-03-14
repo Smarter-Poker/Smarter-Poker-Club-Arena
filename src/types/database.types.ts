@@ -45,10 +45,14 @@ export interface Club {
   name: string;
   description: string | null;
   avatar_url: string | null;
+  banner_url: string | null;
   owner_id: string;
   is_public: boolean;
   requires_approval: boolean;
   gps_restricted: boolean;
+  member_count: number;
+  online_count: number;
+  union_id: string | null;
   created_at: string;
   updated_at: string;
   settings: ClubSettings;

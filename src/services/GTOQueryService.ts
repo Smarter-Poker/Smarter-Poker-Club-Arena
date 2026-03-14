@@ -100,7 +100,9 @@ class GTOQueryServiceClass {
   ): Promise<PreflopRange | null> {
     let query = supabase
       .from('preflop_ranges')
-      .select('*')
+      .select(
+        'range_string, range_grid, open_frequency, call_frequency, raise_frequency, position, action_type, stack_depth_bb, facing_position'
+      )
       .eq('position', position)
       .eq('action_type', actionType)
       .eq('stack_depth_bb', stackDepth);

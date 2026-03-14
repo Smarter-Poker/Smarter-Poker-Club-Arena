@@ -138,10 +138,20 @@ describe('CashoutService', () => {
   // ─────────────────────────────────────────────────────────────────────────
 
   describe('agent notification isolation', () => {
-    it('agent notification failure should not block cashout', async () => {
-      // Design contract test: notification calls use .catch() wrappers
-      // that log but don't propagate. Cashout proceeds regardless.
-      expect(true).toBe(true);
+    it('notification failure should not prevent cashout from succeeding', async () => {
+      // Source code wraps notification in try/catch (lines 112-124).
+      // Verify: even when notifyCashoutRequest throws, requestCashout still resolves.
+      const { notificationService: mockNotif } =
+        await import('../../src/services/NotificationService');
+      (mockNotif.notifyCashoutRequest as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+        new Error('OneSignal down')
+      );
+
+      // requestCashout should still succeed (notification is non-critical)
+      mockRpc.mockResolvedValueOnce({ data: 'cashout-id', error: null });
+      mockMaybeSingle.mockResolvedValue({ data: null, error: null });
+
+      await expect(cashoutService.requestCashout('user-1', 'club-1', 100)).resolves.not.toThrow();
     });
   });
 

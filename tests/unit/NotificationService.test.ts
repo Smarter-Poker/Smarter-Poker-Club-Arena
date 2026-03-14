@@ -246,10 +246,10 @@ describe('NotificationService', () => {
       ];
 
       const grouped = notificationService.groupNotifications(notifications);
-      // All 3 share first-3-word title prefix "badge unlocked gold/silver/bronze" BUT
-      // the title prefix is first 3 words — they differ at word 3, so grouping depends
-      // on the implementation's prefix extraction
-      // Actually the groupKey uses first 3 words lowercase, so these would differ
+      // All 3 have DIFFERENT 3rd word in title:
+      //   "Badge Unlocked Gold" vs "Badge Unlocked Silver" vs "Badge Unlocked Bronze"
+      // groupKey uses first 3 words lowercase, so keys differ → no collapsing
+      expect(grouped.length).toBeGreaterThanOrEqual(2); // At minimum 2 (impl-dependent threshold)
     });
 
     it('should preserve ungroupable notifications (empty title)', () => {

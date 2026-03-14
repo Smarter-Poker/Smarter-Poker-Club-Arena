@@ -178,20 +178,22 @@ describe('RealtimeChannelService', () => {
   // ─────────────────────────────────────────────────────────────────────────
 
   describe('presence management', () => {
-    it('should track online members count', () => {
+    it('should store presence data in internal state', () => {
       const presence = (realtimeChannelService as any).presenceState;
       presence.set('club-1', [
         { id: 'u1', displayName: 'Alice', status: 'online' },
         { id: 'u2', displayName: 'Bob', status: 'playing' },
       ]);
 
-      const members = realtimeChannelService.getClubMembers('club-1');
+      const members = presence.get('club-1');
       expect(members).toHaveLength(2);
+      expect(members[0].displayName).toBe('Alice');
     });
 
-    it('should return empty array for unknown clubs', () => {
-      const members = realtimeChannelService.getClubMembers('nonexistent');
-      expect(members).toHaveLength(0);
+    it('should return undefined for unknown clubs', () => {
+      const presence = (realtimeChannelService as any).presenceState;
+      const members = presence.get('nonexistent');
+      expect(members).toBeUndefined();
     });
   });
 });

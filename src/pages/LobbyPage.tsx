@@ -39,6 +39,7 @@ export default function LobbyPage() {
   const [stakeFilter, setStakeFilter] = useState<string>('any');
   const [tables, setTables] = useState<PokerTable[]>([]);
   const [loading, setLoading] = useState(true);
+  const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date());
   const [onlinePlayers, setOnlinePlayers] = useState(0);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -351,7 +352,10 @@ export default function LobbyPage() {
         // For users in unions, they'll be redirected above.
         // This fallback shows all tables for standalone (non-union) users.
         const activeTables = await tableService.getActiveTables();
-        if (isMounted.current) setTables(activeTables);
+        if (isMounted.current) {
+          setTables(activeTables);
+          setLastRefreshed(new Date());
+        }
       } catch (error) {
         if (!isMounted.current) return;
         console.error('Failed to fetch tables:', error);
@@ -621,6 +625,9 @@ export default function LobbyPage() {
         <div className={styles.sectionHeader}>
           <h2 className={styles.sectionTitle}>Active Tables</h2>
           <span className={styles.tableCount}>{filteredTables.length} tables</span>
+          <span style={{ fontSize: '11px', color: '#6a7a8a', marginLeft: 'auto' }}>
+            Updated {lastRefreshed.toLocaleTimeString()}
+          </span>
         </div>
 
         {loading ? (

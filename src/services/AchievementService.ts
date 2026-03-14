@@ -351,21 +351,29 @@ class AchievementServiceClass {
 
     if (existing) {
       // Update existing
-      await supabase
+      const { error: progErr } = await supabase
         .from('user_achievements')
         .update({
           progress: newProgress,
           unlocked_at: justUnlocked ? new Date().toISOString() : null,
         })
         .eq('id', existing.id);
+      if (progErr) {
+        console.error('[AchievementService] Progress update failed:', progErr);
+        return { unlocked: false };
+      }
     } else {
       // Create new
-      await supabase.from('user_achievements').insert({
+      const { error: insErr } = await supabase.from('user_achievements').insert({
         user_id: userId,
         achievement_id: achievementId,
         progress: newProgress,
         unlocked_at: justUnlocked ? new Date().toISOString() : null,
       });
+      if (insErr) {
+        console.error('[AchievementService] Achievement insert failed:', insErr);
+        return { unlocked: false };
+      }
     }
 
     // Award rewards if just unlocked
@@ -383,7 +391,7 @@ class AchievementServiceClass {
     const clampedProgress = Math.min(progress, achievement.requirement);
     const unlocked = clampedProgress >= achievement.requirement;
 
-    await supabase.from('user_achievements').upsert(
+    const { error: upsertErr } = await supabase.from('user_achievements').upsert(
       {
         user_id: userId,
         achievement_id: achievementId,
@@ -392,6 +400,10 @@ class AchievementServiceClass {
       },
       { onConflict: 'user_id,achievement_id' }
     );
+    if (upsertErr) {
+      console.error('[AchievementService] setProgress upsert failed:', upsertErr);
+      return;
+    }
 
     if (unlocked) {
       await this.awardRewards(userId, achievement);
@@ -421,13 +433,14 @@ class AchievementServiceClass {
     }
 
     // Create notification
-    await supabase.from('notifications').insert({
+    const { error: notifErr } = await supabase.from('notifications').insert({
       user_id: userId,
       type: 'achievement',
       title: ` Achievement Unlocked!`,
       message: `You earned "${achievement.name}"!`,
       data: { achievement_id: achievement.id },
     });
+    if (notifErr) console.warn('[AchievementService] Notification insert failed:', notifErr);
   }
 
   // ─────────────────────────────────────────────────────────────────────────────

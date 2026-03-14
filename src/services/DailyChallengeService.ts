@@ -400,7 +400,7 @@ class DailyChallengeServiceClass {
       const newProgress = Math.min(uc.progress + amount, challenge.requirement);
       const isComplete = newProgress >= challenge.requirement;
 
-      await supabase
+      const { error: progErr } = await supabase
         .from('user_daily_challenges')
         .update({
           progress: newProgress,
@@ -408,6 +408,10 @@ class DailyChallengeServiceClass {
           completed_at: isComplete ? new Date().toISOString() : null,
         })
         .eq('id', uc.id);
+      if (progErr) {
+        console.error('[DailyChallenge] Progress update failed:', progErr);
+        continue;
+      }
 
       if (isComplete) {
         completed.push({

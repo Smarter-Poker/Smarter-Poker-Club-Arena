@@ -231,7 +231,7 @@ export const BBJService = {
       main_balance: data.main_balance || 0,
       backup_balance: data.backup_balance || 0,
       promo_balance: data.promo_balance || 0,
-      total_contributed: data.hands_contributed || data.total_contributed || 0,
+      total_contributed: data.total_contributed || 0,
       last_hit_at: data.last_hit_at,
       last_hit_amount: data.last_hit_amount || 0,
       created_at: data.created_at,

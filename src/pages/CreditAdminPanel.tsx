@@ -92,7 +92,7 @@ export default function CreditAdminPanel() {
     } catch {
       /* table may not exist */
     }
-  }, []);
+  }, [toast]);
 
   useEffect(() => {
     loadAgents();

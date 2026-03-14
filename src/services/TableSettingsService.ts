@@ -67,7 +67,7 @@ class TableSettingsServiceClass {
    * Update user's table settings
    */
   async updateSettings(userId: string, updates: Partial<TableSettingsData>): Promise<void> {
-    await retryAsync(
+    const { error } = await retryAsync(
       () =>
         supabase.rpc('fn_update_table_settings', {
           p_user_id: userId,
@@ -82,7 +82,12 @@ class TableSettingsServiceClass {
       3
     );
 
-    // Update cache
+    if (error) {
+      console.error('[TableSettingsService] Failed to save settings:', error);
+      throw new Error('Failed to save table settings');
+    }
+
+    // Update cache only after successful save
     const current = this.cache.get(userId) || DEFAULT_SETTINGS;
     const newSettings = { ...current, ...updates };
     this.cache.set(userId, newSettings);

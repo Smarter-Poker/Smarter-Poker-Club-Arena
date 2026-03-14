@@ -227,10 +227,11 @@ class PromotionServiceClass {
       .maybeSingle();
 
     if (promoData) {
-      await supabase
+      const { error: countErr } = await supabase
         .from('promotions')
         .update({ claim_count: (promoData.claim_count || 0) + 1 })
         .eq('id', promotionId);
+      if (countErr) console.error('[PromotionService] Failed to increment claim count:', countErr);
     }
 
     if (!data) throw new Error('Claim created but no data returned');

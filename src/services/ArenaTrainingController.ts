@@ -260,7 +260,7 @@ async function recordSessionCompletion(
   if (!user.user) return;
 
   // Call the record_arena_session RPC for Diamond rewards
-  await retryAsync(
+  const { error: rewardErr } = await retryAsync(
     () =>
       supabase.rpc('record_arena_session', {
         p_user_id: user.user.id,
@@ -272,6 +272,11 @@ async function recordSessionCompletion(
       }),
     3
   );
+  if (rewardErr)
+    console.error(
+      '[ArenaTraining] CRITICAL: Diamond reward RPC failed — user may not receive reward:',
+      rewardErr
+    );
 }
 
 /**

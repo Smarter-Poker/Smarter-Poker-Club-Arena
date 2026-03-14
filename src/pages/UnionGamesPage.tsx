@@ -263,6 +263,19 @@ export default function UnionGamesPage() {
         user.id,
         user.display_name || user.username || 'Player'
       );
+      toast.success('Registered!');
+      loadUnionData(unionId || undefined);
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+  };
+
+  const handleUnregister = async (tournamentId: string) => {
+    if (!user) return;
+    try {
+      // unregisterPlayer handles buy-in refund, status validation, CAS deletion, and rollback
+      await tournamentService.unregisterPlayer(tournamentId, user.id);
+      toast.success('Unregistered — buy-in refunded');
       loadUnionData(unionId || undefined);
     } catch (err: any) {
       toast.error(err.message);
@@ -393,9 +406,14 @@ export default function UnionGamesPage() {
                       View Details
                     </Link>
                     {t.status?.toLowerCase() === 'registering' && (
-                      <button onClick={() => handleRegister(t.id)} className={styles.btnRegister}>
-                        Register
-                      </button>
+                      <>
+                        <button onClick={() => handleRegister(t.id)} className={styles.btnRegister}>
+                          Register
+                        </button>
+                        <button onClick={() => handleUnregister(t.id)} className={styles.btnGhost}>
+                          Unregister
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>

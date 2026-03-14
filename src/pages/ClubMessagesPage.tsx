@@ -146,23 +146,16 @@ export default function ClubMessagesPage() {
     };
   }, [loadClubConversations]);
 
-  // ── Bus Listeners: cross-page message event reactivity ──
+  // ── Bus Listeners: cross-page message event reactivity (debounced) ──
   useEffect(() => {
-    const unsubNotif = masterBus.subscribe('NOTIFICATION_READ', () => {
-      loadClubConversations();
-    });
-    // Phase 4: Cross-page sync (ported from World Hub messages.js)
-    const unsubAnnounce = masterBus.subscribe('ANNOUNCEMENT_CHANGED', () =>
-      loadClubConversations()
-    );
-    const unsubMsg = masterBus.subscribe('MESSAGE_RECEIVED', () => loadClubConversations());
-    const unsubKick = masterBus.subscribe('PLAYER_KICKED', () => loadClubConversations());
-    return () => {
-      unsubNotif();
-      unsubAnnounce();
-      unsubMsg();
-      unsubKick();
-    };
+    const unsubs = [
+      masterBus.subscribeDebounced('NOTIFICATION_READ', () => loadClubConversations(), 500),
+      // Phase 4: Cross-page sync (ported from World Hub messages.js)
+      masterBus.subscribeDebounced('ANNOUNCEMENT_CHANGED', () => loadClubConversations(), 500),
+      masterBus.subscribeDebounced('MESSAGE_RECEIVED', () => loadClubConversations(), 500),
+      masterBus.subscribeDebounced('PLAYER_KICKED', () => loadClubConversations(), 500),
+    ];
+    return () => unsubs.forEach((u) => u());
   }, [loadClubConversations]);
 
   // Stagger animation for conversations

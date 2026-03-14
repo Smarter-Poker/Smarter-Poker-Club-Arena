@@ -61,16 +61,13 @@ export default function SessionHistoryPage() {
   // Auto-refresh on tab return
   useVisibilityRefresh(() => loadSessions());
 
-  // Bus listener: refresh when a session ends or balance changes
+  // Bus listener: refresh when a session ends or balance changes (debounced)
   useEffect(() => {
-    const unsub = masterBus.subscribe('SESSION_ENDED', () => {
-      loadSessions();
-    });
-    const unsub2 = masterBus.subscribeDebounced('BALANCE_UPDATED', () => loadSessions(), 2000);
-    return () => {
-      unsub();
-      unsub2();
-    };
+    const unsubs = [
+      masterBus.subscribeDebounced('SESSION_ENDED', () => loadSessions(), 500),
+      masterBus.subscribeDebounced('BALANCE_UPDATED', () => loadSessions(), 2000),
+    ];
+    return () => unsubs.forEach((u) => u());
   }, [user?.id, timeFilter]);
 
   const loadSessions = async () => {

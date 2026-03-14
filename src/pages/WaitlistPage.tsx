@@ -77,18 +77,17 @@ export default function WaitlistPage() {
     loadWaitlistRef.current = loadWaitlist;
   });
 
-  // ── Bus Listeners: cross-page waitlist event reactivity ──
+  // ── Bus Listeners: cross-page waitlist event reactivity (debounced) ──
   useEffect(() => {
-    const unsubPos = masterBus.subscribe('WAITLIST_POSITION_CHANGED', () => {
-      loadWaitlistRef.current();
-    });
-    const unsubSeated = masterBus.subscribe('TABLE_SEATED', () => {
-      loadWaitlistRef.current();
-    });
-    return () => {
-      unsubPos();
-      unsubSeated();
-    };
+    const unsubs = [
+      masterBus.subscribeDebounced(
+        'WAITLIST_POSITION_CHANGED',
+        () => loadWaitlistRef.current(),
+        300
+      ),
+      masterBus.subscribeDebounced('TABLE_SEATED', () => loadWaitlistRef.current(), 300),
+    ];
+    return () => unsubs.forEach((u) => u());
   }, []);
 
   const loadWaitlist = async (getIsMounted?: () => boolean) => {

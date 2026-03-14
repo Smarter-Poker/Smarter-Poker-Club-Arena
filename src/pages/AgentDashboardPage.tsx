@@ -15,7 +15,6 @@ import { useAuthUser } from '../hooks/useAuthUser';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { cashoutService } from '../services/CashoutService';
 import { WalletService } from '../services/WalletService';
-import { WalletService } from '../services/WalletService';
 import { CreditService } from '../services/CreditService';
 import './AdminDashboardPage.css';
 
@@ -1180,7 +1179,10 @@ export default function AgentDashboardPage() {
                         revoke_credit: 'Credit revoked',
                       };
                       setSuccess(`${labels[creditAction] || 'Done'} — ${fmtChips(amt)} chips`);
-                      masterBus.emit('CREDIT_UPDATED', { userId: creditTarget });
+                      masterBus.emit('CREDIT_UPDATED', {
+                        clubId: clubId || '',
+                        userId: creditTarget,
+                      });
                       setCreditAmount('');
                       setCreditNotes('');
                       loadDashboard(clubId);

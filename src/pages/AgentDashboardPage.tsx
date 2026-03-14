@@ -237,19 +237,25 @@ export default function AgentDashboardPage() {
     };
   }, [user?.id, searchParams, loadDashboard]);
 
-  // ── Bus Listeners ─────────────────────────────────────────
+  // ── Bus Listeners (debounced + clubId-filtered) ──────────
   useEffect(() => {
     if (!clubId) return;
     const refresh = () => loadDashboard(clubId);
+    // Filtered refresh: only reload if the event is for this club (or has no clubId)
+    const filteredRefresh = (event?: any) => {
+      if (!event?.payload?.clubId || event.payload.clubId === clubId) {
+        refresh();
+      }
+    };
     const unsubs = [
-      masterBus.subscribe('CASHOUT_APPROVED', refresh),
-      masterBus.subscribe('CASHOUT_CANCELLED', refresh),
-      masterBus.subscribe('CASHOUT_REQUESTED', refresh),
-      masterBus.subscribe('CHIPS_DISTRIBUTED', refresh),
-      masterBus.subscribe('AGENT_UPDATED', refresh),
-      masterBus.subscribe('BALANCE_UPDATED', refresh),
-      masterBus.subscribe('CREDIT_UPDATED', refresh),
-      masterBus.subscribe('SETTLEMENT_COMPLETED', refresh),
+      masterBus.subscribeDebounced('CASHOUT_APPROVED', filteredRefresh, 300),
+      masterBus.subscribeDebounced('CASHOUT_CANCELLED', filteredRefresh, 300),
+      masterBus.subscribeDebounced('CASHOUT_REQUESTED', filteredRefresh, 300),
+      masterBus.subscribeDebounced('CHIPS_DISTRIBUTED', filteredRefresh, 300),
+      masterBus.subscribeDebounced('AGENT_UPDATED', filteredRefresh, 300),
+      masterBus.subscribeDebounced('BALANCE_UPDATED', refresh, 300),
+      masterBus.subscribeDebounced('CREDIT_UPDATED', filteredRefresh, 300),
+      masterBus.subscribeDebounced('SETTLEMENT_COMPLETED', filteredRefresh, 300),
     ];
     return () => unsubs.forEach((u) => u());
   }, [clubId, loadDashboard]);

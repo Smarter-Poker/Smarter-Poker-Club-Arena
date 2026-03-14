@@ -17,6 +17,8 @@ import { useToast } from '../components/common/Toast';
 import './SessionHistoryPage.css';
 import PageSkeleton from '../components/common/PageSkeleton';
 
+import { useIsMounted } from '../hooks/useIsMounted';
+
 interface SessionRecord {
   id: string;
   table_id: string;
@@ -45,13 +47,7 @@ export default function SessionHistoryPage() {
   const [sessions, setSessions] = useState<SessionRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [timeFilter, setTimeFilter] = useState<'7d' | '30d' | 'all'>('30d');
-  const isMounted = useRef(true);
-
-  useEffect(() => {
-    return () => {
-      isMounted.current = false;
-    };
-  }, []);
+  const isMounted = useIsMounted();
 
   useEffect(() => {
     if (!user?.id) return;

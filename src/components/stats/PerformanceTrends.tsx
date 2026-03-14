@@ -31,28 +31,6 @@ export default function PerformanceTrends({ userId }: PerformanceTrendsProps) {
   const [loading, setLoading] = useState(true);
   const isMounted = useRef(true);
 
-  useEffect(() => {
-    isMounted.current = true;
-    return () => {
-      isMounted.current = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!userId) return;
-    loadSessions();
-  }, [userId, range]);
-
-  // Bus listeners for live updates
-  useEffect(() => {
-    const unsubs = [
-      masterBus.subscribeDebounced('HAND_COMPLETED', () => loadSessions(), 2000),
-      masterBus.subscribeDebounced('SESSION_ENDED', () => loadSessions(), 1000),
-      masterBus.subscribeDebounced('DATA_MUTATED', () => loadSessions(), 3000),
-    ];
-    return () => unsubs.forEach((u) => u());
-  }, [loadSessions]);
-
   const loadSessions = useCallback(async () => {
     if (!userId) return;
     setLoading(true);
@@ -82,6 +60,28 @@ export default function PerformanceTrends({ userId }: PerformanceTrendsProps) {
       if (isMounted.current) setLoading(false);
     }
   }, [userId, range]);
+
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!userId) return;
+    loadSessions();
+  }, [userId, range, loadSessions]);
+
+  // Bus listeners for live updates
+  useEffect(() => {
+    const unsubs = [
+      masterBus.subscribeDebounced('HAND_COMPLETED', () => loadSessions(), 2000),
+      masterBus.subscribeDebounced('SESSION_ENDED', () => loadSessions(), 1000),
+      masterBus.subscribeDebounced('DATA_MUTATED', () => loadSessions(), 3000),
+    ];
+    return () => unsubs.forEach((u) => u());
+  }, [loadSessions]);
 
   // Build cumulative P&L data
   const chartData = useMemo(() => {

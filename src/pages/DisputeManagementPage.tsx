@@ -27,6 +27,8 @@ import {
 import './DisputeManagementPage.css';
 import PageSkeleton from '../components/common/PageSkeleton';
 
+import { useIsMounted } from '../hooks/useIsMounted';
+
 type FilterTab = 'all' | 'open' | 'under_review' | 'resolved' | 'escalated';
 
 export default function DisputeManagementPage() {
@@ -45,13 +47,7 @@ export default function DisputeManagementPage() {
   const [adjustmentType, setAdjustmentType] = useState<'credit' | 'debit' | 'none'>('none');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const isMounted = useRef(true);
-
-  useEffect(() => {
-    return () => {
-      isMounted.current = false;
-    };
-  }, []);
+  const isMounted = useIsMounted();
 
   const loadDisputes = useCallback(async () => {
     setLoading(true);

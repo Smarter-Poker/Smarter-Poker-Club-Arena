@@ -44,7 +44,15 @@ export const DailyChallenges: React.FC<DailyChallengesProps> = ({ challenges, on
       <div className="challenges-header">
         <h3> Daily Challenges</h3>
         <span className="reset-timer">
-          Resets in {formatTimeRemaining(new Date(Date.now() + 86400000))}
+          Resets in{' '}
+          {formatTimeRemaining(
+            (() => {
+              const now = new Date();
+              const midnight = new Date(now);
+              midnight.setHours(24, 0, 0, 0);
+              return midnight;
+            })()
+          )}
         </span>
       </div>
 

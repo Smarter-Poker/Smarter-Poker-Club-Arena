@@ -17,6 +17,8 @@ import { CreditService } from '../services/CreditService';
 import { WalletService } from '../services/WalletService';
 import PageSkeleton from '../components/common/PageSkeleton';
 
+import { useIsMounted } from '../hooks/useIsMounted';
+
 interface AgentWallet {
   agentBal: number;
   playerBal: number;
@@ -48,13 +50,7 @@ export default function AgentPortalPage() {
   const [transferAmount, setTransferAmount] = useState('');
   const [isTransferring, setIsTransferring] = useState(false);
   const [visibleSections, setVisibleSections] = useState<Set<number>>(new Set());
-  const isMounted = useRef(true);
-
-  useEffect(() => {
-    return () => {
-      isMounted.current = false;
-    };
-  }, []);
+  const isMounted = useIsMounted();
 
   useVisibilityRefresh(() => loadData());
 

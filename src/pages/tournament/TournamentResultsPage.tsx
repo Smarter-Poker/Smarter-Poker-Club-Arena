@@ -11,6 +11,8 @@ import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../../components/common/Toast';
 import './TournamentDetails.css';
 
+import { useIsMounted } from '../../hooks/useIsMounted';
+
 interface CompletedTournament {
   id: string;
   name: string;
@@ -74,12 +76,7 @@ export default function TournamentResultsPage() {
   const loadTournamentsRef = useRef<() => void>(() => {});
   const loadResultsRef = useRef<() => void>(() => {});
   const loadHandHistoryRef = useRef<() => void>(() => {});
-  const isMounted = useRef(true);
-  useEffect(() => {
-    return () => {
-      isMounted.current = false;
-    };
-  }, []);
+  const isMounted = useIsMounted();
 
   // Load completed tournaments
   const loadTournaments = async () => {

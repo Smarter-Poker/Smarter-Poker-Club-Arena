@@ -20,6 +20,8 @@ import { SettlementService } from '../services/SettlementService';
 import { SettlementCronService, type CanaryResult } from '../services/SettlementCronService';
 import PageSkeleton from '../components/common/PageSkeleton';
 
+import { useIsMounted } from '../hooks/useIsMounted';
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -184,7 +186,7 @@ export default function SettlementDashboardPage() {
   const navigate = useNavigate();
   useAuthUser(); // Ensures user is authenticated (admin page)
   const toast = useToast();
-  const isMounted = useRef(true);
+  const isMounted = useIsMounted();
 
   const [currentPeriod, setCurrentPeriod] = useState<PeriodInfo | null>(null);
   const [agentPayouts, setAgentPayouts] = useState<AgentPayout[]>([]);
@@ -196,12 +198,6 @@ export default function SettlementDashboardPage() {
   const [expandedPeriodId, setExpandedPeriodId] = useState<string | null>(null);
   const [visibleCards, setVisibleCards] = useState<Set<number>>(new Set());
   const [visibleRows, setVisibleRows] = useState<Set<number>>(new Set());
-
-  useEffect(() => {
-    return () => {
-      isMounted.current = false;
-    };
-  }, []);
 
   const loadData = useCallback(async () => {
     setLoading(true);

@@ -1,8 +1,10 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useToast } from '../../components/common/Toast';
 import './AnalyticsDashboard.css';
+
+import { useIsMounted } from '../../hooks/useIsMounted';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -90,15 +92,10 @@ export default function AnalyticsDashboard() {
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const [timeRange, setTimeRange] = useState<TimeRange>('all'); // Enhancement #1
   const [isLoading, setIsLoading] = useState(true); // Enhancement #7
-  const mountedRef = useRef(true);
+  const mountedRef = useIsMounted();
   const toast = useToast();
 
   // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      mountedRef.current = false;
-    };
-  }, []);
 
   // ── Data loaders ────────────────────────────────────────────────────────
 

@@ -7,7 +7,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -17,6 +17,8 @@ import { cashoutService } from '../services/CashoutService';
 import { WalletService } from '../services/WalletService';
 import { CreditService } from '../services/CreditService';
 import './AdminDashboardPage.css';
+
+import { useIsMounted } from '../hooks/useIsMounted';
 
 // ── Helpers ─────────────────────────────────────────────────
 const fmt = (n: number | null | undefined) => Number(n || 0).toLocaleString();
@@ -86,13 +88,7 @@ export default function AgentDashboardPage() {
   // Agents list (for promo/credit selectors)
   const [agents, setAgents] = useState<any[]>([]);
 
-  const mountedRef = useRef(true);
-  useEffect(
-    () => () => {
-      mountedRef.current = false;
-    },
-    []
-  );
+  const mountedRef = useIsMounted();
 
   // Auto-clear success
   useEffect(() => {

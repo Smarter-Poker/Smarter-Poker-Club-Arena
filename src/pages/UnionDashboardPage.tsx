@@ -7,12 +7,13 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import './AdminDashboardPage.css';
+import { useIsMounted } from '../hooks/useIsMounted';
 
 // ── Helpers ─────────────────────────────────────────────────
 const fmt = (n: number | null | undefined) => Number(n || 0).toLocaleString();
@@ -88,13 +89,7 @@ export default function UnionDashboardPage() {
   const [adminSearch, setAdminSearch] = useState('');
   const [adminResults, setAdminResults] = useState<any[]>([]);
 
-  const mountedRef = useRef(true);
-  useEffect(
-    () => () => {
-      mountedRef.current = false;
-    },
-    []
-  );
+  const mountedRef = useIsMounted();
 
   // Auto-clear success
   useEffect(() => {

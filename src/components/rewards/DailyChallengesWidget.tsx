@@ -63,8 +63,12 @@ export const DailyChallengesWidget: React.FC = () => {
     if (!user?.id) return;
     setLoading(true);
     try {
-      const data = await dailyChallengeService.getTodaysChallenges(user.id);
-      const mapped: Challenge[] = data.map((c: UserDailyChallenge) => ({
+      const [dailyData, weeklyData] = await Promise.all([
+        dailyChallengeService.getTodaysChallenges(user.id),
+        dailyChallengeService.getWeeklyChallenges(user.id),
+      ]);
+
+      const mappedDaily: Challenge[] = dailyData.map((c: UserDailyChallenge) => ({
         id: c.id,
         title: c.challenge.name,
         description: c.challenge.description,
@@ -78,7 +82,22 @@ export const DailyChallengesWidget: React.FC = () => {
         completed: c.completed,
         claimed: !!c.claimed,
       }));
-      setChallenges(mapped);
+
+      const mappedWeekly: Challenge[] = weeklyData.map((c: any) => ({
+        id: c.id,
+        title: `📆 ${c.challenge.name}`,
+        description: c.challenge.description,
+        progress: c.progress,
+        target: c.challenge.requirement,
+        reward: {
+          type: 'chips',
+          amount: c.challenge.chipReward,
+        },
+        completed: c.completed,
+        claimed: !!c.claimed,
+      }));
+
+      setChallenges([...mappedDaily, ...mappedWeekly]);
     } catch (error) {
       console.error('Failed to load challenges:', error);
     }

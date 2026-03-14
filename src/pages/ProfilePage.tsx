@@ -38,6 +38,8 @@ import { useSwipeTabs } from '../hooks/useSwipeTabs';
 import { useToast } from '../components/common/Toast';
 import styles from './ProfilePage.module.css';
 
+import { useIsMounted } from '../hooks/useIsMounted';
+
 // #5: Lazy-load Recharts (387KB) — only imported when History tab is opened
 const LazyProfitChart = lazy(() => import('../components/profile/ProfitChart'));
 
@@ -204,12 +206,7 @@ const AchievementCard = ({ achievement }: { achievement: Achievement }) => {
 
 export default function ProfilePage() {
   const navigate = useNavigate();
-  const isMountedRef = useRef(true);
-  useEffect(() => {
-    return () => {
-      isMountedRef.current = false;
-    };
-  }, []);
+  const isMountedRef = useIsMounted();
 
   const toast = useToast();
   const { user: storeUser } = useAuthUser();

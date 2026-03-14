@@ -21,6 +21,8 @@ import './NotificationCenter.css';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 
+import { useIsMounted } from '../hooks/useIsMounted';
+
 interface Notification {
   id: string;
   type: 'club' | 'tournament' | 'settlement' | 'achievement' | 'system' | 'friend' | 'table';
@@ -51,7 +53,7 @@ export default function NotificationCenter() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>('all');
   const [visibleNotifications, setVisibleNotifications] = useState(new Set<number>());
-  const isMounted = useRef(true);
+  const isMounted = useIsMounted();
 
   useEffect(() => {
     isMounted.current = true;

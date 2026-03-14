@@ -5,7 +5,7 @@
  *  Shows the player their current rakeback tier, pending rakeback, and history.
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -14,6 +14,7 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { useToast } from '../components/common/Toast';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { AreaChart, Area, XAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { useIsMounted } from '../hooks/useIsMounted';
 
 interface RakebackStats {
   totalRakeContributed: number;
@@ -50,13 +51,7 @@ export default function RakebackDashboard() {
   const [recentPayouts, setRecentPayouts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [visibleSections, setVisibleSections] = useState<Set<number>>(new Set());
-  const isMounted = useRef(true);
-
-  useEffect(() => {
-    return () => {
-      isMounted.current = false;
-    };
-  }, []);
+  const isMounted = useIsMounted();
 
   useVisibilityRefresh(() => loadData());
 

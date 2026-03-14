@@ -29,6 +29,7 @@ import { BBJBanner, BBJModal, useBBJ } from '../components/bbj/BBJDisplay';
 import LiveActionTicker from '../components/lobby/LiveActionTicker';
 import LobbyStatsBar from '../components/lobby/LobbyStatsBar';
 import CreateGameModal from '../components/lobby/CreateGameModal';
+import { useIsMounted } from '../hooks/useIsMounted';
 type GameFilter = 'all' | 'nlh' | 'plo' | 'ofc' | 'tournaments' | 'favorites';
 
 export default function LobbyPage() {
@@ -95,12 +96,7 @@ export default function LobbyPage() {
     });
   };
 
-  const isMounted = useRef(true);
-  useEffect(() => {
-    return () => {
-      isMounted.current = false;
-    };
-  }, []);
+  const isMounted = useIsMounted();
 
   // ── Check daily bonus eligibility on mount ──
   useEffect(() => {

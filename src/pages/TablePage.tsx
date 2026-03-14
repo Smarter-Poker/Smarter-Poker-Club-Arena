@@ -146,6 +146,8 @@ import { SessionTrajectoryMini } from '../components/table/SessionTrajectoryMini
 import { StreakBadge } from '../components/table/StreakBadge';
 import { SpinItWheel } from '../components/table/SpinItWheel';
 
+import { useIsMounted } from '../hooks/useIsMounted';
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // RAKE CONFIG HELPER — Derives HandController rake from official chart
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -370,12 +372,7 @@ export default function TablePage({
   const [boardStageKey, setBoardStageKey] = useState(0); // Trigger board transitions
 
   // Initialize user on mount
-  const isMounted = useRef(true);
-  useEffect(() => {
-    return () => {
-      isMounted.current = false;
-    };
-  }, []);
+  const isMounted = useIsMounted();
 
   useEffect(() => {
     async function initUser() {

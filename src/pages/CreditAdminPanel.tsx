@@ -14,6 +14,8 @@ import { useToast } from '../components/common/Toast';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import PageSkeleton from '../components/common/PageSkeleton';
 
+import { useIsMounted } from '../hooks/useIsMounted';
+
 interface AgentCredit {
   id: string;
   displayName: string;
@@ -35,13 +37,7 @@ export default function CreditAdminPanel() {
   const [saving, setSaving] = useState(false);
   const [auditLog, setAuditLog] = useState<any[]>([]);
   const [visibleRows, setVisibleRows] = useState<Set<number>>(new Set());
-  const isMounted = useRef(true);
-
-  useEffect(() => {
-    return () => {
-      isMounted.current = false;
-    };
-  }, []);
+  const isMounted = useIsMounted();
 
   useVisibilityRefresh(() => loadAgents());
 

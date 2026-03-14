@@ -55,11 +55,20 @@ export default function FriendSuggestions() {
         });
       }
     });
+    const unsubProfile = masterBus.subscribe('PROFILE_UPDATED', () => {
+      // Refresh suggestions when profiles change — scores may shift
+      if (isMounted.current && user?.id) {
+        friendSuggestionService.getSuggestions(user.id, 12).then((s) => {
+          if (isMounted.current) setSuggestions(s);
+        });
+      }
+    });
 
     return () => {
       isMounted.current = false;
       unsubSent();
       unsubAccepted();
+      unsubProfile();
     };
   }, [user?.id]);
 

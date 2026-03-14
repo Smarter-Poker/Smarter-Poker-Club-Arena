@@ -6,7 +6,7 @@
  * Real Supabase integration — no demo data
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import styles from './AgentManagementPage.module.css';
 import ConfirmModal from '@/components/common/ConfirmModal';
@@ -34,6 +34,7 @@ import PageSkeleton from '../components/common/PageSkeleton';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { useSwipeTabs } from '../hooks/useSwipeTabs';
 import { resolveClubUUID } from '../utils/clubIdResolver';
+import { useIsMounted } from '../hooks/useIsMounted';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENT
@@ -110,12 +111,7 @@ export default function AgentManagementPage() {
   const [clawbackProcessing, setClawbackProcessing] = useState<string | null>(null);
 
   // Stagger animation for agents list
-  const isMounted = useRef(true);
-  useEffect(() => {
-    return () => {
-      isMounted.current = false;
-    };
-  }, []);
+  const isMounted = useIsMounted();
 
   // Load agents from Supabase
   useEffect(() => {

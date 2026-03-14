@@ -18,6 +18,8 @@ import { ArenaTrainingController } from '../../services/ArenaTrainingController'
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import styles from './TournamentLobbyPage.module.css';
 
+import { useIsMounted } from '../../hooks/useIsMounted';
+
 type TournamentStatus = 'all' | 'upcoming' | 'REGISTERING' | 'RUNNING' | 'COMPLETED';
 type TournamentTypeFilter = 'all' | 'mtt' | 'sng' | 'spin' | 'bounty' | 'pko' | 'mystery';
 
@@ -61,12 +63,7 @@ export default function TournamentLobbyPage() {
   const [visibleTournaments, setVisibleTournaments] = useState<Set<string>>(new Set());
   const [isInUnion, setIsInUnion] = useState(false);
 
-  const isMounted = useRef(true);
-  useEffect(() => {
-    return () => {
-      isMounted.current = false;
-    };
-  }, []);
+  const isMounted = useIsMounted();
 
   // Check if club is in a union (clubs in unions cannot create tournaments)
   useEffect(() => {

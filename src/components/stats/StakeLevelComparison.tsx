@@ -52,21 +52,6 @@ export default function StakeLevelComparison({ userId }: StakeLevelComparisonPro
     };
   }, []);
 
-  useEffect(() => {
-    if (!userId) return;
-    loadRecords();
-  }, [userId]);
-
-  // Bus listeners for live updates
-  useEffect(() => {
-    const unsubs = [
-      masterBus.subscribeDebounced('HAND_COMPLETED', () => loadRecords(), 2000),
-      masterBus.subscribeDebounced('SESSION_ENDED', () => loadRecords(), 1000),
-      masterBus.subscribeDebounced('DATA_MUTATED', () => loadRecords(), 3000),
-    ];
-    return () => unsubs.forEach((u) => u());
-  }, [loadRecords]);
-
   const loadRecords = useCallback(async () => {
     if (!userId) return;
     setLoading(true);
@@ -94,6 +79,21 @@ export default function StakeLevelComparison({ userId }: StakeLevelComparisonPro
       if (isMounted.current) setLoading(false);
     }
   }, [userId]);
+
+  useEffect(() => {
+    if (!userId) return;
+    loadRecords();
+  }, [userId, loadRecords]);
+
+  // Bus listeners for live updates
+  useEffect(() => {
+    const unsubs = [
+      masterBus.subscribeDebounced('HAND_COMPLETED', () => loadRecords(), 2000),
+      masterBus.subscribeDebounced('SESSION_ENDED', () => loadRecords(), 1000),
+      masterBus.subscribeDebounced('DATA_MUTATED', () => loadRecords(), 3000),
+    ];
+    return () => unsubs.forEach((u) => u());
+  }, [loadRecords]);
 
   const groups = useMemo<StakeGroup[]>(() => {
     if (records.length === 0) return [];

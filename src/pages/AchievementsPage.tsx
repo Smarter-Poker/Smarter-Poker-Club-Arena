@@ -22,6 +22,7 @@ import {
 } from '../services/AchievementService';
 import './AchievementsPage.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
+import { useIsMounted } from '../hooks/useIsMounted';
 
 type AchievementCategory = 'all' | 'poker' | 'social' | 'financial' | 'tournament';
 
@@ -227,7 +228,7 @@ export default function AchievementsPage() {
   const [selectedAchievement, setSelectedAchievement] = useState<Achievement | null>(null);
   const unlockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadAchievementsRef = useRef<(() => Promise<void>) | null>(null);
-  const isMounted = useRef(true);
+  const isMounted = useIsMounted();
 
   useEffect(() => {
     isMounted.current = true;

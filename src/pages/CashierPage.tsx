@@ -38,6 +38,7 @@ import { checkSettlementLock } from '../utils/settlementLock';
 import AgentPromoPanel from '../components/agent/AgentPromoPanel';
 import CashoutRequestModal from '../components/wallet/CashoutRequestModal';
 import './CashierPage.css';
+import { useIsMounted } from '../hooks/useIsMounted';
 
 type CashierAction = 'send' | 'distribute' | 'buyin' | 'cashout' | 'mint' | 'history';
 
@@ -158,7 +159,7 @@ export default function CashierPage() {
 
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  const isMounted = useRef(true);
+  const isMounted = useIsMounted();
   useEffect(() => {
     return () => {
       isMounted.current = false;

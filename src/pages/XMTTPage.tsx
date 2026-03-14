@@ -5,7 +5,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -15,6 +15,8 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { tournamentService } from '../services/TournamentService';
 import PageSkeleton from '../components/common/PageSkeleton';
 import styles from './XMTTPage.module.css';
+
+import { useIsMounted } from '../hooks/useIsMounted';
 
 const fmt = (n: number) => Number(n || 0).toLocaleString();
 const fmtChips = (n: number) => {
@@ -86,13 +88,7 @@ export default function XMTTPage() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  const mountedRef = useRef(true);
-  useEffect(
-    () => () => {
-      mountedRef.current = false;
-    },
-    []
-  );
+  const mountedRef = useIsMounted();
 
   const loadTournaments = useCallback(
     async (cId?: string) => {

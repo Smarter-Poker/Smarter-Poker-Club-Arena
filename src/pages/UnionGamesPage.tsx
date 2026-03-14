@@ -6,7 +6,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -16,6 +16,7 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { tournamentService } from '../services/TournamentService';
 import PageSkeleton from '../components/common/PageSkeleton';
 import styles from './UnionGamesPage.module.css';
+import { useIsMounted } from '../hooks/useIsMounted';
 
 const fmt = (n: number) => Number(n || 0).toLocaleString();
 const fmtChips = (n: number) => {
@@ -109,13 +110,7 @@ export default function UnionGamesPage() {
   // BBJ
   const [bbjPool, setBbjPool] = useState<BBJPool | null>(null);
 
-  const mountedRef = useRef(true);
-  useEffect(
-    () => () => {
-      mountedRef.current = false;
-    },
-    []
-  );
+  const mountedRef = useIsMounted();
 
   // ── Load Data ────────────────────────────────────────────
   const loadUnionData = useCallback(

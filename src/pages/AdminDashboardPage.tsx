@@ -18,6 +18,8 @@ import ArenaLedger from '../components/admin/ArenaLedger';
 import AdminTableHeatmap from '../components/admin/AdminTableHeatmap';
 import './AdminDashboardPage.css';
 
+import { useIsMounted } from '../hooks/useIsMounted';
+
 // ── Helpers ─────────────────────────────────────────────────
 const fmt = (n: number | null | undefined) => Number(n || 0).toLocaleString();
 const fmtChips = (n: number | null | undefined) => {
@@ -100,13 +102,7 @@ function DashboardTab({ clubId }: { clubId: string }) {
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const isMounted = useRef(true);
-  useEffect(
-    () => () => {
-      isMounted.current = false;
-    },
-    []
-  );
+  const isMounted = useIsMounted();
 
   const load = useCallback(async () => {
     try {
@@ -408,13 +404,7 @@ function SettlementsTab({ clubId }: { clubId: string }) {
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const isMounted = useRef(true);
-  useEffect(
-    () => () => {
-      isMounted.current = false;
-    },
-    []
-  );
+  const isMounted = useIsMounted();
 
   const load = useCallback(async () => {
     try {
@@ -636,13 +626,7 @@ function AuditLogTab({ clubId }: { clubId: string }) {
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const isMounted = useRef(true);
-  useEffect(
-    () => () => {
-      isMounted.current = false;
-    },
-    []
-  );
+  const isMounted = useIsMounted();
 
   const PAGE_SIZE = 50;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -857,13 +841,7 @@ function AnnouncementsTab({ clubId }: { clubId: string }) {
   const [content, setContent] = useState('');
   const [saving, setSaving] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const isMounted = useRef(true);
-  useEffect(
-    () => () => {
-      isMounted.current = false;
-    },
-    []
-  );
+  const isMounted = useIsMounted();
 
   const load = useCallback(async () => {
     try {
@@ -1086,13 +1064,7 @@ function SettingsTab({ clubId }: { clubId: string }) {
   const [processing, setProcessing] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const isMounted = useRef(true);
-  useEffect(
-    () => () => {
-      isMounted.current = false;
-    },
-    []
-  );
+  const isMounted = useIsMounted();
 
   useEffect(() => {
     (async () => {
@@ -1201,13 +1173,7 @@ function HierarchyTab({ clubId }: { clubId: string }) {
   const [tree, setTree] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const isMounted = useRef(true);
-  useEffect(
-    () => () => {
-      isMounted.current = false;
-    },
-    []
-  );
+  const isMounted = useIsMounted();
 
   const load = useCallback(async () => {
     try {
@@ -1327,13 +1293,7 @@ function HierarchyTab({ clubId }: { clubId: string }) {
 function SettlementHistoryTab({ clubId }: { clubId: string }) {
   const [periods, setPeriods] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const isMounted = useRef(true);
-  useEffect(
-    () => () => {
-      isMounted.current = false;
-    },
-    []
-  );
+  const isMounted = useIsMounted();
 
   const load = useCallback(async () => {
     try {
@@ -1426,13 +1386,7 @@ function BrandingTab({ clubId }: { clubId: string }) {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const isMounted = useRef(true);
-  useEffect(
-    () => () => {
-      isMounted.current = false;
-    },
-    []
-  );
+  const isMounted = useIsMounted();
 
   useEffect(() => {
     (async () => {
@@ -1594,13 +1548,7 @@ function BrandingTab({ clubId }: { clubId: string }) {
 function RecommendationsTab({ clubId }: { clubId: string }) {
   const [recs, setRecs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const isMounted = useRef(true);
-  useEffect(
-    () => () => {
-      isMounted.current = false;
-    },
-    []
-  );
+  const isMounted = useIsMounted();
 
   useEffect(() => {
     (async () => {
@@ -1732,13 +1680,7 @@ function TemplatesTab({ clubId }: { clubId: string }) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const isMounted = useRef(true);
-  useEffect(
-    () => () => {
-      isMounted.current = false;
-    },
-    []
-  );
+  const isMounted = useIsMounted();
 
   const load = useCallback(async () => {
     try {
@@ -1887,13 +1829,7 @@ function TemplatesTab({ clubId }: { clubId: string }) {
 function AnalyticsTab({ clubId }: { clubId: string }) {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const isMounted = useRef(true);
-  useEffect(
-    () => () => {
-      isMounted.current = false;
-    },
-    []
-  );
+  const isMounted = useIsMounted();
 
   useEffect(() => {
     (async () => {
@@ -2107,13 +2043,7 @@ export default function AdminDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<AdminTab>('dashboard');
-  const isMounted = useRef(true);
-  useEffect(
-    () => () => {
-      isMounted.current = false;
-    },
-    []
-  );
+  const isMounted = useIsMounted();
 
   useEffect(() => {
     let cancelled = false;

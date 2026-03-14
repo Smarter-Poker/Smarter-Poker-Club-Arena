@@ -5,7 +5,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styles from './CreateUnionPage.module.css';
 import { supabase } from '../lib/supabase';
@@ -73,6 +73,7 @@ export default function CreateUnionPage() {
 
   // Check if user owns any clubs (required to create union)
   useEffect(() => {
+    let isMounted = true;
     const checkClubOwnership = async () => {
       try {
         const { count } = await supabase
@@ -80,17 +81,22 @@ export default function CreateUnionPage() {
           .select('id', { count: 'exact', head: true })
           .eq('owner_id', user?.id);
 
-        setOwnsClub((count || 0) > 0);
+        if (isMounted) setOwnsClub((count || 0) > 0);
       } catch (e) {
         console.error('Failed to check club ownership:', e);
-        toast.error('Failed to verify club ownership');
-        setOwnsClub(false);
+        if (isMounted) {
+          toast.error('Failed to verify club ownership');
+          setOwnsClub(false);
+        }
       } finally {
-        setCheckingClubs(false);
+        if (isMounted) setCheckingClubs(false);
       }
     };
 
     checkClubOwnership();
+    return () => {
+      isMounted = false;
+    };
   }, [user?.id]);
 
   // Show "create club first" message if user doesn't own a club

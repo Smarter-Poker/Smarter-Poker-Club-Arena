@@ -2,7 +2,7 @@
  *  CLUB FINANCIALS PAGE — Club Financial Overview
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -18,6 +18,7 @@ import { FinancialExportService } from '../services/FinancialExportService';
 import DynamicWallet from '../components/wallet/DynamicWallet';
 import './ClubFinancialsPage.css';
 import { resolveClubUUID } from '../utils/clubIdResolver';
+import { useIsMounted } from '../hooks/useIsMounted';
 
 interface FinancialSummary {
   period: string;
@@ -56,12 +57,7 @@ export default function ClubFinancialsPage() {
   const [visibleTransactions, setVisibleTransactions] = useState<Set<string>>(new Set());
   const [exporting, setExporting] = useState(false);
 
-  const isMounted = useRef(true);
-  useEffect(() => {
-    return () => {
-      isMounted.current = false;
-    };
-  }, []);
+  const isMounted = useIsMounted();
 
   useEffect(() => {
     if (clubId) loadFinancials();

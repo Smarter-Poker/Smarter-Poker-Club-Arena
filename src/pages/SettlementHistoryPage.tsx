@@ -14,6 +14,8 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { useToast } from '../components/common/Toast';
 import PageSkeleton from '../components/common/PageSkeleton';
 
+import { useIsMounted } from '../hooks/useIsMounted';
+
 interface SettlementCycle {
   id: string;
   periodId: string;
@@ -33,13 +35,7 @@ export default function SettlementHistoryPage() {
   const [cycles, setCycles] = useState<SettlementCycle[]>([]);
   const [loading, setLoading] = useState(true);
   const [visibleRows, setVisibleRows] = useState<Set<number>>(new Set());
-  const isMounted = useRef(true);
-
-  useEffect(() => {
-    return () => {
-      isMounted.current = false;
-    };
-  }, []);
+  const isMounted = useIsMounted();
 
   useVisibilityRefresh(() => loadHistory());
 

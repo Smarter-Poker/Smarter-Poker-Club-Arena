@@ -92,7 +92,7 @@ export const DailyChallenges: React.FC = () => {
         progress: uc.progress,
         target: uc.challenge.requirement,
         completed: uc.completed,
-        claimed: !!uc.completedAt,
+        claimed: !!uc.claimed,
         type: 'daily',
       }));
 

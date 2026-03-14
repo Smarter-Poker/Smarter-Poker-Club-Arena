@@ -154,7 +154,9 @@ export const SettlementService = {
   async getPeriodHistory(limit: number = 12): Promise<SettlementPeriod[]> {
     const { data, error } = await supabase
       .from('settlement_periods')
-      .select('*')
+      .select(
+        'id, period_number, year, start_at, end_at, status, total_rake_collected, total_bbj_contributions, total_player_winnings, total_player_losses, total_hands_dealt, settled_at, settled_by'
+      )
       .order('start_at', { ascending: false })
       .limit(limit);
 
@@ -407,7 +409,7 @@ export const SettlementService = {
     // 3. Process player rakeback
     const { data: playerSnapshots } = await supabase
       .from('player_weekly_snapshots')
-      .select('*')
+      .select('id, player_id, rakeback_earned, period_id')
       .eq('period_id', periodId)
       .gt('rakeback_earned', 0)
       .limit(10000);
@@ -636,7 +638,9 @@ export const SettlementService = {
   async getClubReport(clubId: string, periodId?: string): Promise<ClubSettlement | null> {
     const { data, error } = await supabase
       .from('club_settlements')
-      .select('*')
+      .select(
+        'id, period_id, club_id, club_name, total_rake_collected, total_jackpot_contributions, total_promo_costs, unique_players, total_hands_dealt, platform_fee, agent_commissions, gross_revenue, net_revenue, status'
+      )
       .eq('club_id', await resolveClubUUID(clubId))
       .eq('period_id', periodId || (await this.getCurrentPeriod()).id)
       .maybeSingle();
@@ -651,7 +655,9 @@ export const SettlementService = {
   async getAgentReport(agentId: string, periodId?: string): Promise<AgentSettlement | null> {
     const { data, error } = await supabase
       .from('agent_settlements')
-      .select('*')
+      .select(
+        'id, period_id, agent_id, agent_name, total_rake_generated, commission_rate, commission_earned, total_credit_extended, total_credit_repaid, net_settlement, active_players, status'
+      )
       .eq('agent_id', agentId)
       .eq('period_id', periodId || (await this.getCurrentPeriod()).id)
       .maybeSingle();

@@ -79,7 +79,12 @@ class PromotionServiceClass {
     clubId?: string,
     filter?: 'active' | 'upcoming' | 'ended'
   ): Promise<Promotion[]> {
-    let query = supabase.from('promotions').select('*').order('start_date', { ascending: false });
+    let query = supabase
+      .from('promotions')
+      .select(
+        'id, club_id, title, description, type, image_url, start_date, end_date, prize_pool, is_active, requirements, terms, max_claims, claim_count, min_deposit, bonus_percent, wager_requirement, created_at'
+      )
+      .order('start_date', { ascending: false });
 
     if (clubId) {
       query = query.eq('club_id', await resolveClubUUID(clubId));
@@ -107,7 +112,9 @@ class PromotionServiceClass {
   async getPromotion(promotionId: string): Promise<Promotion | null> {
     const { data, error } = await supabase
       .from('promotions')
-      .select('*')
+      .select(
+        'id, club_id, title, description, type, image_url, start_date, end_date, prize_pool, is_active, requirements, terms, max_claims, claim_count, min_deposit, bonus_percent, wager_requirement, created_at'
+      )
       .eq('id', promotionId)
       .maybeSingle();
 
@@ -352,7 +359,9 @@ class PromotionServiceClass {
     // Find applicable deposit bonus promotion
     const { data: promotions } = await supabase
       .from('promotions')
-      .select('*')
+      .select(
+        'id, club_id, title, description, type, image_url, start_date, end_date, prize_pool, is_active, requirements, terms, max_claims, claim_count, min_deposit, bonus_percent, wager_requirement, created_at'
+      )
       .eq('type', 'deposit_match')
       .eq('is_active', true)
       .lte('start_date', new Date().toISOString())
@@ -425,7 +434,9 @@ class PromotionServiceClass {
     // Check for refer-a-friend promotion
     const { data: promotions } = await supabase
       .from('promotions')
-      .select('*')
+      .select(
+        'id, club_id, title, description, type, image_url, start_date, end_date, prize_pool, is_active, requirements, terms, max_claims, claim_count, min_deposit, bonus_percent, wager_requirement, created_at'
+      )
       .eq('type', 'refer_friend')
       .eq('is_active', true)
       .limit(1);

@@ -334,6 +334,7 @@ class MessagingServiceClass {
         console.error('[Messaging] Failed to mark as read:', error);
         return false;
       }
+      masterBus.emit('UNREAD_DM_COUNT_CHANGED' as any, { userId });
       return true;
     } catch (err: unknown) {
       console.error('[Messaging] markAsRead error:', err);

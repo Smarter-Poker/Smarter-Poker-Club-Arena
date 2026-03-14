@@ -311,7 +311,9 @@ class TournamentService {
     // Fetch club-specific tournaments
     const { data: clubTournaments, error } = await supabase
       .from('tournaments')
-      .select('*')
+      .select(
+        'id, name, club_id, union_id, game_type, variant, tournament_type, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at'
+      )
       .eq('club_id', resolvedId)
       .order('created_at', { ascending: false });
 
@@ -333,7 +335,9 @@ class TournamentService {
       if (unionClub?.union_id) {
         const { data: xmttData } = await supabase
           .from('tournaments')
-          .select('*')
+          .select(
+            'id, name, club_id, union_id, game_type, variant, tournament_type, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at'
+          )
           .eq('union_id', unionClub.union_id)
           .eq('is_xmtt', true)
           .neq('club_id', resolvedId) // Avoid duplicates (host club already included above)
@@ -364,7 +368,9 @@ class TournamentService {
   async getTournament(tournamentId: string): Promise<Tournament | null> {
     const { data, error } = await supabase
       .from('tournaments')
-      .select('*')
+      .select(
+        'id, name, club_id, union_id, game_type, variant, tournament_type, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at'
+      )
       .eq('id', tournamentId)
       .maybeSingle();
 
@@ -609,7 +615,9 @@ class TournamentService {
     // Re-fetch the player row we just inserted (the RPC returns only the id)
     const { data, error } = await supabase
       .from('tournament_players')
-      .select('*')
+      .select(
+        'id, tournament_id, user_id, username, status, stack, seat_number, table_id, position, prize, bounty_earned, current_bounty, mystery_bounty_value, rebuys, add_ons, hands_played, chips_won, chips, registered_at, created_at'
+      )
       .eq('id', atomicPlayerId)
       .maybeSingle();
 
@@ -1076,6 +1084,11 @@ class TournamentService {
     );
 
     // Emit completion event (cancelled = complete from a lifecycle perspective)
+    masterBus.emit('TOURNAMENT_CANCELLED' as any, {
+      tournamentId,
+      clubId: tournament.club_id,
+      reason,
+    });
     masterBus.emit('TOURNAMENT_COMPLETE', { tournamentId, clubId: tournament.club_id });
 
     return { refunded: refunded, playersRefunded };
@@ -1106,7 +1119,9 @@ class TournamentService {
     // 1. Get Players
     const { data: players } = await supabase
       .from('tournament_players')
-      .select('*')
+      .select(
+        'id, tournament_id, user_id, username, status, stack, seat_number, table_id, position, prize, bounty_earned, current_bounty, mystery_bounty_value, rebuys, add_ons, hands_played, chips_won, chips, registered_at, created_at'
+      )
       .eq('tournament_id', tournamentId)
       .eq('status', 'registered');
 

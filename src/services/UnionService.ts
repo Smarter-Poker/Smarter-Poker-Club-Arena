@@ -98,7 +98,9 @@ class UnionServiceClass {
   async getUnions(): Promise<Union[]> {
     const { data, error } = await supabase
       .from('unions')
-      .select('*')
+      .select(
+        'id, name, description, owner_id, avatar_url, is_public, member_count, online_count, club_count, total_rake, settings, created_at, updated_at'
+      )
       .order('created_at', { ascending: false })
       .limit(100);
 
@@ -114,7 +116,9 @@ class UnionServiceClass {
     // Get unions where user is owner
     const { data: owned, error: ownedError } = await supabase
       .from('unions')
-      .select('*')
+      .select(
+        'id, name, description, owner_id, avatar_url, is_public, member_count, online_count, club_count, total_rake, settings, created_at, updated_at'
+      )
       .eq('owner_id', userId);
 
     if (ownedError) throw ownedError;
@@ -136,7 +140,9 @@ class UnionServiceClass {
       if (!unionMap.has(a.union_id)) {
         const { data: unionData } = await supabase
           .from('unions')
-          .select('*')
+          .select(
+            'id, name, description, owner_id, avatar_url, is_public, member_count, online_count, club_count, total_rake, settings, created_at, updated_at'
+          )
           .eq('id', a.union_id)
           .maybeSingle();
         if (unionData) {
@@ -154,7 +160,9 @@ class UnionServiceClass {
   async getUnion(unionId: string): Promise<Union | null> {
     const { data, error } = await supabase
       .from('unions')
-      .select('*')
+      .select(
+        'id, name, description, owner_id, avatar_url, is_public, member_count, online_count, club_count, total_rake, settings, created_at, updated_at'
+      )
       .eq('id', unionId)
       .maybeSingle();
 
@@ -248,7 +256,7 @@ class UnionServiceClass {
   async getAdmins(unionId: string): Promise<UnionAdmin[]> {
     const { data, error } = await supabase
       .from('union_admins')
-      .select('*')
+      .select('id, union_id, user_id, role, permissions, created_at')
       .eq('union_id', unionId)
       .order('created_at', { ascending: true });
 

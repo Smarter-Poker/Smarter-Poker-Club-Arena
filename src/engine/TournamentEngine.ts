@@ -813,6 +813,21 @@ export class TournamentEngine {
       // Update all tournament tables with new blinds
       this.updateTableBlinds(level);
 
+      // Notify listeners about the level change
+      masterBus.emit('BLIND_LEVEL_CHANGE', {
+        tournamentId: this.tournamentId,
+        level: newLevel + 1,
+        smallBlind: level.smallBlind,
+        bigBlind: level.bigBlind,
+        ante: level.ante || 0,
+      });
+      masterBus.emit('TOURNAMENT_LEVEL_CHANGE' as any, {
+        tournamentId: this.tournamentId,
+        level: newLevel + 1,
+        smallBlind: level.smallBlind,
+        bigBlind: level.bigBlind,
+      });
+
       // Execute chip race: remove obsolete small denomination chips
       if (newLevel > 0 && this.tournamentInfo.blind_structure[prevLevel]) {
         const prevBlind = this.tournamentInfo.blind_structure[prevLevel];
@@ -1732,6 +1747,12 @@ export class TournamentEngine {
       .from('tables')
       .update({ status: 'closed', current_players: 0 })
       .eq('id', sourceTable.tableId);
+
+    masterBus.emit('TABLE_MERGED' as any, {
+      tournamentId: this.tournamentId,
+      sourceTableId: sourceTable.tableId,
+      tablesRemaining: this.tables.length,
+    });
   }
 
   private removeTable(table: TournamentTable): void {

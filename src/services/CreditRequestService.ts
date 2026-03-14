@@ -92,7 +92,9 @@ class CreditRequestServiceClass {
   async getRequestsForApprover(approverId: string): Promise<CreditRequest[]> {
     const { data, error } = await supabase
       .from('credit_requests')
-      .select('*')
+      .select(
+        'id, requester_id, requester_name, approver_id, approver_name, club_id, requested_amount, approved_amount, reason, status, created_at, reviewed_at, reviewer_notes'
+      )
       .eq('approver_id', approverId)
       .order('created_at', { ascending: false })
       .limit(200);
@@ -107,7 +109,9 @@ class CreditRequestServiceClass {
   async getMyRequests(requesterId: string): Promise<CreditRequest[]> {
     const { data, error } = await supabase
       .from('credit_requests')
-      .select('*')
+      .select(
+        'id, requester_id, requester_name, approver_id, approver_name, club_id, requested_amount, approved_amount, reason, status, created_at, reviewed_at, reviewer_notes'
+      )
       .eq('requester_id', requesterId)
       .order('created_at', { ascending: false })
       .limit(200);
@@ -142,7 +146,9 @@ class CreditRequestServiceClass {
     // Get request first
     const { data: request } = await supabase
       .from('credit_requests')
-      .select('*')
+      .select(
+        'id, requester_id, requester_name, approver_id, approver_name, club_id, requested_amount, approved_amount, reason, status, created_at, reviewed_at, reviewer_notes'
+      )
       .eq('id', requestId)
       .maybeSingle();
 
@@ -192,7 +198,9 @@ class CreditRequestServiceClass {
   async denyRequest(requestId: string, approverId: string, notes?: string): Promise<CreditRequest> {
     const { data: request } = await supabase
       .from('credit_requests')
-      .select('*')
+      .select(
+        'id, requester_id, requester_name, approver_id, approver_name, club_id, requested_amount, approved_amount, reason, status, created_at, reviewed_at, reviewer_notes'
+      )
       .eq('id', requestId)
       .maybeSingle();
 

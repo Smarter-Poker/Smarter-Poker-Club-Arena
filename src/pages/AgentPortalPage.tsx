@@ -92,7 +92,9 @@ export default function AgentPortalPage() {
     try {
       const { data, error } = await supabase
         .from('agents')
-        .select('agent_wallet_balance, player_wallet_balance, promo_wallet_balance, credit_limit')
+        .select(
+          'id, agent_wallet_balance, player_wallet_balance, promo_wallet_balance, credit_limit'
+        )
         // user.id is auth.users.id, NOT agents.id (PK) — query by user_id
         .eq('user_id', user.id)
         .maybeSingle();
@@ -101,7 +103,8 @@ export default function AgentPortalPage() {
 
       let debt = 0;
       try {
-        const calculatedDebt = await CreditService.calculateDebt(user.id);
+        // Use the resolved agents.id PK — CreditService uses .eq('id', agentId) internally
+        const calculatedDebt = await CreditService.calculateDebt(data.id);
         debt = calculatedDebt.debtOwed;
       } catch {
         /* no debt */

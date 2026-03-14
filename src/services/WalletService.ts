@@ -79,7 +79,10 @@ export const WalletService = {
    * Get all wallet balances for a user
    */
   async getBalances(userId: string): Promise<WalletBalance[]> {
-    const { data, error } = await supabase.from('wallets').select('*').eq('user_id', userId);
+    const { data, error } = await supabase
+      .from('wallets')
+      .select('user_id, wallet_type, balance, locked_balance, updated_at')
+      .eq('user_id', userId);
 
     if (error) throw error;
     return (data || []).map((w) => ({
@@ -523,7 +526,9 @@ export const WalletService = {
   ): Promise<TransactionRecord[]> {
     let query = supabase
       .from('wallet_transactions')
-      .select('*')
+      .select(
+        'id, user_id, wallet_type, amount, type, category, description, related_entity_id, created_at'
+      )
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
       .limit(options?.limit || 50);

@@ -135,19 +135,19 @@ export default function ClubSettingsPage() {
     };
   }, [clubId]);
 
-  // ── Bus Listeners: cross-page event reactivity ──
+  // ── Bus Listeners: cross-page event reactivity (debounced) ──
   useEffect(() => {
     let isMounted = true;
-    const unsubJoined = masterBus.subscribe('CLUB_JOINED', () => {
+    const handler = () => {
       if (isMounted) loadClubSettings(() => isMounted);
-    });
-    const unsubLeft = masterBus.subscribe('CLUB_LEFT', () => {
-      if (isMounted) loadClubSettings(() => isMounted);
-    });
+    };
+    const unsubs = [
+      masterBus.subscribeDebounced('CLUB_JOINED', handler, 500),
+      masterBus.subscribeDebounced('CLUB_LEFT', handler, 500),
+    ];
     return () => {
       isMounted = false;
-      unsubJoined();
-      unsubLeft();
+      unsubs.forEach((u) => u());
     };
   }, []);
 

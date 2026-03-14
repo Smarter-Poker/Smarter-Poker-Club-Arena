@@ -118,18 +118,25 @@ export default function ClubCarouselPage() {
     };
   }, []);
 
-  // ── Bus Listeners: cross-page event reactivity ──
+  // ── Bus Listeners: cross-page event reactivity (debounced) ──
   useEffect(() => {
-    const unsubJoined = masterBus.subscribe('CLUB_JOINED', () => {
-      if (isMounted.current) loadUserData();
-    });
-    const unsubLeft = masterBus.subscribe('CLUB_LEFT', () => {
-      if (isMounted.current) loadUserData();
-    });
-    return () => {
-      unsubJoined();
-      unsubLeft();
-    };
+    const unsubs = [
+      masterBus.subscribeDebounced(
+        'CLUB_JOINED',
+        () => {
+          if (isMounted.current) loadUserData();
+        },
+        500
+      ),
+      masterBus.subscribeDebounced(
+        'CLUB_LEFT',
+        () => {
+          if (isMounted.current) loadUserData();
+        },
+        500
+      ),
+    ];
+    return () => unsubs.forEach((u) => u());
   }, []);
 
   // Stagger animation for club cards

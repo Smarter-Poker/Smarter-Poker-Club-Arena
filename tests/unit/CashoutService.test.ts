@@ -83,6 +83,23 @@ vi.mock('../../src/services/NotificationService', () => ({
   },
 }));
 
+vi.mock('../../src/services/WalletService', () => ({
+  WalletService: {
+    getBalance: vi.fn().mockResolvedValue(0),
+    logTransaction: vi.fn().mockResolvedValue(undefined),
+  },
+}));
+
+vi.mock('../../src/services/ChipFlowService', () => ({
+  ChipFlowService: {
+    processTransfer: vi.fn().mockResolvedValue({ success: true }),
+  },
+}));
+
+vi.mock('../../src/utils/clubIdResolver', () => ({
+  resolveClubUUID: (id: string) => Promise.resolve(id),
+}));
+
 // ─── Import AFTER mocks ──────────────────────────────────────────────────
 
 import { cashoutService } from '../../src/services/CashoutService';

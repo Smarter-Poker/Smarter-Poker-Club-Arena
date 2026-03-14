@@ -401,7 +401,9 @@ export default function CashierPage() {
     try {
       const { data, error } = await supabase
         .from('wallet_transactions')
-        .select('*')
+        .select(
+          'id, user_id, wallet_type, amount, type, category, description, related_entity_id, created_at'
+        )
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
         .limit(50);
@@ -570,6 +572,24 @@ export default function CashierPage() {
       },
       500
     );
+    // Cashout approval listener: agent approves → refresh pending list (same-user edge case)
+    const unsubCashoutApproved = masterBus.subscribeDebounced(
+      'CASHOUT_APPROVED',
+      () => {
+        loadBalances(user.id);
+        loadPendingCashouts();
+      },
+      500
+    );
+    // Settlement completion listener: balances may change after settlement
+    const unsubSettlement = masterBus.subscribeDebounced(
+      'SETTLEMENT_COMPLETED',
+      () => {
+        loadBalances(user.id);
+        loadTransactions();
+      },
+      500
+    );
     return () => {
       unsubBalance();
       unsubWallet();
@@ -582,8 +602,10 @@ export default function CashierPage() {
       unsubCashierBalance();
       unsubRakebackClaimed();
       unsubDailyReward();
+      unsubCashoutApproved();
+      unsubSettlement();
     };
-  }, [user?.id, loadBalances, loadTransactions]);
+  }, [user?.id, loadBalances, loadTransactions, loadPendingCashouts]);
 
   // ─────────────────────────────────────────────────────────────────────────────
   // DETERMINE AVAILABLE TABS

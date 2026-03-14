@@ -275,7 +275,8 @@ function PlayerActionModal({
       masterBus.emit('CLUB_UPDATED', { clubId });
       // Emit AGENT_UPDATED so agent-focused pages (AgentDashboard, SuperAgentDashboard,
       // AgentManagementPage, UnionDashboard, AdminDashboard) auto-refresh
-      if (isAgentRole || wasAgentRole) {
+      const agentRoles = ['super_agent', 'agent', 'sub_agent'];
+      if (agentRoles.includes(newRole) || agentRoles.includes(member.role)) {
         masterBus.emit('AGENT_UPDATED', { clubId: clubId || '', agentId: member.user_id });
       }
 

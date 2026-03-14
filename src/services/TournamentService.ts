@@ -2259,6 +2259,96 @@ class TournamentService {
     if (error) return 0;
     return (data || []).reduce((sum, b) => sum + b.bounty_amount, 0);
   }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // TOURNAMENT WAITLIST — For full-capacity tournaments with late registration
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Join the waitlist for a tournament that is at capacity.
+   */
+  async joinTournamentWaitlist(
+    tournamentId: string,
+    userId: string
+  ): Promise<{ position: number }> {
+    // Get current waitlist count for position assignment
+    const { data: existing } = await supabase
+      .from('table_waitlists')
+      .select('id')
+      .eq('table_id', tournamentId)
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (existing) {
+      throw new Error('You are already on the waitlist');
+    }
+
+    const { count } = await supabase
+      .from('table_waitlists')
+      .select('id', { count: 'exact', head: true })
+      .eq('table_id', tournamentId);
+
+    const position = (count || 0) + 1;
+
+    const { error } = await supabase.from('table_waitlists').insert({
+      table_id: tournamentId,
+      user_id: userId,
+      position,
+    });
+
+    if (error) throw error;
+
+    masterBus.emit('WAITLIST_POSITION_CHANGED', {
+      tableId: tournamentId,
+      userId,
+      position,
+    });
+
+    return { position };
+  }
+
+  /**
+   * Leave the waitlist for a tournament.
+   */
+  async leaveTournamentWaitlist(tournamentId: string, userId: string): Promise<void> {
+    const { error } = await supabase
+      .from('table_waitlists')
+      .delete()
+      .eq('table_id', tournamentId)
+      .eq('user_id', userId);
+
+    if (error) throw error;
+
+    masterBus.emit('WAITLIST_POSITION_CHANGED', {
+      tableId: tournamentId,
+      userId,
+      position: 0,
+    });
+  }
+
+  /**
+   * Get a player's position on the tournament waitlist, or null if not on it.
+   */
+  async getTournamentWaitlistPosition(
+    tournamentId: string,
+    userId: string
+  ): Promise<{ position: number; total: number } | null> {
+    const { data: entry } = await supabase
+      .from('table_waitlists')
+      .select('id, position')
+      .eq('table_id', tournamentId)
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (!entry) return null;
+
+    const { count } = await supabase
+      .from('table_waitlists')
+      .select('id', { count: 'exact', head: true })
+      .eq('table_id', tournamentId);
+
+    return { position: entry.position, total: count || 0 };
+  }
 }
 
 export const tournamentService = new TournamentService();

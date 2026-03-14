@@ -12,6 +12,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGri
 import './RakebackPage.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import PageSkeleton from '../components/common/PageSkeleton';
+import { retryAsync } from '../utils/retryAsync';
 
 interface RakebackPeriod {
   id: string;
@@ -196,7 +197,7 @@ export default function RakebackPage() {
   const pendingPeriodIds = periods.filter((p) => p.status === 'pending').map((p) => p.id);
 
   // ── Claim rakeback handler ──
-  const handleClaimRakeback = async (periodId?: string) => {
+  const handleClaimRakeback = async () => {
     setClaimStatus('claiming');
     setClaimMessage('');
     try {
@@ -262,11 +263,15 @@ export default function RakebackPage() {
 
       if (updateError) throw new Error('Failed to lock periods: ' + updateError.message);
 
-      // Step 3: Credit chips (if this fails, periods are already marked paid — safe)
-      const { error: rpcError } = await supabase.rpc('credit_player_rakeback', {
-        p_user_id: user.id,
-        p_amount: verifiedAmount,
-      });
+      // Step 3: Credit chips with retry (if this fails, rollback periods to pending)
+      const { error: rpcError } = await retryAsync(
+        () =>
+          supabase.rpc('credit_player_rakeback', {
+            p_user_id: user.id,
+            p_amount: verifiedAmount,
+          }),
+        2
+      );
 
       if (rpcError) {
         // Rollback: restore periods to 'pending' since credit failed
@@ -305,7 +310,9 @@ export default function RakebackPage() {
     } catch (err: any) {
       if (err.name === 'AbortError') return; // Ignore voluntary aborts
       setClaimStatus('error');
-      setClaimMessage(err.message || 'Claim failed. Please try again.');
+      const msg = err.message || 'Claim failed. Please try again.';
+      setClaimMessage(msg);
+      toast.error(msg);
     }
   };
 

@@ -179,12 +179,23 @@ export default function ClubChat({ clubId, userId, userName }: ClubChatProps) {
       });
       if (error) {
         console.error('[ClubChat] Send error:', error);
-        // Rollback optimistic message — remove the temp message so user sees it failed
-        setMessages((prev) => prev.filter((m) => m.id !== tempId));
+        // Mark message as failed instead of silently removing
+        setMessages((prev) =>
+          prev.map((m) => (m.id === tempId ? { ...m, message_type: 'failed' } : m))
+        );
+        // Auto-remove failed message after 4 seconds
+        setTimeout(() => {
+          setMessages((prev) => prev.filter((m) => m.id !== tempId));
+        }, 4000);
       }
     } catch {
-      // Rollback on any exception
-      setMessages((prev) => prev.filter((m) => m.id !== tempId));
+      // Mark as failed on any exception
+      setMessages((prev) =>
+        prev.map((m) => (m.id === tempId ? { ...m, message_type: 'failed' } : m))
+      );
+      setTimeout(() => {
+        setMessages((prev) => prev.filter((m) => m.id !== tempId));
+      }, 4000);
     } finally {
       setSending(false);
     }
@@ -261,9 +272,27 @@ export default function ClubChat({ clubId, userId, userName }: ClubChatProps) {
               messages.map((m, i) => {
                 const isMe = String(m.user_id) === String(userId);
                 const isSystem = m.message_type === 'system' || m.message_type === 'announcement';
+                const isFailed = m.message_type === 'failed';
                 return (
                   <div key={m.id || i} style={{ marginBottom: 6 }}>
-                    {isSystem ? (
+                    {isFailed ? (
+                      <div style={{ opacity: 0.5 }}>
+                        <span style={{ color: '#FA383E', fontSize: 11, fontWeight: 700 }}>
+                          ⚠ Failed to send
+                        </span>
+                        <div
+                          style={{
+                            color: '#FA383E',
+                            fontSize: 12,
+                            lineHeight: 1.4,
+                            marginTop: 1,
+                            textDecoration: 'line-through',
+                          }}
+                        >
+                          {m.message}
+                        </div>
+                      </div>
+                    ) : isSystem ? (
                       <div
                         style={{
                           textAlign: 'center',

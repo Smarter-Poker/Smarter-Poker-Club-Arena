@@ -88,7 +88,7 @@ class TableSettingsServiceClass {
     this.cache.set(userId, newSettings);
 
     // Notify UI to sync across potentially multiple tables
-    masterBus.emit('SETTINGS_UPDATED', { settings: newSettings as any });
+    masterBus.emit('SETTINGS_UPDATED', { settings: newSettings as Record<string, unknown> });
   }
 
   /**

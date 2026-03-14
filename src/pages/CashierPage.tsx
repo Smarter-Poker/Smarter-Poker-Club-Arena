@@ -243,7 +243,7 @@ export default function CashierPage() {
     };
   }, [loadBalances, user?.id]);
 
-  const loadPendingCashouts = async () => {
+  const loadPendingCashouts = useCallback(async () => {
     if (!clubId || !user?.id) return;
     try {
       const resolvedId = await resolveClubUUID(clubId);
@@ -260,7 +260,7 @@ export default function CashierPage() {
     } catch {
       /* silent */
     }
-  };
+  }, [clubId, user?.id]);
 
   const loadUserContext = async () => {
     if (!clubId || !user?.id) return;

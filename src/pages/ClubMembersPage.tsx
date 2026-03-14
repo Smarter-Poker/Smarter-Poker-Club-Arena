@@ -178,6 +178,15 @@ function PlayerActionModal({
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
+  // Accessibility: close modal on Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
   const promotableRoles = getPromotableRoles(myRole, member.role);
   const canManage = promotableRoles.length > 0 && member.role !== 'owner';
 
@@ -278,7 +287,13 @@ function PlayerActionModal({
   };
 
   return (
-    <div className="player-modal-overlay" onClick={onClose}>
+    <div
+      className="player-modal-overlay"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Actions for ${safeUsername}`}
+    >
       <div className="player-modal" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="player-modal__header">
@@ -296,7 +311,7 @@ function PlayerActionModal({
               {getRoleBadgeIcon(member.role)} {getRoleLabel(member.role)}
             </span>
           </div>
-          <button className="player-modal__close" onClick={onClose}>
+          <button className="player-modal__close" onClick={onClose} aria-label="Close modal">
             &times;
           </button>
         </div>
@@ -636,6 +651,7 @@ export default function ClubMembersPage() {
         <input
           type="text"
           placeholder="Search members..."
+          aria-label="Search club members"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
         />

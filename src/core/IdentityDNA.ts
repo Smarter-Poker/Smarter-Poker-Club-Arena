@@ -185,7 +185,17 @@ class IdentityDNACore {
 
           case 'TOKEN_REFRESHED':
             if (session) {
+              // CRITICAL: Re-hydrate the user store on token refresh.
+              // Without this, the Zustand store's isAuthenticated can become stale
+              // after the JWT rotates, causing AuthGuard to redirect to /auth.
+              await this.hydrateUserFromSession(session);
               this.updateStatus(true, session);
+
+              // Re-emit auth state to ensure all listeners know we're still active
+              masterBus.emit('AUTH_STATE_CHANGED', {
+                userId: session.user.id,
+                isAuthenticated: true,
+              });
             }
             break;
 

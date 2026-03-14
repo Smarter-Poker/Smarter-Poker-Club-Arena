@@ -97,10 +97,11 @@ export const useUserStore = create<UserState>()(
       },
 
       logout: () => {
-        // Sign out from Supabase auth (clears session token)
-        supabase.auth.signOut().catch((err) => {
-          console.error('[UserStore] signOut error:', err);
-        });
+        // CRITICAL: Only clear store state here. Do NOT call supabase.auth.signOut().
+        // IdentityDNA owns the signOut lifecycle. Calling signOut() here creates a
+        // recursive loop: logout() → signOut() → SIGNED_OUT event → clearUser() →
+        // logout() → signOut() again. This corrupts auth state and causes spurious
+        // redirects to /auth during navigation.
         set({
           user: null,
           isAuthenticated: false,

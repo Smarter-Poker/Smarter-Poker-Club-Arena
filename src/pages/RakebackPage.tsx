@@ -59,7 +59,9 @@ export default function RakebackPage() {
     try {
       const { data, error } = await supabase
         .from('rakeback_periods')
-        .select('*')
+        .select(
+          'id, user_id, club_id, period_start, period_end, rake_generated, rakeback_rate, rakeback_earned, status'
+        )
         .eq('user_id', user?.id)
         .order('period_start', { ascending: false })
         .limit(12);
@@ -89,7 +91,7 @@ export default function RakebackPage() {
     if (!user?.id) return;
 
     // Real-time updates when rakeback periods change
-    const rakebackChannelKey = 'rakeback-updates';
+    const rakebackChannelKey = `rakeback-updates-${user.id}`;
 
     const rakebackChannel = masterBus.getOrCreateChannel(rakebackChannelKey);
     rakebackChannel
@@ -106,7 +108,7 @@ export default function RakebackPage() {
       .subscribe();
 
     // Real-time updates when wallet changes (balance/earnings)
-    const walletChannelKey = 'wallet-updates';
+    const walletChannelKey = `wallet-updates-${user.id}`;
 
     const walletChannel = masterBus.getOrCreateChannel(walletChannelKey);
     walletChannel
@@ -465,13 +467,13 @@ export default function RakebackPage() {
                 </div>
                 <div className="period-details">
                   <span className="rake-generated">
-                    Rake: {period.rake_generated.toLocaleString()}
+                    Rake: {(period.rake_generated || 0).toLocaleString()}
                   </span>
                   <span className="rakeback-rate">{(period.rakeback_rate * 100).toFixed(1)}%</span>
                 </div>
                 <div className="period-earned">
                   <span className={`amount ${period.status}`}>
-                    {period.rakeback_earned.toLocaleString()}
+                    {(period.rakeback_earned || 0).toLocaleString()}
                   </span>
                   <span className={`status ${period.status}`}>
                     {period.status === 'paid' ? ' Paid' : ' Pending'}

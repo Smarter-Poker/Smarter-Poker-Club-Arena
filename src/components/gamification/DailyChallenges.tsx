@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { supabase } from '../../lib/supabase';
+
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
 import dailyChallengeService from '../../services/DailyChallengeService';

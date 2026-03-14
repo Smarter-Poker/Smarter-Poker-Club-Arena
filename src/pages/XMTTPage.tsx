@@ -12,6 +12,7 @@ import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import { masterBus } from '../core/MasterBus';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
+import { tournamentService } from '../services/TournamentService';
 import PageSkeleton from '../components/common/PageSkeleton';
 import styles from './XMTTPage.module.css';
 
@@ -213,13 +214,8 @@ export default function XMTTPage() {
   const handleRegister = async (tournamentId: string) => {
     if (!user || !clubId) return;
     try {
-      const { error } = await supabase.from('tournament_players').insert({
-        tournament_id: tournamentId,
-        user_id: user.id,
-        status: 'registered',
-      });
-      if (error) throw error;
-      masterBus.emit('TOURNAMENT_REGISTERED', { tournamentId, clubId: clubId || undefined });
+      // registerPlayer handles buy-in deduction, escrow, duplicate check, and event emission
+      await tournamentService.registerPlayer(tournamentId, user.id, user.email || 'Player');
       loadTournaments(clubId);
       if (selectedTournament === tournamentId) loadDetail(tournamentId);
     } catch (err: any) {

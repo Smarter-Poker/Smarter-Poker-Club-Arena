@@ -13,6 +13,7 @@ import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { resolveClubUUID } from '../utils/clubIdResolver';
+import { WalletService } from '../services/WalletService';
 import './AdminDashboardPage.css'; // reuse admin styles
 
 // ── Helpers ─────────────────────────────────────────────────
@@ -476,18 +477,9 @@ export default function PlayerSessionsPage() {
     if (!wbTarget || !clubId) return;
     setProcessing(true);
     try {
-      const uuid = await resolveClubUUID(clubId);
       const amt = parseInt(wbAmount, 10) || 500;
-      const { error: insertErr } = await supabase.from('chip_transactions').insert({
-        club_id: uuid,
-        user_id: wbTarget.userId,
-        amount: amt,
-        type: 'welcome_back',
-        notes: 'Welcome-back promo chips',
-      });
-      if (insertErr) throw insertErr;
+      await WalletService.distributePromo(user?.id || '', wbTarget.userId, amt);
       setSuccess(`${fmtChips(amt)} welcome-back chips sent to ${wbTarget.name}!`);
-      masterBus.emit('CHIPS_DISTRIBUTED', { clubId: uuid, amount: amt, userId: wbTarget.userId });
       setWbTarget(null);
       setWbAmount('');
       loadRetention(true);

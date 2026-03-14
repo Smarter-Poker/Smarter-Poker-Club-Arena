@@ -47,6 +47,7 @@ export default function AgentPromoPanel({
   onDistribute,
 }: AgentPromoPanelProps) {
   const [promoBalance, setPromoBalance] = useState(0);
+  const [agentPkId, setAgentPkId] = useState<string | null>(null);
   const [downline, setDownline] = useState<DownlinePlayer[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedPlayer, setSelectedPlayer] = useState<string | null>(null);
@@ -80,11 +81,12 @@ export default function AgentPromoPanel({
     try {
       const { data: agent } = await supabase
         .from('agents')
-        .select('promo_wallet_balance')
+        .select('id, promo_wallet_balance')
         .eq('club_id', clubId)
         .eq('user_id', userId)
         .maybeSingle();
       setPromoBalance(Number(agent?.promo_wallet_balance) || 0);
+      setAgentPkId(agent?.id || null);
 
       const { data: players } = await supabase
         .from('club_members')
@@ -158,9 +160,14 @@ export default function AgentPromoPanel({
     setDistributing(true);
     triggerHaptic('medium');
     try {
-      // Direct Supabase RPC for distribution
+      if (!agentPkId) {
+        showToast('Agent record not found', 'error');
+        setDistributing(false);
+        return;
+      }
+      // Direct Supabase RPC for distribution — p_agent_id is agents.id PK, NOT auth.users.id
       const { error } = await supabase.rpc('distribute_promo_chips', {
-        p_agent_id: userId,
+        p_agent_id: agentPkId,
         p_player_id: selectedPlayer,
         p_amount: amt,
       });

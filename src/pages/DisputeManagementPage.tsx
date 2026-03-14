@@ -64,6 +64,7 @@ export default function DisputeManagementPage() {
       }
     } catch (err) {
       console.error('[Disputes] Load failed:', err);
+      if (isMounted.current) toast.error('Failed to load disputes');
     }
     if (isMounted.current) setLoading(false);
   }, [clubId, user?.id]);

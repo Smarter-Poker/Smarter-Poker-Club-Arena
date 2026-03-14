@@ -75,6 +75,7 @@ export default function FlashPoolPage() {
       setPools(poolList);
     } catch (err) {
       console.error('[FlashPoolPage] Failed to load pools:', err);
+      toast.error('Failed to load pools — showing defaults');
       // Fallback: show default pool configurations
       setPools([
         {

@@ -368,6 +368,11 @@ export default function AgentManagementPage() {
       const success = await AgentService.updateAgentStatus(agentId, 'suspended');
       if (success) {
         masterBus.emit('AGENT_UPDATED', { clubId: clubId || '', agentId });
+        masterBus.emit('ADMIN_ACTION', {
+          action: 'agent_suspended',
+          target: agentId,
+          userId: user?.id,
+        });
         toast.success('Agent suspended');
       } else {
         // Rollback: revert optimistic update
@@ -395,6 +400,11 @@ export default function AgentManagementPage() {
       const success = await AgentService.updateAgentStatus(agentId, 'active');
       if (success) {
         masterBus.emit('AGENT_UPDATED', { clubId: clubId || '', agentId });
+        masterBus.emit('ADMIN_ACTION', {
+          action: 'agent_reinstated',
+          target: agentId,
+          userId: user?.id,
+        });
         toast.success('Agent reinstated');
       } else {
         // Rollback
@@ -443,6 +453,12 @@ export default function AgentManagementPage() {
           `Agent role updated to ${newRole === 'super_agent' ? 'Super Agent' : 'Agent'}`
         );
         masterBus.emit('AGENT_UPDATED', { clubId: clubId || '', agentId });
+        masterBus.emit('ADMIN_ACTION', {
+          action: newRole === 'super_agent' ? 'agent_promoted' : 'agent_demoted',
+          target: agentId,
+          details: { newRole },
+          userId: user?.id,
+        });
       } else {
         toast.error('Failed to update agent role');
       }

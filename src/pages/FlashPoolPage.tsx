@@ -48,6 +48,7 @@ export default function FlashPoolPage() {
   const [pools, setPools] = useState<PoolDisplay[]>([]);
   const [joiningPool, setJoiningPool] = useState<string | null>(null);
   const [buyInAmounts, setBuyInAmounts] = useState<Record<string, number>>({});
+  const [userBalance, setUserBalance] = useState<number | null>(null);
 
   // ── Load available pools ──
   const loadPools = useCallback(async () => {
@@ -142,6 +143,25 @@ export default function FlashPoolPage() {
   useEffect(() => {
     loadPools();
   }, [loadPools]);
+
+  // ── Load user's chip balance ──
+  useEffect(() => {
+    if (!user?.id) return;
+    const loadBalance = async () => {
+      try {
+        const { data } = await supabase
+          .from('club_members')
+          .select('chip_balance')
+          .eq('user_id', user.id)
+          .limit(1)
+          .maybeSingle();
+        if (data) setUserBalance(data.chip_balance || 0);
+      } catch {
+        /* best effort */
+      }
+    };
+    loadBalance();
+  }, [user?.id]);
 
   // ── Bus listener for pool updates ──
   useEffect(() => {
@@ -348,6 +368,11 @@ export default function FlashPoolPage() {
                 <div style={{ fontSize: '12px', color: '#8b8fa3' }}>
                   Buy-in: {pool.buyInMin.toLocaleString()} – {pool.buyInMax.toLocaleString()}
                 </div>
+                {userBalance !== null && (
+                  <div style={{ fontSize: '11px', color: '#60a5fa', marginTop: '2px' }}>
+                    💰 Your balance: {userBalance.toLocaleString()} chips
+                  </div>
+                )}
               </div>
               <div style={{ textAlign: 'right' }}>
                 <div
@@ -355,9 +380,13 @@ export default function FlashPoolPage() {
                     fontSize: '14px',
                     fontWeight: 600,
                     color: pool.activePlayers > 0 ? '#3FB950' : '#8b8fa3',
+                    transition: 'color 0.3s ease',
                   }}
                 >
-                  {pool.activePlayers} players
+                  <span style={{ display: 'inline-block', transition: 'transform 0.3s ease' }}>
+                    {pool.activePlayers}
+                  </span>{' '}
+                  players
                 </div>
                 <div style={{ fontSize: '12px', color: '#8b8fa3' }}>
                   {pool.tablesRunning} tables
@@ -371,8 +400,12 @@ export default function FlashPoolPage() {
                 placeholder={`Buy-in (${pool.buyInMin})`}
                 min={pool.buyInMin}
                 max={pool.buyInMax}
+                value={buyInAmounts[pool.poolId] || ''}
                 onChange={(e) =>
-                  setBuyInAmounts((prev) => ({ ...prev, [pool.poolId]: Number(e.target.value) }))
+                  setBuyInAmounts((prev) => ({
+                    ...prev,
+                    [pool.poolId]: e.target.value === '' ? 0 : Number(e.target.value),
+                  }))
                 }
                 style={{
                   flex: 1,

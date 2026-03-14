@@ -594,6 +594,15 @@ export default function CashierPage() {
       },
       500
     );
+    // Commission payout listener: agent's wallet credited after commission execution
+    const unsubCommission = masterBus.subscribeDebounced(
+      'COMMISSION_PAID',
+      () => {
+        loadBalances(user.id);
+        loadTransactions();
+      },
+      500
+    );
     return () => {
       unsubBalance();
       unsubWallet();
@@ -608,6 +617,7 @@ export default function CashierPage() {
       unsubDailyReward();
       unsubCashoutApproved();
       unsubSettlement();
+      unsubCommission();
     };
   }, [user?.id, loadBalances, loadTransactions, loadPendingCashouts]);
 

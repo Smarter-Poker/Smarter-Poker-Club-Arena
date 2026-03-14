@@ -125,16 +125,20 @@ class FriendSuggestionServiceClass {
    * Get IDs of existing friends
    */
   private async getExistingFriendIds(userId: string): Promise<Set<string>> {
-    const { data } = await supabase
-      .from('friendships')
-      .select('user_id, friend_id')
-      .or(`user_id.eq.${userId},friend_id.eq.${userId}`)
-      .eq('status', 'accepted');
-
     const ids = new Set<string>();
-    (data || []).forEach((row: any) => {
-      ids.add(row.user_id === userId ? row.friend_id : row.user_id);
-    });
+    try {
+      const { data, error } = await supabase
+        .from('friendships')
+        .select('user_id, friend_id')
+        .or(`user_id.eq.${userId},friend_id.eq.${userId}`)
+        .eq('status', 'accepted');
+      if (error) console.warn('[FriendSuggestions] getExistingFriendIds error:', error.message);
+      (data || []).forEach((row: any) => {
+        ids.add(row.user_id === userId ? row.friend_id : row.user_id);
+      });
+    } catch (err) {
+      console.warn('[FriendSuggestions] getExistingFriendIds unexpected error:', err);
+    }
     ids.add(userId); // exclude self
     return ids;
   }
@@ -145,94 +149,109 @@ class FriendSuggestionServiceClass {
   private async getSharedClubUsers(
     userId: string
   ): Promise<(FriendSuggestion & { clubName: string })[]> {
-    // Get user's clubs
-    const { data: myClubs } = await supabase
-      .from('club_members')
-      .select('club_id, clubs(name)')
-      .eq('user_id', userId);
+    try {
+      // Get user's clubs
+      const { data: myClubs, error: cErr } = await supabase
+        .from('club_members')
+        .select('club_id, clubs(name)')
+        .eq('user_id', userId);
+      if (cErr) console.warn('[FriendSuggestions] getSharedClubUsers clubs error:', cErr.message);
 
-    if (!myClubs || myClubs.length === 0) return [];
+      if (!myClubs || myClubs.length === 0) return [];
 
-    const clubIds = myClubs.map((c: any) => c.club_id);
-    const clubNames = new Map<string, string>();
-    myClubs.forEach((c: any) => {
-      clubNames.set(c.club_id, (c.clubs as any)?.name || 'Club');
-    });
+      const clubIds = myClubs.map((c: any) => c.club_id);
+      const clubNames = new Map<string, string>();
+      myClubs.forEach((c: any) => {
+        clubNames.set(c.club_id, (c.clubs as any)?.name || 'Club');
+      });
 
-    // Get members of those clubs (excluding self)
-    const { data: members } = await supabase
-      .from('club_members')
-      .select(
+      // Get members of those clubs (excluding self)
+      const { data: members, error: mErr } = await supabase
+        .from('club_members')
+        .select(
+          `
+          user_id,
+          club_id,
+          profiles:user_id(username, display_name, avatar_url, is_online)
         `
-        user_id,
-        club_id,
-        profiles:user_id(username, display_name, avatar_url, is_online)
-      `
-      )
-      .in('club_id', clubIds)
-      .neq('user_id', userId)
-      .limit(100);
+        )
+        .in('club_id', clubIds)
+        .neq('user_id', userId)
+        .limit(100);
+      if (mErr) console.warn('[FriendSuggestions] getSharedClubUsers members error:', mErr.message);
 
-    return (members || []).map((m: any) => ({
-      userId: m.user_id,
-      username: m.profiles?.username || 'Unknown',
-      displayName: m.profiles?.display_name,
-      avatarUrl: m.profiles?.avatar_url,
-      isOnline: m.profiles?.is_online || false,
-      score: 0,
-      reasons: [],
-      clubName: clubNames.get(m.club_id) || 'Club',
-    }));
+      return (members || []).map((m: any) => ({
+        userId: m.user_id,
+        username: m.profiles?.username || 'Unknown',
+        displayName: m.profiles?.display_name,
+        avatarUrl: m.profiles?.avatar_url,
+        isOnline: m.profiles?.is_online || false,
+        score: 0,
+        reasons: [],
+        clubName: clubNames.get(m.club_id) || 'Club',
+      }));
+    } catch (err) {
+      console.warn('[FriendSuggestions] getSharedClubUsers unexpected error:', err);
+      return [];
+    }
   }
 
   /**
    * Find recent table opponents (last 7 days)
    */
   private async getRecentOpponents(userId: string): Promise<FriendSuggestion[]> {
-    const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString();
+    try {
+      const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString();
 
-    // Get tables user played at recently
-    const { data: myHands } = await supabase
-      .from('hand_players')
-      .select('hand_id')
-      .eq('user_id', userId)
-      .gte('created_at', sevenDaysAgo)
-      .limit(200);
+      // Get tables user played at recently
+      const { data: myHands, error: hErr } = await supabase
+        .from('hand_players')
+        .select('hand_id')
+        .eq('user_id', userId)
+        .gte('created_at', sevenDaysAgo)
+        .limit(200);
+      if (hErr) console.warn('[FriendSuggestions] getRecentOpponents hands error:', hErr.message);
 
-    if (!myHands || myHands.length === 0) return [];
+      if (!myHands || myHands.length === 0) return [];
 
-    const handIds = myHands.map((h: any) => h.hand_id);
+      const handIds = myHands.map((h: any) => h.hand_id);
 
-    // Get other players from those hands
-    const { data: opponents } = await supabase
-      .from('hand_players')
-      .select(
+      // Get other players from those hands
+      const { data: opponents, error: oErr } = await supabase
+        .from('hand_players')
+        .select(
+          `
+          user_id,
+          profiles:user_id(username, display_name, avatar_url, is_online)
         `
-        user_id,
-        profiles:user_id(username, display_name, avatar_url, is_online)
-      `
-      )
-      .in('hand_id', handIds)
-      .neq('user_id', userId)
-      .limit(50);
+        )
+        .in('hand_id', handIds)
+        .neq('user_id', userId)
+        .limit(50);
+      if (oErr)
+        console.warn('[FriendSuggestions] getRecentOpponents opponents error:', oErr.message);
 
-    // Dedupe by user_id
-    const seen = new Set<string>();
-    return (opponents || [])
-      .filter((o: any) => {
-        if (seen.has(o.user_id)) return false;
-        seen.add(o.user_id);
-        return true;
-      })
-      .map((o: any) => ({
-        userId: o.user_id,
-        username: o.profiles?.username || 'Unknown',
-        displayName: o.profiles?.display_name,
-        avatarUrl: o.profiles?.avatar_url,
-        isOnline: o.profiles?.is_online || false,
-        score: 0,
-        reasons: [],
-      }));
+      // Dedupe by user_id
+      const seen = new Set<string>();
+      return (opponents || [])
+        .filter((o: any) => {
+          if (seen.has(o.user_id)) return false;
+          seen.add(o.user_id);
+          return true;
+        })
+        .map((o: any) => ({
+          userId: o.user_id,
+          username: o.profiles?.username || 'Unknown',
+          displayName: o.profiles?.display_name,
+          avatarUrl: o.profiles?.avatar_url,
+          isOnline: o.profiles?.is_online || false,
+          score: 0,
+          reasons: [],
+        }));
+    } catch (err) {
+      console.warn('[FriendSuggestions] getRecentOpponents unexpected error:', err);
+      return [];
+    }
   }
 
   /**

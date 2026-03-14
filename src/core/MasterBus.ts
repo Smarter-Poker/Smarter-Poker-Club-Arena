@@ -287,7 +287,11 @@ export type BusEventType =
   | 'UI_THEME_CHANGED'
   // Phase 8 Deep Sweep: flash pool game state event
   | 'GAME_STATE_UPDATED'
-  | 'FLASH_POOL_JOINED';
+  | 'FLASH_POOL_JOINED'
+  // Production resilience events
+  | 'CONNECTION_RESTORED'
+  // Admin audit trail events
+  | 'ADMIN_ACTION';
 
 // #13: Type-safe payload map — compile-time enforcement of correct payloads
 export interface BusPayloadMap {
@@ -876,6 +880,15 @@ export interface BusPayloadMap {
     tablesRunning?: number;
   };
   FLASH_POOL_JOINED: { poolId: string; userId: string; buyIn: number };
+  // Production resilience
+  CONNECTION_RESTORED: { timestamp: number };
+  // Admin audit trail
+  ADMIN_ACTION: {
+    action: string;
+    target: string;
+    details?: Record<string, unknown>;
+    userId?: string;
+  };
 }
 
 export interface BusEvent<T = unknown> {

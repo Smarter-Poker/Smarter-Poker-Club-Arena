@@ -17,6 +17,7 @@ import ClubArenaWelcomeModal, { useClubArenaWelcome } from '../modals/ClubArenaW
 import ClubAnnouncementBanner from '../club/ClubAnnouncementBanner';
 import GlobalHeader from '../navigation/GlobalHeader';
 import { useAuthUser } from '../../hooks/useAuthUser';
+import { masterBus } from '../../core/MasterBus';
 
 export default function AppLayout() {
   const location = useLocation();
@@ -24,6 +25,7 @@ export default function AppLayout() {
   // Detect if running inside iframe (World Hub embedding)
   // Use state to ensure correct value after client-side hydration
   const [isInIframe, setIsInIframe] = useState(false);
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
 
   useEffect(() => {
     const inIframe = window.parent !== window;
@@ -35,6 +37,21 @@ export default function AppLayout() {
     }
     return () => {
       document.body.classList.remove('embedded-in-iframe');
+    };
+  }, []);
+
+  // ── Offline / Online detection ──
+  useEffect(() => {
+    const handleOffline = () => setIsOffline(true);
+    const handleOnline = () => {
+      setIsOffline(false);
+      masterBus.emit('CONNECTION_RESTORED', { timestamp: Date.now() });
+    };
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('online', handleOnline);
+    return () => {
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('online', handleOnline);
     };
   }, []);
 
@@ -54,6 +71,24 @@ export default function AppLayout() {
 
       {/* Global Announcement Banner (shows club announcements when in a club context) */}
       <ClubAnnouncementBanner />
+
+      {/* Offline Banner */}
+      {isOffline && (
+        <div
+          style={{
+            background: 'linear-gradient(135deg, #b91c1c, #991b1b)',
+            color: '#fff',
+            textAlign: 'center',
+            padding: '8px 16px',
+            fontSize: '13px',
+            fontWeight: 600,
+            letterSpacing: '0.3px',
+            zIndex: 9999,
+          }}
+        >
+          ⚠️ You are offline — changes will sync when connection is restored
+        </div>
+      )}
 
       {/* Main Content */}
       <main id="main-content" className={styles.main}>

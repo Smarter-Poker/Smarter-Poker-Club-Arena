@@ -250,30 +250,36 @@ class VIPServiceClass {
    * Get current monthly usage for VIP user
    */
   private async getMonthlyUsage(userId: string): Promise<VIPMonthlyLimits> {
-    const startOfMonth = new Date();
-    startOfMonth.setDate(1);
-    startOfMonth.setHours(0, 0, 0, 0);
+    try {
+      const startOfMonth = new Date();
+      startOfMonth.setDate(1);
+      startOfMonth.setHours(0, 0, 0, 0);
 
-    const { data } = await supabase
-      .from('vip_monthly_usage')
-      .select('feature, usage_count')
-      .eq('user_id', userId)
-      .gte('period_start', startOfMonth.toISOString());
+      const { data, error } = await supabase
+        .from('vip_monthly_usage')
+        .select('feature, usage_count')
+        .eq('user_id', userId)
+        .gte('period_start', startOfMonth.toISOString());
+      if (error) console.warn('[VIPService] getMonthlyUsage error:', error.message);
 
-    const usage: Record<string, number> = {};
-    (data || []).forEach((row) => {
-      usage[row.feature] = row.usage_count;
-    });
+      const usage: Record<string, number> = {};
+      (data || []).forEach((row) => {
+        usage[row.feature] = row.usage_count;
+      });
 
-    return {
-      rabbitHunts: { used: usage['rabbit_hunt'] || 0, limit: VIP_GOLD_LIMITS.rabbitHunts },
-      timeBankSeconds: {
-        used: usage['time_bank_seconds'] || 0,
-        limit: VIP_GOLD_LIMITS.timeBankSeconds,
-      },
-      emojis: { used: usage['emojis'] || 0, limit: VIP_GOLD_LIMITS.emojis },
-      tags: { used: usage['tags'] || 0, limit: VIP_GOLD_LIMITS.tags },
-    };
+      return {
+        rabbitHunts: { used: usage['rabbit_hunt'] || 0, limit: VIP_GOLD_LIMITS.rabbitHunts },
+        timeBankSeconds: {
+          used: usage['time_bank_seconds'] || 0,
+          limit: VIP_GOLD_LIMITS.timeBankSeconds,
+        },
+        emojis: { used: usage['emojis'] || 0, limit: VIP_GOLD_LIMITS.emojis },
+        tags: { used: usage['tags'] || 0, limit: VIP_GOLD_LIMITS.tags },
+      };
+    } catch (err) {
+      console.warn('[VIPService] getMonthlyUsage unexpected error:', err);
+      return this.getEmptyLimits();
+    }
   }
 
   private getEmptyLimits(): VIPMonthlyLimits {
@@ -310,73 +316,89 @@ class VIPServiceClass {
    * Consume VIP quota
    */
   private async consumeVIPQuota(userId: string, feature: VIPFeature): Promise<void> {
-    const startOfMonth = new Date();
-    startOfMonth.setDate(1);
-    startOfMonth.setHours(0, 0, 0, 0);
+    try {
+      const startOfMonth = new Date();
+      startOfMonth.setDate(1);
+      startOfMonth.setHours(0, 0, 0, 0);
 
-    const { error: upsertErr } = await supabase.from('vip_monthly_usage').upsert(
-      {
-        user_id: userId,
-        feature,
-        period_start: startOfMonth.toISOString(),
-        usage_count: 1,
-      },
-      {
-        onConflict: 'user_id,feature,period_start',
-        ignoreDuplicates: false,
-      }
-    );
-    if (upsertErr) console.error('[VIPService] VIP quota upsert failed:', upsertErr);
+      const { error: upsertErr } = await supabase.from('vip_monthly_usage').upsert(
+        {
+          user_id: userId,
+          feature,
+          period_start: startOfMonth.toISOString(),
+          usage_count: 1,
+        },
+        {
+          onConflict: 'user_id,feature,period_start',
+          ignoreDuplicates: false,
+        }
+      );
+      if (upsertErr) console.error('[VIPService] VIP quota upsert failed:', upsertErr);
 
-    // Increment count
-    await retryAsync(
-      () =>
-        supabase.rpc('fn_increment_vip_usage', {
-          p_user_id: userId,
-          p_feature: feature,
-        }),
-      3
-    );
+      // Increment count
+      const { error: rpcErr } = await retryAsync(
+        () =>
+          supabase.rpc('fn_increment_vip_usage', {
+            p_user_id: userId,
+            p_feature: feature,
+          }),
+        3
+      );
+      if (rpcErr) console.warn('[VIPService] fn_increment_vip_usage error:', rpcErr.message);
+    } catch (err) {
+      console.warn('[VIPService] consumeVIPQuota unexpected error:', err);
+    }
   }
 
   /**
    * Check for existing a-la-carte purchase
    */
   private async checkExistingPurchase(userId: string, feature: VIPFeature): Promise<boolean> {
-    const { data } = await supabase
-      .from('feature_purchases')
-      .select('id, uses_remaining, expires_at')
-      .eq('user_id', userId)
-      .eq('feature', feature)
-      .or('expires_at.is.null,expires_at.gt.now()')
-      .order('created_at', { ascending: false })
-      .limit(1);
+    try {
+      const { data, error } = await supabase
+        .from('feature_purchases')
+        .select('id, uses_remaining, expires_at')
+        .eq('user_id', userId)
+        .eq('feature', feature)
+        .or('expires_at.is.null,expires_at.gt.now()')
+        .order('created_at', { ascending: false })
+        .limit(1);
+      if (error) console.warn('[VIPService] checkExistingPurchase error:', error.message);
 
-    if (!data || data.length === 0) return false;
+      if (!data || data.length === 0) return false;
 
-    const purchase = data[0];
+      const purchase = data[0];
 
-    // Per-use: check remaining uses
-    if (purchase.uses_remaining !== null) {
-      return purchase.uses_remaining > 0;
+      // Per-use: check remaining uses
+      if (purchase.uses_remaining !== null) {
+        return purchase.uses_remaining > 0;
+      }
+
+      // Session/permanent: just needs to exist and not expired
+      return true;
+    } catch (err) {
+      console.warn('[VIPService] checkExistingPurchase unexpected error:', err);
+      return false;
     }
-
-    // Session/permanent: just needs to exist and not expired
-    return true;
   }
 
   /**
    * Consume one use of a purchase
    */
   private async consumePurchase(userId: string, feature: VIPFeature): Promise<void> {
-    await retryAsync(
-      () =>
-        supabase.rpc('fn_consume_feature_use', {
-          p_user_id: userId,
-          p_feature: feature,
-        }),
-      3
-    );
+    try {
+      const { error } = await retryAsync(
+        () =>
+          supabase.rpc('fn_consume_feature_use', {
+            p_user_id: userId,
+            p_feature: feature,
+          }),
+        3
+      );
+      if (error) console.warn('[VIPService] fn_consume_feature_use error:', error.message);
+    } catch (err) {
+      console.warn('[VIPService] consumePurchase unexpected error:', err);
+    }
   }
 
   /**

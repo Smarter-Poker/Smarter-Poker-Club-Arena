@@ -297,11 +297,13 @@ export const HydraService = {
     const horses = await this.getActiveHorses(tableId);
 
     // Get table max_players for accurate seat count
-    const { data: tableInfo } = await supabase
+    const { data: tableInfo, error: tableInfoErr } = await supabase
       .from('tables')
       .select('max_players')
       .eq('id', tableId)
       .maybeSingle();
+    if (tableInfoErr)
+      console.warn('[Hydra] getTableLiquidityStatus tableInfo error:', tableInfoErr.message);
     const maxPlayers = tableInfo?.max_players || 9;
 
     // Simple seat count query — only active seats
@@ -393,32 +395,35 @@ export const HydraService = {
    */
   async seatHorse(horseId: string, tableId: string, bigBlind: number): Promise<HorsePlayer | null> {
     // Get horse info
-    const { data: horseData } = await supabase
+    const { data: horseData, error: horseErr } = await supabase
       .from('profiles')
       .select('id, display_name, player_number, avatar_url, horse_profile')
       .eq('id', horseId)
       .eq('is_horse', true)
       .maybeSingle();
+    if (horseErr) console.warn('[Hydra] seatHorse profile error:', horseErr.message);
 
     if (!horseData) return null;
 
     const stack = getStackForProfile(horseData.horse_profile as HorseProfile, bigBlind);
 
     // Find an available seat at the table (only count active seats, not left players)
-    const { data: existingSeats } = await supabase
+    const { data: existingSeats, error: seatsErr } = await supabase
       .from('table_seats')
       .select('seat_number')
       .eq('table_id', tableId)
       .is('left_at', null);
+    if (seatsErr) console.warn('[Hydra] seatHorse seats error:', seatsErr.message);
 
     const takenSeats = new Set((existingSeats || []).map((s) => s.seat_number));
 
     // Get table max_players to know seat range
-    const { data: tableData } = await supabase
+    const { data: tableData, error: tableErr } = await supabase
       .from('tables')
       .select('max_players')
       .eq('id', tableId)
       .maybeSingle();
+    if (tableErr) console.warn('[Hydra] seatHorse table error:', tableErr.message);
 
     const maxSeats = tableData?.max_players || 9;
     let availableSeat = 0;
@@ -472,11 +477,12 @@ export const HydraService = {
     masterBus.emit('BALANCE_UPDATED', { source: 'hydra_seat_horse', userId: horseId });
 
     // Try to log in chip_transactions for club accounting (non-blocking)
-    const { data: tableClubData } = await supabase
+    const { data: tableClubData, error: clubErr1 } = await supabase
       .from('tables')
       .select('club_id')
       .eq('id', tableId)
       .maybeSingle();
+    if (clubErr1) console.warn('[Hydra] seatHorse club lookup error:', clubErr1.message);
 
     if (tableClubData?.club_id) {
       // Fire and forget: logging
@@ -490,7 +496,11 @@ export const HydraService = {
     }
 
     // Update horse status to seated
-    await supabase.from('profiles').update({ horse_status: 'seated' }).eq('id', horseId);
+    const { error: statusErr1 } = await supabase
+      .from('profiles')
+      .update({ horse_status: 'seated' })
+      .eq('id', horseId);
+    if (statusErr1) console.warn('[Hydra] seatHorse status update error:', statusErr1.message);
 
     return {
       id: horseData.id,
@@ -526,7 +536,12 @@ export const HydraService = {
     }
 
     // Mark horse as leaving
-    await supabase.from('profiles').update({ horse_status: 'leaving' }).eq('id', horseId);
+    const { error: leaveErr } = await supabase
+      .from('profiles')
+      .update({ horse_status: 'leaving' })
+      .eq('id', horseId);
+    if (leaveErr)
+      console.warn('[Hydra] scheduleHorseRemoval status update error:', leaveErr.message);
   },
 
   /**
@@ -587,11 +602,12 @@ export const HydraService = {
       masterBus.emit('BALANCE_UPDATED', { source: 'hydra_remove_horse', userId: horseId });
 
       // Try to log in chip_transactions for club accounting
-      const { data: tableClubData } = await supabase
+      const { data: tableClubData, error: clubErr2 } = await supabase
         .from('tables')
         .select('club_id')
         .eq('id', tableId)
         .maybeSingle();
+      if (clubErr2) console.warn('[Hydra] removeHorse club lookup error:', clubErr2.message);
 
       if (tableClubData?.club_id) {
         // Fire and forget: logging
@@ -606,7 +622,11 @@ export const HydraService = {
     }
 
     // 4. Set horse back to available
-    await supabase.from('profiles').update({ horse_status: 'available' }).eq('id', horseId);
+    const { error: statusErr2 } = await supabase
+      .from('profiles')
+      .update({ horse_status: 'available' })
+      .eq('id', horseId);
+    if (statusErr2) console.warn('[Hydra] removeHorse status update error:', statusErr2.message);
 
     return true;
   },

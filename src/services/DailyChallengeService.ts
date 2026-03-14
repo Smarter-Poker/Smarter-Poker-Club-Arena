@@ -243,11 +243,13 @@ class DailyChallengeServiceClass {
     const today = this.getTodayKey();
 
     // Check if challenges already assigned
-    const { data: existing } = await supabase
+    const { data: existing, error: existErr } = await supabase
       .from('user_daily_challenges')
       .select('*, challenge:challenge_id(*)')
       .eq('user_id', userId)
       .eq('assigned_date', today);
+    if (existErr)
+      console.warn('[DailyChallenge] getTodaysChallenges fetch error:', existErr.message);
 
     if (existing && existing.length > 0) {
       return existing.map(this.mapToUserChallenge);
@@ -285,11 +287,12 @@ class DailyChallengeServiceClass {
   async getWeeklyChallenges(userId: string): Promise<(UserDailyChallenge & { tier: 'weekly' })[]> {
     const weekKey = this.getWeekKey();
 
-    const { data: existing } = await supabase
+    const { data: existing, error: wkErr } = await supabase
       .from('user_daily_challenges')
       .select('*, challenge:challenge_id(*)')
       .eq('user_id', userId)
       .eq('assigned_date', weekKey);
+    if (wkErr) console.warn('[DailyChallenge] getWeeklyChallenges fetch error:', wkErr.message);
 
     if (existing && existing.length > 0) {
       return existing.map((row) => ({ ...this.mapToUserChallenge(row), tier: 'weekly' as const }));
@@ -328,11 +331,12 @@ class DailyChallengeServiceClass {
   ): Promise<(UserDailyChallenge & { tier: 'monthly' })[]> {
     const monthKey = this.getMonthKey();
 
-    const { data: existing } = await supabase
+    const { data: existing, error: moErr } = await supabase
       .from('user_daily_challenges')
       .select('*, challenge:challenge_id(*)')
       .eq('user_id', userId)
       .eq('assigned_date', monthKey);
+    if (moErr) console.warn('[DailyChallenge] getMonthlyChallenges fetch error:', moErr.message);
 
     if (existing && existing.length > 0) {
       return existing.map((row) => ({ ...this.mapToUserChallenge(row), tier: 'monthly' as const }));
@@ -379,12 +383,13 @@ class DailyChallengeServiceClass {
     const completed: UserDailyChallenge[] = [];
 
     // Get today's/week's/month's active challenges of this type
-    const { data: challenges } = await supabase
+    const { data: challenges, error: chErr } = await supabase
       .from('user_daily_challenges')
       .select('*, challenge:challenge_id(*)')
       .eq('user_id', userId)
       .in('assigned_date', [today, weekKey, monthKey])
       .eq('completed', false);
+    if (chErr) console.warn('[DailyChallenge] updateProgress fetch error:', chErr.message);
 
     if (!challenges) return { completed };
 
@@ -502,12 +507,13 @@ class DailyChallengeServiceClass {
     currentStreak: number;
     totalChipsEarned: number;
   }> {
-    const { data } = await supabase
+    const { data, error: statErr } = await supabase
       .from('user_daily_challenges')
       .select('challenge_id, completed, assigned_date')
       .eq('user_id', userId)
       .eq('completed', true)
       .limit(500);
+    if (statErr) console.warn('[DailyChallenge] getStats error:', statErr.message);
 
     if (!data) {
       return { totalCompleted: 0, currentStreak: 0, totalChipsEarned: 0 };

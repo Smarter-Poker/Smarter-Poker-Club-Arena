@@ -69,8 +69,18 @@ export function useGlobalBalanceSync() {
     // Initial fetch on mount to guarantee parity
     fetchTrueBalance();
 
+    // Sub to reconnect events — re-fetch balance when coming back online
+    const unsubscribeReconnect = masterBus.subscribeDebounced(
+      'CONNECTION_RESTORED',
+      () => {
+        fetchTrueBalance();
+      },
+      500
+    );
+
     return () => {
       unsubscribeLocal();
+      unsubscribeReconnect();
       supabase.removeChannel(channel);
     };
   }, [user?.id]);

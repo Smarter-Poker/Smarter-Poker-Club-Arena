@@ -275,6 +275,8 @@ export default function AgentManagementPage() {
       'CHIPS_DISTRIBUTED',
       () => {
         loadAgentsData();
+        // Phase 13: Also refresh clawback section when new distribution happens
+        loadRecentDistributions();
       },
       300
     );

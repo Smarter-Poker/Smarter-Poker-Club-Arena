@@ -199,6 +199,8 @@ export default function XMTTPage() {
       // Phase 4: Cross-page sync (ported from World Hub xmtt.js)
       masterBus.subscribe('TOURNAMENT_CANCELLED', refresh),
       masterBus.subscribe('TOURNAMENT_LEVEL_CHANGE', refresh),
+      // Phase 13: Waitlist position changes trigger tournament card refresh
+      masterBus.subscribe('WAITLIST_POSITION_CHANGED', refresh),
     ];
     return () => unsubs.forEach((u) => u());
   }, [clubId, selectedTournament, loadTournaments, loadDetail]);

@@ -255,13 +255,24 @@ export default function RakebackPage() {
       }
 
       // Step 2: Mark periods as 'paid' FIRST (idempotency — prevents double-claim)
-      const { error: updateError } = await supabase
+      // IMPORTANT: .select('id') returns the actually-updated rows — if 0 rows returned,
+      // another tab/session already claimed these periods (concurrent claim defense).
+      const { data: updatedRows, error: updateError } = await supabase
         .from('rakeback_periods')
         .update({ status: 'paid' })
         .in('id', verifiedIds)
-        .eq('status', 'pending'); // Extra guard: only update if still pending
+        .eq('status', 'pending') // Extra guard: only update if still pending
+        .select('id');
 
       if (updateError) throw new Error('Failed to lock periods: ' + updateError.message);
+
+      // If no rows were actually updated, another session already claimed them
+      if (!updatedRows || updatedRows.length === 0) {
+        setClaimStatus('error');
+        setClaimMessage('These periods have already been claimed.');
+        loadRakebackData();
+        return;
+      }
 
       // Step 3: Credit chips with retry (if this fails, rollback periods to pending)
       const { error: rpcError } = await retryAsync(

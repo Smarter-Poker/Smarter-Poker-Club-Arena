@@ -2271,11 +2271,11 @@ class TournamentService {
     tournamentId: string,
     userId: string
   ): Promise<{ position: number }> {
-    // Get current waitlist count for position assignment
+    // Check if already on waitlist
     const { data: existing } = await supabase
-      .from('table_waitlists')
+      .from('tournament_waitlists')
       .select('id')
-      .eq('table_id', tournamentId)
+      .eq('tournament_id', tournamentId)
       .eq('user_id', userId)
       .maybeSingle();
 
@@ -2284,14 +2284,14 @@ class TournamentService {
     }
 
     const { count } = await supabase
-      .from('table_waitlists')
+      .from('tournament_waitlists')
       .select('id', { count: 'exact', head: true })
-      .eq('table_id', tournamentId);
+      .eq('tournament_id', tournamentId);
 
     const position = (count || 0) + 1;
 
-    const { error } = await supabase.from('table_waitlists').insert({
-      table_id: tournamentId,
+    const { error } = await supabase.from('tournament_waitlists').insert({
+      tournament_id: tournamentId,
       user_id: userId,
       position,
     });
@@ -2312,9 +2312,9 @@ class TournamentService {
    */
   async leaveTournamentWaitlist(tournamentId: string, userId: string): Promise<void> {
     const { error } = await supabase
-      .from('table_waitlists')
+      .from('tournament_waitlists')
       .delete()
-      .eq('table_id', tournamentId)
+      .eq('tournament_id', tournamentId)
       .eq('user_id', userId);
 
     if (error) throw error;
@@ -2334,18 +2334,18 @@ class TournamentService {
     userId: string
   ): Promise<{ position: number; total: number } | null> {
     const { data: entry } = await supabase
-      .from('table_waitlists')
+      .from('tournament_waitlists')
       .select('id, position')
-      .eq('table_id', tournamentId)
+      .eq('tournament_id', tournamentId)
       .eq('user_id', userId)
       .maybeSingle();
 
     if (!entry) return null;
 
     const { count } = await supabase
-      .from('table_waitlists')
+      .from('tournament_waitlists')
       .select('id', { count: 'exact', head: true })
-      .eq('table_id', tournamentId);
+      .eq('tournament_id', tournamentId);
 
     return { position: entry.position, total: count || 0 };
   }

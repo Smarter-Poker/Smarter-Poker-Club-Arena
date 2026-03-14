@@ -347,6 +347,8 @@ export default function AgentManagementPage() {
       if (success) {
         setAgents((prev) => prev.map((a) => (a.id === agentId ? { ...a, creditLimit: limit } : a)));
         toast.success(`Credit limit updated to ${limit.toLocaleString()}`);
+        // Emit CREDIT_UPDATED so AgentDashboard, SuperAgentDashboard, etc. auto-refresh
+        masterBus.emit('CREDIT_UPDATED', { clubId: clubId || '', amount: limit });
       } else {
         toast.error('Failed to update credit limit');
       }

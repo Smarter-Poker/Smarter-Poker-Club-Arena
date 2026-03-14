@@ -485,13 +485,18 @@ export default function MarketplacePage() {
               className={styles.btnPrimary}
               disabled={processing || !newItemName || !newItemPrice}
               onClick={async () => {
+                const price = Math.floor(Number(newItemPrice));
+                if (!price || !Number.isFinite(price) || price <= 0) {
+                  toast.error('Price must be a positive number');
+                  return;
+                }
                 setProcessing(true);
                 try {
                   const { error } = await supabase.from('marketplace_items').insert({
                     club_id: clubId,
-                    name: newItemName,
-                    price: Number(newItemPrice),
-                    description: newItemDesc || null,
+                    name: newItemName.trim(),
+                    price,
+                    description: newItemDesc.trim() || null,
                     is_active: true,
                   });
                   if (error) throw error;

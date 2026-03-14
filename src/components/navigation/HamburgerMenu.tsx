@@ -181,7 +181,11 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     localStorage.removeItem('tutorial_completed');
     if (user?.id) {
       try {
-        await supabase.from('profiles').update({ tutorial_completed: false }).eq('id', user.id);
+        const { error: resetErr } = await supabase
+          .from('profiles')
+          .update({ tutorial_completed: false })
+          .eq('id', user.id);
+        if (resetErr) console.error('[HamburgerMenu] Tutorial reset save failed:', resetErr);
       } catch (error) {
         console.error('Error resetting tutorial:', error);
       }

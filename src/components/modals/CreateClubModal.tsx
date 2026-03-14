@@ -234,14 +234,24 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
         .maybeSingle();
 
       if (insertError) throw insertError;
+      if (!clubData) throw new Error('Club creation returned no data');
 
-      // Add owner as first member
-      await supabase.from('club_members').insert({
+      // Add owner as first member — cleanup orphan if this fails
+      const { error: memberError } = await supabase.from('club_members').insert({
         club_id: clubData.id,
         user_id: user?.id,
         role: 'owner',
         status: 'active',
       });
+
+      if (memberError) {
+        console.error(
+          '[CreateClubModal] Owner membership failed, cleaning up orphaned club:',
+          memberError
+        );
+        await supabase.from('clubs').delete().eq('id', clubData.id);
+        throw new Error('Failed to set up club ownership. Please try again.');
+      }
 
       toast.success(`Club "${clubName}" created successfully!`);
 

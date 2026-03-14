@@ -271,7 +271,17 @@ export default function RakebackPage() {
       if (rpcError) {
         // Rollback: restore periods to 'pending' since credit failed
         console.error('[Rakeback] Credit failed, rolling back period status:', rpcError);
-        await supabase.from('rakeback_periods').update({ status: 'pending' }).in('id', verifiedIds);
+        const { error: rollbackErr } = await supabase
+          .from('rakeback_periods')
+          .update({ status: 'pending' })
+          .in('id', verifiedIds);
+        if (rollbackErr) {
+          console.error(
+            '[Rakeback] CRITICAL: Rollback ALSO failed — periods stuck as paid without credit:',
+            rollbackErr
+          );
+          throw new Error('Claim failed and rollback failed. Please contact support immediately.');
+        }
         throw new Error(rpcError.message);
       }
 

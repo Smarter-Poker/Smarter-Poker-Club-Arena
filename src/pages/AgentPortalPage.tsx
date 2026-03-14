@@ -127,13 +127,14 @@ export default function AgentPortalPage() {
     if (!user?.id) return;
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('commission_ledger')
         .select('amount, created_at')
         .eq('agent_id', user.id)
         .gte('created_at', new Date(Date.now() - 7 * 86400000).toISOString())
         .order('created_at', { ascending: true })
         .limit(5000);
+      if (error) console.error('[AgentPortal] Commission history load failed:', error.message);
 
       if (data && data.length > 0) {
         const grouped: Record<string, number> = {};

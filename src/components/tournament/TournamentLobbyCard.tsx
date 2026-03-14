@@ -90,12 +90,13 @@ export default function TournamentLobbyCard({ tournament, onRegister }: Tourname
 
   const checkRegistration = async () => {
     if (!user?.id) return;
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('tournament_players')
       .select('id')
       .eq('tournament_id', tournament.id)
       .eq('user_id', user.id)
       .maybeSingle();
+    if (error) console.error('[TournamentLobbyCard] Registration check failed:', error.message);
     setIsRegistered(!!data);
   };
 

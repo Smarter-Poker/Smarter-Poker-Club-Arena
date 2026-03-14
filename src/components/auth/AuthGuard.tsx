@@ -1,35 +1,37 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  CLUB ARENA — Auth Guard Component
+ *  CLUB ARENA — Auth Guard Component (HARDENED)
  * ═══════════════════════════════════════════════════════════════════════════════
  * Protects routes that require authentication.
- * Redirects to /auth if not authenticated.
+ * Redirects to /auth ONLY as a last resort when ALL evidence of a session is gone.
  *
- * CRITICAL: Ensures useUserStore is hydrated with session user data BEFORE
- * rendering children. This eliminates the race condition where pages render
- * with a null user despite the user being authenticated.
- *
- * Auth state listener is owned by IdentityDNA — AuthGuard does NOT create
- * its own onAuthStateChange listener to avoid duplicate event handling.
- *
- * RESILIENT to navigator.locks deadlock — falls back to localStorage check
- * if getSession() times out or is aborted.
+ * CRITICAL DESIGN PRINCIPLES:
+ * 1. NEVER redirect to /auth if there's any valid session evidence
+ *    (store, localStorage, getSession)
+ * 2. On navigation between pages, check store FIRST (instant, no async)
+ * 3. localStorage JWT check is the safety net when store is empty
+ * 4. getSession() is the final fallback for OAuth callbacks
+ * 5. Auth state listener is owned by IdentityDNA — AuthGuard does NOT create
+ *    its own onAuthStateChange listener
+ * 6. If sign-out is detected, DOUBLE-CHECK localStorage before redirecting
+ *    to prevent race conditions from transient store resets
  */
 
-import { ReactNode, useEffect, useState } from 'react';
+import { ReactNode, useEffect, useState, useRef, useCallback } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useUserStore } from '../../stores/useUserStore';
 
 const AUTH_STORAGE_KEY = 'smarter-poker-auth';
-const SESSION_CHECK_TIMEOUT = 3000; // 3s max wait for getSession
+const SESSION_CHECK_TIMEOUT = 5000; // 5s max wait for getSession (increased from 3s)
 
 interface AuthGuardProps {
   children: ReactNode;
 }
 
 /**
- * Fast session check from localStorage (bypasses navigator.locks)
+ * Fast session check from localStorage (bypasses navigator.locks).
+ * Returns true if a non-expired JWT exists in localStorage.
  */
 function hasLocalSession(): boolean {
   try {
@@ -38,9 +40,9 @@ function hasLocalSession(): boolean {
     const data = JSON.parse(raw);
     const token = data?.access_token;
     if (!token) return false;
-    // Check expiry from JWT payload
+    // Check expiry from JWT payload (with 60s buffer for clock skew)
     const payload = JSON.parse(atob(token.split('.')[1]));
-    return payload.exp * 1000 > Date.now();
+    return payload.exp * 1000 > Date.now() - 60_000;
   } catch {
     return false;
   }
@@ -48,8 +50,6 @@ function hasLocalSession(): boolean {
 
 /**
  * Hydrate the Zustand user store from a Supabase session if it's empty.
- * This MUST be called before AuthGuard renders children to prevent
- * the race condition where pages see user === null.
  */
 function hydrateStoreFromSession(session: {
   user: { id: string; email?: string; user_metadata?: Record<string, any> };
@@ -95,41 +95,61 @@ function hydrateStoreFromLocalStorage(): void {
   }
 }
 
-export function AuthGuard({ children }: AuthGuardProps) {
-  // If IdentityDNA already proved we are authenticated globally, skip the loading flash entirely
-  const dncStatus = useUserStore.getState().isAuthenticated;
+/**
+ * Comprehensive auth check that uses ALL available evidence.
+ * Returns true if the user should be considered authenticated.
+ */
+function isDefinitelyAuthenticated(): boolean {
+  // Check 1: Zustand store (fastest — in-memory)
+  if (useUserStore.getState().isAuthenticated && useUserStore.getState().user) {
+    return true;
+  }
 
-  const [isLoading, setIsLoading] = useState(!dncStatus);
-  const [isAuthenticated, setIsAuthenticated] = useState(dncStatus);
+  // Check 2: localStorage JWT (fast — no async, no locks)
+  if (hasLocalSession()) {
+    return true;
+  }
+
+  return false;
+}
+
+export function AuthGuard({ children }: AuthGuardProps) {
+  // CRITICAL: Check ALL evidence sources synchronously on mount.
+  // This prevents the loading flash on navigation between protected routes.
+  const initiallyAuthenticated = isDefinitelyAuthenticated();
+
+  const [isLoading, setIsLoading] = useState(!initiallyAuthenticated);
+  const [isAuthenticated, setIsAuthenticated] = useState(initiallyAuthenticated);
+  const redirectBlockedRef = useRef(false);
 
   const location = useLocation();
-  const storeUser = useUserStore((s) => s.user);
+
+  // Hydrate store from localStorage if store is empty but localStorage has session
+  useEffect(() => {
+    if (initiallyAuthenticated && !useUserStore.getState().user) {
+      hydrateStoreFromLocalStorage();
+    }
+  }, [initiallyAuthenticated]);
 
   useEffect(() => {
     let cancelled = false;
 
     async function checkAuth() {
-      // If we already know we're authenticated from a previous route, do nothing.
-      if (useUserStore.getState().isAuthenticated) {
+      // FAST PATH: Already determined to be authenticated synchronously
+      if (isDefinitelyAuthenticated()) {
         if (!cancelled) {
+          // Ensure store is hydrated
+          if (!useUserStore.getState().user) {
+            hydrateStoreFromLocalStorage();
+          }
           setIsAuthenticated(true);
           setIsLoading(false);
         }
         return;
       }
 
-      // FAST PATH: Check localStorage directly (no navigator.locks)
-      if (hasLocalSession()) {
-        if (!cancelled) {
-          console.warn('[AUTH GUARD] Trusting localStorage session for initial paint');
-          hydrateStoreFromLocalStorage();
-          setIsAuthenticated(true);
-          setIsLoading(false);
-        }
-        return;
-      }
-
-      // NO localStorage session — try getSession with timeout for OAuth callbacks etc.
+      // SLOW PATH: No evidence in store or localStorage.
+      // Try getSession() as final fallback (handles OAuth callbacks, etc.)
       try {
         const sessionPromise = supabase.auth.getSession();
         const timeoutPromise = new Promise<never>((_, reject) =>
@@ -138,17 +158,32 @@ export function AuthGuard({ children }: AuthGuardProps) {
         const {
           data: { session },
         } = await Promise.race([sessionPromise, timeoutPromise]);
+
         if (!cancelled) {
           if (session) {
             hydrateStoreFromSession(session);
+            setIsAuthenticated(true);
+          } else {
+            // FINAL CHECK: Before declaring unauthenticated, check localStorage
+            // one more time (race condition: IdentityDNA may have just written it)
+            if (hasLocalSession()) {
+              hydrateStoreFromLocalStorage();
+              setIsAuthenticated(true);
+            } else {
+              setIsAuthenticated(false);
+            }
           }
-          setIsAuthenticated(!!session);
           setIsLoading(false);
         }
       } catch {
-        // No session in localStorage AND getSession failed — not authenticated
+        // getSession timed out. Check localStorage one final time before giving up.
         if (!cancelled) {
-          setIsAuthenticated(false);
+          if (hasLocalSession()) {
+            hydrateStoreFromLocalStorage();
+            setIsAuthenticated(true);
+          } else {
+            setIsAuthenticated(false);
+          }
           setIsLoading(false);
         }
       }
@@ -156,21 +191,43 @@ export function AuthGuard({ children }: AuthGuardProps) {
 
     checkAuth();
 
-    // NOTE: We do NOT register an onAuthStateChange listener here.
-    // IdentityDNA owns the global auth state listener and hydrates useUserStore.
-    // Adding a listener here would create duplicate event processing.
-    // Instead, we subscribe to useUserStore.user above to react to IdentityDNA updates.
-
     return () => {
       cancelled = true;
     };
   }, []);
 
-  // If IdentityDNA fires SIGNED_OUT after initial check, react to store change
+  // React to store sign-out events — but with EXTRA safety checks.
+  // CRITICAL: Do NOT redirect to /auth on transient store resets.
+  // Always double-check localStorage before allowing a redirect.
   const storeAuthenticated = useUserStore((s) => s.isAuthenticated);
+  const storeUser = useUserStore((s) => s.user);
+
   useEffect(() => {
-    // Only react to sign-out events AFTER initial loading is complete
-    if (!isLoading && isAuthenticated && !storeAuthenticated && !storeUser) {
+    // If the store says authenticated, trust it and ensure our state matches
+    if (storeAuthenticated && storeUser) {
+      if (!isAuthenticated) {
+        setIsAuthenticated(true);
+        setIsLoading(false);
+      }
+      return;
+    }
+
+    // Store says NOT authenticated — but is it a real sign-out or a transient reset?
+    if (!isLoading && isAuthenticated && !storeAuthenticated) {
+      // SAFETY NET: Check localStorage before redirecting.
+      // If localStorage still has a valid session, this is a transient store reset
+      // (e.g., from a token refresh race condition). Do NOT redirect.
+      if (hasLocalSession()) {
+        console.warn(
+          '[AUTH GUARD] Store cleared but localStorage has valid session — re-hydrating instead of redirecting'
+        );
+        hydrateStoreFromLocalStorage();
+        // Do NOT set isAuthenticated to false
+        return;
+      }
+
+      // localStorage is also empty — this is a real sign-out
+      console.log('[AUTH GUARD] Real sign-out detected (store + localStorage both empty)');
       setIsAuthenticated(false);
     }
   }, [storeAuthenticated, storeUser, isLoading, isAuthenticated]);
@@ -197,7 +254,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
     );
   }
 
-  // Redirect to auth if not authenticated
+  // Redirect to auth ONLY if not authenticated
   if (!isAuthenticated) {
     return <Navigate to="/auth" state={{ from: location }} replace />;
   }
@@ -207,25 +264,16 @@ export function AuthGuard({ children }: AuthGuardProps) {
 }
 
 export function GuestGuard({ children }: AuthGuardProps) {
-  const dncStatus = useUserStore.getState().isAuthenticated;
+  const initiallyAuthenticated = isDefinitelyAuthenticated();
 
-  const [isLoading, setIsLoading] = useState(!dncStatus);
-  const [isAuthenticated, setIsAuthenticated] = useState(dncStatus);
+  const [isLoading, setIsLoading] = useState(!initiallyAuthenticated);
+  const [isAuthenticated, setIsAuthenticated] = useState(initiallyAuthenticated);
 
   useEffect(() => {
     let cancelled = false;
 
     async function checkAuth() {
-      if (useUserStore.getState().isAuthenticated) {
-        if (!cancelled) {
-          setIsAuthenticated(true);
-          setIsLoading(false);
-        }
-        return;
-      }
-
-      // Fast path from localStorage
-      if (hasLocalSession()) {
+      if (isDefinitelyAuthenticated()) {
         if (!cancelled) {
           setIsAuthenticated(true);
           setIsLoading(false);
@@ -242,12 +290,12 @@ export function GuestGuard({ children }: AuthGuardProps) {
           data: { session },
         } = await Promise.race([sessionPromise, timeoutPromise]);
         if (!cancelled) {
-          setIsAuthenticated(!!session);
+          setIsAuthenticated(!!session || hasLocalSession());
           setIsLoading(false);
         }
       } catch {
         if (!cancelled) {
-          setIsAuthenticated(false);
+          setIsAuthenticated(hasLocalSession());
           setIsLoading(false);
         }
       }

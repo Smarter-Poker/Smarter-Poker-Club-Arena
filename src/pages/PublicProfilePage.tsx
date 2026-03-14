@@ -143,13 +143,14 @@ export default function PublicProfilePage() {
     myId: string,
     theirId: string
   ): Promise<'none' | 'pending_sent' | 'pending_received' | 'friends'> {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('friendships')
       .select('status, user_id')
       .or(
         `and(user_id.eq.${myId},friend_id.eq.${theirId}),and(user_id.eq.${theirId},friend_id.eq.${myId})`
       )
       .maybeSingle();
+    if (error) console.error('[PublicProfile] Friendship check failed:', error.message);
 
     if (!data) return 'none';
     if (data.status === 'accepted') return 'friends';

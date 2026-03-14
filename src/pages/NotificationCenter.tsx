@@ -64,12 +64,13 @@ export default function NotificationCenter() {
     if (!user?.id) return;
     setLoading(true);
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('notifications')
         .select('id, type, title, message, body, link, action_url, read, created_at')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
         .limit(50);
+      if (error) console.error('[NotificationCenter] Load failed:', error.message);
 
       if (data && isMounted.current) {
         setNotifications(

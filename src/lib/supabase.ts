@@ -202,4 +202,72 @@ if (typeof window !== 'undefined') {
 
   // Session status logged by AntiGravityBoot — no duplicate getSession() here
   // (duplicate calls cause navigator.locks deadlock)
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // PROACTIVE TOKEN REFRESH — Prevents session expiration from ever logging out
+  // ══════════════════════════════════════════════════════════════════════════
+  // Supabase's autoRefreshToken only refreshes when getSession() is called or
+  // on a timer that can miss if the tab is backgrounded. This proactive refresh
+  // checks the JWT expiry every 60 seconds and triggers a refresh 5 minutes
+  // before expiry, ensuring the user NEVER gets logged out due to token expiry.
+  const REFRESH_CHECK_INTERVAL = 60_000; // Check every 60 seconds
+  const REFRESH_BUFFER = 5 * 60_000; // Refresh 5 minutes before expiry
+
+  setInterval(() => {
+    try {
+      const raw = localStorage.getItem(NEW_SHARED_KEY);
+      if (!raw) return;
+      const data = JSON.parse(raw);
+      const token = data?.access_token;
+      if (!token) return;
+
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      const expiresAt = payload.exp * 1000;
+      const timeUntilExpiry = expiresAt - Date.now();
+
+      if (timeUntilExpiry < REFRESH_BUFFER && timeUntilExpiry > 0) {
+        console.log(
+          `[Supabase] Proactive token refresh — expires in ${Math.round(timeUntilExpiry / 1000)}s`
+        );
+        supabase.auth.refreshSession().catch((err) => {
+          console.warn('[Supabase] Proactive refresh failed:', err);
+        });
+      } else if (timeUntilExpiry <= 0) {
+        // Token already expired — try to refresh anyway
+        console.warn('[Supabase] Token expired — attempting emergency refresh');
+        supabase.auth.refreshSession().catch((err) => {
+          console.error('[Supabase] Emergency refresh failed:', err);
+        });
+      }
+    } catch {
+      // Silent — best effort
+    }
+  }, REFRESH_CHECK_INTERVAL);
+
+  // Also refresh when the tab becomes visible (user returns from another tab)
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+      try {
+        const raw = localStorage.getItem(NEW_SHARED_KEY);
+        if (!raw) return;
+        const data = JSON.parse(raw);
+        const token = data?.access_token;
+        if (!token) return;
+
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        const expiresAt = payload.exp * 1000;
+        const timeUntilExpiry = expiresAt - Date.now();
+
+        // If less than 10 minutes until expiry, refresh on tab focus
+        if (timeUntilExpiry < 10 * 60_000) {
+          console.log('[Supabase] Tab visible — refreshing session proactively');
+          supabase.auth.refreshSession().catch(() => {
+            // Silent — autoRefreshToken will also try
+          });
+        }
+      } catch {
+        // Silent
+      }
+    }
+  });
 }

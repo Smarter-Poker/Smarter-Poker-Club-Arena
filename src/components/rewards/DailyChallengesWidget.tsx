@@ -25,6 +25,7 @@ interface Challenge {
   reward: { type: 'chips' | 'diamonds'; amount: number };
   expiresAt?: Date;
   completed: boolean;
+  claimed: boolean;
 }
 
 export const DailyChallengesWidget: React.FC = () => {
@@ -69,8 +70,9 @@ export const DailyChallengesWidget: React.FC = () => {
           type: 'chips',
           amount: c.challenge.chipReward,
         },
-        expiresAt: new Date(Date.now() + 86400000), // Expires at end of day
+        expiresAt: new Date(Date.now() + 86400000),
         completed: c.completed,
+        claimed: !!c.claimed,
       }));
       setChallenges(mapped);
     } catch (error) {
@@ -79,11 +81,31 @@ export const DailyChallengesWidget: React.FC = () => {
     setLoading(false);
   };
 
+  // Double-claim guard
+  const claimingRef = useRef<Set<string>>(new Set());
+
   const handleClaimReward = async (challengeId: string) => {
-    // Rewards are automatically claimed on completion by the service
-    toast.success(' Reward already claimed!');
-    // Remove from list
-    setChallenges((prev) => prev.filter((c) => c.id !== challengeId));
+    if (!user?.id) return;
+    if (claimingRef.current.has(challengeId)) return;
+    claimingRef.current.add(challengeId);
+
+    const challenge = challenges.find((c) => c.id === challengeId);
+    if (!challenge || challenge.claimed) {
+      claimingRef.current.delete(challengeId);
+      return;
+    }
+
+    try {
+      await dailyChallengeService.claimChallenge(user.id, challengeId, challenge.reward.amount);
+      setChallenges((prev) =>
+        prev.map((c) => (c.id === challengeId ? { ...c, claimed: true } : c))
+      );
+      toast.success(`+${challenge.reward.amount} Chips claimed!`);
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to claim reward');
+    } finally {
+      claimingRef.current.delete(challengeId);
+    }
   };
 
   if (loading) {

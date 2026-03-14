@@ -80,11 +80,13 @@ export default function DailyChallenges() {
         data: { user },
       } = await supabase.auth.getUser();
       if (user) {
-        const { data } = await supabase
+        const { data, error: progressErr } = await supabase
           .from('daily_challenge_progress')
           .select('challenge_index, progress, completed')
           .eq('user_id', user.id)
           .eq('day_key', dayKey);
+        if (progressErr)
+          console.error('[DailyChallenges] Progress load failed:', progressErr.message);
 
         if (data && data.length > 0) {
           const map: Record<string, number> = {};

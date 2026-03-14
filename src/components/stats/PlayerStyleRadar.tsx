@@ -60,90 +60,86 @@ export default function PlayerStyleRadar({ userId }: PlayerStyleRadarProps) {
     if (!userId) return;
     setLoading(true);
 
-    (async () => {
-      try {
-        // Fetch session aggregates
-        const { data: sessions } = await supabase
-          .from('session_history')
-          .select('vpip_percent, pfr_percent, hands_played, hands_won, bb_won')
-          .eq('user_id', userId)
-          .limit(200);
+    try {
+      // Fetch session aggregates
+      const { data: sessions } = await supabase
+        .from('session_history')
+        .select('vpip_percent, pfr_percent, hands_played, hands_won, bb_won')
+        .eq('user_id', userId)
+        .limit(200);
 
-        // Fetch position stats
-        const { data: posStats } = await supabase
-          .from('player_position_stats')
-          .select('position, hands_played, vpip_count, pfr_count, three_bet_count, hands_won')
-          .eq('user_id', userId)
-          .limit(50);
+      // Fetch position stats
+      const { data: posStats } = await supabase
+        .from('player_position_stats')
+        .select('position, hands_played, vpip_count, pfr_count, three_bet_count, hands_won')
+        .eq('user_id', userId)
+        .limit(50);
 
-        const sess = sessions || [];
-        const pos = posStats || [];
+      const sess = sessions || [];
+      const pos = posStats || [];
 
-        if (sess.length === 0 && pos.length === 0) {
-          if (isMounted.current) setAxes([]);
-          if (isMounted.current) setLoading(false);
-          return;
-        }
-
-        // Calculate aggregate stats
-        const totalHands = sess.reduce((s, r) => s + r.hands_played, 0) || 1;
-        const totalWon = sess.reduce((s, r) => s + r.hands_won, 0);
-        const avgVPIP = sess.reduce((s, r) => s + r.vpip_percent, 0) / (sess.length || 1);
-        const avgPFR = sess.reduce((s, r) => s + r.pfr_percent, 0) / (sess.length || 1);
-
-        // Position awareness: variance in VPIP across positions (higher = more aware)
-        const posVPIPs = pos.map((p) =>
-          p.hands_played > 0 ? (p.vpip_count / p.hands_played) * 100 : 0
-        );
-        const posAwarenessVariance =
-          posVPIPs.length > 1
-            ? Math.sqrt(
-                posVPIPs.reduce((s, v) => s + Math.pow(v - avgVPIP, 2), 0) / posVPIPs.length
-              )
-            : 0;
-
-        // Normalize each axis to 0-100
-        const aggression = Math.min(100, (avgPFR / 30) * 100); // PFR/30 → 100
-        const tightness = Math.min(100, Math.max(0, (1 - avgVPIP / 50) * 100)); // Inversed VPIP
-        const posAwareness = Math.min(100, (posAwarenessVariance / 15) * 100); // Variance/15 → 100
-        const winRate = Math.min(100, totalHands > 0 ? (totalWon / totalHands) * 200 : 0); // WR/50% → 100
-        const showdownRate = Math.min(100, totalHands > 0 ? (totalWon / totalHands) * 150 : 0); // Proxy
-        const bluffFreq = Math.min(100, Math.max(0, 100 - showdownRate + avgPFR / 2));
-
-        const radarAxes: RadarAxis[] = [
-          { label: 'Aggression', value: Math.round(aggression), color: '#ef4444' },
-          { label: 'Tightness', value: Math.round(tightness), color: '#3b82f6' },
-          { label: 'Position', value: Math.round(posAwareness), color: '#a78bfa' },
-          { label: 'Win Rate', value: Math.round(winRate), color: '#22c55e' },
-          { label: 'Showdown', value: Math.round(showdownRate), color: '#f59e0b' },
-          { label: 'Bluff Freq', value: Math.round(bluffFreq), color: '#ec4899' },
-        ];
-
-        if (isMounted.current) setAxes(radarAxes);
-
-        // Classify overall style
-        const totalPosHands = pos.reduce((s, r) => s + r.hands_played, 0);
-        const totalPosVPIP = pos.reduce((s, r) => s + r.vpip_count, 0);
-        const totalPosPFR = pos.reduce((s, r) => s + r.pfr_count, 0);
-        const total3Bet = pos.reduce((s, r) => s + r.three_bet_count, 0);
-
-        if (isMounted.current) {
-          setStyle(
-            playerStyleClassifier.classify({
-              handsPlayed: totalPosHands || totalHands,
-              vpipCount: totalPosVPIP || Math.round((avgVPIP / 100) * totalHands),
-              pfrCount: totalPosPFR || Math.round((avgPFR / 100) * totalHands),
-              threeBetCount: total3Bet,
-            })
-          );
-        }
-      } catch (err) {
-        console.error('[PlayerStyleRadar] Error:', err);
+      if (sess.length === 0 && pos.length === 0) {
         if (isMounted.current) setAxes([]);
-      } finally {
         if (isMounted.current) setLoading(false);
+        return;
       }
-    })();
+
+      // Calculate aggregate stats
+      const totalHands = sess.reduce((s, r) => s + r.hands_played, 0) || 1;
+      const totalWon = sess.reduce((s, r) => s + r.hands_won, 0);
+      const avgVPIP = sess.reduce((s, r) => s + r.vpip_percent, 0) / (sess.length || 1);
+      const avgPFR = sess.reduce((s, r) => s + r.pfr_percent, 0) / (sess.length || 1);
+
+      // Position awareness: variance in VPIP across positions (higher = more aware)
+      const posVPIPs = pos.map((p) =>
+        p.hands_played > 0 ? (p.vpip_count / p.hands_played) * 100 : 0
+      );
+      const posAwarenessVariance =
+        posVPIPs.length > 1
+          ? Math.sqrt(posVPIPs.reduce((s, v) => s + Math.pow(v - avgVPIP, 2), 0) / posVPIPs.length)
+          : 0;
+
+      // Normalize each axis to 0-100
+      const aggression = Math.min(100, (avgPFR / 30) * 100); // PFR/30 → 100
+      const tightness = Math.min(100, Math.max(0, (1 - avgVPIP / 50) * 100)); // Inversed VPIP
+      const posAwareness = Math.min(100, (posAwarenessVariance / 15) * 100); // Variance/15 → 100
+      const winRate = Math.min(100, totalHands > 0 ? (totalWon / totalHands) * 200 : 0); // WR/50% → 100
+      const showdownRate = Math.min(100, totalHands > 0 ? (totalWon / totalHands) * 150 : 0); // Proxy
+      const bluffFreq = Math.min(100, Math.max(0, 100 - showdownRate + avgPFR / 2));
+
+      const radarAxes: RadarAxis[] = [
+        { label: 'Aggression', value: Math.round(aggression), color: '#ef4444' },
+        { label: 'Tightness', value: Math.round(tightness), color: '#3b82f6' },
+        { label: 'Position', value: Math.round(posAwareness), color: '#a78bfa' },
+        { label: 'Win Rate', value: Math.round(winRate), color: '#22c55e' },
+        { label: 'Showdown', value: Math.round(showdownRate), color: '#f59e0b' },
+        { label: 'Bluff Freq', value: Math.round(bluffFreq), color: '#ec4899' },
+      ];
+
+      if (isMounted.current) setAxes(radarAxes);
+
+      // Classify overall style
+      const totalPosHands = pos.reduce((s, r) => s + r.hands_played, 0);
+      const totalPosVPIP = pos.reduce((s, r) => s + r.vpip_count, 0);
+      const totalPosPFR = pos.reduce((s, r) => s + r.pfr_count, 0);
+      const total3Bet = pos.reduce((s, r) => s + r.three_bet_count, 0);
+
+      if (isMounted.current) {
+        setStyle(
+          playerStyleClassifier.classify({
+            handsPlayed: totalPosHands || totalHands,
+            vpipCount: totalPosVPIP || Math.round((avgVPIP / 100) * totalHands),
+            pfrCount: totalPosPFR || Math.round((avgPFR / 100) * totalHands),
+            threeBetCount: total3Bet,
+          })
+        );
+      }
+    } catch (err) {
+      console.error('[PlayerStyleRadar] Error:', err);
+      if (isMounted.current) setAxes([]);
+    } finally {
+      if (isMounted.current) setLoading(false);
+    }
   }, [userId]);
 
   // SVG radar chart

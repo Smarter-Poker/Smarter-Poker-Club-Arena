@@ -10,6 +10,7 @@ interface Challenge {
   reward: { type: 'chips' | 'diamonds'; amount: number };
   expiresAt?: Date;
   completed: boolean;
+  claimed?: boolean;
 }
 
 interface DailyChallengesProps {
@@ -51,7 +52,7 @@ export const DailyChallenges: React.FC<DailyChallengesProps> = ({ challenges, on
         {challenges.map((challenge) => (
           <div
             key={challenge.id}
-            className={`challenge-item ${challenge.completed ? 'completed' : ''}`}
+            className={`challenge-item ${challenge.completed ? 'completed' : ''} ${challenge.claimed ? 'claimed' : ''}`}
           >
             <div className="challenge-info">
               <h4>{challenge.title}</h4>
@@ -63,7 +64,7 @@ export const DailyChallenges: React.FC<DailyChallengesProps> = ({ challenges, on
                 <div
                   className="progress-fill"
                   style={{
-                    width: `${Math.min((challenge.progress / challenge.target) * 100, 100)}%`,
+                    width: `${challenge.target > 0 ? Math.min((challenge.progress / challenge.target) * 100, 100) : 0}%`,
                   }}
                 />
               </div>
@@ -77,11 +78,13 @@ export const DailyChallenges: React.FC<DailyChallengesProps> = ({ challenges, on
               <span className="reward-amount">{challenge.reward.amount.toLocaleString()}</span>
             </div>
 
-            {challenge.completed && (
+            {challenge.completed && !challenge.claimed ? (
               <button className="claim-btn" onClick={() => onClaimReward?.(challenge.id)}>
                 Claim
               </button>
-            )}
+            ) : challenge.claimed ? (
+              <span className="claimed-check">✓</span>
+            ) : null}
           </div>
         ))}
       </div>

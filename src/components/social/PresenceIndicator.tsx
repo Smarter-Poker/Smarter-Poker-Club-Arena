@@ -133,11 +133,12 @@ export function usePresence(userId: string): PresenceStatus {
     if (!userId) return;
 
     const fetchPresence = async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('profiles')
         .select('is_online')
         .eq('id', userId)
         .maybeSingle();
+      if (error) console.error('[PresenceIndicator] Fetch failed:', error.message);
 
       if (data) {
         setStatus(data.is_online ? 'online' : 'offline');

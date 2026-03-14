@@ -75,7 +75,8 @@ export const ClubDiscovery: React.FC<ClubDiscoveryProps> = ({ onJoinRequest, onV
           query = query.order('member_count', { ascending: false });
         }
 
-        const { data } = await query;
+        const { data, error: queryErr } = await query;
+        if (queryErr) console.error('[ClubDiscovery] Load failed:', queryErr.message);
         fetchedClubs = data || [];
       }
 

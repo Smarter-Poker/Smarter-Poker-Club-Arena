@@ -47,12 +47,13 @@ export default function NewConversationPage() {
 
     setSearching(true);
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('profiles')
         .select('id, username, display_name, avatar_url, is_online')
         .neq('id', user.id)
         .or(`username.ilike.%${query}%,display_name.ilike.%${query}%`)
         .limit(20);
+      if (error) console.error('[NewConversation] Profile search failed:', error.message);
 
       // Exclude already selected users
       const selectedIds = new Set(selectedUsers.map((u) => u.id));

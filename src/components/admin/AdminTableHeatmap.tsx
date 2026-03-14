@@ -71,13 +71,14 @@ export default function AdminTableHeatmap({
 
     const fetchTables = async () => {
       try {
-        const { data } = await supabase
+        const { data, error: heatmapErr } = await supabase
           .from('tables')
           .select(
             'id, name, status, current_players, max_players, small_blind, big_blind, game_variant'
           )
           .eq('club_id', clubId)
           .eq('is_deleted', false);
+        if (heatmapErr) console.error('[AdminTableHeatmap] Load failed:', heatmapErr.message);
         if (isMounted.current && data) setFetchedTables(data);
       } catch {
         /* silent */

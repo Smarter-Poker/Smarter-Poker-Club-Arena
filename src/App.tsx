@@ -34,6 +34,7 @@ import BusToastBridge from './components/common/BusToastBridge';
 import MilestoneToast from './components/common/MilestoneToast';
 import { bootServices, shutdownServices } from './services/ServiceBootstrap';
 import { GlobalBalanceSync } from './core/useGlobalBalanceSync';
+import { supabaseConnectionWatchdog } from './utils/supabaseConnectionWatchdog';
 
 // Auth Guards
 import { AuthGuard, GuestGuard } from './components/auth/AuthGuard';
@@ -311,13 +312,22 @@ export default function App() {
     };
   }, []);
 
-  // ── Start BusEventLogger & register Service Worker ──
+  // ── Start BusEventLogger, Connection Watchdog & register Service Worker ──
   useEffect(() => {
     busEventLogger.start();
 
+    // Start Supabase connection watchdog (monitors connectivity, emits bus events,
+    // auto-reconnects realtime channels on recovery)
+    supabaseConnectionWatchdog.start();
+
     // Register SW for background notifications
+    // FIX: Use base-relative path so the SW is found under /hub/club-arena/
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw-bus.js').catch((_err) => {
+      const swPath =
+        import.meta.env.BASE_URL && import.meta.env.BASE_URL !== '/'
+          ? `${import.meta.env.BASE_URL}sw-bus.js`
+          : '/sw-bus.js';
+      navigator.serviceWorker.register(swPath).catch((_err) => {
         void 0; /* SW not supported or blocked */
       });
     }
@@ -329,6 +339,7 @@ export default function App() {
 
     return () => {
       busEventLogger.stop();
+      supabaseConnectionWatchdog.stop();
       // Tear down engine services (online listener, cron timer, IndexedDB)
       shutdownServices();
     };

@@ -73,11 +73,12 @@ export const WaitlistManager: React.FC<WaitlistManagerProps> = ({
 
   const loadWaitlist = async () => {
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('table_waitlists')
         .select('id, user_id, position, created_at')
         .eq('table_id', tableId)
         .order('position', { ascending: true });
+      if (error) console.error('[WaitlistManager] Load failed:', error.message);
 
       if (data && data.length > 0) {
         // Fetch profiles separately

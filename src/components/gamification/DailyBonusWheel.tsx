@@ -55,13 +55,14 @@ export function DailyBonusWheel({ isOpen, onClose, onReward }: DailyBonusWheelPr
     if (!user?.id) return;
 
     try {
-      const { data } = await supabase
+      const { data, error: spinCheckErr } = await supabase
         .from('daily_spins')
         .select('created_at')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
+      if (spinCheckErr) console.error('[DailyBonusWheel] Spin check failed:', spinCheckErr.message);
 
       if (data) {
         const lastSpin = new Date(data.created_at);

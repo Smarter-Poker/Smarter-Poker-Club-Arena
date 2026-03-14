@@ -60,29 +60,27 @@ export default function PerformanceTrends({ userId }: PerformanceTrendsProps) {
     const days = range === '7d' ? 7 : range === '30d' ? 30 : 90;
     const since = new Date(Date.now() - days * 86_400_000).toISOString();
 
-    (async () => {
-      try {
-        const { data, error } = await supabase
-          .from('session_history')
-          .select('ended_at, profit_loss, hands_played, big_blind')
-          .eq('user_id', userId)
-          .gte('ended_at', since)
-          .order('ended_at', { ascending: true })
-          .limit(500);
+    try {
+      const { data, error } = await supabase
+        .from('session_history')
+        .select('ended_at, profit_loss, hands_played, big_blind')
+        .eq('user_id', userId)
+        .gte('ended_at', since)
+        .order('ended_at', { ascending: true })
+        .limit(500);
 
-        if (error) {
-          console.warn('[PerformanceTrends] Fetch error:', error.message);
-          if (isMounted.current) setSessions([]);
-        } else {
-          if (isMounted.current) setSessions(data || []);
-        }
-      } catch (err) {
-        console.error('[PerformanceTrends] Error:', err);
+      if (error) {
+        console.warn('[PerformanceTrends] Fetch error:', error.message);
         if (isMounted.current) setSessions([]);
-      } finally {
-        if (isMounted.current) setLoading(false);
+      } else {
+        if (isMounted.current) setSessions(data || []);
       }
-    })();
+    } catch (err) {
+      console.error('[PerformanceTrends] Error:', err);
+      if (isMounted.current) setSessions([]);
+    } finally {
+      if (isMounted.current) setLoading(false);
+    }
   }, [userId, range]);
 
   // Build cumulative P&L data

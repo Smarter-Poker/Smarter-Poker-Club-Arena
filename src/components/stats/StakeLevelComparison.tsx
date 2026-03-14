@@ -71,30 +71,28 @@ export default function StakeLevelComparison({ userId }: StakeLevelComparisonPro
     if (!userId) return;
     setLoading(true);
 
-    (async () => {
-      try {
-        const { data, error } = await supabase
-          .from('session_history')
-          .select(
-            'big_blind, profit_loss, hands_played, hands_won, vpip_percent, pfr_percent, bb_won, duration_minutes'
-          )
-          .eq('user_id', userId)
-          .order('big_blind', { ascending: true })
-          .limit(500);
+    try {
+      const { data, error } = await supabase
+        .from('session_history')
+        .select(
+          'big_blind, profit_loss, hands_played, hands_won, vpip_percent, pfr_percent, bb_won, duration_minutes'
+        )
+        .eq('user_id', userId)
+        .order('big_blind', { ascending: true })
+        .limit(500);
 
-        if (error) {
-          console.warn('[StakeLevelComparison] Fetch error:', error.message);
-          if (isMounted.current) setRecords([]);
-        } else {
-          if (isMounted.current) setRecords(data || []);
-        }
-      } catch (err) {
-        console.error('[StakeLevelComparison] Error:', err);
+      if (error) {
+        console.warn('[StakeLevelComparison] Fetch error:', error.message);
         if (isMounted.current) setRecords([]);
-      } finally {
-        if (isMounted.current) setLoading(false);
+      } else {
+        if (isMounted.current) setRecords(data || []);
       }
-    })();
+    } catch (err) {
+      console.error('[StakeLevelComparison] Error:', err);
+      if (isMounted.current) setRecords([]);
+    } finally {
+      if (isMounted.current) setLoading(false);
+    }
   }, [userId]);
 
   const groups = useMemo<StakeGroup[]>(() => {

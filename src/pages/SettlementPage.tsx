@@ -536,7 +536,7 @@ export default function SettlementPage() {
         .from('settlement_periods')
         .select('id, status')
         .eq('id', period.id)
-        .single();
+        .maybeSingle();
 
       if (checkErr) throw new Error('Failed to verify period status: ' + checkErr.message);
       if (freshPeriod?.status === 'settled') {

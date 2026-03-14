@@ -240,7 +240,7 @@ export default function LobbyPage() {
         .from('table_waitlist')
         .insert({ table_id: tableId, user_id: user.id })
         .select('position')
-        .single();
+        .maybeSingle();
       if (wErr) throw wErr;
       setWaitlistPositions((prev) => ({ ...prev, [tableId]: data?.position || 1 }));
       masterBus.emit('WAITLIST_POSITION_CHANGED', {

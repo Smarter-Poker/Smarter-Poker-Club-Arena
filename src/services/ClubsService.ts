@@ -338,7 +338,7 @@ export async function getUserMemberships(): Promise<(ClubMember & { club: Club }
     .from('club_members')
     .select(
       `
-      id, club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, reputation_xp, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, parent_agent_id,
+      id, club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, reputation_xp, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, parent_agent_id, chips, total_hands, total_won, total_lost, rake_generated,
       club:clubs(id, club_id, name, slug, description, logo_url, banner_url, color_theme, theme, member_count, table_count, total_chips, is_public, requires_approval, owner_id, city, country, settings, created_at, updated_at)
     `
     )
@@ -361,7 +361,7 @@ export async function getClubMembers(clubId: string): Promise<ClubMember[]> {
     .from('club_members')
     .select(
       `
-      id, club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, reputation_xp, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, parent_agent_id,
+      id, club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, reputation_xp, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, parent_agent_id, chips, total_hands, total_won, total_lost, rake_generated,
       profile:profiles(username, avatar_url)
     `
     )
@@ -389,7 +389,7 @@ export async function getClubChallenges(clubId: string): Promise<ClubChallenge[]
   const { data, error } = await supabase
     .from('club_challenges')
     .select(
-      'id, club_id, title, description, type, target_value, current_value, reward_type, reward_amount, starts_at, ends_at, status, created_at'
+      'id, club_id, title, description, type, target_value, current_value, reward_type, reward_amount, reward_chips, starts_at, ends_at, status, is_active, created_at'
     )
     .eq('club_id', resolvedId)
     .eq('status', 'active')
@@ -419,7 +419,7 @@ export async function getClubLeaderboard(
     .from('club_members')
     .select(
       `
-      id, club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, reputation_xp, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, parent_agent_id,
+      id, club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, reputation_xp, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, parent_agent_id, chips, total_hands, total_won, total_lost, rake_generated,
       profile:profiles(username, avatar_url)
     `
     )

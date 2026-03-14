@@ -1840,7 +1840,7 @@ function TemplatesTab({ clubId }: { clubId: string }) {
                             status: 'active',
                           })
                           .select('id')
-                          .single();
+                          .maybeSingle();
                         if (insErr) throw insErr;
                         masterBus.emit('TABLE_CREATED', { tableId: newTable?.id || '', clubId });
                       } catch (e: any) {

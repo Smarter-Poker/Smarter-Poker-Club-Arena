@@ -336,7 +336,7 @@ function ConfigModal({
             settings: { private_game: privateGame, bomb_pot: bombPot },
           })
           .select()
-          .single();
+          .maybeSingle();
 
         if (error) throw error;
         if (!data) throw new Error('Table creation failed — no data returned');
@@ -366,7 +366,7 @@ function ConfigModal({
             },
           })
           .select()
-          .single();
+          .maybeSingle();
 
         if (error) throw error;
         if (!data) throw new Error('Tournament creation failed — no data returned');

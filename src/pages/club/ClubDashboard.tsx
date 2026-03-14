@@ -210,7 +210,11 @@ export default function ClubDashboard() {
       const { column: clubCol, value: clubVal } = resolveClubIdFilter(clubId);
       let resolvedId = clubId;
       if (clubCol === 'club_id') {
-        const { data } = await supabase.from('clubs').select('id').eq('club_id', clubVal).single();
+        const { data } = await supabase
+          .from('clubs')
+          .select('id')
+          .eq('club_id', clubVal)
+          .maybeSingle();
         if (data) resolvedId = data.id;
       }
 

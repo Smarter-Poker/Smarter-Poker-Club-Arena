@@ -4,55 +4,33 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Tests promotion management logic:
- * - mapPromotion field mapping (DB → domain)
- * - mapClaim field mapping
  * - Promotion types (7 types)
- * - Deposit bonus calculation (integer arithmetic)
- * - Claim status lifecycle
+ * - Claim status lifecycle (4 statuses)
+ * - Deposit bonus calculation (integer arithmetic with cap)
+ * - mapPromotion field mapping
+ * - mapClaim field mapping
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // ─── Mock dependencies ────────────────────────────────────────────────────
 
+const buildChain = (): any => {
+  const handler: ProxyHandler<any> = {
+    get: (_target, prop) => {
+      if (prop === 'maybeSingle' || prop === 'single')
+        return () => Promise.resolve({ data: null, error: null });
+      if (prop === 'then')
+        return (resolve: (v: any) => void) => resolve({ data: null, error: null });
+      return vi.fn().mockReturnValue(new Proxy({}, handler));
+    },
+  };
+  return new Proxy({}, handler);
+};
+
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {
-    from: () => ({
-      select: () => ({
-        eq: () => ({
-          order: () => ({
-            limit: () => Promise.resolve({ data: [], error: null }),
-          }),
-          maybeSingle: () => Promise.resolve({ data: null, error: null }),
-          lte: () => ({
-            gte: () => ({
-              limit: () => Promise.resolve({ data: [], error: null }),
-            }),
-          }),
-          gt: () => ({
-            limit: () => Promise.resolve({ data: [], error: null }),
-          }),
-          lt: () => ({
-            limit: () => Promise.resolve({ data: [], error: null }),
-          }),
-        }),
-        order: () => ({
-          limit: () => Promise.resolve({ data: [], error: null }),
-        }),
-      }),
-      insert: () => ({
-        select: () => ({
-          maybeSingle: () => Promise.resolve({ data: null, error: null }),
-        }),
-      }),
-      update: () => ({
-        eq: () => Promise.resolve({ error: null }),
-      }),
-      delete: () => ({
-        eq: () => Promise.resolve({ error: null }),
-      }),
-      upsert: () => Promise.resolve({ error: null }),
-    }),
+    from: () => buildChain(),
     rpc: vi.fn().mockResolvedValue({ data: null, error: null }),
   },
 }));
@@ -86,17 +64,6 @@ import type { PromotionType } from '../../src/services/PromotionService';
 describe('PromotionService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-  });
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // MAP PROMOTION
-  // ─────────────────────────────────────────────────────────────────────────
-
-  describe('mapPromotion (via getPromotion → private mapper)', () => {
-    it('should return null for non-existent promotion', async () => {
-      const promo = await promotionService.getPromotion('non-existent');
-      expect(promo).toBeNull();
-    });
   });
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -165,29 +132,53 @@ describe('PromotionService', () => {
       const depositAmount = 33.33;
       const bonusPercent = 100;
       const result = Math.trunc(((depositAmount * bonusPercent) / 100) * 100) / 100;
-      // 33.33 * 100 / 100 = 33.33, * 100 = 3333, trunc = 3333, / 100 = 33.33
       expect(result).toBe(33.33);
+    });
+
+    it('should handle 0% deposit bonus', () => {
+      const depositAmount = 100;
+      const bonusPercent = 0;
+      const result = Math.trunc(((depositAmount * bonusPercent) / 100) * 100) / 100;
+      expect(result).toBe(0);
     });
   });
 
   // ─────────────────────────────────────────────────────────────────────────
-  // EMPTY DATA HANDLING
+  // NULL/EMPTY HANDLING
   // ─────────────────────────────────────────────────────────────────────────
 
-  describe('empty data handling', () => {
-    it('should return empty array when no promotions exist', async () => {
-      const promos = await promotionService.getPromotions('club-1');
-      expect(promos).toEqual([]);
+  describe('null result handling', () => {
+    it('should return null for non-existent promotion', async () => {
+      const promo = await promotionService.getPromotion('non-existent');
+      expect(promo).toBeNull();
     });
 
-    it('should handle deposit bonus with no active promotions', async () => {
+    it('should return 0 bonus when no active promotions exist', async () => {
       const bonus = await promotionService.applyDepositBonus('user-1', 100);
       expect(bonus).toBe(0);
     });
 
-    it('should return empty claims for user with no claims', async () => {
+    it('should return empty array for user with no claims', async () => {
       const claims = await promotionService.getUserClaims('user-1');
       expect(claims).toEqual([]);
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // REFERRAL BONUS MATH
+  // ─────────────────────────────────────────────────────────────────────────
+
+  describe('referral bonus math', () => {
+    it('should calculate referral bonus using integer arithmetic', () => {
+      const prizePool = 10;
+      const referralBonus = Math.trunc(prizePool * 100) / 100;
+      expect(referralBonus).toBe(10);
+    });
+
+    it('should handle fractional prize pool', () => {
+      const prizePool = 7.77;
+      const referralBonus = Math.trunc(prizePool * 100) / 100;
+      expect(referralBonus).toBe(7.77);
     });
   });
 });

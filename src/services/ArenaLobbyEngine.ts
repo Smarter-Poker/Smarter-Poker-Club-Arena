@@ -104,7 +104,9 @@ export async function getClubTraffic(clubId: string): Promise<ClubTrafficData | 
 export async function getClubStakes(clubId: string): Promise<StakeInfo[]> {
   const { data, error } = await supabase
     .from('tables')
-    .select('id, club_id, table_name, game_type, small_blind, big_blind, min_buy_in, max_buy_in, max_players, player_count, status, waiting_list_count, created_at')
+    .select(
+      'id, club_id, table_name, game_type, small_blind, big_blind, min_buy_in, max_buy_in, max_players, player_count, status, waiting_list_count, label, created_at'
+    )
     .eq('club_id', await resolveClubUUID(clubId))
     .eq('status', 'active')
     .order('small_blind', { ascending: true });

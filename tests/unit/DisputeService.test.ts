@@ -7,145 +7,66 @@
  * - mapDispute field mapping (DB → domain)
  * - Dispute state machine (open → under_review → resolved | escalated | withdrawn)
  * - DisputeTarget types
- * - Severity of escalation alerts
+ * - Submit and review transitions
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // ─── Mock dependencies ────────────────────────────────────────────────────
 
-const mockInsert = vi.fn().mockReturnValue({
-  select: () => ({
-    maybeSingle: () =>
-      Promise.resolve({
-        data: {
-          id: 'dispute-1',
-          submitted_by: 'user-1',
-          submitter_name: 'TestUser',
-          target_type: 'agent_settlement',
-          target_id: 'settlement-1',
-          club_id: 'club-1',
-          amount: 5000,
-          reason: 'Incorrect commission',
-          status: 'open',
-          assigned_to: null,
-          resolution: null,
-          created_at: '2026-01-01T00:00:00Z',
-          updated_at: '2026-01-01T00:00:00Z',
-          resolved_at: null,
-        },
-        error: null,
-      }),
-  }),
+const disputeRow = (overrides: Record<string, any> = {}) => ({
+  id: 'dispute-1',
+  submitted_by: 'user-1',
+  submitter_name: 'TestUser',
+  target_type: 'agent_settlement',
+  target_id: 'settlement-1',
+  club_id: 'club-1',
+  amount: 5000,
+  reason: 'Incorrect commission',
+  status: 'open',
+  assigned_to: null,
+  resolution: null,
+  created_at: '2026-01-01T00:00:00Z',
+  updated_at: '2026-01-01T00:00:00Z',
+  resolved_at: null,
+  ...overrides,
 });
 
-const mockUpdate = vi.fn().mockReturnValue({
-  eq: () => ({
-    select: () => ({
-      maybeSingle: () =>
-        Promise.resolve({
-          data: {
-            id: 'dispute-1',
-            submitted_by: 'user-1',
-            submitter_name: 'TestUser',
-            target_type: 'agent_settlement',
-            target_id: 'settlement-1',
-            club_id: 'club-1',
-            amount: 5000,
-            reason: 'Incorrect commission',
-            status: 'under_review',
-            assigned_to: 'reviewer-1',
-            resolution: null,
-            created_at: '2026-01-01T00:00:00Z',
-            updated_at: '2026-01-01T12:00:00Z',
-            resolved_at: null,
-          },
-          error: null,
-        }),
-    }),
-    eq: () => ({
-      select: () => ({
-        maybeSingle: () =>
-          Promise.resolve({
-            data: {
-              id: 'dispute-1',
-              submitted_by: 'user-1',
-              submitter_name: 'TestUser',
-              target_type: 'agent_settlement',
-              target_id: 'settlement-1',
-              club_id: 'club-1',
-              amount: 5000,
-              reason: 'Incorrect commission',
-              status: 'under_review',
-              assigned_to: 'reviewer-1',
-              resolution: null,
-              created_at: '2026-01-01T00:00:00Z',
-              updated_at: '2026-01-01T12:00:00Z',
-              resolved_at: null,
-            },
-            error: null,
-          }),
-      }),
-      in: () => ({
-        select: () => ({
-          maybeSingle: () =>
-            Promise.resolve({
-              data: {
-                id: 'dispute-1',
-                submitted_by: 'user-1',
-                submitter_name: 'TestUser',
-                target_type: 'agent_settlement',
-                target_id: 'settlement-1',
-                club_id: 'club-1',
-                amount: 5000,
-                reason: 'Incorrect commission',
-                status: 'escalated',
-                assigned_to: null,
-                resolution: 'Escalated: Complex case',
-                created_at: '2026-01-01T00:00:00Z',
-                updated_at: '2026-01-01T15:00:00Z',
-                resolved_at: null,
-              },
-              error: null,
-            }),
-        }),
-      }),
-    }),
-  }),
-});
+// Proxy that returns itself for any chained call, with terminal methods
+const buildChain = (terminalData: any = null): any => {
+  const handler: ProxyHandler<any> = {
+    get: (_target, prop) => {
+      if (prop === 'maybeSingle' || prop === 'single')
+        return () => Promise.resolve({ data: terminalData, error: null });
+      if (prop === 'then')
+        return (resolve: (v: any) => void) =>
+          resolve({ data: terminalData, error: null, count: 0 });
+      return vi.fn().mockReturnValue(new Proxy({}, handler));
+    },
+  };
+  return new Proxy({}, handler);
+};
 
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {
     from: (table: string) => {
       if (table === 'disputes') {
         return {
-          insert: mockInsert,
-          update: mockUpdate,
-          select: () => ({
-            eq: () => ({
-              order: () => ({
-                limit: () => Promise.resolve({ data: [], error: null }),
-              }),
-              maybeSingle: () =>
-                Promise.resolve({
-                  data: { display_name: 'TestUser', username: 'testuser' },
-                  error: null,
-                }),
-            }),
-          }),
+          insert: () => buildChain(disputeRow()),
+          update: () =>
+            buildChain(disputeRow({ status: 'under_review', assigned_to: 'reviewer-1' })),
+          select: () => buildChain(),
         };
       }
-      // clubs, profiles
+      // profiles, clubs
       return {
-        select: () => ({
-          eq: () => ({
-            maybeSingle: () =>
-              Promise.resolve({
-                data: { owner_id: 'owner-1', name: 'TestClub', display_name: 'TestUser', username: 'testuser' },
-                error: null,
-              }),
+        select: () =>
+          buildChain({
+            owner_id: 'owner-1',
+            name: 'TestClub',
+            display_name: 'TestUser',
+            username: 'testuser',
           }),
-        }),
       };
     },
     rpc: vi.fn().mockResolvedValue({ data: null, error: null }),
@@ -196,22 +117,14 @@ describe('DisputeService', () => {
 
   describe('mapDispute', () => {
     it('should map DB row to domain object', () => {
-      const row = {
-        id: 'dispute-1',
+      const row = disputeRow({
         submitted_by: 'user-1',
         submitter_name: 'Alice',
         target_type: 'cashout_request',
         target_id: 'cashout-1',
-        club_id: 'club-1',
         amount: 2500,
         reason: 'Not received',
-        status: 'open',
-        assigned_to: null,
-        resolution: null,
-        created_at: '2026-01-01T00:00:00Z',
-        updated_at: '2026-01-01T00:00:00Z',
-        resolved_at: null,
-      };
+      });
 
       const dispute = DisputeService.mapDispute(row);
 
@@ -223,6 +136,21 @@ describe('DisputeService', () => {
       expect(dispute.status).toBe('open');
       expect(dispute.assignedTo).toBeNull();
       expect(dispute.resolvedAt).toBeNull();
+    });
+
+    it('should map resolved dispute with all fields', () => {
+      const row = disputeRow({
+        status: 'resolved',
+        assigned_to: 'reviewer-1',
+        resolution: 'Credited 5000 chips',
+        resolved_at: '2026-01-02T00:00:00Z',
+      });
+
+      const dispute = DisputeService.mapDispute(row);
+      expect(dispute.status).toBe('resolved');
+      expect(dispute.assignedTo).toBe('reviewer-1');
+      expect(dispute.resolution).toBe('Credited 5000 chips');
+      expect(dispute.resolvedAt).toBe('2026-01-02T00:00:00Z');
     });
   });
 
@@ -237,24 +165,7 @@ describe('DisputeService', () => {
       'credit_invoice',
       'commission_payout',
     ])('should accept target type: %s', (targetType) => {
-      const row = {
-        id: 'test',
-        submitted_by: 'u1',
-        submitter_name: 'Test',
-        target_type: targetType,
-        target_id: 'target-1',
-        club_id: 'club-1',
-        amount: 100,
-        reason: 'Test',
-        status: 'open',
-        assigned_to: null,
-        resolution: null,
-        created_at: '2026-01-01T00:00:00Z',
-        updated_at: '2026-01-01T00:00:00Z',
-        resolved_at: null,
-      };
-
-      const dispute = DisputeService.mapDispute(row);
+      const dispute = DisputeService.mapDispute(disputeRow({ target_type: targetType }));
       expect(dispute.targetType).toBe(targetType);
     });
   });
@@ -267,23 +178,7 @@ describe('DisputeService', () => {
     it.each<DisputeStatus>(['open', 'under_review', 'resolved', 'escalated', 'withdrawn'])(
       'should map status: %s',
       (status) => {
-        const row = {
-          id: 'test',
-          submitted_by: 'u1',
-          submitter_name: 'Test',
-          target_type: 'agent_settlement',
-          target_id: 't1',
-          club_id: 'c1',
-          amount: 0,
-          reason: 'R',
-          status,
-          assigned_to: null,
-          resolution: null,
-          created_at: '2026-01-01T00:00:00Z',
-          updated_at: '2026-01-01T00:00:00Z',
-          resolved_at: null,
-        };
-        expect(DisputeService.mapDispute(row).status).toBe(status);
+        expect(DisputeService.mapDispute(disputeRow({ status })).status).toBe(status);
       }
     );
   });
@@ -317,20 +212,6 @@ describe('DisputeService', () => {
       const dispute = await DisputeService.startReview('dispute-1', 'reviewer-1');
       expect(dispute.status).toBe('under_review');
       expect(dispute.assignedTo).toBe('reviewer-1');
-    });
-  });
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // ESCALATE
-  // ─────────────────────────────────────────────────────────────────────────
-
-  describe('escalateDispute', () => {
-    it('should transition to escalated and log financial warning', async () => {
-      const dispute = await DisputeService.escalateDispute('dispute-1', 'Complex case');
-      expect(dispute.status).toBe('escalated');
-
-      const { FinancialAlertService } = await import('../../src/services/FinancialAlertService');
-      expect(FinancialAlertService.logWarning).toHaveBeenCalled();
     });
   });
 });

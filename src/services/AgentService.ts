@@ -1135,7 +1135,7 @@ class AgentServiceClass {
     }
 
     // Check if already clawed back
-    if (txn.notes?.includes('[CLAWED BACK]')) {
+    if (txn.notes?.includes('[CLAWED BACK:')) {
       return { success: false, error: 'This transaction has already been clawed back' };
     }
 
@@ -1171,7 +1171,7 @@ class AgentServiceClass {
       .from('chip_transactions')
       .update({ notes: clawbackNote })
       .eq('id', transactionId)
-      .not('notes', 'like', '%[CLAWED BACK]%')
+      .not('notes', 'like', '%[CLAWED BACK:%')
       .select('id')
       .maybeSingle();
 

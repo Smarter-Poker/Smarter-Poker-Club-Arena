@@ -29,33 +29,60 @@ export default function EngineDashboard() {
     return () => clearInterval(interval);
   }, []);
 
-  // Bus listeners: immediately refresh stats when engine events fire
   useEffect(() => {
-    const unsubTable = masterBus.subscribe('TABLE_UPDATED', () => {
-      setStats(cashGameOrchestrator.getStats());
-      loadHydraStats();
-    });
-    const unsubHand = masterBus.subscribe('HAND_COMPLETED', () => {
-      setStats(cashGameOrchestrator.getStats());
-    });
-    const unsubTournament = masterBus.subscribe('TOURNAMENT_UPDATED', () => {
-      setTStats(tournamentOrchestrator.getStats());
-    });
+    const unsubTable = masterBus.subscribeDebounced(
+      'TABLE_UPDATED',
+      () => {
+        setStats(cashGameOrchestrator.getStats());
+        loadHydraStats();
+      },
+      500
+    );
+    const unsubHand = masterBus.subscribeDebounced(
+      'HAND_COMPLETED',
+      () => {
+        setStats(cashGameOrchestrator.getStats());
+      },
+      500
+    );
+    const unsubTournament = masterBus.subscribeDebounced(
+      'TOURNAMENT_UPDATED',
+      () => {
+        setTStats(tournamentOrchestrator.getStats());
+      },
+      500
+    );
     // Phase 3: Refresh Hydra stats when horses are seated or removed
-    const unsubHorseSeated = masterBus.subscribe('HORSE_SEATED', () => {
-      loadHydraStats();
-    });
-    const unsubHorseRemoved = masterBus.subscribe('HORSE_REMOVED', () => {
-      loadHydraStats();
-    });
+    const unsubHorseSeated = masterBus.subscribeDebounced(
+      'HORSE_SEATED',
+      () => {
+        loadHydraStats();
+      },
+      500
+    );
+    const unsubHorseRemoved = masterBus.subscribeDebounced(
+      'HORSE_REMOVED',
+      () => {
+        loadHydraStats();
+      },
+      500
+    );
     // Phase 4: Refresh stats on table break completions (tournament rebalancing)
-    const unsubTableBreak = masterBus.subscribe('TABLE_BREAK_COMPLETED', () => {
-      setTStats(tournamentOrchestrator.getStats());
-    });
+    const unsubTableBreak = masterBus.subscribeDebounced(
+      'TABLE_BREAK_COMPLETED',
+      () => {
+        setTStats(tournamentOrchestrator.getStats());
+      },
+      500
+    );
     // Phase 4: Refresh stats on bomb pot triggers (cash game activity)
-    const unsubBombPot = masterBus.subscribe('BOMB_POT_TRIGGERED', () => {
-      setStats(cashGameOrchestrator.getStats());
-    });
+    const unsubBombPot = masterBus.subscribeDebounced(
+      'BOMB_POT_TRIGGERED',
+      () => {
+        setStats(cashGameOrchestrator.getStats());
+      },
+      500
+    );
     return () => {
       unsubTable();
       unsubHand();

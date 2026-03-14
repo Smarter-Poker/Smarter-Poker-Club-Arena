@@ -91,7 +91,11 @@ export interface ChannelSubscription {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // Subscription limits and cleanup
-const MAX_CONCURRENT_SUBSCRIPTIONS = 10;
+// Increased from 10 to 25. At 10, a user in 2 clubs watching a tournament
+// with the lobby open would easily exceed the limit, causing the oldest
+// subscription (often a critical club presence channel) to be silently dropped.
+// Supabase supports up to 100 concurrent channels per connection.
+const MAX_CONCURRENT_SUBSCRIPTIONS = 25;
 const SUBSCRIPTION_CLEANUP_TIMEOUT = 30 * 60 * 1000; // 30 minutes
 
 class RealtimeChannelService {

@@ -196,6 +196,15 @@ class IdentityDNACore {
                 userId: session.user.id,
                 isAuthenticated: true,
               });
+
+              // CRITICAL: Re-initialize PostgresSyncHooks with the fresh token.
+              // The old realtime channel was authenticated with the previous JWT.
+              // After token rotation, Supabase's server may reject events on the
+              // stale channel, silently breaking all realtime subscriptions.
+              // This is the #1 cause of "connectivity issues" — the WebSocket
+              // stays connected but receives zero events because the token expired.
+              postgresSyncHooks.destroy();
+              postgresSyncHooks.init(session.user.id);
             }
             break;
 

@@ -260,8 +260,8 @@ export default function AnalyticsDashboard() {
     };
 
     const unsubHand = masterBus.subscribe('HAND_COMPLETED', debouncedRefresh);
-    const unsubSettlement = masterBus.subscribe('SETTLEMENT_COMPLETED', refreshAll);
-    const unsubVip = masterBus.subscribe('MILESTONE_UNLOCKED', refreshAll);
+    const unsubSettlement = masterBus.subscribeDebounced('SETTLEMENT_COMPLETED', refreshAll, 1000);
+    const unsubVip = masterBus.subscribeDebounced('MILESTONE_UNLOCKED', refreshAll, 1000);
 
     // Admin listeners
     const unsubCrash = masterBus.subscribe('COMPONENT_CRASH', (event) => {

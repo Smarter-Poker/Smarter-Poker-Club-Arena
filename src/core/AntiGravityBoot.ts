@@ -91,10 +91,35 @@ export async function initAntiGravity(): Promise<BootStatus> {
       }
     } catch (e: any) {
       errors.push(`Supabase Connection Exception: ${e.message}`);
-      // Still mark as OK if it was just a timeout — the server is reachable
-      // Session was already bootstrapped above so API calls will work
-      supabaseOk = true;
-      console.warn('[ANTIGRAVITY] getSession timed out, proceeding anyway:', e.message);
+
+      // HARDENED: Only proceed if the user has a cached session in localStorage.
+      // If localStorage has a valid JWT, we can trust that Supabase was reachable
+      // at some point and the timeout is likely due to navigator.locks contention.
+      // If there's NO cached session AND we're online, Supabase is truly unreachable.
+      const AUTH_KEY = 'smarter-poker-auth';
+      const hasCachedSession = (() => {
+        try {
+          const raw = localStorage.getItem(AUTH_KEY);
+          if (!raw) return false;
+          const data = JSON.parse(raw);
+          return !!data?.access_token;
+        } catch {
+          return false;
+        }
+      })();
+
+      if (hasCachedSession || !navigator.onLine) {
+        // Timeout with cached session OR offline — proceed (degraded mode)
+        supabaseOk = true;
+        console.warn(
+          '[ANTIGRAVITY] getSession timed out, proceeding with cached session:',
+          e.message
+        );
+      } else {
+        // Truly unreachable AND no cached session — fail closed
+        supabaseOk = false;
+        console.error('[ANTIGRAVITY] Supabase unreachable and no cached session:', e.message);
+      }
     }
   } else {
     errors.push('Supabase credentials missing, health check skipped');

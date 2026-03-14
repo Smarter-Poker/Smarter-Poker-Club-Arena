@@ -331,9 +331,14 @@ class ClubServiceClass {
       .eq('id', memberId)
       .maybeSingle();
     if (approved) {
-      await supabase.from('club_members').update({ status: 'active' }).eq('id', memberId);
+      const { error: approveErr } = await supabase
+        .from('club_members')
+        .update({ status: 'active' })
+        .eq('id', memberId);
+      if (approveErr) throw new Error('Failed to approve membership: ' + approveErr.message);
     } else {
-      await supabase.from('club_members').delete().eq('id', memberId);
+      const { error: rejectErr } = await supabase.from('club_members').delete().eq('id', memberId);
+      if (rejectErr) throw new Error('Failed to reject membership: ' + rejectErr.message);
     }
     if (member) {
       masterBus.emit('CLUB_UPDATED', { clubId: member.club_id });

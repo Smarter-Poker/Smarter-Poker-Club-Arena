@@ -454,14 +454,19 @@ class UnionServiceClass {
       .maybeSingle();
 
     if (union) {
-      await supabase
+      const { error: countErr } = await supabase
         .from('unions')
         .update({ club_count: (union.club_count || 0) + 1 })
         .eq('id', unionId);
+      if (countErr) console.error('[UnionService] Failed to increment union club_count:', countErr);
     }
 
     // Update club's union_id
-    await supabase.from('clubs').update({ union_id: unionId }).eq('id', clubId);
+    const { error: linkErr } = await supabase
+      .from('clubs')
+      .update({ union_id: unionId })
+      .eq('id', clubId);
+    if (linkErr) console.error('[UnionService] Failed to set club union_id:', linkErr);
 
     masterBus.emit('UNION_UPDATED', { unionId });
     masterBus.emit('CLUB_UPDATED', { clubId });
@@ -489,14 +494,19 @@ class UnionServiceClass {
       .maybeSingle();
 
     if (union) {
-      await supabase
+      const { error: countErr } = await supabase
         .from('unions')
         .update({ club_count: Math.max(0, (union.club_count || 0) - 1) })
         .eq('id', unionId);
+      if (countErr) console.error('[UnionService] Failed to decrement union club_count:', countErr);
     }
 
     // Update club's union_id to null
-    await supabase.from('clubs').update({ union_id: null }).eq('id', clubId);
+    const { error: unlinkErr } = await supabase
+      .from('clubs')
+      .update({ union_id: null })
+      .eq('id', clubId);
+    if (unlinkErr) console.error('[UnionService] Failed to clear club union_id:', unlinkErr);
 
     masterBus.emit('UNION_UPDATED', { unionId });
     masterBus.emit('CLUB_UPDATED', { clubId });

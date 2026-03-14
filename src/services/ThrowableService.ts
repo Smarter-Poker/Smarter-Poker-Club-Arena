@@ -166,7 +166,13 @@ class ThrowableServiceClass {
 
       // If VIP with free throws remaining, just record usage
       if (allowance.isVip && allowance.freeThrowsRemaining > 0) {
-        await supabase.from('throw_usage').insert({ user_id: userId, throwable_id: throwableId });
+        const { error: usageErr } = await supabase
+          .from('throw_usage')
+          .insert({ user_id: userId, throwable_id: throwableId });
+        if (usageErr) {
+          console.error('[ThrowableService] Failed to record VIP throw usage:', usageErr);
+          return { success: false, error: 'Failed to record throw usage' };
+        }
         return { success: true };
       }
 
@@ -198,9 +204,10 @@ class ThrowableServiceClass {
       }
 
       // Record usage
-      await supabase
+      const { error: usageErr2 } = await supabase
         .from('throw_usage')
         .insert({ user_id: userId, throwable_id: throwableId, paid_diamonds: true });
+      if (usageErr2) console.error('[ThrowableService] Paid throw usage record failed:', usageErr2);
 
       return { success: true };
     } catch {

@@ -174,11 +174,16 @@ export default function DynamicWallet({
           .maybeSingle(),
         supabase
           .from('agents')
-          .select('balance, promo_balance')
+          .select('business_balance, promo_balance')
           .eq('club_id', clubId)
           .eq('user_id', userId)
           .maybeSingle(),
-        supabase.from('clubs').select('bank_balance').eq('id', clubId).maybeSingle(),
+        // Club bank: sum of all agent business_balance for this club
+        supabase
+          .from('agents')
+          .select('business_balance')
+          .eq('club_id', clubId)
+          .eq('status', 'active'),
       ]);
 
       if (isMounted.current) {
@@ -188,8 +193,13 @@ export default function DynamicWallet({
           promoBalance: Number(memberRes.data?.promo_balance) || 0,
           bbjPool: Number(bbjRes.data?.main_balance) || 0,
           backupBBJ: Number(bbjRes.data?.backup_balance) || 0,
-          agentBalance: Number(agentRes.data?.balance) || 0,
-          clubBank: Number(clubRes.data?.bank_balance) || 0,
+          agentBalance: Number(agentRes.data?.business_balance) || 0,
+          clubBank: Array.isArray(clubRes.data)
+            ? clubRes.data.reduce(
+                (sum: number, a: any) => sum + (Number(a.business_balance) || 0),
+                0
+              )
+            : 0,
           unionBank: 0,
         });
       }

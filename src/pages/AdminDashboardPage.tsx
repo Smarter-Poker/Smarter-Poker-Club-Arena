@@ -1091,6 +1091,7 @@ function SettingsTab({ clubId }: { clubId: string }) {
       const uuid = await resolveClubUUID(clubId);
       const { error } = await supabase.from('clubs').update({ settings }).eq('id', uuid);
       if (error) throw error;
+      masterBus.emit('CLUB_UPDATED', { clubId: uuid });
       if (isMounted.current) setMsg('Settings saved!');
     } catch (e: any) {
       if (isMounted.current) setErr(e.message);
@@ -1426,6 +1427,7 @@ function BrandingTab({ clubId }: { clubId: string }) {
       const uuid = await resolveClubUUID(clubId);
       const { error } = await supabase.from('clubs').update({ theme }).eq('id', uuid);
       if (error) throw error;
+      masterBus.emit('CLUB_UPDATED', { clubId: uuid });
       if (isMounted.current) setMsg('Branding saved!');
     } catch (e: any) {
       if (isMounted.current) setErr(e.message);

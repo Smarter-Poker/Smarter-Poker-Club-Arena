@@ -118,6 +118,11 @@ export default function UnionDashboardPage() {
     setApps([]);
   }, [unionId]);
 
+  // ── Invalidate Apps Cache on Filter Change ─────────────────
+  useEffect(() => {
+    setAppsLoaded(false);
+  }, [appsFilter]);
+
   // ── Load Dashboard ─────────────────────────────────────────
   const loadDashboard = useCallback(
     async (uid?: string | null) => {
@@ -285,6 +290,9 @@ export default function UnionDashboardPage() {
       masterBus.subscribe('CASHOUT_APPROVED', refresh),
       masterBus.subscribe('CASHOUT_REQUESTED', refresh),
       masterBus.subscribe('TABLE_CREATED', refresh),
+      masterBus.subscribe('BALANCE_UPDATED', refresh),
+      masterBus.subscribe('CREDIT_UPDATED', refresh),
+      masterBus.subscribe('SETTLEMENT_COMPLETED', refresh),
     ];
     return () => unsubs.forEach((u) => u());
   }, [unionId, loadDashboard]);
@@ -308,6 +316,21 @@ export default function UnionDashboardPage() {
           table: 'union_applications',
           filter: `union_id=eq.${unionId}`,
         },
+        () => loadDashboard(unionId)
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'union_admins', filter: `union_id=eq.${unionId}` },
+        () => loadDashboard(unionId)
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'union_wallets', filter: `union_id=eq.${unionId}` },
+        () => loadDashboard(unionId)
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'unions', filter: `id=eq.${unionId}` },
         () => loadDashboard(unionId)
       )
       .subscribe();

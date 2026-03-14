@@ -244,6 +244,9 @@ export default function AgentDashboardPage() {
       masterBus.subscribe('CASHOUT_REQUESTED', refresh),
       masterBus.subscribe('CHIPS_DISTRIBUTED', refresh),
       masterBus.subscribe('AGENT_UPDATED', refresh),
+      masterBus.subscribe('BALANCE_UPDATED', refresh),
+      masterBus.subscribe('CREDIT_UPDATED', refresh),
+      masterBus.subscribe('SETTLEMENT_COMPLETED', refresh),
     ];
     return () => unsubs.forEach((u) => u());
   }, [clubId, loadDashboard]);

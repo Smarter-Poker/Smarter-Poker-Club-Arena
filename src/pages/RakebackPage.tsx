@@ -224,10 +224,10 @@ export default function RakebackPage() {
       }
 
       // Direct Supabase: credit the player's wallet via RPC
+      // RPC signature: credit_player_rakeback(p_user_id UUID, p_amount NUMERIC, p_period_id UUID DEFAULT NULL)
       const { error: rpcError } = await supabase.rpc('credit_player_rakeback', {
         p_user_id: user.id,
         p_amount: totalToClaim,
-        p_club_id: targetClubId,
       });
 
       if (rpcError) throw new Error(rpcError.message);

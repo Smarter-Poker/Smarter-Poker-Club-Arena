@@ -703,7 +703,9 @@ export const RakeService = {
                   .update({
                     rake_generated: supabase.rpc('raw_increment', { val: rakeCredit }) as any,
                   })
-                  .eq('id', agentId),
+                  // agentId is auth.users.id (from club_members.agent_id via table engine)
+                  // Agents table PK is different — query by user_id column
+                  .eq('user_id', agentId),
               3
             );
             if (fallbackErr) {

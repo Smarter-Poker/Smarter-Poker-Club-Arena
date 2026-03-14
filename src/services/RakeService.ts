@@ -475,30 +475,23 @@ export const RakeService = {
           3
         );
 
-        // Fallback: atomic UPDATE ... SET total_rake = total_rake + $1
-        // (safe under concurrency — no read-modify-write race)
+        // Fallback: direct PostgREST read-modify-write
         if (rpcError) {
-          const { error: updateErr } = await supabase.rpc('sql', {
-            query: `UPDATE unions SET total_rake = COALESCE(total_rake, 0) + $1 WHERE id = $2`,
-            params: [calculation.cappedRake, unionId],
-          });
-          // If raw SQL RPC also fails, use PostgREST with optimistic atomic pattern
-          if (updateErr) {
-            const { error: fallbackErr } = await supabase
-              .from('unions')
-              .update({
-                total_rake: supabase.rpc('increment_field_inline', {
-                  field: 'total_rake',
-                  amount: calculation.cappedRake,
-                }) as any,
-              })
-              .eq('id', unionId);
-            if (fallbackErr) {
-              console.error(
-                `[RakeService] Failed to update union total_rake for ${unionId}:`,
-                fallbackErr
-              );
-            }
+          const { data: unionRow } = await supabase
+            .from('unions')
+            .select('total_rake')
+            .eq('id', unionId)
+            .maybeSingle();
+          const currentRake = Number(unionRow?.total_rake) || 0;
+          const { error: fallbackErr } = await supabase
+            .from('unions')
+            .update({ total_rake: currentRake + calculation.cappedRake })
+            .eq('id', unionId);
+          if (fallbackErr) {
+            console.error(
+              `[RakeService] Failed to update union total_rake for ${unionId}:`,
+              fallbackErr
+            );
           }
         }
       } catch (e: unknown) {
@@ -604,21 +597,21 @@ export const RakeService = {
             3
           );
 
-          // Fallback: atomic UPDATE col = col + amount (no read-modify-write race)
+          // Fallback: read-modify-write
           if (rpcError) {
             const resolvedClubId = await resolveClubUUID(clubId);
-            const { error: fallbackErr } = await retryAsync(
-              () =>
-                supabase
-                  .from('club_members')
-                  .update({
-                    rake_generated: supabase.rpc('raw_increment', { val: attr.rakeCredit }) as any,
-                  })
-                  .eq('club_id', resolvedClubId)
-                  .eq('user_id', attr.userId),
-              3
-            );
-            // Last resort: direct SQL via edge function
+            const { data: memberRow } = await supabase
+              .from('club_members')
+              .select('rake_generated')
+              .eq('club_id', resolvedClubId)
+              .eq('user_id', attr.userId)
+              .maybeSingle();
+            const currentRake = Number(memberRow?.rake_generated) || 0;
+            const { error: fallbackErr } = await supabase
+              .from('club_members')
+              .update({ rake_generated: currentRake + attr.rakeCredit })
+              .eq('club_id', resolvedClubId)
+              .eq('user_id', attr.userId);
             if (fallbackErr) {
               console.error(
                 `[RakeService] CRITICAL: All atomic patterns failed for rake_generated update. ` +
@@ -694,20 +687,18 @@ export const RakeService = {
             3
           );
 
-          // Fallback: atomic UPDATE col = col + amount (no read-modify-write race)
+          // Fallback: read-modify-write for agent rake_generated
           if (rpcError) {
-            const { error: fallbackErr } = await retryAsync(
-              () =>
-                supabase
-                  .from('agents')
-                  .update({
-                    rake_generated: supabase.rpc('raw_increment', { val: rakeCredit }) as any,
-                  })
-                  // agentId is auth.users.id (from club_members.agent_id via table engine)
-                  // Agents table PK is different — query by user_id column
-                  .eq('user_id', agentId),
-              3
-            );
+            const { data: agentRow } = await supabase
+              .from('agents')
+              .select('rake_generated')
+              .eq('user_id', agentId)
+              .maybeSingle();
+            const currentRake = Number(agentRow?.rake_generated) || 0;
+            const { error: fallbackErr } = await supabase
+              .from('agents')
+              .update({ rake_generated: currentRake + rakeCredit })
+              .eq('user_id', agentId);
             if (fallbackErr) {
               console.error(
                 `[RakeService] CRITICAL: All atomic patterns failed for agent rake. ` +

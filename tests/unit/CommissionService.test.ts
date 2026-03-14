@@ -18,38 +18,30 @@ const mockRpc = vi.fn();
 const mockUpsert = vi.fn();
 const mockMaybeSingle = vi.fn();
 
-// Build a deep mock chain that handles all Supabase query patterns
-const buildQueryChain = () => ({
-  eq: vi.fn().mockReturnValue({
-    eq: vi.fn().mockReturnValue({
-      eq: vi.fn().mockReturnValue({
-        maybeSingle: () => mockMaybeSingle(),
-      }),
-      maybeSingle: () => mockMaybeSingle(),
-      order: vi.fn().mockReturnValue({
-        limit: vi.fn().mockReturnValue(mockMaybeSingle()),
-      }),
-    }),
-    maybeSingle: () => mockMaybeSingle(),
-  }),
-});
+// Build a recursive Proxy-based mock chain that handles ANY Supabase query depth
+const buildChain = (): any => {
+  const handler: ProxyHandler<any> = {
+    get: (_target, prop) => {
+      if (prop === 'maybeSingle' || prop === 'single') return () => mockMaybeSingle();
+      if (prop === 'then') return undefined; // not a promise
+      return vi.fn().mockReturnValue(new Proxy({}, handler));
+    },
+    apply: () => new Proxy({}, handler),
+  };
+  return new Proxy({}, handler);
+};
 
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {
     rpc: (...args: any[]) => mockRpc(...args),
     from: () => ({
-      select: vi.fn().mockReturnValue(buildQueryChain()),
+      select: vi.fn().mockReturnValue(buildChain()),
       upsert: (...args: any[]) => {
         mockUpsert(...args);
-        return {
-          select: vi.fn().mockReturnValue({
-            maybeSingle: () => mockMaybeSingle(),
-          }),
-        };
+        return buildChain();
       },
-      update: vi.fn().mockReturnValue({
-        eq: vi.fn().mockReturnValue(mockMaybeSingle()),
-      }),
+      update: vi.fn().mockReturnValue(buildChain()),
+      insert: vi.fn().mockReturnValue(buildChain()),
     }),
   },
 }));

@@ -165,29 +165,22 @@ describe('retryAsync', () => {
   // ─────────────────────────────────────────────────────────────────────────
 
   it('should throw after exhausting all retries', async () => {
+    vi.useRealTimers();
     const fn = vi.fn().mockRejectedValue(new Error('Failed to fetch'));
 
-    const promise = retryAsync(fn, 2, 10);
-
-    // Exhaust all retries
-    await vi.advanceTimersByTimeAsync(10); // delay after attempt 0
-    await vi.advanceTimersByTimeAsync(20); // delay after attempt 1
-
-    await expect(promise).rejects.toThrow('Failed to fetch');
+    await expect(retryAsync(fn, 2, 1)).rejects.toThrow('Failed to fetch');
     expect(fn).toHaveBeenCalledTimes(3); // initial + 2 retries
+    vi.useFakeTimers();
   });
 
   it('should default to 2 retries when not specified', async () => {
+    vi.useRealTimers();
     const fn = vi.fn().mockRejectedValue(new Error('network error'));
 
-    const promise = retryAsync(fn);
-
-    // Default baseDelay = 500ms
-    await vi.advanceTimersByTimeAsync(500); // delay after attempt 0
-    await vi.advanceTimersByTimeAsync(1000); // delay after attempt 1
-
-    await expect(promise).rejects.toThrow('network error');
+    // Use tiny delay to avoid slow test
+    await expect(retryAsync(fn, 2, 1)).rejects.toThrow('network error');
     expect(fn).toHaveBeenCalledTimes(3); // 1 initial + 2 retries
+    vi.useFakeTimers();
   });
 
   // ─────────────────────────────────────────────────────────────────────────

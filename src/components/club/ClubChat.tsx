@@ -105,7 +105,18 @@ export default function ClubChat({ clubId, userId, userName }: ClubChatProps) {
         },
         (payload) => {
           const newMsg = payload.new as ClubChatMessage;
-          setMessages((prev) => [...prev.slice(-99), newMsg]);
+          setMessages((prev) => {
+            // Remove optimistic temp message from same sender to prevent duplicates
+            const filtered = prev.filter(
+              (m) =>
+                !(
+                  m.id.startsWith('temp-') &&
+                  m.user_id === newMsg.user_id &&
+                  m.message === newMsg.message
+                )
+            );
+            return [...filtered.slice(-99), newMsg];
+          });
           if (!expandedRef.current) setUnread((prev) => prev + 1);
           // Notify other components about incoming chat
           try {

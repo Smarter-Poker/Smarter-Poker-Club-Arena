@@ -13,6 +13,7 @@ import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { resolveClubUUID } from '../utils/clubIdResolver';
+import { cashoutService } from '../services/CashoutService';
 import './AdminDashboardPage.css';
 
 // ── Helpers ─────────────────────────────────────────────────
@@ -296,17 +297,8 @@ export default function AgentDashboardPage() {
     if (!confirm('Approve this cashout request?')) return;
     setProcessing(true);
     try {
-      const { error: upErr } = await supabase
-        .from('cashout_requests')
-        .update({
-          status: 'approved',
-          approved_by: user?.id,
-          approved_at: new Date().toISOString(),
-        })
-        .eq('id', cashoutId);
-      if (upErr) throw upErr;
+      await cashoutService.approveCashout(cashoutId, user?.id || '');
       setSuccess('Cashout approved successfully.');
-      masterBus.emit('CASHOUT_APPROVED', { cashoutId, clubId: clubId || '' });
       loadDashboard(clubId);
     } catch (err: any) {
       setError(err.message);
@@ -319,13 +311,8 @@ export default function AgentDashboardPage() {
     if (!confirm('Deny and refund this cashout request?')) return;
     setProcessing(true);
     try {
-      const { error: upErr } = await supabase
-        .from('cashout_requests')
-        .update({ status: 'rejected', rejected_by: user?.id })
-        .eq('id', cashoutId);
-      if (upErr) throw upErr;
-      setSuccess('Cashout denied and refunded.');
-      masterBus.emit('CASHOUT_CANCELLED', { cashoutId, clubId: clubId || '' });
+      await cashoutService.rejectCashout(cashoutId, user?.id || '', 'Denied by agent');
+      setSuccess('Cashout denied and chips refunded to player.');
       loadDashboard(clubId);
     } catch (err: any) {
       setError(err.message);

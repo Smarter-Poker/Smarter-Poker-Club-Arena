@@ -77,7 +77,18 @@ export default function TableChatHUD({ tableId, userId, isMuted = false }: Table
         },
         (payload) => {
           const msg = payload.new as ChatMessage;
-          setMessages((prev) => [...prev.slice(-49), msg]);
+          setMessages((prev) => {
+            // Remove optimistic temp message from same sender to prevent duplicates
+            const filtered = prev.filter(
+              (m) =>
+                !(
+                  m.id.startsWith('temp-') &&
+                  m.sender_id === msg.sender_id &&
+                  m.message === msg.message
+                )
+            );
+            return [...filtered.slice(-49), msg];
+          });
           try {
             masterBus.emit('CHAT_MESSAGE_RECEIVED', {
               clubId: msg.table_id || tableId,

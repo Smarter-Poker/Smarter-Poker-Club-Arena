@@ -668,6 +668,7 @@ export default function UnionDashboardPage() {
                         });
                         setSuccess('Announcement sent');
                         setAnnMsg('');
+                        loadDashboard(unionId);
                       } catch (err: any) {
                         setError(err.message);
                       } finally {
@@ -947,6 +948,7 @@ export default function UnionDashboardPage() {
                         });
                         setSuccess('Chips sent');
                         setTransferForm({ clubId: '', amount: '', notes: '' });
+                        loadDashboard(unionId);
                       } catch (err: any) {
                         setError(err.message);
                       } finally {

@@ -145,6 +145,17 @@ export const CreditService = {
       .eq('id', agentId);
 
     if (error) throw error;
+
+    // Emit CREDIT_UPDATED
+    const { data: agent } = await supabase
+      .from('agents')
+      .select('club_id')
+      .eq('id', agentId)
+      .maybeSingle();
+    if (agent?.club_id) {
+      masterBus.emit('CREDIT_UPDATED', { clubId: agent.club_id, amount: limit });
+    }
+
     return true;
   },
 
@@ -213,6 +224,19 @@ export const CreditService = {
         .eq('id', request.agent_id);
 
       if (limitErr) throw new Error(`Failed to update credit limit: ${limitErr.message}`);
+
+      // Emit CREDIT_UPDATED
+      const { data: agent } = await supabase
+        .from('agents')
+        .select('club_id')
+        .eq('id', request.agent_id)
+        .maybeSingle();
+      if (agent?.club_id) {
+        masterBus.emit('CREDIT_UPDATED', {
+          clubId: agent.club_id,
+          amount: request.requested_limit,
+        });
+      }
     }
 
     return true;
@@ -520,6 +544,17 @@ export const CreditService = {
       .eq('id', agentId);
 
     if (error) throw new Error(`Failed to suspend agent: ${error.message}`);
+
+    // Emit CREDIT_UPDATED
+    const { data: agent } = await supabase
+      .from('agents')
+      .select('club_id')
+      .eq('id', agentId)
+      .maybeSingle();
+    if (agent?.club_id) {
+      masterBus.emit('CREDIT_UPDATED', { clubId: agent.club_id });
+    }
+
     return true;
   },
 
@@ -547,6 +582,16 @@ export const CreditService = {
       .eq('id', agentId);
 
     if (error) throw new Error(`Failed to reinstate agent: ${error.message}`);
+
+    // Emit CREDIT_UPDATED
+    const { data: agent } = await supabase
+      .from('agents')
+      .select('club_id')
+      .eq('id', agentId)
+      .maybeSingle();
+    if (agent?.club_id) {
+      masterBus.emit('CREDIT_UPDATED', { clubId: agent.club_id });
+    }
 
     return true;
   },

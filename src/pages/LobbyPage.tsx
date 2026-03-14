@@ -382,13 +382,13 @@ export default function LobbyPage() {
           table: 'tables',
         },
         (payload) => {
-          if (payload.eventType === 'INSERT') {
+          if (payload.eventType === 'INSERT' && payload.new) {
             setTables((prev) => [...prev, payload.new as PokerTable]);
-          } else if (payload.eventType === 'UPDATE') {
+          } else if (payload.eventType === 'UPDATE' && payload.new) {
             setTables((prev) =>
               prev.map((t) => (t.id === payload.new.id ? (payload.new as PokerTable) : t))
             );
-          } else if (payload.eventType === 'DELETE') {
+          } else if (payload.eventType === 'DELETE' && payload.old) {
             setTables((prev) => prev.filter((t) => t.id !== payload.old.id));
           }
         }

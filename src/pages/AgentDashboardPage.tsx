@@ -300,17 +300,7 @@ export default function AgentDashboardPage() {
   }, [clubId, loadDashboard]);
 
   // ── Visibility Refresh — refresh on tab focus after 30s ──
-  useEffect(() => {
-    let lastFetch = Date.now();
-    const handleVis = () => {
-      if (document.visibilityState === 'visible' && Date.now() - lastFetch > 30_000) {
-        lastFetch = Date.now();
-        loadDashboard(clubId);
-      }
-    };
-    document.addEventListener('visibilitychange', handleVis);
-    return () => document.removeEventListener('visibilitychange', handleVis);
-  }, [clubId, loadDashboard]);
+  useVisibilityRefresh(() => loadDashboard(clubId));
 
   // ── Cashout Actions ────────────────────────────────────────
   const approveCashout = async (cashoutId: string) => {

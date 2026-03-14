@@ -1111,7 +1111,9 @@ class AgentServiceClass {
     // 1. Get the original transaction
     const { data: txn, error: txnErr } = await supabase
       .from('chip_transactions')
-      .select('id, from_user_id, to_user_id, amount, club_id, created_at, transaction_type, notes')
+      .select(
+        'id, from_user_id, to_user_id, amount, club_id, created_at, transaction_type, notes, clawed_back'
+      )
       .eq('id', transactionId)
       .maybeSingle();
 
@@ -1134,8 +1136,8 @@ class AgentServiceClass {
       return { success: false, error: 'Can only clawback agent→player distributions' };
     }
 
-    // Check if already clawed back
-    if (txn.notes?.includes('[CLAWED BACK:')) {
+    // Check if already clawed back (boolean column takes priority, notes fallback for legacy)
+    if (txn.clawed_back || txn.notes?.includes('[CLAWED BACK:')) {
       return { success: false, error: 'This transaction has already been clawed back' };
     }
 
@@ -1169,9 +1171,9 @@ class AgentServiceClass {
     const clawbackNote = `${txn.notes || ''} [CLAWED BACK: ${clawbackAmount} at ${new Date().toISOString()}]`;
     const { data: claimed, error: claimErr } = await supabase
       .from('chip_transactions')
-      .update({ notes: clawbackNote })
+      .update({ notes: clawbackNote, clawed_back: true })
       .eq('id', transactionId)
-      .or('notes.is.null,notes.not.like.*[CLAWED BACK:*')
+      .eq('clawed_back', false)
       .select('id')
       .maybeSingle();
 
@@ -1195,7 +1197,7 @@ class AgentServiceClass {
       // Revert claim note on failure
       await supabase
         .from('chip_transactions')
-        .update({ notes: txn.notes || '' })
+        .update({ notes: txn.notes || '', clawed_back: false })
         .eq('id', transactionId);
 
       return {
@@ -1244,7 +1246,7 @@ class AgentServiceClass {
 
     const { data, error } = await supabase
       .from('chip_transactions')
-      .select('id, to_user_id, amount, created_at, notes, transaction_type')
+      .select('id, to_user_id, amount, created_at, notes, transaction_type, clawed_back')
       .eq('from_user_id', agentUserId)
       .eq('club_id', clubId)
       .in('transaction_type', ['agent_to_player', 'promo_agent_to_player', 'send'])
@@ -1275,7 +1277,7 @@ class AgentServiceClass {
         toDisplayName: nameMap.get(t.to_user_id) || 'Unknown',
         amount: t.amount,
         createdAt: t.created_at,
-        canClawback: !t.notes?.includes('[CLAWED BACK:') && minutesRemaining > 0,
+        canClawback: !t.clawed_back && !t.notes?.includes('[CLAWED BACK:') && minutesRemaining > 0,
         minutesRemaining,
       };
     });

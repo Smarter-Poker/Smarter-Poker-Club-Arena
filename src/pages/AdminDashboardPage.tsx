@@ -265,17 +265,7 @@ function DashboardTab({ clubId }: { clubId: string }) {
   }, [clubId, load]);
 
   // ── Visibility Refresh — refresh on tab focus after 30s ──
-  useEffect(() => {
-    let lastFetch = Date.now();
-    const handleVis = () => {
-      if (document.visibilityState === 'visible' && Date.now() - lastFetch > 30_000) {
-        lastFetch = Date.now();
-        load();
-      }
-    };
-    document.addEventListener('visibilitychange', handleVis);
-    return () => document.removeEventListener('visibilitychange', handleVis);
-  }, [load]);
+  useVisibilityRefresh(load);
 
   if (loading)
     return (

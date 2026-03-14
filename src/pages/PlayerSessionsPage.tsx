@@ -421,18 +421,9 @@ export default function PlayerSessionsPage() {
   }, [clubId, loadSessions]);
 
   // ── Visibility Refresh — throttled to 30s minimum gap ──────
-  useEffect(() => {
-    if (!clubId) return;
-    let lastFetch = Date.now();
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible' && Date.now() - lastFetch > 30_000) {
-        lastFetch = Date.now();
-        loadSessions(clubId, true);
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibility);
-    return () => document.removeEventListener('visibilitychange', handleVisibility);
-  }, [clubId, loadSessions]);
+  useVisibilityRefresh(() => {
+    if (clubId) loadSessions(clubId, true);
+  });
 
   // ── Derived Data ───────────────────────────────────────────
   const filtered = useMemo(

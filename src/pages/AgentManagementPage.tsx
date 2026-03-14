@@ -147,7 +147,7 @@ export default function AgentManagementPage() {
         .eq('from_user_id', user.id)
         .in('transaction_type', ['agent_to_player', 'promo_agent_to_player', 'send'])
         .gte('created_at', tenMinAgo)
-        .or('notes.is.null,notes.not.like.*[CLAWED BACK:*')
+        .eq('clawed_back', false)
         .order('created_at', { ascending: false })
         .limit(20);
       if (isMounted.current) setRecentDistributions(data || []);

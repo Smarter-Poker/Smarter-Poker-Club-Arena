@@ -314,17 +314,7 @@ export default function UnionDashboardPage() {
   }, [unionId, loadDashboard]);
 
   // ── Visibility Refresh — refresh on tab focus after 30s ──
-  useEffect(() => {
-    let lastFetch = Date.now();
-    const handleVis = () => {
-      if (document.visibilityState === 'visible' && Date.now() - lastFetch > 30_000) {
-        lastFetch = Date.now();
-        loadDashboard(unionId);
-      }
-    };
-    document.addEventListener('visibilitychange', handleVis);
-    return () => document.removeEventListener('visibilitychange', handleVis);
-  }, [unionId, loadDashboard]);
+  useVisibilityRefresh(() => loadDashboard(unionId));
 
   // ── Computed ───────────────────────────────────────────────
   const isLead = adminRole === 'union_lead';

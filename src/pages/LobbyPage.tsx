@@ -270,7 +270,11 @@ export default function LobbyPage() {
         resume: 'active',
         close: 'closed',
       };
-      await supabase.from('tables').update({ status: statusMap[action] }).eq('id', tableId);
+      const { error: updErr } = await supabase
+        .from('tables')
+        .update({ status: statusMap[action] })
+        .eq('id', tableId);
+      if (updErr) throw updErr;
       if (action === 'close') {
         masterBus.emit('TABLE_CLOSED', { tableId, clubId: userClubId || undefined });
       } else {

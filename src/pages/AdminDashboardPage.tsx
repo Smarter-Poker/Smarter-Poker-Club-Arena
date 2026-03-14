@@ -885,9 +885,16 @@ function AnnouncementsTab({ clubId }: { clubId: string }) {
     try {
       const uuid = await resolveClubUUID(clubId);
       if (editing) {
-        await supabase.from('club_announcements').update({ title, content }).eq('id', editing.id);
+        const { error: upErr } = await supabase
+          .from('club_announcements')
+          .update({ title, content })
+          .eq('id', editing.id);
+        if (upErr) throw upErr;
       } else {
-        await supabase.from('club_announcements').insert({ club_id: uuid, title, content });
+        const { error: insErr } = await supabase
+          .from('club_announcements')
+          .insert({ club_id: uuid, title, content });
+        if (insErr) throw insErr;
       }
       setTitle('');
       setContent('');
@@ -904,7 +911,8 @@ function AnnouncementsTab({ clubId }: { clubId: string }) {
   const handleDelete = async (id: string) => {
     if (!confirm('Delete this announcement?')) return;
     try {
-      await supabase.from('club_announcements').delete().eq('id', id);
+      const { error: delErr } = await supabase.from('club_announcements').delete().eq('id', id);
+      if (delErr) throw delErr;
       load();
       masterBus.emit('ANNOUNCEMENT_CHANGED', { clubId, action: 'deleted' });
     } catch (err: any) {
@@ -914,7 +922,11 @@ function AnnouncementsTab({ clubId }: { clubId: string }) {
 
   const handlePin = async (item: any) => {
     try {
-      await supabase.from('club_announcements').update({ pinned: !item.pinned }).eq('id', item.id);
+      const { error: pinErr } = await supabase
+        .from('club_announcements')
+        .update({ pinned: !item.pinned })
+        .eq('id', item.id);
+      if (pinErr) throw pinErr;
       load();
       masterBus.emit('ANNOUNCEMENT_CHANGED', { clubId, action: 'created' });
     } catch (err: any) {

@@ -38,6 +38,8 @@ export default function DisputeManagementPage() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<FilterTab>('all');
   const [resolving, setResolving] = useState<string | null>(null);
+  const [reviewing, setReviewing] = useState<string | null>(null);
+  const [escalating, setEscalating] = useState<string | null>(null);
   const [resolutionText, setResolutionText] = useState('');
   const [adjustmentAmount, setAdjustmentAmount] = useState('');
   const [adjustmentType, setAdjustmentType] = useState<'credit' | 'debit' | 'none'>('none');
@@ -108,7 +110,8 @@ export default function DisputeManagementPage() {
   }, [loadDisputes]);
 
   const handleStartReview = async (disputeId: string) => {
-    if (!user?.id) return;
+    if (!user?.id || reviewing) return;
+    setReviewing(disputeId);
     try {
       await DisputeService.startReview(disputeId, user.id);
       toast.success('Dispute now under review');
@@ -116,6 +119,7 @@ export default function DisputeManagementPage() {
     } catch (err) {
       toast.error('Failed to start review');
     }
+    setReviewing(null);
   };
 
   const handleResolve = async (disputeId: string) => {
@@ -144,6 +148,8 @@ export default function DisputeManagementPage() {
   };
 
   const handleEscalate = async (disputeId: string) => {
+    if (escalating) return;
+    setEscalating(disputeId);
     try {
       await DisputeService.escalateDispute(disputeId, 'Escalated by admin for further review');
       toast.success('Dispute escalated');
@@ -151,6 +157,7 @@ export default function DisputeManagementPage() {
     } catch (err) {
       toast.error('Failed to escalate');
     }
+    setEscalating(null);
   };
 
   const filtered = (
@@ -328,8 +335,9 @@ export default function DisputeManagementPage() {
                         <button
                           className="action-btn review"
                           onClick={() => handleStartReview(dispute.id)}
+                          disabled={reviewing === dispute.id}
                         >
-                          🔍 Start Review
+                          {reviewing === dispute.id ? '🔍 Reviewing...' : '🔍 Start Review'}
                         </button>
                       )}
 
@@ -371,8 +379,9 @@ export default function DisputeManagementPage() {
                               <button
                                 className="action-btn escalate"
                                 onClick={() => handleEscalate(dispute.id)}
+                                disabled={escalating === dispute.id}
                               >
-                                🔴 Escalate
+                                {escalating === dispute.id ? '🔴 Escalating...' : '🔴 Escalate'}
                               </button>
                             </div>
                           </div>

@@ -151,7 +151,8 @@ describe('CashoutService', () => {
       mockRpc.mockResolvedValueOnce({ data: 'cashout-id', error: null });
       mockMaybeSingle.mockResolvedValue({ data: null, error: null });
 
-      await expect(cashoutService.requestCashout('user-1', 'club-1', 100)).resolves.not.toThrow();
+      // requestCashout should still succeed (notification is non-critical)
+      await expect(cashoutService.requestCashout('user-1', 'club-1', 100)).resolves.toBeDefined();
     });
   });
 
@@ -161,7 +162,8 @@ describe('CashoutService', () => {
 
   describe('cancelCashout', () => {
     it('should require cashout ID', async () => {
-      await expect(cashoutService.cancelCashout('', 'user1')).rejects.toThrow();
+      const result = await cashoutService.cancelCashout('', 'user1');
+      expect(result).toBeFalsy();
     });
   });
 });

@@ -1558,6 +1558,7 @@ function BrandingTab({ clubId }: { clubId: string }) {
                 return;
               if (!confirm('Are you absolutely sure? This cannot be undone.')) return;
               try {
+                setErr(null);
                 const uuid = await resolveClubUUID(clubId);
                 const { error } = await supabase.rpc('transfer_club_ownership', {
                   p_club_id: uuid,

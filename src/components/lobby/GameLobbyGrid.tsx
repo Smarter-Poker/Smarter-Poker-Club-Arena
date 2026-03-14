@@ -106,8 +106,20 @@ export default function GameLobbyGrid({ clubId, onGamePress }: GameLobbyGridProp
     if (!clubId) return;
     try {
       const [tablesRes, tourneysRes] = await Promise.all([
-        supabase.from('tables').select('*').eq('club_id', clubId).neq('status', 'deleted'),
-        supabase.from('tournaments').select('*').eq('club_id', clubId).neq('status', 'deleted'),
+        supabase
+          .from('tables')
+          .select(
+            'id, name, game_type, game_variant, small_blind, big_blind, max_players, current_players, status, created_at'
+          )
+          .eq('club_id', clubId)
+          .neq('status', 'deleted'),
+        supabase
+          .from('tournaments')
+          .select(
+            'id, name, type, game_variant, buy_in, status, current_players, max_players, start_time, created_at'
+          )
+          .eq('club_id', clubId)
+          .neq('status', 'deleted'),
       ]);
       const tables = tablesRes.data || [];
       const tournaments = tourneysRes.data || [];

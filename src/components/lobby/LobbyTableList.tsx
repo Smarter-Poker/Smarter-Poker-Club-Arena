@@ -71,7 +71,12 @@ export function LobbyTableList({ clubId, gameType, onJoinTable }: LobbyTableList
   const loadTables = async () => {
     setLoading(true);
     try {
-      let query = supabase.from('tables').select('*').eq('status', 'active');
+      let query = supabase
+        .from('tables')
+        .select(
+          'id, name, game_type, game_variant, small_blind, big_blind, max_players, current_players, status, stakes'
+        )
+        .eq('status', 'active');
 
       if (clubId) {
         const resolvedId = await resolveClubUUID(clubId);

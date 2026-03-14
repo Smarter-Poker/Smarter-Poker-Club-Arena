@@ -171,7 +171,7 @@ export const CreditService = {
     if (!account) throw new Error('Agent not found');
 
     const { data, error } = await supabase
-      .from('credit_limit_requests')
+      .from('credit_requests')
       .insert({
         agent_id: agentId,
         current_limit: account.creditLimit,
@@ -197,7 +197,7 @@ export const CreditService = {
     const status = approved ? 'approved' : 'denied';
 
     const { data: request, error: fetchError } = await supabase
-      .from('credit_limit_requests')
+      .from('credit_requests')
       .select('agent_id, requested_limit')
       .eq('id', requestId)
       .maybeSingle();
@@ -206,7 +206,7 @@ export const CreditService = {
 
     // Update request
     const { error: reqUpdateErr } = await supabase
-      .from('credit_limit_requests')
+      .from('credit_requests')
       .update({
         status,
         reviewed_by: reviewerId,

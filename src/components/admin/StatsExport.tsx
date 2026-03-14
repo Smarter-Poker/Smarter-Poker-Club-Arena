@@ -56,7 +56,7 @@ export function StatsExport({ clubId, isOpen, onClose }: StatsExportProps) {
       }
 
       // Fetch stats
-      let query = supabase.from('hand_histories').select('*').eq('user_id', user.id);
+      let query = supabase.from('hand_history').select('*').eq('user_id', user.id);
 
       if (clubId) {
         query = query.eq('club_id', await resolveClubUUID(clubId));

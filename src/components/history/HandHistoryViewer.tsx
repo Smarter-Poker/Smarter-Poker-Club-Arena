@@ -58,7 +58,7 @@ export function HandHistoryViewer({
 
     try {
       let query = supabase
-        .from('hand_histories')
+        .from('hand_history')
         .select('*')
         .eq('user_id', user.id)
         .order('played_at', { ascending: false })

@@ -78,7 +78,7 @@ export function HandReplayer({ handId, isOpen, onClose }: HandReplayerProps) {
 
     try {
       const { data, error } = await supabase
-        .from('hand_histories')
+        .from('hand_history')
         .select('*')
         .eq('id', handId)
         .maybeSingle();

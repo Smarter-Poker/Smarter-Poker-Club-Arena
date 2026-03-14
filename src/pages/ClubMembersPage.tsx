@@ -448,6 +448,7 @@ export default function ClubMembersPage() {
 
   const [members, setMembers] = useState<ClubMember[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [filter, setFilter] = useState<MemberFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
@@ -530,7 +531,12 @@ export default function ClubMembersPage() {
     // Subscribe to bus-level events for cross-component sync
     const reload = (event?: any) => {
       if (!clubId || !event?.payload?.clubId || event.payload.clubId === clubId) {
-        if (isMounted) loadMembers(() => isMounted);
+        if (isMounted) {
+          setIsRefreshing(true);
+          loadMembers(() => isMounted).finally(() => {
+            if (isMounted) setIsRefreshing(false);
+          });
+        }
       }
     };
 

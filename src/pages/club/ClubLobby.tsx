@@ -3,7 +3,7 @@
  * PokerBros-style club interface with tournaments, tables, and navigation
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { clubService } from '../../services/ClubService';
 import { tableService } from '../../services/TableService';
@@ -14,6 +14,7 @@ import { useUserStore } from '../../stores/useUserStore';
 import type { Club, PokerTable, Tournament } from '../../types/database.types';
 import ClubBottomNav from '../../components/club/ClubBottomNav';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
+import { useVisibilityRefresh } from '../../hooks/useVisibilityRefresh';
 import './ClubLobby.css';
 
 // Animation utilities
@@ -38,6 +39,13 @@ export default function ClubLobby() {
   const [chipBalance, setChipBalance] = useState(0);
   const [diamondBalance, setDiamondBalance] = useState(0);
   const currentUser = useUserStore((s) => s.user);
+  const isMountedRef = useRef(true);
+  useEffect(
+    () => () => {
+      isMountedRef.current = false;
+    },
+    []
+  );
 
   // UNION-FIRST: Check if this club is in a union and redirect
   useEffect(() => {
@@ -62,15 +70,60 @@ export default function ClubLobby() {
   }, [clubId, navigate]);
 
   useEffect(() => {
-    let isMounted = true;
     if (!clubId) {
       setIsLoading(false);
       return;
     }
-    loadClubData(() => isMounted);
-    return () => {
-      isMounted = false;
-    };
+    loadClubData();
+  }, [clubId, currentUser?.id]);
+
+  // ── Visibility Refresh: reload data when user tabs back ──
+  useVisibilityRefresh(() => {
+    if (clubId) loadClubData();
+  });
+
+  // ── Bus Listeners: cross-page reactivity ──
+  useEffect(() => {
+    if (!clubId) return;
+    const reload = () => loadClubData();
+    const unsubs = [
+      masterBus.subscribeDebounced(
+        'BALANCE_UPDATED',
+        () => {
+          if (!currentUser?.id) return;
+          Promise.all([
+            supabase
+              .from('wallets')
+              .select('balance')
+              .eq('user_id', currentUser.id)
+              .eq('wallet_type', 'PLAYER')
+              .maybeSingle(),
+            supabase
+              .from('diamond_wallets')
+              .select('balance')
+              .eq('user_id', currentUser.id)
+              .maybeSingle(),
+          ])
+            .then(([chipRes, diamondRes]) => {
+              if (!isMountedRef.current) return;
+              if (chipRes.data) setChipBalance(chipRes.data.balance || 0);
+              if (diamondRes.data) setDiamondBalance(diamondRes.data.balance || 0);
+            })
+            .catch(() => {});
+        },
+        500
+      ),
+      masterBus.subscribeDebounced('TABLE_SEATED', reload, 300),
+      masterBus.subscribeDebounced('TABLE_LEFT', reload, 300),
+      masterBus.subscribeDebounced(
+        'CLUB_UPDATED',
+        (payload: any) => {
+          if (!payload?.clubId || payload.clubId === clubId) reload();
+        },
+        300
+      ),
+    ];
+    return () => unsubs.forEach((u) => u());
   }, [clubId, currentUser?.id]);
 
   // ── Realtime subscription: live table and tournament updates ──
@@ -128,7 +181,7 @@ export default function ClubLobby() {
     };
   }, [clubId]);
 
-  const loadClubData = async (getIsMounted: () => boolean) => {
+  const loadClubData = useCallback(async () => {
     if (!clubId) return;
     setIsLoading(true);
     try {
@@ -137,7 +190,7 @@ export default function ClubLobby() {
         tableService.getClubTables(clubId),
         tournamentService.getTournaments(clubId),
       ]);
-      if (!getIsMounted()) return;
+      if (!isMountedRef.current) return;
       setClub(clubData);
       setTables(tableData);
       setTournaments(tournamentData);
@@ -149,20 +202,20 @@ export default function ClubLobby() {
           .eq('user_id', currentUser.id)
           .eq('wallet_type', 'PLAYER')
           .maybeSingle();
-        if (getIsMounted() && walletData) setChipBalance(walletData.balance || 0);
+        if (isMountedRef.current && walletData) setChipBalance(walletData.balance || 0);
 
         const { data: diamondData } = await supabase
           .from('diamond_wallets')
           .select('balance')
           .eq('user_id', currentUser.id)
           .maybeSingle();
-        if (getIsMounted() && diamondData) setDiamondBalance(diamondData.balance || 0);
+        if (isMountedRef.current && diamondData) setDiamondBalance(diamondData.balance || 0);
       }
     } catch (err) {
       console.error('[ClubLobby] Failed to load club data:', err);
     }
-    if (getIsMounted()) setIsLoading(false);
-  };
+    if (isMountedRef.current) setIsLoading(false);
+  }, [clubId, currentUser?.id]);
 
   const filters: GameFilter[] = ['ALL', "Hold'em", 'Omaha', 'Mixed', 'MTT', 'Spin-It', 'SN'];
 

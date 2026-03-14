@@ -1096,7 +1096,7 @@ class MessagingServiceClass {
   /** Get count of shared sessions with another player */
   async getPlayedWithCount(userId: string, otherUserId: string): Promise<number> {
     const { count } = await supabase
-      .from('hand_histories')
+      .from('hand_history')
       .select('id', { count: 'exact', head: true })
       .contains('player_ids', [userId, otherUserId]);
     return count || 0;
@@ -1105,7 +1105,7 @@ class MessagingServiceClass {
   /** Get "last played together" timestamp */
   async getLastPlayedTogether(userId: string, otherUserId: string): Promise<string | null> {
     const { data } = await supabase
-      .from('hand_histories')
+      .from('hand_history')
       .select('created_at')
       .contains('player_ids', [userId, otherUserId])
       .order('created_at', { ascending: false })

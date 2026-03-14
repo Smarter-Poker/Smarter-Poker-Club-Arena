@@ -41,7 +41,7 @@ export const BlockedPlayersList: React.FC<BlockedPlayersListProps> = ({ onUnbloc
     setLoading(true);
     try {
       const { data, error } = await supabase
-        .from('blocked_players')
+        .from('user_blocks')
         .select(
           `
                     id,
@@ -79,7 +79,7 @@ export const BlockedPlayersList: React.FC<BlockedPlayersListProps> = ({ onUnbloc
   const handleUnblock = async (player: BlockedPlayer) => {
     setUnblocking(player.id);
     try {
-      const { error } = await supabase.from('blocked_players').delete().eq('id', player.id);
+      const { error } = await supabase.from('user_blocks').delete().eq('id', player.id);
 
       if (error) throw error;
 

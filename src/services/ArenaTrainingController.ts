@@ -153,7 +153,7 @@ export async function startTrainingSession(
   const levelConfig = LEVELS.find((l) => l.level === level) || LEVELS[0];
 
   const { data, error } = await supabase
-    .from('training_sessions')
+    .from('arena_sessions')
     .insert({
       user_id: user.user.id,
       club_id: clubId,
@@ -207,7 +207,7 @@ export async function recordAnswer(
   isCorrect: boolean
 ): Promise<{ masteryRate: number; passed: boolean }> {
   const { data: session, error: fetchError } = await supabase
-    .from('training_sessions')
+    .from('arena_sessions')
     .select('*')
     .eq('id', sessionId)
     .maybeSingle();
@@ -225,7 +225,7 @@ export async function recordAnswer(
   const passed = isComplete && masteryRate >= MASTERY_THRESHOLD;
 
   const { error: updateError } = await supabase
-    .from('training_sessions')
+    .from('arena_sessions')
     .update({
       questions_attempted: newAttempted,
       correct_answers: newCorrect,
@@ -284,7 +284,7 @@ async function recordSessionCompletion(
  */
 export async function getUnlockedLevel(userId: string): Promise<number> {
   const { data, error } = await supabase
-    .from('training_sessions')
+    .from('arena_sessions')
     .select('level, score')
     .eq('user_id', userId)
     .eq('status', 'complete')
@@ -308,7 +308,7 @@ export async function getTrainingHistory(
   limit: number = 20
 ): Promise<TrainingSession[]> {
   const { data, error } = await supabase
-    .from('training_sessions')
+    .from('arena_sessions')
     .select('*')
     .eq('user_id', userId)
     .order('created_at', { ascending: false })

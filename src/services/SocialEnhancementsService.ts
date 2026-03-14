@@ -238,7 +238,7 @@ class SocialEnhancementsServiceClass {
       // Shared tables (recent 30 days)
       const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString();
       const { count: sharedTables, error: e3 } = await supabase
-        .from('hand_histories')
+        .from('hand_history')
         .select('id', { count: 'exact', head: true })
         .contains('player_ids', [userId, otherUserId])
         .gte('created_at', thirtyDaysAgo);

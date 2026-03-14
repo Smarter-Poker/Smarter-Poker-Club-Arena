@@ -154,7 +154,7 @@ export default function UnionGamesPage() {
             .order('start_time', { ascending: false })
             .limit(50),
           supabase
-            .from('poker_tables')
+            .from('tables')
             .select(
               'id, name, status, game_type, game_variant, small_blind, big_blind, max_players, current_players, club_id'
             )

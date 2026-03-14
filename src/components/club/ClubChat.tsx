@@ -156,10 +156,11 @@ export default function ClubChat({ clubId, userId, userName }: ClubChatProps) {
   const sendMessage = async () => {
     if (!text.trim() || sending) return;
     setSending(true);
+    const tempId = `temp-${Date.now()}`;
     try {
       // Optimistic add
       const optimistic: ClubChatMessage = {
-        id: `temp-${Date.now()}`,
+        id: tempId,
         user_id: userId,
         message: text.trim(),
         display_name: userName || 'You',
@@ -176,9 +177,14 @@ export default function ClubChat({ clubId, userId, userName }: ClubChatProps) {
         display_name: userName || 'Player',
         message_type: 'message',
       });
-      if (error) console.error('[ClubChat] Send error:', error);
+      if (error) {
+        console.error('[ClubChat] Send error:', error);
+        // Rollback optimistic message — remove the temp message so user sees it failed
+        setMessages((prev) => prev.filter((m) => m.id !== tempId));
+      }
     } catch {
-      /* silent */
+      // Rollback on any exception
+      setMessages((prev) => prev.filter((m) => m.id !== tempId));
     } finally {
       setSending(false);
     }

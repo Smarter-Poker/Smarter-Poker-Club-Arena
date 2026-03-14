@@ -172,9 +172,9 @@ export default function AgentPromoPanel({
       if (isMounted.current) {
         setAmount('');
         setSelectedPlayer(null);
+        loadData();
+        onDistribute?.();
       }
-      loadData();
-      onDistribute?.();
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Distribution failed';
       showToast(msg, 'error');

@@ -614,10 +614,12 @@ export default function CashierPage() {
   const notifyWalletChange = (targetUserId: string, chipAmount: number) => {
     try {
       // 1. Notify local React app via MasterBus for instant sync
+      // NOTE: Do not pass stale balance values here — the receiver should
+      // re-query from Supabase to get the latest actual balance
       masterBus.emit('WALLET_REFRESHED', {
         walletType: 'PLAYER',
-        available: balances.PLAYER.available,
-        total: balances.PLAYER.total,
+        available: 0,
+        total: 0,
       });
 
       // 2. Notify parent World Hub iframe

@@ -50,6 +50,7 @@ export default function AgentPortalPage() {
   const [transferAmount, setTransferAmount] = useState('');
   const [isTransferring, setIsTransferring] = useState(false);
   const [visibleSections, setVisibleSections] = useState<Set<number>>(new Set());
+  const [agentClubId, setAgentClubId] = useState<string | null>(null);
   const isMounted = useIsMounted();
 
   useVisibilityRefresh(() => loadData());
@@ -119,7 +120,7 @@ export default function AgentPortalPage() {
       const { data, error } = await supabase
         .from('agents')
         .select(
-          'id, agent_wallet_balance, player_wallet_balance, promo_wallet_balance, credit_limit'
+          'id, club_id, agent_wallet_balance, player_wallet_balance, promo_wallet_balance, credit_limit'
         )
         // user.id is auth.users.id, NOT agents.id (PK) — query by user_id
         .eq('user_id', user.id)
@@ -137,6 +138,7 @@ export default function AgentPortalPage() {
       }
 
       if (!isMounted.current) return;
+      if (data.club_id) setAgentClubId(data.club_id);
       setWallet({
         agentBal: data.agent_wallet_balance || 0,
         playerBal: data.player_wallet_balance || 0,
@@ -432,6 +434,8 @@ export default function AgentPortalPage() {
               </div>
             </div>
             <button
+              onClick={() => agentClubId && navigate(`/clubs/${agentClubId}/settlement`)}
+              disabled={!agentClubId}
               style={{
                 padding: '6px 14px',
                 background: 'rgba(239,68,68,0.15)',
@@ -440,7 +444,8 @@ export default function AgentPortalPage() {
                 color: '#ef4444',
                 fontWeight: 700,
                 fontSize: '0.75rem',
-                cursor: 'pointer',
+                cursor: agentClubId ? 'pointer' : 'not-allowed',
+                opacity: agentClubId ? 1 : 0.5,
               }}
             >
               SETTLE NOW

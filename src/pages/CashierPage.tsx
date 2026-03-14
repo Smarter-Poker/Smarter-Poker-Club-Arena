@@ -1271,7 +1271,19 @@ export default function CashierPage() {
                 setIsProcessing(true);
                 setMessage(null);
                 try {
-                  await _WalletService.distributePromo(user.id, selectedRecipient, value);
+                  // Look up agent PK — distributePromo RPC expects agents.id, not auth.users.id
+                  const resolvedClub = await resolveClubUUID(clubId || '');
+                  const { data: agentRow } = await supabase
+                    .from('agents')
+                    .select('id')
+                    .eq('user_id', user.id)
+                    .eq('club_id', resolvedClub)
+                    .maybeSingle();
+                  if (!agentRow?.id) {
+                    setMessage({ type: 'error', text: 'Agent record not found for this club' });
+                    return;
+                  }
+                  await _WalletService.distributePromo(agentRow.id, selectedRecipient, value);
                   const recipient = recipients.find((r) => r.id === selectedRecipient);
                   setMessage({
                     type: 'success',

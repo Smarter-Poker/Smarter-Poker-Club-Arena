@@ -212,7 +212,11 @@ export default function FlashPoolPage() {
       }
       setJoiningPool(pool.poolId);
       try {
-        flashPoolEngine.joinPool(pool.poolId, user.id, buyIn);
+        const joined = flashPoolEngine.joinPool(pool.poolId, user.id, buyIn);
+        if (!joined) {
+          toast.error('Unable to join pool — you may already be in this pool');
+          return;
+        }
         toast.success(`Joining ${pool.stakes} flash pool...`);
         masterBus.emit('FLASH_POOL_JOINED', {
           poolId: pool.poolId,

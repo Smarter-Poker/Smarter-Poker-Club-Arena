@@ -247,6 +247,26 @@ export default function XMTTPage() {
   const [waitlistPositions, setWaitlistPositions] = useState<Record<string, number | null>>({});
   const [waitlistProcessing, setWaitlistProcessing] = useState<string | null>(null);
 
+  // Load existing waitlist positions on mount for full-capacity tournaments
+  useEffect(() => {
+    if (!user || tournaments.length === 0) return;
+    const fullTournaments = tournaments.filter(
+      (t) => t.max_players && (t.registered_count || 0) >= t.max_players
+    );
+    if (fullTournaments.length === 0) return;
+
+    fullTournaments.forEach(async (t) => {
+      try {
+        const result = await tournamentService.getTournamentWaitlistPosition(t.id, user.id);
+        if (result) {
+          setWaitlistPositions((prev) => ({ ...prev, [t.id]: result.position }));
+        }
+      } catch {
+        // Non-critical — position just won't show
+      }
+    });
+  }, [user?.id, tournaments.length]);
+
   const handleJoinWaitlist = async (tournamentId: string) => {
     if (!user) return;
     setWaitlistProcessing(tournamentId);

@@ -1033,13 +1033,16 @@ export default function AgentDashboardPage() {
                   disabled={processing || !creditTarget || !creditAmount}
                   onClick={async () => {
                     setProcessing(true);
+                    setError(null);
                     try {
-                      await WalletService.distributePromo(
-                        user?.id || '',
-                        creditTarget,
-                        Number(creditAmount)
-                      );
-                      setSuccess(`Granted ${fmtChips(Number(creditAmount))} promo chips!`);
+                      const promoAmt = Number(creditAmount);
+                      if (isNaN(promoAmt) || promoAmt <= 0) {
+                        setError('Enter a valid chip amount');
+                        setProcessing(false);
+                        return;
+                      }
+                      await WalletService.distributePromo(user?.id || '', creditTarget, promoAmt);
+                      setSuccess(`Granted ${fmtChips(promoAmt)} promo chips!`);
                       setCreditTarget('');
                       setCreditAmount('');
                       loadDashboard(clubId);
@@ -1166,6 +1169,11 @@ export default function AgentDashboardPage() {
                     setError(null);
                     try {
                       const amt = Number(creditAmount);
+                      if (isNaN(amt) || amt <= 0) {
+                        setError('Enter a valid chip amount');
+                        setProcessing(false);
+                        return;
+                      }
                       if (creditAction === 'issue_credit' || creditAction === 'add_prepaid') {
                         await CreditService.setCreditLine(
                           creditTarget,

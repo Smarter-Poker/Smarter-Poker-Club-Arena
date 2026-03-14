@@ -503,10 +503,11 @@ export default function MarketplacePage() {
                     <button
                       onClick={async () => {
                         try {
-                          await supabase
+                          const { error: togErr } = await supabase
                             .from('marketplace_items')
                             .update({ is_active: !item.is_active })
                             .eq('id', item.id);
+                          if (togErr) throw togErr;
                           loadAdminItems();
                           loadMarketplace(clubId || undefined, true);
                         } catch (err: any) {
@@ -521,7 +522,11 @@ export default function MarketplacePage() {
                       onClick={async () => {
                         if (!confirm(`Delete "${item.name}"?`)) return;
                         try {
-                          await supabase.from('marketplace_items').delete().eq('id', item.id);
+                          const { error: delErr } = await supabase
+                            .from('marketplace_items')
+                            .delete()
+                            .eq('id', item.id);
+                          if (delErr) throw delErr;
                           loadAdminItems();
                           loadMarketplace(clubId || undefined, true);
                         } catch (err: any) {

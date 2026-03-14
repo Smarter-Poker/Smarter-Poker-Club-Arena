@@ -328,15 +328,8 @@ export default function AgentDashboardPage() {
     try {
       const uuid = await resolveClubUUID(clubId);
       const amt = parseFloat(transferAmount);
-      const { error: txErr } = await supabase.from('chip_transactions').insert({
-        club_id: uuid,
-        from_user_id: user?.id,
-        to_user_id: transferTarget,
-        amount: amt,
-        type: 'agent_transfer',
-        notes: transferNotes || 'Agent-to-agent transfer',
-      });
-      if (txErr) throw txErr;
+      if (isNaN(amt) || amt <= 0) throw new Error('Invalid transfer amount');
+      await WalletService.transferToUser(user?.id || '', transferTarget, amt);
       setSuccess(`Transferred ${fmtChips(amt)} chips.`);
       masterBus.emit('CHIPS_DISTRIBUTED', { clubId: uuid, amount: amt });
       setShowTransfer(false);

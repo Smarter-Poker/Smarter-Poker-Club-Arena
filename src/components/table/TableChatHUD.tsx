@@ -131,8 +131,9 @@ export default function TableChatHUD({ tableId, userId, isMuted = false }: Table
     if (!newMessage.trim() || isMuted || !userId) return;
     const text = newMessage.trim();
     setNewMessage('');
+    const tempId = `temp-${Date.now()}`;
     const optMsg: ChatMessage = {
-      id: `temp-${Date.now()}`,
+      id: tempId,
       table_id: tableId,
       sender_id: userId,
       sender_name: 'You',
@@ -142,23 +143,29 @@ export default function TableChatHUD({ tableId, userId, isMuted = false }: Table
     };
     setMessages((prev) => [...prev.slice(-49), optMsg]);
     triggerHaptic('light');
-    const { error } = await supabase.from('table_chat').insert({
-      table_id: tableId,
-      sender_id: userId,
-      message: text,
-      message_type: 'player',
-    });
-    if (error) {
-      console.error('Failed to send:', error);
-      setMessages((prev) => prev.filter((m) => m.id !== optMsg.id));
+    try {
+      const { error } = await supabase.from('table_chat').insert({
+        table_id: tableId,
+        sender_id: userId,
+        message: text,
+        message_type: 'player',
+      });
+      if (error) {
+        console.error('Failed to send:', error);
+        setMessages((prev) => prev.filter((m) => m.id !== tempId));
+      }
+    } catch {
+      // Rollback on network/exception failure
+      setMessages((prev) => prev.filter((m) => m.id !== tempId));
     }
   };
 
   const sendQuickPhrase = async (phrase: string) => {
+    const tempId = `temp-${Date.now()}`;
     setMessages((prev) => [
       ...prev.slice(-49),
       {
-        id: `temp-${Date.now()}`,
+        id: tempId,
         table_id: tableId,
         sender_id: userId,
         sender_name: 'You',
@@ -168,9 +175,18 @@ export default function TableChatHUD({ tableId, userId, isMuted = false }: Table
       },
     ]);
     triggerHaptic('light');
-    await supabase
-      .from('table_chat')
-      .insert({ table_id: tableId, sender_id: userId, message: phrase, message_type: 'player' });
+    try {
+      const { error } = await supabase
+        .from('table_chat')
+        .insert({ table_id: tableId, sender_id: userId, message: phrase, message_type: 'player' });
+      if (error) {
+        console.error('[TableChat] Quick phrase failed:', error);
+        setMessages((prev) => prev.filter((m) => m.id !== tempId));
+      }
+    } catch {
+      // Rollback on network/exception failure
+      setMessages((prev) => prev.filter((m) => m.id !== tempId));
+    }
   };
 
   if (isMobile && !isOpen) {

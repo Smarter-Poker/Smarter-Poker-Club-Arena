@@ -79,13 +79,15 @@ export default function SearchPage() {
 
       if (!getIsMounted || getIsMounted()) setLoading(true);
       const allResults: SearchResult[] = [];
+      // Sanitize SQL wildcards to prevent unintended pattern matching
+      const sanitized = searchQuery.replace(/[%_]/g, '');
 
       try {
         if (category === 'all' || category === 'clubs') {
           const { data: clubs } = await supabase
             .from('clubs')
             .select('id, name, avatar_url, member_count')
-            .ilike('name', `%${searchQuery}%`)
+            .ilike('name', `%${sanitized}%`)
             .limit(10);
 
           if (clubs) {
@@ -105,7 +107,7 @@ export default function SearchPage() {
           const { data: players } = await supabase
             .from('profiles')
             .select('id, username, avatar_url')
-            .ilike('username', `%${searchQuery}%`)
+            .ilike('username', `%${sanitized}%`)
             .limit(10);
 
           if (players) {
@@ -124,7 +126,7 @@ export default function SearchPage() {
           const { data: tables } = await supabase
             .from('tables')
             .select('id, name, stakes, current_players, max_players')
-            .ilike('name', `%${searchQuery}%`)
+            .ilike('name', `%${sanitized}%`)
             .limit(10);
 
           if (tables) {

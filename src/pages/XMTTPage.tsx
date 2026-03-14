@@ -136,9 +136,9 @@ export default function XMTTPage() {
           .select('*, profiles(display_name, username)')
           .eq('tournament_id', tournamentId),
       ]);
-      if (mountedRef.current) {
+      if (mountedRef.current && tourn) {
         setDetail({
-          tournament: tourn,
+          tournament: tourn as Tournament,
           registrations: (regs || []).map((r: any) => ({
             user_id: r.user_id,
             display_name: r.profiles?.display_name,

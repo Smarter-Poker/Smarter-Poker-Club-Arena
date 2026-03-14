@@ -258,17 +258,15 @@ function PlayerActionModal({
 
             // Create BUSINESS and PROMO wallets (required for agents to receive commissions)
             for (const walletType of ['BUSINESS', 'PROMO'] as const) {
-              await supabase
-                .from('wallets')
-                .upsert(
-                  {
-                    user_id: member.user_id,
-                    wallet_type: walletType,
-                    balance: 0,
-                    locked_balance: 0,
-                  },
-                  { onConflict: 'user_id,wallet_type' }
-                );
+              await supabase.from('wallets').upsert(
+                {
+                  user_id: member.user_id,
+                  wallet_type: walletType,
+                  balance: 0,
+                  locked_balance: 0,
+                },
+                { onConflict: 'user_id,wallet_type' }
+              );
             }
           }
         } else if (wasAgentRole && !isAgentRole) {

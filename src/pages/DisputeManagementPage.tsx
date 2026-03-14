@@ -17,6 +17,7 @@ import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
+import ClubBottomNav from '../components/club/ClubBottomNav';
 import {
   DisputeService,
   type Dispute,
@@ -201,187 +202,190 @@ export default function DisputeManagementPage() {
   };
 
   return (
-    <div className="dispute-management-page">
-      <div className="dispute-header">
-        <h2>⚖️ Dispute Management</h2>
-        {statusCounts.open > 0 && (
-          <span className="open-count-badge">{statusCounts.open} open</span>
-        )}
-      </div>
-
-      {/* Filter Tabs */}
-      <div className="dispute-tabs">
-        {(['all', 'open', 'under_review', 'resolved', 'escalated'] as FilterTab[]).map((tab) => (
-          <button
-            key={tab}
-            className={`tab-btn ${activeTab === tab ? 'active' : ''}`}
-            onClick={() => setActiveTab(tab)}
-          >
-            {tab === 'under_review' ? 'Reviewing' : tab.charAt(0).toUpperCase() + tab.slice(1)}
-            {statusCounts[tab] > 0 && <span className="tab-count">{statusCounts[tab]}</span>}
-          </button>
-        ))}
-      </div>
-
-      {/* Search */}
-      <div style={{ marginBottom: '12px' }}>
-        <input
-          type="text"
-          placeholder="Search by name, reason, amount..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          style={{
-            width: '100%',
-            padding: '10px 14px',
-            background: 'rgba(0,0,0,0.3)',
-            border: '1px solid rgba(255,255,255,0.08)',
-            borderRadius: '8px',
-            color: '#fff',
-            fontSize: '0.85rem',
-            boxSizing: 'border-box',
-          }}
-        />
-      </div>
-
-      {/* Disputes List */}
-      {loading ? (
-        <div className="loading-state">
-          <PageSkeleton variant="list" />
-          <p>Loading disputes...</p>
+    <>
+      <div className="dispute-management-page">
+        <div className="dispute-header">
+          <h2>⚖️ Dispute Management</h2>
+          {statusCounts.open > 0 && (
+            <span className="open-count-badge">{statusCounts.open} open</span>
+          )}
         </div>
-      ) : filtered.length === 0 ? (
-        <div className="empty-state">
-          <span className="empty-icon">◉</span>
-          <p>{activeTab === 'all' ? 'No disputes filed' : `No ${activeTab} disputes`}</p>
-        </div>
-      ) : (
-        <div className="dispute-list">
-          {filtered.map((dispute) => (
-            <div key={dispute.id} className={`dispute-card status-${dispute.status}`}>
-              <div
-                className="dispute-card-header"
-                onClick={() => {
-                  const newId = expandedId === dispute.id ? null : dispute.id;
-                  setExpandedId(newId);
-                  // Reset form state when switching cards to prevent stale data carry-over
-                  if (newId !== expandedId) {
-                    setResolutionText('');
-                    setAdjustmentAmount('');
-                    setAdjustmentType('none');
-                  }
-                }}
-              >
-                <div className="dispute-meta">
-                  {getStatusBadge(dispute.status)}
-                  <span className="dispute-amount">{dispute.amount.toLocaleString()} chips</span>
-                </div>
-                <div className="dispute-target">
-                  <span className="target-type">{dispute.targetType.replace('_', ' ')}</span>
-                  <span className="dispute-submitter">by {dispute.submitterName}</span>
-                </div>
-                <div className="dispute-date">
-                  {new Date(dispute.createdAt).toLocaleDateString(undefined, {
-                    month: 'short',
-                    day: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
-                  {(dispute.status === 'open' || dispute.status === 'under_review') &&
-                    (() => {
-                      const sla = getSlaRemaining(dispute.createdAt);
-                      if (!sla) return null;
-                      return (
-                        <span
-                          style={{
-                            display: 'block',
-                            fontSize: '0.65rem',
-                            marginTop: '2px',
-                            color: sla.urgent ? '#ff3b30' : 'rgba(255,255,255,0.4)',
-                            fontWeight: sla.urgent ? 700 : 400,
-                          }}
-                        >
-                          ⏱️ {sla.text}
-                        </span>
-                      );
-                    })()}
-                </div>
-              </div>
 
-              <div className="dispute-reason">
-                <strong>Reason:</strong> {dispute.reason}
-              </div>
-
-              {dispute.resolution && (
-                <div className="dispute-resolution-text">
-                  <strong>Resolution:</strong> {dispute.resolution}
-                </div>
-              )}
-
-              {/* Expanded Actions */}
-              {expandedId === dispute.id &&
-                dispute.status !== 'resolved' &&
-                dispute.status !== 'withdrawn' && (
-                  <div className="dispute-actions">
-                    {dispute.status === 'open' && (
-                      <button
-                        className="action-btn review"
-                        onClick={() => handleStartReview(dispute.id)}
-                      >
-                        🔍 Start Review
-                      </button>
-                    )}
-
-                    {(dispute.status === 'open' || dispute.status === 'under_review') && (
-                      <>
-                        <div className="resolution-form">
-                          <textarea
-                            placeholder="Enter resolution notes..."
-                            value={resolutionText}
-                            onChange={(e) => setResolutionText(e.target.value)}
-                            rows={2}
-                          />
-                          <div className="adjustment-row">
-                            <select
-                              value={adjustmentType}
-                              onChange={(e) => setAdjustmentType(e.target.value as any)}
-                            >
-                              <option value="none">No Adjustment</option>
-                              <option value="credit">Credit Player</option>
-                              <option value="debit">Debit Player</option>
-                            </select>
-                            {adjustmentType !== 'none' && (
-                              <input
-                                type="number"
-                                placeholder="Amount"
-                                value={adjustmentAmount}
-                                onChange={(e) => setAdjustmentAmount(e.target.value)}
-                              />
-                            )}
-                          </div>
-                          <div className="resolution-actions">
-                            <button
-                              className="action-btn resolve"
-                              onClick={() => handleResolve(dispute.id)}
-                              disabled={resolving === dispute.id}
-                            >
-                              {resolving === dispute.id ? 'Resolving...' : '✓ Resolve'}
-                            </button>
-                            <button
-                              className="action-btn escalate"
-                              onClick={() => handleEscalate(dispute.id)}
-                            >
-                              🔴 Escalate
-                            </button>
-                          </div>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                )}
-            </div>
+        {/* Filter Tabs */}
+        <div className="dispute-tabs">
+          {(['all', 'open', 'under_review', 'resolved', 'escalated'] as FilterTab[]).map((tab) => (
+            <button
+              key={tab}
+              className={`tab-btn ${activeTab === tab ? 'active' : ''}`}
+              onClick={() => setActiveTab(tab)}
+            >
+              {tab === 'under_review' ? 'Reviewing' : tab.charAt(0).toUpperCase() + tab.slice(1)}
+              {statusCounts[tab] > 0 && <span className="tab-count">{statusCounts[tab]}</span>}
+            </button>
           ))}
         </div>
-      )}
-    </div>
+
+        {/* Search */}
+        <div style={{ marginBottom: '12px' }}>
+          <input
+            type="text"
+            placeholder="Search by name, reason, amount..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            style={{
+              width: '100%',
+              padding: '10px 14px',
+              background: 'rgba(0,0,0,0.3)',
+              border: '1px solid rgba(255,255,255,0.08)',
+              borderRadius: '8px',
+              color: '#fff',
+              fontSize: '0.85rem',
+              boxSizing: 'border-box',
+            }}
+          />
+        </div>
+
+        {/* Disputes List */}
+        {loading ? (
+          <div className="loading-state">
+            <PageSkeleton variant="list" />
+            <p>Loading disputes...</p>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="empty-state">
+            <span className="empty-icon">◉</span>
+            <p>{activeTab === 'all' ? 'No disputes filed' : `No ${activeTab} disputes`}</p>
+          </div>
+        ) : (
+          <div className="dispute-list">
+            {filtered.map((dispute) => (
+              <div key={dispute.id} className={`dispute-card status-${dispute.status}`}>
+                <div
+                  className="dispute-card-header"
+                  onClick={() => {
+                    const newId = expandedId === dispute.id ? null : dispute.id;
+                    setExpandedId(newId);
+                    // Reset form state when switching cards to prevent stale data carry-over
+                    if (newId !== expandedId) {
+                      setResolutionText('');
+                      setAdjustmentAmount('');
+                      setAdjustmentType('none');
+                    }
+                  }}
+                >
+                  <div className="dispute-meta">
+                    {getStatusBadge(dispute.status)}
+                    <span className="dispute-amount">{dispute.amount.toLocaleString()} chips</span>
+                  </div>
+                  <div className="dispute-target">
+                    <span className="target-type">{dispute.targetType.replace('_', ' ')}</span>
+                    <span className="dispute-submitter">by {dispute.submitterName}</span>
+                  </div>
+                  <div className="dispute-date">
+                    {new Date(dispute.createdAt).toLocaleDateString(undefined, {
+                      month: 'short',
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                    {(dispute.status === 'open' || dispute.status === 'under_review') &&
+                      (() => {
+                        const sla = getSlaRemaining(dispute.createdAt);
+                        if (!sla) return null;
+                        return (
+                          <span
+                            style={{
+                              display: 'block',
+                              fontSize: '0.65rem',
+                              marginTop: '2px',
+                              color: sla.urgent ? '#ff3b30' : 'rgba(255,255,255,0.4)',
+                              fontWeight: sla.urgent ? 700 : 400,
+                            }}
+                          >
+                            ⏱️ {sla.text}
+                          </span>
+                        );
+                      })()}
+                  </div>
+                </div>
+
+                <div className="dispute-reason">
+                  <strong>Reason:</strong> {dispute.reason}
+                </div>
+
+                {dispute.resolution && (
+                  <div className="dispute-resolution-text">
+                    <strong>Resolution:</strong> {dispute.resolution}
+                  </div>
+                )}
+
+                {/* Expanded Actions */}
+                {expandedId === dispute.id &&
+                  dispute.status !== 'resolved' &&
+                  dispute.status !== 'withdrawn' && (
+                    <div className="dispute-actions">
+                      {dispute.status === 'open' && (
+                        <button
+                          className="action-btn review"
+                          onClick={() => handleStartReview(dispute.id)}
+                        >
+                          🔍 Start Review
+                        </button>
+                      )}
+
+                      {(dispute.status === 'open' || dispute.status === 'under_review') && (
+                        <>
+                          <div className="resolution-form">
+                            <textarea
+                              placeholder="Enter resolution notes..."
+                              value={resolutionText}
+                              onChange={(e) => setResolutionText(e.target.value)}
+                              rows={2}
+                            />
+                            <div className="adjustment-row">
+                              <select
+                                value={adjustmentType}
+                                onChange={(e) => setAdjustmentType(e.target.value as any)}
+                              >
+                                <option value="none">No Adjustment</option>
+                                <option value="credit">Credit Player</option>
+                                <option value="debit">Debit Player</option>
+                              </select>
+                              {adjustmentType !== 'none' && (
+                                <input
+                                  type="number"
+                                  placeholder="Amount"
+                                  value={adjustmentAmount}
+                                  onChange={(e) => setAdjustmentAmount(e.target.value)}
+                                />
+                              )}
+                            </div>
+                            <div className="resolution-actions">
+                              <button
+                                className="action-btn resolve"
+                                onClick={() => handleResolve(dispute.id)}
+                                disabled={resolving === dispute.id}
+                              >
+                                {resolving === dispute.id ? 'Resolving...' : '✓ Resolve'}
+                              </button>
+                              <button
+                                className="action-btn escalate"
+                                onClick={() => handleEscalate(dispute.id)}
+                              >
+                                🔴 Escalate
+                              </button>
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      {clubId && <ClubBottomNav clubId={clubId!} />}
+    </>
   );
 }

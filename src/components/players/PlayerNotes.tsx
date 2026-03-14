@@ -86,7 +86,18 @@ export const PlayerNotes: React.FC<PlayerNotesProps> = ({ playerId, onClose, mod
       if (error) throw error;
 
       // Replaced fallback mock data
-      setNotes(data || []);
+      setNotes(
+        (data || []).map((d: any) => ({
+          id: d.id,
+          playerId: d.player_id,
+          playerName: '',
+          noteColor: d.color || 'blue',
+          note: d.note || '',
+          tags: d.tags || [],
+          createdAt: d.created_at,
+          updatedAt: d.updated_at,
+        }))
+      );
     } catch (error) {
       console.error('Failed to load notes:', error);
     } finally {

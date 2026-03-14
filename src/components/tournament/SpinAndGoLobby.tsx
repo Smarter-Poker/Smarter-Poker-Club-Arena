@@ -85,7 +85,9 @@ export function SpinAndGoLobby({ clubId, onRegister }: SpinAndGoLobbyProps) {
       const resolvedId = await resolveClubUUID(clubId);
       const { data, error } = await supabase
         .from('spin_tournaments')
-        .select('*')
+        .select(
+          'id, buy_in_amount, player_count, max_players, multipliers, prize_pool, status, start_at'
+        )
         .eq('club_id', resolvedId)
         .in('status', ['registering', 'spinning'])
         .order('buy_in', { ascending: true });

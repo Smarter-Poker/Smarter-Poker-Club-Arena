@@ -650,14 +650,16 @@ export function useBBJ(clubId: string | null) {
       // Direct Supabase query instead of API route
       const { data: pool } = await supabase
         .from('bbj_pools')
-        .select('*')
+        .select(
+          'id, club_id, main_balance, total_contributed, hourly_rate, tiers, qualifying_hands, rules'
+        )
         .eq('club_id', clubId)
         .maybeSingle();
 
       if (pool) {
         const { data: winners } = await supabase
           .from('bbj_winners')
-          .select('*')
+          .select('id, loser_name, loser_hand, winner_hand, total_payout, awarded_at')
           .eq('club_id', clubId)
           .order('awarded_at', { ascending: false })
           .limit(5);

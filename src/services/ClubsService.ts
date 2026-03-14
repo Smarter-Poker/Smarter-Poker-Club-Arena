@@ -349,7 +349,7 @@ export async function getUserMemberships(): Promise<(ClubMember & { club: Club }
     throw new Error('Failed to get memberships');
   }
 
-  return data || [];
+  return (data || []) as unknown as (ClubMember & { club: Club })[];
 }
 
 /**

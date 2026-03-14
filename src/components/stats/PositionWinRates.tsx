@@ -103,7 +103,9 @@ const PositionWinRates: React.FC = () => {
 
     const { data: posData, error } = await supabase
       .from('player_position_stats')
-      .select('*')
+      .select(
+        'position, hands_played, vpip_count, pfr_count, three_bet_count, hands_won, total_profit'
+      )
       .eq('user_id', userResp.user.id);
 
     if (!error && posData && posData.length > 0) {

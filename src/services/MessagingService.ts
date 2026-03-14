@@ -1018,8 +1018,8 @@ class MessagingServiceClass {
         is_read_only: true,
       })
       .select('id')
-      .single();
-    return error ? null : data.id;
+      .maybeSingle();
+    return error || !data ? null : data.id;
   }
 
   /** Post an admin announcement (only club admins can post) */

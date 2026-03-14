@@ -149,9 +149,9 @@ class SocialEnhancementsServiceClass {
         expires_at: expiresAt,
       })
       .select('id')
-      .single();
+      .maybeSingle();
 
-    return error ? null : data.id;
+    return error || !data ? null : data.id;
   }
 
   /** Get active stories from friends */

@@ -942,6 +942,9 @@ export default function UnionDashboardPage() {
                     onClick={async () => {
                       setProcessing(true);
                       try {
+                        // TODO(BUG #19): PHANTOM TRANSACTION — this INSERT only logs to union_transactions
+                        // but does NOT atomically debit union_wallets.chip_balance or credit
+                        // the club's wallet. Needs Supabase RPC: fn_union_send_chips_to_club
                         const { error: txErr } = await supabase.from('union_transactions').insert({
                           union_id: unionId,
                           club_id: transferForm.clubId,

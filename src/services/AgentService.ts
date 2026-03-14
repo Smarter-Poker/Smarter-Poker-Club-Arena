@@ -269,7 +269,11 @@ class AgentServiceClass {
 
     // Update membership role
     if (membership?.id) {
-      await supabase.from('club_members').update({ role: input.role }).eq('id', membership.id);
+      const { error: roleErr } = await supabase
+        .from('club_members')
+        .update({ role: input.role })
+        .eq('id', membership.id);
+      if (roleErr) console.error('[AgentService] Failed to update membership role:', roleErr);
     }
 
     return this.getAgent(data.id) as Promise<Agent>;
@@ -304,7 +308,11 @@ class AgentServiceClass {
 
     // Also update membership role if exists
     if (agent.membership_id) {
-      await supabase.from('club_members').update({ role: newRole }).eq('id', agent.membership_id);
+      const { error: roleErr } = await supabase
+        .from('club_members')
+        .update({ role: newRole })
+        .eq('id', agent.membership_id);
+      if (roleErr) console.error('[AgentService] Failed to sync membership role:', roleErr);
     }
 
     return true;
@@ -399,7 +407,11 @@ class AgentServiceClass {
         attempts++;
       } while (attempts < 50);
 
-      await supabase.from('profiles').update({ player_number: playerNumber }).eq('id', userId);
+      const { error: numErr } = await supabase
+        .from('profiles')
+        .update({ player_number: playerNumber })
+        .eq('id', userId);
+      if (numErr) console.error('[AgentService] Failed to assign player_number:', numErr);
 
       console.debug(`[AgentService] Assigned player_number ${playerNumber} to ${profile.username}`);
     }
@@ -414,13 +426,15 @@ class AgentServiceClass {
         .maybeSingle();
 
       if (!existing) {
-        await supabase.from('wallets').insert({
+        const { error: walletErr } = await supabase.from('wallets').insert({
           user_id: userId,
           wallet_type: walletType,
           balance: 0,
           locked_balance: 0,
         });
-        console.debug(`[AgentService] Created ${walletType} wallet for ${profile.username}`);
+        if (walletErr)
+          console.error(`[AgentService] Failed to create ${walletType} wallet:`, walletErr);
+        else console.debug(`[AgentService] Created ${walletType} wallet for ${profile.username}`);
       }
     }
 
@@ -519,13 +533,14 @@ class AgentServiceClass {
     }
 
     // 4. Increment agent player count
-    await supabase
+    const { error: countErr } = await supabase
       .from('agents')
       .update({
         total_players: (agentRecord as any).total_players + 1,
         active_player_count: (agentRecord as any).active_player_count + 1,
       })
       .eq('id', agentRecord.id);
+    if (countErr) console.error('[AgentService] Failed to update agent player count:', countErr);
 
     console.debug(
       `[AgentService] Linked player ${playerId} under agent ${agentProfile.username} via referral code ${referralCode}`
@@ -572,13 +587,14 @@ class AgentServiceClass {
     }
 
     // Update agent player count
-    await supabase
+    const { error: countErr } = await supabase
       .from('agents')
       .update({
         total_players: agentRecord.total_players + 1,
         active_player_count: agentRecord.active_player_count + 1,
       })
       .eq('id', agentRecord.id);
+    if (countErr) console.error('[AgentService] Failed to update agent player count:', countErr);
 
     masterBus.emit('CLUB_UPDATED', { clubId });
 
@@ -632,13 +648,14 @@ class AgentServiceClass {
     if (error) return false;
 
     // Log the assignment
-    await supabase.from('credit_assignments').insert({
+    const { error: auditErr } = await supabase.from('credit_assignments').insert({
       agent_id: agentId,
       assigned_by: assignedBy,
       old_limit: oldLimit,
       new_limit: newLimit,
       reason,
     });
+    if (auditErr) console.error('[AgentService] Failed to log credit assignment:', auditErr);
 
     // Notify UI of club config changes
     if (agent.club_id) {

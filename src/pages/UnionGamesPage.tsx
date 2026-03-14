@@ -13,6 +13,7 @@ import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import { masterBus } from '../core/MasterBus';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
+import { tournamentService } from '../services/TournamentService';
 import PageSkeleton from '../components/common/PageSkeleton';
 import styles from './UnionGamesPage.module.css';
 
@@ -256,13 +257,12 @@ export default function UnionGamesPage() {
   const handleRegister = async (tournamentId: string) => {
     if (!user) return;
     try {
-      const { error } = await supabase.from('tournament_players').insert({
-        tournament_id: tournamentId,
-        user_id: user.id,
-        status: 'registered',
-      });
-      if (error) throw error;
-      masterBus.emit('TOURNAMENT_REGISTERED', { tournamentId, unionId: unionId || undefined });
+      // registerPlayer handles buy-in deduction, escrow, duplicate check, and event emission
+      await tournamentService.registerPlayer(
+        tournamentId,
+        user.id,
+        user.display_name || user.username || 'Player'
+      );
       loadUnionData(unionId || undefined);
     } catch (err: any) {
       toast.error(err.message);

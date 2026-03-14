@@ -458,7 +458,14 @@ export async function deleteClub(clubId: string): Promise<void> {
 
   // Delete all members first (cascade should handle this, but explicit is safer)
   const resolvedId = await resolveClubUUID(clubId);
-  await supabase.from('club_members').delete().eq('club_id', resolvedId);
+  const { error: memberErr } = await supabase
+    .from('club_members')
+    .delete()
+    .eq('club_id', resolvedId);
+  if (memberErr) {
+    console.error('[ClubsService] Failed to remove members before club delete:', memberErr);
+    throw new Error('Failed to remove club members');
+  }
 
   // Delete the club
   const { error } = await supabase.from('clubs').delete().eq('id', clubId);
@@ -542,7 +549,14 @@ export async function uploadClubLogo(clubId: string, file: File): Promise<string
   const logoUrl = urlData.publicUrl;
 
   // Update club record with new logo URL
-  await supabase.from('clubs').update({ logo_url: logoUrl }).eq('id', clubId);
+  const { error: updateErr } = await supabase
+    .from('clubs')
+    .update({ logo_url: logoUrl })
+    .eq('id', clubId);
+  if (updateErr) {
+    console.error('[ClubsService] Logo uploaded but failed to save URL to club record:', updateErr);
+    throw new Error('Logo uploaded but failed to save — please try again');
+  }
 
   return logoUrl;
 }
@@ -587,7 +601,17 @@ export async function uploadClubBanner(clubId: string, file: File): Promise<stri
   const bannerUrl = urlData.publicUrl;
 
   // Update club record with new banner URL
-  await supabase.from('clubs').update({ banner_url: bannerUrl }).eq('id', clubId);
+  const { error: updateErr } = await supabase
+    .from('clubs')
+    .update({ banner_url: bannerUrl })
+    .eq('id', clubId);
+  if (updateErr) {
+    console.error(
+      '[ClubsService] Banner uploaded but failed to save URL to club record:',
+      updateErr
+    );
+    throw new Error('Banner uploaded but failed to save — please try again');
+  }
 
   return bannerUrl;
 }

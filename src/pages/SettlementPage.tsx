@@ -417,7 +417,7 @@ export default function SettlementPage() {
         {
           event: '*',
           schema: 'public',
-          table: 'club_wires',
+          table: 'club_settlements',
         },
         (payload) => {
           // Update club wires state directly for faster UI updates

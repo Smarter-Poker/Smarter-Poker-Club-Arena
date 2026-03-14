@@ -215,7 +215,11 @@ export default function XMTTPage() {
     if (!user || !clubId) return;
     try {
       // registerPlayer handles buy-in deduction, escrow, duplicate check, and event emission
-      await tournamentService.registerPlayer(tournamentId, user.id, user.email || 'Player');
+      await tournamentService.registerPlayer(
+        tournamentId,
+        user.id,
+        user.display_name || user.username || 'Player'
+      );
       loadTournaments(clubId);
       if (selectedTournament === tournamentId) loadDetail(tournamentId);
     } catch (err: any) {

@@ -211,7 +211,10 @@ export const DailyChallenges: React.FC = () => {
       toast.success(
         `+${challenge.chipReward} Chips${challenge.diamondReward ? ` +${challenge.diamondReward} 💎` : ''}`
       );
-      setTimeout(() => setShowAnimation(false), 2000);
+      const animT = window.setTimeout(() => {
+        if (isMounted.current) setShowAnimation(false);
+      }, 2000);
+      animTimers.current.push(animT);
     } catch (err: any) {
       toast.error(err?.message || 'Failed to claim reward');
     } finally {

@@ -41,7 +41,7 @@ export const DailyChallengesWidget: React.FC = () => {
   const debouncedRefresh = useCallback(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
-      if (isMounted.current && user?.id) loadChallenges();
+      if (isMounted.current && user?.id) loadChallengesRef.current?.();
     }, 150);
   }, [user?.id]);
 
@@ -89,7 +89,9 @@ export const DailyChallengesWidget: React.FC = () => {
     };
   }, [user?.id, debouncedRefresh]);
 
-  const loadChallenges = async () => {
+  const loadChallengesRef = useRef<(() => Promise<void>) | null>(null);
+
+  const loadChallenges = useCallback(async () => {
     if (!user?.id) return;
     setLoading(true);
     try {
@@ -97,6 +99,8 @@ export const DailyChallengesWidget: React.FC = () => {
         dailyChallengeService.getTodaysChallenges(user.id),
         dailyChallengeService.getWeeklyChallenges(user.id),
       ]);
+
+      if (!isMounted.current) return;
 
       const mappedDaily: Challenge[] = dailyData.map((c: UserDailyChallenge) => ({
         id: c.id,
@@ -127,12 +131,17 @@ export const DailyChallengesWidget: React.FC = () => {
         claimed: !!c.claimed,
       }));
 
-      setChallenges([...mappedDaily, ...mappedWeekly]);
+      if (isMounted.current) setChallenges([...mappedDaily, ...mappedWeekly]);
     } catch (error) {
       console.error('Failed to load challenges:', error);
     }
-    setLoading(false);
-  };
+    if (isMounted.current) setLoading(false);
+  }, [user?.id]);
+
+  // Keep ref in sync for debouncedRefresh
+  useEffect(() => {
+    loadChallengesRef.current = loadChallenges;
+  }, [loadChallenges]);
 
   // Double-claim guard
   const claimingRef = useRef<Set<string>>(new Set());

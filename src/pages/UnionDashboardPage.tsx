@@ -112,6 +112,12 @@ export default function UnionDashboardPage() {
     return () => clearTimeout(t);
   }, [success]);
 
+  // ── Cache Invalidation on Union Change ─────────────────────
+  useEffect(() => {
+    setAppsLoaded(false);
+    setApps([]);
+  }, [unionId]);
+
   // ── Load Dashboard ─────────────────────────────────────────
   const loadDashboard = useCallback(
     async (uid?: string | null) => {

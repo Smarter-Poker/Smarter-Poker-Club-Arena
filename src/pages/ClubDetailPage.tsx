@@ -514,34 +514,17 @@ export default function ClubDetailPage() {
     };
   }, [clubId]);
 
-  // ── Bus Listeners: cross-page event reactivity ──
+  // ── Bus Listeners: cross-page event reactivity (debounced) ──
   useEffect(() => {
-    const unsubJoined = masterBus.subscribe('CLUB_JOINED', () => {
-      loadClubData();
-    });
-    const unsubLeft = masterBus.subscribe('CLUB_LEFT', () => {
-      loadClubData();
-    });
-    const unsubSeated = masterBus.subscribe('TABLE_SEATED', () => {
-      loadClubData();
-    });
-    const unsubTableLeft = masterBus.subscribe('TABLE_LEFT', () => {
-      loadClubData();
-    });
-    const unsubClubUpdated = masterBus.subscribe('CLUB_UPDATED', () => {
-      loadClubData();
-    });
-    const unsubAnnouncement = masterBus.subscribe('ANNOUNCEMENT_CHANGED', () => {
-      loadClubData();
-    });
-    return () => {
-      unsubJoined();
-      unsubLeft();
-      unsubSeated();
-      unsubTableLeft();
-      unsubClubUpdated();
-      unsubAnnouncement();
-    };
+    const unsubs = [
+      masterBus.subscribeDebounced('CLUB_JOINED', () => loadClubData(), 300),
+      masterBus.subscribeDebounced('CLUB_LEFT', () => loadClubData(), 300),
+      masterBus.subscribeDebounced('TABLE_SEATED', () => loadClubData(), 300),
+      masterBus.subscribeDebounced('TABLE_LEFT', () => loadClubData(), 300),
+      masterBus.subscribeDebounced('CLUB_UPDATED', () => loadClubData(), 300),
+      masterBus.subscribeDebounced('ANNOUNCEMENT_CHANGED', () => loadClubData(), 300),
+    ];
+    return () => unsubs.forEach((u) => u());
   }, []);
 
   const loadClubData = async (getIsMounted?: () => boolean) => {

@@ -176,19 +176,17 @@ export default function SearchPage() {
     };
   }, [debouncedQuery, search]);
 
-  // ── Bus Listeners: re-search when data changes from other pages ──
+  // ── Bus Listeners: re-search when data changes from other pages (debounced) ──
   useEffect(() => {
     const refresh = () => {
       if (query.trim()) search(query);
     };
-    const unsubClub = masterBus.subscribe('CLUB_UPDATED', refresh);
-    const unsubProfile = masterBus.subscribe('PROFILE_UPDATED', refresh);
-    const unsubJoined = masterBus.subscribe('CLUB_JOINED', refresh);
-    return () => {
-      unsubClub();
-      unsubProfile();
-      unsubJoined();
-    };
+    const unsubs = [
+      masterBus.subscribeDebounced('CLUB_UPDATED', refresh, 500),
+      masterBus.subscribeDebounced('PROFILE_UPDATED', refresh, 500),
+      masterBus.subscribeDebounced('CLUB_JOINED', refresh, 500),
+    ];
+    return () => unsubs.forEach((u) => u());
   }, [query, search]);
 
   const getIcon = (type: string): string => {

@@ -383,7 +383,7 @@ export default function FlashPoolPage() {
               />
               <button
                 onClick={() => handleJoinPool(pool)}
-                disabled={joiningPool === pool.poolId}
+                disabled={joiningPool === pool.poolId || pool.status === 'closed'}
                 style={{
                   background:
                     joiningPool === pool.poolId
@@ -400,7 +400,11 @@ export default function FlashPoolPage() {
                   transition: 'all 0.3s ease',
                 }}
               >
-                {joiningPool === pool.poolId ? '⏳' : '⚡ Play'}
+                {joiningPool === pool.poolId
+                  ? '⏳'
+                  : pool.status === 'closed'
+                    ? '🔒 Closed'
+                    : '⚡ Play'}
               </button>
             </div>
           </div>

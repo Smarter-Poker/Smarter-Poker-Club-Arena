@@ -118,32 +118,23 @@ export default function FriendsPage() {
     };
   }, [user?.id]);
 
-  // ── Bus Listeners: cross-page friend reactivity ──
+  // ── Bus Listeners: cross-page friend reactivity (debounced) ──
   useEffect(() => {
     let isMounted = true;
-    const unsubAccepted = masterBus.subscribe('FRIEND_REQUEST_ACCEPTED', () => {
+    const handler = () => {
       if (isMounted && loadFriendsRef.current) loadFriendsRef.current();
-    });
-    const unsubSent = masterBus.subscribe('FRIEND_REQUEST_SENT', () => {
-      if (isMounted && loadFriendsRef.current) loadFriendsRef.current();
-    });
-    const unsubProfile = masterBus.subscribe('PROFILE_UPDATED', () => {
-      if (isMounted && loadFriendsRef.current) loadFriendsRef.current();
-    });
-    // Q3: Reactively update when a user is blocked/unblocked
-    const unsubBlocked = masterBus.subscribe('USER_BLOCKED', () => {
-      if (isMounted && loadFriendsRef.current) loadFriendsRef.current();
-    });
-    const unsubUnblocked = masterBus.subscribe('USER_UNBLOCKED', () => {
-      if (isMounted && loadFriendsRef.current) loadFriendsRef.current();
-    });
+    };
+    const unsubs = [
+      masterBus.subscribeDebounced('FRIEND_REQUEST_ACCEPTED', handler, 500),
+      masterBus.subscribeDebounced('FRIEND_REQUEST_SENT', handler, 500),
+      masterBus.subscribeDebounced('PROFILE_UPDATED', handler, 500),
+      // Q3: Reactively update when a user is blocked/unblocked
+      masterBus.subscribeDebounced('USER_BLOCKED', handler, 500),
+      masterBus.subscribeDebounced('USER_UNBLOCKED', handler, 500),
+    ];
     return () => {
       isMounted = false;
-      unsubAccepted();
-      unsubSent();
-      unsubProfile();
-      unsubBlocked();
-      unsubUnblocked();
+      unsubs.forEach((u) => u());
     };
   }, []);
 

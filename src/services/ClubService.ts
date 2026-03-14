@@ -44,7 +44,9 @@ class ClubServiceClass {
     const { column, value } = resolveClubIdFilter(clubId);
     const { data, error } = await supabase
       .from('clubs')
-      .select('*')
+      .select(
+        'id, club_id, name, description, owner_id, avatar_url, banner_url, is_public, requires_approval, gps_restricted, member_count, online_count, settings, union_id, created_at, updated_at'
+      )
       .eq(column, value)
       .maybeSingle();
 
@@ -58,7 +60,9 @@ class ClubServiceClass {
   async getClubByPublicId(publicId: number): Promise<Club | null> {
     const { data, error } = await supabase
       .from('clubs')
-      .select('*')
+      .select(
+        'id, club_id, name, description, owner_id, avatar_url, banner_url, is_public, requires_approval, gps_restricted, member_count, online_count, settings, union_id, created_at, updated_at'
+      )
       .eq('club_id', publicId)
       .maybeSingle();
 
@@ -72,7 +76,9 @@ class ClubServiceClass {
   async searchClubs(query: string): Promise<Club[]> {
     const { data, error } = await supabase
       .from('clubs')
-      .select('*')
+      .select(
+        'id, club_id, name, description, owner_id, avatar_url, banner_url, is_public, requires_approval, gps_restricted, member_count, online_count, settings, union_id, created_at, updated_at'
+      )
       .eq('is_public', true)
       .ilike('name', `%${query}%`)
       .limit(20);

@@ -175,6 +175,7 @@ export default function DailyChallenges() {
 
         if (changed) {
           saveProgress(updated);
+          masterBus.emit('CHALLENGE_PROGRESS_UPDATED' as any, { progress: updated });
         }
         return changed ? updated : prev;
       });

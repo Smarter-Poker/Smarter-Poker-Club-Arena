@@ -178,7 +178,7 @@ export const CommissionService = {
   async getRates(agentId: string): Promise<CommissionRate[]> {
     const { data, error } = await supabase
       .from('commission_structures')
-      .select('*')
+      .select('id, club_id, agent_id, target_role, rate, effective_date, created_by')
       .eq('agent_id', agentId);
 
     if (error) throw error;
@@ -362,7 +362,9 @@ export const CommissionService = {
   async getCommissionHistory(agentId: string, limit: number = 10): Promise<CommissionPayout[]> {
     const { data, error } = await supabase
       .from('commission_payouts')
-      .select('*')
+      .select(
+        'id, agent_id, period_id, gross_rake, commission_earned, paid_to_downlines, net_payout, status, created_at'
+      )
       .eq('agent_id', agentId)
       .order('created_at', { ascending: false })
       .limit(limit);

@@ -199,7 +199,11 @@ export const BBJService = {
   async getPool(options: { unionId?: string; clubId?: string }): Promise<BBJPool | null> {
     const { unionId, clubId } = options;
 
-    let query = supabase.from('bbj_pools').select('*');
+    let query = supabase
+      .from('bbj_pools')
+      .select(
+        'id, union_id, club_id, main_balance, backup_balance, promo_balance, total_contributed, last_hit_at, last_hit_amount, status, created_at, updated_at'
+      );
 
     if (unionId) {
       query = query.eq('union_id', unionId);
@@ -438,7 +442,9 @@ export const BBJService = {
     // Get current pool by ID (NOT by clubId — params.poolId is the pool's primary key)
     const { data: pool, error: poolError } = await supabase
       .from('bbj_pools')
-      .select('*')
+      .select(
+        'id, union_id, club_id, main_balance, backup_balance, promo_balance, total_contributed, last_hit_at, last_hit_amount, status, created_at, updated_at'
+      )
       .eq('id', params.poolId)
       .maybeSingle();
 
@@ -511,7 +517,9 @@ export const BBJService = {
   async getPayoutHistory(poolId: string, limit: number = 10): Promise<BBJPayout[]> {
     const { data, error } = await supabase
       .from('bbj_payouts')
-      .select('*')
+      .select(
+        'id, pool_id, hand_id, winner_user_id, loser_user_id, table_players_share, winner_share, loser_share, table_share, total_amount, created_at'
+      )
       .eq('pool_id', poolId)
       .order('created_at', { ascending: false })
       .limit(limit);

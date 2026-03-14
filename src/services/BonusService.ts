@@ -67,7 +67,7 @@ class BonusServiceClass {
     // Get user's bonus data
     const { data: bonusData } = await supabase
       .from('user_bonuses')
-      .select('*')
+      .select('id, user_id, daily_streak, last_daily_claim')
       .eq('user_id', userId)
       .maybeSingle();
 
@@ -87,7 +87,9 @@ class BonusServiceClass {
     // Get special bonuses
     const { data: specialData } = await supabase
       .from('special_bonuses')
-      .select('*')
+      .select(
+        'id, name, description, reward, reward_type, condition, progress, target, claimed, expires_at'
+      )
       .eq('user_id', userId)
       .eq('claimed', false)
       .gte('expires_at', new Date().toISOString());
@@ -264,7 +266,9 @@ class BonusServiceClass {
     // Check if bonus exists and is claimable
     const { data: bonus } = await supabase
       .from('special_bonuses')
-      .select('*')
+      .select(
+        'id, name, description, reward, reward_type, condition, progress, target, claimed, expires_at'
+      )
       .eq('id', bonusId)
       .eq('user_id', userId)
       .maybeSingle();

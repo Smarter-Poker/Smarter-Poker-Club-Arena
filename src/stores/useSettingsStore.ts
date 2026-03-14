@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { masterBus } from '../core/MasterBus';
 
 interface SettingsState {
   soundEnabled: boolean;
@@ -25,7 +26,10 @@ export const useSettingsStore = create<SettingsState>()(
       toggleFourColorDeck: () => set((state) => ({ fourColorDeck: !state.fourColorDeck })),
       toggleNotifications: () =>
         set((state) => ({ notificationsEnabled: !state.notificationsEnabled })),
-      setTheme: (theme) => set({ theme }),
+      setTheme: (theme) => {
+        set({ theme });
+        masterBus.emit('UI_THEME_CHANGED' as any, { key: 'theme', value: theme });
+      },
     }),
     {
       name: 'club-arena-settings',

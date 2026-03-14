@@ -340,29 +340,51 @@ export default function AgentManagementPage() {
   // Direct credit limit assignment (real Supabase call)
   const handleSetCreditLimit = async (agentId: string, limit: number) => {
     if (!user?.id) return;
-
-    const success = await AgentService.setCreditLimit(agentId, limit, user.id);
-    if (success) {
-      setAgents((prev) => prev.map((a) => (a.id === agentId ? { ...a, creditLimit: limit } : a)));
+    try {
+      const success = await AgentService.setCreditLimit(agentId, limit, user.id);
+      if (success) {
+        setAgents((prev) => prev.map((a) => (a.id === agentId ? { ...a, creditLimit: limit } : a)));
+        toast.success(`Credit limit updated to ${limit.toLocaleString()}`);
+      } else {
+        toast.error('Failed to update credit limit');
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to update credit limit');
     }
     setEditingLimit(null);
   };
 
   // Suspend agent (real Supabase call)
   const handleSuspendAgent = async (agentId: string) => {
-    const success = await AgentService.updateAgentStatus(agentId, 'suspended');
-    if (success) {
-      setAgents((prev) => prev.map((a) => (a.id === agentId ? { ...a, status: 'suspended' } : a)));
-      masterBus.emit('AGENT_UPDATED', { clubId: clubId || '', agentId });
+    try {
+      const success = await AgentService.updateAgentStatus(agentId, 'suspended');
+      if (success) {
+        setAgents((prev) =>
+          prev.map((a) => (a.id === agentId ? { ...a, status: 'suspended' } : a))
+        );
+        masterBus.emit('AGENT_UPDATED', { clubId: clubId || '', agentId });
+        toast.success('Agent suspended');
+      } else {
+        toast.error('Failed to suspend agent');
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to suspend agent');
     }
   };
 
   // Reinstate agent (real Supabase call)
   const handleReinstateAgent = async (agentId: string) => {
-    const success = await AgentService.updateAgentStatus(agentId, 'active');
-    if (success) {
-      setAgents((prev) => prev.map((a) => (a.id === agentId ? { ...a, status: 'active' } : a)));
-      masterBus.emit('AGENT_UPDATED', { clubId: clubId || '', agentId });
+    try {
+      const success = await AgentService.updateAgentStatus(agentId, 'active');
+      if (success) {
+        setAgents((prev) => prev.map((a) => (a.id === agentId ? { ...a, status: 'active' } : a)));
+        masterBus.emit('AGENT_UPDATED', { clubId: clubId || '', agentId });
+        toast.success('Agent reinstated');
+      } else {
+        toast.error('Failed to reinstate agent');
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to reinstate agent');
     }
   };
 

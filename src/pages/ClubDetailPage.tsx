@@ -319,6 +319,7 @@ import { ClubsService } from '../services/ClubsService';
 import DailyChallengesWidget from '../components/rewards/DailyChallengesWidget';
 import ClubBottomNav from '../components/club/ClubBottomNav';
 import ConfirmModal from '../components/common/ConfirmModal';
+import PageSkeleton from '../components/common/PageSkeleton';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { resolveClubIdFilter, resolveClubUUID } from '../utils/clubIdResolver';
 
@@ -720,8 +721,7 @@ export default function ClubDetailPage() {
   if (loading) {
     return (
       <div className={styles.loading}>
-        <div className={styles.spinner} />
-        <p>Loading club...</p>
+        <PageSkeleton variant="dashboard" />
       </div>
     );
   }

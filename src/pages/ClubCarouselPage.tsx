@@ -10,7 +10,7 @@
  * - Each card: Club avatar, ID, name, level, member count
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -20,6 +20,7 @@ import IntroVideo from '../components/IntroVideo';
 import './ClubCarouselPage.css';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
+import { useIsMounted } from '../hooks/useIsMounted';
 
 interface UserClub {
   id: string;
@@ -90,12 +91,7 @@ export default function ClubCarouselPage() {
     setShowIntro(false);
   };
 
-  const isMounted = useRef(true);
-  useEffect(() => {
-    return () => {
-      isMounted.current = false;
-    };
-  }, []);
+  const isMounted = useIsMounted();
 
   useEffect(() => {
     loadUserData();

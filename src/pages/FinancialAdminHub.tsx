@@ -6,7 +6,7 @@
  *  Quick links to: Alerts, Health, Disputes, Rate Audit, Settlements, Financials.
  */
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -15,6 +15,7 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useToast } from '../components/common/Toast';
 import { ResponsiveContainer, AreaChart, Area, XAxis, Tooltip } from 'recharts';
+import { useIsMounted } from '../hooks/useIsMounted';
 
 interface HubStats {
   totalAlerts: number;
@@ -130,13 +131,7 @@ export default function FinancialAdminHub() {
   const navigate = useNavigate();
   const { user } = useAuthUser();
   const toast = useToast();
-  const isMounted = useRef(true);
-
-  useEffect(() => {
-    return () => {
-      isMounted.current = false;
-    };
-  }, []);
+  const isMounted = useIsMounted();
 
   const [stats, setStats] = useState<HubStats>({
     totalAlerts: 0,

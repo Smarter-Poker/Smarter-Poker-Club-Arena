@@ -20,6 +20,7 @@ import SecurityBadge from '../components/common/SecurityBadge';
 import SettlementReceipt from '../components/settlement/SettlementReceipt';
 import SettlementTimeline from '../components/settlement/SettlementTimeline';
 import PageSkeleton from '../components/common/PageSkeleton';
+import { useIsMounted } from '../hooks/useIsMounted';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MONDAY 4AM COUNTDOWN — Live payout timer widget
@@ -226,7 +227,7 @@ export default function SettlementPage() {
   const [togglingAutoSettle, setTogglingAutoSettle] = useState(false);
   const [visibleWires, setVisibleWires] = useState<Set<string>>(new Set());
   const [visiblePayouts, setVisiblePayouts] = useState<Set<string>>(new Set());
-  const isMounted = useRef(true);
+  const isMounted = useIsMounted();
   const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {

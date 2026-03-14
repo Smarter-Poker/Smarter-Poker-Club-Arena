@@ -6,7 +6,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { retryAsync } from '../utils/retryAsync';
@@ -16,6 +16,7 @@ import { masterBus } from '../core/MasterBus';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import PageSkeleton from '../components/common/PageSkeleton';
 import styles from './MarketplacePage.module.css';
+import { useIsMounted } from '../hooks/useIsMounted';
 
 const fmt = (n: number) => Number(n || 0).toLocaleString();
 const fmtChips = (n: number) => {
@@ -79,13 +80,7 @@ export default function MarketplacePage() {
   const [searchFilter, setSearchFilter] = useState('');
   const [lastCreateTime, setLastCreateTime] = useState(0);
 
-  const mountedRef = useRef(true);
-  useEffect(
-    () => () => {
-      mountedRef.current = false;
-    },
-    []
-  );
+  const mountedRef = useIsMounted();
 
   const loadMarketplace = useCallback(
     async (cId?: string, silent = false) => {

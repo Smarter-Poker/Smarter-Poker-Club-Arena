@@ -6,7 +6,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -15,6 +15,7 @@ import { masterBus } from '../core/MasterBus';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import PageSkeleton from '../components/common/PageSkeleton';
 import styles from './AntiCheatPage.module.css';
+import { useIsMounted } from '../hooks/useIsMounted';
 
 // ── Helpers ─────────────────────────────────────────────────
 const fmt = (n: number) => Number(n || 0).toLocaleString();
@@ -145,13 +146,7 @@ export default function AntiCheatPage() {
   const [reviewStatus, setReviewStatus] = useState('reviewed');
   const [reviewNotes, setReviewNotes] = useState('');
 
-  const mountedRef = useRef(true);
-  useEffect(
-    () => () => {
-      mountedRef.current = false;
-    },
-    []
-  );
+  const mountedRef = useIsMounted();
 
   // ── Load Stats ──────────────────────────────────────────
   const loadStats = useCallback(

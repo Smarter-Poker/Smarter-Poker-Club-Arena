@@ -454,30 +454,34 @@ function SettlementsTab({ clubId }: { clubId: string }) {
       const uuid = await resolveClubUUID(clubId);
 
       if (actionName === 'open') {
-        await supabase.from('settlement_periods').insert({
+        const { error: insErr } = await supabase.from('settlement_periods').insert({
           club_id: uuid,
           status: 'open',
           start_at: new Date().toISOString(),
         });
+        if (insErr) throw insErr;
       } else if (actionName === 'close' && extras.periodId) {
-        await supabase
+        const { error: clErr } = await supabase
           .from('settlement_periods')
           .update({
             status: 'closed',
             end_at: new Date().toISOString(),
           })
           .eq('id', extras.periodId);
+        if (clErr) throw clErr;
       } else if (actionName === 'pay' && extras.commissionId) {
-        await supabase
+        const { error: payErr } = await supabase
           .from('agent_commissions')
           .update({ status: 'paid' })
           .eq('id', extras.commissionId);
+        if (payErr) throw payErr;
       } else if (actionName === 'pay_all' && extras.periodId) {
-        await supabase
+        const { error: paErr } = await supabase
           .from('agent_commissions')
           .update({ status: 'paid' })
           .eq('period_id', extras.periodId)
           .eq('status', 'pending');
+        if (paErr) throw paErr;
       }
       load();
     } catch (err: any) {
@@ -1779,7 +1783,7 @@ function TemplatesTab({ clubId }: { clubId: string }) {
                     onClick={async () => {
                       try {
                         const uuid = await resolveClubUUID(clubId);
-                        await supabase.from('tables').insert({
+                        const { error: insErr } = await supabase.from('tables').insert({
                           club_id: uuid,
                           name: tmpl.name || 'New Table',
                           game_type: tmpl.game_type || 'nlh',
@@ -1790,9 +1794,10 @@ function TemplatesTab({ clubId }: { clubId: string }) {
                           max_buy_in: tmpl.max_buy_in || 200,
                           status: 'active',
                         });
+                        if (insErr) throw insErr;
                         masterBus.emit('TABLE_CREATED', { tableId: '', clubId });
-                      } catch {
-                        /* toast would handle */
+                      } catch (e: any) {
+                        console.error('[Templates] Launch failed:', e.message);
                       }
                     }}
                     className="admin-btn admin-btn-success admin-btn-sm"
@@ -1802,8 +1807,16 @@ function TemplatesTab({ clubId }: { clubId: string }) {
                   <button
                     onClick={async () => {
                       if (!confirm(`Delete template "${tmpl.name}"?`)) return;
-                      await supabase.from('table_templates').delete().eq('id', tmpl.id);
-                      load();
+                      try {
+                        const { error: delErr } = await supabase
+                          .from('table_templates')
+                          .delete()
+                          .eq('id', tmpl.id);
+                        if (delErr) throw delErr;
+                        load();
+                      } catch (e: any) {
+                        console.error('[Templates] Delete failed:', e.message);
+                      }
                     }}
                     className="admin-btn admin-btn-danger admin-btn-sm"
                   >

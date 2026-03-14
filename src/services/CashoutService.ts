@@ -188,6 +188,7 @@ class CashoutServiceClass {
 
     // Emit balance change — chips returned from escrow
     masterBus.emit('BALANCE_UPDATED', { source: 'cashout_cancel', userId: playerId });
+    masterBus.emit('CASHOUT_CANCELLED', { cashoutId, clubId: cashout?.clubId || '' });
 
     return data === true;
   }
@@ -323,6 +324,7 @@ class CashoutServiceClass {
       userId: cashout.playerId,
       amount: cashout.amount,
     });
+    masterBus.emit('CASHOUT_CANCELLED', { cashoutId, clubId: cashout?.clubId || '' });
 
     return true;
   }

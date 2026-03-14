@@ -223,13 +223,12 @@ export const BBJService = {
     }
 
     // Map DB columns to service interface
-    // DB has: pool_amount, hands_contributed
-    // Service expects: main_balance, backup_balance, promo_balance, total_contributed
+    // DB has: main_balance, backup_balance, promo_balance, total_contributed
     const mapped: BBJPool = {
       id: data.id,
       union_id: data.union_id,
       club_id: data.club_id,
-      main_balance: data.pool_amount || data.main_balance || 0,
+      main_balance: data.main_balance || 0,
       backup_balance: data.backup_balance || 0,
       promo_balance: data.promo_balance || 0,
       total_contributed: data.hands_contributed || data.total_contributed || 0,

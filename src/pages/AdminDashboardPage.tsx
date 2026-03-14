@@ -1718,6 +1718,7 @@ function TemplatesTab({ clubId }: { clubId: string }) {
   const [templates, setTemplates] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const isMounted = useRef(true);
   useEffect(
     () => () => {
@@ -1770,6 +1771,23 @@ function TemplatesTab({ clubId }: { clubId: string }) {
   return (
     <div className="admin-tab-content">
       <h3 className="admin-card-title">📋 Table Templates</h3>
+      {actionError && (
+        <div className="admin-error-banner" style={{ marginBottom: '12px' }}>
+          {actionError}
+          <button
+            onClick={() => setActionError(null)}
+            style={{
+              marginLeft: 8,
+              background: 'none',
+              border: 'none',
+              color: 'inherit',
+              cursor: 'pointer',
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
       {templates.length === 0 ? (
         <div className="admin-empty-state">
           <span className="admin-empty-icon">📋</span>
@@ -1793,23 +1811,28 @@ function TemplatesTab({ clubId }: { clubId: string }) {
                 <div style={{ display: 'flex', gap: '6px' }}>
                   <button
                     onClick={async () => {
+                      setActionError(null);
                       try {
                         const uuid = await resolveClubUUID(clubId);
-                        const { error: insErr } = await supabase.from('tables').insert({
-                          club_id: uuid,
-                          name: tmpl.name || 'New Table',
-                          game_type: tmpl.game_type || 'nlh',
-                          small_blind: tmpl.small_blind || 1,
-                          big_blind: tmpl.big_blind || 2,
-                          max_players: tmpl.max_players || 9,
-                          min_buy_in: tmpl.min_buy_in || 40,
-                          max_buy_in: tmpl.max_buy_in || 200,
-                          status: 'active',
-                        });
+                        const { data: newTable, error: insErr } = await supabase
+                          .from('tables')
+                          .insert({
+                            club_id: uuid,
+                            name: tmpl.name || 'New Table',
+                            game_type: tmpl.game_type || 'nlh',
+                            small_blind: tmpl.small_blind || 1,
+                            big_blind: tmpl.big_blind || 2,
+                            max_players: tmpl.max_players || 9,
+                            min_buy_in: tmpl.min_buy_in || 40,
+                            max_buy_in: tmpl.max_buy_in || 200,
+                            status: 'active',
+                          })
+                          .select('id')
+                          .single();
                         if (insErr) throw insErr;
-                        masterBus.emit('TABLE_CREATED', { tableId: '', clubId });
+                        masterBus.emit('TABLE_CREATED', { tableId: newTable?.id || '', clubId });
                       } catch (e: any) {
-                        console.error('[Templates] Launch failed:', e.message);
+                        setActionError(`Launch failed: ${e.message}`);
                       }
                     }}
                     className="admin-btn admin-btn-success admin-btn-sm"
@@ -1819,6 +1842,7 @@ function TemplatesTab({ clubId }: { clubId: string }) {
                   <button
                     onClick={async () => {
                       if (!confirm(`Delete template "${tmpl.name}"?`)) return;
+                      setActionError(null);
                       try {
                         const { error: delErr } = await supabase
                           .from('table_templates')
@@ -1827,7 +1851,7 @@ function TemplatesTab({ clubId }: { clubId: string }) {
                         if (delErr) throw delErr;
                         load();
                       } catch (e: any) {
-                        console.error('[Templates] Delete failed:', e.message);
+                        setActionError(`Delete failed: ${e.message}`);
                       }
                     }}
                     className="admin-btn admin-btn-danger admin-btn-sm"

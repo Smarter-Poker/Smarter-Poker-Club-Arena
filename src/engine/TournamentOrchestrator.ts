@@ -292,13 +292,21 @@ export class TournamentOrchestrator {
         return;
       }
 
-      // 2. Restore chip stacks in tournament_players
-      for (const flight of flights) {
-        await supabase
-          .from('tournament_players')
-          .update({ chips: flight.bagged_chips, status: 'playing' })
-          .eq('tournament_id', tournamentId)
-          .eq('user_id', flight.user_id);
+      // 2. Restore chip stacks in tournament_players (parallel — each is independent)
+      const restoreResults = await Promise.allSettled(
+        flights.map((flight) =>
+          supabase
+            .from('tournament_players')
+            .update({ chips: flight.bagged_chips, status: 'playing' })
+            .eq('tournament_id', tournamentId)
+            .eq('user_id', flight.user_id)
+        )
+      );
+      const restoreFailures = restoreResults.filter((r) => r.status === 'rejected');
+      if (restoreFailures.length > 0) {
+        console.error(
+          `[TournamentOrchestrator] ${restoreFailures.length}/${flights.length} chip restores failed`
+        );
       }
 
       // 3. Mark flights as resumed

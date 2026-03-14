@@ -290,7 +290,7 @@ export const SettlementService = {
     // 1. Get all approved agent settlements
     const { data: agentSettlements } = await supabase
       .from('agent_settlements')
-      .select('*')
+      .select('*, agents:agent_id(user_id)')
       .eq('period_id', periodId)
       .eq('status', 'approved')
       .limit(5000);

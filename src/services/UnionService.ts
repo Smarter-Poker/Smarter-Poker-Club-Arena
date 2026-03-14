@@ -446,19 +446,18 @@ class UnionServiceClass {
 
     if (error) return false;
 
-    // Update union club_count via direct update
-    const { data: union } = await supabase
-      .from('unions')
-      .select('club_count')
-      .eq('id', unionId)
-      .maybeSingle();
+    // Update union club_count from actual union_clubs count (race-safe)
+    const { count: clubCount } = await supabase
+      .from('union_clubs')
+      .select('*', { count: 'exact', head: true })
+      .eq('union_id', unionId);
 
-    if (union) {
+    if (clubCount !== null) {
       const { error: countErr } = await supabase
         .from('unions')
-        .update({ club_count: (union.club_count || 0) + 1 })
+        .update({ club_count: clubCount })
         .eq('id', unionId);
-      if (countErr) console.error('[UnionService] Failed to increment union club_count:', countErr);
+      if (countErr) console.error('[UnionService] Failed to update union club_count:', countErr);
     }
 
     // Update club's union_id
@@ -486,19 +485,18 @@ class UnionServiceClass {
 
     if (error) return false;
 
-    // Decrement union club_count via direct update
-    const { data: union } = await supabase
-      .from('unions')
-      .select('club_count')
-      .eq('id', unionId)
-      .maybeSingle();
+    // Update union club_count from actual union_clubs count (race-safe)
+    const { count: clubCount } = await supabase
+      .from('union_clubs')
+      .select('*', { count: 'exact', head: true })
+      .eq('union_id', unionId);
 
-    if (union) {
+    if (clubCount !== null) {
       const { error: countErr } = await supabase
         .from('unions')
-        .update({ club_count: Math.max(0, (union.club_count || 0) - 1) })
+        .update({ club_count: clubCount })
         .eq('id', unionId);
-      if (countErr) console.error('[UnionService] Failed to decrement union club_count:', countErr);
+      if (countErr) console.error('[UnionService] Failed to update union club_count:', countErr);
     }
 
     // Update club's union_id to null

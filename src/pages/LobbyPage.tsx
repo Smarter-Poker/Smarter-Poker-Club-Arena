@@ -834,6 +834,25 @@ export default function LobbyPage() {
                     >
                       {tableActionProcessing === table.id ? '...' : '✕'}
                     </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleTableAction(table.id, 'delete');
+                      }}
+                      disabled={tableActionProcessing === table.id}
+                      style={{
+                        fontSize: '9px',
+                        padding: '2px 6px',
+                        borderRadius: 4,
+                        background: 'rgba(150,30,30,0.15)',
+                        border: '1px solid rgba(150,30,30,0.25)',
+                        color: '#c0392b',
+                        cursor: 'pointer',
+                        fontWeight: 600,
+                      }}
+                    >
+                      {tableActionProcessing === table.id ? '...' : '🗑'}
+                    </button>
                   </div>
                 )}
               </div>

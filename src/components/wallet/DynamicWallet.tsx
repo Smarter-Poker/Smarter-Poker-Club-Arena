@@ -174,14 +174,14 @@ export default function DynamicWallet({
           .maybeSingle(),
         supabase
           .from('agents')
-          .select('business_balance, promo_balance')
+          .select('agent_wallet_balance, promo_wallet_balance')
           .eq('club_id', clubId)
           .eq('user_id', userId)
           .maybeSingle(),
-        // Club bank: sum of all agent business_balance for this club
+        // Club bank: sum of all agent wallet balances for this club
         supabase
           .from('agents')
-          .select('business_balance')
+          .select('agent_wallet_balance')
           .eq('club_id', clubId)
           .eq('status', 'active'),
       ]);

@@ -41,6 +41,7 @@ export default function FriendsPage() {
   const [friends, setFriends] = useState<Friend[]>([]);
   const [pendingRequests, setPendingRequests] = useState<Friend[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<FriendsTab>('friends');
   const [searchQuery, setSearchQuery] = useState('');
   const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
@@ -122,7 +123,12 @@ export default function FriendsPage() {
   useEffect(() => {
     let isMounted = true;
     const handler = () => {
-      if (isMounted && loadFriendsRef.current) loadFriendsRef.current();
+      if (isMounted && loadFriendsRef.current) {
+        setIsRefreshing(true);
+        loadFriendsRef.current().finally(() => {
+          if (isMounted) setIsRefreshing(false);
+        });
+      }
     };
     const unsubs = [
       masterBus.subscribeDebounced('FRIEND_REQUEST_ACCEPTED', handler, 500),

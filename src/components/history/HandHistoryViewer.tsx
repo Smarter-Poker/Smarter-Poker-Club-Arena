@@ -60,7 +60,7 @@ export function HandHistoryViewer({
       let query = supabase
         .from('hand_history')
         .select(
-          'id, table_id, table_name, stakes, pot_size, result, game_type, hero_hand, community_cards, actions, played_at, user_id, club_id'
+          'id, table_id, table_name, stakes, pot_size, result, game_type, hero_hand, community_cards, actions, played_at, user_id, club_id, hole_cards, position, final_action, created_at'
         )
         .eq('user_id', user.id)
         .order('played_at', { ascending: false })

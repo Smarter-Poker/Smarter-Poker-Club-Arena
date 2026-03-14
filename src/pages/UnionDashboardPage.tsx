@@ -673,6 +673,10 @@ export default function UnionDashboardPage() {
                             created_by: user?.id,
                           });
                         if (annErr) throw annErr;
+                        masterBus.emit('ANNOUNCEMENT_CHANGED', {
+                          clubId: annClub || unionId || '',
+                          action: 'created',
+                        });
                         setSuccess('Announcement sent');
                         setAnnMsg('');
                         loadDashboard(unionId);
@@ -762,6 +766,7 @@ export default function UnionDashboardPage() {
                               .eq('union_id', unionId)
                               .eq('club_id', club.id);
                             if (rmErr) throw rmErr;
+                            masterBus.emit('CLUB_UPDATED', { clubId: club.id });
                             setSuccess(`${club.name} removed`);
                             loadDashboard(unionId);
                           } catch (err: any) {
@@ -1462,6 +1467,7 @@ export default function UnionDashboardPage() {
                                       .eq('union_id', unionId)
                                       .eq('user_id', admin.user_id);
                                     if (delErr) throw delErr;
+                                    masterBus.emit('CLUB_UPDATED', { clubId: unionId || '' });
                                     setSuccess('Admin removed');
                                     loadDashboard(unionId);
                                   } catch (err: any) {
@@ -1553,6 +1559,7 @@ export default function UnionDashboardPage() {
                                     role: 'union_admin',
                                   });
                                 if (addErr) throw addErr;
+                                masterBus.emit('CLUB_UPDATED', { clubId: unionId || '' });
                                 setSuccess(`${u.display_name || u.username} added as admin`);
                                 setAdminResults([]);
                                 setAdminSearch('');

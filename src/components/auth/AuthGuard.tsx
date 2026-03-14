@@ -17,7 +17,7 @@
  *    to prevent race conditions from transient store resets
  */
 
-import { ReactNode, useEffect, useRef, useState } from 'react';
+import { ReactNode, useEffect, useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useUserStore } from '../../stores/useUserStore';
@@ -120,8 +120,6 @@ export function AuthGuard({ children }: AuthGuardProps) {
 
   const [isLoading, setIsLoading] = useState(!initiallyAuthenticated);
   const [isAuthenticated, setIsAuthenticated] = useState(initiallyAuthenticated);
-  const redirectBlockedRef = useRef(false);
-
   const location = useLocation();
 
   // Hydrate store from localStorage if store is empty but localStorage has session

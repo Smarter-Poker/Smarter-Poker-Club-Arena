@@ -885,11 +885,11 @@ function AnnouncementsTab({ clubId }: { clubId: string }) {
     try {
       const uuid = await resolveClubUUID(clubId);
       if (editing) {
-        const { error: upErr } = await supabase
+        const { error: updErr } = await supabase
           .from('club_announcements')
           .update({ title, content })
           .eq('id', editing.id);
-        if (upErr) throw upErr;
+        if (updErr) throw updErr;
       } else {
         const { error: insErr } = await supabase
           .from('club_announcements')

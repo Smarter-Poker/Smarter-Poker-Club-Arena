@@ -474,11 +474,12 @@ export default function UnionDashboardPage() {
                     }
                     setProcessing(true);
                     try {
-                      await supabase
+                      const { error: commErr } = await supabase
                         .from('union_clubs')
                         .update({ commission_rate: rate })
                         .eq('union_id', unionId)
                         .eq('club_id', editCommClub.id);
+                      if (commErr) throw commErr;
                       setSuccess('Commission updated');
                       setEditCommClub(null);
                       loadDashboard(unionId);
@@ -660,12 +661,15 @@ export default function UnionDashboardPage() {
                     onClick={async () => {
                       setProcessing(true);
                       try {
-                        await supabase.from('union_announcements').insert({
-                          union_id: unionId,
-                          message: annMsg,
-                          club_id: annClub || null,
-                          created_by: user?.id,
-                        });
+                        const { error: annErr } = await supabase
+                          .from('union_announcements')
+                          .insert({
+                            union_id: unionId,
+                            message: annMsg,
+                            club_id: annClub || null,
+                            created_by: user?.id,
+                          });
+                        if (annErr) throw annErr;
                         setSuccess('Announcement sent');
                         setAnnMsg('');
                         loadDashboard(unionId);
@@ -748,11 +752,12 @@ export default function UnionDashboardPage() {
                           if (!confirm(`Remove ${club.name} from the union?`)) return;
                           setProcessing(true);
                           try {
-                            await supabase
+                            const { error: rmErr } = await supabase
                               .from('union_clubs')
                               .delete()
                               .eq('union_id', unionId)
                               .eq('club_id', club.id);
+                            if (rmErr) throw rmErr;
                             setSuccess(`${club.name} removed`);
                             loadDashboard(unionId);
                           } catch (err: any) {
@@ -937,7 +942,7 @@ export default function UnionDashboardPage() {
                     onClick={async () => {
                       setProcessing(true);
                       try {
-                        await supabase.from('union_transactions').insert({
+                        const { error: txErr } = await supabase.from('union_transactions').insert({
                           union_id: unionId,
                           club_id: transferForm.clubId,
                           amount: parseInt(transferForm.amount),
@@ -946,6 +951,7 @@ export default function UnionDashboardPage() {
                           direction: 'debit',
                           notes: transferForm.notes || undefined,
                         });
+                        if (txErr) throw txErr;
                         setSuccess('Chips sent');
                         setTransferForm({ clubId: '', amount: '', notes: '' });
                         loadDashboard(unionId);
@@ -1194,10 +1200,11 @@ export default function UnionDashboardPage() {
                           onClick={async () => {
                             setProcessing(true);
                             try {
-                              await supabase
+                              const { error: appErr } = await supabase
                                 .from('union_applications')
                                 .update({ status: 'approved' })
                                 .eq('id', app.id);
+                              if (appErr) throw appErr;
                               setSuccess(`${app.club_name} approved`);
                               setAppsLoaded(false);
                               loadApps();
@@ -1217,10 +1224,11 @@ export default function UnionDashboardPage() {
                             if (!confirm(`Reject ${app.club_name}?`)) return;
                             setProcessing(true);
                             try {
-                              await supabase
+                              const { error: rejErr } = await supabase
                                 .from('union_applications')
                                 .update({ status: 'rejected' })
                                 .eq('id', app.id);
+                              if (rejErr) throw rejErr;
                               setSuccess(`${app.club_name} rejected`);
                               setAppsLoaded(false);
                               loadApps();
@@ -1353,7 +1361,11 @@ export default function UnionDashboardPage() {
                           parseFloat(settingsForm.default_club_commission_rate) / 100;
                       if (Object.keys(settings).length > 0)
                         updates.settings = { ...(union?.settings || {}), ...settings };
-                      await supabase.from('unions').update(updates).eq('id', unionId);
+                      const { error: setErr } = await supabase
+                        .from('unions')
+                        .update(updates)
+                        .eq('id', unionId);
+                      if (setErr) throw setErr;
                       setSuccess('Settings saved');
                       loadDashboard(unionId);
                     } catch (err: any) {
@@ -1430,11 +1442,12 @@ export default function UnionDashboardPage() {
                                   if (!confirm('Remove this admin?')) return;
                                   setProcessing(true);
                                   try {
-                                    await supabase
+                                    const { error: delErr } = await supabase
                                       .from('union_admins')
                                       .delete()
                                       .eq('union_id', unionId)
                                       .eq('user_id', admin.user_id);
+                                    if (delErr) throw delErr;
                                     setSuccess('Admin removed');
                                     loadDashboard(unionId);
                                   } catch (err: any) {
@@ -1516,11 +1529,14 @@ export default function UnionDashboardPage() {
                             onClick={async () => {
                               setProcessing(true);
                               try {
-                                await supabase.from('union_admins').insert({
-                                  union_id: unionId,
-                                  user_id: u.id,
-                                  role: 'union_admin',
-                                });
+                                const { error: addErr } = await supabase
+                                  .from('union_admins')
+                                  .insert({
+                                    union_id: unionId,
+                                    user_id: u.id,
+                                    role: 'union_admin',
+                                  });
+                                if (addErr) throw addErr;
                                 setSuccess(`${u.display_name || u.username} added as admin`);
                                 setAdminResults([]);
                                 setAdminSearch('');

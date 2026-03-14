@@ -1037,7 +1037,7 @@ export default function AgentDashboardPage() {
                     setProcessing(true);
                     try {
                       const uuid = await resolveClubUUID(clubId!);
-                      await supabase.from('chip_transactions').insert({
+                      const { error: promoErr } = await supabase.from('chip_transactions').insert({
                         club_id: uuid,
                         to_user_id: creditTarget,
                         from_user_id: user?.id,
@@ -1045,6 +1045,7 @@ export default function AgentDashboardPage() {
                         type: 'promo_grant',
                         notes: 'Promo chips granted',
                       });
+                      if (promoErr) throw promoErr;
                       setSuccess(`Granted ${fmtChips(Number(creditAmount))} promo chips!`);
                       masterBus.emit('CHIPS_DISTRIBUTED', {
                         clubId: uuid,
@@ -1176,7 +1177,7 @@ export default function AgentDashboardPage() {
                     setError(null);
                     try {
                       const uuid = await resolveClubUUID(clubId!);
-                      await supabase.from('chip_transactions').insert({
+                      const { error: credErr } = await supabase.from('chip_transactions').insert({
                         club_id: uuid,
                         to_user_id: creditTarget,
                         from_user_id: user?.id,
@@ -1184,6 +1185,7 @@ export default function AgentDashboardPage() {
                         type: creditAction,
                         notes: creditNotes || `${creditAction} for agent`,
                       });
+                      if (credErr) throw credErr;
                       const labels: Record<string, string> = {
                         issue_credit: 'Credit issued',
                         add_prepaid: 'Prepaid added',

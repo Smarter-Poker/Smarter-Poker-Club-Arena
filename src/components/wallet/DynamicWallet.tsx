@@ -163,7 +163,7 @@ export default function DynamicWallet({
         supabase.from('profiles').select('diamonds').eq('id', userId).maybeSingle(),
         supabase
           .from('club_members')
-          .select('chip_balance, promo_balance')
+          .select('chip_balance')
           .eq('club_id', clubId)
           .eq('user_id', userId)
           .maybeSingle(),
@@ -190,7 +190,7 @@ export default function DynamicWallet({
         setData({
           diamonds: Number(profileRes.data?.diamonds) || 0,
           chipBalance: Number(memberRes.data?.chip_balance) || 0,
-          promoBalance: Number(memberRes.data?.promo_balance) || 0,
+          promoBalance: Number(agentRes.data?.promo_wallet_balance) || 0,
           bbjPool: Number(bbjRes.data?.main_balance) || 0,
           backupBBJ: Number(bbjRes.data?.backup_balance) || 0,
           agentBalance: Number(agentRes.data?.agent_wallet_balance) || 0,

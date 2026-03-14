@@ -480,6 +480,7 @@ export default function PlayerSessionsPage() {
   const sendWelcomeBack = async () => {
     if (!wbTarget || !clubId) return;
     setProcessing(true);
+    setError(null);
     try {
       const amt = parseInt(wbAmount, 10) || 500;
       await WalletService.distributePromo(user?.id || '', wbTarget.userId, amt);

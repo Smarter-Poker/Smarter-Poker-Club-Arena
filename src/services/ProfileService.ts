@@ -71,7 +71,9 @@ class ProfileServiceClass {
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('*')
+        .select(
+          'id, username, display_name, avatar_url, bio, level, vip_tier, vip_points, current_streak, longest_streak, last_login_date, hands_played, tournaments_won, total_winnings, created_at, updated_at'
+        )
         .eq('id', userId)
         .maybeSingle();
 
@@ -91,7 +93,9 @@ class ProfileServiceClass {
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('*')
+        .select(
+          'id, username, display_name, avatar_url, bio, level, vip_tier, vip_points, current_streak, longest_streak, last_login_date, hands_played, tournaments_won, total_winnings, created_at, updated_at'
+        )
         .eq('username', username)
         .maybeSingle();
 
@@ -301,7 +305,9 @@ class ProfileServiceClass {
 
     const { data } = await supabase
       .from('profiles')
-      .select('*')
+      .select(
+        'id, username, display_name, avatar_url, level, vip_tier, vip_points, hands_played, tournaments_won, total_winnings, created_at, updated_at'
+      )
       .order(orderColumn, { ascending: false })
       .limit(limit);
 

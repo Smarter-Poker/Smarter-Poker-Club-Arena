@@ -23,7 +23,9 @@ class TableService {
     const resolvedId = await resolveClubUUID(clubId);
     const { data, error } = await supabase
       .from('tables')
-      .select('*')
+      .select(
+        'id, club_id, name, game_type, game_variant, stakes, small_blind, big_blind, min_buy_in, max_buy_in, max_players, current_players, status, settings, created_at'
+      )
       .eq('club_id', resolvedId)
       .eq('is_deleted', false)
       .neq('status', 'closed')
@@ -43,7 +45,9 @@ class TableService {
   async getActiveTables(limit = 50): Promise<PokerTable[]> {
     const { data, error } = await supabase
       .from('tables')
-      .select('*')
+      .select(
+        'id, club_id, name, game_type, game_variant, stakes, small_blind, big_blind, min_buy_in, max_buy_in, max_players, current_players, status, settings, created_at'
+      )
       .eq('is_deleted', false)
       .neq('status', 'closed')
       .is('tournament_id', null) // Exclude tournament tables from cash lobby
@@ -74,7 +78,9 @@ class TableService {
     const clubIds = clubs.map((c) => c.club_id);
     const { data, error } = await supabase
       .from('tables')
-      .select('*')
+      .select(
+        'id, club_id, name, game_type, game_variant, stakes, small_blind, big_blind, min_buy_in, max_buy_in, max_players, current_players, status, settings, created_at'
+      )
       .in('club_id', clubIds)
       .eq('is_deleted', false)
       .neq('status', 'closed');
@@ -92,7 +98,9 @@ class TableService {
   async getTable(tableId: string): Promise<PokerTable | null> {
     const { data, error } = await supabase
       .from('tables')
-      .select('*')
+      .select(
+        'id, club_id, name, game_type, game_variant, stakes, small_blind, big_blind, min_buy_in, max_buy_in, max_players, current_players, status, settings, tournament_id, is_deleted, created_at'
+      )
       .eq('id', tableId)
       .maybeSingle();
 

@@ -453,13 +453,28 @@ export class TournamentOrchestrator {
             ?.players.find((p) => p.userId === move.playerId);
 
           // Insert at new seat
-          await supabase.from('table_seats').insert({
+          const { error: insertErr } = await supabase.from('table_seats').insert({
             table_id: move.toTableId,
             user_id: move.playerId,
             seat_number: move.toSeat,
             stack: playerData?.stack || 0,
             joined_at: new Date().toISOString(),
           });
+
+          if (insertErr) {
+            console.error(
+              `[TournamentOrchestrator] Seat insert failed for ${move.playerId} at ${move.toTableId} — rolling back:`,
+              insertErr
+            );
+            // Rollback: re-seat player at their original table
+            await supabase.from('table_seats').insert({
+              table_id: move.fromTableId,
+              user_id: move.playerId,
+              seat_number: playerData?.seat || 1,
+              stack: playerData?.stack || 0,
+              joined_at: new Date().toISOString(),
+            });
+          }
         } catch (moveErr: unknown) {
           console.error(
             `[TournamentOrchestrator] Failed to move ${move.playerId}: ${move.fromTableId} → ${move.toTableId}`,

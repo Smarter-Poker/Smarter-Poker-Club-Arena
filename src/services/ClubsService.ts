@@ -55,7 +55,9 @@ export async function discoverNearbyClubs(
 export async function searchClubs(query: string): Promise<Club[]> {
   const { data, error } = await supabase
     .from('clubs')
-    .select('*')
+    .select(
+      'id, club_id, name, slug, description, logo_url, banner_url, color_theme, theme, member_count, table_count, total_chips, is_public, requires_approval, owner_id, city, country, created_at, updated_at'
+    )
     .ilike('name', `%${query}%`)
     .eq('is_public', true)
     .order('member_count', { ascending: false })
@@ -78,7 +80,9 @@ export async function getClub(identifier: string): Promise<Club | null> {
 
   const { data, error } = await supabase
     .from('clubs')
-    .select('*')
+    .select(
+      'id, club_id, name, slug, description, logo_url, banner_url, color_theme, theme, member_count, table_count, total_chips, is_public, requires_approval, owner_id, union_id, city, country, settings, created_at, updated_at'
+    )
     .eq(isUUID ? 'id' : 'slug', identifier)
     .maybeSingle();
 

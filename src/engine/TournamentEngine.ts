@@ -1345,7 +1345,7 @@ export class TournamentEngine {
     // Calculate prize
     const prize = this.calculatePrize(position);
     // Update tournament_players
-    await this.supabase
+    const { error: elimErr } = await this.supabase
       .from('tournament_players')
       .update({
         status: 'eliminated',
@@ -1356,23 +1356,38 @@ export class TournamentEngine {
       })
       .eq('tournament_id', this.tournamentId)
       .eq('user_id', userId);
+    if (elimErr)
+      console.error(
+        `[TournamentEngine:${this.tournamentId.slice(0, 8)}] Failed to mark player ${userId.slice(0, 8)} as eliminated:`,
+        elimErr
+      );
 
     // Remove from table_seats
-    await this.supabase
+    const { error: seatErr } = await this.supabase
       .from('table_seats')
       .update({ left_at: new Date().toISOString() })
       .eq('table_id', tableId)
       .eq('user_id', userId)
       .is('left_at', null);
+    if (seatErr)
+      console.error(
+        `[TournamentEngine:${this.tournamentId.slice(0, 8)}] Failed to vacate seat for ${userId.slice(0, 8)}:`,
+        seatErr
+      );
 
     // Decrement tables.current_players and local playerCount
     const table = this.tables.find((t) => t.tableId === tableId);
     if (table) {
       table.playerCount = Math.max(0, table.playerCount - 1);
-      await this.supabase
+      const { error: countErr } = await this.supabase
         .from('tables')
         .update({ current_players: table.playerCount })
         .eq('id', tableId);
+      if (countErr)
+        console.error(
+          `[TournamentEngine:${this.tournamentId.slice(0, 8)}] Failed to update table player count:`,
+          countErr
+        );
     }
 
     // Credit prize to player wallet (if any)
@@ -1516,7 +1531,7 @@ export class TournamentEngine {
       return;
     }
     // Log in chip_transactions for club accounting
-    await this.supabase.from('chip_transactions').insert({
+    const { error: auditErr } = await this.supabase.from('chip_transactions').insert({
       club_id: clubId,
       from_user_id: null,
       to_user_id: userId,
@@ -1524,6 +1539,11 @@ export class TournamentEngine {
       transaction_type: 'cash_out',
       notes: `Tournament prize: ${this.tournamentInfo.name}`,
     });
+    if (auditErr)
+      console.error(
+        `[TournamentEngine:${this.tournamentId.slice(0, 8)}] chip_transactions audit log failed:`,
+        auditErr
+      );
   }
 
   // ═══════════════════════════════════════════════════════════════════════════

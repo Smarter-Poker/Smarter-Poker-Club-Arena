@@ -156,6 +156,7 @@ export default function LobbyPage() {
       'CHIPS_DISTRIBUTED',
       'TABLE_DELETED',
       'TABLE_CLOSED',
+      'CLUB_SETTINGS_UPDATED',
     ] as const;
     const unsubEvents = LOBBY_REFRESH_EVENTS.map((ev) =>
       masterBus.subscribeDebounced(ev, refreshTables, 500)

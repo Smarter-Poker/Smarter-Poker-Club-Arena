@@ -80,17 +80,15 @@ export default function AgentPromoPanel({
     try {
       const { data: agent } = await supabase
         .from('agents')
-        .select('promo_balance')
+        .select('promo_wallet_balance')
         .eq('club_id', clubId)
         .eq('user_id', userId)
         .maybeSingle();
-      setPromoBalance(Number(agent?.promo_balance) || 0);
+      setPromoBalance(Number(agent?.promo_wallet_balance) || 0);
 
       const { data: players } = await supabase
         .from('club_members')
-        .select(
-          'user_id, chip_balance, promo_balance, profiles(display_name, username, avatar_url)'
-        )
+        .select('user_id, chip_balance, profiles(display_name, username, avatar_url)')
         .eq('club_id', clubId)
         .eq('agent_id', userId)
         .eq('role', 'player')
@@ -128,7 +126,7 @@ export default function AgentPromoPanel({
         { event: 'UPDATE', schema: 'public', table: 'agents', filter: `user_id=eq.${userId}` },
         (payload) => {
           if (payload.new?.club_id === clubId && isMounted.current)
-            setPromoBalance(Number(payload.new.promo_balance) || 0);
+            setPromoBalance(Number(payload.new.promo_wallet_balance) || 0);
         }
       )
       .on(
@@ -300,7 +298,7 @@ export default function AgentPromoPanel({
                 {downline.map((p) => (
                   <option key={p.user_id} value={p.user_id}>
                     {p.profiles?.display_name || p.profiles?.username || p.user_id.slice(0, 8)}
-                    {' — '}Promo: {(p.promo_balance || 0).toLocaleString()}
+                    {' — '}Chips: {(p.chip_balance || 0).toLocaleString()}
                   </option>
                 ))}
               </select>
@@ -445,11 +443,6 @@ export default function AgentPromoPanel({
                       <div style={{ fontSize: 11, color: FB.text, fontWeight: 700 }}>
                         {(p.chip_balance || 0).toLocaleString()}
                       </div>
-                      {(p.promo_balance || 0) > 0 && (
-                        <div style={{ fontSize: 9, color: FB.promo, fontWeight: 600 }}>
-                          +{(p.promo_balance || 0).toLocaleString()} promo
-                        </div>
-                      )}
                     </div>
                   </div>
                 );

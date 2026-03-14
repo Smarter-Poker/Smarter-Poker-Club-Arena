@@ -213,6 +213,8 @@ function DashboardTab({ clubId }: { clubId: string }) {
       masterBus.subscribe('TOURNAMENT_COMPLETE', load),
       masterBus.subscribe('SETTLEMENT_COMPLETED', load),
       masterBus.subscribe('SETTLEMENT_PAYOUT_FAILED', load),
+      masterBus.subscribe('RAKEBACK_CLAIMED', load),
+      masterBus.subscribe('CLUB_SETTINGS_UPDATED', load),
     ];
     return () => unsubs.forEach((u) => u());
   }, [load]);

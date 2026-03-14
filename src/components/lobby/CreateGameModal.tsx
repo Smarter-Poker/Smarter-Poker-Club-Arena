@@ -339,6 +339,7 @@ function ConfigModal({
           .single();
 
         if (error) throw error;
+        if (!data) throw new Error('Table creation failed — no data returned');
         masterBus.emit('TABLE_CREATED', { tableId: data.id, clubId });
         masterBus.emit('DATA_MUTATED', { table: 'tables', action: 'created' });
         haptic('success');
@@ -368,6 +369,7 @@ function ConfigModal({
           .single();
 
         if (error) throw error;
+        if (!data) throw new Error('Tournament creation failed — no data returned');
         masterBus.emit('TOURNAMENT_UPDATED', { tournamentId: data.id, status: 'registering' });
         masterBus.emit('DATA_MUTATED', { table: 'tournaments', action: 'created' });
         haptic('success');

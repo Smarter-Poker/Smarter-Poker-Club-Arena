@@ -556,6 +556,13 @@ export default function CashierPage() {
       },
       500
     );
+    const unsubRakebackClaimed = masterBus.subscribeDebounced(
+      'RAKEBACK_CLAIMED',
+      () => {
+        loadBalances(user.id);
+      },
+      500
+    );
     return () => {
       unsubBalance();
       unsubWallet();
@@ -566,6 +573,7 @@ export default function CashierPage() {
       unsubCashoutRequested();
       unsubCashoutCancelled();
       unsubCashierBalance();
+      unsubRakebackClaimed();
     };
   }, [user?.id, loadBalances, loadTransactions]);
 

@@ -116,7 +116,7 @@ export default function AdminTableHeatmap({
       masterBus.removeRegisteredChannel(channelKey);
       unsubs.forEach((u) => u());
     };
-  }, [clubId, propTables]);
+  }, [clubId, propTables?.length]);
 
   const tables = propTables && propTables.length > 0 ? propTables : fetchedTables;
 

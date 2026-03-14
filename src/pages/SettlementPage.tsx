@@ -279,6 +279,31 @@ export default function SettlementPage() {
         setSelectedPeriod(mappedPeriods[0]);
       }
 
+      // Load auto-settlement setting from DB
+      try {
+        if (unionId) {
+          const { data: unionData } = await supabase
+            .from('unions')
+            .select('auto_settlement')
+            .eq('id', unionId)
+            .maybeSingle();
+          if (isMounted.current && unionData) {
+            setAutoSettlement(!!unionData.auto_settlement);
+          }
+        } else if (clubId) {
+          const { data: clubData } = await supabase
+            .from('clubs')
+            .select('auto_settlement')
+            .eq('id', clubId)
+            .maybeSingle();
+          if (isMounted.current && clubData) {
+            setAutoSettlement(!!clubData.auto_settlement);
+          }
+        }
+      } catch {
+        // Non-critical: default to false if query fails
+      }
+
       // Generate settlements for current period (skip if no real period)
       if (currentPeriod.id && currentPeriod.id !== 'default') {
         try {

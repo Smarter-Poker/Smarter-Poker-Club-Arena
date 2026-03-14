@@ -397,35 +397,49 @@ export const MembershipService = {
   async getMemberCounts(
     clubId: string
   ): Promise<{ total: number; active: number; pending: number; online: number }> {
-    const resolvedId = await resolveClubUUID(clubId);
-    const { count: total } = await supabase
-      .from('club_members')
-      .select('*', { count: 'exact', head: true })
-      .eq('club_id', resolvedId);
+    try {
+      const resolvedId = await resolveClubUUID(clubId);
+      const { count: total, error: totalErr } = await supabase
+        .from('club_members')
+        .select('*', { count: 'exact', head: true })
+        .eq('club_id', resolvedId);
 
-    const { count: active } = await supabase
-      .from('club_members')
-      .select('*', { count: 'exact', head: true })
-      .eq('club_id', resolvedId)
-      .in('status', ['active', 'approved']);
+      if (totalErr)
+        console.warn('[MembershipService] getMemberCounts total error:', totalErr.message);
 
-    const { count: pending } = await supabase
-      .from('club_members')
-      .select('*', { count: 'exact', head: true })
-      .eq('club_id', resolvedId)
-      .eq('status', 'pending');
+      const { count: active, error: activeErr } = await supabase
+        .from('club_members')
+        .select('*', { count: 'exact', head: true })
+        .eq('club_id', resolvedId)
+        .in('status', ['active', 'approved']);
 
-    // Estimate online count — creating a channel just to check presenceState()
-    // on an unsubscribed channel always returned 0 and caused side-effect churn.
-    // Real online tracking should come from a dedicated presence subscription.
-    const online = Math.floor((active || 0) * 0.15);
+      if (activeErr)
+        console.warn('[MembershipService] getMemberCounts active error:', activeErr.message);
 
-    return {
-      total: total || 0,
-      active: active || 0,
-      pending: pending || 0,
-      online,
-    };
+      const { count: pending, error: pendingErr } = await supabase
+        .from('club_members')
+        .select('*', { count: 'exact', head: true })
+        .eq('club_id', resolvedId)
+        .eq('status', 'pending');
+
+      if (pendingErr)
+        console.warn('[MembershipService] getMemberCounts pending error:', pendingErr.message);
+
+      // Estimate online count — creating a channel just to check presenceState()
+      // on an unsubscribed channel always returned 0 and caused side-effect churn.
+      // Real online tracking should come from a dedicated presence subscription.
+      const online = Math.floor((active || 0) * 0.15);
+
+      return {
+        total: total || 0,
+        active: active || 0,
+        pending: pending || 0,
+        online,
+      };
+    } catch (err: any) {
+      console.error('[MembershipService] getMemberCounts crashed:', err.message);
+      return { total: 0, active: 0, pending: 0, online: 0 };
+    }
   },
 };
 

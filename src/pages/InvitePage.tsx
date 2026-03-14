@@ -14,6 +14,7 @@ import './InvitePage.css';
 import { retryAsync } from '../utils/retryAsync';
 import { resolveClubIdFilter } from '../utils/clubIdResolver';
 import PageSkeleton from '../components/common/PageSkeleton';
+import ClubBottomNav from '../components/club/ClubBottomNav';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 
 const inviteStepAnimationStyle = {
@@ -329,6 +330,7 @@ export default function InvitePage() {
           </button>
         )}
       </div>
+      {clubId && <ClubBottomNav clubId={clubId} />}
     </div>
   );
 }

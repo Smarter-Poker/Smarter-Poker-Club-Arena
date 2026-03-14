@@ -1305,7 +1305,9 @@ export default function AgentManagementPage() {
         onTransferComplete={() => {
           // Refresh agents
           if (clubId) {
-            AgentService.getAgents(clubId).then(setAgents);
+            AgentService.getAgents(clubId)
+              .then(setAgents)
+              .catch(() => {});
           }
         }}
       />
@@ -1334,7 +1336,9 @@ export default function AgentManagementPage() {
         onPlayerAdded={() => {
           // Refresh agents
           if (clubId) {
-            AgentService.getAgents(clubId).then(setAgents);
+            AgentService.getAgents(clubId)
+              .then(setAgents)
+              .catch(() => {});
           }
         }}
       />

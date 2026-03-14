@@ -33,6 +33,7 @@ import { PlayerSearch } from '@/components/admin/PlayerSearch';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { useSwipeTabs } from '../hooks/useSwipeTabs';
+import { resolveClubUUID } from '../utils/clubIdResolver';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENT
@@ -139,13 +140,14 @@ export default function AgentManagementPage() {
   const loadRecentDistributions = async () => {
     if (!clubId || !user?.id) return;
     try {
+      const resolvedId = await resolveClubUUID(clubId);
       const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
       const { data } = await supabase
         .from('chip_transactions')
         .select(
           'id, from_user_id, to_user_id, amount, created_at, transaction_type, notes, profiles:to_user_id(username)'
         )
-        .eq('club_id', clubId)
+        .eq('club_id', resolvedId)
         .eq('from_user_id', user.id)
         .in('transaction_type', ['agent_to_player', 'promo_agent_to_player', 'send'])
         .gte('created_at', tenMinAgo)

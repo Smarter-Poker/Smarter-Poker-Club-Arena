@@ -147,7 +147,7 @@ export const MembershipService = {
     const resolvedId = await resolveClubUUID(clubId);
     const { data, error } = await supabase
       .from('club_members')
-      .select('*')
+      .select('id, club_id, user_id, role, status, joined_at, invited_by, agent_id, parent_agent_id, notes')
       .eq('club_id', resolvedId)
       .eq('user_id', userId)
       .maybeSingle();

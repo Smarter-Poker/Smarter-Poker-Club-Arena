@@ -199,7 +199,6 @@ export default function CashierPage() {
   const [recipients, setRecipients] = useState<Recipient[]>([]);
   const [selectedRecipient, setSelectedRecipient] = useState('');
   const [loadingRecipients, setLoadingRecipients] = useState(false);
-  const [distributeNotes, setDistributeNotes] = useState('');
 
   // Transaction history state
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -1232,28 +1231,6 @@ export default function CashierPage() {
               />
             </div>
 
-            {/* Notes */}
-            <div>
-              <label
-                style={{
-                  fontSize: '0.75rem',
-                  color: 'rgba(255,255,255,0.5)',
-                  marginBottom: 4,
-                  display: 'block',
-                }}
-              >
-                Notes (optional)
-              </label>
-              <MetalInput
-                type="text"
-                placeholder="Reason for distribution"
-                value={distributeNotes}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                  setDistributeNotes(e.target.value)
-                }
-              />
-            </div>
-
             {/* Execute Button */}
             <MetalButton
               variant="primary"
@@ -1281,7 +1258,6 @@ export default function CashierPage() {
                     userId: selectedRecipient,
                   });
                   setAmount('');
-                  setDistributeNotes('');
                   setSelectedRecipient('');
                   loadBalances(user.id);
                   loadRecipients();

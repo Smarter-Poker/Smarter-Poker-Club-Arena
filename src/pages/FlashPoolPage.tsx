@@ -47,7 +47,7 @@ export default function FlashPoolPage() {
   const [loading, setLoading] = useState(true);
   const [pools, setPools] = useState<PoolDisplay[]>([]);
   const [joiningPool, setJoiningPool] = useState<string | null>(null);
-  const [buyInAmount, setBuyInAmount] = useState(0);
+  const [buyInAmounts, setBuyInAmounts] = useState<Record<string, number>>({});
 
   // ── Load available pools ──
   const loadPools = useCallback(async () => {
@@ -201,9 +201,17 @@ export default function FlashPoolPage() {
         toast.error('Please sign in to play');
         return;
       }
+      const enteredAmount = buyInAmounts[pool.poolId] || 0;
+      const buyIn = enteredAmount || pool.buyInMin;
+      // Validate buy-in is within the pool's allowed range
+      if (buyIn < pool.buyInMin || buyIn > pool.buyInMax) {
+        toast.error(
+          `Buy-in must be between ${pool.buyInMin.toLocaleString()} and ${pool.buyInMax.toLocaleString()}`
+        );
+        return;
+      }
       setJoiningPool(pool.poolId);
       try {
-        const buyIn = buyInAmount || pool.buyInMin;
         flashPoolEngine.joinPool(pool.poolId, user.id, buyIn);
         toast.success(`Joining ${pool.stakes} flash pool...`);
         masterBus.emit('FLASH_POOL_JOINED', {
@@ -218,7 +226,7 @@ export default function FlashPoolPage() {
         setJoiningPool(null);
       }
     },
-    [user, buyInAmount, toast]
+    [user, buyInAmounts, toast]
   );
 
   if (loading) return <PageSkeleton />;
@@ -359,7 +367,9 @@ export default function FlashPoolPage() {
                 placeholder={`Buy-in (${pool.buyInMin})`}
                 min={pool.buyInMin}
                 max={pool.buyInMax}
-                onChange={(e) => setBuyInAmount(Number(e.target.value))}
+                onChange={(e) =>
+                  setBuyInAmounts((prev) => ({ ...prev, [pool.poolId]: Number(e.target.value) }))
+                }
                 style={{
                   flex: 1,
                   background: 'rgba(255,255,255,0.06)',

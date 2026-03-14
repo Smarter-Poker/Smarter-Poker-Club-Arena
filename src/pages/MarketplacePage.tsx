@@ -159,7 +159,7 @@ export default function MarketplacePage() {
     };
   }, [user, searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Realtime
+  // Realtime bus listeners
   useEffect(() => {
     if (!clubId) return;
     const refresh = () => loadMarketplace(clubId, true);
@@ -170,6 +170,31 @@ export default function MarketplacePage() {
       masterBus.subscribe('CASHIER_BALANCE_CHANGED', refresh),
     ];
     return () => unsubs.forEach((u) => u());
+  }, [clubId, loadMarketplace]);
+
+  // Supabase real-time for marketplace item changes (stock updates, new items)
+  useEffect(() => {
+    if (!clubId) return;
+    const channelKey = `marketplace-live-${clubId}`;
+    const channel = masterBus.getOrCreateChannel(channelKey);
+    channel
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'marketplace_items',
+          filter: `club_id=eq.${clubId}`,
+        },
+        () => {
+          loadMarketplace(clubId, true);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      masterBus.removeRegisteredChannel(channelKey);
+    };
   }, [clubId, loadMarketplace]);
 
   useVisibilityRefresh(async () => {

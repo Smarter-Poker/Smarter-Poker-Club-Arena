@@ -163,6 +163,38 @@ export default function FlashPoolPage() {
     return () => unsub();
   }, []);
 
+  // ── Supabase real-time for live pool stats ──
+  useEffect(() => {
+    const channelKey = 'flash-pools-live';
+    const channel = masterBus.getOrCreateChannel(channelKey);
+    channel
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'flash_pools' },
+        (payload: any) => {
+          const row = payload.new;
+          if (!row) return;
+          setPools((prev) =>
+            prev.map((p) =>
+              p.poolId === row.id
+                ? {
+                    ...p,
+                    activePlayers: row.active_players ?? p.activePlayers,
+                    tablesRunning: row.tables_running ?? p.tablesRunning,
+                    status: row.status ?? p.status,
+                  }
+                : p
+            )
+          );
+        }
+      )
+      .subscribe();
+
+    return () => {
+      masterBus.removeRegisteredChannel(channelKey);
+    };
+  }, []);
+
   const handleJoinPool = useCallback(
     async (pool: PoolDisplay) => {
       if (!user?.id) {

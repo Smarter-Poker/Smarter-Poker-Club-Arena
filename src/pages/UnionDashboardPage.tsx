@@ -952,20 +952,24 @@ export default function UnionDashboardPage() {
                       setProcessing(true);
                       setError(null);
                       try {
+                        const chipAmount = parseInt(transferForm.amount, 10);
+                        if (isNaN(chipAmount) || chipAmount <= 0) {
+                          setError('Enter a valid chip amount');
+                          setProcessing(false);
+                          return;
+                        }
                         // Atomic RPC: debits union_wallets, credits club wallet, logs to union_transactions
                         const { data: result, error: rpcErr } = await supabase.rpc(
                           'fn_union_send_chips_to_club',
                           {
                             p_union_id: unionId,
                             p_club_id: transferForm.clubId,
-                            p_amount: parseInt(transferForm.amount) || 0,
+                            p_amount: chipAmount,
                             p_notes: transferForm.notes || null,
                           }
                         );
                         if (rpcErr) throw rpcErr;
-                        setSuccess(
-                          `Sent ${parseInt(transferForm.amount).toLocaleString()} chips to club`
-                        );
+                        setSuccess(`Sent ${chipAmount.toLocaleString()} chips to club`);
                         masterBus.emit('BALANCE_UPDATED', { source: 'union_transfer' });
                         setTransferForm({ clubId: '', amount: '', notes: '' });
                         loadDashboard(unionId);

@@ -298,6 +298,7 @@ export default function AgentDashboardPage() {
   const approveCashout = async (cashoutId: string) => {
     if (!confirm('Approve this cashout request?')) return;
     setProcessing(true);
+    setError(null);
     try {
       await cashoutService.approveCashout(cashoutId, user?.id || '');
       setSuccess('Cashout approved successfully.');
@@ -312,6 +313,7 @@ export default function AgentDashboardPage() {
   const denyCashout = async (cashoutId: string) => {
     if (!confirm('Deny and refund this cashout request?')) return;
     setProcessing(true);
+    setError(null);
     try {
       await cashoutService.rejectCashout(cashoutId, user?.id || '', 'Denied by agent');
       setSuccess('Cashout denied and chips refunded to player.');
@@ -327,6 +329,7 @@ export default function AgentDashboardPage() {
   const executeTransfer = async () => {
     if (!transferTarget || !transferAmount || !clubId) return;
     setProcessing(true);
+    setError(null);
     try {
       const uuid = await resolveClubUUID(clubId);
       const amt = parseFloat(transferAmount);

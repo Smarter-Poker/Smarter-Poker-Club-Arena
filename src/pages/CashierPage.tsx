@@ -39,7 +39,7 @@ import AgentPromoPanel from '../components/agent/AgentPromoPanel';
 import CashoutRequestModal from '../components/wallet/CashoutRequestModal';
 import './CashierPage.css';
 
-type CashierAction = 'send' | 'buyin' | 'cashout' | 'mint' | 'history';
+type CashierAction = 'send' | 'distribute' | 'buyin' | 'cashout' | 'mint' | 'history';
 
 interface Transaction {
   id: string;
@@ -199,6 +199,7 @@ export default function CashierPage() {
   const [recipients, setRecipients] = useState<Recipient[]>([]);
   const [selectedRecipient, setSelectedRecipient] = useState('');
   const [loadingRecipients, setLoadingRecipients] = useState(false);
+  const [distributeNotes, setDistributeNotes] = useState('');
 
   // Transaction history state
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -307,9 +308,9 @@ export default function CashierPage() {
     }
   };
 
-  // Load recipients when "Send" tab is active
+  // Load recipients when "Send" or "Distribute" tab is active
   useEffect(() => {
-    if (action === 'send' && user?.id && clubId) {
+    if ((action === 'send' || action === 'distribute') && user?.id && clubId) {
       loadRecipients();
     }
   }, [action, user?.id, clubId]);
@@ -589,17 +590,22 @@ export default function CashierPage() {
     userRole === 'sub_agent';
   const canMint = (userRole === 'owner' && !isInUnion) || isUnionOwner;
 
+  const canDistribute =
+    userRole === 'owner' || isUnionOwner || userRole === 'agent' || userRole === 'super_agent';
+
   const tabs = useMemo(() => {
     const t: CashierAction[] = [];
     if (canSend) t.push('send');
+    if (canDistribute) t.push('distribute');
     t.push('buyin', 'cashout');
     if (canMint) t.push('mint');
     t.push('history');
     return t;
-  }, [canSend, canMint]);
+  }, [canSend, canDistribute, canMint]);
 
   const tabLabels: Record<CashierAction, string> = {
     send: 'Send',
+    distribute: 'Distribute',
     buyin: 'Buy-In',
     cashout: 'Cash-Out',
     mint: 'Mint',
@@ -1145,6 +1151,123 @@ export default function CashierPage() {
                 CONFIRM SEND
               </MetalButton>
             </div>
+          </div>
+        </MetalFrame>
+      )}
+
+      {/* ═══ DISTRIBUTE CHIPS ═══ */}
+      {action === 'distribute' && (
+        <MetalFrame title="DISTRIBUTE CHIPS" variant="form" size="md">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div className="cashier-message info">
+              Distribute chips directly to players or agents from the club bank. Each distribution
+              is logged with a full audit trail.
+            </div>
+
+            {/* Player Selector */}
+            <div>
+              <label style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)', marginBottom: 4, display: 'block' }}>
+                Recipient
+              </label>
+              {loadingRecipients ? (
+                <div style={{ padding: '8px', color: 'rgba(255,255,255,0.3)', fontSize: '0.8rem' }}>
+                  Loading players...
+                </div>
+              ) : (
+                <select
+                  value={selectedRecipient}
+                  onChange={(e) => setSelectedRecipient(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    background: 'rgba(0,0,0,0.3)',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    borderRadius: '8px',
+                    color: '#fff',
+                    fontSize: '0.85rem',
+                  }}
+                >
+                  <option value="">Select player...</option>
+                  {recipients.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.username} ({r.role}) — {r.balance.toLocaleString()} chips
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+
+            {/* Amount */}
+            <div>
+              <label style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)', marginBottom: 4, display: 'block' }}>
+                Amount
+              </label>
+              <MetalInput
+                type="number"
+                placeholder="Enter chip amount"
+                value={amount}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAmount(e.target.value)}
+              />
+            </div>
+
+            {/* Notes */}
+            <div>
+              <label style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)', marginBottom: 4, display: 'block' }}>
+                Notes (optional)
+              </label>
+              <MetalInput
+                type="text"
+                placeholder="Reason for distribution"
+                value={distributeNotes}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDistributeNotes(e.target.value)}
+              />
+            </div>
+
+            {/* Execute Button */}
+            <MetalButton
+              variant="primary"
+              disabled={isProcessing || cooldown > 0 || !selectedRecipient || !amount}
+              onClick={async () => {
+                const value = parseFloat(amount);
+                if (isNaN(value) || value <= 0) {
+                  setMessage({ type: 'error', text: 'Enter a valid amount' });
+                  return;
+                }
+                if (!user?.id || !selectedRecipient) return;
+
+                setIsProcessing(true);
+                setMessage(null);
+                try {
+                  await _WalletService.distributePromo(user.id, selectedRecipient, value);
+                  const recipient = recipients.find((r) => r.id === selectedRecipient);
+                  setMessage({
+                    type: 'success',
+                    text: `Distributed ${value.toLocaleString()} chips to ${recipient?.username || 'player'}`,
+                  });
+                  masterBus.emit('CHIPS_DISTRIBUTED', {
+                    clubId: clubId || '',
+                    amount: value,
+                    userId: selectedRecipient,
+                  });
+                  setAmount('');
+                  setDistributeNotes('');
+                  setSelectedRecipient('');
+                  loadBalances(user.id);
+                  loadRecipients();
+                  startCooldown();
+                } catch (err: any) {
+                  setMessage({ type: 'error', text: err.message || 'Distribution failed' });
+                } finally {
+                  setIsProcessing(false);
+                }
+              }}
+            >
+              {isProcessing
+                ? 'Distributing...'
+                : cooldown > 0
+                  ? `Wait ${cooldown}s`
+                  : `Distribute ${amount ? parseFloat(amount).toLocaleString() : '0'} Chips`}
+            </MetalButton>
           </div>
         </MetalFrame>
       )}

@@ -6,7 +6,7 @@
  * Wired to DailyChallengeService for Supabase data
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   dailyChallengeService,
   type UserDailyChallenge,
@@ -15,6 +15,7 @@ import { DailyChallenges } from './DailyChallenges';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../../components/common/Toast';
 import { masterBus } from '../../core/MasterBus';
+import { supabase } from '../../lib/supabase';
 
 interface Challenge {
   id: string;
@@ -35,6 +36,14 @@ export const DailyChallengesWidget: React.FC = () => {
   const [loading, setLoading] = useState(true);
 
   const isMounted = useRef(true);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const debouncedRefresh = useCallback(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      if (isMounted.current && user?.id) loadChallenges();
+    }, 150);
+  }, [user?.id]);
 
   useEffect(() => {
     isMounted.current = true;
@@ -44,20 +53,41 @@ export const DailyChallengesWidget: React.FC = () => {
     const unsubHand = masterBus.subscribe('HAND_COMPLETED', () => {
       if (isMounted.current && user?.id) loadChallenges();
     });
-    const unsubBalance = masterBus.subscribe('BALANCE_UPDATED', () => {
-      if (isMounted.current && user?.id) loadChallenges();
-    });
+    // Debounced — BALANCE_UPDATED fires twice per claim (RPC + WalletService)
+    const unsubBalance = masterBus.subscribe('BALANCE_UPDATED', debouncedRefresh);
     const unsubReset = masterBus.subscribe('DAILY_RESET_AVAILABLE', () => {
       if (isMounted.current && user?.id) loadChallenges();
     });
+
+    // Supabase Realtime — cross-tab sync
+    let realtimeChannel: ReturnType<typeof supabase.channel> | null = null;
+    if (user?.id) {
+      realtimeChannel = supabase
+        .channel(`widget-challenges-${user.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'user_daily_challenges',
+            filter: `user_id=eq.${user.id}`,
+          },
+          () => {
+            if (isMounted.current) debouncedRefresh();
+          }
+        )
+        .subscribe();
+    }
 
     return () => {
       isMounted.current = false;
       unsubHand();
       unsubBalance();
       unsubReset();
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      if (realtimeChannel) supabase.removeChannel(realtimeChannel);
     };
-  }, [user?.id]);
+  }, [user?.id, debouncedRefresh]);
 
   const loadChallenges = async () => {
     if (!user?.id) return;

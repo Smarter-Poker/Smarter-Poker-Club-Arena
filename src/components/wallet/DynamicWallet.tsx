@@ -193,10 +193,10 @@ export default function DynamicWallet({
           promoBalance: Number(memberRes.data?.promo_balance) || 0,
           bbjPool: Number(bbjRes.data?.main_balance) || 0,
           backupBBJ: Number(bbjRes.data?.backup_balance) || 0,
-          agentBalance: Number(agentRes.data?.business_balance) || 0,
+          agentBalance: Number(agentRes.data?.agent_wallet_balance) || 0,
           clubBank: Array.isArray(clubRes.data)
             ? clubRes.data.reduce(
-                (sum: number, a: any) => sum + (Number(a.business_balance) || 0),
+                (sum: number, a: any) => sum + (Number(a.agent_wallet_balance) || 0),
                 0
               )
             : 0,

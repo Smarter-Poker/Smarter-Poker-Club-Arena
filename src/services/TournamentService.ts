@@ -1956,13 +1956,18 @@ class TournamentService {
     }
 
     // Update tournament status
-    await supabase
+    const { error: statusError } = await supabase
       .from('tournaments')
       .update({
         status: 'COMPLETED',
         ended_at: new Date().toISOString(),
       })
       .eq('id', tournamentId);
+
+    if (statusError) {
+      console.error('[TournamentService] Failed to mark tournament COMPLETED:', statusError);
+      return { success: false };
+    }
 
     // Payouts are processed automatically by the settlement system
     // via the tournament_payouts table populated during eliminations

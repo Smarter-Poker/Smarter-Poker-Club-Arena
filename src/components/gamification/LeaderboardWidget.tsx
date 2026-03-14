@@ -2,10 +2,13 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  *  LEADERBOARD WIDGET — Compact Leaderboard Display
  * ═══════════════════════════════════════════════════════════════════════════════
+ * Hardened: isMounted, useCallback, bus listeners (HAND_COMPLETED, BALANCE_UPDATED),
+ * animation cleanup, loading skeleton.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
+import { masterBus } from '../../core/MasterBus';
 import './LeaderboardWidget.css';
 
 interface LeaderboardWidgetProps {
@@ -34,18 +37,12 @@ export function LeaderboardWidget({
   const [entries, setEntries] = useState<LeaderEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
+  const isMounted = useRef(true);
+  const animTimers = useRef<number[]>([]);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
-    entries.forEach((_, i) => {
-      setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60);
-    });
-  }, [entries]);
-
-  useEffect(() => {
-    loadLeaderboard();
-  }, [clubId, period, metric]);
-
-  const loadLeaderboard = async () => {
+  const loadLeaderboard = useCallback(async () => {
+    if (!isMounted.current) return;
     setLoading(true);
     try {
       const { data, error } = await supabase.rpc('fn_get_leaderboard', {
@@ -55,22 +52,60 @@ export function LeaderboardWidget({
         p_limit: limit,
       });
 
+      if (!isMounted.current) return;
+
       if (!error && data) {
-        setEntries(
-          data.map((e: any, idx: number) => ({
-            rank: idx + 1,
-            userId: e.user_id,
-            username: e.username,
-            avatarUrl: e.avatar_url || '',
-            value: e.value || 0,
-          }))
-        );
+        const mapped = data.map((e: any, idx: number) => ({
+          rank: idx + 1,
+          userId: e.user_id,
+          username: e.username,
+          avatarUrl: e.avatar_url || '',
+          value: e.value || 0,
+        }));
+        setEntries(mapped);
+
+        // Staggered reveal animation — track timers for cleanup
+        animTimers.current.forEach(clearTimeout);
+        animTimers.current = [];
+        setVisibleItems(new Set());
+        mapped.forEach((_: any, i: number) => {
+          const t = window.setTimeout(
+            () => setVisibleItems((prev) => new Set(prev).add(i)),
+            i * 60
+          );
+          animTimers.current.push(t);
+        });
       }
     } catch (error) {
       console.error('Failed to load leaderboard:', error);
     }
-    setLoading(false);
-  };
+    if (isMounted.current) setLoading(false);
+  }, [clubId, period, metric, limit]);
+
+  const debouncedRefresh = useCallback(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      if (isMounted.current) loadLeaderboard();
+    }, 2000); // 2s debounce — leaderboard doesn't need instant refresh
+  }, [loadLeaderboard]);
+
+  useEffect(() => {
+    isMounted.current = true;
+    loadLeaderboard();
+
+    // Bus listeners — leaderboard refreshes after gameplay events
+    const unsubHand = masterBus.subscribe('HAND_COMPLETED', debouncedRefresh);
+    const unsubBalance = masterBus.subscribe('BALANCE_UPDATED', debouncedRefresh);
+
+    return () => {
+      isMounted.current = false;
+      unsubHand();
+      unsubBalance();
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      animTimers.current.forEach(clearTimeout);
+      animTimers.current = [];
+    };
+  }, [loadLeaderboard, debouncedRefresh]);
 
   const formatValue = (value: number) => {
     if (metric === 'profit') {
@@ -106,7 +141,47 @@ export function LeaderboardWidget({
   };
 
   if (loading) {
-    return <div className="leaderboard-widget loading">Loading...</div>;
+    return (
+      <div className="leaderboard-widget loading">
+        {showTitle && (
+          <div className="leaderboard-widget__header">
+            <span className="icon">{getMetricIcon()}</span>
+            <span className="title">Top Players</span>
+            <span className="period">{getPeriodLabel()}</span>
+          </div>
+        )}
+        <div className="leaderboard-widget__list">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="leader-entry" style={{ opacity: 0.3 }}>
+              <span
+                className="rank"
+                style={{
+                  background: 'rgba(255,255,255,0.08)',
+                  borderRadius: 4,
+                  width: 30,
+                  height: 14,
+                  display: 'inline-block',
+                }}
+              >
+                &nbsp;
+              </span>
+              <span
+                className="username"
+                style={{
+                  background: 'rgba(255,255,255,0.06)',
+                  borderRadius: 4,
+                  width: '40%',
+                  height: 14,
+                  display: 'inline-block',
+                }}
+              >
+                &nbsp;
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
   }
 
   return (

@@ -15,6 +15,7 @@ import type { Club, PokerTable, Tournament } from '../../types/database.types';
 import ClubBottomNav from '../../components/club/ClubBottomNav';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { useVisibilityRefresh } from '../../hooks/useVisibilityRefresh';
+import PageSkeleton from '../../components/common/PageSkeleton';
 import './ClubLobby.css';
 
 // Animation utilities
@@ -229,7 +230,7 @@ export default function ClubLobby() {
   if (isLoading) {
     return (
       <div className="club-lobby loading">
-        <div className="loader">Loading Club...</div>
+        <PageSkeleton variant="default" />
       </div>
     );
   }

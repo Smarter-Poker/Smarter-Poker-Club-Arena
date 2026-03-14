@@ -116,14 +116,20 @@ export const DailyChallenges: React.FC = () => {
     }
   };
 
+  // Guard against double-claim — Set tracks in-flight claims before React state updates
+  const claimingRef = useRef<Set<string>>(new Set());
+
   const claimReward = async (challenge: Challenge) => {
     if (!challenge.completed || challenge.claimed || !user?.id) return;
+    // Race condition guard: block if already in-flight
+    if (claimingRef.current.has(challenge.id)) return;
+    claimingRef.current.add(challenge.id);
 
     try {
       // Claim via service → writes to Supabase + credits chips
       await dailyChallengeService.claimChallenge(user.id, challenge.id, challenge.chipReward);
 
-      // Optimistic local update AFTER successful Supabase write
+      // Local update AFTER successful Supabase write
       setChallenges((prev) =>
         prev.map((c) => (c.id === challenge.id ? { ...c, claimed: true } : c))
       );
@@ -134,6 +140,8 @@ export const DailyChallenges: React.FC = () => {
       setTimeout(() => setShowAnimation(false), 2000);
     } catch (err: any) {
       toast.error(err?.message || 'Failed to claim reward');
+    } finally {
+      claimingRef.current.delete(challenge.id);
     }
   };
 

@@ -140,11 +140,14 @@ describe('FinancialAlertService', () => {
       expect(mockInsert).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warning' }));
     });
 
-    it('should route info severity to logWarning', async () => {
+    it('should route info severity to logWarning (persisted as warning)', async () => {
       await FinancialAlertService.raise('info', 'Info message', 'TestSource', {});
 
-      // Info falls to the else clause, which calls logWarning
-      expect(mockInsert).toHaveBeenCalledWith(expect.objectContaining({ severity: 'info' }));
+      // Info falls to the else clause → logWarning → _log('warning', ...)
+      // So the DB insert uses severity='warning', NOT 'info'
+      expect(mockInsert).toHaveBeenCalledWith(
+        expect.objectContaining({ severity: 'warning', message: 'Info message' })
+      );
     });
   });
 

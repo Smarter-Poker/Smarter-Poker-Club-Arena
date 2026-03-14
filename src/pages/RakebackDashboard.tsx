@@ -67,11 +67,43 @@ export default function RakebackDashboard() {
   useEffect(() => {
     const unsub = masterBus.subscribeDebounced('BALANCE_UPDATED', () => loadData(), 1000);
     const unsub2 = masterBus.subscribeDebounced('HAND_COMPLETED', () => loadData(), 2000);
+    const unsub3 = masterBus.subscribeDebounced('RAKEBACK_CLAIMED', () => loadData(), 500);
+    const unsub4 = masterBus.subscribeDebounced('SETTLEMENT_COMPLETED', () => loadData(), 1000);
     return () => {
       unsub();
       unsub2();
+      unsub3();
+      unsub4();
     };
   }, []);
+
+  // Supabase realtime: instant updates when wallet_transactions change (rake/rakeback)
+  useEffect(() => {
+    if (!user?.id) return;
+    const channelKey = `rakeback-dash-${user.id}`;
+    const channel = masterBus.getOrCreateChannel(channelKey);
+    channel
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'wallet_transactions',
+          filter: `user_id=eq.${user.id}`,
+        },
+        (payload: any) => {
+          // Only reload for rake/rakeback transactions
+          const cat = payload?.new?.category;
+          if (cat === 'rake' || cat === 'rakeback') {
+            if (isMounted.current) loadData();
+          }
+        }
+      )
+      .subscribe();
+    return () => {
+      masterBus.removeRegisteredChannel(channelKey);
+    };
+  }, [user?.id]);
 
   const loadData = async () => {
     if (!user?.id) return;

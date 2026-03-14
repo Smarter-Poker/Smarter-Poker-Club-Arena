@@ -258,6 +258,8 @@ export default function AgentManagementPage() {
       'BALANCE_UPDATED',
       () => {
         loadAgentsData();
+        // Phase 13: Refresh clawback section after balance changes (e.g. clawback completes)
+        loadRecentDistributions();
       },
       300
     );

@@ -101,7 +101,9 @@ export default function XMTTPage() {
       try {
         let query = supabase
           .from('tournaments')
-          .select('*')
+          .select(
+            'id, name, status, type, buy_in, max_players, registered_count, start_time, created_at, prize_pool, club_id'
+          )
           .eq('club_id', targetClub)
           .order('start_time', { ascending: false });
 
@@ -122,7 +124,13 @@ export default function XMTTPage() {
     try {
       setDetailLoading(true);
       const [{ data: tourn }, { data: regs }] = await Promise.all([
-        supabase.from('tournaments').select('*').eq('id', tournamentId).maybeSingle(),
+        supabase
+          .from('tournaments')
+          .select(
+            'id, name, status, type, buy_in, max_players, registered_count, start_time, created_at, prize_pool'
+          )
+          .eq('id', tournamentId)
+          .maybeSingle(),
         supabase
           .from('tournament_players')
           .select('*, profiles(display_name, username)')
@@ -193,14 +201,14 @@ export default function XMTTPage() {
       if (selectedTournament) loadDetail(selectedTournament);
     };
     const unsubs = [
-      masterBus.subscribe('TOURNAMENT_REGISTERED', refresh),
-      masterBus.subscribe('TOURNAMENT_STARTED', refresh),
-      masterBus.subscribe('TOURNAMENT_COMPLETE', refresh),
+      masterBus.subscribeDebounced('TOURNAMENT_REGISTERED', refresh, 500),
+      masterBus.subscribeDebounced('TOURNAMENT_STARTED', refresh, 500),
+      masterBus.subscribeDebounced('TOURNAMENT_COMPLETE', refresh, 500),
       // Phase 4: Cross-page sync (ported from World Hub xmtt.js)
-      masterBus.subscribe('TOURNAMENT_CANCELLED', refresh),
-      masterBus.subscribe('TOURNAMENT_LEVEL_CHANGE', refresh),
+      masterBus.subscribeDebounced('TOURNAMENT_CANCELLED', refresh, 500),
+      masterBus.subscribeDebounced('TOURNAMENT_LEVEL_CHANGE', refresh, 1000),
       // Phase 13: Waitlist position changes trigger tournament card refresh
-      masterBus.subscribe('WAITLIST_POSITION_CHANGED', refresh),
+      masterBus.subscribeDebounced('WAITLIST_POSITION_CHANGED', refresh, 500),
     ];
     return () => unsubs.forEach((u) => u());
   }, [clubId, selectedTournament, loadTournaments, loadDetail]);

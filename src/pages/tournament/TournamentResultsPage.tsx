@@ -87,7 +87,9 @@ export default function TournamentResultsPage() {
     try {
       let query = supabase
         .from('tournaments')
-        .select('*')
+        .select(
+          'id, name, variant, tournament_type, game_type, buy_in_amount, buy_in_fee, prize_pool, current_players, max_players, status, started_at, ended_at, is_xmtt, is_bounty, is_pko, is_mystery_bounty, spin_multiplier'
+        )
         .eq('status', 'COMPLETED')
         .order('ended_at', { ascending: false })
         .limit(100);
@@ -154,7 +156,9 @@ export default function TournamentResultsPage() {
       (async () => {
         const { data } = await supabase
           .from('tournaments')
-          .select('*')
+          .select(
+            'id, name, variant, tournament_type, game_type, buy_in_amount, buy_in_fee, prize_pool, current_players, max_players, status, started_at, ended_at, is_xmtt, is_bounty, is_pko, is_mystery_bounty, spin_multiplier'
+          )
           .eq('id', tournamentId)
           .maybeSingle();
         if (isMounted.current && data) {

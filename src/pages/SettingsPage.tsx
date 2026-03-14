@@ -351,10 +351,28 @@ export default function SettingsPage() {
 
       // Fetch user data from various tables
       const [profiles, wallets, achievements, handHistory] = await Promise.all([
-        supabase.from('profiles').select('*').eq('id', user.id).maybeSingle(),
-        supabase.from('wallets').select('*').eq('user_id', user.id),
-        supabase.from('user_achievements').select('*').eq('user_id', user.id),
-        supabase.from('hand_history').select('*').eq('player_id', user.id).limit(100),
+        supabase
+          .from('profiles')
+          .select(
+            'id, display_name, username, avatar_url, bio, role, created_at, streak_days, last_login'
+          )
+          .eq('id', user.id)
+          .maybeSingle(),
+        supabase
+          .from('wallets')
+          .select('id, user_id, wallet_type, balance, currency, created_at')
+          .eq('user_id', user.id),
+        supabase
+          .from('user_achievements')
+          .select('id, user_id, achievement_id, unlocked_at, progress')
+          .eq('user_id', user.id),
+        supabase
+          .from('hand_history')
+          .select(
+            'id, hand_number, game_variant, small_blind, big_blind, pot_size, community_cards, winners, players, created_at'
+          )
+          .eq('player_id', user.id)
+          .limit(100),
       ]);
 
       const exportData = {

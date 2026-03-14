@@ -486,13 +486,19 @@ export const HydraService = {
 
     if (tableClubData?.club_id) {
       // Fire and forget: logging
-      supabase.from('chip_transactions').insert({
-        club_id: tableClubData.club_id,
-        to_user_id: horseId,
-        amount: stack,
-        transaction_type: 'buy_in',
-        notes: `Horse buy-in at table ${tableId}`,
-      });
+      supabase
+        .from('chip_transactions')
+        .insert({
+          club_id: tableClubData.club_id,
+          to_user_id: horseId,
+          amount: stack,
+          transaction_type: 'buy_in',
+          notes: `Horse buy-in at table ${tableId}`,
+        })
+        .then(({ error }) => {
+          if (error)
+            console.error('[Hydra] chip_transactions insert (buy_in) failed:', error.message);
+        });
     }
 
     // Update horse status to seated
@@ -611,13 +617,19 @@ export const HydraService = {
 
       if (tableClubData?.club_id) {
         // Fire and forget: logging
-        supabase.from('chip_transactions').insert({
-          club_id: tableClubData.club_id,
-          from_user_id: horseId,
-          amount: returnedChips,
-          transaction_type: 'cashout',
-          notes: `Horse cash-out from table ${tableId}`,
-        });
+        supabase
+          .from('chip_transactions')
+          .insert({
+            club_id: tableClubData.club_id,
+            from_user_id: horseId,
+            amount: returnedChips,
+            transaction_type: 'cashout',
+            notes: `Horse cash-out from table ${tableId}`,
+          })
+          .then(({ error }) => {
+            if (error)
+              console.error('[Hydra] chip_transactions insert (cashout) failed:', error.message);
+          });
       }
     }
 

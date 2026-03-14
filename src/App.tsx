@@ -7,7 +7,8 @@
  */
 
 import { Routes, Route, useLocation } from 'react-router-dom';
-import { Suspense, lazy, useState, useEffect, useRef } from 'react';
+import { Suspense, useState, useEffect, useRef } from 'react';
+import { lazyWithRetry as lazy } from './utils/lazyWithRetry';
 import { supabase } from './lib/supabase';
 import { realtimeChannelService } from './services/RealtimeChannelService';
 import { replayOfflineQueue } from './utils/offlineQueue';

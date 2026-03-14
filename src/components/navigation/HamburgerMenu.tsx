@@ -10,6 +10,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
+import { identityDNA } from '../../core/IdentityDNA';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
 import styles from './HamburgerMenu.module.css';
@@ -196,11 +197,18 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
 
   const handleLogOut = async () => {
     try {
-      await supabase.auth.signOut();
-      navigate('/auth');
+      // CRITICAL: Use identityDNA.logout() — NOT supabase.auth.signOut() directly.
+      // IdentityDNA owns the signOut lifecycle: it triggers the auth state listener
+      // which clears the Zustand store, destroys PostgresSyncHooks, and emits
+      // AUTH_STATE_CHANGED. AuthGuard then detects the sign-out and redirects to /auth.
+      await identityDNA.logout();
       onClose();
+      // AuthGuard handles the redirect to /auth — no manual navigate needed
     } catch (error) {
       console.error('Error logging out:', error);
+      // Force redirect on error as fallback
+      navigate('/auth');
+      onClose();
     }
   };
 

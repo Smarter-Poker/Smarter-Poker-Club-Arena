@@ -155,7 +155,10 @@ export default function ClubCarouselPage() {
       } = await supabase.auth.getUser();
       if (!isMounted.current) return;
       if (!authUser) {
-        navigate('/auth');
+        // Don't manually redirect to /auth — AuthGuard handles this.
+        // getUser() can return null transiently during token refresh.
+        console.warn('[ClubCarouselPage] getUser() returned null — skipping data load');
+        setLoading(false);
         return;
       }
 

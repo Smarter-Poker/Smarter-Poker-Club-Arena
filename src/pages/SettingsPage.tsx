@@ -8,6 +8,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { identityDNA } from '../core/IdentityDNA';
 import { masterBus } from '../core/MasterBus';
 import { notificationService } from '../services/NotificationService';
 import UserProfileEdit from '../components/social/UserProfileEdit';
@@ -419,9 +420,9 @@ export default function SettingsPage() {
     if (actionType === 'delete-account') {
       setActionLoading(true);
       try {
-        const { error } = await supabase.auth.signOut();
-        if (error) throw error;
-        window.location.href = '/';
+        // Use IdentityDNA for proper signOut lifecycle (clears store, destroys realtime, etc.)
+        await identityDNA.logout();
+        // AuthGuard will handle redirect to /auth
       } catch (err) {
         console.error('Account deletion failed:', err);
         toast.error('Account deletion failed. Please try again.');

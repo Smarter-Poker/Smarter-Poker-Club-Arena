@@ -221,6 +221,7 @@ function DashboardTab({ clubId }: { clubId: string }) {
       masterBus.subscribeDebounced('RAKEBACK_CLAIMED', load, 500),
       masterBus.subscribeDebounced('CLUB_SETTINGS_UPDATED', load, 500),
       masterBus.subscribeDebounced('COLLUSION_DETECTED', load, 500),
+      masterBus.subscribeDebounced('ADMIN_ACTION', load, 500),
     ];
     return () => unsubs.forEach((u) => u());
   }, [load]);

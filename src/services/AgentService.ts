@@ -1171,7 +1171,7 @@ class AgentServiceClass {
       .from('chip_transactions')
       .update({ notes: clawbackNote })
       .eq('id', transactionId)
-      .not('notes', 'like', '%[CLAWED BACK:%')
+      .or('notes.is.null,notes.not.like.*[CLAWED BACK:*')
       .select('id')
       .maybeSingle();
 

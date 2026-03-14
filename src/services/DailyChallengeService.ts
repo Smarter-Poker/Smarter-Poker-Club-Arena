@@ -458,14 +458,18 @@ class DailyChallengeServiceClass {
       throw new Error(error.message);
     }
 
-    WalletService.logTransaction(
-      userId,
-      'PLAYER',
-      rewardAmount,
-      'credit',
-      'bonus',
-      `Manual Claim: Daily Challenge Reward`
-    );
+    try {
+      await WalletService.logTransaction(
+        userId,
+        'PLAYER',
+        rewardAmount,
+        'credit',
+        'bonus',
+        `Manual Claim: Daily Challenge Reward`
+      );
+    } catch (logErr) {
+      console.warn('[DailyChallenge] Transaction log failed (claim still valid):', logErr);
+    }
     masterBus.emit('BALANCE_UPDATED', { source: 'daily_challenge_claim', userId });
     return true;
   }

@@ -10,6 +10,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
+import { retryAsync } from '../../utils/retryAsync';
 import { masterBus } from '../../core/MasterBus';
 import { triggerHaptic } from '../../services/HapticService';
 import { resolveAvatarDisplay } from '../../utils/avatarUtils';
@@ -166,11 +167,15 @@ export default function AgentPromoPanel({
         return;
       }
       // Direct Supabase RPC for distribution — p_agent_id is agents.id PK, NOT auth.users.id
-      const { error } = await supabase.rpc('distribute_promo_chips', {
-        p_agent_id: agentPkId,
-        p_player_id: selectedPlayer,
-        p_amount: amt,
-      });
+      const { error } = await retryAsync(
+        () =>
+          supabase.rpc('distribute_promo_chips', {
+            p_agent_id: agentPkId,
+            p_player_id: selectedPlayer,
+            p_amount: amt,
+          }),
+        3
+      );
       if (error) throw error;
 
       showToast(`🎉 ${amt.toLocaleString()} promo chips sent!`);

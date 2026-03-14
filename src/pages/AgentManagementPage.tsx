@@ -104,6 +104,10 @@ export default function AgentManagementPage() {
   // Animation state
   const [visibleAgents, setVisibleAgents] = useState<Set<string>>(new Set());
 
+  // Clawback state
+  const [recentDistributions, setRecentDistributions] = useState<any[]>([]);
+  const [clawbackProcessing, setClawbackProcessing] = useState<string | null>(null);
+
   // Stagger animation for agents list
   const isMounted = useRef(true);
   useEffect(() => {
@@ -130,6 +134,33 @@ export default function AgentManagementPage() {
         if (isMounted.current) setIsLoading(false);
       });
   }, [clubId]);
+
+  // Load recent distributions for clawback
+  const loadRecentDistributions = async () => {
+    if (!clubId || !user?.id) return;
+    try {
+      const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+      const { data } = await supabase
+        .from('chip_transactions')
+        .select(
+          'id, from_user_id, to_user_id, amount, created_at, transaction_type, notes, users:to_user_id(username)'
+        )
+        .eq('club_id', clubId)
+        .eq('from_user_id', user.id)
+        .in('transaction_type', ['agent_to_player', 'promo_agent_to_player', 'send'])
+        .gte('created_at', tenMinAgo)
+        .not('notes', 'like', '%[CLAWED BACK]%')
+        .order('created_at', { ascending: false })
+        .limit(20);
+      if (isMounted.current) setRecentDistributions(data || []);
+    } catch {
+      /* silent */
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'players') loadRecentDistributions();
+  }, [activeTab, clubId, user?.id]);
 
   // Stagger animation for agents list
   useEffect(() => {
@@ -722,6 +753,106 @@ export default function AgentManagementPage() {
                 navigate(`/profile/${playerId}`);
               }}
             />
+
+            {/* Recent Distributions with Clawback */}
+            {recentDistributions.length > 0 && (
+              <div style={{ marginTop: 24 }}>
+                <h3
+                  style={{ fontSize: '0.95rem', color: 'rgba(255,255,255,0.7)', marginBottom: 12 }}
+                >
+                  ↩ Recent Distributions (Clawback Window)
+                </h3>
+                {recentDistributions.map((tx) => {
+                  const elapsed = Date.now() - new Date(tx.created_at).getTime();
+                  const remainingSec = Math.max(0, Math.ceil((10 * 60 * 1000 - elapsed) / 1000));
+                  const remainingMin = Math.floor(remainingSec / 60);
+                  const remainingSecMod = remainingSec % 60;
+                  const recipientName = (tx.users as any)?.username || 'Player';
+                  return (
+                    <div
+                      key={tx.id}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '10px 14px',
+                        background: 'rgba(0,0,0,0.2)',
+                        borderRadius: 8,
+                        marginBottom: 8,
+                        border: '1px solid rgba(255,255,255,0.06)',
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontSize: '0.85rem', color: '#fff', fontWeight: 600 }}>
+                          {tx.amount.toLocaleString()} chips → {recipientName}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: '0.7rem',
+                            color: 'rgba(255,255,255,0.4)',
+                            marginTop: 2,
+                          }}
+                        >
+                          {tx.transaction_type} •{' '}
+                          <span style={{ color: remainingSec > 0 ? '#F5A623' : '#FA383E' }}>
+                            {remainingSec > 0
+                              ? `${remainingMin}:${String(remainingSecMod).padStart(2, '0')} left`
+                              : 'expired'}
+                          </span>
+                        </div>
+                      </div>
+                      {remainingSec > 0 && (
+                        <button
+                          onClick={async () => {
+                            if (
+                              !confirm(
+                                `Clawback ${tx.amount.toLocaleString()} chips from ${recipientName}?`
+                              )
+                            )
+                              return;
+                            setClawbackProcessing(tx.id);
+                            try {
+                              const result = await AgentService.clawbackDistribution(
+                                tx.id,
+                                clubId!,
+                                user!.id
+                              );
+                              if (result.success) {
+                                toast.success(
+                                  `Clawed back ${(result.recovered || tx.amount).toLocaleString()} chips`
+                                );
+                                masterBus.emit('BALANCE_UPDATED', { source: 'clawback' });
+                                loadRecentDistributions();
+                              } else {
+                                toast.error(result.error || 'Clawback failed');
+                              }
+                            } catch (err: any) {
+                              toast.error(err.message || 'Clawback failed');
+                            } finally {
+                              setClawbackProcessing(null);
+                            }
+                          }}
+                          disabled={clawbackProcessing === tx.id}
+                          style={{
+                            padding: '6px 14px',
+                            borderRadius: 6,
+                            background: 'rgba(250,56,62,0.15)',
+                            border: '1px solid rgba(250,56,62,0.3)',
+                            color: '#FA383E',
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {clawbackProcessing === tx.id ? '...' : '↩ Clawback'}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 

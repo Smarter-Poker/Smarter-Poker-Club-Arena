@@ -9,6 +9,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { retryAsync } from '../utils/retryAsync';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import { masterBus } from '../core/MasterBus';
@@ -181,12 +182,16 @@ export default function MarketplacePage() {
     setProcessing(true);
     try {
       // Deduct chips
-      const { error: deductErr } = await supabase.rpc('deduct_marketplace_chips', {
-        p_club_id: clubId,
-        p_user_id: user.id,
-        p_amount: buyTarget.price,
-        p_item_id: buyTarget.id,
-      });
+      const { error: deductErr } = await retryAsync(
+        () =>
+          supabase.rpc('deduct_marketplace_chips', {
+            p_club_id: clubId,
+            p_user_id: user.id,
+            p_amount: buyTarget.price,
+            p_item_id: buyTarget.id,
+          }),
+        3
+      );
       if (deductErr) throw deductErr;
 
       toast.success(`Successfully purchased ${buyTarget.name}!`);

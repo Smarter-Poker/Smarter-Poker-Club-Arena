@@ -564,6 +564,13 @@ export default function CashierPage() {
       },
       500
     );
+    const unsubDailyReward = masterBus.subscribeDebounced(
+      'DAILY_REWARD_CLAIMED',
+      () => {
+        loadBalances(user.id);
+      },
+      500
+    );
     return () => {
       unsubBalance();
       unsubWallet();
@@ -575,6 +582,7 @@ export default function CashierPage() {
       unsubCashoutCancelled();
       unsubCashierBalance();
       unsubRakebackClaimed();
+      unsubDailyReward();
     };
   }, [user?.id, loadBalances, loadTransactions]);
 
@@ -1166,7 +1174,14 @@ export default function CashierPage() {
 
             {/* Player Selector */}
             <div>
-              <label style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)', marginBottom: 4, display: 'block' }}>
+              <label
+                style={{
+                  fontSize: '0.75rem',
+                  color: 'rgba(255,255,255,0.5)',
+                  marginBottom: 4,
+                  display: 'block',
+                }}
+              >
                 Recipient
               </label>
               {loadingRecipients ? (
@@ -1199,7 +1214,14 @@ export default function CashierPage() {
 
             {/* Amount */}
             <div>
-              <label style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)', marginBottom: 4, display: 'block' }}>
+              <label
+                style={{
+                  fontSize: '0.75rem',
+                  color: 'rgba(255,255,255,0.5)',
+                  marginBottom: 4,
+                  display: 'block',
+                }}
+              >
                 Amount
               </label>
               <MetalInput
@@ -1212,14 +1234,23 @@ export default function CashierPage() {
 
             {/* Notes */}
             <div>
-              <label style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)', marginBottom: 4, display: 'block' }}>
+              <label
+                style={{
+                  fontSize: '0.75rem',
+                  color: 'rgba(255,255,255,0.5)',
+                  marginBottom: 4,
+                  display: 'block',
+                }}
+              >
                 Notes (optional)
               </label>
               <MetalInput
                 type="text"
                 placeholder="Reason for distribution"
                 value={distributeNotes}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDistributeNotes(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                  setDistributeNotes(e.target.value)
+                }
               />
             </div>
 

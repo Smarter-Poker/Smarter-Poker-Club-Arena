@@ -6,6 +6,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
+import { retryAsync } from '../../utils/retryAsync';
 import { masterBus } from '../../core/MasterBus';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
@@ -223,7 +224,10 @@ export function AgentCommissionDashboard() {
     if (!user?.id || !summary?.pendingPayout) return;
 
     try {
-      const { error } = await supabase.rpc('fn_request_agent_payout', { p_agent_id: user.id });
+      const { error } = await retryAsync(
+        () => supabase.rpc('fn_request_agent_payout', { p_agent_id: user.id }),
+        3
+      );
 
       if (error) {
         console.warn('[AgentDashboard] fn_request_agent_payout RPC not available');

@@ -215,6 +215,7 @@ function DashboardTab({ clubId }: { clubId: string }) {
       masterBus.subscribeDebounced('SETTLEMENT_PAYOUT_FAILED', load, 500),
       masterBus.subscribeDebounced('RAKEBACK_CLAIMED', load, 500),
       masterBus.subscribeDebounced('CLUB_SETTINGS_UPDATED', load, 500),
+      masterBus.subscribeDebounced('COLLUSION_DETECTED', load, 500),
     ];
     return () => unsubs.forEach((u) => u());
   }, [load]);

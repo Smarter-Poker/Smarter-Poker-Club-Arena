@@ -11,6 +11,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
+import { retryAsync } from '../../utils/retryAsync';
 import styles from '../../pages/HomePage.module.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -277,12 +278,13 @@ export default function DailyChallenges() {
           // STEP 2: Atomically increment diamond balance (TOCTOU-safe)
           // The upsert is idempotent, so if this step fails the user can safely retry
           // and the upsert will re-run without side effects.
-          const { data: rpcResult, error: diamondError } = await supabase.rpc(
-            'increment_diamonds',
-            {
-              p_user_id: user.id,
-              p_amount: reward,
-            }
+          const { data: rpcResult, error: diamondError } = await retryAsync(
+            () =>
+              supabase.rpc('increment_diamonds', {
+                p_user_id: user.id,
+                p_amount: reward,
+              }),
+            3
           );
           if (diamondError) throw diamondError;
           const newBalance = typeof rpcResult === 'number' ? rpcResult : reward;

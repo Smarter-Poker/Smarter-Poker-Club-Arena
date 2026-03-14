@@ -241,6 +241,38 @@ export default function XMTTPage() {
     }
   };
 
+  // Waitlist state
+  const [waitlistPositions, setWaitlistPositions] = useState<Record<string, number | null>>({});
+  const [waitlistProcessing, setWaitlistProcessing] = useState<string | null>(null);
+
+  const handleJoinWaitlist = async (tournamentId: string) => {
+    if (!user) return;
+    setWaitlistProcessing(tournamentId);
+    try {
+      const { position } = await tournamentService.joinTournamentWaitlist(tournamentId, user.id);
+      setWaitlistPositions((prev) => ({ ...prev, [tournamentId]: position }));
+    } catch (err: any) {
+      setActionError(err.message);
+      setTimeout(() => setActionError(null), 5000);
+    } finally {
+      setWaitlistProcessing(null);
+    }
+  };
+
+  const handleLeaveWaitlist = async (tournamentId: string) => {
+    if (!user) return;
+    setWaitlistProcessing(tournamentId);
+    try {
+      await tournamentService.leaveTournamentWaitlist(tournamentId, user.id);
+      setWaitlistPositions((prev) => ({ ...prev, [tournamentId]: null }));
+    } catch (err: any) {
+      setActionError(err.message);
+      setTimeout(() => setActionError(null), 5000);
+    } finally {
+      setWaitlistProcessing(null);
+    }
+  };
+
   const filtered = filter === 'all' ? tournaments : tournaments.filter((t) => t.status === filter);
 
   if (loading) return <PageSkeleton variant="dashboard" />;
@@ -316,24 +348,64 @@ export default function XMTTPage() {
                 </div>
                 {t.status === 'registering' && (
                   <div className={styles.tournActions}>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleRegister(t.id);
-                      }}
-                      className={styles.btnRegister}
-                    >
-                      Register
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleUnregister(t.id);
-                      }}
-                      className={styles.btnUnregister}
-                    >
-                      Unregister
-                    </button>
+                    {/* Register/Unregister — show when not at capacity */}
+                    {(t.registered_count || 0) < (t.max_players || Infinity) && (
+                      <>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRegister(t.id);
+                          }}
+                          className={styles.btnRegister}
+                        >
+                          Register
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleUnregister(t.id);
+                          }}
+                          className={styles.btnUnregister}
+                        >
+                          Unregister
+                        </button>
+                      </>
+                    )}
+                    {/* Waitlist — show when at capacity */}
+                    {(t.registered_count || 0) >= (t.max_players || Infinity) && t.max_players && (
+                      <>
+                        {waitlistPositions[t.id] ? (
+                          <>
+                            <span
+                              style={{ color: '#F5A623', fontSize: '0.75rem', fontWeight: 600 }}
+                            >
+                              📋 Position #{waitlistPositions[t.id]}
+                            </span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleLeaveWaitlist(t.id);
+                              }}
+                              disabled={waitlistProcessing === t.id}
+                              className={styles.btnUnregister}
+                            >
+                              {waitlistProcessing === t.id ? '...' : 'Leave Waitlist'}
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleJoinWaitlist(t.id);
+                            }}
+                            disabled={waitlistProcessing === t.id}
+                            className={styles.btnRegister}
+                          >
+                            {waitlistProcessing === t.id ? 'Joining...' : '📋 Join Waitlist'}
+                          </button>
+                        )}
+                      </>
+                    )}
                   </div>
                 )}
               </div>

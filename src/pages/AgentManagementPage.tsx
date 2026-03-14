@@ -349,6 +349,7 @@ export default function AgentManagementPage() {
     const success = await AgentService.updateAgentStatus(agentId, 'suspended');
     if (success) {
       setAgents((prev) => prev.map((a) => (a.id === agentId ? { ...a, status: 'suspended' } : a)));
+      masterBus.emit('AGENT_UPDATED', { clubId: clubId || '', agentId });
     }
   };
 
@@ -357,6 +358,7 @@ export default function AgentManagementPage() {
     const success = await AgentService.updateAgentStatus(agentId, 'active');
     if (success) {
       setAgents((prev) => prev.map((a) => (a.id === agentId ? { ...a, status: 'active' } : a)));
+      masterBus.emit('AGENT_UPDATED', { clubId: clubId || '', agentId });
     }
   };
 
@@ -390,6 +392,7 @@ export default function AgentManagementPage() {
         toast.success(
           `Agent role updated to ${newRole === 'super_agent' ? 'Super Agent' : 'Agent'}`
         );
+        masterBus.emit('AGENT_UPDATED', { clubId: clubId || '', agentId });
       } else {
         toast.error('Failed to update agent role');
       }
@@ -430,6 +433,7 @@ export default function AgentManagementPage() {
 
       setAgents((prev) => [newAgent, ...prev]);
       setShowAddModal(false);
+      masterBus.emit('AGENT_UPDATED', { clubId: clubId || '', agentId: newAgent.id });
       setNewAgentForm({
         userId: '',
         role: 'agent',

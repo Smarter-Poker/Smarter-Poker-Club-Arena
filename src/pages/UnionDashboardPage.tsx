@@ -473,6 +473,7 @@ export default function UnionDashboardPage() {
                       return;
                     }
                     setProcessing(true);
+                    setError(null);
                     try {
                       const { error: commErr } = await supabase
                         .from('union_clubs')
@@ -661,6 +662,7 @@ export default function UnionDashboardPage() {
                     disabled={processing || !annMsg.trim()}
                     onClick={async () => {
                       setProcessing(true);
+                      setError(null);
                       try {
                         const { error: annErr } = await supabase
                           .from('union_announcements')
@@ -752,6 +754,7 @@ export default function UnionDashboardPage() {
                         onClick={async () => {
                           if (!confirm(`Remove ${club.name} from the union?`)) return;
                           setProcessing(true);
+                          setError(null);
                           try {
                             const { error: rmErr } = await supabase
                               .from('union_clubs')
@@ -942,6 +945,7 @@ export default function UnionDashboardPage() {
                     disabled={processing || !transferForm.clubId || !transferForm.amount}
                     onClick={async () => {
                       setProcessing(true);
+                      setError(null);
                       try {
                         // Atomic RPC: debits union_wallets, credits club wallet, logs to union_transactions
                         const { data: result, error: rpcErr } = await supabase.rpc(
@@ -1204,6 +1208,7 @@ export default function UnionDashboardPage() {
                           disabled={processing}
                           onClick={async () => {
                             setProcessing(true);
+                            setError(null);
                             try {
                               const { error: appErr } = await supabase
                                 .from('union_applications')
@@ -1228,6 +1233,7 @@ export default function UnionDashboardPage() {
                           onClick={async () => {
                             if (!confirm(`Reject ${app.club_name}?`)) return;
                             setProcessing(true);
+                            setError(null);
                             try {
                               const { error: rejErr } = await supabase
                                 .from('union_applications')
@@ -1350,6 +1356,7 @@ export default function UnionDashboardPage() {
                   disabled={processing}
                   onClick={async () => {
                     setProcessing(true);
+                    setError(null);
                     try {
                       const updates: any = {};
                       if (settingsForm.name) updates.name = settingsForm.name;
@@ -1447,6 +1454,7 @@ export default function UnionDashboardPage() {
                                 onClick={async () => {
                                   if (!confirm('Remove this admin?')) return;
                                   setProcessing(true);
+                                  setError(null);
                                   try {
                                     const { error: delErr } = await supabase
                                       .from('union_admins')
@@ -1490,6 +1498,7 @@ export default function UnionDashboardPage() {
                       disabled={processing || adminSearch.length < 2}
                       onClick={async () => {
                         setProcessing(true);
+                        setError(null);
                         try {
                           const { data: users } = await supabase
                             .from('profiles')
@@ -1534,6 +1543,7 @@ export default function UnionDashboardPage() {
                             disabled={processing}
                             onClick={async () => {
                               setProcessing(true);
+                              setError(null);
                               try {
                                 const { error: addErr } = await supabase
                                   .from('union_admins')

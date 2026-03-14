@@ -293,12 +293,12 @@ export default function SettingsPage() {
         }
       }
     };
-    const unsub1 = masterBus.subscribe('SETTINGS_UPDATED', reloadSettings);
-    const unsub2 = masterBus.subscribe('PROFILE_UPDATED', () => {
+    const unsub1 = masterBus.subscribeDebounced('SETTINGS_UPDATED', reloadSettings, 300);
+    const unsub2 = masterBus.subscribeDebounced('PROFILE_UPDATED', () => {
       supabase.auth.getUser().then(({ data }) => {
         if (isMounted && data?.user?.email) setUserEmail(data.user.email);
       });
-    });
+    }, 300);
     return () => {
       isMounted = false;
       unsub1();

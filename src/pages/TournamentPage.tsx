@@ -180,9 +180,9 @@ export default function TournamentPage() {
       .subscribe();
 
     // Refresh profile/wallet when balance changes (e.g., after register/unregister/rebuy)
-    const unsubBalance = masterBus.subscribe('BALANCE_UPDATED', () => {
+    const unsubBalance = masterBus.subscribeDebounced('BALANCE_UPDATED', () => {
       masterBus.emit('PROFILE_UPDATED', { userId: currentUser.id, updates: {} });
-    });
+    }, 500);
 
     // ── Ported from World Hub tournaments.js: refresh on cross-page actions ──
     const unsubChipsDistributed = masterBus.subscribeDebounced(

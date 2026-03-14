@@ -87,9 +87,9 @@ export default function ClubAnnouncementsPage() {
 
   // ── Bus Listeners: cross-page event reactivity ──
   useEffect(() => {
-    const unsubJoined = masterBus.subscribe('CLUB_JOINED', () => {
+    const unsubJoined = masterBus.subscribeDebounced('CLUB_JOINED', () => {
       loadAnnouncements();
-    });
+    }, 500);
     return () => {
       unsubJoined();
     };

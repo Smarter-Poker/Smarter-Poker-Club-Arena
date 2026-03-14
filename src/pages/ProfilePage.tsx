@@ -432,7 +432,7 @@ export default function ProfilePage() {
   useEffect(() => {
     let isMounted = true;
 
-    const unsubProfile = masterBus.subscribe('PROFILE_UPDATED', () => {
+    const unsubProfile = masterBus.subscribeDebounced('PROFILE_UPDATED', () => {
       // Re-load profile when updated from settings or other pages
       supabase.auth
         .getUser()
@@ -463,8 +463,8 @@ export default function ProfilePage() {
           }
         })
         .catch(() => {});
-    });
-    const unsubHand = masterBus.subscribe('HAND_COMPLETED', () => {
+    }, 500);
+    const unsubHand = masterBus.subscribeDebounced('HAND_COMPLETED', () => {
       // Refresh stats after a hand is completed
       supabase.auth
         .getUser()
@@ -497,7 +497,7 @@ export default function ProfilePage() {
           }
         })
         .catch(() => {});
-    });
+    }, 2000);
     const unsubBalance = masterBus.subscribeDebounced(
       'BALANCE_UPDATED',
       () => {
@@ -521,7 +521,7 @@ export default function ProfilePage() {
       500
     );
     // Gamification bus listeners: refresh balance when rewards earned on other pages
-    const unsubDailyReward = masterBus.subscribe('DAILY_REWARD_CLAIMED', (payload: any) => {
+    const unsubDailyReward = masterBus.subscribeDebounced('DAILY_REWARD_CLAIMED', (payload: any) => {
       if (!isMounted) return;
       if (payload?.rewardType === 'diamonds') setShowDiamondRain(true);
       supabase.auth
@@ -542,8 +542,8 @@ export default function ProfilePage() {
           }
         })
         .catch(() => {});
-    });
-    const unsubMissionClaim = masterBus.subscribe('MISSION_CLAIMED', (payload: any) => {
+    }, 500);
+    const unsubMissionClaim = masterBus.subscribeDebounced('MISSION_CLAIMED', (payload: any) => {
       if (!isMounted) return;
       if (payload?.rewardType === 'diamonds') setShowDiamondRain(true);
       supabase.auth
@@ -561,8 +561,8 @@ export default function ProfilePage() {
           }
         })
         .catch(() => {});
-    });
-    const unsubWheelSpin = masterBus.subscribe('WHEEL_SPIN_RESULT', (payload: any) => {
+    }, 500);
+    const unsubWheelSpin = masterBus.subscribeDebounced('WHEEL_SPIN_RESULT', (payload: any) => {
       if (!isMounted) return;
       if (payload?.type === 'diamonds') setShowDiamondRain(true);
       supabase.auth
@@ -580,10 +580,10 @@ export default function ProfilePage() {
           }
         })
         .catch(() => {});
-    });
+    }, 500);
 
     // Auto-refresh missions when progress is updated in-game
-    const unsubChallengeProgress = masterBus.subscribe('CHALLENGE_PROGRESS_UPDATED', () => {
+    const unsubChallengeProgress = masterBus.subscribeDebounced('CHALLENGE_PROGRESS_UPDATED', () => {
       if (!isMounted) return;
       supabase.auth
         .getUser()
@@ -617,7 +617,7 @@ export default function ProfilePage() {
           }
         })
         .catch(() => {});
-    });
+    }, 1000);
 
     return () => {
       isMounted = false;

@@ -151,7 +151,7 @@ export default function TournamentLobbyPage() {
       .subscribe();
 
     // ── Bus event subscriptions for faster local updates ──
-    const unsubElim = masterBus.subscribe('PLAYER_ELIMINATED', (event) => {
+    const unsubElim = masterBus.subscribeDebounced('PLAYER_ELIMINATED', (event) => {
       // Decrement player count for the specific tournament
       setTournaments((prev) =>
         prev.map((t) =>
@@ -160,17 +160,17 @@ export default function TournamentLobbyPage() {
             : t
         )
       );
-    });
+    }, 300);
 
-    const unsubMerge = masterBus.subscribe('TABLE_MERGED', () => {
+    const unsubMerge = masterBus.subscribeDebounced('TABLE_MERGED', () => {
       // Refresh tournament list to reflect table changes
       loadTournamentsRef.current();
-    });
+    }, 500);
 
     // Refresh profile/wallet when balance changes (e.g., after register/unregister)
-    const unsubBalance = masterBus.subscribe('BALANCE_UPDATED', () => {
+    const unsubBalance = masterBus.subscribeDebounced('BALANCE_UPDATED', () => {
       masterBus.emit('PROFILE_UPDATED', { userId: user?.id || '', updates: {} });
-    });
+    }, 500);
 
     return () => {
       masterBus.removeRegisteredChannel(channelKey);

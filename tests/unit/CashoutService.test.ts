@@ -171,6 +171,8 @@ describe('CashoutService', () => {
   describe('cancelCashout', () => {
     it('should return false for empty cashout ID (RPC returns null)', async () => {
       // Source: cancelCashout passes args to RPC → data is null → returns data === true → false
+      mockMaybeSingle.mockResolvedValue({ data: null, error: null });
+      mockRpc.mockResolvedValueOnce({ data: null, error: null });
       const result = await cashoutService.cancelCashout('', 'user1');
       expect(result).toBe(false);
     });

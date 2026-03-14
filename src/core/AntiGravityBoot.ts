@@ -84,8 +84,13 @@ export async function initAntiGravity(): Promise<BootStatus> {
       const { error } = await Promise.race([sessionPromise, timeoutPromise]);
 
       if (error) {
-        errors.push(`Supabase Health Check Failed: ${error.message}`);
-        supabaseOk = false;
+        errors.push(`Supabase Health Check Warning: ${error.message}`);
+        // ZERO TOLERANCE: Even if getSession returns an error, the app MUST render.
+        // Common errors like "Invalid Refresh Token" or "Session not found" are
+        // auth-level issues that AuthGuard handles gracefully. They must NOT
+        // trigger the SystemOffline screen. Only missing env vars should do that.
+        supabaseOk = true;
+        console.warn('[ANTIGRAVITY] getSession returned error, proceeding anyway:', error.message);
       } else {
         supabaseOk = true;
       }
@@ -108,17 +113,16 @@ export async function initAntiGravity(): Promise<BootStatus> {
         }
       })();
 
-      if (hasCachedSession || !navigator.onLine) {
-        // Timeout with cached session OR offline — proceed (degraded mode)
-        supabaseOk = true;
-        console.warn(
-          '[ANTIGRAVITY] getSession timed out, proceeding with cached session:',
-          e.message
-        );
+      // ZERO TOLERANCE: The app must ALWAYS render. A transient Supabase timeout
+      // must NEVER show the SystemOffline screen — that's catastrophic for users.
+      // The app will render, AuthGuard will redirect unauthenticated users to /auth,
+      // the Connection Watchdog will monitor recovery, and the offline banner will
+      // inform users of degraded state. This is infinitely better than a dead screen.
+      supabaseOk = true;
+      if (hasCachedSession) {
+        console.warn('[ANTIGRAVITY] getSession timed out, proceeding with cached session:', e.message);
       } else {
-        // Truly unreachable AND no cached session — fail closed
-        supabaseOk = false;
-        console.error('[ANTIGRAVITY] Supabase unreachable and no cached session:', e.message);
+        console.warn('[ANTIGRAVITY] getSession timed out, proceeding in degraded mode — AuthGuard handles auth:', e.message);
       }
     }
   } else {

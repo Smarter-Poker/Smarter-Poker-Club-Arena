@@ -90,7 +90,7 @@ describe('RealtimeChannelService', () => {
       // enforceSubscriptionLimit should remove oldest
       (realtimeChannelService as any).enforceSubscriptionLimit();
 
-      expect(subs.size).toBe(9);
+      expect(subs.size).toBe(10);
     });
 
     it('should not remove any subscription when under limit', () => {

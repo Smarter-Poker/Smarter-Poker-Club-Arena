@@ -102,33 +102,33 @@ export default function PublicProfilePage() {
 
   // Bus listeners: real-time friend/block state sync
   useEffect(() => {
-    const unsubFriend = masterBus.subscribe('FRIEND_REQUEST_ACCEPTED', () => {
+    const unsubFriend = masterBus.subscribeDebounced('FRIEND_REQUEST_ACCEPTED', () => {
       // Re-check friendship status when any request is accepted
       if (user?.id && userId) {
         checkFriendship(user.id, userId).then(setFriendStatus);
       }
-    });
-    const unsubFriendSent = masterBus.subscribe('FRIEND_REQUEST_SENT', (event) => {
+    }, 300);
+    const unsubFriendSent = masterBus.subscribeDebounced('FRIEND_REQUEST_SENT', (event) => {
       if (event.payload?.toUserId === userId) {
         setFriendStatus('pending_sent');
       }
-    });
-    const unsubBlock = masterBus.subscribe('USER_BLOCKED', (event) => {
+    }, 300);
+    const unsubBlock = masterBus.subscribeDebounced('USER_BLOCKED', (event) => {
       if (event.payload?.blockedUserId === userId) {
         setIsBlocked(true);
       }
-    });
-    const unsubUnblock = masterBus.subscribe('USER_UNBLOCKED', (event) => {
+    }, 300);
+    const unsubUnblock = masterBus.subscribeDebounced('USER_UNBLOCKED', (event) => {
       if (event.payload?.unblockedUserId === userId) {
         setIsBlocked(false);
       }
-    });
+    }, 300);
     // Q3 Phase 10: Refresh player status when profile is updated
-    const unsubProfile = masterBus.subscribe('PROFILE_UPDATED', (event) => {
+    const unsubProfile = masterBus.subscribeDebounced('PROFILE_UPDATED', (event) => {
       if (event.payload?.userId === userId) {
         playerStatusService.getPlayerStatus(userId).then(setPlayerStatus);
       }
-    });
+    }, 500);
     return () => {
       unsubFriend();
       unsubFriendSent();

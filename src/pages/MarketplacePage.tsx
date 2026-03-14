@@ -51,6 +51,7 @@ interface Purchase {
   item_id: string;
   price_paid: number;
   created_at: string;
+  marketplace_items?: { name: string; category: string }[];
 }
 
 export default function MarketplacePage() {
@@ -230,7 +231,7 @@ export default function MarketplacePage() {
         clubId,
       });
       setBuyTarget(null);
-      loadMarketplace(clubId);
+      loadMarketplace(clubId, true);
     } catch (err: any) {
       toast.error(err.message);
     } finally {
@@ -462,7 +463,7 @@ export default function MarketplacePage() {
                 </thead>
                 <tbody>
                   {purchases.map((p) => {
-                    const joinedItem = (p as any).marketplace_items;
+                    const joinedItem = p.marketplace_items?.[0];
                     const itemData = itemMap[p.item_id];
                     const displayName = joinedItem?.name || itemData?.name || 'Deleted Item';
                     const displayCategory = joinedItem?.category || itemData?.category || 'General';
@@ -582,6 +583,7 @@ export default function MarketplacePage() {
                             .update({ is_active: !item.is_active })
                             .eq('id', item.id);
                           if (togErr) throw togErr;
+                          toast.success(item.is_active ? 'Item hidden' : 'Item activated');
                           loadAdminItems();
                           loadMarketplace(clubId || undefined, true);
                         } catch (err: any) {
@@ -601,6 +603,7 @@ export default function MarketplacePage() {
                             .delete()
                             .eq('id', item.id);
                           if (delErr) throw delErr;
+                          toast.success('Item deleted');
                           loadAdminItems();
                           loadMarketplace(clubId || undefined, true);
                         } catch (err: any) {

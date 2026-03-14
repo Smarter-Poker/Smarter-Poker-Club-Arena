@@ -1275,7 +1275,7 @@ class AgentServiceClass {
         toDisplayName: nameMap.get(t.to_user_id) || 'Unknown',
         amount: t.amount,
         createdAt: t.created_at,
-        canClawback: !t.notes?.includes('[CLAWED BACK]') && minutesRemaining > 0,
+        canClawback: !t.notes?.includes('[CLAWED BACK:') && minutesRemaining > 0,
         minutesRemaining,
       };
     });

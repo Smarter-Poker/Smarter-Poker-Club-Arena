@@ -73,72 +73,79 @@ class ClubMessagingPermissionsClass {
    * Get user's role within a club
    */
   async getUserClubRole(userId: string, clubId: string): Promise<UserClubRole | null> {
-    const resolvedClubId = await resolveClubUUID(clubId);
-    // Check if user is union owner/admin (highest privilege)
-    const { data: unionRole } = await supabase
-      .from('union_members')
-      .select(
-        `
-                role,
-                unions!inner(id, clubs(id))
-            `
-      )
-      .eq('user_id', userId)
-      .in('unions.clubs.id', [resolvedClubId])
-      .maybeSingle();
+    try {
+      const resolvedClubId = await resolveClubUUID(clubId);
+      // Check if user is union owner/admin (highest privilege)
+      const { data: unionRole, error: uErr } = await supabase
+        .from('union_members')
+        .select(
+          `
+                  role,
+                  unions!inner(id, clubs(id))
+              `
+        )
+        .eq('user_id', userId)
+        .in('unions.clubs.id', [resolvedClubId])
+        .maybeSingle();
+      if (uErr) console.warn('[MsgPerms] getUserClubRole union query error:', uErr.message);
 
-    if (unionRole) {
-      const role = unionRole.role === 'owner' ? 'union_owner' : 'union_admin';
-      return { userId, clubId, role };
-    }
+      if (unionRole) {
+        const role = unionRole.role === 'owner' ? 'union_owner' : 'union_admin';
+        return { userId, clubId, role };
+      }
 
-    // Check club membership
-    const { data: clubMember } = await supabase
-      .from('club_members')
-      .select('role, agent_id')
-      .eq('user_id', userId)
-      .eq('club_id', resolvedClubId)
-      .maybeSingle();
+      // Check club membership
+      const { data: clubMember, error: cErr } = await supabase
+        .from('club_members')
+        .select('role, agent_id')
+        .eq('user_id', userId)
+        .eq('club_id', resolvedClubId)
+        .maybeSingle();
+      if (cErr) console.warn('[MsgPerms] getUserClubRole member query error:', cErr.message);
 
-    if (!clubMember) {
+      if (!clubMember) {
+        return null;
+      }
+
+      // Map role
+      let role: ClubRole;
+      switch (clubMember.role) {
+        case 'owner':
+          role = 'club_owner';
+          break;
+        case 'admin':
+          role = 'club_admin';
+          break;
+        case 'agent':
+          role = 'agent';
+          break;
+        default:
+          role = 'player';
+      }
+
+      // For agents, get their player list
+      let playerIds: string[] | undefined;
+      if (role === 'agent') {
+        const { data: players, error: pErr } = await supabase
+          .from('club_members')
+          .select('user_id')
+          .eq('club_id', resolvedClubId)
+          .eq('agent_id', userId);
+        if (pErr) console.warn('[MsgPerms] getUserClubRole players query error:', pErr.message);
+        playerIds = players?.map((p) => p.user_id) || [];
+      }
+
+      return {
+        userId,
+        clubId,
+        role,
+        agentId: clubMember.agent_id || undefined,
+        playerIds,
+      };
+    } catch (err) {
+      console.warn('[MsgPerms] getUserClubRole unexpected error:', err);
       return null;
     }
-
-    // Map role
-    let role: ClubRole;
-    switch (clubMember.role) {
-      case 'owner':
-        role = 'club_owner';
-        break;
-      case 'admin':
-        role = 'club_admin';
-        break;
-      case 'agent':
-        role = 'agent';
-        break;
-      default:
-        role = 'player';
-    }
-
-    // For agents, get their player list
-    let playerIds: string[] | undefined;
-    if (role === 'agent') {
-      const { data: players } = await supabase
-        .from('club_members')
-        .select('user_id')
-        .eq('club_id', resolvedClubId)
-        .eq('agent_id', userId);
-
-      playerIds = players?.map((p) => p.user_id) || [];
-    }
-
-    return {
-      userId,
-      clubId,
-      role,
-      agentId: clubMember.agent_id || undefined,
-      playerIds,
-    };
   }
 
   /**
@@ -202,69 +209,75 @@ class ClubMessagingPermissionsClass {
    * Get list of users that a given user CAN message within a club
    */
   async getMessagableUsers(userId: string, clubId: string): Promise<string[]> {
-    const userRole = await this.getUserClubRole(userId, clubId);
-    if (!userRole) return [];
+    try {
+      const userRole = await this.getUserClubRole(userId, clubId);
+      if (!userRole) return [];
 
-    const messagableUserIds: string[] = [];
+      const messagableUserIds: string[] = [];
 
-    switch (userRole.role) {
-      // UNION/CLUB OWNER/ADMIN → All club members
-      case 'union_owner':
-      case 'union_admin':
-      case 'club_owner':
-      case 'club_admin': {
-        const { data: allMembers } = await supabase
-          .from('club_members')
-          .select('user_id')
-          .eq('club_id', await resolveClubUUID(clubId))
-          .neq('user_id', userId);
-
-        return allMembers?.map((m) => m.user_id) || [];
-      }
-
-      // AGENT → Their players + owners/admins + other agents
-      case 'agent': {
-        // Get their players
-        const { data: players } = await supabase
-          .from('club_members')
-          .select('user_id')
-          .eq('club_id', await resolveClubUUID(clubId))
-          .eq('agent_id', userId);
-
-        players?.forEach((p) => messagableUserIds.push(p.user_id));
-
-        // Get owners/admins/agents
-        const { data: management } = await supabase
-          .from('club_members')
-          .select('user_id')
-          .eq('club_id', await resolveClubUUID(clubId))
-          .in('role', ['owner', 'admin', 'agent'])
-          .neq('user_id', userId);
-
-        management?.forEach((m) => messagableUserIds.push(m.user_id));
-        break;
-      }
-
-      // PLAYER → Their agent + owners/admins
-      case 'player': {
-        // Their agent
-        if (userRole.agentId) {
-          messagableUserIds.push(userRole.agentId);
+      switch (userRole.role) {
+        // UNION/CLUB OWNER/ADMIN → All club members
+        case 'union_owner':
+        case 'union_admin':
+        case 'club_owner':
+        case 'club_admin': {
+          const { data: allMembers, error: aErr } = await supabase
+            .from('club_members')
+            .select('user_id')
+            .eq('club_id', await resolveClubUUID(clubId))
+            .neq('user_id', userId);
+          if (aErr) console.warn('[MsgPerms] getMessagableUsers all-members error:', aErr.message);
+          return allMembers?.map((m) => m.user_id) || [];
         }
 
-        // Owners/admins
-        const { data: admins } = await supabase
-          .from('club_members')
-          .select('user_id')
-          .eq('club_id', await resolveClubUUID(clubId))
-          .in('role', ['owner', 'admin']);
+        // AGENT → Their players + owners/admins + other agents
+        case 'agent': {
+          const resolvedId = await resolveClubUUID(clubId);
+          const [{ data: players, error: pErr }, { data: management, error: mErr }] =
+            await Promise.all([
+              supabase
+                .from('club_members')
+                .select('user_id')
+                .eq('club_id', resolvedId)
+                .eq('agent_id', userId),
+              supabase
+                .from('club_members')
+                .select('user_id')
+                .eq('club_id', resolvedId)
+                .in('role', ['owner', 'admin', 'agent'])
+                .neq('user_id', userId),
+            ]);
+          if (pErr)
+            console.warn('[MsgPerms] getMessagableUsers agent-players error:', pErr.message);
+          if (mErr) console.warn('[MsgPerms] getMessagableUsers agent-mgmt error:', mErr.message);
 
-        admins?.forEach((a) => messagableUserIds.push(a.user_id));
-        break;
+          players?.forEach((p) => messagableUserIds.push(p.user_id));
+          management?.forEach((m) => messagableUserIds.push(m.user_id));
+          break;
+        }
+
+        // PLAYER → Their agent + owners/admins
+        case 'player': {
+          if (userRole.agentId) {
+            messagableUserIds.push(userRole.agentId);
+          }
+          const { data: admins, error: adErr } = await supabase
+            .from('club_members')
+            .select('user_id')
+            .eq('club_id', await resolveClubUUID(clubId))
+            .in('role', ['owner', 'admin']);
+          if (adErr)
+            console.warn('[MsgPerms] getMessagableUsers player-admins error:', adErr.message);
+          admins?.forEach((a) => messagableUserIds.push(a.user_id));
+          break;
+        }
       }
-    }
 
-    return [...new Set(messagableUserIds)]; // Remove duplicates
+      return [...new Set(messagableUserIds)]; // Remove duplicates
+    } catch (err) {
+      console.warn('[MsgPerms] getMessagableUsers unexpected error:', err);
+      return [];
+    }
   }
 }
 

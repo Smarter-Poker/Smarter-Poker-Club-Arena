@@ -358,36 +358,56 @@ export default function AgentManagementPage() {
     setEditingLimit(null);
   };
 
-  // Suspend agent (real Supabase call)
+  // Suspend agent (optimistic UI with rollback)
   const handleSuspendAgent = async (agentId: string) => {
+    // Optimistic: update UI instantly for premium feel
+    setAgents((prev) =>
+      prev.map((a) => (a.id === agentId ? { ...a, status: 'suspended' as const } : a))
+    );
     try {
       const success = await AgentService.updateAgentStatus(agentId, 'suspended');
       if (success) {
-        setAgents((prev) =>
-          prev.map((a) => (a.id === agentId ? { ...a, status: 'suspended' } : a))
-        );
         masterBus.emit('AGENT_UPDATED', { clubId: clubId || '', agentId });
         toast.success('Agent suspended');
       } else {
+        // Rollback: revert optimistic update
+        setAgents((prev) =>
+          prev.map((a) => (a.id === agentId ? { ...a, status: 'active' as const } : a))
+        );
         toast.error('Failed to suspend agent');
       }
     } catch (err: any) {
+      // Rollback on network error
+      setAgents((prev) =>
+        prev.map((a) => (a.id === agentId ? { ...a, status: 'active' as const } : a))
+      );
       toast.error(err.message || 'Failed to suspend agent');
     }
   };
 
-  // Reinstate agent (real Supabase call)
+  // Reinstate agent (optimistic UI with rollback)
   const handleReinstateAgent = async (agentId: string) => {
+    // Optimistic: update UI instantly for premium feel
+    setAgents((prev) =>
+      prev.map((a) => (a.id === agentId ? { ...a, status: 'active' as const } : a))
+    );
     try {
       const success = await AgentService.updateAgentStatus(agentId, 'active');
       if (success) {
-        setAgents((prev) => prev.map((a) => (a.id === agentId ? { ...a, status: 'active' } : a)));
         masterBus.emit('AGENT_UPDATED', { clubId: clubId || '', agentId });
         toast.success('Agent reinstated');
       } else {
+        // Rollback
+        setAgents((prev) =>
+          prev.map((a) => (a.id === agentId ? { ...a, status: 'suspended' as const } : a))
+        );
         toast.error('Failed to reinstate agent');
       }
     } catch (err: any) {
+      // Rollback on network error
+      setAgents((prev) =>
+        prev.map((a) => (a.id === agentId ? { ...a, status: 'suspended' as const } : a))
+      );
       toast.error(err.message || 'Failed to reinstate agent');
     }
   };

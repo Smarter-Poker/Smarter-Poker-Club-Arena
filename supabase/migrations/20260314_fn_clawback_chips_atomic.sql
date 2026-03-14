@@ -1,0 +1,113 @@
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- fn_clawback_chips_atomic — Phase 13 Fix
+-- Atomically claws back distributed chips from a player to the distributing agent.
+-- Handles partial clawback when player balance is insufficient.
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+CREATE OR REPLACE FUNCTION fn_clawback_chips_atomic(
+    p_transaction_id UUID,
+    p_club_id UUID,
+    p_agent_id UUID,
+    p_amount NUMERIC
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    v_player_id UUID;
+    v_player_balance NUMERIC;
+    v_actual_amount NUMERIC;
+    v_is_partial BOOLEAN := FALSE;
+    v_player_new_balance NUMERIC;
+    v_agent_new_balance NUMERIC;
+BEGIN
+    -- 1. Get the target player from the original transaction
+    SELECT to_user_id INTO v_player_id
+    FROM chip_transactions
+    WHERE id = p_transaction_id AND club_id = p_club_id;
+
+    IF v_player_id IS NULL THEN
+        RETURN jsonb_build_object(
+            'success', FALSE,
+            'error', 'Transaction not found'
+        );
+    END IF;
+
+    -- 2. Get player's current balance (lock row for update)
+    SELECT COALESCE(balance, 0) INTO v_player_balance
+    FROM wallets
+    WHERE user_id = v_player_id AND club_id = p_club_id
+    FOR UPDATE;
+
+    IF v_player_balance IS NULL THEN
+        RETURN jsonb_build_object(
+            'success', FALSE,
+            'error', 'Player wallet not found'
+        );
+    END IF;
+
+    -- 3. Determine actual clawback amount (partial if insufficient balance)
+    IF v_player_balance >= p_amount THEN
+        v_actual_amount := p_amount;
+    ELSIF v_player_balance > 0 THEN
+        v_actual_amount := v_player_balance;
+        v_is_partial := TRUE;
+    ELSE
+        RETURN jsonb_build_object(
+            'success', FALSE,
+            'partial', FALSE,
+            'recovered', 0,
+            'player_new_balance', 0,
+            'error', 'Player has zero balance — nothing to recover'
+        );
+    END IF;
+
+    -- 4. Deduct from player wallet
+    UPDATE wallets
+    SET balance = balance - v_actual_amount,
+        updated_at = NOW()
+    WHERE user_id = v_player_id AND club_id = p_club_id;
+
+    -- 5. Credit to agent wallet
+    UPDATE wallets
+    SET balance = balance + v_actual_amount,
+        updated_at = NOW()
+    WHERE user_id = p_agent_id AND club_id = p_club_id;
+
+    -- 6. Get new balances for response
+    SELECT balance INTO v_player_new_balance
+    FROM wallets
+    WHERE user_id = v_player_id AND club_id = p_club_id;
+
+    SELECT balance INTO v_agent_new_balance
+    FROM wallets
+    WHERE user_id = p_agent_id AND club_id = p_club_id;
+
+    -- 7. Log the clawback transaction
+    INSERT INTO chip_transactions (
+        club_id, from_user_id, to_user_id, amount, transaction_type, notes
+    ) VALUES (
+        p_club_id,
+        v_player_id,
+        p_agent_id,
+        v_actual_amount,
+        'clawback',
+        format('Clawback of txn %s — %s chips recovered', p_transaction_id::text, v_actual_amount)
+    );
+
+    RETURN jsonb_build_object(
+        'success', TRUE,
+        'partial', v_is_partial,
+        'recovered', v_actual_amount,
+        'player_new_balance', COALESCE(v_player_new_balance, 0),
+        'agent_new_balance', COALESCE(v_agent_new_balance, 0)
+    );
+
+EXCEPTION WHEN OTHERS THEN
+    RETURN jsonb_build_object(
+        'success', FALSE,
+        'error', SQLERRM
+    );
+END;
+$$;

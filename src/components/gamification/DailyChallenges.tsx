@@ -78,12 +78,13 @@ export const DailyChallenges: React.FC = () => {
   const loadChallenges = async () => {
     if (!user?.id) return;
     try {
-      const [userChallenges, stats] = await Promise.all([
+      const [userChallenges, weeklyChallenges, stats] = await Promise.all([
         dailyChallengeService.getTodaysChallenges(user.id),
+        dailyChallengeService.getWeeklyChallenges(user.id),
         dailyChallengeService.getStats(user.id),
       ]);
 
-      const mappedChallenges: Challenge[] = userChallenges.map((uc: any) => ({
+      const mappedDaily: Challenge[] = userChallenges.map((uc: any) => ({
         id: uc.id,
         title: uc.challenge.name,
         description: uc.challenge.description,
@@ -93,22 +94,36 @@ export const DailyChallenges: React.FC = () => {
         target: uc.challenge.requirement,
         completed: uc.completed,
         claimed: !!uc.claimed,
-        type: 'daily',
+        type: 'daily' as const,
       }));
 
-      setChallenges(mappedChallenges);
+      const mappedWeekly: Challenge[] = weeklyChallenges.map((uc: any) => ({
+        id: uc.id,
+        title: uc.challenge.name,
+        description: uc.challenge.description,
+        icon: uc.challenge.icon || '📆',
+        chipReward: uc.challenge.chipReward,
+        diamondReward: uc.challenge.diamondReward,
+        progress: uc.progress,
+        target: uc.challenge.requirement,
+        completed: uc.completed,
+        claimed: !!uc.claimed,
+        type: 'weekly' as const,
+      }));
+
+      const allChallenges = [...mappedDaily, ...mappedWeekly];
+      setChallenges(allChallenges);
       setStreak((prev) => ({
         ...prev,
         currentStreak: stats.currentStreak,
       }));
-      const daily = mappedChallenges.filter((c) => c.type === 'daily');
-      const weekly = mappedChallenges.filter((c) => c.type === 'weekly');
+
       setVisibleDaily(new Set());
-      daily.forEach((_, i) => {
+      mappedDaily.forEach((_, i) => {
         setTimeout(() => setVisibleDaily((prev) => new Set(prev).add(i)), i * 60);
       });
       setVisibleWeekly(new Set());
-      weekly.forEach((_, i) => {
+      mappedWeekly.forEach((_, i) => {
         setTimeout(() => setVisibleWeekly((prev) => new Set(prev).add(i)), i * 60);
       });
     } catch (error) {

@@ -41,12 +41,12 @@ export default function ClubLobby() {
   const [diamondBalance, setDiamondBalance] = useState(0);
   const currentUser = useUserStore((s) => s.user);
   const isMountedRef = useRef(true);
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
       isMountedRef.current = false;
-    },
-    []
-  );
+    };
+  }, []);
 
   // UNION-FIRST: Check if this club is in a union and redirect
   useEffect(() => {

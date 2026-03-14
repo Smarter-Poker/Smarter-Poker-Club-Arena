@@ -206,8 +206,9 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
       // AuthGuard handles the redirect to /auth — no manual navigate needed
     } catch (error) {
       console.error('Error logging out:', error);
-      // Force redirect on error as fallback
-      navigate('/auth');
+      // Clear store as fallback — AuthGuard will detect and redirect to /auth
+      const { useUserStore } = await import('../../stores/useUserStore');
+      useUserStore.getState().logout();
       onClose();
     }
   };

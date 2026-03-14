@@ -18,33 +18,37 @@ const mockRpc = vi.fn();
 const mockUpsert = vi.fn();
 const mockMaybeSingle = vi.fn();
 
+// Build a deep mock chain that handles all Supabase query patterns
+const buildQueryChain = () => ({
+  eq: vi.fn().mockReturnValue({
+    eq: vi.fn().mockReturnValue({
+      eq: vi.fn().mockReturnValue({
+        maybeSingle: () => mockMaybeSingle(),
+      }),
+      maybeSingle: () => mockMaybeSingle(),
+      order: vi.fn().mockReturnValue({
+        limit: vi.fn().mockReturnValue(mockMaybeSingle()),
+      }),
+    }),
+    maybeSingle: () => mockMaybeSingle(),
+  }),
+});
+
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {
     rpc: (...args: any[]) => mockRpc(...args),
     from: () => ({
-      select: () => ({
-        eq: () => ({
-          eq: () => ({
-            eq: () => ({
-              maybeSingle: () => mockMaybeSingle(),
-            }),
-            maybeSingle: () => mockMaybeSingle(),
-            order: () => ({
-              limit: () => mockMaybeSingle(),
-            }),
-          }),
-        }),
-      }),
+      select: vi.fn().mockReturnValue(buildQueryChain()),
       upsert: (...args: any[]) => {
         mockUpsert(...args);
         return {
-          select: () => ({
+          select: vi.fn().mockReturnValue({
             maybeSingle: () => mockMaybeSingle(),
           }),
         };
       },
-      update: () => ({
-        eq: () => mockMaybeSingle(),
+      update: vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue(mockMaybeSingle()),
       }),
     }),
   },
@@ -86,10 +90,21 @@ describe('CommissionService', () => {
       ).rejects.toThrow('AGENT rate capped at 70%');
     });
 
+    it('should reject SUB_AGENT rate above 60%', async () => {
+      await expect(
+        CommissionService.setRate('club1', 'agent1', 'SUB_AGENT', 0.61, 'admin')
+      ).rejects.toThrow('SUB_AGENT rate capped at 60%');
+    });
+
+    it('should reject PLAYER rate above 50%', async () => {
+      await expect(
+        CommissionService.setRate('club1', 'agent1', 'PLAYER', 0.51, 'admin')
+      ).rejects.toThrow('PLAYER rate capped at 50%');
+    });
+
     it('should accept AGENT rate at exactly 70%', async () => {
-      // Mock the old rate lookup
       mockMaybeSingle
-        .mockResolvedValueOnce({ data: null }) // existing rate
+        .mockResolvedValueOnce({ data: null }) // existing rate lookup
         .mockResolvedValueOnce({
           data: {
             id: 'rate-1',
@@ -104,18 +119,6 @@ describe('CommissionService', () => {
 
       const result = await CommissionService.setRate('club1', 'agent1', 'AGENT', 0.7, 'admin');
       expect(result.rate).toBe(0.7);
-    });
-
-    it('should reject SUB_AGENT rate above 60%', async () => {
-      await expect(
-        CommissionService.setRate('club1', 'agent1', 'SUB_AGENT', 0.61, 'admin')
-      ).rejects.toThrow('SUB_AGENT rate capped at 60%');
-    });
-
-    it('should reject PLAYER rate above 50%', async () => {
-      await expect(
-        CommissionService.setRate('club1', 'agent1', 'PLAYER', 0.51, 'admin')
-      ).rejects.toThrow('PLAYER rate capped at 50%');
     });
   });
 
@@ -173,22 +176,6 @@ describe('CommissionService', () => {
       mockRpc.mockResolvedValueOnce({ error: { message: 'payout already executed' } });
 
       await expect(CommissionService.executePayout('payout-123')).rejects.toBeDefined();
-    });
-  });
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // GET RATE — DEFAULT
-  // ─────────────────────────────────────────────────────────────────────────
-
-  describe('getRate', () => {
-    it('should return 0 when no rate is configured', async () => {
-      // getRates returns empty array
-      mockMaybeSingle.mockResolvedValueOnce({ data: [] });
-      // Note: getRates uses from().select().eq() chain which returns data via our mock
-
-      // For getRate to work properly with mocks, we need to test the chain
-      // Since the mock returns { data: [] } the rates array will be empty
-      // getRate will return the fallback: 0
     });
   });
 

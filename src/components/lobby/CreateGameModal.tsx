@@ -340,6 +340,7 @@ function ConfigModal({
         if (error) throw error;
         masterBus.emit('TABLE_CREATED', { tableId: data.id, clubId });
         masterBus.emit('DATA_MUTATED', { table: 'tables', action: 'created' });
+        haptic('success');
         onCreated?.(data);
       } else {
         const { data, error } = await supabase
@@ -368,10 +369,12 @@ function ConfigModal({
         if (error) throw error;
         masterBus.emit('TOURNAMENT_UPDATED', { tournamentId: data.id, status: 'registering' });
         masterBus.emit('DATA_MUTATED', { table: 'tournaments', action: 'created' });
+        haptic('success');
         onCreated?.(data);
       }
       onClose();
     } catch (err: any) {
+      haptic('error');
       alert('Failed: ' + (err.message || 'Unknown error'));
     } finally {
       setCreating(false);

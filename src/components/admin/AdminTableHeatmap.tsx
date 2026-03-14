@@ -154,7 +154,10 @@ export default function AdminTableHeatmap({
           {(['density', 'stakes', 'variant'] as ViewMode[]).map((mode) => (
             <button
               key={mode}
-              onClick={() => setViewMode(mode)}
+              onClick={() => {
+                haptic('light');
+                setViewMode(mode);
+              }}
               style={{
                 background: viewMode === mode ? '#2374E1' : 'transparent',
                 border: `1px solid ${viewMode === mode ? '#2374E1' : '#3E4042'}`,
@@ -187,7 +190,10 @@ export default function AdminTableHeatmap({
           return (
             <div
               key={t.id}
-              onClick={() => onAction?.({ action: 'manage', table: t })}
+              onClick={() => {
+                haptic('medium');
+                onAction?.({ action: 'manage', table: t });
+              }}
               style={{
                 background: '#242526',
                 borderRadius: 16,

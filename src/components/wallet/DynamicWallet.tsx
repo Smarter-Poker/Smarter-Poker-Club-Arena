@@ -169,7 +169,7 @@ export default function DynamicWallet({
           .maybeSingle(),
         supabase
           .from('bbj_pools')
-          .select('pool_amount, backup_pool_amount')
+          .select('main_balance, backup_balance')
           .eq('club_id', clubId)
           .maybeSingle(),
         supabase
@@ -186,8 +186,8 @@ export default function DynamicWallet({
           diamonds: Number(profileRes.data?.diamonds) || 0,
           chipBalance: Number(memberRes.data?.chip_balance) || 0,
           promoBalance: Number(memberRes.data?.promo_balance) || 0,
-          bbjPool: Number(bbjRes.data?.pool_amount) || 0,
-          backupBBJ: Number(bbjRes.data?.backup_pool_amount) || 0,
+          bbjPool: Number(bbjRes.data?.main_balance) || 0,
+          backupBBJ: Number(bbjRes.data?.backup_balance) || 0,
           agentBalance: Number(agentRes.data?.balance) || 0,
           clubBank: Number(clubRes.data?.bank_balance) || 0,
           unionBank: 0,
@@ -268,8 +268,8 @@ export default function DynamicWallet({
           if (isMounted.current) {
             setData((prev) => ({
               ...prev,
-              bbjPool: Number(p.new?.pool_amount) || 0,
-              backupBBJ: Number(p.new?.backup_pool_amount) || 0,
+              bbjPool: Number(p.new?.main_balance) || 0,
+              backupBBJ: Number(p.new?.backup_balance) || 0,
             }));
           }
         }

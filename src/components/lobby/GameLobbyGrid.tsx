@@ -199,7 +199,10 @@ export default function GameLobbyGrid({ clubId, onGamePress }: GameLobbyGridProp
             return (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => {
+                  haptic('light');
+                  setActiveTab(tab.id);
+                }}
                 style={{
                   flexShrink: 0,
                   padding: '10px 12px',

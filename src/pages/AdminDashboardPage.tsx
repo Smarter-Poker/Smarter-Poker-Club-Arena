@@ -211,6 +211,8 @@ function DashboardTab({ clubId }: { clubId: string }) {
       masterBus.subscribe('TOURNAMENT_REGISTERED', load),
       masterBus.subscribe('TOURNAMENT_STARTED', load),
       masterBus.subscribe('TOURNAMENT_COMPLETE', load),
+      masterBus.subscribe('SETTLEMENT_COMPLETED', load),
+      masterBus.subscribe('SETTLEMENT_PAYOUT_FAILED', load),
     ];
     return () => unsubs.forEach((u) => u());
   }, [load]);
@@ -2277,7 +2279,14 @@ export default function AdminDashboardPage() {
               <h3 style={{ color: 'var(--text-primary)', marginBottom: '12px' }}>
                 🗺️ Table Heatmap — God View
               </h3>
-              <AdminTableHeatmap clubId={clubId} />
+              <AdminTableHeatmap
+                clubId={clubId}
+                onAction={(payload) => {
+                  if (payload.action === 'manage' && payload.table.id) {
+                    navigate(`/table/${payload.table.id}`);
+                  }
+                }}
+              />
             </div>
           </>
         )}

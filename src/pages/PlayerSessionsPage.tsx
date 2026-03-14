@@ -114,6 +114,16 @@ export default function PlayerSessionsPage() {
     return () => clearTimeout(t);
   }, [success]);
 
+  // ── Cache Invalidation on Club Change ──────────────────────
+  useEffect(() => {
+    setRetentionLoaded(false);
+    setChipFlowLoaded(false);
+    setNotesLoaded(false);
+    setRetention(null);
+    setChipFlow({});
+    setNotes({});
+  }, [clubId]);
+
   // ── Load Sessions (Primary Data) ──────────────────────────
   const loadSessions = useCallback(
     async (cId: string | null, silent = false) => {
@@ -371,7 +381,7 @@ export default function PlayerSessionsPage() {
     return () => {
       cancelled = true;
     };
-  }, [user?.id, searchParams]);
+  }, [user?.id, searchParams, loadSessions]);
 
   // ── Lazy Tab Loading ───────────────────────────────────────
   useEffect(() => {

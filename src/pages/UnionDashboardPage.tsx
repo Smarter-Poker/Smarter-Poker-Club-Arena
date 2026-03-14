@@ -224,16 +224,10 @@ export default function UnionDashboardPage() {
   useEffect(() => {
     if (!user?.id) return;
     loadDashboard();
-  }, [user?.id]);
-
-  // ── Tab-based lazy loading ─────────────────────────────────
-  useEffect(() => {
-    if (!unionId) return;
-    if (tab === 'applications' && !appsLoaded) loadApps();
-  }, [tab, unionId, appsLoaded]);
+  }, [user?.id, loadDashboard]);
 
   // ── Load Applications ──────────────────────────────────────
-  const loadApps = async () => {
+  const loadApps = useCallback(async () => {
     if (!unionId) return;
     try {
       let query = supabase
@@ -252,7 +246,13 @@ export default function UnionDashboardPage() {
     } catch (_e) {
       /* silent */
     }
-  };
+  }, [unionId, appsFilter]);
+
+  // ── Tab-based lazy loading ─────────────────────────────────
+  useEffect(() => {
+    if (!unionId) return;
+    if (tab === 'applications' && !appsLoaded) loadApps();
+  }, [tab, unionId, appsLoaded, loadApps]);
 
   const _loadLeaveRequests = async () => {
     if (!unionId) return;

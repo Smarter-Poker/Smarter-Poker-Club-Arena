@@ -232,7 +232,7 @@ export default function AgentDashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, [user?.id, searchParams]);
+  }, [user?.id, searchParams, loadDashboard]);
 
   // ── Bus Listeners ─────────────────────────────────────────
   useEffect(() => {

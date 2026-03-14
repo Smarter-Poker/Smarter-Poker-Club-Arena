@@ -2,20 +2,11 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  *  UNIT TESTS — SettlementCronService
  * ═══════════════════════════════════════════════════════════════════════════════
- *
- * Tests settlement scheduling and countdown logic:
- * - formatCountdown: time formatting for UI
- * - getNextSundaySnapshot: Sunday midnight cutoff calculation
- * - getNextMondayPayout: Monday 4 AM payout calculation
- * - getStatus: cron dashboard state
- * - start/stop: timer lifecycle
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-// ─── Mock dependencies ────────────────────────────────────────────────────
-
-const mockRpc = vi.fn().mockResolvedValue({ data: null, error: null });
+// ─── Mock dependencies (no top-level variable references) ─────────────────
 
 const buildChain = (): any => {
   const handler: ProxyHandler<any> = {
@@ -33,7 +24,7 @@ const buildChain = (): any => {
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {
     from: () => buildChain(),
-    rpc: mockRpc,
+    rpc: vi.fn().mockResolvedValue({ data: null, error: null }),
     functions: { invoke: vi.fn().mockResolvedValue({ data: null, error: null }) },
   },
 }));
@@ -51,7 +42,7 @@ vi.mock('../../src/services/SettlementService', () => ({
       id: 'period-1',
       status: 'open',
       startAt: new Date().toISOString(),
-      endAt: new Date(Date.now() + 86400000).toISOString(), // Tomorrow
+      endAt: new Date(Date.now() + 86400000).toISOString(),
     }),
     closePeriod: vi.fn().mockResolvedValue(undefined),
     executeMondayPayouts: vi.fn().mockResolvedValue({
@@ -103,13 +94,13 @@ describe('SettlementCronService', () => {
     });
 
     it('should format hours and minutes', () => {
-      const target = new Date(Date.now() + 5 * 60 * 60 * 1000 + 30 * 60 * 1000); // 5h 30m
+      const target = new Date(Date.now() + 5 * 60 * 60 * 1000 + 30 * 60 * 1000);
       const result = SettlementCronService.formatCountdown(target);
       expect(result).toBe('5h 30m');
     });
 
     it('should format days when >= 24 hours', () => {
-      const target = new Date(Date.now() + 50 * 60 * 60 * 1000); // 50 hours = 2d 2h
+      const target = new Date(Date.now() + 50 * 60 * 60 * 1000);
       const result = SettlementCronService.formatCountdown(target);
       expect(result).toBe('2d 2h');
     });
@@ -122,7 +113,7 @@ describe('SettlementCronService', () => {
   describe('getNextSundaySnapshot', () => {
     it('should return a Sunday', () => {
       const next = SettlementCronService.getNextSundaySnapshot();
-      expect(next.getDay()).toBe(0); // 0 = Sunday
+      expect(next.getDay()).toBe(0);
     });
 
     it('should be set to 23:59:59', () => {
@@ -145,7 +136,7 @@ describe('SettlementCronService', () => {
   describe('getNextMondayPayout', () => {
     it('should return a Monday', () => {
       const next = SettlementCronService.getNextMondayPayout();
-      expect(next.getDay()).toBe(1); // 1 = Monday
+      expect(next.getDay()).toBe(1);
     });
 
     it('should be set to 4:00 AM', () => {

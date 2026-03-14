@@ -540,7 +540,9 @@ export default function ClubDetailPage() {
       const { column: clubCol, value: clubVal } = resolveClubIdFilter(clubId);
       const { data: clubData, error: clubError } = await supabase
         .from('clubs')
-        .select('*')
+        .select(
+          'id, club_id, name, description, avatar_url, is_public, requires_approval, member_count, table_count, created_at, default_rake_percent, rake_cap, time_bank_seconds, allow_straddle, allow_run_it_twice, min_buyin_bb, max_buyin_bb, owner_id'
+        )
         .eq(clubCol, clubVal)
         .maybeSingle();
 
@@ -617,7 +619,7 @@ export default function ClubDetailPage() {
       // Load tables
       const { data: tableData } = await supabase
         .from('tables')
-        .select('*')
+        .select('id, name, game_type, stakes, current_players, max_players, status, created_at')
         .eq('club_id', resolvedId)
         .eq('is_deleted', false);
 
@@ -1515,11 +1517,24 @@ export default function ClubDetailPage() {
                 const resolvedId = await resolveClubUUID(clubId);
                 const { data } = await supabase
                   .from('tables')
-                  .select('*')
+                  .select(
+                    'id, name, game_type, stakes, current_players, max_players, status, created_at'
+                  )
                   .eq('club_id', resolvedId)
                   .eq('is_deleted', false)
                   .order('created_at', { ascending: false });
-                if (data) setTables(data);
+                if (data)
+                  setTables(
+                    data.map((t: any) => ({
+                      id: t.id,
+                      name: t.name || 'Table',
+                      gameVariant: t.game_type || 'NLH',
+                      stakes: t.stakes || '1/2',
+                      currentPlayers: t.current_players || 0,
+                      maxPlayers: t.max_players || 6,
+                      status: t.status || 'waiting',
+                    }))
+                  );
               }
             } finally {
               setDeletingTableId(null);

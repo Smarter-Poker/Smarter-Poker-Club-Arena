@@ -157,7 +157,9 @@ export default function ClubSettingsPage() {
       const { column: clubCol, value: clubVal } = resolveClubIdFilter(clubId!);
       const { data, error } = await supabase
         .from('clubs')
-        .select('*')
+        .select(
+          'id, owner_id, name, description, is_public, requires_approval, default_rake_percent, rake_cap, time_bank_seconds, allow_straddle, allow_run_it_twice, allow_rabbit_hunt, min_buyin_bb, max_buyin_bb'
+        )
         .eq(clubCol, clubVal)
         .maybeSingle();
 

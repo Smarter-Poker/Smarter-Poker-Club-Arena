@@ -131,12 +131,17 @@ function DashboardTab({ clubId }: { clubId: string }) {
       const rakeData = rakeRes.data || [];
 
       const totalMembers = members.length;
-      const activeMembers = members.filter((m: any) => m.is_active !== false).length;
-      const activeTables = tables.filter((t: any) => t.status === 'active').length;
-      const agents = members.filter((m: any) =>
-        ['agent', 'super_agent', 'sub_agent'].includes(m.role)
+      const activeMembers = members.filter(
+        (m: { is_active?: boolean }) => m.is_active !== false
+      ).length;
+      const activeTables = tables.filter((t: { status?: string }) => t.status === 'active').length;
+      const agents = members.filter((m: { role?: string }) =>
+        ['agent', 'super_agent', 'sub_agent'].includes(m.role || '')
       );
-      const totalRake = rakeData.reduce((sum: number, r: any) => sum + (r.total_rake || 0), 0);
+      const totalRake = rakeData.reduce(
+        (sum: number, r: { total_rake?: number }) => sum + (r.total_rake || 0),
+        0
+      );
 
       // Calculate health score
       const playerScore =

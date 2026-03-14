@@ -71,7 +71,9 @@ export default function InvitePage() {
       setError(null);
     }
     try {
-      let clubQuery = supabase.from('clubs').select('*');
+      let clubQuery = supabase
+        .from('clubs')
+        .select('id, name, description, member_count, avatar_url, is_public');
 
       if (inviteCode) {
         clubQuery = clubQuery.eq('invite_code', inviteCode);
@@ -198,7 +200,10 @@ export default function InvitePage() {
           }),
         3
       );
-      if (countErr) console.error('[InvitePage] increment_member_count failed:', countErr.message);
+      if (countErr) {
+        console.error('[InvitePage] increment_member_count failed:', countErr.message);
+        toast.error('Joined successfully, but member count may be temporarily off.');
+      }
 
       masterBus.emit('CLUB_JOINED', { clubId: club.id });
 

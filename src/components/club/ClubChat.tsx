@@ -68,7 +68,7 @@ export default function ClubChat({ clubId, userId, userName }: ClubChatProps) {
 
       const { data, error } = await supabase
         .from('club_chat')
-        .select('*')
+        .select('id, user_id, message, display_name, message_type, created_at')
         .eq('club_id', clubId)
         .order('created_at', { ascending: false })
         .limit(50);

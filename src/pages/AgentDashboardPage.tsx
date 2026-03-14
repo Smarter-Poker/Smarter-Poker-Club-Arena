@@ -162,7 +162,9 @@ export default function AgentDashboardPage() {
         // Get pending cashouts
         const { data: cashouts } = await supabase
           .from('cashout_requests')
-          .select('*')
+          .select(
+            'id, user_id, club_id, amount, status, notes, payment_method, created_at, updated_at'
+          )
           .eq('club_id', uuid)
           .eq('status', 'pending')
           .order('created_at', { ascending: false });
@@ -170,7 +172,7 @@ export default function AgentDashboardPage() {
         // Get commission history
         const { data: comms } = await supabase
           .from('agent_commissions')
-          .select('*')
+          .select('id, user_id, club_id, amount, commission_type, source_player_id, created_at')
           .eq('club_id', uuid)
           .eq('user_id', user.id)
           .order('created_at', { ascending: false })
@@ -179,7 +181,7 @@ export default function AgentDashboardPage() {
         // Get recent transactions
         const { data: txns } = await supabase
           .from('chip_transactions')
-          .select('*')
+          .select('id, user_id, club_id, amount, type, description, reference_id, created_at')
           .eq('club_id', uuid)
           .order('created_at', { ascending: false })
           .limit(100);

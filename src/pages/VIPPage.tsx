@@ -176,7 +176,7 @@ export default function VIPPage() {
 
       const { data: ledgerData } = await supabase
         .from('vip_points_ledger')
-        .select('*')
+        .select('id, amount, description, transaction_type, created_at')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
         .limit(10);

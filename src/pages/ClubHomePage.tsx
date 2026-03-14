@@ -333,7 +333,9 @@ export default function ClubHomePage() {
       const { column: clubCol, value: clubVal } = resolveClubIdFilter(clubId);
       const { data: clubData, error: clubError } = await supabase
         .from('clubs')
-        .select('*')
+        .select(
+          'id, club_id, name, description, avatar_url, member_count, online_count, owner_id, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next, created_at'
+        )
         .eq(clubCol, clubVal)
         .maybeSingle();
 
@@ -402,7 +404,7 @@ export default function ClubHomePage() {
             supabase.from('union_clubs').select('club_id').eq('union_id', unionId),
             supabase
               .from('club_members')
-              .select('*', { count: 'exact', head: true })
+              .select('id', { count: 'exact', head: true })
               .eq('club_id', resolvedId) // Will be updated below if union has multiple clubs
               .in('status', ['active', 'approved']),
           ]);
@@ -415,7 +417,7 @@ export default function ClubHomePage() {
               try {
                 const { count: totalMembers } = await supabase
                   .from('club_members')
-                  .select('*', { count: 'exact', head: true })
+                  .select('id', { count: 'exact', head: true })
                   .in('club_id', unionClubIds)
                   .in('status', ['active', 'approved']);
 
@@ -445,13 +447,17 @@ export default function ClubHomePage() {
       const [tableResult, clubTournamentResult, bbjResult, ...xmttResults] = await Promise.all([
         supabase
           .from('tables')
-          .select('*')
+          .select(
+            'id, name, game_variant, stakes, current_players, max_players, status, small_blind, big_blind, min_buy_in, max_buy_in, settings, created_at'
+          )
           .in('club_id', unionClubIds)
           .eq('is_deleted', false)
           .order('created_at', { ascending: false }),
         supabase
           .from('tournaments')
-          .select('*')
+          .select(
+            'id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id'
+          )
           .in('club_id', unionClubIds)
           .neq('status', 'COMPLETED')
           .order('start_time', { ascending: true }),
@@ -467,7 +473,9 @@ export default function ClubHomePage() {
           ? [
               supabase
                 .from('tournaments')
-                .select('*')
+                .select(
+                  'id, name, game_type, buy_in_amount, buy_in_fee, guaranteed_prize, start_time, status, current_players, max_players, starting_chips, club_id, union_id, is_xmtt'
+                )
                 .eq('union_id', unionId)
                 .eq('is_xmtt', true)
                 .neq('status', 'COMPLETED')

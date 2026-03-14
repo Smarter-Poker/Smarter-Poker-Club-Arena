@@ -76,7 +76,9 @@ export default function SessionHistoryPage() {
     try {
       let query = supabase
         .from('session_history')
-        .select('*')
+        .select(
+          'id, table_id, user_id, session_start, session_end, initial_stack, final_stack, buy_in_total, hands_played, hands_won, vpip_percent, pfr_percent, profit_loss, big_blind, bb_won, rebuys, biggest_pot, trajectory'
+        )
         .eq('user_id', user.id)
         .order('session_end', { ascending: false })
         .limit(100);

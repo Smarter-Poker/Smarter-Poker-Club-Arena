@@ -1105,6 +1105,9 @@ class AgentServiceClass {
     windowRemaining?: string;
     error?: string;
   }> {
+    // 0. Resolve clubId to UUID (URL param may be integer)
+    const resolvedClubId = await resolveClubUUID(clubId);
+
     // 1. Get the original transaction
     const { data: txn, error: txnErr } = await supabase
       .from('chip_transactions')
@@ -1121,7 +1124,7 @@ class AgentServiceClass {
       return { success: false, error: 'You can only clawback your own distributions' };
     }
 
-    if (txn.club_id !== clubId) {
+    if (txn.club_id !== resolvedClubId) {
       return { success: false, error: 'Club ID mismatch' };
     }
 
@@ -1181,7 +1184,7 @@ class AgentServiceClass {
       () =>
         supabase.rpc('fn_clawback_chips_atomic', {
           p_transaction_id: transactionId,
-          p_club_id: clubId,
+          p_club_id: resolvedClubId,
           p_agent_id: agentUserId,
           p_amount: clawbackAmount,
         }),

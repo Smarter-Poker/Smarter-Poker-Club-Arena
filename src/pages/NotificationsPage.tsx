@@ -159,7 +159,7 @@ export default function NotificationsPage() {
     try {
       const { data, error } = await supabase
         .from('notifications')
-        .select('*')
+        .select('id, type, title, message, read, created_at, action_url')
         .eq('user_id', user?.id)
         .order('created_at', { ascending: false })
         .limit(50);

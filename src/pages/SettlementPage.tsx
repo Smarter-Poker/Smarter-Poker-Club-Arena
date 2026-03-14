@@ -530,6 +530,25 @@ export default function SettlementPage() {
     // Capture period ref to avoid stale closure race
     const period = selectedPeriod;
     try {
+      // ═══ IDEMPOTENCY: Re-check period status from DB before executing ═══
+      const { data: freshPeriod, error: checkErr } = await supabase
+        .from('settlement_periods')
+        .select('id, status')
+        .eq('id', period.id)
+        .single();
+
+      if (checkErr) throw new Error('Failed to verify period status: ' + checkErr.message);
+      if (freshPeriod?.status === 'settled') {
+        toast.error('This period has already been settled.');
+        setIsProcessing(false);
+        return;
+      }
+      if (freshPeriod?.status === 'processing') {
+        toast.error('This period is currently being processed by another admin.');
+        setIsProcessing(false);
+        return;
+      }
+
       // Execute real payouts via SettlementService
       const result = await SettlementService.executeMondayPayouts(period.id);
 

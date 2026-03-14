@@ -168,7 +168,7 @@ export default function UnionDashboardPage() {
     // Load union info
     const { data: unionRow } = await supabase
       .from('unions')
-      .select('*')
+      .select('id, name, description, owner_id, created_at, logo_url, member_count, status')
       .eq('id', uid)
       .maybeSingle();
     if (mountedRef.current) setUnion(unionRow);
@@ -207,7 +207,7 @@ export default function UnionDashboardPage() {
     // Load wallets
     const { data: walletRow } = await supabase
       .from('union_wallets')
-      .select('*')
+      .select('id, union_id, balance, currency, pending_balance, created_at')
       .eq('union_id', uid)
       .maybeSingle();
     if (mountedRef.current) setWallets(walletRow);
@@ -215,7 +215,9 @@ export default function UnionDashboardPage() {
     // Load settlement periods
     const { data: periods } = await supabase
       .from('settlement_periods')
-      .select('*')
+      .select(
+        'id, club_id, period_start, period_end, status, total_rake, total_commission, settlement_amount, settled_at, created_at'
+      )
       .in('club_id', clubIds.length > 0 ? clubIds : ['__none__'])
       .order('created_at', { ascending: false })
       .limit(30);
@@ -234,7 +236,7 @@ export default function UnionDashboardPage() {
     try {
       let query = supabase
         .from('union_applications')
-        .select('*')
+        .select('id, union_id, club_name, club_id, applicant_id, status, message, created_at')
         .eq('union_id', unionId)
         .order('created_at', { ascending: false });
       if (appsFilter !== 'all') {

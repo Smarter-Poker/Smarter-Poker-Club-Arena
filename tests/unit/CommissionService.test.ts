@@ -19,11 +19,16 @@ const mockUpsert = vi.fn();
 const mockMaybeSingle = vi.fn();
 
 // Build a recursive Proxy-based mock chain that handles ANY Supabase query depth
+// When `then` is accessed, behaves as a Promise resolving to { error: null, data: null }
+// This mirrors real Supabase PostgREST builder behavior where any chain is awaitable
 const buildChain = (): any => {
   const handler: ProxyHandler<any> = {
     get: (_target, prop) => {
       if (prop === 'maybeSingle' || prop === 'single') return () => mockMaybeSingle();
-      if (prop === 'then') return undefined; // not a promise
+      // Make the chain thenable so `await supabase.from().update().eq()` works
+      if (prop === 'then') {
+        return (resolve: (v: any) => void) => resolve({ error: null, data: null });
+      }
       return vi.fn().mockReturnValue(new Proxy({}, handler));
     },
     apply: () => new Proxy({}, handler),

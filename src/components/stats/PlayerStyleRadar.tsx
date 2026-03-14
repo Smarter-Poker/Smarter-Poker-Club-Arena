@@ -9,8 +9,9 @@
  * Data source: Aggregated from session_history and player_position_stats
  */
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
+import { masterBus } from '../../core/MasterBus';
 import {
   playerStyleClassifier,
   type PlayerStyleResult,
@@ -41,6 +42,21 @@ export default function PlayerStyleRadar({ userId }: PlayerStyleRadarProps) {
   }, []);
 
   useEffect(() => {
+    if (!userId) return;
+    loadData();
+  }, [userId]);
+
+  // Bus listeners for live stat updates
+  useEffect(() => {
+    const unsubs = [
+      masterBus.subscribeDebounced('HAND_COMPLETED', () => loadData(), 2000),
+      masterBus.subscribeDebounced('SESSION_ENDED', () => loadData(), 1000),
+      masterBus.subscribeDebounced('DATA_MUTATED', () => loadData(), 3000),
+    ];
+    return () => unsubs.forEach((u) => u());
+  }, []);
+
+  const loadData = useCallback(async () => {
     if (!userId) return;
     setLoading(true);
 

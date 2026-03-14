@@ -60,7 +60,7 @@ export default function TableCard({ table }: TableCardProps) {
   const [mounted, setMounted] = useState(false);
   const [adminRole, setAdminRole] = useState<string | null>(null);
   const [adminProcessing, setAdminProcessing] = useState(false);
-  const refreshRef = useRef<() => void>();
+  const refreshRef = useRef<() => void>(undefined);
 
   useEffect(() => {
     setTimeout(() => setMounted(true), 50);

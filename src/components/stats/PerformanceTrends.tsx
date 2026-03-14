@@ -9,6 +9,7 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
+import { masterBus } from '../../core/MasterBus';
 import './PerformanceTrends.css';
 
 interface PerformanceTrendsProps {
@@ -38,6 +39,21 @@ export default function PerformanceTrends({ userId }: PerformanceTrendsProps) {
   }, []);
 
   useEffect(() => {
+    if (!userId) return;
+    loadSessions();
+  }, [userId, range]);
+
+  // Bus listeners for live updates
+  useEffect(() => {
+    const unsubs = [
+      masterBus.subscribeDebounced('HAND_COMPLETED', () => loadSessions(), 2000),
+      masterBus.subscribeDebounced('SESSION_ENDED', () => loadSessions(), 1000),
+      masterBus.subscribeDebounced('DATA_MUTATED', () => loadSessions(), 3000),
+    ];
+    return () => unsubs.forEach((u) => u());
+  }, []);
+
+  const loadSessions = useCallback(async () => {
     if (!userId) return;
     setLoading(true);
 

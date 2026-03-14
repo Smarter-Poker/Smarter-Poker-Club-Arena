@@ -204,7 +204,9 @@ export const DailyChallenges: React.FC = () => {
                 <div className="progress-bar">
                   <div
                     className="progress-fill"
-                    style={{ width: `${(challenge.progress / challenge.target) * 100}%` }}
+                    style={{
+                      width: `${challenge.target > 0 ? Math.min((challenge.progress / challenge.target) * 100, 100) : 0}%`,
+                    }}
                   />
                 </div>
                 <span className="progress-text">
@@ -234,7 +236,7 @@ export const DailyChallenges: React.FC = () => {
           {weeklyChallenges.map((challenge, i) => (
             <div
               key={challenge.id}
-              className={`challenge-card ${challenge.completed ? 'completed' : ''}`}
+              className={`challenge-card ${challenge.completed ? 'completed' : ''} ${challenge.claimed ? 'claimed' : ''}`}
               style={{
                 opacity: visibleWeekly.has(i) ? 1 : 0,
                 transform: visibleWeekly.has(i) ? 'translateY(0)' : 'translateY(8px)',
@@ -248,7 +250,9 @@ export const DailyChallenges: React.FC = () => {
                 <div className="progress-bar">
                   <div
                     className="progress-fill"
-                    style={{ width: `${(challenge.progress / challenge.target) * 100}%` }}
+                    style={{
+                      width: `${challenge.target > 0 ? Math.min((challenge.progress / challenge.target) * 100, 100) : 0}%`,
+                    }}
                   />
                 </div>
                 <span className="progress-text">

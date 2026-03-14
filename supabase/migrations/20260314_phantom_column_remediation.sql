@@ -22,3 +22,9 @@ ALTER TABLE clubs ADD COLUMN IF NOT EXISTS max_buy_in NUMERIC(18,4) DEFAULT 0;
 ALTER TABLE clubs ADD COLUMN IF NOT EXISTS default_game_type TEXT DEFAULT 'NLHE';
 ALTER TABLE clubs ADD COLUMN IF NOT EXISTS allow_insurance BOOLEAN DEFAULT false;
 ALTER TABLE clubs ADD COLUMN IF NOT EXISTS auto_approve_agents BOOLEAN DEFAULT false;
+
+-- session_history — missing columns used by PerformanceTrends and StakeLevelComparison
+ALTER TABLE session_history ADD COLUMN IF NOT EXISTS profit_loss NUMERIC(18,4) DEFAULT 0;
+ALTER TABLE session_history ADD COLUMN IF NOT EXISTS big_blind NUMERIC(18,4) DEFAULT 0;
+ALTER TABLE session_history ADD COLUMN IF NOT EXISTS duration_minutes INTEGER DEFAULT 0;
+ALTER TABLE session_history ADD COLUMN IF NOT EXISTS ended_at TIMESTAMPTZ;

@@ -7,8 +7,9 @@
  * win rate, avg session P/L, VPIP, PFR, total hands, total profit.
  */
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
+import { masterBus } from '../../core/MasterBus';
 import './StakeLevelComparison.css';
 
 interface StakeLevelComparisonProps {
@@ -52,6 +53,21 @@ export default function StakeLevelComparison({ userId }: StakeLevelComparisonPro
   }, []);
 
   useEffect(() => {
+    if (!userId) return;
+    loadRecords();
+  }, [userId]);
+
+  // Bus listeners for live updates
+  useEffect(() => {
+    const unsubs = [
+      masterBus.subscribeDebounced('HAND_COMPLETED', () => loadRecords(), 2000),
+      masterBus.subscribeDebounced('SESSION_ENDED', () => loadRecords(), 1000),
+      masterBus.subscribeDebounced('DATA_MUTATED', () => loadRecords(), 3000),
+    ];
+    return () => unsubs.forEach((u) => u());
+  }, []);
+
+  const loadRecords = useCallback(async () => {
     if (!userId) return;
     setLoading(true);
 

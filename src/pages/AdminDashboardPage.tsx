@@ -19,6 +19,7 @@ import AdminTableHeatmap from '../components/admin/AdminTableHeatmap';
 import './AdminDashboardPage.css';
 
 import { useIsMounted } from '../hooks/useIsMounted';
+import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 
 // ── Helpers ─────────────────────────────────────────────────
 const fmt = (n: number | null | undefined) => Number(n || 0).toLocaleString();

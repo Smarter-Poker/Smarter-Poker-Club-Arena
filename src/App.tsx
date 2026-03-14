@@ -6,7 +6,7 @@
  * Root application with routing, auth guards, and global providers
  */
 
-import { Routes, Route, useLocation } from 'react-router-dom';
+import { Routes, Route, useLocation, Link } from 'react-router-dom';
 import { Suspense, useState, useEffect, useRef } from 'react';
 import { lazyWithRetry as lazy } from './utils/lazyWithRetry';
 import { supabase } from './lib/supabase';
@@ -862,7 +862,7 @@ export default function App() {
                   }
                 />
                 <Route
-                  path="players"
+                  path="player-sessions"
                   element={
                     <AuthGuard>
                       <PageErrorBoundary pageName="Players">
@@ -1172,7 +1172,7 @@ export default function App() {
                   }
                 />
                 <Route
-                  path="rakeback"
+                  path="rakeback-dashboard"
                   element={
                     <AuthGuard>
                       <PageErrorBoundary pageName="Rakeback">
@@ -1252,7 +1252,7 @@ export default function App() {
                   }
                 />
                 <Route
-                  path="notifications"
+                  path="notification-center"
                   element={
                     <AuthGuard>
                       <PageErrorBoundary pageName="Notification Center">
@@ -1419,12 +1419,12 @@ export default function App() {
                     <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white">
                       <h1 className="text-6xl font-bold mb-4">404</h1>
                       <p className="text-xl text-gray-400 mb-8">Page not found</p>
-                      <a
-                        href="/lobby"
+                      <Link
+                        to="/lobby"
                         className="px-6 py-3 bg-green-600 rounded-lg hover:bg-green-700 transition-colors"
                       >
                         Back to Lobby
-                      </a>
+                      </Link>
                     </div>
                   }
                 />

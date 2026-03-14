@@ -16,6 +16,7 @@ import { resolveClubUUID } from '../utils/clubIdResolver';
 import { WalletService } from '../services/WalletService';
 import './AdminDashboardPage.css'; // reuse admin styles
 import { useIsMounted } from '../hooks/useIsMounted';
+import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 
 // ── Helpers ─────────────────────────────────────────────────
 const fmt = (n: number | null | undefined) => Number(n || 0).toLocaleString();

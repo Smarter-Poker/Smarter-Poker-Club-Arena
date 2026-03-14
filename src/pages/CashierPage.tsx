@@ -604,6 +604,23 @@ export default function CashierPage() {
       },
       500
     );
+    // Supabase Realtime channel for chip_transactions (cross-device sync)
+    const chipTxnChannel = supabase
+      .channel(`cashier-chip-txns-${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'chip_transactions',
+          filter: `to_user_id=eq.${user.id}`,
+        },
+        () => {
+          loadBalances(user.id);
+          loadTransactions();
+        }
+      )
+      .subscribe();
     return () => {
       unsubBalance();
       unsubWallet();
@@ -619,6 +636,7 @@ export default function CashierPage() {
       unsubCashoutApproved();
       unsubSettlement();
       unsubCommission();
+      supabase.removeChannel(chipTxnChannel);
     };
   }, [user?.id, loadBalances, loadTransactions, loadPendingCashouts]);
 
@@ -1311,7 +1329,28 @@ export default function CashierPage() {
                   loadRecipients();
                   startCooldown();
                 } catch (err: any) {
-                  setMessage({ type: 'error', text: err.message || 'Distribution failed' });
+                  const msg = err.message || 'Distribution failed';
+                  // Parse specific RPC errors into user-friendly messages
+                  if (msg.includes('Rate limit')) {
+                    setMessage({
+                      type: 'error',
+                      text: '⏱ Too many distributions — please wait 60 seconds',
+                    });
+                  } else if (msg.includes('Insufficient promo')) {
+                    setMessage({
+                      type: 'error',
+                      text: '💰 Insufficient promo balance for this distribution',
+                    });
+                  } else if (msg.includes('Player not found')) {
+                    setMessage({ type: 'error', text: '❌ Player is not a member of this club' });
+                  } else if (msg.includes('Agent not found')) {
+                    setMessage({
+                      type: 'error',
+                      text: '❌ Your agent record was not found — contact club owner',
+                    });
+                  } else {
+                    setMessage({ type: 'error', text: msg });
+                  }
                 } finally {
                   setIsProcessing(false);
                 }

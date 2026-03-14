@@ -884,9 +884,15 @@ export default function AgentManagementPage() {
                                 user!.id
                               );
                               if (result.success) {
-                                toast.success(
-                                  `Clawed back ${(result.recovered || tx.amount).toLocaleString()} chips`
-                                );
+                                if (result.partial) {
+                                  toast.success(
+                                    `⚠️ Partially recovered ${(result.recovered || 0).toLocaleString()} of ${tx.amount.toLocaleString()} chips (player had insufficient balance)`
+                                  );
+                                } else {
+                                  toast.success(
+                                    `✅ Fully recovered ${(result.recovered || tx.amount).toLocaleString()} chips`
+                                  );
+                                }
                                 masterBus.emit('BALANCE_UPDATED', { source: 'clawback' });
                                 loadRecentDistributions();
                               } else {

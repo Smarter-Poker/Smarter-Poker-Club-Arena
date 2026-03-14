@@ -53,6 +53,7 @@ export default function AgentDashboardPage() {
 
   const [tab, setTab] = useState<AgentTab>('overview');
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [clubId, setClubId] = useState<string | null>(null);
@@ -238,9 +239,22 @@ export default function AgentDashboardPage() {
   }, [user?.id, searchParams, loadDashboard]);
 
   // ── Bus Listeners (debounced + clubId-filtered) ──────────
+  // Use non-blocking refresh for bus events (doesn't show full loading skeleton)
+  const refreshDashboard = useCallback(
+    async (cId: string | null) => {
+      setIsRefreshing(true);
+      try {
+        await loadDashboard(cId);
+      } finally {
+        if (mountedRef.current) setIsRefreshing(false);
+      }
+    },
+    [loadDashboard]
+  );
+
   useEffect(() => {
     if (!clubId) return;
-    const refresh = () => loadDashboard(clubId);
+    const refresh = () => refreshDashboard(clubId);
     // Filtered refresh: only reload if the event is for this club (or has no clubId)
     const filteredRefresh = (event?: any) => {
       if (!event?.payload?.clubId || event.payload.clubId === clubId) {
@@ -258,7 +272,7 @@ export default function AgentDashboardPage() {
       masterBus.subscribeDebounced('SETTLEMENT_COMPLETED', filteredRefresh, 300),
     ];
     return () => unsubs.forEach((u) => u());
-  }, [clubId, loadDashboard]);
+  }, [clubId, refreshDashboard]);
 
   // ── Supabase Realtime — cross-user WebSocket updates ──
   useEffect(() => {

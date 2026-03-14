@@ -267,23 +267,29 @@ export default function LobbyPage() {
 
   // ── Admin Table Actions ──
   const isAdmin = userRole === 'owner' || userRole === 'admin';
-  const handleTableAction = async (tableId: string, action: 'pause' | 'resume' | 'close') => {
+  const handleTableAction = async (
+    tableId: string,
+    action: 'pause' | 'resume' | 'close' | 'delete'
+  ) => {
+    // Confirmation for destructive actions
+    if (action === 'close' && !confirm('Close this table? Players will be refunded.')) return;
+    if (action === 'delete' && !confirm('Permanently delete this table? This cannot be undone.'))
+      return;
+
     setTableActionProcessing(tableId);
     try {
-      const statusMap: Record<string, string> = {
-        pause: 'paused',
-        resume: 'active',
-        close: 'closed',
-      };
-      const { error: updErr } = await supabase
-        .from('tables')
-        .update({ status: statusMap[action] })
-        .eq('id', tableId);
-      if (updErr) throw updErr;
-      if (action === 'close') {
+      if (action === 'pause') {
+        await tableService.pauseTable(tableId);
+        masterBus.emit('TABLE_UPDATED', { tableId, status: 'paused' });
+      } else if (action === 'resume') {
+        await tableService.resumeTable(tableId);
+        masterBus.emit('TABLE_UPDATED', { tableId, status: 'running' });
+      } else if (action === 'close') {
+        await tableService.closeTable(tableId);
         masterBus.emit('TABLE_CLOSED', { tableId, clubId: userClubId || undefined });
-      } else {
-        masterBus.emit('TABLE_UPDATED', { tableId, status: statusMap[action] });
+      } else if (action === 'delete') {
+        await tableService.deleteTable(tableId, userClubId || '');
+        masterBus.emit('TABLE_DELETED', { tableId, clubId: userClubId || undefined });
       }
     } catch (err: any) {
       toast.error(err.message || `Failed to ${action} table`);

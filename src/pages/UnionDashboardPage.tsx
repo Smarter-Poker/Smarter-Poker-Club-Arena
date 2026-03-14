@@ -1372,14 +1372,33 @@ export default function UnionDashboardPage() {
                       if (settingsForm.description !== undefined)
                         updates.description = settingsForm.description;
                       const settings: any = {};
-                      if (settingsForm.union_rake_hold)
-                        settings.union_rake_hold = parseFloat(settingsForm.union_rake_hold) / 100;
-                      if (settingsForm.default_agent_commission)
-                        settings.default_agent_commission =
-                          parseFloat(settingsForm.default_agent_commission) / 100;
-                      if (settingsForm.default_club_commission_rate)
-                        settings.default_club_commission_rate =
-                          parseFloat(settingsForm.default_club_commission_rate) / 100;
+                      if (settingsForm.union_rake_hold) {
+                        const v = parseFloat(settingsForm.union_rake_hold) / 100;
+                        if (isNaN(v)) {
+                          setError('Invalid rake hold value');
+                          setProcessing(false);
+                          return;
+                        }
+                        settings.union_rake_hold = v;
+                      }
+                      if (settingsForm.default_agent_commission) {
+                        const v = parseFloat(settingsForm.default_agent_commission) / 100;
+                        if (isNaN(v)) {
+                          setError('Invalid agent commission value');
+                          setProcessing(false);
+                          return;
+                        }
+                        settings.default_agent_commission = v;
+                      }
+                      if (settingsForm.default_club_commission_rate) {
+                        const v = parseFloat(settingsForm.default_club_commission_rate) / 100;
+                        if (isNaN(v)) {
+                          setError('Invalid club commission value');
+                          setProcessing(false);
+                          return;
+                        }
+                        settings.default_club_commission_rate = v;
+                      }
                       if (Object.keys(settings).length > 0)
                         updates.settings = { ...(union?.settings || {}), ...settings };
                       const { error: setErr } = await supabase

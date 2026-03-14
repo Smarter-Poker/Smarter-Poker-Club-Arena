@@ -302,7 +302,10 @@ export class TournamentOrchestrator {
             .eq('user_id', flight.user_id)
         )
       );
-      const restoreFailures = restoreResults.filter((r) => r.status === 'rejected');
+      // Supabase PostgREST returns {error} inside fulfilled promises — check both paths
+      const restoreFailures = restoreResults.filter(
+        (r) => r.status === 'rejected' || (r.status === 'fulfilled' && r.value?.error)
+      );
       if (restoreFailures.length > 0) {
         console.error(
           `[TournamentOrchestrator] ${restoreFailures.length}/${flights.length} chip restores failed`

@@ -497,7 +497,7 @@ export default function PlayerSessionsPage() {
 
   // ── Save Player Note ───────────────────────────────────────
   const saveNote = async () => {
-    if (!noteTarget || !clubId) return;
+    if (!noteTarget || !clubId || !user?.id) return;
     setSavingNote(true);
     try {
       const uuid = await resolveClubUUID(clubId);

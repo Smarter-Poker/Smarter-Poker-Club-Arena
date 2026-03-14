@@ -883,6 +883,7 @@ function AnnouncementsTab({ clubId }: { clubId: string }) {
   const handleSave = async () => {
     if (!title.trim()) return;
     setSaving(true);
+    setActionError(null);
     try {
       const uuid = await resolveClubUUID(clubId);
       if (editing) {
@@ -911,6 +912,7 @@ function AnnouncementsTab({ clubId }: { clubId: string }) {
 
   const handleDelete = async (id: string) => {
     if (!confirm('Delete this announcement?')) return;
+    setActionError(null);
     try {
       const { error: delErr } = await supabase.from('club_announcements').delete().eq('id', id);
       if (delErr) throw delErr;
@@ -923,6 +925,7 @@ function AnnouncementsTab({ clubId }: { clubId: string }) {
 
   const handlePin = async (item: any) => {
     try {
+      setActionError(null);
       const { error: pinErr } = await supabase
         .from('club_announcements')
         .update({ pinned: !item.pinned })

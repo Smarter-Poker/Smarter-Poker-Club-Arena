@@ -808,16 +808,11 @@ export const RakeService = {
             table_id: null,
             hand_id: null,
             club_id: params.clubId,
-            pot_amount: params.buyInAmount * params.playerCount,
+            // Canonical columns from rake_records schema (20260125900)
+            pot_size: params.buyInAmount * params.playerCount,
             rake_amount: params.totalBuyInFees,
-            bbj_amount: 0,
-            source: 'tournament',
-            tournament_id: params.tournamentId,
-            metadata: {
-              playerCount: params.playerCount,
-              buyInAmount: params.buyInAmount,
-              feePerPlayer: params.feePerPlayer,
-            },
+            bbj_contribution: 0,
+            num_players: params.playerCount,
           }),
         3
       );

@@ -75,6 +75,8 @@ export default function MarketplacePage() {
   const [newItemName, setNewItemName] = useState('');
   const [newItemPrice, setNewItemPrice] = useState('');
   const [newItemDesc, setNewItemDesc] = useState('');
+  const [searchFilter, setSearchFilter] = useState('');
+  const [lastCreateTime, setLastCreateTime] = useState(0);
 
   const mountedRef = useRef(true);
   useEffect(
@@ -105,7 +107,7 @@ export default function MarketplacePage() {
               .order('created_at', { ascending: false }),
             supabase
               .from('marketplace_purchases')
-              .select('id, item_id, price_paid, created_at')
+              .select('id, item_id, price_paid, created_at, marketplace_items(name, category)')
               .eq('user_id', user.id)
               .order('created_at', { ascending: false }),
             supabase
@@ -226,7 +228,6 @@ export default function MarketplacePage() {
       masterBus.emit('BALANCE_UPDATED', {
         source: 'marketplace_purchase',
         clubId,
-        balance: balance - buyTarget.price,
       });
       setBuyTarget(null);
       loadMarketplace(clubId);
@@ -377,39 +378,65 @@ export default function MarketplacePage() {
               <span className={styles.emptyText}>The store is currently empty.</span>
             </div>
           ) : (
-            <div className={styles.itemGrid}>
-              {items.map((item) => {
-                const alreadyOwned = purchasedItemIds.has(item.id);
-                return (
-                  <div key={item.id} className={styles.itemCard}>
-                    <div className={styles.itemImageArea}>
-                      {item.image_url ? (
-                        <img src={item.image_url} alt={item.name} className={styles.itemCover} />
-                      ) : (
-                        <div className={styles.itemPlaceholderLg}>🎁</div>
-                      )}
-                      <span className={styles.categoryTag}>{item.category || 'General'}</span>
-                    </div>
-                    <div className={styles.itemBody}>
-                      <div className={styles.itemName}>{item.name}</div>
-                      <div className={styles.itemDesc}>
-                        {item.description || 'No description available.'}
+            <>
+              <div style={{ marginBottom: '12px' }}>
+                <input
+                  type="text"
+                  placeholder="🔍 Search items..."
+                  value={searchFilter}
+                  onChange={(e) => setSearchFilter(e.target.value)}
+                  className={styles.formInput}
+                  style={{ width: '100%', maxWidth: '300px' }}
+                />
+              </div>
+              <div className={styles.itemGrid}>
+                {items
+                  .filter((item) => {
+                    if (!searchFilter.trim()) return true;
+                    const q = searchFilter.toLowerCase();
+                    return (
+                      item.name.toLowerCase().includes(q) ||
+                      (item.category || '').toLowerCase().includes(q) ||
+                      (item.description || '').toLowerCase().includes(q)
+                    );
+                  })
+                  .map((item) => {
+                    const alreadyOwned = purchasedItemIds.has(item.id);
+                    return (
+                      <div key={item.id} className={styles.itemCard}>
+                        <div className={styles.itemImageArea}>
+                          {item.image_url ? (
+                            <img
+                              src={item.image_url}
+                              alt={item.name}
+                              className={styles.itemCover}
+                            />
+                          ) : (
+                            <div className={styles.itemPlaceholderLg}>🎁</div>
+                          )}
+                          <span className={styles.categoryTag}>{item.category || 'General'}</span>
+                        </div>
+                        <div className={styles.itemBody}>
+                          <div className={styles.itemName}>{item.name}</div>
+                          <div className={styles.itemDesc}>
+                            {item.description || 'No description available.'}
+                          </div>
+                          <div className={styles.itemFooter}>
+                            <span className={styles.itemPrice}>{fmtChips(item.price)}</span>
+                            <button
+                              onClick={() => setBuyTarget(item)}
+                              className={alreadyOwned ? styles.btnOwned : styles.btnPrimary}
+                              disabled={alreadyOwned || processing}
+                            >
+                              {alreadyOwned ? 'Owned' : 'Buy'}
+                            </button>
+                          </div>
+                        </div>
                       </div>
-                      <div className={styles.itemFooter}>
-                        <span className={styles.itemPrice}>{fmtChips(item.price)}</span>
-                        <button
-                          onClick={() => setBuyTarget(item)}
-                          className={alreadyOwned ? styles.btnOwned : styles.btnPrimary}
-                          disabled={alreadyOwned || processing}
-                        >
-                          {alreadyOwned ? 'Owned' : 'Buy'}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+                    );
+                  })}
+              </div>
+            </>
           )}
         </div>
       )}
@@ -435,14 +462,15 @@ export default function MarketplacePage() {
                 </thead>
                 <tbody>
                   {purchases.map((p) => {
+                    const joinedItem = (p as any).marketplace_items;
                     const itemData = itemMap[p.item_id];
+                    const displayName = joinedItem?.name || itemData?.name || 'Deleted Item';
+                    const displayCategory = joinedItem?.category || itemData?.category || 'General';
                     return (
                       <tr key={p.id}>
-                        <td style={{ fontWeight: 600 }}>{itemData?.name || 'Unknown Item'}</td>
+                        <td style={{ fontWeight: 600 }}>{displayName}</td>
                         <td>
-                          <span className={styles.categorySmall}>
-                            {itemData?.category || 'General'}
-                          </span>
+                          <span className={styles.categorySmall}>{displayCategory}</span>
                         </td>
                         <td style={{ fontWeight: 700, color: '#F7C52A' }}>
                           {fmtChips(p.price_paid)}
@@ -489,6 +517,12 @@ export default function MarketplacePage() {
               className={styles.btnPrimary}
               disabled={processing || !newItemName.trim() || !newItemPrice}
               onClick={async () => {
+                // Throttle: 3 second cooldown between creates
+                const now = Date.now();
+                if (now - lastCreateTime < 3000) {
+                  toast.error('Please wait a moment before creating another item');
+                  return;
+                }
                 const price = Math.floor(Number(newItemPrice));
                 if (!price || !Number.isFinite(price) || price <= 0) {
                   toast.error('Price must be a positive number');
@@ -505,6 +539,7 @@ export default function MarketplacePage() {
                   });
                   if (error) throw error;
                   toast.success('Item created!');
+                  setLastCreateTime(Date.now());
                   setNewItemName('');
                   setNewItemPrice('');
                   setNewItemDesc('');

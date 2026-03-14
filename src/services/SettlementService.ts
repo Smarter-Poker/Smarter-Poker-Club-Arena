@@ -345,15 +345,19 @@ export const SettlementService = {
 
         if (payoutError) throw payoutError;
 
+        // Resolve auth.users.id from joined agents table
+        // settlement.agent_id is agents.id PK — frontend matches on auth.users.id
+        const agentUserId = (settlement as any).agents?.user_id || settlement.agent_id;
+
         // Emit bus event so agent sees their settlement in real-time
         masterBus.emit('BALANCE_UPDATED', {
           source: 'agent_settlement_payout',
-          userId: settlement.agent_id,
+          userId: agentUserId,
         });
 
-        // Send push notification to agent
+        // Send push notification to agent (push needs auth.users.id)
         pushNotificationService
-          .notifySettlement(settlement.agent_id, settlement.net_settlement, 'Weekly Commission')
+          .notifySettlement(agentUserId, settlement.net_settlement, 'Weekly Commission')
           .catch((err) => console.error('[Settlement] Agent push failed:', err));
 
         agentsPaid++;

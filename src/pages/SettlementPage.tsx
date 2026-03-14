@@ -653,7 +653,7 @@ export default function SettlementPage() {
   if (isLoading) {
     return (
       <div className={styles.page}>
-        <div className={styles.loading}>Loading settlement data...</div>
+        <PageSkeleton variant="dashboard" />
       </div>
     );
   }

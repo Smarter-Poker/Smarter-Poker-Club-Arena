@@ -48,6 +48,30 @@ vi.mock('../../src/utils/retryAsync', () => ({
   retryAsync: (fn: () => any) => fn(),
 }));
 
+vi.mock('../../src/services/CommissionService', () => ({
+  CommissionService: {
+    getRate: vi.fn().mockResolvedValue(0),
+    executePayout: vi.fn().mockResolvedValue(undefined),
+  },
+}));
+
+vi.mock('../../src/services/WalletService', () => ({
+  WalletService: {
+    getBalance: vi.fn().mockResolvedValue(0),
+    logTransaction: vi.fn().mockResolvedValue(undefined),
+  },
+}));
+
+vi.mock('../../src/services/PushNotificationService', () => ({
+  pushNotificationService: {
+    sendToUser: vi.fn().mockResolvedValue(undefined),
+  },
+}));
+
+vi.mock('../../src/utils/clubIdResolver', () => ({
+  resolveClubUUID: (id: string) => Promise.resolve(id),
+}));
+
 // ─── Import AFTER mocks ──────────────────────────────────────────────────
 
 import { SettlementService } from '../../src/services/SettlementService';

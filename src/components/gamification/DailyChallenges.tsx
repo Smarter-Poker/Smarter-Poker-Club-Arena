@@ -256,9 +256,19 @@ export const DailyChallenges: React.FC = () => {
                 </span>
               </div>
               <div className="challenge-reward">
-                <span className="chip-badge">+{challenge.chipReward} Chips</span>
-                {challenge.diamondReward && (
-                  <span className="diamond-badge">+{challenge.diamondReward} 💎</span>
+                {challenge.completed && !challenge.claimed ? (
+                  <button className="claim-btn" onClick={() => claimReward(challenge)}>
+                    Claim
+                  </button>
+                ) : challenge.claimed ? (
+                  <span className="claimed-check">✓</span>
+                ) : (
+                  <>
+                    <span className="chip-badge">+{challenge.chipReward} Chips</span>
+                    {challenge.diamondReward && (
+                      <span className="diamond-badge">+{challenge.diamondReward} 💎</span>
+                    )}
+                  </>
                 )}
               </div>
             </div>

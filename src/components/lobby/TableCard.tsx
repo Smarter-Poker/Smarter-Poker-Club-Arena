@@ -3,7 +3,7 @@
  * Displays a single table in the lobby grid
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { waitlistService } from '../../services/WaitlistService';
 import { tableService } from '../../services/TableService';
@@ -11,6 +11,7 @@ import { useAuthUser } from '../../hooks/useAuthUser';
 import { supabase } from '../../lib/supabase';
 import { PlayerAvatar } from '../avatars/PlayerAvatar';
 import { haptic } from '../../services/HapticService';
+import { masterBus } from '../../core/MasterBus';
 import styles from './TableCard.module.css';
 import type { PokerTable } from '../../types/database.types';
 import { useToast } from '../common/Toast';
@@ -59,6 +60,7 @@ export default function TableCard({ table }: TableCardProps) {
   const [mounted, setMounted] = useState(false);
   const [adminRole, setAdminRole] = useState<string | null>(null);
   const [adminProcessing, setAdminProcessing] = useState(false);
+  const refreshRef = useRef<() => void>();
 
   useEffect(() => {
     setTimeout(() => setMounted(true), 50);
@@ -130,10 +132,53 @@ export default function TableCard({ table }: TableCardProps) {
         }
       });
 
+    // Store refresh function for bus listeners
+    refreshRef.current = () => {
+      supabase
+        .from('table_waitlists')
+        .select('id', { count: 'exact', head: true })
+        .eq('table_id', table.id)
+        .eq('status', 'waiting')
+        .then(({ count }) => {
+          if (isMounted && count !== null) setWaiting(count);
+        });
+      supabase
+        .from('table_players')
+        .select('user_id, profiles(id, avatar_url, display_name, username)')
+        .eq('table_id', table.id)
+        .eq('status', 'active')
+        .limit(6)
+        .then(({ data }) => {
+          if (isMounted && data && data.length > 0) {
+            setPlayerAvatars(
+              data.map((p: any) => ({
+                id: p.user_id,
+                url: p.profiles?.avatar_url,
+                name: p.profiles?.display_name || p.profiles?.username || '?',
+              }))
+            );
+          } else if (isMounted) {
+            setPlayerAvatars([]);
+          }
+        });
+    };
+
     return () => {
       isMounted = false;
     };
   }, [table.id]);
+
+  // Bus listeners for live table updates
+  useEffect(() => {
+    const refresh = () => refreshRef.current?.();
+    const unsubs = [
+      masterBus.subscribeDebounced('TABLE_SEATED', refresh, 500),
+      masterBus.subscribeDebounced('TABLE_LEFT', refresh, 500),
+      masterBus.subscribeDebounced('WAITLIST_POSITION_CHANGED', refresh, 500),
+      masterBus.subscribeDebounced('DATA_MUTATED', refresh, 1000),
+    ];
+    return () => unsubs.forEach((u) => u());
+  }, []);
 
   // Check admin role for this table's club
   useEffect(() => {

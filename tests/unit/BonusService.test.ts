@@ -2,17 +2,11 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  *  UNIT TESTS — BonusService
  * ═══════════════════════════════════════════════════════════════════════════════
- *
- * Tests bonus service CRUD with bus event verification:
- * - getBonusStatus: returns default status for new user
- * - canSpinToday: handles error gracefully
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// ─── Mock dependencies ────────────────────────────────────────────────────
-
-const mockRpcResult = { data: null, error: null };
+// ─── Mock dependencies (no top-level variable refs in factory) ────────────
 
 vi.mock('../../src/lib/supabase', () => {
   const buildChain = (): any => {
@@ -30,7 +24,7 @@ vi.mock('../../src/lib/supabase', () => {
   return {
     supabase: {
       from: () => buildChain(),
-      rpc: vi.fn().mockResolvedValue(mockRpcResult),
+      rpc: vi.fn().mockResolvedValue({ data: null, error: null }),
     },
   };
 });
@@ -39,6 +33,13 @@ vi.mock('../../src/core/MasterBus', () => ({
   masterBus: {
     emit: vi.fn(),
     subscribe: vi.fn(() => vi.fn()),
+  },
+}));
+
+vi.mock('../../src/services/WalletService', () => ({
+  WalletService: {
+    getBalance: vi.fn().mockResolvedValue(0),
+    credit: vi.fn().mockResolvedValue(true),
   },
 }));
 
@@ -55,10 +56,6 @@ describe('BonusService', () => {
     vi.clearAllMocks();
   });
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // GET BONUS STATUS
-  // ─────────────────────────────────────────────────────────────────────────
-
   describe('getBonusStatus', () => {
     it('should return default status when no data', async () => {
       const status = await bonusService.getBonusStatus('user-1');
@@ -67,10 +64,6 @@ describe('BonusService', () => {
       expect(status.canClaimDaily).toBe(true);
     });
   });
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // CAN SPIN TODAY
-  // ─────────────────────────────────────────────────────────────────────────
 
   describe('canSpinToday', () => {
     it('should return true when no spin record exists', async () => {

@@ -76,6 +76,36 @@ export default function AgentPortalPage() {
     };
   }, []);
 
+  // RT subscription: auto-refresh when agent wallet changes in Supabase
+  useEffect(() => {
+    if (!user?.id) return;
+    const channel = supabase
+      .channel(`agent-portal-${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'agents', filter: `user_id=eq.${user.id}` },
+        () => {
+          if (isMounted.current) loadWallet();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'commission_ledger',
+          filter: `agent_id=eq.${user.id}`,
+        },
+        () => {
+          if (isMounted.current) loadCommissionHistory();
+        }
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id]);
+
   const loadData = async () => {
     if (!user?.id) return;
     setLoading(true);

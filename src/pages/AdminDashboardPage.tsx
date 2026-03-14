@@ -2054,13 +2054,19 @@ function MintChipsTab({ clubId }: { clubId: string }) {
               setMsg(null);
               try {
                 const uuid = await resolveClubUUID(clubId);
+                const mintAmount = Number(amount);
+                if (isNaN(mintAmount) || mintAmount <= 0) {
+                  setErr('Enter a valid chip amount');
+                  setProcessing(false);
+                  return;
+                }
                 const { error } = await supabase.rpc('mint_club_chips', {
                   p_club_id: uuid,
-                  p_amount: Number(amount),
+                  p_amount: mintAmount,
                   p_notes: notes || undefined,
                 });
                 if (error) throw error;
-                setMsg(`Minted ${fmtChips(Number(amount))} chips to treasury!`);
+                setMsg(`Minted ${fmtChips(mintAmount)} chips to treasury!`);
                 masterBus.emit('CHIPS_DISTRIBUTED', { clubId });
                 setAmount('');
                 setNotes('');

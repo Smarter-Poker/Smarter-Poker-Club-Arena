@@ -143,7 +143,7 @@ export default function AgentManagementPage() {
       const { data } = await supabase
         .from('chip_transactions')
         .select(
-          'id, from_user_id, to_user_id, amount, created_at, transaction_type, notes, users:to_user_id(username)'
+          'id, from_user_id, to_user_id, amount, created_at, transaction_type, notes, profiles:to_user_id(username)'
         )
         .eq('club_id', clubId)
         .eq('from_user_id', user.id)
@@ -775,7 +775,7 @@ export default function AgentManagementPage() {
                   const remainingSec = Math.max(0, Math.ceil((10 * 60 * 1000 - elapsed) / 1000));
                   const remainingMin = Math.floor(remainingSec / 60);
                   const remainingSecMod = remainingSec % 60;
-                  const recipientName = (tx.users as any)?.username || 'Player';
+                  const recipientName = (tx.profiles as any)?.username || 'Player';
                   return (
                     <div
                       key={tx.id}

@@ -56,6 +56,7 @@ export default function ClubChat({ clubId, userId, userName }: ClubChatProps) {
   const listRef = useRef<HTMLDivElement>(null);
   const lastSeenRef = useRef(0);
   const expandedRef = useRef(expanded);
+  const failedTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   const loadMessages = useCallback(async () => {
     if (!clubId) return;
@@ -184,18 +185,20 @@ export default function ClubChat({ clubId, userId, userName }: ClubChatProps) {
           prev.map((m) => (m.id === tempId ? { ...m, message_type: 'failed' } : m))
         );
         // Auto-remove failed message after 4 seconds
-        setTimeout(() => {
+        const tid = setTimeout(() => {
           setMessages((prev) => prev.filter((m) => m.id !== tempId));
         }, 4000);
+        failedTimersRef.current.push(tid);
       }
     } catch {
       // Mark as failed on any exception
       setMessages((prev) =>
         prev.map((m) => (m.id === tempId ? { ...m, message_type: 'failed' } : m))
       );
-      setTimeout(() => {
+      const tid = setTimeout(() => {
         setMessages((prev) => prev.filter((m) => m.id !== tempId));
       }, 4000);
+      failedTimersRef.current.push(tid);
     } finally {
       setSending(false);
     }

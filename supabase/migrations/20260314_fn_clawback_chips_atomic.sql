@@ -2,10 +2,10 @@
 -- fn_clawback_chips_atomic — Phase 13 Fix (v2 — correct architecture)
 -- 
 -- Club balances are in club_members.chip_balance (NOT wallets table).
--- Agent promo balance is in agents.promo_wallet_balance.
+-- Agent promo balance is in agents.promo_balance.
 -- This RPC atomically: 
 --   1. Deducts from player's club_members.chip_balance
---   2. Credits agent's agents.promo_wallet_balance (returns to promo pool)
+--   2. Credits agent's agents.promo_balance (returns to promo pool)
 --   3. Handles partial clawback when player has insufficient balance
 --   4. Logs the clawback transaction
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -83,7 +83,7 @@ BEGIN
     -- 6. Credit back to agent's promo wallet (if agent PK found)
     IF v_agent_pk IS NOT NULL THEN
         UPDATE agents
-        SET promo_wallet_balance = promo_wallet_balance + v_actual_amount
+        SET promo_balance = promo_balance + v_actual_amount
         WHERE id = v_agent_pk;
     ELSE
         -- Fallback: credit to agent's club_members chip_balance
@@ -98,7 +98,7 @@ BEGIN
     WHERE user_id = v_player_id AND club_id = p_club_id;
 
     IF v_agent_pk IS NOT NULL THEN
-        SELECT promo_wallet_balance INTO v_agent_new_balance
+        SELECT promo_balance INTO v_agent_new_balance
         FROM agents
         WHERE id = v_agent_pk;
     ELSE

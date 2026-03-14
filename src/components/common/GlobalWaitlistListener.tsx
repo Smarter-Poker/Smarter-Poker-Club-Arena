@@ -53,12 +53,13 @@ export default function GlobalWaitlistListener() {
 
         try {
           // Immediately query if the user is #1 on this table's waitlist
-          const { data } = await supabase
+          const { data, error: waitlistErr } = await supabase
             .from('waitlist_entries')
             .select('id, position, poker_tables(name)')
             .eq('user_id', user.id)
             .eq('table_id', vacatedTableId)
             .maybeSingle();
+          if (waitlistErr) console.error('[GlobalWaitlist] Query failed:', waitlistErr.message);
 
           if (data && data.position === 1) {
             const tableName = (data.poker_tables as any)?.name || 'the table';

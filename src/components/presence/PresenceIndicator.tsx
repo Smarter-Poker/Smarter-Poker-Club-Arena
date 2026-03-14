@@ -51,11 +51,12 @@ export const PresenceIndicator: React.FC<PresenceIndicatorProps> = ({
 
   const fetchPresence = async () => {
     try {
-      const { data } = await supabase
+      const { data, error: presenceErr } = await supabase
         .from('player_presence')
         .select('status, last_seen_at, current_table_id')
         .eq('user_id', userId)
         .maybeSingle();
+      if (presenceErr) console.error('[PresenceIndicator] Fetch failed:', presenceErr.message);
 
       if (data) {
         setPresence({

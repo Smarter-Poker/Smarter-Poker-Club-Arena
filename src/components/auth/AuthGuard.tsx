@@ -17,7 +17,7 @@
  *    to prevent race conditions from transient store resets
  */
 
-import { ReactNode, useEffect, useState, useRef, useCallback } from 'react';
+import { ReactNode, useEffect, useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useUserStore } from '../../stores/useUserStore';

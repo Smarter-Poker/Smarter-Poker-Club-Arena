@@ -468,7 +468,7 @@ export default function UnionDashboardPage() {
                   disabled={processing}
                   onClick={async () => {
                     const rate = parseFloat(editCommRate) / 100;
-                    if (rate < 0.01 || rate > 1) {
+                    if (isNaN(rate) || rate < 0.01 || rate > 1) {
                       setError('Rate must be 1-100%');
                       return;
                     }
@@ -958,7 +958,7 @@ export default function UnionDashboardPage() {
                           {
                             p_union_id: unionId,
                             p_club_id: transferForm.clubId,
-                            p_amount: parseInt(transferForm.amount),
+                            p_amount: parseInt(transferForm.amount) || 0,
                             p_notes: transferForm.notes || null,
                           }
                         );

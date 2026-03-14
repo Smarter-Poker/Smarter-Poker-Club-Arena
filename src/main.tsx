@@ -29,6 +29,19 @@ import SystemOffline from './core/SystemOffline';
 import { ErrorBoundary } from './components/common';
 
 // ═══════════════════════════════════════════════════════════════════════════════
+//  GLOBAL SAFETY NET — Catch unhandled promise rejections from service throws
+// ═══════════════════════════════════════════════════════════════════════════════
+// Many services use `throw error` which creates unhandled rejections when called
+// from event handlers, bus listeners, or realtime callbacks without try/catch.
+// This prevents those from silently crashing the app or causing undefined state.
+window.addEventListener('unhandledrejection', (event) => {
+  // Log but don't crash — the page's error state should handle degraded display
+  console.error('[GLOBAL] Unhandled promise rejection caught:', event.reason);
+  // Prevent the default browser behavior (console error + potential crash)
+  event.preventDefault();
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
 //  ANTI-GRAVITY BOOT SEQUENCE — MUST COMPLETE BEFORE RENDER
 // ═══════════════════════════════════════════════════════════════════════════════
 async function boot() {

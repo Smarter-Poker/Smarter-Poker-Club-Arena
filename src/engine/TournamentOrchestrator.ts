@@ -308,8 +308,9 @@ export class TournamentOrchestrator {
       );
       if (restoreFailures.length > 0) {
         console.error(
-          `[TournamentOrchestrator] ${restoreFailures.length}/${flights.length} chip restores failed`
+          `[TournamentOrchestrator] CRITICAL: ${restoreFailures.length}/${flights.length} chip restores failed — aborting Day 2 start to prevent players playing with stale chips`
         );
+        return; // Bail out — flights stay "bagged" so a retry is safe
       }
 
       // 3. Mark flights as resumed

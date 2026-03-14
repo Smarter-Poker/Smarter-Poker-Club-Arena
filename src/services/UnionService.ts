@@ -439,9 +439,12 @@ class UnionServiceClass {
    * Add club to union
    */
   async addClub(unionId: string, clubId: string): Promise<boolean> {
+    // Resolve club UUID once for consistent usage across all queries
+    const resolvedClubId = await resolveClubUUID(clubId);
+
     const { error } = await supabase.from('union_clubs').insert({
       union_id: unionId,
-      club_id: clubId,
+      club_id: resolvedClubId,
     });
 
     if (error) return false;
@@ -464,11 +467,11 @@ class UnionServiceClass {
     const { error: linkErr } = await supabase
       .from('clubs')
       .update({ union_id: unionId })
-      .eq('id', clubId);
+      .eq('id', resolvedClubId);
     if (linkErr) console.error('[UnionService] Failed to set club union_id:', linkErr);
 
     masterBus.emit('UNION_UPDATED', { unionId });
-    masterBus.emit('CLUB_UPDATED', { clubId });
+    masterBus.emit('CLUB_UPDATED', { clubId: resolvedClubId });
 
     return true;
   }
@@ -477,11 +480,14 @@ class UnionServiceClass {
    * Remove club from union
    */
   async removeClub(unionId: string, clubId: string): Promise<boolean> {
+    // Resolve club UUID once for consistent usage across all queries
+    const resolvedClubId = await resolveClubUUID(clubId);
+
     const { error } = await supabase
       .from('union_clubs')
       .delete()
       .eq('union_id', unionId)
-      .eq('club_id', await resolveClubUUID(clubId));
+      .eq('club_id', resolvedClubId);
 
     if (error) return false;
 
@@ -503,11 +509,11 @@ class UnionServiceClass {
     const { error: unlinkErr } = await supabase
       .from('clubs')
       .update({ union_id: null })
-      .eq('id', clubId);
+      .eq('id', resolvedClubId);
     if (unlinkErr) console.error('[UnionService] Failed to clear club union_id:', unlinkErr);
 
     masterBus.emit('UNION_UPDATED', { unionId });
-    masterBus.emit('CLUB_UPDATED', { clubId });
+    masterBus.emit('CLUB_UPDATED', { clubId: resolvedClubId });
 
     return true;
   }

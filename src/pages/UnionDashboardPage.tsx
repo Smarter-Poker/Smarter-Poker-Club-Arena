@@ -17,12 +17,7 @@ import './AdminDashboardPage.css';
 // ── Helpers ─────────────────────────────────────────────────
 const fmt = (n: number | null | undefined) => Number(n || 0).toLocaleString();
 const pct = (n: number | null | undefined) => `${((Number(n) || 0) * 100).toFixed(1)}%`;
-const _fmtChips = (n: number | null | undefined) => {
-  const v = Number(n || 0);
-  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
-  if (v >= 1_000) return `${(v / 1_000).toFixed(1)}K`;
-  return fmt(v);
-};
+
 const timeAgo = (ts: string | null | undefined) => {
   if (!ts) return '';
   const mins = Math.floor((Date.now() - new Date(ts).getTime()) / 60000);
@@ -70,13 +65,9 @@ export default function UnionDashboardPage() {
   const [_leaveRequests, setLeaveRequests] = useState<any[]>([]);
 
   // Activity
-  const [_recentTx, _setRecentTx] = useState<any[]>([]);
-  const [_txPage, _setTxPage] = useState(1);
-  const _TX_PER_PAGE = 25;
 
   // Wallet transfer form
   const [transferForm, setTransferForm] = useState({ clubId: '', amount: '', notes: '' });
-  const [_rakeAmount, _setRakeAmount] = useState('');
 
   // Search / Filter
   const [clubSearch, setClubSearch] = useState('');
@@ -264,20 +255,6 @@ export default function UnionDashboardPage() {
     if (!unionId) return;
     if (tab === 'applications' && !appsLoaded) loadApps();
   }, [tab, unionId, appsLoaded, loadApps]);
-
-  const _loadLeaveRequests = async () => {
-    if (!unionId) return;
-    try {
-      const { data } = await supabase
-        .from('union_leave_requests')
-        .select('*')
-        .eq('union_id', unionId)
-        .eq('status', 'pending');
-      if (mountedRef.current) setLeaveRequests(data || []);
-    } catch (_e) {
-      /* silent */
-    }
-  };
 
   // ── Bus Listeners ──────────────────────────────────────────
   useEffect(() => {

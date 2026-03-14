@@ -728,7 +728,6 @@ export default function CashierPage() {
 
         const recipient = selectedRecipientData;
         const recipientIsAgent = recipient?.role === 'agent' || recipient?.role === 'super_agent';
-        const _recipientIsSubAgent = recipient?.role === 'sub_agent';
 
         if (userRole === 'owner' && recipientIsAgent) {
           await ChipFlowService.clubToAgent(

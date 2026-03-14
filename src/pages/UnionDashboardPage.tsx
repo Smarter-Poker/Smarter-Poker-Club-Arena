@@ -943,15 +943,23 @@ export default function UnionDashboardPage() {
                     onClick={async () => {
                       setProcessing(true);
                       try {
-                        // BLOCKED: Atomic RPC fn_union_send_chips_to_club required to prevent phantom transactions.
-                        // A raw INSERT to union_transactions does NOT move money — it only creates a log record.
-                        // This MUST be replaced with an atomic RPC that debits union_wallets.chip_balance
-                        // AND credits the club's wallet in a single transaction.
-                        throw new Error(
-                          'Union chip transfers are temporarily disabled. ' +
-                            'Atomic RPC (fn_union_send_chips_to_club) must be deployed to Supabase before this feature can be used safely. ' +
-                            'Without it, transfers would create phantom log records without actually moving chips.'
+                        // Atomic RPC: debits union_wallets, credits club wallet, logs to union_transactions
+                        const { data: result, error: rpcErr } = await supabase.rpc(
+                          'fn_union_send_chips_to_club',
+                          {
+                            p_union_id: unionId,
+                            p_club_id: transferForm.clubId,
+                            p_amount: parseInt(transferForm.amount),
+                            p_notes: transferForm.notes || null,
+                          }
                         );
+                        if (rpcErr) throw rpcErr;
+                        setSuccess(
+                          `Sent ${parseInt(transferForm.amount).toLocaleString()} chips to club`
+                        );
+                        masterBus.emit('BALANCE_UPDATED', { source: 'union_transfer' });
+                        setTransferForm({ clubId: '', amount: '', notes: '' });
+                        loadDashboard(unionId);
                       } catch (err: any) {
                         setError(err.message);
                       } finally {

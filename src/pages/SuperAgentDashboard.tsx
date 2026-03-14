@@ -477,6 +477,7 @@ export default function SuperAgentDashboard() {
           </div>
         )}
       </div>
+      {clubId && <ClubBottomNav clubId={clubId} />}
     </div>
   );
 }

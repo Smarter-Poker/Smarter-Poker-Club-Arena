@@ -212,10 +212,10 @@ export function AgentCommissionDashboard() {
 
       if (subAgentsData) {
         setSubAgents(
-          subAgentsData.map((a) => ({
+          subAgentsData.map((a: any) => ({
             id: a.id,
-            username: a.username,
-            avatarUrl: a.avatar_url || '',
+            username: a.profiles?.display_name || a.user_id?.substring(0, 8) || 'Unknown',
+            avatarUrl: a.profiles?.avatar_url || '',
             totalPlayers: a.player_count || 0,
             totalCommission: a.total_commission || 0,
             commissionRate: a.commission_rate || 0,

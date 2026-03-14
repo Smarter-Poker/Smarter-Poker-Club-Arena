@@ -316,7 +316,7 @@ export default function TableConfigPage() {
         const resolvedId = await resolveClubUUID(clubId);
         const { data, error } = await supabase
           .from('table_templates')
-          .select('*')
+          .select('id, name, game_type, game_mode, config, club_id, is_deleted, created_at')
           .eq('club_id', resolvedId)
           .eq('is_deleted', false)
           .order('created_at', { ascending: false });
@@ -354,7 +354,7 @@ export default function TableConfigPage() {
           resolveClubUUID(clubId!).then((resolvedId) => {
             supabase
               .from('table_templates')
-              .select('*')
+              .select('id, name, game_type, game_mode, config, club_id, is_deleted, created_at')
               .eq('club_id', resolvedId)
               .eq('is_deleted', false)
               .order('created_at', { ascending: false })

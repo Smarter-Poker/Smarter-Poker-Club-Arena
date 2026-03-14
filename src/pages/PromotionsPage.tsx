@@ -84,7 +84,12 @@ export default function PromotionsPage() {
   const loadPromotions = async (getIsMounted?: () => boolean) => {
     setLoading(true);
     try {
-      let query = supabase.from('promotions').select('*').order('start_date', { ascending: false });
+      let query = supabase
+        .from('promotions')
+        .select(
+          'id, title, description, type, image_url, start_date, end_date, prize_pool, is_active, requirements, club_id'
+        )
+        .order('start_date', { ascending: false });
 
       if (clubId) {
         const resolvedId = await resolveClubUUID(clubId);

@@ -209,7 +209,9 @@ export default function PlayerStatsPage() {
     try {
       const { data, error } = await supabase
         .from('player_stats')
-        .select('*')
+        .select(
+          'total_hands, hands_won, hands_lost, showdowns_won, showdowns_total, vpip, pfr, aggression_factor, three_bet_percent, fold_to_three_bet, cbet_flop, cbet_turn, bb_per_100, total_profit, biggest_pot_won, biggest_pot_lost, hours_played, avg_session_length'
+        )
         .eq('user_id', targetUserId)
         .maybeSingle();
 

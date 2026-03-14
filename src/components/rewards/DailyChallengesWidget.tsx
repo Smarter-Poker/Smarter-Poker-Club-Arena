@@ -6,7 +6,7 @@
  * Wired to DailyChallengeService for Supabase data
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   dailyChallengeService,
   type UserDailyChallenge,
@@ -14,6 +14,7 @@ import {
 import { DailyChallenges } from './DailyChallenges';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../../components/common/Toast';
+import { masterBus } from '../../core/MasterBus';
 
 interface Challenge {
   id: string;
@@ -32,9 +33,25 @@ export const DailyChallengesWidget: React.FC = () => {
   const [challenges, setChallenges] = useState<Challenge[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const isMounted = useRef(true);
+
   useEffect(() => {
+    isMounted.current = true;
     if (!user?.id) return;
     loadChallenges();
+
+    const unsubHand = masterBus.subscribe('HAND_COMPLETED', () => {
+      if (isMounted.current && user?.id) loadChallenges();
+    });
+    const unsubReset = masterBus.subscribe('DAILY_RESET_AVAILABLE', () => {
+      if (isMounted.current && user?.id) loadChallenges();
+    });
+
+    return () => {
+      isMounted.current = false;
+      unsubHand();
+      unsubReset();
+    };
   }, [user?.id]);
 
   const loadChallenges = async () => {

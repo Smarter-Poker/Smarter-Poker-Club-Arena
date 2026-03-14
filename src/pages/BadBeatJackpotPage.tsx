@@ -120,7 +120,9 @@ export default function BadBeatJackpotPage() {
 
         const { data: jackpotData } = await supabase
           .from('bbj_pools')
-          .select('*')
+          .select(
+            'id, club_id, main_balance, backup_balance, promo_balance, total_contributed, last_hit_at, last_hit_amount'
+          )
           .eq('club_id', resolvedId)
           .maybeSingle();
 
@@ -132,7 +134,9 @@ export default function BadBeatJackpotPage() {
 
         const { data: historyData } = await supabase
           .from('bbj_winners')
-          .select('*')
+          .select(
+            'id, awarded_at, total_payout, winner_hand, loser_hand, winner_display_name, loser_display_name'
+          )
           .eq('club_id', resolvedId)
           .order('awarded_at', { ascending: false })
           .limit(10);

@@ -6,6 +6,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import styles from './LobbyPage.module.css';
 import TableCard from '../components/lobby/TableCard';
 import GameTypeTabs from '../components/lobby/GameTypeTabs';
@@ -34,6 +35,12 @@ export default function LobbyPage() {
   const navigate = useNavigate();
   const toast = useToast();
   const { user } = useAuthUser();
+  useVisibilityRefresh(() => {
+    tableService
+      .getTables()
+      .then(setTables)
+      .catch(() => {});
+  });
   const [activeFilter, setActiveFilter] = useState<GameFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [stakeFilter, setStakeFilter] = useState<string>('any');

@@ -84,7 +84,7 @@ export default function CreditAdminPanel() {
     try {
       const { data: auditData } = await supabase
         .from('commission_rate_audit')
-        .select('*')
+        .select('agent_id, old_rate, new_rate, created_at')
         .eq('rate_type', 'credit_limit')
         .order('created_at', { ascending: false })
         .limit(20);

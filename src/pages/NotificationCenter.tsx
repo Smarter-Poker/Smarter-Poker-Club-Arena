@@ -66,7 +66,7 @@ export default function NotificationCenter() {
     try {
       const { data } = await supabase
         .from('notifications')
-        .select('*')
+        .select('id, type, title, message, body, link, action_url, read, created_at')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
         .limit(50);

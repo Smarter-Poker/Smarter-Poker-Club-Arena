@@ -17,6 +17,7 @@ import { masterBus } from '../core/MasterBus';
 import { flashPoolEngine, type FlashPoolConfig } from '../engine/FlashPoolEngine';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
+import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import PageSkeleton from '../components/common/PageSkeleton';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -43,6 +44,7 @@ export default function FlashPoolPage() {
   const navigate = useNavigate();
   const { user } = useAuthUser();
   const toast = useToast();
+  useVisibilityRefresh(() => loadPools());
 
   const [loading, setLoading] = useState(true);
   const [pools, setPools] = useState<PoolDisplay[]>([]);
@@ -55,7 +57,9 @@ export default function FlashPoolPage() {
     try {
       const { data, error } = await supabase
         .from('flash_pools')
-        .select('*')
+        .select(
+          'id, small_blind, big_blind, active_players, tables_running, buy_in_min, buy_in_max, status'
+        )
         .in('status', ['active', 'waiting'])
         .order('big_blind', { ascending: true });
 

@@ -104,7 +104,7 @@ export default function BonusPage() {
 
       const { data: specials } = await supabase
         .from('special_bonuses')
-        .select('*')
+        .select('id, title, description, reward, expires_at, claimed')
         .eq('user_id', user?.id)
         .gte('expires_at', new Date().toISOString())
         .order('expires_at', { ascending: true })

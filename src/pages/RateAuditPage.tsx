@@ -94,7 +94,7 @@ export default function RateAuditPage() {
       try {
         const { data: commData } = await supabase
           .from('commission_rate_audit')
-          .select('*')
+          .select('id, agent_id, changed_by, old_rate, new_rate, rate_type, created_at')
           .order('created_at', { ascending: false })
           .limit(100);
 
@@ -113,15 +113,15 @@ export default function RateAuditPage() {
             }))
           );
         }
-      } catch {
-        /* table may not exist yet */
+      } catch (e) {
+        console.warn('[RateAudit] commission_rate_audit table may not exist:', e);
       }
 
       // Load rake rate audit
       try {
         const { data: rakeData } = await supabase
           .from('rake_rate_audit')
-          .select('*')
+          .select('id, club_id, changed_by, old_rate, new_rate, rate_type, created_at, notes')
           .order('created_at', { ascending: false })
           .limit(100);
 
@@ -141,8 +141,8 @@ export default function RateAuditPage() {
             }))
           );
         }
-      } catch {
-        /* table may not exist yet */
+      } catch (e) {
+        console.warn('[RateAudit] rake_rate_audit table may not exist:', e);
       }
 
       // Sort all by date descending

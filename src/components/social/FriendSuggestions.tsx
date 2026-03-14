@@ -5,7 +5,7 @@
  * Horizontal scroll of suggestion cards with shared context
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   friendSuggestionService,
@@ -14,6 +14,7 @@ import {
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { supabase } from '../../lib/supabase';
 import { useToast } from '../common/Toast';
+import { masterBus } from '../../core/MasterBus';
 import styles from './FriendSuggestions.module.css';
 
 export default function FriendSuggestions() {
@@ -26,12 +27,40 @@ export default function FriendSuggestions() {
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [sendingRequest, setSendingRequest] = useState<string | null>(null);
 
+  const isMounted = useRef(true);
+
   useEffect(() => {
+    isMounted.current = true;
     if (!user?.id) return;
     friendSuggestionService
       .getSuggestions(user.id, 12)
-      .then(setSuggestions)
-      .finally(() => setLoading(false));
+      .then((s) => {
+        if (isMounted.current) setSuggestions(s);
+      })
+      .finally(() => {
+        if (isMounted.current) setLoading(false);
+      });
+
+    // Auto-dismiss when friend request sent/accepted elsewhere
+    const unsubSent = masterBus.subscribe('FRIEND_REQUEST_SENT', (event: any) => {
+      if (isMounted.current) {
+        setDismissed((prev) => new Set(prev).add(event.payload?.toUserId));
+      }
+    });
+    const unsubAccepted = masterBus.subscribe('FRIEND_REQUEST_ACCEPTED', () => {
+      // Refresh suggestions after an acceptance (friend list changed)
+      if (isMounted.current && user?.id) {
+        friendSuggestionService.getSuggestions(user.id, 12).then((s) => {
+          if (isMounted.current) setSuggestions(s);
+        });
+      }
+    });
+
+    return () => {
+      isMounted.current = false;
+      unsubSent();
+      unsubAccepted();
+    };
   }, [user?.id]);
 
   const handleAddFriend = async (userId: string) => {
@@ -46,6 +75,8 @@ export default function FriendSuggestions() {
       if (error) throw error;
       toast.success('Friend request sent!');
       setDismissed((prev) => new Set(prev).add(userId));
+      // Emit bus event so other components react too
+      masterBus.emit('FRIEND_REQUEST_SENT', { fromUserId: user.id, toUserId: userId });
     } catch {
       toast.error('Failed to send request');
     }

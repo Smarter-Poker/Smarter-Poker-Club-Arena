@@ -158,8 +158,8 @@ export default function ClubLobby() {
           .maybeSingle();
         if (getIsMounted() && diamondData) setDiamondBalance(diamondData.balance || 0);
       }
-    } catch {
-      // Error loading club data - user will see empty state
+    } catch (err) {
+      console.error('[ClubLobby] Failed to load club data:', err);
     }
     if (getIsMounted()) setIsLoading(false);
   };

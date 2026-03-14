@@ -167,23 +167,27 @@ export default function FlashPoolPage() {
     loadBalance();
   }, [user?.id]);
 
-  // ── Bus listener for pool updates ──
+  // ── Bus listener for pool updates (debounced) ──
   useEffect(() => {
-    const unsub = masterBus.subscribe('GAME_STATE_UPDATED', (event) => {
-      const data = event.payload;
-      if (!data) return;
-      setPools((prev) =>
-        prev.map((p) =>
-          p.poolId === data.poolId
-            ? {
-                ...p,
-                activePlayers: data.activePlayers ?? p.activePlayers,
-                tablesRunning: data.tablesRunning ?? p.tablesRunning,
-              }
-            : p
-        )
-      );
-    });
+    const unsub = masterBus.subscribeDebounced(
+      'GAME_STATE_UPDATED',
+      (event) => {
+        const data = event.payload;
+        if (!data) return;
+        setPools((prev) =>
+          prev.map((p) =>
+            p.poolId === data.poolId
+              ? {
+                  ...p,
+                  activePlayers: data.activePlayers ?? p.activePlayers,
+                  tablesRunning: data.tablesRunning ?? p.tablesRunning,
+                }
+              : p
+          )
+        );
+      },
+      500
+    );
     return () => unsub();
   }, []);
 

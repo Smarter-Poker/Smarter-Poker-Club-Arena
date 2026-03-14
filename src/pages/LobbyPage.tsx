@@ -37,7 +37,7 @@ export default function LobbyPage() {
   const { user } = useAuthUser();
   useVisibilityRefresh(() => {
     tableService
-      .getTables()
+      .getActiveTables()
       .then(setTables)
       .catch(() => {});
   });

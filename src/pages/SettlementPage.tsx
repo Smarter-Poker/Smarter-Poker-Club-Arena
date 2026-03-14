@@ -19,6 +19,7 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import SecurityBadge from '../components/common/SecurityBadge';
 import SettlementReceipt from '../components/settlement/SettlementReceipt';
 import SettlementTimeline from '../components/settlement/SettlementTimeline';
+import PageSkeleton from '../components/common/PageSkeleton';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MONDAY 4AM COUNTDOWN — Live payout timer widget

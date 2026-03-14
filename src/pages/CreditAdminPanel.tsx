@@ -99,9 +99,13 @@ export default function CreditAdminPanel() {
   }, [loadAgents]);
 
   useEffect(() => {
-    const unsub = masterBus.subscribeDebounced('BALANCE_UPDATED', () => loadAgents(), 1000);
+    const unsubs = [
+      masterBus.subscribeDebounced('BALANCE_UPDATED', () => loadAgents(), 1000),
+      masterBus.subscribeDebounced('CREDIT_UPDATED', () => loadAgents(), 500),
+      masterBus.subscribeDebounced('AGENT_UPDATED', () => loadAgents(), 500),
+    ];
     return () => {
-      unsub();
+      unsubs.forEach((u) => u());
     };
   }, []);
 

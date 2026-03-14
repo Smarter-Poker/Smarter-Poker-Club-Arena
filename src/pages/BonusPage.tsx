@@ -78,6 +78,31 @@ export default function BonusPage() {
     }
   }, [user?.id]);
 
+  // ── Bus Listener: cross-page sync ──
+  useEffect(() => {
+    let isMounted = true;
+    const unsubs = [
+      masterBus.subscribeDebounced(
+        'BALANCE_UPDATED',
+        () => {
+          if (isMounted) loadBonuses(() => isMounted);
+        },
+        500
+      ),
+      masterBus.subscribeDebounced(
+        'DAILY_REWARD_CLAIMED',
+        () => {
+          if (isMounted) loadBonuses(() => isMounted);
+        },
+        500
+      ),
+    ];
+    return () => {
+      isMounted = false;
+      unsubs.forEach((u) => u());
+    };
+  }, []);
+
   const loadBonuses = async (getIsMounted?: () => boolean) => {
     if (!getIsMounted || getIsMounted()) setLoading(true);
     try {

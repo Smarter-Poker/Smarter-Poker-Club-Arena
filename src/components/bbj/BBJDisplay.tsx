@@ -665,7 +665,7 @@ export function useBBJ(clubId: string | null) {
         setBbjData({
           pool: {
             amount: Number(pool.main_balance) || 0,
-            handsContributed: Number(pool.hands_contributed) || 0,
+            handsContributed: Number(pool.total_contributed) || 0,
           },
           winners: (winners || []).map((w: Record<string, unknown>) => ({
             id: w.id as string,
@@ -714,7 +714,7 @@ export function useBBJ(clubId: string | null) {
                   pool: {
                     ...prev.pool,
                     amount: Number(payload.new.main_balance),
-                    handsContributed: Number(payload.new.hands_contributed),
+                    handsContributed: Number(payload.new.total_contributed),
                   },
                 }
               : prev

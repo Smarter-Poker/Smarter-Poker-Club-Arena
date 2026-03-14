@@ -21,7 +21,7 @@ interface JackpotInfo {
   main_balance: number;
   backup_balance: number;
   promo_balance: number;
-  hands_contributed: number;
+  total_contributed: number;
   last_hit_at?: string;
   last_hit_amount?: number;
 }
@@ -303,7 +303,7 @@ export default function BadBeatJackpotPage() {
         </div>
         <div className="info-card">
           <span className="info-label">Hands Dealt</span>
-          <span className="info-value">{(jackpot?.hands_contributed || 0).toLocaleString()}</span>
+          <span className="info-value">{(jackpot?.total_contributed || 0).toLocaleString()}</span>
         </div>
         {playerContribution > 0 && (
           <div

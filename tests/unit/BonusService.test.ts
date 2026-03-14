@@ -60,7 +60,7 @@ describe('BonusService', () => {
     it('should return default status when no data', async () => {
       const status = await bonusService.getBonusStatus('user-1');
       expect(status).toBeDefined();
-      expect(status.dailyStreak).toBe(0);
+      expect(status.streak).toBe(0);
       expect(status.canClaimDaily).toBe(true);
     });
   });

@@ -664,18 +664,31 @@ class TournamentService {
         console.error(`[TournamentService] Failed to insert tournament rake_record:`, e);
       }
 
-      // Update tournament total_rake field
+      // Update tournament total_rake atomically to prevent lost updates on concurrent registrations
       try {
-        const { data: tData } = await supabase
-          .from('tournaments')
-          .select('total_rake')
-          .eq('id', tournamentId)
-          .maybeSingle();
-        if (tData) {
-          await supabase
+        const { error: rakeIncErr } = await retryAsync(
+          () =>
+            supabase.rpc('increment_tournament_rake', {
+              p_tournament_id: tournamentId,
+              p_amount: rake,
+            }),
+          3
+        );
+        // Fallback: read-modify-write (still inside try/catch for non-existence of RPC)
+        if (rakeIncErr) {
+          const { data: tData } = await supabase
             .from('tournaments')
-            .update({ total_rake: (tData.total_rake || 0) + rake })
-            .eq('id', tournamentId);
+            .select('total_rake')
+            .eq('id', tournamentId)
+            .maybeSingle();
+          if (tData) {
+            const { error: fallbackErr } = await supabase
+              .from('tournaments')
+              .update({ total_rake: (tData.total_rake || 0) + rake })
+              .eq('id', tournamentId);
+            if (fallbackErr)
+              console.error('[TournamentService] total_rake update fallback failed:', fallbackErr);
+          }
         }
       } catch (e: unknown) {
         console.error(`[TournamentService] Failed to update tournament total_rake:`, e);
@@ -690,10 +703,12 @@ class TournamentService {
             .eq('id', tournament.union_id)
             .maybeSingle();
           if (unionData) {
-            await supabase
+            const { error: unionRakeErr } = await supabase
               .from('unions')
               .update({ total_rake: (unionData.total_rake || 0) + rake })
               .eq('id', tournament.union_id);
+            if (unionRakeErr)
+              console.error('[TournamentService] union total_rake update failed:', unionRakeErr);
           }
         } catch (e: unknown) {
           console.error(`[TournamentService] Failed to update union total_rake:`, e);
@@ -1152,12 +1167,14 @@ class TournamentService {
       const player = shuffled[i];
       const tableAssign = tableSeats[i % numTables];
 
-      await supabase.from('table_seats').insert({
+      const { error: seatErr } = await supabase.from('table_seats').insert({
         table_id: tableAssign.tableId,
         seat_number: tableAssign.nextSeat,
         user_id: player.user_id,
         stack: tournament.starting_chips,
       });
+      if (seatErr)
+        console.error(`[TournamentService] Failed to seat player ${player.user_id}:`, seatErr);
       tableAssign.nextSeat++;
     }
 
@@ -1719,7 +1736,12 @@ class TournamentService {
 
     if (finalizeErr) {
       // Fallback: just update prize_pool without the finalized flag
-      await supabase.from('tournaments').update({ prize_pool: finalPool }).eq('id', tournamentId);
+      const { error: fallbackErr } = await supabase
+        .from('tournaments')
+        .update({ prize_pool: finalPool })
+        .eq('id', tournamentId);
+      if (fallbackErr)
+        console.error('[TournamentService] finalizePrizePool fallback failed:', fallbackErr);
     }
 
     console.debug(
@@ -1810,7 +1832,11 @@ class TournamentService {
       await this.balanceTables(tournamentId);
 
       // Close the broken table
-      await supabase.from('tables').update({ status: 'closed' }).eq('id', tableToBreak.id);
+      const { error: closeErr } = await supabase
+        .from('tables')
+        .update({ status: 'closed' })
+        .eq('id', tableToBreak.id);
+      if (closeErr) console.error('[TournamentService] Failed to close broken table:', closeErr);
 
       return { tableMerged: true };
     }
@@ -2154,36 +2180,42 @@ class TournamentService {
       }
 
       // Record bounty payout
-      await supabase.from('tournament_bounties').insert({
+      const { error: bountyInsErr } = await supabase.from('tournament_bounties').insert({
         tournament_id: tournamentId,
         eliminated_player_id: eliminatedPlayerId,
         collector_player_id: collectorPlayerId,
         bounty_amount: collectorPortion,
         added_to_collector_bounty: addedToHead,
       });
+      if (bountyInsErr)
+        console.error('[TournamentService] Failed to record PKO bounty:', bountyInsErr);
 
       return { bountyAmount: collectorPortion, collectorNewBounty: newCollectorBounty };
     } else if (bountyConfig.bountyType === 'mystery') {
       // Mystery: Reveal hidden bounty value
       const mysteryValue = this.rollMysteryBounty(bountyConfig);
 
-      await supabase.from('tournament_bounties').insert({
+      const { error: mysteryInsErr } = await supabase.from('tournament_bounties').insert({
         tournament_id: tournamentId,
         eliminated_player_id: eliminatedPlayerId,
         collector_player_id: collectorPlayerId,
         bounty_amount: mysteryValue,
         is_mystery_revealed: true,
       });
+      if (mysteryInsErr)
+        console.error('[TournamentService] Failed to record mystery bounty:', mysteryInsErr);
 
       return { bountyAmount: mysteryValue };
     } else {
       // Fixed bounty
-      await supabase.from('tournament_bounties').insert({
+      const { error: fixedInsErr } = await supabase.from('tournament_bounties').insert({
         tournament_id: tournamentId,
         eliminated_player_id: eliminatedPlayerId,
         collector_player_id: collectorPlayerId,
         bounty_amount: bountyAmount,
       });
+      if (fixedInsErr)
+        console.error('[TournamentService] Failed to record fixed bounty:', fixedInsErr);
 
       return { bountyAmount };
     }

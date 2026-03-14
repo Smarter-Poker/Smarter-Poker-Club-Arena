@@ -263,7 +263,8 @@ class DailyChallengeServiceClass {
       completed: false,
     }));
 
-    await supabase.from('user_daily_challenges').insert(inserts);
+    const { error: insertErr } = await supabase.from('user_daily_challenges').insert(inserts);
+    if (insertErr) console.error('[DailyChallenge] Failed to assign daily challenges:', insertErr);
 
     // Return with challenge data
     return todaysChallenges.map((c, i) => ({
@@ -304,7 +305,8 @@ class DailyChallengeServiceClass {
       completed: false,
     }));
 
-    await supabase.from('user_daily_challenges').insert(inserts);
+    const { error: insertErr } = await supabase.from('user_daily_challenges').insert(inserts);
+    if (insertErr) console.error('[DailyChallenge] Failed to assign weekly challenges:', insertErr);
 
     return weeklyChallenges.map((c, i) => ({
       id: `${userId}-${c.id}-${weekKey}`,
@@ -346,7 +348,9 @@ class DailyChallengeServiceClass {
       completed: false,
     }));
 
-    await supabase.from('user_daily_challenges').insert(inserts);
+    const { error: insertErr } = await supabase.from('user_daily_challenges').insert(inserts);
+    if (insertErr)
+      console.error('[DailyChallenge] Failed to assign monthly challenges:', insertErr);
 
     return monthlyChallenges.map((c, i) => ({
       id: `${userId}-${c.id}-${monthKey}`,

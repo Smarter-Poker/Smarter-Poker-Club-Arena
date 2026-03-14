@@ -231,13 +231,8 @@ export default function XMTTPage() {
   const handleUnregister = async (tournamentId: string) => {
     if (!user || !clubId) return;
     try {
-      const { error } = await supabase
-        .from('tournament_players')
-        .delete()
-        .eq('tournament_id', tournamentId)
-        .eq('user_id', user.id);
-      if (error) throw error;
-      masterBus.emit('TOURNAMENT_REGISTERED', { tournamentId, clubId: clubId || undefined });
+      // unregisterPlayer handles buy-in refund, status validation, CAS deletion, and rollback
+      await tournamentService.unregisterPlayer(tournamentId, user.id);
       loadTournaments(clubId);
       if (selectedTournament === tournamentId) loadDetail(tournamentId);
     } catch (err: any) {

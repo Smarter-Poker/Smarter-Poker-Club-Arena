@@ -480,6 +480,7 @@ export default function UnionDashboardPage() {
                         .eq('union_id', unionId)
                         .eq('club_id', editCommClub.id);
                       if (commErr) throw commErr;
+                      masterBus.emit('CLUB_UPDATED', { clubId: editCommClub.id });
                       setSuccess('Commission updated');
                       setEditCommClub(null);
                       loadDashboard(unionId);
@@ -942,22 +943,15 @@ export default function UnionDashboardPage() {
                     onClick={async () => {
                       setProcessing(true);
                       try {
-                        // TODO(BUG #19): PHANTOM TRANSACTION — this INSERT only logs to union_transactions
-                        // but does NOT atomically debit union_wallets.chip_balance or credit
-                        // the club's wallet. Needs Supabase RPC: fn_union_send_chips_to_club
-                        const { error: txErr } = await supabase.from('union_transactions').insert({
-                          union_id: unionId,
-                          club_id: transferForm.clubId,
-                          amount: parseInt(transferForm.amount),
-                          tx_type: 'send_to_club',
-                          wallet: 'chip',
-                          direction: 'debit',
-                          notes: transferForm.notes || undefined,
-                        });
-                        if (txErr) throw txErr;
-                        setSuccess('Chips sent');
-                        setTransferForm({ clubId: '', amount: '', notes: '' });
-                        loadDashboard(unionId);
+                        // BLOCKED: Atomic RPC fn_union_send_chips_to_club required to prevent phantom transactions.
+                        // A raw INSERT to union_transactions does NOT move money — it only creates a log record.
+                        // This MUST be replaced with an atomic RPC that debits union_wallets.chip_balance
+                        // AND credits the club's wallet in a single transaction.
+                        throw new Error(
+                          'Union chip transfers are temporarily disabled. ' +
+                            'Atomic RPC (fn_union_send_chips_to_club) must be deployed to Supabase before this feature can be used safely. ' +
+                            'Without it, transfers would create phantom log records without actually moving chips.'
+                        );
                       } catch (err: any) {
                         setError(err.message);
                       } finally {
@@ -1369,6 +1363,7 @@ export default function UnionDashboardPage() {
                         .update(updates)
                         .eq('id', unionId);
                       if (setErr) throw setErr;
+                      masterBus.emit('CLUB_UPDATED', { clubId: unionId || '' });
                       setSuccess('Settings saved');
                       loadDashboard(unionId);
                     } catch (err: any) {

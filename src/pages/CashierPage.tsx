@@ -162,7 +162,6 @@ export default function CashierPage() {
   const isMounted = useIsMounted();
   useEffect(() => {
     return () => {
-      isMounted.current = false;
       if (abortControllerRef.current) abortControllerRef.current.abort();
     };
   }, []);

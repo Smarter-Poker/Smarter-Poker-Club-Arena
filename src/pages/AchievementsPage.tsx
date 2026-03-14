@@ -231,13 +231,6 @@ export default function AchievementsPage() {
   const isMounted = useIsMounted();
 
   useEffect(() => {
-    isMounted.current = true;
-    return () => {
-      isMounted.current = false;
-    };
-  }, []);
-
-  useEffect(() => {
     if (user?.id) {
       loadAchievements();
 

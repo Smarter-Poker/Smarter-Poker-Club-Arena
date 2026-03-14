@@ -55,13 +55,6 @@ export default function NotificationCenter() {
   const [visibleNotifications, setVisibleNotifications] = useState(new Set<number>());
   const isMounted = useIsMounted();
 
-  useEffect(() => {
-    isMounted.current = true;
-    return () => {
-      isMounted.current = false;
-    };
-  }, []);
-
   const loadNotifications = useCallback(async () => {
     if (!user?.id) return;
     setLoading(true);

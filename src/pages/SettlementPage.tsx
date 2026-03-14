@@ -231,9 +231,7 @@ export default function SettlementPage() {
   const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    isMounted.current = true;
     return () => {
-      isMounted.current = false;
       if (abortControllerRef.current) abortControllerRef.current.abort();
     };
   }, []);

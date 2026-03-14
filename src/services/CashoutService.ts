@@ -247,11 +247,12 @@ class CashoutServiceClass {
           userId: cashout.playerId,
           amount: -cashout.amount,
         });
-        // Agent balance updated — resolve their user_id from the agents table
+        // agentId here is auth.users.id (from user.id in calling components)
+        // Query by user_id, NOT by agents.id (PK), since they are different UUIDs
         const { data: agentData } = await supabase
           .from('agents')
           .select('user_id')
-          .eq('id', agentId)
+          .eq('user_id', agentId)
           .maybeSingle();
 
         if (agentData?.user_id) {

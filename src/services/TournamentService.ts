@@ -2300,8 +2300,8 @@ class TournamentService {
 
     masterBus.emit('WAITLIST_POSITION_CHANGED', {
       tableId: tournamentId,
-      userId,
       position,
+      tableName: 'tournament',
     });
 
     return { position };
@@ -2321,8 +2321,8 @@ class TournamentService {
 
     masterBus.emit('WAITLIST_POSITION_CHANGED', {
       tableId: tournamentId,
-      userId,
       position: 0,
+      tableName: 'tournament',
     });
   }
 

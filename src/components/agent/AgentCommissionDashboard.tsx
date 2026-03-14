@@ -193,12 +193,22 @@ export function AgentCommissionDashboard() {
       }
 
       // Load sub-agents
-      const { data: subAgentsData } = await supabase
+      // parent_agent_id stores agents.id PK (FK), NOT auth.users.id
+      // Must resolve current user's agent PK first
+      const { data: myAgent } = await supabase
         .from('agents')
-        .select(
-          'id, username, avatar_url, player_count, total_commission, commission_rate, created_at'
-        )
-        .eq('parent_agent_id', user.id);
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      const { data: subAgentsData } = myAgent
+        ? await supabase
+            .from('agents')
+            .select(
+              'id, user_id, player_count, total_commission, commission_rate, created_at, profiles!agents_user_id_fkey(display_name, avatar_url)'
+            )
+            .eq('parent_agent_id', myAgent.id)
+        : { data: null };
 
       if (subAgentsData) {
         setSubAgents(

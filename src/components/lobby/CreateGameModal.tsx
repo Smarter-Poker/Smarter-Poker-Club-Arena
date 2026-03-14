@@ -16,6 +16,7 @@ import React, { useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useAuthUser } from '../../hooks/useAuthUser';
+import haptic from '../../utils/haptic';
 
 const FB = {
   bg: '#18191A',

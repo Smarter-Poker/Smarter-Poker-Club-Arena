@@ -8,6 +8,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { masterBus } from '../../core/MasterBus';
+import haptic from '../../utils/haptic';
 
 const FB = { bg: '#18191A', card: '#242526', text: '#E4E6EB', dim: '#B0B3B8' };
 
@@ -181,6 +182,7 @@ export default function MysteryBountyReveal({
       return () => clearTimeout(t1);
     }
     if (phase === 'reveal') {
+      haptic('allIn');
       if (reveal?.amount > 10000) fireConfetti(isJackpot);
       const t2 = setTimeout(() => {
         setPhase('done');

@@ -12,6 +12,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
+import haptic from '../../utils/haptic';
 
 const TABS = [
   { id: 'all', label: 'ALL' },

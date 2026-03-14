@@ -10,6 +10,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
+import haptic from '../../utils/haptic';
 
 interface TableRow {
   id: string;

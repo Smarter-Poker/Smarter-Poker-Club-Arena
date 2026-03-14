@@ -93,7 +93,8 @@ export default function AgentPortalPage() {
       const { data, error } = await supabase
         .from('agents')
         .select('agent_wallet_balance, player_wallet_balance, promo_wallet_balance, credit_limit')
-        .eq('id', user.id)
+        // user.id is auth.users.id, NOT agents.id (PK) — query by user_id
+        .eq('user_id', user.id)
         .maybeSingle();
 
       if (error || !data) return;

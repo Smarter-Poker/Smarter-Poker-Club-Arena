@@ -611,17 +611,22 @@ class UnionServiceClass {
    */
   async updateClubSplits(unionId: string, splits: Record<string, number>): Promise<boolean> {
     // Update each club's commission rate in union_clubs
+    let anyFailed = false;
     for (const [clubId, splitPercent] of Object.entries(splits)) {
-      await supabase
+      const { error: splitErr } = await supabase
         .from('union_clubs')
         .update({ club_commission_rate: splitPercent / 100 })
         .eq('union_id', unionId)
         .eq('club_id', await resolveClubUUID(clubId));
+      if (splitErr) {
+        console.error(`[UnionService] Failed to update split for club ${clubId}:`, splitErr);
+        anyFailed = true;
+      }
     }
 
     masterBus.emit('UNION_UPDATED', { unionId });
 
-    return true;
+    return !anyFailed;
   }
 
   // ─────────────────────────────────────────────────────────────────────────────

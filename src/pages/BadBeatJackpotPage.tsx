@@ -17,7 +17,7 @@ import PageSkeleton from '../components/common/PageSkeleton';
 interface JackpotInfo {
   id: string;
   club_id: string;
-  pool_amount: number;
+  pool_amount?: number; // Legacy — not in schema, kept for backward compat
   main_balance: number;
   backup_balance: number;
   promo_balance: number;
@@ -72,7 +72,7 @@ export default function BadBeatJackpotPage() {
           (payload) => {
             if (!isMounted) return;
             const newData = payload.new as JackpotInfo;
-            if (newData.pool_amount > prevAmountRef.current) {
+            if ((newData.main_balance || 0) > prevAmountRef.current) {
               setJustUpdated(true);
               if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
               flashTimerRef.current = setTimeout(() => {
@@ -80,7 +80,7 @@ export default function BadBeatJackpotPage() {
                 flashTimerRef.current = null;
               }, 2000);
             }
-            prevAmountRef.current = newData.pool_amount;
+            prevAmountRef.current = newData.main_balance || 0;
             setJackpot(newData);
           }
         )
@@ -127,7 +127,7 @@ export default function BadBeatJackpotPage() {
         if (getIsMounted && !getIsMounted()) return;
         if (jackpotData) {
           setJackpot(jackpotData);
-          prevAmountRef.current = jackpotData.pool_amount;
+          prevAmountRef.current = jackpotData.main_balance || 0;
         }
 
         const { data: historyData } = await supabase
@@ -210,13 +210,11 @@ export default function BadBeatJackpotPage() {
       <div className={`jackpot-display ${justUpdated ? 'just-updated' : ''}`}>
         <div className="jackpot-glow" />
         <span className="jackpot-label">Main Jackpot</span>
-        <span className="jackpot-amount">
-          {(jackpot?.main_balance || jackpot?.pool_amount || 0).toLocaleString()}
-        </span>
+        <span className="jackpot-amount">{(jackpot?.main_balance || 0).toLocaleString()}</span>
       </div>
 
       {/* 100K Pivot Law Threshold Alert */}
-      {(jackpot?.pool_amount || 0) > 50000 && (
+      {(jackpot?.main_balance || 0) > 50000 && (
         <div
           style={{
             margin: '0 1rem 0.75rem',
@@ -243,7 +241,7 @@ export default function BadBeatJackpotPage() {
               🎯 100K Pivot Alert
             </span>
             <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)', marginTop: '2px' }}>
-              Pool at {(((jackpot?.pool_amount || 0) / 100000) * 100).toFixed(1)}% of pivot
+              Pool at {(((jackpot?.main_balance || 0) / 100000) * 100).toFixed(1)}% of pivot
               threshold
             </div>
           </div>
@@ -259,7 +257,7 @@ export default function BadBeatJackpotPage() {
             <div
               style={{
                 height: '100%',
-                width: `${Math.min(100, ((jackpot?.pool_amount || 0) / 100000) * 100)}%`,
+                width: `${Math.min(100, ((jackpot?.main_balance || 0) / 100000) * 100)}%`,
                 background: 'linear-gradient(90deg, #FFD700, #FF6B00)',
                 borderRadius: '3px',
                 transition: 'width 1s ease',

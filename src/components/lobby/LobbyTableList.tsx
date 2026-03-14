@@ -74,7 +74,7 @@ export function LobbyTableList({ clubId, gameType, onJoinTable }: LobbyTableList
       let query = supabase
         .from('tables')
         .select(
-          'id, name, game_type, game_variant, small_blind, big_blind, max_players, current_players, status, stakes'
+          'id, name, game_type, game_variant, small_blind, big_blind, max_players, current_players, status, stakes, player_count, avg_pot, waitlist_count, is_private, settings'
         )
         .eq('status', 'active');
 

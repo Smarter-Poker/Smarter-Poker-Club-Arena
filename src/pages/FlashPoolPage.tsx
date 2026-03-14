@@ -167,6 +167,29 @@ export default function FlashPoolPage() {
     loadBalance();
   }, [user?.id]);
 
+  // ── Bus listener: keep balance in sync when chips change on other pages ──
+  useEffect(() => {
+    if (!user?.id) return;
+    const unsub = masterBus.subscribeDebounced(
+      'BALANCE_UPDATED',
+      async () => {
+        try {
+          const { data } = await supabase
+            .from('club_members')
+            .select('chip_balance')
+            .eq('user_id', user.id)
+            .limit(1)
+            .maybeSingle();
+          if (data) setUserBalance(data.chip_balance || 0);
+        } catch {
+          /* best effort */
+        }
+      },
+      500
+    );
+    return () => unsub();
+  }, [user?.id]);
+
   // ── Bus listener for pool updates (debounced) ──
   useEffect(() => {
     const unsub = masterBus.subscribeDebounced(

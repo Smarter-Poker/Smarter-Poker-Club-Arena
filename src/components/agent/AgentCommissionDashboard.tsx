@@ -171,7 +171,9 @@ export function AgentCommissionDashboard() {
       // Load recent records
       const { data: recordsData } = await supabase
         .from('commission_records')
-        .select('*')
+        .select(
+          'id, player_id, player_name, amount, rake_amount, commission_rate, created_at, table_id, table_name'
+        )
         .eq('agent_id', user.id)
         .order('created_at', { ascending: false })
         .limit(50);

@@ -90,7 +90,7 @@ export default function CommissionHistoryModal({
       // Fetch commission entries
       let query = supabase
         .from('agent_commissions')
-        .select('*')
+        .select('id, created_at, type, amount, description')
         .eq('agent_id', agentId)
         .order('created_at', { ascending: false });
 

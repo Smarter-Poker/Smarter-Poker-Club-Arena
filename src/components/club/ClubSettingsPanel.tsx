@@ -77,7 +77,7 @@ export function ClubSettingsPanel({ clubId, isOpen, onClose, onSave }: ClubSetti
       const { data, error } = await supabase
         .from('clubs')
         .select(
-          'id, name, description, logo, is_private, require_approval, min_buy_in, max_buy_in, rake_percent, rake_cap, default_game_type, allow_insurance'
+          'id, name, description, logo, is_private, require_approval, min_buy_in, max_buy_in, rake_percent, rake_cap, default_game_type, allow_insurance, allow_run_it_twice, allow_straddle, auto_approve_agents'
         )
         .eq(clubCol, clubVal)
         .maybeSingle();

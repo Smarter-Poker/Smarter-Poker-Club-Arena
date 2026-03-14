@@ -91,7 +91,18 @@ export interface ClubMember {
   user_id: string;
   club_id: string;
   role: MemberRole;
+  status?: string;
+  tier?: string | null;
+  chip_balance?: number;
+  credit_used?: number;
   chips: number;
+  diamonds?: number;
+  reputation_xp?: number;
+  trust_score?: number;
+  rank_level?: number;
+  sessions_played?: number;
+  orange_ball_status?: string | null;
+  parent_agent_id?: string | null;
   total_hands: number;
   total_won: number;
   total_lost: number;
@@ -99,7 +110,7 @@ export interface ClubMember {
   notes?: string; // Admin notes
   joined_at: string;
   last_active?: string;
-  profile?: UserProfile;
+  profile?: UserProfile | { username?: string; avatar_url?: string }[];
 }
 
 export type MemberRole = 'owner' | 'super_agent' | 'agent' | 'manager' | 'member' | 'guest';

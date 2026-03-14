@@ -78,6 +78,21 @@ export interface ClubMember {
   joined_at: string;
   status: MemberStatus;
   agent_id: string | null; // If this member is managed by an agent
+  tier?: string | null;
+  credit_used?: number;
+  diamonds?: number;
+  reputation_xp?: number;
+  trust_score?: number;
+  rank_level?: number;
+  sessions_played?: number;
+  orange_ball_status?: string | null;
+  parent_agent_id?: string | null;
+  chips?: number;
+  total_hands?: number;
+  total_won?: number;
+  total_lost?: number;
+  rake_generated?: number;
+  profile?: { username?: string; avatar_url?: string }[];
 }
 
 export type MemberRole = 'owner' | 'admin' | 'agent' | 'member';

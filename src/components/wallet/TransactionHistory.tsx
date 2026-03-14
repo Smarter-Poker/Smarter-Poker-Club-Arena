@@ -127,7 +127,9 @@ export function TransactionHistory({ walletId, limit = 20 }: TransactionHistoryP
     try {
       let query = supabase
         .from('wallet_transactions')
-        .select('*')
+        .select(
+          'id, type, category, amount, balance_after, description, created_at, wallet_id, user_id, reference_id, wallet_type'
+        )
         .order('created_at', { ascending: false })
         .limit(limit);
 

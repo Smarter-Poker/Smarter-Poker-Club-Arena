@@ -72,7 +72,10 @@ export const PlayerNotes: React.FC<PlayerNotesProps> = ({ playerId, onClose, mod
     if (!user?.id) return;
 
     try {
-      let query = supabase.from('player_notes').select('*').eq('user_id', user.id);
+      let query = supabase
+        .from('player_notes')
+        .select('id, user_id, player_id, note, color, tags, updated_at, created_at')
+        .eq('user_id', user.id);
 
       if (playerId) {
         query = query.eq('player_id', playerId);

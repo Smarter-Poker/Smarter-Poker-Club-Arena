@@ -79,7 +79,7 @@ export function HandReplayer({ handId, isOpen, onClose }: HandReplayerProps) {
     try {
       const { data, error } = await supabase
         .from('hand_history')
-        .select('*')
+        .select('id, players, hero_seat, actions, community_cards, pot_size, winners')
         .eq('id', handId)
         .maybeSingle();
 

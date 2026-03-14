@@ -96,7 +96,7 @@ export default function PlayerNotesPanel({
     setLoading(true);
     const { data } = await supabase
       .from('player_notes')
-      .select('*')
+      .select('id, user_id, target_user_id, note, color, tags')
       .eq('user_id', user?.id)
       .eq('target_user_id', targetUserId)
       .maybeSingle();

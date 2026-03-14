@@ -57,7 +57,7 @@ export default function TableChatHUD({ tableId, userId, isMuted = false }: Table
     const loadMessages = async () => {
       const { data } = await supabase
         .from('table_chat')
-        .select('*')
+        .select('id, table_id, user_id, username, message, created_at, sender_id, message_type')
         .eq('table_id', tableId)
         .order('created_at', { ascending: false })
         .limit(50);

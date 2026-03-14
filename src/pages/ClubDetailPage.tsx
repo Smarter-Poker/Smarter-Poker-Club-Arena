@@ -353,6 +353,7 @@ export default function ClubDetailPage() {
   const [agentsLoading, setAgentsLoading] = useState(false);
   const [showAgentManager, setShowAgentManager] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
+  const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date());
   const [editedSettings, setEditedSettings] = useState<Partial<ClubSettings>>({});
   const [showMemberMenu, setShowMemberMenu] = useState<string | null>(null);
   const [userRole, setUserRole] = useState<'owner' | 'admin' | 'agent' | 'member'>('member');
@@ -548,7 +549,10 @@ export default function ClubDetailPage() {
 
       if (clubError || !clubData) {
         console.error('[ClubDetailPage] Failed to load club:', clubError);
-        if (!getIsMounted || getIsMounted()) setLoading(false);
+        if (!getIsMounted || getIsMounted()) {
+          setLoading(false);
+          setLastRefreshed(new Date());
+        }
         return;
       }
 
@@ -767,6 +771,9 @@ export default function ClubDetailPage() {
             <span className={styles.heroBadge} style={{ borderColor: '#22c55e' }}>
               <span className={styles.heroBadgeDot} style={{ background: '#22c55e' }} />
               {onlineCount} Online
+            </span>
+            <span className={styles.heroBadge} style={{ borderColor: '#6a7a8a', fontSize: '11px' }}>
+              Updated {lastRefreshed.toLocaleTimeString()}
             </span>
             <span className={styles.heroBadge} style={{ borderColor: '#60a5fa' }}>
               {club.memberCount} Members

@@ -234,6 +234,12 @@ export default function ClubSettingsPage() {
         }
       );
       toast.success('Settings saved!');
+      masterBus.emit('ADMIN_ACTION', {
+        action: 'settings_updated',
+        target: clubId || '',
+        details: { changedFields },
+        userId: user?.id,
+      });
       // Update original baseline so diff resets
       originalSettings.current = { ...settings };
       navigate(`/clubs/${clubId}`);

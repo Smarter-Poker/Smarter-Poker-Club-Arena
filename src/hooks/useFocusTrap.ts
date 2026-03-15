@@ -55,9 +55,10 @@ export function useFocusTrap(isActive: boolean) {
     // Focus the first focusable element inside the container
     const focusableElements =
       containerRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTORS);
+    let rafId: number | null = null;
     if (focusableElements.length > 0) {
       // Small delay to allow the modal animation to start
-      requestAnimationFrame(() => {
+      rafId = requestAnimationFrame(() => {
         focusableElements[0]?.focus();
       });
     }
@@ -65,6 +66,7 @@ export function useFocusTrap(isActive: boolean) {
     document.addEventListener('keydown', handleKeyDown);
 
     return () => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
       document.removeEventListener('keydown', handleKeyDown);
       // Restore focus to the previously focused element
       previousFocusRef.current?.focus();

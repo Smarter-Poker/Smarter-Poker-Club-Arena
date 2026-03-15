@@ -9,6 +9,7 @@ import { clubService } from '../../services/ClubService';
 import { tableService } from '../../services/TableService';
 import { tournamentService } from '../../services/TournamentService';
 import { supabase } from '../../lib/supabase';
+import { waitForAuth } from '../../utils/waitForAuth';
 import { masterBus } from '../../core/MasterBus';
 import { useUserStore } from '../../stores/useUserStore';
 import type { Club, PokerTable, Tournament } from '../../types/database.types';
@@ -56,18 +57,11 @@ export default function ClubLobby() {
 
     const init = async () => {
       // In iframe context, wait for auth to be set by the parent via postMessage.
-      const inIframe = window.parent !== window;
-      if (inIframe) {
-        for (let attempt = 0; attempt < 10; attempt++) {
-          const {
-            data: { session },
-          } = await supabase.auth.getSession();
-          if (session?.user) break;
-          if (cancelled || !isMountedRef.current) return;
-          await new Promise((r) => setTimeout(r, 300));
-        }
-        if (cancelled || !isMountedRef.current) return;
+      const authReady = await waitForAuth(() => !cancelled && isMountedRef.current);
+      if (!authReady) {
+        console.warn('[ClubLobby] Auth not ready — proceeding anyway');
       }
+      if (cancelled || !isMountedRef.current) return;
 
       // Check union membership first
       try {

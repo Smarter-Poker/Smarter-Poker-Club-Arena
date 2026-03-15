@@ -17,6 +17,7 @@ import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useWalletStore } from '../../stores/useWalletStore';
+import { useAuthUser } from '../../hooks/useAuthUser';
 import HamburgerMenu from './HamburgerMenu';
 import styles from './GlobalHeader.module.css';
 
@@ -30,29 +31,29 @@ interface GlobalHeaderProps {
 
 export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
   const { loadBalances, loadDiamonds } = useWalletStore();
+  const { user: authUser } = useAuthUser();
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [notificationCount, setNotificationCount] = useState(0);
   const [unreadMessages, setUnreadMessages] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
 
+  // Load user data when auth user becomes available (no more getUser() calls)
   useEffect(() => {
     let mounted = true;
+    if (!authUser?.id) return;
+
+    const userId = authUser.id;
 
     const loadUserData = async () => {
       try {
-        const {
-          data: { user: authUser },
-        } = await supabase.auth.getUser();
-        if (!authUser?.id) return;
-
-        loadBalances(authUser.id);
-        loadDiamonds(authUser.id);
+        loadBalances(userId);
+        loadDiamonds(userId);
 
         // Fetch profile avatar
         const { data: profile } = await supabase
           .from('profiles')
           .select('avatar_url')
-          .eq('id', authUser.id)
+          .eq('id', userId)
           .maybeSingle();
 
         if (profile && mounted) {
@@ -63,7 +64,7 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
         const { count: notifCount } = await supabase
           .from('notifications')
           .select('*', { count: 'exact', head: true })
-          .eq('user_id', authUser.id)
+          .eq('user_id', userId)
           .eq('read', false);
         if (mounted) setNotificationCount(notifCount || 0);
 
@@ -71,7 +72,7 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
         const { count: msgCount } = await supabase
           .from('messages')
           .select('*', { count: 'exact', head: true })
-          .eq('recipient_id', authUser.id)
+          .eq('recipient_id', userId)
           .eq('read', false);
         if (mounted) setUnreadMessages(msgCount || 0);
       } catch (e) {
@@ -84,63 +85,54 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
     // ─── MASTER BUS LISTENERS (#4: Debounced balance refresh) ───
     let unsubWallet: (() => void) | null = null;
     let unsubProfile: (() => void) | null = null;
-    let activeChannelKey: string | null = null;
 
-    const setupRealtime = async () => {
-      const { data } = await supabase.auth.getUser();
-      if (!data.user?.id) return;
+    const activeChannelKey = `header-sync-${userId}`;
+    const channel = masterBus.getOrCreateChannel(activeChannelKey);
 
-      activeChannelKey = `header-sync-${data.user.id}`;
-      const channel = masterBus.getOrCreateChannel(activeChannelKey);
-
-      channel
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'notifications',
-            filter: `user_id=eq.${data.user.id}`,
-          },
-          async () => {
-            if (!mounted) return;
-            const { count } = await supabase
-              .from('notifications')
-              .select('*', { count: 'exact', head: true })
-              .eq('user_id', data.user.id)
-              .eq('read', false);
-            if (mounted) setNotificationCount(count || 0);
-          }
-        )
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'messages',
-            filter: `recipient_id=eq.${data.user.id}`,
-          },
-          async () => {
-            if (!mounted) return;
-            const { count } = await supabase
-              .from('messages')
-              .select('*', { count: 'exact', head: true })
-              .eq('recipient_id', data.user.id)
-              .eq('read', false);
-            if (mounted) setUnreadMessages(count || 0);
-          }
-        )
-        .subscribe();
-    };
-
-    setupRealtime();
+    channel
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'notifications',
+          filter: `user_id=eq.${userId}`,
+        },
+        async () => {
+          if (!mounted) return;
+          const { count } = await supabase
+            .from('notifications')
+            .select('*', { count: 'exact', head: true })
+            .eq('user_id', userId)
+            .eq('read', false);
+          if (mounted) setNotificationCount(count || 0);
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'messages',
+          filter: `recipient_id=eq.${userId}`,
+        },
+        async () => {
+          if (!mounted) return;
+          const { count } = await supabase
+            .from('messages')
+            .select('*', { count: 'exact', head: true })
+            .eq('recipient_id', userId)
+            .eq('read', false);
+          if (mounted) setUnreadMessages(count || 0);
+        }
+      )
+      .subscribe();
 
     // #4: Debounced — collapses rapid-fire wallet refreshes into one call
     unsubWallet = masterBus.subscribeDebounced(
       'WALLET_REFRESHED',
-      async () => {
-        const { data } = await supabase.auth.getUser();
-        if (data.user?.id && mounted) loadBalances(data.user.id);
+      () => {
+        if (mounted) loadBalances(userId);
       },
       300
     );
@@ -155,11 +147,9 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
       mounted = false;
       unsubWallet?.();
       unsubProfile?.();
-      if (activeChannelKey) {
-        masterBus.removeRegisteredChannel(activeChannelKey);
-      }
+      masterBus.removeRegisteredChannel(activeChannelKey);
     };
-  }, [loadBalances, loadDiamonds]);
+  }, [authUser?.id, loadBalances, loadDiamonds]);
 
   const handleHubClick = () => {
     navigateToHub('/hub');

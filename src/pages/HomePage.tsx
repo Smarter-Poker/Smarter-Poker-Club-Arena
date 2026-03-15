@@ -23,6 +23,7 @@ import {
 } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { waitForAuth } from '../utils/waitForAuth';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { ClubsService } from '../services/ClubsService';
 import { useToast } from '../components/common/Toast';
@@ -835,34 +836,14 @@ function HomePageInner() {
       }, 12_000);
 
       try {
-        // In iframe context, wait for auth to actually be set by the parent.
-        // The parent sends SMARTER_AUTH_TOKEN via postMessage → App.tsx calls setSession().
-        // Instead of a fragile 800ms timeout, we poll getSession() with backoff.
-        const inIframe = window.parent !== window;
-        if (inIframe) {
-          let authReady = false;
-          for (let attempt = 0; attempt < 10; attempt++) {
-            const {
-              data: { session },
-            } = await supabase.auth.getSession();
-            if (session?.user) {
-              authReady = true;
-              break;
-            }
-            if (getIsMounted && !getIsMounted()) {
-              clearTimeout(loadingTimeout);
-              return;
-            }
-            // Wait 300ms between checks (total max wait: 3s)
-            await new Promise((r) => setTimeout(r, 300));
-          }
-          if (!authReady) {
-            console.warn('[HomePage] Auth not ready after 3s — proceeding anyway');
-          }
-          if (getIsMounted && !getIsMounted()) {
-            clearTimeout(loadingTimeout);
-            return;
-          }
+        // In iframe context, wait for auth to be set by the parent via postMessage.
+        const authReady = await waitForAuth(getIsMounted || undefined);
+        if (!authReady) {
+          console.warn('[HomePage] Auth not ready — proceeding anyway');
+        }
+        if (getIsMounted && !getIsMounted()) {
+          clearTimeout(loadingTimeout);
+          return;
         }
 
         const {

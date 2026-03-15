@@ -80,30 +80,33 @@ function ShellContent() {
     scheduleStaleCacheReaper();
   }, []);
 
-  // Real-time notifications
+  // Real-time notifications — uses useAuthUser() hook instead of getUser()
   useEffect(() => {
     let mounted = true;
+    if (!user?.id) return;
+
+    const userId = user.id;
+
     const setupNotifications = async () => {
-      const {
-        data: { user: authUser },
-      } = await supabase.auth.getUser();
-      if (!authUser || !mounted) return;
+      try {
+        // Get initial count
+        const count = await notificationService.getUnreadCount(userId);
+        if (!mounted) return;
+        setUnreadCount(count);
 
-      // Get initial count
-      const count = await notificationService.getUnreadCount(authUser.id);
-      if (!mounted) return;
-      setUnreadCount(count);
-
-      // Subscribe to real-time updates
-      await notificationService.subscribe(authUser.id, {
-        onNew: () => {
-          if (mounted) setUnreadCount((prev) => prev + 1);
-        },
-        onUpdate: async () => {
-          const newCount = await notificationService.getUnreadCount(authUser.id);
-          if (mounted) setUnreadCount(newCount);
-        },
-      });
+        // Subscribe to real-time updates
+        await notificationService.subscribe(userId, {
+          onNew: () => {
+            if (mounted) setUnreadCount((prev) => prev + 1);
+          },
+          onUpdate: async () => {
+            const newCount = await notificationService.getUnreadCount(userId);
+            if (mounted) setUnreadCount(newCount);
+          },
+        });
+      } catch (err) {
+        console.error('[Shell] Notification setup failed:', err);
+      }
     };
 
     setupNotifications();
@@ -112,7 +115,7 @@ function ShellContent() {
       mounted = false;
       notificationService.unsubscribe();
     };
-  }, []);
+  }, [user?.id]);
 
   // Detect if we're inside a specific club (Club Arena context)
   // Club Arena is its own business - no global header needed

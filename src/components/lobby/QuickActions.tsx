@@ -31,8 +31,7 @@ export default function QuickActions() {
   const handleQuickSeat = async () => {
     if (!user?.id) {
       toast.error('Please log in to join a table');
-      navigate('/auth');
-      return;
+      return; // AuthGuard will handle redirect if session is truly gone
     }
 
     try {
@@ -109,8 +108,7 @@ export default function QuickActions() {
   const handleCreateTable = () => {
     if (!user?.id) {
       toast.error('Please log in to create a table');
-      navigate('/auth');
-      return;
+      return; // AuthGuard will handle redirect if session is truly gone
     }
     // Navigate to clubs page — user picks a club, then creates table within it
     navigate('/clubs');

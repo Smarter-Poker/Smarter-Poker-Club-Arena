@@ -15,6 +15,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { waitForAuth } from '../utils/waitForAuth';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useWalletStore } from '../stores/useWalletStore';
@@ -376,18 +377,11 @@ export default function ClubHomePage() {
 
     try {
       // In iframe context, wait for auth to be set by the parent via postMessage.
-      const inIframe = window.parent !== window;
-      if (inIframe) {
-        for (let attempt = 0; attempt < 10; attempt++) {
-          const {
-            data: { session },
-          } = await supabase.auth.getSession();
-          if (session?.user) break;
-          if (getIsMounted && !getIsMounted()) return;
-          await new Promise((r) => setTimeout(r, 300));
-        }
-        if (getIsMounted && !getIsMounted()) return;
+      const authReady = await waitForAuth(getIsMounted || undefined);
+      if (!authReady) {
+        console.warn('[ClubHomePage] Auth not ready — proceeding anyway');
       }
+      if (getIsMounted && !getIsMounted()) return;
 
       // Load club info — smart resolve: clubId may be UUID or integer club_id
       const { column: clubCol, value: clubVal } = resolveClubIdFilter(clubId);
@@ -531,7 +525,12 @@ export default function ClubHomePage() {
           .order('start_time', { ascending: true }),
         (async () => {
           try {
-            return await supabase.from('bbj_pools').select('main_balance').eq('club_id', resolvedId).limit(1).maybeSingle();
+            return await supabase
+              .from('bbj_pools')
+              .select('main_balance')
+              .eq('club_id', resolvedId)
+              .limit(1)
+              .maybeSingle();
           } catch {
             return { data: null, error: null };
           }
@@ -879,7 +878,9 @@ export default function ClubHomePage() {
           <div className="wallet-row diamond">
             <span className="wallet-icon diamond-icon"></span>
             <span className="wallet-amount">{formatNumber(wallet.diamonds)}</span>
-            <button className="wallet-add-btn" onClick={() => haptic.medium()}>+</button>
+            <button className="wallet-add-btn" onClick={() => haptic.medium()}>
+              +
+            </button>
           </div>
         </div>
       </div>

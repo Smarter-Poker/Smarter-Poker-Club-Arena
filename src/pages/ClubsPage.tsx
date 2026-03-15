@@ -10,6 +10,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { waitForAuth } from '../utils/waitForAuth';
 import { masterBus } from '../core/MasterBus';
 import { ClubsService } from '../services/ClubsService';
 import { LoadingState, NoClubsEmpty } from '../components/common/EmptyState';
@@ -101,18 +102,11 @@ export default function ClubsPage() {
     setIsLoading(true);
     try {
       // In iframe context, wait for auth to be set by the parent via postMessage.
-      const inIframe = window.parent !== window;
-      if (inIframe) {
-        for (let attempt = 0; attempt < 10; attempt++) {
-          const {
-            data: { session },
-          } = await supabase.auth.getSession();
-          if (session?.user) break;
-          if (getIsMounted && !getIsMounted()) return;
-          await new Promise((r) => setTimeout(r, 300));
-        }
-        if (getIsMounted && !getIsMounted()) return;
+      const authReady = await waitForAuth(getIsMounted || undefined);
+      if (!authReady) {
+        console.warn('[ClubsPage] Auth not ready — proceeding anyway');
       }
+      if (getIsMounted && !getIsMounted()) return;
       const memberships = await ClubsService.getUserMemberships();
       if (getIsMounted && !getIsMounted()) return;
       setMyClubs(memberships);

@@ -10,6 +10,7 @@ import { useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { identityDNA } from '../core/IdentityDNA';
 import { masterBus } from '../core/MasterBus';
+import { useAuthUser } from '../hooks/useAuthUser';
 import { notificationService } from '../services/NotificationService';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import UserProfileEdit from '../components/social/UserProfileEdit';
@@ -203,6 +204,7 @@ const ColorPicker = ({
 export default function SettingsPage() {
   const [searchParams] = useSearchParams();
   const toast = useToast();
+  const { user: authUser } = useAuthUser();
   const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
   const [hasChanges, setHasChanges] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -273,10 +275,15 @@ export default function SettingsPage() {
         console.error('Failed to load settings:', e);
       }
     }
-    // Get current user email
-    supabase.auth.getUser().then(({ data }) => {
-      if (isMounted && data?.user?.email) setUserEmail(data.user.email);
-    });
+    // Get current user email from auth session (avoid redundant getUser() call)
+    if (authUser?.id) {
+      supabase.auth
+        .getSession()
+        .then(({ data: { session } }) => {
+          if (isMounted && session?.user?.email) setUserEmail(session.user.email);
+        })
+        .catch(() => {});
+    }
     return () => {
       isMounted = false;
     };

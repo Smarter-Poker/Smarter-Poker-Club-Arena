@@ -107,6 +107,20 @@ export default function CreditAdminPanel() {
     };
   }, []);
 
+  // ── Supabase Realtime — cross-user WebSocket updates ──
+  useEffect(() => {
+    const channelKey = 'credit-admin-agents';
+    const channel = masterBus.getOrCreateChannel(channelKey);
+    channel
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'agents' }, () =>
+        loadAgents()
+      )
+      .subscribe();
+    return () => {
+      masterBus.removeRegisteredChannel(channelKey);
+    };
+  }, [loadAgents]);
+
   const handleSaveLimit = async (agentId: string) => {
     const limit = parseFloat(newLimit);
     if (isNaN(limit) || limit < 0) {

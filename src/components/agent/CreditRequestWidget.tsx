@@ -42,6 +42,13 @@ export default function CreditRequestWidget({
     loadRequests();
   }, [agentId]);
 
+  // Cleanup stagger timers on unmount
+  useEffect(() => {
+    return () => {
+      staggerTimersRef.current.forEach(clearTimeout);
+    };
+  }, []);
+
   // Bus listener: refresh when credit status changes elsewhere
   useEffect(() => {
     const unsub = masterBus.subscribeDebounced(

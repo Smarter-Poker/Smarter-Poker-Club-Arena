@@ -395,6 +395,36 @@ export default function AntiCheatPage() {
     return () => unsubs.forEach((u) => u());
   }, [clubId, loadStats]);
 
+  // ── Supabase Realtime — cross-user WebSocket updates ──
+  useEffect(() => {
+    if (!clubId) return;
+    const channelKey = `anti-cheat-${clubId}`;
+    const channel = masterBus.getOrCreateChannel(channelKey);
+    channel
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'anti_cheat_flags', filter: `club_id=eq.${clubId}` },
+        () => {
+          loadStats(clubId);
+          setFlagsLoaded(false);
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'anti_cheat_events',
+          filter: `club_id=eq.${clubId}`,
+        },
+        () => setEventsLoaded(false)
+      )
+      .subscribe();
+    return () => {
+      masterBus.removeRegisteredChannel(channelKey);
+    };
+  }, [clubId, loadStats]);
+
   // ── Actions ────────────────────────────────────────────────
   const reviewFlag = async () => {
     if (!reviewTarget || !clubId) return;

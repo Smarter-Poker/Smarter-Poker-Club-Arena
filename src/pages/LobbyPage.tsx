@@ -33,6 +33,23 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import { retryFetch } from '../utils/retryFetch';
 type GameFilter = 'all' | 'nlh' | 'plo' | 'ofc' | 'tournaments' | 'favorites';
 
+// SWR cache helpers for instant lobby display
+function getLobbyCache(): any[] | null {
+  try {
+    const raw = sessionStorage.getItem('lobby_tables_cache');
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+function setLobbyCache(data: any[]) {
+  try {
+    sessionStorage.setItem('lobby_tables_cache', JSON.stringify(data.slice(0, 50)));
+  } catch {
+    /* storage full */
+  }
+}
+
 export default function LobbyPage() {
   const navigate = useNavigate();
   const toast = useToast();
@@ -51,6 +68,17 @@ export default function LobbyPage() {
   const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date());
   const [onlinePlayers, setOnlinePlayers] = useState(0);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasDataRef = useRef(false);
+
+  // SWR: show cached table list instantly on mount
+  useEffect(() => {
+    const cached = getLobbyCache();
+    if (cached && cached.length > 0) {
+      setTables(cached);
+      hasDataRef.current = true;
+      setLoading(false);
+    }
+  }, []);
 
   // Waitlist state (ported from WH lobby.js)
   const [waitlistPositions, setWaitlistPositions] = useState<Record<string, number>>({});
@@ -379,6 +407,8 @@ export default function LobbyPage() {
         if (isMounted.current) {
           setTables(activeTables);
           setLastRefreshed(new Date());
+          setLobbyCache(activeTables);
+          hasDataRef.current = true;
         }
       } catch (error) {
         if (!isMounted.current) return;

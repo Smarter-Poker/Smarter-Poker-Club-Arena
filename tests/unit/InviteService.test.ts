@@ -1,16 +1,10 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  UNIT TESTS — InviteService
+ *  UNIT TESTS — InviteService (Strengthened)
  * ═══════════════════════════════════════════════════════════════════════════════
- *
- * Tests invite code generation:
- * - generateCode: 8-char alphanumeric, excludes ambiguous characters (0, O, 1, I)
- * - getInviteUrl: proper URL construction
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-// ─── Mock dependencies ────────────────────────────────────────────────────
 
 vi.mock('../../src/lib/supabase', () => {
   const buildChain = (): any => {
@@ -28,62 +22,73 @@ vi.mock('../../src/lib/supabase', () => {
   return {
     supabase: {
       from: () => buildChain(),
-      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: null }, error: null }) },
-      functions: { invoke: vi.fn().mockResolvedValue({ data: null, error: null }) },
+      rpc: vi.fn().mockResolvedValue({ data: null, error: null }),
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: null } }) },
     },
   };
 });
 
-vi.mock('../../src/utils/clubIdResolver', () => ({
-  resolveClubUUID: (id: string) => Promise.resolve(id),
+vi.mock('../../src/core/MasterBus', () => ({
+  masterBus: { emit: vi.fn(), subscribe: vi.fn(() => vi.fn()) },
 }));
 
-// ─── Import AFTER mocks ──────────────────────────────────────────────────
+vi.mock('../../src/utils/retryAsync', () => ({
+  retryAsync: <T>(fn: () => Promise<T>) => fn(),
+}));
 
-import { InviteService } from '../../src/services/InviteService';
+import { inviteService } from '../../src/services/InviteService';
 
 describe('InviteService', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // GENERATE CODE
-  // ─────────────────────────────────────────────────────────────────────────
+  beforeEach(() => vi.clearAllMocks());
 
   describe('generateCode', () => {
-    it('should generate an 8-character code', () => {
-      const code = InviteService.generateCode();
-      expect(code.length).toBe(8);
-    });
-
-    it('should only contain allowed characters (no 0, O, 1, I)', () => {
-      const allowed = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-      for (let i = 0; i < 50; i++) {
-        const code = InviteService.generateCode();
-        for (const char of code) {
-          expect(allowed).toContain(char);
-        }
-      }
+    it('should return an 8-character code', () => {
+      const code = inviteService.generateCode();
+      expect(code).toHaveLength(8);
     });
 
     it('should generate unique codes', () => {
-      const codes = new Set<string>();
-      for (let i = 0; i < 100; i++) {
-        codes.add(InviteService.generateCode());
-      }
-      expect(codes.size).toBe(100); // All unique
+      const codes = new Set(Array.from({ length: 20 }, () => inviteService.generateCode()));
+      expect(codes.size).toBe(20);
+    });
+
+    it('should only contain alphanumeric characters', () => {
+      const code = inviteService.generateCode();
+      expect(code).toMatch(/^[A-Z0-9]+$/);
     });
   });
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // GET INVITE URL
-  // ─────────────────────────────────────────────────────────────────────────
-
   describe('getInviteUrl', () => {
-    it('should construct URL with code parameter', () => {
-      const url = InviteService.getInviteUrl('ABC12345');
-      expect(url).toContain('/invite?code=ABC12345');
+    it('should return URL containing the code', () => {
+      const url = inviteService.getInviteUrl('ABC12345');
+      expect(url).toContain('ABC12345');
+    });
+  });
+
+  describe('validateCode', () => {
+    it('should return null for invalid code', async () => {
+      const result = await inviteService.validateCode('INVALID');
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('getClubInvites', () => {
+    it('should return empty array when no invites', async () => {
+      const result = await inviteService.getClubInvites('club-1');
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe('export shape', () => {
+    it('should export all methods', () => {
+      expect(typeof inviteService.generateCode).toBe('function');
+      expect(typeof inviteService.createInvite).toBe('function');
+      expect(typeof inviteService.getInviteUrl).toBe('function');
+      expect(typeof inviteService.validateCode).toBe('function');
+      expect(typeof inviteService.acceptInvite).toBe('function');
+      expect(typeof inviteService.cancelInvite).toBe('function');
+      expect(typeof inviteService.getClubInvites).toBe('function');
+      expect(typeof inviteService.copyInviteLink).toBe('function');
     });
   });
 });

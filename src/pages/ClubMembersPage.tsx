@@ -13,6 +13,7 @@ import { useVirtualScroll } from '../hooks/useVirtualScroll';
 import PageSkeleton from '../components/common/PageSkeleton';
 import ClubBottomNav from '../components/club/ClubBottomNav';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
+import { retryFetch } from '../utils/retryFetch';
 import './ClubMembersPage.css';
 import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
@@ -463,10 +464,28 @@ export default function ClubMembersPage() {
       try {
         const resolvedId = await resolveClubUUID(clubId);
 
-        const { data, error } = await supabase
-          .from('club_members')
-          .select(
-            `
+        // SWR: Show cached members instantly while loading fresh data
+        const swrKey = `members_cache_${resolvedId}`;
+        try {
+          const cached = sessionStorage.getItem(swrKey);
+          if (cached) {
+            const cm = JSON.parse(cached);
+            if (Array.isArray(cm) && cm.length > 0) {
+              setMembers(cm);
+              if (getIsMounted && !getIsMounted()) return;
+              setLoading(false); // Show cached list instantly
+            }
+          }
+        } catch {
+          /* corrupt cache */
+        }
+
+        const { data, error } = await retryFetch(
+          () =>
+            supabase
+              .from('club_members')
+              .select(
+                `
                     user_id,
                     role,
                     chip_balance,
@@ -478,36 +497,50 @@ export default function ClubMembersPage() {
                         is_horse
                     )
                 `
-          )
-          .eq('club_id', resolvedId)
-          .not('status', 'in', '("banned","suspended")')
-          .limit(5000);
+              )
+              .eq('club_id', resolvedId)
+              .not('status', 'in', '("banned","suspended")')
+              .limit(5000)
+              .then((r) => r),
+          { maxRetries: 2 }
+        );
 
         if (getIsMounted && !getIsMounted()) return;
         if (!error && data) {
-          setMembers(
-            data.map((m: any) => ({
-              id: m.user_id,
-              user_id: m.user_id,
-              username: m.profiles?.username || 'Unknown',
-              avatar_url: m.profiles?.avatar_url,
-              role: m.role || 'member',
-              chip_balance: m.chip_balance || 0,
-              joined_at: m.joined_at,
-              is_online: onlineUserIds.has(m.user_id),
-              last_active: undefined,
-              parent_agent_id: m.parent_agent_id,
-            }))
-          );
+          const mapped = data.map((m: any) => ({
+            id: m.user_id,
+            user_id: m.user_id,
+            username: m.profiles?.username || 'Unknown',
+            avatar_url: m.profiles?.avatar_url,
+            role: m.role || 'member',
+            chip_balance: m.chip_balance || 0,
+            joined_at: m.joined_at,
+            is_online: onlineUserIds.has(m.user_id),
+            last_active: undefined,
+            parent_agent_id: m.parent_agent_id,
+          }));
+          setMembers(mapped);
+
+          // Save to SWR cache (lightweight: just top-level fields)
+          try {
+            sessionStorage.setItem(swrKey, JSON.stringify(mapped.slice(0, 200)));
+          } catch {
+            /* storage full */
+          }
 
           // Fetch current user's role
           if (user?.id) {
-            const { data: memberData } = await supabase
-              .from('club_members')
-              .select('role')
-              .eq('club_id', resolvedId)
-              .eq('user_id', user.id)
-              .maybeSingle();
+            const { data: memberData } = await retryFetch(
+              () =>
+                supabase
+                  .from('club_members')
+                  .select('role')
+                  .eq('club_id', resolvedId)
+                  .eq('user_id', user.id)
+                  .maybeSingle()
+                  .then((r) => r),
+              { maxRetries: 2 }
+            );
 
             if (getIsMounted && !getIsMounted()) return;
             if (memberData) {

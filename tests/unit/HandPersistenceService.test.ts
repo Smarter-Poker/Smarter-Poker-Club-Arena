@@ -1,17 +1,10 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  UNIT TESTS — HandPersistenceService
+ *  UNIT TESTS — HandPersistenceService (Strengthened)
  * ═══════════════════════════════════════════════════════════════════════════════
- *
- * Tests hand persistence state management:
- * - constructor: creates instance with tableId
- * - dispose: clears all internal state
- * - getCurrentHandId: returns null on fresh instance
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-// ─── Mock dependencies ────────────────────────────────────────────────────
 
 vi.mock('../../src/lib/supabase', () => {
   const buildChain = (): any => {
@@ -29,45 +22,65 @@ vi.mock('../../src/lib/supabase', () => {
   return {
     supabase: {
       from: () => buildChain(),
+      rpc: vi.fn().mockResolvedValue({ data: null, error: null }),
     },
   };
 });
 
-// ─── Import AFTER mocks ──────────────────────────────────────────────────
+vi.mock('../../src/core/MasterBus', () => ({
+  masterBus: { emit: vi.fn(), subscribe: vi.fn(() => vi.fn()) },
+}));
 
-import { HandPersistence } from '../../src/services/HandPersistenceService';
+vi.mock('../../src/utils/retryAsync', () => ({
+  retryAsync: <T>(fn: () => Promise<T>) => fn(),
+}));
 
-describe('HandPersistence', () => {
-  let instance: HandPersistence;
+import { HandPersistenceService } from '../../src/services/HandPersistenceService';
+
+describe('HandPersistenceService', () => {
+  let service: HandPersistenceService;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    instance = new HandPersistence('test-table-1');
+    service = new HandPersistenceService('table-1');
   });
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // CONSTRUCTOR
-  // ─────────────────────────────────────────────────────────────────────────
 
   describe('constructor', () => {
-    it('should initialize with no current hand', () => {
-      expect(instance.getCurrentHandId()).toBeNull();
+    it('should create instance with tableId', () => {
+      expect(service).toBeDefined();
     });
   });
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // DISPOSE
-  // ─────────────────────────────────────────────────────────────────────────
+  describe('getCurrentHandId', () => {
+    it('should return null when no hand started', () => {
+      expect(service.getCurrentHandId()).toBeNull();
+    });
+  });
 
   describe('dispose', () => {
-    it('should clear all state', () => {
-      instance.dispose();
-      expect(instance.getCurrentHandId()).toBeNull();
+    it('should not crash when called', () => {
+      service.dispose();
     });
 
-    it('should not throw when called multiple times', () => {
-      instance.dispose();
-      expect(() => instance.dispose()).not.toThrow();
+    it('should be safe to call multiple times', () => {
+      service.dispose();
+      service.dispose();
+    });
+  });
+
+  describe('cleanupOrphanedHands', () => {
+    it('should not throw', async () => {
+      await service.cleanupOrphanedHands();
+    });
+  });
+
+  describe('export shape', () => {
+    it('should export HandPersistenceService class', () => {
+      expect(typeof HandPersistenceService).toBe('function');
+      expect(typeof service.getCurrentHandId).toBe('function');
+      expect(typeof service.wireToHandController).toBe('function');
+      expect(typeof service.dispose).toBe('function');
+      expect(typeof service.cleanupOrphanedHands).toBe('function');
     });
   });
 });

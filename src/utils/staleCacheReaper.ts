@@ -19,6 +19,8 @@
  *   psr_cache_      → PlayerStyleRadar
  *   pt_cache_       → PerformanceTrends
  *   slc_cache_      → StakeLevelComparison
+ *   profile_cache_  → ProfilePage (Phase 4)
+ *   members_cache_  → ClubMembersPage (Phase 4)
  */
 
 const SWR_PREFIXES = [
@@ -33,6 +35,8 @@ const SWR_PREFIXES = [
   'psr_cache_',
   'pt_cache_',
   'slc_cache_',
+  'profile_cache_',
+  'members_cache_',
 ];
 
 /** Maximum cache age in milliseconds (1 hour) */

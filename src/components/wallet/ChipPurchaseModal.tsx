@@ -4,7 +4,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
@@ -44,15 +44,23 @@ export function ChipPurchaseModal({
   const toast = useToast();
   const [purchasing, setPurchasing] = useState<string | null>(null);
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
+  const animTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   useEffect(() => {
+    animTimers.current.forEach(clearTimeout);
+    animTimers.current = [];
     if (isOpen) {
       CHIP_PACKAGES.forEach((_, i) => {
-        setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60);
+        const t = setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60);
+        animTimers.current.push(t);
       });
     } else {
       setVisibleItems(new Set());
     }
+    return () => {
+      animTimers.current.forEach(clearTimeout);
+      animTimers.current = [];
+    };
   }, [isOpen]);
 
   const handlePurchase = async (pkg: ChipPackage) => {

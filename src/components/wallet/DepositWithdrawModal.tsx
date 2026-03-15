@@ -5,7 +5,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useToast } from '../common/Toast';
 import styles from './DepositWithdrawModal.module.css';
@@ -239,16 +239,20 @@ export default function DepositWithdrawModal({
   const [error, setError] = useState<string | null>(null);
   const [referenceId, setReferenceId] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
+  const mountTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Withdrawal-specific fields
   const [withdrawAddress, setWithdrawAddress] = useState('');
 
   useEffect(() => {
     if (isOpen) {
-      setTimeout(() => setMounted(true), 50);
+      mountTimer.current = setTimeout(() => setMounted(true), 50);
     } else {
       setMounted(false);
     }
+    return () => {
+      if (mountTimer.current) clearTimeout(mountTimer.current);
+    };
   }, [isOpen]);
 
   const currentMethod = PAYMENT_METHODS.find((m) => m.id === selectedMethod);

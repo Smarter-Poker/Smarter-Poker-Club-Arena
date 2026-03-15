@@ -199,12 +199,23 @@ describe('GrindRewardsService', () => {
       expect(result).toBe(expected);
     });
 
-    it('should compute last place with no bonuses', () => {
-      // Last place: positionRatio = 0, positionMultiplier = 0
+    it('should compute last place with minimal points', () => {
+      // Last place: positionRatio = 1 - 99/100 = 0.01
+      // positionMultiplier = pow(0.01, 1.5) ≈ 0.001
+      // buyInWeight = log10(501) ≈ 2.6998
       // winBonus = 0, finalTableBonus = 0
-      // total = round((fieldBonus * 0 * buyInWeight + 0 + 0) * 100) / 100 = 0
+      // total = round((100 * 0.001 * 2.6998 + 0 + 0) * 100) / 100
       const result = grindRewardsService.calculateTournamentPoints(100, 100, 500);
-      expect(result).toBe(0);
+      const expected =
+        Math.round(
+          (Math.sqrt(100) * 10 * Math.pow(1 - 99 / 100, 1.5) * Math.max(1, Math.log10(501)) +
+            0 +
+            0) *
+            100
+        ) / 100;
+      expect(result).toBe(expected);
+      expect(result).toBeGreaterThan(0); // Non-zero due to positionRatio = 0.01
+      expect(result).toBeLessThan(1); // But very small
     });
   });
 

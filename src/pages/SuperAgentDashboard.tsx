@@ -3,6 +3,7 @@
  */
 
 import { useState, useEffect, useMemo } from 'react';
+import { useIsMounted } from '../hooks/useIsMounted';
 import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -25,6 +26,7 @@ export default function SuperAgentDashboard() {
   const { clubId } = useParams();
   const { user } = useAuthUser();
   const toast = useToast();
+  const isMounted = useIsMounted();
   useVisibilityRefresh(() => {
     if (clubId && user?.id) loadDashboardData();
   });
@@ -169,20 +171,23 @@ export default function SuperAgentDashboard() {
     setLoading(true);
     try {
       const agents = await AgentService.getAgents(clubId!);
+      if (!isMounted.current) return;
       const myAgent = agents.find((a) => a.userId === user?.id);
       if (myAgent) {
         setAgent(myAgent);
         setSubAgents(agents.filter((a) => a.parentAgentId === myAgent.id));
         const myPlayers = await AgentService.getAgentPlayers(myAgent.id);
+        if (!isMounted.current) return;
         setPlayers(myPlayers);
         const commSpread = await CommissionService.calculateSpread(myAgent.id);
+        if (!isMounted.current) return;
         setSpread(commSpread);
       }
     } catch (error) {
       console.error('Failed to load dashboard:', error);
-      toast.error('Failed to load dashboard data');
+      if (isMounted.current) toast.error('Failed to load dashboard data');
     }
-    setLoading(false);
+    if (isMounted.current) setLoading(false);
   };
 
   const handleTransfer = async () => {
@@ -193,14 +198,15 @@ export default function SuperAgentDashboard() {
     setIsTransferring(true);
     try {
       await AgentService.transferToPlayer(agent.id, transferPlayerId, clubId!, amount);
+      if (!isMounted.current) return;
       setTransferPlayerId('');
       toast.success(`Transferred ${amount.toLocaleString()} chips successfully`);
       loadDashboardData();
     } catch (error) {
       console.error('Transfer failed:', error);
-      toast.error('Transfer failed');
+      if (isMounted.current) toast.error('Transfer failed');
     }
-    setIsTransferring(false);
+    if (isMounted.current) setIsTransferring(false);
   };
 
   if (loading) {

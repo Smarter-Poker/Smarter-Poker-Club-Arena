@@ -96,6 +96,13 @@ export default function CreditAdminPanel() {
     loadAgents();
   }, [loadAgents]);
 
+  // Cleanup stagger timers on unmount
+  useEffect(() => {
+    return () => {
+      staggerTimersRef.current.forEach(clearTimeout);
+    };
+  }, []);
+
   useEffect(() => {
     const unsubs = [
       masterBus.subscribeDebounced('BALANCE_UPDATED', () => loadAgents(), 1000),

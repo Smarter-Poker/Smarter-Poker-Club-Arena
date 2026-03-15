@@ -27,7 +27,7 @@ export function StatsExport({ clubId, isOpen, onClose }: StatsExportProps) {
   const [includeHands, setIncludeHands] = useState(false);
   const [exporting, setExporting] = useState(false);
   const isMounted = useIsMounted();
-  const [mounted, setMounted] = useState(false);
+  const [animMounted, setAnimMounted] = useState(false);
 
   useEffect(() => {
     if (isOpen) {

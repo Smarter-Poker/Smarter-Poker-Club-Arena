@@ -55,14 +55,25 @@ export default defineConfig({
     sourcemap: true, // Generate source maps for Sentry
     rollupOptions: {
       output: {
-        manualChunks: {
-          // Split vendor chunks — isolate heavy deps from main bundle
-          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
-          'vendor-supabase': ['@supabase/supabase-js'],
-          // 'vendor-three' REMOVED — three.js not imported anywhere, saves ~189KB
-          'vendor-charts': ['recharts'],
-          'vendor-motion': ['framer-motion'],
-          'vendor-sentry': ['@sentry/react'],
+        manualChunks(id: string) {
+          // ── Vendor Splits ──
+          if (id.includes('node_modules/react-dom')) return 'vendor-react';
+          if (id.includes('node_modules/react-router')) return 'vendor-react';
+          if (id.includes('node_modules/react/')) return 'vendor-react';
+          if (id.includes('node_modules/@supabase/')) return 'vendor-supabase';
+          if (id.includes('node_modules/recharts') || id.includes('node_modules/d3-'))
+            return 'vendor-charts';
+          if (id.includes('node_modules/framer-motion')) return 'vendor-motion';
+          if (id.includes('node_modules/@sentry/')) return 'vendor-sentry';
+
+          // ── Application Splits ──
+          // Services layer — shared singletons (Wallet, Club, Agent, etc.)
+          if (id.includes('/src/services/') && !id.includes('.test.')) return 'chunk-services';
+          // Core layer — MasterBus, stores, hooks
+          if (id.includes('/src/core/') || id.includes('/src/stores/')) return 'chunk-core';
+          // Shared UI components used across many routes
+          if (id.includes('/src/components/common/')) return 'chunk-common';
+          // Let Vite handle everything else (route-level splits for pages)
         },
       },
     },

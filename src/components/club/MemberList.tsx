@@ -184,6 +184,7 @@ function MemberListInner({
                   <button
                     className="member-action-btn member-action-btn--chips"
                     title="Send Chips"
+                    aria-label="Send Chips"
                     onClick={() => onSendChips(member.id)}
                   ></button>
                   {canManage(member.role) && (
@@ -191,11 +192,13 @@ function MemberListInner({
                       <button
                         className="member-action-btn"
                         title="Promote"
+                        aria-label="Promote"
                         onClick={() => onPromote(member.id)}
                       ></button>
                       <button
                         className="member-action-btn member-action-btn--danger"
                         title="Kick"
+                        aria-label="Kick"
                         onClick={() => onKick(member.id)}
                       ></button>
                     </>

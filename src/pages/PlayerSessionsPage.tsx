@@ -103,7 +103,7 @@ interface ChipFlowEntry {
 interface ChipTxRow {
   user_id: string;
   amount: number;
-  type: string;
+  transaction_type: string;
   created_at: string;
 }
 interface RetentionMemberRow {
@@ -419,7 +419,7 @@ export default function PlayerSessionsPage() {
         () =>
           supabase
             .from('chip_transactions')
-            .select('user_id, amount, type, created_at')
+            .select('user_id, amount, transaction_type, created_at')
             .eq('club_id', uuid)
             .gte('created_at', sevenDaysAgo)
             .then((r) => r),
@@ -432,7 +432,11 @@ export default function PlayerSessionsPage() {
       (txns || []).forEach((t: ChipTxRow) => {
         if (!flow[t.user_id]) flow[t.user_id] = { in: 0, out: 0, net: 0 };
         const amt = Math.abs(t.amount || 0);
-        if (t.type === 'buyin' || t.type === 'distribution' || t.amount > 0) {
+        if (
+          t.transaction_type === 'buyin' ||
+          t.transaction_type === 'distribution' ||
+          t.amount > 0
+        ) {
           flow[t.user_id].in += amt;
           flow[t.user_id].net += amt;
         } else {

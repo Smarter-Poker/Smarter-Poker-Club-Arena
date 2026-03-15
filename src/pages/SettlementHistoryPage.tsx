@@ -44,6 +44,13 @@ export default function SettlementHistoryPage() {
     loadHistory();
   }, []);
 
+  // Cleanup stagger timers on unmount
+  useEffect(() => {
+    return () => {
+      staggerTimersRef.current.forEach(clearTimeout);
+    };
+  }, []);
+
   useEffect(() => {
     const unsub = masterBus.subscribeDebounced('SETTLEMENT_COMPLETED', () => loadHistory(), 1000);
     const unsub2 = masterBus.subscribeDebounced(

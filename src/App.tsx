@@ -16,8 +16,8 @@ import { busEventLogger } from './services/BusEventLogger';
 import GlobalWaitlistListener from './components/common/GlobalWaitlistListener';
 import WaitlistBanner from './components/common/WaitlistBanner';
 
-// Intro Video for first-time load
-import IntroVideo from './components/IntroVideo';
+// Intro Video — lazy-loaded (only shown once per session, not needed for initial paint)
+const IntroVideo = lazy(() => import('./components/IntroVideo'));
 import { useSettingsStore } from './stores/useSettingsStore';
 
 // Layouts

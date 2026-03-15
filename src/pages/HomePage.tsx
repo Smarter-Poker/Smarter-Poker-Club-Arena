@@ -188,21 +188,34 @@ class HomePageErrorBoundary extends Component<{ children: ReactNode }, ErrorBoun
 // ═══════════════════════════════════════════════════════════════════════════════
 const CLUB_ORDER_KEY = 'club_arena_club_order';
 
+// ── Home Page Types ─────────────────────────────────────────
+interface UserClub {
+  id: string;
+  name?: string;
+  club_id?: number | string;
+  logo_url?: string;
+  member_count?: number;
+  active_tables?: number;
+  is_owner?: boolean;
+  last_active_at?: string;
+  [key: string]: unknown;
+}
+
 interface CarouselSectionProps {
-  displayClubs: any[];
+  displayClubs: UserClub[];
   sharkClubId: string | null;
   sharkClubStats: { totalMembers: number; clubLevel: number; activePlayers: number };
   flippedCards: Set<number>;
   pinnedClubIds: string[];
   cardColorPreset: string;
   navigate: (path: string) => void;
-  toast: any;
-  handleContextMenu: (e: React.MouseEvent, club: any) => void;
-  handleLongPressStart: (club: any, e: React.TouchEvent) => void;
+  toast: ReturnType<typeof useToast>;
+  handleContextMenu: (e: React.MouseEvent, club: UserClub) => void;
+  handleLongPressStart: (club: UserClub, e: React.TouchEvent) => void;
   handleLongPressEnd: () => void;
   handleClubHoverStart: (clubId: string) => void;
   handleClubHoverEnd: () => void;
-  handleTooltipEnter: (club: any, e: React.MouseEvent) => void;
+  handleTooltipEnter: (club: UserClub, e: React.MouseEvent) => void;
   handleTooltipLeave: () => void;
   onOpenJoinModal: () => void;
   onOpenCreateModal: () => void;
@@ -238,7 +251,7 @@ function CarouselSection({
   // Enhancement #8: Drag-to-reorder state
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
-  const [orderedClubs, setOrderedClubs] = useState<any[]>(displayClubs);
+  const [orderedClubs, setOrderedClubs] = useState<UserClub[]>(displayClubs);
 
   // Keep orderedClubs in sync with displayClubs (respecting saved order)
   useEffect(() => {
@@ -359,7 +372,7 @@ function CarouselSection({
 
   // Enhancement #3: Tap handler — single tap flips, double tap navigates
   const handleCardTap = useCallback(
-    (club: any) => {
+    (club: UserClub) => {
       const now = Date.now();
       const last = lastTapRef.current;
       if (last.id === club.id && now - last.time < 350) {
@@ -391,7 +404,7 @@ function CarouselSection({
   );
 
   // Render a single user club card in carousel style
-  const renderClubCard = (club: any, idx: number) => {
+  const renderClubCard = (club: UserClub, idx: number) => {
     const isFlipped = flippedCards.has(idx);
     const isQuickFlipped = quickFlipped.has(club.id);
     const isLive = (club.active_tables || 0) > 0;
@@ -661,7 +674,7 @@ function HomePageInner() {
 
   // Real data states
   const [isLoading, setIsLoading] = useState(true);
-  const [userClubs, setUserClubs] = useState<any[]>(() => {
+  const [userClubs, setUserClubs] = useState<UserClub[]>(() => {
     // Enhancement #9: SWR — instant render from cache
     try {
       const cached = localStorage.getItem(SWR_CACHE_KEY);
@@ -683,7 +696,7 @@ function HomePageInner() {
     visible: boolean;
     x: number;
     y: number;
-    club: any;
+    club: UserClub;
   } | null>(null);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -708,7 +721,9 @@ function HomePageInner() {
   });
 
   // #4: Leave confirmation modal
-  const [leaveConfirm, setLeaveConfirm] = useState<{ visible: boolean; club: any } | null>(null);
+  const [leaveConfirm, setLeaveConfirm] = useState<{ visible: boolean; club: UserClub } | null>(
+    null
+  );
 
   // #9: Search/filter
   const [searchQuery, setSearchQuery] = useState('');
@@ -722,7 +737,9 @@ function HomePageInner() {
   const seasonalTheme = useMemo(() => getSeasonalTheme(), []);
 
   // #13: Tooltip state
-  const [tooltipClub, setTooltipClub] = useState<{ club: any; x: number; y: number } | null>(null);
+  const [tooltipClub, setTooltipClub] = useState<{ club: UserClub; x: number; y: number } | null>(
+    null
+  );
 
   // #15: Online status
   const [isOnline, setIsOnline] = useState(
@@ -816,11 +833,14 @@ function HomePageInner() {
         if (authUser) {
           const memberships = await ClubsService.getUserMemberships();
           const clubs =
-            memberships?.map((m: any) => ({
-              ...m.club,
-              is_owner: m.role === 'owner',
-              member_count: m.club?.member_count || 0,
-            })) || [];
+            memberships?.map(
+              (m) =>
+                ({
+                  ...m.club,
+                  is_owner: m.role === 'owner',
+                  member_count: m.club?.member_count || 0,
+                }) as UserClub
+            ) || [];
           if (getIsMounted && !getIsMounted()) return;
           setUserClubs(clubs);
           // Enhancement #9: Update SWR cache
@@ -887,7 +907,7 @@ function HomePageInner() {
     let isMounted = true;
     fetchUserData(false, () => isMounted);
 
-    let channel: any = null;
+    let channel: ReturnType<typeof masterBus.getOrCreateChannel> | null = null;
     const setupRealtimeSubscription = async () => {
       const {
         data: { user: authUser },
@@ -1129,12 +1149,12 @@ function HomePageInner() {
   // ═══════════════════════════════════════════════════════════════════════════════
   // Enhancement #2: Context Menu handlers
   // ═══════════════════════════════════════════════════════════════════════════════
-  const handleContextMenu = useCallback((e: React.MouseEvent, club: any) => {
+  const handleContextMenu = useCallback((e: React.MouseEvent, club: UserClub) => {
     e.preventDefault();
     setContextMenu({ visible: true, x: e.clientX, y: e.clientY, club });
   }, []);
 
-  const handleLongPressStart = useCallback((club: any, e: React.TouchEvent) => {
+  const handleLongPressStart = useCallback((club: UserClub, e: React.TouchEvent) => {
     e.stopPropagation(); // Prevent pull-to-refresh from activating
     longPressTimer.current = setTimeout(() => {
       haptic.medium();
@@ -1240,7 +1260,7 @@ function HomePageInner() {
 
   // #4: Leave club with confirmation
   const handleLeaveClub = useCallback(
-    async (club: any) => {
+    async (club: UserClub) => {
       try {
         await ClubsService.leave(club.id);
         toast.success('Left the club');
@@ -1307,7 +1327,7 @@ function HomePageInner() {
   }, []);
 
   // #13: Tooltip for desktop hover (club stats)
-  const handleTooltipEnter = useCallback((club: any, e: React.MouseEvent) => {
+  const handleTooltipEnter = useCallback((club: UserClub, e: React.MouseEvent) => {
     setTooltipClub({ club, x: e.clientX, y: e.clientY });
   }, []);
   const handleTooltipLeave = useCallback(() => {
@@ -1428,7 +1448,7 @@ function HomePageInner() {
   useEffect(() => {
     if (!isLoading && displayClubs.length > 0) {
       const timerIds: ReturnType<typeof setTimeout>[] = [];
-      displayClubs.forEach((_: any, idx: number) => {
+      displayClubs.forEach((_: UserClub, idx: number) => {
         const id = setTimeout(
           () => {
             setFlippedCards((prev) => new Set(prev).add(idx));

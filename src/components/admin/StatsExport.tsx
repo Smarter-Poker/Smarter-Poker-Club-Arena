@@ -27,13 +27,13 @@ export function StatsExport({ clubId, isOpen, onClose }: StatsExportProps) {
   const [includeHands, setIncludeHands] = useState(false);
   const [exporting, setExporting] = useState(false);
   const isMounted = useIsMounted();
-  const [animMounted, setAnimMounted] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
-      setTimeout(() => setAnimMounted(true), 50);
+      setTimeout(() => setMounted(true), 50);
     } else {
-      setAnimMounted(false);
+      setMounted(false);
     }
   }, [isOpen]);
 
@@ -115,8 +115,8 @@ export function StatsExport({ clubId, isOpen, onClose }: StatsExportProps) {
         className="stats-export"
         onClick={(e) => e.stopPropagation()}
         style={{
-          opacity: animMounted ? 1 : 0,
-          transform: animMounted ? 'translateY(0)' : 'translateY(8px)',
+          opacity: mounted ? 1 : 0,
+          transform: mounted ? 'translateY(0)' : 'translateY(8px)',
           transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
         }}
       >

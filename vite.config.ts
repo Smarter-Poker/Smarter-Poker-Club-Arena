@@ -70,7 +70,12 @@ export default defineConfig({
           // Services layer — shared singletons (Wallet, Club, Agent, etc.)
           if (id.includes('/src/services/') && !id.includes('.test.')) return 'chunk-services';
           // Core layer — MasterBus, stores, hooks
-          if (id.includes('/src/core/') || id.includes('/src/stores/')) return 'chunk-core';
+          if (
+            id.includes('/src/core/') ||
+            id.includes('/src/stores/') ||
+            id.includes('/src/hooks/')
+          )
+            return 'chunk-core';
           // Shared UI components used across many routes
           if (id.includes('/src/components/common/')) return 'chunk-common';
           // Let Vite handle everything else (route-level splits for pages)

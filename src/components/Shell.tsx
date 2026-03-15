@@ -70,22 +70,26 @@ function ShellContent() {
 
   // Real-time notifications
   useEffect(() => {
+    let mounted = true;
     const setupNotifications = async () => {
       const {
         data: { user: authUser },
       } = await supabase.auth.getUser();
-      if (!authUser) return;
+      if (!authUser || !mounted) return;
 
       // Get initial count
       const count = await notificationService.getUnreadCount(authUser.id);
+      if (!mounted) return;
       setUnreadCount(count);
 
       // Subscribe to real-time updates
       await notificationService.subscribe(authUser.id, {
-        onNew: () => setUnreadCount((prev) => prev + 1),
+        onNew: () => {
+          if (mounted) setUnreadCount((prev) => prev + 1);
+        },
         onUpdate: async () => {
           const newCount = await notificationService.getUnreadCount(authUser.id);
-          setUnreadCount(newCount);
+          if (mounted) setUnreadCount(newCount);
         },
       });
     };
@@ -93,6 +97,7 @@ function ShellContent() {
     setupNotifications();
 
     return () => {
+      mounted = false;
       notificationService.unsubscribe();
     };
   }, []);

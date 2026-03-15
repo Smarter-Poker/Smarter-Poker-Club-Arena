@@ -8,6 +8,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import './DailyBonusWheel.css';
 import { retryAsync } from '../../utils/retryAsync';
 
@@ -44,6 +45,15 @@ export function DailyBonusWheel({ isOpen, onClose, onReward }: DailyBonusWheelPr
   const [spinning, setSpinning] = useState(false);
   const [result, setResult] = useState<WheelReward | null>(null);
   const [rotation, setRotation] = useState(0);
+  const isMounted = useIsMounted();
+  const spinTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Cleanup spin timer on unmount
+  useEffect(() => {
+    return () => {
+      if (spinTimerRef.current) clearTimeout(spinTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (isOpen && user?.id) {
@@ -68,12 +78,12 @@ export function DailyBonusWheel({ isOpen, onClose, onReward }: DailyBonusWheelPr
         const lastSpin = new Date(data.created_at);
         const now = new Date();
         const hoursSince = (now.getTime() - lastSpin.getTime()) / (1000 * 60 * 60);
-        setCanSpin(hoursSince >= 24);
+        if (isMounted.current) setCanSpin(hoursSince >= 24);
       } else {
-        setCanSpin(true);
+        if (isMounted.current) setCanSpin(true);
       }
     } catch {
-      setCanSpin(true);
+      if (isMounted.current) setCanSpin(true);
     }
   };
 
@@ -96,7 +106,8 @@ export function DailyBonusWheel({ isOpen, onClose, onReward }: DailyBonusWheelPr
     setRotation(finalRotation);
 
     // Wait for animation
-    setTimeout(async () => {
+    spinTimerRef.current = setTimeout(async () => {
+      if (!isMounted.current) return;
       setResult(prize);
       setSpinning(false);
       setCanSpin(false);

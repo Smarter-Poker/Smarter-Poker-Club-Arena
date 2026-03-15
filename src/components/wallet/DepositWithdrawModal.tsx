@@ -6,6 +6,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { useToast } from '../common/Toast';
 import styles from './DepositWithdrawModal.module.css';
@@ -239,6 +240,7 @@ export default function DepositWithdrawModal({
   const [error, setError] = useState<string | null>(null);
   const [referenceId, setReferenceId] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
+  const isMounted = useIsMounted();
   const mountTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Withdrawal-specific fields
@@ -330,16 +332,19 @@ export default function DepositWithdrawModal({
         }
       }
 
+      if (!isMounted.current) return;
       setReferenceId(data.id);
       setStep('success');
       triggerHaptic([20, 100, 20]);
       onComplete?.();
     } catch (err) {
       console.error(`${mode} failed:`, err);
-      toast.error(`Failed to process ${mode}. Please try again.`);
-      setError(`Failed to process ${mode}. Please try again.`);
+      if (isMounted.current) {
+        toast.error(`Failed to process ${mode}. Please try again.`);
+        setError(`Failed to process ${mode}. Please try again.`);
+      }
     }
-    setProcessing(false);
+    if (isMounted.current) setProcessing(false);
   };
 
   const handleClose = () => {

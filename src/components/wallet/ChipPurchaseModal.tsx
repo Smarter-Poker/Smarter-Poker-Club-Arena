@@ -5,6 +5,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
@@ -43,6 +44,7 @@ export function ChipPurchaseModal({
   const { user } = useAuthUser();
   const toast = useToast();
   const [purchasing, setPurchasing] = useState<string | null>(null);
+  const isMounted = useIsMounted();
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
   const animTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
@@ -84,13 +86,14 @@ export function ChipPurchaseModal({
 
       if (error) throw error;
 
+      if (!isMounted.current) return;
       toast.success(`${pkg.chips.toLocaleString()} chips added to your wallet!`);
       onPurchase?.(pkg.chips);
       onClose();
     } catch (error) {
-      toast.error('Purchase failed');
+      if (isMounted.current) toast.error('Purchase failed');
     }
-    setPurchasing(null);
+    if (isMounted.current) setPurchasing(null);
   };
 
   if (!isOpen) return null;

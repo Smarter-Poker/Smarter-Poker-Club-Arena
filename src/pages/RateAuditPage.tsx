@@ -7,6 +7,7 @@
  */
 
 import { useState, useEffect, useMemo } from 'react';
+import { useIsMounted } from '../hooks/useIsMounted';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -34,6 +35,7 @@ export default function RateAuditPage() {
   const navigate = useNavigate();
   const { user } = useAuthUser();
   const toast = useToast();
+  const isMounted = useIsMounted();
   useVisibilityRefresh(() => loadAuditData());
 
   const [changes, setChanges] = useState<RateChange[]>([]);

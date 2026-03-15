@@ -5,6 +5,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
@@ -25,13 +26,14 @@ export function StatsExport({ clubId, isOpen, onClose }: StatsExportProps) {
   const [dateRange, setDateRange] = useState<'7d' | '30d' | '90d' | 'all'>('30d');
   const [includeHands, setIncludeHands] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const isMounted = useIsMounted();
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
-      setTimeout(() => setMounted(true), 50);
+      setTimeout(() => setAnimMounted(true), 50);
     } else {
-      setMounted(false);
+      setAnimMounted(false);
     }
   }, [isOpen]);
 
@@ -78,12 +80,12 @@ export function StatsExport({ clubId, isOpen, onClose }: StatsExportProps) {
         downloadFile(json, 'stats.json', 'application/json');
       }
 
-      toast.success('Stats exported successfully!');
+      if (isMounted.current) toast.success('Stats exported successfully!');
       onClose();
     } catch (error) {
-      toast.error('Failed to export stats');
+      if (isMounted.current) toast.error('Failed to export stats');
     }
-    setExporting(false);
+    if (isMounted.current) setExporting(false);
   };
 
   const convertToCSV = (data: any[]) => {
@@ -113,8 +115,8 @@ export function StatsExport({ clubId, isOpen, onClose }: StatsExportProps) {
         className="stats-export"
         onClick={(e) => e.stopPropagation()}
         style={{
-          opacity: mounted ? 1 : 0,
-          transform: mounted ? 'translateY(0)' : 'translateY(8px)',
+          opacity: animMounted ? 1 : 0,
+          transform: animMounted ? 'translateY(0)' : 'translateY(8px)',
           transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
         }}
       >

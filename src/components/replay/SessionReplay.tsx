@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import './SessionReplay.css';
 
@@ -32,6 +33,7 @@ interface SessionReplayProps {
 }
 
 export const SessionReplay: React.FC<SessionReplayProps> = ({ sessionId, onClose }) => {
+  const isMounted = useIsMounted();
   const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const [replay, setReplay] = useState<ReplayData | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);

@@ -124,7 +124,7 @@ export default function TournamentBracket({ tournamentId, totalPlayers }: Tourna
     } catch (error) {
       console.error('Failed to load bracket:', error);
     }
-    setLoading(false);
+    if (isMounted.current) setLoading(false);
   };
 
   const formatChips = (chips: number): string => {

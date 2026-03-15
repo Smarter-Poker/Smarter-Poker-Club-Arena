@@ -90,7 +90,7 @@ export function ClubAnnouncementsList({ clubId, isAdmin, limit = 10 }: ClubAnnou
     } catch (error) {
       toast.error('Failed to load announcements');
     }
-    setLoading(false);
+    if (isMounted.current) setLoading(false);
   };
 
   const deleteAnnouncement = async (id: string) => {

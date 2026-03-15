@@ -74,7 +74,7 @@ export function TournamentChipCount({ tournamentId, limit = 10 }: TournamentChip
     } catch (error) {
       console.error('Failed to load chip counts:', error);
     }
-    setLoading(false);
+    if (isMounted.current) setLoading(false);
   };
 
   const avgStack = leaders.length > 0 ? totalChips / leaders.length : 0;

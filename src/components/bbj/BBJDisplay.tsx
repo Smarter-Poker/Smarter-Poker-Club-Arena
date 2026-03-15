@@ -689,7 +689,7 @@ export function useBBJ(clubId: string | null) {
     } catch (err) {
       console.error('[BBJ] Fetch error:', err);
     } finally {
-      setLoading(false);
+      if (isMounted.current) setLoading(false);
     }
   }, [clubId]);
 

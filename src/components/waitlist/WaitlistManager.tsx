@@ -113,7 +113,7 @@ export const WaitlistManager: React.FC<WaitlistManagerProps> = ({
     } catch (error) {
       console.error('Failed to load waitlist:', error);
     } finally {
-      setLoading(false);
+      if (isMounted.current) setLoading(false);
     }
   };
 

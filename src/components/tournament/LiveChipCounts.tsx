@@ -91,7 +91,7 @@ export const LiveChipCounts: React.FC<LiveChipCountsProps> = ({
     } catch (error) {
       console.error('Failed to load chip counts:', error);
     } finally {
-      setLoading(false);
+      if (isMounted.current) setLoading(false);
     }
   };
 

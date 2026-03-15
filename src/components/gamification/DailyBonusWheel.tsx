@@ -5,7 +5,6 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
@@ -42,7 +41,6 @@ export function DailyBonusWheel({ isOpen, onClose, onReward }: DailyBonusWheelPr
   const wheelRef = useRef<HTMLDivElement>(null);
 
   const [canSpin, setCanSpin] = useState(true);
-  const isMounted = useIsMounted();
   const [spinning, setSpinning] = useState(false);
   const [result, setResult] = useState<WheelReward | null>(null);
   const [rotation, setRotation] = useState(0);

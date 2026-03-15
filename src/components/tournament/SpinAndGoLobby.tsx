@@ -115,7 +115,7 @@ export function SpinAndGoLobby({ clubId, onRegister }: SpinAndGoLobbyProps) {
     } catch (error) {
       toast.error('Failed to load spin tournaments');
     }
-    setLoading(false);
+    if (isMounted.current) setLoading(false);
   };
 
   const handleRegister = async (tournament: SpinTournament) => {

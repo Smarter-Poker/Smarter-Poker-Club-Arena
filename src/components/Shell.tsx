@@ -5,7 +5,6 @@
 
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
-import { useIsMounted } from '../hooks/useIsMounted';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { useUserStore } from '../stores/useUserStore';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -37,7 +36,6 @@ function VIPBadge() {
 
 function ShellContent() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const isMounted = useIsMounted();
   const location = useLocation();
   const navigate = useNavigate();
 

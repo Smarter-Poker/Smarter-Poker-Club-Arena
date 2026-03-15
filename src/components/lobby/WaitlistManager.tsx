@@ -96,7 +96,7 @@ export function WaitlistManager({ tableId, isAdmin, onSeatPlayer }: WaitlistMana
     } catch (error) {
       toast.error('Failed to load waitlist');
     }
-    setLoading(false);
+    if (isMounted.current) setLoading(false);
   };
 
   const joinWaitlist = async () => {

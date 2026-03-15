@@ -6,7 +6,6 @@
  */
 
 import { useState, useEffect } from 'react';
-import { useIsMounted } from '../../hooks/useIsMounted';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
@@ -56,7 +55,6 @@ export default function TournamentLobbyCard({ tournament, onRegister }: Tourname
   const navigate = useNavigate();
   const { user } = useAuthUser();
   const [registering, setRegistering] = useState(false);
-  const isMounted = useIsMounted();
   const [isRegistered, setIsRegistered] = useState(false);
   const [countdown, setCountdown] = useState<string>('');
   const [lateRegCountdown, setLateRegCountdown] = useState<string>('');

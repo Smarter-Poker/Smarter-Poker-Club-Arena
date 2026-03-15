@@ -192,30 +192,16 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
             aria-label="Open Menu"
             onClick={() => setMenuOpen(true)}
           >
-            <img
-              loading="lazy"
-              decoding="async"
-              src={`${BASE}images/btn-hamburger.png`}
-              alt="Menu"
-              className={styles.iconImg}
-            />
+            <img src={`${BASE}images/btn-hamburger.png`} alt="Menu" className={styles.iconImg} />
           </button>
           <button className={styles.hubBtn} onClick={handleHubClick}>
-            <img
-              loading="lazy"
-              decoding="async"
-              src={`${BASE}images/btn-hub.png`}
-              alt="Hub"
-              className={styles.hubImg}
-            />
+            <img src={`${BASE}images/btn-hub.png`} alt="Hub" className={styles.hubImg} />
           </button>
         </div>
 
         {/* CENTER: Brand text (hidden on mobile) */}
         <div className={styles.headerCenter}>
           <img
-            loading="lazy"
-            decoding="async"
             src={`${BASE}images/brand-text.png`}
             alt="Smarter.Poker"
             className={styles.brandText}
@@ -231,8 +217,6 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
             aria-label="Diamond Wallet"
           >
             <img
-              loading="lazy"
-              decoding="async"
               src={`${BASE}images/diamond-icon.png`}
               alt="Diamond Wallet"
               className={styles.orbImg}
@@ -241,26 +225,14 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
 
           {/* VIP Member */}
           <button className={styles.orbBtn} onClick={() => navigateToHub('/hub/diamond-store')}>
-            <img
-              loading="lazy"
-              decoding="async"
-              src={`${BASE}images/vip-card.png`}
-              alt="VIP Member"
-              className={styles.orbImg}
-            />
+            <img src={`${BASE}images/vip-card.png`} alt="VIP Member" className={styles.orbImg} />
           </button>
 
           {/* Profile / Avatar */}
           <button className={styles.orbBtn} onClick={() => navigateToHub('/hub/profile')}>
             <div className={styles.profileOrb}>
               {avatarUrl ? (
-                <img
-                  loading="lazy"
-                  decoding="async"
-                  src={avatarUrl}
-                  alt=""
-                  className={styles.profileImg}
-                />
+                <img src={avatarUrl} alt="" className={styles.profileImg} />
               ) : (
                 <span className={styles.profilePlaceholder}>👤</span>
               )}
@@ -270,8 +242,6 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
           {/* Messages */}
           <button className={styles.orbBtn} onClick={() => navigateToHub('/hub/messenger')}>
             <img
-              loading="lazy"
-              decoding="async"
               src={`${BASE}images/header-messenger.png`}
               alt="Messages"
               className={styles.orbImg}
@@ -286,8 +256,6 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
           {/* Notifications — route to in-app Notification Center */}
           <a href="/notifications" className={styles.orbLink}>
             <img
-              loading="lazy"
-              decoding="async"
               src={`${BASE}images/header-notifications.png`}
               alt="Notifications"
               className={styles.orbImg}
@@ -302,8 +270,6 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
           {/* Settings */}
           <button className={styles.orbBtn} onClick={() => navigateToHub('/hub/settings')}>
             <img
-              loading="lazy"
-              decoding="async"
               src={`${BASE}images/header-settings.png`}
               alt="Settings"
               className={styles.orbImg}
@@ -316,13 +282,7 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
             onClick={() => navigateToHub('/hub/help')}
             aria-label="Live Help"
           >
-            <img
-              loading="lazy"
-              decoding="async"
-              src={`${BASE}images/header-help.png`}
-              alt="Live Help"
-              className={styles.orbImg}
-            />
+            <img src={`${BASE}images/header-help.png`} alt="Live Help" className={styles.orbImg} />
           </button>
         </div>
       </header>

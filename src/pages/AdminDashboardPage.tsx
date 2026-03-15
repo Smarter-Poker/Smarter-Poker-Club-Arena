@@ -20,6 +20,7 @@ import './AdminDashboardPage.css';
 
 import { useIsMounted } from '../hooks/useIsMounted';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
+import { retryFetch } from '../utils/retryFetch';
 
 // ── Helpers ─────────────────────────────────────────────────
 const fmt = (n: number | null | undefined) => Number(n || 0).toLocaleString();
@@ -187,12 +188,33 @@ function DashboardTab({ clubId }: { clubId: string }) {
 
       // Parallel: club health metrics + audit stats
       const [membersRes, tablesRes, rakeRes] = await Promise.all([
-        supabase
-          .from('club_members')
-          .select('id, role, is_active, user_id', { count: 'exact' })
-          .eq('club_id', uuid),
-        supabase.from('tables').select('id, current_players, status').eq('club_id', uuid),
-        supabase.from('player_stats').select('total_rake').eq('club_id', uuid),
+        retryFetch(
+          () =>
+            supabase
+              .from('club_members')
+              .select('id, role, is_active, user_id', { count: 'exact' })
+              .eq('club_id', uuid)
+              .then((r) => r),
+          { maxRetries: 2, isMountedRef: isMounted }
+        ),
+        retryFetch(
+          () =>
+            supabase
+              .from('tables')
+              .select('id, current_players, status')
+              .eq('club_id', uuid)
+              .then((r) => r),
+          { maxRetries: 2, isMountedRef: isMounted }
+        ),
+        retryFetch(
+          () =>
+            supabase
+              .from('player_stats')
+              .select('total_rake')
+              .eq('club_id', uuid)
+              .then((r) => r),
+          { maxRetries: 2, isMountedRef: isMounted }
+        ),
       ]);
 
       if (!isMounted.current) return;

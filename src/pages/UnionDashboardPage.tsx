@@ -40,6 +40,64 @@ type UnionTab =
   | 'applications'
   | 'settings';
 
+// ── Union Dashboard Types ────────────────────────────────────
+interface UnionRow {
+  id: string;
+  name: string;
+  description?: string;
+  owner_id: string;
+  created_at: string;
+  logo_url?: string;
+  member_count?: number;
+  status?: string;
+  code?: string;
+}
+interface UnionClubRow {
+  id: string;
+  club_id: string;
+  clubs: Record<string, unknown>;
+  commission_rate?: number;
+  [key: string]: unknown;
+}
+interface UnionAgent {
+  id?: string;
+  user_id: string;
+  club_id: string;
+  role: string;
+  status: string;
+  commission_rate?: number;
+  profiles?: { display_name?: string; username?: string; avatar_url?: string };
+}
+interface UnionAdmin {
+  user_id: string;
+  union_id: string;
+  role: string;
+  created_at: string;
+  profile?: { display_name?: string; username?: string; avatar_url?: string };
+}
+interface UnionWallet {
+  id: string;
+  union_id: string;
+  chip_balance: number;
+  rake_wallet: number;
+  bbj_wallet: number;
+  promo_wallet: number;
+  insurance_wallet: number;
+  total_rake_collected: number;
+  total_settlements: number;
+  created_at: string;
+}
+interface UnionApp {
+  id: string;
+  union_id: string;
+  club_name: string;
+  club_id?: string;
+  applicant_id: string;
+  status: string;
+  notes?: string;
+  created_at: string;
+}
+
 export default function UnionDashboardPage() {
   const navigate = useNavigate();
   const { user } = useAuthUser();
@@ -52,19 +110,19 @@ export default function UnionDashboardPage() {
 
   // Union data
   const [unionId, setUnionId] = useState<string | null>(null);
-  const [union, setUnion] = useState<any>(null);
+  const [union, setUnion] = useState<UnionRow | null>(null);
   const [adminRole, setAdminRole] = useState<string | null>(null);
-  const [clubs, setClubs] = useState<any[]>([]);
-  const [agents, setAgents] = useState<any[]>([]);
-  const [admins, setAdmins] = useState<any[]>([]);
-  const [wallets, setWallets] = useState<any>(null);
-  const [recentPeriods, setRecentPeriods] = useState<any[]>([]);
+  const [clubs, setClubs] = useState<Record<string, unknown>[]>([]);
+  const [agents, setAgents] = useState<UnionAgent[]>([]);
+  const [admins, setAdmins] = useState<UnionAdmin[]>([]);
+  const [wallets, setWallets] = useState<UnionWallet | null>(null);
+  const [recentPeriods, setRecentPeriods] = useState<Record<string, unknown>[]>([]);
 
   // Applications
-  const [apps, setApps] = useState<any[]>([]);
+  const [apps, setApps] = useState<UnionApp[]>([]);
   const [appsFilter, setAppsFilter] = useState('pending');
   const [appsLoaded, setAppsLoaded] = useState(false);
-  const [_leaveRequests, setLeaveRequests] = useState<any[]>([]);
+  const [_leaveRequests, setLeaveRequests] = useState<Record<string, unknown>[]>([]);
 
   // Activity
 
@@ -76,10 +134,10 @@ export default function UnionDashboardPage() {
   const [agentSearch, setAgentSearch] = useState('');
 
   // Settings form
-  const [settingsForm, setSettingsForm] = useState<Record<string, any>>({});
+  const [settingsForm, setSettingsForm] = useState<Record<string, string>>({});
 
   // Commission edit modal
-  const [editCommClub, setEditCommClub] = useState<any>(null);
+  const [editCommClub, setEditCommClub] = useState<Record<string, unknown> | null>(null);
   const [editCommRate, setEditCommRate] = useState('');
 
   // Announcement
@@ -88,7 +146,7 @@ export default function UnionDashboardPage() {
 
   // Admin search
   const [adminSearch, setAdminSearch] = useState('');
-  const [adminResults, setAdminResults] = useState<any[]>([]);
+  const [adminResults, setAdminResults] = useState<Record<string, unknown>[]>([]);
 
   const mountedRef = useIsMounted();
 
@@ -174,7 +232,7 @@ export default function UnionDashboardPage() {
       .from('union_clubs')
       .select('*, clubs:club_id(*)')
       .eq('union_id', uid);
-    const enrichedClubs = (unionClubs || []).map((uc: any) => ({
+    const enrichedClubs = (unionClubs || []).map((uc: UnionClubRow) => ({
       id: uc.club_id,
       ...uc.clubs,
       club_commission_rate: uc.commission_rate || 0.9,
@@ -182,7 +240,7 @@ export default function UnionDashboardPage() {
     if (mountedRef.current) setClubs(enrichedClubs);
 
     // Load agents across clubs
-    const clubIds = enrichedClubs.map((c: any) => c.id).filter(Boolean);
+    const clubIds = enrichedClubs.map((c) => c.id).filter(Boolean);
     if (clubIds.length > 0) {
       const { data: agentRows } = await supabase
         .from('club_members')
@@ -333,7 +391,7 @@ export default function UnionDashboardPage() {
     if (!agentSearch.trim()) return agents;
     const q = agentSearch.toLowerCase();
     return agents.filter(
-      (a: any) =>
+      (a: UnionAgent) =>
         a.profiles?.display_name?.toLowerCase().includes(q) ||
         a.profiles?.username?.toLowerCase().includes(q) ||
         a.role?.toLowerCase().includes(q)
@@ -357,7 +415,7 @@ export default function UnionDashboardPage() {
 
   const exportAgents = () => {
     const headers = ['Agent', 'Club', 'Role', 'Commission', 'Status'];
-    const rows = agents.map((a: any) => {
+    const rows = agents.map((a: UnionAgent) => {
       const club = clubs.find((c) => c.id === a.club_id);
       return [
         a.profiles?.display_name || a.profiles?.username || a.user_id,
@@ -766,13 +824,13 @@ export default function UnionDashboardPage() {
             <div className="admin-stats-grid" style={{ marginBottom: '16px' }}>
               <div className="admin-stat-card">
                 <div className="admin-stat-value" style={{ color: '#31A24C' }}>
-                  {fmt(agents.filter((a: any) => a.status === 'active').length)}
+                  {fmt(agents.filter((a) => a.status === 'active').length)}
                 </div>
                 <div className="admin-stat-label">Active</div>
               </div>
               <div className="admin-stat-card">
                 <div className="admin-stat-value" style={{ color: '#FA383E' }}>
-                  {fmt(agents.filter((a: any) => a.status === 'suspended').length)}
+                  {fmt(agents.filter((a) => a.status === 'suspended').length)}
                 </div>
                 <div className="admin-stat-label">Suspended</div>
               </div>
@@ -809,7 +867,7 @@ export default function UnionDashboardPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredAgents.map((agent: any) => {
+                  {filteredAgents.map((agent) => {
                     const club = clubs.find((c) => c.id === agent.club_id);
                     return (
                       <tr key={agent.id || agent.user_id}>
@@ -980,7 +1038,7 @@ export default function UnionDashboardPage() {
                   <tbody>
                     {clubs.map((c) => {
                       const treasury = c.chip_treasury || 0;
-                      const agentCount = agents.filter((a: any) => a.club_id === c.id).length;
+                      const agentCount = agents.filter((a) => a.club_id === c.id).length;
                       const health =
                         treasury > 100000
                           ? 'Excellent'
@@ -1151,7 +1209,7 @@ export default function UnionDashboardPage() {
                   gap: '12px',
                 }}
               >
-                {apps.map((app: any) => (
+                {apps.map((app) => (
                   <div key={app.id} className="admin-card" style={{ padding: '14px 16px' }}>
                     <div
                       style={{
@@ -1335,11 +1393,11 @@ export default function UnionDashboardPage() {
                     setProcessing(true);
                     setError(null);
                     try {
-                      const updates: any = {};
+                      const updates: Record<string, string> = {};
                       if (settingsForm.name) updates.name = settingsForm.name;
                       if (settingsForm.description !== undefined)
                         updates.description = settingsForm.description;
-                      const settings: any = {};
+                      const settings: Record<string, number> = {};
                       if (settingsForm.union_rake_hold) {
                         const v = parseFloat(settingsForm.union_rake_hold) / 100;
                         if (isNaN(v)) {
@@ -1412,7 +1470,7 @@ export default function UnionDashboardPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {admins.map((admin: any) => (
+                    {admins.map((admin) => (
                       <tr key={admin.user_id}>
                         <td style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                           {admin.profile?.avatar_url && (

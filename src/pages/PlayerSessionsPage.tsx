@@ -59,6 +59,66 @@ interface PlayerNote {
 
 type PlayersTab = 'members' | 'sessions' | 'retention' | 'chipflow';
 
+// ── PlayerSessions Types ─────────────────────────────────────
+interface MemberRow {
+  user_id: string;
+  role: string;
+  is_active?: boolean;
+  chip_balance: number;
+  created_at: string;
+}
+interface ProfileRow {
+  id: string;
+  username?: string;
+  display_name?: string;
+  avatar_url?: string;
+  last_seen_at?: string;
+}
+interface ActiveTable {
+  id: string;
+  name: string;
+  current_players: number;
+  max_players: number;
+  status: string;
+}
+interface NoteRow {
+  target_user_id: string;
+  player_type: string;
+  color_label: string;
+  notes: string;
+}
+interface RetentionPlayer {
+  userId: string;
+  name: string;
+  chipBalance: number;
+  daysSinceActive: number;
+}
+interface ChipFlowEntry {
+  userId: string;
+  name: string;
+  in: number;
+  out: number;
+  net: number;
+}
+interface ChipTxRow {
+  user_id: string;
+  amount: number;
+  type: string;
+  created_at: string;
+}
+interface RetentionMemberRow {
+  user_id: string;
+  chip_balance: number;
+  created_at: string;
+}
+interface SessionSummary {
+  totalMembers: number;
+  online: number;
+  idle: number;
+  activeTables: number;
+  totalSeated: number;
+}
+
 export default function PlayerSessionsPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -73,15 +133,22 @@ export default function PlayerSessionsPage() {
 
   // Members / Sessions state
   const [sessions, setSessions] = useState<PlayerSession[]>([]);
-  const [summary, setSummary] = useState<any>(null);
-  const [tables, setTables] = useState<any[]>([]);
+  const [summary, setSummary] = useState<SessionSummary | null>(null);
+  const [tables, setTables] = useState<ActiveTable[]>([]);
 
   // Retention state
-  const [retention, setRetention] = useState<any>(null);
+  const [retention, setRetention] = useState<{
+    summary: { total: number; active: number; atRisk: number; churned: number };
+    atRisk: RetentionPlayer[];
+    churned: RetentionPlayer[];
+  } | null>(null);
   const [retentionLoaded, setRetentionLoaded] = useState(false);
 
   // Chip Flow state
-  const [chipFlow, setChipFlow] = useState<Record<string, any> | null>(null);
+  const [chipFlow, setChipFlow] = useState<Record<
+    string,
+    { in: number; out: number; net: number }
+  > | null>(null);
   const [chipFlowLoaded, setChipFlowLoaded] = useState(false);
 
   // Search / Filter
@@ -90,13 +157,13 @@ export default function PlayerSessionsPage() {
   const [roleFilter, setRoleFilter] = useState('all');
 
   // Welcome-back modal
-  const [wbTarget, setWbTarget] = useState<any>(null);
+  const [wbTarget, setWbTarget] = useState<RetentionPlayer | null>(null);
   const [wbAmount, setWbAmount] = useState('');
 
   // Player Notes
   const [notes, setNotes] = useState<Record<string, PlayerNote>>({});
   const [notesLoaded, setNotesLoaded] = useState(false);
-  const [noteTarget, setNoteTarget] = useState<any>(null);
+  const [noteTarget, setNoteTarget] = useState<PlayerSession | null>(null);
   const [noteData, setNoteData] = useState<PlayerNote>({
     player_type: 'unknown',
     color_label: 'none',
@@ -153,8 +220,8 @@ export default function PlayerSessionsPage() {
         if (memErr) throw memErr;
 
         // Get profiles for display names
-        const userIds = (members || []).map((m: any) => m.user_id).filter(Boolean);
-        const profileMap: Record<string, any> = {};
+        const userIds = (members || []).map((m: MemberRow) => m.user_id).filter(Boolean);
+        const profileMap: Record<string, ProfileRow> = {};
         if (userIds.length > 0) {
           const { data: profiles } = await retryFetch(
             () =>
@@ -166,7 +233,7 @@ export default function PlayerSessionsPage() {
             { maxRetries: 2, isMountedRef: mountedRef }
           );
           if (profiles) {
-            profiles.forEach((p: any) => {
+            profiles.forEach((p: ProfileRow) => {
               profileMap[p.id] = p;
             });
           }
@@ -187,7 +254,7 @@ export default function PlayerSessionsPage() {
         if (!mountedRef.current) return;
 
         const now = Date.now();
-        const sessionData: PlayerSession[] = (members || []).map((m: any) => {
+        const sessionData: PlayerSession[] = (members || []).map((m: MemberRow) => {
           const profile = profileMap[m.user_id] || {};
           const lastSeen = profile.last_seen_at ? new Date(profile.last_seen_at).getTime() : 0;
           const minutesSince = lastSeen ? (now - lastSeen) / 60000 : 99999;
@@ -225,7 +292,7 @@ export default function PlayerSessionsPage() {
           idle: sessionData.filter((s) => s.status === 'idle').length,
           activeTables: (activeTables || []).length,
           totalSeated: (activeTables || []).reduce(
-            (sum: number, t: any) => sum + (t.current_players || 0),
+            (sum: number, t: ActiveTable) => sum + (t.current_players || 0),
             0
           ),
         });
@@ -240,7 +307,7 @@ export default function PlayerSessionsPage() {
               .in('target_user_id', userIds);
             if (mountedRef.current && notesData) {
               const noteMap: Record<string, PlayerNote> = {};
-              notesData.forEach((n: any) => {
+              notesData.forEach((n: NoteRow) => {
                 noteMap[n.target_user_id] = {
                   player_type: n.player_type || 'unknown',
                   color_label: n.color_label || 'none',
@@ -281,8 +348,8 @@ export default function PlayerSessionsPage() {
           { maxRetries: 2, isMountedRef: mountedRef }
         );
 
-        const userIds = (members || []).map((m: any) => m.user_id).filter(Boolean);
-        const profileMap: Record<string, any> = {};
+        const userIds = (members || []).map((m: RetentionMemberRow) => m.user_id).filter(Boolean);
+        const profileMap: Record<string, ProfileRow> = {};
         if (userIds.length > 0) {
           const { data: profiles } = await retryFetch(
             () =>
@@ -294,7 +361,7 @@ export default function PlayerSessionsPage() {
             { maxRetries: 2, isMountedRef: mountedRef }
           );
           if (profiles)
-            profiles.forEach((p: any) => {
+            profiles.forEach((p: ProfileRow) => {
               profileMap[p.id] = p;
             });
         }
@@ -302,11 +369,11 @@ export default function PlayerSessionsPage() {
         if (!mountedRef.current) return;
 
         const now = Date.now();
-        const atRisk: any[] = [];
-        const churned: any[] = [];
+        const atRisk: RetentionPlayer[] = [];
+        const churned: RetentionPlayer[] = [];
         let active = 0;
 
-        (members || []).forEach((m: any) => {
+        (members || []).forEach((m: RetentionMemberRow) => {
           const profile = profileMap[m.user_id] || {};
           const lastSeen = profile.last_seen_at ? new Date(profile.last_seen_at).getTime() : 0;
           const daysSince = lastSeen ? Math.floor((now - lastSeen) / 86400000) : 999;
@@ -362,7 +429,7 @@ export default function PlayerSessionsPage() {
       if (!mountedRef.current) return;
 
       const flow: Record<string, { in: number; out: number; net: number }> = {};
-      (txns || []).forEach((t: any) => {
+      (txns || []).forEach((t: ChipTxRow) => {
         if (!flow[t.user_id]) flow[t.user_id] = { in: 0, out: 0, net: 0 };
         const amt = Math.abs(t.amount || 0);
         if (t.type === 'buyin' || t.type === 'distribution' || t.amount > 0) {
@@ -477,7 +544,7 @@ export default function PlayerSessionsPage() {
     [sessions, statusFilter, roleFilter, searchQuery]
   );
 
-  const retSummary = retention?.summary || {};
+  const retSummary = retention?.summary ?? { total: 0, active: 0, atRisk: 0, churned: 0 };
   const atRisk = retention?.atRisk || [];
   const churned = retention?.churned || [];
 
@@ -493,7 +560,7 @@ export default function PlayerSessionsPage() {
         name: nameMap[userId] || userId.substring(0, 8),
         ...flow,
       }))
-      .sort((a: any, b: any) => Math.abs(b.net) - Math.abs(a.net));
+      .sort((a, b) => Math.abs(b.net) - Math.abs(a.net));
   }, [chipFlow, sessions]);
 
   // ── Welcome Back Action ────────────────────────────────────
@@ -1027,7 +1094,7 @@ export default function PlayerSessionsPage() {
               <div style={{ marginBottom: '16px' }}>
                 <h3 className="admin-section-title">Active Tables ({tables.length})</h3>
                 <div className="admin-stats-grid">
-                  {tables.map((t: any) => (
+                  {tables.map((t) => (
                     <div key={t.id} className="admin-stat-card">
                       <div className="admin-stat-value" style={{ color: '#4599FF' }}>
                         {t.current_players}/{t.max_players}
@@ -1157,7 +1224,7 @@ export default function PlayerSessionsPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {atRisk.map((p: any) => (
+                          {atRisk.map((p) => (
                             <tr key={p.userId}>
                               <td style={{ fontWeight: 600 }}>{p.name}</td>
                               <td>{fmtChips(p.chipBalance)}</td>
@@ -1204,7 +1271,7 @@ export default function PlayerSessionsPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {churned.map((p: any) => (
+                          {churned.map((p) => (
                             <tr key={p.userId}>
                               <td style={{ fontWeight: 600 }}>{p.name}</td>
                               <td>{fmtChips(p.chipBalance)}</td>
@@ -1262,7 +1329,10 @@ export default function PlayerSessionsPage() {
                   <div className="admin-stat-card">
                     <div className="admin-stat-value" style={{ color: '#31A24C' }}>
                       {fmtChips(
-                        chipFlowEntries.reduce((sum: number, e: any) => sum + (e.in || 0), 0)
+                        chipFlowEntries.reduce(
+                          (sum: number, e: ChipFlowEntry) => sum + (e.in || 0),
+                          0
+                        )
                       )}
                     </div>
                     <div className="admin-stat-label">Total Inflow</div>
@@ -1270,7 +1340,10 @@ export default function PlayerSessionsPage() {
                   <div className="admin-stat-card">
                     <div className="admin-stat-value" style={{ color: '#FA383E' }}>
                       {fmtChips(
-                        chipFlowEntries.reduce((sum: number, e: any) => sum + (e.out || 0), 0)
+                        chipFlowEntries.reduce(
+                          (sum: number, e: ChipFlowEntry) => sum + (e.out || 0),
+                          0
+                        )
                       )}
                     </div>
                     <div className="admin-stat-label">Total Outflow</div>
@@ -1280,14 +1353,19 @@ export default function PlayerSessionsPage() {
                       className="admin-stat-value"
                       style={{
                         color:
-                          chipFlowEntries.reduce((sum: number, e: any) => sum + (e.net || 0), 0) >=
-                          0
+                          chipFlowEntries.reduce(
+                            (sum: number, e: ChipFlowEntry) => sum + (e.net || 0),
+                            0
+                          ) >= 0
                             ? '#31A24C'
                             : '#FA383E',
                       }}
                     >
                       {fmtChips(
-                        chipFlowEntries.reduce((sum: number, e: any) => sum + (e.net || 0), 0)
+                        chipFlowEntries.reduce(
+                          (sum: number, e: ChipFlowEntry) => sum + (e.net || 0),
+                          0
+                        )
                       )}
                     </div>
                     <div className="admin-stat-label">Net Flow</div>
@@ -1312,7 +1390,7 @@ export default function PlayerSessionsPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {chipFlowEntries.map((e: any) => (
+                      {chipFlowEntries.map((e) => (
                         <tr key={e.userId}>
                           <td style={{ fontWeight: 600 }}>{e.name}</td>
                           <td style={{ color: '#31A24C' }}>+{fmtChips(e.in)}</td>

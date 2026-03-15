@@ -143,6 +143,7 @@ export default function CreditAdminPanel() {
       toast.success(`Credit limit updated to ${limit.toLocaleString()}`);
       setEditingAgent(null);
       setNewLimit('');
+      masterBus.emit('CREDIT_UPDATED', { clubId: '', userId: agentId, amount: limit });
       masterBus.emit('BALANCE_UPDATED', { source: 'credit_limit_change', agentId });
     } catch (err) {
       toast.error('Failed to update credit limit');

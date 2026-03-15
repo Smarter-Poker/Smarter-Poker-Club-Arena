@@ -4,36 +4,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 import { describe, it, expect, vi } from 'vitest';
-
-vi.mock('../../src/lib/supabase', () => {
-  const buildChain = (): any => {
-    const handler: ProxyHandler<any> = {
-      get: (_target, prop) => {
-        if (prop === 'maybeSingle' || prop === 'single')
-          return () => Promise.resolve({ data: null, error: null });
-        if (prop === 'then')
-          return (resolve: (v: any) => void) => resolve({ data: null, error: null });
-        return vi.fn().mockReturnValue(new Proxy({}, handler));
-      },
-    };
-    return new Proxy({}, handler);
-  };
-  return {
-    supabase: {
-      from: () => buildChain(),
-      rpc: vi.fn().mockResolvedValue({ data: null, error: null }),
-      auth: {
-        getUser: vi.fn().mockResolvedValue({ data: { user: null }, error: null }),
-      },
-    },
-  };
-});
-
-vi.mock('../../src/stores/useUserStore', () => ({
-  useUserStore: vi.fn(() => ({ user: null })),
-}));
-
-import { renderHook } from '@testing-library/react';
+import { renderHook, act } from '@testing-library/react';
 import { usePlayerStats } from '../../src/hooks/usePlayerStats';
 
 describe('usePlayerStats', () => {
@@ -41,18 +12,42 @@ describe('usePlayerStats', () => {
     expect(typeof usePlayerStats).toBe('function');
   });
 
-  it('should return stats object', () => {
+  it('should return getStats function', () => {
     const { result } = renderHook(() => usePlayerStats());
-    expect(result.current).toBeDefined();
+    expect(typeof result.current.getStats).toBe('function');
   });
 
-  it('should return handsPlayed as number', () => {
+  it('should return recordHandPlayed function', () => {
     const { result } = renderHook(() => usePlayerStats());
-    expect(typeof result.current.handsPlayed).toBe('number');
+    expect(typeof result.current.recordHandPlayed).toBe('function');
   });
 
-  it('should return vpipCount as number', () => {
+  it('should return recordVPIP function', () => {
     const { result } = renderHook(() => usePlayerStats());
-    expect(typeof result.current.vpipCount).toBe('number');
+    expect(typeof result.current.recordVPIP).toBe('function');
+  });
+
+  it('should return clearStats function', () => {
+    const { result } = renderHook(() => usePlayerStats());
+    expect(typeof result.current.clearStats).toBe('function');
+  });
+
+  it('should start with empty statsMap', () => {
+    const { result } = renderHook(() => usePlayerStats());
+    expect(result.current.statsMap).toBeDefined();
+    expect(Object.keys(result.current.statsMap)).toHaveLength(0);
+  });
+
+  it('should return null for unknown player stats', () => {
+    const { result } = renderHook(() => usePlayerStats());
+    expect(result.current.getStats('unknown')).toBeNull();
+  });
+
+  it('should record a hand played', () => {
+    const { result } = renderHook(() => usePlayerStats());
+    act(() => {
+      result.current.recordHandPlayed('p1');
+    });
+    expect(result.current.getStats('p1')?.handsPlayed).toBe(1);
   });
 });

@@ -10,6 +10,7 @@
 import { supabase } from '../lib/supabase';
 import { pushNotificationService } from './PushNotificationService';
 import { retryAsync } from '../utils/retryAsync';
+import { masterBus } from '../core/MasterBus';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -158,11 +159,11 @@ class CreditRequestServiceClass {
 
     const amount = approvedAmount || request.requested_amount;
 
-    // IMPORTANT: Execute credit transfer BEFORE marking as approved
-    // to prevent approved status without actual transfer on failure
+    // STEP 1: Execute credit transfer atomically
     await this.executeCreditTransfer(approverId, request.requester_id, amount, requestId);
 
-    // Only update request status after successful transfer
+    // STEP 2: Update request status to 'approved' with the approved amount
+    // (executeCreditTransfer no longer sets status — this is the single source of truth)
     const { data, error } = await supabase
       .from('credit_requests')
       .update({
@@ -176,6 +177,18 @@ class CreditRequestServiceClass {
       .maybeSingle();
 
     if (error) throw error;
+
+    // STEP 3: Emit bus events so all listening pages (AgentDashboard, CreditAdmin, etc.) refresh
+    masterBus.emit('CREDIT_UPDATED', {
+      clubId: request.club_id || '',
+      userId: request.requester_id,
+      amount,
+    });
+    masterBus.emit('BALANCE_UPDATED', { source: 'credit_request_approved', userId: approverId });
+    masterBus.emit('BALANCE_UPDATED', {
+      source: 'credit_request_approved',
+      userId: request.requester_id,
+    });
 
     // Notify requester
     try {
@@ -276,16 +289,8 @@ class CreditRequestServiceClass {
       throw new Error('Credit transfer failed');
     }
 
-    // Update request status to executed
-    const { error: statusErr } = await supabase
-      .from('credit_requests')
-      .update({ status: 'executed' })
-      .eq('id', requestId);
-    if (statusErr)
-      console.error(
-        '[CreditRequest] WARN: Transfer succeeded but status update to executed failed:',
-        statusErr
-      );
+    // NOTE: Status transition is handled by the caller (approveRequest/denyRequest)
+    // to prevent status overwrite conflicts. Do NOT set status here.
   }
 
   private async notifyApprover(

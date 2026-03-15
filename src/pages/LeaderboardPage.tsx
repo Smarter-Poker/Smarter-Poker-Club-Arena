@@ -18,6 +18,7 @@ import type {
   TournamentStats,
 } from '../services/LeaderboardService';
 import { getUserMemberships } from '../services/ClubsService';
+import { exportToCSV } from '../lib/export';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import { PlayerAvatar } from '../components/avatars/PlayerAvatar';
@@ -460,6 +461,41 @@ export default function LeaderboardPage() {
             </button>
           ))}
         </div>
+
+        {entries.length > 0 && (
+          <button
+            className="lb-csv-btn"
+            style={{
+              background: 'rgba(65,105,225,0.15)',
+              color: '#4169E1',
+              border: '1px solid rgba(65,105,225,0.3)',
+              padding: '6px 14px',
+              borderRadius: '8px',
+              fontSize: '13px',
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+            onClick={() => {
+              try {
+                exportToCSV(entries, `leaderboard_${metric}_${period}.csv`, [
+                  { key: 'rank', label: 'Rank' },
+                  { key: 'username', label: 'Username' },
+                  {
+                    key: 'value',
+                    label: METRIC_OPTIONS.find((m) => m.value === metric)?.label || 'Value',
+                  },
+                  { key: 'change', label: 'Change' },
+                  { key: 'userId', label: 'User ID' },
+                ]);
+                toast.success('Leaderboard exported!');
+              } catch {
+                toast.error('Export failed');
+              }
+            }}
+          >
+            📥 Export CSV
+          </button>
+        )}
       </div>
 
       {/* Leaderboard Content */}

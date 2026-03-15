@@ -16,6 +16,7 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import PageSkeleton from '../components/common/PageSkeleton';
 import styles from './AntiCheatPage.module.css';
 import { useIsMounted } from '../hooks/useIsMounted';
+import { retryFetch } from '../utils/retryFetch';
 
 // ── Helpers ─────────────────────────────────────────────────
 const fmt = (n: number) => Number(n || 0).toLocaleString();
@@ -155,9 +156,15 @@ export default function AntiCheatPage() {
       if (!targetClub) return;
       try {
         setLoading(true);
-        const { data, error } = await supabase.rpc('get_anti_cheat_stats', {
-          p_club_id: targetClub,
-        });
+        const { data, error } = await retryFetch(
+          () =>
+            supabase
+              .rpc('get_anti_cheat_stats', {
+                p_club_id: targetClub,
+              })
+              .then((r) => r),
+          { maxRetries: 2, isMountedRef: mountedRef }
+        );
         if (error) throw error;
         if (mountedRef.current) setStats(data || null);
       } catch (err: any) {
@@ -241,11 +248,17 @@ export default function AntiCheatPage() {
   const loadCollusion = useCallback(async () => {
     if (!clubId) return;
     try {
-      const { data, error } = await supabase.rpc('detect_collusion_pairs', {
-        p_club_id: clubId,
-        p_threshold: 0.75,
-        p_min_hands: 5,
-      });
+      const { data, error } = await retryFetch(
+        () =>
+          supabase
+            .rpc('detect_collusion_pairs', {
+              p_club_id: clubId,
+              p_threshold: 0.75,
+              p_min_hands: 5,
+            })
+            .then((r) => r),
+        { maxRetries: 2, isMountedRef: mountedRef }
+      );
       if (error) throw error;
       if (mountedRef.current) {
         setCollusionPairs(data?.pairs || data || []);
@@ -265,10 +278,16 @@ export default function AntiCheatPage() {
   const loadAnomalies = useCallback(async () => {
     if (!clubId) return;
     try {
-      const { data, error } = await supabase.rpc('detect_suspicious_plays', {
-        p_club_id: clubId,
-        p_limit: 500,
-      });
+      const { data, error } = await retryFetch(
+        () =>
+          supabase
+            .rpc('detect_suspicious_plays', {
+              p_club_id: clubId,
+              p_limit: 500,
+            })
+            .then((r) => r),
+        { maxRetries: 2, isMountedRef: mountedRef }
+      );
       if (error) throw error;
       if (mountedRef.current) {
         setAnomalies(data || []);

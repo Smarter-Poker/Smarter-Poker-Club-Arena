@@ -4,8 +4,9 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
+import { masterBus } from '../../core/MasterBus';
 import {
   referralService,
   type ReferralStats,
@@ -29,10 +30,22 @@ export default function ReferralDashboard({ userId }: ReferralDashboardProps) {
   const [copied, setCopied] = useState(false);
   const toast = useToast();
   const isMounted = useIsMounted();
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!userId) return;
     loadData();
+
+    const unsubs = [
+      masterBus.subscribe('BALANCE_UPDATED', () => {
+        if (isMounted.current) loadData();
+      }),
+    ];
+
+    return () => {
+      unsubs.forEach((u) => u());
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    };
   }, [userId]);
 
   const loadData = async () => {
@@ -57,7 +70,10 @@ export default function ReferralDashboard({ userId }: ReferralDashboardProps) {
     try {
       await navigator.clipboard.writeText(stats.code);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => {
+        if (isMounted.current) setCopied(false);
+      }, 2000);
     } catch {
       toast.error('Failed to copy');
     }

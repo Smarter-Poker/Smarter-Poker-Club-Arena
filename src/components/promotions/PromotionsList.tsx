@@ -14,6 +14,7 @@ import {
   type Promotion,
   type PromotionClaim,
 } from '../../services/PromotionService';
+import { masterBus } from '../../core/MasterBus';
 import PromotionDetail from './PromotionDetail';
 import './PromotionsList.css';
 
@@ -64,6 +65,11 @@ export default function PromotionsList({ userId, clubId }: PromotionsListProps) 
 
   useEffect(() => {
     loadData();
+
+    const unsub = masterBus.subscribe('BALANCE_UPDATED', () => {
+      if (isMounted.current) loadData();
+    });
+    return () => unsub();
   }, [loadData]);
 
   const getTimeRemaining = (endDate: string): string => {

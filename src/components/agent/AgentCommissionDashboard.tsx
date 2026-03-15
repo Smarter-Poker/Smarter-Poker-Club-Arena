@@ -169,10 +169,11 @@ export function AgentCommissionDashboard() {
       }
 
       // Load recent records
+      // commission_records schema: id, agent_id, period_id, gross_rake, commission_rate, commission_amount, status, paid_at, created_at, updated_at
       const { data: recordsData } = await supabase
         .from('commission_records')
         .select(
-          'id, player_id, player_name, amount, rake_amount, commission_rate, created_at, table_id, table_name'
+          'id, agent_id, period_id, gross_rake, commission_rate, commission_amount, status, created_at'
         )
         .eq('agent_id', user.id)
         .order('created_at', { ascending: false })
@@ -180,16 +181,16 @@ export function AgentCommissionDashboard() {
 
       if (recordsData) {
         setRecords(
-          recordsData.map((r) => ({
+          recordsData.map((r: any) => ({
             id: r.id,
-            playerId: r.player_id,
-            playerName: r.player_name || 'Unknown',
-            amount: r.amount,
-            rakeAmount: r.rake_amount || 0,
+            playerId: r.period_id || '',
+            playerName: r.status || 'pending',
+            amount: r.commission_amount || 0,
+            rakeAmount: r.gross_rake || 0,
             commissionRate: r.commission_rate || 0,
             createdAt: new Date(r.created_at),
-            tableId: r.table_id,
-            tableName: r.table_name,
+            tableId: undefined,
+            tableName: undefined,
           }))
         );
       }
@@ -434,8 +435,8 @@ export function AgentCommissionDashboard() {
             <table>
               <thead>
                 <tr>
-                  <th>Player</th>
-                  <th>Rake</th>
+                  <th>Status</th>
+                  <th>Gross Rake</th>
                   <th>Rate</th>
                   <th>Commission</th>
                   <th>Date</th>
@@ -451,7 +452,21 @@ export function AgentCommissionDashboard() {
                       transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
                     }}
                   >
-                    <td>{record.playerName}</td>
+                    <td>
+                      <span
+                        style={{
+                          textTransform: 'capitalize',
+                          color:
+                            record.playerName === 'paid'
+                              ? '#10b981'
+                              : record.playerName === 'pending'
+                                ? '#f59e0b'
+                                : 'inherit',
+                        }}
+                      >
+                        {record.playerName}
+                      </span>
+                    </td>
                     <td>{record.rakeAmount.toLocaleString()}</td>
                     <td>{(record.commissionRate * 100).toFixed(1)}%</td>
                     <td className="commission">{record.amount.toLocaleString()}</td>

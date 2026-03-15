@@ -7,6 +7,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { promotionService, type Promotion } from '../../services/PromotionService';
+import { masterBus } from '../../core/MasterBus';
 import './PromotionCarousel.css';
 
 interface PromotionCarouselProps {
@@ -46,7 +47,7 @@ export default function PromotionCarousel({ clubId, onPromoClick }: PromotionCar
   }, []);
 
   useEffect(() => {
-    (async () => {
+    const loadPromos = async () => {
       try {
         const data = await promotionService.getPromotions(clubId, 'active');
         if (isMounted.current) setPromos(data);
@@ -54,7 +55,14 @@ export default function PromotionCarousel({ clubId, onPromoClick }: PromotionCar
         console.error('[PromotionCarousel] load error:', err);
       }
       if (isMounted.current) setLoading(false);
-    })();
+    };
+    loadPromos();
+
+    // Refresh when data changes (e.g. promo claimed, new promo created)
+    const unsub = masterBus.subscribe('BALANCE_UPDATED', () => {
+      if (isMounted.current) loadPromos();
+    });
+    return () => unsub();
   }, [clubId]);
 
   // Auto-rotate every 6 seconds

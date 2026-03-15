@@ -167,6 +167,8 @@ export default function FriendListPanel({
         .ilike('username', addFriendInput.trim())
         .maybeSingle();
 
+      if (!isMounted.current) return;
+
       if (findError || !targetUser) {
         setError('User not found');
         setAddingFriend(false);
@@ -186,6 +188,8 @@ export default function FriendListPanel({
         .eq('user_id', user.id)
         .eq('friend_id', targetUser.id)
         .maybeSingle();
+
+      if (!isMounted.current) return;
 
       if (existing) {
         setError('Already friends');
@@ -212,13 +216,15 @@ export default function FriendListPanel({
       });
       if (notifyError) console.warn('[Friends] notification insert failed:', notifyError.message);
 
-      setAddFriendInput('');
-      setShowAddFriend(false);
-      setError(null);
+      if (isMounted.current) {
+        setAddFriendInput('');
+        setShowAddFriend(false);
+        setError(null);
+      }
     } catch (err) {
-      setError('Failed to send request');
+      if (isMounted.current) setError('Failed to send request');
     }
-    setAddingFriend(false);
+    if (isMounted.current) setAddingFriend(false);
   };
 
   const handleRemoveFriend = async (friendshipId: string) => {

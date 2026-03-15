@@ -7,6 +7,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
+import { useIsMounted } from '../hooks/useIsMounted';
 import { useParams, useNavigate } from 'react-router-dom';
 import { profileService } from '../services/ProfileService';
 import type { UserProfile, ProfileStats } from '../services/ProfileService';
@@ -47,6 +48,7 @@ export default function PublicProfilePage() {
   const navigate = useNavigate();
   const { user } = useAuthUser();
   const toast = useToast();
+  const isMounted = useIsMounted();
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [stats, setStats] = useState<ProfileStats | null>(null);
@@ -83,6 +85,7 @@ export default function PublicProfilePage() {
         playerStatusService.getPlayerStatus(userId),
       ]);
 
+      if (!isMounted.current) return;
       setProfile(profileData);
       setStats(statsData);
       setMutualFriends(mutuals);
@@ -91,9 +94,9 @@ export default function PublicProfilePage() {
       setPlayerStatus(status);
     } catch (err) {
       console.error('[PublicProfile] Load error:', err);
-      toast.error('Failed to load profile');
+      if (isMounted.current) toast.error('Failed to load profile');
     }
-    setLoading(false);
+    if (isMounted.current) setLoading(false);
   }, [userId, user?.id]);
 
   useEffect(() => {
@@ -191,14 +194,15 @@ export default function PublicProfilePage() {
         status: 'pending',
       });
       if (error) throw error;
+      if (!isMounted.current) return;
       setFriendStatus('pending_sent');
       masterBus.emit('FRIEND_REQUEST_SENT', { fromUserId: user.id, toUserId: userId });
       toast.success('Friend request sent!');
     } catch (err) {
       console.error('[PublicProfile] Add friend error:', err);
-      toast.error('Failed to send friend request');
+      if (isMounted.current) toast.error('Failed to send friend request');
     }
-    setActionLoading(false);
+    if (isMounted.current) setActionLoading(false);
   };
 
   // Accept friend request
@@ -212,14 +216,15 @@ export default function PublicProfilePage() {
         .or(`and(user_id.eq.${userId},friend_id.eq.${user.id})`)
         .eq('status', 'pending');
       if (error) throw error;
+      if (!isMounted.current) return;
       setFriendStatus('friends');
       masterBus.emit('FRIEND_REQUEST_ACCEPTED', { userId: user.id, friendId: userId });
       toast.success('Friend request accepted!');
     } catch (err) {
       console.error('[PublicProfile] Accept friend error:', err);
-      toast.error('Failed to accept request');
+      if (isMounted.current) toast.error('Failed to accept request');
     }
-    setActionLoading(false);
+    if (isMounted.current) setActionLoading(false);
   };
 
   // Start or resume a DM conversation
@@ -228,6 +233,7 @@ export default function PublicProfilePage() {
     setActionLoading(true);
     try {
       const conv = await messagingService.startConversation(user.id, userId);
+      if (!isMounted.current) return;
       if (conv) {
         navigate(`/messages/${conv.id}`);
       } else {
@@ -235,15 +241,16 @@ export default function PublicProfilePage() {
       }
     } catch (err) {
       console.error('[PublicProfile] Message error:', err);
-      toast.error('Failed to start conversation');
+      if (isMounted.current) toast.error('Failed to start conversation');
     }
-    setActionLoading(false);
+    if (isMounted.current) setActionLoading(false);
   };
 
   // Block confirmed
   const handleBlockConfirm = async (reason?: string) => {
     if (!user?.id || !userId) return;
     const success = await blockService.blockUser(user.id, userId, reason);
+    if (!isMounted.current) return;
     if (success) {
       setIsBlocked(true);
       setShowBlockModal(false);
@@ -257,6 +264,7 @@ export default function PublicProfilePage() {
   const handleUnblock = async () => {
     if (!user?.id || !userId) return;
     const success = await blockService.unblockUser(user.id, userId);
+    if (!isMounted.current) return;
     if (success) {
       setIsBlocked(false);
       toast.success('Player unblocked');

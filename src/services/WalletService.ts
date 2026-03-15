@@ -364,7 +364,8 @@ export const WalletService = {
       try {
         await this.distributePromo(agentId, dist.playerId, dist.amount);
         success++;
-      } catch {
+      } catch (err) {
+        console.error(`[WalletService] distributePromo failed for player ${dist.playerId}:`, err);
         failed++;
       }
     }

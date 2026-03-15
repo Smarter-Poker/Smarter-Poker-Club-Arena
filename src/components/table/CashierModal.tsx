@@ -10,7 +10,7 @@
  * - Transaction history
  */
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { haptic } from '../../services/SoundService';
 import './CashierModal.css';
 
@@ -105,16 +105,27 @@ export function CashierModal({
   }, [activeTab, canAddAmount, canWithdrawAmount]);
 
   // Reset amount when switching tabs
+  const animTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  useEffect(() => {
+    return () => {
+      animTimers.current.forEach(clearTimeout);
+    };
+  }, []);
+
   const handleTabChange = useCallback(
     (tab: CashierTab) => {
       setActiveTab(tab);
       setAmount(0);
       setVisibleQuick([]);
+      animTimers.current.forEach(clearTimeout);
+      animTimers.current = [];
       const max = tab === 'add' ? canAddAmount : canWithdrawAmount;
       [0, 1, 2, 3].forEach((i) => {
-        setTimeout(() => {
+        const t = setTimeout(() => {
           setVisibleQuick((prev) => [...prev, true]);
         }, i * 50);
+        animTimers.current.push(t);
       });
     },
     [canAddAmount, canWithdrawAmount]

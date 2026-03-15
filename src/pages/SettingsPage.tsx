@@ -11,6 +11,7 @@ import { supabase } from '../lib/supabase';
 import { identityDNA } from '../core/IdentityDNA';
 import { masterBus } from '../core/MasterBus';
 import { notificationService } from '../services/NotificationService';
+import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import UserProfileEdit from '../components/social/UserProfileEdit';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import FAQPanel from '../components/support/FAQPanel';
@@ -310,6 +311,21 @@ export default function SettingsPage() {
       unsub2();
     };
   }, []);
+
+  // Refresh data when user returns to tab
+  useVisibilityRefresh(() => {
+    const saved = localStorage.getItem('club-arena-settings');
+    if (saved) {
+      try {
+        setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(saved) });
+      } catch {
+        /* parse error */
+      }
+    }
+    supabase.auth.getUser().then(({ data }) => {
+      if (data?.user?.email) setUserEmail(data.user.email);
+    });
+  });
 
   // Account Actions
   const handleChangeEmail = async () => {

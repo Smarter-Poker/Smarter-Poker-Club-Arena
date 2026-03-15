@@ -118,14 +118,20 @@ export default function ClubsPage() {
     let isMounted = true;
     loadMyClubs(() => isMounted);
 
-    // Realtime: refresh clubs when membership data changes
-    const channelKey = 'clubs-page-live';
+    // Realtime: refresh clubs when membership data changes or clubs are modified
+    const channelKey = 'clubs-page-realtime';
     const channel = masterBus.getOrCreateChannel(channelKey);
     channel
       .on('postgres_changes', { event: '*', schema: 'public', table: 'club_members' }, () => {
         if (isMounted) loadMyClubs(() => isMounted);
       })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'clubs' }, () => {
+        if (isMounted) loadMyClubs(() => isMounted);
+      })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'clubs' }, () => {
+        if (isMounted) loadMyClubs(() => isMounted);
+      })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'clubs' }, () => {
         if (isMounted) loadMyClubs(() => isMounted);
       })
       .subscribe();
@@ -144,6 +150,8 @@ export default function ClubsPage() {
     const unsubs = [
       masterBus.subscribeDebounced('CLUB_JOINED', handler, 500),
       masterBus.subscribeDebounced('CLUB_LEFT', handler, 500),
+      masterBus.subscribeDebounced('CLUB_UPDATED', handler, 500),
+      masterBus.subscribeDebounced('CLUB_SETTINGS_UPDATED', handler, 500),
     ];
     return () => {
       isMounted = false;

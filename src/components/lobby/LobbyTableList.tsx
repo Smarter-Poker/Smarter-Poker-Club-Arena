@@ -5,6 +5,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useToast } from '../common/Toast';
@@ -86,7 +87,7 @@ export function LobbyTableList({ clubId, gameType, onJoinTable }: LobbyTableList
 
       const { data, error } = await query;
 
-      if (!error && data) {
+      if (!error && data && isMounted.current) {
         setTables(
           data.map((t) => ({
             id: t.id,
@@ -107,9 +108,9 @@ export function LobbyTableList({ clubId, gameType, onJoinTable }: LobbyTableList
         });
       }
     } catch (error) {
-      toast.error('Failed to load tables');
+      if (isMounted.current) toast.error('Failed to load tables');
     }
-    setLoading(false);
+    if (isMounted.current) setLoading(false);
   };
 
   const sortedTables = [...tables].sort((a, b) => {

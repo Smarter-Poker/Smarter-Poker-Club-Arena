@@ -25,3 +25,4 @@ supabase/.temp
 scripts/trees/
 .env*.local
 .env.prod.check
+.env.vercel

@@ -29,6 +29,7 @@ import {
 import { getClubLevel, ClubLevelInfo } from '../utils/clubLevels';
 import { useToast } from '../components/common/Toast';
 import ConfirmModal from '../components/common/ConfirmModal';
+import { retryFetch } from '../utils/retryFetch';
 import './ClubHomePage.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { resolveClubIdFilter } from '../utils/clubIdResolver';
@@ -302,11 +303,16 @@ export default function ClubHomePage() {
       } = await supabase.auth.getUser();
       if (!authUser) return;
 
-      const { data: profileData } = await supabase
-        .from('profiles')
-        .select('id, username, display_name, avatar_url, player_number')
-        .eq('id', authUser.id)
-        .maybeSingle();
+      const { data: profileData } = await retryFetch(
+        () =>
+          supabase
+            .from('profiles')
+            .select('id, username, display_name, avatar_url, player_number')
+            .eq('id', authUser.id)
+            .maybeSingle()
+            .then((r) => r),
+        { maxRetries: 2 }
+      );
 
       if (getIsMounted && !getIsMounted()) return;
       if (profileData) {
@@ -331,13 +337,18 @@ export default function ClubHomePage() {
     try {
       // Load club info — smart resolve: clubId may be UUID or integer club_id
       const { column: clubCol, value: clubVal } = resolveClubIdFilter(clubId);
-      const { data: clubData, error: clubError } = await supabase
-        .from('clubs')
-        .select(
-          'id, club_id, name, description, avatar_url, member_count, online_count, owner_id, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next, created_at'
-        )
-        .eq(clubCol, clubVal)
-        .maybeSingle();
+      const { data: clubData, error: clubError } = await retryFetch(
+        () =>
+          supabase
+            .from('clubs')
+            .select(
+              'id, club_id, name, description, avatar_url, member_count, online_count, owner_id, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next, created_at'
+            )
+            .eq(clubCol, clubVal)
+            .maybeSingle()
+            .then((r) => r),
+        { maxRetries: 2 }
+      );
 
       if (clubError || !clubData) {
         console.error('Failed to load club:', clubError);

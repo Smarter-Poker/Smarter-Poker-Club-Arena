@@ -164,7 +164,9 @@ export default function CreditRequestWidget({
         <div className="credit-bar">
           <div
             className="credit-used"
-            style={{ width: `${Math.min(100, (currentCreditUsed / currentCreditLimit) * 100)}%` }}
+            style={{
+              width: `${Math.min(100, (currentCreditUsed / (currentCreditLimit || 1)) * 100)}%`,
+            }}
           />
         </div>
         <div className="credit-info">

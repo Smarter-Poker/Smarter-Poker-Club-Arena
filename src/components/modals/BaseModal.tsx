@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 import './BaseModal.css';
 
 interface BaseModalProps {
@@ -20,6 +21,8 @@ export const BaseModal: React.FC<BaseModalProps> = ({
   showCloseButton = true,
   closeOnBackdrop = true,
 }) => {
+  const focusTrapRef = useFocusTrap(isOpen);
+
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = 'hidden';
@@ -43,7 +46,13 @@ export const BaseModal: React.FC<BaseModalProps> = ({
 
   return (
     <div className="base-modal-overlay" onClick={closeOnBackdrop ? onClose : undefined}>
-      <div className={`base-modal size-${size}`} onClick={(e) => e.stopPropagation()}>
+      <div
+        ref={focusTrapRef}
+        className={`base-modal size-${size}`}
+        role="dialog"
+        aria-modal="true"
+        onClick={(e) => e.stopPropagation()}
+      >
         {(title || showCloseButton) && (
           <div className="modal-header">
             {title && <h2>{title}</h2>}

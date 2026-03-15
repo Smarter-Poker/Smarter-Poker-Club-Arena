@@ -1,16 +1,10 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  UNIT TESTS — CreditRequestService
+ *  UNIT TESTS — CreditRequestService (Strengthened)
  * ═══════════════════════════════════════════════════════════════════════════════
- *
- * Tests credit request workflow with mocked Supabase:
- * - getMyRequests: returns empty array when no data
- * - getPendingCount: returns 0 when no pending requests
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-// ─── Mock dependencies ────────────────────────────────────────────────────
 
 vi.mock('../../src/lib/supabase', () => {
   const buildChain = (): any => {
@@ -34,44 +28,59 @@ vi.mock('../../src/lib/supabase', () => {
 });
 
 vi.mock('../../src/core/MasterBus', () => ({
-  masterBus: {
-    emit: vi.fn(),
-    subscribe: vi.fn(() => vi.fn()),
-  },
+  masterBus: { emit: vi.fn(), subscribe: vi.fn(() => vi.fn()) },
 }));
 
 vi.mock('../../src/utils/retryAsync', () => ({
   retryAsync: <T>(fn: () => Promise<T>) => fn(),
 }));
 
-// ─── Import AFTER mocks ──────────────────────────────────────────────────
-
 import { creditRequestService } from '../../src/services/CreditRequestService';
 
 describe('CreditRequestService', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // GET MY REQUESTS
-  // ─────────────────────────────────────────────────────────────────────────
+  beforeEach(() => vi.clearAllMocks());
 
   describe('getMyRequests', () => {
     it('should return empty array when no requests', async () => {
       const requests = await creditRequestService.getMyRequests('user-1');
       expect(requests).toEqual([]);
     });
-  });
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // GET PENDING COUNT
-  // ─────────────────────────────────────────────────────────────────────────
+    it('should not throw for unknown user', async () => {
+      const requests = await creditRequestService.getMyRequests('nonexistent');
+      expect(Array.isArray(requests)).toBe(true);
+    });
+  });
 
   describe('getPendingCount', () => {
     it('should return 0 when no pending requests', async () => {
       const count = await creditRequestService.getPendingCount('approver-1');
       expect(count).toBe(0);
+    });
+
+    it('should return a number type', async () => {
+      const count = await creditRequestService.getPendingCount('approver-2');
+      expect(typeof count).toBe('number');
+    });
+  });
+
+  describe('export shape', () => {
+    it('should export creditRequestService singleton', () => {
+      expect(creditRequestService).toBeDefined();
+      expect(typeof creditRequestService.getMyRequests).toBe('function');
+      expect(typeof creditRequestService.getPendingCount).toBe('function');
+    });
+
+    it('should have submitRequest method', () => {
+      expect(typeof creditRequestService.submitRequest).toBe('function');
+    });
+
+    it('should have approveRequest method', () => {
+      expect(typeof creditRequestService.approveRequest).toBe('function');
+    });
+
+    it('should have rejectRequest method', () => {
+      expect(typeof creditRequestService.rejectRequest).toBe('function');
     });
   });
 });

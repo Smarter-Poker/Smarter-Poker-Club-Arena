@@ -36,6 +36,7 @@ import PromotionsList from '../components/promotions/PromotionsList';
 import { dailyChallengeService, type UserDailyChallenge } from '../services/DailyChallengeService';
 import { useSwipeTabs } from '../hooks/useSwipeTabs';
 import { useToast } from '../components/common/Toast';
+import { retryFetch } from '../utils/retryFetch';
 import styles from './ProfilePage.module.css';
 
 import { useIsMounted } from '../hooks/useIsMounted';
@@ -285,20 +286,43 @@ export default function ProfilePage() {
     let isMounted = true;
     async function loadProfile() {
       setIsLoading(true);
+
+      // SWR: Show cached profile instantly while loading fresh data
       try {
         const {
           data: { user: authUser },
         } = await supabase.auth.getUser();
         if (!authUser || !isMounted) return;
 
+        const swrKey = `profile_cache_${authUser.id}`;
+        try {
+          const cached = sessionStorage.getItem(swrKey);
+          if (cached) {
+            const cp = JSON.parse(cached);
+            if (cp.user) setUser(cp.user);
+            if (cp.stats) setStats(cp.stats);
+            if (cp.diamonds != null) setDiamonds(cp.diamonds);
+            if (cp.isVIP != null) setIsVIP(cp.isVIP);
+            if (cp.dailyStreak != null) setDailyStreak(cp.dailyStreak);
+            setIsLoading(false); // Show cached UI instantly
+          }
+        } catch {
+          /* corrupt cache */
+        }
+
         // Fetch basic profile and stats
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select(
-            'id, username, display_name, player_number, avatar_url, vip_level, created_at, diamonds, is_vip, daily_streak, stats'
-          )
-          .eq('id', authUser.id)
-          .maybeSingle();
+        const { data: profile } = await retryFetch(
+          () =>
+            supabase
+              .from('profiles')
+              .select(
+                'id, username, display_name, player_number, avatar_url, vip_level, created_at, diamonds, is_vip, daily_streak, stats'
+              )
+              .eq('id', authUser.id)
+              .maybeSingle()
+              .then((r) => r),
+          { maxRetries: 2, isMountedRef: isMountedRef }
+        );
 
         if (profile && isMounted) {
           setUser({
@@ -334,14 +358,61 @@ export default function ProfilePage() {
           }
         }
 
+        // Save to SWR cache
+        if (profile && isMounted) {
+          try {
+            sessionStorage.setItem(
+              swrKey,
+              JSON.stringify({
+                user: {
+                  id: profile.id,
+                  username: profile.username || 'Player',
+                  displayName: profile.display_name || profile.username || 'Player',
+                  playerNumber: profile.player_number || Math.floor(Math.random() * 9999) + 1,
+                  avatarUrl: profile.avatar_url || '',
+                  vipLevel: profile.vip_level || 'bronze',
+                  memberSince: profile.created_at,
+                },
+                stats: profile.stats
+                  ? {
+                      totalHands: profile.stats.total_hands || 0,
+                      vpip: profile.stats.vpip || 0,
+                      pfr: profile.stats.pfr || 0,
+                      threeBet: profile.stats.three_bet || 0,
+                      aggression: profile.stats.aggression_factor || 0,
+                      bbPer100: profile.stats.bb_per_100 || 0,
+                      biggestPot: profile.stats.biggest_pot || 0,
+                      totalProfit: profile.stats.total_profit || 0,
+                      winRate: profile.stats.win_rate || 0,
+                      tournamentsPlayed: profile.stats.tournaments_played || 0,
+                      tournamentsWon: profile.stats.tournaments_won || 0,
+                      bountyKOs: profile.stats.bounty_kos || 0,
+                      roi: profile.stats.roi || 0,
+                    }
+                  : null,
+                diamonds: profile.diamonds || 0,
+                isVIP: profile.is_vip || false,
+                dailyStreak: profile.daily_streak || 0,
+              })
+            );
+          } catch {
+            /* storage full */
+          }
+        }
+
         // ── Batch: achievements + missions + transactions in parallel ──
         const [achievementsResult, missionsResult, transactionsResult] = await Promise.allSettled([
           // Achievements
-          supabase
-            .from('user_achievements')
-            .select('*, achievement:achievements(*)')
-            .eq('user_id', authUser.id)
-            .limit(200),
+          retryFetch(
+            () =>
+              supabase
+                .from('user_achievements')
+                .select('*, achievement:achievements(*)')
+                .eq('user_id', authUser.id)
+                .limit(200)
+                .then((r) => r),
+            { maxRetries: 2, isMountedRef: isMountedRef }
+          ),
           // Missions (daily + weekly + monthly)
           Promise.all([
             dailyChallengeService.getTodaysChallenges(authUser.id),
@@ -349,12 +420,17 @@ export default function ProfilePage() {
             dailyChallengeService.getMonthlyChallenges(authUser.id),
           ]),
           // Transaction history
-          supabase
-            .from('wallet_transactions')
-            .select('id, type, amount, created_at, description')
-            .eq('user_id', authUser.id)
-            .order('created_at', { ascending: true })
-            .limit(200),
+          retryFetch(
+            () =>
+              supabase
+                .from('wallet_transactions')
+                .select('id, type, amount, created_at, description')
+                .eq('user_id', authUser.id)
+                .order('created_at', { ascending: true })
+                .limit(200)
+                .then((r) => r),
+            { maxRetries: 2, isMountedRef: isMountedRef }
+          ),
         ]);
 
         if (!isMounted) return;

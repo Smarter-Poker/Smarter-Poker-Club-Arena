@@ -6,6 +6,7 @@
  */
 
 import { useState, useCallback } from 'react';
+import { useIsMounted } from '../hooks/useIsMounted';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { messagingService } from '../services/MessagingService';
@@ -35,6 +36,7 @@ export default function NewConversationPage() {
   const [groupName, setGroupName] = useState('');
   const [searching, setSearching] = useState(false);
   const [creating, setCreating] = useState(false);
+  const isMounted = useIsMounted();
 
   const isGroup = selectedUsers.length > 1;
 
@@ -57,21 +59,22 @@ export default function NewConversationPage() {
 
       // Exclude already selected users
       const selectedIds = new Set(selectedUsers.map((u) => u.id));
-      setSearchResults(
-        (data || [])
-          .filter((u: any) => !selectedIds.has(u.id))
-          .map((u: any) => ({
-            id: u.id,
-            username: u.username,
-            displayName: u.display_name,
-            avatarUrl: u.avatar_url,
-            isOnline: u.is_online || false,
-          }))
-      );
+      if (isMounted.current)
+        setSearchResults(
+          (data || [])
+            .filter((u: any) => !selectedIds.has(u.id))
+            .map((u: any) => ({
+              id: u.id,
+              username: u.username,
+              displayName: u.display_name,
+              avatarUrl: u.avatar_url,
+              isOnline: u.is_online || false,
+            }))
+        );
     } catch (err) {
       console.error('[NewConversation] Search error:', err);
     }
-    setSearching(false);
+    if (isMounted.current) setSearching(false);
   }, 300);
 
   const handleSearchChange = useCallback(

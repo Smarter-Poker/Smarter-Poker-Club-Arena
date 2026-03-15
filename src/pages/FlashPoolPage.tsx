@@ -11,6 +11,7 @@
  */
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useIsMounted } from '../hooks/useIsMounted';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -51,6 +52,7 @@ export default function FlashPoolPage() {
   const [joiningPool, setJoiningPool] = useState<string | null>(null);
   const [buyInAmounts, setBuyInAmounts] = useState<Record<string, number>>({});
   const [userBalance, setUserBalance] = useState<number | null>(null);
+  const isMounted = useIsMounted();
 
   // ── Load available pools ──
   const loadPools = useCallback(async () => {
@@ -77,9 +79,11 @@ export default function FlashPoolPage() {
         status: row.status || 'active',
       }));
 
+      if (!isMounted.current) return;
       setPools(poolList);
     } catch (err) {
       console.error('[FlashPoolPage] Failed to load pools:', err);
+      if (!isMounted.current) return;
       toast.error('Failed to load pools — showing defaults');
       // Fallback: show default pool configurations
       setPools([

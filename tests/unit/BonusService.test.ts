@@ -1,12 +1,12 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  UNIT TESTS — BonusService
+ *  UNIT TESTS — BonusService (Strengthened)
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// ─── Mock dependencies (no top-level variable refs in factory) ────────────
+// ─── Mock dependencies ────────────────────────────────────────────────────
 
 vi.mock('../../src/lib/supabase', () => {
   const buildChain = (): any => {
@@ -30,10 +30,7 @@ vi.mock('../../src/lib/supabase', () => {
 });
 
 vi.mock('../../src/core/MasterBus', () => ({
-  masterBus: {
-    emit: vi.fn(),
-    subscribe: vi.fn(() => vi.fn()),
-  },
+  masterBus: { emit: vi.fn(), subscribe: vi.fn(() => vi.fn()) },
 }));
 
 vi.mock('../../src/services/WalletService', () => ({
@@ -52,9 +49,7 @@ vi.mock('../../src/utils/retryAsync', () => ({
 import { bonusService } from '../../src/services/BonusService';
 
 describe('BonusService', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
+  beforeEach(() => vi.clearAllMocks());
 
   describe('getBonusStatus', () => {
     it('should return default status when no data', async () => {
@@ -63,12 +58,38 @@ describe('BonusService', () => {
       expect(status.streak).toBe(0);
       expect(status.canClaimDaily).toBe(true);
     });
+
+    it('should return a status object with expected shape', async () => {
+      const status = await bonusService.getBonusStatus('user-2');
+      expect(typeof status.streak).toBe('number');
+      expect(typeof status.canClaimDaily).toBe('boolean');
+    });
   });
 
   describe('canSpinToday', () => {
     it('should return true when no spin record exists', async () => {
       const result = await bonusService.canSpinToday('user-1');
       expect(result).toBe(true);
+    });
+
+    it('should not throw for empty userId', async () => {
+      const result = await bonusService.canSpinToday('');
+      expect(typeof result).toBe('boolean');
+    });
+  });
+
+  describe('claimDailyBonus', () => {
+    it('should return a result when claiming', async () => {
+      const result = await bonusService.claimDailyBonus('user-1');
+      expect(result).toBeDefined();
+    });
+  });
+
+  describe('export shape', () => {
+    it('should export bonusService singleton with expected methods', () => {
+      expect(typeof bonusService.getBonusStatus).toBe('function');
+      expect(typeof bonusService.canSpinToday).toBe('function');
+      expect(typeof bonusService.claimDailyBonus).toBe('function');
     });
   });
 });

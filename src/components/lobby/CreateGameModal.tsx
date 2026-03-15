@@ -13,6 +13,7 @@
  */
 
 import React, { useState } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useAuthUser } from '../../hooks/useAuthUser';
@@ -294,6 +295,7 @@ function ConfigModal({
   const { user } = useAuthUser();
   const [tab, setTab] = useState('regular');
   const [creating, setCreating] = useState(false);
+  const isMounted = useIsMounted();
   const [name, setName] = useState('');
   const [tableSize, setTableSize] = useState(9);
   const [actionTime, setActionTime] = useState(15);
@@ -380,7 +382,7 @@ function ConfigModal({
       haptic('error');
       alert('Failed: ' + (err.message || 'Unknown error'));
     } finally {
-      setCreating(false);
+      if (isMounted.current) setCreating(false);
     }
   };
 

@@ -47,6 +47,7 @@ export default function InvitePage() {
   const [alreadyMember, setAlreadyMember] = useState(false);
   const [inviteUrl, setInviteUrl] = useState('');
   const [copied, setCopied] = useState(false);
+  const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const qrCanvasRef = useRef<HTMLCanvasElement>(null);
   const toast = useToast();
 
@@ -171,7 +172,8 @@ export default function InvitePage() {
       await navigator.clipboard.writeText(inviteUrl);
       setCopied(true);
       toast.success('Invite link copied!');
-      setTimeout(() => setCopied(false), 2000);
+      clearTimeout(copiedTimerRef.current);
+      copiedTimerRef.current = setTimeout(() => setCopied(false), 2000);
     } catch {
       toast.error('Failed to copy link');
     }

@@ -88,10 +88,11 @@ export default function CommissionHistoryModal({
       }
 
       // Fetch commission entries
+      // agent_commissions schema: id, club_id, user_id, amount, commission_rate, source_type, source_id, notes, created_at
       let query = supabase
         .from('agent_commissions')
-        .select('id, created_at, type, amount, description, source_player_name, source_table_name')
-        .eq('agent_id', agentId)
+        .select('id, created_at, source_type, amount, notes')
+        .eq('user_id', agentId)
         .order('created_at', { ascending: false });
 
       if (dateFilter) {
@@ -102,40 +103,43 @@ export default function CommissionHistoryModal({
 
       if (!error && data) {
         setEntries(
-          data.map((e) => ({
+          data.map((e: any) => ({
             id: e.id,
             date: e.created_at,
-            type: e.type,
+            type: e.source_type || 'rake',
             amount: e.amount,
-            description: e.description || '',
-            sourcePlayer: e.source_player_name,
-            sourceTable: e.source_table_name,
+            description: e.notes || '',
+            sourcePlayer: undefined,
+            sourceTable: undefined,
           }))
         );
 
         // Calculate summary
         const totalEarned = data
-          .filter((e) => e.type === 'rake')
-          .reduce((sum, e) => sum + e.amount, 0);
+          .filter((e: any) => (e.source_type || 'rake') === 'rake')
+          .reduce((sum: number, e: any) => sum + (e.amount || 0), 0);
         const totalPaid = data
-          .filter((e) => e.type === 'payout')
-          .reduce((sum, e) => sum + Math.abs(e.amount), 0);
+          .filter((e: any) => (e.source_type || 'rake') === 'payout')
+          .reduce((sum: number, e: any) => sum + Math.abs(e.amount || 0), 0);
 
         const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
         const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
 
         const thisMonth = data
-          .filter((e) => new Date(e.created_at) >= thisMonthStart && e.type === 'rake')
-          .reduce((sum, e) => sum + e.amount, 0);
+          .filter(
+            (e: any) =>
+              new Date(e.created_at) >= thisMonthStart && (e.source_type || 'rake') === 'rake'
+          )
+          .reduce((sum: number, e: any) => sum + (e.amount || 0), 0);
 
         const lastMonth = data
           .filter(
-            (e) =>
+            (e: any) =>
               new Date(e.created_at) >= lastMonthStart &&
               new Date(e.created_at) < thisMonthStart &&
-              e.type === 'rake'
+              (e.source_type || 'rake') === 'rake'
           )
-          .reduce((sum, e) => sum + e.amount, 0);
+          .reduce((sum: number, e: any) => sum + (e.amount || 0), 0);
 
         setSummary({
           totalEarned,

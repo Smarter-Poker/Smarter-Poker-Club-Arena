@@ -49,6 +49,14 @@ export default function FriendListPanel({
   const [error, setError] = useState<string | null>(null);
   const [visibleFriends, setVisibleFriends] = useState<Set<number>>(new Set());
   const loadFriendsRef = useRef<() => void>(() => {});
+  const animTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  useEffect(() => {
+    return () => {
+      animTimers.current.forEach(clearTimeout);
+      animTimers.current = [];
+    };
+  }, []);
 
   useEffect(() => {
     if (user?.id) {

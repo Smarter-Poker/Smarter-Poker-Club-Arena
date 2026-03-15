@@ -5,7 +5,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -89,6 +89,7 @@ export default function XMTTPage() {
   const [actionError, setActionError] = useState<string | null>(null);
 
   const mountedRef = useIsMounted();
+  const errorTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const loadTournaments = useCallback(
     async (cId?: string) => {
@@ -230,7 +231,8 @@ export default function XMTTPage() {
       if (selectedTournament === tournamentId) loadDetail(tournamentId);
     } catch (err: any) {
       setActionError(err.message);
-      setTimeout(() => setActionError(null), 5000);
+      clearTimeout(errorTimerRef.current);
+      errorTimerRef.current = setTimeout(() => setActionError(null), 5000);
     }
   };
 
@@ -243,7 +245,8 @@ export default function XMTTPage() {
       if (selectedTournament === tournamentId) loadDetail(tournamentId);
     } catch (err: any) {
       setActionError(err.message);
-      setTimeout(() => setActionError(null), 5000);
+      clearTimeout(errorTimerRef.current);
+      errorTimerRef.current = setTimeout(() => setActionError(null), 5000);
     }
   };
 
@@ -279,7 +282,8 @@ export default function XMTTPage() {
       setWaitlistPositions((prev) => ({ ...prev, [tournamentId]: position }));
     } catch (err: any) {
       setActionError(err.message);
-      setTimeout(() => setActionError(null), 5000);
+      clearTimeout(errorTimerRef.current);
+      errorTimerRef.current = setTimeout(() => setActionError(null), 5000);
     } finally {
       setWaitlistProcessing(null);
     }
@@ -293,7 +297,8 @@ export default function XMTTPage() {
       setWaitlistPositions((prev) => ({ ...prev, [tournamentId]: null }));
     } catch (err: any) {
       setActionError(err.message);
-      setTimeout(() => setActionError(null), 5000);
+      clearTimeout(errorTimerRef.current);
+      errorTimerRef.current = setTimeout(() => setActionError(null), 5000);
     } finally {
       setWaitlistProcessing(null);
     }

@@ -22,6 +22,7 @@ import { tableService } from '../services/TableService';
 // Tournament registration/refunds handled via TournamentService → Player Wallet RPCs
 import { useToast } from '../components/common/Toast';
 import { resolveClubUUID } from '../utils/clubIdResolver';
+import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import ClubBottomNav from '../components/club/ClubBottomNav';
 import MysteryBountyReveal from '../components/tournament/MysteryBountyReveal';
 
@@ -146,6 +147,15 @@ export default function TournamentPage() {
     );
     return () => timers.forEach(clearTimeout);
   }, [tournaments]);
+
+  // Refresh tournament list when user returns to tab
+  useVisibilityRefresh(async () => {
+    if (!clubId) return;
+    const data = await tournamentService.getTournaments(clubId);
+    setTournaments(data);
+    const updated = data.find((t) => t.id === selectedTournamentRef.current?.id);
+    if (updated) setSelectedTournament(updated);
+  });
 
   // ── Realtime subscription: live tournament updates ──
   useEffect(() => {

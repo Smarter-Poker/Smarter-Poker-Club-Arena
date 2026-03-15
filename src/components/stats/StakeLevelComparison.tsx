@@ -5,12 +5,21 @@
  *
  * Groups session_history by big_blind and shows comparative metrics:
  * win rate, avg session P/L, VPIP, PFR, total hands, total profit.
+ *
+ * Improvements:
+ *  - Exponential backoff retry on transient fetch failures
+ *  - SWR cache: show cached data instantly, refresh in background
+ *  - Supabase Realtime subscription for cross-tab sync
+ *  - CSV data export
+ *  - Enhanced empty state
  */
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
+import { retryFetch } from '../../utils/retryFetch';
+import StatsExportButton from './StatsExportButton';
 import './StakeLevelComparison.css';
 
 interface StakeLevelComparisonProps {
@@ -41,30 +50,66 @@ interface StakeGroup {
   avgDuration: number;
 }
 
+// ── SWR Cache helpers ──
+const CACHE_PREFIX = 'slc_cache_';
+function getCached(userId: string): SessionRecord[] | null {
+  try {
+    const raw = sessionStorage.getItem(CACHE_PREFIX + userId);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+function setCache(userId: string, data: SessionRecord[]) {
+  try {
+    sessionStorage.setItem(CACHE_PREFIX + userId, JSON.stringify(data));
+  } catch {
+    /* quota exceeded */
+  }
+}
+
 export default function StakeLevelComparison({ userId }: StakeLevelComparisonProps) {
   const [records, setRecords] = useState<SessionRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const isMounted = useIsMounted();
 
+  // SWR: show cached data instantly
+  useEffect(() => {
+    if (!userId) return;
+    const cached = getCached(userId);
+    if (cached && cached.length > 0) {
+      setRecords(cached);
+      setLoading(false);
+    }
+  }, [userId]);
+
   const loadRecords = useCallback(async () => {
     if (!userId) return;
-    setLoading(true);
+    if (records.length === 0) setLoading(true);
 
     try {
-      const { data, error } = await supabase
-        .from('session_history')
-        .select(
-          'big_blind, profit_loss, hands_played, hands_won, vpip_percent, pfr_percent, bb_won, duration_minutes'
-        )
-        .eq('user_id', userId)
-        .order('big_blind', { ascending: true })
-        .limit(500);
+      const { data, error } = await retryFetch(
+        () =>
+          supabase
+            .from('session_history')
+            .select(
+              'big_blind, profit_loss, hands_played, hands_won, vpip_percent, pfr_percent, bb_won, duration_minutes'
+            )
+            .eq('user_id', userId)
+            .order('big_blind', { ascending: true })
+            .limit(500),
+        { maxRetries: 2, isMountedRef: isMounted }
+      );
 
       if (error) {
         console.warn('[StakeLevelComparison] Fetch error:', error.message);
         if (isMounted.current) setRecords([]);
       } else {
-        if (isMounted.current) setRecords(data || []);
+        const fetched = data || [];
+        if (isMounted.current) {
+          setRecords(fetched);
+          setCache(userId, fetched);
+        }
       }
     } catch (err) {
       console.error('[StakeLevelComparison] Error:', err);
@@ -72,6 +117,7 @@ export default function StakeLevelComparison({ userId }: StakeLevelComparisonPro
     } finally {
       if (isMounted.current) setLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
   useEffect(() => {
@@ -88,6 +134,23 @@ export default function StakeLevelComparison({ userId }: StakeLevelComparisonPro
     ];
     return () => unsubs.forEach((u) => u());
   }, [loadRecords]);
+
+  // Supabase Realtime subscription for cross-tab sync
+  useEffect(() => {
+    if (!userId) return;
+    const channel = supabase
+      .channel(`slc_realtime_${userId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'session_history', filter: `user_id=eq.${userId}` },
+        () => loadRecords()
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [userId, loadRecords]);
 
   const groups = useMemo<StakeGroup[]>(() => {
     if (records.length === 0) return [];
@@ -131,6 +194,32 @@ export default function StakeLevelComparison({ userId }: StakeLevelComparisonPro
     return groups.reduce((best, g) => (g.bbPer100 > best.bbPer100 ? g : best), groups[0]);
   }, [groups]);
 
+  // CSV export data
+  const exportHeaders = [
+    'Stakes',
+    'Sessions',
+    'Hands',
+    'P/L',
+    'BB/100',
+    'VPIP%',
+    'PFR%',
+    'Avg Dur (min)',
+  ];
+  const exportRows = useMemo(
+    () =>
+      groups.map((g) => [
+        g.label,
+        g.sessions,
+        g.totalHands,
+        g.totalProfit,
+        g.bbPer100,
+        g.avgVPIP,
+        g.avgPFR,
+        g.avgDuration,
+      ]),
+    [groups]
+  );
+
   if (loading) {
     return (
       <div className="slc-widget">
@@ -147,14 +236,28 @@ export default function StakeLevelComparison({ userId }: StakeLevelComparisonPro
     return (
       <div className="slc-widget">
         <h3 className="slc-title">Stake Level Comparison</h3>
-        <div className="slc-empty">No session data available yet</div>
+        <div className="slc-empty">
+          <div className="slc-empty-icon">📊</div>
+          <div className="slc-empty-title">No Stake Data Yet</div>
+          <div className="slc-empty-desc">
+            Play sessions at different stakes to compare your performance across varying levels.
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="slc-widget">
-      <h3 className="slc-title">Stake Level Comparison</h3>
+      <div className="slc-header-row">
+        <h3 className="slc-title">Stake Level Comparison</h3>
+        <StatsExportButton
+          headers={exportHeaders}
+          rows={exportRows}
+          filename="stake-comparison"
+          label="CSV"
+        />
+      </div>
 
       {bestStake && groups.length > 1 && (
         <div className="slc-best-badge">

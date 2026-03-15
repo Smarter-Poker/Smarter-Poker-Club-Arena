@@ -5,12 +5,21 @@
  *
  * Displays cumulative profit/loss over time using session_history data.
  * Pure SVG rendering — no chart library dependency.
+ *
+ * Improvements:
+ *  - Exponential backoff retry on transient fetch failures
+ *  - SWR cache: show cached data instantly, refresh in background
+ *  - Supabase Realtime subscription for cross-tab sync
+ *  - ARIA labels on SVG chart for accessibility
+ *  - CSV data export
  */
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
+import { retryFetch } from '../../utils/retryFetch';
+import StatsExportButton from './StatsExportButton';
 import './PerformanceTrends.css';
 
 interface PerformanceTrendsProps {
@@ -26,33 +35,69 @@ interface SessionRecord {
   big_blind: number;
 }
 
+// ── SWR Cache helpers ──
+const CACHE_PREFIX = 'pt_cache_';
+function getCached(userId: string, range: TimeRange): SessionRecord[] | null {
+  try {
+    const raw = sessionStorage.getItem(`${CACHE_PREFIX}${userId}_${range}`);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+function setCache(userId: string, range: TimeRange, data: SessionRecord[]) {
+  try {
+    sessionStorage.setItem(`${CACHE_PREFIX}${userId}_${range}`, JSON.stringify(data));
+  } catch {
+    /* quota exceeded */
+  }
+}
+
 export default function PerformanceTrends({ userId }: PerformanceTrendsProps) {
   const [sessions, setSessions] = useState<SessionRecord[]>([]);
   const [range, setRange] = useState<TimeRange>('30d');
   const [loading, setLoading] = useState(true);
   const isMounted = useIsMounted();
 
+  // SWR: show cached data instantly
+  useEffect(() => {
+    if (!userId) return;
+    const cached = getCached(userId, range);
+    if (cached && cached.length > 0) {
+      setSessions(cached);
+      setLoading(false);
+    }
+  }, [userId, range]);
+
   const loadSessions = useCallback(async () => {
     if (!userId) return;
-    setLoading(true);
+    if (sessions.length === 0) setLoading(true);
 
     const days = range === '7d' ? 7 : range === '30d' ? 30 : 90;
     const since = new Date(Date.now() - days * 86_400_000).toISOString();
 
     try {
-      const { data, error } = await supabase
-        .from('session_history')
-        .select('ended_at, profit_loss, hands_played, big_blind')
-        .eq('user_id', userId)
-        .gte('ended_at', since)
-        .order('ended_at', { ascending: true })
-        .limit(500);
+      const { data, error } = await retryFetch(
+        () =>
+          supabase
+            .from('session_history')
+            .select('ended_at, profit_loss, hands_played, big_blind')
+            .eq('user_id', userId)
+            .gte('ended_at', since)
+            .order('ended_at', { ascending: true })
+            .limit(500),
+        { maxRetries: 2, isMountedRef: isMounted }
+      );
 
       if (error) {
         console.warn('[PerformanceTrends] Fetch error:', error.message);
         if (isMounted.current) setSessions([]);
       } else {
-        if (isMounted.current) setSessions(data || []);
+        const records = data || [];
+        if (isMounted.current) {
+          setSessions(records);
+          setCache(userId, range, records);
+        }
       }
     } catch (err) {
       console.error('[PerformanceTrends] Error:', err);
@@ -60,6 +105,7 @@ export default function PerformanceTrends({ userId }: PerformanceTrendsProps) {
     } finally {
       if (isMounted.current) setLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, range]);
 
   useEffect(() => {
@@ -76,6 +122,23 @@ export default function PerformanceTrends({ userId }: PerformanceTrendsProps) {
     ];
     return () => unsubs.forEach((u) => u());
   }, [loadSessions]);
+
+  // Supabase Realtime subscription for cross-tab sync
+  useEffect(() => {
+    if (!userId) return;
+    const channel = supabase
+      .channel(`pt_realtime_${userId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'session_history', filter: `user_id=eq.${userId}` },
+        () => loadSessions()
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [userId, loadSessions]);
 
   // Build cumulative P&L data
   const chartData = useMemo(() => {
@@ -96,6 +159,22 @@ export default function PerformanceTrends({ userId }: PerformanceTrendsProps) {
     return { points, min, max, total: cumulative, sessionCount: sessions.length, handsTotal };
   }, [sessions]);
 
+  // CSV export data
+  const exportHeaders = ['Date', 'Profit/Loss', 'Hands Played', 'Big Blind', 'Cumulative P/L'];
+  const exportRows = useMemo(() => {
+    let cum = 0;
+    return sessions.map((s) => {
+      cum += s.profit_loss;
+      return [
+        new Date(s.ended_at).toLocaleDateString(),
+        s.profit_loss,
+        s.hands_played,
+        s.big_blind,
+        cum,
+      ];
+    });
+  }, [sessions]);
+
   const renderChart = useCallback(() => {
     if (chartData.points.length < 2) {
       return <div className="pt-no-data">Not enough sessions to chart</div>;
@@ -106,16 +185,16 @@ export default function PerformanceTrends({ userId }: PerformanceTrendsProps) {
     const PAD = 24;
     const usableW = W - PAD * 2;
     const usableH = H - PAD * 2;
-    const range = chartData.max - chartData.min || 1;
+    const dataRange = chartData.max - chartData.min || 1;
 
     const svgPoints = chartData.points.map((p, i) => {
       const x = PAD + (i / (chartData.points.length - 1)) * usableW;
-      const y = PAD + usableH - ((p.value - chartData.min) / range) * usableH;
+      const y = PAD + usableH - ((p.value - chartData.min) / dataRange) * usableH;
       return { x, y, ...p };
     });
 
     // Zero line
-    const zeroY = PAD + usableH - ((0 - chartData.min) / range) * usableH;
+    const zeroY = PAD + usableH - ((0 - chartData.min) / dataRange) * usableH;
     const isPositive = chartData.total >= 0;
     const mainColor = isPositive ? '#22c55e' : '#ef4444';
 
@@ -125,8 +204,20 @@ export default function PerformanceTrends({ userId }: PerformanceTrendsProps) {
     // Gradient fill
     const areaPoints = `${PAD},${zeroY} ${linePoints} ${PAD + usableW},${zeroY}`;
 
+    // ARIA description
+    const ariaDesc = `Cumulative profit/loss chart over ${range}. Total: ${chartData.total >= 0 ? '+' : ''}${chartData.total.toLocaleString()}, ${chartData.sessionCount} sessions, ${chartData.handsTotal.toLocaleString()} hands.`;
+
     return (
-      <svg className="pt-chart-svg" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet">
+      <svg
+        className="pt-chart-svg"
+        viewBox={`0 0 ${W} ${H}`}
+        preserveAspectRatio="xMidYMid meet"
+        role="img"
+        aria-label={ariaDesc}
+      >
+        <title>Performance Trends</title>
+        <desc>{ariaDesc}</desc>
+
         <defs>
           <linearGradient id="pt-fill-grad" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor={mainColor} stopOpacity="0.3" />
@@ -194,7 +285,7 @@ export default function PerformanceTrends({ userId }: PerformanceTrendsProps) {
         </text>
       </svg>
     );
-  }, [chartData]);
+  }, [chartData, range]);
 
   const plClass = chartData.total >= 0 ? 'pt-positive' : 'pt-negative';
 
@@ -203,16 +294,24 @@ export default function PerformanceTrends({ userId }: PerformanceTrendsProps) {
       {/* Header */}
       <div className="pt-header">
         <h3 className="pt-title">Performance Trends</h3>
-        <div className="pt-range-tabs">
-          {(['7d', '30d', '90d'] as TimeRange[]).map((r) => (
-            <button
-              key={r}
-              className={`pt-range-tab ${range === r ? 'pt-range-active' : ''}`}
-              onClick={() => setRange(r)}
-            >
-              {r}
-            </button>
-          ))}
+        <div className="pt-header-actions">
+          <StatsExportButton
+            headers={exportHeaders}
+            rows={exportRows}
+            filename="performance-trends"
+            label="CSV"
+          />
+          <div className="pt-range-tabs">
+            {(['7d', '30d', '90d'] as TimeRange[]).map((r) => (
+              <button
+                key={r}
+                className={`pt-range-tab ${range === r ? 'pt-range-active' : ''}`}
+                onClick={() => setRange(r)}
+              >
+                {r}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 

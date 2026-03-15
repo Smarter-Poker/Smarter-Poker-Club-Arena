@@ -179,7 +179,9 @@ export default function AgentDashboardPage() {
         // Get recent transactions
         const { data: txns } = await supabase
           .from('chip_transactions')
-          .select('id, user_id, club_id, amount, type, description, reference_id, created_at')
+          .select(
+            'id, from_user_id, to_user_id, club_id, amount, type, notes, reference_id, created_at'
+          )
           .eq('club_id', uuid)
           .order('created_at', { ascending: false })
           .limit(100);

@@ -9,12 +9,8 @@ import { describe, it, expect, vi } from 'vitest';
 const store: Record<string, string> = {};
 vi.stubGlobal('localStorage', {
   getItem: (k: string) => store[k] ?? null,
-  setItem: (k: string, v: string) => {
-    store[k] = v;
-  },
-  removeItem: (k: string) => {
-    delete store[k];
-  },
+  setItem: (k: string, v: string) => { store[k] = v; },
+  removeItem: (k: string) => { delete store[k]; },
 });
 
 import { THEMES, getStoredThemeId, getTheme, useClubTheme } from '../../src/utils/clubThemeEngine';
@@ -27,7 +23,8 @@ describe('clubThemeEngine', () => {
 
   it('should have required fields on each theme', () => {
     for (const [, theme] of Object.entries(THEMES)) {
-      expect(typeof theme.name).toBe('string');
+      expect(typeof theme.id).toBe('string');
+      expect(typeof theme.label).toBe('string');
       expect(typeof theme.primary).toBe('string');
     }
   });
@@ -45,10 +42,11 @@ describe('clubThemeEngine', () => {
     expect(typeof getTheme).toBe('function');
   });
 
-  it('should return a theme for default id', () => {
-    const theme = getTheme('default');
+  it('should return a theme for dark id', () => {
+    const theme = getTheme('dark');
     expect(theme).toBeDefined();
-    expect(typeof theme.name).toBe('string');
+    expect(typeof theme.label).toBe('string');
+    expect(typeof theme.primary).toBe('string');
   });
 
   it('should export useClubTheme as a function', () => {

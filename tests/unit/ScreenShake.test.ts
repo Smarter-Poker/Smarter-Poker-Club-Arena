@@ -15,15 +15,21 @@ describe('ScreenShake', () => {
     expect(typeof useScreenShake).toBe('function');
   });
 
-  it('should not throw when called without DOM', () => {
-    triggerScreenShake({ intensity: 'light' });
+  it('should return cleanup fn for light intensity', () => {
+    const cleanup = triggerScreenShake('light');
+    expect(typeof cleanup).toBe('function');
+    cleanup();
   });
 
-  it('should accept medium intensity', () => {
-    triggerScreenShake({ intensity: 'medium' });
+  it('should return cleanup fn for medium intensity', () => {
+    const cleanup = triggerScreenShake('medium');
+    expect(typeof cleanup).toBe('function');
+    cleanup();
   });
 
-  it('should accept heavy intensity', () => {
-    triggerScreenShake({ intensity: 'heavy' });
+  it('should return cleanup fn for heavy intensity', () => {
+    const cleanup = triggerScreenShake('heavy');
+    expect(typeof cleanup).toBe('function');
+    cleanup();
   });
 });

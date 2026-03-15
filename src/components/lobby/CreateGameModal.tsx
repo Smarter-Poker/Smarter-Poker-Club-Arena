@@ -12,7 +12,7 @@
  *   2) Regular | SNG | MTT tabs with full options
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
@@ -670,11 +670,124 @@ export default function CreateGameModal({
 }: CreateGameModalProps) {
   const [screen, setScreen] = useState(initialVariant ? 'config' : 'type_select');
   const [variant, setVariant] = useState(initialVariant || 'nlh');
+  const [isInUnion, setIsInUnion] = useState(false);
+  const [checkingUnion, setCheckingUnion] = useState(true);
+
+  // Check if club is in a union
+  useEffect(() => {
+    if (!clubId) {
+      setCheckingUnion(false);
+      return;
+    }
+    let isMounted = true;
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from('union_clubs')
+          .select('union_id')
+          .eq('club_id', clubId)
+          .limit(1)
+          .maybeSingle();
+        if (!isMounted) return;
+        if (data) setIsInUnion(true);
+      } catch {
+        /* fail-open */
+      }
+      if (isMounted) setCheckingUnion(false);
+    })();
+    return () => {
+      isMounted = false;
+    };
+  }, [clubId]);
 
   const handleVariantSelect = (v: string) => {
     setVariant(v);
     setScreen('config');
   };
+
+  // Show loading state while checking union status
+  if (checkingUnion) {
+    return (
+      <div
+        style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0,0,0,0.8)',
+          zIndex: 1000,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+        onClick={onClose}
+      >
+        <div
+          style={{
+            background: FB.bg,
+            borderRadius: 16,
+            padding: '32px',
+            textAlign: 'center',
+            border: `1px solid ${FB.border}`,
+          }}
+        >
+          <div style={{ color: FB.textPrimary, fontSize: 14 }}>Loading...</div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show union message if club is in a union
+  if (isInUnion) {
+    return (
+      <div
+        style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0,0,0,0.8)',
+          zIndex: 1000,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+        onClick={(e) => e.target === e.currentTarget && onClose()}
+      >
+        <div
+          style={{
+            background: FB.bg,
+            borderRadius: 16,
+            width: '100%',
+            maxWidth: 400,
+            padding: '32px 24px',
+            textAlign: 'center',
+            border: `1px solid ${FB.border}`,
+            boxShadow: '0 16px 48px rgba(0,0,0,0.6)',
+          }}
+        >
+          <h2 style={{ color: FB.textPrimary, fontSize: 18, fontWeight: 800, margin: '0 0 12px' }}>
+            Union Club
+          </h2>
+          <p style={{ color: FB.textSecondary, fontSize: 14, margin: '0 0 24px', lineHeight: 1.6 }}>
+            Games are managed at the union level. Please contact your union administrator.
+          </p>
+          <button
+            onClick={onClose}
+            style={{
+              width: '100%',
+              padding: 12,
+              borderRadius: 10,
+              border: `1px solid ${FB.warning}`,
+              background: 'transparent',
+              color: FB.warning,
+              fontSize: 14,
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (screen === 'type_select') {
     return <GameTypeSelector onSelect={handleVariantSelect} onClose={onClose} />;

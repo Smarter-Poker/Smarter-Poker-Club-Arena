@@ -357,6 +357,7 @@ export default function ClubDetailPage() {
   const [editedSettings, setEditedSettings] = useState<Partial<ClubSettings>>({});
   const [showMemberMenu, setShowMemberMenu] = useState<string | null>(null);
   const [userRole, setUserRole] = useState<'owner' | 'admin' | 'agent' | 'member'>('member');
+  const [isInUnion, setIsInUnion] = useState(false);
 
   // Controlled settings form state (replaces document.getElementById)
   const [settingsForm, setSettingsForm] = useState({
@@ -388,6 +389,29 @@ export default function ClubDetailPage() {
   useEffect(() => {
     let isMounted = true;
     loadClubData(() => isMounted);
+    return () => {
+      isMounted = false;
+    };
+  }, [clubId]);
+
+  // Check if club is in a union
+  useEffect(() => {
+    if (!clubId) return;
+    let isMounted = true;
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from('union_clubs')
+          .select('union_id')
+          .eq('club_id', clubId)
+          .limit(1)
+          .maybeSingle();
+        if (!isMounted) return;
+        if (data) setIsInUnion(true);
+      } catch {
+        /* fail-open */
+      }
+    })();
     return () => {
       isMounted = false;
     };
@@ -1094,12 +1118,14 @@ export default function ClubDetailPage() {
           <div className={styles.tablesContainer}>
             <div className={styles.tablesHeader}>
               <h3>All Tables ({tables.length})</h3>
-              <button
-                className={styles.createButton}
-                onClick={() => navigate(`/clubs/${clubId}/create-table`)}
-              >
-                + Create Table
-              </button>
+              {!isInUnion && (
+                <button
+                  className={styles.createButton}
+                  onClick={() => navigate(`/clubs/${clubId}/create-table`)}
+                >
+                  + Create Table
+                </button>
+              )}
             </div>
             <div className={styles.tablesGrid}>
               {tables.map((table, idx) => (

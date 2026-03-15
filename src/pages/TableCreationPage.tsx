@@ -2,7 +2,7 @@
  *  TABLE CREATION PAGE — Create New Poker Table
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -52,6 +52,24 @@ export default function TableCreationPage() {
   });
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Union guard: redirect back if club is in a union
+  useEffect(() => {
+    if (!clubId) return;
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from('union_clubs')
+          .select('union_id')
+          .eq('club_id', clubId)
+          .limit(1)
+          .maybeSingle();
+        if (data) navigate(`/clubs/${clubId}`, { replace: true });
+      } catch {
+        /* fail-open */
+      }
+    })();
+  }, [clubId, navigate]);
 
   const handleCreate = async () => {
     if (!settings.name.trim()) {

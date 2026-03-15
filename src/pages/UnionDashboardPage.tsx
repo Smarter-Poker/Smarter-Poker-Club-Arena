@@ -250,7 +250,8 @@ export default function UnionDashboardPage() {
     // Load union info
     const { data: unionRow } = await supabase
       .from('unions')
-      .select('id, name, description, owner_id, created_at, logo_url, member_count, status')
+      // unions live DB columns: id, name, description, owner_id, created_at, auto_settlement, member_count (no logo_url or status)
+      .select('id, name, description, owner_id, created_at, member_count')
       .eq('id', uid)
       .maybeSingle();
     if (mountedRef.current) setUnion(unionRow);

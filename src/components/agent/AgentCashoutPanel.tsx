@@ -96,7 +96,7 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
     } catch (err: any) {
       if (isMounted.current) setError(err.message || 'Failed to approve cashout');
     }
-    setProcessing(null);
+    if (isMounted.current) setProcessing(null);
   };
 
   const handleReject = async (cashout: CashoutRequest, reason?: string) => {
@@ -112,7 +112,7 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
     } catch (err: any) {
       if (isMounted.current) setError(err.message || 'Failed to reject cashout');
     }
-    setProcessing(null);
+    if (isMounted.current) setProcessing(null);
   };
 
   const formatTime = (dateStr: string) => {

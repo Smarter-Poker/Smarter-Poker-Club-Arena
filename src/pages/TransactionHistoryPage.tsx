@@ -9,6 +9,8 @@ import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import { exportToCSV } from '../lib/export';
+import { retryFetch } from '../utils/retryFetch';
+import { useIsMounted } from '../hooks/useIsMounted';
 import './TransactionHistoryPage.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import PageSkeleton from '../components/common/PageSkeleton';
@@ -41,6 +43,7 @@ export default function TransactionHistoryPage() {
   useVisibilityRefresh(() => loadTransactions(1, true));
   const { user } = useAuthUser();
   const toast = useToast();
+  const isMounted = useIsMounted();
 
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -179,7 +182,10 @@ export default function TransactionHistoryPage() {
         query = query.lte('created_at', endDate.toISOString());
       }
 
-      const { data, error } = await query;
+      const { data, error } = await retryFetch(() => query.then((r) => r), {
+        maxRetries: 2,
+        isMountedRef: isMounted,
+      });
 
       if (getIsMounted && !getIsMounted()) return;
       if (!error && data) {

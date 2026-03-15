@@ -59,10 +59,12 @@ export default function CreditRequestWidget({
     try {
       // Load my requests
       const myReqs = await creditRequestService.getMyRequests(agentId);
+      if (!isMounted.current) return;
       setRequests(myReqs);
 
       // Load requests I need to approve (if I'm a super agent)
       const toApprove = await creditRequestService.getRequestsForApprover(agentId);
+      if (!isMounted.current) return;
       const pending = toApprove.filter((r) => r.status === 'pending');
       setPendingApprovals(pending);
       setVisibleApprovals(new Set());

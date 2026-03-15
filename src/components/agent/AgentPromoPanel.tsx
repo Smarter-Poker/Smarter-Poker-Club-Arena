@@ -80,6 +80,7 @@ export default function AgentPromoPanel({
         .eq('club_id', clubId)
         .eq('user_id', userId)
         .maybeSingle();
+      if (!isMounted.current) return;
       setPromoBalance(Number(agent?.promo_wallet_balance) || 0);
       setAgentPkId(agent?.id || null);
 
@@ -91,7 +92,7 @@ export default function AgentPromoPanel({
         .eq('role', 'player')
         .order('chip_balance', { ascending: false })
         .limit(1000);
-      setDownline((players as DownlinePlayer[]) || []);
+      if (isMounted.current) setDownline((players as DownlinePlayer[]) || []);
     } catch (e) {
       console.error('[AgentPromoPanel] Load error:', e);
     } finally {

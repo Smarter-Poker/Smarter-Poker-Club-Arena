@@ -79,7 +79,7 @@ export default function CreditRequestWidget({
       console.error('Failed to load credit requests:', error);
       if (isMounted.current) toast.error('Failed to load credit requests');
     }
-    setLoading(false);
+    if (isMounted.current) setLoading(false);
   };
 
   const handleSubmitRequest = async () => {

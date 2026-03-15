@@ -100,6 +100,12 @@ export default function ClubsPage() {
   const loadMyClubs = async (getIsMounted?: () => boolean) => {
     setIsLoading(true);
     try {
+      // In iframe context, wait for postMessage auth token before fetching
+      const inIframe = window.parent !== window;
+      if (inIframe) {
+        await new Promise((r) => setTimeout(r, 800));
+        if (getIsMounted && !getIsMounted()) return;
+      }
       const memberships = await ClubsService.getUserMemberships();
       if (getIsMounted && !getIsMounted()) return;
       setMyClubs(memberships);

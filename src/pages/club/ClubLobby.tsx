@@ -44,34 +44,54 @@ export default function ClubLobby() {
   const isMountedRef = useIsMounted();
 
   // UNION-FIRST: Check if this club is in a union and redirect
+  // Combined with initial data load to prevent race condition where
+  // "Club not found" flashes before data arrives
   useEffect(() => {
-    if (!clubId) return;
-    const checkUnion = async () => {
+    if (!clubId) {
+      setIsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const init = async () => {
+      // In iframe context, wait for postMessage auth token before any Supabase calls
+      const inIframe = window.parent !== window;
+      if (inIframe) {
+        await new Promise((r) => setTimeout(r, 800));
+        if (cancelled || !isMountedRef.current) return;
+      }
+
+      // Check union membership first
       try {
         const resolvedId = await resolveClubUUID(clubId);
+        if (cancelled || !isMountedRef.current) return;
         const { data: ucRow } = await supabase
           .from('union_clubs')
           .select('union_id')
           .eq('club_id', resolvedId)
           .limit(1)
           .maybeSingle();
-        if (ucRow) {
+        if (ucRow && !cancelled && isMountedRef.current) {
           navigate(`/unions/${ucRow.union_id}`, { replace: true });
+          return;
         }
       } catch {
         // Fail-open for standalone clubs
       }
-    };
-    checkUnion();
-  }, [clubId, navigate]);
 
-  useEffect(() => {
-    if (!clubId) {
-      setIsLoading(false);
-      return;
-    }
-    loadClubData();
-  }, [clubId, currentUser?.id]);
+      // Now load club data (only if not redirected)
+      if (!cancelled && isMountedRef.current) {
+        loadClubData();
+      }
+    };
+
+    init();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [clubId, currentUser?.id, navigate]);
 
   // ── Visibility Refresh: reload data when user tabs back ──
   useVisibilityRefresh(() => {

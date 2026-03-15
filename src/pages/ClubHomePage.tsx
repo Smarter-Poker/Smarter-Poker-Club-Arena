@@ -367,6 +367,13 @@ export default function ClubHomePage() {
     if (!getIsMounted || getIsMounted()) setLoading(true);
 
     try {
+      // In iframe context, wait for postMessage auth token before any Supabase calls
+      const inIframe = window.parent !== window;
+      if (inIframe) {
+        await new Promise((r) => setTimeout(r, 800));
+        if (getIsMounted && !getIsMounted()) return;
+      }
+
       // Load club info — smart resolve: clubId may be UUID or integer club_id
       const { column: clubCol, value: clubVal } = resolveClubIdFilter(clubId);
       const { data: clubData, error: clubError } = await retryFetch(
@@ -439,6 +446,7 @@ export default function ClubHomePage() {
           .limit(1)
           .maybeSingle();
         if (!ucErr && ucRow) {
+          if (getIsMounted && !getIsMounted()) return;
           setIsInUnion(true);
           unionId = ucRow.union_id;
 
@@ -464,6 +472,7 @@ export default function ClubHomePage() {
                   .in('club_id', unionClubIds)
                   .in('status', ['active', 'approved']);
 
+                if (getIsMounted && !getIsMounted()) return;
                 setClub((prev) =>
                   prev ? { ...prev, member_count: totalMembers || prev.member_count || 0 } : prev
                 );
@@ -473,6 +482,7 @@ export default function ClubHomePage() {
             } else {
               // Single club — use the result from the parallel batch
               if (memberCountResult.count != null) {
+                if (getIsMounted && !getIsMounted()) return;
                 setClub((prev) =>
                   prev
                     ? { ...prev, member_count: memberCountResult.count || prev.member_count || 0 }

@@ -607,7 +607,7 @@ function CarouselSection({
       <div
         className={styles.carouselCardFeatured}
         ref={sharkCardRef}
-        onClick={() => {
+        onClick={async () => {
           haptic.success();
           PremiumSFX.navigate();
           if (sharkClubId) {
@@ -615,7 +615,23 @@ function CarouselSection({
             localStorage.setItem(LAST_CLUB_KEY, sharkClubId);
             navigate(`/clubs/${sharkClubId}`);
           } else {
-            toast.info('Shark Club not found. Join or create a club!');
+            // sharkClubId may not be loaded yet — try a quick lookup before giving up
+            try {
+              const { data: sharkClub } = await supabase
+                .from('clubs')
+                .select('id')
+                .eq('club_id', 25450)
+                .maybeSingle();
+              if (sharkClub?.id) {
+                localStorage.setItem(LAST_VISITED_KEY, sharkClub.id);
+                localStorage.setItem(LAST_CLUB_KEY, sharkClub.id);
+                navigate(`/clubs/${sharkClub.id}`);
+              } else {
+                toast.info('Shark Club not found. Join or create a club!');
+              }
+            } catch {
+              toast.info('Shark Club not found. Join or create a club!');
+            }
           }
         }}
       >
@@ -1038,13 +1054,22 @@ function HomePageInner() {
         // 1. Real member count from clubs table (bypasses RLS on club_members)
         const memberCount = club.member_count || 0;
 
-        // 2. Real active players: count occupied seats across ALL tables (platform-wide)
+        // 2. Real active players: count occupied seats for THIS CLUB only
         let activePlayers = 0;
-        const { count: seatCount } = await supabase
-          .from('table_seats')
-          .select('*', { count: 'exact', head: true })
-          .is('left_at', null);
-        activePlayers = seatCount || 0;
+        // First get all table IDs belonging to Shark Club
+        const { data: sharkTables } = await supabase
+          .from('tables')
+          .select('id')
+          .eq('club_id', club.id);
+        if (sharkTables && sharkTables.length > 0) {
+          const tableIds = sharkTables.map((t: any) => t.id);
+          const { count: seatCount } = await supabase
+            .from('table_seats')
+            .select('*', { count: 'exact', head: true })
+            .in('table_id', tableIds)
+            .is('left_at', null);
+          activePlayers = seatCount || 0;
+        }
 
         // 3. Club level — no column exists yet, default to 1
         if (!isMounted) return;

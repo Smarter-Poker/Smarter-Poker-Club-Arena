@@ -244,7 +244,11 @@ export default function MessagesPanel({ initialConversationId, onClose }: Messag
       <div className={styles.sidebar}>
         <div className={styles.sidebarHeader}>
           <h3> Messages</h3>
-          {onClose && <button onClick={onClose}>✕</button>}
+          {onClose && (
+            <button onClick={onClose} aria-label="Close">
+              ✕
+            </button>
+          )}
         </div>
 
         <div className={styles.conversationList}>

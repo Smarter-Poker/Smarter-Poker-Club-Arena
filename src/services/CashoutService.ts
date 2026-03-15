@@ -520,7 +520,6 @@ class CashoutServiceClass {
       .from('chip_transactions')
       .update({
         is_reversed: true,
-        metadata: { is_reversed: true },
       })
       .eq('from_user_id', agentId)
       .eq('to_user_id', playerId)

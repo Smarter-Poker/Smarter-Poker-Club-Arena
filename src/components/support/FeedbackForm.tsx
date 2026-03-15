@@ -123,7 +123,9 @@ export function FeedbackForm({ isOpen, onClose }: { isOpen: boolean; onClose: ()
       <div className="feedback-modal" onClick={(e) => e.stopPropagation()}>
         <div className="feedback-header">
           <h2>Send Feedback</h2>
-          <button onClick={onClose}>×</button>
+          <button onClick={onClose} aria-label="Close">
+            ×
+          </button>
         </div>
 
         <form onSubmit={handleSubmit} className="feedback-form">

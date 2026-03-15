@@ -53,7 +53,9 @@ export const TagInput: React.FC<TagInputProps> = ({
         {tags.map((tag, i) => (
           <span key={i} className="tag">
             {tag}
-            <button onClick={() => removeTag(i)}>×</button>
+            <button onClick={() => removeTag(i)} aria-label="Remove tag">
+              ×
+            </button>
           </span>
         ))}
         {tags.length < maxTags && (

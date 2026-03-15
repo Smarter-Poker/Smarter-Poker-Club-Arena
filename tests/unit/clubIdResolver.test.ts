@@ -32,8 +32,8 @@ describe('isUUID', () => {
     expect(isUUID('550e8400-e29b-41d4-a716-446655440000')).toBe(true);
   });
 
-  it('should return false for a slug', () => {
-    expect(isUUID('shark-club')).toBe(false);
+  it('should return false for an integer string', () => {
+    expect(isUUID('25450')).toBe(false);
   });
 
   it('should return false for empty string', () => {
@@ -52,9 +52,9 @@ describe('resolveClubIdFilter', () => {
     expect(result.value).toBe('550e8400-e29b-41d4-a716-446655440000');
   });
 
-  it('should return club_id filter for non-UUID input', () => {
-    const result = resolveClubIdFilter('shark-club');
+  it('should return club_id filter with numeric value for integer string', () => {
+    const result = resolveClubIdFilter('25450');
     expect(result.column).toBe('club_id');
-    expect(result.value).toBe('shark-club');
+    expect(result.value).toBe(25450);
   });
 });

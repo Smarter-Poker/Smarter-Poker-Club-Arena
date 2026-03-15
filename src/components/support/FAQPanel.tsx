@@ -62,7 +62,9 @@ export function FAQPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () => 
       <div className="faq-modal" onClick={(e) => e.stopPropagation()}>
         <div className="faq-header">
           <h2>Help & Rules</h2>
-          <button onClick={onClose}>×</button>
+          <button onClick={onClose} aria-label="Close">
+            ×
+          </button>
         </div>
 
         <div className="faq-search">

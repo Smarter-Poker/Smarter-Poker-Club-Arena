@@ -42,7 +42,9 @@ export function ReferralModal({
       <div className="referral-modal" onClick={(e) => e.stopPropagation()}>
         <div className="referral-header">
           <h2>Invite & Earn</h2>
-          <button onClick={onClose}>×</button>
+          <button onClick={onClose} aria-label="Close">
+            ×
+          </button>
         </div>
 
         <div className="referral-body">

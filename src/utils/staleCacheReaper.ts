@@ -21,6 +21,9 @@
  *   slc_cache_      → StakeLevelComparison
  *   profile_cache_  → ProfilePage (Phase 4)
  *   members_cache_  → ClubMembersPage (Phase 4)
+ *   tx_cache_       → TransactionHistoryPage (Phase 8)
+ *   club_home_cache_ → ClubHomePage (Phase 8)
+ *   lobby_tables_cache → LobbyPage (Phase 8)
  */
 
 const SWR_PREFIXES = [
@@ -37,6 +40,9 @@ const SWR_PREFIXES = [
   'slc_cache_',
   'profile_cache_',
   'members_cache_',
+  'tx_cache_',
+  'club_home_cache_',
+  'lobby_tables_cache',
 ];
 
 /** Maximum cache age in milliseconds (1 hour) */

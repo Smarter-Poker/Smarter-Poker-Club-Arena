@@ -157,7 +157,7 @@ export default function AgentPortalPage() {
     try {
       const { data, error } = await supabase
         .from('commission_ledger')
-        .select('amount, created_at')
+        .select('commission_earned, created_at')
         .eq('agent_id', user.id)
         .gte('created_at', new Date(Date.now() - 7 * 86400000).toISOString())
         .order('created_at', { ascending: true })
@@ -168,15 +168,15 @@ export default function AgentPortalPage() {
         const grouped: Record<string, number> = {};
         data.forEach((d: any) => {
           const day = new Date(d.created_at).toLocaleDateString('en-US', { weekday: 'short' });
-          grouped[day] = (grouped[day] || 0) + (d.amount || 0);
+          grouped[day] = (grouped[day] || 0) + (d.commission_earned || 0);
         });
         if (isMounted.current)
           setCommissionData(days.map((d) => ({ name: d, commissions: grouped[d] || 0 })));
       } else {
         if (isMounted.current) setCommissionData(days.map((d) => ({ name: d, commissions: 0 })));
       }
-    } catch {
-      /* silent */
+    } catch (err) {
+      console.error('[AgentPortal] Commission history error:', err);
     }
   };
 

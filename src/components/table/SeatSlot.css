@@ -114,6 +114,22 @@
   margin-bottom: -6px; /* overlap into info box */
 }
 
+/* Circular Timer Arc — scales with avatar-wrap at all breakpoints */
+.seat__circular-timer {
+  position: absolute;
+  inset: -4px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.seat__circular-timer .circular-timer {
+  width: 100% !important;
+  height: 100% !important;
+}
+
 .seat__avatar {
   width: var(--seat-avatar-size, 56px);
   height: var(--seat-avatar-size, 56px);

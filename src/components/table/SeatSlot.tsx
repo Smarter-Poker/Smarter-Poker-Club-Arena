@@ -19,7 +19,9 @@
 
 import React, { useMemo, useState, useEffect, memo } from 'react';
 import './SeatSlot.css';
+import './CircularTimer.css';
 import { CardImage, CardBack } from './CardImage';
+import { CircularTimer } from './CircularTimer';
 import MiniHUD, { type MiniHUDStats } from './MiniHUD';
 import type { PlayerStyleResult } from '../../services/PlayerStyleClassifier';
 import { ChipPhysics } from './ChipPhysics';
@@ -64,6 +66,7 @@ export interface SeatSlotProps {
   hudStats?: MiniHUDStats | null; // Opponent VPIP/PFR stats
   showHUD?: boolean; // Whether to show the HUD overlay
   playerStyle?: PlayerStyleResult | null; // Auto-classified player archetype
+  secondsLeft?: number; // Actual seconds remaining (for countdown overlay)
   deckStyle?: '4color' | '2color';
   cardBack?: string; // Card back design ID (e.g. 'classic_red', 'black', 'clubs_gold')
   showStackInBB?: boolean;
@@ -217,6 +220,7 @@ export const SeatSlot = memo(
       hudStats,
       showHUD = false,
       playerStyle,
+      secondsLeft,
       deckStyle = '4color',
       cardBack = 'black',
       showStackInBB = false,
@@ -380,6 +384,18 @@ export const SeatSlot = memo(
 
         {/* Avatar Circle — large, sits on top of info box */}
         <div className="seat__avatar-wrap">
+          {/* Circular Timer Arc — PokerBros-style ring around avatar */}
+          {isActive && timerProgress !== undefined && (
+            <div className="seat__circular-timer">
+              <CircularTimer
+                progress={timerProgress}
+                size={64}
+                strokeWidth={3}
+                showCountdown={true}
+                secondsLeft={secondsLeft}
+              />
+            </div>
+          )}
           <div
             className="seat__avatar"
             onClick={(e) => {

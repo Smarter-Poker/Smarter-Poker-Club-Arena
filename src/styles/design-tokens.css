@@ -145,11 +145,23 @@
   --stack-danger: #f97316; /* 10-19 BB — orange */
   --stack-critical: #ef4444; /* <10 BB — red */
 
-  /* ─── Timer Colors ─── */
+  /* ─── Timer Colors (PokerBros-style arc) ─── */
   --timer-color: #ffd700;
   --timer-glow: rgba(255, 215, 0, 0.6);
+  --timer-safe: #22c55e;
+  --timer-caution: #eab308;
+  --timer-warning: #f97316;
   --timer-urgent: #ef4444;
   --timer-urgent-glow: rgba(239, 68, 68, 0.6);
+
+  /* ─── Table Layout (from UI Overhaul spec) ─── */
+  --header-height: 44px;
+  --button-height: 56px;
+  --avatar-size-hero: 56px;
+  --card-width: 64px;
+  --card-height: 92px;
+  --seat-name-size: 0.6875rem;
+  --seat-stack-size: 0.6875rem;
 
   /* ─── Chip Denomination Colors (Standard Casino) ─── */
   --chip-white: #e5e7eb; /* 1 chip */

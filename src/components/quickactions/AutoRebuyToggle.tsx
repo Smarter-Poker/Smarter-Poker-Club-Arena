@@ -48,6 +48,7 @@ export const AutoRebuyToggle: React.FC<AutoRebuyToggleProps> = ({
         </div>
         <button
           className="settings-btn"
+          aria-label="Rebuy settings"
           onClick={(e) => {
             e.stopPropagation();
             setShowSettings(!showSettings);

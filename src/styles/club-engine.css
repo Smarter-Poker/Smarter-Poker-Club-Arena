@@ -849,6 +849,68 @@ pre {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
+   ♿ ACCESSIBILITY — Focus, Reduced Motion, Screen Reader
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+/* Focus visible ring — keyboard navigation only (not mouse clicks) */
+:focus-visible {
+  outline: 2px solid var(--club-blue-light);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* Interactive elements — enhanced focus ring */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[role='button']:focus-visible,
+[role='tab']:focus-visible,
+[role='menuitem']:focus-visible {
+  outline: 2px solid var(--club-blue-light);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px var(--club-blue-dim);
+}
+
+/* Remove default outline for mouse users */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Screen reader only — visually hidden but accessible */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* Reduced motion — respect user preference */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .pulse,
+  .card-deal,
+  .chip-stack,
+  .win-glow {
+    animation: none !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
    🎭 SELECTION STYLING
    ═══════════════════════════════════════════════════════════════════════════════ */
 

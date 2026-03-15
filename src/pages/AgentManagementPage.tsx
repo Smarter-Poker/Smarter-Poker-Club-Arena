@@ -12,6 +12,7 @@ import styles from './AgentManagementPage.module.css';
 import ConfirmModal from '@/components/common/ConfirmModal';
 import { AgentService, type Agent } from '@/services/AgentService';
 import { MembershipService, type ClubMembership } from '@/services/MembershipService';
+import { exportToCSV } from '../lib/export';
 import { useAuthUser } from '@/hooks/useAuthUser';
 import { supabase } from '@/lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -573,6 +574,45 @@ export default function AgentManagementPage() {
         <button className={styles.addButton} onClick={() => setShowAddModal(true)}>
           + Add Agent
         </button>
+        {agents.length > 0 && (
+          <button
+            className={styles.addButton}
+            style={{
+              background: 'rgba(65,105,225,0.15)',
+              color: '#4169E1',
+              border: '1px solid rgba(65,105,225,0.3)',
+            }}
+            onClick={() => {
+              try {
+                exportToCSV(
+                  agents.map((a) => ({
+                    displayName: a.displayName || 'Unknown',
+                    role: a.role,
+                    status: a.status,
+                    commissionRate: `${((a.commissionRate || 0) * 100).toFixed(0)}%`,
+                    creditLimit: a.creditLimit,
+                    totalPlayers: a.totalPlayers,
+                    weeklyRake: a.weeklyRakeGenerated,
+                  })),
+                  'agents_list.csv',
+                  [
+                    { key: 'displayName', label: 'Agent' },
+                    { key: 'role', label: 'Role' },
+                    { key: 'status', label: 'Status' },
+                    { key: 'commissionRate', label: 'Commission' },
+                    { key: 'creditLimit', label: 'Credit Limit' },
+                    { key: 'totalPlayers', label: 'Players' },
+                    { key: 'weeklyRake', label: 'Weekly Rake' },
+                  ]
+                );
+              } catch {
+                /* silent */
+              }
+            }}
+          >
+            📥 Export
+          </button>
+        )}
       </header>
 
       {/* Summary Cards */}
@@ -1027,6 +1067,7 @@ export default function AgentManagementPage() {
                           </button>
                           <button
                             className={styles.actionBtn}
+                            aria-label="Cancel"
                             onClick={() => setEditingLimit(null)}
                           ></button>
                         </div>

@@ -17,6 +17,7 @@ import PageSkeleton from '../components/common/PageSkeleton';
 import styles from './AntiCheatPage.module.css';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { retryFetch } from '../utils/retryFetch';
+import { exportToCSV } from '../lib/export';
 
 // ── Helpers ─────────────────────────────────────────────────
 const fmt = (n: number) => Number(n || 0).toLocaleString();
@@ -521,6 +522,51 @@ export default function AntiCheatPage() {
           </Link>
           <button onClick={handleRefresh} className={styles.btnGhost}>
             ↻ Refresh
+          </button>
+          <button
+            className={styles.btnGhost}
+            onClick={() => {
+              try {
+                if (tab === 'flags' && flags.length > 0) {
+                  exportToCSV(flags, 'anti_cheat_flags.csv', [
+                    { key: 'severity', label: 'Severity' },
+                    { key: 'flag_type', label: 'Type' },
+                    { key: 'status', label: 'Status' },
+                    { key: 'player_id', label: 'Player ID' },
+                    { key: 'flagged_at', label: 'Flagged At' },
+                  ]);
+                } else if (tab === 'events' && events.length > 0) {
+                  exportToCSV(events, 'anti_cheat_events.csv', [
+                    { key: 'event_type', label: 'Type' },
+                    { key: 'player_id', label: 'Player ID' },
+                    { key: 'created_at', label: 'Time' },
+                  ]);
+                } else if (tab === 'collusion' && collusionPairs.length > 0) {
+                  exportToCSV(collusionPairs, 'collusion_pairs.csv', [
+                    { key: 'dumper_id', label: 'Dumper ID' },
+                    { key: 'receiver_id', label: 'Receiver ID' },
+                    { key: 'hands_together', label: 'Hands Together' },
+                    { key: 'chip_flow_ratio', label: 'Flow Ratio' },
+                    { key: 'net_chips_transferred', label: 'Net Chips' },
+                    { key: 'severity', label: 'Severity' },
+                  ]);
+                } else if (tab === 'anomalies' && anomalies.length > 0) {
+                  exportToCSV(anomalies, 'anomalies.csv', [
+                    { key: 'player_id', label: 'Player ID' },
+                    { key: 'hand_rank', label: 'Hand Rank' },
+                    { key: 'pot_total', label: 'Pot' },
+                    { key: 'severity', label: 'Severity' },
+                    { key: 'completed_at', label: 'Time' },
+                  ]);
+                } else {
+                  toast.info?.('No data to export from this tab');
+                }
+              } catch {
+                /* silent */
+              }
+            }}
+          >
+            📥 Export
           </button>
         </div>
       </header>

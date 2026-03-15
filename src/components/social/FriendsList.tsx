@@ -235,6 +235,7 @@ function FriendItem({
           className="action-icon-btn"
           onClick={() => onChat(friend.id)}
           title="Message"
+          aria-label="Message"
         ></button>
         <button className="action-icon-btn" onClick={() => setShowMenu(!showMenu)} title="Menu">
           ⋮

@@ -59,9 +59,17 @@ export function QuickActionBar({
         </button>
       )}
 
-      {onSettings && <button className="quick-action settings" onClick={onSettings}></button>}
+      {onSettings && (
+        <button
+          className="quick-action settings"
+          onClick={onSettings}
+          aria-label="Settings"
+        ></button>
+      )}
 
-      {onLeave && <button className="quick-action leave" onClick={onLeave}></button>}
+      {onLeave && (
+        <button className="quick-action leave" onClick={onLeave} aria-label="Leave table"></button>
+      )}
     </div>
   );
 }

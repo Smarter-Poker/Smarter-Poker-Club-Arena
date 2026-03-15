@@ -16,6 +16,7 @@ import { resolveClubUUID } from '../utils/clubIdResolver';
 import { cashoutService } from '../services/CashoutService';
 import { WalletService } from '../services/WalletService';
 import { CreditService } from '../services/CreditService';
+import { exportToCSV } from '../lib/export';
 import './AdminDashboardPage.css';
 import AgentScoreCard from '../components/agent/AgentScoreCard';
 
@@ -559,6 +560,58 @@ export default function AgentDashboardPage() {
               disabled={processing}
             >
               ↻ Refresh
+            </button>
+            <button
+              className="admin-btn admin-btn-ghost"
+              onClick={() => {
+                try {
+                  if (tab === 'players' && players.length > 0) {
+                    exportToCSV(
+                      players.map((p) => ({
+                        username: p.profile?.display_name || p.profile?.username || p.user_id,
+                        role: p.role,
+                        chip_balance: p.chip_balance,
+                        status: p.status,
+                        joined: p.created_at,
+                      })),
+                      'agent_players.csv',
+                      [
+                        { key: 'username', label: 'Player' },
+                        { key: 'role', label: 'Role' },
+                        { key: 'chip_balance', label: 'Balance' },
+                        { key: 'status', label: 'Status' },
+                        { key: 'joined', label: 'Joined' },
+                      ]
+                    );
+                  } else if (tab === 'cashouts' && pendingCashouts.length > 0) {
+                    exportToCSV(pendingCashouts, 'agent_cashouts.csv', [
+                      { key: 'player_id', label: 'Player ID' },
+                      { key: 'amount', label: 'Amount' },
+                      { key: 'status', label: 'Status' },
+                      { key: 'created_at', label: 'Requested' },
+                    ]);
+                  } else if (tab === 'commissions' && commissions.length > 0) {
+                    exportToCSV(commissions, 'agent_commissions.csv', [
+                      { key: 'amount', label: 'Amount' },
+                      { key: 'source_type', label: 'Source' },
+                      { key: 'notes', label: 'Notes' },
+                      { key: 'created_at', label: 'Date' },
+                    ]);
+                  } else if (tab === 'overview' && recentTx.length > 0) {
+                    exportToCSV(recentTx, 'agent_transactions.csv', [
+                      { key: 'transaction_type', label: 'Type' },
+                      { key: 'amount', label: 'Amount' },
+                      { key: 'from_user_id', label: 'From' },
+                      { key: 'to_user_id', label: 'To' },
+                      { key: 'created_at', label: 'Date' },
+                    ]);
+                  }
+                } catch {
+                  /* silent */
+                }
+              }}
+            >
+              📥 Export
             </button>
           </div>
         </div>

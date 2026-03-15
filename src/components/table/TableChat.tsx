@@ -437,6 +437,7 @@ export function TableChat({
         <button
           className={`table-chat__emoji-toggle ${showEmojis ? 'table-chat__emoji-toggle--active' : ''}`}
           onClick={() => setShowEmojis(!showEmojis)}
+          aria-label="Toggle emoji picker"
         ></button>
         <input
           ref={inputRef}

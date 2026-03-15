@@ -349,6 +349,7 @@ function FriendListPanelInner({
                     onMessageClick?.(friend.friendId, friend.displayName);
                   }}
                   title="Message"
+                  aria-label="Message"
                 ></button>
                 {friend.isOnline && onInviteClick && (
                   <button
@@ -358,6 +359,7 @@ function FriendListPanelInner({
                       onInviteClick(friend.friendId);
                     }}
                     title="Invite to table"
+                    aria-label="Invite to table"
                   ></button>
                 )}
               </div>

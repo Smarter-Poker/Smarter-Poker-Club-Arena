@@ -13,6 +13,7 @@ vi.mock('../../src/lib/supabase', () => ({
       order: vi.fn().mockReturnThis(),
       limit: vi.fn().mockReturnThis(),
       maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+      upsert: vi.fn().mockResolvedValue({ data: null, error: null }),
     }),
     rpc: vi.fn().mockResolvedValue({ data: null, error: null }),
   },

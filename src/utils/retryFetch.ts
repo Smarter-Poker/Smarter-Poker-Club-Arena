@@ -16,7 +16,10 @@ interface RetryOptions {
   isMountedRef?: MutableRefObject<boolean>;
 }
 
-export async function retryFetch<T>(fn: () => Promise<T>, options: RetryOptions = {}): Promise<T> {
+export async function retryFetch<T>(
+  fn: () => PromiseLike<T> | Promise<T>,
+  options: RetryOptions = {}
+): Promise<T> {
   const { maxRetries = 2, baseDelayMs = 1000, isMountedRef } = options;
   let lastError: unknown;
 

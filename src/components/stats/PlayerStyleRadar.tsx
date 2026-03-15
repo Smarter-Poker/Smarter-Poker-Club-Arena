@@ -84,7 +84,8 @@ export default function PlayerStyleRadar({ userId }: PlayerStyleRadarProps) {
             .from('session_history')
             .select('vpip_percent, pfr_percent, hands_played, hands_won, bb_won')
             .eq('user_id', userId)
-            .limit(200),
+            .limit(200)
+            .then((r) => r),
         { maxRetries: 2, isMountedRef: isMounted }
       );
 
@@ -95,7 +96,8 @@ export default function PlayerStyleRadar({ userId }: PlayerStyleRadarProps) {
             .from('player_position_stats')
             .select('position, hands_played, vpip_count, pfr_count, three_bet_count, hands_won')
             .eq('user_id', userId)
-            .limit(50),
+            .limit(50)
+            .then((r) => r),
         { maxRetries: 2, isMountedRef: isMounted }
       );
 
@@ -109,18 +111,22 @@ export default function PlayerStyleRadar({ userId }: PlayerStyleRadarProps) {
       }
 
       // Calculate aggregate stats
-      const totalHands = sess.reduce((s, r) => s + r.hands_played, 0) || 1;
-      const totalWon = sess.reduce((s, r) => s + r.hands_won, 0);
-      const avgVPIP = sess.reduce((s, r) => s + r.vpip_percent, 0) / (sess.length || 1);
-      const avgPFR = sess.reduce((s, r) => s + r.pfr_percent, 0) / (sess.length || 1);
+      const totalHands = sess.reduce((s: number, r: any) => s + r.hands_played, 0) || 1;
+      const totalWon = sess.reduce((s: number, r: any) => s + r.hands_won, 0);
+      const avgVPIP =
+        sess.reduce((s: number, r: any) => s + r.vpip_percent, 0) / (sess.length || 1);
+      const avgPFR = sess.reduce((s: number, r: any) => s + r.pfr_percent, 0) / (sess.length || 1);
 
       // Position awareness: variance in VPIP across positions (higher = more aware)
-      const posVPIPs = pos.map((p) =>
+      const posVPIPs = pos.map((p: any) =>
         p.hands_played > 0 ? (p.vpip_count / p.hands_played) * 100 : 0
       );
       const posAwarenessVariance =
         posVPIPs.length > 1
-          ? Math.sqrt(posVPIPs.reduce((s, v) => s + Math.pow(v - avgVPIP, 2), 0) / posVPIPs.length)
+          ? Math.sqrt(
+              posVPIPs.reduce((s: number, v: number) => s + Math.pow(v - avgVPIP, 2), 0) /
+                posVPIPs.length
+            )
           : 0;
 
       // Normalize each axis to 0-100
@@ -146,10 +152,10 @@ export default function PlayerStyleRadar({ userId }: PlayerStyleRadarProps) {
       }
 
       // Classify overall style
-      const totalPosHands = pos.reduce((s, r) => s + r.hands_played, 0);
-      const totalPosVPIP = pos.reduce((s, r) => s + r.vpip_count, 0);
-      const totalPosPFR = pos.reduce((s, r) => s + r.pfr_count, 0);
-      const total3Bet = pos.reduce((s, r) => s + r.three_bet_count, 0);
+      const totalPosHands = pos.reduce((s: number, r: any) => s + r.hands_played, 0);
+      const totalPosVPIP = pos.reduce((s: number, r: any) => s + r.vpip_count, 0);
+      const totalPosPFR = pos.reduce((s: number, r: any) => s + r.pfr_count, 0);
+      const total3Bet = pos.reduce((s: number, r: any) => s + r.three_bet_count, 0);
 
       if (isMounted.current) {
         setStyle(

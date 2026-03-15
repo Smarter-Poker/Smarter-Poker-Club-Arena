@@ -138,8 +138,9 @@ export default function StakeLevelComparison({ userId }: StakeLevelComparisonPro
   // Supabase Realtime subscription for cross-tab sync
   useEffect(() => {
     if (!userId) return;
-    const channel = supabase
-      .channel(`slc_realtime_${userId}`)
+    const channelKey = `slc_realtime_${userId}`;
+    const channel = masterBus.getOrCreateChannel(channelKey);
+    channel
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'session_history', filter: `user_id=eq.${userId}` },
@@ -148,7 +149,7 @@ export default function StakeLevelComparison({ userId }: StakeLevelComparisonPro
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      masterBus.removeRegisteredChannel(channelKey);
     };
   }, [userId, loadRecords]);
 

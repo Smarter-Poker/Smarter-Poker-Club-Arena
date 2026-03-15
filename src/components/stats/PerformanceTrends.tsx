@@ -126,8 +126,9 @@ export default function PerformanceTrends({ userId }: PerformanceTrendsProps) {
   // Supabase Realtime subscription for cross-tab sync
   useEffect(() => {
     if (!userId) return;
-    const channel = supabase
-      .channel(`pt_realtime_${userId}`)
+    const channelKey = `pt_realtime_${userId}`;
+    const channel = masterBus.getOrCreateChannel(channelKey);
+    channel
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'session_history', filter: `user_id=eq.${userId}` },
@@ -136,7 +137,7 @@ export default function PerformanceTrends({ userId }: PerformanceTrendsProps) {
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      masterBus.removeRegisteredChannel(channelKey);
     };
   }, [userId, loadSessions]);
 

@@ -194,8 +194,9 @@ export default function PlayerStyleRadar({ userId }: PlayerStyleRadarProps) {
   // Supabase Realtime subscription for cross-tab sync
   useEffect(() => {
     if (!userId) return;
-    const channel = supabase
-      .channel(`psr_realtime_${userId}`)
+    const channelKey = `psr_realtime_${userId}`;
+    const channel = masterBus.getOrCreateChannel(channelKey);
+    channel
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'session_history', filter: `user_id=eq.${userId}` },
@@ -204,7 +205,7 @@ export default function PlayerStyleRadar({ userId }: PlayerStyleRadarProps) {
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      masterBus.removeRegisteredChannel(channelKey);
     };
   }, [userId, loadData]);
 

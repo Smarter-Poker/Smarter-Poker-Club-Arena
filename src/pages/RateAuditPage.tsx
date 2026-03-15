@@ -154,7 +154,7 @@ export default function RateAuditPage() {
       setChanges(allChanges);
     } catch (err) {
       console.error('[RateAuditPage] Load failed:', err);
-      toast.error('Failed to load rate audit data');
+      if (isMounted.current) toast.error('Failed to load rate audit data');
     }
     if (isMounted.current) setLoading(false);
   };

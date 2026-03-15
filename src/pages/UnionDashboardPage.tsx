@@ -203,18 +203,20 @@ export default function UnionDashboardPage() {
     // Load wallets
     const { data: walletRow } = await supabase
       .from('union_wallets')
-      .select('id, union_id, balance, currency, pending_balance, created_at')
+      // union_wallets schema: chip_balance, rake_wallet, bbj_wallet, promo_wallet, insurance_wallet, total_rake_collected, total_settlements
+      .select(
+        'id, union_id, chip_balance, rake_wallet, bbj_wallet, promo_wallet, insurance_wallet, total_rake_collected, total_settlements, created_at'
+      )
       .eq('union_id', uid)
       .maybeSingle();
     if (mountedRef.current) setWallets(walletRow);
 
-    // Load settlement periods
+    // settlement_periods is a global table (no club_id column) — query by status/date instead
     const { data: periods } = await supabase
       .from('settlement_periods')
       .select(
-        'id, club_id, period_start, period_end, status, total_rake, total_commission, settlement_amount, settled_at, created_at'
+        'id, period_number, year, start_at, end_at, status, total_rake_collected, total_hands_dealt, settled_at, created_at'
       )
-      .in('club_id', clubIds.length > 0 ? clubIds : ['__none__'])
       .order('created_at', { ascending: false })
       .limit(30);
     if (mountedRef.current) setRecentPeriods(periods || []);
@@ -232,7 +234,8 @@ export default function UnionDashboardPage() {
     try {
       let query = supabase
         .from('union_applications')
-        .select('id, union_id, club_name, club_id, applicant_id, status, message, created_at')
+        // union_applications schema: notes (not message)
+        .select('id, union_id, club_name, club_id, applicant_id, status, notes, created_at')
         .eq('union_id', unionId)
         .order('created_at', { ascending: false });
       if (appsFilter !== 'all') {
@@ -1160,7 +1163,7 @@ export default function UnionDashboardPage() {
                       <div style={{ fontWeight: 600 }}>{app.club_name}</div>
                       <span className="admin-badge">{app.status}</span>
                     </div>
-                    {app.message && (
+                    {app.notes && (
                       <div
                         style={{
                           fontSize: '13px',
@@ -1169,7 +1172,7 @@ export default function UnionDashboardPage() {
                           marginBottom: '6px',
                         }}
                       >
-                        "{app.message}"
+                        "{app.notes}"
                       </div>
                     )}
                     <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>

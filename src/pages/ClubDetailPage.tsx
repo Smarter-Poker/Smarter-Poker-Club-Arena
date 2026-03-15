@@ -1462,7 +1462,9 @@ export default function ClubDetailPage() {
           <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
             <div className={styles.modalHeader}>
               <h3>Agent Management</h3>
-              <button onClick={() => setShowAgentManager(false)}>×</button>
+              <button onClick={() => setShowAgentManager(false)} aria-label="Close agent manager">
+                ×
+              </button>
             </div>
             <div className={styles.modalContent}>
               <p>

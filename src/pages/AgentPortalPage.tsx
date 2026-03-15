@@ -214,7 +214,7 @@ export default function AgentPortalPage() {
         if (isMounted.current) toast.error('Transfer failed');
       }
     } catch (err) {
-      toast.error('Transfer failed: ' + (err as Error).message);
+      if (isMounted.current) toast.error('Transfer failed: ' + (err as Error).message);
     }
     setIsTransferring(false);
   };

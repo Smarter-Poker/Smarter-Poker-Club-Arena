@@ -230,7 +230,9 @@ export default function ReportReviewPage() {
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>{getReasonIcon(selectedReport.reason)} Report Details</h3>
-              <button onClick={() => setSelectedReport(null)}>×</button>
+              <button onClick={() => setSelectedReport(null)} aria-label="Close report details">
+                ×
+              </button>
             </div>
             <div className="modal-body">
               <div className="detail-row">

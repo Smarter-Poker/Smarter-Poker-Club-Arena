@@ -762,15 +762,16 @@ export default function CashierPage() {
       if (action === 'send') {
         // ─── SEND CHIPS ───
         if (!selectedRecipient) {
-          setMessage({ type: 'error', text: 'Please select a recipient' });
+          if (isMounted.current) setMessage({ type: 'error', text: 'Please select a recipient' });
           if (isMounted.current) setIsProcessing(false);
           return;
         }
         if (balances.PLAYER.available < value) {
-          setMessage({
-            type: 'error',
-            text: `Insufficient balance. Available: ${balances.PLAYER.available.toLocaleString()}`,
-          });
+          if (isMounted.current)
+            setMessage({
+              type: 'error',
+              text: `Insufficient balance. Available: ${balances.PLAYER.available.toLocaleString()}`,
+            });
           if (isMounted.current) setIsProcessing(false);
           return;
         }
@@ -806,10 +807,11 @@ export default function CashierPage() {
           );
         }
 
-        setMessage({
-          type: 'success',
-          text: `Sent ${value.toLocaleString()} chips to ${recipient?.username}`,
-        });
+        if (isMounted.current)
+          setMessage({
+            type: 'success',
+            text: `Sent ${value.toLocaleString()} chips to ${recipient?.username}`,
+          });
         loadBalances(user.id);
         loadRecipients(); // Refresh balances
         setSelectedRecipient('');
@@ -819,33 +821,39 @@ export default function CashierPage() {
         // ─── MINT CHIPS ───
         const mintResult = await mintChips(clubId!, value);
         if (!mintResult.success) {
-          setMessage({ type: 'error', text: 'Minting failed. Please try again.' });
+          if (isMounted.current)
+            setMessage({ type: 'error', text: 'Minting failed. Please try again.' });
           if (isMounted.current) setIsProcessing(false);
           return;
         }
-        setMessage({ type: 'success', text: `Minted ${value.toLocaleString()} chips` });
+        if (isMounted.current)
+          setMessage({ type: 'success', text: `Minted ${value.toLocaleString()} chips` });
         loadBalances(user.id);
         notifyWalletChange(user.id, value);
       } else if (action === 'buyin') {
         // ─── TABLE BUY-IN ───
         if (balances.PLAYER.available < value) {
-          setMessage({ type: 'error', text: 'Insufficient chip balance for buy-in' });
+          if (isMounted.current)
+            setMessage({ type: 'error', text: 'Insufficient chip balance for buy-in' });
           if (isMounted.current) setIsProcessing(false);
           return;
         }
         if (!tableId) {
-          setMessage({ type: 'error', text: 'No table selected for buy-in.' });
+          if (isMounted.current)
+            setMessage({ type: 'error', text: 'No table selected for buy-in.' });
           if (isMounted.current) setIsProcessing(false);
           return;
         }
         const { lockForBuyIn } = useWalletStore.getState();
         const success = await lockForBuyIn(user.id, value, tableId);
         if (success) {
-          setMessage({ type: 'success', text: `Bought in for ${value.toLocaleString()} chips` });
+          if (isMounted.current)
+            setMessage({ type: 'success', text: `Bought in for ${value.toLocaleString()} chips` });
           notifyWalletChange(user.id, value);
           navigate(`/table/${tableId}`);
         } else {
-          setMessage({ type: 'error', text: 'Buy-in failed. Please try again.' });
+          if (isMounted.current)
+            setMessage({ type: 'error', text: 'Buy-in failed. Please try again.' });
         }
       } else if (action === 'cashout') {
         // ─── CASH OUT ───
@@ -858,14 +866,16 @@ export default function CashierPage() {
           const { unlockFromTable } = useWalletStore.getState();
           const success = await unlockFromTable(user.id, value, tableId);
           if (success) {
-            setMessage({
-              type: 'success',
-              text: `Cashed out ${value.toLocaleString()} chips from table`,
-            });
+            if (isMounted.current)
+              setMessage({
+                type: 'success',
+                text: `Cashed out ${value.toLocaleString()} chips from table`,
+              });
             notifyWalletChange(user.id, value);
             navigate(`/table/${tableId}`);
           } else {
-            setMessage({ type: 'error', text: 'Cash-out failed. Please try again.' });
+            if (isMounted.current)
+              setMessage({ type: 'error', text: 'Cash-out failed. Please try again.' });
           }
         } else {
           // Standard cashout: request-cashout API (escrow → agent approval)
@@ -878,10 +888,11 @@ export default function CashierPage() {
           }
 
           if (balances.PLAYER.available < value) {
-            setMessage({
-              type: 'error',
-              text: `Insufficient balance. Available: ${balances.PLAYER.available.toLocaleString()}`,
-            });
+            if (isMounted.current)
+              setMessage({
+                type: 'error',
+                text: `Insufficient balance. Available: ${balances.PLAYER.available.toLocaleString()}`,
+              });
             if (isMounted.current) setIsProcessing(false);
             return;
           }
@@ -890,21 +901,27 @@ export default function CashierPage() {
           try {
             if (!clubId) throw new Error('Club ID is missing');
             await cashoutService.requestCashout(user.id, clubId!, value);
-            setMessage({
-              type: 'success',
-              text: `Cashout request submitted! ${value.toLocaleString()} chips are now held in escrow. Your agent will review shortly.`,
-            });
+            if (isMounted.current)
+              setMessage({
+                type: 'success',
+                text: `Cashout request submitted! ${value.toLocaleString()} chips are now held in escrow. Your agent will review shortly.`,
+              });
             loadBalances(user.id);
             loadPendingCashouts();
             notifyWalletChange(user.id, value);
           } catch (err: any) {
-            setMessage({ type: 'error', text: err.message || 'Cashout request failed.' });
+            if (isMounted.current)
+              setMessage({ type: 'error', text: err.message || 'Cashout request failed.' });
           }
         }
       }
       setAmount('');
     } catch (error: any) {
-      setMessage({ type: 'error', text: error.message || 'Transaction failed. Please try again.' });
+      if (isMounted.current)
+        setMessage({
+          type: 'error',
+          text: error.message || 'Transaction failed. Please try again.',
+        });
     }
     if (isMounted.current) setIsProcessing(false);
     startCooldown(); // Rate limit
@@ -942,7 +959,8 @@ export default function CashierPage() {
       notifyWalletChange(user.id, value);
       setAmount('');
     } catch (error: any) {
-      setMessage({ type: 'error', text: error.message || 'Cashout failed. Please try again.' });
+      if (isMounted.current)
+        setMessage({ type: 'error', text: error.message || 'Cashout failed. Please try again.' });
     }
     if (isMounted.current) setIsProcessing(false);
     startCooldown();
@@ -1351,24 +1369,28 @@ export default function CashierPage() {
                   const msg = err.message || 'Distribution failed';
                   // Parse specific RPC errors into user-friendly messages
                   if (msg.includes('Rate limit')) {
-                    setMessage({
-                      type: 'error',
-                      text: '⏱ Too many distributions — please wait 60 seconds',
-                    });
+                    if (isMounted.current)
+                      setMessage({
+                        type: 'error',
+                        text: '⏱ Too many distributions — please wait 60 seconds',
+                      });
                   } else if (msg.includes('Insufficient promo')) {
-                    setMessage({
-                      type: 'error',
-                      text: '💰 Insufficient promo balance for this distribution',
-                    });
+                    if (isMounted.current)
+                      setMessage({
+                        type: 'error',
+                        text: '💰 Insufficient promo balance for this distribution',
+                      });
                   } else if (msg.includes('Player not found')) {
-                    setMessage({ type: 'error', text: '❌ Player is not a member of this club' });
+                    if (isMounted.current)
+                      setMessage({ type: 'error', text: '❌ Player is not a member of this club' });
                   } else if (msg.includes('Agent not found')) {
-                    setMessage({
-                      type: 'error',
-                      text: '❌ Your agent record was not found — contact club owner',
-                    });
+                    if (isMounted.current)
+                      setMessage({
+                        type: 'error',
+                        text: '❌ Your agent record was not found — contact club owner',
+                      });
                   } else {
-                    setMessage({ type: 'error', text: msg });
+                    if (isMounted.current) setMessage({ type: 'error', text: msg });
                   }
                 } finally {
                   if (isMounted.current) setIsProcessing(false);

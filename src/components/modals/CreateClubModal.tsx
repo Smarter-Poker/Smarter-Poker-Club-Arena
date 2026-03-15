@@ -258,7 +258,7 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
 
       if (!isMounted.current) return;
 
-      toast.success(`Club "${clubName}" created successfully!`);
+      if (isMounted.current) toast.success(`Club "${clubName}" created successfully!`);
 
       setClubName('');
       setLogoFile(null);

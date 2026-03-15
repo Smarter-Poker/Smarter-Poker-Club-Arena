@@ -23,6 +23,25 @@ import {
 import './AchievementsPage.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { useIsMounted } from '../hooks/useIsMounted';
+import { retryFetch } from '../utils/retryFetch';
+
+// ── SWR Cache ──
+const ACH_CACHE_KEY = 'ach_cache_';
+function getCachedAch(userId: string): Achievement[] | null {
+  try {
+    const raw = sessionStorage.getItem(ACH_CACHE_KEY + userId);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+function setCachedAch(userId: string, data: Achievement[]) {
+  try {
+    sessionStorage.setItem(ACH_CACHE_KEY + userId, JSON.stringify(data));
+  } catch {
+    /* quota */
+  }
+}
 
 type AchievementCategory = 'all' | 'poker' | 'social' | 'financial' | 'tournament';
 
@@ -292,10 +311,20 @@ export default function AchievementsPage() {
 
   const loadAchievements = async () => {
     if (!user?.id) return;
-    setLoading(true);
+    // SWR: show cached instantly
+    const cached = getCachedAch(user.id);
+    if (cached && cached.length > 0) {
+      setAchievements(cached);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
     try {
-      // Get user's achievements from AchievementService
-      const userAchievements = await achievementService.getUserAchievements(user?.id || '');
+      // Get user's achievements from AchievementService with retry
+      const userAchievements = await retryFetch(
+        () => achievementService.getUserAchievements(user?.id || ''),
+        { maxRetries: 2 }
+      );
       const allAchievements = achievementService.getAll();
 
       // Create a map of user progress
@@ -318,7 +347,10 @@ export default function AchievementsPage() {
         };
       });
 
-      if (isMounted.current) setAchievements(merged);
+      if (isMounted.current) {
+        setAchievements(merged);
+        setCachedAch(user?.id || '', merged);
+      }
     } catch (error) {
       console.error('Failed to load achievements:', error);
       if (isMounted.current) toast?.error('Failed to load achievements');

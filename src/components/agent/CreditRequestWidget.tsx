@@ -6,6 +6,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { creditRequestService, type CreditRequest } from '../../services/CreditRequestService';
 import { useToast } from '../common/Toast';
+import { masterBus } from '../../core/MasterBus';
 import './CreditRequestWidget.css';
 
 interface CreditRequestWidgetProps {
@@ -39,6 +40,18 @@ export default function CreditRequestWidget({
 
   useEffect(() => {
     loadRequests();
+  }, [agentId]);
+
+  // Bus listener: refresh when credit status changes elsewhere
+  useEffect(() => {
+    const unsub = masterBus.subscribeDebounced(
+      'CREDIT_UPDATED',
+      () => {
+        if (isMounted.current) loadRequests();
+      },
+      500
+    );
+    return unsub;
   }, [agentId]);
 
   const loadRequests = async () => {
@@ -106,6 +119,7 @@ export default function CreditRequestWidget({
       toast.success(
         `Approved ${request.requestedAmount.toLocaleString()} for ${request.requesterName}`
       );
+      masterBus.emit('CREDIT_UPDATED', { clubId: '', userId: request.requesterId });
       loadRequests();
     } catch (error) {
       if (isMounted.current) toast.error('Failed to approve request');
@@ -116,6 +130,7 @@ export default function CreditRequestWidget({
     try {
       await creditRequestService.denyRequest(request.id, agentId);
       toast.success('Request denied');
+      masterBus.emit('CREDIT_UPDATED', { clubId: '', userId: request.requesterId });
       loadRequests();
     } catch (error) {
       if (isMounted.current) toast.error('Failed to deny request');

@@ -646,6 +646,7 @@ function QualifyingTab({ hands }: { hands: Record<string, QualifyingHandInfo> })
 export function useBBJ(clubId: string | null) {
   const [bbjData, setBbjData] = useState<BBJData | null>(null);
   const [loading, setLoading] = useState(true);
+  const isMounted = useIsMounted();
 
   const fetchBBJ = useCallback(async () => {
     if (!clubId) return;

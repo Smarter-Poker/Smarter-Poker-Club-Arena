@@ -21,7 +21,27 @@ import HandHistoryModal from '../components/club/HandHistoryModal';
 import { ShareHand, type ShareableHand } from '../components/table/ShareHand';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
+import { useIsMounted } from '../hooks/useIsMounted';
+import { retryFetch } from '../utils/retryFetch';
 import './HandHistoryPage.css';
+
+// ── SWR Cache ──
+const HH_CACHE_KEY = 'hh_cache_';
+function getCachedHands(userId: string): HandRecord[] | null {
+  try {
+    const raw = sessionStorage.getItem(HH_CACHE_KEY + userId);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+function setCachedHands(userId: string, data: HandRecord[]) {
+  try {
+    sessionStorage.setItem(HH_CACHE_KEY + userId, JSON.stringify(data.slice(0, 50)));
+  } catch {
+    /* quota */
+  }
+}
 
 type HistoryFilter = 'all' | 'won' | 'lost' | 'big-pots';
 
@@ -42,6 +62,17 @@ export default function HandHistoryPage() {
   const [hasMore, setHasMore] = useState(true);
   const [visibleHandCards, setVisibleHandCards] = useState(new Set<number>());
   const PAGE_SIZE = 25;
+  const isMounted = useIsMounted();
+
+  // SWR: show cached hands instantly on mount
+  useEffect(() => {
+    if (!user?.id) return;
+    const cached = getCachedHands(user.id);
+    if (cached && cached.length > 0) {
+      setHands(cached);
+      setLoading(false);
+    }
+  }, [user?.id]);
 
   // Stagger hand cards on render
   useEffect(() => {
@@ -122,7 +153,10 @@ export default function HandHistoryPage() {
     }
 
     try {
-      const data = await handHistoryService.getPlayerHands(user.id, PAGE_SIZE * currentPage);
+      const data = await retryFetch(
+        () => handHistoryService.getPlayerHands(user.id, PAGE_SIZE * currentPage),
+        { maxRetries: 2, isMountedRef: isMounted }
+      );
 
       if (getIsMounted && !getIsMounted()) return;
       let filtered = data;
@@ -142,6 +176,8 @@ export default function HandHistoryPage() {
 
       setHands(filtered);
       setHasMore(data.length === PAGE_SIZE * currentPage);
+      // Update SWR cache with latest data
+      if (reset && user?.id) setCachedHands(user.id, filtered);
     } catch (error) {
       console.error('Failed to load hands:', error);
       if (!getIsMounted || getIsMounted()) toast.error('Failed to load hand history');

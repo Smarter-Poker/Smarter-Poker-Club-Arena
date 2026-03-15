@@ -25,6 +25,25 @@ import type { VipTier } from '../components/avatars/PlayerAvatar';
 import './LeaderboardPage.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import PageSkeleton from '../components/common/PageSkeleton';
+import { retryFetch } from '../utils/retryFetch';
+
+// ── SWR Cache helpers ──
+const LB_CACHE_KEY = 'lb_cache_';
+function getCachedEntries(key: string): LeaderboardEntry[] | null {
+  try {
+    const raw = sessionStorage.getItem(LB_CACHE_KEY + key);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+function setCachedEntries(key: string, data: LeaderboardEntry[]) {
+  try {
+    sessionStorage.setItem(LB_CACHE_KEY + key, JSON.stringify(data));
+  } catch {
+    /* quota */
+  }
+}
 
 const podiumAnimationStyle = {
   opacity: 0,
@@ -276,11 +295,25 @@ export default function LeaderboardPage() {
       setLoading(false);
       return;
     }
-    if (!silent) setLoading(true);
+    // SWR: show cached data instantly
+    const cacheKey = `${selectedClubId}_${metric}_${period}`;
+    if (!silent) {
+      const cached = getCachedEntries(cacheKey);
+      if (cached && cached.length > 0) {
+        setEntries(cached);
+        setLoading(false);
+      } else {
+        setLoading(true);
+      }
+    }
     try {
-      const data = await LeaderboardService.getClubLeaderboard(selectedClubId, metric, period, 50);
+      const data = await retryFetch(
+        () => LeaderboardService.getClubLeaderboard(selectedClubId, metric, period, 50),
+        { maxRetries: 2 }
+      );
       if (getIsMounted && !getIsMounted()) return;
       setEntries(data);
+      setCachedEntries(cacheKey, data);
       setLastUpdated(new Date());
 
       // Get user's rank
@@ -304,7 +337,10 @@ export default function LeaderboardPage() {
     }
     setTournamentsLoading(true);
     try {
-      const data = await LeaderboardService.getClubTournamentStats(selectedClubId, 50);
+      const data = await retryFetch(
+        () => LeaderboardService.getClubTournamentStats(selectedClubId, 50),
+        { maxRetries: 2 }
+      );
       if (getIsMounted && !getIsMounted()) return;
       setTournamentStats(data);
       setLastUpdated(new Date());

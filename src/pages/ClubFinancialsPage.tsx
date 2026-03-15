@@ -19,6 +19,7 @@ import DynamicWallet from '../components/wallet/DynamicWallet';
 import './ClubFinancialsPage.css';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { useIsMounted } from '../hooks/useIsMounted';
+import { retryFetch } from '../utils/retryFetch';
 
 interface FinancialSummary {
   period: string;
@@ -213,13 +214,17 @@ export default function ClubFinancialsPage() {
       }
 
       // Load rake data from rake_history (the REAL table populated by the server)
-      const { data: rakeData } = await supabase
-        .from('rake_history')
-        .select('rake_amount, pot_amount, collected_at')
-        .eq('club_id', resolvedId)
-        .gte('collected_at', startDate.toISOString())
-        .order('collected_at', { ascending: true })
-        .limit(5000);
+      const { data: rakeData } = await retryFetch(
+        () =>
+          supabase
+            .from('rake_history')
+            .select('rake_amount, pot_amount, collected_at')
+            .eq('club_id', resolvedId)
+            .gte('collected_at', startDate.toISOString())
+            .order('collected_at', { ascending: true })
+            .limit(5000),
+        { maxRetries: 2, isMountedRef: isMounted }
+      );
 
       // Aggregate totals from actual rake_history rows
       const totalRake = (rakeData || []).reduce(
@@ -272,13 +277,17 @@ export default function ClubFinancialsPage() {
       );
 
       // Load recent rake history as transactions (no club_transactions table needed)
-      const { data: recentRake } = await supabase
-        .from('rake_history')
-        .select('id, rake_amount, pot_amount, hand_number, collected_at')
-        .eq('club_id', resolvedId)
-        .gte('collected_at', startDate.toISOString())
-        .order('collected_at', { ascending: false })
-        .limit(20);
+      const { data: recentRake } = await retryFetch(
+        () =>
+          supabase
+            .from('rake_history')
+            .select('id, rake_amount, pot_amount, hand_number, collected_at')
+            .eq('club_id', resolvedId)
+            .gte('collected_at', startDate.toISOString())
+            .order('collected_at', { ascending: false })
+            .limit(20),
+        { maxRetries: 2, isMountedRef: isMounted }
+      );
 
       if (recentRake) {
         setTransactions(

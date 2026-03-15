@@ -194,11 +194,11 @@ export default function AgentPortalPage() {
   const handleTransfer = async () => {
     const amount = parseFloat(transferAmount);
     if (!amount || amount <= 0 || !user?.id) {
-      toast.error('Enter a valid amount');
+      if (isMounted.current) toast.error('Enter a valid amount');
       return;
     }
     if (amount > wallet.agentBal) {
-      toast.error('Insufficient balance in Business Wallet');
+      if (isMounted.current) toast.error('Insufficient balance in Business Wallet');
       return;
     }
     setIsTransferring(true);

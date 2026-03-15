@@ -19,6 +19,8 @@ vi.mock('../../src/lib/supabase', () => ({
 vi.mock('@sentry/react', () => ({
   startSpan: vi.fn((_opts: any, fn: any) => fn()),
   setMeasurement: vi.fn(),
+  captureException: vi.fn(),
+  captureMessage: vi.fn(),
 }));
 
 import { trackSupabaseOperation, trackSupabaseQuery } from '../../src/core/SupabaseIntegration';
@@ -28,10 +30,9 @@ describe('trackSupabaseOperation', () => {
     expect(typeof trackSupabaseOperation).toBe('function');
   });
 
-  it('should execute the provided function and return result', async () => {
-    const fn = vi.fn().mockResolvedValue('result');
-    const result = await trackSupabaseOperation('test-op', fn);
-    expect(fn).toHaveBeenCalledTimes(1);
+  it('should execute the provided promise and return result', async () => {
+    const result = await trackSupabaseOperation('test-table', 'select', Promise.resolve('result'));
+    expect(result).toBe('result');
   });
 });
 
@@ -40,9 +41,9 @@ describe('trackSupabaseQuery', () => {
     expect(typeof trackSupabaseQuery).toBe('function');
   });
 
-  it('should execute query function', async () => {
-    const fn = vi.fn().mockResolvedValue({ data: [1, 2, 3], error: null });
-    await trackSupabaseQuery('test-query', fn);
-    expect(fn).toHaveBeenCalledTimes(1);
+  it('should execute query promise-like', async () => {
+    const mockResult = { data: [1, 2, 3], error: null };
+    const result = await trackSupabaseQuery('test-table', 'select', Promise.resolve(mockResult));
+    expect(result).toEqual(mockResult);
   });
 });

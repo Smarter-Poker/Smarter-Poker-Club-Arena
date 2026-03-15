@@ -67,28 +67,29 @@ export default function AuthPage() {
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    setError(null);
+    if (isMounted.current) setError(null);
 
     // Validation
     if (password !== confirmPassword) {
-      setError('Passwords do not match');
+      if (isMounted.current) setError('Passwords do not match');
       setIsLoading(false);
       return;
     }
 
     if (password.length < 8) {
-      setError('Password must be at least 8 characters');
+      if (isMounted.current) setError('Password must be at least 8 characters');
       setIsLoading(false);
       return;
     }
     if (!/[A-Z]/.test(password) || !/[0-9]/.test(password)) {
-      setError('Password must include at least one uppercase letter and one number');
+      if (isMounted.current)
+        setError('Password must include at least one uppercase letter and one number');
       setIsLoading(false);
       return;
     }
 
     if (!username.trim()) {
-      setError('Username is required');
+      if (isMounted.current) setError('Username is required');
       setIsLoading(false);
       return;
     }
@@ -193,7 +194,7 @@ export default function AuthPage() {
   const handlePasswordReset = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    setError(null);
+    if (isMounted.current) setError(null);
 
     try {
       const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {

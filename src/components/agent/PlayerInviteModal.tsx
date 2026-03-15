@@ -117,7 +117,7 @@ export default function PlayerInviteModal({
   // Add existing player to agent
   const handleAddPlayer = async (player: ExistingPlayer) => {
     setAdding(player.id);
-    setMessage(null);
+    if (isMounted.current) setMessage(null);
 
     try {
       // First add to club_memberships
@@ -162,7 +162,7 @@ export default function PlayerInviteModal({
   // Generate invite code
   const generateInviteCode = async () => {
     setInviting(true);
-    setMessage(null);
+    if (isMounted.current) setMessage(null);
 
     try {
       // Generate a unique invite code

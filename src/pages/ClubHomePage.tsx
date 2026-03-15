@@ -33,6 +33,7 @@ import { retryFetch } from '../utils/retryFetch';
 import './ClubHomePage.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { resolveClubIdFilter } from '../utils/clubIdResolver';
+import { useIsMounted } from '../hooks/useIsMounted';
 
 // Types
 interface ClubData {
@@ -115,6 +116,7 @@ export default function ClubHomePage() {
   const navigate = useNavigate();
   const { user } = useAuthUser();
   const { diamonds } = useWalletStore();
+  const isMountedRef = useIsMounted();
 
   // Refs to avoid stale closures in realtime subscriptions
   const clubIdRef = useRef(clubId);

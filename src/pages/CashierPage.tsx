@@ -934,15 +934,16 @@ export default function CashierPage() {
     setIsProcessing(true);
     try {
       if (balances.PLAYER.available < value) {
-        setMessage({
-          type: 'error',
-          text: `Insufficient balance. Available: ${balances.PLAYER.available.toLocaleString()}`,
-        });
-        setIsProcessing(false);
+        if (isMounted.current)
+          setMessage({
+            type: 'error',
+            text: `Insufficient balance. Available: ${balances.PLAYER.available.toLocaleString()}`,
+          });
+        if (isMounted.current) setIsProcessing(false);
         return;
       }
       if (!clubId) {
-        setMessage({ type: 'error', text: 'Club ID is missing' });
+        if (isMounted.current) setMessage({ type: 'error', text: 'Club ID is missing' });
         setIsProcessing(false);
         return;
       }

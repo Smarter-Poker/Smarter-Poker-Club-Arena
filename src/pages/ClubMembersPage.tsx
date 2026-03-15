@@ -18,6 +18,7 @@ import { exportToCSV } from '../lib/export';
 import './ClubMembersPage.css';
 import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
+import { useIsMounted } from '../hooks/useIsMounted';
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    TYPES
@@ -508,7 +509,7 @@ export default function ClubMembersPage() {
               .not('status', 'in', '("banned","suspended")')
               .limit(5000)
               .then((r) => r),
-          { maxRetries: 2 }
+          { maxRetries: 2, isMountedRef: isMountedRef }
         );
 
         if (getIsMounted && !getIsMounted()) return;
@@ -545,7 +546,7 @@ export default function ClubMembersPage() {
                   .eq('user_id', user.id)
                   .maybeSingle()
                   .then((r) => r),
-              { maxRetries: 2 }
+              { maxRetries: 2, isMountedRef: isMountedRef }
             );
 
             if (getIsMounted && !getIsMounted()) return;
@@ -730,7 +731,17 @@ export default function ClubMembersPage() {
         ))}
         {filteredMembers.length > 0 && (
           <button
-            style={{ marginLeft: 'auto', padding: '6px 14px', borderRadius: '8px', cursor: 'pointer', background: 'rgba(0,200,83,0.12)', color: '#00C853', border: '1px solid rgba(0,200,83,0.3)', fontWeight: 600, fontSize: '13px' }}
+            style={{
+              marginLeft: 'auto',
+              padding: '6px 14px',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              background: 'rgba(0,200,83,0.12)',
+              color: '#00C853',
+              border: '1px solid rgba(0,200,83,0.3)',
+              fontWeight: 600,
+              fontSize: '13px',
+            }}
             onClick={() => {
               try {
                 exportToCSV(filteredMembers, 'club_members.csv', [
@@ -741,7 +752,9 @@ export default function ClubMembersPage() {
                   { key: 'joined_at', label: 'Joined' },
                   { key: 'user_id', label: 'User ID' },
                 ]);
-              } catch { /* silent */ }
+              } catch {
+                /* silent */
+              }
             }}
           >
             ⬇ Export CSV

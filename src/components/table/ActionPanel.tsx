@@ -293,7 +293,7 @@ export default function ActionPanel({
   // ─── STANDARD 3-BUTTON MODE ──────────────────────────────────
   return (
     <div
-      className={`action-panel ${isMyTurn ? 'action-panel--active' : ''} ${turnPulse ? 'action-panel--turn-pulse' : ''}`}
+      className={`action-panel ${isMyTurn ? 'action-panel--active' : ''} ${turnPulse ? 'action-panel--attention' : ''}`}
     >
       <div className="action-row">
         {/* FOLD — Always Red, Left */}

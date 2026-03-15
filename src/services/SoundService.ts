@@ -741,21 +741,12 @@ class SoundService {
   }
 
   /**
-   * Check if sounds should play
-   */
-  private shouldPlay(): boolean {
-    if (this.ctx!.state === 'suspended') {
-      this.ctx!.resume().catch(() => {});
-      return false;
-    }
-    return this.masterVolume > 0 && this.effectsVolume > 0;
-  }
-
-  /**
-   * Create a gain node with automatic volume scaling
+   * Create a gain node with automatic volume scaling.
+   * Caller MUST call ensureContext() before invoking this helper.
    */
   private createGain(volume: number): GainNode {
-    const gain = this.ctx!.createGain();
+    if (!this.ctx) throw new Error('[SoundService] createGain called without audio context');
+    const gain = this.ctx.createGain();
     gain.gain.value = volume * this.masterVolume * this.effectsVolume;
     gain.connect(this.out);
     return gain;

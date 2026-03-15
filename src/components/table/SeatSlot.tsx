@@ -562,7 +562,17 @@ export const SeatSlot = memo(
     if (pp.showCards !== np.showCards) return false;
     if (pp.avatar !== np.avatar) return false;
     if (prev.showStackInBB !== next.showStackInBB) return false;
-    if (JSON.stringify(pp.holeCards) !== JSON.stringify(np.holeCards)) return false;
+    // Compare holeCards without JSON.stringify (performance optimization)
+    const ph = pp.holeCards;
+    const nh = np.holeCards;
+    if (ph === nh) {
+      /* same ref, skip */
+    } else if (!ph || !nh || ph.length !== nh.length) return false;
+    else {
+      for (let i = 0; i < ph.length; i++) {
+        if (ph[i] !== nh[i]) return false;
+      }
+    }
 
     return true;
   }

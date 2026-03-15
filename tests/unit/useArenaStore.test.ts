@@ -67,5 +67,8 @@ describe('useArenaStore', () => {
     expect(typeof state.endSession).toBe('function');
     expect(typeof state.updateTimer).toBe('function');
     expect(typeof state.loadUnlockedLevel).toBe('function');
+    expect(typeof state.addLeakSignal).toBe('function');
+    expect(typeof state.clearLeakSignal).toBe('function');
+    expect(typeof state.reset).toBe('function');
   });
 });

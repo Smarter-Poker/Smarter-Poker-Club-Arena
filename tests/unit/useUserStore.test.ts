@@ -41,7 +41,6 @@ describe('useUserStore', () => {
       isLoading: false,
       currentClubId: null,
       totalChips: 0,
-      total_hands: 0,
     });
   });
 
@@ -81,6 +80,7 @@ describe('useUserStore', () => {
     expect(typeof state.setUser).toBe('function');
     expect(typeof state.updateProfile).toBe('function');
     expect(typeof state.loadProfile).toBe('function');
+    expect(typeof state.setCurrentClub).toBe('function');
     expect(typeof state.updateTotalChips).toBe('function');
   });
 });

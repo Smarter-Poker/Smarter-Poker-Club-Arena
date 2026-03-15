@@ -277,7 +277,9 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
               className={styles.orbImg}
             />
             {unreadMessages > 0 && (
-              <span className={styles.badge}>{unreadMessages > 99 ? '99+' : unreadMessages}</span>
+              <span className={styles.badge} aria-live="polite">
+                {unreadMessages > 99 ? '99+' : unreadMessages}
+              </span>
             )}
           </button>
 
@@ -291,7 +293,7 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
               className={styles.orbImg}
             />
             {notificationCount > 0 && (
-              <span className={styles.badge}>
+              <span className={styles.badge} aria-live="polite">
                 {notificationCount > 99 ? '99+' : notificationCount}
               </span>
             )}

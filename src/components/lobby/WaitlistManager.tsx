@@ -174,7 +174,7 @@ export function WaitlistManager({ tableId, isAdmin, onSeatPlayer }: WaitlistMana
       {waitlist.length === 0 ? (
         <div className="empty-state">No one waiting</div>
       ) : (
-        <div className="waitlist__list">
+        <div className="waitlist__list" aria-live="polite">
           {waitlist.map((entry, i) => (
             <div
               key={entry.id}

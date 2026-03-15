@@ -44,8 +44,7 @@ export default function TableChatHUD({ tableId, userId, isMuted = false }: Table
         const mutedStr = localStorage.getItem('ca_muted_players');
         setMutedPlayers(mutedStr ? JSON.parse(mutedStr) : []);
       } catch (err) {
-
-        console.error("[TableChatHUD] Error:", err);
+        console.error('[TableChatHUD] Error:', err);
         /* ignore */
       }
     };
@@ -98,8 +97,7 @@ export default function TableChatHUD({ tableId, userId, isMuted = false }: Table
               message: msg.message,
             });
           } catch (err) {
-
-            console.error("[TableChatHUD] Error:", err);
+            console.error('[TableChatHUD] Error:', err);
             /* */
           }
           if (!isOpenRef.current) {
@@ -159,8 +157,7 @@ export default function TableChatHUD({ tableId, userId, isMuted = false }: Table
         setMessages((prev) => prev.filter((m) => m.id !== tempId));
       }
     } catch (err) {
-
-      console.error("[TableChatHUD] Error:", err);
+      console.error('[TableChatHUD] Error:', err);
       // Rollback on network/exception failure
       setMessages((prev) => prev.filter((m) => m.id !== tempId));
     }
@@ -190,8 +187,7 @@ export default function TableChatHUD({ tableId, userId, isMuted = false }: Table
         setMessages((prev) => prev.filter((m) => m.id !== tempId));
       }
     } catch (err) {
-
-      console.error("[TableChatHUD] Error:", err);
+      console.error('[TableChatHUD] Error:', err);
       // Rollback on network/exception failure
       setMessages((prev) => prev.filter((m) => m.id !== tempId));
     }
@@ -215,7 +211,7 @@ export default function TableChatHUD({ tableId, userId, isMuted = false }: Table
           </button>
         )}
       </div>
-      <div style={S.messageList} ref={chatRef}>
+      <div style={S.messageList} ref={chatRef} aria-live="polite">
         {messages.length === 0 && <div style={S.empty}>No messages yet. Say hi!</div>}
         {messages
           .filter((m) => !mutedPlayers.includes(m.sender_id))

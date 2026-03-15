@@ -631,7 +631,7 @@ export default function MessageThread({ conversationId, onBack }: MessageThreadP
       )}
 
       {/* Messages */}
-      <div className={styles.messages} ref={scrollRef}>
+      <div className={styles.messages} ref={scrollRef} aria-live="polite">
         {loading ? (
           <div className={styles.loading}>
             <div className={styles.spinner} />

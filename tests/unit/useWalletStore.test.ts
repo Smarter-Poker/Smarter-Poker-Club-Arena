@@ -70,5 +70,8 @@ describe('useWalletStore', () => {
     expect(typeof state.refreshAll).toBe('function');
     expect(typeof state.lockForBuyIn).toBe('function');
     expect(typeof state.unlockFromTable).toBe('function');
+    expect(typeof state.internalTransfer).toBe('function');
+    expect(typeof state.mintChips).toBe('function');
+    expect(typeof state.reset).toBe('function');
   });
 });

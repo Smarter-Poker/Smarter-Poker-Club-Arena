@@ -130,8 +130,7 @@ export default function ClubChat({ clubId, userId, userName }: ClubChatProps) {
               message: newMsg.message,
             });
           } catch (err) {
-
-            console.error("[ClubChat] Error:", err);
+            console.error('[ClubChat] Error:', err);
             /* silent */
           }
         }
@@ -196,8 +195,7 @@ export default function ClubChat({ clubId, userId, userName }: ClubChatProps) {
         failedTimersRef.current.push(tid);
       }
     } catch (err) {
-
-      console.error("[ClubChat] Error:", err);
+      console.error('[ClubChat] Error:', err);
       // Mark as failed on any exception
       setMessages((prev) =>
         prev.map((m) => (m.id === tempId ? { ...m, message_type: 'failed' } : m))
@@ -266,6 +264,7 @@ export default function ClubChat({ clubId, userId, userName }: ClubChatProps) {
       {expanded && (
         <div>
           <div
+            aria-live="polite"
             ref={listRef}
             style={{
               height: 200,

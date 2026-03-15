@@ -6,6 +6,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { promotionService, LeaderboardEntry } from '../../services/PromotionService';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { masterBus } from '../../core/MasterBus';
@@ -29,7 +30,7 @@ export default function LeaderboardCard({
   const [loading, setLoading] = useState(true);
   const [userRank, setUserRank] = useState<LeaderboardEntry | null>(null);
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
-  const isMounted = useRef(true);
+  const isMounted = useIsMounted();
   const animTimers = useRef<number[]>([]);
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -66,7 +67,6 @@ export default function LeaderboardCard({
   }, [promotionId, limit, showCurrentUser, user?.id]);
 
   useEffect(() => {
-    isMounted.current = true;
     loadLeaderboard();
 
     const unsubBalance = masterBus.subscribe('BALANCE_UPDATED', () => {
@@ -78,7 +78,6 @@ export default function LeaderboardCard({
     });
 
     return () => {
-      isMounted.current = false;
       unsubBalance();
       if (refreshTimer.current) clearTimeout(refreshTimer.current);
       animTimers.current.forEach(clearTimeout);

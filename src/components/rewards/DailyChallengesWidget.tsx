@@ -7,6 +7,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import {
   dailyChallengeService,
   type UserDailyChallenge,
@@ -35,7 +36,7 @@ export const DailyChallengesWidget: React.FC = () => {
   const [challenges, setChallenges] = useState<Challenge[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const isMounted = useRef(true);
+  const isMounted = useIsMounted();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -47,7 +48,6 @@ export const DailyChallengesWidget: React.FC = () => {
   }, [user?.id]);
 
   useEffect(() => {
-    isMounted.current = true;
     if (!user?.id) return;
     // Use ref for initial load to avoid stale closure (loadChallenges not in deps)
     initTimerRef.current = setTimeout(() => loadChallengesRef.current?.(), 0);
@@ -82,7 +82,6 @@ export const DailyChallengesWidget: React.FC = () => {
     }
 
     return () => {
-      isMounted.current = false;
       unsubHand();
       unsubBalance();
       unsubReset();

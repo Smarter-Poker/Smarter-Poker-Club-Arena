@@ -27,6 +27,7 @@ export default function FriendActivityFeed({ friends }: { friends: any[] }) {
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [loading, setLoading] = useState(true);
   const isMounted = useIsMounted();
+  const achieveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Build a lookup map for friend data
   const friendMap = useRef(new Map<string, { username: string; avatar_url?: string }>());
@@ -172,13 +173,18 @@ export default function FriendActivityFeed({ friends }: { friends: any[] }) {
 
     // Refresh feed when achievements are unlocked
     const unsubAchieve = masterBus.subscribe('ACHIEVEMENT_UNLOCKED', () => {
-      if (isMounted.current) setTimeout(loadRealActivities, 1500);
+      if (!isMounted.current) return;
+      if (achieveTimerRef.current) clearTimeout(achieveTimerRef.current);
+      achieveTimerRef.current = setTimeout(() => {
+        if (isMounted.current) loadRealActivities();
+      }, 1500);
     });
 
     return () => {
       unsubComplete();
       unsubFriend();
       unsubAchieve();
+      if (achieveTimerRef.current) clearTimeout(achieveTimerRef.current);
     };
   }, [friends, loadRealActivities]);
 

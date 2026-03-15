@@ -254,7 +254,10 @@ export const FinancialExportService = {
   async fetchCashoutHistory(options: ExportOptions) {
     let query = supabase
       .from('cashout_requests')
-      .select('id, player_id, agent_id, club_id, amount, status, notes, created_at, completed_at')
+      // cashout_requests schema: player_note (not notes)
+      .select(
+        'id, player_id, agent_id, club_id, amount, status, player_note, created_at, completed_at'
+      )
       .order('created_at', { ascending: false })
       .limit(options.limit || 1000);
 
@@ -274,7 +277,7 @@ export const FinancialExportService = {
         'Club ID',
         'Amount',
         'Status',
-        'Notes',
+        'Player Note',
         'Created At',
         'Completed At',
       ],

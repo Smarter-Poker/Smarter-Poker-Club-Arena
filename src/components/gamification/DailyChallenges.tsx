@@ -111,7 +111,7 @@ export const DailyChallenges: React.FC = () => {
         ...prev,
         currentStreak: stats.currentStreak,
       }));
-      setLoading(false);
+      if (isMounted.current) setLoading(false);
 
       // Item 9: Clear old timers before setting new ones
       animTimers.current.forEach(clearTimeout);

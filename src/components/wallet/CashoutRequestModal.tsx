@@ -6,6 +6,7 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { cashoutService, CashoutRequest } from '../../services/CashoutService';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
@@ -131,6 +132,7 @@ export default function CashoutRequestModal({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [pendingCashouts, setPendingCashouts] = useState<CashoutRequest[]>([]);
+  const isMounted = useIsMounted();
   const [loadingPending, setLoadingPending] = useState(true);
   const [mounted, setMounted] = useState(false);
   const autoCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -204,11 +206,11 @@ export default function CashoutRequestModal({
     setLoadingPending(true);
     try {
       const cashouts = await cashoutService.getPlayerCashouts(playerId, clubId);
-      setPendingCashouts(cashouts.filter((c) => c.status === 'pending'));
+      if (isMounted.current) setPendingCashouts(cashouts.filter((c) => c.status === 'pending'));
     } catch (err) {
       console.error('Failed to load pending cashouts:', err);
     }
-    setLoadingPending(false);
+    if (isMounted.current) setLoadingPending(false);
   };
 
   const handleSubmit = async () => {
@@ -229,6 +231,7 @@ export default function CashoutRequestModal({
 
     try {
       await cashoutService.requestCashout(playerId, clubId, cashoutAmount, note || undefined);
+      if (!isMounted.current) return;
       setSuccess(true);
       setAmount('');
       setNote('');
@@ -243,9 +246,9 @@ export default function CashoutRequestModal({
         autoCloseTimer.current = null;
       }, 2000);
     } catch (err: any) {
-      setError(err.message || 'Failed to request cashout');
+      if (isMounted.current) setError(err.message || 'Failed to request cashout');
     }
-    setIsSubmitting(false);
+    if (isMounted.current) setIsSubmitting(false);
   };
 
   const handleCancel = async (cashoutId: string) => {
@@ -255,7 +258,7 @@ export default function CashoutRequestModal({
       loadPendingCashouts();
       onComplete?.();
     } catch (err: any) {
-      setError(err.message || 'Failed to cancel cashout');
+      if (isMounted.current) setError(err.message || 'Failed to cancel cashout');
     }
   };
 

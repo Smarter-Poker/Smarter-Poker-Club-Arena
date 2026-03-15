@@ -261,9 +261,9 @@ export async function leaveClub(clubId: string): Promise<void> {
   try {
     await supabase
       .from('cashout_requests')
-      .update({ status: 'cancelled', resolved_at: new Date().toISOString() })
+      .update({ status: 'cancelled', cancelled_at: new Date().toISOString() })
       .eq('club_id', resolvedId)
-      .eq('user_id', userId)
+      .eq('player_id', userId)
       .eq('status', 'pending');
   } catch (e: unknown) {
     console.warn('[ClubsService] leaveClub: cashout cancel failed (non-critical):', e);

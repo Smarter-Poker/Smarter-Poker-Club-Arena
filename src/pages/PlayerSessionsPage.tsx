@@ -14,6 +14,7 @@ import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { WalletService } from '../services/WalletService';
+import { retryFetch } from '../utils/retryFetch';
 import './AdminDashboardPage.css'; // reuse admin styles
 import { useIsMounted } from '../hooks/useIsMounted';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
@@ -139,20 +140,30 @@ export default function PlayerSessionsPage() {
         const uuid = await resolveClubUUID(targetClubId);
 
         // Load members with basic info
-        const { data: members, error: memErr } = await supabase
-          .from('club_members')
-          .select('user_id, role, is_active, chip_balance, created_at')
-          .eq('club_id', uuid);
+        const { data: members, error: memErr } = await retryFetch(
+          () =>
+            supabase
+              .from('club_members')
+              .select('user_id, role, is_active, chip_balance, created_at')
+              .eq('club_id', uuid)
+              .then((r) => r),
+          { maxRetries: 2, isMountedRef: mountedRef }
+        );
         if (memErr) throw memErr;
 
         // Get profiles for display names
         const userIds = (members || []).map((m: any) => m.user_id).filter(Boolean);
         const profileMap: Record<string, any> = {};
         if (userIds.length > 0) {
-          const { data: profiles } = await supabase
-            .from('profiles')
-            .select('id, username, display_name, avatar_url, last_seen_at')
-            .in('id', userIds);
+          const { data: profiles } = await retryFetch(
+            () =>
+              supabase
+                .from('profiles')
+                .select('id, username, display_name, avatar_url, last_seen_at')
+                .in('id', userIds)
+                .then((r) => r),
+            { maxRetries: 2, isMountedRef: mountedRef }
+          );
           if (profiles) {
             profiles.forEach((p: any) => {
               profileMap[p.id] = p;
@@ -161,11 +172,16 @@ export default function PlayerSessionsPage() {
         }
 
         // Get active tables
-        const { data: activeTables } = await supabase
-          .from('tables')
-          .select('id, name, current_players, max_players, status')
-          .eq('club_id', uuid)
-          .eq('status', 'active');
+        const { data: activeTables } = await retryFetch(
+          () =>
+            supabase
+              .from('tables')
+              .select('id, name, current_players, max_players, status')
+              .eq('club_id', uuid)
+              .eq('status', 'active')
+              .then((r) => r),
+          { maxRetries: 2, isMountedRef: mountedRef }
+        );
 
         if (!mountedRef.current) return;
 
@@ -254,18 +270,28 @@ export default function PlayerSessionsPage() {
       if (!clubId) return;
       try {
         const uuid = await resolveClubUUID(clubId);
-        const { data: members } = await supabase
-          .from('club_members')
-          .select('user_id, chip_balance, created_at')
-          .eq('club_id', uuid);
+        const { data: members } = await retryFetch(
+          () =>
+            supabase
+              .from('club_members')
+              .select('user_id, chip_balance, created_at')
+              .eq('club_id', uuid)
+              .then((r) => r),
+          { maxRetries: 2, isMountedRef: mountedRef }
+        );
 
         const userIds = (members || []).map((m: any) => m.user_id).filter(Boolean);
         const profileMap: Record<string, any> = {};
         if (userIds.length > 0) {
-          const { data: profiles } = await supabase
-            .from('profiles')
-            .select('id, display_name, username, last_seen_at')
-            .in('id', userIds);
+          const { data: profiles } = await retryFetch(
+            () =>
+              supabase
+                .from('profiles')
+                .select('id, display_name, username, last_seen_at')
+                .in('id', userIds)
+                .then((r) => r),
+            { maxRetries: 2, isMountedRef: mountedRef }
+          );
           if (profiles)
             profiles.forEach((p: any) => {
               profileMap[p.id] = p;
@@ -321,11 +347,16 @@ export default function PlayerSessionsPage() {
       const uuid = await resolveClubUUID(clubId);
       const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString();
 
-      const { data: txns } = await supabase
-        .from('chip_transactions')
-        .select('user_id, amount, type, created_at')
-        .eq('club_id', uuid)
-        .gte('created_at', sevenDaysAgo);
+      const { data: txns } = await retryFetch(
+        () =>
+          supabase
+            .from('chip_transactions')
+            .select('user_id, amount, type, created_at')
+            .eq('club_id', uuid)
+            .gte('created_at', sevenDaysAgo)
+            .then((r) => r),
+        { maxRetries: 2, isMountedRef: mountedRef }
+      );
 
       if (!mountedRef.current) return;
 

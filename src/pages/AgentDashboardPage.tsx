@@ -157,12 +157,10 @@ export default function AgentDashboardPage() {
           profile: profileMap[m.user_id] || {},
         }));
 
-        // Get pending cashouts
+        // cashout_requests schema: player_id (not user_id), player_note (not notes), no payment_method
         const { data: cashouts } = await supabase
           .from('cashout_requests')
-          .select(
-            'id, user_id, club_id, amount, status, notes, payment_method, created_at, updated_at'
-          )
+          .select('id, player_id, club_id, amount, status, player_note, created_at, updated_at')
           .eq('club_id', uuid)
           .eq('status', 'pending')
           .order('created_at', { ascending: false });
@@ -808,7 +806,7 @@ export default function AgentDashboardPage() {
                   <tbody>
                     {pendingCashouts.map((c: any) => (
                       <tr key={c.id}>
-                        <td>{c.user_id?.substring(0, 8)}..</td>
+                        <td>{c.player_id?.substring(0, 8)}..</td>
                         <td style={{ fontWeight: 700, color: '#F7C52A' }}>{fmtChips(c.amount)}</td>
                         <td
                           style={{
@@ -819,7 +817,7 @@ export default function AgentDashboardPage() {
                             textOverflow: 'ellipsis',
                           }}
                         >
-                          {c.note || '—'}
+                          {c.player_note || '—'}
                         </td>
                         <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
                           {timeAgo(c.created_at)}

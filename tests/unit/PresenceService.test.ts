@@ -9,25 +9,19 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-// ─── Mock dependencies ────────────────────────────────────────────────────
-
-const mockPresenceState = vi.fn().mockReturnValue({});
-const mockTrack = vi.fn().mockResolvedValue(undefined);
-const mockUntrack = vi.fn().mockResolvedValue(undefined);
-const mockSubscribe = vi.fn().mockImplementation((cb: (status: string) => void) => {
-  // Simulate SUBSCRIBED
-  cb('SUBSCRIBED');
-  return { unsubscribe: vi.fn() };
-});
+// ─── Mock dependencies (all inline to avoid hoisting issues) ─────────────
 
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {
     channel: vi.fn().mockReturnValue({
       on: vi.fn().mockReturnThis(),
-      subscribe: mockSubscribe,
-      track: mockTrack,
-      untrack: mockUntrack,
-      presenceState: mockPresenceState,
+      subscribe: vi.fn().mockImplementation((cb: (status: string) => void) => {
+        cb('SUBSCRIBED');
+        return { unsubscribe: vi.fn() };
+      }),
+      track: vi.fn().mockResolvedValue(undefined),
+      untrack: vi.fn().mockResolvedValue(undefined),
+      presenceState: vi.fn().mockReturnValue({}),
     }),
     removeChannel: vi.fn().mockResolvedValue(undefined),
   },
@@ -41,7 +35,6 @@ describe('PresenceService', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
-    mockPresenceState.mockReturnValue({});
   });
 
   afterEach(async () => {

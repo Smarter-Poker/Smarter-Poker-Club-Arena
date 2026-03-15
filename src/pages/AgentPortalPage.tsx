@@ -112,13 +112,14 @@ export default function AgentPortalPage() {
     if (!user?.id) return;
     setLoading(true);
     // loadWallet FIRST — it resolves the agents.id PK needed by loadCommissionHistory
-    await loadWallet();
-    await loadCommissionHistory();
+    const resolvedPkId = await loadWallet();
+    // Pass resolved PK directly — agentPkId state won't be updated until next render
+    await loadCommissionHistory(resolvedPkId ?? undefined);
     if (isMounted.current) setLoading(false);
   };
 
-  const loadWallet = async () => {
-    if (!user?.id) return;
+  const loadWallet = async (): Promise<string | null> => {
+    if (!user?.id) return null;
     try {
       const { data, error } = await supabase
         .from('agents')
@@ -129,7 +130,7 @@ export default function AgentPortalPage() {
         .eq('user_id', user.id)
         .maybeSingle();
 
-      if (error || !data) return;
+      if (error || !data) return null;
 
       let debt = 0;
       try {
@@ -140,7 +141,7 @@ export default function AgentPortalPage() {
         /* no debt */
       }
 
-      if (!isMounted.current) return;
+      if (!isMounted.current) return data.id;
       setAgentPkId(data.id); // Triggers RT subscription re-creation with correct filter
       if (data.club_id) setAgentClubId(data.club_id);
       setWallet({
@@ -150,14 +151,17 @@ export default function AgentPortalPage() {
         creditLimit: data.credit_limit || 0,
         debt,
       });
+      return data.id;
     } catch (err) {
       console.error('[AgentPortal] loadWallet error:', err);
+      return null;
     }
   };
 
-  const loadCommissionHistory = async () => {
+  const loadCommissionHistory = async (overridePkId?: string) => {
     // commission_ledger.agent_id stores agents.id PK, not auth.uid()
-    const agentId = agentPkId;
+    // overridePkId lets loadData pass the PK directly before React re-renders
+    const agentId = overridePkId || agentPkId;
     if (!agentId) return;
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     try {

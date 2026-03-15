@@ -14,6 +14,7 @@ import { supabase } from '../lib/supabase';
 import { VIPProvider, useVIPStatus } from '../hooks/useVIP';
 import { InAppAlerts, useAlerts } from './notifications/InAppAlerts';
 import { useClubTheme } from '../utils/clubThemeEngine';
+import { scheduleStaleCacheReaper } from '../utils/staleCacheReaper';
 import './Shell.css';
 
 // VIP Badge Component
@@ -67,6 +68,11 @@ function ShellContent() {
       root.style.setProperty('--club-accent', clubTheme.accent);
     }
   }, [theme, clubTheme]);
+
+  // Schedule stale cache cleanup during idle time
+  useEffect(() => {
+    scheduleStaleCacheReaper();
+  }, []);
 
   // Real-time notifications
   useEffect(() => {

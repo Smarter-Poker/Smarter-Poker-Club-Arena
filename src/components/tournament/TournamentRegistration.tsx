@@ -77,6 +77,7 @@ export function TournamentRegistration({
         .order('created_at', { ascending: true });
 
       if (!error && data) {
+        if (!isMounted.current) return;
         setPlayers(
           data.map((p: any) => ({
             id: p.user_id,

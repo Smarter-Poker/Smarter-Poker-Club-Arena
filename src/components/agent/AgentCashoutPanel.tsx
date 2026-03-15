@@ -35,6 +35,7 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
     setLoading(true);
     try {
       const pending = await cashoutService.getAgentPendingCashouts(user.id, clubId);
+      if (!isMounted.current) return;
       setCashouts(pending);
       setVisibleItems(new Set());
       // Clear previous stagger timers

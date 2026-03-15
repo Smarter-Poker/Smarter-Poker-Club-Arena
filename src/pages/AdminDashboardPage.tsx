@@ -411,14 +411,17 @@ function SettlementsTab({ clubId }: { clubId: string }) {
       if (pErr) throw pErr;
       const currentPeriod = periods?.[0] || null;
 
-      // Get pending commissions
+      // agent_commissions schema: id, club_id, user_id, amount, commission_rate, source_type, source_id, notes, created_at
+      // Note: agent_commissions has NO period_id or status columns
       let commissions: any[] = [];
       if (currentPeriod) {
         const { data: comms } = await supabase
           .from('agent_commissions')
-          .select('id, user_id, total_rake_generated, fee_percent, amount, status, period_id')
-          .eq('period_id', currentPeriod.id)
-          .eq('status', 'pending');
+          .select('id, user_id, amount, commission_rate, source_type, notes, created_at')
+          .eq('club_id', uuid)
+          .gte('created_at', currentPeriod.start_at)
+          .order('created_at', { ascending: false })
+          .limit(100);
         commissions = comms || [];
       }
 
@@ -458,17 +461,19 @@ function SettlementsTab({ clubId }: { clubId: string }) {
           .eq('id', extras.periodId);
         if (clErr) throw clErr;
       } else if (actionName === 'pay' && extras.commissionId) {
+        // agent_commissions has no 'status' column — delete to acknowledge payment
         const { error: payErr } = await supabase
           .from('agent_commissions')
-          .update({ status: 'paid' })
+          .delete()
           .eq('id', extras.commissionId);
         if (payErr) throw payErr;
-      } else if (actionName === 'pay_all' && extras.periodId) {
+      } else if (actionName === 'pay_all' && cp) {
+        // agent_commissions has no period_id/status — delete all for this club in current period
         const { error: paErr } = await supabase
           .from('agent_commissions')
-          .update({ status: 'paid' })
-          .eq('period_id', extras.periodId)
-          .eq('status', 'pending');
+          .delete()
+          .eq('club_id', uuid)
+          .gte('created_at', cp.start_at);
         if (paErr) throw paErr;
       }
       load();
@@ -574,8 +579,8 @@ function SettlementsTab({ clubId }: { clubId: string }) {
             <thead>
               <tr>
                 <th>Agent User ID</th>
-                <th style={{ textAlign: 'right' }}>Total Rake Gen</th>
-                <th style={{ textAlign: 'center' }}>Fee %</th>
+                <th style={{ textAlign: 'right' }}>Source</th>
+                <th style={{ textAlign: 'center' }}>Rate</th>
                 <th style={{ textAlign: 'right' }}>Payout</th>
                 <th style={{ textAlign: 'center' }}>Action</th>
               </tr>
@@ -584,8 +589,8 @@ function SettlementsTab({ clubId }: { clubId: string }) {
               {(data.pendingCommissions || []).map((c: any) => (
                 <tr key={c.id}>
                   <td className="admin-mono">{c.user_id?.substring(0, 8)}...</td>
-                  <td style={{ textAlign: 'right' }}>{fmtChips(c.total_rake_generated)}</td>
-                  <td style={{ textAlign: 'center' }}>{c.fee_percent}%</td>
+                  <td style={{ textAlign: 'right' }}>{c.source_type || 'rake'}</td>
+                  <td style={{ textAlign: 'center' }}>{((c.commission_rate || 0) * 100).toFixed(1)}%</td>
                   <td style={{ textAlign: 'right', fontWeight: 700, color: '#F7C52A' }}>
                     {fmtChips(c.amount)}
                   </td>

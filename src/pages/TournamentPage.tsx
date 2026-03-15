@@ -139,11 +139,12 @@ export default function TournamentPage() {
   useEffect(() => {
     if (tournaments.length === 0) return;
     setVisibleTournaments(new Set());
-    tournaments.forEach((tourn, index) => {
+    const timers = tournaments.map((tourn, index) =>
       setTimeout(() => {
         setVisibleTournaments((prev) => new Set(prev).add(tourn.id));
-      }, index * 60);
-    });
+      }, index * 60)
+    );
+    return () => timers.forEach(clearTimeout);
   }, [tournaments]);
 
   // ── Realtime subscription: live tournament updates ──

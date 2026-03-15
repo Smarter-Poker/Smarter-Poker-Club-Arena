@@ -283,11 +283,12 @@ export default function UnionDetailPage() {
   useEffect(() => {
     if (clubs.length === 0) return;
     setVisibleClubs(new Set());
-    clubs.forEach((club, index) => {
+    const timers = clubs.map((club, index) =>
       setTimeout(() => {
         setVisibleClubs((prev) => new Set(prev).add(club.clubId));
-      }, index * 60);
-    });
+      }, index * 60)
+    );
+    return () => timers.forEach(clearTimeout);
   }, [clubs]);
 
   // ── Realtime: live union data updates ──

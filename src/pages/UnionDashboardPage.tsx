@@ -51,12 +51,24 @@ interface UnionRow {
   member_count?: number;
   status?: string;
   code?: string;
+  settings?: Record<string, number | string | boolean>;
 }
 interface UnionClubRow {
   id: string;
   club_id: string;
   clubs: Record<string, unknown>;
   commission_rate?: number;
+  [key: string]: unknown;
+}
+interface EnrichedClub {
+  id: string;
+  name?: string;
+  club_id?: string;
+  member_count?: number;
+  active_tables?: number;
+  total_rake?: number;
+  chip_treasury?: number;
+  club_commission_rate: number;
   [key: string]: unknown;
 }
 interface UnionAgent {
@@ -96,6 +108,19 @@ interface UnionApp {
   status: string;
   notes?: string;
   created_at: string;
+  applied_at?: string;
+}
+interface SettlementPeriod {
+  id: string;
+  period_number: number;
+  year: number;
+  start_at: string;
+  end_at?: string;
+  status: string;
+  total_rake_collected?: number;
+  total_hands_dealt?: number;
+  settled_at?: string;
+  created_at: string;
 }
 
 export default function UnionDashboardPage() {
@@ -112,17 +137,17 @@ export default function UnionDashboardPage() {
   const [unionId, setUnionId] = useState<string | null>(null);
   const [union, setUnion] = useState<UnionRow | null>(null);
   const [adminRole, setAdminRole] = useState<string | null>(null);
-  const [clubs, setClubs] = useState<Record<string, unknown>[]>([]);
+  const [clubs, setClubs] = useState<EnrichedClub[]>([]);
   const [agents, setAgents] = useState<UnionAgent[]>([]);
   const [admins, setAdmins] = useState<UnionAdmin[]>([]);
   const [wallets, setWallets] = useState<UnionWallet | null>(null);
-  const [recentPeriods, setRecentPeriods] = useState<Record<string, unknown>[]>([]);
+  const [recentPeriods, setRecentPeriods] = useState<SettlementPeriod[]>([]);
 
   // Applications
   const [apps, setApps] = useState<UnionApp[]>([]);
   const [appsFilter, setAppsFilter] = useState('pending');
   const [appsLoaded, setAppsLoaded] = useState(false);
-  const [_leaveRequests, setLeaveRequests] = useState<Record<string, unknown>[]>([]);
+  const [_leaveRequests, setLeaveRequests] = useState<unknown[]>([]);
 
   // Activity
 
@@ -137,7 +162,7 @@ export default function UnionDashboardPage() {
   const [settingsForm, setSettingsForm] = useState<Record<string, string>>({});
 
   // Commission edit modal
-  const [editCommClub, setEditCommClub] = useState<Record<string, unknown> | null>(null);
+  const [editCommClub, setEditCommClub] = useState<EnrichedClub | null>(null);
   const [editCommRate, setEditCommRate] = useState('');
 
   // Announcement
@@ -146,7 +171,9 @@ export default function UnionDashboardPage() {
 
   // Admin search
   const [adminSearch, setAdminSearch] = useState('');
-  const [adminResults, setAdminResults] = useState<Record<string, unknown>[]>([]);
+  const [adminResults, setAdminResults] = useState<
+    { id: string; display_name?: string; username?: string }[]
+  >([]);
 
   const mountedRef = useIsMounted();
 

@@ -4,7 +4,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, memo } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
@@ -260,4 +260,4 @@ export function TransactionHistory({ walletId, limit = 20 }: TransactionHistoryP
   );
 }
 
-export default TransactionHistory;
+export default memo(TransactionHistory);

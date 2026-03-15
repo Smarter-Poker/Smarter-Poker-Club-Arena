@@ -505,9 +505,22 @@ export default function ProfilePage() {
   useEffect(() => {
     let isMounted = true;
 
+    // Helper: invalidate SWR cache when bus events update state
+    const invalidateProfileCache = () => {
+      try {
+        const keys = Object.keys(sessionStorage);
+        keys.forEach((k) => {
+          if (k.startsWith('profile_cache_')) sessionStorage.removeItem(k);
+        });
+      } catch {
+        /* silent */
+      }
+    };
+
     const unsubProfile = masterBus.subscribeDebounced(
       'PROFILE_UPDATED',
       () => {
+        invalidateProfileCache();
         // Re-load profile when updated from settings or other pages
         supabase.auth
           .getUser()
@@ -544,6 +557,7 @@ export default function ProfilePage() {
     const unsubHand = masterBus.subscribeDebounced(
       'HAND_COMPLETED',
       () => {
+        invalidateProfileCache();
         // Refresh stats after a hand is completed
         supabase.auth
           .getUser()
@@ -582,6 +596,7 @@ export default function ProfilePage() {
     const unsubBalance = masterBus.subscribeDebounced(
       'BALANCE_UPDATED',
       () => {
+        invalidateProfileCache();
         // Refresh diamond balance when balance changes on other pages
         supabase.auth
           .getUser()

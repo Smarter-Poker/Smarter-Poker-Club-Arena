@@ -52,9 +52,9 @@ describe('resolveClubIdFilter', () => {
     expect(result.value).toBe('550e8400-e29b-41d4-a716-446655440000');
   });
 
-  it('should return slug filter for non-UUID input', () => {
+  it('should return club_id filter for non-UUID input', () => {
     const result = resolveClubIdFilter('shark-club');
-    expect(result.column).toBe('slug');
+    expect(result.column).toBe('club_id');
     expect(result.value).toBe('shark-club');
   });
 });

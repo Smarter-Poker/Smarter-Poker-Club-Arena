@@ -44,8 +44,7 @@ function hasLocalSession(): boolean {
     const payload = JSON.parse(atob(token.split('.')[1]));
     return payload.exp * 1000 > Date.now() - 60_000;
   } catch (err) {
-
-    console.error("[AuthGuard] Error:", err);
+    console.error('[AuthGuard] Error:', err);
     return false;
   }
 }
@@ -93,8 +92,7 @@ function hydrateStoreFromLocalStorage(): void {
       });
     }
   } catch (err) {
-
-    console.error("[AuthGuard] Error:", err);
+    console.error('[AuthGuard] Error:', err);
     // Silent — best effort
   }
 }
@@ -178,8 +176,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
           setIsLoading(false);
         }
       } catch (err) {
-
-        console.error("[AuthGuard] Error:", err);
+        console.error('[AuthGuard] Error:', err);
         // getSession timed out. Check localStorage one final time before giving up.
         if (!cancelled) {
           if (hasLocalSession()) {
@@ -231,7 +228,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
       }
 
       // localStorage is also empty — this is a real sign-out
-      console.log('[AUTH GUARD] Real sign-out detected (store + localStorage both empty)');
+      console.debug('[AUTH GUARD] Real sign-out detected (store + localStorage both empty)');
       setIsAuthenticated(false);
     }
   }, [storeAuthenticated, storeUser, isLoading, isAuthenticated]);
@@ -298,8 +295,7 @@ export function GuestGuard({ children }: AuthGuardProps) {
           setIsLoading(false);
         }
       } catch (err) {
-
-        console.error("[AuthGuard] Error:", err);
+        console.error('[AuthGuard] Error:', err);
         if (!cancelled) {
           setIsAuthenticated(hasLocalSession());
           setIsLoading(false);

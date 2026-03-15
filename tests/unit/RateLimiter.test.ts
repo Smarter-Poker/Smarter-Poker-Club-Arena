@@ -3,7 +3,7 @@
  *  UNIT TESTS — RateLimiter
  * ═══════════════════════════════════════════════════════════════════════════════
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { RateLimiter, RATE_LIMITS, rateLimiter } from '../../src/utils/RateLimiter';
 
 describe('RateLimiter', () => {
@@ -19,23 +19,29 @@ describe('RateLimiter', () => {
   });
 
   it('should allow first request', () => {
-    const result = limiter.check('user-1', 'api_call' as any);
+    const result = limiter.check('BUY_IN', 'user-1', 5, 60000);
     expect(result.allowed).toBe(true);
   });
 
   it('should track remaining attempts', () => {
-    const result = limiter.check('user-1', 'api_call' as any);
+    const result = limiter.check('BUY_IN', 'user-1', 5, 60000);
     expect(typeof result.remaining).toBe('number');
   });
 
   it('should block after exceeding limit', () => {
-    const action = Object.keys(RATE_LIMITS)[0] as any;
-    const limit = RATE_LIMITS[action as keyof typeof RATE_LIMITS];
-    for (let i = 0; i < (limit?.maxAttempts ?? 10); i++) {
-      limiter.check('user-flood', action);
+    for (let i = 0; i < 5; i++) {
+      limiter.check('BUY_IN', 'user-flood', 5, 60000);
     }
-    const result = limiter.check('user-flood', action);
+    const result = limiter.check('BUY_IN', 'user-flood', 5, 60000);
     expect(result.allowed).toBe(false);
+  });
+
+  it('should isolate by action+user key', () => {
+    for (let i = 0; i < 5; i++) {
+      limiter.check('BUY_IN', 'user-a', 5, 60000);
+    }
+    const resultOtherUser = limiter.check('BUY_IN', 'user-b', 5, 60000);
+    expect(resultOtherUser.allowed).toBe(true);
   });
 });
 
@@ -45,9 +51,9 @@ describe('RATE_LIMITS', () => {
     expect(Object.keys(RATE_LIMITS).length).toBeGreaterThan(0);
   });
 
-  it('should have maxAttempts and windowMs for each action', () => {
+  it('should have maxPerWindow and windowMs for each action', () => {
     for (const [, config] of Object.entries(RATE_LIMITS)) {
-      expect(typeof config.maxAttempts).toBe('number');
+      expect(typeof config.maxPerWindow).toBe('number');
       expect(typeof config.windowMs).toBe('number');
     }
   });
@@ -58,5 +64,3 @@ describe('rateLimiter singleton', () => {
     expect(rateLimiter).toBeInstanceOf(RateLimiter);
   });
 });
-
-import { afterEach } from 'vitest';

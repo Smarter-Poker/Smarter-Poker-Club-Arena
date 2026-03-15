@@ -9,7 +9,7 @@
  *  - Polling every 15s for real-time updates
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, memo } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
@@ -90,7 +90,7 @@ interface GameLobbyGridProps {
   pollMs?: number;
 }
 
-export default function GameLobbyGrid({ clubId, onGamePress }: GameLobbyGridProps) {
+function GameLobbyGridInner({ clubId, onGamePress }: GameLobbyGridProps) {
   const [activeTab, setActiveTab] = useState('all');
   const [games, setGames] = useState<GameRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -375,3 +375,4 @@ export default function GameLobbyGrid({ clubId, onGamePress }: GameLobbyGridProp
     </div>
   );
 }
+export default memo(GameLobbyGridInner);

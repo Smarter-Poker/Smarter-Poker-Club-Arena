@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, memo } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
@@ -253,4 +253,4 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
   );
 };
 
-export default NotificationCenter;
+export default memo(NotificationCenter);

@@ -88,7 +88,7 @@ export default function GlobalWaitlistListener() {
       if (cleanedUpRef.current) return;
 
       if (status === 'SUBSCRIBED') {
-        console.log('[GlobalWaitlistListener] Connected and listening');
+        console.debug('[GlobalWaitlistListener] Connected and listening');
         retryCountRef.current = 0; // Reset on success
       } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
         if (retryCountRef.current >= MAX_RETRIES) {

@@ -9,7 +9,7 @@
  * - Admin Actions (Kick, Ban, Promote)
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import './MemberList.css';
 
@@ -45,7 +45,7 @@ export interface MemberListProps {
 // COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export function MemberList({
+function MemberListInner({
   members,
   currentUserRole,
   onPromote,
@@ -212,4 +212,5 @@ export function MemberList({
   );
 }
 
-export default MemberList;
+export default memo(MemberListInner);
+export { MemberListInner as MemberList };

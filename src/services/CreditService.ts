@@ -652,10 +652,10 @@ export const CreditService = {
   mapCreditRequest(req: any, agentName: string): CreditLimitRequest {
     return {
       id: req.id,
-      agentId: req.agent_id,
+      agentId: req.requester_id || req.agent_id,
       agentName,
-      currentLimit: req.current_limit,
-      requestedLimit: req.requested_limit,
+      currentLimit: req.current_limit || 0,
+      requestedLimit: req.requested_amount || req.requested_limit || 0,
       reason: req.reason,
       status: req.status,
       reviewedBy: req.reviewed_by,

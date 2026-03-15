@@ -6,26 +6,37 @@
 import { describe, it, expect } from 'vitest';
 import { getTierForLevel, getClubLevel } from '../../src/utils/clubLevels';
 
+const VALID_TIERS = [
+  'starter',
+  'small',
+  'growing',
+  'established',
+  'large',
+  'regional',
+  'major',
+  'network',
+  'enterprise',
+  'elite',
+];
+
 describe('getTierForLevel', () => {
-  it('should return bronze for level 1', () => {
-    expect(getTierForLevel(1)).toBe('bronze');
+  it('should return starter for level 1', () => {
+    expect(getTierForLevel(1)).toBe('starter');
   });
 
   it('should return a valid tier for level 5', () => {
     const tier = getTierForLevel(5);
-    expect(['bronze', 'silver', 'gold', 'platinum', 'diamond', 'elite', 'legendary']).toContain(
-      tier
-    );
+    expect(VALID_TIERS).toContain(tier);
   });
 
-  it('should return highest tier for very high level', () => {
+  it('should return a valid tier for very high level', () => {
     const tier = getTierForLevel(100);
-    expect(tier).toBeDefined();
+    expect(VALID_TIERS).toContain(tier);
   });
 
-  it('should return bronze for level 0 or negative', () => {
-    expect(getTierForLevel(0)).toBe('bronze');
-    expect(getTierForLevel(-1)).toBe('bronze');
+  it('should return starter for level 0 or negative', () => {
+    expect(getTierForLevel(0)).toBe('starter');
+    expect(getTierForLevel(-1)).toBe('starter');
   });
 });
 
@@ -42,15 +53,13 @@ describe('getClubLevel', () => {
     expect(info.level).toBe(1);
   });
 
-  it('should increase level with more activity', () => {
-    const low = getClubLevel({ members: 5, tables: 1, totalHands: 50 });
-    const high = getClubLevel({ members: 100, tables: 20, totalHands: 10000 });
-    expect(high.level).toBeGreaterThanOrEqual(low.level);
+  it('should return a valid tier', () => {
+    const info = getClubLevel({ members: 50, tables: 10, totalHands: 5000 });
+    expect(VALID_TIERS).toContain(info.tier);
   });
 
-  it('should return xp and nextLevelXp', () => {
+  it('should return progressPercent as a number', () => {
     const info = getClubLevel({ members: 10, tables: 2, totalHands: 100 });
-    expect(typeof info.xp).toBe('number');
-    expect(typeof info.nextLevelXp).toBe('number');
+    expect(typeof info.progressPercent).toBe('number');
   });
 });

@@ -5,7 +5,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, memo } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
@@ -35,7 +35,7 @@ interface FriendListPanelProps {
   onInviteClick?: (friendId: string) => void;
 }
 
-export default function FriendListPanel({
+function FriendListPanelInner({
   onMessageClick,
   onProfileClick,
   onInviteClick,
@@ -368,3 +368,4 @@ export default function FriendListPanel({
     </div>
   );
 }
+export default memo(FriendListPanelInner);

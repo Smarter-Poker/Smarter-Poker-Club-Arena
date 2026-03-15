@@ -285,7 +285,7 @@ export default function ChipTransferModal({
       }
 
       setSuccess(`Transferred ${transferAmount.toLocaleString()} to ${recipientData?.username}`);
-      toast.success(`Transferred ${transferAmount.toLocaleString()} chips`);
+      if (isMounted.current) toast.success(`Transferred ${transferAmount.toLocaleString()} chips`);
       setAmount('');
       setNote('');
 

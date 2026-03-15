@@ -237,7 +237,7 @@ export default function PublicProfilePage() {
       if (conv) {
         navigate(`/messages/${conv.id}`);
       } else {
-        toast.error('Failed to start conversation');
+        if (isMounted.current) toast.error('Failed to start conversation');
       }
     } catch (err) {
       console.error('[PublicProfile] Message error:', err);
@@ -256,7 +256,7 @@ export default function PublicProfilePage() {
       setShowBlockModal(false);
       if (isMounted.current) toast.success('Player blocked');
     } else {
-      toast.error('Failed to block player');
+      if (isMounted.current) toast.error('Failed to block player');
     }
   };
 

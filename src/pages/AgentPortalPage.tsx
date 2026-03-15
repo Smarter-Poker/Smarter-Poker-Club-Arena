@@ -211,7 +211,7 @@ export default function AgentPortalPage() {
         setTransferAmount('');
         masterBus.emit('BALANCE_UPDATED', { source: 'agent_transfer', userId: user.id });
       } else {
-        toast.error('Transfer failed');
+        if (isMounted.current) toast.error('Transfer failed');
       }
     } catch (err) {
       toast.error('Transfer failed: ' + (err as Error).message);

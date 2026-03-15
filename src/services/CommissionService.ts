@@ -123,8 +123,7 @@ export const CommissionService = {
         .maybeSingle();
       oldRate = existing?.rate ?? 0;
     } catch (err) {
-
-      console.error("[CommissionService] Error:", err);
+      console.error('[CommissionService] Error:', err);
       /* first time set — oldRate stays 0 */
     }
 
@@ -132,7 +131,7 @@ export const CommissionService = {
       .from('commission_structures')
       .upsert(
         {
-          club_id: clubId,
+          club_id: resolvedClubId,
           agent_id: agentId,
           target_role: targetRole,
           rate,
@@ -160,8 +159,7 @@ export const CommissionService = {
           clubId,
         });
       } catch (err) {
-
-        console.error("[CommissionService] Error:", err);
+        console.error('[CommissionService] Error:', err);
         /* non-blocking */
       }
     }

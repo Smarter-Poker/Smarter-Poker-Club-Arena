@@ -110,7 +110,7 @@ export function TournamentRegistration({
 
       // Only allow admin removal before tournament starts (ANNOUNCED or REGISTERING)
       if (tournament && !['ANNOUNCED', 'REGISTERING'].includes(tournament.status)) {
-        toast.error('Cannot remove players after tournament has started');
+        if (isMounted.current) toast.error('Cannot remove players after tournament has started');
         return;
       }
 
@@ -153,7 +153,8 @@ export function TournamentRegistration({
                 username: playerEntry?.username || 'Player',
                 status: 'registered',
               });
-              toast.error('Removal cancelled — refund failed, player re-inserted');
+              if (isMounted.current)
+                toast.error('Removal cancelled — refund failed, player re-inserted');
             } catch (reinsertErr) {
               console.error(
                 '[AdminRemove] CRITICAL: Re-insert failed after refund failure:',
@@ -194,8 +195,7 @@ export function TournamentRegistration({
       toast.success('Player removed and refunded');
       loadPlayers();
     } catch (err) {
-
-      console.error("[TournamentRegistration] Error:", err);
+      console.error('[TournamentRegistration] Error:', err);
       if (isMounted.current) toast.error('Failed to remove player');
     }
   };

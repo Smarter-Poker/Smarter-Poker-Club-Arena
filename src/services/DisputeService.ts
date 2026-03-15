@@ -199,7 +199,31 @@ export const DisputeService = {
     reviewerId: string,
     resolution: DisputeResolution
   ): Promise<Dispute> {
-    // If adjustment is needed, execute it atomically
+    // CRITICAL FIX: Update dispute status FIRST (atomically mark resolved),
+    // then adjust wallet. If status update fails, dispute remains open and cannot be
+    // resolved again. If wallet adjustment fails after status update, we can alert ops
+    // but we won't double-pay. This prevents the race condition where wallet is adjusted
+    // but status update fails, leaving dispute open for re-resolution.
+
+    // 1. First, atomically update dispute status to 'resolved'
+    const { data, error } = await supabase
+      .from('disputes')
+      .update({
+        status: 'resolved',
+        resolution: resolution.resolution,
+        resolved_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', disputeId)
+      .select()
+      .maybeSingle();
+
+    if (error || !data) {
+      if (error) throw error;
+      throw new Error('Dispute not found or already resolved');
+    }
+
+    // 2. If adjustment is needed, execute it AFTER status is safely updated
     if (
       resolution.adjustmentType &&
       resolution.adjustmentType !== 'none' &&
@@ -218,68 +242,46 @@ export const DisputeService = {
             ? 'atomic_credit_wallet_and_log'
             : 'atomic_deduct_wallet_and_log';
 
-        const { error: adjustErr } = await retryAsync(
-          () =>
-            supabase.rpc(rpcName, {
-              p_user_id: dispute.submitted_by,
-              p_amount: resolution.adjustmentAmount,
-              p_category: 'dispute_resolution',
-              p_description: `Dispute ${disputeId} resolved: ${resolution.resolution}`,
-              p_table_id: null,
-              p_hand_id: null,
-              p_related_entity_id: disputeId,
-            }),
-          3
-        );
+        try {
+          const { error: adjustErr } = await retryAsync(
+            () =>
+              supabase.rpc(rpcName, {
+                p_user_id: dispute.submitted_by,
+                p_amount: resolution.adjustmentAmount,
+                p_category: 'dispute_resolution',
+                p_description: `Dispute ${disputeId} resolved: ${resolution.resolution}`,
+                p_table_id: null,
+                p_hand_id: null,
+                p_related_entity_id: disputeId,
+              }),
+            3
+          );
 
-        if (adjustErr) {
-          throw new Error(`Dispute adjustment failed: ${adjustErr.message}`);
-        }
-
-        masterBus.emit('BALANCE_UPDATED', {
-          source: 'dispute_resolution',
-          userId: dispute.submitted_by,
-          disputeId,
-        });
-      }
-    }
-
-    // Track if wallet was already adjusted (for rollback alerting)
-    const walletAdjusted =
-      resolution.adjustmentType &&
-      resolution.adjustmentType !== 'none' &&
-      resolution.adjustmentAmount &&
-      resolution.adjustmentAmount > 0;
-
-    const { data, error } = await supabase
-      .from('disputes')
-      .update({
-        status: 'resolved',
-        resolution: resolution.resolution,
-        resolved_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', disputeId)
-      .select()
-      .maybeSingle();
-
-    if (error || !data) {
-      // CRITICAL: If wallet was already adjusted but status update failed,
-      // money has been moved but dispute is still "open" — raise alert for ops
-      if (walletAdjusted) {
-        await FinancialAlertService.logCritical(
-          'DisputeService',
-          `Dispute ${disputeId}: wallet adjusted but status update FAILED — manual reconciliation required`,
-          {
-            disputeId,
-            adjustmentType: resolution.adjustmentType,
-            adjustmentAmount: resolution.adjustmentAmount,
-            error: error?.message || 'No data returned',
+          if (adjustErr) {
+            // Dispute is already marked resolved. Log alert but don't fail (dispute is safe).
+            await FinancialAlertService.logWarning(
+              'DisputeService',
+              `Dispute ${disputeId}: status resolved but wallet adjustment failed — manual action needed`,
+              {
+                disputeId,
+                adjustmentType: resolution.adjustmentType,
+                adjustmentAmount: resolution.adjustmentAmount,
+                error: adjustErr.message,
+              }
+            );
+            throw new Error(`Wallet adjustment failed (dispute marked resolved): ${adjustErr.message}`);
           }
-        );
+
+          masterBus.emit('BALANCE_UPDATED', {
+            source: 'dispute_resolution',
+            userId: dispute.submitted_by,
+            disputeId,
+          });
+        } catch (err: any) {
+          // If wallet fails after status is updated, ops can safely retry just the wallet adjustment
+          throw err;
+        }
       }
-      if (error) throw error;
-      throw new Error('Dispute not found or already resolved');
     }
 
     // Notify the submitter

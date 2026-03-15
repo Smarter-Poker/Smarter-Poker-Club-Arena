@@ -414,6 +414,7 @@ export default function LobbyPage() {
         if (!isMounted.current) return;
         console.error('Failed to fetch tables:', error);
         setTables([]);
+        toast.error('Failed to load tables. Please try refreshing.');
       } finally {
         clearTimeout(loadingTimeout);
         if (isMounted.current) setLoading(false);

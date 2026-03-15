@@ -226,19 +226,20 @@ class PromotionServiceClass {
 
     if (error) throw error;
 
-    // Atomically increment claim count via direct update
-    const { data: promoData } = await supabase
-      .from('promotions')
-      .select('claim_count')
-      .eq('id', promotionId)
-      .maybeSingle();
-
-    if (promoData) {
-      const { error: countErr } = await supabase
-        .from('promotions')
-        .update({ claim_count: (promoData.claim_count || 0) + 1 })
-        .eq('id', promotionId);
-      if (countErr) console.error('[PromotionService] Failed to increment claim count:', countErr);
+    // Atomically increment claim count using SQL increment to prevent race condition
+    // with concurrent claims. This ensures the counter is incremented safely even
+    // under high concurrency.
+    try {
+      await retryAsync(
+        () =>
+          supabase.rpc('increment_promotion_claim_count', {
+            p_promotion_id: promotionId,
+          }),
+        2
+      );
+    } catch (countErr: any) {
+      console.error('[PromotionService] Failed to increment claim count:', countErr.message);
+      // Non-blocking: claim was successful even if counter increment failed
     }
 
     if (!data) throw new Error('Claim created but no data returned');

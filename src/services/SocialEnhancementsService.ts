@@ -556,7 +556,12 @@ class SocialEnhancementsServiceClass {
     if (url) {
       notification.onclick = () => {
         window.focus();
-        window.location.href = url;
+        const isInIframe = typeof window !== 'undefined' && window.parent !== window;
+        if (isInIframe) {
+          try { window.top!.location.href = url; } catch { window.parent.postMessage({ type: 'NAVIGATE', path: url }, '*'); }
+        } else {
+          window.location.href = url;
+        }
       };
     }
   }

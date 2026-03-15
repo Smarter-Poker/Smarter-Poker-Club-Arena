@@ -298,6 +298,10 @@ export default function PlayerWalletPage() {
       setMessage({ type: 'error', text: 'Cannot transfer to the same wallet' });
       return;
     }
+    if (amount > balances[transferFrom].available) {
+      setMessage({ type: 'error', text: `Insufficient balance. Available: ${balances[transferFrom].available.toLocaleString()}` });
+      return;
+    }
     setIsTransferring(true);
     setMessage(null);
     try {

@@ -269,7 +269,8 @@ export async function leaveClub(clubId: string): Promise<void> {
     console.warn('[ClubsService] leaveClub: cashout cancel failed (non-critical):', e);
   }
 
-  // 4. Return chip_balance to club treasury (if any)
+  // 4. Return chip_balance to club treasury (if any) — BEFORE deleting membership
+  // If refund fails, throw error to prevent membership deletion (no chip loss)
   const balance = member.chip_balance || 0;
   if (balance > 0) {
     try {
@@ -285,8 +286,9 @@ export async function leaveClub(clubId: string): Promise<void> {
         2
       );
     } catch (err: any) {
+      // CRITICAL: Fail fast — do NOT delete membership if refund fails
       console.error('[ClubsService] Failed to refund chips on leave:', err.message);
-      // Continue — we don't want to trap members in clubs due to refund failures
+      throw new Error(`Cannot leave club: chip refund failed. ${err.message}`);
     }
   }
 
@@ -303,7 +305,7 @@ export async function leaveClub(clubId: string): Promise<void> {
     }
   }
 
-  // 6. Delete membership record
+  // 6. Delete membership record (only after successful refund)
   const { error } = await supabase
     .from('club_members')
     .delete()

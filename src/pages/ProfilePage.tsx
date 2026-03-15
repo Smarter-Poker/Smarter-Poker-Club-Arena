@@ -925,7 +925,15 @@ export default function ProfilePage() {
         <div className={styles.headerActions}>
           <button
             className={styles.editButton}
-            onClick={() => window.open('https://smarter.poker/hub/avatars-complete', '_blank')}
+            onClick={() => {
+              const url = 'https://smarter.poker/hub/avatars-complete';
+              const isInIframe = typeof window !== 'undefined' && window.parent !== window;
+              if (isInIframe) {
+                try { window.top!.open(url, '_blank'); } catch { window.open(url, '_blank'); }
+              } else {
+                window.open(url, '_blank');
+              }
+            }}
           >
             Change Avatar
           </button>

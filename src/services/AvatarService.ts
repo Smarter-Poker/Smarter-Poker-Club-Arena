@@ -468,7 +468,13 @@ class AvatarServiceClass {
    * The Hub will handle avatar selection and save to the user's profile
    */
   openAvatarSelector(): void {
-    window.open(this.getHubAvatarUrl(), '_blank', 'width=800,height=600');
+    const url = this.getHubAvatarUrl();
+    const isInIframe = typeof window !== 'undefined' && window.parent !== window;
+    if (isInIframe) {
+      try { window.top!.open(url, '_blank'); } catch { window.open(url, '_blank'); }
+    } else {
+      window.open(url, '_blank', 'width=800,height=600');
+    }
   }
 
   /**

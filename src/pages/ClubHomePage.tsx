@@ -531,7 +531,7 @@ export default function ClubHomePage() {
           .order('start_time', { ascending: true }),
         (async () => {
           try {
-            return await supabase.from('bbj_pools').select('main_balance').limit(1).maybeSingle();
+            return await supabase.from('bbj_pools').select('main_balance').eq('club_id', resolvedId).limit(1).maybeSingle();
           } catch {
             return { data: null, error: null };
           }

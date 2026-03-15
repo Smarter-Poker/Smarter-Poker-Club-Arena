@@ -284,7 +284,13 @@ export default function HandHistoryPage() {
       } else {
         // Standalone - open Jarvis in new tab with hand data
         const encodedData = encodeURIComponent(JSON.stringify(handSummary));
-        window.open(`https://smarter.poker/hub/jarvis?hand=${encodedData}`, '_blank');
+        const url = `https://smarter.poker/hub/jarvis?hand=${encodedData}`;
+        const isInIframe = typeof window !== 'undefined' && window.parent !== window;
+        if (isInIframe) {
+          try { window.top!.open(url, '_blank'); } catch { window.open(url, '_blank'); }
+        } else {
+          window.open(url, '_blank');
+        }
         toast.info('Opening Jarvis analysis...');
       }
     } catch (err) {

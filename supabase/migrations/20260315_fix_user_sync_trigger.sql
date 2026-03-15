@@ -18,7 +18,7 @@ BEGIN
     INSERT INTO users (id, username, email)
     VALUES (
         NEW.id,
-        COALESCE(NEW.raw_user_meta_data->>'username', 'Player' || (1000 + floor(random() * 9000)::int)::text),
+        COALESCE(NEW.raw_user_meta_data->>'username', 'Player_' || substring(NEW.id::text from 1 for 8)),
         NEW.email
     )
     ON CONFLICT (id) DO NOTHING;
@@ -27,7 +27,7 @@ BEGIN
     INSERT INTO profiles (id, username, display_name)
     VALUES (
         NEW.id,
-        COALESCE(NEW.raw_user_meta_data->>'username', 'Player' || (1000 + floor(random() * 9000)::int)::text),
+        COALESCE(NEW.raw_user_meta_data->>'username', 'Player_' || substring(NEW.id::text from 1 for 8)),
         COALESCE(NEW.raw_user_meta_data->>'display_name', 'New Player')
     )
     ON CONFLICT (id) DO NOTHING;
@@ -45,7 +45,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 INSERT INTO users (id, username, email)
 SELECT
     au.id,
-    COALESCE(au.raw_user_meta_data->>'username', 'Player' || (1000 + floor(random() * 9000)::int)::text),
+    COALESCE(au.raw_user_meta_data->>'username', 'Player_' || substring(au.id::text from 1 for 8)),
     au.email
 FROM auth.users au
 WHERE NOT EXISTS (

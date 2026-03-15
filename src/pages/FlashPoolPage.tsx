@@ -84,65 +84,8 @@ export default function FlashPoolPage() {
     } catch (err) {
       console.error('[FlashPoolPage] Failed to load pools:', err);
       if (!isMounted.current) return;
-      toast.error('Failed to load pools — showing defaults');
-      // Fallback: show default pool configurations
-      setPools([
-        {
-          poolId: 'flash-micro',
-          stakes: '0.01/0.02',
-          smallBlind: 0.01,
-          bigBlind: 0.02,
-          activePlayers: 0,
-          tablesRunning: 0,
-          buyInMin: 0.8,
-          buyInMax: 4.0,
-          status: 'active',
-        },
-        {
-          poolId: 'flash-low',
-          stakes: '0.05/0.10',
-          smallBlind: 0.05,
-          bigBlind: 0.1,
-          activePlayers: 0,
-          tablesRunning: 0,
-          buyInMin: 4.0,
-          buyInMax: 20.0,
-          status: 'active',
-        },
-        {
-          poolId: 'flash-mid',
-          stakes: '0.25/0.50',
-          smallBlind: 0.25,
-          bigBlind: 0.5,
-          activePlayers: 0,
-          tablesRunning: 0,
-          buyInMin: 20.0,
-          buyInMax: 100.0,
-          status: 'active',
-        },
-        {
-          poolId: 'flash-high',
-          stakes: '1/2',
-          smallBlind: 1,
-          bigBlind: 2,
-          activePlayers: 0,
-          tablesRunning: 0,
-          buyInMin: 80,
-          buyInMax: 400,
-          status: 'active',
-        },
-        {
-          poolId: 'flash-vip',
-          stakes: '5/10',
-          smallBlind: 5,
-          bigBlind: 10,
-          activePlayers: 0,
-          tablesRunning: 0,
-          buyInMin: 400,
-          buyInMax: 2000,
-          status: 'active',
-        },
-      ]);
+      toast.error('Failed to load pools');
+      setPools([]);
     } finally {
       setLoading(false);
     }

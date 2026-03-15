@@ -1070,7 +1070,8 @@ function SettingsTab({ clubId }: { clubId: string }) {
           setSettings(data?.settings || {});
           setLoading(false);
         }
-      } catch {
+      } catch (err) {
+        console.warn('[AdminDash/Settings] Load failed:', err);
         if (isMounted.current) setLoading(false);
       }
     })();
@@ -1298,8 +1299,8 @@ function SettlementHistoryTab({ clubId }: { clubId: string }) {
         .limit(50);
       if (error) throw error;
       if (isMounted.current) setPeriods(data || []);
-    } catch {
-      /* silent */
+    } catch (err) {
+      console.warn('[AdminDash/Settlement] Periods load failed:', err);
     } finally {
       if (isMounted.current) setLoading(false);
     }
@@ -1388,7 +1389,8 @@ function BrandingTab({ clubId }: { clubId: string }) {
           setTheme(data?.theme || {});
           setLoading(false);
         }
-      } catch {
+      } catch (err) {
+        console.warn('[AdminDash/Theme] Load failed:', err);
         if (isMounted.current) setLoading(false);
       }
     })();
@@ -1618,8 +1620,8 @@ function RecommendationsTab({ clubId }: { clubId: string }) {
         }
 
         if (isMounted.current) setRecs(recommendations);
-      } catch {
-        /* silent */
+      } catch (err) {
+        console.warn('[AdminDash/Recommendations] Load failed:', err);
       } finally {
         if (isMounted.current) setLoading(false);
       }
@@ -1864,8 +1866,8 @@ function AnalyticsTab({ clubId }: { clubId: string }) {
             weeklySessions: sess.length,
             avgSessionMinutes: avgDuration,
           });
-      } catch {
-        /* silent */
+      } catch (err) {
+        console.warn('[AdminDash/Analytics] Load failed:', err);
       } finally {
         if (isMounted.current) setLoading(false);
       }

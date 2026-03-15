@@ -19,6 +19,7 @@ export default function GamificationLeaderboard() {
 
   useEffect(() => {
     let isMounted = true;
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
     setLoading(true);
 
     const fetchLeaderboard = async () => {
@@ -86,14 +87,23 @@ export default function GamificationLeaderboard() {
 
     // Bus listeners — auto-refresh when relevant events fire
     const unsubWheel = masterBus.subscribe('WHEEL_SPIN_RESULT', () => {
-      if (isMounted) setTimeout(fetchLeaderboard, 1500);
+      if (!isMounted) return;
+      if (refreshTimer) clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => {
+        if (isMounted) fetchLeaderboard();
+      }, 1500);
     });
     const unsubMission = masterBus.subscribe('MISSION_CLAIMED', () => {
-      if (isMounted) setTimeout(fetchLeaderboard, 1500);
+      if (!isMounted) return;
+      if (refreshTimer) clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => {
+        if (isMounted) fetchLeaderboard();
+      }, 1500);
     });
 
     return () => {
       isMounted = false;
+      if (refreshTimer) clearTimeout(refreshTimer);
       unsubWheel();
       unsubMission();
     };

@@ -70,6 +70,8 @@ export default function DailyChallenges() {
   const picked = useRef(pickChallenges()); // stable across re-renders
   const tableSessionStart = useRef<number | null>(null); // for play-time tracking
   const claimingRef = useRef<Set<number>>(new Set()); // prevents double-click race
+  const isMountedRef = useRef(true);
+  const claimTimerRef = useRef<number | null>(null);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // Load progress from Supabase → fallback to localStorage
@@ -95,6 +97,7 @@ export default function DailyChallenges() {
             map[row.challenge_index] = row.progress;
             if (row.completed) claimedMap[row.challenge_index] = true;
           });
+          if (!isMountedRef.current) return;
           setProgress(map);
           setClaimed(claimedMap);
           return;
@@ -237,7 +240,10 @@ export default function DailyChallenges() {
       }
     });
 
+    isMountedRef.current = true;
+
     return () => {
+      isMountedRef.current = false;
       unsubHandCompleted();
       unsubHandWon();
       unsubFlopSeen();
@@ -247,6 +253,7 @@ export default function DailyChallenges() {
       unsubFlushWin();
       unsubSeated();
       unsubLeft();
+      if (claimTimerRef.current) clearTimeout(claimTimerRef.current);
     };
   }, [loadProgress, incrementByEvent]);
 
@@ -293,6 +300,7 @@ export default function DailyChallenges() {
           const newBalance = typeof rpcResult === 'number' ? rpcResult : reward;
 
           // STEP 3: Both DB writes confirmed — NOW lock local state
+          if (!isMountedRef.current) return;
           setClaimed((prev) => {
             const next = { ...prev, [challengeIndex]: true };
             try {
@@ -312,11 +320,16 @@ export default function DailyChallenges() {
         }
       } catch (err) {
         console.error('[DailyChallenges] Claim failed — user can retry:', err);
-        // Release claim guard so user can retry on failure
+      } finally {
+        // Always release claim guard (was leaking on success path before)
         claimingRef.current.delete(challengeIndex);
       }
-      // Fade out animation timing
-      setTimeout(() => setClaimingIndex(null), 600);
+      // Fade out animation timing — tracked for cleanup
+      if (isMountedRef.current) {
+        claimTimerRef.current = window.setTimeout(() => {
+          if (isMountedRef.current) setClaimingIndex(null);
+        }, 600);
+      }
     },
     [claimed, dayKey, progress]
   );

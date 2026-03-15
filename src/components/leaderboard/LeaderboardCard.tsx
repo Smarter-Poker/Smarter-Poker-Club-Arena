@@ -5,9 +5,10 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { promotionService, LeaderboardEntry } from '../../services/PromotionService';
 import { useAuthUser } from '../../hooks/useAuthUser';
+import { masterBus } from '../../core/MasterBus';
 import styles from './LeaderboardCard.module.css';
 
 interface LeaderboardCardProps {
@@ -28,27 +29,31 @@ export default function LeaderboardCard({
   const [loading, setLoading] = useState(true);
   const [userRank, setUserRank] = useState<LeaderboardEntry | null>(null);
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
+  const isMounted = useRef(true);
+  const animTimers = useRef<number[]>([]);
 
-  useEffect(() => {
-    loadLeaderboard();
-  }, [promotionId, limit]);
-
-  const loadLeaderboard = async () => {
+  const loadLeaderboard = useCallback(async () => {
+    if (!isMounted.current) return;
     setLoading(true);
     try {
       const data = await promotionService.getLeaderboard(promotionId, limit);
+      if (!isMounted.current) return;
       setEntries(data);
+      // Track animation timers for cleanup
+      animTimers.current.forEach(clearTimeout);
+      animTimers.current = [];
       setVisibleItems(new Set());
       data.forEach((_, i) => {
-        setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60);
+        const t = window.setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60);
+        animTimers.current.push(t);
       });
 
       // Find current user if not in top N
       if (showCurrentUser && user?.id) {
         const currentUserEntry = data.find((e) => e.userId === user.id);
         if (!currentUserEntry) {
-          // User not in top N, fetch their rank separately
           const allData = await promotionService.getLeaderboard(promotionId, 1000);
+          if (!isMounted.current) return;
           const userEntry = allData.find((e) => e.userId === user.id);
           if (userEntry) setUserRank(userEntry);
         }
@@ -56,8 +61,24 @@ export default function LeaderboardCard({
     } catch (error) {
       console.error('Failed to load leaderboard:', error);
     }
-    setLoading(false);
-  };
+    if (isMounted.current) setLoading(false);
+  }, [promotionId, limit, showCurrentUser, user?.id]);
+
+  useEffect(() => {
+    isMounted.current = true;
+    loadLeaderboard();
+
+    const unsubBalance = masterBus.subscribe('BALANCE_UPDATED', () => {
+      if (isMounted.current) setTimeout(() => loadLeaderboard(), 2000);
+    });
+
+    return () => {
+      isMounted.current = false;
+      unsubBalance();
+      animTimers.current.forEach(clearTimeout);
+      animTimers.current = [];
+    };
+  }, [loadLeaderboard]);
 
   const getMedalIcon = (rank: number): string => {
     switch (rank) {

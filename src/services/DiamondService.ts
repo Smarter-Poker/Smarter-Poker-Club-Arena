@@ -117,7 +117,8 @@ export const DiamondService = {
         .eq('type', 'debit')
         .in('category', ['diamond_deduction', 'vip_purchase', 'mint']);
       lifetimeSpent = (spentData || []).reduce((sum, t) => sum + Number(t.amount || 0), 0);
-    } catch {
+    } catch (err) {
+      console.error('[DiamondService] Error:', err);
       // Non-blocking: lifetime stats are best-effort
     }
 

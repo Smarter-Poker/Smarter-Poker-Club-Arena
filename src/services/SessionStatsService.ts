@@ -90,7 +90,8 @@ class SessionStatsServiceClass {
         }
         localStorage.removeItem(this.STORAGE_PREFIX + tableId);
       }
-    } catch {
+    } catch (err) {
+      console.error('[SessionStatsService] Error:', err);
       /* localStorage may be unavailable */
     }
 
@@ -117,7 +118,8 @@ class SessionStatsServiceClass {
       // Enhancement #7: Backup session to localStorage for reconnect resume
       try {
         localStorage.setItem(this.STORAGE_PREFIX + tableId, JSON.stringify(session));
-      } catch {
+      } catch (err) {
+        console.error('[SessionStatsService] Error:', err);
         /* localStorage may be full or unavailable */
       }
     }, 500);
@@ -247,7 +249,8 @@ class SessionStatsServiceClass {
     // Enhancement #7: Clean up localStorage backup
     try {
       localStorage.removeItem(this.STORAGE_PREFIX + tableId);
-    } catch {
+    } catch (err) {
+      console.error('[SessionStatsService] Error:', err);
       /* no-op */
     }
 
@@ -272,7 +275,8 @@ class SessionStatsServiceClass {
       const queue = existing ? JSON.parse(existing) : [];
       queue.push({ ...payload, queued_at: new Date().toISOString(), retry_count: retryCount + 1 });
       localStorage.setItem(this.OFFLINE_QUEUE_KEY, JSON.stringify(queue.slice(-20))); // Max 20 queued
-    } catch {
+    } catch (err) {
+      console.error('[SessionStatsService] Error:', err);
       /* localStorage may be full — intentional no-op */
     }
   }
@@ -304,7 +308,8 @@ class SessionStatsServiceClass {
             }
           });
       });
-    } catch {
+    } catch (err) {
+      console.error('[SessionStatsService] Error:', err);
       /* localStorage may be unavailable — intentional no-op */
     }
   }

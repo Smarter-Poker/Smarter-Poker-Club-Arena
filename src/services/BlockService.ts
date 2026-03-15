@@ -189,7 +189,8 @@ class BlockServiceClass {
 
       this.blockedIds = new Set((data || []).map((row: any) => row.blocked_id));
       this.cacheUserId = userId;
-    } catch {
+    } catch (err) {
+      console.error('[BlockService] Error:', err);
       this.blockedIds = new Set();
     }
   }

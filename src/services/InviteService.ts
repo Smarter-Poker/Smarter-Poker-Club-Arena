@@ -219,7 +219,8 @@ export const InviteService = {
       const url = this.getInviteUrl(code);
       await navigator.clipboard.writeText(url);
       return true;
-    } catch {
+    } catch (err) {
+      console.error('[InviteService] Error:', err);
       return false;
     }
   },

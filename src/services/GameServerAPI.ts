@@ -133,7 +133,8 @@ export async function getServerStatus(): Promise<ServerStatus | null> {
     const response = await fetch(`${GAME_SERVER_URL}/health`);
     if (!response.ok) return null;
     return (await response.json()) as ServerStatus;
-  } catch {
+  } catch (err) {
+    console.error('[GameServerAPI] Error:', err);
     return null;
   }
 }

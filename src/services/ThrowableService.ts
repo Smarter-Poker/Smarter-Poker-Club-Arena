@@ -144,7 +144,8 @@ class ThrowableServiceClass {
         freeThrowsRemaining: remaining,
         diamondCost: remaining > 0 ? 0 : DIAMOND_COST_PER_THROW,
       };
-    } catch {
+    } catch (err) {
+      console.error('[ThrowableService] Error:', err);
       return { isVip: false, freeThrowsRemaining: 0, diamondCost: DIAMOND_COST_PER_THROW };
     }
   }
@@ -210,7 +211,8 @@ class ThrowableServiceClass {
       if (usageErr2) console.error('[ThrowableService] Paid throw usage record failed:', usageErr2);
 
       return { success: true };
-    } catch {
+    } catch (err) {
+      console.error('[ThrowableService] Error:', err);
       return { success: false, error: 'Unexpected error' };
     }
   }

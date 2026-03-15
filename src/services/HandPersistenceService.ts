@@ -93,7 +93,8 @@ export class HandPersistence {
           `[HandPersistence:${this.tableId}] Cleaned up ${count} orphaned active hands`
         );
       }
-    } catch {
+    } catch (err) {
+      console.error('[HandPersistenceService] Error:', err);
       // Silently ignore — cleanup is non-critical
     }
   }

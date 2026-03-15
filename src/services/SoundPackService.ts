@@ -161,7 +161,8 @@ class SoundPackService {
     // Persist selection
     try {
       localStorage.setItem('smarter_sound_pack', packId);
-    } catch {
+    } catch (err) {
+      console.error('[SoundPackService] Error:', err);
       // localStorage might not be available
     }
   }
@@ -183,7 +184,8 @@ class SoundPackService {
       if (saved && SOUND_PACKS[saved]) {
         this.setPack(saved);
       }
-    } catch {
+    } catch (err) {
+      console.error('[SoundPackService] Error:', err);
       // Use default
     }
   }

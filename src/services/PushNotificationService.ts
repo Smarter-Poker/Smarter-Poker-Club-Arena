@@ -133,7 +133,8 @@ class PushNotificationServiceClass {
         return await window.OneSignal.Notifications.permission;
       }
       return false;
-    } catch {
+    } catch (err) {
+      console.error('[PushNotificationService] Error:', err);
       return false;
     }
   }
@@ -208,7 +209,8 @@ class PushNotificationServiceClass {
       // If no preferences found, assume all enabled (default on)
       if (!data || data.length === 0) return userIds;
       return data.map((d) => d.user_id);
-    } catch {
+    } catch (err) {
+      console.error('[PushNotificationService] Error:', err);
       return userIds; // On error, send to all
     }
   }

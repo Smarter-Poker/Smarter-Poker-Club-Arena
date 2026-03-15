@@ -391,7 +391,8 @@ export const SettlementService = {
               error: errMsg,
             }
           );
-        } catch {
+        } catch (err) {
+          console.error('[SettlementService] Error:', err);
           /* best effort — already logged to console */
         }
 

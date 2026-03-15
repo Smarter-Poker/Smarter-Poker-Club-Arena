@@ -56,7 +56,7 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id: string) {
-          // ── Vendor Splits ──
+          // ── Vendor Splits (safe — no circular dependencies) ──
           if (id.includes('node_modules/react-dom')) return 'vendor-react';
           if (id.includes('node_modules/react-router')) return 'vendor-react';
           if (id.includes('node_modules/react/')) return 'vendor-react';
@@ -66,19 +66,11 @@ export default defineConfig({
           if (id.includes('node_modules/framer-motion')) return 'vendor-motion';
           if (id.includes('node_modules/@sentry/')) return 'vendor-sentry';
 
-          // ── Application Splits ──
-          // Services layer — shared singletons (Wallet, Club, Agent, etc.)
-          if (id.includes('/src/services/') && !id.includes('.test.')) return 'chunk-services';
-          // Core layer — MasterBus, stores, hooks
-          if (
-            id.includes('/src/core/') ||
-            id.includes('/src/stores/') ||
-            id.includes('/src/hooks/')
-          )
-            return 'chunk-core';
-          // Shared UI components used across many routes
-          if (id.includes('/src/components/common/')) return 'chunk-common';
-          // Let Vite handle everything else (route-level splits for pages)
+          // ── Application code: let Vite handle splitting naturally ──
+          // DO NOT manually chunk services, core, hooks, stores, or common components.
+          // These layers have bidirectional imports (MasterBus ↔ services, common → core/services)
+          // that create circular chunk dependencies, causing runtime module loading failures.
+          // Vite's default splitting handles this correctly by co-locating tightly coupled modules.
         },
       },
     },

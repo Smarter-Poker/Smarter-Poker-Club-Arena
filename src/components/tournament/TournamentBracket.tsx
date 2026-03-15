@@ -108,6 +108,8 @@ export default function TournamentBracket({ tournamentId, totalPlayers }: Tourna
         return b.chips - a.chips;
       });
 
+      if (!isMounted.current) return;
+
       setPlayers(mapped);
       const active = mapped.filter((p) => !p.eliminated);
       const elim = mapped.filter((p) => p.eliminated);

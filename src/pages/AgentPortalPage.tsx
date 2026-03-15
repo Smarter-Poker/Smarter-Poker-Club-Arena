@@ -51,6 +51,7 @@ export default function AgentPortalPage() {
   const [isTransferring, setIsTransferring] = useState(false);
   const [visibleSections, setVisibleSections] = useState<Set<number>>(new Set());
   const [agentClubId, setAgentClubId] = useState<string | null>(null);
+  const [agentPkId, setAgentPkId] = useState<string | null>(null); // agents.id PK (different from auth.uid)
   const isMounted = useIsMounted();
 
   useVisibilityRefresh(() => loadData());
@@ -79,9 +80,9 @@ export default function AgentPortalPage() {
 
   // RT subscription: auto-refresh when agent wallet changes in Supabase
   useEffect(() => {
-    if (!user?.id) return;
+    if (!user?.id || !agentPkId) return;
     const channel = supabase
-      .channel(`agent-portal-${user.id}`)
+      .channel(`agent-portal-${user.id}-${agentPkId}`)
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'agents', filter: `user_id=eq.${user.id}` },
@@ -95,7 +96,7 @@ export default function AgentPortalPage() {
           event: 'INSERT',
           schema: 'public',
           table: 'commission_ledger',
-          filter: `agent_id=eq.${user.id}`,
+          filter: `agent_id=eq.${agentPkId}`,
         },
         () => {
           if (isMounted.current) loadCommissionHistory();
@@ -105,12 +106,14 @@ export default function AgentPortalPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user?.id]);
+  }, [user?.id, agentPkId]);
 
   const loadData = async () => {
     if (!user?.id) return;
     setLoading(true);
-    await Promise.all([loadWallet(), loadCommissionHistory()]);
+    // loadWallet FIRST — it resolves the agents.id PK needed by loadCommissionHistory
+    await loadWallet();
+    await loadCommissionHistory();
     if (isMounted.current) setLoading(false);
   };
 
@@ -138,6 +141,7 @@ export default function AgentPortalPage() {
       }
 
       if (!isMounted.current) return;
+      setAgentPkId(data.id); // Triggers RT subscription re-creation with correct filter
       if (data.club_id) setAgentClubId(data.club_id);
       setWallet({
         agentBal: data.agent_wallet_balance || 0,
@@ -152,13 +156,15 @@ export default function AgentPortalPage() {
   };
 
   const loadCommissionHistory = async () => {
-    if (!user?.id) return;
+    // commission_ledger.agent_id stores agents.id PK, not auth.uid()
+    const agentId = agentPkId;
+    if (!agentId) return;
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     try {
       const { data, error } = await supabase
         .from('commission_ledger')
         .select('commission_earned, created_at')
-        .eq('agent_id', user.id)
+        .eq('agent_id', agentId)
         .gte('created_at', new Date(Date.now() - 7 * 86400000).toISOString())
         .order('created_at', { ascending: true })
         .limit(5000);

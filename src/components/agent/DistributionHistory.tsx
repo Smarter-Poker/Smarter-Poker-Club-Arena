@@ -9,7 +9,8 @@
  * - Per-player grouping and totals
  */
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
@@ -38,12 +39,7 @@ export default function DistributionHistory({ userId, clubId }: DistributionHist
   const [loading, setLoading] = useState(true);
   const [dateRange, setDateRange] = useState<DateRange>('30d');
   const [searchTerm, setSearchTerm] = useState('');
-  const isMounted = useRef(true);
-
-  useEffect(() => {
-    isMounted.current = true;
-    return () => { isMounted.current = false; };
-  }, []);
+  const isMounted = useIsMounted();
 
   const loadHistory = useCallback(async () => {
     if (!userId || !clubId) return;
@@ -73,9 +69,10 @@ export default function DistributionHistory({ userId, clubId }: DistributionHist
 
       // Fetch recipient display names
       const toIds = [...new Set((data || []).map((r) => r.to_user_id))];
-      const { data: profiles } = toIds.length > 0
-        ? await supabase.from('profiles').select('id, display_name, username').in('id', toIds)
-        : { data: [] };
+      const { data: profiles } =
+        toIds.length > 0
+          ? await supabase.from('profiles').select('id, display_name, username').in('id', toIds)
+          : { data: [] };
 
       const nameMap = new Map(
         (profiles || []).map((p) => [p.id, p.display_name || p.username || 'Unknown'])
@@ -95,7 +92,9 @@ export default function DistributionHistory({ userId, clubId }: DistributionHist
     }
   }, [userId, clubId, dateRange]);
 
-  useEffect(() => { loadHistory(); }, [loadHistory]);
+  useEffect(() => {
+    loadHistory();
+  }, [loadHistory]);
 
   // Bus listeners
   useEffect(() => {

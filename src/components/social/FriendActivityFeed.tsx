@@ -7,6 +7,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import './FriendActivityFeed.css';
@@ -25,7 +26,7 @@ interface ActivityItem {
 export default function FriendActivityFeed({ friends }: { friends: any[] }) {
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const isMounted = useRef(true);
+  const isMounted = useIsMounted();
 
   // Build a lookup map for friend data
   const friendMap = useRef(new Map<string, { username: string; avatar_url?: string }>());
@@ -125,7 +126,6 @@ export default function FriendActivityFeed({ friends }: { friends: any[] }) {
   }, [friends]);
 
   useEffect(() => {
-    isMounted.current = true;
     loadRealActivities();
 
     // Real-time bus listeners — augment feed with live events
@@ -176,7 +176,6 @@ export default function FriendActivityFeed({ friends }: { friends: any[] }) {
     });
 
     return () => {
-      isMounted.current = false;
       unsubComplete();
       unsubFriend();
       unsubAchieve();

@@ -33,15 +33,12 @@ export interface SafeResult<T> {
  * Wraps an async service call so thrown errors become { data: null, error: message }
  * instead of crashing the caller.
  */
-export async function safeServiceCall<T>(
-  fn: () => Promise<T>
-): Promise<SafeResult<T>> {
+export async function safeServiceCall<T>(fn: () => Promise<T>): Promise<SafeResult<T>> {
   try {
     const data = await fn();
     return { data, error: null };
   } catch (err: any) {
-    const message =
-      err?.message || err?.error_description || 'An unexpected error occurred';
+    const message = err?.message || err?.error_description || 'An unexpected error occurred';
     console.warn('[SafeServiceCall] Caught thrown error:', message);
     return { data: null, error: message };
   }
@@ -55,8 +52,7 @@ export function safeServiceCallSync<T>(fn: () => T): SafeResult<T> {
     const data = fn();
     return { data, error: null };
   } catch (err: any) {
-    const message =
-      err?.message || err?.error_description || 'An unexpected error occurred';
+    const message = err?.message || err?.error_description || 'An unexpected error occurred';
     console.warn('[SafeServiceCallSync] Caught thrown error:', message);
     return { data: null, error: message };
   }

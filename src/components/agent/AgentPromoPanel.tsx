@@ -9,6 +9,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { retryAsync } from '../../utils/retryAsync';
 import { masterBus } from '../../core/MasterBus';
@@ -55,15 +56,8 @@ export default function AgentPromoPanel({
   const [amount, setAmount] = useState('');
   const [distributing, setDistributing] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: string } | null>(null);
-  const isMounted = useRef(true);
+  const isMounted = useIsMounted();
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    isMounted.current = true;
-    return () => {
-      isMounted.current = false;
-    };
-  }, []);
 
   const isAgent = ['agent', 'sub_agent', 'super_agent'].includes(role);
 

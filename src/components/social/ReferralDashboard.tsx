@@ -4,7 +4,8 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import {
   referralService,
   type ReferralStats,
@@ -27,14 +28,7 @@ export default function ReferralDashboard({ userId }: ReferralDashboardProps) {
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
   const toast = useToast();
-  const isMounted = useRef(true);
-
-  useEffect(() => {
-    isMounted.current = true;
-    return () => {
-      isMounted.current = false;
-    };
-  }, []);
+  const isMounted = useIsMounted();
 
   useEffect(() => {
     if (!userId) return;

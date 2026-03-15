@@ -5,6 +5,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { promotionService, type Promotion } from '../../services/PromotionService';
 import './PromotionCarousel.css';
 
@@ -35,13 +36,11 @@ export default function PromotionCarousel({ clubId, onPromoClick }: PromotionCar
   const [promos, setPromos] = useState<Promotion[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
   const [loading, setLoading] = useState(true);
-  const isMounted = useRef(true);
+  const isMounted = useIsMounted();
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    isMounted.current = true;
     return () => {
-      isMounted.current = false;
       if (timerRef.current) clearInterval(timerRef.current);
     };
   }, []);

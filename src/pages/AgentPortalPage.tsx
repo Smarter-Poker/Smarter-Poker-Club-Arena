@@ -58,12 +58,13 @@ export default function AgentPortalPage() {
 
   useEffect(() => {
     loadData();
-    // Stagger animations
-    [0, 1, 2, 3, 4].forEach((i) => {
+    // Stagger animations — clean up timers on unmount
+    const timers = [0, 1, 2, 3, 4].map((i) =>
       setTimeout(() => {
         if (isMounted.current) setVisibleSections((prev) => new Set(prev).add(i));
-      }, i * 80);
-    });
+      }, i * 80)
+    );
+    return () => timers.forEach(clearTimeout);
   }, [user?.id]);
 
   // Bus listeners

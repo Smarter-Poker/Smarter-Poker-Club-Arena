@@ -5,7 +5,8 @@
  * Horizontal scroll of suggestion cards with shared context
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { useNavigate } from 'react-router-dom';
 import {
   friendSuggestionService,
@@ -27,10 +28,9 @@ export default function FriendSuggestions() {
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [sendingRequest, setSendingRequest] = useState<string | null>(null);
 
-  const isMounted = useRef(true);
+  const isMounted = useIsMounted();
 
   useEffect(() => {
-    isMounted.current = true;
     if (!user?.id) return;
     friendSuggestionService
       .getSuggestions(user.id, 12)
@@ -65,7 +65,6 @@ export default function FriendSuggestions() {
     });
 
     return () => {
-      isMounted.current = false;
       unsubSent();
       unsubAccepted();
       unsubProfile();

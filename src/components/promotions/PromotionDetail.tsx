@@ -5,6 +5,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import {
   promotionService,
   type Promotion,
@@ -34,14 +35,7 @@ export default function PromotionDetail({
   const [loadingLb, setLoadingLb] = useState(false);
   const toast = useToast();
   const popupRef = useRef<HTMLDivElement>(null);
-  const isMounted = useRef(true);
-
-  useEffect(() => {
-    isMounted.current = true;
-    return () => {
-      isMounted.current = false;
-    };
-  }, []);
+  const isMounted = useIsMounted();
 
   // Close on outside click
   useEffect(() => {

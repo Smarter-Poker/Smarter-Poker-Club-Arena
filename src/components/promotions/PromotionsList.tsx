@@ -7,7 +7,8 @@
  * Shows claimed status per promotion for current user.
  */
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import {
   promotionService,
   type Promotion,
@@ -40,14 +41,7 @@ export default function PromotionsList({ userId, clubId }: PromotionsListProps) 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [selectedPromo, setSelectedPromo] = useState<Promotion | null>(null);
-  const isMounted = useRef(true);
-
-  useEffect(() => {
-    isMounted.current = true;
-    return () => {
-      isMounted.current = false;
-    };
-  }, []);
+  const isMounted = useIsMounted();
 
   const loadData = useCallback(async () => {
     setLoading(true);

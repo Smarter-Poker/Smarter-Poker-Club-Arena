@@ -4,7 +4,8 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import './OnlineFriendsPill.css';
@@ -22,14 +23,7 @@ interface OnlineFriendsPillProps {
 
 export default function OnlineFriendsPill({ userId, onFriendClick }: OnlineFriendsPillProps) {
   const [friends, setFriends] = useState<OnlineFriend[]>([]);
-  const isMounted = useRef(true);
-
-  useEffect(() => {
-    isMounted.current = true;
-    return () => {
-      isMounted.current = false;
-    };
-  }, []);
+  const isMounted = useIsMounted();
 
   useEffect(() => {
     if (!userId) return;

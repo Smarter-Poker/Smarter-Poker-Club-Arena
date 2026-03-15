@@ -10,7 +10,8 @@
  * - Promo efficiency (net chips out vs promo spent)
  */
 
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
@@ -42,14 +43,7 @@ export default function AgentAnalyticsDashboard({ userId, clubId }: AgentAnalyti
     { recovered_amount: number; clawed_back_at: string }[]
   >([]);
   const [loading, setLoading] = useState(true);
-  const isMounted = useRef(true);
-
-  useEffect(() => {
-    isMounted.current = true;
-    return () => {
-      isMounted.current = false;
-    };
-  }, []);
+  const isMounted = useIsMounted();
 
   const loadData = useCallback(async () => {
     if (!userId || !clubId) return;

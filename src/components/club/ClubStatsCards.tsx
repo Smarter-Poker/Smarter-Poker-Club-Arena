@@ -6,6 +6,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { masterBus } from '../../core/MasterBus';
@@ -34,6 +35,7 @@ export default function ClubStatsCards({ clubId }: ClubStatsCardsProps) {
     weeklyGrowth: 0,
   });
   const [loading, setLoading] = useState(true);
+  const isMounted = useIsMounted();
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
 
   // statCards moved after format function declarations (see below)
@@ -131,7 +133,7 @@ export default function ClubStatsCards({ clubId }: ClubStatsCardsProps) {
     } catch (error) {
       console.error('Failed to load club stats:', error);
     }
-    setLoading(false);
+    if (isMounted.current) setLoading(false);
   };
 
   const formatInt = (num: number): string => {

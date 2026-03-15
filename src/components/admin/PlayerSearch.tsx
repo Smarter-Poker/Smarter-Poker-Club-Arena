@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useCallback, useEffect } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import './PlayerSearch.css';
 
@@ -35,6 +36,7 @@ export const PlayerSearch: React.FC<PlayerSearchProps> = ({
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Player[]>([]);
   const [loading, setLoading] = useState(false);
+  const isMounted = useIsMounted();
   const [searchType, setSearchType] = useState<'username' | 'email' | 'id'>('username');
   const [searched, setSearched] = useState(false);
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());

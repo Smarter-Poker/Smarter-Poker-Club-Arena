@@ -5,6 +5,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useToast } from '../common/Toast';
@@ -41,6 +42,7 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
 
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
+  const isMounted = useIsMounted();
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'name' | 'balance' | 'rake' | 'joined'>('name');
@@ -86,7 +88,7 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
     } catch (error) {
       toast.error('Failed to load members');
     }
-    setLoading(false);
+    if (isMounted.current) setLoading(false);
   };
 
   const updateRole = async (memberId: string, newRole: string) => {

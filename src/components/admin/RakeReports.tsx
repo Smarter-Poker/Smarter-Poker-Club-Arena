@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { useToast } from '../common/Toast';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
@@ -28,6 +29,7 @@ export const RakeReports: React.FC<RakeReportsProps> = ({ clubId }) => {
   const [rawRecords, setRawRecords] = useState<any[]>([]);
   const [period, setPeriod] = useState<'today' | 'week' | 'month' | 'year'>('week');
   const [loading, setLoading] = useState(true);
+  const isMounted = useIsMounted();
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
 
   useEffect(() => {
@@ -105,7 +107,7 @@ export const RakeReports: React.FC<RakeReportsProps> = ({ clubId }) => {
     } catch (error) {
       console.error('Failed to load rake data:', error);
     } finally {
-      setLoading(false);
+      if (isMounted.current) setLoading(false);
     }
   };
 

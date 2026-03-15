@@ -15,6 +15,7 @@ import { useAuthUser } from '../hooks/useAuthUser';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { WalletService } from '../services/WalletService';
 import { retryFetch } from '../utils/retryFetch';
+import { exportToCSV } from '../lib/export';
 import './AdminDashboardPage.css'; // reuse admin styles
 import { useIsMounted } from '../hooks/useIsMounted';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
@@ -868,6 +869,39 @@ export default function PlayerSessionsPage() {
                 <option value="agent">Agent</option>
                 <option value="player">Player</option>
               </select>
+              {filtered.length > 0 && (
+                <button
+                  className="admin-input"
+                  style={{
+                    flex: '0 0 120px',
+                    cursor: 'pointer',
+                    background: 'rgba(0,200,83,0.12)',
+                    color: '#00C853',
+                    border: '1px solid rgba(0,200,83,0.3)',
+                    textAlign: 'center',
+                    fontWeight: 600,
+                    fontSize: '13px',
+                  }}
+                  onClick={() => {
+                    try {
+                      exportToCSV(filtered, 'player_sessions.csv', [
+                        { key: 'displayName', label: 'Name' },
+                        { key: 'userId', label: 'User ID' },
+                        { key: 'role', label: 'Role' },
+                        { key: 'status', label: 'Status' },
+                        { key: 'chipBalance', label: 'Chip Balance' },
+                        { key: 'txCount24h', label: 'Txns (24h)' },
+                        { key: 'volume24h', label: 'Volume (24h)' },
+                        { key: 'lastActive', label: 'Last Active' },
+                      ]);
+                    } catch {
+                      /* silent */
+                    }
+                  }}
+                >
+                  ⬇ Export CSV
+                </button>
+              )}
             </div>
 
             {/* Member Cards */}

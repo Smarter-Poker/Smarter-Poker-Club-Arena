@@ -1252,10 +1252,17 @@ function HomePageInner() {
           else if (userClubs.length > 0) navigate(`/clubs/${userClubs[0].id}/cashier`);
           break;
         }
-        case '4':
+        case '4': {
           haptic.light();
-          window.location.href = 'https://smarter.poker/hub/marketplace';
+          const mktUrl = 'https://smarter.poker/hub/marketplace';
+          const inIframe = typeof window !== 'undefined' && window.parent !== window;
+          if (inIframe) {
+            try { window.top!.location.href = mktUrl; } catch { window.parent.postMessage({ type: 'NAVIGATE', path: '/hub/marketplace' }, '*'); }
+          } else {
+            window.location.href = mktUrl;
+          }
           break;
+        }
         case '5':
           haptic.light();
           navigate('/hands');

@@ -210,12 +210,67 @@ class TableService {
     );
 
     if (error) {
-      console.error('[TableService] Error closing table and refunding chips:', error);
-      // Fallback: manually flag it as closed if the RPC somehow fails
+      console.error('[TableService] CRITICAL: force_close_table_and_refund RPC failed:', error);
+
+      // CRITICAL: The RPC that atomically refunds chips AND closes the table failed.
+      // Fallback: close the table to prevent new hands, but chips may be orphaned.
+      // Log a CRITICAL financial alert so ops can manually reconcile.
       await supabase
         .from('tables')
         .update({ status: 'closed', current_players: 0 })
         .eq('id', tableId);
+
+      // Attempt per-player refund as best-effort recovery
+      try {
+        const { data: seatedPlayers } = await supabase
+          .from('table_seats')
+          .select('user_id, stack, seat_number')
+          .eq('table_id', tableId)
+          .is('left_at', null)
+          .gt('stack', 0);
+
+        let refundedCount = 0;
+        for (const player of seatedPlayers || []) {
+          const { error: refundErr } = await supabase.rpc('atomic_credit_wallet_and_log', {
+            p_user_id: player.user_id,
+            p_amount: player.stack,
+            p_category: 'cashout',
+            p_description: `Emergency table close refund: ${player.stack} chips (table ${tableId})`,
+            p_table_id: tableId,
+            p_hand_id: null,
+            p_related_entity_id: null,
+          });
+          if (!refundErr) {
+            // Mark seat as left
+            await supabase
+              .from('table_seats')
+              .update({ left_at: new Date().toISOString() })
+              .eq('table_id', tableId)
+              .eq('seat_number', player.seat_number)
+              .is('left_at', null);
+            refundedCount++;
+          } else {
+            console.error(`[TableService] Failed to refund player ${player.user_id}:`, refundErr);
+          }
+        }
+        console.warn(
+          `[TableService] Emergency refund: ${refundedCount}/${(seatedPlayers || []).length} players refunded`
+        );
+      } catch (refundErr: unknown) {
+        console.error('[TableService] Emergency per-player refund failed entirely:', refundErr);
+      }
+
+      // Log critical financial alert for ops visibility
+      try {
+        const { FinancialAlertService } = await import('./FinancialAlertService');
+        await FinancialAlertService.logCritical(
+          'TableService.closeTable',
+          `force_close_table_and_refund RPC failed — emergency fallback used. Manual chip reconciliation may be required.`,
+          { tableId, rpcError: error.message }
+        );
+      } catch {
+        /* best effort — already logged to console */
+      }
     } else {
       console.debug(`[TableService] Table closed successfully. Result:`, result);
       // Emit for ALL players who were seated — the RPC refunds them atomically

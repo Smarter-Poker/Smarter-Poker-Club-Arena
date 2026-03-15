@@ -20,7 +20,7 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({ items, separator = '/'
           <li key={i}>
             {i < items.length - 1 ? (
               <>
-                <a href={item.href} onClick={item.onClick} className="breadcrumb-link">
+                <a href={item.href || '#'} onClick={(e) => { if (item.onClick) { e.preventDefault(); item.onClick(); } }} className="breadcrumb-link">
                   {item.label}
                 </a>
                 <span className="separator">{separator}</span>

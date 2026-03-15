@@ -603,9 +603,44 @@ export const SettlementService = {
         );
 
         if (transferError || transferResult === false) {
+          const errMsg = transferError?.message || 'transferResult === false (insufficient balance?)';
           console.error(
-            `[Settlement] Transfer failed from Union owner to ${club.name} (insufficient balance or RPC error)`
+            `[Settlement] CRITICAL: Transfer failed from Union owner to ${club.name}: ${errMsg}`
           );
+
+          // Log critical financial alert — silent skipping is dangerous for money movement
+          try {
+            const { FinancialAlertService } = await import('./FinancialAlertService');
+            await FinancialAlertService.logCritical(
+              'SettlementService.executeUnionRakeBack',
+              `Union rakeback transfer FAILED for club ${club.name} — ${rakeBack} chips not delivered. Manual reconciliation required.`,
+              {
+                unionId,
+                clubId: club.id,
+                clubName: club.name,
+                clubOwnerId: club.owner_id,
+                unionOwnerId: union.owner_id,
+                rakeBack,
+                clubRake: clubRake,
+                periodStart,
+                periodEnd,
+                error: errMsg,
+              }
+            );
+          } catch {
+            /* best effort — already logged to console */
+          }
+
+          // Emit bus event so admin dashboards see the failure
+          masterBus.emit('SETTLEMENT_PAYOUT_FAILED', {
+            type: 'union_rakeback',
+            unionId,
+            clubId: club.id,
+            clubName: club.name,
+            amount: rakeBack,
+            error: errMsg,
+          });
+
           continue;
         }
 

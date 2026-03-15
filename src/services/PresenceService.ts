@@ -255,12 +255,25 @@ class PresenceServiceClass {
     // Heartbeat every 30 seconds to update lastSeen per channel
     const interval = setInterval(async () => {
       const channel = this.channels.get(channelName);
-      if (channel) {
+      if (!channel) {
+        // Channel was removed but heartbeat is still running — clean up
+        console.warn(`[PresenceService] Heartbeat orphaned for ${channelName} — stopping`);
+        this.stopHeartbeat(channelName);
+        return;
+      }
+      try {
         await channel.track({
           userId,
           ...presence,
           lastSeen: new Date().toISOString(),
         });
+      } catch (err: unknown) {
+        console.error(`[PresenceService] Heartbeat track failed for ${channelName}:`, err);
+        // Don't stop heartbeat on transient errors — it will retry next interval.
+        // But if the channel is gone from our map, stop to prevent memory leak.
+        if (!this.channels.has(channelName)) {
+          this.stopHeartbeat(channelName);
+        }
       }
     }, 30000);
 

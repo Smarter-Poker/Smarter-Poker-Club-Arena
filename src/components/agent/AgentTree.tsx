@@ -181,6 +181,7 @@ function TreeNode({
         {onTransferClick && node.status === 'active' && (
           <button
             className={styles.transferBtn}
+            aria-label="Transfer"
             onClick={(e) => {
               e.stopPropagation();
               onTransferClick(node);

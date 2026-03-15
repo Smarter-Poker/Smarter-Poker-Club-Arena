@@ -85,6 +85,7 @@ export const PlayerCard: React.FC<PlayerCardProps> = ({
         )}
         <button
           className="message-btn"
+          aria-label="Send Message"
           onClick={(e) => {
             e.stopPropagation();
             onMessage?.();

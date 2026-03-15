@@ -13,6 +13,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 
 const FB = {
@@ -229,6 +230,7 @@ export function BBJTicker({
 // ═══════════════════════════════════════════════════════════
 export function BBJModal({ data, onClose }: { data: BBJData | null; onClose: () => void }) {
   const [activeTab, setActiveTab] = useState('basic');
+  const isMounted = useIsMounted();
   if (!data) return null;
 
   const { pool, winners = [], tiers = {}, qualifyingHands = {}, rules = [] } = data;

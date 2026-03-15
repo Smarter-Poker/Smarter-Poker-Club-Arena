@@ -119,7 +119,7 @@ export function MissionPanel({ isOpen, onClose, missions, onClaim }: MissionPane
 }
 
 function MissionItem({ mission, onClaim }: { mission: Mission; onClaim: (id: string) => void }) {
-  const percent = Math.min(100, (mission.current / mission.target) * 100);
+  const percent = mission.target > 0 ? Math.min(100, (mission.current / mission.target) * 100) : 0;
   const isCompleted = mission.current >= mission.target;
 
   return (

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useToast } from '../common/Toast';
@@ -37,6 +38,7 @@ export const WaitlistManager: React.FC<WaitlistManagerProps> = ({
 }) => {
   const { showToast } = useToast();
   const [waitlist, setWaitlist] = useState<WaitlistEntry[]>([]);
+  const isMounted = useIsMounted();
   const [loading, setLoading] = useState(true);
   const [joining, setJoining] = useState(false);
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());

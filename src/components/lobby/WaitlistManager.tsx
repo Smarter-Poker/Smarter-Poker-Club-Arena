@@ -5,6 +5,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useAuthUser } from '../../hooks/useAuthUser';
@@ -32,6 +33,7 @@ export function WaitlistManager({ tableId, isAdmin, onSeatPlayer }: WaitlistMana
   const toast = useToast();
 
   const [waitlist, setWaitlist] = useState<WaitlistEntry[]>([]);
+  const isMounted = useIsMounted();
   const [loading, setLoading] = useState(true);
   const [myPosition, setMyPosition] = useState<number | null>(null);
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());

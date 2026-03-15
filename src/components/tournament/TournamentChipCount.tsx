@@ -5,6 +5,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import './TournamentChipCount.css';
 
@@ -24,6 +25,7 @@ interface ChipLeader {
 
 export function TournamentChipCount({ tournamentId, limit = 10 }: TournamentChipCountProps) {
   const [leaders, setLeaders] = useState<ChipLeader[]>([]);
+  const isMounted = useIsMounted();
   const [totalChips, setTotalChips] = useState(0);
   const [loading, setLoading] = useState(true);
   const [mounted, setMounted] = useState(false);

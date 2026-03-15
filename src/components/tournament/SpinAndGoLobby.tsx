@@ -5,6 +5,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useAuthUser } from '../../hooks/useAuthUser';
@@ -49,6 +50,7 @@ export function SpinAndGoLobby({ clubId, onRegister }: SpinAndGoLobbyProps) {
   const toast = useToast();
 
   const [tournaments, setTournaments] = useState<SpinTournament[]>([]);
+  const isMounted = useIsMounted();
   const [loading, setLoading] = useState(true);
   const [registering, setRegistering] = useState<string | null>(null);
   const [expandedCard, setExpandedCard] = useState<string | null>(null);

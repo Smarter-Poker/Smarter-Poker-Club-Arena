@@ -5,6 +5,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { useToast } from '../common/Toast';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
@@ -38,6 +39,7 @@ const PRIORITY_COLORS: Record<string, string> = {
 export function ClubAnnouncementsList({ clubId, isAdmin, limit = 10 }: ClubAnnouncementsListProps) {
   const toast = useToast();
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const isMounted = useIsMounted();
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {

@@ -13,6 +13,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useWalletStore } from '../../stores/useWalletStore';
@@ -30,6 +31,7 @@ interface GlobalHeaderProps {
 export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
   const { loadBalances, loadDiamonds } = useWalletStore();
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const isMounted = useIsMounted();
   const [notificationCount, setNotificationCount] = useState(0);
   const [unreadMessages, setUnreadMessages] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);

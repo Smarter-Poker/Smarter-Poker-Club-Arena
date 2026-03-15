@@ -6,6 +6,7 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import styles from './TournamentBracket.module.css';
@@ -37,6 +38,7 @@ interface TournamentBracketProps {
 export default function TournamentBracket({ tournamentId, totalPlayers }: TournamentBracketProps) {
   const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const [players, setPlayers] = useState<BracketPlayer[]>([]);
+  const isMounted = useIsMounted();
   const [loading, setLoading] = useState(true);
   const [visibleActive, setVisibleActive] = useState<Set<number>>(new Set());
   const [visibleEliminated, setVisibleEliminated] = useState<Set<number>>(new Set());

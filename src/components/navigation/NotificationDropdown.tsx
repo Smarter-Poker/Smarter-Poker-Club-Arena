@@ -6,6 +6,7 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useAuthUser } from '../../hooks/useAuthUser';
@@ -28,6 +29,7 @@ interface NotificationDropdownProps {
 export default function NotificationDropdown({ onNavigate }: NotificationDropdownProps) {
   const { user } = useAuthUser();
   const [isOpen, setIsOpen] = useState(false);
+  const isMounted = useIsMounted();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);

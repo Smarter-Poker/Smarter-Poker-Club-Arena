@@ -13,6 +13,7 @@
  */
 
 import React, { useState } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useAuthUser } from '../../hooks/useAuthUser';
@@ -293,6 +294,7 @@ function ConfigModal({
 }) {
   const { user } = useAuthUser();
   const [tab, setTab] = useState('regular');
+  const isMounted = useIsMounted();
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
   const [tableSize, setTableSize] = useState(9);

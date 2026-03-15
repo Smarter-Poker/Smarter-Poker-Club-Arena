@@ -349,6 +349,11 @@ export default function LobbyPage() {
 
   // Fetch tables and subscribe to real-time updates
   useEffect(() => {
+    // Safety timeout: never show loading spinner for more than 10 seconds
+    const loadingTimeout = setTimeout(() => {
+      if (isMounted.current) setLoading(false);
+    }, 10_000);
+
     const fetchTables = async () => {
       try {
         setLoading(true);
@@ -364,6 +369,7 @@ export default function LobbyPage() {
         console.error('Failed to fetch tables:', error);
         setTables([]);
       } finally {
+        clearTimeout(loadingTimeout);
         if (isMounted.current) setLoading(false);
       }
     };
@@ -431,6 +437,7 @@ export default function LobbyPage() {
 
     // Cleanup — untrack presence + remove channels + clear debounce
     return () => {
+      clearTimeout(loadingTimeout);
       presenceChannel.untrack().catch(() => {});
       masterBus.removeRegisteredChannel(tableChannelKey);
       masterBus.removeRegisteredChannel(presenceKey);

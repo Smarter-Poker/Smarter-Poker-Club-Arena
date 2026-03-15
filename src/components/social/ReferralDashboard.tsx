@@ -69,13 +69,14 @@ export default function ReferralDashboard({ userId }: ReferralDashboardProps) {
     if (!stats.code) return;
     try {
       await navigator.clipboard.writeText(stats.code);
+      if (!isMounted.current) return;
       setCopied(true);
       if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
       copyTimerRef.current = setTimeout(() => {
         if (isMounted.current) setCopied(false);
       }, 2000);
     } catch {
-      toast.error('Failed to copy');
+      if (isMounted.current) toast.error('Failed to copy');
     }
   };
 

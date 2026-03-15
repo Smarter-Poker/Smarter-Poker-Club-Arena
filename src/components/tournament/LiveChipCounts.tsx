@@ -6,6 +6,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import './LiveChipCounts.css';
 
@@ -32,6 +33,7 @@ export const LiveChipCounts: React.FC<LiveChipCountsProps> = ({
   autoRefresh = 10000,
 }) => {
   const [leaders, setLeaders] = useState<ChipLeader[]>([]);
+  const isMounted = useIsMounted();
   const [totalChips, setTotalChips] = useState(0);
   const [loading, setLoading] = useState(true);
   const [mounted, setMounted] = useState(false);

@@ -5,6 +5,7 @@
 
 import { useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { supabase } from '../../lib/supabase';
 import { useToast } from '../common/Toast';
@@ -12,6 +13,7 @@ import styles from './QuickActions.module.css';
 
 export default function QuickActions() {
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
+  const isMounted = useIsMounted();
 
   useEffect(() => {
     const items = 3;

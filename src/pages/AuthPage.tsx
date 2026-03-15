@@ -162,6 +162,18 @@ export default function AuthPage() {
           }
         }
 
+        // ═══════════════════════════════════════════════════════════════════
+        // Ensure public.users entry exists (required for club_members FK)
+        // The DB trigger should handle this, but belt-and-suspenders approach
+        // ═══════════════════════════════════════════════════════════════════
+        await supabase.from('users').upsert({
+          id: data.user.id,
+          username: username.trim(),
+          email: email.trim(),
+        }, { onConflict: 'id' }).then(({ error: usersErr }) => {
+          if (usersErr) console.warn('[AUTH] public.users upsert (non-critical):', usersErr.message);
+        });
+
         // Check if email confirmation is required
         if (data.session) {
           // Redeem referral code if provided

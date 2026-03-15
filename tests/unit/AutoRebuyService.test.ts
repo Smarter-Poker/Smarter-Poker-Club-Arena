@@ -4,7 +4,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../../src/lib/supabase', () => {
   const buildChain = (): any => {
@@ -92,5 +92,3 @@ describe('AutoRebuyService', () => {
     });
   });
 });
-
-import { afterEach } from 'vitest';

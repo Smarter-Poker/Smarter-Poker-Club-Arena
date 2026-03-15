@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import './ActionSheet.css';
 
 interface ActionItem {
@@ -24,6 +24,15 @@ export const ActionSheet: React.FC<ActionSheetProps> = ({
   actions,
   onAction,
 }) => {
+  // Escape-to-close keyboard handler
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    if (isOpen) window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   return (

@@ -249,7 +249,7 @@ export function AgentCommissionDashboard() {
         return null;
       }
 
-      toast.success('Payout request submitted!');
+      if (isMounted.current) toast.success('Payout request submitted!');
       loadData();
     } catch (error) {
       console.warn('[AgentDashboard] Payout request failed (non-fatal):', error);

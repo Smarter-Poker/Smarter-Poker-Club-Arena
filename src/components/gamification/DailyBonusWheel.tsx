@@ -83,8 +83,7 @@ export function DailyBonusWheel({ isOpen, onClose, onReward }: DailyBonusWheelPr
         if (isMounted.current) setCanSpin(true);
       }
     } catch (err) {
-
-      console.error("[DailyBonusWheel] Error:", err);
+      console.error('[DailyBonusWheel] Error:', err);
       if (isMounted.current) setCanSpin(true);
     }
   };
@@ -144,6 +143,15 @@ export function DailyBonusWheel({ isOpen, onClose, onReward }: DailyBonusWheelPr
       }
     }, 4000);
   };
+
+  // Escape-to-close keyboard handler
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    if (isOpen) window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 

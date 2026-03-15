@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import './AlertModal.css';
 
 interface AlertModalProps {
@@ -30,6 +30,15 @@ export const AlertModal: React.FC<AlertModalProps> = ({
   cancelText = 'Cancel',
   onConfirm,
 }) => {
+  // Escape-to-close keyboard handler
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    if (isOpen) window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const config = TYPE_CONFIG[type];

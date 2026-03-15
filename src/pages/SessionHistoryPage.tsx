@@ -16,6 +16,7 @@ import { masterBus } from '../core/MasterBus';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { useToast } from '../components/common/Toast';
 import { retryFetch } from '../utils/retryFetch';
+import { exportToCSV } from '../lib/export';
 import './SessionHistoryPage.css';
 import PageSkeleton from '../components/common/PageSkeleton';
 
@@ -261,6 +262,39 @@ export default function SessionHistoryPage() {
             {f === '7d' ? '7 Days' : f === '30d' ? '30 Days' : 'All Time'}
           </button>
         ))}
+        {sessions.length > 0 && (
+          <button
+            className="sh-filter-chip"
+            style={{
+              marginLeft: 'auto',
+              background: 'rgba(0,200,83,0.15)',
+              color: '#00C853',
+              border: '1px solid rgba(0,200,83,0.3)',
+            }}
+            onClick={() => {
+              try {
+                exportToCSV(sessions, `session_history_${timeFilter}.csv`, [
+                  { key: 'session_start', label: 'Start' },
+                  { key: 'session_end', label: 'End' },
+                  { key: 'hands_played', label: 'Hands' },
+                  { key: 'initial_stack', label: 'Buy-In' },
+                  { key: 'final_stack', label: 'Cash-Out' },
+                  { key: 'profit_loss', label: 'P/L' },
+                  { key: 'bb_won', label: 'BB Won' },
+                  { key: 'vpip_percent', label: 'VPIP %' },
+                  { key: 'pfr_percent', label: 'PFR %' },
+                  { key: 'biggest_pot', label: 'Biggest Pot' },
+                  { key: 'rebuys', label: 'Rebuys' },
+                ]);
+                toast.success('Sessions exported!');
+              } catch {
+                toast.error('Failed to export sessions.');
+              }
+            }}
+          >
+            ⬇ Export CSV
+          </button>
+        )}
       </div>
 
       {/* Sessions List */}

@@ -1,4 +1,4 @@
-import React , useEffect } from 'react';
+import React, { useEffect } from 'react';
 import './ImageModal.css';
 
 interface ImageModalProps {
@@ -16,7 +16,6 @@ export const ImageModal: React.FC<ImageModalProps> = ({
   alt = 'Image',
   caption,
 }) => {
-  
   // Escape-to-close keyboard handler
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {

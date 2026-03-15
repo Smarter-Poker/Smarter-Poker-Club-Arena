@@ -36,59 +36,59 @@ vi.mock('../../src/utils/retryAsync', () => ({
   retryAsync: <T>(fn: () => Promise<T>) => fn(),
 }));
 
-import { inviteService } from '../../src/services/InviteService';
+import { InviteService } from '../../src/services/InviteService';
 
 describe('InviteService', () => {
   beforeEach(() => vi.clearAllMocks());
 
   describe('generateCode', () => {
     it('should return an 8-character code', () => {
-      const code = inviteService.generateCode();
+      const code = InviteService.generateCode();
       expect(code).toHaveLength(8);
     });
 
     it('should generate unique codes', () => {
-      const codes = new Set(Array.from({ length: 20 }, () => inviteService.generateCode()));
+      const codes = new Set(Array.from({ length: 20 }, () => InviteService.generateCode()));
       expect(codes.size).toBe(20);
     });
 
     it('should only contain alphanumeric characters', () => {
-      const code = inviteService.generateCode();
+      const code = InviteService.generateCode();
       expect(code).toMatch(/^[A-Z0-9]+$/);
     });
   });
 
   describe('getInviteUrl', () => {
     it('should return URL containing the code', () => {
-      const url = inviteService.getInviteUrl('ABC12345');
+      const url = InviteService.getInviteUrl('ABC12345');
       expect(url).toContain('ABC12345');
     });
   });
 
   describe('validateCode', () => {
     it('should return null for invalid code', async () => {
-      const result = await inviteService.validateCode('INVALID');
+      const result = await InviteService.validateCode('INVALID');
       expect(result).toBeNull();
     });
   });
 
   describe('getClubInvites', () => {
     it('should return empty array when no invites', async () => {
-      const result = await inviteService.getClubInvites('club-1');
+      const result = await InviteService.getClubInvites('club-1');
       expect(result).toEqual([]);
     });
   });
 
   describe('export shape', () => {
     it('should export all methods', () => {
-      expect(typeof inviteService.generateCode).toBe('function');
-      expect(typeof inviteService.createInvite).toBe('function');
-      expect(typeof inviteService.getInviteUrl).toBe('function');
-      expect(typeof inviteService.validateCode).toBe('function');
-      expect(typeof inviteService.acceptInvite).toBe('function');
-      expect(typeof inviteService.cancelInvite).toBe('function');
-      expect(typeof inviteService.getClubInvites).toBe('function');
-      expect(typeof inviteService.copyInviteLink).toBe('function');
+      expect(typeof InviteService.generateCode).toBe('function');
+      expect(typeof InviteService.createInvite).toBe('function');
+      expect(typeof InviteService.getInviteUrl).toBe('function');
+      expect(typeof InviteService.validateCode).toBe('function');
+      expect(typeof InviteService.acceptInvite).toBe('function');
+      expect(typeof InviteService.cancelInvite).toBe('function');
+      expect(typeof InviteService.getClubInvites).toBe('function');
+      expect(typeof InviteService.copyInviteLink).toBe('function');
     });
   });
 });

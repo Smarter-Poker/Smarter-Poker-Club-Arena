@@ -143,18 +143,18 @@ export default function PlayerActivityFeed({ userId }: PlayerActivityFeedProps) 
 
   // Auto-refresh when gamification events fire
   useEffect(() => {
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+    const debouncedRefresh = () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => loadActivity(), 1500);
+    };
     const unsubs = [
-      masterBus.subscribe('MISSION_CLAIMED', () => {
-        setTimeout(loadActivity, 1500);
-      }),
-      masterBus.subscribe('DAILY_REWARD_CLAIMED', () => {
-        setTimeout(loadActivity, 1500);
-      }),
-      masterBus.subscribe('WHEEL_SPIN_RESULT', () => {
-        setTimeout(loadActivity, 1500);
-      }),
+      masterBus.subscribe('MISSION_CLAIMED', debouncedRefresh),
+      masterBus.subscribe('DAILY_REWARD_CLAIMED', debouncedRefresh),
+      masterBus.subscribe('WHEEL_SPIN_RESULT', debouncedRefresh),
     ];
     return () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
       unsubs.forEach((u) => {
         if (typeof u === 'function') u();
       });

@@ -17,7 +17,7 @@ vi.mock('../../src/lib/supabase', () => ({
 }));
 
 vi.mock('@sentry/react', () => ({
-  startSpan: vi.fn((opts: any, fn: () => any) => fn()),
+  startSpan: vi.fn((_opts: any, fn: any) => fn()),
   setMeasurement: vi.fn(),
 }));
 
@@ -28,7 +28,7 @@ describe('trackSupabaseOperation', () => {
     expect(typeof trackSupabaseOperation).toBe('function');
   });
 
-  it('should execute the provided function', async () => {
+  it('should execute the provided function and return result', async () => {
     const fn = vi.fn().mockResolvedValue('result');
     const result = await trackSupabaseOperation('test-op', fn);
     expect(fn).toHaveBeenCalledTimes(1);
@@ -40,9 +40,9 @@ describe('trackSupabaseQuery', () => {
     expect(typeof trackSupabaseQuery).toBe('function');
   });
 
-  it('should execute and return query result', async () => {
+  it('should execute query function', async () => {
     const fn = vi.fn().mockResolvedValue({ data: [1, 2, 3], error: null });
-    const result = await trackSupabaseQuery('test-query', fn);
+    await trackSupabaseQuery('test-query', fn);
     expect(fn).toHaveBeenCalledTimes(1);
   });
 });

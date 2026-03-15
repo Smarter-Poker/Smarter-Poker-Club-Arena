@@ -35,12 +35,18 @@ export const Stopwatch: React.FC<StopwatchProps> = ({ autoStart = false, onTick 
     <div className="stopwatch">
       <div className="stopwatch-display">{formatTime(elapsed)}</div>
       <div className="stopwatch-controls">
-        <button onClick={() => setIsRunning(!isRunning)}>{isRunning ? '⏸' : '▶'}</button>
+        <button
+          onClick={() => setIsRunning(!isRunning)}
+          aria-label={isRunning ? 'Pause stopwatch' : 'Start stopwatch'}
+        >
+          {isRunning ? '⏸' : '▶'}
+        </button>
         <button
           onClick={() => {
             setElapsed(0);
             setIsRunning(false);
           }}
+          aria-label="Reset stopwatch"
         >
           ↺
         </button>

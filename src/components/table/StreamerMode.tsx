@@ -31,7 +31,13 @@ export function StreamerMode({ isEnabled, onToggle }: StreamerModeProps) {
       </button>
 
       {isEnabled && (
-        <button className="settings-btn" onClick={() => setShowSettings(!showSettings)}></button>
+        <button
+          className="settings-btn"
+          onClick={() => setShowSettings(!showSettings)}
+          aria-label="Streamer mode settings"
+        >
+          ⚙
+        </button>
       )}
 
       {showSettings && (

@@ -64,8 +64,7 @@ export default function ClubAnnouncementBanner({
       try {
         setDismissed(new Set(JSON.parse(stored)));
       } catch (err) {
-
-        console.error("[ClubAnnouncementBanner] Error:", err);
+        console.error('[ClubAnnouncementBanner] Error:', err);
         localStorage.removeItem(`dismissed_announcements_${clubId}`);
       }
     }
@@ -215,14 +214,28 @@ export default function ClubAnnouncementBanner({
       <div className={styles.actions}>
         {visibleAnnouncements.length > 1 && (
           <div className={styles.pagination}>
-            <button onClick={() => setCurrentIndex((prev) => prev - 1)}>‹</button>
+            <button
+              onClick={() => setCurrentIndex((prev) => prev - 1)}
+              aria-label="Previous announcement"
+            >
+              ‹
+            </button>
             <span>
               {safeIndex + 1}/{visibleAnnouncements.length}
             </span>
-            <button onClick={() => setCurrentIndex((prev) => prev + 1)}>›</button>
+            <button
+              onClick={() => setCurrentIndex((prev) => prev + 1)}
+              aria-label="Next announcement"
+            >
+              ›
+            </button>
           </div>
         )}
-        <button className={styles.dismissBtn} onClick={() => dismiss(current.id)}>
+        <button
+          className={styles.dismissBtn}
+          onClick={() => dismiss(current.id)}
+          aria-label="Dismiss announcement"
+        >
           ✕
         </button>
       </div>

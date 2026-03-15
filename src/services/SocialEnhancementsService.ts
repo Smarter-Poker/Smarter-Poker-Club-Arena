@@ -573,10 +573,9 @@ class SocialEnhancementsServiceClass {
         window.focus();
         const isInIframe = typeof window !== 'undefined' && window.parent !== window;
         if (isInIframe) {
-          try { window.top!.location.href = url; } catch { window.parent.postMessage({ type: 'NAVIGATE', path: url }, '*'); }
-        } else {
-          window.location.href = url;
+          window.parent.postMessage({ type: 'NAVIGATE', path: url }, '*');
         }
+        // Non-iframe: handled by React Router outside this service
       };
     }
   }

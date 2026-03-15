@@ -188,13 +188,17 @@ export default function BonusPage() {
   };
 
   const claimSpecialBonus = async (bonusId: string) => {
+    if (!user?.id) return;
     try {
       const { error } = await supabase
         .from('special_bonuses')
-        .update({ claimed: true })
-        .eq('id', bonusId);
+        .update({ claimed: true, claimed_at: new Date().toISOString() })
+        .eq('id', bonusId)
+        .eq('user_id', user.id)
+        .eq('claimed', false); // Prevent double-claim race condition
       if (error) throw error;
       toast.success('Special bonus claimed!');
+      masterBus.emit('BALANCE_UPDATED', { source: 'special_bonus', userId: user.id });
       loadBonuses();
     } catch (error) {
       console.error('Failed to claim special bonus:', error);

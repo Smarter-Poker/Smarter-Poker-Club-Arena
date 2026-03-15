@@ -167,18 +167,11 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
 
   // Iframe-safe navigation: navigates the top window, not the iframe
   const navigateToHub = (path: string) => {
-    const url = `https://smarter.poker${path}`;
     const isInIframe = typeof window !== 'undefined' && window.parent !== window;
     if (isInIframe) {
-      try {
-        window.top!.location.href = url;
-      } catch (err) {
-        console.error('[GlobalHeader] Error:', err);
-        window.parent.postMessage({ type: 'NAVIGATE', path }, '*');
-      }
-    } else {
-      window.location.href = url;
+      window.parent.postMessage({ type: 'NAVIGATE', path }, '*');
     }
+    // Non-iframe: Hub-only routes — no-op outside iframe
   };
 
   return (

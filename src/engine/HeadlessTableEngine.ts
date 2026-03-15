@@ -934,8 +934,10 @@ export class HeadlessTableEngine {
             runItTwiceEngine.offer(this.tableId, handId, offeredBy, offeredTo, event.pot);
 
             // Safety timeout fallback if engine fails to fire decline
+            // cleanup() MUST be called to prevent leaked event listeners
             setTimeout(() => {
               if (!handled) {
+                console.warn('[HeadlessTableEngine] RIT safety timeout — cleaning up stale listeners');
                 cleanup();
                 handleDecline();
               }

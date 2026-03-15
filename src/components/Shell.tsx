@@ -29,12 +29,10 @@ function VIPBadge() {
       className={`shell-vip-badge ${isVIP ? 'vip-active' : ''}`}
       onClick={() => {
         const isInIframe = typeof window !== 'undefined' && window.parent !== window;
-        const url = 'https://smarter.poker/hub/diamond-store';
         if (isInIframe) {
-          try { window.top!.location.href = url; } catch { window.parent.postMessage({ type: 'NAVIGATE', path: '/hub/diamond-store' }, '*'); }
-        } else {
-          window.location.href = url;
+          window.parent.postMessage({ type: 'NAVIGATE', path: '/hub/diamond-store' }, '*');
         }
+        // Non-iframe: diamond store only exists on Hub, no-op
       }}
       title={isVIP ? 'VIP Gold Active' : 'Get VIP Benefits'}
     >
@@ -201,13 +199,11 @@ function ShellContent() {
             <div
               className="shell-diamonds"
               onClick={() => {
-                const url = 'https://smarter.poker/hub/diamond-store';
                 const inIframe = typeof window !== 'undefined' && window.parent !== window;
                 if (inIframe) {
-                  try { window.top!.location.href = url; } catch { window.parent.postMessage({ type: 'NAVIGATE', path: '/hub/diamond-store' }, '*'); }
-                } else {
-                  window.location.href = url;
+                  window.parent.postMessage({ type: 'NAVIGATE', path: '/hub/diamond-store' }, '*');
                 }
+                // Non-iframe: diamond store only exists on Hub
               }}
               style={{ cursor: 'pointer' }}
             >

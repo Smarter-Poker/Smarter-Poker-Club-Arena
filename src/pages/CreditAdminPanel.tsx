@@ -34,6 +34,7 @@ export default function CreditAdminPanel() {
 
   const [agents, setAgents] = useState<AgentCredit[]>([]);
   const [loading, setLoading] = useState(true);
+  const [authorized, setAuthorized] = useState<boolean | null>(null);
   const [editingAgent, setEditingAgent] = useState<string | null>(null);
   const [newLimit, setNewLimit] = useState('');
   const [saving, setSaving] = useState(false);
@@ -42,7 +43,26 @@ export default function CreditAdminPanel() {
   const isMounted = useIsMounted();
   const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
-  useVisibilityRefresh(() => loadAgents());
+  // Permission check: only club owners/admins can access credit admin
+  useEffect(() => {
+    if (!user?.id) return;
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from('club_members')
+          .select('role')
+          .eq('user_id', user.id)
+          .in('role', ['owner', 'admin'])
+          .limit(1)
+          .maybeSingle();
+        if (isMounted.current) setAuthorized(!!data);
+      } catch {
+        if (isMounted.current) setAuthorized(false);
+      }
+    })();
+  }, [user?.id]);
+
+  useVisibilityRefresh(() => { if (authorized) loadAgents(); });
 
   const loadAgents = useCallback(async () => {
     setLoading(true);
@@ -186,6 +206,18 @@ export default function CreditAdminPanel() {
 
   const totalCreditExposure = agents.reduce((s, a) => s + a.creditLimit, 0);
   const totalDebt = agents.reduce((s, a) => s + a.debtOwed, 0);
+
+  // Block unauthorized access
+  if (authorized === false) {
+    return (
+      <div style={{ padding: '40px', textAlign: 'center', color: 'rgba(255,255,255,0.4)' }}>
+        <div style={{ fontSize: '2rem', marginBottom: '12px' }}>🔒</div>
+        <div style={{ fontSize: '0.9rem', fontWeight: 600 }}>Access Denied</div>
+        <div style={{ fontSize: '0.75rem', marginTop: '4px' }}>Only club owners and admins can access the Credit Admin Panel.</div>
+        <button onClick={() => navigate(-1)} style={{ marginTop: '16px', padding: '8px 16px', background: 'rgba(59,130,246,0.15)', border: '1px solid rgba(59,130,246,0.3)', borderRadius: '8px', color: '#3b82f6', cursor: 'pointer', fontWeight: 600 }}>← Go Back</button>
+      </div>
+    );
+  }
 
   return (
     <div style={{ padding: '16px', maxWidth: '800px', margin: '0 auto', paddingBottom: '100px' }}>

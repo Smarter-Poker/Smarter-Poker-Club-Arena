@@ -285,11 +285,14 @@ class BonusServiceClass {
       throw new Error('Bonus requirements not met');
     }
 
-    // Mark as claimed
-    await supabase
+    // Mark as claimed — user_id filter prevents cross-user claim
+    const { error: claimErr } = await supabase
       .from('special_bonuses')
       .update({ claimed: true, claimed_at: new Date().toISOString() })
-      .eq('id', bonusId);
+      .eq('id', bonusId)
+      .eq('user_id', userId)
+      .eq('claimed', false); // Prevent double-claim race
+    if (claimErr) throw new Error(`Claim update failed: ${claimErr.message}`);
 
     // Award reward
     await this.awardReward(userId, bonus.reward, bonus.reward_type);

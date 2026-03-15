@@ -593,10 +593,12 @@ export default function MarketplacePage() {
                       onClick={async () => {
                         if (!confirm(`Delete "${item.name}"?`)) return;
                         try {
+                          // SECURITY: Filter by both id AND club_id to prevent cross-club deletion
                           const { error: delErr } = await supabase
                             .from('marketplace_items')
                             .delete()
-                            .eq('id', item.id);
+                            .eq('id', item.id)
+                            .eq('club_id', item.club_id);
                           if (delErr) throw delErr;
                           toast.success('Item deleted');
                           loadAdminItems();

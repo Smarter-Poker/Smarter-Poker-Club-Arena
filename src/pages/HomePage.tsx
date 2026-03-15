@@ -1254,12 +1254,12 @@ function HomePageInner() {
         }
         case '4': {
           haptic.light();
-          const mktUrl = 'https://smarter.poker/hub/marketplace';
+          // Navigate via postMessage to parent (Hub) — never escape iframe
           const inIframe = typeof window !== 'undefined' && window.parent !== window;
           if (inIframe) {
-            try { window.top!.location.href = mktUrl; } catch { window.parent.postMessage({ type: 'NAVIGATE', path: '/hub/marketplace' }, '*'); }
+            window.parent.postMessage({ type: 'NAVIGATE', path: '/hub/marketplace' }, '*');
           } else {
-            window.location.href = mktUrl;
+            navigate('/marketplace');
           }
           break;
         }
@@ -1535,19 +1535,8 @@ function HomePageInner() {
         PremiumSFX.navigate();
         if (window.parent !== window) {
           window.parent.postMessage({ type: 'NAVIGATE', path: '/hub/marketplace' }, '*');
-          const fallbackTimer = setTimeout(() => {
-            window.location.href = 'https://smarter.poker/hub/marketplace';
-          }, 1000);
-          const handleAck = (event: MessageEvent) => {
-            if (event.data?.type === 'NAVIGATE_ACK') {
-              clearTimeout(fallbackTimer);
-              window.removeEventListener('message', handleAck);
-            }
-          };
-          window.addEventListener('message', handleAck);
-          setTimeout(() => window.removeEventListener('message', handleAck), 1200);
         } else {
-          window.location.href = 'https://smarter.poker/hub/marketplace';
+          navigate('/marketplace');
         }
       },
     }),

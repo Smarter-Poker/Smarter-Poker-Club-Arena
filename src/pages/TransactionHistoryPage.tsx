@@ -2,7 +2,7 @@
  *  TRANSACTION HISTORY PAGE — With Pagination & Export
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -38,12 +38,30 @@ type TransactionFilter = 'all' | 'deposits' | 'withdrawals' | 'transfers' | 'rak
 
 const PAGE_SIZE = 25;
 
+// SWR cache helpers
+function getTxCache(userId: string): Transaction[] | null {
+  try {
+    const raw = sessionStorage.getItem(`tx_cache_${userId}`);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+function setTxCache(userId: string, data: Transaction[]) {
+  try {
+    sessionStorage.setItem(`tx_cache_${userId}`, JSON.stringify(data.slice(0, 25)));
+  } catch {
+    /* storage full */
+  }
+}
+
 export default function TransactionHistoryPage() {
   const navigate = useNavigate();
   useVisibilityRefresh(() => loadTransactions(1, true));
   const { user } = useAuthUser();
   const toast = useToast();
   const isMounted = useIsMounted();
+  const hasDataRef = useRef(false);
 
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -55,6 +73,17 @@ export default function TransactionHistoryPage() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [visibleTransactions, setVisibleTransactions] = useState(new Set<number>());
+
+  // SWR: show cached transactions instantly on mount (only for 'all' filter, no date range)
+  useEffect(() => {
+    if (!user?.id || filter !== 'all' || dateFrom || dateTo) return;
+    const cached = getTxCache(user.id);
+    if (cached && cached.length > 0) {
+      setTransactions(cached);
+      hasDataRef.current = true;
+      setLoading(false);
+    }
+  }, [user?.id]);
 
   // Stagger transaction rows
   useEffect(() => {
@@ -68,7 +97,7 @@ export default function TransactionHistoryPage() {
   useEffect(() => {
     let isMounted = true;
     if (user?.id) {
-      setTransactions([]);
+      if (!hasDataRef.current) setTransactions([]);
       setPage(0);
       setHasMore(true);
       loadTransactions(0, true, () => isMounted);

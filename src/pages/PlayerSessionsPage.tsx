@@ -584,6 +584,11 @@ export default function PlayerSessionsPage() {
         return;
       }
       await WalletService.distributePromo(agentRow.id, wbTarget.userId, amt);
+      masterBus.emit('CHIPS_DISTRIBUTED', {
+        clubId: resolvedClub,
+        userId: wbTarget.userId,
+        amount: amt,
+      });
       setSuccess(`${fmtChips(amt)} welcome-back chips sent to ${wbTarget.name}!`);
       setWbTarget(null);
       setWbAmount('');
@@ -614,6 +619,7 @@ export default function PlayerSessionsPage() {
       );
       if (upsertErr) throw upsertErr;
       setNotes((prev) => ({ ...prev, [noteTarget.userId]: noteData }));
+      masterBus.emit('PLAYER_NOTE_SAVED', { clubId: uuid, targetUserId: noteTarget.userId });
       setSuccess('Note saved!');
       setNoteTarget(null);
     } catch (err: any) {

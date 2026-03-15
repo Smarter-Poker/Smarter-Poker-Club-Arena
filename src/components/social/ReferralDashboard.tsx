@@ -91,7 +91,7 @@ export default function ReferralDashboard({ userId }: ReferralDashboardProps) {
         });
       } else {
         await navigator.clipboard.writeText(shareText);
-        toast.success('Invite link copied!');
+        if (isMounted.current) toast.success('Invite link copied!');
       }
     } catch {
       // user cancelled

@@ -81,14 +81,15 @@ export default function FriendSuggestions() {
         status: 'pending',
       });
       if (error) throw error;
+      if (!isMounted.current) return;
       toast.success('Friend request sent!');
       setDismissed((prev) => new Set(prev).add(userId));
       // Emit bus event so other components react too
       masterBus.emit('FRIEND_REQUEST_SENT', { fromUserId: user.id, toUserId: userId });
     } catch {
-      toast.error('Failed to send request');
+      if (isMounted.current) toast.error('Failed to send request');
     }
-    setSendingRequest(null);
+    if (isMounted.current) setSendingRequest(null);
   };
 
   const handleDismiss = (userId: string) => {

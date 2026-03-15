@@ -173,9 +173,9 @@ export const CreditService = {
     const { data, error } = await supabase
       .from('credit_requests')
       .insert({
-        agent_id: agentId,
-        current_limit: account.creditLimit,
-        requested_limit: requestedLimit,
+        // credit_requests schema: requester_id, requested_amount (NOT agent_id, current_limit, requested_limit)
+        requester_id: agentId,
+        requested_amount: requestedLimit,
         reason,
         status: 'pending',
       })
@@ -198,7 +198,7 @@ export const CreditService = {
 
     const { data: request, error: fetchError } = await supabase
       .from('credit_requests')
-      .select('agent_id, requested_limit')
+      .select('requester_id, requested_amount')
       .eq('id', requestId)
       .maybeSingle();
 
@@ -220,8 +220,8 @@ export const CreditService = {
     if (approved) {
       const { error: limitErr } = await supabase
         .from('agents')
-        .update({ credit_limit: request.requested_limit })
-        .eq('id', request.agent_id);
+        .update({ credit_limit: request.requested_amount })
+        .eq('id', request.requester_id);
 
       if (limitErr) throw new Error(`Failed to update credit limit: ${limitErr.message}`);
 
@@ -229,12 +229,12 @@ export const CreditService = {
       const { data: agent } = await supabase
         .from('agents')
         .select('club_id')
-        .eq('id', request.agent_id)
+        .eq('id', request.requester_id)
         .maybeSingle();
       if (agent?.club_id) {
         masterBus.emit('CREDIT_UPDATED', {
           clubId: agent.club_id,
-          amount: request.requested_limit,
+          amount: request.requested_amount,
         });
       }
     }

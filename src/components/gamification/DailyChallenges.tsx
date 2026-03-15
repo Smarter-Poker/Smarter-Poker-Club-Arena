@@ -202,6 +202,8 @@ export const DailyChallenges: React.FC = () => {
       // Claim via service → writes to Supabase + credits chips
       await dailyChallengeService.claimChallenge(user.id, challenge.id, challenge.chipReward);
 
+      if (!isMounted.current) return;
+
       // Local update AFTER successful Supabase write
       setChallenges((prev) =>
         prev.map((c) => (c.id === challenge.id ? { ...c, claimed: true } : c))
@@ -215,7 +217,7 @@ export const DailyChallenges: React.FC = () => {
       }, 2000);
       animTimers.current.push(animT);
     } catch (err: any) {
-      toast.error(err?.message || 'Failed to claim reward');
+      if (isMounted.current) toast.error(err?.message || 'Failed to claim reward');
     } finally {
       claimingRef.current.delete(challenge.id);
     }

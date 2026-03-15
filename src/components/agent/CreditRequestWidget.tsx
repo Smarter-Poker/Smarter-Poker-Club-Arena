@@ -2,7 +2,7 @@
  *  CREDIT REQUEST WIDGET — Agent Credit Request UI
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { creditRequestService, type CreditRequest } from '../../services/CreditRequestService';
 import { useToast } from '../common/Toast';
@@ -26,6 +26,7 @@ export default function CreditRequestWidget({
   const isMounted = useIsMounted();
   const toast = useToast();
 
+  const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const [requests, setRequests] = useState<CreditRequest[]>([]);
   const [pendingApprovals, setPendingApprovals] = useState<CreditRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -52,13 +53,15 @@ export default function CreditRequestWidget({
       const pending = toApprove.filter((r) => r.status === 'pending');
       setPendingApprovals(pending);
       setVisibleApprovals(new Set());
-      pending.forEach((_, i) => {
-        setTimeout(() => setVisibleApprovals((prev) => new Set(prev).add(i)), i * 60);
-      });
+      staggerTimersRef.current.forEach(clearTimeout);
+      staggerTimersRef.current = pending.map((_, i) =>
+        setTimeout(() => setVisibleApprovals((prev) => new Set(prev).add(i)), i * 60)
+      );
       setVisibleHistory(new Set());
-      myReqs.slice(0, 5).forEach((_, i) => {
-        setTimeout(() => setVisibleHistory((prev) => new Set(prev).add(i)), i * 60);
-      });
+      const histTimers = myReqs
+        .slice(0, 5)
+        .map((_, i) => setTimeout(() => setVisibleHistory((prev) => new Set(prev).add(i)), i * 60));
+      staggerTimersRef.current.push(...histTimers);
     } catch (error) {
       console.error('Failed to load credit requests:', error);
       if (isMounted.current) toast.error('Failed to load credit requests');

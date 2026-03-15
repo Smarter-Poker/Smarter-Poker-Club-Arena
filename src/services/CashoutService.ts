@@ -276,8 +276,8 @@ class CashoutServiceClass {
           });
         }
       }
-    } catch {
-      // Non-fatal: cashout succeeded, bus emission is best-effort
+    } catch (err) {
+      console.error('[CashoutService] Post-cashout bus emission failed:', err);
     }
 
     return data === true;

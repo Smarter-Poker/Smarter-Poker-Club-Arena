@@ -161,8 +161,8 @@ export const FinancialCronService = {
           details: { difference: result.difference },
           created_at: reconciliationResult.checkedAt,
         });
-      } catch {
-        /* table may not exist yet — non-blocking */
+      } catch (err) {
+        console.error('[FinancialCron] Reconciliation audit log failed:', err);
       }
 
       return reconciliationResult;
@@ -267,8 +267,8 @@ export const FinancialCronService = {
         club_id: params.clubId,
         created_at: new Date().toISOString(),
       });
-    } catch {
-      // Non-blocking — table may not exist yet
+    } catch (err) {
+      console.error('[FinancialCron] Audit insert failed:', err);
       console.error('[FinancialCron] commission_rate_audit insert failed (table may not exist)');
     }
   },

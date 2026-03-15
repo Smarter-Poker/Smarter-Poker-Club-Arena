@@ -162,8 +162,8 @@ export const SettlementCronService = {
               'SettlementCronService',
               { ...canary }
             );
-          } catch {
-            /* best effort */
+          } catch (err) {
+            console.error('[SettlementCron] Canary audit log failed:', err);
           }
 
           // Automated push/email alert via Supabase edge function
@@ -247,8 +247,8 @@ export const SettlementCronService = {
             'Canary balance-check RPC (get_wallet_balance_totals) is missing — settlement blocked',
             { error: error?.message || 'No data returned' }
           );
-        } catch {
-          /* best effort */
+        } catch (err) {
+          console.error('[SettlementCron] Balance check audit failed:', err);
         }
         return { passed: false, totalCredits: 0, totalDebits: 0, difference: -1 };
       }

@@ -5,7 +5,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import styles from './TournamentBracket.module.css';
@@ -35,6 +35,7 @@ interface TournamentBracketProps {
 }
 
 export default function TournamentBracket({ tournamentId, totalPlayers }: TournamentBracketProps) {
+  const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const [players, setPlayers] = useState<BracketPlayer[]>([]);
   const [loading, setLoading] = useState(true);
   const [visibleActive, setVisibleActive] = useState<Set<number>>(new Set());
@@ -109,13 +110,15 @@ export default function TournamentBracket({ tournamentId, totalPlayers }: Tourna
       const active = mapped.filter((p) => !p.eliminated);
       const elim = mapped.filter((p) => p.eliminated);
       setVisibleActive(new Set());
-      active.forEach((_, i) => {
-        setTimeout(() => setVisibleActive((prev) => new Set(prev).add(i)), i * 60);
-      });
+      staggerTimersRef.current.forEach(clearTimeout);
+      staggerTimersRef.current = active.map((_, i) =>
+        setTimeout(() => setVisibleActive((prev) => new Set(prev).add(i)), i * 60)
+      );
       setVisibleEliminated(new Set());
-      elim.forEach((_, i) => {
-        setTimeout(() => setVisibleEliminated((prev) => new Set(prev).add(i)), i * 60);
-      });
+      const elimTimers = elim.map((_, i) =>
+        setTimeout(() => setVisibleEliminated((prev) => new Set(prev).add(i)), i * 60)
+      );
+      staggerTimersRef.current.push(...elimTimers);
     } catch (error) {
       console.error('Failed to load bracket:', error);
     }

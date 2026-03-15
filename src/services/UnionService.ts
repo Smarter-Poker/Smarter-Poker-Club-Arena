@@ -273,8 +273,8 @@ class UnionServiceClass {
             .eq('id', a.user_id)
             .maybeSingle();
           displayName = profile?.full_name || profile?.username;
-        } catch {
-          // Silently ignore
+        } catch (err) {
+          console.error('[UnionService] Profile lookup failed:', err);
         }
 
         return {
@@ -393,8 +393,8 @@ class UnionServiceClass {
             .eq('club_id', uc.club_id)
             .in('status', ['active', 'approved']);
           memberCount = count || 0;
-        } catch {
-          // Silently ignore member count errors
+        } catch (err) {
+          console.error('[UnionService] Member count query failed:', err);
         }
 
         try {
@@ -406,8 +406,8 @@ class UnionServiceClass {
             .gte('created_at', oneWeekAgo)
             .limit(5000);
           weeklyRake = (rakeData || []).reduce((sum, r) => sum + Number(r.amount || 0), 0);
-        } catch {
-          // Silently ignore rake query errors
+        } catch (err) {
+          console.error('[UnionService] Rake query failed:', err);
         }
 
         // Get owner display name from profiles table directly
@@ -422,8 +422,8 @@ class UnionServiceClass {
               .maybeSingle();
             ownerName = profile?.full_name || profile?.username;
           }
-        } catch {
-          // Silently ignore profile lookup errors
+        } catch (err) {
+          console.error('[UnionService] Owner profile lookup failed:', err);
         }
 
         return {

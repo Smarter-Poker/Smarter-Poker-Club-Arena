@@ -14,6 +14,7 @@ import PageSkeleton from '../components/common/PageSkeleton';
 import ClubBottomNav from '../components/club/ClubBottomNav';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { retryFetch } from '../utils/retryFetch';
+import { exportToCSV } from '../lib/export';
 import './ClubMembersPage.css';
 import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
@@ -727,6 +728,25 @@ export default function ClubMembersPage() {
             {f === 'agents' && agentCount > 0 ? ` (${agentCount})` : ''}
           </button>
         ))}
+        {filteredMembers.length > 0 && (
+          <button
+            style={{ marginLeft: 'auto', padding: '6px 14px', borderRadius: '8px', cursor: 'pointer', background: 'rgba(0,200,83,0.12)', color: '#00C853', border: '1px solid rgba(0,200,83,0.3)', fontWeight: 600, fontSize: '13px' }}
+            onClick={() => {
+              try {
+                exportToCSV(filteredMembers, 'club_members.csv', [
+                  { key: 'username', label: 'Username' },
+                  { key: 'role', label: 'Role' },
+                  { key: 'chip_balance', label: 'Chip Balance' },
+                  { key: 'is_online', label: 'Online' },
+                  { key: 'joined_at', label: 'Joined' },
+                  { key: 'user_id', label: 'User ID' },
+                ]);
+              } catch { /* silent */ }
+            }}
+          >
+            ⬇ Export CSV
+          </button>
+        )}
       </div>
 
       <div className="members-list" ref={virtualScroll.containerRef}>

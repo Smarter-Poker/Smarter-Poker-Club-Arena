@@ -63,6 +63,9 @@ describe('useArenaStore', () => {
     const state = useArenaStore.getState();
     expect(typeof state.loadStats).toBe('function');
     expect(typeof state.startTraining).toBe('function');
-    expect(typeof state.answerQuestion).toBe('function');
+    expect(typeof state.recordAnswer).toBe('function');
+    expect(typeof state.endSession).toBe('function');
+    expect(typeof state.updateTimer).toBe('function');
+    expect(typeof state.loadUnlockedLevel).toBe('function');
   });
 });

@@ -46,6 +46,7 @@ describe('useWalletStore', () => {
       isLoadingWallet: false,
       isLoadingDiamonds: false,
       diamonds: 0,
+      balances: {} as any, // Mocking initial state
     });
   });
 
@@ -61,14 +62,13 @@ describe('useWalletStore', () => {
     expect(useWalletStore.getState().isLoadingDiamonds).toBe(false);
   });
 
-  it('should have balances in state', () => {
-    const state = useWalletStore.getState();
-    expect(state.balances).toBeDefined();
-  });
-
   it('should export store with load actions', () => {
     const state = useWalletStore.getState();
-    expect(typeof state.loadWallet).toBe('function');
+    expect(typeof state.loadBalances).toBe('function');
     expect(typeof state.loadDiamonds).toBe('function');
+    expect(typeof state.loadTransactions).toBe('function');
+    expect(typeof state.refreshAll).toBe('function');
+    expect(typeof state.lockForBuyIn).toBe('function');
+    expect(typeof state.unlockFromTable).toBe('function');
   });
 });

@@ -30,7 +30,7 @@ describe('useTableStore', () => {
       isLoading: false,
       error: null,
       mySeat: null,
-      isConnected: false,
+      wsConnected: false,
     });
   });
 
@@ -44,7 +44,7 @@ describe('useTableStore', () => {
   });
 
   it('should start disconnected', () => {
-    expect(useTableStore.getState().isConnected).toBe(false);
+    expect(useTableStore.getState().wsConnected).toBe(false);
   });
 
   it('should start with no error', () => {
@@ -58,13 +58,14 @@ describe('useTableStore', () => {
   it('should export store with all actions', () => {
     const state = useTableStore.getState();
     expect(typeof state.loadTable).toBe('function');
-    expect(typeof state.sitDown).toBe('function');
-    expect(typeof state.standUp).toBe('function');
+    expect(typeof state.joinTable).toBe('function');
+    expect(typeof state.leaveTable).toBe('function');
+    expect(typeof state.performAction).toBe('function');
     expect(typeof state.setWebSocketConnection).toBe('function');
   });
 
   it('should set WebSocket connection state', () => {
     useTableStore.getState().setWebSocketConnection(true, vi.fn() as any);
-    expect(useTableStore.getState().isConnected).toBe(true);
+    expect(useTableStore.getState().wsConnected).toBe(true);
   });
 });

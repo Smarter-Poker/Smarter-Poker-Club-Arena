@@ -29,7 +29,7 @@ describe('useClubStore', () => {
     useClubStore.setState({
       nearbyClubs: [],
       searchResults: [],
-      myClubs: [],
+      myClubs: [], // Depending on interface, might be activeClubMembers etc, but testing initial is robust
       isDiscovering: false,
       isSearching: false,
       userLocation: null,
@@ -64,6 +64,8 @@ describe('useClubStore', () => {
     expect(typeof state.setUserLocation).toBe('function');
     expect(typeof state.setActiveTab).toBe('function');
     expect(typeof state.discoverNearby).toBe('function');
-    expect(typeof state.search).toBe('function');
+    expect(typeof state.searchClubs).toBe('function');
+    expect(typeof state.loadMemberships).toBe('function');
+    expect(typeof state.loadClub).toBe('function');
   });
 });

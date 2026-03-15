@@ -170,7 +170,7 @@ export default function AgentDashboardPage() {
         // Get commission history
         const { data: comms } = await supabase
           .from('agent_commissions')
-          .select('id, user_id, club_id, amount, commission_type, source_player_id, created_at')
+          .select('id, user_id, club_id, amount, source_type, source_id, notes, created_at')
           .eq('club_id', uuid)
           .eq('user_id', user.id)
           .order('created_at', { ascending: false })
@@ -879,8 +879,8 @@ export default function AgentDashboardPage() {
                   <thead>
                     <tr>
                       <th>Amount</th>
-                      <th>Status</th>
-                      <th>Period</th>
+                      <th>Type</th>
+                      <th>Notes</th>
                       <th>Date</th>
                     </tr>
                   </thead>
@@ -889,10 +889,10 @@ export default function AgentDashboardPage() {
                       <tr key={c.id || i}>
                         <td style={{ fontWeight: 700, color: '#31A24C' }}>{fmtChips(c.amount)}</td>
                         <td>
-                          <span className="admin-badge">{c.status || 'recorded'}</span>
+                          <span className="admin-badge">{c.source_type || 'rake'}</span>
                         </td>
                         <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                          {c.period_label || c.settlement_period_id?.substring(0, 8) || '—'}
+                          {c.notes || '—'}
                         </td>
                         <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
                           {timeAgo(c.created_at)}

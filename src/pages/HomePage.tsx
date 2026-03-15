@@ -27,6 +27,7 @@ import { ClubsService } from '../services/ClubsService';
 import { useToast } from '../components/common/Toast';
 import GlobalHeader from '../components/navigation/GlobalHeader';
 import haptic from '../services/HapticService';
+import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import PremiumSFX from '../services/PremiumSFX';
 import { masterBus } from '../core/MasterBus';
 import DailyChallenges from '../components/home/DailyChallenges';
@@ -781,6 +782,11 @@ function HomePageInner() {
   // ═══════════════════════════════════════════════════════════════════════════════
   // DATA FETCHING (with SWR cache)
   // ═══════════════════════════════════════════════════════════════════════════════
+  // Refresh on tab visibility change
+  useVisibilityRefresh(async () => {
+    fetchUserData(true);
+  });
+
   const fetchUserData = useCallback(
     async (skipLoading = false, getIsMounted?: () => boolean) => {
       if (!skipLoading) setIsLoading(true);

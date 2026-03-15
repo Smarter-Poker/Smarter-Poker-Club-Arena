@@ -293,7 +293,9 @@ export type BusEventType =
   // Admin audit trail events
   | 'ADMIN_ACTION'
   // Referral events
-  | 'REFERRAL_CLAIMED';
+  | 'REFERRAL_CLAIMED'
+  // Player notes event
+  | 'PLAYER_NOTE_SAVED';
 
 // #13: Type-safe payload map — compile-time enforcement of correct payloads
 export interface BusPayloadMap {
@@ -891,6 +893,10 @@ export interface BusPayloadMap {
     details?: Record<string, unknown>;
     userId?: string;
   };
+  // Referral event
+  REFERRAL_CLAIMED: { referralCode?: string; userId?: string; clubId?: string };
+  // Player notes
+  PLAYER_NOTE_SAVED: { clubId: string; targetUserId: string };
 }
 
 export interface BusEvent<T = unknown> {

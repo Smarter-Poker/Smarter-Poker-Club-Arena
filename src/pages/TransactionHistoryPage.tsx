@@ -229,6 +229,12 @@ export default function TransactionHistoryPage() {
           club_name: t.clubs?.name,
         }));
 
+        // SWR: cache first page for instant display on revisit (unfiltered only)
+        if (pageNum === 0 && filter === 'all' && !dateFrom && !dateTo && user?.id) {
+          setTxCache(user.id, mapped);
+        }
+        hasDataRef.current = true;
+
         if (reset) {
           setTransactions(mapped);
         } else {

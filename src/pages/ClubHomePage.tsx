@@ -35,6 +35,23 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { resolveClubIdFilter } from '../utils/clubIdResolver';
 import { useIsMounted } from '../hooks/useIsMounted';
 
+// SWR cache helpers for instant club data display
+function getClubHomeCache(clubId: string) {
+  try {
+    const raw = sessionStorage.getItem(`club_home_cache_${clubId}`);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+function setClubHomeCache(clubId: string, data: { club: any; tables: any[] }) {
+  try {
+    sessionStorage.setItem(`club_home_cache_${clubId}`, JSON.stringify(data));
+  } catch {
+    /* storage full */
+  }
+}
+
 // Types
 interface ClubData {
   id: string;
@@ -136,6 +153,19 @@ export default function ClubHomePage() {
   const [isInUnion, setIsInUnion] = useState(false);
   const [clubLevel, setClubLevel] = useState<ClubLevelInfo | null>(null);
   const toast = useToast();
+  const hasDataRef = useRef(false);
+
+  // SWR: show cached club data instantly on mount
+  useEffect(() => {
+    if (!clubId) return;
+    const cached = getClubHomeCache(clubId);
+    if (cached && cached.club) {
+      setClub(cached.club);
+      if (cached.tables?.length) setTables(cached.tables);
+      hasDataRef.current = true;
+      setLoading(false);
+    }
+  }, [clubId]);
 
   // Confirm modal state for table deletion
   const [deleteTableConfirm, setDeleteTableConfirm] = useState<{
@@ -501,6 +531,12 @@ export default function ClubHomePage() {
 
       const tableData = tableResult.data;
       if (tableData) setTables(tableData);
+
+      // SWR: cache club + tables for instant display on revisit
+      if (clubId && clubData) {
+        setClubHomeCache(clubId, { club: clubData, tables: tableData || [] });
+      }
+      hasDataRef.current = true;
 
       // Merge club tournaments + XMTT tournaments
       const allTournaments: TournamentData[] = clubTournamentResult.data

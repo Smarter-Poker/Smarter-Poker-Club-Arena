@@ -345,8 +345,18 @@ export default function SettingsPage() {
   };
 
   const handleChangePassword = async () => {
-    if (!newPassword || newPassword.length < 8) return;
-    if (newPassword !== confirmPassword) return;
+    if (!newPassword || newPassword.length < 8) {
+      toast.error('Password must be at least 8 characters');
+      return;
+    }
+    if (!/[A-Z]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
+      toast.error('Password must include at least one uppercase letter and one number');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error('Passwords do not match');
+      return;
+    }
     setActionLoading(true);
     try {
       const { error } = await supabase.auth.updateUser({ password: newPassword });
@@ -436,12 +446,27 @@ export default function SettingsPage() {
     if (actionType === 'delete-account') {
       setActionLoading(true);
       try {
-        // Use IdentityDNA for proper signOut lifecycle (clears store, destroys realtime, etc.)
+        // NOTE: True account deletion requires a server-side admin API call.
+        // For now, we sign out and clear local data. The user should contact
+        // support for full account deletion (GDPR compliance).
         await identityDNA.logout();
+        // Clear all local caches
+        try {
+          const keys = Object.keys(sessionStorage);
+          keys.forEach((k) => {
+            if (k.startsWith('profile_cache_')) sessionStorage.removeItem(k);
+          });
+          localStorage.removeItem('club-arena-settings');
+        } catch {
+          /* cleanup best-effort */
+        }
+        toast.success(
+          'You have been logged out. Contact support@smarter.poker for full account deletion.'
+        );
         // AuthGuard will handle redirect to /auth
       } catch (err) {
         console.error('Account deletion failed:', err);
-        toast.error('Account deletion failed. Please try again.');
+        toast.error('Failed to process request. Please try again.');
       }
       setActionLoading(false);
     } else if (actionType === 'disable-2fa') {

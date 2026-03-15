@@ -206,8 +206,15 @@ export default function App() {
 
     const handleMessage = async (event: MessageEvent) => {
       // Accept from smarter.poker OR localhost:3000 for local dev
-      if (!event.origin.includes('smarter.poker') && event.origin !== 'http://localhost:3000')
-        return;
+      // SECURITY: Use exact match / endsWith to prevent subdomain spoofing
+      // (e.g. evil-smarter.poker.attacker.com would pass .includes() check)
+      const origin = event.origin;
+      const isValidOrigin =
+        origin === 'https://smarter.poker' ||
+        origin === 'https://www.smarter.poker' ||
+        (origin.endsWith('.smarter.poker') && origin.startsWith('https://')) ||
+        origin === 'http://localhost:3000';
+      if (!isValidOrigin) return;
 
       if (event.data?.type === 'SMARTER_AUTH_TOKEN' && event.data.token) {
         // Send ACK immediately to halt World Hub retry loop.
@@ -223,6 +230,12 @@ export default function App() {
         if (lastAuthTokenRef.current === event.data.token) return;
         lastAuthTokenRef.current = event.data.token;
 
+        if (!event.data.refreshToken) {
+          console.warn(
+            '[App] Parent sent auth token without refreshToken — token refresh will fail at expiry'
+          );
+        }
+
         try {
           await supabase.auth.setSession({
             access_token: event.data.token,
@@ -230,6 +243,15 @@ export default function App() {
           });
         } catch (e) {
           console.error('[App] Failed to set session from parent:', e);
+          // Notify parent so it can retry or redirect
+          try {
+            window.parent.postMessage(
+              { type: 'SMARTER_AUTH_FAILED', error: String(e) },
+              parentOrigin
+            );
+          } catch {
+            /* cross-origin safety */
+          }
         }
       }
 

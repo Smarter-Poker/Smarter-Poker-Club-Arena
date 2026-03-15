@@ -52,6 +52,7 @@ class IdentityDNACore {
   private status: IdentityDNAStatus | null = null;
   private authListener: { data: { subscription: { unsubscribe: () => void } } } | null = null;
   private initialized: boolean = false;
+  private isHydrating: boolean = false; // Guard against concurrent SIGNED_IN events
 
   /**
    * Initialize Identity DNA
@@ -137,38 +138,49 @@ class IdentityDNACore {
         switch (event) {
           case 'SIGNED_IN':
             if (session) {
-              await this.hydrateUserFromSession(session);
-              this.updateStatus(true, session);
+              // Guard against concurrent SIGNED_IN events (e.g. parent sends two auth tokens)
+              if (this.isHydrating) {
+                console.warn('[IdentityDNA] Ignoring concurrent SIGNED_IN — hydration in progress');
+                break;
+              }
+              this.isHydrating = true;
+              try {
+                await this.hydrateUserFromSession(session);
+                this.updateStatus(true, session);
 
-              // Set Sentry user context
-              setSentryUser({
-                id: session.user.id,
-                email: session.user.email,
-                username: session.user.user_metadata?.username || session.user.email?.split('@')[0],
-              });
-
-              masterBus.emit('AUTH_STATE_CHANGED', {
-                userId: session.user.id,
-                isAuthenticated: true,
-              });
-
-              // Trigger login achievement (for login streaks, daily logins, etc.)
-              achievementTriggerService
-                .onLogin(session.user.id)
-                .catch((err) => console.warn('[Achievements] Login trigger failed:', err));
-
-              // Register push notifications
-              pushNotificationService
-                .init()
-                .then(() => {
-                  pushNotificationService.setExternalUserId(session.user.id);
-                })
-                .catch(() => {
-                  /* OneSignal not configured */
+                // Set Sentry user context
+                setSentryUser({
+                  id: session.user.id,
+                  email: session.user.email,
+                  username:
+                    session.user.user_metadata?.username || session.user.email?.split('@')[0],
                 });
 
-              // Phase 7: Absolute Realtime Perfection (Listen to external/Admin Postgres mutations)
-              postgresSyncHooks.init(session.user.id);
+                masterBus.emit('AUTH_STATE_CHANGED', {
+                  userId: session.user.id,
+                  isAuthenticated: true,
+                });
+
+                // Trigger login achievement (for login streaks, daily logins, etc.)
+                achievementTriggerService
+                  .onLogin(session.user.id)
+                  .catch((err) => console.warn('[Achievements] Login trigger failed:', err));
+
+                // Register push notifications
+                pushNotificationService
+                  .init()
+                  .then(() => {
+                    pushNotificationService.setExternalUserId(session.user.id);
+                  })
+                  .catch(() => {
+                    /* OneSignal not configured */
+                  });
+
+                // Phase 7: Absolute Realtime Perfection (Listen to external/Admin Postgres mutations)
+                postgresSyncHooks.init(session.user.id);
+              } finally {
+                this.isHydrating = false;
+              }
             }
             break;
 
@@ -188,7 +200,17 @@ class IdentityDNACore {
               // CRITICAL: Re-hydrate the user store on token refresh.
               // Without this, the Zustand store's isAuthenticated can become stale
               // after the JWT rotates, causing AuthGuard to redirect to /auth.
-              await this.hydrateUserFromSession(session);
+              // Use timeout to prevent profile load from blocking all auth events.
+              try {
+                const hydratePromise = this.hydrateUserFromSession(session);
+                const timeoutPromise = new Promise<void>((_, reject) =>
+                  setTimeout(() => reject(new Error('Profile hydration timeout')), 5000)
+                );
+                await Promise.race([hydratePromise, timeoutPromise]);
+              } catch (err) {
+                console.warn('[IdentityDNA] TOKEN_REFRESHED hydration issue:', err);
+                // Still update status — user is authenticated even if profile load stalls
+              }
               this.updateStatus(true, session);
 
               // Re-emit auth state to ensure all listeners know we're still active

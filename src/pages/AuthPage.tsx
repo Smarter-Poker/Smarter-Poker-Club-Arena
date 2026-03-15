@@ -31,6 +31,18 @@ export default function AuthPage() {
   const [success, setSuccess] = useState<string | null>(null);
   const [cardOpacity, setCardOpacity] = useState(0);
 
+  // Redirect already-authenticated users away from auth page
+  useEffect(() => {
+    supabase.auth
+      .getUser()
+      .then(({ data: { user } }) => {
+        if (user) navigate('/', { replace: true });
+      })
+      .catch(() => {
+        /* not logged in */
+      });
+  }, [navigate]);
+
   // Form entrance animation
   useEffect(() => {
     setCardOpacity(1);
@@ -58,7 +70,8 @@ export default function AuthPage() {
       }
     } catch (err: any) {
       console.error('🔐 [AUTH] Login failed:', err);
-      if (isMounted.current) setError(err.message || 'Login failed. Please try again.');
+      // SECURITY: Generic message to prevent user enumeration
+      if (isMounted.current) setError('Invalid email or password. Please try again.');
     } finally {
       if (isMounted.current) setIsLoading(false);
     }
@@ -94,6 +107,13 @@ export default function AuthPage() {
       return;
     }
 
+    // Email format validation (beyond HTML type="email")
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      if (isMounted.current) setError('Please enter a valid email address');
+      setIsLoading(false);
+      return;
+    }
+
     try {
       // Sign up with Supabase
       const { data, error: authError } = await supabase.auth.signUp({
@@ -109,7 +129,7 @@ export default function AuthPage() {
 
       if (authError) throw authError;
 
-      if (data.user) {
+      if (data.user?.id) {
         // ═══════════════════════════════════════════════════════════════════
         // 🔗 DUPLICATE PREVENTION: Check if a profile with same email exists
         // ═══════════════════════════════════════════════════════════════════
@@ -166,13 +186,18 @@ export default function AuthPage() {
         // Ensure public.users entry exists (required for club_members FK)
         // The DB trigger should handle this, but belt-and-suspenders approach
         // ═══════════════════════════════════════════════════════════════════
-        await supabase.from('users').upsert({
-          id: data.user.id,
-          username: username.trim(),
-          email: email.trim(),
-        }, { onConflict: 'id' }).then(({ error: usersErr }) => {
-          if (usersErr) console.warn('[AUTH] public.users upsert (non-critical):', usersErr.message);
-        });
+        const { error: usersErr } = await supabase.from('users').upsert(
+          {
+            id: data.user.id,
+            username: username.trim(),
+            email: email.trim(),
+          },
+          { onConflict: 'id' }
+        );
+        if (usersErr) {
+          console.error('[AUTH] public.users upsert FAILED:', usersErr.message);
+          // Don't throw — DB trigger may handle this. But log as error, not warn.
+        }
 
         // Check if email confirmation is required
         if (data.session) {
@@ -209,13 +234,13 @@ export default function AuthPage() {
     if (isMounted.current) setError(null);
 
     try {
-      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+      await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/auth?mode=reset`,
       });
 
-      if (resetError) throw resetError;
-
-      setSuccess('Password reset email sent! Check your inbox.');
+      // SECURITY: Always show success regardless of whether email exists
+      // This prevents user enumeration attacks
+      setSuccess('If an account exists with this email, you will receive a password reset link.');
     } catch (err: any) {
       console.error('🔐 [AUTH] Password reset failed:', err);
       if (isMounted.current) setError(err.message || 'Failed to send reset email.');

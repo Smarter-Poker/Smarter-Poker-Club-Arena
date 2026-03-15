@@ -212,6 +212,20 @@ if (typeof window !== 'undefined') {
   // before expiry, ensuring the user NEVER gets logged out due to token expiry.
   const REFRESH_CHECK_INTERVAL = 60_000; // Check every 60 seconds
   const REFRESH_BUFFER = 5 * 60_000; // Refresh 5 minutes before expiry
+  let lastRefreshAttempt = 0;
+  const REFRESH_DEBOUNCE = 5_000; // 5s debounce to prevent duplicate refreshes
+
+  /** Safely parse JWT expiry. Returns null if token is malformed. */
+  function getTokenExpiry(token: string): number | null {
+    try {
+      const parts = token.split('.');
+      if (parts.length !== 3) return null;
+      const payload = JSON.parse(atob(parts[1]));
+      return typeof payload.exp === 'number' ? payload.exp * 1000 : null;
+    } catch {
+      return null;
+    }
+  }
 
   setInterval(() => {
     try {
@@ -219,13 +233,17 @@ if (typeof window !== 'undefined') {
       if (!raw) return;
       const data = JSON.parse(raw);
       const token = data?.access_token;
-      if (!token) return;
+      if (!token || typeof token !== 'string') return;
 
-      const payload = JSON.parse(atob(token.split('.')[1]));
-      const expiresAt = payload.exp * 1000;
+      const expiresAt = getTokenExpiry(token);
+      if (!expiresAt) return; // Malformed JWT — skip
       const timeUntilExpiry = expiresAt - Date.now();
 
+      // Debounce: skip if we refreshed recently
+      if (Date.now() - lastRefreshAttempt < REFRESH_DEBOUNCE) return;
+
       if (timeUntilExpiry < REFRESH_BUFFER && timeUntilExpiry > 0) {
+        lastRefreshAttempt = Date.now();
         console.log(
           `[Supabase] Proactive token refresh — expires in ${Math.round(timeUntilExpiry / 1000)}s`
         );
@@ -233,10 +251,19 @@ if (typeof window !== 'undefined') {
           console.warn('[Supabase] Proactive refresh failed:', err);
         });
       } else if (timeUntilExpiry <= 0) {
+        lastRefreshAttempt = Date.now();
         // Token already expired — try to refresh anyway
         console.warn('[Supabase] Token expired — attempting emergency refresh');
         supabase.auth.refreshSession().catch((err) => {
           console.error('[Supabase] Emergency refresh failed:', err);
+          // If refresh token is dead, force signOut to prevent zombie session
+          if (
+            String(err).includes('Invalid Refresh Token') ||
+            String(err).includes('invalid_grant')
+          ) {
+            console.error('[Supabase] Refresh token is dead — forcing sign out');
+            supabase.auth.signOut().catch(() => {});
+          }
         });
       }
     } catch {
@@ -248,18 +275,22 @@ if (typeof window !== 'undefined') {
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) {
       try {
+        // Debounce: skip if interval just refreshed
+        if (Date.now() - lastRefreshAttempt < REFRESH_DEBOUNCE) return;
+
         const raw = localStorage.getItem(NEW_SHARED_KEY);
         if (!raw) return;
         const data = JSON.parse(raw);
         const token = data?.access_token;
-        if (!token) return;
+        if (!token || typeof token !== 'string') return;
 
-        const payload = JSON.parse(atob(token.split('.')[1]));
-        const expiresAt = payload.exp * 1000;
+        const expiresAt = getTokenExpiry(token);
+        if (!expiresAt) return; // Malformed JWT
         const timeUntilExpiry = expiresAt - Date.now();
 
         // If less than 10 minutes until expiry, refresh on tab focus
         if (timeUntilExpiry < 10 * 60_000) {
+          lastRefreshAttempt = Date.now();
           console.log('[Supabase] Tab visible — refreshing session proactively');
           supabase.auth.refreshSession().catch(() => {
             // Silent — autoRefreshToken will also try

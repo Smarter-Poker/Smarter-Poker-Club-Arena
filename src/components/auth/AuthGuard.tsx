@@ -39,12 +39,15 @@ function hasLocalSession(): boolean {
     if (!raw) return false;
     const data = JSON.parse(raw);
     const token = data?.access_token;
-    if (!token) return false;
+    if (!token || typeof token !== 'string') return false;
+    // Validate JWT structure (must have exactly 3 parts)
+    const parts = token.split('.');
+    if (parts.length !== 3) return false;
     // Check expiry from JWT payload (with 60s buffer for clock skew)
-    const payload = JSON.parse(atob(token.split('.')[1]));
+    const payload = JSON.parse(atob(parts[1]));
     return payload.exp * 1000 > Date.now() - 60_000;
-  } catch (err) {
-    console.error('[AuthGuard] Error:', err);
+  } catch {
+    // Malformed JWT, corrupted localStorage, etc. — treat as no session
     return false;
   }
 }
@@ -80,9 +83,12 @@ function hydrateStoreFromLocalStorage(): void {
     if (!raw) return;
     const data = JSON.parse(raw);
     const token = data?.access_token;
-    if (!token) return;
+    if (!token || typeof token !== 'string') return;
+    // Validate JWT structure before decoding
+    const parts = token.split('.');
+    if (parts.length !== 3) return;
     // Decode JWT payload to get user ID and email
-    const payload = JSON.parse(atob(token.split('.')[1]));
+    const payload = JSON.parse(atob(parts[1]));
     if (payload.sub) {
       useUserStore.getState().setUser({
         id: payload.sub,

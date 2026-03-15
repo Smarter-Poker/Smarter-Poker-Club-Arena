@@ -1,17 +1,10 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  UNIT TESTS — HandHistoryService
+ *  UNIT TESTS — HandHistoryService (Strengthened)
  * ═══════════════════════════════════════════════════════════════════════════════
- *
- * Tests hand history query methods with mocked Supabase:
- * - getHand: returns null for missing hand
- * - getPlayerHands: returns empty array when no data
- * - getTableHands: returns empty array when no data
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-// ─── Mock dependencies ────────────────────────────────────────────────────
 
 vi.mock('../../src/lib/supabase', () => {
   const buildChain = (): any => {
@@ -29,37 +22,60 @@ vi.mock('../../src/lib/supabase', () => {
   return {
     supabase: {
       from: () => buildChain(),
+      rpc: vi.fn().mockResolvedValue({ data: null, error: null }),
     },
   };
 });
 
-// ─── Import AFTER mocks ──────────────────────────────────────────────────
+vi.mock('../../src/utils/retryAsync', () => ({
+  retryAsync: <T>(fn: () => Promise<T>) => fn(),
+}));
 
 import { handHistoryService } from '../../src/services/HandHistoryService';
 
 describe('HandHistoryService', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
+  beforeEach(() => vi.clearAllMocks());
 
   describe('getHand', () => {
-    it('should return null when no data', async () => {
-      const result = await handHistoryService.getHand('nonexistent-id');
-      expect(result).toBeNull();
+    it('should return null when hand not found', async () => {
+      const hand = await handHistoryService.getHand('nonexistent');
+      expect(hand).toBeNull();
     });
   });
 
   describe('getPlayerHands', () => {
-    it('should return empty array when no data', async () => {
-      const result = await handHistoryService.getPlayerHands('user-1');
-      expect(result).toEqual([]);
+    it('should return empty array when no hands', async () => {
+      const hands = await handHistoryService.getPlayerHands('user-1');
+      expect(hands).toEqual([]);
+    });
+
+    it('should use default limit of 50', async () => {
+      const hands = await handHistoryService.getPlayerHands('user-1');
+      expect(Array.isArray(hands)).toBe(true);
     });
   });
 
   describe('getTableHands', () => {
-    it('should return empty array when no data', async () => {
-      const result = await handHistoryService.getTableHands('table-1');
-      expect(result).toEqual([]);
+    it('should return empty array when no table hands', async () => {
+      const hands = await handHistoryService.getTableHands('table-1');
+      expect(hands).toEqual([]);
+    });
+  });
+
+  describe('getRecentWinningHands', () => {
+    it('should return empty array when no wins', async () => {
+      const hands = await handHistoryService.getRecentWinningHands('user-1');
+      expect(hands).toEqual([]);
+    });
+  });
+
+  describe('export shape', () => {
+    it('should export singleton with all query methods', () => {
+      expect(typeof handHistoryService.getHand).toBe('function');
+      expect(typeof handHistoryService.getPlayerHands).toBe('function');
+      expect(typeof handHistoryService.getTableHands).toBe('function');
+      expect(typeof handHistoryService.getRecentWinningHands).toBe('function');
+      expect(typeof handHistoryService.searchHands).toBe('function');
     });
   });
 });

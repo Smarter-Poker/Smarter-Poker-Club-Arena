@@ -402,7 +402,6 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           { label: 'Tournament Results', path: '/tournament-results' },
           { label: 'Hand History', path: '/hand-history' },
           { label: 'Session History', path: '/history' },
-          { label: 'Hands', path: '/hands' },
           { label: 'Leaderboard', path: '/leaderboard' },
         ].map((item, i) => (
           <div

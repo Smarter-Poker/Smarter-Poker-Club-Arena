@@ -907,8 +907,9 @@ export default function TablePage({
     }>
   >([]);
 
-  // Sound settings state
+  // Sound & vibration settings state
   const [isSoundEnabled, setIsSoundEnabled] = useState(true);
+  const [isVibrationEnabled, setIsVibrationEnabled] = useState(true);
 
   // Play turn alert when it's hero's turn
   const playTurnAlert = () => {
@@ -1647,7 +1648,7 @@ export default function TablePage({
                     setTimeout(() => {
                       const tournId = tableState.tournamentId;
                       if (tournId) {
-                        window.location.href = `/hub/club-arena/tournament-results?id=${tournId}`;
+                        navigate(`/tournament-results?id=${tournId}`);
                       }
                     }, 5000);
                   }
@@ -4164,9 +4165,9 @@ export default function TablePage({
                 </button>
 
                 {/* Time Bank */}
-                <button className="control-strip__btn" title="Time Bank">
+                <button className="control-strip__btn" title="Time Bank" onClick={handleActivateTimeBank} disabled={timeBanksRemaining <= 0 || timeBankActive}>
                   <span className="control-strip__icon">⏱</span>
-                  <span className="control-strip__count">3</span>
+                  <span className="control-strip__count">{timeBanksRemaining}</span>
                 </button>
 
                 {/* Timer Display */}
@@ -4180,7 +4181,7 @@ export default function TablePage({
                 <div className="control-strip__spacer" />
 
                 {/* Rabbit Hunt */}
-                <button className="control-strip__btn" title="Rabbit Hunt">
+                <button className="control-strip__btn" title="Rabbit Hunt" onClick={() => { if (isRabbitAvailable) handleRabbitReveal(); }} disabled={!isRabbitAvailable}>
                   <span className="control-strip__icon">🐰</span>
                 </button>
 
@@ -4299,15 +4300,15 @@ export default function TablePage({
               <span className="menu-item-label">Table Rules</span>
               <span className="menu-item-arrow">›</span>
             </button>
-            <button className="menu-item">
+            <button className="menu-item" onClick={() => setIsSoundEnabled(!isSoundEnabled)}>
               <span className="menu-item-icon">♪</span>
               <span className="menu-item-label">Sounds</span>
-              <span className="menu-item-arrow">›</span>
+              <span className={`menu-item-toggle ${isSoundEnabled ? 'on' : ''}`}>{isSoundEnabled ? 'ON' : 'OFF'}</span>
             </button>
-            <button className="menu-item">
+            <button className="menu-item" onClick={() => setIsVibrationEnabled(!isVibrationEnabled)}>
               <span className="menu-item-icon">⋆</span>
               <span className="menu-item-label">Vibrations</span>
-              <span className="menu-item-toggle on">ON</span>
+              <span className={`menu-item-toggle ${isVibrationEnabled ? 'on' : ''}`}>{isVibrationEnabled ? 'ON' : 'OFF'}</span>
             </button>
             <button className="menu-item" onClick={() => setIsChatMuted(!isChatMuted)}>
               <span className="menu-item-icon">💬</span>
@@ -4316,12 +4317,23 @@ export default function TablePage({
                 {isChatMuted ? 'MUTED' : 'ON'}
               </span>
             </button>
-            <button className="menu-item">
+            <button className="menu-item" onClick={() => {
+              const shareUrl = `${window.location.origin}/hub/club-arena/table/${tableId}`;
+              navigator.clipboard?.writeText(shareUrl).then(() => {
+                toast.success('Table link copied to clipboard!');
+              }).catch(() => {
+                toast.info('Share: ' + shareUrl);
+              });
+              setIsSideMenuOpen(false);
+            }}>
               <span className="menu-item-icon">↗</span>
               <span className="menu-item-label">Share</span>
               <span className="menu-item-arrow">›</span>
             </button>
-            <button className="menu-item">
+            <button className="menu-item" onClick={() => {
+              toast.info('VIP features coming soon!');
+              setIsSideMenuOpen(false);
+            }}>
               <span className="menu-item-icon">★</span>
               <span className="menu-item-label">VIP</span>
               <span className="menu-item-arrow">›</span>

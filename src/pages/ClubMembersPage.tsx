@@ -597,7 +597,7 @@ export default function ClubMembersPage() {
       isMounted = false;
       unsubs.forEach((unsub) => unsub());
     };
-  }, [clubId]);
+  }, [clubId, loadMembers]);
 
   // Stagger animation for members
   useEffect(() => {
@@ -637,7 +637,7 @@ export default function ClubMembersPage() {
       isMounted = false;
       masterBus.removeRegisteredChannel(channelKey);
     };
-  }, [clubId]);
+  }, [clubId, loadMembers]);
 
   // Real-time presence tracking for club members
   useEffect(() => {
@@ -679,7 +679,7 @@ export default function ClubMembersPage() {
         if (filter === 'agents' && !['super_agent', 'agent', 'sub_agent'].includes(m.role))
           return false;
         if (filter === 'admins' && !['owner', 'admin'].includes(m.role)) return false;
-        if (searchQuery && !m.username.toLowerCase().includes(searchQuery.toLowerCase()))
+        if (searchQuery && !(m.username || '').toLowerCase().includes(searchQuery.toLowerCase()))
           return false;
         return true;
       }),

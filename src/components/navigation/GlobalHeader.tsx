@@ -13,6 +13,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useWalletStore } from '../../stores/useWalletStore';
@@ -254,7 +255,7 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
           </button>
 
           {/* Notifications — route to in-app Notification Center */}
-          <a href="/notifications" className={styles.orbLink}>
+          <Link to="/notifications" className={styles.orbLink}>
             <img
               src={`${BASE}images/header-notifications.png`}
               alt="Notifications"
@@ -265,7 +266,7 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
                 {notificationCount > 99 ? '99+' : notificationCount}
               </span>
             )}
-          </a>
+          </Link>
 
           {/* Settings */}
           <button className={styles.orbBtn} onClick={() => navigateToHub('/hub/settings')}>

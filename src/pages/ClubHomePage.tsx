@@ -879,7 +879,7 @@ export default function ClubHomePage() {
           <div className="wallet-row diamond">
             <span className="wallet-icon diamond-icon"></span>
             <span className="wallet-amount">{formatNumber(wallet.diamonds)}</span>
-            <button className="wallet-add-btn">+</button>
+            <button className="wallet-add-btn" onClick={() => haptic.medium()}>+</button>
           </div>
         </div>
       </div>
@@ -1058,7 +1058,7 @@ export default function ClubHomePage() {
             try {
               const { error } = await supabase
                 .from('tables')
-                .update({ status: 'deleted', is_active: false })
+                .update({ status: 'deleted', is_active: false, is_deleted: true })
                 .eq('id', id);
               if (error) throw error;
               setTables((prev) => prev.filter((t) => t.id !== id));

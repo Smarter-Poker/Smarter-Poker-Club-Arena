@@ -7,6 +7,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import './LeaderboardWidget.css';
@@ -37,7 +38,7 @@ export function LeaderboardWidget({
   const [entries, setEntries] = useState<LeaderEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
-  const isMounted = useRef(true);
+  const isMounted = useIsMounted();
   const animTimers = useRef<number[]>([]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -90,7 +91,6 @@ export function LeaderboardWidget({
   }, [loadLeaderboard]);
 
   useEffect(() => {
-    isMounted.current = true;
     loadLeaderboard();
 
     // Bus listeners — leaderboard refreshes after gameplay events
@@ -98,7 +98,6 @@ export function LeaderboardWidget({
     const unsubBalance = masterBus.subscribe('BALANCE_UPDATED', debouncedRefresh);
 
     return () => {
-      isMounted.current = false;
       unsubHand();
       unsubBalance();
       if (debounceRef.current) clearTimeout(debounceRef.current);

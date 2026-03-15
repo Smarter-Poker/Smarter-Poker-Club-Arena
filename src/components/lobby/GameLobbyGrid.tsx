@@ -9,7 +9,8 @@
  *  - Polling every 15s for real-time updates
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import haptic from '../../utils/haptic';
@@ -94,13 +95,7 @@ export default function GameLobbyGrid({ clubId, onGamePress }: GameLobbyGridProp
   const [games, setGames] = useState<GameRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const isMounted = useRef(true);
-
-  useEffect(() => {
-    return () => {
-      isMounted.current = false;
-    };
-  }, []);
+  const isMounted = useIsMounted();
 
   const loadGames = useCallback(async () => {
     if (!clubId) return;

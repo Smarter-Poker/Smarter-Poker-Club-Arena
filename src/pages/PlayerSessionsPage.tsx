@@ -470,7 +470,20 @@ export default function PlayerSessionsPage() {
     setError(null);
     try {
       const amt = parseInt(wbAmount, 10) || 500;
-      await WalletService.distributePromo(user?.id || '', wbTarget.userId, amt);
+      // Resolve agent PK — distributePromo expects agents.id, NOT auth.users.id
+      const resolvedClub = await resolveClubUUID(clubId);
+      const { data: agentRow } = await supabase
+        .from('agents')
+        .select('id')
+        .eq('user_id', user?.id || '')
+        .eq('club_id', resolvedClub)
+        .maybeSingle();
+      if (!agentRow?.id) {
+        setError('Agent record not found for this club');
+        setProcessing(false);
+        return;
+      }
+      await WalletService.distributePromo(agentRow.id, wbTarget.userId, amt);
       setSuccess(`${fmtChips(amt)} welcome-back chips sent to ${wbTarget.name}!`);
       setWbTarget(null);
       setWbAmount('');

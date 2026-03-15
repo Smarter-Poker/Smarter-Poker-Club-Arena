@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useNavigate } from 'react-router-dom';
@@ -30,13 +31,11 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
-  const isMounted = useRef(true);
+  const isMounted = useIsMounted();
   const animationTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   useEffect(() => {
-    isMounted.current = true;
     return () => {
-      isMounted.current = false;
       animationTimers.current.forEach(clearTimeout);
       animationTimers.current = [];
     };

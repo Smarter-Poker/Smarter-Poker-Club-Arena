@@ -7,6 +7,7 @@
  */
 
 import { useEffect, useState, useRef } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import './DiamondRainEffect.css';
 
 interface DiamondRainEffectProps {
@@ -39,13 +40,7 @@ export default function DiamondRainEffect({
   // Stabilize onComplete to prevent re-trigger loop when parent passes inline callback
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
-  const isMounted = useRef(true);
-
-  useEffect(() => {
-    return () => {
-      isMounted.current = false;
-    };
-  }, []);
+  const isMounted = useIsMounted();
 
   useEffect(() => {
     if (!active) {

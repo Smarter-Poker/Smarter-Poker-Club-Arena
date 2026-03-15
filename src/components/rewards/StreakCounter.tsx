@@ -7,7 +7,8 @@
  * Refreshes on DAILY_RESET_AVAILABLE and BALANCE_UPDATED bus events.
  */
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import dailyChallengeService from '../../services/DailyChallengeService';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { masterBus } from '../../core/MasterBus';
@@ -28,7 +29,7 @@ export const StreakCounter: React.FC<StreakCounterProps> = ({
   streakBonus: propBonus,
 }) => {
   const { user } = useAuthUser();
-  const isMounted = useRef(true);
+  const isMounted = useIsMounted();
 
   // Self-contained mode — fetch data if no props provided
   const selfContained = propStreak === undefined;
@@ -66,7 +67,6 @@ export const StreakCounter: React.FC<StreakCounterProps> = ({
   }, [selfContained, propStreak, propLongest, propBonus]);
 
   useEffect(() => {
-    isMounted.current = true;
     if (selfContained) loadStreak();
 
     const unsubReset = masterBus.subscribe('DAILY_RESET_AVAILABLE', () => {
@@ -77,7 +77,6 @@ export const StreakCounter: React.FC<StreakCounterProps> = ({
     });
 
     return () => {
-      isMounted.current = false;
       unsubReset();
       unsubBalance();
     };

@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { LeaderboardService } from '../../services/LeaderboardService';
 import type { LeaderboardMetric, LeaderboardPeriod } from '../../services/LeaderboardService';
 import { masterBus } from '../../core/MasterBus';
@@ -40,7 +41,7 @@ export const LeaderboardWidget: React.FC<LeaderboardWidgetProps> = ({
   const [timeframe, setTimeframe] = useState<'daily' | 'weekly' | 'monthly' | 'alltime'>('weekly');
   const [loading, setLoading] = useState(true);
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
-  const isMounted = useRef(true);
+  const isMounted = useIsMounted();
   const animTimers = useRef<number[]>([]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -108,14 +109,12 @@ export const LeaderboardWidget: React.FC<LeaderboardWidgetProps> = ({
   }, [loadLeaderboard]);
 
   useEffect(() => {
-    isMounted.current = true;
     loadLeaderboard();
 
     const unsubHand = masterBus.subscribe('HAND_COMPLETED', debouncedRefresh);
     const unsubBalance = masterBus.subscribe('BALANCE_UPDATED', debouncedRefresh);
 
     return () => {
-      isMounted.current = false;
       unsubHand();
       unsubBalance();
       if (debounceRef.current) clearTimeout(debounceRef.current);

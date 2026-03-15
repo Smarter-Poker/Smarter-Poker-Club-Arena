@@ -8,6 +8,7 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { triggerHaptic } from '../../services/HapticService';
 import { masterBus } from '../../core/MasterBus';
 import './LuckyDrawWheel.css';
@@ -55,12 +56,11 @@ export default function LuckyDrawWheel({
   const [rotation, setRotation] = useState(0);
   const wheelRef = useRef<HTMLDivElement>(null);
   const spinTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isMounted = useRef(true);
+  const isMounted = useIsMounted();
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      isMounted.current = false;
       if (spinTimerRef.current) clearTimeout(spinTimerRef.current);
     };
   }, []);

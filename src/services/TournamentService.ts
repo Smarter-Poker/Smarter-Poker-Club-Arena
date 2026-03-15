@@ -424,7 +424,9 @@ class TournamentService {
           typeof unionData.settings === 'string'
             ? JSON.parse(unionData.settings)
             : unionData.settings || {};
-      } catch {
+      } catch (err) {
+
+        console.error("[TournamentService] Error:", err);
         settings = {};
       }
       if (settings && settings.crossClubTournaments === false) {
@@ -1239,7 +1241,9 @@ class TournamentService {
       if (typeof raw === 'string') {
         try {
           return JSON.parse(raw);
-        } catch {
+        } catch (err) {
+
+          console.error("[TournamentService] Error:", err);
           return [];
         }
       }

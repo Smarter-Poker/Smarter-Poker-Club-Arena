@@ -110,7 +110,9 @@ function parseSettings(settings: TableSettings | string | undefined): TableSetti
   if (typeof settings === 'string') {
     try {
       return JSON.parse(settings);
-    } catch {
+    } catch (err) {
+
+      console.error("[DynamicGameCard] Error:", err);
       return {};
     }
   }

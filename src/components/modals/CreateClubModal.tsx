@@ -171,7 +171,9 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
         toast.error('A club with this name already exists');
         return;
       }
-    } catch {
+    } catch (err) {
+
+      console.error("[CreateClubModal] Error:", err);
       // Non-blocking
     }
 

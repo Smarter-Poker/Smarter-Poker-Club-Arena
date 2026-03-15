@@ -236,7 +236,9 @@ export default function HandReplay({
           text: shareText,
           url: shareUrl,
         });
-      } catch {
+      } catch (err) {
+
+        console.error("[HandReplay] Error:", err);
         copyToClipboard(shareUrl);
       }
     } else {

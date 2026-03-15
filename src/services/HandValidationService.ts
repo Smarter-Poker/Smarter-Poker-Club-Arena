@@ -176,7 +176,9 @@ export const HandValidationService = {
             'HandValidationService',
             { handId: input.handId, discrepancies: result.discrepancies }
           );
-        } catch {
+        } catch (err) {
+
+          console.error("[HandValidationService] Error:", err);
           /* best effort */
         }
       }

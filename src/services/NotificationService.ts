@@ -431,7 +431,9 @@ class NotificationServiceClass {
     try {
       const { messagingService } = await import('./MessagingService');
       if (messagingService.isNotificationTypeMuted(notification.type)) return;
-    } catch {
+    } catch (err) {
+
+      console.error("[NotificationService] Error:", err);
       /* service not loaded — allow notification */
     }
 

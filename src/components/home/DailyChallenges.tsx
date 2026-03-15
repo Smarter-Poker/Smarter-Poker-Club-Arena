@@ -104,7 +104,9 @@ export default function DailyChallenges() {
           return;
         }
       }
-    } catch {
+    } catch (err) {
+
+      console.error("[DailyChallenges] Error:", err);
       // Supabase unavailable -- fallback to localStorage
     }
 
@@ -114,7 +116,9 @@ export default function DailyChallenges() {
       setProgress(stored);
       const storedClaimed = JSON.parse(localStorage.getItem(`${dayKey}_claimed`) || '{}');
       setClaimed(storedClaimed);
-    } catch {
+    } catch (err) {
+
+      console.error("[DailyChallenges] Error:", err);
       localStorage.removeItem(dayKey);
     }
   }, [dayKey]);
@@ -127,7 +131,9 @@ export default function DailyChallenges() {
       // Always save to localStorage (instant)
       try {
         localStorage.setItem(dayKey, JSON.stringify(newProgress));
-      } catch {
+      } catch (err) {
+
+        console.error("[DailyChallenges] Error:", err);
         /* */
       }
 
@@ -153,7 +159,9 @@ export default function DailyChallenges() {
             .from('daily_challenge_progress')
             .upsert(upserts, { onConflict: 'user_id,day_key,challenge_index' });
         }
-      } catch {
+      } catch (err) {
+
+        console.error("[DailyChallenges] Error:", err);
         // Silent — localStorage is the fallback
       }
     },
@@ -303,7 +311,9 @@ export default function DailyChallenges() {
             const next = { ...prev, [challengeIndex]: true };
             try {
               localStorage.setItem(`${dayKey}_claimed`, JSON.stringify(next));
-            } catch {
+            } catch (err) {
+
+              console.error("[DailyChallenges] Error:", err);
               /* */
             }
             return next;

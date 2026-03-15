@@ -60,7 +60,9 @@ export default function ForwardMessageModal({
       } else {
         toast.error('Failed to forward');
       }
-    } catch {
+    } catch (err) {
+
+      console.error("[ForwardMessageModal] Error:", err);
       toast.error('Failed to forward');
     }
     setForwarding(null);

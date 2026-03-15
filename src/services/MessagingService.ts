@@ -606,7 +606,9 @@ class MessagingServiceClass {
       if (partErr) console.error('[Messaging] Failed to insert participant entry:', partErr);
 
       return true;
-    } catch {
+    } catch (err) {
+
+      console.error("[MessagingService] Error:", err);
       return false;
     }
   }
@@ -640,7 +642,9 @@ class MessagingServiceClass {
         .eq('user_id', userId);
 
       return true;
-    } catch {
+    } catch (err) {
+
+      console.error("[MessagingService] Error:", err);
       return false;
     }
   }
@@ -841,7 +845,9 @@ class MessagingServiceClass {
             achievements: true,
             system: true,
           };
-    } catch {
+    } catch (err) {
+
+      console.error("[MessagingService] Error:", err);
       return { messages: true, games: true, social: true, achievements: true, system: true };
     }
   }
@@ -1189,7 +1195,9 @@ class MessagingServiceClass {
             achievements: 'celebration',
             system: 'default',
           };
-    } catch {
+    } catch (err) {
+
+      console.error("[MessagingService] Error:", err);
       return {
         messages: 'default',
         games: 'default',

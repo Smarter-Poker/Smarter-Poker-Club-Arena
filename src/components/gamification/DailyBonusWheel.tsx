@@ -82,7 +82,9 @@ export function DailyBonusWheel({ isOpen, onClose, onReward }: DailyBonusWheelPr
       } else {
         if (isMounted.current) setCanSpin(true);
       }
-    } catch {
+    } catch (err) {
+
+      console.error("[DailyBonusWheel] Error:", err);
       if (isMounted.current) setCanSpin(true);
     }
   };

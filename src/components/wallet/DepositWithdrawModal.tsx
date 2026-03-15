@@ -17,7 +17,9 @@ const triggerHaptic = (pattern: number | number[] = 10) => {
     if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
       navigator.vibrate(pattern);
     }
-  } catch {
+  } catch (err) {
+
+    console.error("[DepositWithdrawModal] Error:", err);
     /* silent — not all devices support vibration */
   }
 };

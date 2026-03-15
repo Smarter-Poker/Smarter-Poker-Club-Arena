@@ -2267,7 +2267,9 @@ class HorseOrchestrator {
                 horseId: 'batch',
                 horseName: `${needed} horses seeded`,
               });
-            } catch {
+            } catch (err) {
+
+              console.error("[HorseOrchestrator] Error:", err);
               /* best effort */
             }
           } catch (err: any) {
@@ -2323,7 +2325,9 @@ class HorseOrchestrator {
       }
 
       return bestSeat;
-    } catch {
+    } catch (err) {
+
+      console.error("[HorseOrchestrator] Error:", err);
       // Fallback: return first available seat
       return 1;
     }
@@ -2393,7 +2397,9 @@ class HorseOrchestrator {
             horseId: fresh.id,
             horseName: fresh.display_name || 'Horse',
           });
-        } catch {
+        } catch (err) {
+
+          console.error("[HorseOrchestrator] Error:", err);
           /* best effort */
         }
       }

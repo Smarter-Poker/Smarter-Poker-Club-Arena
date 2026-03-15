@@ -41,7 +41,9 @@ export function StraddleToggle({
     // Safe haptic feedback
     try {
       navigator?.vibrate?.(10);
-    } catch {
+    } catch (err) {
+
+      console.error("[StraddleToggle] Error:", err);
       /* noop */
     }
     // Wire to engine for bus emission

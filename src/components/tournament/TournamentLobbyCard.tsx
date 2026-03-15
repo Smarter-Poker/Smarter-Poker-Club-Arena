@@ -228,7 +228,9 @@ export default function TournamentLobbyCard({ tournament, onRegister }: Tourname
         if (Array.isArray(structure) && structure.length > 0) {
           blindDuration = structure[0].durationMinutes || structure[0].duration_minutes;
         }
-      } catch {
+      } catch (err) {
+
+        console.error("[TournamentLobbyCard] Error:", err);
         // If parsing fails, return no badge
         return null;
       }

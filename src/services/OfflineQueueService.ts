@@ -180,7 +180,9 @@ export const OfflineQueueService = {
           mutationsReplayed: replayed,
           mutationsFailed: failed,
         });
-      } catch {
+      } catch (err) {
+
+        console.error("[OfflineQueueService] Error:", err);
         /* non-fatal */
       }
 

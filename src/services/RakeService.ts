@@ -835,7 +835,9 @@ export const RakeService = {
         if (rpcError) {
           console.error('[RakeService] increment_club_rake RPC failed (may not exist):', rpcError);
         }
-      } catch {
+      } catch (err) {
+
+        console.error("[RakeService] Error:", err);
         /* RPC may not exist — non-blocking */
       }
       return true;
@@ -870,7 +872,9 @@ export const RakeService = {
         notes: params.notes,
         created_at: new Date().toISOString(),
       });
-    } catch {
+    } catch (err) {
+
+      console.error("[RakeService] Error:", err);
       console.error('[RakeService] rake_rate_audit insert failed (table may not exist)');
     }
   },

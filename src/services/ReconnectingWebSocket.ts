@@ -144,7 +144,9 @@ export class ReconnectingWebSocket {
               totalReconnects: this.totalReconnects,
               url: this.url,
             });
-          } catch {
+          } catch (err) {
+
+            console.error("[ReconnectingWebSocket] Error:", err);
             /* non-fatal */
           }
           this.reconnectStartTime = 0;
@@ -184,7 +186,9 @@ export class ReconnectingWebSocket {
               console.error('[ReconnectingWS] Handler error:', err);
             }
           }
-        } catch {
+        } catch (err) {
+
+          console.error("[ReconnectingWebSocket] Error:", err);
           console.error('[ReconnectingWS] Non-JSON message received');
         }
       };

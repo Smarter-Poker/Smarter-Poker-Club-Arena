@@ -44,7 +44,9 @@ export class TableErrorBoundary extends Component<Props, State> {
           timestamp: Date.now(),
         });
       });
-    } catch {
+    } catch (err) {
+
+      console.error("[TableErrorBoundary] Error:", err);
       // Fail silently — crash reporting is best-effort
     }
   }

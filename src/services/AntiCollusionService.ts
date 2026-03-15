@@ -65,7 +65,9 @@ function hydrateSession(): void {
         sessionTracking.set(key, value);
       }
     }
-  } catch {
+  } catch (err) {
+
+    console.error("[AntiCollusionService] Error:", err);
     /* ignore */
   }
 }
@@ -77,7 +79,9 @@ function persistSession(): void {
       SESSION_STORAGE_KEY,
       JSON.stringify(Array.from(sessionTracking.entries()))
     );
-  } catch {
+  } catch (err) {
+
+    console.error("[AntiCollusionService] Error:", err);
     /* quota exceeded — non-fatal */
   }
 }
@@ -221,7 +225,9 @@ export const AntiCollusionService = {
             evidence: event.evidence,
           }
         );
-      } catch {
+      } catch (err) {
+
+        console.error("[AntiCollusionService] Error:", err);
         /* best effort */
       }
     }

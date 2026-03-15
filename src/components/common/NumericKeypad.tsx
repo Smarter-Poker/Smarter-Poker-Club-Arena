@@ -15,7 +15,9 @@ const triggerHaptic = (pattern: number | number[] = 8) => {
     if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
       navigator.vibrate(pattern);
     }
-  } catch {
+  } catch (err) {
+
+    console.error("[NumericKeypad] Error:", err);
     /* silent */
   }
 };

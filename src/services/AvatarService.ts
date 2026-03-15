@@ -403,7 +403,9 @@ class AvatarServiceClass {
       }
 
       return data.avatar_url;
-    } catch {
+    } catch (err) {
+
+      console.error("[AvatarService] Error:", err);
       return DEFAULT_AVATAR_URL;
     }
   }
@@ -427,7 +429,9 @@ class AvatarServiceClass {
           avatarMap.set(profile.id, profile.avatar_url || DEFAULT_AVATAR_URL);
         }
       }
-    } catch {
+    } catch (err) {
+
+      console.error("[AvatarService] Error:", err);
       // Fall back to default avatars
     }
 
@@ -452,7 +456,9 @@ class AvatarServiceClass {
         .eq('id', userId);
 
       return !error;
-    } catch {
+    } catch (err) {
+
+      console.error("[AvatarService] Error:", err);
       return false;
     }
   }
@@ -477,7 +483,9 @@ class AvatarServiceClass {
         .maybeSingle();
 
       return data?.is_vip || false;
-    } catch {
+    } catch (err) {
+
+      console.error("[AvatarService] Error:", err);
       return false;
     }
   }

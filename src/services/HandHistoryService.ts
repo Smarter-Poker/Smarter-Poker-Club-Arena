@@ -375,7 +375,9 @@ class HandHistoryServiceClass {
       for (const p of data || []) {
         map.set(p.id, { username: p.username, avatar_url: p.avatar_url });
       }
-    } catch {
+    } catch (err) {
+
+      console.error("[HandHistoryService] Error:", err);
       // Non-critical — names will fall back to truncated user_id
     }
 

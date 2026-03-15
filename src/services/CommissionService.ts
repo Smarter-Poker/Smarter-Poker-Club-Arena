@@ -122,7 +122,9 @@ export const CommissionService = {
         .eq('target_role', targetRole)
         .maybeSingle();
       oldRate = existing?.rate ?? 0;
-    } catch {
+    } catch (err) {
+
+      console.error("[CommissionService] Error:", err);
       /* first time set — oldRate stays 0 */
     }
 
@@ -157,7 +159,9 @@ export const CommissionService = {
           rateType: targetRole as 'commission' | 'sub_agent' | 'player',
           clubId,
         });
-      } catch {
+      } catch (err) {
+
+        console.error("[CommissionService] Error:", err);
         /* non-blocking */
       }
     }

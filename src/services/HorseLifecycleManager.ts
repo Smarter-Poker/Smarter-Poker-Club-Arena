@@ -387,7 +387,9 @@ class HorseLifecycleManagerCore {
               .update({ current_players: count ?? 0 })
               .eq('id', tableId);
           }
-        } catch {
+        } catch (err) {
+
+          console.error("[HorseLifecycleManager] Error:", err);
           /* non-critical */
         }
       }
@@ -657,7 +659,9 @@ class HorseLifecycleManagerCore {
           if (profile?.is_horse) {
             await this.resetHorse(seat.user_id);
           }
-        } catch {
+        } catch (err) {
+
+          console.error("[HorseLifecycleManager] Error:", err);
           /* skip individual errors */
         }
       }
@@ -677,7 +681,9 @@ class HorseLifecycleManagerCore {
               .update({ current_players: count ?? 0 })
               .eq('id', tableId);
           }
-        } catch {
+        } catch (err) {
+
+          console.error("[HorseLifecycleManager] Error:", err);
           /* non-critical */
         }
       }
@@ -685,7 +691,9 @@ class HorseLifecycleManagerCore {
       if (cleaned > 0) {
         console.debug('[LifecycleManager] Cleaned up ' + cleaned + ' stale table seats');
       }
-    } catch {
+    } catch (err) {
+
+      console.error("[HorseLifecycleManager] Error:", err);
       /* non-critical cleanup */
     }
   }

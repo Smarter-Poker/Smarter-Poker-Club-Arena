@@ -52,7 +52,9 @@ function getCtx(): AudioContext | null {
       });
     }
     return _ctx;
-  } catch {
+  } catch (err) {
+
+    console.error("[PremiumSFX] Error:", err);
     return null; // Web Audio API not supported
   }
 }
@@ -61,7 +63,9 @@ function getCtx(): AudioContext | null {
 function isEnabled(): boolean {
   try {
     return localStorage.getItem(SOUNDS_ENABLED_KEY) !== 'false';
-  } catch {
+  } catch (err) {
+
+    console.error("[PremiumSFX] Error:", err);
     return true;
   }
 }

@@ -41,14 +41,18 @@ function getCached(userId: string, range: TimeRange): SessionRecord[] | null {
   try {
     const raw = sessionStorage.getItem(`${CACHE_PREFIX}${userId}_${range}`);
     return raw ? JSON.parse(raw) : null;
-  } catch {
+  } catch (err) {
+
+    console.error("[PerformanceTrends] Error:", err);
     return null;
   }
 }
 function setCache(userId: string, range: TimeRange, data: SessionRecord[]) {
   try {
     sessionStorage.setItem(`${CACHE_PREFIX}${userId}_${range}`, JSON.stringify(data));
-  } catch {
+  } catch (err) {
+
+    console.error("[PerformanceTrends] Error:", err);
     /* quota exceeded */
   }
 }

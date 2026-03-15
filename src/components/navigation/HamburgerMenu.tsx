@@ -50,7 +50,9 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   const [selectedCardColor, setSelectedCardColor] = useState(() => {
     try {
       return localStorage.getItem('club_arena_card_color') || 'default';
-    } catch {
+    } catch (err) {
+
+      console.error("[HamburgerMenu] Error:", err);
       return 'default';
     }
   });
@@ -143,7 +145,9 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   const updateSetting = async (localKey: string, dbKey: string, value: boolean) => {
     try {
       localStorage.setItem(localKey, String(value));
-    } catch {
+    } catch (err) {
+
+      console.error("[HamburgerMenu] Error:", err);
       /* */
     }
     if (user?.id) {
@@ -761,7 +765,9 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                   try {
                     const { masterBus } = await import('../../core/MasterBus');
                     masterBus.emit('CARD_COLOR_CHANGED', { preset: preset.id });
-                  } catch {
+                  } catch (err) {
+
+                    console.error("[HamburgerMenu] Error:", err);
                     /* */
                   }
                   if (user?.id) {
@@ -772,7 +778,9 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                         .eq('id', user.id);
                       if (saveErr)
                         console.error('[HamburgerMenu] Card color save failed:', saveErr);
-                    } catch {
+                    } catch (err) {
+
+                      console.error("[HamburgerMenu] Error:", err);
                       /* silent */
                     }
                   }

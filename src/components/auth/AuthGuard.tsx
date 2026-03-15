@@ -43,7 +43,9 @@ function hasLocalSession(): boolean {
     // Check expiry from JWT payload (with 60s buffer for clock skew)
     const payload = JSON.parse(atob(token.split('.')[1]));
     return payload.exp * 1000 > Date.now() - 60_000;
-  } catch {
+  } catch (err) {
+
+    console.error("[AuthGuard] Error:", err);
     return false;
   }
 }
@@ -90,7 +92,9 @@ function hydrateStoreFromLocalStorage(): void {
         avatar_url: null,
       });
     }
-  } catch {
+  } catch (err) {
+
+    console.error("[AuthGuard] Error:", err);
     // Silent — best effort
   }
 }
@@ -173,7 +177,9 @@ export function AuthGuard({ children }: AuthGuardProps) {
           }
           setIsLoading(false);
         }
-      } catch {
+      } catch (err) {
+
+        console.error("[AuthGuard] Error:", err);
         // getSession timed out. Check localStorage one final time before giving up.
         if (!cancelled) {
           if (hasLocalSession()) {
@@ -291,7 +297,9 @@ export function GuestGuard({ children }: AuthGuardProps) {
           setIsAuthenticated(!!session || hasLocalSession());
           setIsLoading(false);
         }
-      } catch {
+      } catch (err) {
+
+        console.error("[AuthGuard] Error:", err);
         if (!cancelled) {
           setIsAuthenticated(hasLocalSession());
           setIsLoading(false);

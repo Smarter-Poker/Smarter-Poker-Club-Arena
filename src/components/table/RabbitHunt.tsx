@@ -78,7 +78,9 @@ export function RabbitHunt({ isAvailable, onReveal, currentBoard, maxCards = 5 }
       try {
         const access = await vipService.checkFeatureAccess(user.id, 'rabbit_hunt');
         setIsVIP(access.hasAccess && !access.needsPurchase);
-      } catch {
+      } catch (err) {
+
+        console.error("[RabbitHunt] Error:", err);
         setIsVIP(false);
       }
       setIsCheckingVIP(false);

@@ -77,7 +77,9 @@ export function ThemeSelector({ onThemeChange }: ThemeSelectorProps) {
   const [activeTheme, setActiveTheme] = useState<string>(() => {
     try {
       return localStorage.getItem(STORAGE_KEY) || 'green';
-    } catch {
+    } catch (err) {
+
+      console.error("[ThemeSelector] Error:", err);
       return 'green';
     }
   });
@@ -95,7 +97,9 @@ export function ThemeSelector({ onThemeChange }: ThemeSelectorProps) {
     }
     try {
       localStorage.setItem(STORAGE_KEY, themeId);
-    } catch {
+    } catch (err) {
+
+      console.error("[ThemeSelector] Error:", err);
       /* localStorage unavailable */
     }
   };

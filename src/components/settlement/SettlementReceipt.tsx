@@ -58,7 +58,9 @@ export default function SettlementReceipt({
       copyTimerRef.current = setTimeout(() => {
         if (isMounted.current) setCopied(false);
       }, 2000);
-    } catch {
+    } catch (err) {
+
+      console.error("[SettlementReceipt] Error:", err);
       // Fallback: select text
     }
   }, [receiptId]);

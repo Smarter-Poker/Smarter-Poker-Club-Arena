@@ -143,7 +143,9 @@ export const ConnectionHUD: React.FC<ConnectionHUDProps> = ({ tableId, userId })
           if (state?.isConnected) return; // Successfully reconnected
           throw new Error('Still disconnected');
         }
-      } catch {
+      } catch (err) {
+
+        console.error("[ConnectionHUD] Error:", err);
         if (cancelled) return; // Don't schedule if cleaned up during await
         // Exponential backoff: 1s, 2s, 4s, 8s, max 16s
         const delay = Math.min(1000 * Math.pow(2, attempt), 16_000);

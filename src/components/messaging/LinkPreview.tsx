@@ -56,7 +56,9 @@ function LinkPreviewInner({ url }: LinkPreviewProps) {
             favicon: `https://www.google.com/s2/favicons?domain=${domain}&sz=32`,
           });
         }
-      } catch {
+      } catch (err) {
+
+        console.error("[LinkPreview] Error:", err);
         if (!cancelled) setError(true);
       }
       if (!cancelled) setLoading(false);

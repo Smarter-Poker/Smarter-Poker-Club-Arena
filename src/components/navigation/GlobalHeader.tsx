@@ -171,7 +171,9 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
     if (isInIframe) {
       try {
         window.top!.location.href = url;
-      } catch {
+      } catch (err) {
+
+        console.error("[GlobalHeader] Error:", err);
         window.parent.postMessage({ type: 'NAVIGATE', path }, '*');
       }
     } else {

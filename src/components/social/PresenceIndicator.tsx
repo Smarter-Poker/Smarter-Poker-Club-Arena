@@ -63,7 +63,9 @@ export default function PresenceIndicator({
               setLastSeen(new Date(profile.last_active));
             }
           }
-        } catch {
+        } catch (err) {
+
+          console.error("[PresenceIndicator] Error:", err);
           // no-op
         }
       }

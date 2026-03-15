@@ -74,7 +74,9 @@ export default function AdminTableHeatmap({
           .eq('is_deleted', false);
         if (heatmapErr) console.error('[AdminTableHeatmap] Load failed:', heatmapErr.message);
         if (isMounted.current && data) setFetchedTables(data);
-      } catch {
+      } catch (err) {
+
+        console.error("[AdminTableHeatmap] Error:", err);
         /* silent */
       }
     };

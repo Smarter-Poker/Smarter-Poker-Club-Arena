@@ -179,7 +179,9 @@ export const SettlementCronService = {
                 timestamp: new Date().toISOString(),
               },
             });
-          } catch {
+          } catch (err) {
+
+            console.error("[SettlementCronService] Error:", err);
             console.error(
               '[SettlementCron] Edge function send-canary-alert unavailable — relying on DB alert'
             );

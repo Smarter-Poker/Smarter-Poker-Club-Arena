@@ -75,7 +75,9 @@ export default function ReferralDashboard({ userId }: ReferralDashboardProps) {
       copyTimerRef.current = setTimeout(() => {
         if (isMounted.current) setCopied(false);
       }, 2000);
-    } catch {
+    } catch (err) {
+
+      console.error("[ReferralDashboard] Error:", err);
       if (isMounted.current) toast.error('Failed to copy');
     }
   };
@@ -93,7 +95,9 @@ export default function ReferralDashboard({ userId }: ReferralDashboardProps) {
         await navigator.clipboard.writeText(shareText);
         if (isMounted.current) toast.success('Invite link copied!');
       }
-    } catch {
+    } catch (err) {
+
+      console.error("[ReferralDashboard] Error:", err);
       // user cancelled
     }
   };

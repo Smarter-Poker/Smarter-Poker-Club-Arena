@@ -43,6 +43,7 @@ export function LobbyTableList({ clubId, gameType, onJoinTable }: LobbyTableList
 
   const [tables, setTables] = useState<TableInfo[]>([]);
   const [loading, setLoading] = useState(true);
+  const isMounted = useIsMounted();
   const [sortBy, setSortBy] = useState<'stakes' | 'players' | 'pot'>('stakes');
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
 

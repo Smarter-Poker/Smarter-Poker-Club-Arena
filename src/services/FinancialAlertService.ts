@@ -104,7 +104,9 @@ export const FinancialAlertService = {
         context,
         timestamp: alert.createdAt,
       });
-    } catch {
+    } catch (err) {
+
+      console.error("[FinancialAlertService] Error:", err);
       // Bus emission failure is non-fatal
     }
 

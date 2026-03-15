@@ -390,7 +390,9 @@ class HorseBugReporterService {
         resolved: false,
         created_at: report.timestamp,
       });
-    } catch {
+    } catch (err) {
+
+      console.error("[HorseBugReporter] Error:", err);
       // Silently fail — table might not exist yet
     }
   }

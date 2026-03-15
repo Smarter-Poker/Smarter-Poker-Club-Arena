@@ -516,7 +516,9 @@ class SocialEnhancementsServiceClass {
         (presences as any[]).forEach((p) => onlineIds.add(p.user_id));
       });
       return friendIds.filter((id) => onlineIds.has(id)).length;
-    } catch {
+    } catch (err) {
+
+      console.error("[SocialEnhancementsService] Error:", err);
       return 0;
     }
   }

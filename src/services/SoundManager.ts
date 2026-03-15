@@ -24,7 +24,9 @@ class SoundManagerClass {
         this.audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
       }
       return this.audioCtx;
-    } catch {
+    } catch (err) {
+
+      console.error("[SoundManager] Error:", err);
       return null;
     }
   }

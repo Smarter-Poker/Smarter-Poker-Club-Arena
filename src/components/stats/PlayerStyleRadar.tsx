@@ -43,14 +43,18 @@ function getCached(userId: string): RadarAxis[] | null {
   try {
     const raw = sessionStorage.getItem(CACHE_PREFIX + userId);
     return raw ? JSON.parse(raw) : null;
-  } catch {
+  } catch (err) {
+
+    console.error("[PlayerStyleRadar] Error:", err);
     return null;
   }
 }
 function setCache(userId: string, data: RadarAxis[]) {
   try {
     sessionStorage.setItem(CACHE_PREFIX + userId, JSON.stringify(data));
-  } catch {
+  } catch (err) {
+
+    console.error("[PlayerStyleRadar] Error:", err);
     /* quota exceeded — ignore */
   }
 }

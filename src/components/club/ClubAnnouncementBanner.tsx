@@ -63,7 +63,9 @@ export default function ClubAnnouncementBanner({
     if (stored) {
       try {
         setDismissed(new Set(JSON.parse(stored)));
-      } catch {
+      } catch (err) {
+
+        console.error("[ClubAnnouncementBanner] Error:", err);
         localStorage.removeItem(`dismissed_announcements_${clubId}`);
       }
     }

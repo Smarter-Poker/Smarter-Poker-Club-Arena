@@ -116,7 +116,9 @@ export const QuickActionsPanel: React.FC = () => {
     if (saved) {
       try {
         setRecentlyUsed(JSON.parse(saved));
-      } catch {
+      } catch (err) {
+
+        console.error("[QuickActionsPanel] Error:", err);
         localStorage.removeItem('quickActionsRecent');
       }
     }

@@ -193,7 +193,9 @@ export function TournamentRegistration({
 
       toast.success('Player removed and refunded');
       loadPlayers();
-    } catch {
+    } catch (err) {
+
+      console.error("[TournamentRegistration] Error:", err);
       if (isMounted.current) toast.error('Failed to remove player');
     }
   };

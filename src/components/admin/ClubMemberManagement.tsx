@@ -105,7 +105,9 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
       if (isMounted.current) toast.success('Role updated');
       masterBus.emit('CLUB_UPDATED', { clubId });
       loadMembers();
-    } catch {
+    } catch (err) {
+
+      console.error("[ClubMemberManagement] Error:", err);
       if (isMounted.current) toast.error('Failed to update role');
     }
   };
@@ -124,7 +126,9 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
       if (isMounted.current) toast.success(currentlyBanned ? 'Member unbanned' : 'Member banned');
       masterBus.emit('CLUB_UPDATED', { clubId });
       loadMembers();
-    } catch {
+    } catch (err) {
+
+      console.error("[ClubMemberManagement] Error:", err);
       if (isMounted.current) toast.error('Failed to update ban status');
     }
   };
@@ -143,7 +147,9 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
       if (isMounted.current) toast.success('Member removed from club');
       masterBus.emit('CLUB_UPDATED', { clubId });
       loadMembers();
-    } catch {
+    } catch (err) {
+
+      console.error("[ClubMemberManagement] Error:", err);
       if (isMounted.current) toast.error('Failed to remove member');
     }
   };

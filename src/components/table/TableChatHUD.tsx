@@ -43,7 +43,9 @@ export default function TableChatHUD({ tableId, userId, isMuted = false }: Table
       try {
         const mutedStr = localStorage.getItem('ca_muted_players');
         setMutedPlayers(mutedStr ? JSON.parse(mutedStr) : []);
-      } catch {
+      } catch (err) {
+
+        console.error("[TableChatHUD] Error:", err);
         /* ignore */
       }
     };
@@ -95,7 +97,9 @@ export default function TableChatHUD({ tableId, userId, isMuted = false }: Table
               senderId: msg.sender_id,
               message: msg.message,
             });
-          } catch {
+          } catch (err) {
+
+            console.error("[TableChatHUD] Error:", err);
             /* */
           }
           if (!isOpenRef.current) {
@@ -154,7 +158,9 @@ export default function TableChatHUD({ tableId, userId, isMuted = false }: Table
         console.error('Failed to send:', error);
         setMessages((prev) => prev.filter((m) => m.id !== tempId));
       }
-    } catch {
+    } catch (err) {
+
+      console.error("[TableChatHUD] Error:", err);
       // Rollback on network/exception failure
       setMessages((prev) => prev.filter((m) => m.id !== tempId));
     }
@@ -183,7 +189,9 @@ export default function TableChatHUD({ tableId, userId, isMuted = false }: Table
         console.error('[TableChat] Quick phrase failed:', error);
         setMessages((prev) => prev.filter((m) => m.id !== tempId));
       }
-    } catch {
+    } catch (err) {
+
+      console.error("[TableChatHUD] Error:", err);
       // Rollback on network/exception failure
       setMessages((prev) => prev.filter((m) => m.id !== tempId));
     }

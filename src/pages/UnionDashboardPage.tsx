@@ -121,6 +121,7 @@ interface SettlementPeriod {
   total_hands_dealt?: number;
   settled_at?: string;
   created_at: string;
+  club_id?: string;
 }
 
 export default function UnionDashboardPage() {
@@ -1360,7 +1361,7 @@ export default function UnionDashboardPage() {
                       step="0.1"
                       value={
                         settingsForm.union_rake_hold ??
-                        (union?.settings?.union_rake_hold || 0.1) * 100
+                        (Number(union?.settings?.union_rake_hold) || 0.1) * 100
                       }
                       onChange={(e) =>
                         setSettingsForm((f) => ({ ...f, union_rake_hold: e.target.value }))
@@ -1377,7 +1378,7 @@ export default function UnionDashboardPage() {
                       step="0.1"
                       value={
                         settingsForm.default_agent_commission ??
-                        (union?.settings?.default_agent_commission || 0.5) * 100
+                        (Number(union?.settings?.default_agent_commission) || 0.5) * 100
                       }
                       onChange={(e) =>
                         setSettingsForm((f) => ({ ...f, default_agent_commission: e.target.value }))
@@ -1394,7 +1395,7 @@ export default function UnionDashboardPage() {
                       step="0.1"
                       value={
                         settingsForm.default_club_commission_rate ??
-                        (union?.settings?.default_club_commission_rate || 0.9) * 100
+                        (Number(union?.settings?.default_club_commission_rate) || 0.9) * 100
                       }
                       onChange={(e) =>
                         setSettingsForm((f) => ({
@@ -1420,11 +1421,14 @@ export default function UnionDashboardPage() {
                     setProcessing(true);
                     setError(null);
                     try {
-                      const updates: Record<string, string> = {};
+                      const updates: Record<
+                        string,
+                        string | Record<string, number | string | boolean>
+                      > = {};
                       if (settingsForm.name) updates.name = settingsForm.name;
                       if (settingsForm.description !== undefined)
                         updates.description = settingsForm.description;
-                      const settings: Record<string, number> = {};
+                      const settings: Record<string, number | string | boolean> = {};
                       if (settingsForm.union_rake_hold) {
                         const v = parseFloat(settingsForm.union_rake_hold) / 100;
                         if (isNaN(v)) {
@@ -1476,9 +1480,13 @@ export default function UnionDashboardPage() {
               <div className="admin-card" style={{ padding: '20px' }}>
                 <h3 className="admin-card-title">Union Settings (Read Only)</h3>
                 <div className="admin-text-secondary">
-                  <div>Rake Hold: {pct(union?.settings?.union_rake_hold)}</div>
-                  <div>Agent Commission: {pct(union?.settings?.default_agent_commission)}</div>
-                  <div>Club Commission: {pct(union?.settings?.default_club_commission_rate)}</div>
+                  <div>Rake Hold: {pct(Number(union?.settings?.union_rake_hold))}</div>
+                  <div>
+                    Agent Commission: {pct(Number(union?.settings?.default_agent_commission))}
+                  </div>
+                  <div>
+                    Club Commission: {pct(Number(union?.settings?.default_club_commission_rate))}
+                  </div>
                 </div>
               </div>
             )}

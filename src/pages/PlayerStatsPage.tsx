@@ -14,6 +14,7 @@ import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import { retryFetch } from '../utils/retryFetch';
+import { exportToCSV } from '../lib/export';
 import { useIsMounted } from '../hooks/useIsMounted';
 import {
   AreaChart,
@@ -641,6 +642,35 @@ export default function PlayerStatsPage() {
               >
                 Charts
               </h3>
+              {sessionHistory.length > 0 && (
+                <button
+                  style={{
+                    background: 'rgba(65,105,225,0.15)',
+                    color: '#4169E1',
+                    border: '1px solid rgba(65,105,225,0.3)',
+                    padding: '6px 14px',
+                    borderRadius: '8px',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    marginBottom: '12px',
+                  }}
+                  onClick={() => {
+                    try {
+                      exportToCSV(sessionHistory, 'player_session_history.csv', [
+                        { key: 'date', label: 'Date' },
+                        { key: 'hands', label: 'Hands' },
+                        { key: 'profit', label: 'Profit' },
+                        { key: 'cumulative', label: 'Cumulative P/L' },
+                      ]);
+                    } catch {
+                      /* silent */
+                    }
+                  }}
+                >
+                  📥 Export Sessions
+                </button>
+              )}
               {/* Profit Over Time Chart */}
               <div className="chart-card">
                 <h3> Profit Over Time</h3>

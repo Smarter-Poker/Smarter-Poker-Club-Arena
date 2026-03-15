@@ -10,6 +10,7 @@ import { masterBus } from '../core/MasterBus';
 import { useToast } from '../components/common/Toast';
 import { retryFetch } from '../utils/retryFetch';
 import { useIsMounted } from '../hooks/useIsMounted';
+import { exportToCSV } from '../lib/export';
 import FriendsList from '../components/social/FriendsList';
 import RecentPlayers from '../components/social/RecentPlayers';
 import FriendActivityFeed from '../components/social/FriendActivityFeed';
@@ -483,6 +484,36 @@ export default function FriendsPage() {
                 transition: 'box-shadow 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
               }}
             />
+            {filteredFriends.length > 0 && (
+              <button
+                style={{
+                  background: 'rgba(65,105,225,0.15)',
+                  color: '#4169E1',
+                  border: '1px solid rgba(65,105,225,0.3)',
+                  padding: '6px 14px',
+                  borderRadius: '8px',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                }}
+                onClick={() => {
+                  try {
+                    exportToCSV(filteredFriends, 'friends_list.csv', [
+                      { key: 'username', label: 'Username' },
+                      { key: 'is_online', label: 'Online' },
+                      { key: 'status_text', label: 'Status' },
+                      { key: 'user_id', label: 'User ID' },
+                    ]);
+                    toast.success('Friends exported!');
+                  } catch {
+                    toast.error('Export failed');
+                  }
+                }}
+              >
+                📥 Export
+              </button>
+            )}
           </div>
 
           <div className="friends-list">

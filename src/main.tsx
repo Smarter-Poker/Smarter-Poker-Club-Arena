@@ -25,6 +25,7 @@ import { initAntiGravity, isSystemOnline, getBootStatus } from './core/AntiGravi
 import { initMasterBus, isMasterBusOnline } from './core/MasterBus';
 import { initIdentityDNA, isIdentityDNALoaded } from './core/IdentityDNA';
 import { initSentry } from './core/SentryInit';
+import { initWebVitals } from './core/WebVitals';
 import SystemOffline from './core/SystemOffline';
 import { ErrorBoundary } from './components/common';
 
@@ -47,6 +48,7 @@ window.addEventListener('unhandledrejection', (event) => {
 async function boot() {
   // PHASE 0: Initialize Sentry (FIRST - before any errors can occur)
   initSentry();
+  initWebVitals();
 
   console.log('[BOOT] Phase 1: AntiGravity...');
   // PHASE 1: Anti-Gravity Core

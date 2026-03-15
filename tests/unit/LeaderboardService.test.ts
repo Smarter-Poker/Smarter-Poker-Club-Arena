@@ -1,16 +1,10 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  UNIT TESTS — LeaderboardService
+ *  UNIT TESTS — LeaderboardService (Strengthened)
  * ═══════════════════════════════════════════════════════════════════════════════
- *
- * Tests leaderboard stat queries with mocked Supabase:
- * - getPlayerStats: returns null for missing user
- * - getClubLeaderboard: returns empty array when no data
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-// ─── Mock dependencies ────────────────────────────────────────────────────
 
 vi.mock('../../src/lib/supabase', () => {
   const buildChain = (): any => {
@@ -37,34 +31,48 @@ vi.mock('../../src/utils/retryAsync', () => ({
   retryAsync: <T>(fn: () => Promise<T>) => fn(),
 }));
 
-// ─── Import AFTER mocks ──────────────────────────────────────────────────
-
 import { LeaderboardService } from '../../src/services/LeaderboardService';
 
 describe('LeaderboardService', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // GET PLAYER STATS
-  // ─────────────────────────────────────────────────────────────────────────
+  beforeEach(() => vi.clearAllMocks());
 
   describe('getPlayerStats', () => {
     it('should return null when no data found', async () => {
       const stats = await LeaderboardService.getPlayerStats('nonexistent-user');
       expect(stats).toBeNull();
     });
-  });
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // GET CLUB LEADERBOARD
-  // ─────────────────────────────────────────────────────────────────────────
+    it('should accept any userId string', async () => {
+      const stats = await LeaderboardService.getPlayerStats('');
+      expect(stats).toBeNull();
+    });
+  });
 
   describe('getClubLeaderboard', () => {
     it('should return empty array when no data', async () => {
       const result = await LeaderboardService.getClubLeaderboard('club-1', 'profit', 'weekly');
       expect(result).toEqual([]);
+    });
+
+    it('should accept different metric types', async () => {
+      const profit = await LeaderboardService.getClubLeaderboard('club-1', 'profit', 'weekly');
+      const hands = await LeaderboardService.getClubLeaderboard('club-1', 'hands', 'daily');
+      expect(Array.isArray(profit)).toBe(true);
+      expect(Array.isArray(hands)).toBe(true);
+    });
+
+    it('should accept different period types', async () => {
+      const daily = await LeaderboardService.getClubLeaderboard('club-1', 'profit', 'daily');
+      const monthly = await LeaderboardService.getClubLeaderboard('club-1', 'profit', 'monthly');
+      expect(Array.isArray(daily)).toBe(true);
+      expect(Array.isArray(monthly)).toBe(true);
+    });
+  });
+
+  describe('export shape', () => {
+    it('should export LeaderboardService with all methods', () => {
+      expect(typeof LeaderboardService.getPlayerStats).toBe('function');
+      expect(typeof LeaderboardService.getClubLeaderboard).toBe('function');
     });
   });
 });

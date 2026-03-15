@@ -39,6 +39,7 @@ import AgentPromoPanel from '../components/agent/AgentPromoPanel';
 import CashoutRequestModal from '../components/wallet/CashoutRequestModal';
 import './CashierPage.css';
 import { useIsMounted } from '../hooks/useIsMounted';
+import { retryFetch } from '../utils/retryFetch';
 
 type CashierAction = 'send' | 'distribute' | 'buyin' | 'cashout' | 'mint' | 'history';
 
@@ -251,13 +252,18 @@ export default function CashierPage() {
     if (!clubId || !user?.id) return;
     try {
       const resolvedId = await resolveClubUUID(clubId);
-      const { data } = await supabase
-        .from('cashout_requests')
-        .select('id, amount, status, created_at')
-        .eq('club_id', resolvedId)
-        .eq('player_id', user.id)
-        .in('status', ['pending', 'processing'])
-        .order('created_at', { ascending: false });
+      const { data } = await retryFetch(
+        () =>
+          supabase
+            .from('cashout_requests')
+            .select('id, amount, status, created_at')
+            .eq('club_id', resolvedId)
+            .eq('player_id', user.id)
+            .in('status', ['pending', 'processing'])
+            .order('created_at', { ascending: false })
+            .then((r) => r),
+        { maxRetries: 2, isMountedRef: isMounted }
+      );
       if (isMounted.current) {
         setPendingCashouts(data || []);
       }
@@ -271,12 +277,17 @@ export default function CashierPage() {
     try {
       const resolvedId = await resolveClubUUID(clubId);
       // Get user's role in this club
-      const { data: memberData } = await supabase
-        .from('club_members')
-        .select('role')
-        .eq('club_id', resolvedId)
-        .eq('user_id', user.id)
-        .maybeSingle();
+      const { data: memberData } = await retryFetch(
+        () =>
+          supabase
+            .from('club_members')
+            .select('role')
+            .eq('club_id', resolvedId)
+            .eq('user_id', user.id)
+            .maybeSingle()
+            .then((r) => r),
+        { maxRetries: 2, isMountedRef: isMounted }
+      );
       if (!isMounted.current) return;
       const role = memberData?.role || 'member';
       setUserRole(role);
@@ -403,14 +414,19 @@ export default function CashierPage() {
     if (!user?.id) return;
     setLoadingTx(true);
     try {
-      const { data, error } = await supabase
-        .from('wallet_transactions')
-        .select(
-          'id, user_id, wallet_type, amount, type, category, description, related_entity_id, created_at'
-        )
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(50);
+      const { data, error } = await retryFetch(
+        () =>
+          supabase
+            .from('wallet_transactions')
+            .select(
+              'id, user_id, wallet_type, amount, type, category, description, related_entity_id, created_at'
+            )
+            .eq('user_id', user.id)
+            .order('created_at', { ascending: false })
+            .limit(50)
+            .then((r) => r),
+        { maxRetries: 2, isMountedRef: isMounted }
+      );
 
       if (!error && data && isMounted.current) {
         setTransactions(data);

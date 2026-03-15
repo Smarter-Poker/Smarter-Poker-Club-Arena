@@ -30,6 +30,7 @@ import LiveActionTicker from '../components/lobby/LiveActionTicker';
 import LobbyStatsBar from '../components/lobby/LobbyStatsBar';
 import CreateGameModal from '../components/lobby/CreateGameModal';
 import { useIsMounted } from '../hooks/useIsMounted';
+import { retryFetch } from '../utils/retryFetch';
 type GameFilter = 'all' | 'nlh' | 'plo' | 'ofc' | 'tournaments' | 'favorites';
 
 export default function LobbyPage() {
@@ -181,12 +182,17 @@ export default function LobbyPage() {
     if (!user?.id || !userClubId) return;
     (async () => {
       try {
-        const { data: mem } = await supabase
-          .from('club_members')
-          .select('role')
-          .eq('user_id', user.id)
-          .eq('club_id', userClubId)
-          .maybeSingle();
+        const { data: mem } = await retryFetch(
+          () =>
+            supabase
+              .from('club_members')
+              .select('role')
+              .eq('user_id', user.id)
+              .eq('club_id', userClubId)
+              .maybeSingle()
+              .then((r) => r),
+          { maxRetries: 2, isMountedRef: isMounted }
+        );
         if (isMounted.current && mem?.role) setUserRole(mem.role);
       } catch {
         /* non-critical */
@@ -312,21 +318,31 @@ export default function LobbyPage() {
       if (!user?.id) return;
       try {
         // Find clubs the user belongs to
-        const { data: memberships } = await supabase
-          .from('club_members')
-          .select('club_id')
-          .eq('user_id', user.id);
+        const { data: memberships } = await retryFetch(
+          () =>
+            supabase
+              .from('club_members')
+              .select('club_id')
+              .eq('user_id', user.id)
+              .then((r) => r),
+          { maxRetries: 2, isMountedRef: isMounted }
+        );
 
         if (!memberships?.length || !isMounted.current) return;
 
         // Check if any of these clubs are in a union
         const clubIds = memberships.map((m) => m.club_id);
-        const { data: unionClub } = await supabase
-          .from('union_clubs')
-          .select('union_id')
-          .in('club_id', clubIds)
-          .limit(1)
-          .maybeSingle();
+        const { data: unionClub } = await retryFetch(
+          () =>
+            supabase
+              .from('union_clubs')
+              .select('union_id')
+              .in('club_id', clubIds)
+              .limit(1)
+              .maybeSingle()
+              .then((r) => r),
+          { maxRetries: 2, isMountedRef: isMounted }
+        );
 
         if (unionClub && isMounted.current) {
           // User's club is in a union — redirect to union lobby

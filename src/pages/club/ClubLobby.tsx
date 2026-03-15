@@ -145,6 +145,15 @@ export default function ClubLobby() {
         },
         300
       ),
+      masterBus.subscribeDebounced(
+        'TOURNAMENT_UPDATED',
+        () => {
+          // Reload when any tournament changes — payload has tournamentId, not clubId
+          reload();
+        },
+        300
+      ),
+      masterBus.subscribeDebounced('ANNOUNCEMENT_CHANGED', reload, 300),
     ];
     return () => unsubs.forEach((u) => u());
   }, [clubId, currentUser?.id]);

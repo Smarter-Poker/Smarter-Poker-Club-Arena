@@ -321,6 +321,14 @@ export default function ClubHomePage() {
         },
         300
       ),
+      masterBus.subscribeDebounced(
+        'TOURNAMENT_UPDATED',
+        () => {
+          // Reload when any tournament changes — payload has tournamentId, not clubId
+          reload();
+        },
+        300
+      ),
     ];
     return () => {
       isMounted = false;

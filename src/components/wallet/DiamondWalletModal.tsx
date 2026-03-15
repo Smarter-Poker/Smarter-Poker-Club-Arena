@@ -9,7 +9,8 @@
  * Shows full-screen transaction history with filtering.
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import './DiamondWalletModal.css';
@@ -135,14 +136,7 @@ export default function DiamondWalletModal({
   const [balance, setBalance] = useState(0);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
-  const isMounted = useRef(true);
-
-  useEffect(() => {
-    isMounted.current = true;
-    return () => {
-      isMounted.current = false;
-    };
-  }, []);
+  const isMounted = useIsMounted();
 
   const fetchTransactions = useCallback(async () => {
     if (!user?.id) return;

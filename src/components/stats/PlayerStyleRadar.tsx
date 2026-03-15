@@ -9,7 +9,8 @@
  * Data source: Aggregated from session_history and player_position_stats
  */
 
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import {
@@ -32,14 +33,7 @@ export default function PlayerStyleRadar({ userId }: PlayerStyleRadarProps) {
   const [axes, setAxes] = useState<RadarAxis[]>([]);
   const [style, setStyle] = useState<PlayerStyleResult | null>(null);
   const [loading, setLoading] = useState(true);
-  const isMounted = useRef(true);
-
-  useEffect(() => {
-    isMounted.current = true;
-    return () => {
-      isMounted.current = false;
-    };
-  }, []);
+  const isMounted = useIsMounted();
 
   const loadData = useCallback(async () => {
     if (!userId) return;

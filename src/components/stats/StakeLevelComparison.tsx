@@ -7,7 +7,8 @@
  * win rate, avg session P/L, VPIP, PFR, total hands, total profit.
  */
 
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import './StakeLevelComparison.css';
@@ -43,14 +44,7 @@ interface StakeGroup {
 export default function StakeLevelComparison({ userId }: StakeLevelComparisonProps) {
   const [records, setRecords] = useState<SessionRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  const isMounted = useRef(true);
-
-  useEffect(() => {
-    isMounted.current = true;
-    return () => {
-      isMounted.current = false;
-    };
-  }, []);
+  const isMounted = useIsMounted();
 
   const loadRecords = useCallback(async () => {
     if (!userId) return;

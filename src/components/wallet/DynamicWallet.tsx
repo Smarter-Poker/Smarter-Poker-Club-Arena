@@ -14,6 +14,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import './DynamicWallet.css';
@@ -144,14 +145,7 @@ export default function DynamicWallet({
     backupBBJ: 0,
   });
   const [loading, setLoading] = useState(true);
-  const isMounted = useRef(true);
-
-  useEffect(() => {
-    isMounted.current = true;
-    return () => {
-      isMounted.current = false;
-    };
-  }, []);
+  const isMounted = useIsMounted();
 
   const fetchData = useCallback(async () => {
     if (!userId || !clubId) return;

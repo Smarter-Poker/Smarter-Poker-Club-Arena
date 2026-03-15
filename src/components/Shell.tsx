@@ -27,7 +27,15 @@ function VIPBadge() {
   return (
     <button
       className={`shell-vip-badge ${isVIP ? 'vip-active' : ''}`}
-      onClick={() => navigate('/diamond-store/vip')}
+      onClick={() => {
+        const isInIframe = typeof window !== 'undefined' && window.parent !== window;
+        const url = 'https://smarter.poker/hub/diamond-store';
+        if (isInIframe) {
+          try { window.top!.location.href = url; } catch { window.parent.postMessage({ type: 'NAVIGATE', path: '/hub/diamond-store' }, '*'); }
+        } else {
+          window.location.href = url;
+        }
+      }}
       title={isVIP ? 'VIP Gold Active' : 'Get VIP Benefits'}
     >
       {isVIP ? ' VIP' : ''}
@@ -146,7 +154,7 @@ function ShellContent() {
               Home
             </NavLink>
             <NavLink
-              to="/play"
+              to="/lobby"
               className={({ isActive }) => `shell-nav-link ${isActive ? 'active' : ''}`}
             >
               Play
@@ -192,7 +200,15 @@ function ShellContent() {
             </button>
             <div
               className="shell-diamonds"
-              onClick={() => navigate('/diamond-store')}
+              onClick={() => {
+                const url = 'https://smarter.poker/hub/diamond-store';
+                const inIframe = typeof window !== 'undefined' && window.parent !== window;
+                if (inIframe) {
+                  try { window.top!.location.href = url; } catch { window.parent.postMessage({ type: 'NAVIGATE', path: '/hub/diamond-store' }, '*'); }
+                } else {
+                  window.location.href = url;
+                }
+              }}
               style={{ cursor: 'pointer' }}
             >
               <span className="diamond-icon">◇</span>
@@ -243,7 +259,7 @@ function ShellContent() {
               {' '}
               Home
             </NavLink>
-            <NavLink to="/play" onClick={() => setMobileMenuOpen(false)}>
+            <NavLink to="/lobby" onClick={() => setMobileMenuOpen(false)}>
               {' '}
               Play
             </NavLink>

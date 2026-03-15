@@ -31,7 +31,7 @@ export default function PresenceHub() {
 
   return (
     <div className="presence-hub">
-      <div className="presence-header" onClick={() => navigate('/social/friends')}>
+      <div className="presence-header" onClick={() => navigate('/friends')}>
         <div className="presence-title">
           <span className="live-dot-pulse"></span>
           <h3>Who's Online</h3>
@@ -62,7 +62,7 @@ export default function PresenceHub() {
             className="presence-more"
             onClick={() => {
               haptic.light();
-              navigate('/social/friends');
+              navigate('/friends');
             }}
           >
             +{onlineFriends.length - 5}

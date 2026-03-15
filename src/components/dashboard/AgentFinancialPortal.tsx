@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { CreditService } from '../../services/CreditService';
 import { WalletService } from '../../services/WalletService';
@@ -16,6 +17,7 @@ interface ChartData {
 }
 
 export const AgentFinancialPortal: React.FC<AgentPortalProps> = ({ agentId }) => {
+  const navigate = useNavigate();
   const toast = useToast();
   const [wallet, setWallet] = useState({
     agentBal: 0,
@@ -224,7 +226,7 @@ export const AgentFinancialPortal: React.FC<AgentPortalProps> = ({ agentId }) =>
               className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white font-bold rounded"
               onClick={() => {
                 // Navigate to settlement page — construct club URL from agent data
-                window.location.href = '/wallet';
+                navigate('/wallet');
               }}
             >
               SETTLE NOW

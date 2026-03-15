@@ -31,7 +31,7 @@ export default function QuickActions() {
   const handleQuickSeat = async () => {
     if (!user?.id) {
       toast.error('Please log in to join a table');
-      navigate('/login');
+      navigate('/auth');
       return;
     }
 
@@ -109,7 +109,7 @@ export default function QuickActions() {
   const handleCreateTable = () => {
     if (!user?.id) {
       toast.error('Please log in to create a table');
-      navigate('/login');
+      navigate('/auth');
       return;
     }
     // Navigate to clubs page — user picks a club, then creates table within it

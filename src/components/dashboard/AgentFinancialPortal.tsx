@@ -43,7 +43,7 @@ export const AgentFinancialPortal: React.FC<AgentPortalProps> = ({ agentId }) =>
     try {
       const { data, error } = await supabase
         .from('commission_ledger')
-        .select('amount, created_at')
+        .select('commission_earned, created_at')
         .eq('agent_id', agentId)
         .gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
         .order('created_at', { ascending: true })
@@ -56,7 +56,7 @@ export const AgentFinancialPortal: React.FC<AgentPortalProps> = ({ agentId }) =>
         const grouped: Record<string, number> = {};
         data.forEach((d: any) => {
           const day = new Date(d.created_at).toLocaleDateString('en-US', { weekday: 'short' });
-          grouped[day] = (grouped[day] || 0) + (d.amount || 0);
+          grouped[day] = (grouped[day] || 0) + (d.commission_earned || 0);
         });
         setCommissionData(days.map((d) => ({ name: d, rake: 0, commissions: grouped[d] || 0 })));
       } else {
@@ -220,7 +220,13 @@ export const AgentFinancialPortal: React.FC<AgentPortalProps> = ({ agentId }) =>
                 You must settle {wallet.debt.toLocaleString()} chips.
               </span>
             </div>
-            <button className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white font-bold rounded">
+            <button
+              className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white font-bold rounded"
+              onClick={() => {
+                // Navigate to settlement page — construct club URL from agent data
+                window.location.href = '/wallet';
+              }}
+            >
               SETTLE NOW
             </button>
           </div>

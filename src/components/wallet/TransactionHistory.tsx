@@ -107,6 +107,7 @@ export function TransactionHistory({ walletId, limit = 20 }: TransactionHistoryP
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
   const isMounted = useIsMounted();
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const loadRef = useRef<() => void>(() => {});
 
   // Stagger animation for transaction list
   useEffect(() => {
@@ -129,7 +130,7 @@ export function TransactionHistory({ walletId, limit = 20 }: TransactionHistoryP
     const debouncedRefresh = () => {
       if (refreshTimer.current) clearTimeout(refreshTimer.current);
       refreshTimer.current = setTimeout(() => {
-        if (isMounted.current) loadTransactions();
+        if (isMounted.current) loadRef.current();
       }, 500);
     };
     const unsubs = [
@@ -182,8 +183,11 @@ export function TransactionHistory({ walletId, limit = 20 }: TransactionHistoryP
     } catch (error) {
       toast.error('Failed to load transactions');
     }
-    setLoading(false);
+    if (isMounted.current) setLoading(false);
   };
+
+  // Keep loadRef in sync with latest loadTransactions
+  loadRef.current = loadTransactions;
 
   const filteredTransactions =
     filter === 'all'

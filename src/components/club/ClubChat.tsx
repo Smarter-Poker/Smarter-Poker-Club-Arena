@@ -83,8 +83,8 @@ export default function ClubChat({ clubId, userId, userName }: ClubChatProps) {
         lastSeenRef.current = msgs.length;
         setUnread(0);
       }
-    } catch {
-      /* silent */
+    } catch (err) {
+      console.error('[ClubChat] Failed to load messages:', err);
     }
   }, [clubId]);
 

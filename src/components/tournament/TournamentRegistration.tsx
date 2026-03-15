@@ -217,6 +217,8 @@ export function TournamentRegistration({
 
   useEffect(() => {
     setVisibleEliminated([]);
+    staggerTimersRef.current.forEach(clearTimeout);
+    staggerTimersRef.current = [];
     staggerTimersRef.current.push(
       ...eliminatedPlayers.map((_, i) =>
         setTimeout(() => setVisibleEliminated((prev) => [...prev, true]), i * 60)

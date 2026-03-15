@@ -126,6 +126,8 @@ export function PlayerStats({
   useEffect(() => {
     if (isOpen && notes.length > 0) {
       setVisibleNotes([]);
+      staggerTimersRef.current.forEach(clearTimeout);
+      staggerTimersRef.current = [];
       staggerTimersRef.current.push(
         ...notes.map((_, i) => setTimeout(() => setVisibleNotes((prev) => [...prev, true]), i * 40))
       );

@@ -45,11 +45,19 @@ export function PrivateChat({
   const [inputText, setInputText] = useState('');
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const animTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   useEffect(() => {
+    animTimers.current.forEach(clearTimeout);
+    animTimers.current = [];
     messages.forEach((_, i) => {
-      setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60);
+      const t = setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60);
+      animTimers.current.push(t);
     });
+    return () => {
+      animTimers.current.forEach(clearTimeout);
+      animTimers.current = [];
+    };
   }, [messages]);
 
   // Auto-scroll to bottom

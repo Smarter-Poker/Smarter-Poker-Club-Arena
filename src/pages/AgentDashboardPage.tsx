@@ -180,7 +180,7 @@ export default function AgentDashboardPage() {
         const { data: txns } = await supabase
           .from('chip_transactions')
           .select(
-            'id, from_user_id, to_user_id, club_id, amount, type, notes, reference_id, created_at'
+            'id, from_user_id, to_user_id, club_id, amount, transaction_type, notes, reference_id, created_at'
           )
           .eq('club_id', uuid)
           .order('created_at', { ascending: false })

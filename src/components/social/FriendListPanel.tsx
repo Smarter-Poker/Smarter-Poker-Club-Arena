@@ -6,6 +6,7 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useAuthUser } from '../../hooks/useAuthUser';
@@ -50,6 +51,7 @@ export default function FriendListPanel({
   const [visibleFriends, setVisibleFriends] = useState<Set<number>>(new Set());
   const loadFriendsRef = useRef<() => void>(() => {});
   const animTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const isMounted = useIsMounted();
 
   useEffect(() => {
     return () => {
@@ -135,19 +137,21 @@ export default function FriendListPanel({
         return a.displayName.localeCompare(b.displayName);
       });
 
-      setFriends(friendList);
-      // Stagger entrance — tracked for cleanup
-      animTimers.current.forEach(clearTimeout);
-      animTimers.current = [];
-      setVisibleFriends(new Set());
-      friendList.forEach((_, i) => {
-        const t = setTimeout(() => setVisibleFriends((prev) => new Set(prev).add(i)), i * 50);
-        animTimers.current.push(t);
-      });
+      if (isMounted.current) {
+        setFriends(friendList);
+        // Stagger entrance — tracked for cleanup
+        animTimers.current.forEach(clearTimeout);
+        animTimers.current = [];
+        setVisibleFriends(new Set());
+        friendList.forEach((_, i) => {
+          const t = setTimeout(() => setVisibleFriends((prev) => new Set(prev).add(i)), i * 50);
+          animTimers.current.push(t);
+        });
+      }
     } catch (err) {
       console.error('Failed to load friends:', err);
     }
-    setLoading(false);
+    if (isMounted.current) setLoading(false);
   };
 
   const handleAddFriend = async () => {

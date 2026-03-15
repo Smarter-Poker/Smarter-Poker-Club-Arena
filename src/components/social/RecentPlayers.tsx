@@ -3,7 +3,7 @@
  * View players you've recently played with
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import './RecentPlayers.css';
 
 interface RecentPlayer {
@@ -33,15 +33,23 @@ export const RecentPlayers: React.FC<RecentPlayersProps> = ({
   const [players, setPlayers] = useState<RecentPlayer[]>([]);
   const [loading, setLoading] = useState(true);
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
+  const animTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   useEffect(() => {
     loadRecentPlayers();
   }, []);
 
   useEffect(() => {
+    animTimers.current.forEach(clearTimeout);
+    animTimers.current = [];
     players.forEach((_, i) => {
-      setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60);
+      const t = setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60);
+      animTimers.current.push(t);
     });
+    return () => {
+      animTimers.current.forEach(clearTimeout);
+      animTimers.current = [];
+    };
   }, [players]);
 
   const loadRecentPlayers = async () => {

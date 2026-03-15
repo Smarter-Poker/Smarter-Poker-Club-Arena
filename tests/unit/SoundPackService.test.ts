@@ -30,6 +30,7 @@ vi.stubGlobal('localStorage', {
 // ─── Import AFTER mocks ──────────────────────────────────────────────────
 
 import { soundPackService } from '../../src/services/SoundPackService';
+import { soundService } from '../../src/services/SoundService';
 
 describe('SoundPackService', () => {
   beforeEach(() => {
@@ -75,7 +76,6 @@ describe('SoundPackService', () => {
     });
 
     it('should switch to silent and disable sounds', () => {
-      const { soundService } = require('../../src/services/SoundService');
       soundPackService.setPack('silent');
       expect(soundService.setEnabled).toHaveBeenCalledWith(false);
     });

@@ -402,10 +402,14 @@ export interface BusPayloadMap {
     totalDisbursed?: number;
   };
   SETTLEMENT_PAYOUT_FAILED: {
-    settlementId: string;
-    agentId: string;
+    type?: string;
+    settlementId?: string;
+    agentId?: string;
+    unionId?: string;
+    clubId?: string;
+    clubName?: string;
     amount: number;
-    periodId: string;
+    periodId?: string;
     error: string;
   };
   // Resilience & Connection Events

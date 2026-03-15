@@ -316,7 +316,7 @@ export default function ProfilePage() {
             supabase
               .from('profiles')
               .select(
-                'id, username, display_name, player_number, avatar_url, vip_level, created_at, diamonds, is_vip, daily_streak, stats'
+                'id, username, display_name, player_number, avatar_url, tier, created_at, diamonds, is_vip, daily_streak, stats'
               )
               .eq('id', authUser.id)
               .maybeSingle()
@@ -331,7 +331,7 @@ export default function ProfilePage() {
             displayName: profile.display_name || profile.username || 'Player',
             playerNumber: profile.player_number || Math.floor(Math.random() * 9999) + 1,
             avatarUrl: profile.avatar_url || '',
-            vipLevel: profile.vip_level || 'bronze',
+            vipLevel: profile.tier || 'bronze',
             memberSince: profile.created_at,
           });
 
@@ -370,7 +370,7 @@ export default function ProfilePage() {
                   displayName: profile.display_name || profile.username || 'Player',
                   playerNumber: profile.player_number || Math.floor(Math.random() * 9999) + 1,
                   avatarUrl: profile.avatar_url || '',
-                  vipLevel: profile.vip_level || 'bronze',
+                  vipLevel: profile.tier || 'bronze',
                   memberSince: profile.created_at,
                 },
                 stats: profile.stats
@@ -529,7 +529,7 @@ export default function ProfilePage() {
               supabase
                 .from('profiles')
                 .select(
-                  'id, username, display_name, player_number, avatar_url, vip_level, created_at, diamonds, is_vip, daily_streak, stats'
+                  'id, username, display_name, player_number, avatar_url, tier, created_at, diamonds, is_vip, daily_streak, stats'
                 )
                 .eq('id', authUser.id)
                 .maybeSingle()
@@ -541,7 +541,7 @@ export default function ProfilePage() {
                       displayName: profile.display_name || profile.username || 'Player',
                       playerNumber: profile.player_number || 0,
                       avatarUrl: profile.avatar_url || '',
-                      vipLevel: profile.vip_level || 'bronze',
+                      vipLevel: profile.tier || 'bronze',
                       memberSince: profile.created_at,
                     });
                     setDiamonds(profile.diamonds || 0);
@@ -774,7 +774,7 @@ export default function ProfilePage() {
               const { data: updatedProfile } = await supabase
                 .from('profiles')
                 .select(
-                  'id, username, display_name, player_number, avatar_url, vip_level, created_at, diamonds, is_vip, daily_streak, stats'
+                  'id, username, display_name, player_number, avatar_url, tier, created_at, diamonds, is_vip, daily_streak, stats'
                 )
                 .eq('id', authUser.id)
                 .maybeSingle();
@@ -787,7 +787,7 @@ export default function ProfilePage() {
                   playerNumber:
                     updatedProfile.player_number || Math.floor(Math.random() * 9999) + 1,
                   avatarUrl: updatedProfile.avatar_url || '',
-                  vipLevel: updatedProfile.vip_level || 'bronze',
+                  vipLevel: updatedProfile.tier || 'bronze',
                   memberSince: updatedProfile.created_at,
                 });
 

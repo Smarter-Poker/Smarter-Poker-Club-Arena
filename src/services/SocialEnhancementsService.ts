@@ -155,7 +155,7 @@ class SocialEnhancementsServiceClass {
   }
 
   /** Get active stories from friends */
-  async getFriendStories(userId: string): Promise<PlayerStory[]> {
+  async getFriendStories(userId: string): Promise<{ data: PlayerStory[]; error?: string }> {
     try {
       // Get friend IDs
       const { data: friendships, error: fErr } = await supabase
@@ -163,12 +163,15 @@ class SocialEnhancementsServiceClass {
         .select('user_id, friend_id')
         .or(`user_id.eq.${userId},friend_id.eq.${userId}`)
         .eq('status', 'accepted');
-      if (fErr) console.warn('[Social] getFriendStories friendships error:', fErr.message);
+      if (fErr) {
+        console.error('[Social] getFriendStories friendships error:', fErr.message);
+        return { data: [], error: `Failed to load friendships: ${fErr.message}` };
+      }
 
       const friendIds = (friendships || []).map((f: any) =>
         f.user_id === userId ? f.friend_id : f.user_id
       );
-      if (friendIds.length === 0) return [];
+      if (friendIds.length === 0) return { data: [] };
 
       const { data, error: sErr } = await supabase
         .from('player_stories')
@@ -177,23 +180,28 @@ class SocialEnhancementsServiceClass {
         .gte('expires_at', new Date().toISOString())
         .order('created_at', { ascending: false })
         .limit(50);
-      if (sErr) console.warn('[Social] getFriendStories stories error:', sErr.message);
+      if (sErr) {
+        console.error('[Social] getFriendStories stories error:', sErr.message);
+        return { data: [], error: `Failed to load stories: ${sErr.message}` };
+      }
 
-      return (data || []).map((s: any) => ({
-        id: s.id,
-        userId: s.user_id,
-        username: s.profiles?.username || 'Unknown',
-        avatarUrl: s.profiles?.avatar_url,
-        content: s.content,
-        imageUrl: s.image_url,
-        expiresAt: s.expires_at,
-        createdAt: s.created_at,
-        viewCount: s.view_count || 0,
-        isExpired: new Date(s.expires_at) < new Date(),
-      }));
+      return {
+        data: (data || []).map((s: any) => ({
+          id: s.id,
+          userId: s.user_id,
+          username: s.profiles?.username || 'Unknown',
+          avatarUrl: s.profiles?.avatar_url,
+          content: s.content,
+          imageUrl: s.image_url,
+          expiresAt: s.expires_at,
+          createdAt: s.created_at,
+          viewCount: s.view_count || 0,
+          isExpired: new Date(s.expires_at) < new Date(),
+        })),
+      };
     } catch (err) {
-      console.warn('[Social] getFriendStories unexpected error:', err);
-      return [];
+      console.error('[Social] getFriendStories unexpected error:', err);
+      return { data: [], error: 'Unexpected error loading stories' };
     }
   }
 
@@ -305,7 +313,10 @@ class SocialEnhancementsServiceClass {
   // ═══════════════════════════════════════════════════════════════════════════
 
   /** Get enriched social feed for a user (friend activity) */
-  async getEnrichedSocialFeed(userId: string, limit = 30): Promise<SocialFeedItem[]> {
+  async getEnrichedSocialFeed(
+    userId: string,
+    limit = 30
+  ): Promise<{ data: SocialFeedItem[]; error?: string }> {
     try {
       // Get friend IDs
       const { data: friendships, error: fErr } = await supabase
@@ -313,12 +324,15 @@ class SocialEnhancementsServiceClass {
         .select('user_id, friend_id')
         .or(`user_id.eq.${userId},friend_id.eq.${userId}`)
         .eq('status', 'accepted');
-      if (fErr) console.warn('[Social] getEnrichedSocialFeed friendships error:', fErr.message);
+      if (fErr) {
+        console.error('[Social] getEnrichedSocialFeed friendships error:', fErr.message);
+        return { data: [], error: `Failed to load friendships: ${fErr.message}` };
+      }
 
       const friendIds = (friendships || []).map((f: any) =>
         f.user_id === userId ? f.friend_id : f.user_id
       );
-      if (friendIds.length === 0) return [];
+      if (friendIds.length === 0) return { data: [] };
 
       const items: SocialFeedItem[] = [];
 
@@ -397,12 +411,14 @@ class SocialEnhancementsServiceClass {
       });
 
       // Sort by date and limit
-      return items
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-        .slice(0, limit);
+      return {
+        data: items
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+          .slice(0, limit),
+      };
     } catch (err) {
-      console.warn('[Social] getEnrichedSocialFeed unexpected error:', err);
-      return [];
+      console.error('[Social] getEnrichedSocialFeed unexpected error:', err);
+      return { data: [], error: 'Unexpected error loading social feed' };
     }
   }
 
@@ -517,8 +533,7 @@ class SocialEnhancementsServiceClass {
       });
       return friendIds.filter((id) => onlineIds.has(id)).length;
     } catch (err) {
-
-      console.error("[SocialEnhancementsService] Error:", err);
+      console.error('[SocialEnhancementsService] Error:', err);
       return 0;
     }
   }

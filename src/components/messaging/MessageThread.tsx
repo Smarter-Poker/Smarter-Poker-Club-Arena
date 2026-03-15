@@ -126,10 +126,13 @@ export default function MessageThread({ conversationId, onBack }: MessageThreadP
     }
   }, [conversationId, user?.id]);
 
-  // Load messages
+  // Load messages — `replace` resets to newest page; otherwise prepends older messages
   const loadMessages = useCallback(
     async (replace = false) => {
       if (!conversationId) return;
+
+      // When replacing (fresh load), always start from offset 0
+      const currentOffset = replace ? 0 : offset;
 
       try {
         const { data, error } = await supabase
@@ -151,7 +154,7 @@ export default function MessageThread({ conversationId, onBack }: MessageThreadP
           )
           .eq('conversation_id', conversationId)
           .order('created_at', { ascending: false })
-          .range(offset, offset + 29);
+          .range(currentOffset, currentOffset + 29);
 
         if (!error && data) {
           const mapped: Message[] = data
@@ -177,8 +180,14 @@ export default function MessageThread({ conversationId, onBack }: MessageThreadP
 
           if (replace) {
             setMessages(mapped);
+            setOffset(0); // Reset offset on fresh load
           } else {
-            setMessages((prev) => [...mapped, ...prev]);
+            // Prepend older messages, deduplicating by ID
+            setMessages((prev) => {
+              const existingIds = new Set(prev.map((m) => m.id));
+              const newMsgs = mapped.filter((m) => !existingIds.has(m.id));
+              return [...newMsgs, ...prev];
+            });
           }
           setHasMore(data.length === 30);
 
@@ -209,6 +218,19 @@ export default function MessageThread({ conversationId, onBack }: MessageThreadP
     },
     [conversationId, offset]
   );
+
+  // Load older messages — increments offset to fetch next page
+  const loadOlderMessages = useCallback(() => {
+    if (!hasMore || loading) return;
+    setOffset((prev) => prev + 30);
+  }, [hasMore, loading]);
+
+  // When offset changes (and isn't 0), load the next page
+  useEffect(() => {
+    if (offset > 0) {
+      loadMessages(false);
+    }
+  }, [offset]);
 
   // Send message
   const sendMessage = async (text: string, imageUrl?: string, audioUrl?: string) => {
@@ -631,7 +653,18 @@ export default function MessageThread({ conversationId, onBack }: MessageThreadP
       )}
 
       {/* Messages */}
-      <div className={styles.messages} ref={scrollRef} aria-live="polite">
+      <div
+        className={styles.messages}
+        ref={scrollRef}
+        aria-live="polite"
+        onScroll={(e) => {
+          // Infinite scroll: load older messages when scrolled near the top
+          const target = e.currentTarget;
+          if (target.scrollTop < 80 && hasMore && !loading) {
+            loadOlderMessages();
+          }
+        }}
+      >
         {loading ? (
           <div className={styles.loading}>
             <div className={styles.spinner} />

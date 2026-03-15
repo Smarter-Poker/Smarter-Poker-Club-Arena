@@ -166,7 +166,7 @@ export default function ClubCarouselPage() {
       try {
         const { data: profileData, error: profileError } = await supabase
           .from('profiles')
-          .select('id, display_name, avatar_url, diamonds')
+          .select('id, display_name, avatar_url, diamonds, tier')
           .eq('id', authUser.id)
           .maybeSingle();
 
@@ -179,7 +179,7 @@ export default function ClubCarouselPage() {
             display_name: profileData.display_name || 'Player',
             avatar_url: profileData.avatar_url,
             player_number: 0, // Not available in profiles table
-            vip_level: 'bronze', // Default, not in profiles table
+            vip_level: profileData.tier || 'bronze', // DB uses `tier` column
           });
           // Get diamonds from profiles table
           setWallet((prev) => ({ ...prev, diamonds: profileData.diamonds || 0 }));

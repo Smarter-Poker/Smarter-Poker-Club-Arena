@@ -30,7 +30,8 @@ export interface UserProfile {
   username: string;
   display_name: string | null;
   avatar_url: string | null;
-  vip_level: 'bronze' | 'silver' | 'gold' | 'platinum' | 'diamond';
+  vip_level: 'bronze' | 'silver' | 'gold' | 'platinum' | 'diamond'; // Maps to DB `tier` column
+  tier?: string; // Raw DB tier value (e.g. "Newcomer")
   created_at: string;
   updated_at?: string;
 }
@@ -268,7 +269,9 @@ class IdentityDNACore {
           username: profile.username,
           display_name: profile.display_name,
           avatar_url: profile.avatar_url,
-          vip_level: profile.vip_level,
+          vip_level: ((profile as any).tier ||
+            profile.vip_level ||
+            'bronze') as UserProfile['vip_level'], // DB uses `tier`, not `vip_level`
         });
       }
     } catch (e) {

@@ -47,6 +47,7 @@ export default function ConversationList({
   const [hasMore, setHasMore] = useState(true);
   const [visibleConversations, setVisibleConversations] = useState<Set<number>>(new Set());
   const heartbeatRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const realtimeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Club Messages widget state
   const [clubUnreadTotal, setClubUnreadTotal] = useState(0);
@@ -112,6 +113,9 @@ export default function ConversationList({
     async (replace = false) => {
       if (!user?.id) return;
 
+      // When replacing (fresh load), always start from offset 0
+      const currentOffset = replace ? 0 : offset;
+
       try {
         const { data, error } = await supabase
           .from('conversation_participants')
@@ -136,7 +140,7 @@ export default function ConversationList({
           )
           .eq('user_id', user.id)
           .order('conversations(last_message_time)', { ascending: false })
-          .range(offset, offset + 19);
+          .range(currentOffset, currentOffset + 19);
 
         if (!error && data) {
           const mapped: Conversation[] = data
@@ -165,13 +169,19 @@ export default function ConversationList({
 
           if (replace) {
             setConversations(mapped);
+            setOffset(0); // Reset offset on fresh load
             // Stagger entrance
             setVisibleConversations(new Set());
             mapped.forEach((_, i) => {
               setTimeout(() => setVisibleConversations((prev) => new Set(prev).add(i)), i * 40);
             });
           } else {
-            setConversations((prev) => [...prev, ...mapped]);
+            // Append older conversations, deduplicating
+            setConversations((prev) => {
+              const existingIds = new Set(prev.map((c) => c.id));
+              const newConvs = mapped.filter((c) => !existingIds.has(c.id));
+              return [...prev, ...newConvs];
+            });
           }
           setHasMore(data.length === 20);
         }
@@ -183,11 +193,24 @@ export default function ConversationList({
     [user?.id, offset]
   );
 
-  // Heartbeat for refreshing (SNGINE pattern)
+  // Load more conversations — increments offset to fetch next page
+  const loadMoreConversations = useCallback(() => {
+    if (!hasMore || loading) return;
+    setOffset((prev) => prev + 20);
+  }, [hasMore, loading]);
+
+  // When offset changes (and isn't 0), load the next page
+  useEffect(() => {
+    if (offset > 0) {
+      loadConversations(false);
+    }
+  }, [offset]);
+
+  // Heartbeat for refreshing (SNGINE pattern) — 30s to reduce Supabase load
   const initHeartbeat = useCallback(() => {
     heartbeatRef.current = setInterval(() => {
       loadConversations(true);
-    }, 10000); // 10 second heartbeat
+    }, 30000); // 30 second heartbeat (was 10s — too aggressive)
   }, [loadConversations]);
 
   useEffect(() => {
@@ -195,8 +218,16 @@ export default function ConversationList({
     loadClubMessagesCount();
     initHeartbeat();
 
-    // Real-time subscription for new messages
+    // Real-time subscription for new messages — debounced to prevent stampede
     const channelKey = 'conversations-updates';
+
+    const debouncedReload = () => {
+      if (realtimeDebounceRef.current) clearTimeout(realtimeDebounceRef.current);
+      realtimeDebounceRef.current = setTimeout(() => {
+        loadConversations(true);
+        loadClubMessagesCount();
+      }, 500); // 500ms debounce — coalesces rapid message events
+    };
 
     const channel = masterBus.getOrCreateChannel(channelKey);
     channel
@@ -207,10 +238,7 @@ export default function ConversationList({
           schema: 'public',
           table: 'messages',
         },
-        () => {
-          loadConversations(true);
-          loadClubMessagesCount();
-        }
+        debouncedReload
       )
       .subscribe();
 
@@ -232,6 +260,7 @@ export default function ConversationList({
 
     return () => {
       if (heartbeatRef.current) clearInterval(heartbeatRef.current);
+      if (realtimeDebounceRef.current) clearTimeout(realtimeDebounceRef.current);
       masterBus.removeRegisteredChannel(channelKey);
       unsubSent();
       unsubReceived();
@@ -328,7 +357,20 @@ export default function ConversationList({
       )}
 
       {/* Conversation List */}
-      <div className={styles.list}>
+      <div
+        className={styles.list}
+        onScroll={(e) => {
+          // Infinite scroll: load more when near bottom
+          const target = e.currentTarget;
+          if (
+            target.scrollHeight - target.scrollTop - target.clientHeight < 120 &&
+            hasMore &&
+            !loading
+          ) {
+            loadMoreConversations();
+          }
+        }}
+      >
         {loading ? (
           <div className={styles.loading}>
             <div className={styles.spinner} />

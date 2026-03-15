@@ -31,7 +31,7 @@ export interface UserProfile {
   username: string;
   display_name: string | null;
   avatar_url: string | null;
-  vip_level: 'bronze' | 'silver' | 'gold' | 'platinum' | 'diamond';
+  vip_level: 'bronze' | 'silver' | 'gold' | 'platinum' | 'diamond'; // Maps to DB `tier` column
   stats?: PlayerStats;
   created_at: string;
 }
@@ -160,7 +160,7 @@ export const useUserStore = create<UserState>()(
             username: data.username || 'Player',
             display_name: data.display_name,
             avatar_url: data.avatar_url,
-            vip_level: data.vip_level || 'bronze',
+            vip_level: data.tier || 'bronze', // DB uses `tier`, not `vip_level`
             stats: data.stats || DEFAULT_STATS,
             created_at: data.created_at,
           };

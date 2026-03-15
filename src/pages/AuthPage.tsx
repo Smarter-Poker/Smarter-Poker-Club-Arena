@@ -162,7 +162,7 @@ export default function AuthPage() {
             id: data.user.id,
             username: username.trim(),
             display_name: username.trim(),
-            vip_level: 'bronze',
+            tier: 'Newcomer', // DB uses `tier`, not `vip_level`
             diamonds: 0,
             created_at: new Date().toISOString(),
             last_login: new Date().toISOString(),

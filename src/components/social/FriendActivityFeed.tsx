@@ -8,6 +8,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
+import { useAuthUser } from '../../hooks/useAuthUser';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import './FriendActivityFeed.css';
@@ -24,6 +25,7 @@ interface ActivityItem {
 }
 
 export default function FriendActivityFeed({ friends }: { friends: any[] }) {
+  const { user } = useAuthUser();
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [loading, setLoading] = useState(true);
   const isMounted = useIsMounted();
@@ -41,7 +43,8 @@ export default function FriendActivityFeed({ friends }: { friends: any[] }) {
   }, [friends]);
 
   const loadRealActivities = useCallback(async () => {
-    if (friends.length === 0) {
+    // Guard: don't query if not authenticated or no friends
+    if (!user?.id || friends.length === 0) {
       if (isMounted.current) setLoading(false);
       return;
     }
@@ -113,18 +116,18 @@ export default function FriendActivityFeed({ friends }: { friends: any[] }) {
         }
       }
 
-      // Sort all by timestamp descending, limit to 15
+      // Sort all by timestamp descending, limit to 30
       feed.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
 
       if (isMounted.current) {
-        setActivities(feed.slice(0, 15));
+        setActivities(feed.slice(0, 30));
         setLoading(false);
       }
     } catch (err) {
       console.error('[FriendActivityFeed] load error:', err);
       if (isMounted.current) setLoading(false);
     }
-  }, [friends]);
+  }, [friends, user?.id]);
 
   useEffect(() => {
     loadRealActivities();

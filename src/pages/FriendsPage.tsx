@@ -35,10 +35,23 @@ interface Friend {
 
 type FriendsTab = 'friends' | 'pending' | 'recent';
 
-// ── SWR Cache helpers ──
+// ── SWR Cache helpers (with 5-minute TTL) ──
 const FR_CACHE_PREFIX = 'fr_cache_';
+const FR_CACHE_TS_PREFIX = 'fr_cache_ts_';
+const FR_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
 function getCachedFriends(userId: string) {
   try {
+    const tsRaw = sessionStorage.getItem(FR_CACHE_TS_PREFIX + userId);
+    if (tsRaw) {
+      const ts = parseInt(tsRaw, 10);
+      if (Date.now() - ts > FR_CACHE_TTL) {
+        // Cache expired — clear it
+        sessionStorage.removeItem(FR_CACHE_PREFIX + userId);
+        sessionStorage.removeItem(FR_CACHE_TS_PREFIX + userId);
+        return null;
+      }
+    }
     const raw = sessionStorage.getItem(FR_CACHE_PREFIX + userId);
     return raw ? JSON.parse(raw) : null;
   } catch {
@@ -48,6 +61,7 @@ function getCachedFriends(userId: string) {
 function setCachedFriends(userId: string, data: any) {
   try {
     sessionStorage.setItem(FR_CACHE_PREFIX + userId, JSON.stringify(data));
+    sessionStorage.setItem(FR_CACHE_TS_PREFIX + userId, String(Date.now()));
   } catch {
     /* quota */
   }

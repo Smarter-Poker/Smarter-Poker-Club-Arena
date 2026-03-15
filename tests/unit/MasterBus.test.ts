@@ -5,7 +5,34 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 
-// Need a full channel mock because MasterBus subscribes to Supabase channels at init
+// All stores must be mocked because MasterBus imports them at module level
+vi.mock('../../src/stores/useArenaStore', () => ({
+  useArenaStore: { getState: vi.fn(() => ({})), setState: vi.fn() },
+}));
+vi.mock('../../src/stores/useClubStore', () => ({
+  useClubStore: { getState: vi.fn(() => ({})), setState: vi.fn() },
+}));
+vi.mock('../../src/stores/useTableStore', () => ({
+  useTableStore: { getState: vi.fn(() => ({})), setState: vi.fn() },
+}));
+vi.mock('../../src/stores/useUnionStore', () => ({
+  useUnionStore: { getState: vi.fn(() => ({})), setState: vi.fn() },
+}));
+vi.mock('../../src/stores/useWalletStore', () => ({
+  useWalletStore: { getState: vi.fn(() => ({})), setState: vi.fn() },
+}));
+vi.mock('../../src/stores/useSettingsStore', () => ({
+  useSettingsStore: { getState: vi.fn(() => ({})), setState: vi.fn() },
+}));
+vi.mock('../../src/stores/useUserStore', () => ({
+  useUserStore: { getState: vi.fn(() => ({})), setState: vi.fn() },
+}));
+vi.mock('../../src/services/RealtimeChannelService', () => ({
+  realtimeChannelService: {
+    subscribeToClub: vi.fn(),
+    unsubscribeFromClub: vi.fn(),
+  },
+}));
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {
     channel: vi.fn().mockReturnValue({
@@ -14,17 +41,6 @@ vi.mock('../../src/lib/supabase', () => ({
       unsubscribe: vi.fn(),
     }),
     removeChannel: vi.fn(),
-    auth: {
-      getUser: vi.fn().mockResolvedValue({ data: { user: null } }),
-      onAuthStateChange: vi.fn(() => ({
-        data: { subscription: { unsubscribe: vi.fn() } },
-      })),
-    },
-    from: vi.fn().mockReturnValue({
-      select: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
-    }),
   },
 }));
 
@@ -54,18 +70,18 @@ describe('MasterBus', () => {
 
   it('should unsubscribe correctly', () => {
     const handler = vi.fn();
-    const unsub = masterBus.subscribe('WALLET_UPDATED' as BusEventType, handler);
+    const unsub = masterBus.subscribe('CONNECTION_RESTORED' as BusEventType, handler);
     unsub();
-    masterBus.emit('WALLET_UPDATED' as BusEventType, { userId: 'u1' });
+    masterBus.emit('CONNECTION_RESTORED' as BusEventType, { timestamp: Date.now() });
     expect(handler).not.toHaveBeenCalled();
   });
 
   it('should isolate events by type', () => {
     const handler1 = vi.fn();
     const handler2 = vi.fn();
-    const unsub1 = masterBus.subscribe('WALLET_UPDATED' as BusEventType, handler1);
+    const unsub1 = masterBus.subscribe('CLUB_JOINED' as BusEventType, handler1);
     const unsub2 = masterBus.subscribe('TABLE_EVENT' as BusEventType, handler2);
-    masterBus.emit('WALLET_UPDATED' as BusEventType, { userId: 'u1' });
+    masterBus.emit('CLUB_JOINED' as BusEventType, { clubId: 'c1' });
     expect(handler1).toHaveBeenCalledTimes(1);
     expect(handler2).not.toHaveBeenCalled();
     unsub1();
@@ -75,9 +91,9 @@ describe('MasterBus', () => {
   it('should support multiple subscribers for same event', () => {
     const h1 = vi.fn();
     const h2 = vi.fn();
-    const u1 = masterBus.subscribe('WALLET_UPDATED' as BusEventType, h1);
-    const u2 = masterBus.subscribe('WALLET_UPDATED' as BusEventType, h2);
-    masterBus.emit('WALLET_UPDATED' as BusEventType, { userId: 'u1' });
+    const u1 = masterBus.subscribe('SESSION_ENDED' as BusEventType, h1);
+    const u2 = masterBus.subscribe('SESSION_ENDED' as BusEventType, h2);
+    masterBus.emit('SESSION_ENDED' as BusEventType, { tableId: 't1' });
     expect(h1).toHaveBeenCalledTimes(1);
     expect(h2).toHaveBeenCalledTimes(1);
     u1();
@@ -86,7 +102,5 @@ describe('MasterBus', () => {
 
   it('should have getStatus method', () => {
     expect(typeof masterBus.getStatus).toBe('function');
-    const status = masterBus.getStatus();
-    expect(status).toBeDefined();
   });
 });

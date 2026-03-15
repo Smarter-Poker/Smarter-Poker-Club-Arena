@@ -55,10 +55,17 @@ export default function ClubLobby() {
     let cancelled = false;
 
     const init = async () => {
-      // In iframe context, wait for postMessage auth token before any Supabase calls
+      // In iframe context, wait for auth to be set by the parent via postMessage.
       const inIframe = window.parent !== window;
       if (inIframe) {
-        await new Promise((r) => setTimeout(r, 800));
+        for (let attempt = 0; attempt < 10; attempt++) {
+          const {
+            data: { session },
+          } = await supabase.auth.getSession();
+          if (session?.user) break;
+          if (cancelled || !isMountedRef.current) return;
+          await new Promise((r) => setTimeout(r, 300));
+        }
         if (cancelled || !isMountedRef.current) return;
       }
 

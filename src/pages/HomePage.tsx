@@ -691,7 +691,11 @@ function HomePageInner() {
   // Real data states
   const [isLoading, setIsLoading] = useState(true);
   const [userClubs, setUserClubs] = useState<UserClub[]>(() => {
-    // Enhancement #9: SWR — instant render from cache
+    // SWR — instant render from cache, but ONLY if we're NOT in an iframe.
+    // In iframe mode, auth comes from postMessage and the cache might be stale
+    // (from a different user or an unauthenticated session).
+    const inIframe = window.parent !== window;
+    if (inIframe) return [];
     try {
       const cached = localStorage.getItem(SWR_CACHE_KEY);
       if (cached) {
@@ -831,12 +835,30 @@ function HomePageInner() {
       }, 12_000);
 
       try {
-        // In iframe context, wait briefly for postMessage auth token to arrive
-        // before calling getUser(), preventing a race condition where
-        // getUser() fires before setSession() from the parent completes.
+        // In iframe context, wait for auth to actually be set by the parent.
+        // The parent sends SMARTER_AUTH_TOKEN via postMessage → App.tsx calls setSession().
+        // Instead of a fragile 800ms timeout, we poll getSession() with backoff.
         const inIframe = window.parent !== window;
         if (inIframe) {
-          await new Promise((r) => setTimeout(r, 800));
+          let authReady = false;
+          for (let attempt = 0; attempt < 10; attempt++) {
+            const {
+              data: { session },
+            } = await supabase.auth.getSession();
+            if (session?.user) {
+              authReady = true;
+              break;
+            }
+            if (getIsMounted && !getIsMounted()) {
+              clearTimeout(loadingTimeout);
+              return;
+            }
+            // Wait 300ms between checks (total max wait: 3s)
+            await new Promise((r) => setTimeout(r, 300));
+          }
+          if (!authReady) {
+            console.warn('[HomePage] Auth not ready after 3s — proceeding anyway');
+          }
           if (getIsMounted && !getIsMounted()) {
             clearTimeout(loadingTimeout);
             return;

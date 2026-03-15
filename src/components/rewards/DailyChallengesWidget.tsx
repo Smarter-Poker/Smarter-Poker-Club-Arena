@@ -37,6 +37,7 @@ export const DailyChallengesWidget: React.FC = () => {
 
   const isMounted = useRef(true);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const initTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const debouncedRefresh = useCallback(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -49,7 +50,7 @@ export const DailyChallengesWidget: React.FC = () => {
     isMounted.current = true;
     if (!user?.id) return;
     // Use ref for initial load to avoid stale closure (loadChallenges not in deps)
-    setTimeout(() => loadChallengesRef.current?.(), 0);
+    initTimerRef.current = setTimeout(() => loadChallengesRef.current?.(), 0);
 
     const unsubHand = masterBus.subscribe('HAND_COMPLETED', () => {
       if (isMounted.current && user?.id) loadChallengesRef.current?.();
@@ -86,6 +87,7 @@ export const DailyChallengesWidget: React.FC = () => {
       unsubBalance();
       unsubReset();
       if (debounceRef.current) clearTimeout(debounceRef.current);
+      if (initTimerRef.current) clearTimeout(initTimerRef.current);
       if (realtimeChannel) supabase.removeChannel(realtimeChannel);
     };
   }, [user?.id, debouncedRefresh]);

@@ -1050,7 +1050,20 @@ export default function AgentDashboardPage() {
                         setProcessing(false);
                         return;
                       }
-                      await WalletService.distributePromo(user?.id || '', creditTarget, promoAmt);
+                      // Resolve agent PK — distributePromo expects agents.id, NOT auth.users.id
+                      const resolvedClub = await resolveClubUUID(clubId || '');
+                      const { data: agentRow } = await supabase
+                        .from('agents')
+                        .select('id')
+                        .eq('user_id', creditTarget)
+                        .eq('club_id', resolvedClub)
+                        .maybeSingle();
+                      if (!agentRow?.id) {
+                        setError('Agent record not found for this club');
+                        setProcessing(false);
+                        return;
+                      }
+                      await WalletService.distributePromo(agentRow.id, creditTarget, promoAmt);
                       setSuccess(`Granted ${fmtChips(promoAmt)} promo chips!`);
                       setCreditTarget('');
                       setCreditAmount('');

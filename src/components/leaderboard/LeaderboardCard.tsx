@@ -31,6 +31,7 @@ export default function LeaderboardCard({
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
   const isMounted = useRef(true);
   const animTimers = useRef<number[]>([]);
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadLeaderboard = useCallback(async () => {
     if (!isMounted.current) return;
@@ -69,12 +70,17 @@ export default function LeaderboardCard({
     loadLeaderboard();
 
     const unsubBalance = masterBus.subscribe('BALANCE_UPDATED', () => {
-      if (isMounted.current) setTimeout(() => loadLeaderboard(), 2000);
+      if (!isMounted.current) return;
+      if (refreshTimer.current) clearTimeout(refreshTimer.current);
+      refreshTimer.current = setTimeout(() => {
+        if (isMounted.current) loadLeaderboard();
+      }, 2000);
     });
 
     return () => {
       isMounted.current = false;
       unsubBalance();
+      if (refreshTimer.current) clearTimeout(refreshTimer.current);
       animTimers.current.forEach(clearTimeout);
       animTimers.current = [];
     };

@@ -62,9 +62,10 @@ export default function CommissionHistoryModal({
   const [visibleEntries, setVisibleEntries] = useState<Set<number>>(new Set());
 
   useEffect(() => {
-    entries.forEach((_, i) => {
-      setTimeout(() => setVisibleEntries((prev) => new Set(prev).add(i)), i * 50);
-    });
+    const timers = entries.map((_, i) =>
+      setTimeout(() => setVisibleEntries((prev) => new Set(prev).add(i)), i * 50)
+    );
+    return () => timers.forEach(clearTimeout);
   }, [entries.length]);
 
   useEffect(() => {

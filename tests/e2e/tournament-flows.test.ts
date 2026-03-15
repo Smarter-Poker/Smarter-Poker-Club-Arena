@@ -87,7 +87,7 @@ describe('Tournament Registration — Critical Flows', () => {
     });
 
     it('should block removal after tournament starts', () => {
-      const tournamentStatus = 'in_progress';
+      const tournamentStatus: string = 'in_progress';
       const canRemove = tournamentStatus === 'registration';
       expect(canRemove).toBe(false);
     });

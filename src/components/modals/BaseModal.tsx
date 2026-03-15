@@ -57,7 +57,7 @@ export const BaseModal: React.FC<BaseModalProps> = ({
           <div className="modal-header">
             {title && <h2>{title}</h2>}
             {showCloseButton && (
-              <button className="modal-close" onClick={onClose}>
+              <button className="modal-close" onClick={onClose} aria-label="Close">
                 ×
               </button>
             )}

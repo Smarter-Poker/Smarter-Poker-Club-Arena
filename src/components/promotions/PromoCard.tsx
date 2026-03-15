@@ -39,7 +39,7 @@ export const PromoCard: React.FC<PromoCardProps> = ({
     <div className={`promo-card ${isNew ? 'new' : ''}`} onClick={onClick}>
       {imageUrl && (
         <div className="promo-image">
-          <img src={imageUrl} alt={title} />
+          <img loading="lazy" decoding="async" src={imageUrl} alt={title} />
         </div>
       )}
 

@@ -613,6 +613,8 @@ export default function TableOperationsPanel({ clubId }: Props) {
                           <div style={styles.playerAvatar}>
                             {profile?.avatar_url ? (
                               <img
+                                loading="lazy"
+                                decoding="async"
                                 src={profile.avatar_url}
                                 alt=""
                                 style={{ width: '100%', height: '100%', borderRadius: '50%' }}

@@ -149,7 +149,11 @@ export function PlayerStats({
         {/* Header */}
         <div className="player-stats__header">
           <div className="player-stats__avatar">
-            {avatar ? <img src={avatar} alt="" /> : <span>{playerName[0]?.toUpperCase()}</span>}
+            {avatar ? (
+              <img loading="lazy" decoding="async" src={avatar} alt="" />
+            ) : (
+              <span>{playerName[0]?.toUpperCase()}</span>
+            )}
           </div>
           <div className="player-stats__info">
             <span className="player-stats__name">

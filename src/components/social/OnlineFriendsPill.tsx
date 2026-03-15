@@ -99,7 +99,13 @@ export default function OnlineFriendsPill({ userId, onFriendClick }: OnlineFrien
             title={friend.displayName}
           >
             {friend.avatarUrl ? (
-              <img src={friend.avatarUrl} alt={friend.displayName} className="ofp-avatar-img" />
+              <img
+                loading="lazy"
+                decoding="async"
+                src={friend.avatarUrl}
+                alt={friend.displayName}
+                className="ofp-avatar-img"
+              />
             ) : (
               <span className="ofp-avatar-text">{friend.displayName.charAt(0).toUpperCase()}</span>
             )}

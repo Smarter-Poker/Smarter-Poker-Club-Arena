@@ -261,7 +261,7 @@ export default function MessagesPanel({ initialConversationId, onClose }: Messag
               >
                 <div className={styles.avatar}>
                   {convo.participantAvatar ? (
-                    <img src={convo.participantAvatar} alt="" />
+                    <img loading="lazy" decoding="async" src={convo.participantAvatar} alt="" />
                   ) : (
                     <span>●</span>
                   )}
@@ -289,7 +289,12 @@ export default function MessagesPanel({ initialConversationId, onClose }: Messag
             <div className={styles.chatHeader}>
               <div className={styles.avatar}>
                 {selectedConvo.participantAvatar ? (
-                  <img src={selectedConvo.participantAvatar} alt="" />
+                  <img
+                    loading="lazy"
+                    decoding="async"
+                    src={selectedConvo.participantAvatar}
+                    alt=""
+                  />
                 ) : (
                   <span>●</span>
                 )}

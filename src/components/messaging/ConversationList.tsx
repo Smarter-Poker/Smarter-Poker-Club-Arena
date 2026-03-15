@@ -354,6 +354,8 @@ export default function ConversationList({
               {/* Avatar */}
               <div className={styles.avatarContainer}>
                 <img
+                  loading="lazy"
+                  decoding="async"
                   src={conv.picture}
                   alt={conv.name}
                   className={styles.avatar}

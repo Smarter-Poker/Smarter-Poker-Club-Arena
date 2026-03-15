@@ -27,7 +27,7 @@ export const Gallery: React.FC<GalleryProps> = ({ images, columns = 3 }) => {
     <div className={`gallery columns-${columns}`}>
       {images.map((img, idx) => (
         <div key={idx} className="gallery-item" onClick={() => setSelectedIndex(idx)}>
-          <img src={img.src} alt={img.alt || `Image ${idx + 1}`} />
+          <img loading="lazy" decoding="async" src={img.src} alt={img.alt || `Image ${idx + 1}`} />
         </div>
       ))}
 
@@ -36,7 +36,7 @@ export const Gallery: React.FC<GalleryProps> = ({ images, columns = 3 }) => {
           <button className="gallery-nav prev" onClick={handlePrev}>
             ‹
           </button>
-          <img src={images[selectedIndex].src} alt="" />
+          <img loading="lazy" decoding="async" src={images[selectedIndex].src} alt="" />
           <button className="gallery-nav next" onClick={handleNext}>
             ›
           </button>

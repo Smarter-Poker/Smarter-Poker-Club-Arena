@@ -259,7 +259,7 @@ function PlayerActionModal({
 
             // Create BUSINESS and PROMO wallets (required for agents to receive commissions)
             for (const walletType of ['BUSINESS', 'PROMO'] as const) {
-              await supabase.from('wallets').upsert(
+              const { error: walletErr } = await supabase.from('wallets').upsert(
                 {
                   user_id: member.user_id,
                   wallet_type: walletType,
@@ -268,6 +268,11 @@ function PlayerActionModal({
                 },
                 { onConflict: 'user_id,wallet_type' }
               );
+              if (walletErr)
+                console.warn(
+                  `[ClubMembers] Failed to create ${walletType} wallet:`,
+                  walletErr.message
+                );
             }
           }
         } else if (wasAgentRole && !isAgentRole) {

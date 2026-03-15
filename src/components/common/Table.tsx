@@ -164,7 +164,13 @@ export function LeaderboardTable({
           <div className="leaderboard-rank">{getRankBadge(entry.rank)}</div>
           <div className="leaderboard-player">
             {entry.avatar && (
-              <img src={entry.avatar} alt={entry.name} className="leaderboard-avatar" />
+              <img
+                loading="lazy"
+                decoding="async"
+                src={entry.avatar}
+                alt={entry.name}
+                className="leaderboard-avatar"
+              />
             )}
             <span className="leaderboard-name">{entry.name}</span>
           </div>

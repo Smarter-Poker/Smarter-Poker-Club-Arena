@@ -50,7 +50,11 @@ export const NotificationItem: React.FC<NotificationItemProps> = ({
       onClick={onClick}
     >
       <div className="notif-icon">
-        {avatarUrl ? <img src={avatarUrl} alt="" /> : <span>{TYPE_ICONS[type] || ''}</span>}
+        {avatarUrl ? (
+          <img loading="lazy" decoding="async" src={avatarUrl} alt="" />
+        ) : (
+          <span>{TYPE_ICONS[type] || ''}</span>
+        )}
       </div>
 
       <div className="notif-content">

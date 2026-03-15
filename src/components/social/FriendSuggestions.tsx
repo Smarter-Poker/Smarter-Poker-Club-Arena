@@ -87,8 +87,7 @@ export default function FriendSuggestions() {
       // Emit bus event so other components react too
       masterBus.emit('FRIEND_REQUEST_SENT', { fromUserId: user.id, toUserId: userId });
     } catch (err) {
-
-      console.error("[FriendSuggestions] Error:", err);
+      console.error('[FriendSuggestions] Error:', err);
       if (isMounted.current) toast.error('Failed to send request');
     }
     if (isMounted.current) setSendingRequest(null);
@@ -118,6 +117,8 @@ export default function FriendSuggestions() {
               ✕
             </button>
             <img
+              loading="lazy"
+              decoding="async"
               src={suggestion.avatarUrl || '/default-avatar.png'}
               alt={suggestion.username}
               className={styles.avatar}

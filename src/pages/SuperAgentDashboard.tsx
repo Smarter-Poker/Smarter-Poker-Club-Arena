@@ -200,7 +200,8 @@ export default function SuperAgentDashboard() {
       await AgentService.transferToPlayer(agent.id, transferPlayerId, clubId!, amount);
       if (!isMounted.current) return;
       setTransferPlayerId('');
-      toast.success(`Transferred ${amount.toLocaleString()} chips successfully`);
+      if (isMounted.current)
+        toast.success(`Transferred ${amount.toLocaleString()} chips successfully`);
       loadDashboardData();
     } catch (error) {
       console.error('Transfer failed:', error);

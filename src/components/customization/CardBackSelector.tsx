@@ -224,6 +224,8 @@ export const CardBackSelector: React.FC<CardBackSelectorProps> = ({
               <div className="card-back-preview">
                 <div className="card-shape">
                   <img
+                    loading="lazy"
+                    decoding="async"
                     src={cardBack.preview}
                     alt={`${cardBack.name} card back`}
                     className="card-back-preview-img"
@@ -255,6 +257,8 @@ export const CardBackSelector: React.FC<CardBackSelectorProps> = ({
 
             <div className="cbs-confirm__preview">
               <img
+                loading="lazy"
+                decoding="async"
                 src={confirmPurchase.preview}
                 alt={confirmPurchase.name}
                 className="cbs-confirm__img"

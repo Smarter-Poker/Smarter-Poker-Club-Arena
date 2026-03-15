@@ -218,7 +218,7 @@ export const PlayerSearch: React.FC<PlayerSearchProps> = ({
             >
               <div className="player-avatar">
                 {player.avatar ? (
-                  <img src={player.avatar} alt={player.username} />
+                  <img loading="lazy" decoding="async" src={player.avatar} alt={player.username} />
                 ) : (
                   <span>{player.username[0]?.toUpperCase() || '?'}</span>
                 )}

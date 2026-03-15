@@ -35,45 +35,45 @@ vi.mock('../../src/utils/retryAsync', () => ({
   retryAsync: <T>(fn: () => Promise<T>) => fn(),
 }));
 
-import { disputeService } from '../../src/services/DisputeService';
+import { DisputeService } from '../../src/services/DisputeService';
 
 describe('DisputeService', () => {
   beforeEach(() => vi.clearAllMocks());
 
   describe('getClubDisputes', () => {
     it('should return empty array when no disputes', async () => {
-      const result = await disputeService.getClubDisputes('club-1');
+      const result = await DisputeService.getClubDisputes('club-1');
       expect(result).toEqual([]);
     });
 
     it('should accept optional status filter', async () => {
-      const result = await disputeService.getClubDisputes('club-1', 'pending');
+      const result = await DisputeService.getClubDisputes('club-1', 'pending');
       expect(Array.isArray(result)).toBe(true);
     });
   });
 
   describe('getMyDisputes', () => {
     it('should return empty array for user with no disputes', async () => {
-      const result = await disputeService.getMyDisputes('user-1');
+      const result = await DisputeService.getMyDisputes('user-1');
       expect(result).toEqual([]);
     });
   });
 
   describe('getOpenCount', () => {
     it('should return 0 when no open disputes', async () => {
-      const count = await disputeService.getOpenCount('club-1');
+      const count = await DisputeService.getOpenCount('club-1');
       expect(count).toBe(0);
     });
   });
 
   describe('export shape', () => {
-    it('should export disputeService with all methods', () => {
-      expect(typeof disputeService.submitDispute).toBe('function');
-      expect(typeof disputeService.getClubDisputes).toBe('function');
-      expect(typeof disputeService.getMyDisputes).toBe('function');
-      expect(typeof disputeService.getOpenCount).toBe('function');
-      expect(typeof disputeService.startReview).toBe('function');
-      expect(typeof disputeService.resolveDispute).toBe('function');
+    it('should export DisputeService with all methods', () => {
+      expect(typeof DisputeService.submitDispute).toBe('function');
+      expect(typeof DisputeService.getClubDisputes).toBe('function');
+      expect(typeof DisputeService.getMyDisputes).toBe('function');
+      expect(typeof DisputeService.getOpenCount).toBe('function');
+      expect(typeof DisputeService.startReview).toBe('function');
+      expect(typeof DisputeService.resolveDispute).toBe('function');
     });
   });
 });

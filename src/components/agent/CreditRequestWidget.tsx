@@ -103,7 +103,7 @@ export default function CreditRequestWidget({
         requestedAmount: amount,
         reason: requestReason || 'Credit limit increase',
       });
-      toast.success('Credit request submitted');
+      if (isMounted.current) toast.success('Credit request submitted');
       setShowRequestForm(false);
       setRequestAmount('');
       setRequestReason('');
@@ -118,9 +118,10 @@ export default function CreditRequestWidget({
   const handleApprove = async (request: CreditRequest) => {
     try {
       await creditRequestService.approveRequest(request.id, agentId);
-      toast.success(
-        `Approved ${request.requestedAmount.toLocaleString()} for ${request.requesterName}`
-      );
+      if (isMounted.current)
+        toast.success(
+          `Approved ${request.requestedAmount.toLocaleString()} for ${request.requesterName}`
+        );
       masterBus.emit('CREDIT_UPDATED', { clubId: '', userId: request.requesterId });
       loadRequests();
     } catch (error) {
@@ -131,7 +132,7 @@ export default function CreditRequestWidget({
   const handleDeny = async (request: CreditRequest) => {
     try {
       await creditRequestService.denyRequest(request.id, agentId);
-      toast.success('Request denied');
+      if (isMounted.current) toast.success('Request denied');
       masterBus.emit('CREDIT_UPDATED', { clubId: '', userId: request.requesterId });
       loadRequests();
     } catch (error) {

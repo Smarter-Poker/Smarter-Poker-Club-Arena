@@ -261,7 +261,7 @@ export default function PlayerInviteModal({
                   <div key={player.id} className={styles.resultCard}>
                     <div className={styles.playerAvatar}>
                       {player.avatarUrl ? (
-                        <img src={player.avatarUrl} alt="" />
+                        <img loading="lazy" decoding="async" src={player.avatarUrl} alt="" />
                       ) : (
                         <span>{player.displayName.charAt(0)}</span>
                       )}

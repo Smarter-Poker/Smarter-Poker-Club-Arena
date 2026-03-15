@@ -172,8 +172,7 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
         return;
       }
     } catch (err) {
-
-      console.error("[CreateClubModal] Error:", err);
+      console.error('[CreateClubModal] Error:', err);
       // Non-blocking
     }
 
@@ -284,6 +283,8 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
       <div className={styles.modalContainer} onClick={(e) => e.stopPropagation()}>
         {/* High-fidelity frame background - hidden when logo generator is open */}
         <img
+          loading="lazy"
+          decoding="async"
           src={MODAL_FRAME_URL}
           alt=""
           className={styles.frameImage}
@@ -330,7 +331,15 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
             transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
           }}
         >
-          {logoPreview && <img src={logoPreview} alt="Logo preview" className={styles.logoThumb} />}
+          {logoPreview && (
+            <img
+              loading="lazy"
+              decoding="async"
+              src={logoPreview}
+              alt="Logo preview"
+              className={styles.logoThumb}
+            />
+          )}
         </button>
 
         {/* Create Logo button zone */}
@@ -347,7 +356,15 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
             transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
           }}
         >
-          {logoPreview && <img src={logoPreview} alt="Logo preview" className={styles.logoThumb} />}
+          {logoPreview && (
+            <img
+              loading="lazy"
+              decoding="async"
+              src={logoPreview}
+              alt="Logo preview"
+              className={styles.logoThumb}
+            />
+          )}
         </button>
 
         {/* Hidden file input */}
@@ -518,6 +535,8 @@ function LogoGeneratorModal({ onSelect, onClose, clubName = '' }: LogoGeneratorM
       >
         {/* Frame - explicitly hidden during generation/preview */}
         <img
+          loading="lazy"
+          decoding="async"
           src="https://club-arena.vercel.app/images/logo-generator-frame.png"
           alt="Frame"
           className={styles.frameImage}
@@ -569,7 +588,13 @@ function LogoGeneratorModal({ onSelect, onClose, clubName = '' }: LogoGeneratorM
         ) : previewUrl ? (
           <>
             <div className={styles.previewContainer}>
-              <img src={previewUrl} alt="Generated Logo" className={styles.previewImage} />
+              <img
+                loading="lazy"
+                decoding="async"
+                src={previewUrl}
+                alt="Generated Logo"
+                className={styles.previewImage}
+              />
             </div>
 
             <div className={styles.logoGeneratorActions}>

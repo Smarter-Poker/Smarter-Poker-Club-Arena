@@ -137,6 +137,8 @@ export default function PremiumCard({
           {card && cardImagePath && (
             <>
               <img
+                loading="lazy"
+                decoding="async"
                 src={cardImagePath}
                 alt={`${card.rank} of ${card.suit}`}
                 className="card-front-image"
@@ -149,7 +151,13 @@ export default function PremiumCard({
 
         {/* Card Back - Using custom image */}
         <div className="card-back">
-          <img src={theme.image} alt="Card Back" className="card-back-image" />
+          <img
+            loading="lazy"
+            decoding="async"
+            src={theme.image}
+            alt="Card Back"
+            className="card-back-image"
+          />
         </div>
       </div>
     </div>

@@ -116,7 +116,13 @@ export default function ClubLogoSelector({
       {/* Preview Area */}
       <div className="logo-preview">
         {preview ? (
-          <img src={preview} alt="Club logo preview" className="logo-preview__image" />
+          <img
+            loading="lazy"
+            decoding="async"
+            src={preview}
+            alt="Club logo preview"
+            className="logo-preview__image"
+          />
         ) : (
           <div className="logo-preview__placeholder">
             <span className="logo-preview__icon">IMG</span>
@@ -166,7 +172,13 @@ export default function ClubLogoSelector({
                 onClick={() => handlePresetSelect(preset)}
                 title={preset.name}
               >
-                <img src={preset.file} alt={preset.name} className="logo-preset__image" />
+                <img
+                  loading="lazy"
+                  decoding="async"
+                  src={preset.file}
+                  alt={preset.name}
+                  className="logo-preset__image"
+                />
               </button>
             ))}
           </div>

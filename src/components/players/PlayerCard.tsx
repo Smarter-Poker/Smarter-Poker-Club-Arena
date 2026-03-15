@@ -35,7 +35,11 @@ export const PlayerCard: React.FC<PlayerCardProps> = ({
   return (
     <div className="player-card" onClick={onClick}>
       <div className="player-avatar">
-        {avatarUrl ? <img src={avatarUrl} alt={displayName} /> : <span>{displayName[0]}</span>}
+        {avatarUrl ? (
+          <img loading="lazy" decoding="async" src={avatarUrl} alt={displayName} />
+        ) : (
+          <span>{displayName[0]}</span>
+        )}
         <span className={`online-dot ${isOnline ? 'online' : 'offline'}`} />
       </div>
 

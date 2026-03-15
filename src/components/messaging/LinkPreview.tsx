@@ -57,8 +57,7 @@ function LinkPreviewInner({ url }: LinkPreviewProps) {
           });
         }
       } catch (err) {
-
-        console.error("[LinkPreview] Error:", err);
+        console.error('[LinkPreview] Error:', err);
         if (!cancelled) setError(true);
       }
       if (!cancelled) setLoading(false);
@@ -83,12 +82,26 @@ function LinkPreviewInner({ url }: LinkPreviewProps) {
     >
       {preview.image && (
         <div className={styles.imageContainer}>
-          <img src={preview.image} alt="" className={styles.image} />
+          <img
+            loading="lazy"
+            decoding="async"
+            src={preview.image}
+            alt=""
+            className={styles.image}
+          />
         </div>
       )}
       <div className={styles.content}>
         <div className={styles.domainRow}>
-          {preview.favicon && <img src={preview.favicon} alt="" className={styles.favicon} />}
+          {preview.favicon && (
+            <img
+              loading="lazy"
+              decoding="async"
+              src={preview.favicon}
+              alt=""
+              className={styles.favicon}
+            />
+          )}
           <span className={styles.domain}>{preview.domain}</span>
         </div>
         {preview.title && preview.title !== preview.domain && (

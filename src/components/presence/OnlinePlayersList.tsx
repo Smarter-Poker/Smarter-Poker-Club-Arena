@@ -193,7 +193,12 @@ export const OnlinePlayersList: React.FC<OnlinePlayersListProps> = ({
             >
               <div className="player-avatar">
                 {player.avatarUrl ? (
-                  <img src={player.avatarUrl} alt={player.displayName} />
+                  <img
+                    loading="lazy"
+                    decoding="async"
+                    src={player.avatarUrl}
+                    alt={player.displayName}
+                  />
                 ) : (
                   <span>{(player.displayName || '?')[0]}</span>
                 )}

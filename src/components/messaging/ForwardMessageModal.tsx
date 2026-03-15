@@ -61,8 +61,7 @@ export default function ForwardMessageModal({
         toast.error('Failed to forward');
       }
     } catch (err) {
-
-      console.error("[ForwardMessageModal] Error:", err);
+      console.error('[ForwardMessageModal] Error:', err);
       toast.error('Failed to forward');
     }
     setForwarding(null);
@@ -116,6 +115,8 @@ export default function ForwardMessageModal({
               return (
                 <div key={conv.id} className={styles.item} onClick={() => handleForward(conv.id)}>
                   <img
+                    loading="lazy"
+                    decoding="async"
                     src={otherUser?.avatarUrl || '/default-avatar.png'}
                     alt={otherUser?.displayName}
                     className={styles.avatar}

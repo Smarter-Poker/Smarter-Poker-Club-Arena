@@ -50,7 +50,7 @@ export default function PresenceHub() {
             }}
           >
             {friend.avatar ? (
-              <img src={friend.avatar} alt={friend.username} />
+              <img loading="lazy" decoding="async" src={friend.avatar} alt={friend.username} />
             ) : (
               <div className="presence-avatar-fallback">{friend.username[0]?.toUpperCase()}</div>
             )}

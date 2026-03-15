@@ -26,7 +26,7 @@ export const EditableAvatar: React.FC<EditableAvatarProps> = ({
     <div className={`editable-avatar size-${size}`} onClick={onEdit}>
       <div className="avatar-display">
         {src ? (
-          <img src={src} alt={name || 'Avatar'} />
+          <img loading="lazy" decoding="async" src={src} alt={name || 'Avatar'} />
         ) : (
           <span className="initials">{initials.toUpperCase()}</span>
         )}

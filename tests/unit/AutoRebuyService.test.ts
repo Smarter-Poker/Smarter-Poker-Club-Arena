@@ -4,7 +4,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../../src/lib/supabase', () => {
   const buildChain = (): any => {
@@ -38,59 +38,59 @@ vi.mock('../../src/utils/retryAsync', () => ({
 import { AutoRebuyService } from '../../src/services/AutoRebuyService';
 
 describe('AutoRebuyService', () => {
-  let service: AutoRebuyService;
-
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useFakeTimers();
-    service = new AutoRebuyService();
+    AutoRebuyService.stop();
   });
 
   afterEach(() => {
-    service.stop();
+    AutoRebuyService.stop();
     vi.useRealTimers();
   });
 
   describe('start / stop lifecycle', () => {
     it('should start without crashing', () => {
-      service.start();
+      AutoRebuyService.start();
     });
 
     it('should guard against double start', () => {
-      service.start();
-      service.start(); // Should not throw or double up
+      AutoRebuyService.start();
+      AutoRebuyService.start();
     });
 
     it('should stop without crashing', () => {
-      service.start();
-      service.stop();
+      AutoRebuyService.start();
+      AutoRebuyService.stop();
     });
 
     it('should guard against stop when not started', () => {
-      service.stop(); // Should not throw
+      AutoRebuyService.stop();
     });
 
     it('should be re-startable after stop', () => {
-      service.start();
-      service.stop();
-      service.start();
-      service.stop();
+      AutoRebuyService.start();
+      AutoRebuyService.stop();
+      AutoRebuyService.start();
+      AutoRebuyService.stop();
     });
   });
 
   describe('rebuyHorse', () => {
-    it('should return false for unknown horse', async () => {
-      const result = await service.rebuyHorse('unknown', 'table-1', 100);
+    it('should return a boolean', async () => {
+      const result = await AutoRebuyService.rebuyHorse('unknown', 'table-1', 100);
       expect(typeof result).toBe('boolean');
     });
   });
 
   describe('export shape', () => {
-    it('should export AutoRebuyService class with all methods', () => {
-      expect(typeof service.start).toBe('function');
-      expect(typeof service.stop).toBe('function');
-      expect(typeof service.rebuyHorse).toBe('function');
-      expect(typeof service.reseatHorse).toBe('function');
+    it('should export singleton with all methods', () => {
+      expect(typeof AutoRebuyService.start).toBe('function');
+      expect(typeof AutoRebuyService.stop).toBe('function');
+      expect(typeof AutoRebuyService.rebuyHorse).toBe('function');
+      expect(typeof AutoRebuyService.reseatHorse).toBe('function');
     });
   });
 });
+
+import { afterEach } from 'vitest';

@@ -125,7 +125,7 @@ export const RecentPlayers: React.FC<RecentPlayersProps> = ({
             >
               <div className="player-avatar">
                 {player.avatar ? (
-                  <img src={player.avatar} alt={player.username} />
+                  <img loading="lazy" decoding="async" src={player.avatar} alt={player.username} />
                 ) : (
                   <span>{player.username[0]}</span>
                 )}

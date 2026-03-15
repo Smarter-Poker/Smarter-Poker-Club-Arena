@@ -113,7 +113,12 @@ export const ChipDistributionPanel: React.FC<ChipDistributionPanelProps> = ({
           >
             <div className="target-avatar">
               {target.avatarUrl ? (
-                <img src={target.avatarUrl} alt={target.displayName} />
+                <img
+                  loading="lazy"
+                  decoding="async"
+                  src={target.avatarUrl}
+                  alt={target.displayName}
+                />
               ) : (
                 <span>{(target.displayName || '?')[0]}</span>
               )}

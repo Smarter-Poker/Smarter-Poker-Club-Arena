@@ -243,7 +243,7 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
                 <div className={styles.playerHeader}>
                   <div className={styles.playerAvatar}>
                     {searchResult.avatar_url ? (
-                      <img src={searchResult.avatar_url} alt="" />
+                      <img loading="lazy" decoding="async" src={searchResult.avatar_url} alt="" />
                     ) : (
                       <span>?</span>
                     )}

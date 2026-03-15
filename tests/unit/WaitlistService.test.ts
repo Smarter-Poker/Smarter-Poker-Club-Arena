@@ -40,14 +40,14 @@ import { waitlistService } from '../../src/services/WaitlistService';
 describe('WaitlistService', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  describe('getWaitlist', () => {
+  describe('getTableWaitlist', () => {
     it('should return empty array when no entries', async () => {
-      const result = await waitlistService.getWaitlist('table-1');
+      const result = await waitlistService.getTableWaitlist('table-1');
       expect(result).toEqual([]);
     });
 
     it('should accept any tableId', async () => {
-      const result = await waitlistService.getWaitlist('nonexistent');
+      const result = await waitlistService.getTableWaitlist('nonexistent');
       expect(Array.isArray(result)).toBe(true);
     });
   });
@@ -59,19 +59,28 @@ describe('WaitlistService', () => {
     });
   });
 
-  describe('notifyNextPlayer', () => {
-    it('should return false when no players waiting', async () => {
-      const result = await waitlistService.notifyNextPlayer('table-1');
-      expect(result).toBe(false);
+  describe('getUserWaitlistEntry', () => {
+    it('should return null when no entry', async () => {
+      const result = await waitlistService.getUserWaitlistEntry('table-1', 'user-1');
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('getUserWaitlists', () => {
+    it('should return empty array when user has no waitlists', async () => {
+      const result = await waitlistService.getUserWaitlists('user-1');
+      expect(result).toEqual([]);
     });
   });
 
   describe('export shape', () => {
     it('should export waitlistService singleton with all methods', () => {
-      expect(typeof waitlistService.getWaitlist).toBe('function');
+      expect(typeof waitlistService.join).toBe('function');
+      expect(typeof waitlistService.leave).toBe('function');
       expect(typeof waitlistService.getPosition).toBe('function');
-      expect(typeof waitlistService.joinWaitlist).toBe('function');
-      expect(typeof waitlistService.leaveWaitlist).toBe('function');
+      expect(typeof waitlistService.getUserWaitlistEntry).toBe('function');
+      expect(typeof waitlistService.getUserWaitlists).toBe('function');
+      expect(typeof waitlistService.getTableWaitlist).toBe('function');
       expect(typeof waitlistService.notifyNextPlayer).toBe('function');
       expect(typeof waitlistService.markSeated).toBe('function');
     });

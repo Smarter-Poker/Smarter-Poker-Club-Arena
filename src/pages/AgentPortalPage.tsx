@@ -205,7 +205,8 @@ export default function AgentPortalPage() {
     try {
       const success = await WalletService.agentSelfTransfer(user.id, amount);
       if (success) {
-        toast.success(`Transferred ${amount.toLocaleString()} chips to Play Wallet`);
+        if (isMounted.current)
+          toast.success(`Transferred ${amount.toLocaleString()} chips to Play Wallet`);
         setTransferModalOpen(false);
         setTransferAmount('');
         masterBus.emit('BALANCE_UPDATED', { source: 'agent_transfer', userId: user.id });

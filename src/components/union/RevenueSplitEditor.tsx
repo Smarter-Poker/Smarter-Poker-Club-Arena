@@ -94,7 +94,7 @@ export const RevenueSplitEditor: React.FC<RevenueSplitEditorProps> = ({
             <div className="club-info">
               <div className="club-logo">
                 {club.clubLogo ? (
-                  <img src={club.clubLogo} alt={club.clubName} />
+                  <img loading="lazy" decoding="async" src={club.clubLogo} alt={club.clubName} />
                 ) : (
                   <span>{club.clubName[0]}</span>
                 )}

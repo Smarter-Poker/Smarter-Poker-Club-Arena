@@ -160,7 +160,7 @@ export const InviteToTable: React.FC<InviteToTableProps> = ({
             >
               <div className="player-avatar">
                 {player.avatar ? (
-                  <img src={player.avatar} alt={player.username} />
+                  <img loading="lazy" decoding="async" src={player.avatar} alt={player.username} />
                 ) : (
                   <span>{player.username[0]}</span>
                 )}

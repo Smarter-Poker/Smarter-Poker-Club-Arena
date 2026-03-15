@@ -86,6 +86,8 @@ export const EliminationOverlay: React.FC<EliminationOverlayProps> = ({
         <div className="elimination-player">
           {elimination.avatarUrl ? (
             <img
+              loading="lazy"
+              decoding="async"
               src={elimination.avatarUrl}
               alt={elimination.name}
               className="elimination-avatar"

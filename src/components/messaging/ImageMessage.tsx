@@ -90,7 +90,13 @@ export function ImagePreview({ imageUrl, onRemove }: { imageUrl: string; onRemov
   return (
     <div className={styles.previewContainer}>
       <div className={styles.previewWrapper}>
-        <img src={imageUrl} alt="Preview" className={styles.previewImage} />
+        <img
+          loading="lazy"
+          decoding="async"
+          src={imageUrl}
+          alt="Preview"
+          className={styles.previewImage}
+        />
         <button className={styles.removePreviewBtn} onClick={onRemove} title="Remove preview">
           ✕
         </button>
@@ -118,6 +124,8 @@ export function ImageThumbnail({ imageUrl, onClick }: { imageUrl: string; onClic
     >
       {!loaded && <div className={styles.shimmer} />}
       <img
+        loading="lazy"
+        decoding="async"
         src={imageUrl}
         alt="Message image"
         className={styles.thumbnailImage}
@@ -219,6 +227,8 @@ export function ImageLightbox({ imageUrl, onClose }: { imageUrl: string; onClose
         {/* Image container */}
         <div className={styles.imageContainer}>
           <img
+            loading="lazy"
+            decoding="async"
             ref={imgRef}
             src={imageUrl}
             alt="Full size"

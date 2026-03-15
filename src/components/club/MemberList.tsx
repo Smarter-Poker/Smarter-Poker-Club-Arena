@@ -144,7 +144,7 @@ export function MemberList({
                 >
                   <div className="member-avatar">
                     {member.avatar ? (
-                      <img src={member.avatar} alt="" />
+                      <img loading="lazy" decoding="async" src={member.avatar} alt="" />
                     ) : (
                       <span>{(member.name || '?')[0]?.toUpperCase() || '?'}</span>
                     )}

@@ -132,6 +132,8 @@ export function AvatarGallery({
         <div className="ag-preview">
           <div className="ag-preview__current">
             <img
+              loading="lazy"
+              decoding="async"
               src={currentAvatarUrl}
               alt="Current avatar"
               className="ag-preview__img ag-preview__img--current"
@@ -141,6 +143,8 @@ export function AvatarGallery({
           <div className="ag-preview__arrow">→</div>
           <div className="ag-preview__selected">
             <img
+              loading="lazy"
+              decoding="async"
               src={selectedAvatar}
               alt="Selected avatar"
               className="ag-preview__img ag-preview__img--selected"
@@ -192,7 +196,13 @@ export function AvatarGallery({
                     onClick={() => handleSelect(avatar)}
                     title={avatar.name}
                   >
-                    <img src={avatar.imageUrl} alt={avatar.name} className="ag-item__img" />
+                    <img
+                      loading="lazy"
+                      decoding="async"
+                      src={avatar.imageUrl}
+                      alt={avatar.name}
+                      className="ag-item__img"
+                    />
                     {isLocked && <div className="ag-item__lock">👑</div>}
                     {isSelected && <div className="ag-item__check">✓</div>}
                     <span className="ag-item__name">{avatar.name}</span>
@@ -204,7 +214,13 @@ export function AvatarGallery({
             <div className="ag-upload">
               <div className="ag-upload__zone" onClick={() => fileInputRef.current?.click()}>
                 {uploadPreview ? (
-                  <img src={uploadPreview} alt="Upload preview" className="ag-upload__preview" />
+                  <img
+                    loading="lazy"
+                    decoding="async"
+                    src={uploadPreview}
+                    alt="Upload preview"
+                    className="ag-upload__preview"
+                  />
                 ) : (
                   <>
                     <span className="ag-upload__icon">📷</span>

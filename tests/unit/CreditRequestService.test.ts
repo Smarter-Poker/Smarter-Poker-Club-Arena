@@ -65,22 +65,13 @@ describe('CreditRequestService', () => {
   });
 
   describe('export shape', () => {
-    it('should export creditRequestService singleton', () => {
-      expect(creditRequestService).toBeDefined();
+    it('should export singleton with all methods', () => {
       expect(typeof creditRequestService.getMyRequests).toBe('function');
       expect(typeof creditRequestService.getPendingCount).toBe('function');
-    });
-
-    it('should have submitRequest method', () => {
       expect(typeof creditRequestService.submitRequest).toBe('function');
-    });
-
-    it('should have approveRequest method', () => {
       expect(typeof creditRequestService.approveRequest).toBe('function');
-    });
-
-    it('should have rejectRequest method', () => {
-      expect(typeof creditRequestService.rejectRequest).toBe('function');
+      expect(typeof creditRequestService.denyRequest).toBe('function');
+      expect(typeof creditRequestService.getRequestsForApprover).toBe('function');
     });
   });
 });

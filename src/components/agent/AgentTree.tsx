@@ -140,7 +140,7 @@ function TreeNode({
         {/* Avatar */}
         <div className={styles.nodeAvatar}>
           {node.avatarUrl ? (
-            <img src={node.avatarUrl} alt="" />
+            <img loading="lazy" decoding="async" src={node.avatarUrl} alt="" />
           ) : (
             <span>{node.displayName?.charAt(0) || '?'}</span>
           )}

@@ -74,6 +74,8 @@ export default function SmarterHeader({
         )}
         <div className="header-brand">
           <img
+            loading="lazy"
+            decoding="async"
             src={`${import.meta.env.BASE_URL}images/smarter-poker-logo.jpg`}
             alt="Smarter.Poker"
             className="brand-logo"
@@ -94,7 +96,11 @@ export default function SmarterHeader({
       <div className="header-right">
         {/* Avatar */}
         <button className="header-avatar" onClick={() => navigate('/profile')}>
-          {user?.avatar_url ? <img src={user.avatar_url} alt="" /> : <span>●</span>}
+          {user?.avatar_url ? (
+            <img loading="lazy" decoding="async" src={user.avatar_url} alt="" />
+          ) : (
+            <span>●</span>
+          )}
         </button>
 
         {/* Messages */}

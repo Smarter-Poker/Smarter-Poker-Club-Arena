@@ -253,7 +253,7 @@ export default function FriendActivityFeed({ friends }: { friends: any[] }) {
           >
             <div className="activity-avatar">
               {item.avatar ? (
-                <img src={item.avatar} alt="" />
+                <img loading="lazy" decoding="async" src={item.avatar} alt="" />
               ) : (
                 <span>{item.username[0]?.toUpperCase()}</span>
               )}

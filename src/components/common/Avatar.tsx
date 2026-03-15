@@ -76,7 +76,7 @@ export function Avatar({
       tabIndex={onClick ? 0 : undefined}
     >
       {src ? (
-        <img src={src} alt={alt} className="avatar-image" />
+        <img loading="lazy" decoding="async" src={src} alt={alt} className="avatar-image" />
       ) : (
         <div className="avatar-fallback" style={{ backgroundColor: bgColor }}>
           {initials}

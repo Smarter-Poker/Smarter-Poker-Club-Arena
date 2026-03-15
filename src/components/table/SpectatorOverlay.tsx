@@ -99,6 +99,8 @@ export function SpectatorOverlay({
               spectators.map((spec) => (
                 <div key={spec.userId} className="so-viewer">
                   <img
+                    loading="lazy"
+                    decoding="async"
                     className="so-viewer__avatar"
                     src={spec.avatarUrl || '/avatars/default-player.png'}
                     alt={spec.displayName}

@@ -185,7 +185,11 @@ export default function TournamentBracket({ tournamentId, totalPlayers }: Tourna
             >
               <span className={styles.rank}>{index + 1}</span>
               <div className={styles.avatar}>
-                {player.avatarUrl ? <img src={player.avatarUrl} alt="" /> : <span>●</span>}
+                {player.avatarUrl ? (
+                  <img loading="lazy" decoding="async" src={player.avatarUrl} alt="" />
+                ) : (
+                  <span>●</span>
+                )}
               </div>
               <div className={styles.info}>
                 <span className={styles.name}>{player.displayName}</span>
@@ -213,7 +217,11 @@ export default function TournamentBracket({ tournamentId, totalPlayers }: Tourna
               >
                 <span className={styles.position}>{getPositionBadge(player.finishPosition)}</span>
                 <div className={styles.avatar}>
-                  {player.avatarUrl ? <img src={player.avatarUrl} alt="" /> : <span>●</span>}
+                  {player.avatarUrl ? (
+                    <img loading="lazy" decoding="async" src={player.avatarUrl} alt="" />
+                  ) : (
+                    <span>●</span>
+                  )}
                 </div>
                 <span className={styles.name}>{player.displayName}</span>
               </div>

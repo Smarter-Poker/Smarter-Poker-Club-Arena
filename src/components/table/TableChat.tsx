@@ -116,7 +116,7 @@ function MessageRow({ message, isOwnMessage, isNew = false }: MessageRowProps) {
       {!isOwnMessage && (
         <div className="chat-message__avatar">
           {message.playerAvatar ? (
-            <img src={message.playerAvatar} alt="" />
+            <img loading="lazy" decoding="async" src={message.playerAvatar} alt="" />
           ) : (
             <span>{message.playerName?.[0]?.toUpperCase() || '?'}</span>
           )}

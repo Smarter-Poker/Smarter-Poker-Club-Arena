@@ -21,7 +21,7 @@ export const ImageCard: React.FC<ImageCardProps> = ({
   return (
     <div className={`image-card aspect-${aspectRatio.replace(':', '-')}`} onClick={onClick}>
       <div className="image-wrapper">
-        <img src={imageUrl} alt={title} />
+        <img loading="lazy" decoding="async" src={imageUrl} alt={title} />
         {badge && <span className="image-badge">{badge}</span>}
       </div>
       <div className="image-content">

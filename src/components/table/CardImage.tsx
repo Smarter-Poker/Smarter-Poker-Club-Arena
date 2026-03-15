@@ -107,6 +107,8 @@ export function CardImage({
   return (
     <div className={classes}>
       <img
+        loading="lazy"
+        decoding="async"
         src={imagePath}
         alt={`${card.rank} of ${SUIT_MAP[card.suit]}`}
         className="card-image__img"

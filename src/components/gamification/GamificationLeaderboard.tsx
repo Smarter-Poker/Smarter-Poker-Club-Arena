@@ -147,6 +147,8 @@ export default function GamificationLeaderboard() {
                       : `#${entry.rank}`}
               </div>
               <img
+                loading="lazy"
+                decoding="async"
                 src={entry.avatarUrl || '/assets/default-avatar.png'}
                 alt={entry.username}
                 className="gl-avatar"

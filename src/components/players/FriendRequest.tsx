@@ -36,7 +36,11 @@ export const FriendRequest: React.FC<FriendRequestProps> = ({
   return (
     <div className="friend-request">
       <div className="request-avatar">
-        {avatarUrl ? <img src={avatarUrl} alt={displayName} /> : <span>{displayName[0]}</span>}
+        {avatarUrl ? (
+          <img loading="lazy" decoding="async" src={avatarUrl} alt={displayName} />
+        ) : (
+          <span>{displayName[0]}</span>
+        )}
       </div>
 
       <div className="request-info">

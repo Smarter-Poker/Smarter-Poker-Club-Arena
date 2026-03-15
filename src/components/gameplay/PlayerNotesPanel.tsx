@@ -227,7 +227,11 @@ export default function PlayerNotesPanel({
         <div className={styles.header}>
           <div className={styles.targetInfo}>
             <div className={styles.avatar}>
-              {targetAvatar ? <img src={targetAvatar} alt="" /> : ''}
+              {targetAvatar ? (
+                <img loading="lazy" decoding="async" src={targetAvatar} alt="" />
+              ) : (
+                ''
+              )}
             </div>
             <span>{targetName || 'Player'}</span>
           </div>
@@ -321,7 +325,11 @@ export default function PlayerNotesPanel({
               <div className={styles.noteHeader}>
                 <div className={styles.targetInfo}>
                   <div className={styles.avatar}>
-                    {note.targetAvatar ? <img src={note.targetAvatar} alt="" /> : ''}
+                    {note.targetAvatar ? (
+                      <img loading="lazy" decoding="async" src={note.targetAvatar} alt="" />
+                    ) : (
+                      ''
+                    )}
                   </div>
                   <span>{note.targetName}</span>
                 </div>

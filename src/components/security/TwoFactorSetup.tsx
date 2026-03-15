@@ -91,7 +91,7 @@ export const TwoFactorSetup: React.FC<TwoFactorSetupProps> = ({
         <div className="setup-scan">
           <p>Scan this QR code with your authenticator app:</p>
           <div className="qr-container">
-            <img src={qrCodeUrl} alt="2FA QR Code" />
+            <img loading="lazy" decoding="async" src={qrCodeUrl} alt="2FA QR Code" />
           </div>
           {secretKey && (
             <div className="secret-key">

@@ -108,7 +108,7 @@ export const AgentHierarchyTree: React.FC<AgentHierarchyTreeProps> = ({
 
           <div className="node-avatar">
             {node.avatarUrl ? (
-              <img src={node.avatarUrl} alt={node.displayName} />
+              <img loading="lazy" decoding="async" src={node.avatarUrl} alt={node.displayName} />
             ) : (
               <span>{(node.displayName || '?')[0]}</span>
             )}

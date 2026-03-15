@@ -26,13 +26,19 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
         {error ? (
           <div className="image-error">Failed to load</div>
         ) : (
-          <img src={thumbnail || src} alt={alt} onError={() => setError(true)} />
+          <img
+            loading="lazy"
+            decoding="async"
+            src={thumbnail || src}
+            alt={alt}
+            onError={() => setError(true)}
+          />
         )}
       </div>
 
       {isExpanded && (
         <div className="image-viewer-overlay" onClick={() => setIsExpanded(false)}>
-          <img src={src} alt={alt} className="image-viewer-full" />
+          <img loading="lazy" decoding="async" src={src} alt={alt} className="image-viewer-full" />
           <button className="image-viewer-close">×</button>
         </div>
       )}

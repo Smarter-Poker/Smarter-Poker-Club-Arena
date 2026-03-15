@@ -35,14 +35,14 @@ vi.mock('../../src/utils/retryAsync', () => ({
   retryAsync: <T>(fn: () => Promise<T>) => fn(),
 }));
 
-import { HandPersistenceService } from '../../src/services/HandPersistenceService';
+import { HandPersistence } from '../../src/services/HandPersistenceService';
 
 describe('HandPersistenceService', () => {
-  let service: HandPersistenceService;
+  let service: HandPersistence;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    service = new HandPersistenceService('table-1');
+    service = new HandPersistence('table-1');
   });
 
   describe('constructor', () => {
@@ -75,8 +75,8 @@ describe('HandPersistenceService', () => {
   });
 
   describe('export shape', () => {
-    it('should export HandPersistenceService class', () => {
-      expect(typeof HandPersistenceService).toBe('function');
+    it('should export HandPersistence class', () => {
+      expect(typeof HandPersistence).toBe('function');
       expect(typeof service.getCurrentHandId).toBe('function');
       expect(typeof service.wireToHandController).toBe('function');
       expect(typeof service.dispose).toBe('function');

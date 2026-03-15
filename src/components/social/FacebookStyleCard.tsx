@@ -45,6 +45,8 @@ interface FBAvatarProps {
 export const FBAvatar: React.FC<FBAvatarProps> = ({ src, name, size = 40, online = false }) => (
   <div style={{ position: 'relative', width: size, height: size }}>
     <img
+      loading="lazy"
+      decoding="async"
       src={src || '/default-avatar.png'}
       alt={name || ''}
       style={{

@@ -95,6 +95,8 @@ export const SpectatorBadge: React.FC<SpectatorBadgeProps> = ({ observers, class
             >
               {obs.avatar ? (
                 <img
+                  loading="lazy"
+                  decoding="async"
                   src={obs.avatar}
                   alt={obs.username}
                   style={{

@@ -197,7 +197,7 @@ export default function PublicProfilePage() {
       if (!isMounted.current) return;
       setFriendStatus('pending_sent');
       masterBus.emit('FRIEND_REQUEST_SENT', { fromUserId: user.id, toUserId: userId });
-      toast.success('Friend request sent!');
+      if (isMounted.current) toast.success('Friend request sent!');
     } catch (err) {
       console.error('[PublicProfile] Add friend error:', err);
       if (isMounted.current) toast.error('Failed to send friend request');
@@ -219,7 +219,7 @@ export default function PublicProfilePage() {
       if (!isMounted.current) return;
       setFriendStatus('friends');
       masterBus.emit('FRIEND_REQUEST_ACCEPTED', { userId: user.id, friendId: userId });
-      toast.success('Friend request accepted!');
+      if (isMounted.current) toast.success('Friend request accepted!');
     } catch (err) {
       console.error('[PublicProfile] Accept friend error:', err);
       if (isMounted.current) toast.error('Failed to accept request');
@@ -254,7 +254,7 @@ export default function PublicProfilePage() {
     if (success) {
       setIsBlocked(true);
       setShowBlockModal(false);
-      toast.success('Player blocked');
+      if (isMounted.current) toast.success('Player blocked');
     } else {
       toast.error('Failed to block player');
     }
@@ -267,7 +267,7 @@ export default function PublicProfilePage() {
     if (!isMounted.current) return;
     if (success) {
       setIsBlocked(false);
-      toast.success('Player unblocked');
+      if (isMounted.current) toast.success('Player unblocked');
     }
   };
 

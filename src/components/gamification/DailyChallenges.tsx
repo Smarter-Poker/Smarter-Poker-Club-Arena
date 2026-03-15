@@ -209,9 +209,10 @@ export const DailyChallenges: React.FC = () => {
         prev.map((c) => (c.id === challenge.id ? { ...c, claimed: true } : c))
       );
       setShowAnimation(true);
-      toast.success(
-        `+${challenge.chipReward} Chips${challenge.diamondReward ? ` +${challenge.diamondReward} 💎` : ''}`
-      );
+      if (isMounted.current)
+        toast.success(
+          `+${challenge.chipReward} Chips${challenge.diamondReward ? ` +${challenge.diamondReward} 💎` : ''}`
+        );
       const animT = window.setTimeout(() => {
         if (isMounted.current) setShowAnimation(false);
       }, 2000);

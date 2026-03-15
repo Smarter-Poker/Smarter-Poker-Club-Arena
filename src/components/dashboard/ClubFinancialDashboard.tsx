@@ -179,7 +179,7 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
     setLoading(true);
     try {
       await WalletService.mintChips(clubId, mintAmount);
-      toast.success(`Successfully minted ${mintAmount} chips!`);
+      if (isMounted.current) toast.success(`Successfully minted ${mintAmount} chips!`);
       fetchDiamondBalance();
     } catch (error) {
       if (isMounted.current) toast.error('Minting failed: ' + (error as Error).message);
@@ -195,7 +195,7 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
     }
     try {
       await CommissionService.setRate(clubId, agentId, 'AGENT', commissionRate, user.id);
-      toast.success('Commission Limit set successfully');
+      if (isMounted.current) toast.success('Commission Limit set successfully');
     } catch (error) {
       if (isMounted.current) toast.error('Error: ' + (error as Error).message);
     }

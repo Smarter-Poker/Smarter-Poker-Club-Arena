@@ -418,13 +418,14 @@ export default function AntiCheatPage() {
         if (error) throw error;
       }
 
-      // Log the kick event
-      await supabase.from('anti_cheat_events').insert({
+      // Log the kick event (non-blocking but warn on failure)
+      const { error: logError } = await supabase.from('anti_cheat_events').insert({
         club_id: clubId,
         player_id: playerId,
         event_type: 'player_kicked',
         details: { reason: 'Anti-cheat violation — removed by admin', table_id: tableId },
       });
+      if (logError) console.warn('[AntiCheat] Failed to log kick event:', logError.message);
 
       toast.success('Player removed.');
       masterBus.emit('PLAYER_KICKED', { clubId: clubId ?? '', userId: playerId });

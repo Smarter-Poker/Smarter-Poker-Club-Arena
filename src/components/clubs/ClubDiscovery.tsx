@@ -293,7 +293,7 @@ export const ClubDiscovery: React.FC<ClubDiscoveryProps> = ({ onJoinRequest, onV
               <div className="club-header">
                 <div className="club-logo">
                   {club.logo ? (
-                    <img src={club.logo} alt={club.name} />
+                    <img loading="lazy" decoding="async" src={club.logo} alt={club.name} />
                   ) : (
                     <span>{club.name[0]}</span>
                   )}

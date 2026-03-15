@@ -188,7 +188,7 @@ export const AvatarGenerator: React.FC<{
                 className={`result-image ${selectedImage === img ? 'selected' : ''}`}
                 onClick={() => setSelectedImage(img)}
               >
-                <img src={img} alt={`Generated avatar ${i + 1}`} />
+                <img loading="lazy" decoding="async" src={img} alt={`Generated avatar ${i + 1}`} />
                 {selectedImage === img && <span className="selected-check">✓</span>}
               </button>
             ))}

@@ -211,7 +211,12 @@ export const WaitlistManager: React.FC<WaitlistManagerProps> = ({
               <span className="position">#{entry.position}</span>
               <div className="entry-avatar">
                 {entry.avatarUrl ? (
-                  <img src={entry.avatarUrl} alt={entry.displayName} />
+                  <img
+                    loading="lazy"
+                    decoding="async"
+                    src={entry.avatarUrl}
+                    alt={entry.displayName}
+                  />
                 ) : (
                   <span>{(entry.displayName || '?')[0]}</span>
                 )}

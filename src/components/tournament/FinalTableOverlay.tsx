@@ -162,6 +162,8 @@ export const FinalTableOverlay: React.FC<FinalTableOverlayProps> = ({
                 <div className="ft-player__avatar">
                   {player.avatar ? (
                     <img
+                      loading="lazy"
+                      decoding="async"
                       src={player.avatar}
                       alt={player.username}
                       className="ft-player__avatar-img"

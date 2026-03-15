@@ -31,7 +31,7 @@ export const Avatar: React.FC<AvatarProps> = ({
   return (
     <div className={`avatar size-${size}`} onClick={onClick}>
       {src ? (
-        <img src={src} alt={alt} />
+        <img loading="lazy" decoding="async" src={src} alt={alt} />
       ) : (
         <span className="avatar-initials">{initials.toUpperCase()}</span>
       )}

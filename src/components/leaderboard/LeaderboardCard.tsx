@@ -5,7 +5,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, memo } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { promotionService, LeaderboardEntry } from '../../services/PromotionService';
 import { useAuthUser } from '../../hooks/useAuthUser';
@@ -19,7 +19,7 @@ interface LeaderboardCardProps {
   showCurrentUser?: boolean;
 }
 
-export default function LeaderboardCard({
+function LeaderboardCardInner({
   promotionId,
   title = 'Leaderboard',
   limit = 10,
@@ -148,7 +148,11 @@ export default function LeaderboardCard({
 
                 <div className={styles.playerCol}>
                   <div className={styles.avatar}>
-                    {entry.avatarUrl ? <img src={entry.avatarUrl} alt="" /> : <span>●</span>}
+                    {entry.avatarUrl ? (
+                      <img loading="lazy" decoding="async" src={entry.avatarUrl} alt="" />
+                    ) : (
+                      <span>●</span>
+                    )}
                   </div>
                   <span className={styles.name}>
                     {entry.displayName || entry.username}
@@ -178,7 +182,11 @@ export default function LeaderboardCard({
             </div>
             <div className={styles.playerCol}>
               <div className={styles.avatar}>
-                {userRank.avatarUrl ? <img src={userRank.avatarUrl} alt="" /> : <span>●</span>}
+                {userRank.avatarUrl ? (
+                  <img loading="lazy" decoding="async" src={userRank.avatarUrl} alt="" />
+                ) : (
+                  <span>●</span>
+                )}
               </div>
               <span className={styles.name}>
                 {userRank.displayName || userRank.username}
@@ -194,3 +202,4 @@ export default function LeaderboardCard({
     </div>
   );
 }
+export default memo(LeaderboardCardInner);

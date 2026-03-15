@@ -79,7 +79,7 @@ export function PrivateChat({
         <div className="chat-user-info">
           <div className="chat-avatar">
             {friendAvatar ? (
-              <img src={friendAvatar} alt={friendName} />
+              <img loading="lazy" decoding="async" src={friendAvatar} alt={friendName} />
             ) : (
               <span>{(friendName || '?')[0]?.toUpperCase() || '?'}</span>
             )}

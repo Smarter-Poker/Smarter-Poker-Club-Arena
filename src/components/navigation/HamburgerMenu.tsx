@@ -51,8 +51,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     try {
       return localStorage.getItem('club_arena_card_color') || 'default';
     } catch (err) {
-
-      console.error("[HamburgerMenu] Error:", err);
+      console.error('[HamburgerMenu] Error:', err);
       return 'default';
     }
   });
@@ -146,8 +145,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     try {
       localStorage.setItem(localKey, String(value));
     } catch (err) {
-
-      console.error("[HamburgerMenu] Error:", err);
+      console.error('[HamburgerMenu] Error:', err);
       /* */
     }
     if (user?.id) {
@@ -333,6 +331,8 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           }}
         >
           <img
+            loading="lazy"
+            decoding="async"
             src={avatarUrl || '/default-avatar.png'}
             alt=""
             style={{
@@ -766,8 +766,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                     const { masterBus } = await import('../../core/MasterBus');
                     masterBus.emit('CARD_COLOR_CHANGED', { preset: preset.id });
                   } catch (err) {
-
-                    console.error("[HamburgerMenu] Error:", err);
+                    console.error('[HamburgerMenu] Error:', err);
                     /* */
                   }
                   if (user?.id) {
@@ -779,8 +778,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                       if (saveErr)
                         console.error('[HamburgerMenu] Card color save failed:', saveErr);
                     } catch (err) {
-
-                      console.error("[HamburgerMenu] Error:", err);
+                      console.error('[HamburgerMenu] Error:', err);
                       /* silent */
                     }
                   }

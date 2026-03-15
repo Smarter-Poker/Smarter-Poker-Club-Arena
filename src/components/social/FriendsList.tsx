@@ -208,7 +208,7 @@ function FriendItem({
       <div className="friend-main" onClick={() => onChat(friend.id)}>
         <div className="friend-avatar">
           {friend.avatar ? (
-            <img src={friend.avatar} alt={friend.name} />
+            <img loading="lazy" decoding="async" src={friend.avatar} alt={friend.name} />
           ) : (
             <span>{(friend.name || '?')[0]?.toUpperCase() || '?'}</span>
           )}

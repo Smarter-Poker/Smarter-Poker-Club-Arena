@@ -102,7 +102,7 @@ export function UserProfileEdit({ isOpen, onClose, initialData, onSave }: UserPr
         <div className="profile-content">
           <div className="avatar-section">
             <div className="current-avatar">
-              <img src={formData.avatarUrl} alt="Avatar" />
+              <img loading="lazy" decoding="async" src={formData.avatarUrl} alt="Avatar" />
               <button
                 className="edit-avatar-btn"
                 onClick={() => setShowAvatarPicker(!showAvatarPicker)}
@@ -114,6 +114,8 @@ export function UserProfileEdit({ isOpen, onClose, initialData, onSave }: UserPr
               <div className="avatar-picker">
                 {AVAILABLE_AVATARS.map((url) => (
                   <img
+                    loading="lazy"
+                    decoding="async"
                     key={url}
                     src={url}
                     alt="Choice"

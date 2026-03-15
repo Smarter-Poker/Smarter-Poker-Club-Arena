@@ -3,7 +3,7 @@
  * Displays a single table in the lobby grid
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { waitlistService } from '../../services/WaitlistService';
 import { tableService } from '../../services/TableService';
@@ -52,7 +52,7 @@ const GAME_ICONS: Record<string, string> = {
   mixed: '',
 };
 
-export default function TableCard({ table }: TableCardProps) {
+function TableCardInner({ table }: TableCardProps) {
   const navigate = useNavigate();
   const { user } = useAuthUser();
   const toast = useToast();
@@ -412,3 +412,4 @@ export default function TableCard({ table }: TableCardProps) {
     </div>
   );
 }
+export default memo(TableCardInner);

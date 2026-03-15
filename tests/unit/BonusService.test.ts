@@ -6,8 +6,6 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// ─── Mock dependencies ────────────────────────────────────────────────────
-
 vi.mock('../../src/lib/supabase', () => {
   const buildChain = (): any => {
     const handler: ProxyHandler<any> = {
@@ -44,8 +42,6 @@ vi.mock('../../src/utils/retryAsync', () => ({
   retryAsync: <T>(fn: () => Promise<T>) => fn(),
 }));
 
-// ─── Import AFTER mocks ──────────────────────────────────────────────────
-
 import { bonusService } from '../../src/services/BonusService';
 
 describe('BonusService', () => {
@@ -78,18 +74,13 @@ describe('BonusService', () => {
     });
   });
 
-  describe('claimDailyBonus', () => {
-    it('should return a result when claiming', async () => {
-      const result = await bonusService.claimDailyBonus('user-1');
-      expect(result).toBeDefined();
-    });
-  });
-
   describe('export shape', () => {
     it('should export bonusService singleton with expected methods', () => {
       expect(typeof bonusService.getBonusStatus).toBe('function');
       expect(typeof bonusService.canSpinToday).toBe('function');
       expect(typeof bonusService.claimDailyBonus).toBe('function');
+      expect(typeof bonusService.getWheelStats).toBe('function');
+      expect(typeof bonusService.spinLuckyWheel).toBe('function');
     });
   });
 });

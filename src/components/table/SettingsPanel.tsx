@@ -312,7 +312,13 @@ export function SettingsPanel({
                 <span className="settings-item__description">Change your table avatar</span>
               </div>
               <button className="settings-action-btn" onClick={() => setShowAvatarGallery(true)}>
-                <img src={currentAvatarUrl} alt="Avatar" className="settings-avatar-preview" />
+                <img
+                  loading="lazy"
+                  decoding="async"
+                  src={currentAvatarUrl}
+                  alt="Avatar"
+                  className="settings-avatar-preview"
+                />
                 Change
               </button>
             </div>

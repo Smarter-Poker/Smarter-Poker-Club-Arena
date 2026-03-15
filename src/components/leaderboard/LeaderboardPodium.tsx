@@ -58,7 +58,13 @@ export default function LeaderboardPodium({
             {/* Avatar */}
             <div className="podium-avatar-ring" style={{ boxShadow: `0 0 16px ${colors.glow}` }}>
               {player.avatarUrl ? (
-                <img src={player.avatarUrl} alt={player.username} className="podium-avatar" />
+                <img
+                  loading="lazy"
+                  decoding="async"
+                  src={player.avatarUrl}
+                  alt={player.username}
+                  className="podium-avatar"
+                />
               ) : (
                 <div className="podium-avatar-fallback">
                   {player.username.charAt(0).toUpperCase()}

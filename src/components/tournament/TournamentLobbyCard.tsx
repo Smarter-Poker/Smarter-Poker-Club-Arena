@@ -5,7 +5,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
@@ -51,7 +51,7 @@ interface TournamentLobbyCardProps {
   onRegister?: (tournamentId: string) => void;
 }
 
-export default function TournamentLobbyCard({ tournament, onRegister }: TournamentLobbyCardProps) {
+function TournamentLobbyCardInner({ tournament, onRegister }: TournamentLobbyCardProps) {
   const navigate = useNavigate();
   const { user } = useAuthUser();
   const [registering, setRegistering] = useState(false);
@@ -229,8 +229,7 @@ export default function TournamentLobbyCard({ tournament, onRegister }: Tourname
           blindDuration = structure[0].durationMinutes || structure[0].duration_minutes;
         }
       } catch (err) {
-
-        console.error("[TournamentLobbyCard] Error:", err);
+        console.error('[TournamentLobbyCard] Error:', err);
         // If parsing fails, return no badge
         return null;
       }
@@ -472,3 +471,4 @@ export default function TournamentLobbyCard({ tournament, onRegister }: Tourname
     </div>
   );
 }
+export default memo(TournamentLobbyCardInner);

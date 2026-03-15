@@ -197,7 +197,13 @@ export const LiveChipCounts: React.FC<LiveChipCountsProps> = ({
               {/* Player Info */}
               <div className="lcc-player-info">
                 {leader.avatarUrl && (
-                  <img src={leader.avatarUrl} alt={leader.username} className="lcc-avatar" />
+                  <img
+                    loading="lazy"
+                    decoding="async"
+                    src={leader.avatarUrl}
+                    alt={leader.username}
+                    className="lcc-avatar"
+                  />
                 )}
                 <div className="lcc-name-plate">
                   <span className="lcc-username">

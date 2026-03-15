@@ -1,4 +1,4 @@
-import React from 'react';
+import React , useEffect } from 'react';
 import './ImageModal.css';
 
 interface ImageModalProps {
@@ -16,6 +16,16 @@ export const ImageModal: React.FC<ImageModalProps> = ({
   alt = 'Image',
   caption,
 }) => {
+  
+  // Escape-to-close keyboard handler
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    if (isOpen) window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   return (
@@ -24,7 +34,7 @@ export const ImageModal: React.FC<ImageModalProps> = ({
         ×
       </button>
       <div className="image-container" onClick={(e) => e.stopPropagation()}>
-        <img src={imageUrl} alt={alt} />
+        <img loading="lazy" decoding="async" src={imageUrl} alt={alt} />
         {caption && <p className="image-caption">{caption}</p>}
       </div>
     </div>

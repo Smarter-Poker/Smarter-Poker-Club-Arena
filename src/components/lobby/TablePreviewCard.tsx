@@ -95,7 +95,13 @@ export default function TablePreviewCard({
             >
               {player ? (
                 player.avatarUrl ? (
-                  <img src={player.avatarUrl} alt={player.username} className="tp-avatar" />
+                  <img
+                    loading="lazy"
+                    decoding="async"
+                    src={player.avatarUrl}
+                    alt={player.username}
+                    className="tp-avatar"
+                  />
                 ) : (
                   <div className="tp-avatar-fallback">
                     {player.username.charAt(0).toUpperCase()}

@@ -220,7 +220,12 @@ export function RealTimeResults({
                 <div key={observer.id} className="rtr-observer">
                   <div className="rtr-observer-avatar">
                     {observer.avatar ? (
-                      <img src={observer.avatar} alt={observer.name} />
+                      <img
+                        loading="lazy"
+                        decoding="async"
+                        src={observer.avatar}
+                        alt={observer.name}
+                      />
                     ) : (
                       <span>{observer.name.charAt(0).toUpperCase()}</span>
                     )}

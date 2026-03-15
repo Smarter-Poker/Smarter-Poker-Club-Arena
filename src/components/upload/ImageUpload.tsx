@@ -21,7 +21,7 @@ export const ImageUpload: React.FC<ImageUploadProps> = ({
     <label className="image-upload">
       <input type="file" accept="image/*" onChange={handleChange} hidden />
       {value ? (
-        <img src={value} alt="Preview" className="image-preview" />
+        <img loading="lazy" decoding="async" src={value} alt="Preview" className="image-preview" />
       ) : (
         <div className="image-placeholder">
           <span className="placeholder-icon">+</span>

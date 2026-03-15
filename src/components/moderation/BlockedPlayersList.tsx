@@ -123,7 +123,7 @@ export const BlockedPlayersList: React.FC<BlockedPlayersListProps> = ({ onUnbloc
             >
               <div className="blocked-avatar">
                 {player.avatar ? (
-                  <img src={player.avatar} alt="" />
+                  <img loading="lazy" decoding="async" src={player.avatar} alt="" />
                 ) : (
                   <span>{player.username[0]}</span>
                 )}

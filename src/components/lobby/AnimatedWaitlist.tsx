@@ -82,7 +82,13 @@ export default function AnimatedWaitlist({
               >
                 <div className="aw-avatar-wrap">
                   {entry.avatarUrl ? (
-                    <img src={entry.avatarUrl} alt={entry.username} className="aw-avatar" />
+                    <img
+                      loading="lazy"
+                      decoding="async"
+                      src={entry.avatarUrl}
+                      alt={entry.username}
+                      className="aw-avatar"
+                    />
                   ) : (
                     <div className="aw-avatar-fallback">
                       {entry.username.charAt(0).toUpperCase()}

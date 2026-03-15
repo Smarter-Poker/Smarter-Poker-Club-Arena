@@ -175,6 +175,8 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
               <div className="cashout-header">
                 <div className="player-info">
                   <img
+                    loading="lazy"
+                    decoding="async"
                     src={cashout.playerAvatar || '/default-avatar.png'}
                     alt=""
                     className="player-avatar"

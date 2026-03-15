@@ -157,6 +157,8 @@ export default function MessageBubble({
       {/* Avatar (for received messages) */}
       {!isCurrentUser && showAvatar && (
         <img
+          loading="lazy"
+          decoding="async"
           src={message.userPicture}
           alt={message.userFullname}
           className={styles.avatar}

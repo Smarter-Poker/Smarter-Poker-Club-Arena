@@ -198,6 +198,8 @@ export const GifPicker: React.FC<GifPickerProps> = ({ isOpen, onSelect, onClose 
               {filteredGifs.map((gif) => (
                 <button key={gif.id} className="gif-item" onClick={() => handleSelectGif(gif)}>
                   <img
+                    loading="lazy"
+                    decoding="async"
                     src={gif.previewUrl}
                     alt={gif.title}
                     style={{ width: '100%', height: '100%', objectFit: 'cover' }}

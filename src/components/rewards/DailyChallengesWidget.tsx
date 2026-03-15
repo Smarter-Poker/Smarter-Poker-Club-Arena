@@ -165,7 +165,7 @@ export const DailyChallengesWidget: React.FC = () => {
       setChallenges((prev) =>
         prev.map((c) => (c.id === challengeId ? { ...c, claimed: true } : c))
       );
-      toast.success(`+${challenge.reward.amount} Chips claimed!`);
+      if (isMounted.current) toast.success(`+${challenge.reward.amount} Chips claimed!`);
     } catch (err: any) {
       if (isMounted.current) toast.error(err?.message || 'Failed to claim reward');
     } finally {

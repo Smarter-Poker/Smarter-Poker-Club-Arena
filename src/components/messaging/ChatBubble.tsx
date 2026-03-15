@@ -160,7 +160,13 @@ export default function ChatBubble({
           {/* Image */}
           {message.imageUrl && (
             <div className={styles.imageContainer}>
-              <img src={message.imageUrl} alt="" className={styles.image} />
+              <img
+                loading="lazy"
+                decoding="async"
+                src={message.imageUrl}
+                alt=""
+                className={styles.image}
+              />
             </div>
           )}
 

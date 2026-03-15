@@ -58,7 +58,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
         >
           <div className="result-image">
             {result.imageUrl ? (
-              <img src={result.imageUrl} alt="" />
+              <img loading="lazy" decoding="async" src={result.imageUrl} alt="" />
             ) : (
               <span>{TYPE_ICONS[result.type]}</span>
             )}

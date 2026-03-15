@@ -5,6 +5,7 @@
  */
 
 import { useState } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useToast } from '../common/Toast';
@@ -58,6 +59,7 @@ export default function FriendChallengeModal({
 }: FriendChallengeModalProps) {
   const [selectedType, setSelectedType] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const isMounted = useIsMounted();
   const toast = useToast();
 
   if (!isOpen) return null;
@@ -95,13 +97,14 @@ export default function FriendChallengeModal({
           message: `You challenged ${challengeeName} to ${challenge.label}!`,
         },
       });
+      if (!isMounted.current) return;
       toast.success(`Challenge sent to ${challengeeName}!`);
       onClose();
     } catch (err: any) {
       console.error('[FriendChallenge] send error:', err);
-      toast.error(err.message || 'Failed to send challenge');
+      if (isMounted.current) toast.error(err.message || 'Failed to send challenge');
     }
-    setSending(false);
+    if (isMounted.current) setSending(false);
   };
 
   return (

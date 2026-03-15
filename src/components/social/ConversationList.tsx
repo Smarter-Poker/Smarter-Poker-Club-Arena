@@ -5,6 +5,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { masterBus } from '../../core/MasterBus';
@@ -29,6 +30,7 @@ export function ConversationList({ onSelectConversation }: ConversationListProps
   const toast = useToast();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
+  const isMounted = useIsMounted();
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
 
   useEffect(() => {
@@ -78,9 +80,9 @@ export function ConversationList({ onSelectConversation }: ConversationListProps
         );
       }
     } catch (error) {
-      toast.error('Failed to load conversations');
+      if (isMounted.current) toast.error('Failed to load conversations');
     }
-    setLoading(false);
+    if (isMounted.current) setLoading(false);
   };
 
   const formatTime = (date: Date) => {

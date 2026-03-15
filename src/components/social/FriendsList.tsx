@@ -46,20 +46,32 @@ export function FriendsList({
   const [visibleOnline, setVisibleOnline] = useState<Set<number>>(new Set());
   const [visibleOffline, setVisibleOffline] = useState<Set<number>>(new Set());
 
+  const animTimers = React.useRef<ReturnType<typeof setTimeout>[]>([]);
+
   React.useEffect(() => {
     if (!isOpen) return;
 
     const onlineFriends = friends.filter((f) => f.status !== 'offline');
     const offlineFriends = friends.filter((f) => f.status === 'offline');
 
+    animTimers.current.forEach(clearTimeout);
+    animTimers.current = [];
+
     setVisibleOnline(new Set());
     onlineFriends.forEach((_, i) => {
-      setTimeout(() => setVisibleOnline((prev) => new Set(prev).add(i)), i * 60);
+      const t = setTimeout(() => setVisibleOnline((prev) => new Set(prev).add(i)), i * 60);
+      animTimers.current.push(t);
     });
     setVisibleOffline(new Set());
     offlineFriends.forEach((_, i) => {
-      setTimeout(() => setVisibleOffline((prev) => new Set(prev).add(i)), i * 60);
+      const t = setTimeout(() => setVisibleOffline((prev) => new Set(prev).add(i)), i * 60);
+      animTimers.current.push(t);
     });
+
+    return () => {
+      animTimers.current.forEach(clearTimeout);
+      animTimers.current = [];
+    };
   }, [friends, isOpen]);
 
   if (!isOpen) return null;

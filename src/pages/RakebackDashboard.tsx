@@ -57,11 +57,12 @@ export default function RakebackDashboard() {
 
   useEffect(() => {
     loadData();
-    [0, 1, 2, 3, 4].forEach((i) => {
+    const timers = [0, 1, 2, 3, 4].map((i) =>
       setTimeout(() => {
         if (isMounted.current) setVisibleSections((prev) => new Set(prev).add(i));
-      }, i * 80);
-    });
+      }, i * 80)
+    );
+    return () => timers.forEach(clearTimeout);
   }, [user?.id]);
 
   useEffect(() => {

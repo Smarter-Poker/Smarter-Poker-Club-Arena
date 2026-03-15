@@ -128,10 +128,13 @@ export default function FriendListPanel({
       });
 
       setFriends(friendList);
-      // Stagger entrance
+      // Stagger entrance — tracked for cleanup
+      animTimers.current.forEach(clearTimeout);
+      animTimers.current = [];
       setVisibleFriends(new Set());
       friendList.forEach((_, i) => {
-        setTimeout(() => setVisibleFriends((prev) => new Set(prev).add(i)), i * 50);
+        const t = setTimeout(() => setVisibleFriends((prev) => new Set(prev).add(i)), i * 50);
+        animTimers.current.push(t);
       });
     } catch (err) {
       console.error('Failed to load friends:', err);

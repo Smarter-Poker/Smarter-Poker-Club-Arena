@@ -101,11 +101,12 @@ export default function ClubSettingsPage() {
   useEffect(() => {
     if (!loading) {
       const sections = ['basic', 'gameplay', 'advanced', 'danger'];
-      sections.forEach((section, index) => {
+      const timers = sections.map((section, index) =>
         setTimeout(() => {
           setVisibleSections((prev) => new Set(prev).add(section));
-        }, index * 80);
-      });
+        }, index * 80)
+      );
+      return () => timers.forEach(clearTimeout);
     }
   }, [loading]);
 

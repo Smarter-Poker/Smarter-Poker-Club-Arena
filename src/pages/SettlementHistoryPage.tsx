@@ -5,7 +5,7 @@
  *  Shows past settlement cycles with trend comparison.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -36,6 +36,7 @@ export default function SettlementHistoryPage() {
   const [loading, setLoading] = useState(true);
   const [visibleRows, setVisibleRows] = useState<Set<number>>(new Set());
   const isMounted = useIsMounted();
+  const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   useVisibilityRefresh(() => loadHistory());
 
@@ -78,11 +79,13 @@ export default function SettlementHistoryPage() {
           agentPayouts: 0,
         }));
         setCycles(mapped);
-        mapped.forEach((_, i) => {
+        // Clear previous stagger timers before starting new ones
+        staggerTimersRef.current.forEach(clearTimeout);
+        staggerTimersRef.current = mapped.map((_, i) =>
           setTimeout(() => {
             if (isMounted.current) setVisibleRows((prev) => new Set(prev).add(i));
-          }, i * 50);
-        });
+          }, i * 50)
+        );
       }
     } catch (err) {
       if (!isMounted.current) return;

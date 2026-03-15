@@ -5,7 +5,7 @@
  * Progress bars, XP + diamond reward badges, completion animation.
  */
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { triggerHaptic } from '../../services/HapticService';
 import { masterBus } from '../../core/MasterBus';
 import './MissionsPanel.css';
@@ -46,6 +46,13 @@ const REWARD_ICONS: Record<string, string> = {
 export default function MissionsPanel({ missions, onClaim }: MissionsPanelProps) {
   const [activeTier, setActiveTier] = useState<MissionTier>('daily');
   const [celebratingIds, setCelebratingIds] = useState<string[]>([]);
+  const celebrateTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  useEffect(() => {
+    return () => {
+      celebrateTimers.current.forEach(clearTimeout);
+    };
+  }, []);
 
   const filtered = useMemo(
     () => missions.filter((m) => m.tier === activeTier),
@@ -136,9 +143,10 @@ export default function MissionsPanel({ missions, onClaim }: MissionsPanelProps)
                       onClick={() => {
                         triggerHaptic('success');
                         setCelebratingIds((prev) => [...prev, mission.id]);
-                        setTimeout(() => {
+                        const t = setTimeout(() => {
                           setCelebratingIds((prev) => prev.filter((id) => id !== mission.id));
                         }, 1500);
+                        celebrateTimers.current.push(t);
 
                         masterBus.emit('MISSION_CLAIMED', {
                           missionId: mission.id,

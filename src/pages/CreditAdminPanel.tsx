@@ -5,7 +5,7 @@
  *  Admin page for setting/adjusting agent credit limits with full audit trail.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -38,6 +38,7 @@ export default function CreditAdminPanel() {
   const [auditLog, setAuditLog] = useState<any[]>([]);
   const [visibleRows, setVisibleRows] = useState<Set<number>>(new Set());
   const isMounted = useIsMounted();
+  const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   useVisibilityRefresh(() => loadAgents());
 
@@ -63,12 +64,13 @@ export default function CreditAdminPanel() {
           status: a.status || 'active',
         }));
         setAgents(mapped);
-        // Stagger rows
-        mapped.forEach((_, i) => {
+        // Clear previous stagger timers before starting new ones
+        staggerTimersRef.current.forEach(clearTimeout);
+        staggerTimersRef.current = mapped.map((_, i) =>
           setTimeout(() => {
             if (isMounted.current) setVisibleRows((prev) => new Set(prev).add(i));
-          }, i * 40);
-        });
+          }, i * 40)
+        );
       }
     } catch (err) {
       console.error('[CreditAdmin] Load failed:', err);

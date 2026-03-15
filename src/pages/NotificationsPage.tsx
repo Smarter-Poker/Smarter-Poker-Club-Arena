@@ -13,6 +13,8 @@ import { haptic } from '../services/HapticService';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { useSwipeAction } from '../hooks/useSwipeAction';
 import { notificationService } from '../services/NotificationService';
+import { retryFetch } from '../utils/retryFetch';
+import { useIsMounted } from '../hooks/useIsMounted';
 import NotificationSettingsPanel from '../components/social/NotificationSettingsPanel';
 import './NotificationsPage.css';
 
@@ -49,10 +51,30 @@ interface Notification {
   action_url?: string;
 }
 
+// ── SWR Cache helpers ──
+const NOTIF_CACHE_PREFIX = 'notif_cache_';
+function getCachedNotifs(userId: string) {
+  try {
+    const raw = sessionStorage.getItem(NOTIF_CACHE_PREFIX + userId);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+function setCachedNotifs(userId: string, data: any) {
+  try {
+    sessionStorage.setItem(NOTIF_CACHE_PREFIX + userId, JSON.stringify(data));
+  } catch {
+    /* quota */
+  }
+}
+
 export default function NotificationsPage() {
   const navigate = useNavigate();
   const { user } = useAuthUser();
   const toast = useToast();
+  const isMounted = useIsMounted();
+  const hasDataRef = useRef(false);
   useVisibilityRefresh(() => loadNotifications());
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
@@ -65,6 +87,17 @@ export default function NotificationsPage() {
   const [dndActive, setDndActive] = useState(() => notificationService.isDndActive());
   const [showDndPicker, setShowDndPicker] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+
+  // SWR: show cached notifications instantly on mount
+  useEffect(() => {
+    if (!user?.id) return;
+    const cached = getCachedNotifs(user.id);
+    if (cached && cached.length > 0) {
+      setNotifications(cached);
+      hasDataRef.current = true;
+      setLoading(false);
+    }
+  }, [user?.id]);
 
   const handleDndToggle = useCallback(
     (minutes: number) => {
@@ -155,26 +188,34 @@ export default function NotificationsPage() {
 
   const loadNotifications = async (getIsMounted?: () => boolean) => {
     if (!user?.id) return;
-    setLoading(true);
+    if (!hasDataRef.current) setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('notifications')
-        .select('id, type, title, message, read, created_at, action_url')
-        .eq('user_id', user?.id)
-        .order('created_at', { ascending: false })
-        .limit(50);
+      const { data, error } = await retryFetch(
+        () =>
+          supabase
+            .from('notifications')
+            .select('id, type, title, message, read, created_at, action_url')
+            .eq('user_id', user?.id)
+            .order('created_at', { ascending: false })
+            .limit(50)
+            .then((r) => r),
+        { maxRetries: 2, isMountedRef: isMounted }
+      );
 
       if (getIsMounted && !getIsMounted()) return;
+      if (!isMounted.current) return;
 
       if (!error && data) {
         setNotifications(data);
+        hasDataRef.current = data.length > 0;
+        setCachedNotifs(user?.id || '', data);
       }
     } catch (error) {
       console.error('Failed to load notifications:', error);
-      toast.error('Failed to load notifications');
+      if (isMounted.current) toast.error('Failed to load notifications');
     }
     if (getIsMounted && !getIsMounted()) return;
-    setLoading(false);
+    if (isMounted.current) setLoading(false);
   };
 
   const markAsRead = async (id: string) => {

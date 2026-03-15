@@ -1,13 +1,20 @@
 /**
  *  PLAYER STATS PAGE — Detailed Statistics with Charts
+ *
+ * Improvements:
+ *  - retryFetch: exponential backoff on transient failures
+ *  - SWR cache: show cached stats instantly, refresh in background
+ *  - isMounted guards on all setState calls
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
+import { retryFetch } from '../utils/retryFetch';
+import { useIsMounted } from '../hooks/useIsMounted';
 import {
   AreaChart,
   Area,
@@ -30,6 +37,40 @@ import PageSkeleton from '../components/common/PageSkeleton';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { useSwipeTabs } from '../hooks/useSwipeTabs';
 import './PlayerStatsPage.css';
+
+// ── SWR Cache helpers ──
+const STATS_CACHE_KEY = 'ps_stats_';
+const SESSION_CACHE_KEY = 'ps_sessions_';
+function getCachedStats(userId: string) {
+  try {
+    const raw = sessionStorage.getItem(STATS_CACHE_KEY + userId);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+function setCachedStats(userId: string, data: any) {
+  try {
+    sessionStorage.setItem(STATS_CACHE_KEY + userId, JSON.stringify(data));
+  } catch {
+    /* quota */
+  }
+}
+function getCachedSessions(userId: string) {
+  try {
+    const raw = sessionStorage.getItem(SESSION_CACHE_KEY + userId);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+function setCachedSessions(userId: string, data: any) {
+  try {
+    sessionStorage.setItem(SESSION_CACHE_KEY + userId, JSON.stringify(data));
+  } catch {
+    /* quota */
+  }
+}
 
 interface DetailedStats {
   // Volume
@@ -110,7 +151,25 @@ export default function PlayerStatsPage() {
   const [visibleSummaryCards, setVisibleSummaryCards] = useState(new Set<number>());
   const [visibleSessionRows, setVisibleSessionRows] = useState(new Set<number>());
   const toast = useToast();
+  const isMounted = useIsMounted();
+  const hasStatsRef = useRef(false);
   useVisibilityRefresh(() => loadStats());
+
+  // SWR: show cached stats instantly on mount
+  useEffect(() => {
+    if (!targetUserId) return;
+    const cachedStats = getCachedStats(targetUserId);
+    if (cachedStats) {
+      setStats(cachedStats.stats);
+      setPositionData(cachedStats.positionData || []);
+      hasStatsRef.current = true;
+      setLoading(false);
+    }
+    const cachedSessions = getCachedSessions(targetUserId);
+    if (cachedSessions && cachedSessions.length > 0) {
+      setSessionHistory(cachedSessions);
+    }
+  }, [targetUserId]);
 
   // Stagger summary cards on mount
   useEffect(() => {
@@ -205,20 +264,27 @@ export default function PlayerStatsPage() {
 
   const loadStats = async (getIsMounted?: () => boolean) => {
     if (!targetUserId) return;
-    setLoading(true);
+    if (!hasStatsRef.current) setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('player_stats')
-        .select(
-          'total_hands, hands_won, hands_lost, showdowns_won, showdowns_total, vpip, pfr, aggression_factor, three_bet_percent, fold_to_three_bet, cbet_flop, cbet_turn, bb_per_100, total_profit, biggest_pot_won, biggest_pot_lost, hours_played, avg_session_length'
-        )
-        .eq('user_id', targetUserId)
-        .maybeSingle();
+      const { data, error } = await retryFetch(
+        () =>
+          supabase
+            .from('player_stats')
+            .select(
+              'total_hands, hands_won, hands_lost, showdowns_won, showdowns_total, vpip, pfr, aggression_factor, three_bet_percent, fold_to_three_bet, cbet_flop, cbet_turn, bb_per_100, total_profit, biggest_pot_won, biggest_pot_lost, hours_played, avg_session_length'
+            )
+            .eq('user_id', targetUserId)
+            .maybeSingle()
+            .then((r) => r),
+        { maxRetries: 2, isMountedRef: isMounted }
+      );
 
       if (getIsMounted && !getIsMounted()) return;
+      if (!isMounted.current) return;
 
       if (!error && data) {
         setStats(data);
+        hasStatsRef.current = true;
       } else {
         // Default stats
         setStats({
@@ -244,10 +310,15 @@ export default function PlayerStatsPage() {
       }
 
       // Fetch literal DB data for the position pie chart instead of mock data #SWEEP-8
-      const { data: posData, error: posError } = await supabase
-        .from('player_position_stats')
-        .select('position, hands_won')
-        .eq('user_id', targetUserId);
+      const { data: posData, error: posError } = await retryFetch(
+        () =>
+          supabase
+            .from('player_position_stats')
+            .select('position, hands_won')
+            .eq('user_id', targetUserId)
+            .then((r) => r),
+        { maxRetries: 2, isMountedRef: isMounted }
+      );
 
       if (!posError && posData && posData.length > 0) {
         const fullNames: Record<string, string> = {
@@ -267,26 +338,38 @@ export default function PlayerStatsPage() {
           }))
           .filter((p) => p.value > 0); // Only chart positions with actual wins
         if (getIsMounted && !getIsMounted()) return;
+        if (!isMounted.current) return;
         setPositionData(mapped.length > 0 ? mapped : []);
       } else {
         if (getIsMounted && !getIsMounted()) return;
+        if (!isMounted.current) return;
         setPositionData([]);
+      }
+
+      // Update SWR cache
+      if (isMounted.current) {
+        setCachedStats(targetUserId, { stats: data || stats, positionData: posData || [] });
       }
     } catch (error) {
       console.error('Failed to load stats:', error);
-      toast.error('Failed to load player stats');
+      if (isMounted.current) toast.error('Failed to load player stats');
     }
-    setLoading(false);
+    if (isMounted.current) setLoading(false);
   };
 
   const loadSessionHistory = async (getIsMounted?: () => boolean) => {
     try {
-      const { data } = await supabase
-        .from('player_sessions')
-        .select('date, profit_loss, hands_played')
-        .eq('user_id', targetUserId)
-        .order('date', { ascending: true })
-        .limit(30);
+      const { data } = await retryFetch(
+        () =>
+          supabase
+            .from('player_sessions')
+            .select('date, profit_loss, hands_played')
+            .eq('user_id', targetUserId)
+            .order('date', { ascending: true })
+            .limit(30)
+            .then((r) => r),
+        { maxRetries: 2, isMountedRef: isMounted }
+      );
 
       if (data && data.length > 0) {
         let cumulative = 0;
@@ -303,15 +386,18 @@ export default function PlayerStatsPage() {
           };
         });
         if (getIsMounted && !getIsMounted()) return;
+        if (!isMounted.current) return;
         setSessionHistory(history);
+        setCachedSessions(targetUserId || '', history);
       } else {
         // No real session data yet — show empty state (no fake data)
         if (getIsMounted && !getIsMounted()) return;
+        if (!isMounted.current) return;
         setSessionHistory([]);
       }
     } catch (error) {
       console.error('Failed to load session history:', error);
-      toast.error('Failed to load session history');
+      if (isMounted.current) toast.error('Failed to load session history');
     }
   };
 

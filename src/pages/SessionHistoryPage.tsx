@@ -3,17 +3,19 @@
  *  SESSION HISTORY PAGE — Past session analytics with P&L charts
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * Displays all past sessions from `session_history` Supabase table.
- * Shows P&L trends, session duration, hands played, VPIP/PFR stats.
+ * Improvements:
+ *  - retryFetch: exponential backoff on transient failures
+ *  - SWR cache: show cached sessions instantly, refresh in background
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { masterBus } from '../core/MasterBus';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { useToast } from '../components/common/Toast';
+import { retryFetch } from '../utils/retryFetch';
 import './SessionHistoryPage.css';
 import PageSkeleton from '../components/common/PageSkeleton';
 
@@ -40,6 +42,24 @@ interface SessionRecord {
   trajectory: [number, number][];
 }
 
+// ── SWR Cache helpers ──
+const SH_CACHE_PREFIX = 'sh_cache_';
+function getCachedSH(userId: string, filter: string) {
+  try {
+    const raw = sessionStorage.getItem(SH_CACHE_PREFIX + userId + '_' + filter);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+function setCachedSH(userId: string, filter: string, data: any) {
+  try {
+    sessionStorage.setItem(SH_CACHE_PREFIX + userId + '_' + filter, JSON.stringify(data));
+  } catch {
+    /* quota */
+  }
+}
+
 export default function SessionHistoryPage() {
   const navigate = useNavigate();
   const { user } = useAuthUser();
@@ -48,27 +68,24 @@ export default function SessionHistoryPage() {
   const [loading, setLoading] = useState(true);
   const [timeFilter, setTimeFilter] = useState<'7d' | '30d' | 'all'>('30d');
   const isMounted = useIsMounted();
+  const hasDataRef = useRef(false);
 
+  // SWR: show cached sessions instantly on mount
   useEffect(() => {
     if (!user?.id) return;
-    loadSessions();
+    const cached = getCachedSH(user.id, timeFilter);
+    if (cached && cached.length > 0) {
+      setSessions(cached);
+      hasDataRef.current = true;
+      setLoading(false);
+    } else {
+      hasDataRef.current = false;
+    }
   }, [user?.id, timeFilter]);
 
-  // Auto-refresh on tab return
-  useVisibilityRefresh(() => loadSessions());
-
-  // Bus listener: refresh when a session ends or balance changes (debounced)
-  useEffect(() => {
-    const unsubs = [
-      masterBus.subscribeDebounced('SESSION_ENDED', () => loadSessions(), 500),
-      masterBus.subscribeDebounced('BALANCE_UPDATED', () => loadSessions(), 2000),
-    ];
-    return () => unsubs.forEach((u) => u());
-  }, [user?.id, timeFilter]);
-
-  const loadSessions = async () => {
+  const loadSessions = useCallback(async () => {
     if (!user?.id) return;
-    setLoading(true);
+    if (!hasDataRef.current) setLoading(true);
     try {
       let query = supabase
         .from('session_history')
@@ -87,17 +104,41 @@ export default function SessionHistoryPage() {
         query = query.gte('session_end', cutoff);
       }
 
-      const { data, error } = await query;
+      const { data, error } = await retryFetch(() => query.then((r) => r), {
+        maxRetries: 2,
+        isMountedRef: isMounted,
+      });
       if (error) throw error;
       if (!isMounted.current) return;
-      setSessions(data || []);
+      const fetched = data || [];
+      setSessions(fetched);
+      hasDataRef.current = fetched.length > 0;
+      setCachedSH(user.id, timeFilter, fetched);
     } catch (err) {
       if (!isMounted.current) return;
       console.error('[SessionHistory] Load failed:', err);
       toast.error('Failed to load session history');
     }
     if (isMounted.current) setLoading(false);
-  };
+  }, [user?.id, timeFilter]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    loadSessions();
+  }, [user?.id, timeFilter, loadSessions]);
+
+  // Auto-refresh on tab return
+  useVisibilityRefresh(() => loadSessions());
+
+  // Bus listener: refresh when a session ends or balance changes (debounced)
+  // Uses loadSessions from useCallback so deps stay stable
+  useEffect(() => {
+    const unsubs = [
+      masterBus.subscribeDebounced('SESSION_ENDED', () => loadSessions(), 500),
+      masterBus.subscribeDebounced('BALANCE_UPDATED', () => loadSessions(), 2000),
+    ];
+    return () => unsubs.forEach((u) => u());
+  }, [loadSessions]);
 
   // Aggregate stats
   const totalPL = sessions.reduce((sum, s) => sum + (s.profit_loss || 0), 0);

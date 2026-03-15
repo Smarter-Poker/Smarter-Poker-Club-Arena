@@ -8,6 +8,8 @@ import { supabase } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { masterBus } from '../core/MasterBus';
 import { useToast } from '../components/common/Toast';
+import { retryFetch } from '../utils/retryFetch';
+import { useIsMounted } from '../hooks/useIsMounted';
 import FriendsList from '../components/social/FriendsList';
 import RecentPlayers from '../components/social/RecentPlayers';
 import FriendActivityFeed from '../components/social/FriendActivityFeed';
@@ -32,11 +34,30 @@ interface Friend {
 
 type FriendsTab = 'friends' | 'pending' | 'recent';
 
+// ── SWR Cache helpers ──
+const FR_CACHE_PREFIX = 'fr_cache_';
+function getCachedFriends(userId: string) {
+  try {
+    const raw = sessionStorage.getItem(FR_CACHE_PREFIX + userId);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+function setCachedFriends(userId: string, data: any) {
+  try {
+    sessionStorage.setItem(FR_CACHE_PREFIX + userId, JSON.stringify(data));
+  } catch {
+    /* quota */
+  }
+}
+
 export default function FriendsPage() {
   const navigate = useNavigate();
   useVisibilityRefresh(() => loadFriends());
   const { user } = useAuthUser();
   const toast = useToast();
+  const isMounted = useIsMounted();
 
   const [friends, setFriends] = useState<Friend[]>([]);
   const [pendingRequests, setPendingRequests] = useState<Friend[]>([]);
@@ -50,6 +71,18 @@ export default function FriendsPage() {
   const [searchFocused, setSearchFocused] = useState(false);
   const [challengeTarget, setChallengeTarget] = useState<{ id: string; name: string } | null>(null);
   const loadFriendsRef = useRef(async () => {});
+  const hasDataRef = useRef(false);
+
+  // SWR: show cached friends list instantly on mount
+  useEffect(() => {
+    if (!user?.id) return;
+    const cached = getCachedFriends(user.id);
+    if (cached && cached.length > 0) {
+      setFriends(cached);
+      hasDataRef.current = true;
+      setLoading(false);
+    }
+  }, [user?.id]);
 
   useEffect(() => {
     if (user?.id) loadFriends();
@@ -146,14 +179,16 @@ export default function FriendsPage() {
 
   const loadFriends = async (getIsMounted?: () => boolean) => {
     if (!user?.id) return;
-    setLoading(true);
+    if (!hasDataRef.current) setLoading(true);
     try {
       // ── Batch: sent + received friendships + pending requests in parallel ──
       const [sentResult, receivedResult, pendingResult] = await Promise.all([
-        supabase
-          .from('friendships')
-          .select(
-            `
+        retryFetch(
+          () =>
+            supabase
+              .from('friendships')
+              .select(
+                `
                     id,
                     friend:profiles!friendships_friend_id_fkey (
                         id,
@@ -162,15 +197,20 @@ export default function FriendsPage() {
                     ),
                     status
                 `
-          )
-          .eq('user_id', user?.id)
-          .eq('status', 'accepted')
-          .order('created_at', { ascending: false })
-          .limit(200),
-        supabase
-          .from('friendships')
-          .select(
-            `
+              )
+              .eq('user_id', user?.id)
+              .eq('status', 'accepted')
+              .order('created_at', { ascending: false })
+              .limit(200)
+              .then((r) => r),
+          { maxRetries: 2, isMountedRef: isMounted }
+        ),
+        retryFetch(
+          () =>
+            supabase
+              .from('friendships')
+              .select(
+                `
                     id,
                     friend:profiles!friendships_user_id_fkey (
                         id,
@@ -179,15 +219,20 @@ export default function FriendsPage() {
                     ),
                     status
                 `
-          )
-          .eq('friend_id', user?.id)
-          .eq('status', 'accepted')
-          .order('created_at', { ascending: false })
-          .limit(200),
-        supabase
-          .from('friendships')
-          .select(
-            `
+              )
+              .eq('friend_id', user?.id)
+              .eq('status', 'accepted')
+              .order('created_at', { ascending: false })
+              .limit(200)
+              .then((r) => r),
+          { maxRetries: 2, isMountedRef: isMounted }
+        ),
+        retryFetch(
+          () =>
+            supabase
+              .from('friendships')
+              .select(
+                `
                     id,
                     user:profiles!friendships_user_id_fkey (
                         id,
@@ -195,16 +240,20 @@ export default function FriendsPage() {
                         avatar_url
                     )
                 `
-          )
-          .eq('friend_id', user?.id)
-          .eq('status', 'pending')
-          .order('created_at', { ascending: false })
-          .limit(100),
+              )
+              .eq('friend_id', user?.id)
+              .eq('status', 'pending')
+              .order('created_at', { ascending: false })
+              .limit(100)
+              .then((r) => r),
+          { maxRetries: 2, isMountedRef: isMounted }
+        ),
       ]);
 
       const allFriendships = [...(sentResult.data || []), ...(receivedResult.data || [])];
 
       if (getIsMounted && !getIsMounted()) return;
+      if (!isMounted.current) return;
 
       if (allFriendships.length > 0) {
         const uniqueMap = new Map();
@@ -242,6 +291,9 @@ export default function FriendsPage() {
         }
 
         setFriends(Array.from(uniqueMap.values()));
+        // Update SWR cache
+        if (isMounted.current) setCachedFriends(user?.id || '', Array.from(uniqueMap.values()));
+        hasDataRef.current = true;
       } else {
         setFriends([]);
       }
@@ -267,7 +319,7 @@ export default function FriendsPage() {
       toast.error('Failed to load friends');
     }
     if (getIsMounted && !getIsMounted()) return;
-    setLoading(false);
+    if (isMounted.current) setLoading(false);
   };
 
   const acceptRequest = async (friendshipId: string) => {

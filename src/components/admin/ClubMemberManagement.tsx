@@ -62,7 +62,7 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
         .eq('club_id', resolvedId)
         .order('created_at', { ascending: true });
 
-      if (!error && data) {
+      if (!error && data && isMounted.current) {
         setMembers(
           data.map((m) => {
             const player = Array.isArray(m.player) ? m.player[0] : m.player;
@@ -86,7 +86,7 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
         });
       }
     } catch (error) {
-      toast.error('Failed to load members');
+      if (isMounted.current) toast.error('Failed to load members');
     }
     if (isMounted.current) setLoading(false);
   };
@@ -102,11 +102,11 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
 
       if (error) throw error;
 
-      toast.success('Role updated');
+      if (isMounted.current) toast.success('Role updated');
       masterBus.emit('CLUB_UPDATED', { clubId });
       loadMembers();
     } catch {
-      toast.error('Failed to update role');
+      if (isMounted.current) toast.error('Failed to update role');
     }
   };
 
@@ -121,11 +121,11 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
 
       if (error) throw error;
 
-      toast.success(currentlyBanned ? 'Member unbanned' : 'Member banned');
+      if (isMounted.current) toast.success(currentlyBanned ? 'Member unbanned' : 'Member banned');
       masterBus.emit('CLUB_UPDATED', { clubId });
       loadMembers();
     } catch {
-      toast.error('Failed to update ban status');
+      if (isMounted.current) toast.error('Failed to update ban status');
     }
   };
 
@@ -140,11 +140,11 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
 
       if (error) throw error;
 
-      toast.success('Member removed from club');
+      if (isMounted.current) toast.success('Member removed from club');
       masterBus.emit('CLUB_UPDATED', { clubId });
       loadMembers();
     } catch {
-      toast.error('Failed to remove member');
+      if (isMounted.current) toast.error('Failed to remove member');
     }
   };
 

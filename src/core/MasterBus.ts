@@ -291,7 +291,9 @@ export type BusEventType =
   // Production resilience events
   | 'CONNECTION_RESTORED'
   // Admin audit trail events
-  | 'ADMIN_ACTION';
+  | 'ADMIN_ACTION'
+  // Referral events
+  | 'REFERRAL_CLAIMED';
 
 // #13: Type-safe payload map — compile-time enforcement of correct payloads
 export interface BusPayloadMap {

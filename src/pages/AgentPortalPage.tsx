@@ -138,8 +138,8 @@ export default function AgentPortalPage() {
         // Use the resolved agents.id PK — CreditService uses .eq('id', agentId) internally
         const calculatedDebt = await CreditService.calculateDebt(data.id);
         debt = calculatedDebt.debtOwed;
-      } catch {
-        /* no debt */
+      } catch (err) {
+        console.warn('[AgentPortal] Debt calculation skipped:', err);
       }
 
       if (!isMounted.current) return data.id;

@@ -233,7 +233,8 @@ export default function PlayerSessionsPage() {
               setNotes(noteMap);
               setNotesLoaded(true);
             }
-          } catch {
+          } catch (err) {
+            console.warn('[PlayerSessions] Notes load skipped:', err);
             if (mountedRef.current) setNotesLoaded(true);
           }
         }

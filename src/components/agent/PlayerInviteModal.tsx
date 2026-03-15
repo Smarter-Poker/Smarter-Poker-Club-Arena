@@ -148,7 +148,8 @@ export default function PlayerInviteModal({
 
       if (assignmentError) throw assignmentError;
 
-      setMessage({ type: 'success', text: `${player.displayName} added successfully!` });
+      if (isMounted.current)
+        setMessage({ type: 'success', text: `${player.displayName} added successfully!` });
       setSearchResults((prev) => prev.filter((p) => p.id !== player.id));
       onPlayerAdded?.();
     } catch (err) {
@@ -179,7 +180,7 @@ export default function PlayerInviteModal({
       if (error) throw error;
 
       setInviteCode(code);
-      setMessage({ type: 'success', text: 'Invite code generated!' });
+      if (isMounted.current) setMessage({ type: 'success', text: 'Invite code generated!' });
     } catch (err) {
       console.error('Failed to generate invite:', err);
       if (isMounted.current) setMessage({ type: 'error', text: 'Failed to generate invite code' });

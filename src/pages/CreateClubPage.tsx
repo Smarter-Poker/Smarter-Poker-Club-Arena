@@ -584,7 +584,7 @@ export default function CreateClubPage() {
       if (existing && existing.length > 0) {
         if (isMounted.current) {
           setError('A club with this name already exists. Please choose a different name.');
-          setCreating(false);
+          if (isMounted.current) setCreating(false);
         }
         return;
       }

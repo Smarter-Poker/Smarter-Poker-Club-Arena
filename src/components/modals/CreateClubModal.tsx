@@ -168,7 +168,7 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
         .limit(1);
 
       if (existing && existing.length > 0) {
-        toast.error('A club with this name already exists');
+        if (isMounted.current) toast.error('A club with this name already exists');
         return;
       }
     } catch (err) {
@@ -508,7 +508,7 @@ function LogoGeneratorModal({ onSelect, onClose, clubName = '' }: LogoGeneratorM
       if (result.success && result.logoUrl) {
         setPreviewUrl(result.logoUrl);
       } else {
-        setError(result.error || 'Failed to generate logo');
+        if (isMounted.current) setError(result.error || 'Failed to generate logo');
       }
     } catch (err) {
       console.error('Failed to generate logo:', err);

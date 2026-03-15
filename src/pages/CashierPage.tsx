@@ -745,11 +745,12 @@ export default function CashierPage() {
       try {
         const lockResult = await checkSettlementLock(clubId);
         if (lockResult.locked) {
-          setMessage({
-            type: 'error',
-            text: `🔒 Chip movements are frozen during settlement (${lockResult.reason || 'Monday 4AM payout in progress'}). Please try again after settlement completes.`,
-          });
-          setIsProcessing(false);
+          if (isMounted.current)
+            setMessage({
+              type: 'error',
+              text: `🔒 Chip movements are frozen during settlement (${lockResult.reason || 'Monday 4AM payout in progress'}). Please try again after settlement completes.`,
+            });
+          if (isMounted.current) setIsProcessing(false);
           return;
         }
       } catch {
@@ -762,7 +763,7 @@ export default function CashierPage() {
         // ─── SEND CHIPS ───
         if (!selectedRecipient) {
           setMessage({ type: 'error', text: 'Please select a recipient' });
-          setIsProcessing(false);
+          if (isMounted.current) setIsProcessing(false);
           return;
         }
         if (balances.PLAYER.available < value) {
@@ -770,7 +771,7 @@ export default function CashierPage() {
             type: 'error',
             text: `Insufficient balance. Available: ${balances.PLAYER.available.toLocaleString()}`,
           });
-          setIsProcessing(false);
+          if (isMounted.current) setIsProcessing(false);
           return;
         }
 
@@ -819,7 +820,7 @@ export default function CashierPage() {
         const mintResult = await mintChips(clubId!, value);
         if (!mintResult.success) {
           setMessage({ type: 'error', text: 'Minting failed. Please try again.' });
-          setIsProcessing(false);
+          if (isMounted.current) setIsProcessing(false);
           return;
         }
         setMessage({ type: 'success', text: `Minted ${value.toLocaleString()} chips` });
@@ -829,12 +830,12 @@ export default function CashierPage() {
         // ─── TABLE BUY-IN ───
         if (balances.PLAYER.available < value) {
           setMessage({ type: 'error', text: 'Insufficient chip balance for buy-in' });
-          setIsProcessing(false);
+          if (isMounted.current) setIsProcessing(false);
           return;
         }
         if (!tableId) {
           setMessage({ type: 'error', text: 'No table selected for buy-in.' });
-          setIsProcessing(false);
+          if (isMounted.current) setIsProcessing(false);
           return;
         }
         const { lockForBuyIn } = useWalletStore.getState();
@@ -872,7 +873,7 @@ export default function CashierPage() {
           if (value >= 10000) {
             // High-value cashout: show confirmation modal instead of blocking confirm()
             setCashoutConfirm({ show: true, value });
-            setIsProcessing(false);
+            if (isMounted.current) setIsProcessing(false);
             return;
           }
 
@@ -881,7 +882,7 @@ export default function CashierPage() {
               type: 'error',
               text: `Insufficient balance. Available: ${balances.PLAYER.available.toLocaleString()}`,
             });
-            setIsProcessing(false);
+            if (isMounted.current) setIsProcessing(false);
             return;
           }
 
@@ -905,7 +906,7 @@ export default function CashierPage() {
     } catch (error: any) {
       setMessage({ type: 'error', text: error.message || 'Transaction failed. Please try again.' });
     }
-    setIsProcessing(false);
+    if (isMounted.current) setIsProcessing(false);
     startCooldown(); // Rate limit
   };
 
@@ -931,10 +932,11 @@ export default function CashierPage() {
 
       // Use CashoutService directly (same as normal cashout path) — no World Hub API dependency
       await cashoutService.requestCashout(user.id, clubId, value);
-      setMessage({
-        type: 'success',
-        text: `Cashout request submitted! ${value.toLocaleString()} chips are now held in escrow. Your agent will review shortly.`,
-      });
+      if (isMounted.current)
+        setMessage({
+          type: 'success',
+          text: `Cashout request submitted! ${value.toLocaleString()} chips are now held in escrow. Your agent will review shortly.`,
+        });
       loadBalances(user.id);
       loadPendingCashouts();
       notifyWalletChange(user.id, value);
@@ -942,7 +944,7 @@ export default function CashierPage() {
     } catch (error: any) {
       setMessage({ type: 'error', text: error.message || 'Cashout failed. Please try again.' });
     }
-    setIsProcessing(false);
+    if (isMounted.current) setIsProcessing(false);
     startCooldown();
   };
 
@@ -1324,15 +1326,17 @@ export default function CashierPage() {
                     .eq('club_id', resolvedClub)
                     .maybeSingle();
                   if (!agentRow?.id) {
-                    setMessage({ type: 'error', text: 'Agent record not found for this club' });
+                    if (isMounted.current)
+                      setMessage({ type: 'error', text: 'Agent record not found for this club' });
                     return;
                   }
                   await _WalletService.distributePromo(agentRow.id, selectedRecipient, value);
                   const recipient = recipients.find((r) => r.id === selectedRecipient);
-                  setMessage({
-                    type: 'success',
-                    text: `Distributed ${value.toLocaleString()} chips to ${recipient?.username || 'player'}`,
-                  });
+                  if (isMounted.current)
+                    setMessage({
+                      type: 'success',
+                      text: `Distributed ${value.toLocaleString()} chips to ${recipient?.username || 'player'}`,
+                    });
                   masterBus.emit('CHIPS_DISTRIBUTED', {
                     clubId: clubId || '',
                     amount: value,
@@ -1367,7 +1371,7 @@ export default function CashierPage() {
                     setMessage({ type: 'error', text: msg });
                   }
                 } finally {
-                  setIsProcessing(false);
+                  if (isMounted.current) setIsProcessing(false);
                 }
               }}
             >

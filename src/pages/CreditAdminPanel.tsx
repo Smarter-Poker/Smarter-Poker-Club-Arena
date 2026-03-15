@@ -124,7 +124,7 @@ export default function CreditAdminPanel() {
     return () => {
       unsubs.forEach((u) => u());
     };
-  }, []);
+  }, [loadAgents]);
 
   // ── Supabase Realtime — cross-user WebSocket updates ──
   useEffect(() => {

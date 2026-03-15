@@ -11,6 +11,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
@@ -57,7 +58,7 @@ export const DailyChallenges: React.FC = () => {
   const [showAnimation, setShowAnimation] = useState(false);
   const [visibleDaily, setVisibleDaily] = useState<Set<number>>(new Set());
   const [visibleWeekly, setVisibleWeekly] = useState<Set<number>>(new Set());
-  const isMounted = useRef(true);
+  const isMounted = useIsMounted();
 
   // Item 9: Track animation timeouts for cleanup
   const animTimers = useRef<number[]>([]);
@@ -141,7 +142,6 @@ export const DailyChallenges: React.FC = () => {
   }, [loadChallenges, user?.id]);
 
   useEffect(() => {
-    isMounted.current = true;
     if (user?.id) {
       loadChallenges();
     }
@@ -177,7 +177,6 @@ export const DailyChallenges: React.FC = () => {
     }
 
     return () => {
-      isMounted.current = false;
       unsubHand();
       unsubBalance();
       unsubReset();

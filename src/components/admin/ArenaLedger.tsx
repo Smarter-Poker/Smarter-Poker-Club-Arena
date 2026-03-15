@@ -11,7 +11,8 @@
  * Used in: Commander admin panels, Financial Admin Hub
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import './ArenaLedger.css';
 
@@ -62,14 +63,7 @@ export default function ArenaLedger({ clubId, maxEntries = 200 }: ArenaLedgerPro
   const [filter, setFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [isLive, setIsLive] = useState(true);
-  const isMounted = useRef(true);
-
-  useEffect(() => {
-    isMounted.current = true;
-    return () => {
-      isMounted.current = false;
-    };
-  }, []);
+  const isMounted = useIsMounted();
 
   // ── Fetch initial data ──────────────────────────────────────────────────────
   const fetchEntries = useCallback(async () => {

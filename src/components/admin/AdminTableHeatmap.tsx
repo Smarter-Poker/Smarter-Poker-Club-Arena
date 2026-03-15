@@ -7,7 +7,8 @@
  * Supports 3 view modes: Density, Stakes, Variant
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import haptic from '../../utils/haptic';
@@ -56,14 +57,7 @@ export default function AdminTableHeatmap({
 }: AdminTableHeatmapProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('density');
   const [fetchedTables, setFetchedTables] = useState<TableRow[]>([]);
-  const isMounted = useRef(true);
-
-  // Self-fetch tables when clubId is provided but tables prop is not
-  useEffect(() => {
-    return () => {
-      isMounted.current = false;
-    };
-  }, []);
+  const isMounted = useIsMounted();
 
   useEffect(() => {
     if (propTables && propTables.length > 0) return; // Use prop data if provided

@@ -7,6 +7,7 @@
  */
 
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { triggerHaptic } from '../../services/HapticService';
 import { masterBus } from '../../core/MasterBus';
 import './DailyLoginReward.css';
@@ -34,11 +35,10 @@ export default function DailyLoginReward({
   const [revealed, setRevealed] = useState(false);
   const [claimed, setClaimed] = useState(false);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isMounted = useRef(true);
+  const isMounted = useIsMounted();
 
   useEffect(() => {
     return () => {
-      isMounted.current = false;
       if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
     };
   }, []);

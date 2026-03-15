@@ -134,8 +134,9 @@ export const CommissionService = {
           agent_id: agentId,
           target_role: targetRole,
           rate,
-          effective_date: new Date().toISOString(),
-          created_by: setBy,
+          // commission_structures schema: set_by, updated_at (NOT created_by, effective_date)
+          updated_at: new Date().toISOString(),
+          set_by: setBy,
         },
         { onConflict: 'club_id,agent_id,target_role' }
       )
@@ -167,8 +168,8 @@ export const CommissionService = {
       agentId: data.agent_id,
       targetRole: data.target_role,
       rate: data.rate,
-      effectiveDate: data.effective_date,
-      createdBy: data.created_by,
+      effectiveDate: data.updated_at,
+      createdBy: data.set_by,
     };
   },
 
@@ -178,7 +179,8 @@ export const CommissionService = {
   async getRates(agentId: string): Promise<CommissionRate[]> {
     const { data, error } = await supabase
       .from('commission_structures')
-      .select('id, club_id, agent_id, target_role, rate, effective_date, created_by')
+      // commission_structures schema: set_by, updated_at (NOT created_by, effective_date)
+      .select('id, club_id, agent_id, target_role, rate, updated_at, set_by')
       .eq('agent_id', agentId);
 
     if (error) throw error;
@@ -188,8 +190,8 @@ export const CommissionService = {
       agentId: r.agent_id,
       targetRole: r.target_role,
       rate: r.rate,
-      effectiveDate: r.effective_date,
-      createdBy: r.created_by,
+      effectiveDate: r.updated_at,
+      createdBy: r.set_by,
     }));
   },
 

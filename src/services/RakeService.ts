@@ -687,17 +687,18 @@ export const RakeService = {
             3
           );
 
-          // Fallback: read-modify-write for agent rake_generated
+          // Fallback: read-modify-write for agent lifetime_rake_generated
+          // NOTE: agents table has lifetime_rake_generated, NOT rake_generated
           if (rpcError) {
             const { data: agentRow } = await supabase
               .from('agents')
-              .select('rake_generated')
+              .select('lifetime_rake_generated')
               .eq('user_id', agentId)
               .maybeSingle();
-            const currentRake = Number(agentRow?.rake_generated) || 0;
+            const currentRake = Number(agentRow?.lifetime_rake_generated) || 0;
             const { error: fallbackErr } = await supabase
               .from('agents')
-              .update({ rake_generated: currentRake + rakeCredit })
+              .update({ lifetime_rake_generated: currentRake + rakeCredit })
               .eq('user_id', agentId);
             if (fallbackErr) {
               console.error(

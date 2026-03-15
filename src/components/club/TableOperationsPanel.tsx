@@ -12,7 +12,7 @@
  * Mobile-first, dark theme consistent with Club Arena design
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
@@ -330,6 +330,7 @@ const getStatusBadgeStyle = (status: string): React.CSSProperties => ({
 
 export default function TableOperationsPanel({ clubId }: Props) {
   const isMounted = useIsMounted();
+  const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const [tables, setTables] = useState<TableInfo[]>([]);
   const [expandedTable, setExpandedTable] = useState<string | null>(null);
   const [seatedPlayers, setSeatedPlayers] = useState<Record<string, SeatedPlayer[]>>({});
@@ -358,12 +359,12 @@ export default function TableOperationsPanel({ clubId }: Props) {
   }, [loadTables]);
 
   useEffect(() => {
+    staggerTimersRef.current.forEach(clearTimeout);
+    staggerTimersRef.current = [];
     setVisibleTables([]);
-    tables.forEach((_, i) => {
-      setTimeout(() => {
-        setVisibleTables((prev) => [...prev, true]);
-      }, i * 60);
-    });
+    staggerTimersRef.current.push(
+      ...tables.map((_, i) => setTimeout(() => setVisibleTables((prev) => [...prev, true]), i * 60))
+    );
   }, [tables]);
 
   useEffect(() => {

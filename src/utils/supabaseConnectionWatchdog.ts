@@ -46,8 +46,12 @@ class SupabaseConnectionWatchdog {
     // Start periodic health checks
     this.heartbeatTimer = setInterval(() => this.checkHealth(), HEARTBEAT_INTERVAL);
 
-    // Initial check after a short delay (let boot sequence complete)
-    setTimeout(() => this.checkHealth(), 5000);
+    // Initial check: in iframe context, wait longer for auth handshake to complete.
+    // The postMessage auth flow + setSession() can take several seconds, during
+    // which Supabase calls may fail, producing false "disconnected" states.
+    const inIframe = typeof window !== 'undefined' && window.parent !== window;
+    const initialDelay = inIframe ? 15_000 : 5_000;
+    setTimeout(() => this.checkHealth(), initialDelay);
   }
 
   /**

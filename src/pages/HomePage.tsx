@@ -790,7 +790,25 @@ function HomePageInner() {
   const fetchUserData = useCallback(
     async (skipLoading = false, getIsMounted?: () => boolean) => {
       if (!skipLoading) setIsLoading(true);
+
+      // Safety timeout: never show loading spinner for more than 12 seconds
+      const loadingTimeout = setTimeout(() => {
+        if (!getIsMounted || getIsMounted()) setIsLoading(false);
+      }, 12_000);
+
       try {
+        // In iframe context, wait briefly for postMessage auth token to arrive
+        // before calling getUser(), preventing a race condition where
+        // getUser() fires before setSession() from the parent completes.
+        const inIframe = window.parent !== window;
+        if (inIframe) {
+          await new Promise((r) => setTimeout(r, 800));
+          if (getIsMounted && !getIsMounted()) {
+            clearTimeout(loadingTimeout);
+            return;
+          }
+        }
+
         const {
           data: { user: authUser },
         } = await supabase.auth.getUser();
@@ -857,6 +875,7 @@ function HomePageInner() {
         console.error('Error fetching user data:', err);
         toast.error('Failed to load user data');
       } finally {
+        clearTimeout(loadingTimeout);
         if (!getIsMounted || getIsMounted()) setIsLoading(false);
       }
     },

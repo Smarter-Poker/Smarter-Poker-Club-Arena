@@ -32,6 +32,7 @@ interface SessionReplayProps {
 }
 
 export const SessionReplay: React.FC<SessionReplayProps> = ({ sessionId, onClose }) => {
+  const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const [replay, setReplay] = useState<ReplayData | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -50,18 +51,22 @@ export const SessionReplay: React.FC<SessionReplayProps> = ({ sessionId, onClose
 
   useEffect(() => {
     if (replay) {
+      staggerTimersRef.current.forEach(clearTimeout);
+      staggerTimersRef.current = [];
       setVisibleStats([]);
-      [0, 1, 2].forEach((i) => {
-        setTimeout(() => {
-          setVisibleStats((prev) => [...prev, true]);
-        }, i * 60);
-      });
+      staggerTimersRef.current.push(
+        ...[0, 1, 2, 3].map((i) =>
+          setTimeout(() => setVisibleStats((prev) => [...prev, true]), i * 60)
+        )
+      );
       setVisibleActions([]);
-      replay.actions.slice(0, 20).forEach((_, i) => {
-        setTimeout(() => {
-          setVisibleActions((prev) => [...prev, true]);
-        }, i * 40);
-      });
+      staggerTimersRef.current.push(
+        ...replay.actions
+          .slice(0, 20)
+          .map((_: any, i: number) =>
+            setTimeout(() => setVisibleActions((prev) => [...prev, true]), i * 40)
+          )
+      );
     }
   }, [replay]);
 

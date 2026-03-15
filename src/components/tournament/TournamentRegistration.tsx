@@ -4,7 +4,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
@@ -36,6 +36,7 @@ export function TournamentRegistration({
 }: TournamentRegistrationProps) {
   const isMounted = useIsMounted();
   const toast = useToast();
+  const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const [players, setPlayers] = useState<RegisteredPlayer[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -204,21 +205,23 @@ export function TournamentRegistration({
   const eliminatedPlayers = filteredPlayers.filter((p) => p.isEliminated);
 
   useEffect(() => {
+    staggerTimersRef.current.forEach(clearTimeout);
+    staggerTimersRef.current = [];
     setVisibleActive([]);
-    activePlayers.forEach((_, i) => {
-      setTimeout(() => {
-        setVisibleActive((prev) => [...prev, true]);
-      }, i * 60);
-    });
+    staggerTimersRef.current.push(
+      ...activePlayers.map((_, i) =>
+        setTimeout(() => setVisibleActive((prev) => [...prev, true]), i * 60)
+      )
+    );
   }, [activePlayers]);
 
   useEffect(() => {
     setVisibleEliminated([]);
-    eliminatedPlayers.forEach((_, i) => {
-      setTimeout(() => {
-        setVisibleEliminated((prev) => [...prev, true]);
-      }, i * 60);
-    });
+    staggerTimersRef.current.push(
+      ...eliminatedPlayers.map((_, i) =>
+        setTimeout(() => setVisibleEliminated((prev) => [...prev, true]), i * 60)
+      )
+    );
   }, [eliminatedPlayers]);
 
   if (loading) {

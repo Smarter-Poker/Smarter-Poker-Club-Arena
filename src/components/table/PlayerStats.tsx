@@ -10,7 +10,7 @@
  * - Actions (add note, report)
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import './PlayerStats.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -94,6 +94,7 @@ export function PlayerStats({
   position,
   isCurrentUser = false,
 }: PlayerStatsProps) {
+  const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const [showNoteInput, setShowNoteInput] = useState(false);
   const [noteText, setNoteText] = useState('');
   const [noteColor, setNoteColor] = useState(NOTE_COLORS[0]);
@@ -111,23 +112,23 @@ export function PlayerStats({
 
   useEffect(() => {
     if (isOpen && stats) {
+      staggerTimersRef.current.forEach(clearTimeout);
+      staggerTimersRef.current = [];
       setVisibleHud([]);
-      [0, 1, 2, 3].forEach((i) => {
-        setTimeout(() => {
-          setVisibleHud((prev) => [...prev, true]);
-        }, i * 50);
-      });
+      staggerTimersRef.current.push(
+        ...[0, 1, 2, 3].map((i) =>
+          setTimeout(() => setVisibleHud((prev) => [...prev, true]), i * 50)
+        )
+      );
     }
   }, [isOpen, stats]);
 
   useEffect(() => {
     if (isOpen && notes.length > 0) {
       setVisibleNotes([]);
-      notes.forEach((_, i) => {
-        setTimeout(() => {
-          setVisibleNotes((prev) => [...prev, true]);
-        }, i * 40);
-      });
+      staggerTimersRef.current.push(
+        ...notes.map((_, i) => setTimeout(() => setVisibleNotes((prev) => [...prev, true]), i * 40))
+      );
     }
   }, [isOpen, notes]);
 

@@ -10,7 +10,7 @@
  * - Preview card
  */
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { haptic } from '../../services/SoundService';
 import { CardImage } from '../table/CardImage';
 import type { Card } from '../table/CardImage';
@@ -298,6 +298,7 @@ export function ShareHand({
   baseUrl = 'https://smarter.poker/hub/club-arena/replay',
   clubName = 'Smarter Poker',
 }: ShareHandProps) {
+  const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const [copied, setCopied] = useState(false);
   const [activeTab, setActiveTab] = useState<'link' | 'social' | 'embed'>('link');
   const [visibleSocial, setVisibleSocial] = useState<boolean[]>([]);
@@ -372,12 +373,14 @@ export function ShareHand({
 
   useEffect(() => {
     if (activeTab === 'social') {
+      staggerTimersRef.current.forEach(clearTimeout);
+      staggerTimersRef.current = [];
       setVisibleSocial([]);
-      [0, 1, 2, 3].forEach((i) => {
-        setTimeout(() => {
-          setVisibleSocial((prev) => [...prev, true]);
-        }, i * 50);
-      });
+      staggerTimersRef.current.push(
+        ...[0, 1, 2, 3].map((i) =>
+          setTimeout(() => setVisibleSocial((prev) => [...prev, true]), i * 50)
+        )
+      );
     }
   }, [activeTab]);
 

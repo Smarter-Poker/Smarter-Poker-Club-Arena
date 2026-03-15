@@ -9,7 +9,8 @@
  *  - Active player count
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import './AgentScoreCard.css';
 
@@ -36,14 +37,7 @@ interface ScoreData {
 export default function AgentScoreCard({ userId, clubId }: AgentScoreCardProps) {
   const [data, setData] = useState<ScoreData | null>(null);
   const [loading, setLoading] = useState(true);
-  const isMounted = useRef(true);
-
-  useEffect(() => {
-    isMounted.current = true;
-    return () => {
-      isMounted.current = false;
-    };
-  }, []);
+  const isMounted = useIsMounted();
 
   const loadScore = useCallback(async () => {
     setLoading(true);

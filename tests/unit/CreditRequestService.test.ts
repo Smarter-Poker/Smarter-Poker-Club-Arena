@@ -74,4 +74,23 @@ describe('CreditRequestService', () => {
       expect(typeof creditRequestService.getRequestsForApprover).toBe('function');
     });
   });
+
+  describe('edge cases', () => {
+    it('should handle getRequestsForApprover with no data', async () => {
+      const result = await creditRequestService.getRequestsForApprover('approver-x');
+      expect(Array.isArray(result)).toBe(true);
+    });
+
+    it('should throw on denyRequest for unknown request', async () => {
+      await expect(
+        creditRequestService.denyRequest('nonexistent-req', 'Too risky')
+      ).rejects.toThrow();
+    });
+
+    it('should throw on approveRequest for unknown request', async () => {
+      await expect(
+        creditRequestService.approveRequest('nonexistent-req', 'approver-1')
+      ).rejects.toThrow();
+    });
+  });
 });

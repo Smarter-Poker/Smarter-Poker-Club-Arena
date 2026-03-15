@@ -52,4 +52,58 @@ describe('hasUnsafeContent', () => {
   it('should detect onclick handlers', () => {
     expect(hasUnsafeContent('onclick="hack()"')).toBe(true);
   });
+
+  it('should detect onerror handlers', () => {
+    expect(hasUnsafeContent('onerror="hack()"')).toBe(true);
+  });
+
+  it('should detect onload handlers', () => {
+    expect(hasUnsafeContent('onload="hack()"')).toBe(true);
+  });
+
+  it('should detect javascript: URLs', () => {
+    expect(hasUnsafeContent('javascript:alert(1)')).toBe(true);
+  });
+});
+
+describe('sanitizeInput edge cases', () => {
+  it('should strip img tags with onerror', () => {
+    const xss = '<img src=x onerror=alert(1)>';
+    expect(sanitizeInput(xss)).not.toContain('<img');
+    expect(sanitizeInput(xss)).not.toContain('onerror');
+  });
+
+  it('should preserve unicode characters', () => {
+    expect(sanitizeInput('Héllo Wörld 🃏')).toContain('Héllo');
+  });
+
+  it('should handle very long strings', () => {
+    const longStr = 'a'.repeat(10000);
+    expect(sanitizeInput(longStr)).toBe(longStr);
+  });
+
+  it('should strip style tags', () => {
+    expect(sanitizeInput('<style>body{display:none}</style>Hello')).toBe('body{display:none}Hello');
+  });
+
+  it('should handle multiple nested tags', () => {
+    expect(sanitizeInput('<div><span><b><i>deep</i></b></span></div>')).toBe('deep');
+  });
+});
+
+describe('sanitizeObject edge cases', () => {
+  it('should preserve non-string values', () => {
+    const result = sanitizeObject({ count: 0, active: false, tags: null as any });
+    expect(result.count).toBe(0);
+    expect(result.active).toBe(false);
+  });
+
+  it('should handle multiple string fields', () => {
+    const result = sanitizeObject({
+      name: '<b>Bold</b>',
+      bio: '<script>xss</script>Safe',
+    });
+    expect(result.name).toBe('Bold');
+    expect(result.bio).not.toContain('<script>');
+  });
 });

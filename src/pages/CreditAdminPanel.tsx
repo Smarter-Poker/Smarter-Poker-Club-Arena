@@ -13,6 +13,8 @@ import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import PageSkeleton from '../components/common/PageSkeleton';
+import { retryFetch } from '../utils/retryFetch';
+import { exportToCSV } from '../lib/export';
 
 import { useIsMounted } from '../hooks/useIsMounted';
 
@@ -45,13 +47,18 @@ export default function CreditAdminPanel() {
   const loadAgents = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await supabase
-        .from('agents')
-        .select(
-          'id, agent_wallet_balance, credit_limit, status, profiles!agents_id_fkey(display_name, username)'
-        )
-        .order('credit_limit', { ascending: false })
-        .limit(100);
+      const { data } = await retryFetch(
+        () =>
+          supabase
+            .from('agents')
+            .select(
+              'id, agent_wallet_balance, credit_limit, status, profiles!agents_id_fkey(display_name, username)'
+            )
+            .order('credit_limit', { ascending: false })
+            .limit(100)
+            .then((r) => r),
+        { maxRetries: 2, isMountedRef: isMounted }
+      );
 
       if (data) {
         if (!isMounted.current) return;
@@ -80,12 +87,17 @@ export default function CreditAdminPanel() {
 
     // Load audit log
     try {
-      const { data: auditData } = await supabase
-        .from('commission_rate_audit')
-        .select('agent_id, old_rate, new_rate, created_at')
-        .eq('rate_type', 'credit_limit')
-        .order('created_at', { ascending: false })
-        .limit(20);
+      const { data: auditData } = await retryFetch(
+        () =>
+          supabase
+            .from('commission_rate_audit')
+            .select('agent_id, old_rate, new_rate, created_at')
+            .eq('rate_type', 'credit_limit')
+            .order('created_at', { ascending: false })
+            .limit(20)
+            .then((r) => r),
+        { maxRetries: 2, isMountedRef: isMounted }
+      );
       if (isMounted.current) setAuditLog(auditData || []);
     } catch {
       /* table may not exist */
@@ -194,9 +206,41 @@ export default function CreditAdminPanel() {
           ← Back
         </button>
         <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700 }}>💳 Credit Admin Panel</h1>
-        <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)' }}>
-          Manage agent credit limits and monitor exposure
-        </p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '4px' }}>
+          <p style={{ margin: 0, fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)' }}>
+            Manage agent credit limits and monitor exposure
+          </p>
+          {agents.length > 0 && (
+            <button
+              onClick={() => {
+                try {
+                  exportToCSV(agents, 'credit_admin.csv', [
+                    { key: 'displayName', label: 'Agent' },
+                    { key: 'creditLimit', label: 'Credit Limit' },
+                    { key: 'currentBalance', label: 'Balance' },
+                    { key: 'debtOwed', label: 'Debt Owed' },
+                    { key: 'status', label: 'Status' },
+                  ]);
+                } catch {
+                  /* silent */
+                }
+              }}
+              style={{
+                background: 'rgba(59,130,246,0.1)',
+                border: '1px solid rgba(59,130,246,0.25)',
+                borderRadius: '6px',
+                color: '#3b82f6',
+                fontSize: '0.7rem',
+                fontWeight: 600,
+                padding: '4px 10px',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              📥 Export
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Summary Cards */}

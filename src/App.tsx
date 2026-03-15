@@ -359,12 +359,14 @@ export default function App() {
 
         {/* Intro video overlay - app loads in background while video plays */}
         {showIntro && (
-          <IntroVideo
-            videoSrc="/videos/club-arena-intro.mp4"
-            minDuration={3000}
-            maxDuration={10000}
-            onComplete={handleIntroComplete}
-          />
+          <Suspense fallback={null}>
+            <IntroVideo
+              videoSrc="/videos/club-arena-intro.mp4"
+              minDuration={3000}
+              maxDuration={10000}
+              onComplete={handleIntroComplete}
+            />
+          </Suspense>
         )}
 
         <TOSGuard>

@@ -22,6 +22,7 @@ import AgentScoreCard from '../components/agent/AgentScoreCard';
 
 import { useIsMounted } from '../hooks/useIsMounted';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
+import { retryFetch } from '../utils/retryFetch';
 
 // ── Helpers ─────────────────────────────────────────────────
 const fmt = (n: number | null | undefined) => Number(n || 0).toLocaleString();
@@ -165,19 +166,29 @@ export default function AgentDashboardPage() {
         const uuid = await resolveClubUUID(targetClubId);
 
         // Get current user's role
-        const { data: membership } = await supabase
-          .from('club_members')
-          .select('role')
-          .eq('club_id', uuid)
-          .eq('user_id', user.id)
-          .maybeSingle();
+        const { data: membership } = await retryFetch(
+          () =>
+            supabase
+              .from('club_members')
+              .select('role')
+              .eq('club_id', uuid)
+              .eq('user_id', user.id)
+              .maybeSingle()
+              .then((r) => r),
+          { maxRetries: 2, isMountedRef: mountedRef }
+        );
         if (mountedRef.current) setRole(membership?.role || 'agent');
 
         // Get agent's players (downline)
-        const { data: downline } = await supabase
-          .from('club_members')
-          .select('user_id, role, chip_balance, status, created_at, referred_by')
-          .eq('club_id', uuid);
+        const { data: downline } = await retryFetch(
+          () =>
+            supabase
+              .from('club_members')
+              .select('user_id, role, chip_balance, status, created_at, referred_by')
+              .eq('club_id', uuid)
+              .then((r) => r),
+          { maxRetries: 2, isMountedRef: mountedRef }
+        );
 
         // Filter to downline for non-owners
         const myDownline = (downline || []).filter(
@@ -191,10 +202,15 @@ export default function AgentDashboardPage() {
         const allUserIds = (downline || []).map((m: DownlineMember) => m.user_id).filter(Boolean);
         const profileMap: Record<string, AgentProfile> = {};
         if (allUserIds.length > 0) {
-          const { data: profiles } = await supabase
-            .from('profiles')
-            .select('id, display_name, username, avatar_url, last_seen_at')
-            .in('id', allUserIds);
+          const { data: profiles } = await retryFetch(
+            () =>
+              supabase
+                .from('profiles')
+                .select('id, display_name, username, avatar_url, last_seen_at')
+                .in('id', allUserIds)
+                .then((r) => r),
+            { maxRetries: 2, isMountedRef: mountedRef }
+          );
           if (profiles)
             profiles.forEach((p: AgentProfile) => {
               profileMap[p.id] = p;
@@ -208,31 +224,46 @@ export default function AgentDashboardPage() {
         }));
 
         // cashout_requests schema: player_id (not user_id), player_note (not notes), no payment_method
-        const { data: cashouts } = await supabase
-          .from('cashout_requests')
-          .select('id, player_id, club_id, amount, status, player_note, created_at, updated_at')
-          .eq('club_id', uuid)
-          .eq('status', 'pending')
-          .order('created_at', { ascending: false });
+        const { data: cashouts } = await retryFetch(
+          () =>
+            supabase
+              .from('cashout_requests')
+              .select('id, player_id, club_id, amount, status, player_note, created_at, updated_at')
+              .eq('club_id', uuid)
+              .eq('status', 'pending')
+              .order('created_at', { ascending: false })
+              .then((r) => r),
+          { maxRetries: 2, isMountedRef: mountedRef }
+        );
 
         // Get commission history
-        const { data: comms } = await supabase
-          .from('agent_commissions')
-          .select('id, user_id, club_id, amount, source_type, source_id, notes, created_at')
-          .eq('club_id', uuid)
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false })
-          .limit(50);
+        const { data: comms } = await retryFetch(
+          () =>
+            supabase
+              .from('agent_commissions')
+              .select('id, user_id, club_id, amount, source_type, source_id, notes, created_at')
+              .eq('club_id', uuid)
+              .eq('user_id', user.id)
+              .order('created_at', { ascending: false })
+              .limit(50)
+              .then((r) => r),
+          { maxRetries: 2, isMountedRef: mountedRef }
+        );
 
         // Get recent transactions
-        const { data: txns } = await supabase
-          .from('chip_transactions')
-          .select(
-            'id, from_user_id, to_user_id, club_id, amount, transaction_type, notes, reference_id, created_at'
-          )
-          .eq('club_id', uuid)
-          .order('created_at', { ascending: false })
-          .limit(100);
+        const { data: txns } = await retryFetch(
+          () =>
+            supabase
+              .from('chip_transactions')
+              .select(
+                'id, from_user_id, to_user_id, club_id, amount, transaction_type, notes, reference_id, created_at'
+              )
+              .eq('club_id', uuid)
+              .order('created_at', { ascending: false })
+              .limit(100)
+              .then((r) => r),
+          { maxRetries: 2, isMountedRef: mountedRef }
+        );
 
         // Get agents list
         const agentList = (downline || [])

@@ -46,3 +46,46 @@ describe('safeServiceCallSync', () => {
     expect(result.error).toBe('boom');
   });
 });
+
+describe('safeServiceCall edge cases', () => {
+  it('should handle string throws (non-Error)', async () => {
+    const result = await safeServiceCall(() => Promise.reject('string-error'));
+    expect(result.data).toBeNull();
+    expect(result.error).toBeDefined();
+  });
+
+  it('should handle null data returns', async () => {
+    const result = await safeServiceCall(() => Promise.resolve(null));
+    expect(result.data).toBeNull();
+    expect(result.error).toBeNull();
+  });
+
+  it('should handle undefined data returns', async () => {
+    const result = await safeServiceCall(() => Promise.resolve(undefined));
+    expect(result.data).toBeUndefined();
+    expect(result.error).toBeNull();
+  });
+
+  it('should handle error with error_description', async () => {
+    const result = await safeServiceCall(() =>
+      Promise.reject({ error_description: 'auth failed' })
+    );
+    expect(result.error).toBe('auth failed');
+  });
+});
+
+describe('safeServiceCallSync edge cases', () => {
+  it('should handle null return', () => {
+    const result = safeServiceCallSync(() => null);
+    expect(result.data).toBeNull();
+    expect(result.error).toBeNull();
+  });
+
+  it('should handle string throws (non-Error)', () => {
+    const result = safeServiceCallSync(() => {
+      throw 'string-error';
+    });
+    expect(result.data).toBeNull();
+    expect(result.error).toBeDefined();
+  });
+});

@@ -35,6 +35,7 @@ import ClubBottomNav from '@/components/club/ClubBottomNav';
 import { PlayerSearch } from '@/components/admin/PlayerSearch';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
+import { retryFetch } from '../utils/retryFetch';
 import { useSwipeTabs } from '../hooks/useSwipeTabs';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { useIsMounted } from '../hooks/useIsMounted';
@@ -141,18 +142,23 @@ export default function AgentManagementPage() {
     try {
       const resolvedId = await resolveClubUUID(clubId);
       const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-      const { data } = await supabase
-        .from('chip_transactions')
-        .select(
-          'id, from_user_id, to_user_id, amount, created_at, transaction_type, notes, profiles:to_user_id(username)'
-        )
-        .eq('club_id', resolvedId)
-        .eq('from_user_id', user.id)
-        .in('transaction_type', ['agent_to_player', 'promo_agent_to_player', 'send'])
-        .gte('created_at', tenMinAgo)
-        .eq('clawed_back', false)
-        .order('created_at', { ascending: false })
-        .limit(20);
+      const { data } = await retryFetch(
+        () =>
+          supabase
+            .from('chip_transactions')
+            .select(
+              'id, from_user_id, to_user_id, amount, created_at, transaction_type, notes, profiles:to_user_id(username)'
+            )
+            .eq('club_id', resolvedId)
+            .eq('from_user_id', user.id)
+            .in('transaction_type', ['agent_to_player', 'promo_agent_to_player', 'send'])
+            .gte('created_at', tenMinAgo)
+            .eq('clawed_back', false)
+            .order('created_at', { ascending: false })
+            .limit(20)
+            .then((r) => r),
+        { maxRetries: 2, isMountedRef: isMounted }
+      );
       if (isMounted.current) setRecentDistributions(data || []);
     } catch {
       /* silent */

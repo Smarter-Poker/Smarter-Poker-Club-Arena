@@ -20,23 +20,31 @@ const isDev = import.meta.env.DEV;
 function sendToSentry(metric: Metric) {
   try {
     // Dynamic import to avoid hard dependency if Sentry isn't loaded
-    import('@sentry/react').then((Sentry) => {
-      Sentry.setMeasurement(metric.name, metric.value, 'millisecond');
+    import('@sentry/react')
+      .then((Sentry) => {
+        Sentry.setMeasurement(
+          metric.name,
+          metric.value,
+          metric.name === 'CLS' ? '' : 'millisecond'
+        );
 
-      // Also add as breadcrumb for contextual debugging
-      Sentry.addBreadcrumb({
-        category: 'web-vitals',
-        message: `${metric.name}: ${Math.round(metric.value)}${metric.name === 'CLS' ? '' : 'ms'}`,
-        level: metric.rating === 'poor' ? 'warning' : 'info',
-        data: {
-          value: metric.value,
-          rating: metric.rating,
-          delta: metric.delta,
-          id: metric.id,
-          navigationType: metric.navigationType,
-        },
+        // Also add as breadcrumb for contextual debugging
+        Sentry.addBreadcrumb({
+          category: 'web-vitals',
+          message: `${metric.name}: ${Math.round(metric.value)}${metric.name === 'CLS' ? '' : 'ms'}`,
+          level: metric.rating === 'poor' ? 'warning' : 'info',
+          data: {
+            value: metric.value,
+            rating: metric.rating,
+            delta: metric.delta,
+            id: metric.id,
+            navigationType: metric.navigationType,
+          },
+        });
+      })
+      .catch(() => {
+        // Silent fail — Sentry may be blocked by ad blockers or unavailable
       });
-    });
   } catch {
     // Silent fail — metrics are non-critical
   }
@@ -69,8 +77,10 @@ function handleMetric(metric: Metric) {
     logToConsole(metric);
   }
 
-  // Always send to Sentry in production (Sentry init gate handles env check)
-  sendToSentry(metric);
+  // Only send to Sentry in production — skip in dev to avoid unnecessary dynamic imports
+  if (!isDev) {
+    sendToSentry(metric);
+  }
 }
 
 /**

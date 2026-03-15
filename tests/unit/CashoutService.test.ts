@@ -70,4 +70,20 @@ describe('CashoutService', () => {
       expect(typeof cashoutService.getAgentPendingCashouts).toBe('function');
     });
   });
+
+  describe('edge cases', () => {
+    it('should throw on cancelCashout for nonexistent id', async () => {
+      await expect(cashoutService.cancelCashout('nonexistent-id', 'player-1')).rejects.toThrow();
+    });
+
+    it('should throw on rejectCashout for nonexistent id', async () => {
+      await expect(
+        cashoutService.rejectCashout('some-id', 'Suspicious activity')
+      ).rejects.toThrow();
+    });
+
+    it('should throw on approveCashout for unknown id', async () => {
+      await expect(cashoutService.approveCashout('unknown-id', 'agent-1')).rejects.toThrow();
+    });
+  });
 });

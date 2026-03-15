@@ -39,4 +39,34 @@ describe('retryFetch', () => {
   it('should be a function export', () => {
     expect(typeof retryFetch).toBe('function');
   });
+
+  it('should return null if function resolves with null', async () => {
+    const fn = vi.fn().mockResolvedValue(null);
+    const result = await retryFetch(fn);
+    expect(result).toBeNull();
+  });
+
+  it('should return 0 if function resolves with 0', async () => {
+    const fn = vi.fn().mockResolvedValue(0);
+    const result = await retryFetch(fn);
+    expect(result).toBe(0);
+  });
+
+  it('should return false if function resolves with false', async () => {
+    const fn = vi.fn().mockResolvedValue(false);
+    const result = await retryFetch(fn);
+    expect(result).toBe(false);
+  });
+
+  it('should succeed on last retry attempt', async () => {
+    let calls = 0;
+    const fn = vi.fn(() => {
+      calls++;
+      if (calls < 3) throw new Error('fail');
+      return Promise.resolve('last-chance');
+    });
+    const result = await retryFetch(fn, { maxRetries: 3, baseDelayMs: 0 });
+    expect(result).toBe('last-chance');
+    expect(fn).toHaveBeenCalledTimes(3);
+  });
 });

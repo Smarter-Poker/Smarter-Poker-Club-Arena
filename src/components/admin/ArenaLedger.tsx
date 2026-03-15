@@ -14,6 +14,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
+import { masterBus } from '../../core/MasterBus';
 import './ArenaLedger.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -126,8 +127,9 @@ export default function ArenaLedger({ clubId, maxEntries = 200 }: ArenaLedgerPro
   useEffect(() => {
     if (!clubId || !isLive) return;
 
-    const channel = supabase
-      .channel(`arena-ledger-${clubId}`)
+    const channelKey = `arena-ledger-${clubId}`;
+    const channel = masterBus
+      .getOrCreateChannel(channelKey)
       .on(
         'postgres_changes',
         {
@@ -175,7 +177,7 @@ export default function ArenaLedger({ clubId, maxEntries = 200 }: ArenaLedgerPro
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      masterBus.removeRegisteredChannel(channelKey);
     };
   }, [clubId, isLive, maxEntries]);
 

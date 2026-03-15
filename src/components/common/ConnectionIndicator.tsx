@@ -1,10 +1,14 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  CONNECTION INDICATOR — Realtime connection health dot
+ *  CONNECTION INDICATOR — Realtime connection health dot (SILENT MODE)
  * ═══════════════════════════════════════════════════════════════════════════════
- * Shows a small colored dot reflecting Supabase realtime connection health.
- * Auto-hides when connected for 5+ seconds to avoid visual clutter.
- * Stays visible when disconnected to alert the user.
+ * DESIGN: Users should NEVER see "Offline". The app silently reconnects in the
+ * background. This indicator only renders in extreme failure cases (60+ seconds
+ * of consecutive disconnection) and auto-dismisses as soon as connectivity
+ * returns. For normal transient blips, users see nothing.
+ *
+ * The watchdog + Supabase client handle actual reconnection. This component
+ * is purely visual feedback for catastrophic, prolonged outages.
  */
 
 import { useState, useEffect, useRef } from 'react';
@@ -13,54 +17,68 @@ import './ConnectionIndicator.css';
 
 type ConnectionState = 'connected' | 'disconnected' | 'reconnecting';
 
+// Only show "Offline" after this many CONSECUTIVE seconds of disconnection.
+// Normal blips (page transitions, token refresh, tab sleep) never reach this.
+const OFFLINE_DISPLAY_THRESHOLD_MS = 60_000; // 60 seconds
+
 export default function ConnectionIndicator() {
   const [connState, setConnState] = useState<ConnectionState>('connected');
-  const [visible, setVisible] = useState(true);
+  const [visible, setVisible] = useState(false); // Start hidden — assume connected
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const disconnectDelayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const mountTimeRef = useRef(Date.now());
+  const offlineTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    const unsubConnected = masterBus.subscribe('REALTIME_CONNECTED', () => {
-      // Cancel any pending disconnect display
-      if (disconnectDelayRef.current) clearTimeout(disconnectDelayRef.current);
-      setConnState('connected');
-      // Auto-hide after 5 seconds when healthy
+    const clearAllTimers = () => {
       if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
-      hideTimerRef.current = setTimeout(() => setVisible(false), 5000);
+      if (offlineTimerRef.current) clearTimeout(offlineTimerRef.current);
+    };
+
+    const unsubConnected = masterBus.subscribe('REALTIME_CONNECTED', () => {
+      // Connection restored — immediately hide any offline indicator
+      if (offlineTimerRef.current) clearTimeout(offlineTimerRef.current);
+      setConnState('connected');
+      // Brief green flash to confirm reconnection, then hide
+      if (visible) {
+        setVisible(true);
+        if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+        hideTimerRef.current = setTimeout(() => setVisible(false), 2000);
+      }
     });
 
     const unsubDisconnected = masterBus.subscribe('REALTIME_DISCONNECTED', () => {
-      // Grace period: Don't show "Offline" during the first 15 seconds after mount.
-      // In iframe contexts, the initial connection takes time to establish.
-      // Also add a 3-second delay before showing "Offline" to avoid flicker
-      // from transient disconnects during page transitions.
-      if (disconnectDelayRef.current) clearTimeout(disconnectDelayRef.current);
-      const timeSinceMount = Date.now() - mountTimeRef.current;
-      const delay = timeSinceMount < 15_000 ? 8_000 : 3_000;
-      disconnectDelayRef.current = setTimeout(() => {
+      // Start the long timer — only show "Offline" if disconnected for 60+ seconds.
+      // Silently reconnect in the background. Users should never know about blips.
+      if (offlineTimerRef.current) clearTimeout(offlineTimerRef.current);
+      offlineTimerRef.current = setTimeout(() => {
         setConnState('disconnected');
         setVisible(true);
-      }, delay);
-      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+      }, OFFLINE_DISPLAY_THRESHOLD_MS);
     });
 
-    // Initial auto-hide after 5s
-    hideTimerRef.current = setTimeout(() => setVisible(false), 5000);
+    // Also listen for reconnecting events — same silent treatment
+    const unsubReconnecting = masterBus.subscribe('WS_RECONNECTING' as any, () => {
+      // Cancel the offline timer — we're actively trying to reconnect
+      // Only show if it's been a really long time
+      if (offlineTimerRef.current) clearTimeout(offlineTimerRef.current);
+      offlineTimerRef.current = setTimeout(() => {
+        setConnState('reconnecting');
+        setVisible(true);
+      }, OFFLINE_DISPLAY_THRESHOLD_MS);
+    });
 
     return () => {
       unsubConnected();
       unsubDisconnected();
-      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
-      if (disconnectDelayRef.current) clearTimeout(disconnectDelayRef.current);
+      unsubReconnecting();
+      clearAllTimers();
     };
-  }, []);
+  }, [visible]);
 
   if (!visible) return null;
 
   const labels: Record<ConnectionState, string> = {
-    connected: 'Live connection active',
-    disconnected: 'Connection lost — data may be stale',
+    connected: 'Connected',
+    disconnected: 'Reconnecting...',
     reconnecting: 'Reconnecting...',
   };
 
@@ -72,7 +90,7 @@ export default function ConnectionIndicator() {
       aria-label={labels[connState]}
     >
       <span className="conn-indicator__dot" />
-      {connState === 'disconnected' && <span className="conn-indicator__label">Offline</span>}
+      {connState !== 'connected' && <span className="conn-indicator__label">Reconnecting...</span>}
     </div>
   );
 }

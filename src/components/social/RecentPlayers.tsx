@@ -4,6 +4,8 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
+import { masterBus } from '../../core/MasterBus';
 import './RecentPlayers.css';
 
 interface RecentPlayer {
@@ -34,9 +36,29 @@ export const RecentPlayers: React.FC<RecentPlayersProps> = ({
   const [loading, setLoading] = useState(true);
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
   const animTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const isMounted = useIsMounted();
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     loadRecentPlayers();
+  }, []);
+
+  // Bus listeners: auto-refresh on table activity
+  useEffect(() => {
+    const debouncedRefresh = () => {
+      if (refreshTimer.current) clearTimeout(refreshTimer.current);
+      refreshTimer.current = setTimeout(() => {
+        if (isMounted.current) loadRecentPlayers();
+      }, 1000);
+    };
+    const unsubs = [
+      masterBus.subscribe('TABLE_LEFT', debouncedRefresh),
+      masterBus.subscribe('TABLE_SEATED', debouncedRefresh),
+    ];
+    return () => {
+      unsubs.forEach((u) => u());
+      if (refreshTimer.current) clearTimeout(refreshTimer.current);
+    };
   }, []);
 
   useEffect(() => {

@@ -127,9 +127,41 @@
 
 .psr-empty {
   text-align: center;
-  padding: 40px 16px;
+  padding: 32px 16px;
+}
+
+.psr-empty-icon {
+  font-size: 2.4rem;
+  margin-bottom: 10px;
+  opacity: 0.8;
+  animation: psr-empty-pulse 2s ease-in-out infinite;
+}
+
+@keyframes psr-empty-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.8;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 1;
+  }
+}
+
+.psr-empty-title {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.45);
+  margin-bottom: 6px;
+}
+
+.psr-empty-desc {
+  font-size: 0.72rem;
   color: rgba(255, 255, 255, 0.25);
-  font-size: 0.8rem;
+  line-height: 1.5;
+  max-width: 240px;
+  margin: 0 auto;
 }
 
 .psr-loading {

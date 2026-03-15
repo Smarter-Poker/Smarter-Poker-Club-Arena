@@ -62,10 +62,10 @@ export const DailyChallengesWidget: React.FC = () => {
     });
 
     // Supabase Realtime — cross-tab sync
-    let realtimeChannel: ReturnType<typeof supabase.channel> | null = null;
+    const channelKey = `widget-challenges-${user.id}`;
     if (user?.id) {
-      realtimeChannel = supabase
-        .channel(`widget-challenges-${user.id}`)
+      const realtimeChannel = masterBus
+        .getOrCreateChannel(channelKey)
         .on(
           'postgres_changes',
           {
@@ -87,7 +87,7 @@ export const DailyChallengesWidget: React.FC = () => {
       unsubReset();
       if (debounceRef.current) clearTimeout(debounceRef.current);
       if (initTimerRef.current) clearTimeout(initTimerRef.current);
-      if (realtimeChannel) supabase.removeChannel(realtimeChannel);
+      masterBus.removeRegisteredChannel(channelKey);
     };
   }, [user?.id, debouncedRefresh]);
 

@@ -96,8 +96,9 @@ export default function ClubChat({ clubId, userId, userName }: ClubChatProps) {
   // Realtime subscription
   useEffect(() => {
     if (!clubId) return;
-    const channel = supabase
-      .channel(`club-chat:${clubId}`)
+    const channelKey = `club-chat:${clubId}`;
+    const channel = masterBus
+      .getOrCreateChannel(channelKey)
       .on(
         'postgres_changes',
         {
@@ -136,7 +137,7 @@ export default function ClubChat({ clubId, userId, userName }: ClubChatProps) {
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      masterBus.removeRegisteredChannel(channelKey);
     };
   }, [clubId]);
 

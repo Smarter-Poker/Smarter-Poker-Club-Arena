@@ -4,10 +4,12 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
+import { useIsMounted } from '../../hooks/useIsMounted';
+import { masterBus } from '../../core/MasterBus';
 import './TransactionHistory.css';
 
 interface TransactionHistoryProps {
@@ -103,6 +105,8 @@ export function TransactionHistory({ walletId, limit = 20 }: TransactionHistoryP
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>('all');
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
+  const isMounted = useIsMounted();
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Stagger animation for transaction list
   useEffect(() => {
@@ -119,6 +123,25 @@ export function TransactionHistory({ walletId, limit = 20 }: TransactionHistoryP
       loadTransactions();
     }
   }, [user?.id, walletId]);
+
+  // Bus listeners: auto-refresh on wallet events
+  useEffect(() => {
+    const debouncedRefresh = () => {
+      if (refreshTimer.current) clearTimeout(refreshTimer.current);
+      refreshTimer.current = setTimeout(() => {
+        if (isMounted.current) loadTransactions();
+      }, 500);
+    };
+    const unsubs = [
+      masterBus.subscribe('BALANCE_UPDATED', debouncedRefresh),
+      masterBus.subscribe('WALLET_REFRESHED', debouncedRefresh),
+      masterBus.subscribe('CHIPS_DISTRIBUTED', debouncedRefresh),
+    ];
+    return () => {
+      unsubs.forEach((u) => u());
+      if (refreshTimer.current) clearTimeout(refreshTimer.current);
+    };
+  }, []);
 
   const loadTransactions = async () => {
     if (!user?.id && !walletId) return;

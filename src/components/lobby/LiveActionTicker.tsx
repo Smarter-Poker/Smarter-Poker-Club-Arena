@@ -86,8 +86,9 @@ export default function LiveActionTicker({
   useEffect(() => {
     if (!clubId) return;
 
-    const channel = supabase
-      .channel(`ticker:${clubId}`)
+    const channelKey = `ticker:${clubId}`;
+    const channel = masterBus
+      .getOrCreateChannel(channelKey)
       .on(
         'postgres_changes',
         {
@@ -125,7 +126,7 @@ export default function LiveActionTicker({
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      masterBus.removeRegisteredChannel(channelKey);
     };
   }, [clubId]);
 

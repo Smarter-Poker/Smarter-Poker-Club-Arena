@@ -15,6 +15,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
+import { masterBus } from '../../core/MasterBus';
 
 const FB = {
   bg: '#18191A',
@@ -700,8 +701,9 @@ export function useBBJ(clubId: string | null) {
   useEffect(() => {
     if (!clubId) return;
 
-    const channel = supabase
-      .channel(`bbj:${clubId}`)
+    const channelKey = `bbj:${clubId}`;
+    const channel = masterBus
+      .getOrCreateChannel(channelKey)
       .on(
         'postgres_changes',
         {
@@ -729,7 +731,7 @@ export function useBBJ(clubId: string | null) {
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      masterBus.removeRegisteredChannel(channelKey);
     };
   }, [clubId]);
 

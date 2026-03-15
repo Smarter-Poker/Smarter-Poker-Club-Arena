@@ -1,33 +1,31 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  SUPABASE CONNECTION WATCHDOG — Monitors & recovers the realtime connection
+ *  SUPABASE CONNECTION WATCHDOG — Aggressive auto-reconnect (NEVER show Offline)
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * The Supabase JS client can silently lose its WebSocket connection without
- * triggering any user-visible feedback. When this happens:
+ * DESIGN PRINCIPLE: Users should NEVER see a disconnected state. The watchdog
+ * silently detects and recovers from connection drops. The ConnectionIndicator
+ * only shows "Reconnecting..." after 60+ seconds of sustained failure.
  *
- * 1. Realtime subscriptions stop receiving updates
- * 2. Presence channels go stale
- * 3. The user has no idea they're disconnected
- *
- * This watchdog:
- * - Pings the Supabase REST API on an interval to verify connectivity
- * - Monitors navigator.onLine events for network drops
- * - Emits MasterBus events (WS_CONNECTED, WS_DISCONNECTED, WS_RECONNECTING)
- *   so ConnectionStatusBar and ConnectionIndicator can react
- * - Forces Supabase realtime channels to reconnect on recovery
- * - Uses exponential backoff for reconnection attempts
+ * Recovery strategy:
+ * 1. Periodic health checks (every 30s) with aggressive retry on failure
+ * 2. When a failure is detected, immediately retry at 5s, 10s, 20s intervals
+ * 3. Force-reconnect all Supabase realtime channels on recovery
+ * 4. Replay offline mutation queue on recovery
+ * 5. In iframe context, delay first check to allow auth handshake
  */
 
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 
-const HEARTBEAT_INTERVAL = 45_000; // 45 seconds
+const HEARTBEAT_INTERVAL = 30_000; // 30 seconds (was 45s — more frequent now)
 const PING_TIMEOUT = 8_000; // 8 seconds max for health check
-const MAX_CONSECUTIVE_FAILURES = 3;
+const MAX_CONSECUTIVE_FAILURES = 5; // Require 5 failures before declaring disconnect (was 3)
+const FAST_RETRY_INTERVALS = [5_000, 10_000, 20_000]; // Aggressive retry on failure
 
 class SupabaseConnectionWatchdog {
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private consecutiveFailures = 0;
   private isConnected = true;
   private started = false;
@@ -50,7 +48,7 @@ class SupabaseConnectionWatchdog {
     // The postMessage auth flow + setSession() can take several seconds, during
     // which Supabase calls may fail, producing false "disconnected" states.
     const inIframe = typeof window !== 'undefined' && window.parent !== window;
-    const initialDelay = inIframe ? 15_000 : 5_000;
+    const initialDelay = inIframe ? 15_000 : 8_000;
     setTimeout(() => this.checkHealth(), initialDelay);
   }
 
@@ -62,17 +60,23 @@ class SupabaseConnectionWatchdog {
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = null;
     }
+    if (this.retryTimer) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = null;
+    }
     window.removeEventListener('online', this.handleOnline);
     window.removeEventListener('offline', this.handleOffline);
     this.started = false;
   }
 
   /**
-   * Check Supabase connectivity by making a lightweight auth call.
+   * Check Supabase connectivity by making a lightweight REST ping.
    */
   private async checkHealth(): Promise<void> {
     if (!navigator.onLine) {
-      this.markDisconnected();
+      this.markFailure();
+      // Don't give up — schedule aggressive retry
+      this.scheduleRetry();
       return;
     }
 
@@ -80,8 +84,6 @@ class SupabaseConnectionWatchdog {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), PING_TIMEOUT);
 
-      // Use a lightweight Supabase call to verify connectivity
-      // getSession() is cached locally, so we use a simple REST ping instead
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/rest/v1/`, {
         method: 'HEAD',
         headers: {
@@ -92,23 +94,47 @@ class SupabaseConnectionWatchdog {
       clearTimeout(timeout);
 
       if (response.ok || response.status === 200 || response.status === 404) {
-        // Supabase is reachable (404 is fine — the endpoint exists)
         this.markConnected();
       } else {
         this.markFailure();
+        this.scheduleRetry();
       }
     } catch (err: any) {
       if (err.name === 'AbortError') {
-        console.warn('[Watchdog] Supabase health check timed out');
+        console.warn('[Watchdog] Health check timed out — retrying');
       }
       this.markFailure();
+      this.scheduleRetry();
     }
   }
 
+  /**
+   * Schedule an aggressive retry after a failure.
+   * Uses escalating intervals: 5s, 10s, 20s, then falls back to normal heartbeat.
+   */
+  private scheduleRetry(): void {
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+
+    const retryIndex = Math.min(this.consecutiveFailures - 1, FAST_RETRY_INTERVALS.length - 1);
+    if (retryIndex < 0) return; // No failures yet
+
+    const delay = FAST_RETRY_INTERVALS[retryIndex] || HEARTBEAT_INTERVAL;
+    this.retryTimer = setTimeout(() => this.checkHealth(), delay);
+  }
+
   private markConnected(): void {
-    if (!this.isConnected) {
+    const wasDisconnected = !this.isConnected;
+    this.isConnected = true;
+    this.consecutiveFailures = 0;
+
+    // Cancel any pending retries
+    if (this.retryTimer) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = null;
+    }
+
+    if (wasDisconnected) {
       console.log('[Watchdog] Supabase connection restored');
-      this.isConnected = true;
       masterBus.emit('WS_CONNECTED', { url: import.meta.env.VITE_SUPABASE_URL || '' });
       masterBus.emit('REALTIME_CONNECTED', { channelName: 'watchdog' });
       masterBus.emit('CONNECTION_RESTORED', { timestamp: Date.now() });
@@ -116,21 +142,18 @@ class SupabaseConnectionWatchdog {
       // Force realtime channels to reconnect
       this.reconnectRealtimeChannels();
 
-      // Replay any queued offline mutations now that Supabase is reachable.
-      // This is more reliable than the navigator.onLine event because the
-      // watchdog verifies actual Supabase connectivity, not just network.
+      // Replay offline queue
       import('../utils/offlineQueue').then(({ replayOfflineQueue }) => {
         replayOfflineQueue().catch((err) => {
           console.warn('[Watchdog] Offline queue replay failed:', err);
         });
       });
     }
-    this.consecutiveFailures = 0;
   }
 
   private markDisconnected(): void {
     if (this.isConnected) {
-      console.warn('[Watchdog] Supabase connection lost');
+      console.warn('[Watchdog] Supabase connection lost (after repeated failures)');
       this.isConnected = false;
       masterBus.emit('WS_DISCONNECTED', { url: import.meta.env.VITE_SUPABASE_URL || '' });
       masterBus.emit('REALTIME_DISCONNECTED', {
@@ -144,24 +167,19 @@ class SupabaseConnectionWatchdog {
     this.consecutiveFailures++;
 
     if (this.consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+      // Only mark disconnected after 5 consecutive failures (~2.5 minutes)
       this.markDisconnected();
-    } else if (this.consecutiveFailures >= 2) {
-      // Show reconnecting state after 2 failures
-      masterBus.emit('WS_RECONNECTING', {
-        url: import.meta.env.VITE_SUPABASE_URL || '',
-        attempt: this.consecutiveFailures,
-      });
     }
+    // Note: We do NOT emit WS_RECONNECTING for transient failures.
+    // The user should never see any indication of connection issues
+    // for normal blips. The aggressive retry handles recovery silently.
   }
 
   /**
    * Force Supabase realtime to reconnect all channels.
-   * This is needed after a network interruption because the WebSocket
-   * may have silently closed.
    */
   private reconnectRealtimeChannels(): void {
     try {
-      // Get all current channels and force re-subscribe
       const channels = supabase.getChannels();
       if (channels.length > 0) {
         console.log(`[Watchdog] Reconnecting ${channels.length} realtime channels...`);
@@ -182,19 +200,19 @@ class SupabaseConnectionWatchdog {
   }
 
   private handleOnline = (): void => {
-    console.log('[Watchdog] Browser went online');
-    // Check health immediately when coming back online
-    setTimeout(() => this.checkHealth(), 1000);
+    console.log('[Watchdog] Browser went online — checking health');
+    // Don't immediately mark as connected — verify with actual health check
+    setTimeout(() => this.checkHealth(), 500);
   };
 
   private handleOffline = (): void => {
     console.log('[Watchdog] Browser went offline');
-    this.markDisconnected();
+    // Don't immediately show disconnected — just increment failure and retry
+    this.markFailure();
+    // Schedule aggressive retry — browser may come back online quickly
+    this.scheduleRetry();
   };
 
-  /**
-   * Get current connection status for diagnostics.
-   */
   getStatus(): { connected: boolean; consecutiveFailures: number; started: boolean } {
     return {
       connected: this.isConnected,

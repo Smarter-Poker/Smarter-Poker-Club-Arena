@@ -7,12 +7,20 @@
  *        Bluff Frequency (inverse of showdown), Win Rate
  *
  * Data source: Aggregated from session_history and player_position_stats
+ *
+ * Improvements:
+ *  - Exponential backoff retry on transient fetch failures
+ *  - SWR cache: show cached data instantly, refresh in background
+ *  - Supabase Realtime subscription for cross-tab sync
+ *  - ARIA labels on SVG chart for accessibility
+ *  - Enhanced empty state with visual guidance
  */
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
+import { retryFetch } from '../../utils/retryFetch';
 import {
   playerStyleClassifier,
   type PlayerStyleResult,
@@ -29,30 +37,67 @@ interface RadarAxis {
   color: string;
 }
 
+// ── SWR Cache helpers ──
+const CACHE_PREFIX = 'psr_cache_';
+function getCached(userId: string): RadarAxis[] | null {
+  try {
+    const raw = sessionStorage.getItem(CACHE_PREFIX + userId);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+function setCache(userId: string, data: RadarAxis[]) {
+  try {
+    sessionStorage.setItem(CACHE_PREFIX + userId, JSON.stringify(data));
+  } catch {
+    /* quota exceeded — ignore */
+  }
+}
+
 export default function PlayerStyleRadar({ userId }: PlayerStyleRadarProps) {
   const [axes, setAxes] = useState<RadarAxis[]>([]);
   const [style, setStyle] = useState<PlayerStyleResult | null>(null);
   const [loading, setLoading] = useState(true);
   const isMounted = useIsMounted();
 
+  // Show cached data instantly on mount (SWR pattern)
+  useEffect(() => {
+    if (!userId) return;
+    const cached = getCached(userId);
+    if (cached && cached.length > 0) {
+      setAxes(cached);
+      setLoading(false); // Show cached immediately, will refresh in background
+    }
+  }, [userId]);
+
   const loadData = useCallback(async () => {
     if (!userId) return;
-    setLoading(true);
+    // Only show full loading state if we have no cached data
+    if (axes.length === 0) setLoading(true);
 
     try {
-      // Fetch session aggregates
-      const { data: sessions } = await supabase
-        .from('session_history')
-        .select('vpip_percent, pfr_percent, hands_played, hands_won, bb_won')
-        .eq('user_id', userId)
-        .limit(200);
+      // Fetch session aggregates with retry
+      const { data: sessions } = await retryFetch(
+        () =>
+          supabase
+            .from('session_history')
+            .select('vpip_percent, pfr_percent, hands_played, hands_won, bb_won')
+            .eq('user_id', userId)
+            .limit(200),
+        { maxRetries: 2, isMountedRef: isMounted }
+      );
 
-      // Fetch position stats
-      const { data: posStats } = await supabase
-        .from('player_position_stats')
-        .select('position, hands_played, vpip_count, pfr_count, three_bet_count, hands_won')
-        .eq('user_id', userId)
-        .limit(50);
+      // Fetch position stats with retry
+      const { data: posStats } = await retryFetch(
+        () =>
+          supabase
+            .from('player_position_stats')
+            .select('position, hands_played, vpip_count, pfr_count, three_bet_count, hands_won')
+            .eq('user_id', userId)
+            .limit(50),
+        { maxRetries: 2, isMountedRef: isMounted }
+      );
 
       const sess = sessions || [];
       const pos = posStats || [];
@@ -79,11 +124,11 @@ export default function PlayerStyleRadar({ userId }: PlayerStyleRadarProps) {
           : 0;
 
       // Normalize each axis to 0-100
-      const aggression = Math.min(100, (avgPFR / 30) * 100); // PFR/30 → 100
-      const tightness = Math.min(100, Math.max(0, (1 - avgVPIP / 50) * 100)); // Inversed VPIP
-      const posAwareness = Math.min(100, (posAwarenessVariance / 15) * 100); // Variance/15 → 100
-      const winRate = Math.min(100, totalHands > 0 ? (totalWon / totalHands) * 200 : 0); // WR/50% → 100
-      const showdownRate = Math.min(100, totalHands > 0 ? (totalWon / totalHands) * 150 : 0); // Proxy
+      const aggression = Math.min(100, (avgPFR / 30) * 100);
+      const tightness = Math.min(100, Math.max(0, (1 - avgVPIP / 50) * 100));
+      const posAwareness = Math.min(100, (posAwarenessVariance / 15) * 100);
+      const winRate = Math.min(100, totalHands > 0 ? (totalWon / totalHands) * 200 : 0);
+      const showdownRate = Math.min(100, totalHands > 0 ? (totalWon / totalHands) * 150 : 0);
       const bluffFreq = Math.min(100, Math.max(0, 100 - showdownRate + avgPFR / 2));
 
       const radarAxes: RadarAxis[] = [
@@ -95,7 +140,10 @@ export default function PlayerStyleRadar({ userId }: PlayerStyleRadarProps) {
         { label: 'Bluff Freq', value: Math.round(bluffFreq), color: '#ec4899' },
       ];
 
-      if (isMounted.current) setAxes(radarAxes);
+      if (isMounted.current) {
+        setAxes(radarAxes);
+        setCache(userId, radarAxes); // Update SWR cache
+      }
 
       // Classify overall style
       const totalPosHands = pos.reduce((s, r) => s + r.hands_played, 0);
@@ -119,6 +167,7 @@ export default function PlayerStyleRadar({ userId }: PlayerStyleRadarProps) {
     } finally {
       if (isMounted.current) setLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
   useEffect(() => {
@@ -136,7 +185,24 @@ export default function PlayerStyleRadar({ userId }: PlayerStyleRadarProps) {
     return () => unsubs.forEach((u) => u());
   }, [loadData]);
 
-  // SVG radar chart
+  // Supabase Realtime subscription for cross-tab sync
+  useEffect(() => {
+    if (!userId) return;
+    const channel = supabase
+      .channel(`psr_realtime_${userId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'session_history', filter: `user_id=eq.${userId}` },
+        () => loadData()
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [userId, loadData]);
+
+  // SVG radar chart with ARIA
   const chartSVG = useMemo(() => {
     if (axes.length < 3) return null;
 
@@ -145,12 +211,10 @@ export default function PlayerStyleRadar({ userId }: PlayerStyleRadarProps) {
     const R = 90;
     const n = axes.length;
     const angleStep = (2 * Math.PI) / n;
-    const startAngle = -Math.PI / 2; // Start from top
+    const startAngle = -Math.PI / 2;
 
-    // Grid rings
     const rings = [0.25, 0.5, 0.75, 1.0];
 
-    // Calculate polygon points for a given set of values
     const getPolygonPoints = (values: number[]) =>
       values
         .map((v, i) => {
@@ -162,8 +226,19 @@ export default function PlayerStyleRadar({ userId }: PlayerStyleRadarProps) {
 
     const dataPoints = getPolygonPoints(axes.map((a) => a.value));
 
+    // Build ARIA description
+    const ariaDesc = axes.map((a) => `${a.label}: ${a.value}/100`).join(', ');
+
     return (
-      <svg className="psr-svg" viewBox="0 0 240 240">
+      <svg
+        className="psr-svg"
+        viewBox="0 0 240 240"
+        role="img"
+        aria-label={`Player style radar chart. ${ariaDesc}`}
+      >
+        <title>Player Style Radar</title>
+        <desc>{ariaDesc}</desc>
+
         {/* Grid rings */}
         {rings.map((scale) => (
           <polygon
@@ -263,7 +338,14 @@ export default function PlayerStyleRadar({ userId }: PlayerStyleRadarProps) {
     return (
       <div className="psr-widget">
         <h3 className="psr-title">Player Profile</h3>
-        <div className="psr-empty">Play some hands to generate your player profile</div>
+        <div className="psr-empty">
+          <div className="psr-empty-icon">🎯</div>
+          <div className="psr-empty-title">No Profile Data Yet</div>
+          <div className="psr-empty-desc">
+            Play hands at the tables to build your player profile. Your aggression, tightness,
+            position awareness, and more will be tracked automatically.
+          </div>
+        </div>
       </div>
     );
   }

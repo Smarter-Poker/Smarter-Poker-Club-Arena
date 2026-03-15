@@ -370,7 +370,7 @@ export default function App() {
         <TOSGuard>
           <GlobalWaitlistListener />
           <WaitlistBanner />
-          {/* Offline Banner */}
+          {/* Offline Banner — subtle amber bar, only for navigator.onLine === false */}
           {isOffline && (
             <div
               style={{
@@ -379,17 +379,16 @@ export default function App() {
                 left: 0,
                 right: 0,
                 zIndex: 9999,
-                background: 'linear-gradient(135deg, #b91c1c 0%, #991b1b 100%)',
-                color: '#fff',
+                background: 'linear-gradient(135deg, #92400e 0%, #78350f 100%)',
+                color: '#fbbf24',
                 textAlign: 'center',
-                padding: '8px 16px',
-                fontSize: '0.8rem',
-                fontWeight: 700,
+                padding: '6px 16px',
+                fontSize: '0.75rem',
+                fontWeight: 600,
                 letterSpacing: '0.5px',
-                boxShadow: '0 2px 8px rgba(185,28,28,0.4)',
               }}
             >
-              CONNECTION LOST — Actions will be queued and replayed when you reconnect
+              Reconnecting — your actions are saved and will sync automatically
             </div>
           )}
           <OfflineQueueBadge />

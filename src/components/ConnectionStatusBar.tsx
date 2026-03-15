@@ -1,62 +1,36 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  CONNECTION STATUS BAR — Global WebSocket connection indicator
+ *  CONNECTION STATUS BAR — Silent reconnection indicator
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * Thin bar at top of viewport that shows connection state.
- * Auto-hides 3s after reconnection succeeds.
+ * DESIGN: This bar is INVISIBLE to users during normal operation. It only
+ * appears as a brief green flash when reconnection succeeds after a prolonged
+ * outage. Users should NEVER see red/orange disconnection indicators.
+ * The watchdog handles all reconnection silently in the background.
  */
 
 import { useEffect, useState, useRef } from 'react';
 import { masterBus } from '../core/MasterBus';
 
-type ConnStatus = 'connected' | 'reconnecting' | 'disconnected' | 'failed' | 'idle';
-
-const STATUS_COLORS: Record<ConnStatus, string> = {
-  connected: '#2ecc71',
-  reconnecting: '#f39c12',
-  disconnected: '#e74c3c',
-  failed: '#c0392b',
-  idle: 'transparent',
-};
-
-const STATUS_LABELS: Record<ConnStatus, string> = {
-  connected: '✓ Connected',
-  reconnecting: '⟳ Reconnecting…',
-  disconnected: '✗ Disconnected',
-  failed: '✗ Connection Failed',
-  idle: '',
-};
+type ConnStatus = 'connected' | 'idle';
 
 export function ConnectionStatusBar() {
   const [status, setStatus] = useState<ConnStatus>('idle');
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    // Only show the bar on successful reconnection (green flash)
     const unsub1 = masterBus.subscribe('WS_CONNECTED', () => {
       setStatus('connected');
-      // Auto-hide after 3s
       if (hideTimer.current) clearTimeout(hideTimer.current);
-      hideTimer.current = setTimeout(() => setStatus('idle'), 3000);
+      hideTimer.current = setTimeout(() => setStatus('idle'), 2000);
     });
-    const unsub2 = masterBus.subscribe('WS_RECONNECTING', () => {
-      setStatus('reconnecting');
-      if (hideTimer.current) clearTimeout(hideTimer.current);
-    });
-    const unsub3 = masterBus.subscribe('WS_DISCONNECTED', () => {
-      setStatus('disconnected');
-      if (hideTimer.current) clearTimeout(hideTimer.current);
-    });
-    const unsub4 = masterBus.subscribe('WS_CONNECTION_FAILED', () => {
-      setStatus('failed');
-      if (hideTimer.current) clearTimeout(hideTimer.current);
-    });
+
+    // Ignore disconnect/reconnecting events — users should never see these
+    // The watchdog handles reconnection silently
 
     return () => {
       unsub1();
-      unsub2();
-      unsub3();
-      unsub4();
       if (hideTimer.current) clearTimeout(hideTimer.current);
     };
   }, []);
@@ -71,32 +45,14 @@ export function ConnectionStatusBar() {
         left: 0,
         right: 0,
         height: '3px',
-        backgroundColor: STATUS_COLORS[status],
+        backgroundColor: '#2ecc71',
         zIndex: 99999,
-        transition: 'background-color 0.3s ease, opacity 0.3s ease',
+        transition: 'opacity 0.3s ease',
       }}
       role="status"
       aria-live="polite"
-      aria-label={STATUS_LABELS[status]}
-    >
-      {(status === 'reconnecting' || status === 'disconnected' || status === 'failed') && (
-        <div
-          style={{
-            position: 'absolute',
-            right: 12,
-            top: 6,
-            fontSize: 11,
-            color: STATUS_COLORS[status],
-            fontWeight: 600,
-            fontFamily: 'system-ui, -apple-system, sans-serif',
-            userSelect: 'none',
-            textShadow: '0 1px 2px rgba(0,0,0,0.7)',
-          }}
-        >
-          {STATUS_LABELS[status]}
-        </div>
-      )}
-    </div>
+      aria-label="Connected"
+    />
   );
 }
 

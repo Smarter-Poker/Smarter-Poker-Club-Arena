@@ -157,10 +157,10 @@ export const DailyChallenges: React.FC = () => {
     });
 
     // Item 7: Supabase Realtime subscription for cross-tab sync
-    let realtimeChannel: ReturnType<typeof supabase.channel> | null = null;
+    const channelKey = `daily-challenges-${user?.id || 'anon'}`;
     if (user?.id) {
-      realtimeChannel = supabase
-        .channel(`daily-challenges-${user.id}`)
+      const realtimeChannel = masterBus
+        .getOrCreateChannel(channelKey)
         .on(
           'postgres_changes',
           {
@@ -185,7 +185,7 @@ export const DailyChallenges: React.FC = () => {
       animTimers.current.forEach(clearTimeout);
       animTimers.current = [];
       // Item 7: Unsubscribe Realtime
-      if (realtimeChannel) supabase.removeChannel(realtimeChannel);
+      masterBus.removeRegisteredChannel(channelKey);
     };
   }, [user?.id, loadChallenges, debouncedRefresh]);
 

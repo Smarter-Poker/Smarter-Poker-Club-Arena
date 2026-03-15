@@ -82,8 +82,8 @@ export default function AgentPortalPage() {
   // RT subscription: auto-refresh when agent wallet changes in Supabase
   useEffect(() => {
     if (!user?.id || !agentPkId) return;
-    const channel = supabase
-      .channel(`agent-portal-${user.id}-${agentPkId}`)
+    const channel = masterBus
+      .getOrCreateChannel(`agent-portal-${user.id}-${agentPkId}`)
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'agents', filter: `user_id=eq.${user.id}` },
@@ -105,7 +105,7 @@ export default function AgentPortalPage() {
       )
       .subscribe();
     return () => {
-      supabase.removeChannel(channel);
+      masterBus.removeRegisteredChannel(`agent-portal-${user.id}-${agentPkId}`);
     };
   }, [user?.id, agentPkId]);
 

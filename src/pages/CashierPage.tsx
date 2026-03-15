@@ -604,8 +604,8 @@ export default function CashierPage() {
       500
     );
     // Supabase Realtime channel for chip_transactions (cross-device sync)
-    const chipTxnChannel = supabase
-      .channel(`cashier-chip-txns-${user.id}`)
+    const chipTxnChannel = masterBus
+      .getOrCreateChannel(`cashier-chip-txns-${user.id}`)
       .on(
         'postgres_changes',
         {
@@ -635,7 +635,7 @@ export default function CashierPage() {
       unsubCashoutApproved();
       unsubSettlement();
       unsubCommission();
-      supabase.removeChannel(chipTxnChannel);
+      masterBus.removeRegisteredChannel(`cashier-chip-txns-${user.id}`);
     };
   }, [user?.id, loadBalances, loadTransactions, loadPendingCashouts]);
 

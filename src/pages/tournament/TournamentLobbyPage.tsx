@@ -14,7 +14,7 @@ import { tournamentService } from '../../services/TournamentService';
 import TournamentLobbyCard from '../../components/tournament/TournamentLobbyCard';
 import { CardSkeleton } from '../../components/skeletons/CardSkeleton';
 import { useToast } from '../../components/common/Toast';
-import { ArenaTrainingController } from '../../services/ArenaTrainingController';
+
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import styles from './TournamentLobbyPage.module.css';
 

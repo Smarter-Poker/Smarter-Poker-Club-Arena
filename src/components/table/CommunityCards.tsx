@@ -11,8 +11,7 @@
  */
 
 import React, { useMemo, useEffect, useRef, useState, memo } from 'react';
-import { CardImage, CardBack } from './CardImage';
-import type { Card } from './CardImage';
+import { CardImage, CardBack, type Card } from './CardImage';
 import { haptic } from '../../services/SoundService';
 import { ParticleSystem } from './ParticleSystem';
 import { triggerScreenShake } from '../../utils/ScreenShake';

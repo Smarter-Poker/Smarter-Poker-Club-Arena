@@ -28,7 +28,6 @@ import { avatarService } from '../services/AvatarService';
 import PlayerNotesPanel from '../components/gameplay/PlayerNotesPanel';
 import HandReplay from '../components/replay/HandReplay';
 import { GameRulesModal } from '../components/table/GameRulesModal';
-import { ChipAnimationManager } from '../components/table/ChipAnimation';
 import SitOutModal from '../components/table/SitOutModal';
 import WaitListModal from '../components/table/WaitListModal';
 import { waitlistService } from '../services/WaitlistService';
@@ -55,17 +54,17 @@ import HandNotation from '../components/table/HandNotation';
 import { soundService, haptic } from '../services/SoundService';
 import { ConfettiCanvas } from '../components/table/ConfettiCanvas';
 import {
+  ChipAnimationManager,
   createChipToPotEvent,
   createPotToWinnerEvent,
   type ChipAnimationEvent,
 } from '../components/table/ChipAnimation';
 import MiniHUD from '../components/table/MiniHUD';
 // PotOddsDisplay intentionally NOT used on live tables — available for practice/training mode only
-import HandHistoryPanel from '../components/table/HandHistoryPanel';
-import type {
-  HandRecord,
-  HandHistoryAction,
-  HandHistoryStreet,
+import HandHistoryPanel, {
+  type HandRecord,
+  type HandHistoryAction,
+  type HandHistoryStreet,
 } from '../components/table/HandHistoryPanel';
 import { timeBankEngine } from '../engine/TimeBankEngine';
 import { usePlayerStats } from '../hooks/usePlayerStats';

@@ -98,7 +98,10 @@ export const FinancialExportService = {
   async fetchClubSettlements(options: ExportOptions) {
     let query = supabase
       .from('club_settlements')
-      .select('id, club_id, period_id, total_rake, union_tax, net_settlement, status, created_at')
+      // club_settlements schema: total_rake_collected, platform_fee, net_revenue
+      .select(
+        'id, club_id, period_id, total_rake_collected, platform_fee, net_revenue, status, created_at'
+      )
       .order('created_at', { ascending: false })
       .limit(options.limit || 1000);
 
@@ -114,9 +117,9 @@ export const FinancialExportService = {
         'ID',
         'Club ID',
         'Period ID',
-        'Total Rake',
-        'Union Tax',
-        'Net Settlement',
+        'Total Rake Collected',
+        'Platform Fee',
+        'Net Revenue',
         'Status',
         'Created At',
       ],
@@ -127,8 +130,9 @@ export const FinancialExportService = {
   async fetchAgentSettlements(options: ExportOptions) {
     let query = supabase
       .from('agent_settlements')
+      // agent_settlements schema: total_rake_generated (not gross_rake), no downline_payouts column
       .select(
-        'id, agent_id, period_id, gross_rake, commission_rate, commission_earned, downline_payouts, net_settlement, status, created_at'
+        'id, agent_id, period_id, total_rake_generated, commission_rate, commission_earned, net_settlement, status, created_at'
       )
       .order('created_at', { ascending: false })
       .limit(options.limit || 1000);
@@ -145,10 +149,9 @@ export const FinancialExportService = {
         'ID',
         'Agent ID',
         'Period ID',
-        'Gross Rake',
+        'Total Rake Generated',
         'Commission Rate',
         'Commission Earned',
-        'Downline Payouts',
         'Net Settlement',
         'Status',
         'Created At',
@@ -221,7 +224,8 @@ export const FinancialExportService = {
   async fetchRakeRecords(options: ExportOptions) {
     let query = supabase
       .from('rake_records')
-      .select('id, table_id, hand_id, club_id, pot_amount, rake_amount, bbj_amount, created_at')
+      // rake_records schema: pot_size (not pot_amount), bbj_contribution (not bbj_amount)
+      .select('id, table_id, hand_id, club_id, pot_size, rake_amount, bbj_contribution, created_at')
       .order('created_at', { ascending: false })
       .limit(options.limit || 1000);
 
@@ -238,9 +242,9 @@ export const FinancialExportService = {
         'Table ID',
         'Hand ID',
         'Club ID',
-        'Pot Amount',
+        'Pot Size',
         'Rake Amount',
-        'BBJ Amount',
+        'BBJ Contribution',
         'Created At',
       ],
       rows: data || [],

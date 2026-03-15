@@ -154,7 +154,7 @@ export default function RateAuditPage() {
       console.error('[RateAuditPage] Load failed:', err);
       toast.error('Failed to load rate audit data');
     }
-    setLoading(false);
+    if (isMounted.current) setLoading(false);
   };
 
   const getDateCutoff = (): number => {

@@ -8,8 +8,7 @@
  */
 
 import React from 'react';
-import { CardImage, CardBack } from './CardImage';
-import type { Card } from './CardImage';
+import { CardImage, CardBack, type Card } from './CardImage';
 import './CardReveal.css';
 
 interface CardRevealProps {

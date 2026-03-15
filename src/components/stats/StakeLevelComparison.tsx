@@ -14,7 +14,7 @@
  *  - Enhanced empty state
  */
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
@@ -72,6 +72,7 @@ export default function StakeLevelComparison({ userId }: StakeLevelComparisonPro
   const [records, setRecords] = useState<SessionRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const isMounted = useIsMounted();
+  const hasDataRef = useRef(false);
 
   // SWR: show cached data instantly
   useEffect(() => {
@@ -79,13 +80,15 @@ export default function StakeLevelComparison({ userId }: StakeLevelComparisonPro
     const cached = getCached(userId);
     if (cached && cached.length > 0) {
       setRecords(cached);
+      hasDataRef.current = true;
       setLoading(false);
     }
   }, [userId]);
 
   const loadRecords = useCallback(async () => {
     if (!userId) return;
-    if (records.length === 0) setLoading(true);
+    // Only show full loading state if we have no cached/existing data
+    if (!hasDataRef.current) setLoading(true);
 
     try {
       const { data, error } = await retryFetch(
@@ -108,6 +111,7 @@ export default function StakeLevelComparison({ userId }: StakeLevelComparisonPro
         const fetched = data || [];
         if (isMounted.current) {
           setRecords(fetched);
+          hasDataRef.current = fetched.length > 0;
           setCache(userId, fetched);
         }
       }

@@ -12,8 +12,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import './HandReplayPlayer.css';
-import { CardImage } from './CardImage';
-import type { Card } from './CardImage';
+import { CardImage, type Card } from './CardImage';
 import type { ShareableHand, ShareableCard, ShareableAction } from './ShareHand';
 
 // ═══════════════════════════════════════════════════════════════════════════════

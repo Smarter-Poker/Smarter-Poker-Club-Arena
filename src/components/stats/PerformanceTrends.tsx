@@ -14,7 +14,7 @@
  *  - CSV data export
  */
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
@@ -58,6 +58,7 @@ export default function PerformanceTrends({ userId }: PerformanceTrendsProps) {
   const [range, setRange] = useState<TimeRange>('30d');
   const [loading, setLoading] = useState(true);
   const isMounted = useIsMounted();
+  const hasDataRef = useRef(false);
 
   // SWR: show cached data instantly
   useEffect(() => {
@@ -65,13 +66,15 @@ export default function PerformanceTrends({ userId }: PerformanceTrendsProps) {
     const cached = getCached(userId, range);
     if (cached && cached.length > 0) {
       setSessions(cached);
+      hasDataRef.current = true;
       setLoading(false);
     }
   }, [userId, range]);
 
   const loadSessions = useCallback(async () => {
     if (!userId) return;
-    if (sessions.length === 0) setLoading(true);
+    // Only show full loading state if we have no cached/existing data
+    if (!hasDataRef.current) setLoading(true);
 
     const days = range === '7d' ? 7 : range === '30d' ? 30 : 90;
     const since = new Date(Date.now() - days * 86_400_000).toISOString();
@@ -96,6 +99,7 @@ export default function PerformanceTrends({ userId }: PerformanceTrendsProps) {
         const records = data || [];
         if (isMounted.current) {
           setSessions(records);
+          hasDataRef.current = records.length > 0;
           setCache(userId, range, records);
         }
       }

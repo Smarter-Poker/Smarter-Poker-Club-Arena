@@ -351,7 +351,7 @@ export default function TableOperationsPanel({ clubId }: Props) {
     setLoading(true);
     const data = await tableService.getClubTables(clubId);
     setTables(data as unknown as TableInfo[]);
-    setLoading(false);
+    if (isMounted.current) setLoading(false);
   }, [clubId]);
 
   useEffect(() => {

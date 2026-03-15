@@ -77,7 +77,7 @@ export const SessionReplay: React.FC<SessionReplayProps> = ({ sessionId, onClose
     } catch (error) {
       console.error('Failed to load session:', error);
     } finally {
-      setLoading(false);
+      if (isMounted.current) setLoading(false);
     }
   };
 

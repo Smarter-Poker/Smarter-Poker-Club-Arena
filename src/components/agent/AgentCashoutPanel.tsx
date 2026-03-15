@@ -45,7 +45,7 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
     } catch (err) {
       console.error('Failed to load cashouts:', err);
     }
-    setLoading(false);
+    if (isMounted.current) setLoading(false);
   }, [user?.id, clubId]);
 
   useEffect(() => {

@@ -93,7 +93,7 @@ export function TournamentRegistration({
     } catch (error) {
       if (isMounted.current) toast.error('Failed to load players');
     }
-    setLoading(false);
+    if (isMounted.current) setLoading(false);
   };
 
   const handleRemovePlayer = async (playerId: string) => {

@@ -85,7 +85,7 @@ export default function TournamentBracket({ tournamentId, totalPlayers }: Tourna
       if (error) {
         console.error('[TournamentBracket] Failed to load players:', error.message);
         setPlayers([]);
-        setLoading(false);
+        if (isMounted.current) setLoading(false);
         return;
       }
 

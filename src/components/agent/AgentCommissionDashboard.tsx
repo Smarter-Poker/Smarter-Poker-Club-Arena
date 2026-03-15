@@ -232,7 +232,7 @@ export function AgentCommissionDashboard() {
       if (isMounted.current) toast.error('Failed to load commission data');
     }
 
-    setLoading(false);
+    if (isMounted.current) setLoading(false);
   };
 
   const requestPayout = async () => {

@@ -20,8 +20,7 @@
 import React, { useMemo, useState, useEffect, memo } from 'react';
 import './SeatSlot.css';
 import { CardImage, CardBack } from './CardImage';
-import MiniHUD from './MiniHUD';
-import type { MiniHUDStats } from './MiniHUD';
+import MiniHUD, { type MiniHUDStats } from './MiniHUD';
 import type { PlayerStyleResult } from '../../services/PlayerStyleClassifier';
 import { ChipPhysics } from './ChipPhysics';
 

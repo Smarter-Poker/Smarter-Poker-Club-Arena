@@ -16,7 +16,7 @@
  *  - Enhanced empty state with visual guidance
  */
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
@@ -60,6 +60,7 @@ export default function PlayerStyleRadar({ userId }: PlayerStyleRadarProps) {
   const [style, setStyle] = useState<PlayerStyleResult | null>(null);
   const [loading, setLoading] = useState(true);
   const isMounted = useIsMounted();
+  const hasDataRef = useRef(false);
 
   // Show cached data instantly on mount (SWR pattern)
   useEffect(() => {
@@ -67,18 +68,19 @@ export default function PlayerStyleRadar({ userId }: PlayerStyleRadarProps) {
     const cached = getCached(userId);
     if (cached && cached.length > 0) {
       setAxes(cached);
+      hasDataRef.current = true;
       setLoading(false); // Show cached immediately, will refresh in background
     }
   }, [userId]);
 
   const loadData = useCallback(async () => {
     if (!userId) return;
-    // Only show full loading state if we have no cached data
-    if (axes.length === 0) setLoading(true);
+    // Only show full loading state if we have no cached/existing data
+    if (!hasDataRef.current) setLoading(true);
 
     try {
       // Fetch session aggregates with retry
-      const { data: sessions } = await retryFetch(
+      const { data: sessions, error: sessError } = await retryFetch(
         () =>
           supabase
             .from('session_history')
@@ -89,8 +91,12 @@ export default function PlayerStyleRadar({ userId }: PlayerStyleRadarProps) {
         { maxRetries: 2, isMountedRef: isMounted }
       );
 
+      if (sessError) {
+        console.warn('[PlayerStyleRadar] Session fetch error:', sessError.message);
+      }
+
       // Fetch position stats with retry
-      const { data: posStats } = await retryFetch(
+      const { data: posStats, error: posError } = await retryFetch(
         () =>
           supabase
             .from('player_position_stats')
@@ -100,6 +106,10 @@ export default function PlayerStyleRadar({ userId }: PlayerStyleRadarProps) {
             .then((r) => r),
         { maxRetries: 2, isMountedRef: isMounted }
       );
+
+      if (posError) {
+        console.warn('[PlayerStyleRadar] Position stats fetch error:', posError.message);
+      }
 
       const sess = sessions || [];
       const pos = posStats || [];
@@ -148,6 +158,7 @@ export default function PlayerStyleRadar({ userId }: PlayerStyleRadarProps) {
 
       if (isMounted.current) {
         setAxes(radarAxes);
+        hasDataRef.current = true;
         setCache(userId, radarAxes); // Update SWR cache
       }
 

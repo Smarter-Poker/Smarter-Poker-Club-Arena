@@ -12,8 +12,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { haptic } from '../../services/SoundService';
-import { CardImage } from '../table/CardImage';
-import type { Card } from '../table/CardImage';
+import { CardImage, type Card } from '../table/CardImage';
 import './ShareHand.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════

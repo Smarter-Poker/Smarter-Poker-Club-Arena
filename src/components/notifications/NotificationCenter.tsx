@@ -121,7 +121,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
           .from('notifications')
           .update({ read: true })
           .eq('id', notif.id);
-        if (!error) {
+        if (!error && isMounted.current) {
           setNotifications((prev) =>
             prev.map((n) => (n.id === notif.id ? { ...n, isRead: true } : n))
           );
@@ -147,7 +147,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
         .eq('user_id', userId)
         .eq('read', false);
 
-      if (!error) {
+      if (!error && isMounted.current) {
         setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
         masterBus.emit('NOTIFICATION_READ', { notifId: null, allRead: true });
       }
@@ -164,7 +164,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
         .eq('user_id', userId)
         .eq('read', true);
 
-      if (!error) {
+      if (!error && isMounted.current) {
         setNotifications((prev) => prev.filter((n) => !n.isRead));
       }
     } catch (err) {

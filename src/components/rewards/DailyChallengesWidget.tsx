@@ -161,12 +161,13 @@ export const DailyChallengesWidget: React.FC = () => {
 
     try {
       await dailyChallengeService.claimChallenge(user.id, challengeId, challenge.reward.amount);
+      if (!isMounted.current) return;
       setChallenges((prev) =>
         prev.map((c) => (c.id === challengeId ? { ...c, claimed: true } : c))
       );
       toast.success(`+${challenge.reward.amount} Chips claimed!`);
     } catch (err: any) {
-      toast.error(err?.message || 'Failed to claim reward');
+      if (isMounted.current) toast.error(err?.message || 'Failed to claim reward');
     } finally {
       claimingRef.current.delete(challengeId);
     }

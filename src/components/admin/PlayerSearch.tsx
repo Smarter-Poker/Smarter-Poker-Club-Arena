@@ -134,7 +134,7 @@ export const PlayerSearch: React.FC<PlayerSearchProps> = ({
       console.error('Failed to search players:', error);
       setResults([]);
     } finally {
-      setLoading(false);
+      if (isMounted.current) setLoading(false);
     }
   }, [query, searchType]);
 

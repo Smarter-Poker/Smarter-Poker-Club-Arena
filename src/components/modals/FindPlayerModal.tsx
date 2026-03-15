@@ -7,7 +7,6 @@
  */
 
 import { useState, useEffect } from 'react';
-import { useIsMounted } from '../../hooks/useIsMounted';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import haptic from '../../services/HapticService';
@@ -41,7 +40,6 @@ const MODAL_FRAME_URL = `${import.meta.env.BASE_URL}images/modals/find-player-fr
 export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProps) {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
-  const isMounted = useIsMounted();
   const [isSearching, setIsSearching] = useState(false);
   const [searchResult, setSearchResult] = useState<PlayerResult | null>(null);
   const [notFound, setNotFound] = useState(false);

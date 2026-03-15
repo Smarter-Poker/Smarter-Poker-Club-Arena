@@ -255,6 +255,8 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
         throw new Error('Failed to set up club ownership. Please try again.');
       }
 
+      if (!isMounted.current) return;
+
       toast.success(`Club "${clubName}" created successfully!`);
 
       setClubName('');
@@ -482,6 +484,8 @@ function LogoGeneratorModal({ onSelect, onClose, clubName = '' }: LogoGeneratorM
         theme: logoDescription.trim(),
       });
 
+      if (!isMounted.current) return;
+
       if (result.success && result.logoUrl) {
         setPreviewUrl(result.logoUrl);
       } else {
@@ -489,9 +493,9 @@ function LogoGeneratorModal({ onSelect, onClose, clubName = '' }: LogoGeneratorM
       }
     } catch (err) {
       console.error('Failed to generate logo:', err);
-      setError(err instanceof Error ? err.message : 'Unknown error');
+      if (isMounted.current) setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
-      setIsGenerating(false);
+      if (isMounted.current) setIsGenerating(false);
     }
   };
 

@@ -8,7 +8,6 @@
  */
 
 import React, { useEffect, useRef, useState } from 'react';
-import { useIsMounted } from '../../hooks/useIsMounted';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { identityDNA } from '../../core/IdentityDNA';
@@ -36,7 +35,6 @@ const colors = {
 };
 
 export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
-  const isMounted = useIsMounted();
   const navigate = useNavigate();
   const { user } = useAuthUser();
   const toast = useToast();

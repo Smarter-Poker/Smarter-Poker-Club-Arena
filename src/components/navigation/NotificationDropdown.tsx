@@ -82,7 +82,7 @@ export default function NotificationDropdown({ onNavigate }: NotificationDropdow
         setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60);
       });
     }
-    setLoading(false);
+    if (isMounted.current) setLoading(false);
   };
 
   const subscribeToNotifications = () => {

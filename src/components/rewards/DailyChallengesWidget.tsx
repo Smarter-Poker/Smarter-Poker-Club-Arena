@@ -48,15 +48,16 @@ export const DailyChallengesWidget: React.FC = () => {
   useEffect(() => {
     isMounted.current = true;
     if (!user?.id) return;
-    loadChallenges();
+    // Use ref for initial load to avoid stale closure (loadChallenges not in deps)
+    setTimeout(() => loadChallengesRef.current?.(), 0);
 
     const unsubHand = masterBus.subscribe('HAND_COMPLETED', () => {
-      if (isMounted.current && user?.id) loadChallenges();
+      if (isMounted.current && user?.id) loadChallengesRef.current?.();
     });
     // Debounced — BALANCE_UPDATED fires twice per claim (RPC + WalletService)
     const unsubBalance = masterBus.subscribe('BALANCE_UPDATED', debouncedRefresh);
     const unsubReset = masterBus.subscribe('DAILY_RESET_AVAILABLE', () => {
-      if (isMounted.current && user?.id) loadChallenges();
+      if (isMounted.current && user?.id) loadChallengesRef.current?.();
     });
 
     // Supabase Realtime — cross-tab sync

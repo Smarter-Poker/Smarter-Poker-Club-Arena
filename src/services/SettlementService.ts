@@ -20,6 +20,14 @@ import { pushNotificationService } from './PushNotificationService';
 import { masterBus } from '../core/MasterBus';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { retryAsync } from '../utils/retryAsync';
+// Use globalThis.crypto for browser-safe UUID generation
+const generateUUID = (): string =>
+  typeof globalThis.crypto?.randomUUID === 'function'
+    ? globalThis.crypto.randomUUID()
+    : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+        const r = (Math.random() * 16) | 0;
+        return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+      });
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -117,8 +125,14 @@ export const SettlementService = {
     // RPC returns table - use first row or create default period
     if (data && data.length > 0) {
       const period = data[0];
+      const periodId = period.id || generateUUID();
+      if (!period.id) {
+        console.warn(
+          `[Settlement] RPC returned period but with null id. Generated fallback UUID: ${periodId}`
+        );
+      }
       return {
-        id: period.id || '00000000-0000-0000-0000-000000000000',
+        id: periodId,
         periodNumber: 1,
         year: new Date().getFullYear(),
         startAt: period.period_start,
@@ -133,8 +147,13 @@ export const SettlementService = {
     }
 
     // Return default empty period if none exists
+    const periodId = generateUUID();
+    console.warn(
+      `[Settlement] CRITICAL: No settlement period found. Created fallback period ${periodId}. ` +
+        `This settlement may be orphaned — verify period table.`
+    );
     return {
-      id: '00000000-0000-0000-0000-000000000000',
+      id: periodId,
       periodNumber: 1,
       year: new Date().getFullYear(),
       startAt: new Date().toISOString(),
@@ -366,12 +385,13 @@ export const SettlementService = {
         totalDisbursed += settlement.net_settlement;
       } catch (err: unknown) {
         console.error(`[Settlement] CRITICAL: Failed to pay agent ${settlement.agent_id}:`, err);
-        // Do NOT revert to 'approved' if it was a network drop. The atomic RPC guarantees consistency.
-        // It stays in 'processing' so it doesn't get double-paid and can be manually reconciled.
+        // Revert status to 'failed' so ops can identify and manually retry
         const errMsg = err instanceof Error ? err.message : String(err);
         await supabase
           .from('agent_settlements')
           .update({
+            status: 'failed',
+            error_message: errMsg,
             notes: `Payout failed or timed out: ${errMsg}`,
             updated_at: new Date().toISOString(),
           })
@@ -565,12 +585,21 @@ export const SettlementService = {
 
     if (!clubs || clubs.length === 0) return { clubsPaid: 0, totalRakeBack: 0, unionRetained: 0 };
 
-    let clubsPaid = 0;
-    let totalRakeBack = 0;
-    let totalCollected = 0;
+    // PRE-CHECK: Verify union owner has sufficient balance for total rakeback
+    // This prevents partial payouts where some clubs get paid and others don't
+    const { data: unionOwnerWallet } = await supabase
+      .from('wallets')
+      .select('balance')
+      .eq('user_id', union.owner_id)
+      .maybeSingle();
+
+    const unionOwnerBalance = Number(unionOwnerWallet?.balance || 0);
+
+    // Calculate total estimated payout to all clubs
+    let totalEstimatedRakeBack = 0;
+    const clubRakeMap = new Map<string, number>();
 
     for (const club of clubs) {
-      // Sum rake collected for this club in the period
       const { data: rakeData } = await supabase
         .from('rake_history')
         .select('rake_amount')
@@ -579,12 +608,60 @@ export const SettlementService = {
         .lt('collected_at', periodEnd);
 
       const clubRake = (rakeData || []).reduce((sum, r) => sum + Number(r.rake_amount), 0);
-      if (clubRake <= 0) continue;
-
-      totalCollected += clubRake;
-
-      // 90% goes back to club owner
       const rakeBack = Math.trunc(clubRake * 0.9 * 100) / 100;
+      clubRakeMap.set(club.id, rakeBack);
+      totalEstimatedRakeBack += rakeBack;
+    }
+
+    // CRITICAL ALERT: Insufficient balance — abort all payouts
+    if (unionOwnerBalance < totalEstimatedRakeBack) {
+      const shortfall = totalEstimatedRakeBack - unionOwnerBalance;
+      console.error(
+        `[Settlement] CRITICAL: Union owner insufficient balance for rakeback. ` +
+          `Balance: ${unionOwnerBalance}, Required: ${totalEstimatedRakeBack}, Shortfall: ${shortfall}`
+      );
+
+      try {
+        const { FinancialAlertService } = await import('./FinancialAlertService');
+        await FinancialAlertService.logCritical(
+          'SettlementService.executeUnionRakeBack',
+          `Union owner insufficient balance for rakeback distribution`,
+          {
+            unionId,
+            unionOwnerId: union.owner_id,
+            unionOwnerBalance,
+            totalEstimatedRakeBack,
+            shortfall,
+            periodStart,
+            periodEnd,
+            affectedClubs: clubs.length,
+          }
+        );
+      } catch {
+        /* best effort */
+      }
+
+      masterBus.emit('SETTLEMENT_PAYOUT_FAILED', {
+        type: 'union_rakeback_insufficient_balance',
+        unionId,
+        error: `Union owner balance insufficient. Balance: ${unionOwnerBalance}, Required: ${totalEstimatedRakeBack}, Shortfall: ${shortfall}`,
+        amount: totalEstimatedRakeBack,
+      });
+
+      return { clubsPaid: 0, totalRakeBack: 0, unionRetained: 0 };
+    }
+
+    let clubsPaid = 0;
+    let totalRakeBack = 0;
+    let totalCollected = 0;
+
+    for (const club of clubs) {
+      const rakeBack = clubRakeMap.get(club.id) || 0;
+      if (rakeBack <= 0) continue;
+
+      // Estimate original rake from rakeback (reverse: rakeBack = rake * 0.9)
+      const clubRake = Math.trunc(rakeBack / 0.9 * 100) / 100;
+      totalCollected += clubRake;
 
       if (rakeBack > 0 && club.owner_id) {
         // Atomic Settlement Transfer

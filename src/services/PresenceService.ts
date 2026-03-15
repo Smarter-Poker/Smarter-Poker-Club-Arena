@@ -35,6 +35,28 @@ class PresenceServiceClass {
   private channels: Map<string, RealtimeChannel> = new Map();
   private channelHeartbeats: Map<string, ReturnType<typeof setInterval>> = new Map();
   private currentUserId: string | null = null;
+  private unloadListener: (() => void) | null = null;
+
+  constructor() {
+    // Ensure cleanup on page unload
+    this.setupUnloadHandler();
+  }
+
+  /**
+   * Setup beforeunload event listener to cleanup all channels
+   */
+  private setupUnloadHandler(): void {
+    if (typeof window !== 'undefined') {
+      const handleUnload = async () => {
+        await this.leaveAll();
+      };
+
+      window.addEventListener('beforeunload', handleUnload);
+      this.unloadListener = () => {
+        window.removeEventListener('beforeunload', handleUnload);
+      };
+    }
+  }
 
   /**
    * Join a presence channel (club, union, or table)

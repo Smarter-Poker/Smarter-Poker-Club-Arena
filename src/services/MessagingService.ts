@@ -54,6 +54,18 @@ class MessagingServiceClass {
   private currentUserId: string | null = null;
 
   /**
+   * Sanitize message content to prevent HTML/XSS injection
+   */
+  private sanitizeMessage(content: string): string {
+    return content
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#x27;');
+  }
+
+  /**
    * Subscribe to real-time messages
    */
   async subscribe(userId: string, callbacks: MessageCallbacks): Promise<void> {
@@ -204,13 +216,14 @@ class MessagingServiceClass {
     receiverId: string,
     content: string
   ): Promise<Message | null> {
+    const sanitizedContent = this.sanitizeMessage(content);
     const { data, error } = await supabase
       .from('messages')
       .insert({
         conversation_id: conversationId,
         sender_id: senderId,
         receiver_id: receiverId,
-        content,
+        content: sanitizedContent,
         is_read: false,
       })
       .select()
@@ -977,8 +990,21 @@ class MessagingServiceClass {
   // Q3 PHASE 11: PINNED MESSAGES (Club Channels)
   // ═══════════════════════════════════════════════════════════════════════════
 
-  /** Pin a message in a conversation */
-  async pinMessage(messageId: string, conversationId: string): Promise<boolean> {
+  /** Pin a message in a conversation (requires conversation access) */
+  async pinMessage(messageId: string, conversationId: string, userId?: string): Promise<boolean> {
+    // Get the conversation and message to verify access
+    const { data: conv } = await supabase
+      .from('conversations')
+      .select('participant_ids')
+      .eq('id', conversationId)
+      .maybeSingle();
+
+    // Verify user is a participant if userId provided
+    if (userId && (!conv || !(conv.participant_ids as string[]).includes(userId))) {
+      console.error('[Messaging] User not a participant of this conversation');
+      return false;
+    }
+
     const { error } = await supabase
       .from('messages')
       .update({ is_pinned: true })
@@ -987,8 +1013,22 @@ class MessagingServiceClass {
     return !error;
   }
 
-  /** Unpin a message */
-  async unpinMessage(messageId: string): Promise<boolean> {
+  /** Unpin a message (requires conversation access) */
+  async unpinMessage(messageId: string, conversationId?: string, userId?: string): Promise<boolean> {
+    // Get the message to verify conversation access if details provided
+    if (conversationId && userId) {
+      const { data: conv } = await supabase
+        .from('conversations')
+        .select('participant_ids')
+        .eq('id', conversationId)
+        .maybeSingle();
+
+      if (!conv || !(conv.participant_ids as string[]).includes(userId)) {
+        console.error('[Messaging] User not a participant of this conversation');
+        return false;
+      }
+    }
+
     const { error } = await supabase
       .from('messages')
       .update({ is_pinned: false })

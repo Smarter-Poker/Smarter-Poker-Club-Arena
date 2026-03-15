@@ -183,7 +183,7 @@ class ProfileServiceClass {
 
     const { error: vipErr } = await supabase
       .from('profiles')
-      .update({ vip_points: newPoints, vip_level: newTier })
+      .update({ vip_points: newPoints, vip_tier: newTier })
       .eq('id', userId);
 
     if (vipErr) {

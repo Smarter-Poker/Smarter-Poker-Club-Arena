@@ -17,6 +17,7 @@ import { cashoutService } from '../services/CashoutService';
 import { WalletService } from '../services/WalletService';
 import { CreditService } from '../services/CreditService';
 import './AdminDashboardPage.css';
+import AgentScoreCard from '../components/agent/AgentScoreCard';
 
 import { useIsMounted } from '../hooks/useIsMounted';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
@@ -545,6 +546,7 @@ export default function AgentDashboardPage() {
             },
             { id: 'commissions' as AgentTab, label: 'Commissions' },
             { id: 'analytics' as AgentTab, label: 'Analytics' },
+            { id: 'score' as AgentTab, label: '🏆 Score' },
             ...(isOwnerOrAdmin ? [{ id: 'promo' as AgentTab, label: '🎁 Promo' }] : []),
             ...(isOwner ? [{ id: 'credit' as AgentTab, label: '🏦 Credit' }] : []),
           ].map((t) => (
@@ -1005,6 +1007,13 @@ export default function AgentDashboardPage() {
                 </table>
               </div>
             )}
+          </div>
+        )}
+
+        {/* ══════ TAB: SCORE ══════ */}
+        {tab === 'score' && user && (
+          <div className="admin-tab-content">
+            <AgentScoreCard userId={user.id} clubId={clubId || ''} />
           </div>
         )}
 

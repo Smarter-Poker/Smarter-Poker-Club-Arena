@@ -7,6 +7,7 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { triggerHaptic } from '../../services/HapticService';
 import { masterBus } from '../../core/MasterBus';
 import './SettlementReceipt.css';
@@ -37,11 +38,10 @@ export default function SettlementReceipt({
   const [copied, setCopied] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isMountedRef = useRef(true);
+  const isMounted = useIsMounted();
 
   useEffect(() => {
     return () => {
-      isMountedRef.current = false;
       if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
     };
   }, []);
@@ -56,7 +56,7 @@ export default function SettlementReceipt({
       setCopied(true);
       if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
       copyTimerRef.current = setTimeout(() => {
-        if (isMountedRef.current) setCopied(false);
+        if (isMounted.current) setCopied(false);
       }, 2000);
     } catch {
       // Fallback: select text

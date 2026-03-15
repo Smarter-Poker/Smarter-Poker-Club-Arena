@@ -9,6 +9,7 @@
  */
 
 import { useEffect, useState, useCallback, useRef } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { retryAsync } from '../../utils/retryAsync';
@@ -70,7 +71,7 @@ export default function DailyChallenges() {
   const picked = useRef(pickChallenges()); // stable across re-renders
   const tableSessionStart = useRef<number | null>(null); // for play-time tracking
   const claimingRef = useRef<Set<number>>(new Set()); // prevents double-click race
-  const isMountedRef = useRef(true);
+  const isMounted = useIsMounted();
   const claimTimerRef = useRef<number | null>(null);
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -97,7 +98,7 @@ export default function DailyChallenges() {
             map[row.challenge_index] = row.progress;
             if (row.completed) claimedMap[row.challenge_index] = true;
           });
-          if (!isMountedRef.current) return;
+          if (!isMounted.current) return;
           setProgress(map);
           setClaimed(claimedMap);
           return;
@@ -240,10 +241,7 @@ export default function DailyChallenges() {
       }
     });
 
-    isMountedRef.current = true;
-
     return () => {
-      isMountedRef.current = false;
       unsubHandCompleted();
       unsubHandWon();
       unsubFlopSeen();
@@ -300,7 +298,7 @@ export default function DailyChallenges() {
           const newBalance = typeof rpcResult === 'number' ? rpcResult : reward;
 
           // STEP 3: Both DB writes confirmed — NOW lock local state
-          if (!isMountedRef.current) return;
+          if (!isMounted.current) return;
           setClaimed((prev) => {
             const next = { ...prev, [challengeIndex]: true };
             try {
@@ -325,9 +323,9 @@ export default function DailyChallenges() {
         claimingRef.current.delete(challengeIndex);
       }
       // Fade out animation timing — tracked for cleanup
-      if (isMountedRef.current) {
+      if (isMounted.current) {
         claimTimerRef.current = window.setTimeout(() => {
-          if (isMountedRef.current) setClaimingIndex(null);
+          if (isMounted.current) setClaimingIndex(null);
         }, 600);
       }
     },

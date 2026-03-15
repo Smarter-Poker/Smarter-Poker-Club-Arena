@@ -28,3 +28,6 @@ ALTER TABLE session_history ADD COLUMN IF NOT EXISTS profit_loss NUMERIC(18,4) D
 ALTER TABLE session_history ADD COLUMN IF NOT EXISTS big_blind NUMERIC(18,4) DEFAULT 0;
 ALTER TABLE session_history ADD COLUMN IF NOT EXISTS duration_minutes INTEGER DEFAULT 0;
 ALTER TABLE session_history ADD COLUMN IF NOT EXISTS ended_at TIMESTAMPTZ;
+
+-- player_position_stats — missing column used by PlayerStyleRadar
+ALTER TABLE player_position_stats ADD COLUMN IF NOT EXISTS hands_won INTEGER DEFAULT 0;

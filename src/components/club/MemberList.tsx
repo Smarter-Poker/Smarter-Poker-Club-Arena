@@ -212,5 +212,6 @@ function MemberListInner({
   );
 }
 
-export default memo(MemberListInner);
-export { MemberListInner as MemberList };
+const MemberList = memo(MemberListInner);
+export { MemberList };
+export default MemberList;

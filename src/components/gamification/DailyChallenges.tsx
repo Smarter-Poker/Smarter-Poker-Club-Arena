@@ -217,6 +217,8 @@ export const DailyChallenges: React.FC = () => {
         if (isMounted.current) setShowAnimation(false);
       }, 2000);
       animTimers.current.push(animT);
+      // Notify other pages that balance changed (chips were credited)
+      masterBus.emit('BALANCE_UPDATED', { source: 'daily_challenge_claim', userId: user.id });
     } catch (err: any) {
       if (isMounted.current) toast.error(err?.message || 'Failed to claim reward');
     } finally {

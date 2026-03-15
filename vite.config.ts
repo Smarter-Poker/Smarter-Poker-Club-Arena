@@ -56,12 +56,13 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: {
-          // Split vendor chunks
+          // Split vendor chunks — isolate heavy deps from main bundle
           'vendor-react': ['react', 'react-dom', 'react-router-dom'],
           'vendor-supabase': ['@supabase/supabase-js'],
           // 'vendor-three' REMOVED — three.js not imported anywhere, saves ~189KB
           'vendor-charts': ['recharts'],
           'vendor-motion': ['framer-motion'],
+          'vendor-sentry': ['@sentry/react'],
         },
       },
     },

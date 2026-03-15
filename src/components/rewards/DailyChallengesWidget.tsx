@@ -166,6 +166,8 @@ export const DailyChallengesWidget: React.FC = () => {
         prev.map((c) => (c.id === challengeId ? { ...c, claimed: true } : c))
       );
       if (isMounted.current) toast.success(`+${challenge.reward.amount} Chips claimed!`);
+      // Notify other pages that balance changed (chips were credited)
+      masterBus.emit('BALANCE_UPDATED', { source: 'daily_challenge_claim', userId: user.id });
     } catch (err: any) {
       if (isMounted.current) toast.error(err?.message || 'Failed to claim reward');
     } finally {

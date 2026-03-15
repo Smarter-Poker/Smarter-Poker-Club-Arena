@@ -50,6 +50,55 @@ type AgentTab =
   | 'promo'
   | 'credit';
 
+// ── Agent Dashboard Types ──────────────────────────────────────
+interface AgentProfile {
+  id: string;
+  display_name?: string;
+  username?: string;
+  avatar_url?: string;
+  last_seen_at?: string;
+}
+interface DownlineMember {
+  user_id: string;
+  role: string;
+  chip_balance: number;
+  status: string;
+  created_at: string;
+  referred_by?: string;
+  profile?: AgentProfile;
+}
+interface CashoutRequest {
+  id: string;
+  player_id: string;
+  club_id: string;
+  amount: number;
+  status: string;
+  player_note?: string;
+  created_at: string;
+  updated_at?: string;
+}
+interface AgentCommission {
+  id: string;
+  user_id: string;
+  club_id: string;
+  amount: number;
+  source_type: string;
+  source_id?: string;
+  notes?: string;
+  created_at: string;
+}
+interface ChipTransaction {
+  id: string;
+  from_user_id?: string;
+  to_user_id?: string;
+  club_id: string;
+  amount: number;
+  transaction_type: string;
+  notes?: string;
+  reference_id?: string;
+  created_at: string;
+}
+
 export default function AgentDashboardPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -65,10 +114,10 @@ export default function AgentDashboardPage() {
   const [role, setRole] = useState('agent');
 
   // Overview data
-  const [players, setPlayers] = useState<any[]>([]);
-  const [pendingCashouts, setPendingCashouts] = useState<any[]>([]);
-  const [commissions, setCommissions] = useState<any[]>([]);
-  const [recentTx, setRecentTx] = useState<any[]>([]);
+  const [players, setPlayers] = useState<DownlineMember[]>([]);
+  const [pendingCashouts, setPendingCashouts] = useState<CashoutRequest[]>([]);
+  const [commissions, setCommissions] = useState<AgentCommission[]>([]);
+  const [recentTx, setRecentTx] = useState<ChipTransaction[]>([]);
 
   // Search / Filter
   const [playerSearch, setPlayerSearch] = useState('');
@@ -88,7 +137,7 @@ export default function AgentDashboardPage() {
   const [creditNotes, setCreditNotes] = useState('');
 
   // Agents list (for promo/credit selectors)
-  const [agents, setAgents] = useState<any[]>([]);
+  const [agents, setAgents] = useState<DownlineMember[]>([]);
 
   const mountedRef = useIsMounted();
 
@@ -131,28 +180,28 @@ export default function AgentDashboardPage() {
 
         // Filter to downline for non-owners
         const myDownline = (downline || []).filter(
-          (m: any) =>
+          (m: DownlineMember) =>
             membership?.role === 'owner' ||
             membership?.role === 'admin' ||
             m.referred_by === user.id
         );
 
         // Get profiles for all relevant users
-        const allUserIds = (downline || []).map((m: any) => m.user_id).filter(Boolean);
-        const profileMap: Record<string, any> = {};
+        const allUserIds = (downline || []).map((m: DownlineMember) => m.user_id).filter(Boolean);
+        const profileMap: Record<string, AgentProfile> = {};
         if (allUserIds.length > 0) {
           const { data: profiles } = await supabase
             .from('profiles')
             .select('id, display_name, username, avatar_url, last_seen_at')
             .in('id', allUserIds);
           if (profiles)
-            profiles.forEach((p: any) => {
+            profiles.forEach((p: AgentProfile) => {
               profileMap[p.id] = p;
             });
         }
 
         // Enrich players with profiles
-        const enrichedPlayers = myDownline.map((m: any) => ({
+        const enrichedPlayers = myDownline.map((m: DownlineMember) => ({
           ...m,
           profile: profileMap[m.user_id] || {},
         }));
@@ -186,8 +235,8 @@ export default function AgentDashboardPage() {
 
         // Get agents list
         const agentList = (downline || [])
-          .filter((m: any) => ['agent', 'sub_agent', 'super_agent'].includes(m.role))
-          .map((m: any) => ({
+          .filter((m: DownlineMember) => ['agent', 'sub_agent', 'super_agent'].includes(m.role))
+          .map((m: DownlineMember) => ({
             ...m,
             profile: profileMap[m.user_id] || {},
           }));
@@ -256,7 +305,7 @@ export default function AgentDashboardPage() {
     if (!clubId) return;
     const refresh = () => refreshDashboard(clubId);
     // Filtered refresh: only reload if the event is for this club (or has no clubId)
-    const filteredRefresh = (event?: any) => {
+    const filteredRefresh = (event?: { payload?: { clubId?: string } }) => {
       if (!event?.payload?.clubId || event.payload.clubId === clubId) {
         refresh();
       }
@@ -529,7 +578,9 @@ export default function AgentDashboardPage() {
           >
             <strong>{pendingCashouts.length}</strong> pending cashout request
             {pendingCashouts.length !== 1 ? 's' : ''} —{' '}
-            {fmtChips(pendingCashouts.reduce((sum: number, c: any) => sum + (c.amount || 0), 0))}{' '}
+            {fmtChips(
+              pendingCashouts.reduce((sum: number, c: CashoutRequest) => sum + (c.amount || 0), 0)
+            )}{' '}
             chips waiting
           </div>
         )}
@@ -601,7 +652,9 @@ export default function AgentDashboardPage() {
               </div>
               <div className="admin-stat-card">
                 <div className="admin-stat-value" style={{ color: '#FA383E' }}>
-                  {fmtChips(pendingCashouts.reduce((s: number, c: any) => s + (c.amount || 0), 0))}
+                  {fmtChips(
+                    pendingCashouts.reduce((s: number, c: CashoutRequest) => s + (c.amount || 0), 0)
+                  )}
                 </div>
                 <div className="admin-stat-label">Cashout Amount</div>
               </div>
@@ -627,12 +680,10 @@ export default function AgentDashboardPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {paginatedTx.map((tx: any, i: number) => (
+                      {paginatedTx.map((tx, i: number) => (
                         <tr key={tx.id || i}>
                           <td>
-                            <span className="admin-badge">
-                              {tx.type || tx.transaction_type || 'transfer'}
-                            </span>
+                            <span className="admin-badge">{tx.transaction_type || 'transfer'}</span>
                           </td>
                           <td style={{ fontWeight: 600 }}>{fmtChips(tx.amount)}</td>
                           <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
@@ -683,7 +734,7 @@ export default function AgentDashboardPage() {
               <div className="admin-stat-card">
                 <div className="admin-stat-value" style={{ color: '#31A24C' }}>
                   {
-                    filteredPlayers.filter((p: any) => {
+                    filteredPlayers.filter((p) => {
                       const ls = p.profile?.last_seen_at;
                       return ls && Date.now() - new Date(ls).getTime() < 300000;
                     }).length
@@ -694,7 +745,10 @@ export default function AgentDashboardPage() {
               <div className="admin-stat-card">
                 <div className="admin-stat-value">
                   {fmtChips(
-                    filteredPlayers.reduce((sum: number, p: any) => sum + (p.chip_balance || 0), 0)
+                    filteredPlayers.reduce(
+                      (sum: number, p: DownlineMember) => sum + (p.chip_balance || 0),
+                      0
+                    )
                   )}
                 </div>
                 <div className="admin-stat-label">Total Chips</div>
@@ -718,7 +772,7 @@ export default function AgentDashboardPage() {
                   gap: '12px',
                 }}
               >
-                {filteredPlayers.map((p: any) => {
+                {filteredPlayers.map((p) => {
                   const name =
                     p.profile?.display_name || p.profile?.username || p.user_id?.substring(0, 8);
                   const isOnline =
@@ -804,7 +858,7 @@ export default function AgentDashboardPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {pendingCashouts.map((c: any) => (
+                    {pendingCashouts.map((c) => (
                       <tr key={c.id}>
                         <td>{c.player_id?.substring(0, 8)}..</td>
                         <td style={{ fontWeight: 700, color: '#F7C52A' }}>{fmtChips(c.amount)}</td>
@@ -856,7 +910,9 @@ export default function AgentDashboardPage() {
               </div>
               <div className="admin-stat-card">
                 <div className="admin-stat-value" style={{ color: '#FA383E' }}>
-                  {fmtChips(pendingCashouts.reduce((s: number, c: any) => s + (c.amount || 0), 0))}
+                  {fmtChips(
+                    pendingCashouts.reduce((s: number, c: CashoutRequest) => s + (c.amount || 0), 0)
+                  )}
                 </div>
                 <div className="admin-stat-label">Total Amount</div>
               </div>

@@ -97,7 +97,7 @@ const CATEGORY_ICONS: Record<string, string> = {
   bonus: '★',
 };
 
-export function TransactionHistory({ walletId, limit = 20 }: TransactionHistoryProps) {
+function TransactionHistoryInner({ walletId, limit = 20 }: TransactionHistoryProps) {
   const { user } = useAuthUser();
   const toast = useToast();
 
@@ -260,4 +260,6 @@ export function TransactionHistory({ walletId, limit = 20 }: TransactionHistoryP
   );
 }
 
-export default memo(TransactionHistory);
+const TransactionHistory = memo(TransactionHistoryInner);
+export { TransactionHistory };
+export default TransactionHistory;

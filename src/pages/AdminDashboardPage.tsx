@@ -56,6 +56,80 @@ type AdminTab =
   | 'mint'
   | 'settings';
 
+// ── Admin Dashboard Types ───────────────────────────────────────
+interface HealthBreakdown {
+  activePlayers?: { score: number; active: number; total: number };
+  rakeTrend?: { score: number; thisWeek: number };
+  agentEngagement?: { score: number; active: number; total: number };
+  playerAcquisition?: { score: number; newThisMonth: number };
+  cashoutVelocity?: { score: number; cashouts: number; buyins: number };
+}
+interface HealthData {
+  healthScore: number;
+  color: string;
+  status: string;
+  trend: string;
+  breakdown: HealthBreakdown;
+}
+interface VolumeStats {
+  totalVolume: number;
+  byActionType: Record<string, { volume: number; count: number }>;
+}
+interface CommissionRow {
+  id: string;
+  user_id: string;
+  amount: number;
+  commission_rate: number;
+  source_type: string;
+  notes: string | null;
+  created_at: string;
+}
+interface AuditLogRow {
+  id: string;
+  action_type: string;
+  user_id: string | null;
+  target_user_id: string | null;
+  amount: number | null;
+  ip_address: string | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+  userName?: string;
+  targetUserName?: string | null;
+}
+interface HierarchyMember {
+  user_id: string;
+  role: string;
+  profiles?: { display_name?: string; username?: string } | null;
+}
+interface Recommendation {
+  icon: string;
+  severity: 'info' | 'warning' | 'critical' | 'success';
+  title: string;
+  desc: string;
+}
+interface TableRow {
+  id: string;
+  current_players: number;
+  status: string;
+  total_hands_dealt?: number;
+}
+interface SessionRow {
+  total_hands: number;
+  net_result: number;
+  duration_minutes: number;
+}
+interface ClubMemberRow {
+  id: string;
+  is_active?: boolean;
+  role: string;
+  last_active_at?: string | null;
+}
+interface ProfileRow {
+  id: string;
+  username: string;
+  display_name?: string | null;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // SHARED UI: Meter
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -99,8 +173,8 @@ function Meter({
 // TAB 1: DASHBOARD (Health Score)
 // ═══════════════════════════════════════════════════════════════════════════════
 function DashboardTab({ clubId }: { clubId: string }) {
-  const [health, setHealth] = useState<any>(null);
-  const [stats, setStats] = useState<any>(null);
+  const [health, setHealth] = useState<HealthData | null>(null);
+  const [stats, setStats] = useState<VolumeStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const isMounted = useIsMounted();
@@ -373,7 +447,7 @@ function DashboardTab({ clubId }: { clubId: string }) {
             </span>
           </h3>
           <div className="admin-stats-grid">
-            {Object.entries(stats.byActionType || {}).map(([type, data]: [string, any]) => (
+            {Object.entries(stats.byActionType || {}).map(([type, data]) => (
               <div key={type} className="admin-stat-card">
                 <div className="admin-stat-label">{toTitleCase(type)}</div>
                 <div className="admin-stat-value">{fmtChips(data.volume)}</div>
@@ -391,7 +465,10 @@ function DashboardTab({ clubId }: { clubId: string }) {
 // TAB 2: SETTLEMENTS
 // ═══════════════════════════════════════════════════════════════════════════════
 function SettlementsTab({ clubId }: { clubId: string }) {
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<{
+    currentPeriod: Record<string, string | number | null> | null;
+    pendingCommissions: CommissionRow[];
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -413,7 +490,7 @@ function SettlementsTab({ clubId }: { clubId: string }) {
 
       // agent_commissions schema: id, club_id, user_id, amount, commission_rate, source_type, source_id, notes, created_at
       // Note: agent_commissions has NO period_id or status columns
-      let commissions: any[] = [];
+      let commissions: CommissionRow[] = [];
       if (currentPeriod) {
         const { data: comms } = await supabase
           .from('agent_commissions')
@@ -437,7 +514,7 @@ function SettlementsTab({ clubId }: { clubId: string }) {
     load();
   }, [load]);
 
-  const doAction = async (actionName: string, extras: Record<string, any> = {}) => {
+  const doAction = async (actionName: string, extras: Record<string, string | undefined> = {}) => {
     if (!confirm(`Are you sure you want to ${actionName} this settlement period?`)) return;
     try {
       setProcessing(true);
@@ -514,13 +591,14 @@ function SettlementsTab({ clubId }: { clubId: string }) {
                 Period #{cp.period_number || 1} • Year {cp.year || new Date().getFullYear()}
               </div>
               <div className="admin-text-primary" style={{ marginTop: '4px', fontWeight: 600 }}>
-                {formatDate(cp.start_at)} — {cp.status === 'open' ? 'Now' : formatDate(cp.end_at)}
+                {formatDate(String(cp.start_at))} —{' '}
+                {cp.status === 'open' ? 'Now' : formatDate(String(cp.end_at))}
               </div>
             </div>
             <div style={{ display: 'flex', gap: '12px' }}>
               {cp.status === 'open' ? (
                 <button
-                  onClick={() => doAction('close', { periodId: cp.id })}
+                  onClick={() => doAction('close', { periodId: String(cp.id) })}
                   disabled={processing}
                   className="admin-btn admin-btn-danger"
                 >
@@ -558,7 +636,9 @@ function SettlementsTab({ clubId }: { clubId: string }) {
         <span>Pending Commissions</span>
         {(data.pendingCommissions || []).length > 0 && (
           <button
-            onClick={() => doAction('pay_all', { periodId: cp?.id })}
+            onClick={() =>
+              doAction('pay_all', { periodId: cp?.id != null ? String(cp.id) : undefined })
+            }
             disabled={processing}
             className="admin-btn admin-btn-ghost admin-btn-sm"
             style={{ borderColor: '#31A24C', color: '#31A24C' }}
@@ -586,11 +666,13 @@ function SettlementsTab({ clubId }: { clubId: string }) {
               </tr>
             </thead>
             <tbody>
-              {(data.pendingCommissions || []).map((c: any) => (
+              {(data.pendingCommissions || []).map((c) => (
                 <tr key={c.id}>
                   <td className="admin-mono">{c.user_id?.substring(0, 8)}...</td>
                   <td style={{ textAlign: 'right' }}>{c.source_type || 'rake'}</td>
-                  <td style={{ textAlign: 'center' }}>{((c.commission_rate || 0) * 100).toFixed(1)}%</td>
+                  <td style={{ textAlign: 'center' }}>
+                    {((c.commission_rate || 0) * 100).toFixed(1)}%
+                  </td>
                   <td style={{ textAlign: 'right', fontWeight: 700, color: '#F7C52A' }}>
                     {fmtChips(c.amount)}
                   </td>
@@ -617,7 +699,7 @@ function SettlementsTab({ clubId }: { clubId: string }) {
 // TAB 3: AUDIT LOG
 // ═══════════════════════════════════════════════════════════════════════════════
 function AuditLogTab({ clubId }: { clubId: string }) {
-  const [logs, setLogs] = useState<any[]>([]);
+  const [logs, setLogs] = useState<AuditLogRow[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
@@ -647,9 +729,11 @@ function AuditLogTab({ clubId }: { clubId: string }) {
         if (!isMounted.current) return;
 
         // Get user profiles for display names
-        const userIds = [...new Set((data || []).map((l: any) => l.user_id).filter(Boolean))];
+        const userIds = [
+          ...new Set((data || []).map((l: AuditLogRow) => l.user_id).filter(Boolean)),
+        ];
         const targetIds = [
-          ...new Set((data || []).map((l: any) => l.target_user_id).filter(Boolean)),
+          ...new Set((data || []).map((l: AuditLogRow) => l.target_user_id).filter(Boolean)),
         ];
         const allIds = [...new Set([...userIds, ...targetIds])];
 
@@ -660,7 +744,7 @@ function AuditLogTab({ clubId }: { clubId: string }) {
             .select('id, username, display_name')
             .in('id', allIds);
           if (profiles) {
-            profiles.forEach((p: any) => {
+            profiles.forEach((p: ProfileRow) => {
               profileMap[p.id] = p.display_name || p.username || 'Unknown';
             });
           }
@@ -668,9 +752,10 @@ function AuditLogTab({ clubId }: { clubId: string }) {
 
         if (!isMounted.current) return;
         setLogs(
-          (data || []).map((l: any) => ({
+          (data || []).map((l: AuditLogRow) => ({
             ...l,
-            userName: profileMap[l.user_id] || l.user_id?.substring(0, 8) || 'System',
+            userName:
+              (l.user_id ? profileMap[l.user_id] : null) || l.user_id?.substring(0, 8) || 'System',
             targetUserName: l.target_user_id
               ? profileMap[l.target_user_id] || l.target_user_id?.substring(0, 8)
               : null,
@@ -737,7 +822,9 @@ function AuditLogTab({ clubId }: { clubId: string }) {
                 const headers = Object.keys(data[0]);
                 const csv = [
                   headers.join(','),
-                  ...data.map((r: any) => headers.map((h) => JSON.stringify(r[h] ?? '')).join(',')),
+                  ...data.map((r: Record<string, unknown>) =>
+                    headers.map((h) => JSON.stringify(r[h] ?? '')).join(',')
+                  ),
                 ].join('\n');
                 const blob = new Blob([csv], { type: 'text/csv' });
                 const url = URL.createObjectURL(blob);
@@ -806,7 +893,11 @@ function AuditLogTab({ clubId }: { clubId: string }) {
                     textAlign: 'right',
                     fontWeight: 700,
                     color:
-                      l.amount > 0 ? '#31A24C' : l.amount < 0 ? '#FA383E' : 'var(--text-primary)',
+                      (l.amount ?? 0) > 0
+                        ? '#31A24C'
+                        : (l.amount ?? 0) < 0
+                          ? '#FA383E'
+                          : 'var(--text-primary)',
                   }}
                 >
                   {l.amount ? fmtChips(l.amount) : '-'}
@@ -1100,7 +1191,8 @@ function SettingsTab({ clubId }: { clubId: string }) {
   };
 
   const toggleField = (key: string) => setSettings((prev) => ({ ...prev, [key]: !prev[key] }));
-  const setField = (key: string, val: any) => setSettings((prev) => ({ ...prev, [key]: val }));
+  const setField = (key: string, val: string | number | boolean) =>
+    setSettings((prev) => ({ ...prev, [key]: val }));
 
   if (loading)
     return (
@@ -1211,15 +1303,13 @@ function HierarchyTab({ clubId }: { clubId: string }) {
       </div>
     );
 
-  const owners = tree.filter((m: any) => m.role === 'owner');
-  const superAgents = tree.filter((m: any) => m.role === 'super_agent');
-  const agents = tree.filter((m: any) => m.role === 'agent');
-  const subAgents = tree.filter((m: any) => m.role === 'sub_agent');
+  const owners = tree.filter((m: HierarchyMember) => m.role === 'owner');
+  const superAgents = tree.filter((m: HierarchyMember) => m.role === 'super_agent');
+  const agents = tree.filter((m: HierarchyMember) => m.role === 'agent');
+  const subAgents = tree.filter((m: HierarchyMember) => m.role === 'sub_agent');
 
-  const getName = (m: any) =>
-    (m.profiles as any)?.display_name ||
-    (m.profiles as any)?.username ||
-    m.user_id?.substring(0, 8);
+  const getName = (m: HierarchyMember) =>
+    m.profiles?.display_name || m.profiles?.username || m.user_id?.substring(0, 8);
 
   return (
     <div className="admin-tab-content">
@@ -1235,7 +1325,7 @@ function HierarchyTab({ clubId }: { clubId: string }) {
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {owners.map((m: any) => (
+            {owners.map((m) => (
               <div
                 key={m.user_id}
                 className="admin-hierarchy-node"
@@ -1244,7 +1334,7 @@ function HierarchyTab({ clubId }: { clubId: string }) {
                 <span className="admin-badge admin-badge-yellow">👑 Owner</span> {getName(m)}
               </div>
             ))}
-            {superAgents.map((m: any) => (
+            {superAgents.map((m) => (
               <div
                 key={m.user_id}
                 className="admin-hierarchy-node"
@@ -1256,7 +1346,7 @@ function HierarchyTab({ clubId }: { clubId: string }) {
                 {getName(m)}
               </div>
             ))}
-            {agents.map((m: any) => (
+            {agents.map((m) => (
               <div
                 key={m.user_id}
                 className="admin-hierarchy-node"
@@ -1268,7 +1358,7 @@ function HierarchyTab({ clubId }: { clubId: string }) {
                 {getName(m)}
               </div>
             ))}
-            {subAgents.map((m: any) => (
+            {subAgents.map((m) => (
               <div
                 key={m.user_id}
                 className="admin-hierarchy-node"
@@ -1563,10 +1653,10 @@ function RecommendationsTab({ clubId }: { clubId: string }) {
         ]);
         const mems = members || [];
         const tbls = tables || [];
-        const recommendations: any[] = [];
+        const recommendations: Recommendation[] = [];
 
         // Check player engagement
-        const inactive = mems.filter((m: any) => {
+        const inactive = mems.filter((m: ClubMemberRow) => {
           if (!m.last_active_at) return true;
           return Date.now() - new Date(m.last_active_at).getTime() > 7 * 86400000;
         });
@@ -1581,7 +1671,7 @@ function RecommendationsTab({ clubId }: { clubId: string }) {
 
         // Check table activity
         const activeTbls = tbls.filter(
-          (t: any) => t.status === 'active' && (t.current_players || 0) > 0
+          (t: TableRow) => t.status === 'active' && (t.current_players || 0) > 0
         );
         if (tbls.length > 0 && activeTbls.length === 0) {
           recommendations.push({
@@ -1603,7 +1693,7 @@ function RecommendationsTab({ clubId }: { clubId: string }) {
         }
 
         // Check agent coverage
-        const agentCount = mems.filter((m: any) =>
+        const agentCount = mems.filter((m: ClubMemberRow) =>
           ['agent', 'super_agent', 'sub_agent'].includes(m.role)
         ).length;
         if (mems.length > 20 && agentCount === 0) {
@@ -1852,12 +1942,19 @@ function AnalyticsTab({ clubId }: { clubId: string }) {
 
         const tbls = tables || [];
         const sess = sessions || [];
-        const totalHands = tbls.reduce((s: number, t: any) => s + (t.total_hands_dealt || 0), 0);
-        const totalSessionHands = sess.reduce((s: number, se: any) => s + (se.total_hands || 0), 0);
+        const totalHands = tbls.reduce(
+          (s: number, t: TableRow) => s + (t.total_hands_dealt || 0),
+          0
+        );
+        const totalSessionHands = sess.reduce(
+          (s: number, se: SessionRow) => s + (se.total_hands || 0),
+          0
+        );
         const avgDuration =
           sess.length > 0
             ? Math.round(
-                sess.reduce((s: number, se: any) => s + (se.duration_minutes || 0), 0) / sess.length
+                sess.reduce((s: number, se: SessionRow) => s + (se.duration_minutes || 0), 0) /
+                  sess.length
               )
             : 0;
 
@@ -1865,7 +1962,7 @@ function AnalyticsTab({ clubId }: { clubId: string }) {
           setData({
             totalMembers: memberCount || 0,
             totalTables: tbls.length,
-            activeTables: tbls.filter((t: any) => t.status === 'active').length,
+            activeTables: tbls.filter((t: TableRow) => t.status === 'active').length,
             totalHandsDealt: totalHands,
             weeklyHands: totalSessionHands,
             weeklySessions: sess.length,

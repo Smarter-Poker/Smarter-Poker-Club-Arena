@@ -72,8 +72,9 @@ describe('CashoutService', () => {
   });
 
   describe('edge cases', () => {
-    it('should throw on cancelCashout for nonexistent id', async () => {
-      await expect(cashoutService.cancelCashout('nonexistent-id', 'player-1')).rejects.toThrow();
+    it('should return false for cancelCashout on nonexistent id', async () => {
+      const result = await cashoutService.cancelCashout('nonexistent-id', 'player-1');
+      expect(result).toBe(false);
     });
 
     it('should throw on rejectCashout for nonexistent id', async () => {
@@ -82,8 +83,9 @@ describe('CashoutService', () => {
       ).rejects.toThrow();
     });
 
-    it('should throw on approveCashout for unknown id', async () => {
-      await expect(cashoutService.approveCashout('unknown-id', 'agent-1')).rejects.toThrow();
+    it('should return false for approveCashout on unknown id', async () => {
+      const result = await cashoutService.approveCashout('unknown-id', 'agent-1');
+      expect(result).toBe(false);
     });
   });
 });

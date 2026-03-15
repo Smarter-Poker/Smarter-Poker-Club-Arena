@@ -57,7 +57,7 @@ vi.mock('../../src/lib/supabase', () => ({
   },
 }));
 
-import { masterBus, BusEventType } from '../../src/core/MasterBus';
+import { masterBus } from '../../src/core/MasterBus';
 import type { MasterBusStatus, BusEvent } from '../../src/core/MasterBus';
 
 describe('MasterBus', () => {
@@ -70,10 +70,12 @@ describe('MasterBus', () => {
     expect(typeof masterBus.emit).toBe('function');
   });
 
-  it('should export BusEventType type (verified via import)', () => {
-    // Type-only assertion: BusEventType is a union string literal type
-    const testType: BusEventType = 'WALLET_UPDATED';
-    expect(testType).toBe('WALLET_UPDATED');
+  it('should have subscribe method', () => {
+    expect(typeof masterBus.subscribe).toBe('function');
+  });
+
+  it('should have getStatus method', () => {
+    expect(typeof masterBus.getStatus).toBe('function');
   });
 
   it('should export MasterBusStatus interface shape', () => {
@@ -97,10 +99,10 @@ describe('MasterBus', () => {
 
   it('should export BusEvent interface shape', () => {
     const mockEvent: BusEvent = {
-      type: 'WALLET_UPDATED',
+      type: 'BALANCE_UPDATED',
       payload: {},
       timestamp: new Date().toISOString(),
     };
-    expect(mockEvent.type).toBe('WALLET_UPDATED');
+    expect(mockEvent.type).toBe('BALANCE_UPDATED');
   });
 });

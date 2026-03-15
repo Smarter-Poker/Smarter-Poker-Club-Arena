@@ -313,7 +313,7 @@ export default function ClubHomePage() {
             .eq('id', authUser.id)
             .maybeSingle()
             .then((r) => r),
-        { maxRetries: 2 }
+        { maxRetries: 2, isMountedRef }
       );
 
       if (getIsMounted && !getIsMounted()) return;
@@ -349,7 +349,7 @@ export default function ClubHomePage() {
             .eq(clubCol, clubVal)
             .maybeSingle()
             .then((r) => r),
-        { maxRetries: 2 }
+        { maxRetries: 2, isMountedRef }
       );
 
       if (clubError || !clubData) {

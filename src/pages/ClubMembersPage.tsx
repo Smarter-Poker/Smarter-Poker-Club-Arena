@@ -452,6 +452,7 @@ export default function ClubMembersPage() {
   const clubId = routeClubId || searchParams.get('club') || undefined;
   const { user } = useAuthUser();
   const toast = useToast();
+  const isMountedRef = useIsMounted();
   useVisibilityRefresh(() => loadMembers());
 
   const [members, setMembers] = useState<ClubMember[]>([]);

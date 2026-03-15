@@ -62,7 +62,10 @@ export default function SettlementHistoryPage() {
     try {
       const { data } = await supabase
         .from('club_settlements')
-        .select('id, period_id, total_rake, union_tax, net_settlement, status, created_at')
+        // club_settlements schema: total_rake_collected, platform_fee, net_revenue (NOT total_rake, union_tax, net_settlement)
+        .select(
+          'id, period_id, total_rake_collected, platform_fee, net_revenue, status, created_at'
+        )
         .order('created_at', { ascending: false })
         .limit(50);
 
@@ -71,9 +74,9 @@ export default function SettlementHistoryPage() {
         const mapped: SettlementCycle[] = data.map((s: any) => ({
           id: s.id,
           periodId: s.period_id || 'N/A',
-          totalRake: s.total_rake || 0,
-          unionTax: s.union_tax || 0,
-          netSettlement: s.net_settlement || 0,
+          totalRake: s.total_rake_collected || 0,
+          unionTax: s.platform_fee || 0,
+          netSettlement: s.net_revenue || 0,
           status: s.status || 'completed',
           createdAt: s.created_at,
           agentPayouts: 0,
@@ -362,7 +365,7 @@ export default function SettlementHistoryPage() {
                 </span>
                 {cycle.unionTax > 0 && (
                   <span>
-                    Tax:{' '}
+                    Fee:{' '}
                     <span style={{ color: '#ef4444' }}>-{cycle.unionTax.toLocaleString()}</span>
                   </span>
                 )}

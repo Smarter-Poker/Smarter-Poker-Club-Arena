@@ -6,6 +6,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { cashoutService, CashoutRequest } from '../../services/CashoutService';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { masterBus } from '../../core/MasterBus';
@@ -18,6 +19,7 @@ interface AgentCashoutPanelProps {
 }
 
 export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentCashoutPanelProps) {
+  const isMounted = useIsMounted();
   const { user } = useAuthUser();
   const [cashouts, setCashouts] = useState<CashoutRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -91,7 +93,7 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
       loadCashouts();
       onCashoutProcessed?.();
     } catch (err: any) {
-      setError(err.message || 'Failed to approve cashout');
+      if (isMounted.current) setError(err.message || 'Failed to approve cashout');
     }
     setProcessing(null);
   };
@@ -107,7 +109,7 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
       loadCashouts();
       onCashoutProcessed?.();
     } catch (err: any) {
-      setError(err.message || 'Failed to reject cashout');
+      if (isMounted.current) setError(err.message || 'Failed to reject cashout');
     }
     setProcessing(null);
   };

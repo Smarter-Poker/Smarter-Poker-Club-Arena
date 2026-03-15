@@ -3,6 +3,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { creditRequestService, type CreditRequest } from '../../services/CreditRequestService';
 import { useToast } from '../common/Toast';
 import './CreditRequestWidget.css';
@@ -22,6 +23,7 @@ export default function CreditRequestWidget({
   currentCreditLimit,
   currentCreditUsed,
 }: CreditRequestWidgetProps) {
+  const isMounted = useIsMounted();
   const toast = useToast();
 
   const [requests, setRequests] = useState<CreditRequest[]>([]);
@@ -59,7 +61,7 @@ export default function CreditRequestWidget({
       });
     } catch (error) {
       console.error('Failed to load credit requests:', error);
-      toast.error('Failed to load credit requests');
+      if (isMounted.current) toast.error('Failed to load credit requests');
     }
     setLoading(false);
   };
@@ -89,9 +91,9 @@ export default function CreditRequestWidget({
       setRequestReason('');
       loadRequests();
     } catch (error) {
-      toast.error('Failed to submit request');
+      if (isMounted.current) toast.error('Failed to submit request');
     } finally {
-      setSubmitting(false);
+      if (isMounted.current) setSubmitting(false);
     }
   };
 
@@ -103,7 +105,7 @@ export default function CreditRequestWidget({
       );
       loadRequests();
     } catch (error) {
-      toast.error('Failed to approve request');
+      if (isMounted.current) toast.error('Failed to approve request');
     }
   };
 
@@ -113,7 +115,7 @@ export default function CreditRequestWidget({
       toast.success('Request denied');
       loadRequests();
     } catch (error) {
-      toast.error('Failed to deny request');
+      if (isMounted.current) toast.error('Failed to deny request');
     }
   };
 

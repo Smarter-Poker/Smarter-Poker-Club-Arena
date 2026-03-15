@@ -8,6 +8,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import { useIsMounted } from '../hooks/useIsMounted';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -18,6 +19,7 @@ type AuthMode = 'login' | 'signup' | 'reset';
 
 export default function AuthPage() {
   const navigate = useNavigate();
+  const isMounted = useIsMounted();
   const [mode, setMode] = useState<AuthMode>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -56,9 +58,9 @@ export default function AuthPage() {
       }
     } catch (err: any) {
       console.error('🔐 [AUTH] Login failed:', err);
-      setError(err.message || 'Login failed. Please try again.');
+      if (isMounted.current) setError(err.message || 'Login failed. Please try again.');
     } finally {
-      setIsLoading(false);
+      if (isMounted.current) setIsLoading(false);
     }
   };
 
@@ -182,9 +184,9 @@ export default function AuthPage() {
       }
     } catch (err: any) {
       console.error('🔐 [AUTH] Signup failed:', err);
-      setError(err.message || 'Signup failed. Please try again.');
+      if (isMounted.current) setError(err.message || 'Signup failed. Please try again.');
     } finally {
-      setIsLoading(false);
+      if (isMounted.current) setIsLoading(false);
     }
   };
 
@@ -203,9 +205,9 @@ export default function AuthPage() {
       setSuccess('Password reset email sent! Check your inbox.');
     } catch (err: any) {
       console.error('🔐 [AUTH] Password reset failed:', err);
-      setError(err.message || 'Failed to send reset email.');
+      if (isMounted.current) setError(err.message || 'Failed to send reset email.');
     } finally {
-      setIsLoading(false);
+      if (isMounted.current) setIsLoading(false);
     }
   };
 

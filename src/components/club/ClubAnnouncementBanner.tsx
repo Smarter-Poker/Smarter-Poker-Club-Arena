@@ -10,6 +10,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { useParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
@@ -44,6 +45,7 @@ export default function ClubAnnouncementBanner({
   const [currentIndex, setCurrentIndex] = useState(0);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
+  const isMounted = useIsMounted();
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -107,6 +109,7 @@ export default function ClubAnnouncementBanner({
         .limit(5);
 
       if (!error && data) {
+        if (!isMounted.current) return;
         const mapped: Announcement[] = data.map((a: any) => ({
           id: a.id,
           title: a.title,
@@ -122,7 +125,7 @@ export default function ClubAnnouncementBanner({
     } catch (error) {
       console.error('Failed to load announcements:', error);
     }
-    setLoading(false);
+    if (isMounted.current) setLoading(false);
   };
 
   const dismiss = (id: string) => {

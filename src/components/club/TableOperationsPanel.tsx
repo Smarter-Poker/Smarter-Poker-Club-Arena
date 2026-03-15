@@ -13,6 +13,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { tableService } from '../../services/TableService';
@@ -328,6 +329,7 @@ const getStatusBadgeStyle = (status: string): React.CSSProperties => ({
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export default function TableOperationsPanel({ clubId }: Props) {
+  const isMounted = useIsMounted();
   const [tables, setTables] = useState<TableInfo[]>([]);
   const [expandedTable, setExpandedTable] = useState<string | null>(null);
   const [seatedPlayers, setSeatedPlayers] = useState<Record<string, SeatedPlayer[]>>({});
@@ -452,7 +454,7 @@ export default function TableOperationsPanel({ clubId }: Props) {
     } catch (err) {
       console.error('[TableOperationsPanel] Failed to kick player:', err);
     } finally {
-      setConfirmAction(null);
+      if (isMounted.current) setConfirmAction(null);
       setActionLoading(null);
     }
   };
@@ -466,7 +468,7 @@ export default function TableOperationsPanel({ clubId }: Props) {
     } catch (err) {
       console.error('[TableOperationsPanel] Failed to close table:', err);
     } finally {
-      setConfirmAction(null);
+      if (isMounted.current) setConfirmAction(null);
       setActionLoading(null);
     }
   };

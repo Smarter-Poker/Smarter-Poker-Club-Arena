@@ -4,7 +4,8 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { useToast } from '../common/Toast';
 import { resolveClubIdFilter } from '../../utils/clubIdResolver';
@@ -57,17 +58,26 @@ export function ClubSettingsPanel({ clubId, isOpen, onClose, onSave }: ClubSetti
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [visibleSections, setVisibleSections] = useState<boolean[]>([]);
+  const isMounted = useIsMounted();
+  const animTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   useEffect(() => {
     if (isOpen) {
       loadSettings();
+      animTimers.current.forEach(clearTimeout);
+      animTimers.current = [];
       setVisibleSections([]);
       [0, 1, 2, 3, 4].forEach((i) => {
-        setTimeout(() => {
-          setVisibleSections((prev) => [...prev, true]);
+        const t = setTimeout(() => {
+          if (isMounted.current) setVisibleSections((prev) => [...prev, true]);
         }, i * 60);
+        animTimers.current.push(t);
       });
     }
+    return () => {
+      animTimers.current.forEach(clearTimeout);
+      animTimers.current = [];
+    };
   }, [isOpen, clubId]);
 
   const loadSettings = async () => {

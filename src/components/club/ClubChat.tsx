@@ -9,6 +9,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 
@@ -57,6 +58,7 @@ export default function ClubChat({ clubId, userId, userName }: ClubChatProps) {
   const lastSeenRef = useRef(0);
   const expandedRef = useRef(expanded);
   const failedTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const isMounted = useIsMounted();
 
   const loadMessages = useCallback(async () => {
     if (!clubId) return;
@@ -73,13 +75,13 @@ export default function ClubChat({ clubId, userId, userName }: ClubChatProps) {
         .order('created_at', { ascending: false })
         .limit(50);
 
-      if (!error && data) {
-        const msgs = (data as ClubChatMessage[]).reverse();
-        setMessages(msgs);
-        if (expandedRef.current) {
-          lastSeenRef.current = msgs.length;
-          setUnread(0);
-        }
+      if (!isMounted.current) return;
+      if (error) throw error;
+      const msgs = (data as ClubChatMessage[]).reverse();
+      setMessages(msgs);
+      if (expandedRef.current) {
+        lastSeenRef.current = msgs.length;
+        setUnread(0);
       }
     } catch {
       /* silent */

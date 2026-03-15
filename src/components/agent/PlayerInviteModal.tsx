@@ -6,6 +6,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import styles from './PlayerInviteModal.module.css';
@@ -41,6 +42,7 @@ export default function PlayerInviteModal({
   clubId,
   onPlayerAdded,
 }: PlayerInviteModalProps) {
+  const isMounted = useIsMounted();
   const [mode, setMode] = useState<'search' | 'invite'>('search');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<ExistingPlayer[]>([]);
@@ -107,7 +109,7 @@ export default function PlayerInviteModal({
       );
     } catch (err) {
       console.error('Search failed:', err);
-      setMessage({ type: 'error', text: 'Search failed' });
+      if (isMounted.current) setMessage({ type: 'error', text: 'Search failed' });
     }
     setSearching(false);
   };
@@ -151,7 +153,7 @@ export default function PlayerInviteModal({
       onPlayerAdded?.();
     } catch (err) {
       console.error('Failed to add player:', err);
-      setMessage({ type: 'error', text: 'Failed to add player' });
+      if (isMounted.current) setMessage({ type: 'error', text: 'Failed to add player' });
     }
     setAdding(null);
   };
@@ -180,7 +182,7 @@ export default function PlayerInviteModal({
       setMessage({ type: 'success', text: 'Invite code generated!' });
     } catch (err) {
       console.error('Failed to generate invite:', err);
-      setMessage({ type: 'error', text: 'Failed to generate invite code' });
+      if (isMounted.current) setMessage({ type: 'error', text: 'Failed to generate invite code' });
     }
     setInviting(false);
   };

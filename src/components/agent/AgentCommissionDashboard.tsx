@@ -5,6 +5,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { retryAsync } from '../../utils/retryAsync';
 import { masterBus } from '../../core/MasterBus';
@@ -43,6 +44,7 @@ interface SubAgent {
 }
 
 export function AgentCommissionDashboard() {
+  const isMounted = useIsMounted();
   const { user } = useAuthUser();
   const toast = useToast();
 
@@ -227,7 +229,7 @@ export function AgentCommissionDashboard() {
         );
       }
     } catch (error) {
-      toast.error('Failed to load commission data');
+      if (isMounted.current) toast.error('Failed to load commission data');
     }
 
     setLoading(false);

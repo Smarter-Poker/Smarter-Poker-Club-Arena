@@ -11,7 +11,8 @@
  * );
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { useIsMounted } from './useIsMounted';
 
 interface UseSupabaseQueryResult<T> {
   data: T | null;
@@ -35,7 +36,7 @@ export function useSupabaseQuery<T>(
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const mountedRef = useRef(true);
+  const isMounted = useIsMounted();
 
   const execute = useCallback(async () => {
     if (options?.enabled === false) {
@@ -48,7 +49,7 @@ export function useSupabaseQuery<T>(
 
     try {
       const result = await queryFn();
-      if (!mountedRef.current) return;
+      if (!isMounted.current) return;
 
       if (result.error) {
         setError(result.error.message);
@@ -57,11 +58,11 @@ export function useSupabaseQuery<T>(
         setData(result.data);
       }
     } catch (err) {
-      if (!mountedRef.current) return;
+      if (!isMounted.current) return;
       setError(err instanceof Error ? err.message : 'Unknown error');
       setData(null);
     } finally {
-      if (mountedRef.current) {
+      if (isMounted.current) {
         setLoading(false);
       }
     }
@@ -69,11 +70,7 @@ export function useSupabaseQuery<T>(
   }, deps);
 
   useEffect(() => {
-    mountedRef.current = true;
     execute();
-    return () => {
-      mountedRef.current = false;
-    };
   }, [execute]);
 
   const refetch = useCallback(() => {

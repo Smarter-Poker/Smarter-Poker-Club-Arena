@@ -15,6 +15,7 @@
  */
 
 import { useState, useEffect, useMemo, useRef } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
@@ -45,6 +46,7 @@ export default function ChipTransferModal({
   recipientId,
   onTransferComplete,
 }: ChipTransferModalProps) {
+  const isMounted = useIsMounted();
   const { user } = useAuthUser();
   const toast = useToast();
 
@@ -200,7 +202,7 @@ export default function ChipTransferModal({
       setRecipients(recipientList);
     } catch (err) {
       console.error('Error loading recipients:', err);
-      toast.error('Failed to load recipients');
+      if (isMounted.current) toast.error('Failed to load recipients');
     }
     setIsLoadingRecipients(false);
   };
@@ -298,7 +300,7 @@ export default function ChipTransferModal({
       }, 1500);
     } catch (err: any) {
       console.error('Transfer error:', err);
-      setError(err.message || 'Transfer failed. Please try again.');
+      if (isMounted.current) setError(err.message || 'Transfer failed. Please try again.');
     }
     setIsLoading(false);
   };

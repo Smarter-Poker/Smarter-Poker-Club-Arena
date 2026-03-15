@@ -3,7 +3,8 @@
  * Personal notes system for tracking opponents
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
@@ -37,12 +38,21 @@ export const PlayerNotes: React.FC<PlayerNotesProps> = ({ playerId, onClose, mod
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
+  const isMounted = useIsMounted();
   const [visibleNotes, setVisibleNotes] = useState<Set<number>>(new Set());
+  const animTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   useEffect(() => {
+    animTimers.current.forEach(clearTimeout);
+    animTimers.current = [];
     notes.forEach((_, i) => {
-      setTimeout(() => setVisibleNotes((prev) => new Set(prev).add(i)), i * 50);
+      const t = setTimeout(() => setVisibleNotes((prev) => new Set(prev).add(i)), i * 50);
+      animTimers.current.push(t);
     });
+    return () => {
+      animTimers.current.forEach(clearTimeout);
+      animTimers.current = [];
+    };
   }, [notes.length]);
 
   const colors: { id: PlayerNote['noteColor']; label: string }[] = [
@@ -84,6 +94,7 @@ export const PlayerNotes: React.FC<PlayerNotesProps> = ({ playerId, onClose, mod
       const { data, error } = await query.order('updated_at', { ascending: false });
 
       if (error) throw error;
+      if (!isMounted.current) return;
 
       // Replaced fallback mock data
       setNotes(
@@ -101,7 +112,7 @@ export const PlayerNotes: React.FC<PlayerNotesProps> = ({ playerId, onClose, mod
     } catch (error) {
       console.error('Failed to load notes:', error);
     } finally {
-      setLoading(false);
+      if (isMounted.current) setLoading(false);
     }
   };
 

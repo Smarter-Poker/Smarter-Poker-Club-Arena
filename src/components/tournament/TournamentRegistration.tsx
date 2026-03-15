@@ -5,6 +5,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useToast } from '../common/Toast';
@@ -33,6 +34,7 @@ export function TournamentRegistration({
   isAdmin,
   onUnregister,
 }: TournamentRegistrationProps) {
+  const isMounted = useIsMounted();
   const toast = useToast();
   const [players, setPlayers] = useState<RegisteredPlayer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -88,7 +90,7 @@ export function TournamentRegistration({
         );
       }
     } catch (error) {
-      toast.error('Failed to load players');
+      if (isMounted.current) toast.error('Failed to load players');
     }
     setLoading(false);
   };
@@ -155,7 +157,8 @@ export function TournamentRegistration({
                 '[AdminRemove] CRITICAL: Re-insert failed after refund failure:',
                 reinsertErr
               );
-              toast.error('CRITICAL: Player removed but refund failed — contact support');
+              if (isMounted.current)
+                toast.error('CRITICAL: Player removed but refund failed — contact support');
             }
             return;
           }
@@ -189,7 +192,7 @@ export function TournamentRegistration({
       toast.success('Player removed and refunded');
       loadPlayers();
     } catch {
-      toast.error('Failed to remove player');
+      if (isMounted.current) toast.error('Failed to remove player');
     }
   };
 

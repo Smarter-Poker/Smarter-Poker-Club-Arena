@@ -10,6 +10,7 @@
  */
 
 import { useState, useRef, useEffect } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
@@ -87,6 +88,7 @@ function calculateClubLevel(memberCount: number): number {
 }
 
 export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateClubModalProps) {
+  const isMounted = useIsMounted();
   const { user } = useAuthUser();
   const toast = useToast();
 
@@ -265,9 +267,9 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
       window.location.reload();
     } catch (err: any) {
       console.error('Failed to create club:', err);
-      toast.error(err.message || 'Failed to create club');
+      if (isMounted.current) toast.error(err.message || 'Failed to create club');
     } finally {
-      setIsCreating(false);
+      if (isMounted.current) setIsCreating(false);
     }
   };
 
@@ -455,6 +457,7 @@ const LOGO_PRESETS = [
 ];
 
 function LogoGeneratorModal({ onSelect, onClose, clubName = '' }: LogoGeneratorModalProps) {
+  const isMounted = useIsMounted();
   const [logoDescription, setLogoDescription] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);

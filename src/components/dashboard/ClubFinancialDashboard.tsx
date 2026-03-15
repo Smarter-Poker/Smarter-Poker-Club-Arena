@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { WalletService } from '../../services/WalletService';
 import { CommissionService } from '../../services/CommissionService';
 import { supabase } from '../../lib/supabase';
@@ -50,6 +51,7 @@ const commissionDistribution = [
 ];
 
 export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ clubId }) => {
+  const isMounted = useIsMounted();
   const { user } = useAuthUser();
   const toast = useToast();
   const [diamondBalance, setDiamondBalance] = useState(0);
@@ -180,9 +182,9 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
       toast.success(`Successfully minted ${mintAmount} chips!`);
       fetchDiamondBalance();
     } catch (error) {
-      toast.error('Minting failed: ' + (error as Error).message);
+      if (isMounted.current) toast.error('Minting failed: ' + (error as Error).message);
     } finally {
-      setLoading(false);
+      if (isMounted.current) setLoading(false);
     }
   };
 
@@ -195,7 +197,7 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
       await CommissionService.setRate(clubId, agentId, 'AGENT', commissionRate, user.id);
       toast.success('Commission Limit set successfully');
     } catch (error) {
-      toast.error('Error: ' + (error as Error).message);
+      if (isMounted.current) toast.error('Error: ' + (error as Error).message);
     }
   };
 

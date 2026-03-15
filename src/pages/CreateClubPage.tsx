@@ -6,6 +6,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import { useIsMounted } from '../hooks/useIsMounted';
 import { useNavigate } from 'react-router-dom';
 import styles from './CreateClubPage.module.css';
 import { supabase } from '../lib/supabase';
@@ -498,6 +499,7 @@ const Step5Preview = ({ form, hasAgreed, setHasAgreed, onShowRules }: Step5Props
 export default function CreateClubPage() {
   const navigate = useNavigate();
   const { user } = useAuthUser();
+  const isMounted = useIsMounted();
   const [step, setStep] = useState(1);
   const [form, setForm] = useState<ClubFormData>(DEFAULT_FORM);
   const [creating, setCreating] = useState(false);
@@ -580,8 +582,10 @@ export default function CreateClubPage() {
         .limit(1);
 
       if (existing && existing.length > 0) {
-        setError('A club with this name already exists. Please choose a different name.');
-        setCreating(false);
+        if (isMounted.current) {
+          setError('A club with this name already exists. Please choose a different name.');
+          setCreating(false);
+        }
         return;
       }
     } catch {
@@ -642,9 +646,9 @@ export default function CreateClubPage() {
       navigate(`/clubs/${data.id}`);
     } catch (err: any) {
       console.error('Failed to create club:', err);
-      setError(err.message || 'Failed to create club');
+      if (isMounted.current) setError(err.message || 'Failed to create club');
     } finally {
-      setCreating(false);
+      if (isMounted.current) setCreating(false);
     }
   };
 

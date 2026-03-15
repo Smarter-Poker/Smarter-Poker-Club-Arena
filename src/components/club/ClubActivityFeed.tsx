@@ -6,6 +6,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { resolveClubIdFilter } from '../../utils/clubIdResolver';
@@ -48,6 +49,7 @@ export default function ClubActivityFeed({
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<ActivityType | 'all'>('all');
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
+  const isMounted = useIsMounted();
 
   useEffect(() => {
     loadActivities();
@@ -101,6 +103,7 @@ export default function ClubActivityFeed({
         userAvatar: a.profiles?.avatar_url,
       }));
 
+      if (!isMounted.current) return;
       setActivities(items);
       setVisibleItems(new Set());
       items.forEach((_, i) => {
@@ -109,7 +112,7 @@ export default function ClubActivityFeed({
     } catch (error) {
       console.error('Failed to load activities:', error);
     }
-    setLoading(false);
+    if (isMounted.current) setLoading(false);
   };
 
   const subscribeToActivities = () => {

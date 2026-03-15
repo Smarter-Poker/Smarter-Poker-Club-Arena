@@ -361,7 +361,7 @@ export default function App() {
         {showIntro && (
           <Suspense fallback={null}>
             <IntroVideo
-              videoSrc="/videos/club-arena-intro.mp4"
+              videoSrc={`${import.meta.env.BASE_URL}videos/club-arena-intro.mp4`}
               minDuration={3000}
               maxDuration={10000}
               onComplete={handleIntroComplete}

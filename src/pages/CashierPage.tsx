@@ -294,20 +294,30 @@ export default function CashierPage() {
 
       // Get club name
       const { column: clubCol, value: clubVal } = resolveClubIdFilter(clubId);
-      const { data: clubData } = await supabase
-        .from('clubs')
-        .select('name')
-        .eq(clubCol, clubVal)
-        .maybeSingle();
+      const { data: clubData } = await retryFetch(
+        () =>
+          supabase
+            .from('clubs')
+            .select('name')
+            .eq(clubCol, clubVal)
+            .maybeSingle()
+            .then((r) => r),
+        { maxRetries: 2, isMountedRef: isMounted }
+      );
       if (!isMounted.current) return;
       setClubName(clubData?.name || '');
 
       // Check if club is in a union
-      const { data: unionClub } = await supabase
-        .from('union_clubs')
-        .select('union_id, unions!inner(owner_id)')
-        .eq('club_id', resolvedId)
-        .maybeSingle();
+      const { data: unionClub } = await retryFetch(
+        () =>
+          supabase
+            .from('union_clubs')
+            .select('union_id, unions!inner(owner_id)')
+            .eq('club_id', resolvedId)
+            .maybeSingle()
+            .then((r) => r),
+        { maxRetries: 2, isMountedRef: isMounted }
+      );
 
       if (!isMounted.current) return;
       if (unionClub) {
@@ -334,27 +344,14 @@ export default function CashierPage() {
     setLoadingRecipients(true);
     try {
       const resolvedId = await resolveClubUUID(clubId);
-      let query = supabase
-        .from('club_members')
-        .select(
-          `
-                    user_id,
-                    role,
-                    users:user_id (id, username)
-                `
-        )
-        .eq('club_id', resolvedId)
-        .neq('user_id', user.id)
-        .limit(500);
-
-      // Filter based on role hierarchy
+      // Determine which roles this user can send to
+      let roleFilter: string[];
       if (userRole === 'owner' || isUnionOwner) {
-        // Owner/Union owner can send to anyone
-        query = query.in('role', ['agent', 'super_agent', 'sub_agent', 'member', 'player']);
+        roleFilter = ['agent', 'super_agent', 'sub_agent', 'member', 'player'];
       } else if (userRole === 'agent' || userRole === 'super_agent') {
-        query = query.in('role', ['sub_agent', 'member', 'player']);
+        roleFilter = ['sub_agent', 'member', 'player'];
       } else if (userRole === 'sub_agent') {
-        query = query.in('role', ['member', 'player']);
+        roleFilter = ['member', 'player'];
       } else {
         // Regular members can't send chips
         setRecipients([]);
@@ -362,15 +359,37 @@ export default function CashierPage() {
         return;
       }
 
-      const { data } = await query;
+      const { data } = await retryFetch(
+        () =>
+          supabase
+            .from('club_members')
+            .select(
+              `
+            user_id,
+            role,
+            users:user_id (id, username)
+          `
+            )
+            .eq('club_id', resolvedId)
+            .neq('user_id', user.id)
+            .in('role', roleFilter)
+            .limit(500)
+            .then((r) => r),
+        { maxRetries: 2, isMountedRef: isMounted }
+      );
 
       // Get wallet balances for all recipients
       const recipientIds = (data || []).map((m: any) => m.users?.id).filter(Boolean);
-      const { data: wallets } = await supabase
-        .from('wallets')
-        .select('user_id, balance')
-        .in('user_id', recipientIds.length > 0 ? recipientIds : ['none'])
-        .eq('wallet_type', 'PLAYER');
+      const { data: wallets } = await retryFetch(
+        () =>
+          supabase
+            .from('wallets')
+            .select('user_id, balance')
+            .in('user_id', recipientIds.length > 0 ? recipientIds : ['none'])
+            .eq('wallet_type', 'PLAYER')
+            .then((r) => r),
+        { maxRetries: 2, isMountedRef: isMounted }
+      );
 
       const walletMap: Record<string, number> = {};
       (wallets || []).forEach((w: any) => {
@@ -1338,12 +1357,17 @@ export default function CashierPage() {
                 try {
                   // Look up agent PK — distributePromo RPC expects agents.id, not auth.users.id
                   const resolvedClub = await resolveClubUUID(clubId || '');
-                  const { data: agentRow } = await supabase
-                    .from('agents')
-                    .select('id')
-                    .eq('user_id', user.id)
-                    .eq('club_id', resolvedClub)
-                    .maybeSingle();
+                  const { data: agentRow } = await retryFetch(
+                    () =>
+                      supabase
+                        .from('agents')
+                        .select('id')
+                        .eq('user_id', user.id)
+                        .eq('club_id', resolvedClub)
+                        .maybeSingle()
+                        .then((r) => r),
+                    { maxRetries: 2, isMountedRef: isMounted }
+                  );
                   if (!agentRow?.id) {
                     if (isMounted.current)
                       setMessage({ type: 'error', text: 'Agent record not found for this club' });

@@ -297,11 +297,16 @@ export default function AgentDashboardPage() {
       let targetClub = qClub;
 
       if (!targetClub) {
-        const { data: mems } = await supabase
-          .from('club_members')
-          .select('club_id')
-          .eq('user_id', user.id)
-          .in('role', ['agent', 'sub_agent', 'super_agent', 'owner', 'admin']);
+        const { data: mems } = await retryFetch(
+          () =>
+            supabase
+              .from('club_members')
+              .select('club_id')
+              .eq('user_id', user.id)
+              .in('role', ['agent', 'sub_agent', 'super_agent', 'owner', 'admin'])
+              .then((r) => r),
+          { maxRetries: 2, isMountedRef: mountedRef }
+        );
         if (mems && mems.length > 0) targetClub = mems[0].club_id;
       }
 
@@ -1201,12 +1206,17 @@ export default function AgentDashboardPage() {
                       }
                       // Resolve agent PK — distributePromo expects agents.id, NOT auth.users.id
                       const resolvedClub = await resolveClubUUID(clubId || '');
-                      const { data: agentRow } = await supabase
-                        .from('agents')
-                        .select('id')
-                        .eq('user_id', creditTarget)
-                        .eq('club_id', resolvedClub)
-                        .maybeSingle();
+                      const { data: agentRow } = await retryFetch(
+                        () =>
+                          supabase
+                            .from('agents')
+                            .select('id')
+                            .eq('user_id', creditTarget)
+                            .eq('club_id', resolvedClub)
+                            .maybeSingle()
+                            .then((r) => r),
+                        { maxRetries: 2, isMountedRef: mountedRef }
+                      );
                       if (!agentRow?.id) {
                         setError('Agent record not found for this club');
                         setProcessing(false);

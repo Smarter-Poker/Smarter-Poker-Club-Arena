@@ -5,6 +5,7 @@ import { CreditService } from '../../services/CreditService';
 import { WalletService } from '../../services/WalletService';
 import { useToast } from '../common/Toast';
 import { FinancialChart } from '../charts/FinancialChart';
+import { masterBus } from '../../core/MasterBus';
 
 interface AgentPortalProps {
   agentId: string;
@@ -37,6 +38,22 @@ export const AgentFinancialPortal: React.FC<AgentPortalProps> = ({ agentId }) =>
   useEffect(() => {
     fetchWalletData();
     fetchCommissionHistory();
+  }, [agentId]);
+
+  // Live-sync: refresh wallet data when balances change anywhere in the app
+  useEffect(() => {
+    const unsubBalance = masterBus.subscribeDebounced('BALANCE_UPDATED', () => {
+      fetchWalletData();
+    }, 500);
+    const unsubSettlement = masterBus.subscribeDebounced('SETTLEMENT_COMPLETED', () => {
+      fetchWalletData();
+      fetchCommissionHistory();
+    }, 500);
+    const unsubCommission = masterBus.subscribeDebounced('COMMISSION_PAID', () => {
+      fetchWalletData();
+      fetchCommissionHistory();
+    }, 500);
+    return () => { unsubBalance(); unsubSettlement(); unsubCommission(); };
   }, [agentId]);
 
   const fetchCommissionHistory = async () => {

@@ -61,8 +61,9 @@ export default defineConfig({
           if (id.includes('node_modules/react-router')) return 'vendor-react';
           if (id.includes('node_modules/react/')) return 'vendor-react';
           if (id.includes('node_modules/@supabase/')) return 'vendor-supabase';
-          if (id.includes('node_modules/recharts') || id.includes('node_modules/d3-'))
-            return 'vendor-charts';
+          // NOTE: recharts/d3 NOT manually chunked — they depend on React,
+          // creating circular chunk deps (vendor-react ↔ vendor-charts).
+          // Let Vite co-locate them naturally with their React dependency.
           if (id.includes('node_modules/framer-motion')) return 'vendor-motion';
           if (id.includes('node_modules/@sentry/')) return 'vendor-sentry';
 

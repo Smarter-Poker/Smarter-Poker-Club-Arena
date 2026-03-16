@@ -7,7 +7,7 @@
  * NO HARDCODED DATA - All data comes from Supabase
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { waitForAuth } from '../utils/waitForAuth';
@@ -75,6 +75,7 @@ export default function ClubsPage() {
   // Real data states
   const [myClubs, setMyClubs] = useState<Membership[]>([]);
   const [myUnions, setMyUnions] = useState<Union[]>([]);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   // Create club form
@@ -126,6 +127,7 @@ export default function ClubsPage() {
           : Promise.resolve([] as Union[]),
       ]);
       if (getIsMounted && !getIsMounted()) return;
+      setCurrentUserId(authUser?.id || null);
       setMyClubs(memberships);
       setMyUnions(unions);
     } catch (err) {
@@ -178,6 +180,7 @@ export default function ClubsPage() {
       masterBus.subscribeDebounced('CLUB_LEFT', handler, 500),
       masterBus.subscribeDebounced('CLUB_UPDATED', handler, 500),
       masterBus.subscribeDebounced('CLUB_SETTINGS_UPDATED', handler, 500),
+      masterBus.subscribeDebounced('UNION_UPDATED', handler, 500),
     ];
     return () => {
       isMounted = false;
@@ -617,7 +620,7 @@ export default function ClubsPage() {
                                 borderRadius: '20px',
                               }}
                             >
-                              OWNER
+                              {union.ownerId === currentUserId ? 'OWNER' : 'MEMBER'}
                             </span>
                           </div>
 

@@ -917,6 +917,7 @@ export interface AuthStatePayload {
 export interface ClubEventPayload {
   clubId: string;
   clubName?: string;
+  action?: string;
 }
 
 export interface TableEventPayload {

@@ -1202,10 +1202,13 @@ export default function TablePage({
       // Only warn if the player is actually seated
       if (tableState.heroSeat > 0 && tableId && userId && userId !== 'guest') {
         // Fire seat cleanup (best-effort, may not complete before tab closes)
-        navigator.sendBeacon?.(
-          `${import.meta.env.VITE_SUPABASE_URL || ''}/rest/v1/rpc/player_leave_table`,
-          JSON.stringify({ p_table_id: tableId, p_user_id: userId })
+        // sendBeacon with Blob to include Content-Type and apikey headers
+        const beaconUrl = `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/rpc/player_leave_table?apikey=${import.meta.env.VITE_SUPABASE_ANON_KEY}`;
+        const blob = new Blob(
+          [JSON.stringify({ p_table_id: tableId, p_user_id: userId })],
+          { type: 'application/json' }
         );
+        navigator.sendBeacon?.(beaconUrl, blob);
         event.preventDefault();
         event.returnValue = '';
       }
@@ -3014,10 +3017,10 @@ export default function TablePage({
                 })),
               };
 
-              handHistoryService.saveHandToSupabase(tableId, payload).catch(() => {}); // Fire-and-forget
+              handHistoryService.saveHandToSupabase(tableId, payload).catch((e) => console.warn('[Table] Hand history save failed:', e));
 
               // Feature 12: Calculate and persist positional VPIP/PFR stats for AnalyticsDashboard
-              playerPositionStatsService.processHand(payload).catch(() => {}); // Fire-and-forget
+              playerPositionStatsService.processHand(payload).catch((e) => console.warn('[Table] Position stats failed:', e));
             }
 
             // ── Session Tracking: update refs for end-of-session summary ──

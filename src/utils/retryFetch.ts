@@ -7,8 +7,11 @@
  * Uses exponential backoff: 1s → 2s → 4s (configurable).
  * Respects isMounted ref to avoid retrying after unmount.
  *
- * IMPORTANT: Supabase SDK returns `{ data, error }` instead of throwing.
- * This wrapper detects `{ error }` in the result and throws it so retries fire.
+ * SUPABASE-AWARE: Supabase SDK returns `{ data, error }` instead of throwing.
+ * This wrapper detects `{ error }` in the result and RETRIES the call, but
+ * returns the final result (including error) after all retries are exhausted.
+ * This preserves callers' `if (error) { ... }` graceful fallback patterns
+ * while ensuring transient errors get retried automatically.
  */
 
 import type { MutableRefObject } from 'react';
@@ -23,7 +26,7 @@ interface RetryOptions {
  * Check if a value looks like a Supabase response with an error.
  * Supabase responses have shape: { data: T | null, error: PostgrestError | null }
  */
-function hasSupabaseError(result: unknown): result is { error: { message: string } } {
+function hasSupabaseError(result: unknown): boolean {
   return (
     result !== null &&
     typeof result === 'object' &&
@@ -40,6 +43,7 @@ export async function retryFetch<T>(
 ): Promise<T> {
   const { maxRetries = 2, baseDelayMs = 1000, isMountedRef } = options;
   let lastError: unknown;
+  let lastResult: T | undefined;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     // Bail if component unmounted between retries
@@ -50,10 +54,19 @@ export async function retryFetch<T>(
     try {
       const result = await fn();
 
-      // CRITICAL: Supabase SDK returns { data, error } instead of throwing.
-      // If the result has an error property, throw it to trigger retry logic.
+      // SUPABASE-AWARE: If the result has an error, treat it as a retryable failure.
+      // But DON'T throw — store the result and retry. After all retries exhausted,
+      // return the last result (with error) so callers' `if (error)` fallbacks work.
       if (hasSupabaseError(result)) {
-        throw new Error(`Supabase error: ${(result as any).error.message}`);
+        lastResult = result;
+        lastError = new Error(`Supabase error: ${(result as any).error.message}`);
+        if (attempt < maxRetries) {
+          const delay = baseDelayMs * Math.pow(2, attempt);
+          await new Promise((r) => setTimeout(r, delay));
+          continue;
+        }
+        // All retries exhausted — return the error result (don't throw)
+        return result;
       }
 
       return result;
@@ -64,6 +77,12 @@ export async function retryFetch<T>(
         await new Promise((r) => setTimeout(r, delay));
       }
     }
+  }
+
+  // If we have a Supabase result with error, return it instead of throwing
+  // This preserves the original { data, error } contract
+  if (lastResult !== undefined) {
+    return lastResult;
   }
 
   throw lastError;

@@ -24,12 +24,12 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { waitForAuth } from '../utils/waitForAuth';
-import { resolveClubUUID } from '../utils/clubIdResolver';
+
 import { ClubsService } from '../services/ClubsService';
 import { useToast } from '../components/common/Toast';
 import GlobalHeader from '../components/navigation/GlobalHeader';
 import haptic from '../services/HapticService';
-import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
+
 import PremiumSFX from '../services/PremiumSFX';
 import { masterBus } from '../core/MasterBus';
 import DailyChallenges from '../components/home/DailyChallenges';
@@ -37,12 +37,13 @@ import PresenceHub from '../components/home/PresenceHub';
 import ClubContextMenu from '../components/home/ClubContextMenu';
 import LOBBY_TILES from '../config/lobbyTiles.config';
 import { postToParent } from '../utils/parentOrigin';
+import CarouselSection from '../components/home/CarouselSection';
+import type { UserClub } from '../components/home/CarouselSection';
 import styles from './HomePage.module.css';
 
 // Lazy-load heavy components to reduce initial bundle
 const CreateClubModal = lazy(() => import('../components/modals/CreateClubModal'));
 const FindPlayerModal = lazy(() => import('../components/modals/FindPlayerModal'));
-const ClubStatsPanel = lazy(() => import('../components/club/ClubStatsPanel'));
 
 const LAST_VISITED_KEY = 'club_arena_last_visited';
 const LAST_CLUB_KEY = 'club_arena_last_club';
@@ -51,77 +52,8 @@ const PINNED_CLUBS_KEY = 'club_arena_pinned_clubs';
 const SOUNDS_ENABLED_KEY = 'club_arena_sounds';
 const CARD_COLOR_KEY = 'club_arena_card_color';
 
-// #6: Card color presets — gradient pairs for club card faces
-const CARD_COLOR_PRESETS: { id: string; name: string; bg: string; overlay: string }[] = [
-  {
-    id: 'default',
-    name: 'Deep Ocean',
-    bg: 'linear-gradient(145deg, rgba(8, 20, 40, 0.9), rgba(5, 12, 28, 0.95))',
-    overlay:
-      'linear-gradient(135deg, rgba(0, 212, 255, 0.06) 0%, transparent 50%, rgba(0, 255, 136, 0.04) 100%)',
-  },
-  {
-    id: 'emerald',
-    name: 'Emerald Night',
-    bg: 'linear-gradient(145deg, rgba(5, 30, 20, 0.9), rgba(3, 18, 12, 0.95))',
-    overlay:
-      'linear-gradient(135deg, rgba(0, 255, 136, 0.08) 0%, transparent 50%, rgba(0, 212, 180, 0.05) 100%)',
-  },
-  {
-    id: 'crimson',
-    name: 'Crimson Velvet',
-    bg: 'linear-gradient(145deg, rgba(40, 8, 15, 0.9), rgba(28, 5, 10, 0.95))',
-    overlay:
-      'linear-gradient(135deg, rgba(255, 60, 80, 0.08) 0%, transparent 50%, rgba(255, 100, 50, 0.05) 100%)',
-  },
-  {
-    id: 'royal',
-    name: 'Royal Purple',
-    bg: 'linear-gradient(145deg, rgba(20, 8, 40, 0.9), rgba(12, 5, 28, 0.95))',
-    overlay:
-      'linear-gradient(135deg, rgba(140, 80, 255, 0.08) 0%, transparent 50%, rgba(180, 100, 255, 0.05) 100%)',
-  },
-  {
-    id: 'gold',
-    name: 'Gold Rush',
-    bg: 'linear-gradient(145deg, rgba(35, 28, 8, 0.9), rgba(24, 18, 5, 0.95))',
-    overlay:
-      'linear-gradient(135deg, rgba(255, 200, 50, 0.08) 0%, transparent 50%, rgba(255, 160, 30, 0.05) 100%)',
-  },
-  {
-    id: 'midnight',
-    name: 'Midnight Ice',
-    bg: 'linear-gradient(145deg, rgba(5, 10, 35, 0.9), rgba(3, 6, 22, 0.95))',
-    overlay:
-      'linear-gradient(135deg, rgba(80, 140, 255, 0.08) 0%, transparent 50%, rgba(60, 180, 255, 0.05) 100%)',
-  },
-  {
-    id: 'obsidian',
-    name: 'Obsidian',
-    bg: 'linear-gradient(145deg, rgba(15, 15, 15, 0.9), rgba(8, 8, 8, 0.95))',
-    overlay:
-      'linear-gradient(135deg, rgba(255, 255, 255, 0.04) 0%, transparent 50%, rgba(200, 200, 200, 0.03) 100%)',
-  },
-  {
-    id: 'neon',
-    name: 'Neon Cyber',
-    bg: 'linear-gradient(145deg, rgba(5, 15, 25, 0.9), rgba(3, 8, 18, 0.95))',
-    overlay:
-      'linear-gradient(135deg, rgba(0, 255, 200, 0.08) 0%, transparent 50%, rgba(255, 0, 200, 0.05) 100%)',
-  },
-];
-
 // Action button images
 const ACTION_BAR_HORIZONTAL = `${import.meta.env.BASE_URL}images/icons/action-bar-horizontal.png`;
-
-// Enhancement #9: Unique gradient CSS classes for logo-less club cards
-const GRADIENT_CLASSES = [
-  styles.clubCardGradient1,
-  styles.clubCardGradient2,
-  styles.clubCardGradient3,
-  styles.clubCardGradient4,
-  styles.clubCardGradient5,
-] as const;
 
 // #12: Seasonal theme detection
 function getSeasonalTheme(): string {
@@ -183,479 +115,6 @@ class HomePageErrorBoundary extends Component<{ children: ReactNode }, ErrorBoun
     }
     return this.props.children;
   }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// CAROUSEL SECTION — Club cards flanking the Shark Club in one swipeable row
-// ═══════════════════════════════════════════════════════════════════════════════
-const CLUB_ORDER_KEY = 'club_arena_club_order';
-
-// ── Home Page Types ─────────────────────────────────────────
-interface UserClub {
-  id: string;
-  name?: string;
-  club_id?: number | string;
-  logo_url?: string;
-  member_count?: number;
-  active_tables?: number;
-  is_owner?: boolean;
-  last_active_at?: string;
-  [key: string]: unknown;
-}
-
-interface CarouselSectionProps {
-  displayClubs: UserClub[];
-  sharkClubId: string | null;
-  sharkClubStats: { totalMembers: number; clubLevel: number; activePlayers: number };
-  flippedCards: Set<number>;
-  pinnedClubIds: string[];
-  cardColorPreset: string;
-  navigate: (path: string) => void;
-  toast: ReturnType<typeof useToast>;
-  handleContextMenu: (e: React.MouseEvent, club: UserClub) => void;
-  handleLongPressStart: (club: UserClub, e: React.TouchEvent) => void;
-  handleLongPressEnd: () => void;
-  onOpenJoinModal: () => void;
-  onOpenCreateModal: () => void;
-}
-
-function CarouselSection({
-  displayClubs,
-  sharkClubId,
-  sharkClubStats,
-  flippedCards,
-  pinnedClubIds,
-  cardColorPreset,
-  navigate,
-  toast,
-  handleContextMenu,
-  handleLongPressStart,
-  handleLongPressEnd,
-  onOpenJoinModal,
-  onOpenCreateModal,
-}: CarouselSectionProps) {
-  const carouselRef = useRef<HTMLDivElement>(null);
-  const sharkCardRef = useRef<HTMLDivElement>(null);
-  const hasScrolledRef = useRef(false);
-
-  // Enhancement #3: Quick-flip toggle (single tap = flip, double tap = navigate)
-  const [quickFlipped, setQuickFlipped] = useState<Set<string>>(new Set());
-  const lastTapRef = useRef<{ id: string; time: number }>({ id: '', time: 0 });
-
-  // Enhancement #8: Drag-to-reorder state
-  const [draggedId, setDraggedId] = useState<string | null>(null);
-  const [dragOverId, setDragOverId] = useState<string | null>(null);
-  const [orderedClubs, setOrderedClubs] = useState<UserClub[]>(displayClubs);
-
-  // Keep orderedClubs in sync with displayClubs (respecting saved order)
-  useEffect(() => {
-    try {
-      const savedOrder: string[] = JSON.parse(localStorage.getItem(CLUB_ORDER_KEY) || '[]');
-      if (savedOrder.length > 0) {
-        const orderMap = new Map(savedOrder.map((id, idx) => [id, idx]));
-        const sorted = [...displayClubs].sort((a, b) => {
-          // Pinned clubs always first
-          const aPinned = pinnedClubIds.includes(a.id) ? 1 : 0;
-          const bPinned = pinnedClubIds.includes(b.id) ? 1 : 0;
-          if (bPinned !== aPinned) return bPinned - aPinned;
-          // Then saved order
-          const aOrder = orderMap.get(a.id) ?? 999;
-          const bOrder = orderMap.get(b.id) ?? 999;
-          return aOrder - bOrder;
-        });
-        setOrderedClubs(sorted);
-      } else {
-        setOrderedClubs(displayClubs);
-      }
-    } catch {
-      setOrderedClubs(displayClubs);
-    }
-  }, [displayClubs, pinnedClubIds]);
-
-  // Split user clubs into left half and right half around the Shark Club
-  const leftClubs = useMemo(() => {
-    const half = Math.ceil(orderedClubs.length / 2);
-    return orderedClubs.slice(0, half);
-  }, [orderedClubs]);
-
-  const rightClubs = useMemo(() => {
-    const half = Math.ceil(orderedClubs.length / 2);
-    return orderedClubs.slice(half);
-  }, [orderedClubs]);
-
-  // Auto-scroll to center the Shark Club card on initial mount only
-  useEffect(() => {
-    if (hasScrolledRef.current) return;
-    const timeout = setTimeout(() => {
-      if (sharkCardRef.current && carouselRef.current) {
-        sharkCardRef.current.scrollIntoView({
-          behavior: 'smooth',
-          inline: 'center',
-          block: 'nearest',
-        });
-        hasScrolledRef.current = true;
-      }
-    }, 400);
-    return () => clearTimeout(timeout);
-  }, [orderedClubs.length]);
-
-  // Enhancement #7: Haptic on scroll snap
-  useEffect(() => {
-    const el = carouselRef.current;
-    if (!el) return;
-    let snapTimer: ReturnType<typeof setTimeout> | null = null;
-    const handleScroll = () => {
-      if (snapTimer) clearTimeout(snapTimer);
-      snapTimer = setTimeout(() => {
-        haptic.light();
-        PremiumSFX.scrollSnap();
-      }, 150);
-    };
-    el.addEventListener('scroll', handleScroll, { passive: true });
-    return () => {
-      el.removeEventListener('scroll', handleScroll);
-      if (snapTimer) clearTimeout(snapTimer);
-    };
-  }, []);
-
-  // Enhancement #8: Drag handlers
-  const handleDragStart = useCallback((clubId: string) => {
-    setDraggedId(clubId);
-    PremiumSFX.dragStart();
-  }, []);
-
-  const handleDragOver = useCallback((e: React.DragEvent, clubId: string) => {
-    e.preventDefault();
-    setDragOverId(clubId);
-  }, []);
-
-  const handleDrop = useCallback(
-    (targetId: string) => {
-      if (!draggedId || draggedId === targetId) {
-        setDraggedId(null);
-        setDragOverId(null);
-        return;
-      }
-      setOrderedClubs((prev) => {
-        const arr = [...prev];
-        const fromIdx = arr.findIndex((c) => c.id === draggedId);
-        const toIdx = arr.findIndex((c) => c.id === targetId);
-        if (fromIdx === -1 || toIdx === -1) return prev;
-        const [moved] = arr.splice(fromIdx, 1);
-        arr.splice(toIdx, 0, moved);
-        // Persist order
-        try {
-          localStorage.setItem(CLUB_ORDER_KEY, JSON.stringify(arr.map((c) => c.id)));
-        } catch {
-          /* */
-        }
-        return arr;
-      });
-      setDraggedId(null);
-      setDragOverId(null);
-      haptic.medium();
-      PremiumSFX.dragDrop();
-    },
-    [draggedId]
-  );
-
-  const handleDragEnd = useCallback(() => {
-    setDraggedId(null);
-    setDragOverId(null);
-  }, []);
-
-  // Enhancement #3: Tap handler — single tap flips, double tap navigates
-  const handleCardTap = useCallback(
-    (club: UserClub) => {
-      const now = Date.now();
-      const last = lastTapRef.current;
-      if (last.id === club.id && now - last.time < 350) {
-        // Double tap → navigate
-        haptic.medium();
-        PremiumSFX.doubleTap();
-        localStorage.setItem(LAST_VISITED_KEY, club.id);
-        localStorage.setItem(LAST_CLUB_KEY, club.id);
-        navigate(`/clubs/${club.id}`);
-        lastTapRef.current = { id: '', time: 0 };
-      } else {
-        // Single tap → flip for stats preview
-        lastTapRef.current = { id: club.id, time: now };
-        setTimeout(() => {
-          if (lastTapRef.current.id === club.id && lastTapRef.current.time === now) {
-            haptic.light();
-            PremiumSFX.tapFlip();
-            setQuickFlipped((prev) => {
-              const next = new Set(prev);
-              if (next.has(club.id)) next.delete(club.id);
-              else next.add(club.id);
-              return next;
-            });
-          }
-        }, 350);
-      }
-    },
-    [navigate]
-  );
-
-  // Render a single user club card in carousel style
-  const renderClubCard = (club: UserClub, idx: number) => {
-    const isFlipped = flippedCards.has(idx);
-    const isQuickFlipped = quickFlipped.has(club.id);
-    const isLive = (club.active_tables || 0) > 0;
-    const isDragging = draggedId === club.id;
-    const isDragTarget = dragOverId === club.id;
-
-    return (
-      <div
-        key={club.id}
-        className={[
-          styles.carouselCard,
-          isFlipped ? styles.clubCardFlipped : '',
-          isQuickFlipped ? styles.carouselCardQuickFlipped : '',
-          isLive ? styles.carouselCardLive : '',
-          isDragging ? styles.cardDragging : '',
-          isDragTarget ? styles.cardDragOver : '',
-        ]
-          .filter(Boolean)
-          .join(' ')}
-        onClick={() => handleCardTap(club)}
-        onContextMenu={(e) => handleContextMenu(e, club)}
-        onTouchStart={(e) => handleLongPressStart(club, e)}
-        onTouchEnd={handleLongPressEnd}
-        onTouchCancel={handleLongPressEnd}
-        draggable
-        onDragStart={() => handleDragStart(club.id)}
-        onDragOver={(e) => handleDragOver(e, club.id)}
-        onDrop={() => handleDrop(club.id)}
-        onDragEnd={handleDragEnd}
-        role="button"
-        aria-label={`${club.name || 'Club'} — ${club.is_owner ? 'Owner' : 'Member'}${isLive ? ' — Live' : ''}`}
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            haptic.medium();
-            navigate(`/clubs/${club.id}`);
-          }
-        }}
-      >
-        {/* Pinned badge */}
-        {pinnedClubIds.includes(club.id) && (
-          <span className={styles.pinnedBadge} title="Pinned">
-            *
-          </span>
-        )}
-        {/* Phase 8 #3: Live table green pulse indicator */}
-        {isLive && <span className={styles.liveIndicator} title="Live tables active" />}
-        <div className={styles.carouselCardPedestal}></div>
-        <div className={styles.clubCardFlipInner} style={{ height: '100%' }}>
-          {/* Card Back (face-down) */}
-          <div className={styles.clubCardFront}>
-            <div className={styles.clubCardBackFace}></div>
-          </div>
-          {/* Card Face (data side) */}
-          <div className={styles.clubCardBack}>
-            {isQuickFlipped ? (
-              /* Enhancement #3: Quick stats back-face */
-              <div className={styles.carouselCardStatsBack}>
-                <span className={styles.statsBackTitle}>STATS</span>
-                <div className={styles.statsBackRow}>
-                  <span className={styles.statsBackLabel}>Members</span>
-                  <span className={styles.statsBackValue}>{club.member_count || 0}</span>
-                </div>
-                <div className={styles.statsBackRow}>
-                  <span className={styles.statsBackLabel}>Tables</span>
-                  <span className={styles.statsBackValue}>{club.active_tables || 0}</span>
-                </div>
-                <div className={styles.statsBackRow}>
-                  <span className={styles.statsBackLabel}>Role</span>
-                  <span className={styles.statsBackValue}>
-                    {club.is_owner ? 'Owner' : 'Member'}
-                  </span>
-                </div>
-                <div className={styles.statsBackRow}>
-                  <span className={styles.statsBackLabel}>Activity</span>
-                  <span className={styles.statsBackValue}>
-                    {club.last_active_at
-                      ? (() => {
-                          const diff = Date.now() - new Date(club.last_active_at).getTime();
-                          const mins = Math.floor(diff / 60000);
-                          if (mins < 1) return 'Now';
-                          if (mins < 60) return `${mins}m`;
-                          const hrs = Math.floor(mins / 60);
-                          if (hrs < 24) return `${hrs}h`;
-                          return `${Math.floor(hrs / 24)}d`;
-                        })()
-                      : '—'}
-                  </span>
-                </div>
-                <span className={styles.statsBackHint}>Double-tap to enter</span>
-              </div>
-            ) : (
-              <div
-                className={styles.carouselCardFace}
-                style={
-                  cardColorPreset !== 'default'
-                    ? {
-                        background: CARD_COLOR_PRESETS.find((p) => p.id === cardColorPreset)?.bg,
-                      }
-                    : undefined
-                }
-              >
-                {/* Color overlay */}
-                {cardColorPreset !== 'default' && (
-                  <div
-                    style={{
-                      position: 'absolute',
-                      inset: 0,
-                      borderRadius: 12,
-                      pointerEvents: 'none',
-                      background: CARD_COLOR_PRESETS.find((p) => p.id === cardColorPreset)?.overlay,
-                    }}
-                  />
-                )}
-                <h3 className={styles.carouselCardTitle}>
-                  {club.name?.toUpperCase() || 'MY CLUB'}
-                </h3>
-                <span className={styles.carouselCardRole}>
-                  {club.is_owner ? 'OWNER' : 'MEMBER'}
-                </span>
-                <div className={styles.carouselCardCenter}>
-                  {club.logo_url ? (
-                    <img
-                      src={club.logo_url}
-                      alt=""
-                      className={styles.carouselCardLogo}
-                      loading="lazy"
-                    />
-                  ) : (
-                    <div
-                      className={`${styles.carouselCardIcon} ${GRADIENT_CLASSES[idx % GRADIENT_CLASSES.length]}`}
-                    >
-                      ♣
-                    </div>
-                  )}
-                </div>
-                <div className={styles.carouselCardMeta}>
-                  <span>{club.member_count || 0} MEMBERS</span>
-                  {(club.active_tables || 0) > 0 && (
-                    <div className={styles.activeTablesBadge}>
-                      <span className={styles.activeTablesDot}></span>
-                      <span>{club.active_tables} Live</span>
-                    </div>
-                  )}
-                  {club.last_active_at && (
-                    <div className={styles.clubCardTimestamp}>
-                      {(() => {
-                        const diff = Date.now() - new Date(club.last_active_at).getTime();
-                        const mins = Math.floor(diff / 60000);
-                        if (mins < 1) return 'Active now';
-                        if (mins < 60) return `${mins}m ago`;
-                        const hrs = Math.floor(mins / 60);
-                        if (hrs < 24) return `${hrs}h ago`;
-                        return `${Math.floor(hrs / 24)}d ago`;
-                      })()}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  return (
-    <div className={styles.clubCarousel} ref={carouselRef}>
-      {/* Enhancement #2: CTA card — Join a Club (when 0 clubs) */}
-      {orderedClubs.length === 0 && (
-        <div
-          className={styles.ctaCard}
-          onClick={() => {
-            haptic.light();
-            PremiumSFX.ctaClick();
-            onOpenJoinModal();
-          }}
-          role="button"
-          aria-label="Join a Club"
-          tabIndex={0}
-        >
-          <div className={styles.ctaCardIcon}>+</div>
-          <span className={styles.ctaCardLabel}>Join a Club</span>
-          <span className={styles.ctaCardSub}>Enter a club code to join an existing club</span>
-        </div>
-      )}
-
-      {/* Left half of user clubs */}
-      {leftClubs.map((club, idx) => renderClubCard(club, idx))}
-
-      {/* SHARK CLUB — featured center card */}
-      <div
-        className={styles.carouselCardFeatured}
-        ref={sharkCardRef}
-        onClick={async () => {
-          haptic.success();
-          PremiumSFX.navigate();
-          if (sharkClubId) {
-            localStorage.setItem(LAST_VISITED_KEY, sharkClubId);
-            localStorage.setItem(LAST_CLUB_KEY, sharkClubId);
-            navigate(`/clubs/${sharkClubId}`);
-          } else {
-            // sharkClubId may not be loaded yet — try a quick lookup before giving up
-            try {
-              const { data: sharkClub } = await supabase
-                .from('clubs')
-                .select('id')
-                .eq('club_id', 25450)
-                .maybeSingle();
-              if (sharkClub?.id) {
-                localStorage.setItem(LAST_VISITED_KEY, sharkClub.id);
-                localStorage.setItem(LAST_CLUB_KEY, sharkClub.id);
-                navigate(`/clubs/${sharkClub.id}`);
-              } else {
-                console.error('[HomePage] Shark Club (25450) not found in DB');
-                toast.error('Shark Club not found');
-              }
-            } catch (err) {
-              console.error('[HomePage] Shark Club lookup failed:', err);
-              toast.error('Could not load Shark Club');
-            }
-          }
-        }}
-      >
-        <div className={styles.carouselFeaturedPedestal}></div>
-        <Suspense fallback={<div className={styles.cardSkeleton}>Loading...</div>}>
-          <ClubStatsPanel
-            totalMembers={sharkClubStats.totalMembers}
-            clubLevel={sharkClubStats.clubLevel}
-            activePlayers={sharkClubStats.activePlayers}
-          />
-        </Suspense>
-      </div>
-
-      {/* Right half of user clubs */}
-      {rightClubs.map((club, idx) => renderClubCard(club, leftClubs.length + idx))}
-
-      {/* Enhancement #2: CTA card — Create a Club (when 0 clubs) */}
-      {orderedClubs.length === 0 && (
-        <div
-          className={styles.ctaCard}
-          onClick={() => {
-            haptic.light();
-            PremiumSFX.ctaClick();
-            onOpenCreateModal();
-          }}
-          role="button"
-          aria-label="Create a Club"
-          tabIndex={0}
-        >
-          <div className={styles.ctaCardIcon}>+</div>
-          <span className={styles.ctaCardLabel}>Create Club</span>
-          <span className={styles.ctaCardSub}>Start your own poker club and invite players</span>
-        </div>
-      )}
-    </div>
-  );
 }
 
 function HomePageInner() {
@@ -739,11 +198,6 @@ function HomePageInner() {
   // #12: Seasonal theme
   const seasonalTheme = useMemo(() => getSeasonalTheme(), []);
 
-  // #13: Tooltip state
-  const [tooltipClub, setTooltipClub] = useState<{ club: UserClub; x: number; y: number } | null>(
-    null
-  );
-
   // #15: Online status
   const [isOnline, setIsOnline] = useState(
     typeof navigator !== 'undefined' ? navigator.onLine : true
@@ -803,10 +257,6 @@ function HomePageInner() {
   // ═══════════════════════════════════════════════════════════════════════════════
   // DATA FETCHING (with SWR cache)
   // ═══════════════════════════════════════════════════════════════════════════════
-  // Refresh on tab visibility change
-  useVisibilityRefresh(async () => {
-    fetchUserData(true);
-  });
 
   const fetchUserData = useCallback(
     async (skipLoading = false, getIsMounted?: () => boolean) => {
@@ -1035,18 +485,19 @@ function HomePageInner() {
         if (!club || !isMounted) return;
         setSharkClubId(club.id);
 
-        // 1. LIVE member count via SECURITY DEFINER RPC (bypasses RLS)
-        const memberCount = await ClubsService.getLiveMemberCount(club.id);
+        // Parallelize independent queries: member count + active players
+        const [memberResult, tablesResult] = await Promise.allSettled([
+          ClubsService.getLiveMemberCount(club.id),
+          supabase.from('tables').select('id').eq('club_id', club.id),
+        ]);
 
-        // 2. Real active players: count occupied seats for THIS CLUB only
+        if (!isMounted) return;
+
+        const memberCount = memberResult.status === 'fulfilled' ? memberResult.value : 0;
+
         let activePlayers = 0;
-        // First get all table IDs belonging to Shark Club
-        const { data: sharkTables } = await supabase
-          .from('tables')
-          .select('id')
-          .eq('club_id', club.id);
-        if (sharkTables && sharkTables.length > 0) {
-          const tableIds = sharkTables.map((t: any) => t.id);
+        if (tablesResult.status === 'fulfilled' && tablesResult.value.data?.length) {
+          const tableIds = tablesResult.value.data.map((t: any) => t.id);
           const { count: seatCount } = await supabase
             .from('table_seats')
             .select('*', { count: 'exact', head: true })
@@ -1055,12 +506,10 @@ function HomePageInner() {
           activePlayers = seatCount || 0;
         }
 
-        // 3. Club level — no column exists yet, default to 1
         if (!isMounted) return;
-        const clubLevel = 1;
         setSharkClubStats({
           totalMembers: memberCount,
-          clubLevel,
+          clubLevel: 1,
           activePlayers,
         });
       } catch (err) {
@@ -1134,7 +583,7 @@ function HomePageInner() {
   }, []);
 
   const handleLongPressStart = useCallback((club: UserClub, e: React.TouchEvent) => {
-    e.stopPropagation(); // Prevent pull-to-refresh from activating
+    e.stopPropagation();
     longPressTimer.current = setTimeout(() => {
       haptic.medium();
       const touch = e.touches[0];
@@ -1224,7 +673,7 @@ function HomePageInner() {
           setShowFindPlayerModal(false);
           setLeaveConfirm(null);
           setShowShortcutHint(false);
-          setTooltipClub(null);
+
           break;
       }
     };
@@ -1314,12 +763,11 @@ function HomePageInner() {
     }
   };
 
-  const handleJoinWithReferral = async () => {
+  const handleJoinClub = async (withReferral = false) => {
     if (!validClubId) return;
 
     try {
-      // Store referral code for future tracking/attribution
-      if (referralCode) {
+      if (withReferral && referralCode) {
         localStorage.setItem(`referral_${validClubId}`, referralCode);
       }
       await ClubsService.join(validClubId);
@@ -1328,25 +776,6 @@ function HomePageInner() {
       setShowReferralPrompt(false);
       setClubCode('');
       setReferralCode('');
-      // Emit bus event + refresh instead of full page reload
-      masterBus.emit('CLUB_JOINED', { clubId: validClubId });
-      setValidClubId(null);
-      fetchUserData(true);
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to join club');
-    }
-  };
-
-  const handleJoinWithoutReferral = async () => {
-    if (!validClubId) return;
-
-    try {
-      await ClubsService.join(validClubId);
-      toast.success('Successfully joined the club!');
-      setShowJoinModal(false);
-      setShowReferralPrompt(false);
-      setClubCode('');
-      // Emit bus event + refresh instead of full page reload
       masterBus.emit('CLUB_JOINED', { clubId: validClubId });
       setValidClubId(null);
       fetchUserData(true);
@@ -1721,29 +1150,6 @@ function HomePageInner() {
         </div>
       )}
 
-      {/* #13: Club tooltip (desktop hover) */}
-      {tooltipClub && (
-        <div
-          className={styles.clubTooltip}
-          style={{
-            top: Math.min(tooltipClub.y - 10, window.innerHeight - 120),
-            left: Math.min(tooltipClub.x + 15, window.innerWidth - 220),
-          }}
-        >
-          <div className={styles.tooltipTitle}>{tooltipClub.club.name}</div>
-          <div className={styles.tooltipRow}>Members: {tooltipClub.club.member_count || 0}</div>
-          <div className={styles.tooltipRow}>
-            Active Tables: {tooltipClub.club.active_tables || 0}
-          </div>
-          <div className={styles.tooltipRow}>
-            Role: {tooltipClub.club.is_owner ? 'Owner' : 'Member'}
-          </div>
-          {tooltipClub.club.club_id && (
-            <div className={styles.tooltipRow}>Code: {tooltipClub.club.club_id}</div>
-          )}
-        </div>
-      )}
-
       {/* ═══════════════════════════════════════════════════════════════════════
                 JOIN A CLUB MODAL
             ═══════════════════════════════════════════════════════════════════════ */}
@@ -1806,12 +1212,15 @@ function HomePageInner() {
                   />
                 </div>
                 <div className={styles.modalButtons}>
-                  <button className={styles.modalButtonPrimary} onClick={handleJoinWithReferral}>
+                  <button
+                    className={styles.modalButtonPrimary}
+                    onClick={() => handleJoinClub(true)}
+                  >
                     Join with Referral
                   </button>
                   <button
                     className={styles.modalButtonSecondary}
-                    onClick={handleJoinWithoutReferral}
+                    onClick={() => handleJoinClub(false)}
                   >
                     Join Without Referral
                   </button>

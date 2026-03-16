@@ -384,18 +384,16 @@ export async function getUserMemberships(): Promise<(ClubMember & { club: Club }
 
     if (clubIds.length > 0) {
       try {
-        // Batch count: one query per club (Supabase doesn't support GROUP BY in PostgREST)
-        const countResults = await Promise.all(
-          clubIds.map(async (cid) => {
-            const { count } = await supabase
-              .from('club_members')
-              .select('*', { count: 'exact', head: true })
-              .eq('club_id', cid);
-            return { clubId: cid, count: count || 0 };
-          })
-        );
+        // Single batched query instead of N individual count queries
+        const { data: memberRows } = await supabase
+          .from('club_members')
+          .select('club_id')
+          .in('club_id', clubIds);
 
-        const countMap = new Map(countResults.map((r) => [r.clubId, r.count]));
+        const countMap = new Map<string, number>();
+        for (const row of memberRows || []) {
+          countMap.set(row.club_id, (countMap.get(row.club_id) || 0) + 1);
+        }
 
         // Override stale member_count with live count
         for (const m of memberships) {

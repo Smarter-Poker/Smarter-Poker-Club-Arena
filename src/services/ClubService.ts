@@ -193,24 +193,32 @@ class ClubServiceClass {
     const resolvedId = await resolveClubUUID(clubId);
     const { data, error } = await supabase
       .from('club_members')
-      .select(
-        `
-                *,
-                profiles!club_members_profiles_fkey (
-                    display_name,
-                    avatar_url
-                )
-            `
-      )
+      .select('*')
       .eq('club_id', resolvedId)
       .order('role', { ascending: true })
       .limit(5000);
 
     if (error) throw error;
+    if (!data || data.length === 0) return [];
 
-    return (data || []).map((m) => ({
+    // Batch-fetch profiles separately (no FK hint needed)
+    const userIds = data.map((m: any) => m.user_id);
+    const profileMap: Record<string, { display_name?: string; avatar_url?: string }> = {};
+    try {
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, display_name, avatar_url')
+        .in('id', userIds);
+      if (profiles) {
+        for (const p of profiles) profileMap[p.id] = p;
+      }
+    } catch {
+      /* non-critical */
+    }
+
+    return data.map((m: any) => ({
       ...m,
-      nickname: (m.profiles as any)?.display_name || m.nickname,
+      nickname: profileMap[m.user_id]?.display_name || m.nickname,
     }));
   }
 
@@ -242,16 +250,16 @@ class ClubServiceClass {
   /**
    * Update member role
    */
-  async updateMemberRole(memberId: string, role: MemberRole): Promise<boolean> {
-    const { data: member } = await supabase
+  async updateMemberRole(clubId: string, userId: string, role: MemberRole): Promise<boolean> {
+    const resolvedId = await resolveClubUUID(clubId);
+    const { error } = await supabase
       .from('club_members')
-      .select('club_id')
-      .eq('id', memberId)
-      .maybeSingle();
-    const { error } = await supabase.from('club_members').update({ role }).eq('id', memberId);
+      .update({ role })
+      .eq('club_id', resolvedId)
+      .eq('user_id', userId);
 
-    if (!error && member) {
-      masterBus.emit('CLUB_UPDATED', { clubId: member.club_id });
+    if (!error) {
+      masterBus.emit('CLUB_UPDATED', { clubId: resolvedId });
     }
     return !error;
   }
@@ -260,22 +268,13 @@ class ClubServiceClass {
    * Update member chip balance — uses proper wallet system
    * Positive amount = credit, negative amount = debit
    */
-  async updateChipBalance(memberId: string, amount: number): Promise<boolean> {
-    // Get the user_id from club_members
-    const { data: member } = await supabase
-      .from('club_members')
-      .select('user_id, club_id')
-      .eq('id', memberId)
-      .maybeSingle();
-
-    if (!member) return false;
-
+  async updateChipBalance(clubId: string, userId: string, amount: number): Promise<boolean> {
     if (amount > 0) {
       // Credit via atomic wallet RPC + log
       const { error } = await retryAsync(
         () =>
           supabase.rpc('atomic_credit_wallet_and_log', {
-            p_user_id: member.user_id,
+            p_user_id: userId,
             p_amount: Math.trunc(amount * 100) / 100,
             p_category: 'transfer',
             p_description: 'Club balance adjustment (credit)',
@@ -289,14 +288,14 @@ class ClubServiceClass {
 
       masterBus.emit('BALANCE_UPDATED', {
         source: 'club_adjustment_credit',
-        userId: member.user_id,
+        userId,
       });
     } else if (amount < 0) {
       const absAmt = Math.trunc(Math.abs(amount) * 100) / 100;
       const { data: result, error } = await retryAsync(
         () =>
           supabase.rpc('atomic_deduct_wallet_and_log', {
-            p_user_id: member.user_id,
+            p_user_id: userId,
             p_amount: absAmt,
             p_category: 'transfer',
             p_description: 'Club balance adjustment (debit)',
@@ -310,7 +309,7 @@ class ClubServiceClass {
 
       masterBus.emit('BALANCE_UPDATED', {
         source: 'club_adjustment_debit',
-        userId: member.user_id,
+        userId,
       });
     }
 
@@ -330,40 +329,39 @@ class ClubServiceClass {
   /**
    * Approve or reject a membership request
    */
-  async handleMembershipRequest(memberId: string, approved: boolean): Promise<void> {
-    const { data: member } = await supabase
-      .from('club_members')
-      .select('club_id')
-      .eq('id', memberId)
-      .maybeSingle();
+  async handleMembershipRequest(clubId: string, userId: string, approved: boolean): Promise<void> {
+    const resolvedId = await resolveClubUUID(clubId);
     if (approved) {
       const { error: approveErr } = await supabase
         .from('club_members')
         .update({ status: 'active' })
-        .eq('id', memberId);
+        .eq('club_id', resolvedId)
+        .eq('user_id', userId);
       if (approveErr) throw new Error('Failed to approve membership: ' + approveErr.message);
     } else {
-      const { error: rejectErr } = await supabase.from('club_members').delete().eq('id', memberId);
+      const { error: rejectErr } = await supabase
+        .from('club_members')
+        .delete()
+        .eq('club_id', resolvedId)
+        .eq('user_id', userId);
       if (rejectErr) throw new Error('Failed to reject membership: ' + rejectErr.message);
     }
-    if (member) {
-      masterBus.emit('CLUB_UPDATED', { clubId: member.club_id });
-    }
+    masterBus.emit('CLUB_UPDATED', { clubId: resolvedId });
   }
 
   /**
    * Remove a member from club
    */
-  async removeMember(memberId: string): Promise<boolean> {
-    const { data: member } = await supabase
+  async removeMember(clubId: string, userId: string): Promise<boolean> {
+    const resolvedId = await resolveClubUUID(clubId);
+    const { error } = await supabase
       .from('club_members')
-      .select('club_id')
-      .eq('id', memberId)
-      .maybeSingle();
-    const { error } = await supabase.from('club_members').delete().eq('id', memberId);
+      .delete()
+      .eq('club_id', resolvedId)
+      .eq('user_id', userId);
 
-    if (!error && member) {
-      masterBus.emit('CLUB_UPDATED', { clubId: member.club_id });
+    if (!error) {
+      masterBus.emit('CLUB_UPDATED', { clubId: resolvedId });
     }
     return !error;
   }

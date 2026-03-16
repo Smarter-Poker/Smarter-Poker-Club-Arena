@@ -93,6 +93,15 @@
         if (!data || typeof data !== 'object') return;
         if (data.type !== 'SMARTER_AUTH_TOKEN' || !data.token) return;
 
+        // SECURITY: Validate origin — same checks as main.tsx and App.tsx
+        var o = event.origin;
+        var ok = (o === 'https://smarter.poker') ||
+                 (o === 'https://www.smarter.poker') ||
+                 (o.indexOf('.smarter.poker') === o.length - 14 && o.indexOf('https://') === 0) ||
+                 (o === 'http://localhost:3000') ||
+                 (o === window.location.origin);
+        if (!ok) return;
+
         acked = true;
         window.__EARLY_AUTH__.token = data.token;
         window.__EARLY_AUTH__.refreshToken = data.refreshToken || null;

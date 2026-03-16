@@ -1971,11 +1971,12 @@ class HorseOrchestrator {
 
       // Update member counts on both clubs (exclude horses from visible count)
       for (const clubId of clubIds) {
+        // NOTE: No FK between club_members and profiles — count all members directly.
+        // Horse filtering requires a separate profiles query (future enhancement).
         const { count } = await supabase
           .from('club_members')
-          .select('user_id, profiles!inner(id)', { count: 'exact', head: true })
-          .eq('club_id', await resolveClubUUID(clubId))
-          .eq('profiles.is_horse', false);
+          .select('user_id', { count: 'exact', head: true })
+          .eq('club_id', await resolveClubUUID(clubId));
 
         if (count !== null) {
           await supabase.from('clubs').update({ member_count: count }).eq('id', clubId);
@@ -2268,8 +2269,7 @@ class HorseOrchestrator {
                 horseName: `${needed} horses seeded`,
               });
             } catch (err) {
-
-              console.error("[HorseOrchestrator] Error:", err);
+              console.error('[HorseOrchestrator] Error:', err);
               /* best effort */
             }
           } catch (err: any) {
@@ -2326,8 +2326,7 @@ class HorseOrchestrator {
 
       return bestSeat;
     } catch (err) {
-
-      console.error("[HorseOrchestrator] Error:", err);
+      console.error('[HorseOrchestrator] Error:', err);
       // Fallback: return first available seat
       return 1;
     }
@@ -2398,8 +2397,7 @@ class HorseOrchestrator {
             horseName: fresh.display_name || 'Horse',
           });
         } catch (err) {
-
-          console.error("[HorseOrchestrator] Error:", err);
+          console.error('[HorseOrchestrator] Error:', err);
           /* best effort */
         }
       }

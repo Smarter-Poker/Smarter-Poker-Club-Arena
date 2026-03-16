@@ -273,9 +273,26 @@ export default function UnionDashboardPage() {
     if (clubIds.length > 0) {
       const { data: agentRows } = await supabase
         .from('club_members')
-        .select('*, profiles:user_id(display_name, username, avatar_url)')
+        .select('*')
         .in('club_id', clubIds)
         .in('role', ['agent', 'sub_agent', 'super_agent']);
+
+      // Batch-fetch profiles (no FK between club_members and profiles)
+      if (agentRows && agentRows.length > 0) {
+        const agentUserIds = [...new Set(agentRows.map((a: any) => a.user_id))];
+        const { data: agentProfiles } = await supabase
+          .from('profiles')
+          .select('id, display_name, username, avatar_url')
+          .in('id', agentUserIds);
+        const agentProfileMap: Record<string, any> = {};
+        if (agentProfiles) {
+          for (const p of agentProfiles) agentProfileMap[p.id] = p;
+        }
+        // Attach profiles to agent rows
+        for (const agent of agentRows) {
+          (agent as any).profiles = agentProfileMap[agent.user_id] || null;
+        }
+      }
 
       if (mountedRef.current) setAgents(agentRows || []);
     }

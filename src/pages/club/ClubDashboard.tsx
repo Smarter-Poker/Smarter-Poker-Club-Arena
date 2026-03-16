@@ -256,7 +256,7 @@ export default function ClubDashboard() {
         // Get member count — include horses
         const { count: memberCount } = await supabase
           .from('club_members')
-          .select('user_id, profiles!inner(id)', { count: 'exact', head: true })
+          .select('user_id', { count: 'exact', head: true })
           .eq('club_id', resolvedId);
 
         // Get table count
@@ -302,25 +302,30 @@ export default function ClubDashboard() {
       const resolvedClubId = clubData?.id || clubId;
       const { data: playersData } = await supabase
         .from('club_members')
-        .select(
-          `
-                    user_id,
-                    chips_won,
-                    chips_lost,
-                    hands_played,
-                    profiles!inner(display_name, avatar_url, is_horse)
-                `
-        )
+        .select('user_id, chips_won, chips_lost, hands_played')
         .eq('club_id', resolvedClubId)
         .order('chips_won', { ascending: false })
         .limit(50);
 
       if (playersData) {
+        // Batch-fetch profiles separately (no FK relationship exists)
+        const playerIds = playersData.map((p: any) => p.user_id);
+        const profileMap: Record<string, any> = {};
+        if (playerIds.length > 0) {
+          const { data: profiles } = await supabase
+            .from('profiles')
+            .select('id, display_name, avatar_url, is_horse')
+            .in('id', playerIds);
+          if (profiles) {
+            for (const p of profiles) profileMap[p.id] = p;
+          }
+        }
+
         const sorted = playersData
           .map((p: any) => ({
             userId: p.user_id,
-            displayName: p.profiles?.display_name || 'Player',
-            avatarUrl: p.profiles?.avatar_url,
+            displayName: profileMap[p.user_id]?.display_name || 'Player',
+            avatarUrl: profileMap[p.user_id]?.avatar_url,
             totalProfit: (p.chips_won || 0) - (p.chips_lost || 0),
             handsPlayed: p.hands_played || 0,
             rank: 0,

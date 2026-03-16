@@ -365,7 +365,7 @@ export default function SettingsPage() {
     const unsub2 = masterBus.subscribeDebounced(
       'PROFILE_UPDATED',
       () => {
-        supabase.auth.getUser().then(({ data }) => {
+        getAuthUser().then(({ data }) => {
           if (isMounted && data?.user?.email) setUserEmail(data.user.email);
         });
       },
@@ -388,7 +388,7 @@ export default function SettingsPage() {
         /* parse error */
       }
     }
-    supabase.auth.getUser().then(({ data }) => {
+    getAuthUser().then(({ data }) => {
       if (data?.user?.email) setUserEmail(data.user.email);
     });
   });

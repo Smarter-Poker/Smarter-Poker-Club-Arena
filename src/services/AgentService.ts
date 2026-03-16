@@ -267,8 +267,7 @@ class AgentServiceClass {
       throw new Error('Commission rate must be between 0% and 70%');
     if (input.playerRakebackRate < 0 || input.playerRakebackRate > 0.5)
       throw new Error('Rakeback rate must be between 0% and 50%');
-    if (input.creditLimit < 0)
-      throw new Error('Credit limit cannot be negative');
+    if (input.creditLimit < 0) throw new Error('Credit limit cannot be negative');
 
     // Get membership via composite key (club_members has no id column)
     const { data: membership } = await supabase
@@ -773,7 +772,7 @@ class AgentServiceClass {
 
     const { data, error } = await supabase
       .from('club_members')
-      .select('club_id, user_id, chip_balance, rakeback_percent, joined_at')
+      .select('club_id, user_id, chip_balance, joined_at')
       .eq('agent_id', agent.membership_id)
       .limit(500);
 
@@ -804,7 +803,7 @@ class AgentServiceClass {
       displayName: profileMap[m.user_id]?.display_name || 'Unknown',
       avatarUrl: profileMap[m.user_id]?.avatar_url,
       chipBalance: m.chip_balance || 0,
-      rakebackPercent: m.rakeback_percent || 0,
+      rakebackPercent: 0, // rakeback_percent column does not exist yet
       joinedAt: m.joined_at,
       isOnline: profileMap[m.user_id]?.is_online || false,
     }));

@@ -82,46 +82,9 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
 
       const player = players[0];
 
-      // Check if player is currently at any tables via player_presence
-      const { data: presenceData } = await supabase
-        .from('player_presence')
-        .select(
-          `
-                    id,
-                    table_id,
-                    status,
-                    tables:table_id (
-                        id,
-                        name,
-                        game_variant,
-                        small_blind,
-                        big_blind,
-                        club_id,
-                        clubs:club_id (name)
-                    )
-                `
-        )
-        .eq('user_id', player.id)
-        .eq('status', 'playing')
-        .limit(4);
-
+      // NOTE: player_presence table does not exist yet (future feature).
+      // Skip cash table presence lookup — only tournament presence below.
       const tables: PlayerTable[] = [];
-
-      if (presenceData && presenceData.length > 0) {
-        for (const presence of presenceData) {
-          if (presence.tables) {
-            const table = presence.tables as any;
-            tables.push({
-              id: table.id,
-              name: table.name || 'Cash Game',
-              game_variant: table.game_variant || 'NLH',
-              stakes: `${table.small_blind || 0}/${table.big_blind || 0}`,
-              club_name: table.clubs?.name || undefined,
-              is_tournament: false,
-            });
-          }
-        }
-      }
 
       // Also check tournament players
       const { data: tournamentData } = await supabase

@@ -168,24 +168,35 @@ class FriendSuggestionServiceClass {
       // Get members of those clubs (excluding self)
       const { data: members, error: mErr } = await supabase
         .from('club_members')
-        .select(
-          `
-          user_id,
-          club_id,
-          profiles:user_id(username, display_name, avatar_url, is_online)
-        `
-        )
+        .select('user_id, club_id')
         .in('club_id', clubIds)
         .neq('user_id', userId)
         .limit(100);
       if (mErr) console.warn('[FriendSuggestions] getSharedClubUsers members error:', mErr.message);
 
+      // Batch-fetch profiles (no FK between club_members and profiles)
+      const userIds = (members || []).map((m: any) => m.user_id);
+      const profileMap: Record<string, any> = {};
+      if (userIds.length > 0) {
+        try {
+          const { data: profiles } = await supabase
+            .from('profiles')
+            .select('id, username, display_name, avatar_url, is_online')
+            .in('id', [...new Set(userIds)]);
+          if (profiles) {
+            for (const p of profiles) profileMap[p.id] = p;
+          }
+        } catch {
+          /* non-critical */
+        }
+      }
+
       return (members || []).map((m: any) => ({
         userId: m.user_id,
-        username: m.profiles?.username || 'Unknown',
-        displayName: m.profiles?.display_name,
-        avatarUrl: m.profiles?.avatar_url,
-        isOnline: m.profiles?.is_online || false,
+        username: profileMap[m.user_id]?.username || 'Unknown',
+        displayName: profileMap[m.user_id]?.display_name,
+        avatarUrl: profileMap[m.user_id]?.avatar_url,
+        isOnline: profileMap[m.user_id]?.is_online || false,
         score: 0,
         reasons: [],
         clubName: clubNames.get(m.club_id) || 'Club',

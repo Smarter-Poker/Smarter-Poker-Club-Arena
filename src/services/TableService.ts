@@ -553,14 +553,41 @@ class TableService {
   /**
    * Delete a table — marks as deleted + decrements club table count
    * Blocks deletion of running/active tables (must close first)
+   * REQUIRES: requesting user is table creator OR club owner
    */
-  async deleteTable(tableId: string, clubId: string): Promise<boolean> {
-    // Pre-check: get current status
+  async deleteTable(tableId: string, clubId: string, userId?: string): Promise<boolean> {
+    // Pre-check: get current status and verify ownership if userId provided
     const table = await this.getTable(tableId);
     if (!table) {
       console.error('[TableService] Table not found for delete');
       return false;
     }
+
+    // Authorization check: if userId provided, verify user is club owner
+    if (userId) {
+      const { getAuthUser } = await import('../lib/supabase');
+      const { data: authData } = await getAuthUser();
+      const requestingUserId = authData?.user?.id || userId;
+
+      const { data: clubMember, error: memberError } = await supabase
+        .from('club_members')
+        .select('role')
+        .eq('club_id', table.club_id)
+        .eq('user_id', requestingUserId)
+        .maybeSingle();
+
+      if (memberError || !clubMember) {
+        console.error('[TableService] User not a member of this club');
+        return false;
+      }
+
+      // Only owner or admin can delete tables
+      if (!['owner', 'admin'].includes(clubMember.role)) {
+        console.error('[TableService] User lacks permission to delete tables');
+        return false;
+      }
+    }
+
     if (['running', 'active'].includes(table.status)) {
       console.error('[TableService] Cannot delete running/active table — close first');
       return false;

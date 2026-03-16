@@ -255,14 +255,36 @@ class NotificationServiceClass {
 
   /**
    * 🏧 Notify agent when a player requests a cash-out
+   * SECURITY: Verifies requesting user is the one making the cashout (requestingUserId == playerRequestingUserId)
    */
   async notifyCashoutRequest(
     agentId: string,
     playerName: string,
     amount: number,
     clubId: string,
-    cashoutId: string
+    cashoutId: string,
+    requestingUserId?: string
   ): Promise<void> {
+    // Authorization check: if requestingUserId provided, verify it matches the player making the request
+    if (requestingUserId) {
+      const { data: cashout, error: cashoutError } = await supabase
+        .from('cashout_requests')
+        .select('user_id')
+        .eq('id', cashoutId)
+        .maybeSingle();
+
+      if (cashoutError || !cashout) {
+        console.error('[NotificationService] Cashout request not found');
+        return;
+      }
+
+      // Verify the requesting user is the one making the cashout (not an arbitrary user)
+      if (cashout.user_id !== requestingUserId) {
+        console.error('[NotificationService] User attempting to trigger cashout for another user');
+        return;
+      }
+    }
+
     await this.create({
       userId: agentId,
       type: 'settlement',

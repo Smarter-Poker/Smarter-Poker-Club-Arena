@@ -286,13 +286,27 @@ class MessagingServiceClass {
   /**
    * Start a new CLUB conversation (category = 'club')
    * Used for club-internal messaging
-   * ENFORCES role-based messaging permissions
+   * ENFORCES club membership verification AND role-based messaging permissions
    */
   async startClubConversation(
     userId: string,
     otherUserId: string,
     clubId: string
   ): Promise<Conversation | null> {
+    // SECURITY: Verify user is a member of the club
+    const resolvedClubId = await resolveClubUUID(clubId);
+    const { data: userMembership, error: membershipError } = await supabase
+      .from('club_members')
+      .select('role')
+      .eq('club_id', resolvedClubId)
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (membershipError || !userMembership) {
+      console.error('[Messaging] User is not a member of this club');
+      throw new Error('You must be a member of the club to start conversations');
+    }
+
     // Check messaging permission based on roles
     const permission = await clubMessagingPermissions.canMessage(userId, otherUserId, clubId);
     if (!permission.allowed) {
@@ -305,7 +319,7 @@ class MessagingServiceClass {
       .from('conversations')
       .select('id, participant_ids, club_id, category, updated_at')
       .contains('participant_ids', [userId, otherUserId])
-      .eq('club_id', await resolveClubUUID(clubId))
+      .eq('club_id', resolvedClubId)
       .eq('category', 'club')
       .maybeSingle();
 

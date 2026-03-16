@@ -515,24 +515,36 @@ class CashoutServiceClass {
     );
 
     // Mark original transaction as reversed via BOTH the dedicated column AND metadata.
-    // Match on the most recent unreversed 'send' within the reversal window.
-    const { error: reverseError } = await supabase
+    // First SELECT the most recent unreversed 'send' within the reversal window,
+    // then UPDATE by ID. PostgREST .limit() on UPDATE is unreliable — use 2-step approach.
+    const resolvedClubForReversal = await resolveClubUUID(clubId);
+    const { data: reversibleTx } = await supabase
       .from('chip_transactions')
-      .update({
-        is_reversed: true,
-        metadata: { is_reversed: true },
-      })
+      .select('id')
       .eq('from_user_id', agentId)
       .eq('to_user_id', playerId)
-      .eq('club_id', await resolveClubUUID(clubId))
+      .eq('club_id', resolvedClubForReversal)
       .eq('transaction_type', 'send')
       .eq('is_reversed', false)
       .gte('reversible_until', new Date().toISOString())
       .order('created_at', { ascending: false })
-      .limit(1);
+      .limit(1)
+      .maybeSingle();
 
-    if (reverseError) {
-      console.error('[Cashout] Failed to mark reversal on column:', reverseError);
+    if (reversibleTx?.id) {
+      const { error: reverseError } = await supabase
+        .from('chip_transactions')
+        .update({
+          is_reversed: true,
+          metadata: { is_reversed: true },
+        })
+        .eq('id', reversibleTx.id);
+
+      if (reverseError) {
+        console.error('[Cashout] Failed to mark reversal on column:', reverseError);
+      }
+    } else {
+      console.warn('[Cashout] No reversible transaction found to mark — reversal metadata skipped');
     }
 
     // Record removal in chip_transactions for reversal tracking

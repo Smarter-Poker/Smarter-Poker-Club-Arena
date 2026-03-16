@@ -55,6 +55,8 @@ interface WalletState {
   // Pending operations
   pendingBuyIn: number | null;
   pendingTableId: string | null;
+  // Mutex flag: prevents concurrent lock/unlock/transfer from racing
+  _operationInFlight: boolean;
 
   // Actions
   loadBalances: (userId: string) => Promise<void>;
@@ -101,6 +103,7 @@ const initialState = {
   isLoadingTransactions: false,
   pendingBuyIn: null as number | null,
   pendingTableId: null as string | null,
+  _operationInFlight: false,
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -197,6 +200,12 @@ export const useWalletStore = create<WalletState>()(
       },
 
       lockForBuyIn: async (userId: string, amount: number, tableId: string) => {
+        // Mutex: prevent concurrent wallet operations from racing
+        if (get()._operationInFlight) {
+          console.warn('[Store] Wallet operation already in flight, skipping lockForBuyIn');
+          return false;
+        }
+
         const { balances } = get();
         if (balances.PLAYER.available < amount) {
           console.error('[Store] Insufficient balance for buy-in');
@@ -206,8 +215,9 @@ export const useWalletStore = create<WalletState>()(
         // Deep copy for safe rollback
         const previousBalances = JSON.parse(JSON.stringify(balances));
 
-        // Optimistic update
+        // Optimistic update + acquire mutex
         set({
+          _operationInFlight: true,
           pendingBuyIn: amount,
           pendingTableId: tableId,
           balances: {
@@ -222,10 +232,12 @@ export const useWalletStore = create<WalletState>()(
 
         try {
           await WalletService.lockForBuyIn(userId, tableId, amount);
+          set({ _operationInFlight: false });
           return true;
         } catch (error) {
-          // Revert on failure using deep-copied state
+          // Revert on failure using deep-copied state + release mutex
           set({
+            _operationInFlight: false,
             pendingBuyIn: null,
             pendingTableId: null,
             balances: previousBalances,
@@ -236,6 +248,12 @@ export const useWalletStore = create<WalletState>()(
       },
 
       unlockFromTable: async (userId: string, amount: number, tableId: string) => {
+        // Mutex: prevent concurrent wallet operations from racing
+        if (get()._operationInFlight) {
+          console.warn('[Store] Wallet operation already in flight, skipping unlockFromTable');
+          return false;
+        }
+
         const { balances, pendingTableId } = get();
         if (pendingTableId !== tableId) {
           console.warn('[Store] Table ID mismatch for unlock');
@@ -245,6 +263,7 @@ export const useWalletStore = create<WalletState>()(
         const previousBalances = JSON.parse(JSON.stringify(balances));
 
         set({
+          _operationInFlight: true,
           pendingBuyIn: null,
           pendingTableId: null,
           balances: {
@@ -259,10 +278,11 @@ export const useWalletStore = create<WalletState>()(
 
         try {
           await WalletService.unlockFromTable(userId, tableId, amount);
+          set({ _operationInFlight: false });
           return true;
         } catch (error) {
-          // Revert optimistic update on failure
-          set({ balances: previousBalances, pendingBuyIn: null, pendingTableId: null });
+          // Revert optimistic update on failure + release mutex
+          set({ _operationInFlight: false, balances: previousBalances, pendingBuyIn: null, pendingTableId: null });
           console.error('[Store] Unlock from table failed:', error);
           return false;
         }
@@ -274,6 +294,12 @@ export const useWalletStore = create<WalletState>()(
         toWallet: WalletType,
         amount: number
       ) => {
+        // Mutex: prevent concurrent wallet operations from racing
+        if (get()._operationInFlight) {
+          console.warn('[Store] Wallet operation already in flight, skipping internalTransfer');
+          return false;
+        }
+
         const { balances } = get();
         if (balances[fromWallet].available < amount) {
           console.error('[Store] Insufficient balance for transfer');
@@ -283,6 +309,7 @@ export const useWalletStore = create<WalletState>()(
         // Deep copy for safe rollback (shallow spread shares nested object refs)
         const previousBalances = JSON.parse(JSON.stringify(balances));
         set({
+          _operationInFlight: true,
           balances: {
             ...balances,
             [fromWallet]: {
@@ -304,10 +331,11 @@ export const useWalletStore = create<WalletState>()(
             toWallet,
             amount,
           });
+          set({ _operationInFlight: false });
           return true;
         } catch (error) {
-          // Revert on failure
-          set({ balances: previousBalances });
+          // Revert on failure + release mutex
+          set({ _operationInFlight: false, balances: previousBalances });
           console.error('[Store] Internal transfer failed:', error);
           return false;
         }

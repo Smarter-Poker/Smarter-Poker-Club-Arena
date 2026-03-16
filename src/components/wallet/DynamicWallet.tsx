@@ -52,9 +52,12 @@ interface WalletData {
 function useAnimatedCounter(target: number, duration = 400) {
   const [value, setValue] = useState(target);
   const rafId = useRef<number | null>(null);
+  // Use ref to avoid stale closure capturing previous `value` on rapid target changes
+  const currentValueRef = useRef(value);
+  currentValueRef.current = value;
 
   useEffect(() => {
-    const start = value;
+    const start = currentValueRef.current;
     const diff = target - start;
     if (Math.abs(diff) < 1) {
       setValue(target);

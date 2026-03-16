@@ -303,7 +303,33 @@ export default function TableConfigPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  // Union clubs can still create tables — union provides cross-club features only
+  // UNION GUARD: Clubs inside a union CANNOT create standalone tables/tournaments.
+  const [isInUnion, setIsInUnion] = useState(false);
+  const [checkingUnion, setCheckingUnion] = useState(true);
+
+  useEffect(() => {
+    if (!clubId) { setCheckingUnion(false); return; }
+    let isMounted = true;
+    (async () => {
+      try {
+        const resolvedId = await resolveClubUUID(clubId);
+        const { data } = await supabase
+          .from('union_clubs')
+          .select('union_id')
+          .eq('club_id', resolvedId)
+          .limit(1)
+          .maybeSingle();
+        if (!isMounted) return;
+        if (data) {
+          setIsInUnion(true);
+          toast.error('Union clubs cannot create standalone tables.');
+          navigate(`/clubs/${clubId}`);
+        }
+      } catch { /* fail-open */ }
+      if (isMounted) setCheckingUnion(false);
+    })();
+    return () => { isMounted = false; };
+  }, [clubId]);
 
   const gameInfo = GAME_TYPE_LABELS[gameType || 'nlh'] || GAME_TYPE_LABELS.nlh;
 
@@ -602,6 +628,11 @@ export default function TableConfigPage() {
       toast.error('Please enter a table name');
       return;
     }
+    // UNION GUARD: double-check at save time (defense-in-depth)
+    if (isInUnion || checkingUnion) {
+      toast.error('Union clubs cannot create standalone tables.');
+      return;
+    }
 
     setSaving(true);
     try {
@@ -609,6 +640,20 @@ export default function TableConfigPage() {
         data: { user },
       } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
+
+      // Runtime union check — prevents race if navigation guard was bypassed
+      const resolvedId = await resolveClubUUID(clubId || '');
+      const { data: unionCheck } = await supabase
+        .from('union_clubs')
+        .select('union_id')
+        .eq('club_id', resolvedId)
+        .limit(1)
+        .maybeSingle();
+      if (unionCheck) {
+        toast.error('Union clubs cannot create standalone tables.');
+        setSaving(false);
+        return;
+      }
 
       const tableData = {
         ...buildTableData(),
@@ -634,6 +679,11 @@ export default function TableConfigPage() {
       toast.error('Please enter a table name');
       return;
     }
+    // UNION GUARD: double-check at start time (defense-in-depth)
+    if (isInUnion || checkingUnion) {
+      toast.error('Union clubs cannot create standalone tables.');
+      return;
+    }
 
     setStarting(true);
     try {
@@ -641,6 +691,20 @@ export default function TableConfigPage() {
         data: { user },
       } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
+
+      // Runtime union check — prevents race if navigation guard was bypassed
+      const resolvedId = await resolveClubUUID(clubId || '');
+      const { data: unionCheck } = await supabase
+        .from('union_clubs')
+        .select('union_id')
+        .eq('club_id', resolvedId)
+        .limit(1)
+        .maybeSingle();
+      if (unionCheck) {
+        toast.error('Union clubs cannot create standalone tables.');
+        setStarting(false);
+        return;
+      }
 
       const tableData = {
         ...buildTableData(),

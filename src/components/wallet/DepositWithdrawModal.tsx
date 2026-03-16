@@ -261,7 +261,11 @@ export default function DepositWithdrawModal({
 
   const currentMethod = PAYMENT_METHODS.find((m) => m.id === selectedMethod);
   const numericAmount = parseFloat(amount) || 0;
-  const feeAmount = currentMethod ? (numericAmount * currentMethod.fee) / 100 : 0;
+  // Use integer math to avoid floating-point precision errors:
+  // fee = round((amount_cents * fee_percent) / 100) / 100
+  const feeAmount = currentMethod
+    ? Math.round(numericAmount * currentMethod.fee) / 100
+    : 0;
   const totalAmount = mode === 'deposit' ? numericAmount : numericAmount + feeAmount;
 
   const handleMethodSelect = (method: PaymentMethod) => {
@@ -289,6 +293,12 @@ export default function DepositWithdrawModal({
       triggerHaptic([30, 50, 30]);
       return;
     }
+    // Require withdrawal destination for non-agent methods
+    if (mode === 'withdraw' && selectedMethod !== 'agent' && !withdrawAddress.trim()) {
+      setError('Please enter a withdrawal destination');
+      triggerHaptic([30, 50, 30]);
+      return;
+    }
 
     triggerHaptic(15);
     setStep('confirm');
@@ -297,6 +307,8 @@ export default function DepositWithdrawModal({
 
   const handleConfirm = async () => {
     if (!currentMethod) return;
+    // Double-submit guard: if already processing, ignore subsequent clicks
+    if (processing) return;
 
     setProcessing(true);
     setError(null);
@@ -523,7 +535,7 @@ export default function DepositWithdrawModal({
               {feeAmount > 0 && (
                 <div className={styles.summaryRow}>
                   <span>Fee ({currentMethod.fee}%)</span>
-                  <span>-{(Math.trunc(feeAmount * 100) / 100).toLocaleString()}</span>
+                  <span>-{feeAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
               )}
               <div className={`${styles.summaryRow} ${styles.total}`}>
@@ -531,7 +543,7 @@ export default function DepositWithdrawModal({
                 <span>
                   {mode === 'deposit'
                     ? numericAmount.toLocaleString()
-                    : (Math.trunc((numericAmount - feeAmount) * 100) / 100).toLocaleString()}
+                    : (Math.round((numericAmount - feeAmount) * 100) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
               </div>
             </div>

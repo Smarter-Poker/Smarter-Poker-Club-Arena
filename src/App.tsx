@@ -379,14 +379,8 @@ export default function App() {
           window.__earlyAuthConsumed = true;
         } catch (e) {
           console.error('[App] Failed to set session from parent:', e);
-          try {
-            window.parent.postMessage(
-              { type: 'SMARTER_AUTH_FAILED', error: String(e) },
-              parentOrigin
-            );
-          } catch {
-            /* cross-origin safety */
-          }
+          // Notify parent of auth failure using secure postToParent
+          postToParent({ type: 'SMARTER_AUTH_FAILED', error: String(e) });
         }
       }
 

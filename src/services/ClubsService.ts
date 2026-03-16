@@ -510,9 +510,43 @@ export async function updateClub(clubId: string, updates: Record<string, any>): 
   const { data: user } = await supabase.auth.getUser();
   if (!user.user) throw new Error('Authentication required');
 
+  // SECURITY: Verify caller is club owner before allowing any updates.
+  // RLS provides a backend safety net, but defense-in-depth is essential
+  // since updateClub accepts arbitrary field updates.
+  const { data: club, error: clubErr } = await supabase
+    .from('clubs')
+    .select('owner_id')
+    .eq('id', clubId)
+    .maybeSingle();
+
+  if (clubErr || !club) {
+    throw new Error('Club not found');
+  }
+
+  if (club.owner_id !== user.user.id) {
+    console.error(`[ClubsService] Unauthorized updateClub attempt by ${user.user.id} on club ${clubId}`);
+    throw new Error('Only the club owner can update club settings');
+  }
+
+  // Whitelist allowed update fields to prevent arbitrary column injection
+  const ALLOWED_FIELDS = [
+    'name', 'description', 'slug', 'is_public', 'requires_approval',
+    'color_theme', 'avatar_url', 'banner_url', 'settings',
+  ];
+  const sanitizedUpdates: Record<string, any> = {};
+  for (const key of Object.keys(updates)) {
+    if (ALLOWED_FIELDS.includes(key)) {
+      sanitizedUpdates[key] = updates[key];
+    }
+  }
+
+  if (Object.keys(sanitizedUpdates).length === 0) {
+    throw new Error('No valid fields to update');
+  }
+
   const { data, error } = await supabase
     .from('clubs')
-    .update(updates)
+    .update(sanitizedUpdates)
     .eq('id', clubId)
     .select()
     .maybeSingle();

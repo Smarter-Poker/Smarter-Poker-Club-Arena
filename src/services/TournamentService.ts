@@ -433,6 +433,42 @@ class TournamentService {
       }
     }
 
+    // VALIDATION: Payout structure percentages must sum to ~100%
+    if (config.payoutStructure && Array.isArray(config.payoutStructure)) {
+      const totalPercent = config.payoutStructure.reduce(
+        (sum: number, p: any) => sum + (Number(p.percentage) || 0),
+        0
+      );
+      if (totalPercent > 0 && Math.abs(totalPercent - 100) > 1) {
+        throw new Error(
+          `Payout percentages must sum to 100% (got ${totalPercent.toFixed(1)}%)`
+        );
+      }
+    }
+
+    // VALIDATION: Blind structure must have increasing blinds and positive durations
+    if (config.blindStructure && Array.isArray(config.blindStructure)) {
+      for (let i = 0; i < config.blindStructure.length; i++) {
+        const level = config.blindStructure[i] as any;
+        if (level.durationMinutes !== undefined && level.durationMinutes <= 0) {
+          throw new Error(
+            `Blind level ${i + 1} has invalid duration (${level.durationMinutes}). Must be > 0.`
+          );
+        }
+        if (i > 0) {
+          const prev = config.blindStructure[i - 1] as any;
+          if (
+            Number(level.smallBlind) < Number(prev.smallBlind) &&
+            Number(level.bigBlind) < Number(prev.bigBlind)
+          ) {
+            throw new Error(
+              `Blind structure must not decrease: level ${i + 1} (${level.smallBlind}/${level.bigBlind}) is lower than level ${i} (${prev.smallBlind}/${prev.bigBlind})`
+            );
+          }
+        }
+      }
+    }
+
     // Map format to variant for DB
     const variantMap: Record<string, string> = {
       mtt: 'freezeout',

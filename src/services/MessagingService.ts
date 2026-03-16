@@ -540,7 +540,19 @@ class MessagingServiceClass {
     participantIds: string[],
     name: string
   ): Promise<Conversation | null> {
-    const allParticipants = [creatorId, ...participantIds.filter((id) => id !== creatorId)];
+    // INPUT VALIDATION: Prevent abuse via oversized inputs
+    if (!name || name.trim().length === 0 || name.trim().length > 100) {
+      console.error('[Messaging] Invalid group name: must be 1-100 characters');
+      return null;
+    }
+    if (participantIds.length > 100) {
+      console.error('[Messaging] Too many participants: maximum 100');
+      return null;
+    }
+
+    // Deduplicate participant IDs
+    const uniqueParticipants = [...new Set(participantIds.filter((id) => id !== creatorId))];
+    const allParticipants = [creatorId, ...uniqueParticipants];
 
     const { data, error } = await supabase
       .from('conversations')

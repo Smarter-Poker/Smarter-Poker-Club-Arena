@@ -169,7 +169,7 @@ class TableService {
     const { data, error } = await supabase
       .from('tables')
       .insert({
-        club_id: clubId,
+        club_id: resolvedClubId,
         name,
         game_type: 'cash',
         game_variant: gameVariant,

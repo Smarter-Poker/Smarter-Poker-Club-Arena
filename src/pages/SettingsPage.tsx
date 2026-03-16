@@ -113,6 +113,65 @@ const DEFAULT_SETTINGS: UserSettings = {
   shareHandHistories: false,
 };
 
+/**
+ * Validate and sanitize settings loaded from localStorage or external sources.
+ * Ensures only expected types/ranges are applied — prevents injection via DevTools.
+ */
+function validateSettings(raw: unknown): UserSettings {
+  if (typeof raw !== 'object' || raw === null) return { ...DEFAULT_SETTINGS };
+  const s = raw as Record<string, unknown>;
+  const d = DEFAULT_SETTINGS;
+
+  const bool = (key: string): boolean =>
+    typeof s[key] === 'boolean' ? (s[key] as boolean) : (d as any)[key];
+  const num = (key: string, min: number, max: number): number => {
+    const v = s[key];
+    return typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max
+      ? v
+      : (d as any)[key];
+  };
+  const enumVal = <T extends string>(key: string, allowed: T[]): T => {
+    return allowed.includes(s[key] as T) ? (s[key] as T) : (d as any)[key];
+  };
+  const str = (key: string, maxLen: number): string => {
+    const v = s[key];
+    return typeof v === 'string' && v.length <= maxLen ? v : (d as any)[key];
+  };
+
+  return {
+    soundEnabled: bool('soundEnabled'),
+    soundVolume: num('soundVolume', 0, 100),
+    musicEnabled: bool('musicEnabled'),
+    musicVolume: num('musicVolume', 0, 100),
+    voiceAnnouncements: bool('voiceAnnouncements'),
+    theme: enumVal('theme', ['dark', 'light', 'auto']),
+    tableColor: str('tableColor', 50),
+    cardBack: str('cardBack', 50),
+    fourColorDeck: bool('fourColorDeck'),
+    animationSpeed: enumVal('animationSpeed', ['slow', 'normal', 'fast']),
+    showBetAmount: bool('showBetAmount'),
+    showPotOdds: bool('showPotOdds'),
+    autoMuck: bool('autoMuck'),
+    autoRebuy: bool('autoRebuy'),
+    autoRebuyThreshold: num('autoRebuyThreshold', 0, 100),
+    confirmAllIn: bool('confirmAllIn'),
+    showHandStrength: bool('showHandStrength'),
+    runItTwiceDefault: bool('runItTwiceDefault'),
+    straddleDefault: bool('straddleDefault'),
+    chatEnabled: bool('chatEnabled'),
+    chatNotifications: bool('chatNotifications'),
+    tournamentReminders: bool('tournamentReminders'),
+    clubActivity: bool('clubActivity'),
+    handWonNotifications: bool('handWonNotifications'),
+    achievementNotifications: bool('achievementNotifications'),
+    friendAlerts: bool('friendAlerts'),
+    settlementAlerts: bool('settlementAlerts'),
+    showOnlineStatus: bool('showOnlineStatus'),
+    allowFriendRequests: bool('allowFriendRequests'),
+    shareHandHistories: bool('shareHandHistories'),
+  };
+}
+
 const TABLE_COLORS = [
   { id: 'green', name: 'Classic Green', color: '#1a5f3a' },
   { id: 'blue', name: 'Ocean Blue', color: '#1e3a5f' },
@@ -270,7 +329,7 @@ export default function SettingsPage() {
     const saved = localStorage.getItem('club-arena-settings');
     if (saved) {
       try {
-        setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(saved) });
+        setSettings(validateSettings(JSON.parse(saved)));
       } catch (e) {
         console.error('Failed to load settings:', e);
       }
@@ -296,7 +355,7 @@ export default function SettingsPage() {
       const saved = localStorage.getItem('club-arena-settings');
       if (saved) {
         try {
-          setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(saved) });
+          setSettings(validateSettings(JSON.parse(saved)));
         } catch {
           /* parse error */
         }
@@ -324,7 +383,7 @@ export default function SettingsPage() {
     const saved = localStorage.getItem('club-arena-settings');
     if (saved) {
       try {
-        setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(saved) });
+        setSettings(validateSettings(JSON.parse(saved)));
       } catch {
         /* parse error */
       }

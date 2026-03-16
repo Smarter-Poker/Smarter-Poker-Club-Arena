@@ -383,6 +383,11 @@ export const WalletService = {
    * Chip flow: Union → Club Bank → Agent Wallet → Player Wallet → Table Buy-in
    */
   async lockForBuyIn(userId: string, tableId: string, amount: number): Promise<boolean> {
+    // VALIDATION: Prevent negative/zero/non-integer amounts before RPC call
+    if (!amount || amount <= 0 || !Number.isFinite(amount)) {
+      throw new Error('Buy-in amount must be a positive number');
+    }
+
     // Atomically deduct from Player Wallet AND LOG using SECURITY DEFINER RPC.
     // The RPC returns false if insufficient balance —- no separate pre-check needed.
     // (Removing the pre-check eliminates a TOCTOU race condition where two concurrent
@@ -426,6 +431,11 @@ export const WalletService = {
    * Credits to Player Wallet (wallets table) using atomic RPC
    */
   async unlockFromTable(userId: string, tableId: string, amount: number): Promise<boolean> {
+    // VALIDATION: Prevent negative/zero/non-finite amounts before RPC call
+    if (!amount || amount <= 0 || !Number.isFinite(amount)) {
+      throw new Error('Cash-out amount must be a positive number');
+    }
+
     // Credit to Player Wallet AND LOG using SECURITY DEFINER RPC
     const { error: creditError } = await retryAsync(async () => {
       const res = await supabase.rpc('atomic_credit_wallet_and_log', {

@@ -923,7 +923,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             style={{
               ...menuItemStyle,
               animation: isOpen
-                ? `slideInLeft 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) ${(i + 34) * 30}ms both`
+                ? `slideInLeft 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) ${(i + 41) * 30}ms both`
                 : 'none',
             }}
             onMouseEnter={(e) => {

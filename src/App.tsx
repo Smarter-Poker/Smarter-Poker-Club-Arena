@@ -190,30 +190,81 @@ export default function App() {
   // requiring a separate login flow.
   const lastAuthTokenRef = useRef<string | null>(null);
 
+  /** Apply settings from World Hub to the local Zustand store */
+  const applySettingsRef = useRef((s: Record<string, unknown>) => {
+    const store = useSettingsStore.getState();
+    if (typeof s.soundEnabled === 'boolean' && s.soundEnabled !== store.soundEnabled)
+      store.toggleSound();
+    if (typeof s.fourColorDeck === 'boolean' && s.fourColorDeck !== store.fourColorDeck)
+      store.toggleFourColorDeck();
+    if (s.theme && s.theme !== store.theme) store.setTheme(s.theme as 'dark' | 'light');
+  });
+
+  // ── Consume early auth token received before React mounted ──
+  // The early listener in main.tsx may have already received and ACK'd
+  // the auth token. We still need to actually call setSession() here.
   useEffect(() => {
     const isInIframe = window.parent !== window;
     if (!isInIframe) return;
 
-    /** Apply settings from World Hub to the local Zustand store */
-    const applySettings = (s: Record<string, unknown>) => {
-      const store = useSettingsStore.getState();
-      if (typeof s.soundEnabled === 'boolean' && s.soundEnabled !== store.soundEnabled)
-        store.toggleSound();
-      if (typeof s.fourColorDeck === 'boolean' && s.fourColorDeck !== store.fourColorDeck)
-        store.toggleFourColorDeck();
-      if (s.theme && s.theme !== store.theme) store.setTheme(s.theme as 'dark' | 'light');
-    };
+    // Dynamic import to avoid circular dependency
+    import('./main')
+      .then(({ earlyAuth }) => {
+        if (earlyAuth.token && lastAuthTokenRef.current !== earlyAuth.token) {
+          console.log('[App] Consuming early auth token received before mount');
+          lastAuthTokenRef.current = earlyAuth.token;
+
+          // Apply settings that came with the early auth
+          if (earlyAuth.settings) {
+            applySettingsRef.current(earlyAuth.settings);
+          }
+
+          // Set the session
+          supabase.auth
+            .setSession({
+              access_token: earlyAuth.token,
+              refresh_token: earlyAuth.refreshToken || '',
+            })
+            .then(() => {
+              console.log('[App] ✅ Early auth session set successfully');
+              // Send another ACK to be safe (main.tsx already sent one)
+              try {
+                window.parent.postMessage({ type: 'SMARTER_AUTH_ACK' }, '*');
+              } catch {
+                /* best effort */
+              }
+            })
+            .catch((e) => {
+              console.error('[App] Failed to set early auth session:', e);
+            });
+
+          // Clear the early auth so it doesn't get consumed again
+          earlyAuth.token = null;
+          earlyAuth.refreshToken = null;
+          earlyAuth.settings = null;
+        }
+      })
+      .catch(() => {
+        // If dynamic import fails, App.tsx postMessage handler below is still the fallback
+        console.warn('[App] Could not import earlyAuth — relying on postMessage handler');
+      });
+  }, []);
+
+  // ── Continue listening for auth tokens via postMessage (backup + refreshes) ──
+  useEffect(() => {
+    const isInIframe = window.parent !== window;
+    if (!isInIframe) return;
 
     const handleMessage = async (event: MessageEvent) => {
       // Accept from smarter.poker OR localhost:3000 for local dev
       // SECURITY: Use exact match / endsWith to prevent subdomain spoofing
-      // (e.g. evil-smarter.poker.attacker.com would pass .includes() check)
       const origin = event.origin;
       const isValidOrigin =
         origin === 'https://smarter.poker' ||
         origin === 'https://www.smarter.poker' ||
         (origin.endsWith('.smarter.poker') && origin.startsWith('https://')) ||
-        origin === 'http://localhost:3000';
+        origin === 'http://localhost:3000' ||
+        origin === window.location.origin; // Same-origin iframe proxy
       if (!isValidOrigin) return;
 
       if (event.data?.type === 'SMARTER_AUTH_TOKEN' && event.data.token) {
@@ -223,10 +274,10 @@ export default function App() {
 
         // Bridge Global Settings from World Hub instantly
         if (event.data.settings) {
-          applySettings(event.data.settings);
+          applySettingsRef.current(event.data.settings);
         }
 
-        // Improvement #4: Skip redundant setSession if token hasn't changed
+        // Skip redundant setSession if token hasn't changed
         if (lastAuthTokenRef.current === event.data.token) return;
         lastAuthTokenRef.current = event.data.token;
 
@@ -243,7 +294,6 @@ export default function App() {
           });
         } catch (e) {
           console.error('[App] Failed to set session from parent:', e);
-          // Notify parent so it can retry or redirect
           try {
             window.parent.postMessage(
               { type: 'SMARTER_AUTH_FAILED', error: String(e) },
@@ -257,7 +307,7 @@ export default function App() {
 
       // Live settings push — World Hub user changed theme/sound/deck while iframe is open
       if (event.data?.type === 'SMARTER_SETTINGS_UPDATE' && event.data.settings) {
-        applySettings(event.data.settings);
+        applySettingsRef.current(event.data.settings);
         console.log('[App] Live settings update received from World Hub');
       }
     };

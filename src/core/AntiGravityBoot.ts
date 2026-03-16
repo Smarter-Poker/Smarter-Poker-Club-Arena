@@ -76,9 +76,16 @@ export async function initAntiGravity(): Promise<BootStatus> {
 
       // Health check — with navigator.locks bypassed in supabase.ts,
       // getSession() should resolve promptly. Keep a safety timeout anyway.
+      // In iframe context, the session won't exist until the parent sends it
+      // via postMessage AFTER load, so use a shorter timeout to avoid stalling boot.
+      const isInIframe = typeof window !== 'undefined' && window.parent !== window;
+      const SESSION_TIMEOUT_MS = isInIframe ? 2000 : 5000;
       const sessionPromise = supabaseClient.auth.getSession();
       const timeoutPromise = new Promise<{ error: { message: string } }>((_, reject) =>
-        setTimeout(() => reject(new Error('Supabase getSession timeout (5s)')), 5000)
+        setTimeout(
+          () => reject(new Error(`Supabase getSession timeout (${SESSION_TIMEOUT_MS / 1000}s)`)),
+          SESSION_TIMEOUT_MS
+        )
       );
 
       const { error } = await Promise.race([sessionPromise, timeoutPromise]);

@@ -43,6 +43,65 @@ window.addEventListener('unhandledrejection', (event) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
+//  EARLY AUTH LISTENER — Respond to World Hub BEFORE boot completes
+// ═══════════════════════════════════════════════════════════════════════════════
+// CRITICAL: The World Hub's ClubArenaEmbed sends SMARTER_AUTH_TOKEN via postMessage
+// and expects SMARTER_AUTH_ACK back. If it doesn't receive ACK within its retry
+// window, it shows a "Connection Problem" overlay. The listener in App.tsx only
+// registers AFTER the full boot sequence + React mount, creating a race condition.
+//
+// This early listener fires IMMEDIATELY (before boot, before React) so the ACK
+// is sent as fast as possible. The token is stored for App.tsx to consume on mount.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/** Module-level storage for auth received before React mounts */
+export const earlyAuth: {
+  token: string | null;
+  refreshToken: string | null;
+  settings: Record<string, unknown> | null;
+} = {
+  token: null,
+  refreshToken: null,
+  settings: null,
+};
+
+if (window.parent !== window) {
+  const earlyAuthHandler = (event: MessageEvent) => {
+    // Validate origin: same checks as App.tsx
+    const origin = event.origin;
+    const isValidOrigin =
+      origin === 'https://smarter.poker' ||
+      origin === 'https://www.smarter.poker' ||
+      (origin.endsWith('.smarter.poker') && origin.startsWith('https://')) ||
+      origin === 'http://localhost:3000' ||
+      origin === window.location.origin; // Same-origin iframe proxy
+    if (!isValidOrigin) return;
+
+    if (event.data?.type === 'SMARTER_AUTH_TOKEN' && event.data.token) {
+      // ACK immediately — this is the critical response the Hub is waiting for
+      try {
+        window.parent.postMessage({ type: 'SMARTER_AUTH_ACK' }, event.origin);
+        console.log('[EARLY-AUTH] ✅ ACK sent to parent before boot completed');
+      } catch {
+        /* cross-origin safety */
+      }
+
+      // Store token for App.tsx to pick up after mount
+      earlyAuth.token = event.data.token;
+      earlyAuth.refreshToken = event.data.refreshToken || null;
+      earlyAuth.settings = event.data.settings || null;
+    }
+  };
+  window.addEventListener('message', earlyAuthHandler);
+  // Also send an immediate heartbeat so the Hub knows we're alive
+  try {
+    window.parent.postMessage({ type: 'CLUB_ARENA_HEARTBEAT' }, '*');
+  } catch {
+    /* best effort */
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 //  ANTI-GRAVITY BOOT SEQUENCE — MUST COMPLETE BEFORE RENDER
 // ═══════════════════════════════════════════════════════════════════════════════
 async function boot() {

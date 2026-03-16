@@ -104,7 +104,6 @@ export const MembershipService = {
       .from('club_members')
       .select(
         `
-                id,
                 club_id,
                 user_id,
                 role,
@@ -126,7 +125,7 @@ export const MembershipService = {
     if (error) throw error;
 
     return (data || []).map((m) => ({
-      id: m.id,
+      id: `${m.club_id}:${m.user_id}`, // Synthetic id from composite key
       clubId: m.club_id,
       userId: m.user_id,
       role: m.role as MemberRole,
@@ -148,7 +147,7 @@ export const MembershipService = {
     const { data, error } = await supabase
       .from('club_members')
       .select(
-        'id, club_id, user_id, role, status, joined_at, invited_by, agent_id, parent_agent_id, notes'
+        'club_id, user_id, role, status, joined_at, invited_by, agent_id, parent_agent_id, notes'
       )
       .eq('club_id', resolvedId)
       .eq('user_id', userId)
@@ -157,7 +156,7 @@ export const MembershipService = {
     if (error || !data) return null;
 
     return {
-      id: data.id,
+      id: `${data.club_id}:${data.user_id}`, // Synthetic id from composite key
       clubId: data.club_id,
       userId: data.user_id,
       role: data.role as MemberRole,
@@ -194,7 +193,7 @@ export const MembershipService = {
     if (!data) throw new Error('Member creation returned no data');
 
     return {
-      id: data.id,
+      id: `${data.club_id}:${data.user_id}`, // Synthetic id from composite key
       clubId: data.club_id,
       userId: data.user_id,
       role: data.role as MemberRole,
@@ -207,16 +206,16 @@ export const MembershipService = {
   /**
    * Update member role
    */
-  async updateRole(memberId: string, newRole: MemberRole): Promise<boolean> {
-    const { data: member, error } = await supabase
+  async updateRole(clubId: string, userId: string, newRole: MemberRole): Promise<boolean> {
+    const resolvedId = await resolveClubUUID(clubId);
+    const { error } = await supabase
       .from('club_members')
       .update({ role: newRole })
-      .eq('id', memberId)
-      .select('club_id')
-      .maybeSingle();
+      .eq('club_id', resolvedId)
+      .eq('user_id', userId);
 
-    if (!error && member) {
-      masterBus.emit('CLUB_UPDATED', { clubId: member.club_id });
+    if (!error) {
+      masterBus.emit('CLUB_UPDATED', { clubId: resolvedId });
     }
 
     return !error;
@@ -225,16 +224,16 @@ export const MembershipService = {
   /**
    * Update member status
    */
-  async updateStatus(memberId: string, status: MemberStatus): Promise<boolean> {
-    const { data: member, error } = await supabase
+  async updateStatus(clubId: string, userId: string, status: MemberStatus): Promise<boolean> {
+    const resolvedId = await resolveClubUUID(clubId);
+    const { error } = await supabase
       .from('club_members')
       .update({ status })
-      .eq('id', memberId)
-      .select('club_id')
-      .maybeSingle();
+      .eq('club_id', resolvedId)
+      .eq('user_id', userId);
 
-    if (!error && member) {
-      masterBus.emit('CLUB_UPDATED', { clubId: member.club_id });
+    if (!error) {
+      masterBus.emit('CLUB_UPDATED', { clubId: resolvedId });
     }
 
     return !error;
@@ -243,16 +242,16 @@ export const MembershipService = {
   /**
    * Remove member from club
    */
-  async removeMember(memberId: string): Promise<boolean> {
-    const { data: member } = await supabase
+  async removeMember(clubId: string, userId: string): Promise<boolean> {
+    const resolvedId = await resolveClubUUID(clubId);
+    const { error } = await supabase
       .from('club_members')
-      .select('club_id')
-      .eq('id', memberId)
-      .maybeSingle();
-    const { error } = await supabase.from('club_members').delete().eq('id', memberId);
+      .delete()
+      .eq('club_id', resolvedId)
+      .eq('user_id', userId);
 
-    if (!error && member) {
-      masterBus.emit('CLUB_UPDATED', { clubId: member.club_id });
+    if (!error) {
+      masterBus.emit('CLUB_UPDATED', { clubId: resolvedId });
     }
 
     return !error;
@@ -267,7 +266,6 @@ export const MembershipService = {
       .from('club_members')
       .select(
         `
-                id,
                 club_id,
                 user_id,
                 role,
@@ -288,7 +286,7 @@ export const MembershipService = {
     if (error) throw error;
 
     return (data || []).map((m) => ({
-      id: m.id,
+      id: `${m.club_id}:${m.user_id}`, // Synthetic id from composite key
       clubId: m.club_id,
       userId: m.user_id,
       role: m.role as MemberRole,

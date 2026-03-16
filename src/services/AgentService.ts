@@ -106,29 +106,48 @@ class AgentServiceClass {
     const resolvedId = await resolveClubUUID(clubId);
     const { data, error } = await supabase
       .from('agents')
-      .select(
-        `
-                *,
-                parent:parent_agent_id (
-                    id,
-                    user_id,
-                    profiles!agents_profiles_fkey (
-                        display_name
-                    )
-                ),
-                profiles!agents_profiles_fkey (
-                    display_name,
-                    avatar_url
-                )
-            `
-      )
+      .select('*')
       .eq('club_id', resolvedId)
       .order('joined_at', { ascending: false })
       .limit(500);
 
     if (error) throw error;
+    if (!data || data.length === 0) return [];
 
-    return (data || []).map((a) => ({
+    // Batch-fetch display names for all agent user_ids + parent user_ids
+    const allUserIds = new Set<string>();
+    for (const a of data) {
+      if (a.user_id) allUserIds.add(a.user_id);
+    }
+    // Fetch parent agents to get their user_ids
+    const parentIds = data.filter((a) => a.parent_agent_id).map((a) => a.parent_agent_id);
+    const parentMap: Record<string, string> = {};
+    if (parentIds.length > 0) {
+      const { data: parents } = await supabase
+        .from('agents')
+        .select('id, user_id')
+        .in('id', parentIds);
+      if (parents) {
+        for (const p of parents) {
+          parentMap[p.id] = p.user_id;
+          allUserIds.add(p.user_id);
+        }
+      }
+    }
+
+    // Fetch all profiles in one query
+    const profileMap: Record<string, { display_name?: string; avatar_url?: string }> = {};
+    if (allUserIds.size > 0) {
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, display_name, avatar_url')
+        .in('id', [...allUserIds]);
+      if (profiles) {
+        for (const p of profiles) profileMap[p.id] = p;
+      }
+    }
+
+    return data.map((a) => ({
       id: a.id,
       userId: a.user_id,
       clubId: a.club_id,
@@ -136,7 +155,9 @@ class AgentServiceClass {
       role: a.role as AgentRole,
       status: a.status as AgentStatus,
       parentAgentId: a.parent_agent_id,
-      parentAgentName: (a.parent as any)?.profiles?.display_name,
+      parentAgentName: a.parent_agent_id
+        ? profileMap[parentMap[a.parent_agent_id]]?.display_name
+        : undefined,
       commissionRate: Number(a.commission_rate),
       playerRakebackRate: Number(a.player_rakeback_rate),
       creditLimit: Number(a.credit_limit),
@@ -150,8 +171,8 @@ class AgentServiceClass {
       subAgentCount: a.sub_agent_count,
       weeklyRakeGenerated: Number(a.weekly_rake_generated),
       lifetimeEarnings: Number(a.lifetime_earnings),
-      displayName: (a.profiles as any)?.display_name,
-      avatarUrl: (a.profiles as any)?.avatar_url,
+      displayName: profileMap[a.user_id]?.display_name,
+      avatarUrl: profileMap[a.user_id]?.avatar_url,
       joinedAt: a.joined_at,
       lastActiveAt: a.last_active_at,
     }));
@@ -163,25 +184,44 @@ class AgentServiceClass {
   async getAgent(agentId: string): Promise<Agent | null> {
     const { data, error } = await supabase
       .from('agents')
-      .select(
-        `
-                *,
-                parent:parent_agent_id (
-                    id,
-                    profiles!agents_profiles_fkey (
-                        display_name
-                    )
-                ),
-                profiles!agents_profiles_fkey (
-                    display_name,
-                    avatar_url
-                )
-            `
-      )
+      .select('*')
       .eq('id', agentId)
       .maybeSingle();
 
     if (error || !data) return null;
+
+    // Fetch profile info separately
+    let displayName: string | undefined;
+    let avatarUrl: string | undefined;
+    let parentAgentName: string | undefined;
+    try {
+      if (data.user_id) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('display_name, avatar_url')
+          .eq('id', data.user_id)
+          .maybeSingle();
+        displayName = profile?.display_name;
+        avatarUrl = profile?.avatar_url;
+      }
+      if (data.parent_agent_id) {
+        const { data: parent } = await supabase
+          .from('agents')
+          .select('user_id')
+          .eq('id', data.parent_agent_id)
+          .maybeSingle();
+        if (parent?.user_id) {
+          const { data: parentProfile } = await supabase
+            .from('profiles')
+            .select('display_name')
+            .eq('id', parent.user_id)
+            .maybeSingle();
+          parentAgentName = parentProfile?.display_name;
+        }
+      }
+    } catch {
+      /* non-critical */
+    }
 
     return {
       id: data.id,
@@ -191,7 +231,7 @@ class AgentServiceClass {
       role: data.role as AgentRole,
       status: data.status as AgentStatus,
       parentAgentId: data.parent_agent_id,
-      parentAgentName: (data.parent as any)?.profiles?.display_name,
+      parentAgentName,
       commissionRate: Number(data.commission_rate),
       playerRakebackRate: Number(data.player_rakeback_rate),
       creditLimit: Number(data.credit_limit),
@@ -205,8 +245,8 @@ class AgentServiceClass {
       subAgentCount: data.sub_agent_count,
       weeklyRakeGenerated: Number(data.weekly_rake_generated),
       lifetimeEarnings: Number(data.lifetime_earnings),
-      displayName: (data.profiles as any)?.display_name,
-      avatarUrl: (data.profiles as any)?.avatar_url,
+      displayName,
+      avatarUrl,
       joinedAt: data.joined_at,
       lastActiveAt: data.last_active_at,
     };
@@ -230,10 +270,10 @@ class AgentServiceClass {
     if (input.creditLimit < 0)
       throw new Error('Credit limit cannot be negative');
 
-    // Get or create membership
+    // Get membership via composite key (club_members has no id column)
     const { data: membership } = await supabase
       .from('club_members')
-      .select('id')
+      .select('club_id, user_id')
       .eq('club_id', input.clubId)
       .eq('user_id', input.userId)
       .maybeSingle();
@@ -258,7 +298,7 @@ class AgentServiceClass {
       .insert({
         user_id: input.userId,
         club_id: input.clubId,
-        membership_id: membership?.id,
+        membership_id: membership?.user_id || input.userId, // club_members has no id — link via user_id
         role: input.role,
         parent_agent_id: input.parentAgentId,
         commission_rate: input.commissionRate,
@@ -271,12 +311,13 @@ class AgentServiceClass {
 
     if (error) throw error;
 
-    // Update membership role
-    if (membership?.id) {
+    // Update membership role via composite key
+    if (membership) {
       const { error: roleErr } = await supabase
         .from('club_members')
         .update({ role: input.role })
-        .eq('id', membership.id);
+        .eq('club_id', input.clubId)
+        .eq('user_id', input.userId);
       if (roleErr) console.error('[AgentService] Failed to update membership role:', roleErr);
     }
 
@@ -310,13 +351,22 @@ class AgentServiceClass {
 
     if (error) return false;
 
-    // Also update membership role if exists
+    // Also update membership role if linked
     if (agent.membership_id) {
-      const { error: roleErr } = await supabase
-        .from('club_members')
-        .update({ role: newRole })
-        .eq('id', agent.membership_id);
-      if (roleErr) console.error('[AgentService] Failed to sync membership role:', roleErr);
+      // membership_id links to user_id in club_members — use composite key
+      const { data: agentFull } = await supabase
+        .from('agents')
+        .select('club_id, user_id')
+        .eq('id', agentId)
+        .maybeSingle();
+      if (agentFull) {
+        const { error: roleErr } = await supabase
+          .from('club_members')
+          .update({ role: newRole })
+          .eq('club_id', agentFull.club_id)
+          .eq('user_id', agentFull.user_id);
+        if (roleErr) console.error('[AgentService] Failed to sync membership role:', roleErr);
+      }
     }
 
     return true;
@@ -723,53 +773,59 @@ class AgentServiceClass {
 
     const { data, error } = await supabase
       .from('club_members')
-      .select(
-        `
-                id,
-                user_id,
-                chip_balance,
-                rakeback_percent,
-                joined_at,
-                profiles!club_members_profiles_fkey (
-                    display_name,
-                    avatar_url,
-                    is_online
-                )
-            `
-      )
+      .select('club_id, user_id, chip_balance, rakeback_percent, joined_at')
       .eq('agent_id', agent.membership_id)
       .limit(500);
 
     if (error) throw error;
+    if (!data || data.length === 0) return [];
 
-    return (data || []).map((m) => ({
-      id: m.id,
+    // Batch-fetch profiles for all player user_ids
+    const userIds = data.map((m) => m.user_id);
+    const profileMap: Record<
+      string,
+      { display_name?: string; avatar_url?: string; is_online?: boolean }
+    > = {};
+    try {
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, display_name, avatar_url, is_online')
+        .in('id', userIds);
+      if (profiles) {
+        for (const p of profiles) profileMap[p.id] = p;
+      }
+    } catch {
+      /* non-critical */
+    }
+
+    return data.map((m) => ({
+      id: `${m.club_id}:${m.user_id}`,
       userId: m.user_id,
-      displayName: (m.profiles as any)?.display_name || 'Unknown',
-      avatarUrl: (m.profiles as any)?.avatar_url,
+      displayName: profileMap[m.user_id]?.display_name || 'Unknown',
+      avatarUrl: profileMap[m.user_id]?.avatar_url,
       chipBalance: m.chip_balance || 0,
       rakebackPercent: m.rakeback_percent || 0,
       joinedAt: m.joined_at,
-      isOnline: (m.profiles as any)?.is_online || false,
+      isOnline: profileMap[m.user_id]?.is_online || false,
     }));
   }
 
   /**
    * Assign a player to an agent
    */
-  async assignPlayer(memberId: string, agentMembershipId: string): Promise<boolean> {
-    const { data: member } = await supabase
-      .from('club_members')
-      .select('club_id')
-      .eq('id', memberId)
-      .maybeSingle();
+  async assignPlayer(
+    clubId: string,
+    playerUserId: string,
+    agentMembershipId: string
+  ): Promise<boolean> {
     const { error } = await supabase
       .from('club_members')
       .update({ agent_id: agentMembershipId })
-      .eq('id', memberId);
+      .eq('club_id', clubId)
+      .eq('user_id', playerUserId);
 
-    if (!error && member) {
-      masterBus.emit('CLUB_UPDATED', { clubId: member.club_id });
+    if (!error) {
+      masterBus.emit('CLUB_UPDATED', { clubId });
     }
 
     return !error;

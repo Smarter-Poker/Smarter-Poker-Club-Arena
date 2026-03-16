@@ -106,13 +106,26 @@ export const CreditService = {
   async getCreditAccount(agentId: string): Promise<CreditAccount | null> {
     const { data: agent, error } = await supabase
       .from('agents')
-      .select(
-        'id, user_id, credit_limit, agent_wallet_balance, is_prepaid, status, profiles!agents_profiles_fkey(display_name)'
-      )
+      .select('id, user_id, credit_limit, agent_wallet_balance, is_prepaid, status')
       .eq('id', agentId)
       .maybeSingle();
 
     if (error || !agent) return null;
+
+    // Fetch display name separately (safe — no FK hint needed)
+    let agentName = 'Unknown';
+    try {
+      if (agent.user_id) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('display_name')
+          .eq('id', agent.user_id)
+          .maybeSingle();
+        agentName = profile?.display_name || 'Unknown';
+      }
+    } catch {
+      /* non-critical */
+    }
 
     const utilization =
       agent.credit_limit > 0
@@ -121,7 +134,7 @@ export const CreditService = {
 
     return {
       agentId: agent.id,
-      agentName: (agent.profiles as any)?.display_name || 'Unknown',
+      agentName,
       creditLimit: agent.credit_limit || 0,
       currentBalance: agent.agent_wallet_balance || 0,
       isPrepaid: agent.is_prepaid || false,
@@ -348,13 +361,36 @@ export const CreditService = {
   async getAgentInvoices(agentId: string): Promise<CreditInvoice[]> {
     const { data, error } = await supabase
       .from('credit_invoices')
-      .select('*, agents:agent_id(profiles!agents_profiles_fkey(display_name))')
+      .select(
+        'id, agent_id, period_start, period_end, debt_owed, amount_paid, amount_remaining, status, due_date, created_at, paid_at'
+      )
       .eq('agent_id', agentId)
       .order('created_at', { ascending: false })
       .limit(200);
 
     if (error) throw error;
-    return (data || []).map((inv) => this.mapInvoice(inv, inv.agents?.profiles?.display_name));
+
+    // Fetch agent display name separately (safe — no FK hint needed)
+    let agentName = 'Unknown';
+    try {
+      const { data: agentData } = await supabase
+        .from('agents')
+        .select('user_id')
+        .eq('id', agentId)
+        .maybeSingle();
+      if (agentData?.user_id) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('display_name')
+          .eq('id', agentData.user_id)
+          .maybeSingle();
+        agentName = profile?.display_name || 'Unknown';
+      }
+    } catch {
+      /* non-critical */
+    }
+
+    return (data || []).map((inv) => this.mapInvoice(inv, agentName));
   },
 
   /**

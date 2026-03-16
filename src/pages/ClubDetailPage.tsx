@@ -647,7 +647,7 @@ export default function ClubDetailPage() {
       // Load tables
       const { data: tableData } = await supabase
         .from('tables')
-        .select('id, name, game_type, stakes, current_players, max_players, status, created_at')
+        .select('id, name, game_variant, stakes, current_players, max_players, status, created_at')
         .eq('club_id', resolvedId)
         .eq('is_deleted', false);
 
@@ -655,7 +655,7 @@ export default function ClubDetailPage() {
         const mappedTables: ClubTable[] = tableData.map((t: any) => ({
           id: t.id,
           name: t.name || 'Table',
-          gameVariant: t.game_type || 'NLH',
+          gameVariant: t.game_variant || 'NLH',
           stakes: t.stakes || '1/2',
           currentPlayers: t.current_players || 0,
           maxPlayers: t.max_players || 6,
@@ -711,7 +711,7 @@ export default function ClubDetailPage() {
 
   // Member action handlers
   const handleMemberAction = async (
-    memberId: string,
+    memberUserId: string,
     action: 'promote' | 'demote' | 'suspend' | 'remove'
   ) => {
     if (!clubId) return;
@@ -719,19 +719,19 @@ export default function ClubDetailPage() {
     try {
       switch (action) {
         case 'promote':
-          await MembershipService.updateRole(memberId, 'admin' as any);
+          await MembershipService.updateRole(clubId, memberUserId, 'admin' as any);
           toast.success('Member promoted to admin');
           break;
         case 'demote':
-          await MembershipService.updateRole(memberId, 'member' as any);
+          await MembershipService.updateRole(clubId, memberUserId, 'member' as any);
           toast.success('Member demoted');
           break;
         case 'suspend':
-          await MembershipService.updateStatus(memberId, 'suspended' as any);
+          await MembershipService.updateStatus(clubId, memberUserId, 'suspended' as any);
           toast.success('Member suspended');
           break;
         case 'remove':
-          await MembershipService.removeMember(memberId);
+          await MembershipService.removeMember(clubId, memberUserId);
           toast.success('Member removed');
           break;
       }

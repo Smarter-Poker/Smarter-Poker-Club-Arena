@@ -2342,20 +2342,22 @@ export default function TablePage({
     const handNumber = handNumberRef.current;
 
     // Convert to SeatPlayer format for HandController
-    const hcPlayers: import('../types/database.types').SeatPlayer[] = seatedPlayers.map(
-      (p, idx) => ({
-        seat: p ? currentState.players.indexOf(p) + 1 : idx + 1,
-        user_id: p!.id,
-        username: p!.name,
-        stack: p!.stack,
+    // FIX: Filter out null/undefined players before mapping to prevent crashes
+    // from non-null assertions on potentially sparse seatedPlayers array
+    const hcPlayers: import('../types/database.types').SeatPlayer[] = seatedPlayers
+      .filter((p): p is NonNullable<typeof p> => p != null)
+      .map((p, idx) => ({
+        seat: currentState.players.indexOf(p) + 1 || idx + 1,
+        user_id: p.id,
+        username: p.name,
+        stack: p.stack,
         bet: 0,
         totalInvested: 0,
         cards: [],
         is_folded: false,
         is_all_in: false,
         is_sitting_out: false,
-      })
-    );
+      }));
 
     const config = {
       tableId: tableId || 'anonymous',
@@ -3075,10 +3077,12 @@ export default function TablePage({
 
           // Execute rake waterfall
           {
-            const currentPlayers = tableStateRef.current.players.filter((p) => p && p.stack > 0);
+            const currentPlayers = tableStateRef.current.players.filter(
+              (p): p is NonNullable<typeof p> => p != null && p.stack > 0
+            );
             const rakeClubId = actualClubIdRef.current || tableId || 'demo';
             const rakePlayers = currentPlayers.map((p) => ({
-              userId: p!.id,
+              userId: p.id,
               clubId: rakeClubId,
               agentId: undefined,
             }));
@@ -3301,7 +3305,10 @@ export default function TablePage({
 
           // Real-time broadcast
           broadcastLocalHandState();
-          if (tableId) submitAction(tableId, userId || 'guest', 'fold').catch(() => {});
+          if (tableId)
+            submitAction(tableId, userId || 'guest', 'fold').catch((e) =>
+              console.warn('[Table] Server fold failed:', e)
+            );
         } else {
           console.warn('[AutoFold] performAction returned false — fold may not have executed');
         }
@@ -3425,7 +3432,10 @@ export default function TablePage({
     });
     soundService.playFold();
     broadcastLocalHandState();
-    if (tableId) submitAction(tableId, userId, 'fold').catch(() => {});
+    if (tableId)
+      submitAction(tableId, userId, 'fold').catch((e) =>
+        console.warn('[Table] Server fold failed:', e)
+      );
   };
 
   const handleCheck = async () => {
@@ -3439,7 +3449,10 @@ export default function TablePage({
     });
     soundService.playCheck();
     broadcastLocalHandState();
-    if (tableId) submitAction(tableId, userId, 'check').catch(() => {});
+    if (tableId)
+      submitAction(tableId, userId, 'check').catch((e) =>
+        console.warn('[Table] Server check failed:', e)
+      );
   };
 
   const handleCall = async () => {
@@ -3453,7 +3466,10 @@ export default function TablePage({
     });
     soundService.playChips();
     broadcastLocalHandState();
-    if (tableId) submitAction(tableId, userId, 'call').catch(() => {});
+    if (tableId)
+      submitAction(tableId, userId, 'call').catch((e) =>
+        console.warn('[Table] Server call failed:', e)
+      );
   };
 
   const handleBet = () => {
@@ -3481,7 +3497,10 @@ export default function TablePage({
           });
           soundService.playFold();
           broadcastLocalHandState();
-          if (tableId) submitAction(tableId, userId, 'fold').catch(() => {});
+          if (tableId)
+            submitAction(tableId, userId, 'fold').catch((e) =>
+              console.warn('[Table] Server fold failed:', e)
+            );
           break;
         case 'check':
           if (!validateAndExecuteAction('check')) return;
@@ -3491,7 +3510,10 @@ export default function TablePage({
           });
           soundService.playCheck();
           broadcastLocalHandState();
-          if (tableId) submitAction(tableId, userId, 'check').catch(() => {});
+          if (tableId)
+            submitAction(tableId, userId, 'check').catch((e) =>
+              console.warn('[Table] Server check failed:', e)
+            );
           break;
         case 'call':
           if (!validateAndExecuteAction('call')) return;
@@ -3501,7 +3523,10 @@ export default function TablePage({
           });
           soundService.playChips();
           broadcastLocalHandState();
-          if (tableId) submitAction(tableId, userId, 'call').catch(() => {});
+          if (tableId)
+            submitAction(tableId, userId, 'call').catch((e) =>
+              console.warn('[Table] Server call failed:', e)
+            );
           break;
         case 'raise':
           if (amount) {
@@ -3515,7 +3540,10 @@ export default function TablePage({
             });
             soundService.playRaise();
             broadcastLocalHandState();
-            if (tableId) submitAction(tableId, userId, 'raise', clamped).catch(() => {});
+            if (tableId)
+              submitAction(tableId, userId, 'raise', clamped).catch((e) =>
+                console.warn('[Table] Server raise failed:', e)
+              );
           }
           break;
         case 'allin':
@@ -3528,7 +3556,10 @@ export default function TablePage({
           soundService.playAllIn();
           setIsAllInMode(true);
           broadcastLocalHandState();
-          if (tableId) submitAction(tableId, userId, 'allin', heroStack).catch(() => {});
+          if (tableId)
+            submitAction(tableId, userId, 'allin', heroStack).catch((e) =>
+              console.warn('[Table] Server allin failed:', e)
+            );
           break;
       }
     },
@@ -3559,7 +3590,10 @@ export default function TablePage({
       // PRIMARY: Broadcast via Supabase Realtime
       broadcastLocalHandState();
       // SECONDARY: Fire-and-forget server call
-      if (tableId) submitAction(tableId, userId, 'raise', clampedRaise).catch(() => {});
+      if (tableId)
+        submitAction(tableId, userId, 'raise', clampedRaise).catch((e) =>
+          console.warn('[Table] Server raise failed:', e)
+        );
     } catch (err) {
       console.warn('[TablePage] Raise error:', err);
     }
@@ -3580,7 +3614,10 @@ export default function TablePage({
       // PRIMARY: Broadcast via Supabase Realtime
       broadcastLocalHandState();
       // SECONDARY: Fire-and-forget server call
-      if (tableId) submitAction(tableId, userId, 'allin', heroStack).catch(() => {});
+      if (tableId)
+        submitAction(tableId, userId, 'allin', heroStack).catch((e) =>
+          console.warn('[Table] Server allin failed:', e)
+        );
     } catch (err) {
       console.warn('[TablePage] All-in error:', err);
     }

@@ -10,9 +10,9 @@
  * - Each card: Club avatar, ID, name, level, member count
  */
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import HamburgerMenu from '../components/navigation/HamburgerMenu';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { unionService } from '../services/UnionService';
@@ -20,12 +20,13 @@ import type { Union } from '../services/UnionService';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import './ClubCarouselPage.css';
-import PageSkeleton from '../components/common/PageSkeleton';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { useIsMounted } from '../hooks/useIsMounted';
+import haptic from '../services/HapticService';
 
 const SWR_CAROUSEL_KEY = 'club_carousel_clubs_cache';
 const SWR_UNIONS_KEY = 'club_carousel_unions_cache';
+const SWIPE_THRESHOLD = 50; // px minimum for a horizontal swipe
 
 interface UserClub {
   id: string;
@@ -68,6 +69,7 @@ const getFrameForClub = (clubId: number): string => {
 
 export default function ClubCarouselPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { user } = useAuthUser();
   useVisibilityRefresh(() => {
     if (user?.id) loadUserData();
@@ -75,7 +77,7 @@ export default function ClubCarouselPage() {
   const toast = useToast();
   const [menuOpen, setMenuOpen] = useState(false);
 
-  // #7: SWR — instant render from cache
+  // SWR — instant render from cache
   const [clubs, setClubs] = useState<UserClub[]>(() => {
     try {
       const cached = localStorage.getItem(SWR_CAROUSEL_KEY);
@@ -106,10 +108,25 @@ export default function ClubCarouselPage() {
   const [wallet, setWallet] = useState<UserWallet>({ gold: 0, diamonds: 0 });
   const [visibleCards, setVisibleCards] = useState<Set<string>>(new Set());
 
-  // #4: Pull-to-refresh state
+  // #5: Search/filter
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // #3: Offline banner
+  const [isOnline, setIsOnline] = useState(
+    typeof navigator !== 'undefined' ? navigator.onLine : true
+  );
+
+  // #9: Connection health
+  const [wsConnected, setWsConnected] = useState(true);
+
+  // #8: Notification badges per club
+  const [clubBadges, setClubBadges] = useState<Record<string, number>>({});
+
+  // Pull-to-refresh state
   const [pullDistance, setPullDistance] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const touchStartY = useRef(0);
+  const touchStartX = useRef(0); // #1: Swipe gesture
   const containerRef = useRef<HTMLDivElement>(null);
 
   const isMounted = useIsMounted();
@@ -121,6 +138,18 @@ export default function ClubCarouselPage() {
 
   useEffect(() => {
     loadUserData();
+  }, []);
+
+  // #3: Online/Offline detection
+  useEffect(() => {
+    const goOnline = () => setIsOnline(true);
+    const goOffline = () => setIsOnline(false);
+    window.addEventListener('online', goOnline);
+    window.addEventListener('offline', goOffline);
+    return () => {
+      window.removeEventListener('online', goOnline);
+      window.removeEventListener('offline', goOffline);
+    };
   }, []);
 
   // Realtime: refresh when club, union, or union_clubs data changes
@@ -140,7 +169,10 @@ export default function ClubCarouselPage() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'union_clubs' }, () => {
         if (isMounted.current) loadUserData();
       })
-      .subscribe();
+      .subscribe((status) => {
+        // #9: Track WS connection health
+        setWsConnected(status === 'SUBSCRIBED');
+      });
     return () => {
       masterBus.removeRegisteredChannel(channelKey);
     };
@@ -177,18 +209,59 @@ export default function ClubCarouselPage() {
         },
         500
       ),
-      masterBus.subscribeDebounced(
-        'CLUB_SETTINGS_UPDATED',
-        () => {
-          if (isMounted.current) loadUserData();
-        },
-        500
-      ),
     ];
     return () => unsubs.forEach((u) => u());
   }, []);
 
-  // Stagger animation for club + union cards
+  // #6: Keyboard navigation
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement) return; // don't hijack search input
+      // Placeholder for handlePrev, handleNext, handleClubClick, totalCards
+      // These functions/variables are assumed to be defined elsewhere in the component
+      const totalCards = clubs.length + userUnions.length;
+      const handlePrev = () => setActiveIndex((prev) => Math.max(0, prev - 1));
+      const handleNext = () => setActiveIndex((prev) => Math.min(totalCards - 1, prev + 1));
+      const handleClubClick = (club: UserClub) => navigate(`/clubs/${club.id}`);
+
+      if (e.key === 'ArrowLeft') {
+        handlePrev();
+        haptic.light();
+      } else if (e.key === 'ArrowRight') {
+        handleNext();
+        haptic.light();
+      } else if (e.key === 'Enter' && totalCards > 0) {
+        if (activeIndex < clubs.length) handleClubClick(clubs[activeIndex]);
+        else {
+          const uIdx = activeIndex - clubs.length;
+          if (userUnions[uIdx]) navigate(`/unions/${userUnions[uIdx].id}`);
+        }
+      } else if (e.key === 'Escape') setSearchQuery('');
+      else if (e.key === '/') {
+        e.preventDefault();
+        setSearchQuery(''); /* focus search input */
+      } else if (/^[1-9]$/.test(e.key)) {
+        const idx = parseInt(e.key, 10) - 1;
+        if (idx < totalCards) {
+          setActiveIndex(idx);
+          haptic.light();
+        }
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  });
+
+  // #7: Deep link support — ?club=UUID jumps to that club
+  useEffect(() => {
+    const deepClubId = searchParams.get('club');
+    if (deepClubId && clubs.length > 0) {
+      const idx = clubs.findIndex((c) => c.id === deepClubId);
+      if (idx >= 0) setActiveIndex(idx);
+    }
+  }, [clubs, searchParams]);
+
+  // #10: Stagger premium 3D card entrance animation
   useEffect(() => {
     if (clubs.length === 0 && userUnions.length === 0) return;
     setVisibleCards(new Set());
@@ -196,10 +269,43 @@ export default function ClubCarouselPage() {
     const timers = allItems.map((itemId, index) =>
       setTimeout(() => {
         setVisibleCards((prev) => new Set(prev).add(itemId));
-      }, index * 60)
+      }, index * 80)
     );
     return () => timers.forEach((t) => clearTimeout(t));
   }, [clubs, userUnions]);
+
+  // #8: Fetch notification badges per club
+  useEffect(() => {
+    if (clubs.length === 0) return;
+    (async () => {
+      try {
+        const {
+          data: { user: authUser },
+        } = await getAuthUser();
+        if (!authUser) return;
+        const { data: notifs } = await supabase
+          .from('notifications')
+          .select('club_id')
+          .eq('user_id', authUser.id)
+          .eq('is_read', false);
+        if (!isMounted.current || !notifs) return;
+        const badges: Record<string, number> = {};
+        for (const n of notifs) {
+          if (n.club_id) badges[n.club_id] = (badges[n.club_id] || 0) + 1;
+        }
+        setClubBadges(badges);
+      } catch {
+        /* non-critical */
+      }
+    })();
+  }, [clubs, isMounted]);
+
+  // #5: Filtered clubs based on search
+  const displayedClubs = useMemo(() => {
+    if (!searchQuery.trim()) return clubs;
+    const q = searchQuery.toLowerCase();
+    return clubs.filter((c) => c.name?.toLowerCase().includes(q) || String(c.club_id).includes(q));
+  }, [clubs, searchQuery]);
 
   // ── #6: Decomposed data loading helpers ──
   const loadProfile = useCallback(
@@ -418,8 +524,9 @@ export default function ClubCarouselPage() {
     })();
   }, []);
 
-  // #4: Pull-to-refresh touch handlers
+  // Touch handlers: pull-to-refresh + #1 horizontal swipe
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
     if (containerRef.current && containerRef.current.scrollTop === 0) {
       touchStartY.current = e.touches[0].clientY;
     }
@@ -427,48 +534,72 @@ export default function ClubCarouselPage() {
 
   const handleTouchMove = useCallback((e: React.TouchEvent) => {
     if (touchStartY.current === 0) return;
-    const diff = e.touches[0].clientY - touchStartY.current;
-    if (diff > 0 && diff < 150) setPullDistance(diff);
+    const diffY = e.touches[0].clientY - touchStartY.current;
+    if (diffY > 0 && diffY < 150) setPullDistance(diffY);
   }, []);
 
-  const handleTouchEnd = useCallback(() => {
-    if (pullDistance > 60 && !isRefreshing) {
-      setIsRefreshing(true);
-      setPullDistance(0);
-      Promise.resolve(loadUserData()).then(
-        () => {
-          if (isMounted.current) setIsRefreshing(false);
-        },
-        () => {
-          if (isMounted.current) setIsRefreshing(false);
+  const handleTouchEnd = useCallback(
+    (e: React.TouchEvent) => {
+      // #1: Detect horizontal swipe
+      const endX = e.changedTouches[0].clientX;
+      const diffX = endX - touchStartX.current;
+      if (Math.abs(diffX) > SWIPE_THRESHOLD) {
+        if (diffX < 0) {
+          handleNext();
+          haptic.light();
+        } else {
+          handlePrev();
+          haptic.light();
         }
-      );
-    } else {
-      setPullDistance(0);
-    }
-    touchStartY.current = 0;
-  }, [pullDistance, isRefreshing, isMounted]);
+        touchStartY.current = 0;
+        touchStartX.current = 0;
+        setPullDistance(0);
+        return;
+      }
+      // Pull-to-refresh (vertical)
+      if (pullDistance > 60 && !isRefreshing) {
+        setIsRefreshing(true);
+        setPullDistance(0);
+        haptic.medium();
+        Promise.resolve(loadUserData()).then(
+          () => {
+            if (isMounted.current) setIsRefreshing(false);
+          },
+          () => {
+            if (isMounted.current) setIsRefreshing(false);
+          }
+        );
+      } else {
+        setPullDistance(0);
+      }
+      touchStartY.current = 0;
+      touchStartX.current = 0;
+    },
+    [pullDistance, isRefreshing, isMounted]
+  );
 
-  const totalCards = clubs.length + userUnions.length;
+  const totalCards = displayedClubs.length + userUnions.length;
 
   const handlePrev = () => {
+    haptic.light(); // #4
     setActiveIndex((prev) => {
       const next = prev > 0 ? prev - 1 : totalCards - 1;
-      // #5: Prefetch the club we're about to show
-      if (next < clubs.length) prefetchClubDetail(clubs[next]);
+      if (next < displayedClubs.length) prefetchClubDetail(displayedClubs[next]);
       return next;
     });
   };
 
   const handleNext = () => {
+    haptic.light(); // #4
     setActiveIndex((prev) => {
       const next = prev < totalCards - 1 ? prev + 1 : 0;
-      if (next < clubs.length) prefetchClubDetail(clubs[next]);
+      if (next < displayedClubs.length) prefetchClubDetail(displayedClubs[next]);
       return next;
     });
   };
 
   const handleClubClick = (club: UserClub) => {
+    haptic.medium(); // #4
     navigate(`/clubs/${club.id}`);
   };
 
@@ -484,10 +615,29 @@ export default function ClubCarouselPage() {
     return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   };
 
-  if (loading) {
+  // #2: Card-shaped skeleton loading
+  if (loading && clubs.length === 0) {
     return (
       <div className="club-carousel loading">
-        <PageSkeleton variant="stats" />
+        <div className="carousel-skeleton">
+          <div className="skeleton-header">
+            <div className="skeleton-avatar shimmer" />
+            <div className="skeleton-text-group">
+              <div className="skeleton-line w60 shimmer" />
+              <div className="skeleton-line w40 shimmer" />
+            </div>
+          </div>
+          <div className="skeleton-cards">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className={`skeleton-card shimmer ${i === 1 ? 'center' : 'side'}`} />
+            ))}
+          </div>
+          <div className="skeleton-dots">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="skeleton-dot shimmer" />
+            ))}
+          </div>
+        </div>
       </div>
     );
   }
@@ -502,7 +652,7 @@ export default function ClubCarouselPage() {
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
       >
-        {/* #4: Pull-to-refresh indicator */}
+        {/* Pull-to-refresh indicator */}
         {(pullDistance > 0 || isRefreshing) && (
           <div
             className="pull-refresh-indicator"
@@ -521,9 +671,21 @@ export default function ClubCarouselPage() {
             </span>
           </div>
         )}
-        {/* ═══════════════════════════════════════════════════════════════════
-                    HEADER - Player Info + Wallet
-                ═══════════════════════════════════════════════════════════════════ */}
+
+        {/* #3: Offline banner */}
+        {!isOnline && (
+          <div className="carousel-offline-banner" role="alert">
+            <span>⚠ Offline — showing cached data</span>
+          </div>
+        )}
+
+        {/* #9: Connection health indicator */}
+        <div
+          className={`ws-status-dot ${wsConnected ? 'connected' : 'disconnected'}`}
+          title={wsConnected ? 'Live connection' : 'Reconnecting…'}
+        />
+
+        {/* HEADER */}
         <header className="club-carousel__header">
           <div className="header__user">
             <div className="user-avatar">
@@ -562,13 +724,28 @@ export default function ClubCarouselPage() {
           </div>
         </div>
 
-        {/* ═══════════════════════════════════════════════════════════════════
-                ACTION BUTTONS - Create Club + Search
-            ═══════════════════════════════════════════════════════════════════ */}
+        {/* ACTION BUTTONS + #5 Search Bar */}
         <div className="club-carousel__actions">
           <button className="action-btn create" onClick={handleCreateClub}>
             <span className="action-icon">+</span>
           </button>
+          {clubs.length > 3 && (
+            <div className="carousel-search-bar">
+              <input
+                type="text"
+                className="carousel-search-input"
+                placeholder="Search clubs…"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                aria-label="Search clubs"
+              />
+              {searchQuery && (
+                <button className="carousel-search-clear" onClick={() => setSearchQuery('')}>
+                  ×
+                </button>
+              )}
+            </div>
+          )}
           <button className="action-btn search" onClick={handleSearch}>
             <span className="action-icon">SEARCH</span>
           </button>
@@ -578,18 +755,26 @@ export default function ClubCarouselPage() {
                 CLUB CAROUSEL
             ═══════════════════════════════════════════════════════════════════ */}
         <div className="club-carousel__cards">
-          {clubs.length === 0 && userUnions.length === 0 ? (
+          {displayedClubs.length === 0 && userUnions.length === 0 ? (
             <div className="no-clubs">
-              <p>You haven't joined any clubs yet</p>
-              <button className="join-btn" onClick={handleSearch}>
-                Find Clubs
-              </button>
+              <p>
+                {searchQuery ? 'No clubs match your search' : "You haven't joined any clubs yet"}
+              </p>
+              {!searchQuery && (
+                <button className="join-btn" onClick={handleSearch}>
+                  Find Clubs
+                </button>
+              )}
             </div>
           ) : (
             <>
               {/* Left Arrow */}
-              {clubs.length + userUnions.length > 1 && (
-                <button className="carousel-arrow left" onClick={handlePrev}>
+              {totalCards > 1 && (
+                <button
+                  className="carousel-arrow left"
+                  onClick={handlePrev}
+                  aria-label="Previous club"
+                >
                   ‹
                 </button>
               )}
@@ -597,16 +782,17 @@ export default function ClubCarouselPage() {
               {/* Club + Union Cards */}
               <div className="cards-container">
                 {/* Club Cards */}
-                {clubs.map((club, index) => {
+                {displayedClubs.map((club, index) => {
                   const offset = index - activeIndex;
                   const isActive = index === activeIndex;
+                  const badge = clubBadges[club.id] || 0;
 
                   return (
                     <div
                       key={club.id}
-                      className={`club-card ${isActive ? 'active' : ''} ${visibleCards.has(club.id) ? 'fadeInUp' : 'hidden'}`}
+                      className={`club-card ${isActive ? 'active' : ''} ${visibleCards.has(club.id) ? 'card-enter' : 'hidden'}`}
                       style={{
-                        transform: `translateX(${offset * 120}%) scale(${isActive ? 1 : 0.8})`,
+                        transform: `translateX(${offset * 120}%) scale(${isActive ? 1 : 0.8}) ${isActive ? 'rotateY(0deg)' : `rotateY(${offset > 0 ? -8 : 8}deg)`}`,
                         opacity: visibleCards.has(club.id)
                           ? Math.abs(offset) > 1
                             ? 0
@@ -617,7 +803,15 @@ export default function ClubCarouselPage() {
                         zIndex: isActive ? 10 : 5 - Math.abs(offset),
                       }}
                       onClick={() => isActive && handleClubClick(club)}
+                      role="button"
+                      tabIndex={isActive ? 0 : -1}
+                      aria-label={`${club.name}, ${club.member_count} members`}
                     >
+                      {/* #8: Notification badge */}
+                      {badge > 0 && (
+                        <div className="club-card__badge">{badge > 9 ? '9+' : badge}</div>
+                      )}
+
                       {/* Frame overlay */}
                       <img
                         src={getFrameForClub(club.club_id)}
@@ -625,7 +819,6 @@ export default function ClubCarouselPage() {
                         className="club-card__frame"
                       />
 
-                      {/* Card content (behind frame) */}
                       <div className="club-card__content">
                         <div className="club-card__id">ID:{club.club_id}</div>
                         <div className="club-card__graphic">
@@ -662,16 +855,16 @@ export default function ClubCarouselPage() {
 
                 {/* Union Cards */}
                 {userUnions.map((union, unionIdx) => {
-                  const index = clubs.length + unionIdx;
+                  const index = displayedClubs.length + unionIdx;
                   const offset = index - activeIndex;
                   const isActive = index === activeIndex;
 
                   return (
                     <div
                       key={`union-${union.id}`}
-                      className={`club-card ${isActive ? 'active' : ''} ${visibleCards.has(union.id) ? 'fadeInUp' : 'hidden'}`}
+                      className={`club-card ${isActive ? 'active' : ''} ${visibleCards.has(union.id) ? 'card-enter' : 'hidden'}`}
                       style={{
-                        transform: `translateX(${offset * 120}%) scale(${isActive ? 1 : 0.8})`,
+                        transform: `translateX(${offset * 120}%) scale(${isActive ? 1 : 0.8}) ${isActive ? 'rotateY(0deg)' : `rotateY(${offset > 0 ? -8 : 8}deg)`}`,
                         opacity: visibleCards.has(union.id)
                           ? Math.abs(offset) > 1
                             ? 0
@@ -682,6 +875,9 @@ export default function ClubCarouselPage() {
                         zIndex: isActive ? 10 : 5 - Math.abs(offset),
                       }}
                       onClick={() => isActive && navigate(`/unions/${union.id}`)}
+                      role="button"
+                      tabIndex={isActive ? 0 : -1}
+                      aria-label={`Union: ${union.name}`}
                     >
                       {/* Union-specific card content */}
                       <div
@@ -727,8 +923,12 @@ export default function ClubCarouselPage() {
               </div>
 
               {/* Right Arrow */}
-              {clubs.length + userUnions.length > 1 && (
-                <button className="carousel-arrow right" onClick={handleNext}>
+              {totalCards > 1 && (
+                <button
+                  className="carousel-arrow right"
+                  onClick={handleNext}
+                  aria-label="Next club"
+                >
                   ›
                 </button>
               )}

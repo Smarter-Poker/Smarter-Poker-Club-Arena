@@ -38,6 +38,7 @@ import ClubContextMenu from '../components/home/ClubContextMenu';
 import LOBBY_TILES from '../config/lobbyTiles.config';
 import { postToParent } from '../utils/parentOrigin';
 import CarouselSection from '../components/home/CarouselSection';
+import { getClubLevel } from '../utils/clubLevels';
 import type { UserClub } from '../components/home/CarouselSection';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import styles from './HomePage.module.css';
@@ -498,22 +499,43 @@ function HomePageInner() {
   }, [fetchUserData]);
 
   // Fetch Shark Club stats — ALL data from live Supabase queries
+  // Hardcoded club_id for Shark Club — permanent fixture of the platform
+  const SHARK_CLUB_NUMERIC_ID = 25450;
+  const SHARK_SWR_KEY = 'shark_club_stats_swr';
+
+  // SWR: show cached Shark Club stats instantly on mount
+  useEffect(() => {
+    try {
+      const cached = sessionStorage.getItem(SHARK_SWR_KEY);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed.totalMembers > 0) setSharkClubStats(parsed);
+      }
+    } catch {
+      /* */
+    }
+  }, []);
+
   useEffect(() => {
     let isMounted = true;
     async function fetchSharkClubStats() {
       try {
-        // Find Shark Club by club_id = 25450
-        console.log('[SHARK-INIT] Fetching Shark Club stats...');
-        const { data: club, error: clubError } = await supabase
+        // Wait for auth to be ready before querying — prevents RLS null results in iframe
+        await waitForAuth(() => isMounted);
+        if (!isMounted) return;
+
+        // Find Shark Club by club_id = 25450 — include level threshold columns
+        const { data: clubRaw } = await supabase
           .from('clubs')
-          .select('id')
-          .eq('club_id', 25450)
+          .select(
+            'id, member_count, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
+          )
+          .eq('club_id', SHARK_CLUB_NUMERIC_ID)
           .maybeSingle();
 
-        console.log('[SHARK-INIT] Club query result:', club, 'error:', clubError);
+        const club = clubRaw as any;
         if (!club || !isMounted) return;
         setSharkClubId(club.id);
-        console.log('[SHARK-INIT] setSharkClubId =', club.id);
 
         // Parallelize independent queries: member count + active players
         const [memberResult, tablesResult] = await Promise.allSettled([
@@ -536,14 +558,33 @@ function HomePageInner() {
           activePlayers = seatCount || 0;
         }
 
-        if (!isMounted) return;
-        setSharkClubStats({
-          totalMembers: memberCount,
-          clubLevel: 1,
-          activePlayers,
+        // Compute live club level from DB thresholds
+        const levelInfo = getClubLevel({
+          level: club.level || 1,
+          playerCount: memberCount,
+          hierarchyUnits: club.hierarchy_units_rounded_up || 0,
+          playerThresholdCurrent: club.player_threshold_current || 0,
+          playerThresholdNext: club.player_threshold_next || 0,
+          hierarchyThresholdCurrent: club.hierarchy_threshold_current || 0,
+          hierarchyThresholdNext: club.hierarchy_threshold_next || 0,
         });
+
+        if (!isMounted) return;
+        const stats = {
+          totalMembers: memberCount,
+          clubLevel: levelInfo.level,
+          activePlayers,
+        };
+        setSharkClubStats(stats);
+
+        // SWR: cache for instant display on revisit
+        try {
+          sessionStorage.setItem(SHARK_SWR_KEY, JSON.stringify(stats));
+        } catch {
+          /* */
+        }
       } catch (err) {
-        console.error('[SHARK-INIT] Failed to fetch Shark Club stats:', err);
+        console.error('[HomePage] Failed to fetch Shark Club stats:', err);
       }
     }
     fetchSharkClubStats().catch(() => {

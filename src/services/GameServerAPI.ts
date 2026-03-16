@@ -16,8 +16,13 @@
 // CONFIGURATION
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// Server URL — localhost for development, Fly.io for production
-const GAME_SERVER_URL = import.meta.env.VITE_GAME_SERVER_URL || 'http://localhost:8080';
+// Server URL — Fly.io for production, localhost for development.
+// CRITICAL FIX: The old fallback was 'http://localhost:8080' which silently broke ALL
+// poker actions in production (fold/call/raise/check/all-in hit localhost and failed,
+// but the .catch(() => {}) in TablePage swallowed every error).
+const GAME_SERVER_URL =
+  import.meta.env.VITE_GAME_SERVER_URL ||
+  (import.meta.env.PROD ? 'https://smarter-poker-game-server.fly.dev' : 'http://localhost:8080');
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES

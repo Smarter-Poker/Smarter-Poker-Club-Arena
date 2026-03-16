@@ -503,7 +503,8 @@ export const WalletService = {
         console.error('[WalletService] Transaction log RPC failed:', error.message);
         // PARTIAL FAILURE RECOVERY: financial op succeeded but audit trail failed
         // Fire a critical alert so ops can manually reconcile
-        FinancialAlertService.logCritical(
+        // FIX: await the async logCritical call to prevent unhandled rejections
+        await FinancialAlertService.logCritical(
           'WalletService.logTransaction',
           'Transaction log failed after successful financial operation — audit trail gap',
           { userId, walletType, amount, type, category, description, rpcError: error.message }
@@ -511,7 +512,8 @@ export const WalletService = {
       }
     } catch (err: unknown) {
       console.error('[WalletService] Transaction log error:', err);
-      FinancialAlertService.logCritical(
+      // FIX: await the async logCritical call to prevent unhandled rejections
+      await FinancialAlertService.logCritical(
         'WalletService.logTransaction',
         'Transaction log threw exception — audit trail gap',
         { userId, walletType, amount, type, category, error: String(err) }

@@ -1682,7 +1682,7 @@ export default function TablePage({
                           `[TablePage] User moved from ${tableId} to ${playerData.table_id}`
                         );
                         const cId = actualClubIdRef.current || tableId || 'demo';
-                        navigate(`/clubs/${cId}/table/${playerData.table_id}`);
+                        navigate(`/table/${playerData.table_id}`); // FIX: was /clubs/:clubId/table/:tableId which is not a defined route
                       } else if (playerData?.table_id === tableId) {
                         // User stayed at this table — just refresh seats
                         setTableState((prev) => ({ ...prev, refreshTrigger: Date.now() }));

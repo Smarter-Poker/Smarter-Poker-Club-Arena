@@ -449,8 +449,9 @@ export default function TableConfigPage() {
       } = await getAuthUser();
       if (!user) throw new Error('Not authenticated');
 
+      const resolvedId = await resolveClubUUID(clubId || '');
       const templateData = {
-        club_id: clubId,
+        club_id: resolvedId, // FIX: was using raw clubId — must use resolved UUID
         name: config.name,
         game_type: gameType?.toUpperCase() || 'NLH',
         game_mode: config.gameMode,
@@ -518,8 +519,9 @@ export default function TableConfigPage() {
     }));
   };
 
-  const buildTableData = () => ({
-    club_id: clubId,
+  // FIX: Accept resolved UUID — raw clubId from URL params may not be a UUID
+  const buildTableData = (resolvedClubId?: string) => ({
+    club_id: resolvedClubId || clubId,
     name: config.name,
     game_type: gameType?.toUpperCase() || 'NLH',
     game_variant: gameType || 'nlh',
@@ -663,7 +665,7 @@ export default function TableConfigPage() {
       }
 
       const tableData = {
-        ...buildTableData(),
+        ...buildTableData(resolvedId),
         created_by: user.id,
         is_template: true,
       };
@@ -714,7 +716,7 @@ export default function TableConfigPage() {
       }
 
       const tableData = {
-        ...buildTableData(),
+        ...buildTableData(resolvedId),
         created_by: user.id,
         status: 'active',
       };

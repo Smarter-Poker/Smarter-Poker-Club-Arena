@@ -334,7 +334,7 @@ class MessagingServiceClass {
       .insert({
         participant_ids: [userId, otherUserId],
         category: 'club',
-        club_id: clubId,
+        club_id: resolvedClubId, // FIX: was using raw clubId — must use resolved UUID
       })
       .select()
       .maybeSingle();
@@ -734,7 +734,25 @@ class MessagingServiceClass {
     targetConversationId: string,
     senderId: string
   ): Promise<Message | null> {
-    // Get original message
+    // SECURITY FIX: Verify sender has access to the original message's conversation
+    const { data: originalMsg } = await supabase
+      .from('messages')
+      .select('id, conversation_id')
+      .eq('id', messageId)
+      .maybeSingle();
+    if (originalMsg?.conversation_id) {
+      const { data: sourceConv } = await supabase
+        .from('conversations')
+        .select('participant_ids')
+        .eq('id', originalMsg.conversation_id)
+        .maybeSingle();
+      if (sourceConv && !(sourceConv.participant_ids as string[]).includes(senderId)) {
+        console.error('[Messaging] Sender is not a participant in the source conversation');
+        return null;
+      }
+    }
+
+    // Get original message content
     const { data: original } = await supabase
       .from('messages')
       .select('content, image_url, audio_url')
@@ -848,18 +866,18 @@ class MessagingServiceClass {
    * Cancel a scheduled message (only the sender can cancel)
    */
   async cancelScheduledMessage(messageId: string, senderId?: string): Promise<boolean> {
-    let query = supabase
+    // SECURITY FIX: senderId is mandatory — prevent unauthorized cancellation
+    if (!senderId) {
+      console.error('[Messaging] senderId required for cancelScheduledMessage');
+      return false;
+    }
+    const { error } = await supabase
       .from('scheduled_messages')
       .update({ status: 'cancelled' })
       .eq('id', messageId)
-      .eq('status', 'pending'); // Only cancel pending messages
+      .eq('status', 'pending')
+      .eq('sender_id', senderId); // Only sender can cancel their own messages
 
-    // App-level sender guard (defense-in-depth alongside RLS)
-    if (senderId) {
-      query = query.eq('sender_id', senderId);
-    }
-
-    const { error } = await query;
     return !error;
   }
 
@@ -1018,6 +1036,11 @@ class MessagingServiceClass {
 
   /** Pin a message in a conversation (requires conversation access) */
   async pinMessage(messageId: string, conversationId: string, userId?: string): Promise<boolean> {
+    // SECURITY FIX: userId is now mandatory for auth — reject if not provided
+    if (!userId) {
+      console.error('[Messaging] userId required for pinMessage authorization');
+      return false;
+    }
     // Get the conversation and message to verify access
     const { data: conv } = await supabase
       .from('conversations')
@@ -1025,8 +1048,8 @@ class MessagingServiceClass {
       .eq('id', conversationId)
       .maybeSingle();
 
-    // Verify user is a participant if userId provided
-    if (userId && (!conv || !(conv.participant_ids as string[]).includes(userId))) {
+    // Verify user is a participant (mandatory check)
+    if (!conv || !(conv.participant_ids as string[]).includes(userId)) {
       console.error('[Messaging] User not a participant of this conversation');
       return false;
     }
@@ -1045,8 +1068,12 @@ class MessagingServiceClass {
     conversationId?: string,
     userId?: string
   ): Promise<boolean> {
-    // Get the message to verify conversation access if details provided
-    if (conversationId && userId) {
+    // SECURITY FIX: Require both conversationId and userId for authorization
+    if (!conversationId || !userId) {
+      console.error('[Messaging] conversationId and userId required for unpinMessage');
+      return false;
+    }
+    {
       const { data: conv } = await supabase
         .from('conversations')
         .select('participant_ids')
@@ -1083,12 +1110,14 @@ class MessagingServiceClass {
 
   /** Create a read-only announcement channel for a club */
   async createAnnouncementChannel(clubId: string, adminId: string): Promise<string | null> {
+    // FIX: Resolve clubId to UUID — conversations.club_id is a UUID FK
+    const resolvedClubId = await resolveClubUUID(clubId);
     const { data, error } = await supabase
       .from('conversations')
       .insert({
         name: 'Announcements',
         category: 'club_announcement',
-        club_id: clubId,
+        club_id: resolvedClubId,
         created_by: adminId,
         participant_ids: [adminId],
         is_read_only: true,
@@ -1104,10 +1133,36 @@ class MessagingServiceClass {
     adminId: string,
     content: string
   ): Promise<boolean> {
+    // SECURITY FIX: Verify the caller is actually a participant of this conversation
+    // and that the conversation is indeed a club_announcement channel
+    const { data: conv } = await supabase
+      .from('conversations')
+      .select('participant_ids, category, club_id')
+      .eq('id', conversationId)
+      .maybeSingle();
+    if (!conv || conv.category !== 'club_announcement') {
+      console.error('[Messaging] postAnnouncement: Invalid conversation or not an announcement channel');
+      return false;
+    }
+    // Verify admin is a club owner/admin
+    if (conv.club_id) {
+      const { data: membership } = await supabase
+        .from('club_members')
+        .select('role')
+        .eq('club_id', conv.club_id)
+        .eq('user_id', adminId)
+        .maybeSingle();
+      if (!membership || !['owner', 'admin'].includes(membership.role)) {
+        console.error('[Messaging] postAnnouncement: User is not a club admin');
+        return false;
+      }
+    }
+
+    const sanitized = this.sanitizeMessage(content);
     const { error } = await supabase.from('messages').insert({
       conversation_id: conversationId,
       sender_id: adminId,
-      content,
+      content: sanitized,
       message_type: 'announcement',
     });
     return !error;

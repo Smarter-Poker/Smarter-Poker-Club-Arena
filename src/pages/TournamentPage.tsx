@@ -377,7 +377,7 @@ export default function TournamentPage() {
       }
 
       if (seat) {
-        navigate(`/clubs/${clubId}/table/${seat.table_id}`);
+        navigate(`/table/${seat.table_id}`); // FIX: was /clubs/:clubId/table/:tableId which is not a defined route
       } else {
         toast.warning(
           'You are registered but not seated. Please wait for the tournament to start fully.'

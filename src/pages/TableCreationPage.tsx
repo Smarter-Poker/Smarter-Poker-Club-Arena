@@ -102,7 +102,7 @@ export default function TableCreationPage() {
       const { data, error: createError } = await supabase
         .from('tables')
         .insert({
-          club_id: clubId,
+          club_id: resolvedClubId, // FIX: was using raw clubId — must use resolved UUID
           name: settings.name.trim(),
           game_type: settings.game_type,
           small_blind: settings.small_blind,

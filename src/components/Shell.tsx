@@ -29,16 +29,12 @@ function VIPBadge() {
     <button
       className={`shell-vip-badge ${isVIP ? 'vip-active' : ''}`}
       onClick={() => {
+        // FIX: Use postToParent() consistently — window.top!.location.href is unsafe in cross-origin iframes
         const isInIframe = typeof window !== 'undefined' && window.parent !== window;
-        const url = 'https://smarter.poker/hub/diamond-store';
         if (isInIframe) {
-          try {
-            window.top!.location.href = url;
-          } catch {
-            postToParent({ type: 'NAVIGATE', path: '/hub/diamond-store' });
-          }
+          postToParent({ type: 'NAVIGATE', path: '/hub/diamond-store' });
         } else {
-          window.location.href = url;
+          window.location.href = 'https://smarter.poker/hub/diamond-store';
         }
       }}
       title={isVIP ? 'VIP Gold Active' : 'Get VIP Benefits'}
@@ -209,19 +205,12 @@ function ShellContent() {
             <div
               className="shell-diamonds"
               onClick={() => {
-                const url = 'https://smarter.poker/hub/diamond-store';
+                // FIX: Use postToParent() — was using unsafe window.top! and wildcard '*' postMessage
                 const inIframe = typeof window !== 'undefined' && window.parent !== window;
                 if (inIframe) {
-                  try {
-                    window.top!.location.href = url;
-                  } catch {
-                    window.parent.postMessage(
-                      { type: 'NAVIGATE', path: '/hub/diamond-store' },
-                      '*'
-                    );
-                  }
+                  postToParent({ type: 'NAVIGATE', path: '/hub/diamond-store' });
                 } else {
-                  window.location.href = url;
+                  window.location.href = 'https://smarter.poker/hub/diamond-store';
                 }
               }}
               style={{ cursor: 'pointer' }}

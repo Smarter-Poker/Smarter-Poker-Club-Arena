@@ -487,10 +487,12 @@ class TournamentService {
       config.type === 'progressive_bounty' ||
       config.type === 'mystery_bounty';
 
+    // FIX: Use resolvedClubId from union guard above — raw clubId may not be a UUID
+    const finalClubId = config.isXmtt ? clubId : (await resolveClubUUID(clubId));
     const { data, error } = await supabase
       .from('tournaments')
       .insert({
-        club_id: clubId,
+        club_id: finalClubId,
         name: config.name,
         game_type: config.gameVariant || 'NLH',
         variant: variantMap[config.type] || 'freezeout',
@@ -682,7 +684,9 @@ class TournamentService {
     }
 
     masterBus.emit('BALANCE_UPDATED', { source: 'tournament_buyin', userId });
+    // FIX: Also emit TOURNAMENT_UPDATED — UI components listen for this event, not TOURNAMENT_REGISTERED
     masterBus.emit('TOURNAMENT_REGISTERED', { tournamentId, userId, clubId: tournament.club_id });
+    masterBus.emit('TOURNAMENT_UPDATED', { tournamentId, status: tournament.status });
 
     // Log rake/fee separately for clean audit trail
     if (rake > 0) {

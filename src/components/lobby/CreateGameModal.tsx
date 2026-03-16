@@ -338,7 +338,7 @@ function ConfigModal({
         const { data, error } = await supabase
           .from('tables')
           .insert({
-            club_id: clubId,
+            club_id: resolvedId, // FIX: was using raw clubId — must use resolved UUID
             name: name || `${variantInfo.label} ${sb}/${bb}`,
             game_type: 'cash',
             game_variant: variant,
@@ -365,7 +365,7 @@ function ConfigModal({
         const { data, error } = await supabase
           .from('tournaments')
           .insert({
-            club_id: clubId,
+            club_id: resolvedId, // FIX: was using raw clubId — must use resolved UUID
             name: name || `${variantInfo.label} ${tab.toUpperCase()}`,
             type: tab,
             game_variant: variant,

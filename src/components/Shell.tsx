@@ -15,6 +15,7 @@ import { VIPProvider, useVIPStatus } from '../hooks/useVIP';
 import { InAppAlerts, useAlerts } from './notifications/InAppAlerts';
 import { useClubTheme } from '../utils/clubThemeEngine';
 import { scheduleStaleCacheReaper } from '../utils/staleCacheReaper';
+import { postToParent } from '../utils/parentOrigin';
 import './Shell.css';
 
 // VIP Badge Component
@@ -34,7 +35,7 @@ function VIPBadge() {
           try {
             window.top!.location.href = url;
           } catch {
-            window.parent.postMessage({ type: 'NAVIGATE', path: '/hub/diamond-store' }, '*');
+            postToParent({ type: 'NAVIGATE', path: '/hub/diamond-store' });
           }
         } else {
           window.location.href = url;

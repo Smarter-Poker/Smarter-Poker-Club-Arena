@@ -222,9 +222,13 @@ class AgentServiceClass {
     if (input.playerRakebackRate === undefined) throw new Error('Rakeback rate is required');
     if (input.creditLimit === undefined) throw new Error('Credit limit is required');
 
-    // Validate caps
-    if (input.commissionRate > 0.7) throw new Error('Commission rate cannot exceed 70%');
-    if (input.playerRakebackRate > 0.5) throw new Error('Rakeback rate cannot exceed 50%');
+    // Validate ranges (must be non-negative and within caps)
+    if (input.commissionRate < 0 || input.commissionRate > 0.7)
+      throw new Error('Commission rate must be between 0% and 70%');
+    if (input.playerRakebackRate < 0 || input.playerRakebackRate > 0.5)
+      throw new Error('Rakeback rate must be between 0% and 50%');
+    if (input.creditLimit < 0)
+      throw new Error('Credit limit cannot be negative');
 
     // Get or create membership
     const { data: membership } = await supabase

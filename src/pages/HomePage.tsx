@@ -36,6 +36,7 @@ import DailyChallenges from '../components/home/DailyChallenges';
 import PresenceHub from '../components/home/PresenceHub';
 import ClubContextMenu from '../components/home/ClubContextMenu';
 import LOBBY_TILES from '../config/lobbyTiles.config';
+import { postToParent } from '../utils/parentOrigin';
 import styles from './HomePage.module.css';
 
 // Lazy-load heavy components to reduce initial bundle
@@ -1240,7 +1241,7 @@ function HomePageInner() {
             try {
               window.top!.location.href = mktUrl;
             } catch {
-              window.parent.postMessage({ type: 'NAVIGATE', path: '/hub/marketplace' }, '*');
+              postToParent({ type: 'NAVIGATE', path: '/hub/marketplace' });
             }
           } else {
             window.location.href = mktUrl;
@@ -1518,7 +1519,7 @@ function HomePageInner() {
         haptic.light();
         PremiumSFX.navigate();
         if (window.parent !== window) {
-          window.parent.postMessage({ type: 'NAVIGATE', path: '/hub/marketplace' }, '*');
+          postToParent({ type: 'NAVIGATE', path: '/hub/marketplace' });
         } else {
           navigate('/marketplace');
         }

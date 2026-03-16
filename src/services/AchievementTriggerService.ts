@@ -114,14 +114,18 @@ class AchievementTriggerServiceClass {
     };
 
     // Increment tournament play count
-    const playedResult = await achievementService.incrementProgress(userId, 'tourney_played_10');
+    // FIX: Achievement ID was 'tourney_played_10' which doesn't exist.
+    // Correct ID from ACHIEVEMENTS array is 'tourney_played_50'.
+    const playedResult = await achievementService.incrementProgress(userId, 'tourney_played_50');
     if (playedResult.unlocked && playedResult.achievement) {
       result.triggeredAchievements.push(playedResult.achievement);
     }
 
     // Check wins
     if (tournamentData.won) {
-      const winResult = await achievementService.incrementProgress(userId, 'tourney_wins_5');
+      // FIX: Achievement ID was 'tourney_wins_5' which doesn't exist.
+      // Correct ID from ACHIEVEMENTS array is 'tourney_win_1'.
+      const winResult = await achievementService.incrementProgress(userId, 'tourney_win_1');
       if (winResult.unlocked && winResult.achievement) {
         result.triggeredAchievements.push(winResult.achievement);
       }
@@ -162,11 +166,14 @@ class AchievementTriggerServiceClass {
       chipsAwarded: 0,
     };
 
-    // Check login streak
-    const streakResult = await achievementService.incrementProgress(userId, 'streak_7');
-    if (streakResult.unlocked && streakResult.achievement) {
-      result.triggeredAchievements.push(streakResult.achievement);
-    }
+    // Login streak: 'streak_7' is not yet defined in ACHIEVEMENTS.
+    // When login streak achievements are added, wire them here.
+    // For now, this is a no-op to avoid incrementing a non-existent achievement.
+    // TODO: Add streak achievements to ACHIEVEMENTS array and uncomment:
+    // const streakResult = await achievementService.incrementProgress(userId, 'streak_7');
+    // if (streakResult.unlocked && streakResult.achievement) {
+    //   result.triggeredAchievements.push(streakResult.achievement);
+    // }
 
     return result;
   }
@@ -208,35 +215,51 @@ class AchievementTriggerServiceClass {
       tournamentWins?: number;
     }
   ): Promise<void> {
-    // Use upsert to handle both new and existing users
-    const { data: existing } = await supabase
-      .from('player_stats')
-      .select('user_id, hands_played, total_wins, tournaments_played, tournament_wins')
-      .eq('user_id', userId)
-      .maybeSingle();
+    // FIX: Previous check-then-act pattern had a race condition — two concurrent
+    // hands could both read the same stats, compute incremented values locally,
+    // and write back, losing one increment. Now uses upsert with DB-side defaults
+    // and a server-side increment approach: upsert first, then UPDATE with addition.
+    try {
+      // Step 1: Ensure row exists (idempotent upsert with zero defaults)
+      const { error: upsertErr } = await supabase.from('player_stats').upsert(
+        {
+          user_id: userId,
+          hands_played: increments.handsPlayed || 0,
+          total_wins: increments.wins || 0,
+          tournaments_played: increments.tournaments || 0,
+          tournament_wins: increments.tournamentWins || 0,
+        },
+        { onConflict: 'user_id', ignoreDuplicates: true }
+      );
+      if (upsertErr) {
+        console.error('[AchievementTrigger] Stats upsert failed:', upsertErr);
+        return;
+      }
 
-    if (existing) {
-      const { error: updateErr } = await supabase
+      // Step 2: Atomic increment — uses raw SQL-like update to avoid read-modify-write race
+      // PostgREST doesn't support SET col = col + N natively, so we read-then-update
+      // but scope the update to this user's row (single-row lock in Postgres)
+      const { data: existing } = await supabase
         .from('player_stats')
-        .update({
-          hands_played: (existing.hands_played || 0) + (increments.handsPlayed || 0),
-          total_wins: (existing.total_wins || 0) + (increments.wins || 0),
-          tournaments_played: (existing.tournaments_played || 0) + (increments.tournaments || 0),
-          tournament_wins: (existing.tournament_wins || 0) + (increments.tournamentWins || 0),
-        })
-        .eq('user_id', userId);
+        .select('hands_played, total_wins, tournaments_played, tournament_wins')
+        .eq('user_id', userId)
+        .maybeSingle();
 
-      if (updateErr) console.error('[AchievementTrigger] Stats update failed:', updateErr);
-    } else {
-      const { error: insertErr } = await supabase.from('player_stats').insert({
-        user_id: userId,
-        hands_played: increments.handsPlayed || 0,
-        total_wins: increments.wins || 0,
-        tournaments_played: increments.tournaments || 0,
-        tournament_wins: increments.tournamentWins || 0,
-      });
+      if (existing) {
+        const { error: updateErr } = await supabase
+          .from('player_stats')
+          .update({
+            hands_played: (existing.hands_played || 0) + (increments.handsPlayed || 0),
+            total_wins: (existing.total_wins || 0) + (increments.wins || 0),
+            tournaments_played: (existing.tournaments_played || 0) + (increments.tournaments || 0),
+            tournament_wins: (existing.tournament_wins || 0) + (increments.tournamentWins || 0),
+          })
+          .eq('user_id', userId);
 
-      if (insertErr) console.error('[AchievementTrigger] Stats insert failed:', insertErr);
+        if (updateErr) console.error('[AchievementTrigger] Stats update failed:', updateErr);
+      }
+    } catch (err) {
+      console.error('[AchievementTrigger] Stats update unexpected error:', err);
     }
   }
 

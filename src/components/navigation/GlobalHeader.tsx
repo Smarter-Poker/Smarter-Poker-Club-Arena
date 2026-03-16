@@ -18,6 +18,7 @@ import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useWalletStore } from '../../stores/useWalletStore';
 import { useAuthUser } from '../../hooks/useAuthUser';
+import { postToParent } from '../../utils/parentOrigin';
 import HamburgerMenu from './HamburgerMenu';
 import styles from './GlobalHeader.module.css';
 
@@ -159,7 +160,7 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
   const navigateToHub = (path: string) => {
     const isInIframe = typeof window !== 'undefined' && window.parent !== window;
     if (isInIframe) {
-      window.parent.postMessage({ type: 'NAVIGATE', path }, '*');
+      postToParent({ type: 'NAVIGATE', path });
     }
     // Non-iframe: Hub-only routes — no-op outside iframe
   };

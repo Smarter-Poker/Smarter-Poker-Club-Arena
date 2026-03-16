@@ -55,30 +55,22 @@ window.addEventListener('unhandledrejection', (event) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 import { earlyAuth } from './core/earlyAuthBridge';
+import { postToParent, setParentOrigin, isTrustedOrigin } from './utils/parentOrigin';
 
 if (window.parent !== window) {
   let authReceived = false;
 
   const earlyAuthHandler = (event: MessageEvent) => {
     // Validate origin: same checks as App.tsx
-    const origin = event.origin;
-    const isValidOrigin =
-      origin === 'https://smarter.poker' ||
-      origin === 'https://www.smarter.poker' ||
-      (origin.endsWith('.smarter.poker') && origin.startsWith('https://')) ||
-      origin === 'http://localhost:3000' ||
-      origin === window.location.origin; // Same-origin iframe proxy
-    if (!isValidOrigin) return;
+    if (!isTrustedOrigin(event.origin)) return;
 
     if (event.data?.type === 'SMARTER_AUTH_TOKEN' && event.data.token) {
       authReceived = true;
-      // ACK immediately — send to BOTH specific origin AND wildcard to cover all cases
-      try {
-        window.parent.postMessage({ type: 'SMARTER_AUTH_ACK' }, '*');
-        console.log('[EARLY-AUTH] ✅ ACK sent to parent (wildcard) before boot');
-      } catch {
-        /* cross-origin safety */
-      }
+      // Store validated parent origin for all future postMessage calls
+      setParentOrigin(event.origin);
+      // ACK immediately — uses validated parent origin (never wildcard)
+      postToParent({ type: 'SMARTER_AUTH_ACK' });
+      console.log('[EARLY-AUTH] ✅ ACK sent to parent before boot');
 
       // Store token for App.tsx to pick up after mount
       earlyAuth.token = event.data.token;
@@ -98,26 +90,19 @@ if (window.parent !== window) {
       return;
     }
     pulseCount++;
-    try {
-      // Send heartbeat AND unsolicited ACK so the Hub knows we're alive
-      window.parent.postMessage({ type: 'CLUB_ARENA_HEARTBEAT' }, '*');
-      // If auth was already received by the App.tsx handler (after boot),
-      // also send a fresh ACK
-      if (earlyAuth.token) {
-        window.parent.postMessage({ type: 'SMARTER_AUTH_ACK' }, '*');
-      }
-    } catch {
-      /* best effort */
+    // Send heartbeat AND unsolicited ACK so the Hub knows we're alive
+    // Uses getParentOrigin() which defaults to 'https://smarter.poker'
+    postToParent({ type: 'CLUB_ARENA_HEARTBEAT' });
+    // If auth was already received by the App.tsx handler (after boot),
+    // also send a fresh ACK
+    if (earlyAuth.token) {
+      postToParent({ type: 'SMARTER_AUTH_ACK' });
     }
   }, 500);
 
   // Send an immediate heartbeat so the Hub knows we're alive
-  try {
-    window.parent.postMessage({ type: 'CLUB_ARENA_HEARTBEAT' }, '*');
-    console.log('[EARLY-AUTH] Heartbeat sent, waiting for auth token...');
-  } catch {
-    /* best effort */
-  }
+  postToParent({ type: 'CLUB_ARENA_HEARTBEAT' });
+  console.log('[EARLY-AUTH] Heartbeat sent, waiting for auth token...');
 
   // CLEANUP: Once App.tsx has consumed the early auth and taken over message
   // handling, remove this early listener to avoid duplicate processing.

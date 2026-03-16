@@ -239,11 +239,11 @@ class VIPServiceClass {
       return { success: false, charged: 0, error: error.message };
     }
 
-    if (!data.success) {
-      return { success: false, charged: 0, error: data.error };
+    if (!data || !data.success) {
+      return { success: false, charged: 0, error: data?.error || 'Purchase failed' };
     }
 
-    return { success: true, charged: data.cost };
+    return { success: true, charged: data.cost || 0 };
   }
 
   /**
@@ -317,25 +317,10 @@ class VIPServiceClass {
    */
   private async consumeVIPQuota(userId: string, feature: VIPFeature): Promise<void> {
     try {
-      const startOfMonth = new Date();
-      startOfMonth.setDate(1);
-      startOfMonth.setHours(0, 0, 0, 0);
-
-      const { error: upsertErr } = await supabase.from('vip_monthly_usage').upsert(
-        {
-          user_id: userId,
-          feature,
-          period_start: startOfMonth.toISOString(),
-          usage_count: 1,
-        },
-        {
-          onConflict: 'user_id,feature,period_start',
-          ignoreDuplicates: false,
-        }
-      );
-      if (upsertErr) console.error('[VIPService] VIP quota upsert failed:', upsertErr);
-
-      // Increment count
+      // ATOMIC: Use single RPC call to both create/find the record AND increment.
+      // Previous 2-step approach (upsert + separate increment) had a race condition
+      // where concurrent calls could both set usage_count=1 then both increment,
+      // resulting in count=2 instead of count=2 from separate increments.
       const { error: rpcErr } = await retryAsync(
         () =>
           supabase.rpc('fn_increment_vip_usage', {
@@ -344,7 +329,27 @@ class VIPServiceClass {
           }),
         3
       );
-      if (rpcErr) console.warn('[VIPService] fn_increment_vip_usage error:', rpcErr.message);
+      if (rpcErr) {
+        // If the RPC fails (e.g., row doesn't exist yet), fall back to upsert
+        console.warn('[VIPService] fn_increment_vip_usage error, falling back to upsert:', rpcErr.message);
+        const startOfMonth = new Date();
+        startOfMonth.setDate(1);
+        startOfMonth.setHours(0, 0, 0, 0);
+
+        const { error: upsertErr } = await supabase.from('vip_monthly_usage').upsert(
+          {
+            user_id: userId,
+            feature,
+            period_start: startOfMonth.toISOString(),
+            usage_count: 1,
+          },
+          {
+            onConflict: 'user_id,feature,period_start',
+            ignoreDuplicates: false,
+          }
+        );
+        if (upsertErr) console.error('[VIPService] VIP quota upsert fallback failed:', upsertErr);
+      }
     } catch (err) {
       console.warn('[VIPService] consumeVIPQuota unexpected error:', err);
     }

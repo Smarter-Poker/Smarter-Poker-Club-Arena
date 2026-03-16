@@ -7,6 +7,7 @@
  */
 
 import { supabase } from '../lib/supabase';
+import { postToParent } from '../utils/parentOrigin';
 import { masterBus } from '../core/MasterBus';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -575,7 +576,7 @@ class SocialEnhancementsServiceClass {
         window.focus();
         const isInIframe = typeof window !== 'undefined' && window.parent !== window;
         if (isInIframe) {
-          window.parent.postMessage({ type: 'NAVIGATE', path: url }, '*');
+          postToParent({ type: 'NAVIGATE', path: url });
         }
         // Non-iframe: handled by React Router outside this service
       };

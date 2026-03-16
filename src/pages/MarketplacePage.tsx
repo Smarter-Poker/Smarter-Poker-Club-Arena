@@ -519,9 +519,22 @@ export default function MarketplacePage() {
                   toast.error('Please wait a moment before creating another item');
                   return;
                 }
+                // Validate item name length to prevent abuse
+                if (newItemName.trim().length > 100) {
+                  toast.error('Item name must be 100 characters or less');
+                  return;
+                }
+                if (newItemDesc.trim().length > 500) {
+                  toast.error('Description must be 500 characters or less');
+                  return;
+                }
                 const price = Math.floor(Number(newItemPrice));
                 if (!price || !Number.isFinite(price) || price <= 0) {
                   toast.error('Price must be a positive number');
+                  return;
+                }
+                if (price > 1_000_000_000) {
+                  toast.error('Price exceeds maximum allowed value');
                   return;
                 }
                 setProcessing(true);

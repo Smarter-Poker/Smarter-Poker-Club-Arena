@@ -16,6 +16,7 @@ import { busEventLogger } from './services/BusEventLogger';
 import GlobalWaitlistListener from './components/common/GlobalWaitlistListener';
 import WaitlistBanner from './components/common/WaitlistBanner';
 import { earlyAuth } from './core/earlyAuthBridge';
+import { postToParent, setParentOrigin, isTrustedOrigin } from './utils/parentOrigin';
 import * as Sentry from '@sentry/react';
 
 // Intro Video — lazy-loaded (only shown once per session, not needed for initial paint)
@@ -301,11 +302,7 @@ export default function App() {
             /* Sentry not loaded */
           }
           // Send another ACK to be safe (main.tsx already sent one)
-          try {
-            window.parent.postMessage({ type: 'SMARTER_AUTH_ACK' }, '*');
-          } catch {
-            /* best effort */
-          }
+          postToParent({ type: 'SMARTER_AUTH_ACK' });
           // Signal main.tsx to stop its early listener (cleanup)
           window.__earlyAuthConsumed = true;
         })
@@ -330,21 +327,14 @@ export default function App() {
     if (!isInIframe) return;
 
     const handleMessage = async (event: MessageEvent) => {
-      // Accept from smarter.poker OR localhost:3000 for local dev
-      // SECURITY: Use exact match / endsWith to prevent subdomain spoofing
-      const origin = event.origin;
-      const isValidOrigin =
-        origin === 'https://smarter.poker' ||
-        origin === 'https://www.smarter.poker' ||
-        (origin.endsWith('.smarter.poker') && origin.startsWith('https://')) ||
-        origin === 'http://localhost:3000' ||
-        origin === window.location.origin; // Same-origin iframe proxy
-      if (!isValidOrigin) return;
+      // SECURITY: Validate origin using shared trusted-origin list
+      if (!isTrustedOrigin(event.origin)) return;
 
       if (event.data?.type === 'SMARTER_AUTH_TOKEN' && event.data.token) {
+        // Store validated parent origin for all future postMessage calls
+        setParentOrigin(event.origin);
         // Send ACK immediately to halt World Hub retry loop.
-        const parentOrigin = event.origin;
-        window.parent.postMessage({ type: 'SMARTER_AUTH_ACK' }, parentOrigin);
+        postToParent({ type: 'SMARTER_AUTH_ACK' });
 
         // Bridge Global Settings from World Hub instantly
         if (event.data.settings) {
@@ -419,11 +409,7 @@ export default function App() {
 
     // Strip the basename prefix that React Router adds internally
     const route = location.pathname.replace(/^\//, '');
-    try {
-      window.parent.postMessage({ type: 'CLUB_ARENA_ROUTE_CHANGE', route }, '*');
-    } catch {
-      /* best effort */
-    }
+    postToParent({ type: 'CLUB_ARENA_ROUTE_CHANGE', route });
   }, [location.pathname]);
 
   // ── Heartbeat: Periodically tell the parent we're still alive ──
@@ -433,19 +419,11 @@ export default function App() {
 
     const HEARTBEAT_INTERVAL = 30_000; // 30 seconds
     const heartbeatId = setInterval(() => {
-      try {
-        window.parent.postMessage({ type: 'CLUB_ARENA_HEARTBEAT' }, '*');
-      } catch {
-        /* best effort */
-      }
+      postToParent({ type: 'CLUB_ARENA_HEARTBEAT' });
     }, HEARTBEAT_INTERVAL);
 
     // Send one immediately on mount
-    try {
-      window.parent.postMessage({ type: 'CLUB_ARENA_HEARTBEAT' }, '*');
-    } catch {
-      /* best effort — ignore postMessage errors from detached frames */
-    }
+    postToParent({ type: 'CLUB_ARENA_HEARTBEAT' });
 
     return () => clearInterval(heartbeatId);
   }, []);

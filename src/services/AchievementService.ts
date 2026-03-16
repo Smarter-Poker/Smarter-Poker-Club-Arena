@@ -476,12 +476,14 @@ class AchievementServiceClass {
   }
 
   async checkSpecialHand(userId: string, handRank: string): Promise<Achievement | null> {
-    let achievementId: string | null = null;
+    // SECURITY: Validate handRank against known values to prevent garbage input
+    const HAND_RANK_MAP: Record<string, string> = {
+      royal_flush: 'royal_flush',
+      straight_flush: 'straight_flush',
+      four_of_a_kind: 'quads',
+    };
 
-    if (handRank === 'royal_flush') achievementId = 'royal_flush';
-    else if (handRank === 'straight_flush') achievementId = 'straight_flush';
-    else if (handRank === 'four_of_a_kind') achievementId = 'quads';
-
+    const achievementId = HAND_RANK_MAP[handRank] || null;
     if (achievementId) {
       const result = await this.incrementProgress(userId, achievementId, 1);
       return result.achievement || null;

@@ -42,11 +42,12 @@ export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '', {
 });
 
 /**
- * Timeout-protected getUser() wrapper.
- * Prevents pages from hanging forever in iframe context where auth can stall.
- * Returns null user (instead of hanging) if the call exceeds timeoutMs.
+ * Timeout-protected getUser() wrapper with getSession() fallback.
+ * In iframe context, getUser() (API call) can hang/timeout.
+ * Falls back to getSession() (localStorage, instant) when getUser() fails.
+ * Returns null user only if BOTH methods fail.
  */
-export async function getAuthUser(timeoutMs = 8000) {
+export async function getAuthUser(timeoutMs = 6000) {
   try {
     const userPromise = supabase.auth.getUser();
     const timeoutPromise = new Promise<never>((_, reject) =>
@@ -54,8 +55,21 @@ export async function getAuthUser(timeoutMs = 8000) {
     );
     return await Promise.race([userPromise, timeoutPromise]);
   } catch (err) {
-    console.warn('[getAuthUser] Timed out or failed:', err);
-    return { data: { user: null }, error: err };
+    console.warn('[getAuthUser] getUser() failed, falling back to getSession():', err);
+    // Fallback: getSession() reads from localStorage — instant, no API call
+    try {
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession();
+      if (session?.user) {
+        return { data: { user: session.user }, error: null };
+      }
+      return { data: { user: null }, error: sessionError || err };
+    } catch (sessionErr) {
+      console.warn('[getAuthUser] getSession() fallback also failed:', sessionErr);
+      return { data: { user: null }, error: sessionErr };
+    }
   }
 }
 

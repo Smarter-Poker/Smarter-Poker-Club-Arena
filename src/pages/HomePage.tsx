@@ -529,6 +529,16 @@ function HomePageInner() {
     // Real-time clubs table updates via MasterBus channel registry
     const sharkChannelKey = 'clubs-live-stats';
     const channel = masterBus.getOrCreateChannel(sharkChannelKey);
+
+    // Debounce club_members changes — fires on ALL clubs, so collapse rapid events
+    let sharkDebounce: ReturnType<typeof setTimeout> | null = null;
+    const debouncedSharkRefresh = () => {
+      if (sharkDebounce) clearTimeout(sharkDebounce);
+      sharkDebounce = setTimeout(() => {
+        if (isMounted) fetchSharkClubStats();
+      }, 2000);
+    };
+
     channel
       .on(
         'postgres_changes',
@@ -542,8 +552,8 @@ function HomePageInner() {
           if (isMounted) fetchSharkClubStats();
         }
       )
-      // BUG FIX: Also listen to club_members changes so member count refreshes
-      // when horses join/leave Shark Club
+      // Listen to club_members changes (debounced — no filter available for
+      // specific club_id, so this fires on all clubs)
       .on(
         'postgres_changes',
         {
@@ -551,9 +561,7 @@ function HomePageInner() {
           schema: 'public',
           table: 'club_members',
         },
-        () => {
-          if (isMounted) fetchSharkClubStats();
-        }
+        debouncedSharkRefresh
       )
       .subscribe();
 
@@ -575,6 +583,7 @@ function HomePageInner() {
 
     return () => {
       isMounted = false;
+      if (sharkDebounce) clearTimeout(sharkDebounce);
       masterBus.removeRegisteredChannel(sharkChannelKey);
       unsubSharkJoined();
       unsubSharkLeft();

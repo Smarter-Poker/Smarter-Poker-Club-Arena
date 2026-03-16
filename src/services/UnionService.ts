@@ -187,7 +187,61 @@ class UnionServiceClass {
       }
     }
 
-    return Array.from(unionMap.values()).map(this.mapUnion);
+    const unions = Array.from(unionMap.values()).map(this.mapUnion);
+
+    // ── Enrich with LIVE clubCount + memberCount (unions.member_count / club_count can be stale) ──
+    if (unions.length > 0) {
+      try {
+        const unionIds = unions.map((u) => u.id);
+        // Single batch: get all union_clubs rows for these unions
+        const { data: ucRows } = await supabase
+          .from('union_clubs')
+          .select('union_id, club_id')
+          .in('union_id', unionIds);
+
+        if (ucRows && ucRows.length > 0) {
+          // Live club counts per union
+          const clubCountMap = new Map<string, number>();
+          const allClubIds: string[] = [];
+          const clubToUnionMap = new Map<string, string>();
+          for (const row of ucRows) {
+            clubCountMap.set(row.union_id, (clubCountMap.get(row.union_id) || 0) + 1);
+            allClubIds.push(row.club_id);
+            clubToUnionMap.set(row.club_id, row.union_id);
+          }
+
+          // Live member counts: fetch all club_members for these club IDs
+          if (allClubIds.length > 0) {
+            const { data: memberRows } = await supabase
+              .from('club_members')
+              .select('club_id')
+              .in('club_id', allClubIds);
+
+            const memberCountMap = new Map<string, number>();
+            for (const row of memberRows || []) {
+              const uid = clubToUnionMap.get(row.club_id);
+              if (uid) {
+                memberCountMap.set(uid, (memberCountMap.get(uid) || 0) + 1);
+              }
+            }
+
+            for (const union of unions) {
+              if (clubCountMap.has(union.id)) union.clubCount = clubCountMap.get(union.id)!;
+              if (memberCountMap.has(union.id)) union.memberCount = memberCountMap.get(union.id)!;
+            }
+          } else {
+            // No clubs in any union — zero out counts
+            for (const union of unions) {
+              if (clubCountMap.has(union.id)) union.clubCount = clubCountMap.get(union.id)!;
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('[UnionService] Live union count enrichment failed (using stale counts):', e);
+      }
+    }
+
+    return unions;
   }
 
   /**

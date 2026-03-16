@@ -162,6 +162,12 @@ export default function ClubsPage() {
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'clubs' }, () => {
         if (isMounted) loadMyClubs(() => isMounted);
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'unions' }, () => {
+        if (isMounted) loadMyClubs(() => isMounted);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'union_clubs' }, () => {
+        if (isMounted) loadMyClubs(() => isMounted);
+      })
       .subscribe();
     return () => {
       isMounted = false;
@@ -210,9 +216,8 @@ export default function ClubsPage() {
 
       await ClubsService.join(club.id);
 
-      // Refresh memberships
-      const memberships = await ClubsService.getUserMemberships();
-      setMyClubs(memberships);
+      // Refresh both clubs AND unions (joined club might belong to a union)
+      await loadMyClubs();
       setJoinClubId('');
       setActiveTab('my-clubs');
     } catch (err: any) {
@@ -348,8 +353,7 @@ export default function ClubsPage() {
                 onJoinRequest={async (clubId) => {
                   try {
                     await ClubsService.join(clubId);
-                    const memberships = await ClubsService.getUserMemberships();
-                    setMyClubs(memberships);
+                    await loadMyClubs();
                     setActiveTab('my-clubs');
                     toast.success('Successfully joined club!');
                   } catch (err: any) {

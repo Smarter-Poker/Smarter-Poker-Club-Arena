@@ -45,10 +45,12 @@ export default function FinancialHealthPage() {
   const [status, setStatus] = useState<CronStatus | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [manualReconciling, setManualReconciling] = useState(false);
+  const [initialLoad, setInitialLoad] = useState(true);
 
   const loadStatus = () => {
     const s = FinancialCronService.getStatus();
     setStatus(s as CronStatus);
+    setInitialLoad(false);
   };
 
   useEffect(() => {
@@ -113,6 +115,19 @@ export default function FinancialHealthPage() {
       minute: '2-digit',
     });
   };
+
+  if (initialLoad && !status) {
+    return (
+      <div className="financial-health-page" style={{ padding: '16px' }}>
+        <div className="fh-header">
+          <h2>🏥 Financial Health Dashboard</h2>
+        </div>
+        <div style={{ textAlign: 'center', padding: '60px 20px', color: 'rgba(255,255,255,0.3)' }}>
+          Loading health status...
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="financial-health-page">

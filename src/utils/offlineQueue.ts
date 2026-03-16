@@ -101,12 +101,19 @@ export async function replayOfflineQueue(): Promise<void> {
         if (item.mutation === 'INSERT' && item.variables?.table) {
           await supabase.from(item.variables.table).insert(item.variables.data || {});
         } else if (item.mutation === 'UPDATE' && item.variables?.table && item.variables?.id) {
-          await supabase
+          // SECURITY: Scope updates to the user who queued them
+          let query = supabase
             .from(item.variables.table)
             .update(item.variables.data || {})
             .eq('id', item.variables.id);
+          if (item.variables.user_id) query = query.eq('user_id', item.variables.user_id);
+          if (item.variables.club_id) query = query.eq('club_id', item.variables.club_id);
+          await query;
         } else if (item.mutation === 'DELETE' && item.variables?.table && item.variables?.id) {
-          await supabase.from(item.variables.table).delete().eq('id', item.variables.id);
+          let delQuery = supabase.from(item.variables.table).delete().eq('id', item.variables.id);
+          if (item.variables.user_id) delQuery = delQuery.eq('user_id', item.variables.user_id);
+          if (item.variables.club_id) delQuery = delQuery.eq('club_id', item.variables.club_id);
+          await delQuery;
         } else if (item.mutation === 'RPC' && item.variables?.fn) {
           await retryAsync(() => supabase.rpc(item.variables!.fn, item.variables!.args || {}), 3);
         }

@@ -780,6 +780,14 @@ export class HeadlessTableEngine {
                   `[HeadlessTableEngine:${this.tableId}] Secure hole card retry ALSO failed:`,
                   retryError.message
                 );
+                // Emit critical alert — hole cards not persisted means players won't see their cards
+                masterBus.emit('FINANCIAL_ALERT', {
+                  severity: 'critical',
+                  source: 'HeadlessTableEngine',
+                  message: `Hole card RPC failed after retry: ${retryError.message}`,
+                  context: { tableId: this.tableId, handNumber } as Record<string, unknown>,
+                  timestamp: new Date().toISOString(),
+                });
               }
             }
           })();

@@ -463,6 +463,8 @@ class SocialEnhancementsServiceClass {
     });
 
     return () => {
+      // Untrack presence before removing channel to avoid stale presence entries
+      try { channel.untrack(); } catch { /* already untracked */ }
       masterBus.removeRegisteredChannel(channelKey);
     };
   }

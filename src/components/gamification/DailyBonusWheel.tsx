@@ -133,8 +133,11 @@ export function DailyBonusWheel({ isOpen, onClose, onReward }: DailyBonusWheelPr
             }),
           3
         );
-        if (rewardErr)
+        if (rewardErr) {
           console.error('[DailyBonusWheel] fn_grant_daily_reward failed:', rewardErr.message);
+          toast.error('Reward failed to apply — please contact support');
+          return;
+        }
 
         toast.success(` You won ${prize.label}!`);
         onReward?.(prize);

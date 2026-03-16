@@ -10,6 +10,7 @@
 import { useState, useEffect, useMemo, useCallback, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase, getAuthUser } from '../lib/supabase';
+import { waitForAuth } from '../utils/waitForAuth';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { LoadingState } from '../components/common/EmptyState';
 import DailyBonusWheel from '../components/bonus/DailyBonusWheel';
@@ -283,6 +284,12 @@ export default function ProfilePage() {
 
       // SWR: Show cached profile instantly while loading fresh data
       try {
+        // CRITICAL: Wait for auth session to be established in iframe context.
+        // Without this, getAuthUser() returns null because setSession() from
+        // the early auth handshake hasn't completed yet.
+        await waitForAuth(() => isMounted);
+        if (!isMounted) return;
+
         // Timeout-protected getUser() — prevents hanging in iframe context
         const {
           data: { user: authUser },

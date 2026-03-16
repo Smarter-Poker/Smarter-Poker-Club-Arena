@@ -226,6 +226,14 @@ export async function joinClub(clubId: string, role: MemberRole = 'member'): Pro
     console.warn('[ClubsService] joinClub: member count increment failed (non-critical):', e);
   }
 
+  // Emit CLUB_JOINED for cross-page reactivity (lobby, carousel, detail pages)
+  try {
+    const { masterBus } = await import('../core/MasterBus');
+    masterBus.emit('CLUB_JOINED', { clubId, action: 'member_joined' });
+  } catch (e) {
+    console.warn('[ClubsService] joinClub: bus emit failed (non-critical):', e);
+  }
+
   return data;
 }
 
@@ -339,8 +347,9 @@ export async function leaveClub(clubId: string): Promise<void> {
     console.warn('[ClubsService] leaveClub: member count decrement failed (non-critical):', e);
   }
 
-  // 8. Real-time sync
+  // 8. Real-time sync — emit both CLUB_LEFT and CLUB_UPDATED so all listeners react
   const { masterBus } = await import('../core/MasterBus');
+  masterBus.emit('CLUB_LEFT', { clubId: resolvedId, action: 'member_left' });
   masterBus.emit('CLUB_UPDATED', { clubId: resolvedId, action: 'member_left' });
 }
 

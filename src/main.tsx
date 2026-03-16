@@ -45,81 +45,31 @@ window.addEventListener('unhandledrejection', (event) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-//  EARLY AUTH LISTENER — Respond to World Hub BEFORE boot completes
+//  FIX 2: EARLY AUTH — SIMPLIFIED (consolidated from 3 listeners → 1)
 // ═══════════════════════════════════════════════════════════════════════════════
-// CRITICAL: The World Hub's ClubArenaEmbed sends SMARTER_AUTH_TOKEN via postMessage
-// and expects SMARTER_AUTH_ACK back. If it doesn't receive ACK within its retry
-// window, it shows a "Connection Problem" overlay. The listener in App.tsx only
-// registers AFTER the full boot sequence + React mount, creating a race condition.
+// BEFORE: Three separate auth listeners (index.html inline, main.tsx, App.tsx)
+//         all sending ACKs independently, masking each other's failures and
+//         causing duplicate token processing + cleanup race conditions.
 //
-// This early listener fires IMMEDIATELY (before boot, before React) so the ACK
-// is sent as fast as possible. The token is stored for App.tsx to consume on mount.
+// AFTER:  Only TWO listeners remain:
+//   1. index.html inline script — sends ACKs + stores token in window.__EARLY_AUTH__
+//      (runs before ANY modules, survives module parse errors)
+//   2. App.tsx useEffect — consumes window.__EARLY_AUTH__ + handles live refreshes
+//
+// This main.tsx listener has been REMOVED because:
+//   - It duplicated the inline script's behavior but ran later
+//   - Its cleanup interval raced with App.tsx's consumption
+//   - Its ACK pulse overlapped with the inline script's pulse
+//   - The earlyAuth module bridge is still used by App.tsx (populated by inline script)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-import { earlyAuth } from './core/earlyAuthBridge';
-import { postToParent, setParentOrigin, isTrustedOrigin } from './utils/parentOrigin';
+import { postToParent } from './utils/parentOrigin';
 
+// Send ONE unconditional ACK + heartbeat from module eval (backup for inline script)
 if (window.parent !== window) {
-  let authReceived = false;
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // UNCONDITIONAL ACK — Same principle as index.html inline script.
-  // ACK means "iframe is alive and handling auth" — auth state is managed
-  // independently via SSO/autoRefreshToken/AuthGuard.
-  // ═══════════════════════════════════════════════════════════════════════
-
-  // Immediate ACK (module evaluation is fast, parent may still be retrying)
   postToParent({ type: 'SMARTER_AUTH_ACK' });
   postToParent({ type: 'CLUB_ARENA_HEARTBEAT' });
-  console.log('[EARLY-AUTH] ✅ Unconditional ACK + heartbeat sent');
-
-  const earlyAuthHandler = (event: MessageEvent) => {
-    // Validate origin: same checks as App.tsx
-    if (!isTrustedOrigin(event.origin)) return;
-
-    if (event.data?.type === 'SMARTER_AUTH_TOKEN' && event.data.token) {
-      authReceived = true;
-      // Store validated parent origin for all future postMessage calls
-      setParentOrigin(event.origin);
-      // Re-ACK when token arrives
-      postToParent({ type: 'SMARTER_AUTH_ACK' });
-      console.log('[EARLY-AUTH] ✅ Token received, ACK sent');
-
-      // Store token for App.tsx to pick up after mount
-      earlyAuth.token = event.data.token;
-      earlyAuth.refreshToken = event.data.refreshToken || null;
-      earlyAuth.settings = event.data.settings || null;
-    }
-  };
-  window.addEventListener('message', earlyAuthHandler);
-
-  // ACK pulse — keep sending until parent acknowledges or 15s passes
-  let pulseCount = 0;
-  const ackPulse = setInterval(() => {
-    if ((authReceived && pulseCount > 5) || pulseCount > 30) {
-      clearInterval(ackPulse);
-      return;
-    }
-    pulseCount++;
-    postToParent({ type: 'SMARTER_AUTH_ACK' });
-    postToParent({ type: 'CLUB_ARENA_HEARTBEAT' });
-  }, 500);
-
-  // CLEANUP: Once App.tsx has consumed the early auth and taken over message
-  // handling, remove this early listener to avoid duplicate processing.
-  // App.tsx sets window.__earlyAuthConsumed = true after successful setSession.
-  let cleanupChecks = 0;
-  const cleanupInterval = setInterval(() => {
-    cleanupChecks++;
-    if ((window as any).__earlyAuthConsumed || cleanupChecks > 60) {
-      // App.tsx is handling messages now (or 30s elapsed) — safe to remove
-      window.removeEventListener('message', earlyAuthHandler);
-      clearInterval(cleanupInterval);
-      if ((window as any).__earlyAuthConsumed) {
-        console.log('[EARLY-AUTH] 🧹 Listener removed — App.tsx has taken over');
-      }
-    }
-  }, 500);
+  console.log('[MAIN] Backup ACK + heartbeat sent (inline script is primary)');
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

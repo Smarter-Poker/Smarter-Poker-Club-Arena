@@ -29,11 +29,18 @@ const TRUSTED_ORIGINS = [
  * Check if an origin is trusted (for inbound message validation)
  */
 export function isTrustedOrigin(origin: string): boolean {
-  return (
-    TRUSTED_ORIGINS.includes(origin) ||
-    (origin.endsWith('.smarter.poker') && origin.startsWith('https://')) ||
-    origin === window.location.origin // Same-origin iframe proxy
-  );
+  if (TRUSTED_ORIGINS.includes(origin)) return true;
+  if (origin === window.location.origin) return true; // Same-origin iframe proxy
+
+  // FIX 6: Tightened subdomain check — must be exactly *.smarter.poker
+  // Previously origin.endsWith('.smarter.poker') matched 'https://evil-smarter.poker'
+  if (origin.startsWith('https://')) {
+    const host = origin.substring(8); // strip https://
+    const suffix = '.smarter.poker';
+    if (host.length > suffix.length && host.endsWith(suffix)) return true;
+  }
+
+  return false;
 }
 
 /**

@@ -262,7 +262,16 @@ class IdentityDNACore {
                   });
 
                 // Phase 7: Absolute Realtime Perfection (Listen to external/Admin Postgres mutations)
-                postgresSyncHooks.init(session.user.id);
+                // FIX 5: Wrapped in try/catch — don't let realtime init failure crash the auth flow
+                try {
+                  postgresSyncHooks.init(session.user.id);
+                } catch (syncErr) {
+                  console.error(
+                    '[IdentityDNA] PostgresSyncHooks init failed on SIGNED_IN:',
+                    syncErr
+                  );
+                  // Non-fatal — user is still authenticated, just realtime may be degraded
+                }
               } finally {
                 this.isHydrating = false;
               }
@@ -310,8 +319,38 @@ class IdentityDNACore {
               // stale channel, silently breaking all realtime subscriptions.
               // This is the #1 cause of "connectivity issues" — the WebSocket
               // stays connected but receives zero events because the token expired.
-              postgresSyncHooks.destroy();
-              postgresSyncHooks.init(session.user.id);
+              //
+              // FIX 5: Wrapped in try/catch with retry. Previously, if init() threw,
+              // the old channel was already destroyed and no new channel was created,
+              // silently killing ALL realtime updates for the rest of the session.
+              try {
+                postgresSyncHooks.destroy();
+                postgresSyncHooks.init(session.user.id);
+              } catch (syncErr) {
+                console.error(
+                  '[IdentityDNA] PostgresSyncHooks re-init failed, retrying in 2s:',
+                  syncErr
+                );
+                // Retry once after a short delay — transient failures are common during token rotation
+                setTimeout(() => {
+                  try {
+                    postgresSyncHooks.destroy(); // Clean up any partial state
+                    postgresSyncHooks.init(session.user.id);
+                    console.log('[IdentityDNA] PostgresSyncHooks re-init succeeded on retry');
+                  } catch (retryErr) {
+                    console.error(
+                      '[IdentityDNA] PostgresSyncHooks re-init FAILED on retry — realtime may be degraded:',
+                      retryErr
+                    );
+                    // Emit bus event so UI can show a connectivity warning
+                    // Using REALTIME_DISCONNECTED (registered type) since realtime is effectively down
+                    masterBus.emit('REALTIME_DISCONNECTED', {
+                      channelName: 'postgres-sync-hooks',
+                      reason: 'PostgresSyncHooks init failed after token refresh',
+                    });
+                  }
+                }, 2000);
+              }
             }
             break;
 

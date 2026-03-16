@@ -10,7 +10,7 @@
  * - Each card: Club avatar, ID, name, level, member count
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import HamburgerMenu from '../components/navigation/HamburgerMenu';
 import { useNavigate } from 'react-router-dom';
 import { supabase, getAuthUser } from '../lib/supabase';
@@ -23,6 +23,9 @@ import './ClubCarouselPage.css';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { useIsMounted } from '../hooks/useIsMounted';
+
+const SWR_CAROUSEL_KEY = 'club_carousel_clubs_cache';
+const SWR_UNIONS_KEY = 'club_carousel_unions_cache';
 
 interface UserClub {
   id: string;
@@ -72,13 +75,42 @@ export default function ClubCarouselPage() {
   const toast = useToast();
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const [clubs, setClubs] = useState<UserClub[]>([]);
-  const [userUnions, setUserUnions] = useState<Union[]>([]);
+  // #7: SWR — instant render from cache
+  const [clubs, setClubs] = useState<UserClub[]>(() => {
+    try {
+      const cached = localStorage.getItem(SWR_CAROUSEL_KEY);
+      if (cached) {
+        const p = JSON.parse(cached);
+        if (Array.isArray(p) && p.length > 0) return p;
+      }
+    } catch {
+      /* ignore */
+    }
+    return [];
+  });
+  const [userUnions, setUserUnions] = useState<Union[]>(() => {
+    try {
+      const cached = localStorage.getItem(SWR_UNIONS_KEY);
+      if (cached) {
+        const p = JSON.parse(cached);
+        if (Array.isArray(p) && p.length > 0) return p;
+      }
+    } catch {
+      /* ignore */
+    }
+    return [];
+  });
   const [activeIndex, setActiveIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [wallet, setWallet] = useState<UserWallet>({ gold: 0, diamonds: 0 });
   const [visibleCards, setVisibleCards] = useState<Set<string>>(new Set());
+
+  // #4: Pull-to-refresh state
+  const [pullDistance, setPullDistance] = useState(0);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const touchStartY = useRef(0);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const isMounted = useIsMounted();
 
@@ -157,6 +189,87 @@ export default function ClubCarouselPage() {
     return () => timers.forEach((t) => clearTimeout(t));
   }, [clubs, userUnions]);
 
+  // ── #6: Decomposed data loading helpers ──
+  const loadProfile = useCallback(
+    async (userId: string) => {
+      try {
+        const { data: profileData, error: profileError } = await supabase
+          .from('profiles')
+          .select('id, display_name, avatar_url, diamonds, tier')
+          .eq('id', userId)
+          .maybeSingle();
+        if (!isMounted.current) return;
+        if (!profileError && profileData) {
+          setUserProfile({
+            id: profileData.id,
+            display_name: profileData.display_name || 'Player',
+            avatar_url: profileData.avatar_url,
+            player_number: 0,
+            vip_level: profileData.tier || 'bronze',
+          });
+          setWallet((prev) => ({ ...prev, diamonds: profileData.diamonds || 0 }));
+        }
+      } catch {
+        /* non-critical */
+      }
+    },
+    [isMounted]
+  );
+
+  const enrichMemberCounts = useCallback(
+    async (clubList: UserClub[]): Promise<UserClub[]> => {
+      if (clubList.length === 0) return clubList;
+      try {
+        const clubIds = clubList.map((c) => c.id);
+        // #1: RPC returns {club_id, member_count} grouped — 1 row per club
+        const { data: counts } = await supabase.rpc('fn_batch_club_member_counts', {
+          p_club_ids: clubIds,
+        });
+        if (!isMounted.current) return clubList;
+        const countMap = new Map<string, number>();
+        for (const row of counts || []) {
+          countMap.set(row.club_id, Number(row.member_count));
+        }
+        for (const club of clubList) {
+          if (countMap.has(club.id)) club.member_count = countMap.get(club.id)!;
+        }
+      } catch (e) {
+        console.warn('[ClubCarouselPage] Live member count enrichment failed:', e);
+      }
+      return clubList;
+    },
+    [isMounted]
+  );
+
+  const filterUnionClubs = useCallback(
+    async (clubList: UserClub[], loadedUnions: Union[]): Promise<UserClub[]> => {
+      if (clubList.length === 0 || loadedUnions.length === 0) return clubList;
+      try {
+        const { data: ucRows } = await supabase
+          .from('union_clubs')
+          .select('club_id, union_id')
+          .in(
+            'club_id',
+            clubList.map((c) => c.id)
+          );
+        if (!isMounted.current) return clubList;
+        if (ucRows && ucRows.length > 0) {
+          const clubToUnionMap = new Map(ucRows.map((r) => [r.club_id, r.union_id]));
+          const loadedUnionIds = new Set(loadedUnions.map((u) => u.id));
+          return clubList.filter((c) => {
+            const parentUnionId = clubToUnionMap.get(c.id);
+            if (!parentUnionId) return true;
+            return !loadedUnionIds.has(parentUnionId);
+          });
+        }
+      } catch {
+        /* fail-open */
+      }
+      return clubList;
+    },
+    [isMounted]
+  );
+
   const loadUserData = async () => {
     setLoading(true);
     try {
@@ -165,179 +278,96 @@ export default function ClubCarouselPage() {
       } = await getAuthUser();
       if (!isMounted.current) return;
       if (!authUser) {
-        // Don't manually redirect to /auth — AuthGuard handles this.
-        // getUser() can return null transiently during token refresh.
         console.warn('[ClubCarouselPage] getUser() returned null — skipping data load');
         setLoading(false);
         return;
       }
 
-      // Load user profile (use only columns that exist in profiles table)
-      try {
-        const { data: profileData, error: profileError } = await supabase
-          .from('profiles')
-          .select('id, display_name, avatar_url, diamonds, tier')
-          .eq('id', authUser.id)
-          .maybeSingle();
-
-        if (!isMounted.current) return;
-        if (profileError) {
-          // Profile query returned non-critical error
-        } else if (profileData) {
-          setUserProfile({
-            id: profileData.id,
-            display_name: profileData.display_name || 'Player',
-            avatar_url: profileData.avatar_url,
-            player_number: 0, // Not available in profiles table
-            vip_level: profileData.tier || 'bronze', // DB uses `tier` column
-          });
-          // Get diamonds from profiles table
-          setWallet((prev) => ({ ...prev, diamonds: profileData.diamonds || 0 }));
-        }
-      } catch (err) {
-        // Non-critical profile load error
-      }
+      // #3: Run profile + clubs/unions in parallel (profile doesn't block clubs)
+      const [, memberResult, unionsResult] = await Promise.allSettled([
+        loadProfile(authUser.id),
+        supabase
+          .from('club_members')
+          .select(
+            `club_id, role, chip_balance, clubs (id, club_id, name, avatar_url, member_count)`
+          )
+          .eq('user_id', authUser.id),
+        unionService.getMyUnions(authUser.id),
+      ]);
 
       if (!isMounted.current) return;
 
-      // Load user's clubs (where they are a member) AND unions in parallel
-      try {
-        const [memberResult, unionsResult] = await Promise.allSettled([
-          supabase
-            .from('club_members')
-            .select(
-              `
-                          club_id,
-                          role,
-                          chip_balance,
-                          clubs (
-                              id,
-                              club_id,
-                              name,
-                              avatar_url,
-                              member_count
-                          )
-                      `
-            )
-            .eq('user_id', authUser.id),
-          unionService.getMyUnions(authUser.id),
-        ]);
+      let displayedClubCount = clubs.length;
+      let loadedUnions: Union[] = [];
+      if (unionsResult.status === 'fulfilled') loadedUnions = unionsResult.value;
 
-        if (!isMounted.current) return;
+      if (memberResult.status === 'fulfilled') {
+        const { data: memberData, error: memberError } = memberResult.value;
+        if (!memberError && memberData) {
+          const allUserClubs: UserClub[] = memberData
+            .filter((m: any) => m.clubs)
+            .map((m: any) => ({
+              id: m.clubs.id,
+              club_id: m.clubs.club_id,
+              name: m.clubs.name,
+              avatar_url: m.clubs.avatar_url,
+              level: 0,
+              member_count: m.clubs.member_count || 0,
+              role: m.role,
+            }));
 
-        // Track actual displayed club count for activeIndex clamping
-        let displayedClubCount = clubs.length; // fallback to current state
+          // #3: Run enrichment + union filtering in parallel
+          const [enriched, filtered] = await Promise.all([
+            enrichMemberCounts(allUserClubs),
+            filterUnionClubs(allUserClubs, loadedUnions),
+          ]);
+          if (!isMounted.current) return;
 
-        // Extract loaded unions first (needed for club filtering below)
-        let loadedUnions: Union[] = [];
-        if (unionsResult.status === 'fulfilled') {
-          loadedUnions = unionsResult.value;
-        }
-
-        // Process clubs
-        if (memberResult.status === 'fulfilled') {
-          const { data: memberData, error: memberError } = memberResult.value;
-          if (!memberError && memberData) {
-            const allUserClubs: UserClub[] = memberData
-              .filter((m: any) => m.clubs)
-              .map((m: any) => ({
-                id: m.clubs.id,
-                club_id: m.clubs.club_id,
-                name: m.clubs.name,
-                avatar_url: m.clubs.avatar_url,
-                level: 0,
-                member_count: m.clubs.member_count || 0,
-                role: m.role,
-              }));
-
-            // ── Enrich with LIVE member counts (clubs.member_count can be stale) ──
-            // Single batched query instead of N individual count queries
-            if (allUserClubs.length > 0) {
-              try {
-                const clubIds = allUserClubs.map((c) => c.id);
-                const { data: memberRows } = await supabase
-                  .from('club_members')
-                  .select('club_id')
-                  .in('club_id', clubIds);
-                if (!isMounted.current) return;
-                const countMap = new Map<string, number>();
-                for (const row of memberRows || []) {
-                  countMap.set(row.club_id, (countMap.get(row.club_id) || 0) + 1);
-                }
-                for (const club of allUserClubs) {
-                  if (countMap.has(club.id)) {
-                    club.member_count = countMap.get(club.id)!;
-                  }
-                }
-              } catch (e) {
-                console.warn('[ClubCarouselPage] Live member count enrichment failed:', e);
-              }
-            }
-
-            // Filter out clubs that belong to a union — BUT only if that union
-            // was successfully loaded. This prevents clubs from vanishing when
-            // the union query fails (root cause of Club JAQK / Midway Union disappearing).
-            let filteredClubs = allUserClubs;
-            if (allUserClubs.length > 0 && loadedUnions.length > 0) {
-              try {
-                const { data: ucRows } = await supabase
-                  .from('union_clubs')
-                  .select('club_id, union_id')
-                  .in(
-                    'club_id',
-                    allUserClubs.map((c) => c.id)
-                  );
-                if (!isMounted.current) return;
-                if (ucRows && ucRows.length > 0) {
-                  // Build a map: club_id → union_id
-                  const clubToUnionMap = new Map(ucRows.map((r) => [r.club_id, r.union_id]));
-                  // Set of union IDs that actually loaded successfully
-                  const loadedUnionIds = new Set(loadedUnions.map((u) => u.id));
-                  // Only filter out a club if its parent union is in the loaded set
-                  filteredClubs = allUserClubs.filter((c) => {
-                    const parentUnionId = clubToUnionMap.get(c.id);
-                    if (!parentUnionId) return true; // not in any union — keep
-                    return !loadedUnionIds.has(parentUnionId); // hide only if union loaded
-                  });
-                }
-              } catch {
-                // Fail-open: show all clubs if union lookup fails
-              }
-            }
-            if (!isMounted.current) return;
-            setClubs(filteredClubs);
-            displayedClubCount = filteredClubs.length;
-
-            const totalGold = memberData.reduce(
-              (sum: number, m: any) => sum + (m.chip_balance || 0),
-              0
-            );
-            setWallet((prev) => ({ ...prev, gold: totalGold }));
+          // Apply enriched counts to filtered set
+          const countLookup = new Map(enriched.map((c) => [c.id, c.member_count]));
+          for (const c of filtered) {
+            if (countLookup.has(c.id)) c.member_count = countLookup.get(c.id)!;
           }
-        }
 
-        // Process unions
-        let newUnionCount = userUnions.length;
-        if (loadedUnions.length > 0) {
-          setUserUnions(loadedUnions);
-          newUnionCount = loadedUnions.length;
-        } else if (unionsResult.status === 'rejected') {
-          console.warn('[ClubCarouselPage] Failed to load unions:', unionsResult.reason);
-        } else {
-          // Unions loaded successfully but returned empty array
-          setUserUnions([]);
-          newUnionCount = 0;
-        }
+          setClubs(filtered);
+          displayedClubCount = filtered.length;
 
-        // Clamp activeIndex to valid range after clubs/unions change
-        const newTotal = displayedClubCount + newUnionCount;
-        if (newTotal > 0) {
-          setActiveIndex((prev) => Math.min(prev, newTotal - 1));
-        } else {
-          setActiveIndex(0);
+          // #7: SWR cache write
+          try {
+            localStorage.setItem(SWR_CAROUSEL_KEY, JSON.stringify(filtered));
+          } catch {
+            /* quota */
+          }
+
+          const totalGold = memberData.reduce(
+            (sum: number, m: any) => sum + (m.chip_balance || 0),
+            0
+          );
+          setWallet((prev) => ({ ...prev, gold: totalGold }));
         }
-      } catch (err) {
-        // Non-critical memberships load error
+      }
+
+      let newUnionCount = userUnions.length;
+      if (loadedUnions.length > 0) {
+        setUserUnions(loadedUnions);
+        newUnionCount = loadedUnions.length;
+        try {
+          localStorage.setItem(SWR_UNIONS_KEY, JSON.stringify(loadedUnions));
+        } catch {
+          /* quota */
+        }
+      } else if (unionsResult.status === 'rejected') {
+        console.warn('[ClubCarouselPage] Failed to load unions:', unionsResult.reason);
+      } else {
+        setUserUnions([]);
+        newUnionCount = 0;
+      }
+
+      const newTotal = displayedClubCount + newUnionCount;
+      if (newTotal > 0) {
+        setActiveIndex((prev) => Math.min(prev, newTotal - 1));
+      } else {
+        setActiveIndex(0);
       }
     } catch (error) {
       if (!isMounted.current) return;
@@ -348,14 +378,74 @@ export default function ClubCarouselPage() {
     }
   };
 
+  // ── #5: Prefetch adjacent club detail on swipe ──
+  const prefetchClubDetail = useCallback((club: UserClub) => {
+    const cacheKey = `club_detail_${club.id}`;
+    if (sessionStorage.getItem(cacheKey)) return; // already cached
+    (async () => {
+      try {
+        const { data } = await supabase.from('clubs').select('*').eq('id', club.id).maybeSingle();
+        if (data) {
+          try {
+            sessionStorage.setItem(cacheKey, JSON.stringify(data));
+          } catch {
+            /* quota */
+          }
+        }
+      } catch {
+        /* best effort */
+      }
+    })();
+  }, []);
+
+  // #4: Pull-to-refresh touch handlers
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    if (containerRef.current && containerRef.current.scrollTop === 0) {
+      touchStartY.current = e.touches[0].clientY;
+    }
+  }, []);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (touchStartY.current === 0) return;
+    const diff = e.touches[0].clientY - touchStartY.current;
+    if (diff > 0 && diff < 150) setPullDistance(diff);
+  }, []);
+
+  const handleTouchEnd = useCallback(() => {
+    if (pullDistance > 60 && !isRefreshing) {
+      setIsRefreshing(true);
+      setPullDistance(0);
+      Promise.resolve(loadUserData()).then(
+        () => {
+          if (isMounted.current) setIsRefreshing(false);
+        },
+        () => {
+          if (isMounted.current) setIsRefreshing(false);
+        }
+      );
+    } else {
+      setPullDistance(0);
+    }
+    touchStartY.current = 0;
+  }, [pullDistance, isRefreshing, isMounted]);
+
   const totalCards = clubs.length + userUnions.length;
 
   const handlePrev = () => {
-    setActiveIndex((prev) => (prev > 0 ? prev - 1 : totalCards - 1));
+    setActiveIndex((prev) => {
+      const next = prev > 0 ? prev - 1 : totalCards - 1;
+      // #5: Prefetch the club we're about to show
+      if (next < clubs.length) prefetchClubDetail(clubs[next]);
+      return next;
+    });
   };
 
   const handleNext = () => {
-    setActiveIndex((prev) => (prev < totalCards - 1 ? prev + 1 : 0));
+    setActiveIndex((prev) => {
+      const next = prev < totalCards - 1 ? prev + 1 : 0;
+      if (next < clubs.length) prefetchClubDetail(clubs[next]);
+      return next;
+    });
   };
 
   const handleClubClick = (club: UserClub) => {
@@ -385,7 +475,32 @@ export default function ClubCarouselPage() {
   return (
     <>
       <HamburgerMenu isOpen={menuOpen} onClose={() => setMenuOpen(false)} />
-      <div className="club-carousel">
+      <div
+        className="club-carousel"
+        ref={containerRef}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+      >
+        {/* #4: Pull-to-refresh indicator */}
+        {(pullDistance > 0 || isRefreshing) && (
+          <div
+            className="pull-refresh-indicator"
+            style={{
+              height: isRefreshing ? 40 : pullDistance * 0.5,
+              opacity: isRefreshing ? 1 : Math.min(pullDistance / 60, 1),
+            }}
+          >
+            <span className={`pull-refresh-spinner ${isRefreshing ? 'spinning' : ''}`}>↻</span>
+            <span>
+              {isRefreshing
+                ? 'Refreshing…'
+                : pullDistance > 60
+                  ? 'Release to refresh'
+                  : 'Pull to refresh'}
+            </span>
+          </div>
+        )}
         {/* ═══════════════════════════════════════════════════════════════════
                     HEADER - Player Info + Wallet
                 ═══════════════════════════════════════════════════════════════════ */}

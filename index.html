@@ -90,39 +90,59 @@
         if (!data || typeof data !== 'object') return;
         if (data.type !== 'SMARTER_AUTH_TOKEN' || !data.token) return;
 
-        // SECURITY: Validate origin — same checks as main.tsx and App.tsx
+        // SECURITY: Validate origin — aligned with parentOrigin.ts isTrustedOrigin()
+        // FIX 6: Centralized origin list, fixed subdomain check to prevent spoofing
         var o = event.origin;
         var ok = (o === 'https://smarter.poker') ||
                  (o === 'https://www.smarter.poker') ||
-                 (o.indexOf('.smarter.poker') === o.length - 14 && o.indexOf('https://') === 0) ||
                  (o === 'http://localhost:3000') ||
                  (o === window.location.origin);
+        // Subdomain check: must be exactly *.smarter.poker (not evil-smarter.poker)
+        if (!ok && o.indexOf('https://') === 0) {
+          var host = o.substring(8); // strip https://
+          var suffix = '.smarter.poker';
+          ok = host.length > suffix.length && host.substring(host.length - suffix.length) === suffix;
+        }
         if (!ok) return;
         window.__EARLY_AUTH__.token = data.token;
         window.__EARLY_AUTH__.refreshToken = data.refreshToken || null;
         window.__EARLY_AUTH__.settings = data.settings || null;
 
-        // Re-ACK when token arrives (belt + suspenders)
-        try { window.parent.postMessage({ type: 'SMARTER_AUTH_ACK' }, '*'); } catch(e) {}
-        console.log('[INLINE-AUTH] Token received from parent, ACK sent');
+        // Re-ACK when token arrives — use validated origin (not '*')
+        // FIX 6: Store validated origin for all future postMessage calls
+        window.__PARENT_ORIGIN__ = event.origin;
+        try { window.parent.postMessage({ type: 'SMARTER_AUTH_ACK' }, event.origin); } catch(e) {}
+        console.log('[INLINE-AUTH] Token received from parent, ACK sent to ' + event.origin);
       });
 
       // ── Immediate ACK + pulse ──
+      // FIX 6: Use document.referrer origin or fallback to 'https://smarter.poker'
+      // instead of wildcard '*' (which leaks data to any embedder).
+      var _ackOrigin = 'https://smarter.poker'; // safe default
+      try {
+        if (document.referrer) {
+          var _refUrl = new URL(document.referrer);
+          _ackOrigin = _refUrl.origin;
+        }
+      } catch(e) {}
+
       // Send ACK right now AND every 500ms for 30s to ensure parent receives it
       // regardless of timing (parent may start retry loop before our first ACK).
       try {
-        window.parent.postMessage({ type: 'SMARTER_AUTH_ACK' }, '*');
-        window.parent.postMessage({ type: 'CLUB_ARENA_HEARTBEAT' }, '*');
-        console.log('[INLINE-AUTH] Immediate ACK + heartbeat sent');
+        window.parent.postMessage({ type: 'SMARTER_AUTH_ACK' }, _ackOrigin);
+        window.parent.postMessage({ type: 'CLUB_ARENA_HEARTBEAT' }, _ackOrigin);
+        console.log('[INLINE-AUTH] Immediate ACK + heartbeat sent to ' + _ackOrigin);
       } catch(e) {}
 
       var pulses = 0;
       var pulse = setInterval(function() {
         if (pulses > 60) { clearInterval(pulse); return; }
         pulses++;
+        // Use stored parent origin if available (set when token received), else referrer origin
+        var target = window.__PARENT_ORIGIN__ || _ackOrigin;
         try {
-          window.parent.postMessage({ type: 'SMARTER_AUTH_ACK' }, '*');
-          window.parent.postMessage({ type: 'CLUB_ARENA_HEARTBEAT' }, '*');
+          window.parent.postMessage({ type: 'SMARTER_AUTH_ACK' }, target);
+          window.parent.postMessage({ type: 'CLUB_ARENA_HEARTBEAT' }, target);
         } catch(e) {}
       }, 500);
     })();

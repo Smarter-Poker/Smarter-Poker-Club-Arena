@@ -369,22 +369,20 @@ export async function getUserMemberships(
 
   const memberships = (data || []) as unknown as (ClubMember & { club: Club })[];
 
-  // Enrich with LIVE member counts from club_members table
+  // Enrich with LIVE member counts via grouped-count RPC
   // The clubs.member_count column is a denormalized counter that can go stale
   if (memberships.length > 0) {
     const clubIds = memberships.map((m) => (m.club as any)?.id).filter(Boolean) as string[];
 
     if (clubIds.length > 0) {
       try {
-        // Single batched query instead of N individual count queries
-        const { data: memberRows } = await supabase
-          .from('club_members')
-          .select('club_id')
-          .in('club_id', clubIds);
-
+        // RPC returns {club_id, member_count} grouped — 1 row per club instead of N rows
+        const { data: counts } = await supabase.rpc('fn_batch_club_member_counts', {
+          p_club_ids: clubIds,
+        });
         const countMap = new Map<string, number>();
-        for (const row of memberRows || []) {
-          countMap.set(row.club_id, (countMap.get(row.club_id) || 0) + 1);
+        for (const row of counts || []) {
+          countMap.set(row.club_id, Number(row.member_count));
         }
 
         // Override stale member_count with live count

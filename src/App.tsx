@@ -202,41 +202,47 @@ export default function App() {
   });
 
   // ── Consume early auth token received before React mounted ──
-  // The early listener in main.tsx may have already received and ACK'd
-  // the auth token. We still need to actually call setSession() here.
-  // Uses a STATIC import of earlyAuthBridge (zero-dependency module) to
-  // guarantee same module instance and eliminate async delay.
+  // Token may have been received by either:
+  // 1. The INLINE <script> in index.html (window.__EARLY_AUTH__ — runs before modules)
+  // 2. The module-level handler in main.tsx (earlyAuth — runs during module eval)
+  // Check both sources for maximum resilience.
   useEffect(() => {
     const isInIframe = window.parent !== window;
     if (!isInIframe) return;
 
-    // earlyAuth is a static import — guaranteed same instance as main.tsx
-    if (earlyAuth.token && lastAuthTokenRef.current !== earlyAuth.token) {
+    // Merge: inline script token takes priority (it runs first)
+    const token = window.__EARLY_AUTH__?.token || earlyAuth.token;
+    const refreshToken = window.__EARLY_AUTH__?.refreshToken || earlyAuth.refreshToken || '';
+    const settings = window.__EARLY_AUTH__?.settings || earlyAuth.settings;
+
+    if (token && lastAuthTokenRef.current !== token) {
       console.log('[App] Consuming early auth token received before mount');
-      const tokenToSet = earlyAuth.token;
-      const refreshToSet = earlyAuth.refreshToken || '';
-      lastAuthTokenRef.current = tokenToSet;
+      lastAuthTokenRef.current = token;
 
       // Apply settings that came with the early auth
-      if (earlyAuth.settings) {
-        applySettingsRef.current(earlyAuth.settings);
+      if (settings) {
+        applySettingsRef.current(settings);
       }
 
-      // Clear early auth BEFORE async setSession to prevent double-consume
-      // if this effect re-runs (React StrictMode double-mount)
+      // Clear BOTH sources BEFORE async setSession to prevent double-consume
       earlyAuth.token = null;
       earlyAuth.refreshToken = null;
       earlyAuth.settings = null;
+      if (window.__EARLY_AUTH__) {
+        window.__EARLY_AUTH__.token = null;
+        window.__EARLY_AUTH__.refreshToken = null;
+        window.__EARLY_AUTH__.settings = null;
+      }
 
       // Set the session
       supabase.auth
         .setSession({
-          access_token: tokenToSet,
-          refresh_token: refreshToSet,
+          access_token: token,
+          refresh_token: refreshToken,
         })
         .then(() => {
           console.log('[App] ✅ Early auth session set successfully');
-          // Send another ACK to be safe (main.tsx already sent one)
+          // Send another ACK to be safe
           try {
             window.parent.postMessage({ type: 'SMARTER_AUTH_ACK' }, '*');
           } catch {

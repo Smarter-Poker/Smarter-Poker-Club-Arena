@@ -2,18 +2,14 @@
  *  ANTI-GRAVITY AUTO-BOOT MODULE (HARDENED)
  * ═══════════════════════════════════════════════════════════════════════════════
  * This module runs AUTOMATICALLY at app startup.
- * It verifies all required systems and fails-closed if anything is missing.
+ * It verifies all required environment variables and fails-closed if missing.
  *
- * HARD REQUIREMENTS:
+ * HARD REQUIREMENTS (synchronous — no network calls):
  * 1. VITE_ANTIGRAVITY_ENABLED must be 'true'
  * 2. VITE_SUPABASE_URL must exist
  * 3. VITE_SUPABASE_ANON_KEY must exist
- * 4. Supabase must respond to a real health check (getSession)
  *
- * DETERMINISTIC PROOFS (exact format):
- * - ANTIGRAVITY_OK:true/false
- * - SUPABASE_OK:true/false
- * - HEARTBEAT:ONLINE/OFFLINE
+ * Supabase connectivity is validated by IdentityDNA.init() separately.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 

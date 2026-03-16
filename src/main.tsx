@@ -4,14 +4,16 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  * PokerBros Clone — Better
  *
- *  ANTI-GRAVITY FAIL-CLOSED:
- * This entry point AWAITS boot completion before ANY rendering.
- * If boot fails, ONLY the SystemOffline screen renders.
+ *  ANTI-GRAVITY INSTANT RENDER:
+ * React renders IMMEDIATELY after synchronous env-var validation.
+ * MasterBus + IdentityDNA auth listener init BEFORE render (both sync).
+ * IdentityDNA's async getSession() runs in background — does not block paint.
  *
  * BOOT SEQUENCE:
- * 1. Anti-Gravity Core (Env + Supabase)
- * 2. Master Bus (State Management)
- * 3. Identity DNA (Auth/User Profile)
+ * 1. Anti-Gravity Core (Env check — synchronous)
+ * 2. Master Bus (State Management — synchronous)
+ * 3. Identity DNA (Auth listener sync + getSession async)
+ * 4. root.render() — React paints immediately
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -133,10 +135,24 @@ const bootStatus = initAntiGravity();
 const root = ReactDOM.createRoot(document.getElementById('root')!);
 
 if (bootStatus.antigravityOk) {
-  // RENDER IMMEDIATELY — don't wait for MasterBus or IdentityDNA.
+  // PHASE 2: MasterBus — synchronous, instant. Must complete before render
+  // so cross-store sync handlers are ready when auth events fire.
+  initMasterBus();
+
+  // PHASE 3: Start IdentityDNA BEFORE render (fire-and-forget).
+  // setupAuthListener() runs synchronously at the start of init(), which
+  // guarantees the onAuthStateChange listener is registered BEFORE any
+  // React useEffect can call setSession() (useEffects run after paint).
+  // The async getSession() part continues in the background.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const identityPromise = initIdentityDNA().catch((err) => {
+    console.error('[BOOT] IdentityDNA init error (app already rendered):', err);
+  });
+
+  // RENDER IMMEDIATELY — don't wait for IdentityDNA's async getSession().
   // The app has AuthGuard, ErrorBoundary, Connection Watchdog, and Offline
   // Banner that gracefully handle degraded state. Blocking rendering for
-  // boot phases caused 2-10s blank screens — completely unacceptable.
+  // getSession() caused 2-10s blank screens — completely unacceptable.
   root.render(
     <ErrorBoundary>
       <BrowserRouter basename="/hub/club-arena">
@@ -144,21 +160,6 @@ if (bootStatus.antigravityOk) {
       </BrowserRouter>
     </ErrorBoundary>
   );
-
-  // BACKGROUND BOOT: Initialize state management + auth after first paint.
-  // MasterBus is synchronous (instant). IdentityDNA is async but the auth
-  // listener it sets up will handle setSession from the parent postMessage.
-  Promise.resolve().then(async () => {
-    try {
-      console.log('[BOOT] Background: MasterBus...');
-      initMasterBus();
-      console.log('[BOOT] Background: IdentityDNA...');
-      await initIdentityDNA();
-      console.log('[BOOT] Background: Complete ✅');
-    } catch (err) {
-      console.error('[BOOT] Background boot error (app already rendered):', err);
-    }
-  });
 } else {
   // ONLY show SystemOffline for missing env vars (build/deploy misconfiguration)
   console.error('[BOOT] Missing environment variables — rendering diagnostic screen');

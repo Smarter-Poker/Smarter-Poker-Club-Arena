@@ -84,7 +84,7 @@ export const BlockedPlayersList: React.FC<BlockedPlayersListProps> = ({ onUnbloc
         .from('user_blocks')
         .delete()
         .eq('id', player.id)
-        .eq('blocker_id', user?.id || '');
+        .eq('user_id', user?.id || '');
 
       if (error) throw error;
 

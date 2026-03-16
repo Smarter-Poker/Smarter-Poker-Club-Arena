@@ -201,7 +201,7 @@ export default function PlayerNotesPanel({
       .from('player_notes')
       .delete()
       .eq('id', noteId)
-      .eq('author_id', user?.id || '');
+      .eq('user_id', user?.id || '');
     if (error) {
       toast.error('Failed to delete note');
       return;

@@ -275,9 +275,9 @@ export default function ConversationList({
       e.stopPropagation();
       if (!user?.id) return;
       if (isPinned) {
-        await messagingService.unpinConversation(user.id, convId);
+        await messagingService.unpinConversation(convId, user.id);
       } else {
-        await messagingService.pinConversation(user.id, convId);
+        await messagingService.pinConversation(convId, user.id);
       }
       // Update local state
       setConversations((prev) =>

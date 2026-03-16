@@ -200,7 +200,12 @@ export default function MessageThread({ conversationId, onBack }: MessageThreadP
             // Fire-and-forget update
             (async () => {
               try {
-                await supabase.from('messages').update({ is_seen: true }).in('id', unseenIds);
+                // SECURITY: Only mark messages where current user is the receiver
+                await supabase
+                  .from('messages')
+                  .update({ is_seen: true })
+                  .in('id', unseenIds)
+                  .eq('receiver_id', user?.id || '');
                 // Update local state to avoid re-triggering
                 setMessages((current) =>
                   current.map((m) => (unseenIds.includes(m.id) ? { ...m, isSeen: true } : m))

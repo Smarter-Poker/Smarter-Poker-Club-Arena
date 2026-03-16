@@ -151,7 +151,7 @@ export const PlayerNotes: React.FC<PlayerNotesProps> = ({ playerId, onClose, mod
         .from('player_notes')
         .delete()
         .eq('id', noteId)
-        .eq('author_id', user?.id || '');
+        .eq('user_id', user?.id || '');
 
       if (error) throw error;
 

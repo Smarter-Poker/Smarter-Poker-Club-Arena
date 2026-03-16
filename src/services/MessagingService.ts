@@ -736,7 +736,7 @@ class MessagingServiceClass {
         conversation_id: targetConversationId,
         sender_id: senderId,
         receiver_id: receiverId,
-        content: `↪ ${original.content || ''}`.trim(),
+        content: this.sanitizeMessage(`↪ ${original.content || ''}`.trim()),
         image_url: original.image_url,
         audio_url: original.audio_url,
         is_forwarded: true,
@@ -921,14 +921,17 @@ class MessagingServiceClass {
     const elapsed = Date.now() - new Date(msg.created_at).getTime();
     if (elapsed > 5 * 60 * 1000) return false;
 
+    // Sanitize edited content to prevent XSS
+    const sanitizedContent = this.sanitizeMessage(newContent);
     const { error } = await supabase
       .from('messages')
       .update({
-        content: newContent,
+        content: sanitizedContent,
         edited_at: new Date().toISOString(),
         is_edited: true,
       })
-      .eq('id', messageId);
+      .eq('id', messageId)
+      .eq('sender_id', senderId); // SECURITY: double-check sender owns the message
 
     if (!error)
       masterBus.emit('MESSAGE_SENT', {

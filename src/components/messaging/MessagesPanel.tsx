@@ -19,6 +19,7 @@ interface Conversation {
   lastMessage?: string;
   lastMessageAt?: string;
   unreadCount: number;
+  isParticipant1: boolean; // true if current user is participant1
 }
 
 interface Message {
@@ -134,6 +135,7 @@ export default function MessagesPanel({ initialConversationId, onClose }: Messag
             .eq('id', participantId)
             .maybeSingle();
 
+          const isParticipant1 = c.participant1_id === user?.id;
           return {
             id: c.id,
             participantId,
@@ -141,7 +143,8 @@ export default function MessagesPanel({ initialConversationId, onClose }: Messag
             participantAvatar: profile?.avatar_url,
             lastMessage: c.last_message,
             lastMessageAt: c.last_message_at,
-            unreadCount: c.participant1_id === user?.id ? c.unread_count_1 : c.unread_count_2,
+            unreadCount: isParticipant1 ? c.unread_count_1 : c.unread_count_2,
+            isParticipant1,
           };
         })
       );
@@ -181,11 +184,12 @@ export default function MessagesPanel({ initialConversationId, onClose }: Messag
   };
 
   const markAsRead = async (conversationId: string) => {
+    // Reset the correct unread_count column for the CURRENT user
+    // isParticipant1 = true means current user is participant1, so reset unread_count_1
+    const column = selectedConvo?.isParticipant1 ? 'unread_count_1' : 'unread_count_2';
     const { error } = await supabase
       .from('conversations')
-      .update({
-        [`unread_count_${selectedConvo?.participantId === user?.id ? '1' : '2'}`]: 0,
-      })
+      .update({ [column]: 0 })
       .eq('id', conversationId);
     if (error) console.warn('[Messages] markAsRead failed:', error.message);
   };

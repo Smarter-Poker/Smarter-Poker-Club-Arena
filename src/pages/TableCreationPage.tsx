@@ -7,6 +7,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { masterBus } from '../core/MasterBus';
+import { resolveClubUUID } from '../utils/clubIdResolver';
 import './TableCreationPage.css';
 
 const sectionAnimationStyle = (index: number) => ({
@@ -54,14 +55,16 @@ export default function TableCreationPage() {
   const [error, setError] = useState<string | null>(null);
 
   // Union guard: redirect back if club is in a union
+  // FIX: Resolve clubId to UUID — union_clubs stores UUIDs, not integer club_ids
   useEffect(() => {
     if (!clubId) return;
     (async () => {
       try {
+        const resolvedId = await resolveClubUUID(clubId);
         const { data } = await supabase
           .from('union_clubs')
           .select('union_id')
-          .eq('club_id', clubId)
+          .eq('club_id', resolvedId)
           .limit(1)
           .maybeSingle();
         if (data) navigate(`/clubs/${clubId}`, { replace: true });
@@ -84,6 +87,18 @@ export default function TableCreationPage() {
     setCreating(true);
     setError(null);
     try {
+      // UNION GUARD (defense-in-depth): Block creation even if useEffect redirect didn't fire yet
+      const resolvedClubId = await resolveClubUUID(clubId);
+      const { data: unionCheck } = await supabase
+        .from('union_clubs')
+        .select('union_id')
+        .eq('club_id', resolvedClubId)
+        .limit(1)
+        .maybeSingle();
+      if (unionCheck) {
+        throw new Error('Clubs inside a union cannot create standalone tables. Tables are managed at the union level.');
+      }
+
       const { data, error: createError } = await supabase
         .from('tables')
         .insert({

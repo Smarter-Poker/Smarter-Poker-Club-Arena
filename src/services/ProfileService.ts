@@ -231,7 +231,7 @@ class ProfileServiceClass {
         .update({
           current_streak: currentStreak,
           longest_streak: longestStreak,
-          last_login: new Date().toISOString(),
+          last_login_date: new Date().toISOString(), // FIX: was `last_login` — column is `last_login_date`
         })
         .eq('id', userId);
 
@@ -329,7 +329,7 @@ class ProfileServiceClass {
 
       if (error || !data) return true; // Default to accepted if query fails
       const prefs = data.preferences as Record<string, unknown> | null;
-      return prefs?.club_arena_tos_accepted ? true : true; // Always true until column is added
+      return !!prefs?.club_arena_tos_accepted; // FIX: was returning true in both branches
     } catch (err: unknown) {
       console.error('[Profile] hasTOSAccepted error:', err);
       return true; // Default to accepted to avoid blocking
@@ -341,10 +341,21 @@ class ProfileServiceClass {
    */
   async acceptTOS(userId: string): Promise<boolean> {
     // club_arena_tos_accepted_at column doesn't exist yet — store in preferences JSONB
+    // FIX: Merge with existing preferences instead of overwriting the entire JSONB field
+    const { data: existing } = await supabase
+      .from('profiles')
+      .select('preferences')
+      .eq('id', userId)
+      .maybeSingle();
+    const currentPrefs = (existing?.preferences as Record<string, unknown>) || {};
     const { error } = await supabase
       .from('profiles')
       .update({
-        preferences: { club_arena_tos_accepted: true, tos_accepted_at: new Date().toISOString() },
+        preferences: {
+          ...currentPrefs,
+          club_arena_tos_accepted: true,
+          tos_accepted_at: new Date().toISOString(),
+        },
       })
       .eq('id', userId);
 

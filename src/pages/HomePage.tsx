@@ -1235,16 +1235,13 @@ function HomePageInner() {
         }
         case '4': {
           haptic.light();
-          const mktUrl = 'https://smarter.poker/hub/marketplace';
+          // FIX: Use consistent navigation pattern — postToParent for iframe, navigate for standalone
+          // Previous code used unsafe window.top! which can throw in cross-origin iframes
           const inIframe = typeof window !== 'undefined' && window.parent !== window;
           if (inIframe) {
-            try {
-              window.top!.location.href = mktUrl;
-            } catch {
-              postToParent({ type: 'NAVIGATE', path: '/hub/marketplace' });
-            }
+            postToParent({ type: 'NAVIGATE', path: '/hub/marketplace' });
           } else {
-            window.location.href = mktUrl;
+            navigate('/marketplace');
           }
           break;
         }

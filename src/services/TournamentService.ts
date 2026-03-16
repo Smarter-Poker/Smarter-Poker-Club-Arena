@@ -457,8 +457,9 @@ class TournamentService {
         }
         if (i > 0) {
           const prev = config.blindStructure[i - 1] as any;
+          // FIX: Use OR — either blind decreasing is invalid (was AND, which allowed partial decreases)
           if (
-            Number(level.smallBlind) < Number(prev.smallBlind) &&
+            Number(level.smallBlind) < Number(prev.smallBlind) ||
             Number(level.bigBlind) < Number(prev.bigBlind)
           ) {
             throw new Error(

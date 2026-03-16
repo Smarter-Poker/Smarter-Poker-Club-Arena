@@ -18,6 +18,7 @@ import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import haptic from '../../utils/haptic';
+import { resolveClubUUID } from '../../utils/clubIdResolver';
 
 const FB = {
   bg: '#18191A',
@@ -316,6 +317,20 @@ function ConfigModal({
     if (!clubId) return;
     setCreating(true);
     try {
+      // UNION GUARD: Clubs inside a union cannot create standalone tables or tournaments.
+      // This is a defense-in-depth check — the UI should already hide the button,
+      // but we must also block at the action level to prevent race conditions.
+      const resolvedId = await resolveClubUUID(clubId);
+      const { data: unionCheck } = await supabase
+        .from('union_clubs')
+        .select('union_id')
+        .eq('club_id', resolvedId)
+        .limit(1)
+        .maybeSingle();
+      if (unionCheck) {
+        throw new Error('Clubs inside a union cannot create standalone games. Tables and tournaments are managed at the union level.');
+      }
+
       const bb = parseFloat(bigBlind) || 2;
       const sb = parseFloat(smallBlind) || 1;
 
@@ -674,6 +689,7 @@ export default function CreateGameModal({
   const [checkingUnion, setCheckingUnion] = useState(true);
 
   // Check if club is in a union
+  // FIX: Resolve clubId to UUID — union_clubs stores UUIDs, not integer club_ids
   useEffect(() => {
     if (!clubId) {
       setCheckingUnion(false);
@@ -682,10 +698,11 @@ export default function CreateGameModal({
     let isMounted = true;
     (async () => {
       try {
+        const resolvedId = await resolveClubUUID(clubId);
         const { data } = await supabase
           .from('union_clubs')
           .select('union_id')
-          .eq('club_id', clubId)
+          .eq('club_id', resolvedId)
           .limit(1)
           .maybeSingle();
         if (!isMounted) return;

@@ -395,15 +395,17 @@ export default function ClubDetailPage() {
   }, [clubId]);
 
   // Check if club is in a union
+  // FIX: Must resolve clubId to UUID first — union_clubs stores UUIDs, not integer club_ids
   useEffect(() => {
     if (!clubId) return;
     let isMounted = true;
     (async () => {
       try {
+        const resolvedId = await resolveClubUUID(clubId);
         const { data } = await supabase
           .from('union_clubs')
           .select('union_id')
-          .eq('club_id', clubId)
+          .eq('club_id', resolvedId)
           .limit(1)
           .maybeSingle();
         if (!isMounted) return;
@@ -1533,11 +1535,13 @@ export default function ClubDetailPage() {
                 async () => {
                   setTables((prev) => prev.filter((t) => t.id !== id));
                   // SECURITY: Scope deletion to current club to prevent cross-club table deletion
+                  // FIX: Resolve clubId to UUID — tables store UUID club_id, not integer
+                  const resolvedClubId = clubId ? await resolveClubUUID(clubId) : '';
                   const { error } = await supabase
                     .from('tables')
                     .update({ status: 'deleted', is_active: false })
                     .eq('id', id)
-                    .eq('club_id', clubId || '');
+                    .eq('club_id', resolvedClubId);
                   if (error) throw error;
                 },
                 // Rollback payload: restore the table on failure

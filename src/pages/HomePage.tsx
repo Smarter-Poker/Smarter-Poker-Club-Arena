@@ -39,6 +39,7 @@ import LOBBY_TILES from '../config/lobbyTiles.config';
 import { postToParent } from '../utils/parentOrigin';
 import CarouselSection from '../components/home/CarouselSection';
 import type { UserClub } from '../components/home/CarouselSection';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import styles from './HomePage.module.css';
 
 // Lazy-load heavy components to reduce initial bundle
@@ -47,6 +48,8 @@ const FindPlayerModal = lazy(() => import('../components/modals/FindPlayerModal'
 
 const LAST_CLUB_KEY = 'club_arena_last_club';
 const SWR_CACHE_KEY = 'club_arena_clubs_cache';
+const SWR_CACHE_TS_KEY = 'club_arena_clubs_cache_ts';
+const SWR_CACHE_TTL = 60 * 60 * 1000; // 1 hour — skip stale cache from old sessions
 const PINNED_CLUBS_KEY = 'club_arena_pinned_clubs';
 const SOUNDS_ENABLED_KEY = 'club_arena_sounds';
 const CARD_COLOR_KEY = 'club_arena_card_color';
@@ -159,7 +162,9 @@ function HomePageInner() {
     if (inIframe) return [];
     try {
       const cached = localStorage.getItem(SWR_CACHE_KEY);
-      if (cached) {
+      const cacheTs = localStorage.getItem(SWR_CACHE_TS_KEY);
+      const isFresh = cacheTs && Date.now() - Number(cacheTs) < SWR_CACHE_TTL;
+      if (cached && isFresh) {
         const parsed = JSON.parse(cached);
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       }
@@ -231,6 +236,10 @@ function HomePageInner() {
   const [validClubId, setValidClubId] = useState<string | null>(null);
   const [referralCode, setReferralCode] = useState('');
   const joinInputRef = useRef<HTMLInputElement>(null);
+
+  // Focus trapping for modals (accessibility)
+  const leaveModalRef = useFocusTrap(!!leaveConfirm?.visible);
+  const joinModalRef = useFocusTrap(showJoinModal);
 
   // Find Player modal state
   const [showFindPlayerModal, setShowFindPlayerModal] = useState(false);
@@ -311,6 +320,7 @@ function HomePageInner() {
           // Enhancement #9: Update SWR cache
           try {
             localStorage.setItem(SWR_CACHE_KEY, JSON.stringify(clubs));
+            localStorage.setItem(SWR_CACHE_TS_KEY, String(Date.now()));
           } catch {
             /* quota */
           }
@@ -533,7 +543,12 @@ function HomePageInner() {
         console.error('Failed to fetch Shark Club stats:', err);
       }
     }
-    fetchSharkClubStats();
+    fetchSharkClubStats().catch(() => {
+      // Single retry after 3s for cold-start / network blip
+      setTimeout(() => {
+        if (isMounted) fetchSharkClubStats();
+      }, 3000);
+    });
 
     // Real-time clubs table updates via MasterBus channel registry
     const sharkChannelKey = 'clubs-live-stats';
@@ -1197,6 +1212,7 @@ function HomePageInner() {
       {leaveConfirm?.visible && (
         <div className={styles.modalOverlay} onClick={() => setLeaveConfirm(null)}>
           <div
+            ref={leaveModalRef}
             className={styles.modalContent}
             onClick={(e) => e.stopPropagation()}
             role="alertdialog"
@@ -1239,7 +1255,11 @@ function HomePageInner() {
             setValidClubId(null);
           }}
         >
-          <div className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+          <div
+            ref={joinModalRef}
+            className={styles.modalContent}
+            onClick={(e) => e.stopPropagation()}
+          >
             {!showReferralPrompt ? (
               <>
                 <h2 className={styles.modalTitle}>Join a Club</h2>

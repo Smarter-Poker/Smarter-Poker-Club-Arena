@@ -793,15 +793,37 @@ export async function canJoinMoreClubs(): Promise<{
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 🔢 LIVE MEMBER COUNT (bypasses RLS via SECURITY DEFINER RPC)
+// 🔢 LIVE MEMBER COUNT — 3-tier fallback (direct count → RPC → stale column)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
- * Get the LIVE member count for a club using the fn_get_club_member_count RPC.
- * This bypasses RLS so non-members can see public club stats.
- * Falls back to the denormalized clubs.member_count if the RPC is not available.
+ * Get the LIVE member count for a club.
+ *
+ * Strategy (3-tier fallback):
+ *   1. Direct COUNT(*) from club_members via PostgREST — works when RLS allows
+ *      (user is a club member, or service role key is used).
+ *   2. SECURITY DEFINER RPC fn_get_club_member_count — bypasses RLS for
+ *      non-members (requires migration to be deployed).
+ *   3. Denormalized clubs.member_count column — last resort (may be stale,
+ *      but auto-synced by trg_sync_club_member_count trigger once deployed).
  */
 export async function getLiveMemberCount(clubId: string): Promise<number> {
+  // ── Tier 1: Direct count from club_members (works if RLS permits) ──
+  try {
+    const { count, error } = await supabase
+      .from('club_members')
+      .select('*', { count: 'exact', head: true })
+      .eq('club_id', clubId);
+
+    if (!error && typeof count === 'number' && count > 0) {
+      return count;
+    }
+    // count === 0 might mean RLS filtered everything — fall through to Tier 2
+  } catch (e) {
+    console.warn('[ClubsService] getLiveMemberCount direct count failed:', e);
+  }
+
+  // ── Tier 2: SECURITY DEFINER RPC (bypasses RLS) ──
   try {
     const { data, error } = await supabase.rpc('fn_get_club_member_count', {
       p_club_id: clubId,
@@ -810,17 +832,12 @@ export async function getLiveMemberCount(clubId: string): Promise<number> {
     if (!error && typeof data === 'number') {
       return data;
     }
-
-    // RPC not deployed yet — fall back to denormalized column
-    console.warn(
-      '[ClubsService] fn_get_club_member_count RPC unavailable, using stale column:',
-      error?.message
-    );
+    // RPC not deployed yet — fall through to Tier 3
   } catch (e) {
-    console.warn('[ClubsService] getLiveMemberCount RPC call failed:', e);
+    // Silently fall through
   }
 
-  // Fallback: read from clubs table (may be stale)
+  // ── Tier 3: Denormalized clubs.member_count (may be stale) ──
   try {
     const { data: club } = await supabase
       .from('clubs')

@@ -62,7 +62,9 @@ export default function CreditAdminPanel() {
     })();
   }, [user?.id]);
 
-  useVisibilityRefresh(() => { if (authorized) loadAgents(); });
+  useVisibilityRefresh(() => {
+    if (authorized) loadAgents();
+  });
 
   const loadAgents = useCallback(async () => {
     setLoading(true);
@@ -71,9 +73,7 @@ export default function CreditAdminPanel() {
         () =>
           supabase
             .from('agents')
-            .select(
-              'id, agent_wallet_balance, credit_limit, status, profiles!agents_id_fkey(display_name, username)'
-            )
+            .select('id, user_id, agent_wallet_balance, credit_limit, status')
             .order('credit_limit', { ascending: false })
             .limit(100)
             .then((r) => r),
@@ -82,9 +82,28 @@ export default function CreditAdminPanel() {
 
       if (data) {
         if (!isMounted.current) return;
+
+        // Batch-fetch profile names separately (no FK hint needed)
+        const userIds = data.map((a: any) => a.user_id).filter(Boolean);
+        const profileMap: Record<string, { display_name?: string; username?: string }> = {};
+        try {
+          const { data: profiles } = await supabase
+            .from('profiles')
+            .select('id, display_name, username')
+            .in('id', userIds);
+          if (profiles) {
+            for (const p of profiles) profileMap[p.id] = p;
+          }
+        } catch {
+          /* non-critical */
+        }
+
         const mapped: AgentCredit[] = data.map((a: any) => ({
           id: a.id,
-          displayName: a.profiles?.display_name || a.profiles?.username || a.id.substring(0, 8),
+          displayName:
+            profileMap[a.user_id]?.display_name ||
+            profileMap[a.user_id]?.username ||
+            a.id.substring(0, 8),
           creditLimit: a.credit_limit || 0,
           currentBalance: a.agent_wallet_balance || 0,
           debtOwed: Math.max(0, (a.credit_limit || 0) - (a.agent_wallet_balance || 0)),
@@ -213,8 +232,24 @@ export default function CreditAdminPanel() {
       <div style={{ padding: '40px', textAlign: 'center', color: 'rgba(255,255,255,0.4)' }}>
         <div style={{ fontSize: '2rem', marginBottom: '12px' }}>🔒</div>
         <div style={{ fontSize: '0.9rem', fontWeight: 600 }}>Access Denied</div>
-        <div style={{ fontSize: '0.75rem', marginTop: '4px' }}>Only club owners and admins can access the Credit Admin Panel.</div>
-        <button onClick={() => navigate(-1)} style={{ marginTop: '16px', padding: '8px 16px', background: 'rgba(59,130,246,0.15)', border: '1px solid rgba(59,130,246,0.3)', borderRadius: '8px', color: '#3b82f6', cursor: 'pointer', fontWeight: 600 }}>← Go Back</button>
+        <div style={{ fontSize: '0.75rem', marginTop: '4px' }}>
+          Only club owners and admins can access the Credit Admin Panel.
+        </div>
+        <button
+          onClick={() => navigate(-1)}
+          style={{
+            marginTop: '16px',
+            padding: '8px 16px',
+            background: 'rgba(59,130,246,0.15)',
+            border: '1px solid rgba(59,130,246,0.3)',
+            borderRadius: '8px',
+            color: '#3b82f6',
+            cursor: 'pointer',
+            fontWeight: 600,
+          }}
+        >
+          ← Go Back
+        </button>
       </div>
     );
   }

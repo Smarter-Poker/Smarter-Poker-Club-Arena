@@ -107,18 +107,7 @@ export default function ClubAnnouncementsPage() {
 
       const { data, error } = await supabase
         .from('club_announcements')
-        .select(
-          `
-                    id,
-                    title,
-                    content,
-                    created_at,
-                    is_pinned,
-                    author:profiles!club_announcements_profiles_fkey (
-                        username
-                    )
-                `
-        )
+        .select('id, title, content, created_at, is_pinned, author_id')
         .eq('club_id', resolvedId)
         .order('is_pinned', { ascending: false })
         .order('created_at', { ascending: false })
@@ -126,13 +115,27 @@ export default function ClubAnnouncementsPage() {
 
       if (getIsMounted && !getIsMounted()) return;
       if (!error && data) {
+        // Batch-fetch author profiles separately (safe, no FK hint)
+        const authorIds = [...new Set(data.map((a: any) => a.author_id).filter(Boolean))];
+        const authorMap: Record<string, string> = {};
+        if (authorIds.length > 0) {
+          try {
+            const { data: profs } = await supabase
+              .from('profiles')
+              .select('id, username')
+              .in('id', authorIds);
+            if (profs) for (const p of profs) authorMap[p.id] = p.username || 'Admin';
+          } catch {
+            /* non-critical */
+          }
+        }
         setAnnouncements(
           data.map((a: any) => ({
             id: a.id,
             title: a.title,
             content: a.content,
             created_at: a.created_at,
-            author_name: a.author?.username || 'Admin',
+            author_name: authorMap[a.author_id] || 'Admin',
             is_pinned: a.is_pinned,
           }))
         );

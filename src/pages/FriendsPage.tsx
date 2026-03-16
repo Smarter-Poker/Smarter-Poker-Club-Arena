@@ -202,17 +202,7 @@ export default function FriendsPage() {
           () =>
             supabase
               .from('friendships')
-              .select(
-                `
-                    id,
-                    friend:profiles!friendships_friend_id_fkey (
-                        id,
-                        username,
-                        avatar_url
-                    ),
-                    status
-                `
-              )
+              .select('id, friend_id, status')
               .eq('user_id', user?.id)
               .eq('status', 'accepted')
               .order('created_at', { ascending: false })
@@ -224,17 +214,7 @@ export default function FriendsPage() {
           () =>
             supabase
               .from('friendships')
-              .select(
-                `
-                    id,
-                    friend:profiles!friendships_user_id_fkey (
-                        id,
-                        username,
-                        avatar_url
-                    ),
-                    status
-                `
-              )
+              .select('id, user_id, status')
               .eq('friend_id', user?.id)
               .eq('status', 'accepted')
               .order('created_at', { ascending: false })
@@ -246,16 +226,7 @@ export default function FriendsPage() {
           () =>
             supabase
               .from('friendships')
-              .select(
-                `
-                    id,
-                    user:profiles!friendships_user_id_fkey (
-                        id,
-                        username,
-                        avatar_url
-                    )
-                `
-              )
+              .select('id, user_id')
               .eq('friend_id', user?.id)
               .eq('status', 'pending')
               .order('created_at', { ascending: false })
@@ -265,7 +236,51 @@ export default function FriendsPage() {
         ),
       ]);
 
-      const allFriendships = [...(sentResult.data || []), ...(receivedResult.data || [])];
+      // Collect all friend user IDs for batch profile lookup
+      const sentFriendIds = (sentResult.data || []).map((f: any) => f.friend_id);
+      const receivedFriendIds = (receivedResult.data || []).map((f: any) => f.user_id);
+      const pendingUserIds = (pendingResult.data || []).map((p: any) => p.user_id);
+      const allProfileIds = [
+        ...new Set([...sentFriendIds, ...receivedFriendIds, ...pendingUserIds]),
+      ];
+
+      // Batch-fetch all profiles at once (no FK hints needed)
+      const profileMap: Record<string, { username?: string; avatar_url?: string }> = {};
+      if (allProfileIds.length > 0) {
+        try {
+          const { data: profiles } = await supabase
+            .from('profiles')
+            .select('id, username, avatar_url')
+            .in('id', allProfileIds);
+          if (profiles) {
+            for (const p of profiles)
+              profileMap[p.id] = { username: p.username, avatar_url: p.avatar_url };
+          }
+        } catch {
+          /* non-critical */
+        }
+      }
+
+      // Map sent friendships (friend_id is the other person)
+      const sentMapped = (sentResult.data || []).map((f: any) => ({
+        ...f,
+        friend: {
+          id: f.friend_id,
+          username: profileMap[f.friend_id]?.username,
+          avatar_url: profileMap[f.friend_id]?.avatar_url,
+        },
+      }));
+      // Map received friendships (user_id is the other person)
+      const receivedMapped = (receivedResult.data || []).map((f: any) => ({
+        ...f,
+        friend: {
+          id: f.user_id,
+          username: profileMap[f.user_id]?.username,
+          avatar_url: profileMap[f.user_id]?.avatar_url,
+        },
+      }));
+
+      const allFriendships = [...sentMapped, ...receivedMapped];
 
       if (getIsMounted && !getIsMounted()) return;
       if (!isMounted.current) return;
@@ -321,10 +336,10 @@ export default function FriendsPage() {
         setPendingRequests(
           pending.map((p: any) => ({
             id: p.id,
-            user_id: p.user?.id,
-            username: p.user?.username || 'Unknown',
-            avatar_url: p.user?.avatar_url,
-            is_online: onlineUserIds.has(p.user?.id),
+            user_id: p.user_id,
+            username: profileMap[p.user_id]?.username || 'Unknown',
+            avatar_url: profileMap[p.user_id]?.avatar_url,
+            is_online: onlineUserIds.has(p.user_id),
           }))
         );
       }

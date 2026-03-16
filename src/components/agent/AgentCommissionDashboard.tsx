@@ -209,18 +209,34 @@ export function AgentCommissionDashboard() {
       const { data: subAgentsData } = myAgent
         ? await supabase
             .from('agents')
-            .select(
-              'id, user_id, player_count, total_commission, commission_rate, created_at, profiles!agents_user_id_fkey(display_name, avatar_url)'
-            )
+            .select('id, user_id, player_count, total_commission, commission_rate, created_at')
             .eq('parent_agent_id', myAgent.id)
         : { data: null };
 
       if (subAgentsData) {
+        // Batch-fetch sub-agent profiles (no FK hint needed)
+        const subAgentUserIds = subAgentsData.map((a: any) => a.user_id).filter(Boolean);
+        const subProfileMap: Record<string, { display_name?: string; avatar_url?: string }> = {};
+        if (subAgentUserIds.length > 0) {
+          try {
+            const { data: profiles } = await supabase
+              .from('profiles')
+              .select('id, display_name, avatar_url')
+              .in('id', subAgentUserIds);
+            if (profiles) {
+              for (const p of profiles) subProfileMap[p.id] = p;
+            }
+          } catch {
+            /* non-critical */
+          }
+        }
+
         setSubAgents(
           subAgentsData.map((a: any) => ({
             id: a.id,
-            username: a.profiles?.display_name || a.user_id?.substring(0, 8) || 'Unknown',
-            avatarUrl: a.profiles?.avatar_url || '',
+            username:
+              subProfileMap[a.user_id]?.display_name || a.user_id?.substring(0, 8) || 'Unknown',
+            avatarUrl: subProfileMap[a.user_id]?.avatar_url || '',
             totalPlayers: a.player_count || 0,
             totalCommission: a.total_commission || 0,
             commissionRate: a.commission_rate || 0,

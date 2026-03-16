@@ -113,26 +113,30 @@ export default function PlayerNotesPanel({
     setLoading(true);
     const { data, error } = await supabase
       .from('player_notes')
-      .select(
-        `
-                id,
-                target_user_id,
-                note,
-                tags,
-                color,
-                updated_at,
-                profiles!player_notes_target_user_id_fkey(display_name, avatar_url)
-            `
-      )
+      .select('id, target_user_id, note, tags, color, updated_at')
       .eq('user_id', user?.id)
       .order('updated_at', { ascending: false });
 
     if (!error && data) {
+      // Batch-fetch target profiles separately (safe, no FK hint)
+      const tIds = [...new Set(data.map((n: any) => n.target_user_id).filter(Boolean))];
+      const pMap: Record<string, { display_name?: string; avatar_url?: string }> = {};
+      if (tIds.length > 0) {
+        try {
+          const { data: profs } = await supabase
+            .from('profiles')
+            .select('id, display_name, avatar_url')
+            .in('id', tIds);
+          if (profs) for (const p of profs) pMap[p.id] = p;
+        } catch {
+          /* non-critical */
+        }
+      }
       const mapped: PlayerNote[] = data.map((n: any) => ({
         id: n.id,
         targetUserId: n.target_user_id,
-        targetName: n.profiles?.display_name || 'Unknown',
-        targetAvatar: n.profiles?.avatar_url,
+        targetName: pMap[n.target_user_id]?.display_name || 'Unknown',
+        targetAvatar: pMap[n.target_user_id]?.avatar_url,
         note: n.note,
         tags: n.tags || [],
         color: n.color || '#6b7280',

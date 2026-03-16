@@ -102,65 +102,74 @@ function FriendListPanelInner({
       // Query 1: friendships where I am user_id (I sent the request)
       const { data: outbound, error: outErr } = await supabase
         .from('friendships')
-        .select(
-          `
-                    id,
-                    friend_id,
-                    profiles!friendships_friend_id_fkey(
-                        id, username, display_name, avatar_url, level, tier, xp
-                    )
-                `
-        )
+        .select('id, friend_id')
         .eq('user_id', user.id)
         .eq('status', 'accepted');
 
       // Query 2: friendships where I am friend_id (they sent the request)
       const { data: inbound, error: inErr } = await supabase
         .from('friendships')
-        .select(
-          `
-                    id,
-                    user_id,
-                    profiles!friendships_user_id_fkey(
-                        id, username, display_name, avatar_url, level, tier, xp
-                    )
-                `
-        )
+        .select('id, user_id')
         .eq('friend_id', user.id)
         .eq('status', 'accepted');
 
       if (outErr) throw outErr;
       if (inErr) throw inErr;
 
+      // Batch-fetch all friend profiles (no FK hints needed)
+      const outboundIds = (outbound || []).map((f: any) => f.friend_id);
+      const inboundIds = (inbound || []).map((f: any) => f.user_id);
+      const allFriendIds = [...new Set([...outboundIds, ...inboundIds])];
+      const profileMap: Record<string, any> = {};
+      if (allFriendIds.length > 0) {
+        try {
+          const { data: profiles } = await supabase
+            .from('profiles')
+            .select('id, username, display_name, avatar_url, level, tier, xp')
+            .in('id', allFriendIds);
+          if (profiles) {
+            for (const p of profiles) profileMap[p.id] = p;
+          }
+        } catch {
+          /* non-critical */
+        }
+      }
+
       // Map outbound friends (friend_id is the other person)
-      const outboundFriends: Friend[] = (outbound || []).map((f: any) => ({
-        id: f.id,
-        friendId: f.friend_id,
-        displayName: f.profiles?.display_name || f.profiles?.username || 'Unknown',
-        username: f.profiles?.username || '',
-        avatarUrl: f.profiles?.avatar_url,
-        isOnline: false,
-        status: 'offline' as PresenceStatus,
-        tableName: undefined,
-        level: f.profiles?.level || 1,
-        vipTier: (f.profiles?.tier as VipTier) || 'bronze',
-        xpProgress: Math.min(100, (f.profiles?.xp || 0) % 100),
-      }));
+      const outboundFriends: Friend[] = (outbound || []).map((f: any) => {
+        const p = profileMap[f.friend_id];
+        return {
+          id: f.id,
+          friendId: f.friend_id,
+          displayName: p?.display_name || p?.username || 'Unknown',
+          username: p?.username || '',
+          avatarUrl: p?.avatar_url,
+          isOnline: false,
+          status: 'offline' as PresenceStatus,
+          tableName: undefined,
+          level: p?.level || 1,
+          vipTier: (p?.tier as VipTier) || 'bronze',
+          xpProgress: Math.min(100, (p?.xp || 0) % 100),
+        };
+      });
 
       // Map inbound friends (user_id is the other person)
-      const inboundFriends: Friend[] = (inbound || []).map((f: any) => ({
-        id: f.id,
-        friendId: f.user_id,
-        displayName: f.profiles?.display_name || f.profiles?.username || 'Unknown',
-        username: f.profiles?.username || '',
-        avatarUrl: f.profiles?.avatar_url,
-        isOnline: false,
-        status: 'offline' as PresenceStatus,
-        tableName: undefined,
-        level: f.profiles?.level || 1,
-        vipTier: (f.profiles?.tier as VipTier) || 'bronze',
-        xpProgress: Math.min(100, (f.profiles?.xp || 0) % 100),
-      }));
+      const inboundFriends: Friend[] = (inbound || []).map((f: any) => {
+        const p = profileMap[f.user_id];
+        return {
+          id: f.id,
+          friendId: f.user_id,
+          displayName: p?.display_name || p?.username || 'Unknown',
+          username: p?.username || '',
+          avatarUrl: p?.avatar_url,
+          isOnline: false,
+          status: 'offline' as PresenceStatus,
+          tableName: undefined,
+          level: p?.level || 1,
+          vipTier: (p?.tier as VipTier) || 'bronze',
+          xpProgress: Math.min(100, (p?.xp || 0) % 100),
+        };
+      });
 
       // Merge and deduplicate by friendId
       const seen = new Set<string>();

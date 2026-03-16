@@ -194,7 +194,7 @@ export default function AntiCheatPage() {
       try {
         let query = supabase
           .from('anti_cheat_flags')
-          .select('*, player:profiles!anti_cheat_flags_player_id_fkey(display_name)')
+          .select('*, player_id')
           .eq('club_id', clubId)
           .order('flagged_at', { ascending: false })
           .limit(50);
@@ -206,8 +206,33 @@ export default function AntiCheatPage() {
 
         const { data, error } = await query;
         if (error) throw error;
-        if (mountedRef.current) {
-          setFlags(data || []);
+
+        // Batch-fetch player profiles (no FK hint needed)
+        if (data && data.length > 0) {
+          const playerIds = [...new Set(data.map((f: any) => f.player_id).filter(Boolean))];
+          const playerNames: Record<string, string> = {};
+          if (playerIds.length > 0) {
+            try {
+              const { data: profiles } = await supabase
+                .from('profiles')
+                .select('id, display_name')
+                .in('id', playerIds);
+              if (profiles) {
+                for (const p of profiles)
+                  playerNames[p.id] = p.display_name || p.id.substring(0, 8);
+              }
+            } catch {
+              /* non-critical */
+            }
+          }
+          if (mountedRef.current) {
+            setFlags(
+              data.map((f: any) => ({ ...f, player: { display_name: playerNames[f.player_id] } }))
+            );
+            setFlagsLoaded(true);
+          }
+        } else if (mountedRef.current) {
+          setFlags([]);
           setFlagsLoaded(true);
         }
       } catch (err: any) {
@@ -227,13 +252,37 @@ export default function AntiCheatPage() {
     try {
       const { data, error } = await supabase
         .from('anti_cheat_events')
-        .select('*, player:profiles!anti_cheat_events_player_id_fkey(display_name)')
+        .select('*, player_id')
         .eq('club_id', clubId)
         .order('created_at', { ascending: false })
         .limit(50);
       if (error) throw error;
-      if (mountedRef.current) {
-        setEvents(data || []);
+
+      // Batch-fetch player profiles (no FK hint needed)
+      if (data && data.length > 0) {
+        const playerIds = [...new Set(data.map((e: any) => e.player_id).filter(Boolean))];
+        const playerNames: Record<string, string> = {};
+        if (playerIds.length > 0) {
+          try {
+            const { data: profiles } = await supabase
+              .from('profiles')
+              .select('id, display_name')
+              .in('id', playerIds);
+            if (profiles) {
+              for (const p of profiles) playerNames[p.id] = p.display_name || p.id.substring(0, 8);
+            }
+          } catch {
+            /* non-critical */
+          }
+        }
+        if (mountedRef.current) {
+          setEvents(
+            data.map((e: any) => ({ ...e, player: { display_name: playerNames[e.player_id] } }))
+          );
+          setEventsLoaded(true);
+        }
+      } else if (mountedRef.current) {
+        setEvents([]);
         setEventsLoaded(true);
       }
     } catch (err: any) {

@@ -114,11 +114,7 @@ class HandHistoryServiceClass {
                         hole_cards,
                         final_hand,
                         result,
-                        is_winner,
-                        profiles!hand_players_profiles_fkey (
-                            username,
-                            avatar_url
-                        )
+                        is_winner
                     ),
                     tables (
                         name,
@@ -199,11 +195,7 @@ class HandHistoryServiceClass {
                         hole_cards,
                         final_hand,
                         result,
-                        is_winner,
-                        profiles!hand_players_profiles_fkey (
-                            username,
-                            avatar_url
-                        )
+                        is_winner
                     ),
                     tables (
                         name,
@@ -376,8 +368,7 @@ class HandHistoryServiceClass {
         map.set(p.id, { username: p.username, avatar_url: p.avatar_url });
       }
     } catch (err) {
-
-      console.error("[HandHistoryService] Error:", err);
+      console.error('[HandHistoryService] Error:', err);
       // Non-critical — names will fall back to truncated user_id
     }
 

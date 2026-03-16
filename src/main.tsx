@@ -54,16 +54,7 @@ window.addEventListener('unhandledrejection', (event) => {
 // is sent as fast as possible. The token is stored for App.tsx to consume on mount.
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/** Module-level storage for auth received before React mounts */
-export const earlyAuth: {
-  token: string | null;
-  refreshToken: string | null;
-  settings: Record<string, unknown> | null;
-} = {
-  token: null,
-  refreshToken: null,
-  settings: null,
-};
+import { earlyAuth } from './core/earlyAuthBridge';
 
 if (window.parent !== window) {
   const earlyAuthHandler = (event: MessageEvent) => {

@@ -207,8 +207,8 @@ export default function App() {
     const isInIframe = window.parent !== window;
     if (!isInIframe) return;
 
-    // Dynamic import to avoid circular dependency
-    import('./main')
+    // Import from the shared bridge module (no circular dependency)
+    import('./core/earlyAuthBridge')
       .then(({ earlyAuth }) => {
         if (earlyAuth.token && lastAuthTokenRef.current !== earlyAuth.token) {
           console.log('[App] Consuming early auth token received before mount');
@@ -245,8 +245,7 @@ export default function App() {
         }
       })
       .catch(() => {
-        // If dynamic import fails, App.tsx postMessage handler below is still the fallback
-        console.warn('[App] Could not import earlyAuth — relying on postMessage handler');
+        console.warn('[App] Could not import earlyAuthBridge — relying on postMessage handler');
       });
   }, []);
 

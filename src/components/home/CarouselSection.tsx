@@ -361,7 +361,9 @@ export default function CarouselSection({
                 <span className={styles.statsBackTitle}>STATS</span>
                 <div className={styles.statsBackRow}>
                   <span className={styles.statsBackLabel}>Members</span>
-                  <span className={styles.statsBackValue}>{club.member_count || 0}</span>
+                  <span className={styles.statsBackValue}>
+                    {(club.member_count || 0).toLocaleString()}
+                  </span>
                 </div>
                 <div className={styles.statsBackRow}>
                   <span className={styles.statsBackLabel}>Tables</span>
@@ -426,7 +428,7 @@ export default function CarouselSection({
                   )}
                 </div>
                 <div className={styles.carouselCardMeta}>
-                  <span>{club.member_count || 0} MEMBERS</span>
+                  <span>{(club.member_count || 0).toLocaleString()} MEMBERS</span>
                   {(club.active_tables || 0) > 0 && (
                     <div className={styles.activeTablesBadge}>
                       <span className={styles.activeTablesDot}></span>

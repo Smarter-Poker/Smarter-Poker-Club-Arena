@@ -373,11 +373,13 @@ function HomePageInner() {
     fetchUserData(false, () => isMounted);
 
     let channel: ReturnType<typeof masterBus.getOrCreateChannel> | null = null;
+    let cachedAuthUserId: string | null = null; // Cache for cleanup — avoids async getAuthUser() in teardown
     const setupRealtimeSubscription = async () => {
       const {
         data: { user: authUser },
       } = await getAuthUser();
       if (!authUser?.id) return;
+      cachedAuthUserId = authUser.id; // Cache for cleanup
 
       const channelKey = `home-clubs-${authUser.id}`;
       channel = masterBus.getOrCreateChannel(channelKey);
@@ -471,11 +473,11 @@ function HomePageInner() {
       if (channel) {
         channel.unsubscribe();
       }
-      getAuthUser().then(({ data: { user: authUser } }) => {
-        if (authUser?.id) {
-          masterBus.removeRegisteredChannel(`home-clubs-${authUser.id}`);
-        }
-      });
+      // Use cached userId from setup — avoids async getAuthUser() call in cleanup
+      // which was fire-and-forget and could leak channels if auth state changed
+      if (cachedAuthUserId) {
+        masterBus.removeRegisteredChannel(`home-clubs-${cachedAuthUserId}`);
+      }
       unsubJoined();
       unsubLeft();
       unsubUpdated();

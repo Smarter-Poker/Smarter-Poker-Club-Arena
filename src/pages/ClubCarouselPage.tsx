@@ -629,7 +629,9 @@ export default function ClubCarouselPage() {
                             <span className="club-name">{club.name}</span>
                             <span className="club-meta">
                               LVL: {club.level}
-                              <span className="member-count">{club.member_count}</span>
+                              <span className="member-count">
+                                {(club.member_count || 0).toLocaleString()}
+                              </span>
                             </span>
                           </div>
                         </div>

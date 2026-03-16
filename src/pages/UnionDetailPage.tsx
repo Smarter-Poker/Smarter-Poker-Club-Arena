@@ -157,7 +157,7 @@ export default function UnionDetailPage() {
           unionData.memberCount = computedMemberCount;
         }
         setUnion(unionData);
-        setClubs(clubsData);
+        setClubs(clubsData || []);
         const sortedTables = (tablesData || []).sort((a: PokerTable, b: PokerTable) => {
           const aPlayers = a.current_players || 0;
           const bPlayers = b.current_players || 0;
@@ -295,7 +295,7 @@ export default function UnionDetailPage() {
     const reloadUnionClubs = async () => {
       try {
         const clubsData = await unionService.getUnionClubs(unionId);
-        setClubs(clubsData);
+        setClubs(clubsData || []);
       } catch (err) {
         // Non-critical: clubs reload failed
       }

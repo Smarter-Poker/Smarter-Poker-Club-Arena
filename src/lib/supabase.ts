@@ -58,21 +58,33 @@ export async function getAuthUser(timeoutMs = 6000) {
   const inIframe = typeof window !== 'undefined' && window.parent !== window;
 
   // ── IFRAME FAST PATH ──
-  // getUser() always hangs in iframe context. Skip it entirely.
+  // getUser() always hangs in iframe context (API blocked by sandbox).
+  // Use getSession() which reads from the SDK's in-memory store (instant).
+  // Retry briefly if session not yet available (setSession from postMessage may be in-flight).
   if (inIframe) {
-    try {
-      const {
-        data: { session },
-        error: sessionError,
-      } = await supabase.auth.getSession();
-      if (session?.user) {
-        return { data: { user: session.user }, error: null };
+    const maxRetries = 10;
+    const retryInterval = 200; // ms
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const {
+          data: { session },
+          error: sessionError,
+        } = await supabase.auth.getSession();
+        if (session?.user) {
+          return { data: { user: session.user }, error: null };
+        }
+        // If no session yet and we have retries left, wait briefly
+        if (attempt < maxRetries - 1) {
+          await new Promise((r) => setTimeout(r, retryInterval));
+          continue;
+        }
+        return { data: { user: null }, error: sessionError };
+      } catch (sessionErr) {
+        console.warn('[getAuthUser] iframe getSession() failed:', sessionErr);
+        return { data: { user: null }, error: sessionErr };
       }
-      return { data: { user: null }, error: sessionError };
-    } catch (sessionErr) {
-      console.warn('[getAuthUser] iframe getSession() failed:', sessionErr);
-      return { data: { user: null }, error: sessionErr };
     }
+    return { data: { user: null }, error: null };
   }
 
   // ── STANDALONE PATH (non-iframe) ──

@@ -102,30 +102,31 @@ export const MembershipService = {
     const resolvedId = await resolveClubUUID(clubId);
     const { data, error } = await supabase
       .from('club_members')
-      .select(
-        `
-                club_id,
-                user_id,
-                role,
-                status,
-                joined_at,
-                invited_by,
-                agent_id,
-                notes,
-                profiles!club_members_profiles_fkey (
-                    display_name,
-                    avatar_url
-                )
-            `
-      )
+      .select('club_id, user_id, role, status, joined_at, invited_by, agent_id, notes')
       .eq('club_id', resolvedId)
       .order('joined_at', { ascending: false })
       .limit(5000);
 
     if (error) throw error;
+    if (!data || data.length === 0) return [];
 
-    return (data || []).map((m) => ({
-      id: `${m.club_id}:${m.user_id}`, // Synthetic id from composite key
+    // Batch-fetch profiles separately (no FK hint needed)
+    const userIds = data.map((m) => m.user_id);
+    const profileMap: Record<string, { display_name?: string; avatar_url?: string }> = {};
+    try {
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, display_name, avatar_url')
+        .in('id', userIds);
+      if (profiles) {
+        for (const p of profiles) profileMap[p.id] = p;
+      }
+    } catch {
+      /* non-critical */
+    }
+
+    return data.map((m) => ({
+      id: `${m.club_id}:${m.user_id}`,
       clubId: m.club_id,
       userId: m.user_id,
       role: m.role as MemberRole,
@@ -134,8 +135,8 @@ export const MembershipService = {
       invitedBy: m.invited_by,
       agentId: m.agent_id,
       notes: m.notes,
-      displayName: (m.profiles as any)?.display_name,
-      avatarUrl: (m.profiles as any)?.avatar_url,
+      displayName: profileMap[m.user_id]?.display_name,
+      avatarUrl: profileMap[m.user_id]?.avatar_url,
     }));
   },
 
@@ -264,19 +265,7 @@ export const MembershipService = {
     const resolvedId = await resolveClubUUID(clubId);
     const { data, error } = await supabase
       .from('club_members')
-      .select(
-        `
-                club_id,
-                user_id,
-                role,
-                status,
-                joined_at,
-                profiles!club_members_profiles_fkey (
-                    display_name,
-                    avatar_url
-                )
-            `
-      )
+      .select('club_id, user_id, role, status, joined_at')
       .eq('club_id', resolvedId)
       .in('status', ['active', 'approved'])
       .in('role', ['member', 'guest'])
@@ -284,16 +273,32 @@ export const MembershipService = {
       .limit(500);
 
     if (error) throw error;
+    if (!data || data.length === 0) return [];
 
-    return (data || []).map((m) => ({
-      id: `${m.club_id}:${m.user_id}`, // Synthetic id from composite key
+    // Batch-fetch profiles separately (no FK hint needed)
+    const userIds = data.map((m) => m.user_id);
+    const profileMap: Record<string, { display_name?: string; avatar_url?: string }> = {};
+    try {
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, display_name, avatar_url')
+        .in('id', userIds);
+      if (profiles) {
+        for (const p of profiles) profileMap[p.id] = p;
+      }
+    } catch {
+      /* non-critical */
+    }
+
+    return data.map((m) => ({
+      id: `${m.club_id}:${m.user_id}`,
       clubId: m.club_id,
       userId: m.user_id,
       role: m.role as MemberRole,
       status: m.status as MemberStatus,
       joinedAt: m.joined_at,
-      displayName: (m.profiles as any)?.display_name || 'Unknown',
-      avatarUrl: (m.profiles as any)?.avatar_url,
+      displayName: profileMap[m.user_id]?.display_name || 'Unknown',
+      avatarUrl: profileMap[m.user_id]?.avatar_url,
     }));
   },
 

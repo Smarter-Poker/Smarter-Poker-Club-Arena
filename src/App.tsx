@@ -152,6 +152,30 @@ function LoadingSpinner() {
 
 const INTRO_SHOWN_KEY = 'club_arena_intro_shown';
 
+// ── Window extension for early auth cleanup signal ──
+declare global {
+  interface Window {
+    __earlyAuthConsumed?: boolean;
+  }
+}
+
+/**
+ * Quick JWT expiry check — returns true if the token is expired or malformed.
+ * Uses a 30-second buffer so we don't attempt setSession() with a token
+ * that will expire before Supabase can process it.
+ */
+function isTokenExpired(token: string): boolean {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return true; // Malformed JWT
+    const payload = JSON.parse(atob(parts[1]));
+    if (typeof payload.exp !== 'number') return true; // No expiry claim
+    return payload.exp * 1000 < Date.now() + 30_000; // 30s buffer
+  } catch {
+    return true; // Parse error — treat as expired
+  }
+}
+
 export default function App() {
   // Check if intro video has been shown this session
   const [showIntro, setShowIntro] = useState(() => {

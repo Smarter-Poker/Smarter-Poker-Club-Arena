@@ -45,7 +45,6 @@ import styles from './HomePage.module.css';
 const CreateClubModal = lazy(() => import('../components/modals/CreateClubModal'));
 const FindPlayerModal = lazy(() => import('../components/modals/FindPlayerModal'));
 
-const LAST_VISITED_KEY = 'club_arena_last_visited';
 const LAST_CLUB_KEY = 'club_arena_last_club';
 const SWR_CACHE_KEY = 'club_arena_clubs_cache';
 const PINNED_CLUBS_KEY = 'club_arena_pinned_clubs';
@@ -673,7 +672,6 @@ function HomePageInner() {
           setShowFindPlayerModal(false);
           setLeaveConfirm(null);
           setShowShortcutHint(false);
-
           break;
       }
     };

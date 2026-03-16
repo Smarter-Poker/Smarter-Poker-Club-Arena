@@ -13,7 +13,7 @@ import { supabase } from '../../lib/supabase';
 import { identityDNA } from '../../core/IdentityDNA';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
-import styles from './HamburgerMenu.module.css';
+import { masterBus } from '../../core/MasterBus';
 
 interface HamburgerMenuProps {
   isOpen: boolean;
@@ -167,18 +167,21 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     const newValue = !soundsEnabled;
     setSoundsEnabled(newValue);
     updateSetting('soundsEnabled', 'sounds_enabled', newValue);
+    masterBus.emit('SETTINGS_CHANGED', { setting: 'isSoundEnabled', value: newValue });
   };
 
   const handleVibrationsToggle = () => {
     const newValue = !vibrationsEnabled;
     setVibrationsEnabled(newValue);
     updateSetting('vibrationsEnabled', 'vibrations_enabled', newValue);
+    masterBus.emit('SETTINGS_CHANGED', { setting: 'vibrationsEnabled', value: newValue });
   };
 
   const handleShowBBToggle = () => {
     const newValue = !showBBEnabled;
     setShowBBEnabled(newValue);
     updateSetting('showStackInBB', 'show_stack_bb', newValue);
+    masterBus.emit('SETTINGS_CHANGED', { setting: 'showStackInBB', value: newValue });
   };
 
   const handleResetTutorial = async () => {
@@ -764,7 +767,6 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                   setSelectedCardColor(preset.id);
                   localStorage.setItem('club_arena_card_color', preset.id);
                   try {
-                    const { masterBus } = await import('../../core/MasterBus');
                     masterBus.emit('CARD_COLOR_CHANGED', { preset: preset.id });
                   } catch (err) {
                     console.error('[HamburgerMenu] Error:', err);

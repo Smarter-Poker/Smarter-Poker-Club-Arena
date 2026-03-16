@@ -65,29 +65,26 @@
       // Storage for auth received before React mounts
       window.__EARLY_AUTH__ = { token: null, refreshToken: null, settings: null };
 
-      var acked = false;
+      // ═══════════════════════════════════════════════════════════════════════
+      // UNCONDITIONAL ACK — Always tell parent we're alive and ready.
+      // ═══════════════════════════════════════════════════════════════════════
+      // The parent's ClubArenaEmbed shows "Connection Problem" if it doesn't
+      // receive SMARTER_AUTH_ACK within its retry window. The ACK means
+      // "iframe loaded and is handling auth" — NOT "user is authenticated."
+      //
+      // Actual auth is handled by:
+      //   1. SSO via shared localStorage ('smarter-poker-auth' storageKey)
+      //   2. postMessage token from parent (when parent's getUser() works)
+      //   3. Supabase autoRefreshToken (refreshes expired tokens automatically)
+      //   4. AuthGuard (redirects to /auth if all else fails)
+      //
+      // The parent's getUser() can fail with AbortError, preventing it from
+      // sending SMARTER_AUTH_TOKEN. If we only ACK after receiving the token,
+      // we deadlock. By ACKing unconditionally, the parent dismisses its
+      // overlay and the iframe handles auth through the 4 mechanisms above.
+      // ═══════════════════════════════════════════════════════════════════════
 
-      // ── SSO PRE-CHECK: If we share localStorage with the parent (same-origin),
-      // we may already have a valid auth session. In that case, send ACK
-      // immediately so the parent doesn't show "Connection Problem" while
-      // waiting for its own getUser() call (which can fail with AbortError).
-      try {
-        var raw = localStorage.getItem('smarter-poker-auth');
-        if (raw) {
-          var parsed = JSON.parse(raw);
-          var token = parsed && parsed.access_token;
-          if (token && typeof token === 'string' && token.split('.').length === 3) {
-            // Verify not expired (with 60s buffer)
-            var payload = JSON.parse(atob(token.split('.')[1]));
-            if (typeof payload.exp === 'number' && payload.exp * 1000 > Date.now() - 60000) {
-              acked = true;
-              console.log('[INLINE-AUTH] SSO session found in localStorage — sending proactive ACK');
-            }
-          }
-        }
-      } catch(e) { /* localStorage unavailable or corrupt token */ }
-
-      // Send ACK to parent — fires for every SMARTER_AUTH_TOKEN received
+      // Listen for auth tokens from parent (still needed for non-SSO scenarios)
       window.addEventListener('message', function(event) {
         var data = event.data;
         if (!data || typeof data !== 'object') return;
@@ -101,40 +98,33 @@
                  (o === 'http://localhost:3000') ||
                  (o === window.location.origin);
         if (!ok) return;
-
-        acked = true;
         window.__EARLY_AUTH__.token = data.token;
         window.__EARLY_AUTH__.refreshToken = data.refreshToken || null;
         window.__EARLY_AUTH__.settings = data.settings || null;
 
-        // ACK to wildcard — covers all origin edge cases
+        // Re-ACK when token arrives (belt + suspenders)
         try { window.parent.postMessage({ type: 'SMARTER_AUTH_ACK' }, '*'); } catch(e) {}
-        console.log('[INLINE-AUTH] ACK sent to parent (token received)');
+        console.log('[INLINE-AUTH] Token received from parent, ACK sent');
       });
 
-      // Proactive pulse — send heartbeat + ACK every 500ms for 30s
-      // CRITICAL: Always send ACK alongside heartbeat when we have auth (SSO or token).
-      // The parent may fail to send SMARTER_AUTH_TOKEN (AbortError on its getUser()),
-      // but it still listens for our ACK to dismiss the "Connection Problem" overlay.
+      // ── Immediate ACK + pulse ──
+      // Send ACK right now AND every 500ms for 30s to ensure parent receives it
+      // regardless of timing (parent may start retry loop before our first ACK).
+      try {
+        window.parent.postMessage({ type: 'SMARTER_AUTH_ACK' }, '*');
+        window.parent.postMessage({ type: 'CLUB_ARENA_HEARTBEAT' }, '*');
+        console.log('[INLINE-AUTH] Immediate ACK + heartbeat sent');
+      } catch(e) {}
+
       var pulses = 0;
       var pulse = setInterval(function() {
         if (pulses > 60) { clearInterval(pulse); return; }
         pulses++;
         try {
+          window.parent.postMessage({ type: 'SMARTER_AUTH_ACK' }, '*');
           window.parent.postMessage({ type: 'CLUB_ARENA_HEARTBEAT' }, '*');
-          if (acked) {
-            window.parent.postMessage({ type: 'SMARTER_AUTH_ACK' }, '*');
-          }
         } catch(e) {}
       }, 500);
-
-      // Immediate heartbeat + ACK if SSO session exists
-      try {
-        window.parent.postMessage({ type: 'CLUB_ARENA_HEARTBEAT' }, '*');
-        if (acked) {
-          window.parent.postMessage({ type: 'SMARTER_AUTH_ACK' }, '*');
-        }
-      } catch(e) {}
     })();
   </script>
 

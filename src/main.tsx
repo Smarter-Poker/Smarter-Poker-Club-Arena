@@ -60,29 +60,16 @@ import { postToParent, setParentOrigin, isTrustedOrigin } from './utils/parentOr
 if (window.parent !== window) {
   let authReceived = false;
 
-  // ── SSO PRE-CHECK: If we already have a valid session from shared localStorage,
-  // send ACKs proactively. The parent's getUser() can fail with AbortError,
-  // preventing it from ever sending SMARTER_AUTH_TOKEN. But since we share the
-  // same storageKey ('smarter-poker-auth'), we already have auth and should
-  // tell the parent immediately to prevent the "Connection Problem" overlay.
-  let hasSSO = false;
-  try {
-    const raw = localStorage.getItem('smarter-poker-auth');
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      const token = parsed?.access_token;
-      if (token && typeof token === 'string' && token.split('.').length === 3) {
-        const payload = JSON.parse(atob(token.split('.')[1]));
-        if (typeof payload.exp === 'number' && payload.exp * 1000 > Date.now() - 60000) {
-          hasSSO = true;
-          console.log('[EARLY-AUTH] ✅ SSO session found — sending proactive ACK');
-          postToParent({ type: 'SMARTER_AUTH_ACK' });
-        }
-      }
-    }
-  } catch {
-    /* localStorage unavailable or corrupt token */
-  }
+  // ═══════════════════════════════════════════════════════════════════════
+  // UNCONDITIONAL ACK — Same principle as index.html inline script.
+  // ACK means "iframe is alive and handling auth" — auth state is managed
+  // independently via SSO/autoRefreshToken/AuthGuard.
+  // ═══════════════════════════════════════════════════════════════════════
+
+  // Immediate ACK (module evaluation is fast, parent may still be retrying)
+  postToParent({ type: 'SMARTER_AUTH_ACK' });
+  postToParent({ type: 'CLUB_ARENA_HEARTBEAT' });
+  console.log('[EARLY-AUTH] ✅ Unconditional ACK + heartbeat sent');
 
   const earlyAuthHandler = (event: MessageEvent) => {
     // Validate origin: same checks as App.tsx
@@ -92,9 +79,9 @@ if (window.parent !== window) {
       authReceived = true;
       // Store validated parent origin for all future postMessage calls
       setParentOrigin(event.origin);
-      // ACK immediately — uses validated parent origin (never wildcard)
+      // Re-ACK when token arrives
       postToParent({ type: 'SMARTER_AUTH_ACK' });
-      console.log('[EARLY-AUTH] ✅ ACK sent to parent before boot');
+      console.log('[EARLY-AUTH] ✅ Token received, ACK sent');
 
       // Store token for App.tsx to pick up after mount
       earlyAuth.token = event.data.token;
@@ -104,10 +91,7 @@ if (window.parent !== window) {
   };
   window.addEventListener('message', earlyAuthHandler);
 
-  // PROACTIVE ACK PULSE: Send periodic ACKs so the Hub receives one
-  // regardless of timing. The Hub may start its retry loop before our
-  // listener is registered, so we pulse ACKs until auth is received.
-  // CRITICAL: Also send ACK when we have SSO session (even without token from parent).
+  // ACK pulse — keep sending until parent acknowledges or 15s passes
   let pulseCount = 0;
   const ackPulse = setInterval(() => {
     if ((authReceived && pulseCount > 5) || pulseCount > 30) {
@@ -115,19 +99,9 @@ if (window.parent !== window) {
       return;
     }
     pulseCount++;
-    postToParent({ type: 'CLUB_ARENA_HEARTBEAT' });
-    // Send ACK if we have auth from any source (token from parent OR SSO)
-    if (earlyAuth.token || hasSSO) {
-      postToParent({ type: 'SMARTER_AUTH_ACK' });
-    }
-  }, 500);
-
-  // Send an immediate heartbeat + ACK if we have SSO
-  postToParent({ type: 'CLUB_ARENA_HEARTBEAT' });
-  if (hasSSO) {
     postToParent({ type: 'SMARTER_AUTH_ACK' });
-  }
-  console.log('[EARLY-AUTH] Heartbeat sent, waiting for auth token...');
+    postToParent({ type: 'CLUB_ARENA_HEARTBEAT' });
+  }, 500);
 
   // CLEANUP: Once App.tsx has consumed the early auth and taken over message
   // handling, remove this early listener to avoid duplicate processing.

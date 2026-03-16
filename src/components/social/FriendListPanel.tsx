@@ -106,7 +106,7 @@ function FriendListPanelInner({
                     id,
                     friend_id,
                     profiles!friendships_friend_id_fkey(
-                        id, username, display_name, avatar_url, level, vip_tier, vip_points
+                        id, username, display_name, avatar_url, level, tier, xp
                     )
                 `
         )
@@ -126,8 +126,8 @@ function FriendListPanelInner({
         status: 'offline' as PresenceStatus,
         tableName: undefined,
         level: f.profiles?.level || 1,
-        vipTier: (f.profiles?.vip_tier as VipTier) || 'bronze',
-        xpProgress: Math.min(100, (f.profiles?.vip_points || 0) % 100),
+        vipTier: (f.profiles?.tier as VipTier) || 'bronze',
+        xpProgress: Math.min(100, (f.profiles?.xp || 0) % 100),
       }));
 
       // Sort by online status

@@ -218,29 +218,14 @@ export default function ProfilePage() {
     if (!au) return;
     const { data: p } = await supabase
       .from('profiles')
-      .select('diamonds, daily_streak, is_vip, stats')
+      .select('diamonds, login_streak, is_vip')
       .eq('id', au.id)
       .maybeSingle();
     if (p) {
       setDiamonds(p.diamonds || 0);
-      setDailyStreak(p.daily_streak || 0);
+      setDailyStreak(p.login_streak || 0);
       setIsVIP(p.is_vip || false);
-      if (p.stats)
-        setStats({
-          totalHands: p.stats.total_hands || 0,
-          vpip: p.stats.vpip || 0,
-          pfr: p.stats.pfr || 0,
-          threeBet: p.stats.three_bet || 0,
-          aggression: p.stats.aggression_factor || 0,
-          bbPer100: p.stats.bb_per_100 || 0,
-          biggestPot: p.stats.biggest_pot || 0,
-          totalProfit: p.stats.total_profit || 0,
-          winRate: p.stats.win_rate || 0,
-          tournamentsPlayed: p.stats.tournaments_played || 0,
-          tournamentsWon: p.stats.tournaments_won || 0,
-          bountyKOs: p.stats.bounty_kos || 0,
-          roi: p.stats.roi || 0,
-        });
+      // stats column doesn't exist in profiles DB table — stats will be loaded separately
     }
   });
   const [activeTab, setActiveTab] = useState<'stats' | 'achievements' | 'history' | 'social'>(
@@ -316,7 +301,7 @@ export default function ProfilePage() {
             supabase
               .from('profiles')
               .select(
-                'id, username, display_name, player_number, avatar_url, tier, created_at, diamonds, is_vip, daily_streak, stats'
+                'id, username, display_name, player_number, avatar_url, tier, created_at, diamonds, is_vip, login_streak'
               )
               .eq('id', authUser.id)
               .maybeSingle()
@@ -337,25 +322,9 @@ export default function ProfilePage() {
 
           setDiamonds(profile.diamonds || 0);
           setIsVIP(profile.is_vip || false);
-          setDailyStreak(profile.daily_streak || 0);
+          setDailyStreak(profile.login_streak || 0);
 
-          if (profile.stats) {
-            setStats({
-              totalHands: profile.stats.total_hands || 0,
-              vpip: profile.stats.vpip || 0,
-              pfr: profile.stats.pfr || 0,
-              threeBet: profile.stats.three_bet || 0,
-              aggression: profile.stats.aggression_factor || 0,
-              bbPer100: profile.stats.bb_per_100 || 0,
-              biggestPot: profile.stats.biggest_pot || 0,
-              totalProfit: profile.stats.total_profit || 0,
-              winRate: profile.stats.win_rate || 0,
-              tournamentsPlayed: profile.stats.tournaments_played || 0,
-              tournamentsWon: profile.stats.tournaments_won || 0,
-              bountyKOs: profile.stats.bounty_kos || 0,
-              roi: profile.stats.roi || 0,
-            });
-          }
+          // stats not available from profiles table — loaded separately
         }
 
         // Save to SWR cache
@@ -373,26 +342,10 @@ export default function ProfilePage() {
                   vipLevel: profile.tier || 'bronze',
                   memberSince: profile.created_at,
                 },
-                stats: profile.stats
-                  ? {
-                      totalHands: profile.stats.total_hands || 0,
-                      vpip: profile.stats.vpip || 0,
-                      pfr: profile.stats.pfr || 0,
-                      threeBet: profile.stats.three_bet || 0,
-                      aggression: profile.stats.aggression_factor || 0,
-                      bbPer100: profile.stats.bb_per_100 || 0,
-                      biggestPot: profile.stats.biggest_pot || 0,
-                      totalProfit: profile.stats.total_profit || 0,
-                      winRate: profile.stats.win_rate || 0,
-                      tournamentsPlayed: profile.stats.tournaments_played || 0,
-                      tournamentsWon: profile.stats.tournaments_won || 0,
-                      bountyKOs: profile.stats.bounty_kos || 0,
-                      roi: profile.stats.roi || 0,
-                    }
-                  : null,
+                stats: null, // Stats loaded separately from poker_session_stats
                 diamonds: profile.diamonds || 0,
                 isVIP: profile.is_vip || false,
-                dailyStreak: profile.daily_streak || 0,
+                dailyStreak: profile.login_streak || 0,
               })
             );
           } catch {
@@ -529,7 +482,7 @@ export default function ProfilePage() {
               supabase
                 .from('profiles')
                 .select(
-                  'id, username, display_name, player_number, avatar_url, tier, created_at, diamonds, is_vip, daily_streak, stats'
+                  'id, username, display_name, player_number, avatar_url, tier, created_at, diamonds, is_vip, login_streak'
                 )
                 .eq('id', authUser.id)
                 .maybeSingle()
@@ -563,28 +516,19 @@ export default function ProfilePage() {
           .getUser()
           .then(({ data: { user: authUser } }) => {
             if (authUser && isMounted) {
+              // Stats column doesn't exist in profiles table — stats come from poker_session_stats
+              // For now, use total_hands_played from profiles as the only available stat
               supabase
                 .from('profiles')
-                .select('stats')
+                .select('total_hands_played')
                 .eq('id', authUser.id)
                 .maybeSingle()
                 .then(({ data: profile }) => {
-                  if (profile?.stats && isMounted) {
-                    setStats({
-                      totalHands: profile.stats.total_hands || 0,
-                      vpip: profile.stats.vpip || 0,
-                      pfr: profile.stats.pfr || 0,
-                      threeBet: profile.stats.three_bet || 0,
-                      aggression: profile.stats.aggression_factor || 0,
-                      bbPer100: profile.stats.bb_per_100 || 0,
-                      biggestPot: profile.stats.biggest_pot || 0,
-                      totalProfit: profile.stats.total_profit || 0,
-                      winRate: profile.stats.win_rate || 0,
-                      tournamentsPlayed: profile.stats.tournaments_played || 0,
-                      tournamentsWon: profile.stats.tournaments_won || 0,
-                      bountyKOs: profile.stats.bounty_kos || 0,
-                      roi: profile.stats.roi || 0,
-                    });
+                  if (profile && isMounted) {
+                    setStats((prev) => ({
+                      ...prev,
+                      totalHands: profile.total_hands_played || 0,
+                    }));
                   }
                 });
             }
@@ -628,13 +572,13 @@ export default function ProfilePage() {
             if (authUser && isMounted) {
               supabase
                 .from('profiles')
-                .select('diamonds, daily_streak')
+                .select('diamonds, login_streak')
                 .eq('id', authUser.id)
                 .maybeSingle()
                 .then(({ data }) => {
                   if (data && isMounted) {
                     setDiamonds(data.diamonds || 0);
-                    setDailyStreak(data.daily_streak || 0);
+                    setDailyStreak(data.login_streak || 0);
                   }
                 });
             }
@@ -774,7 +718,7 @@ export default function ProfilePage() {
               const { data: updatedProfile } = await supabase
                 .from('profiles')
                 .select(
-                  'id, username, display_name, player_number, avatar_url, tier, created_at, diamonds, is_vip, daily_streak, stats'
+                  'id, username, display_name, player_number, avatar_url, tier, created_at, diamonds, is_vip, login_streak'
                 )
                 .eq('id', authUser.id)
                 .maybeSingle();
@@ -794,23 +738,7 @@ export default function ProfilePage() {
                 setDiamonds(updatedProfile.diamonds || 0);
                 setIsVIP(updatedProfile.is_vip || false);
 
-                if (updatedProfile.stats) {
-                  setStats({
-                    totalHands: updatedProfile.stats.total_hands || 0,
-                    vpip: updatedProfile.stats.vpip || 0,
-                    pfr: updatedProfile.stats.pfr || 0,
-                    threeBet: updatedProfile.stats.three_bet || 0,
-                    aggression: updatedProfile.stats.aggression_factor || 0,
-                    bbPer100: updatedProfile.stats.bb_per_100 || 0,
-                    biggestPot: updatedProfile.stats.biggest_pot || 0,
-                    totalProfit: updatedProfile.stats.total_profit || 0,
-                    winRate: updatedProfile.stats.win_rate || 0,
-                    tournamentsPlayed: updatedProfile.stats.tournaments_played || 0,
-                    tournamentsWon: updatedProfile.stats.tournaments_won || 0,
-                    bountyKOs: updatedProfile.stats.bounty_kos || 0,
-                    roi: updatedProfile.stats.roi || 0,
-                  });
-                }
+                // Stats loaded separately — not in profiles table
               }
             }
           )
@@ -929,7 +857,11 @@ export default function ProfilePage() {
               const url = 'https://smarter.poker/hub/avatars-complete';
               const isInIframe = typeof window !== 'undefined' && window.parent !== window;
               if (isInIframe) {
-                try { window.top!.open(url, '_blank'); } catch { window.open(url, '_blank'); }
+                try {
+                  window.top!.open(url, '_blank');
+                } catch {
+                  window.open(url, '_blank');
+                }
               } else {
                 window.open(url, '_blank');
               }

@@ -357,7 +357,7 @@ class BonusServiceClass {
 
       case 'vip_points':
         ({ error } = await retryAsync(
-          () => supabase.rpc('add_vip_points', { p_user_id: userId, p_amount: amt }),
+          () => supabase.rpc('add_vip_points', { p_user_id: userId, p_points: amt }),
           3
         ));
         if (!error) {

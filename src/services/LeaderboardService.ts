@@ -127,7 +127,7 @@ export const LeaderboardService = {
       const userIds = statsData.map((s: any) => s.user_id);
       const { data: profiles } = await supabase
         .from('profiles')
-        .select('id, username, avatar_url, level, vip_tier')
+        .select('id, username, avatar_url, level, tier')
         .in('id', userIds);
 
       const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]));
@@ -157,10 +157,8 @@ export const LeaderboardService = {
           metric,
           change: 0,
           isVIP:
-            profile.vip_tier === 'gold' ||
-            profile.vip_tier === 'platinum' ||
-            profile.vip_tier === 'diamond',
-          vipTier: profile.vip_tier || 'bronze',
+            profile.tier === 'gold' || profile.tier === 'platinum' || profile.tier === 'diamond',
+          vipTier: profile.tier || 'bronze',
           level: profile.level || 1,
         };
       });
@@ -213,7 +211,7 @@ export const LeaderboardService = {
       const userIds = statsData.map((s: any) => s.user_id);
       const { data: profiles } = await supabase
         .from('profiles')
-        .select('id, username, avatar_url, level, vip_tier')
+        .select('id, username, avatar_url, level, tier')
         .in('id', userIds);
 
       const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]));
@@ -243,10 +241,8 @@ export const LeaderboardService = {
           metric,
           change: 0,
           isVIP:
-            profile.vip_tier === 'gold' ||
-            profile.vip_tier === 'platinum' ||
-            profile.vip_tier === 'diamond',
-          vipTier: profile.vip_tier || 'bronze',
+            profile.tier === 'gold' || profile.tier === 'platinum' || profile.tier === 'diamond',
+          vipTier: profile.tier || 'bronze',
           level: profile.level || 1,
         };
       });

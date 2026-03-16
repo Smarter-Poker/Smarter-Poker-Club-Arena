@@ -153,7 +153,7 @@ export default function AnalyticsDashboard() {
   const loadVipLedger = useCallback(async () => {
     try {
       let query = supabase
-        .from('vip_points_ledger')
+        .from('diamond_ledger')
         .select('id, user_id, amount, transaction_type, description, created_at')
         .order('created_at', { ascending: false })
         .limit(20);
@@ -177,11 +177,7 @@ export default function AnalyticsDashboard() {
   const loadAggregates = useCallback(async () => {
     try {
       let handQuery = supabase.from('player_position_stats').select('hands_played').limit(5000);
-      let vipQuery = supabase
-        .from('vip_points_ledger')
-        .select('amount')
-        .gt('amount', 0)
-        .limit(5000);
+      let vipQuery = supabase.from('diamond_ledger').select('amount').gt('amount', 0).limit(5000);
       let playerQuery = supabase.from('player_position_stats').select('user_id').limit(5000);
 
       const cutoff = getTimeRangeCutoff(timeRange);

@@ -136,13 +136,14 @@ class PlayerPositionStatsServiceClass {
       }
 
       // Bulk Add VIP points and broadcast globally
+      // NOTE: bulk_add_vip_points RPC may not exist yet — individual add_vip_points is the fallback
       if (vipPayload.length > 0) {
         const { error: vipError } = await retryAsync(
           () =>
             supabase.rpc('bulk_add_vip_points', {
               payload: vipPayload,
             }),
-          3
+          1 // Only 1 retry — RPC may not exist
         );
         if (!vipError) {
           vipPayload.forEach((v) => {

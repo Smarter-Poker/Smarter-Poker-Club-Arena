@@ -85,11 +85,11 @@ export default function VIPPage() {
             if (newData.diamonds !== undefined) {
               setDiamonds(newData.diamonds);
             }
-            if (newData.vip_points !== undefined) {
+            if (newData.xp !== undefined) {
               setVipPoints((prev) => ({
                 ...prev,
-                current: newData.vip_points,
-                lifetime: Math.max(prev.lifetime, newData.vip_points),
+                current: newData.xp,
+                lifetime: Math.max(prev.lifetime, newData.xp),
               }));
             }
           }
@@ -154,14 +154,14 @@ export default function VIPPage() {
 
       const { data: profData } = await supabase
         .from('profiles')
-        .select('diamonds, vip_points, created_at')
+        .select('diamonds, xp, created_at')
         .eq('id', user.id)
         .maybeSingle();
 
       if (getIsMounted && !getIsMounted()) return;
       setDiamonds(profData?.diamonds || 0);
 
-      const currentPts = profData?.vip_points || 0;
+      const currentPts = profData?.xp || 0;
       setVipPoints((prev) => ({
         ...prev,
         current: currentPts,
@@ -175,7 +175,7 @@ export default function VIPPage() {
       }
 
       const { data: ledgerData } = await supabase
-        .from('vip_points_ledger')
+        .from('diamond_ledger')
         .select('id, amount, description, transaction_type, created_at')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })

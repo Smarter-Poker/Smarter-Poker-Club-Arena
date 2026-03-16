@@ -149,11 +149,17 @@ class TableService {
 
     // Union guard: clubs inside a union cannot create their own tables
     const resolvedClubId = await resolveClubUUID(clubId);
-    const { data: unionCheck } = await supabase
+    if (!resolvedClubId) {
+      throw new Error('Invalid club ID provided');
+    }
+    const { data: unionCheck, error: unionErr } = await supabase
       .from('union_clubs')
       .select('union_id')
       .eq('club_id', resolvedClubId)
       .maybeSingle();
+    if (unionErr) {
+      throw new Error(`Union membership check failed: ${unionErr.message}`);
+    }
     if (unionCheck) {
       throw new Error(
         'Clubs inside a union cannot create standalone tables. Tables are managed at the union level.'

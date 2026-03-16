@@ -98,8 +98,9 @@ function FriendListPanelInner({
     setLoading(true);
 
     try {
-      // Get friends list
-      const { data, error } = await supabase
+      // Get friends list — BIDIRECTIONAL: user may be user_id OR friend_id
+      // Query 1: friendships where I am user_id (I sent the request)
+      const { data: outbound, error: outErr } = await supabase
         .from('friendships')
         .select(
           `
@@ -113,22 +114,63 @@ function FriendListPanelInner({
         .eq('user_id', user.id)
         .eq('status', 'accepted');
 
-      if (error) throw error;
+      // Query 2: friendships where I am friend_id (they sent the request)
+      const { data: inbound, error: inErr } = await supabase
+        .from('friendships')
+        .select(
+          `
+                    id,
+                    user_id,
+                    profiles!friendships_user_id_fkey(
+                        id, username, display_name, avatar_url, level, tier, xp
+                    )
+                `
+        )
+        .eq('friend_id', user.id)
+        .eq('status', 'accepted');
 
-      // Map friends (online status would come from real-time subscriptions)
-      const friendList: Friend[] = (data || []).map((f: any) => ({
+      if (outErr) throw outErr;
+      if (inErr) throw inErr;
+
+      // Map outbound friends (friend_id is the other person)
+      const outboundFriends: Friend[] = (outbound || []).map((f: any) => ({
         id: f.id,
         friendId: f.friend_id,
         displayName: f.profiles?.display_name || f.profiles?.username || 'Unknown',
         username: f.profiles?.username || '',
         avatarUrl: f.profiles?.avatar_url,
-        isOnline: false, // Will be updated by presence subscriptions
+        isOnline: false,
         status: 'offline' as PresenceStatus,
         tableName: undefined,
         level: f.profiles?.level || 1,
         vipTier: (f.profiles?.tier as VipTier) || 'bronze',
         xpProgress: Math.min(100, (f.profiles?.xp || 0) % 100),
       }));
+
+      // Map inbound friends (user_id is the other person)
+      const inboundFriends: Friend[] = (inbound || []).map((f: any) => ({
+        id: f.id,
+        friendId: f.user_id,
+        displayName: f.profiles?.display_name || f.profiles?.username || 'Unknown',
+        username: f.profiles?.username || '',
+        avatarUrl: f.profiles?.avatar_url,
+        isOnline: false,
+        status: 'offline' as PresenceStatus,
+        tableName: undefined,
+        level: f.profiles?.level || 1,
+        vipTier: (f.profiles?.tier as VipTier) || 'bronze',
+        xpProgress: Math.min(100, (f.profiles?.xp || 0) % 100),
+      }));
+
+      // Merge and deduplicate by friendId
+      const seen = new Set<string>();
+      const friendList: Friend[] = [];
+      for (const f of [...outboundFriends, ...inboundFriends]) {
+        if (!seen.has(f.friendId)) {
+          seen.add(f.friendId);
+          friendList.push(f);
+        }
+      }
 
       // Sort by online status
       friendList.sort((a, b) => {

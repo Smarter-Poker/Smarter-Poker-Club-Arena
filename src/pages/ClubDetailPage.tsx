@@ -1532,10 +1532,12 @@ export default function ClubDetailPage() {
                 { tableId: id, status: 'deleted' },
                 async () => {
                   setTables((prev) => prev.filter((t) => t.id !== id));
+                  // SECURITY: Scope deletion to current club to prevent cross-club table deletion
                   const { error } = await supabase
                     .from('tables')
                     .update({ status: 'deleted', is_active: false })
-                    .eq('id', id);
+                    .eq('id', id)
+                    .eq('club_id', clubId || '');
                   if (error) throw error;
                 },
                 // Rollback payload: restore the table on failure

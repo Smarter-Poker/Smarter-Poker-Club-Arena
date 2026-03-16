@@ -1890,6 +1890,11 @@ class TournamentService {
       const tournament = await this.getTournament(tournamentId);
       if (!tournament) return { finalTableId: null };
 
+      // Safe access: blind_structure may be null/empty for misconfigured tournaments
+      const blinds = Array.isArray(tournament.blind_structure) && tournament.blind_structure.length > 0
+        ? tournament.blind_structure[0]
+        : { smallBlind: 10, bigBlind: 20 }; // Fallback defaults
+
       const { data: newTable } = await supabase
         .from('tables')
         .insert({
@@ -1899,8 +1904,8 @@ class TournamentService {
           game_type: 'tournament',
           game_variant: 'nlh',
           stakes: 'Final Table',
-          small_blind: tournament.blind_structure[0].smallBlind,
-          big_blind: tournament.blind_structure[0].bigBlind,
+          small_blind: blinds.smallBlind,
+          big_blind: blinds.bigBlind,
           min_buy_in: 0,
           max_buy_in: 0,
           max_players: 9,

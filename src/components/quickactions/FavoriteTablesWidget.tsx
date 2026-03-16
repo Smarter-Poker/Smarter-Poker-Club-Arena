@@ -79,12 +79,16 @@ export const FavoriteTablesWidget: React.FC<FavoriteTablesWidgetProps> = ({ onJo
   };
 
   const removeFavorite = async (favoriteId: string) => {
-    // SECURITY: Scope to current user
+    // SECURITY: Scope to current user — reject if not authenticated
+    if (!user?.id) {
+      console.error('[FavoriteTablesWidget] Cannot remove favorite: no authenticated user');
+      return;
+    }
     const { error } = await supabase
       .from('favorite_tables')
       .delete()
       .eq('id', favoriteId)
-      .eq('user_id', user?.id || '');
+      .eq('user_id', user.id);
     if (error) {
       console.error('Failed to remove favorite:', error);
       return;

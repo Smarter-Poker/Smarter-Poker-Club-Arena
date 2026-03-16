@@ -56,7 +56,7 @@ export async function searchClubs(query: string): Promise<Club[]> {
   const { data, error } = await supabase
     .from('clubs')
     .select(
-      'id, club_id, name, slug, description, logo_url, banner_url, color_theme, theme, member_count, table_count, total_chips, is_public, requires_approval, owner_id, city, country, settings, created_at, updated_at'
+      'id, club_id, name, slug, description, logo_url, banner_url, color_theme, member_count, table_count, chip_treasury, is_public, requires_approval, owner_id, settings, created_at, updated_at'
     )
     .ilike('name', `%${query}%`)
     .eq('is_public', true)
@@ -81,7 +81,7 @@ export async function getClub(identifier: string): Promise<Club | null> {
   const { data, error } = await supabase
     .from('clubs')
     .select(
-      'id, club_id, name, slug, description, logo_url, banner_url, color_theme, theme, member_count, table_count, total_chips, is_public, requires_approval, owner_id, union_id, city, country, settings, created_at, updated_at'
+      'id, club_id, name, slug, description, logo_url, banner_url, color_theme, member_count, table_count, chip_treasury, is_public, requires_approval, owner_id, union_id, settings, created_at, updated_at'
     )
     .eq(isUUID ? 'id' : 'slug', identifier)
     .maybeSingle();
@@ -144,8 +144,6 @@ export async function createClub(clubData: {
       is_public: clubData.is_public ?? true,
       requires_approval: false,
       owner_id: user.user.id,
-      city: clubData.city,
-      country: clubData.country,
     })
     .select()
     .maybeSingle();
@@ -340,8 +338,8 @@ export async function getUserMemberships(): Promise<(ClubMember & { club: Club }
     .from('club_members')
     .select(
       `
-      id, club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, reputation_xp, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, parent_agent_id, chips, total_hands, total_won, total_lost, rake_generated,
-      club:clubs(id, club_id, name, slug, description, logo_url, banner_url, color_theme, theme, member_count, table_count, total_chips, is_public, requires_approval, owner_id, city, country, settings, created_at, updated_at)
+      id, club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, reputation_xp, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, parent_agent_id, hands_played, chips_won, chips_lost, total_rake_paid,
+      club:clubs(id, club_id, name, slug, description, logo_url, banner_url, color_theme, member_count, table_count, chip_treasury, is_public, requires_approval, owner_id, settings, created_at, updated_at)
     `
     )
     .eq('user_id', user.user.id);
@@ -363,7 +361,7 @@ export async function getClubMembers(clubId: string): Promise<ClubMember[]> {
     .from('club_members')
     .select(
       `
-      id, club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, reputation_xp, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, parent_agent_id, chips, total_hands, total_won, total_lost, rake_generated,
+      id, club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, reputation_xp, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, parent_agent_id, hands_played, chips_won, chips_lost, total_rake_paid,
       profile:profiles(username, avatar_url)
     `
     )
@@ -421,7 +419,7 @@ export async function getClubLeaderboard(
     .from('club_members')
     .select(
       `
-      id, club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, reputation_xp, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, parent_agent_id, chips, total_hands, total_won, total_lost, rake_generated,
+      id, club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, reputation_xp, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, parent_agent_id, hands_played, chips_won, chips_lost, total_rake_paid,
       profile:profiles(username, avatar_url)
     `
     )

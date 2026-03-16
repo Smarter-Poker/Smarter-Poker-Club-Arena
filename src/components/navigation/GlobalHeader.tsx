@@ -72,8 +72,8 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
         const { count: msgCount } = await supabase
           .from('messages')
           .select('*', { count: 'exact', head: true })
-          .eq('recipient_id', userId)
-          .eq('read', false);
+          .eq('receiver_id', userId)
+          .eq('is_read', false);
         if (mounted) setUnreadMessages(msgCount || 0);
       } catch (e) {
         console.error('[GlobalHeader] Error loading user data:', e);
@@ -114,15 +114,15 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
           event: '*',
           schema: 'public',
           table: 'messages',
-          filter: `recipient_id=eq.${userId}`,
+          filter: `receiver_id=eq.${userId}`,
         },
         async () => {
           if (!mounted) return;
           const { count } = await supabase
             .from('messages')
             .select('*', { count: 'exact', head: true })
-            .eq('recipient_id', userId)
-            .eq('read', false);
+            .eq('receiver_id', userId)
+            .eq('is_read', false);
           if (mounted) setUnreadMessages(count || 0);
         }
       )

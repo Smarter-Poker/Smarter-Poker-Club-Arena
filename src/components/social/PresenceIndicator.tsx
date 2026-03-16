@@ -53,19 +53,18 @@ export default function PresenceIndicator({
         try {
           const { data: profile } = await supabase
             .from('profiles')
-            .select('is_online, last_active')
+            .select('is_online, last_seen')
             .eq('id', userId)
             .maybeSingle();
 
           if (profile && isMounted) {
             setStatus(profile.is_online ? 'online' : 'offline');
-            if (profile.last_active) {
-              setLastSeen(new Date(profile.last_active));
+            if (profile.last_seen) {
+              setLastSeen(new Date(profile.last_seen));
             }
           }
         } catch (err) {
-
-          console.error("[PresenceIndicator] Error:", err);
+          console.error('[PresenceIndicator] Error:', err);
           // no-op
         }
       }

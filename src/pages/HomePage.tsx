@@ -876,11 +876,7 @@ function HomePageInner() {
               .select('*', { count: 'exact', head: true })
               .eq('user_id', authUser.id)
               .eq('is_read', false),
-            supabase
-              .from('profiles')
-              .select('card_color_preset')
-              .eq('id', authUser.id)
-              .maybeSingle(),
+            supabase.from('profiles').select('preferences').eq('id', authUser.id).maybeSingle(),
           ]);
 
           if (getIsMounted && !getIsMounted()) return;
@@ -895,8 +891,11 @@ function HomePageInner() {
           }
 
           // Process card color sync
-          if (colorResult.status === 'fulfilled' && colorResult.value.data?.card_color_preset) {
-            const preset = colorResult.value.data.card_color_preset;
+          if (
+            colorResult.status === 'fulfilled' &&
+            (colorResult.value.data?.preferences as any)?.card_color_preset
+          ) {
+            const preset = (colorResult.value.data.preferences as any).card_color_preset;
             if (preset !== localStorage.getItem(CARD_COLOR_KEY)) {
               localStorage.setItem(CARD_COLOR_KEY, preset);
               setCardColorPreset(preset);

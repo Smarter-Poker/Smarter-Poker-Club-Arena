@@ -59,7 +59,7 @@ export function PlayerProfileCard({
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('*, player_stats(*), player_presence(*)')
+        .select('*, player_stats(*)')
         .eq('id', userId)
         .maybeSingle();
 

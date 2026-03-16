@@ -770,9 +770,15 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                   }
                   if (user?.id) {
                     try {
+                      const { data: currentProfile } = await supabase
+                        .from('profiles')
+                        .select('preferences')
+                        .eq('id', user.id)
+                        .maybeSingle();
+                      const prefs = (currentProfile?.preferences as Record<string, unknown>) || {};
                       const { error: saveErr } = await supabase
                         .from('profiles')
-                        .update({ card_color_preset: preset.id })
+                        .update({ preferences: { ...prefs, card_color_preset: preset.id } })
                         .eq('id', user.id);
                       if (saveErr)
                         console.error('[HamburgerMenu] Card color save failed:', saveErr);

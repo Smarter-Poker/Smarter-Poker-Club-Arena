@@ -64,7 +64,7 @@ export default function OnlineFriendsPill({ userId, onFriendClick }: OnlineFrien
       // Get profiles for friends
       const { data: profiles } = await supabase
         .from('profiles')
-        .select('id, display_name, avatar_url, last_seen_at')
+        .select('id, display_name, avatar_url, last_seen')
         .in('id', friendIds);
 
       if (!profiles) return;
@@ -72,7 +72,7 @@ export default function OnlineFriendsPill({ userId, onFriendClick }: OnlineFrien
       // Filter to recently active (last 5 min = "online")
       const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
       const online = profiles
-        .filter((p) => p.last_seen_at && p.last_seen_at > fiveMinAgo)
+        .filter((p) => p.last_seen && p.last_seen > fiveMinAgo)
         .map((p) => ({
           id: p.id,
           displayName: p.display_name || 'Player',

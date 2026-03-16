@@ -53,7 +53,7 @@ export default function PresenceHub() {
       // Step 2: Get profiles of online friends
       const { data: profiles, error } = await supabase
         .from('profiles')
-        .select('id, username, display_name, avatar_url, is_online, current_table, current_table_id')
+        .select('id, username, display_name, avatar_url, is_online')
         .in('id', Array.from(friendIds))
         .eq('is_online', true)
         .limit(20);
@@ -67,7 +67,7 @@ export default function PresenceHub() {
         id: p.id,
         username: p.display_name || p.username || 'Player',
         avatar: p.avatar_url || undefined,
-        status: p.current_table ? 'playing' as const : 'online' as const,
+        status: p.current_table ? ('playing' as const) : ('online' as const),
         table: p.current_table || undefined,
       }));
 
@@ -90,7 +90,10 @@ export default function PresenceHub() {
   useEffect(() => {
     const unsub1 = masterBus.subscribeDebounced('FRIEND_REQUEST_ACCEPTED', fetchOnlineFriends, 500);
     const unsub2 = masterBus.subscribeDebounced('PROFILE_UPDATED', fetchOnlineFriends, 1000);
-    return () => { unsub1(); unsub2(); };
+    return () => {
+      unsub1();
+      unsub2();
+    };
   }, [fetchOnlineFriends]);
 
   // Supabase Realtime: listen for profile online status changes from friends

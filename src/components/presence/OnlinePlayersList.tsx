@@ -43,7 +43,7 @@ export const OnlinePlayersList: React.FC<OnlinePlayersListProps> = ({
         {
           event: '*',
           schema: 'public',
-          table: 'player_presence',
+          table: 'profiles',
         },
         () => {
           loadOnlinePlayers();
@@ -68,93 +68,71 @@ export const OnlinePlayersList: React.FC<OnlinePlayersListProps> = ({
 
   const loadOnlinePlayers = async () => {
     try {
-      let userIdsFilter: string[] = [];
+      // NOTE: player_presence table does not exist yet (future feature).
+      // Use profiles.is_online as fallback for online player listing.
+
       if (clubId) {
         const resolvedId = await resolveClubUUID(clubId);
+        // Get online club members via join
         const { data: members } = await supabase
           .from('club_members')
           .select('user_id')
           .eq('club_id', resolvedId);
 
-        if (members && members.length > 0) {
-          userIdsFilter = members.map((m) => m.user_id);
-        } else {
+        if (!members || members.length === 0) {
           setPlayers([]);
           setOnlineCount(0);
           setLoading(false);
           return;
         }
-      }
 
-      let allPresenceData: any[] = [];
-      let totalPresenceCount = 0;
-
-      if (clubId && userIdsFilter.length > 0) {
-        // Chunk the filter array to prevent 414 URI Too Long errors in PostgREST on massive clubs
+        const memberIds = members.map((m) => m.user_id);
+        // Chunk to avoid URI length issues
         const chunkSize = 150;
-        const chunks = [];
-        for (let i = 0; i < userIdsFilter.length; i += chunkSize) {
-          chunks.push(userIdsFilter.slice(i, i + chunkSize));
+        let allProfiles: any[] = [];
+        for (let i = 0; i < memberIds.length; i += chunkSize) {
+          const chunk = memberIds.slice(i, i + chunkSize);
+          const { data: profiles } = await supabase
+            .from('profiles')
+            .select('id, username, full_name, avatar_url, is_online, last_seen')
+            .in('id', chunk)
+            .eq('is_online', true);
+          if (profiles) allProfiles.push(...profiles);
         }
 
-        const responses = await Promise.all(
-          chunks.map((chunk) =>
-            supabase
-              .from('player_presence')
-              .select('user_id, status, table_id, last_seen_at', { count: 'exact' })
-              .in('status', ['online', 'playing'])
-              .in('user_id', chunk)
-          )
+        // Sort by last_seen descending, limit
+        allProfiles.sort(
+          (a, b) => new Date(b.last_seen || 0).getTime() - new Date(a.last_seen || 0).getTime()
         );
+        allProfiles = allProfiles.slice(0, limit);
 
-        responses.forEach(({ data, count }) => {
-          if (data) allPresenceData.push(...data);
-          if (count) totalPresenceCount += count;
-        });
-
-        // Sort combined results descending by last_seen_at and enforce limit locally
-        allPresenceData.sort(
-          (a, b) =>
-            new Date(b.last_seen_at || 0).getTime() - new Date(a.last_seen_at || 0).getTime()
-        );
-        allPresenceData = allPresenceData.slice(0, limit);
-      } else if (!clubId) {
-        // Global fetch
-        const { data, count } = await supabase
-          .from('player_presence')
-          .select('user_id, status, table_id, last_seen_at', { count: 'exact' })
-          .in('status', ['online', 'playing'])
-          .order('last_seen_at', { ascending: false })
+        const mapped = allProfiles.map((p: any) => ({
+          id: p.id,
+          username: p.username || 'Unknown',
+          displayName: p.full_name || p.username || 'Unknown',
+          avatarUrl: p.avatar_url,
+          status: 'online' as const,
+          currentTable: undefined,
+        }));
+        setPlayers(mapped);
+        setOnlineCount(mapped.length);
+      } else {
+        // Global fetch — get online profiles
+        const { data: profiles, count } = await supabase
+          .from('profiles')
+          .select('id, username, full_name, avatar_url, is_online, last_seen', { count: 'exact' })
+          .eq('is_online', true)
+          .order('last_seen', { ascending: false })
           .limit(limit);
 
-        allPresenceData = data || [];
-        totalPresenceCount = count || 0;
-      }
-
-      const data = allPresenceData;
-      const count = totalPresenceCount;
-
-      if (data && data.length > 0) {
-        // Fetch profiles separately
-        const userIds = data.map((p: any) => p.user_id);
-        const { data: profiles } = await supabase
-          .from('profiles')
-          .select('id, username, full_name, avatar_url')
-          .in('id', userIds);
-
-        const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]));
-
-        const mapped = data.map((p: any) => {
-          const profile = profileMap.get(p.user_id);
-          return {
-            id: p.user_id,
-            username: profile?.username || 'Unknown',
-            displayName: profile?.full_name || profile?.username || 'Unknown',
-            avatarUrl: profile?.avatar_url,
-            status: p.status,
-            currentTable: p.table_id,
-          };
-        });
+        const mapped = (profiles || []).map((p: any) => ({
+          id: p.id,
+          username: p.username || 'Unknown',
+          displayName: p.full_name || p.username || 'Unknown',
+          avatarUrl: p.avatar_url,
+          status: 'online' as const,
+          currentTable: undefined,
+        }));
         setPlayers(mapped);
         setOnlineCount(count || mapped.length);
       }

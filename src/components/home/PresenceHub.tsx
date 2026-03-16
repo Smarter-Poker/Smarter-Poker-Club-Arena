@@ -67,8 +67,8 @@ export default function PresenceHub() {
         id: p.id,
         username: p.display_name || p.username || 'Player',
         avatar: p.avatar_url || undefined,
-        status: p.current_table ? ('playing' as const) : ('online' as const),
-        table: p.current_table || undefined,
+        status: 'online' as const,
+        table: undefined,
       }));
 
       // Sort: playing friends first, then online

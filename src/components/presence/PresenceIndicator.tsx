@@ -51,22 +51,26 @@ export const PresenceIndicator: React.FC<PresenceIndicatorProps> = ({
 
   const fetchPresence = async () => {
     try {
+      // NOTE: player_presence table does not exist yet (future feature).
+      // Fall back to profiles.is_online + profiles.last_seen for basic presence.
       const { data, error: presenceErr } = await supabase
-        .from('player_presence')
-        .select('status, last_seen_at, current_table_id')
-        .eq('user_id', userId)
+        .from('profiles')
+        .select('is_online, last_seen')
+        .eq('id', userId)
         .maybeSingle();
-      if (presenceErr) console.error('[PresenceIndicator] Fetch failed:', presenceErr.message);
+      if (presenceErr) {
+        console.warn('[PresenceIndicator] Fetch failed:', presenceErr.message);
+        return;
+      }
 
       if (data) {
         setPresence({
-          status: data.status || 'offline',
-          lastSeen: data.last_seen_at ? new Date(data.last_seen_at) : null,
-          currentTable: data.current_table_id,
+          status: data.is_online ? 'online' : 'offline',
+          lastSeen: data.last_seen ? new Date(data.last_seen) : null,
         });
       }
     } catch (error) {
-      // User not in presence table = offline
+      // Fallback: treat as offline
       setPresence({ status: 'offline', lastSeen: null });
     }
   };

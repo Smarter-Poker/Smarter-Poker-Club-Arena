@@ -86,7 +86,7 @@ export default function AgentScoreCard({ userId, clubId }: AgentScoreCardProps) 
           .from('profiles')
           .select('id')
           .in('id', uniquePlayerIds.slice(0, 50))
-          .gte('last_seen_at', sevenDaysAgo);
+          .gte('last_seen', sevenDaysAgo);
         activePlayers = (activeProfiles || []).length;
       }
 

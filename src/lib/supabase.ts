@@ -42,45 +42,45 @@ export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '', {
 });
 
 /**
- * Timeout-protected getUser() wrapper with getSession() fallback.
+ * Timeout-protected getUser() wrapper with localStorage fallback.
  *
- * CRITICAL FIX: In iframe context, getUser() (Supabase API call) ALWAYS hangs
- * until the 6s timeout because the request is blocked by the iframe sandbox.
- * This caused a 6-second delay PER call, and since getUserMemberships() calls
- * getAuthUser() again internally, the total delay was 12+ seconds — exceeding
- * the HomePage safety timeout and showing an empty "Welcome" screen.
+ * CRITICAL FIX (v3): In iframe context, BOTH getUser() and getSession() hang:
+ * - getUser() hangs because the API call is blocked by iframe sandbox
+ * - getSession() hangs because Supabase's internal _initialize() promise never
+ *   resolves (it calls _recoverAndRefresh() which makes an API call that hangs)
  *
- * Fix: In iframe context, skip getUser() entirely and use getSession() which
- * reads from localStorage (instant, no network call). getSession() is populated
- * by setSession() from the parent's postMessage auth token.
+ * Fix: In iframe mode, read the session directly from localStorage. The shared
+ * storageKey 'smarter-poker-auth' is written by both Hub and Club Arena (SSO).
+ * This bypasses all SDK internal state and returns instantly.
  */
 export async function getAuthUser(timeoutMs = 6000) {
   const inIframe = typeof window !== 'undefined' && window.parent !== window;
 
   // ── IFRAME FAST PATH ──
-  // getUser() always hangs in iframe context (API blocked by sandbox).
-  // Use getSession() which reads from the SDK's in-memory store (instant).
-  // Retry briefly if session not yet available (setSession from postMessage may be in-flight).
+  // Both getUser() and getSession() hang in iframe context.
+  // Read from localStorage directly — instant, no SDK calls needed.
+  // The 'smarter-poker-auth' key is the SSO session shared with the Hub.
   if (inIframe) {
     const maxRetries = 10;
     const retryInterval = 200; // ms
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
-        const {
-          data: { session },
-          error: sessionError,
-        } = await supabase.auth.getSession();
-        if (session?.user) {
-          return { data: { user: session.user }, error: null };
+        const raw = localStorage.getItem('smarter-poker-auth');
+        if (raw) {
+          const data = JSON.parse(raw);
+          if (data?.user?.id) {
+            return { data: { user: data.user }, error: null };
+          }
         }
         // If no session yet and we have retries left, wait briefly
+        // (setSession from postMessage may be in-flight)
         if (attempt < maxRetries - 1) {
           await new Promise((r) => setTimeout(r, retryInterval));
           continue;
         }
-        return { data: { user: null }, error: sessionError };
+        return { data: { user: null }, error: null };
       } catch (sessionErr) {
-        console.warn('[getAuthUser] iframe getSession() failed:', sessionErr);
+        console.warn('[getAuthUser] iframe localStorage read failed:', sessionErr);
         return { data: { user: null }, error: sessionErr };
       }
     }

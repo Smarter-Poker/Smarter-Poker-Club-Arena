@@ -129,8 +129,9 @@ class IdentityDNACore {
             ? new Date(session.expires_at * 1000).toISOString()
             : null;
 
-          // Hydrate user store with session data
-          await this.hydrateUserFromSession(session);
+          // Hydrate user store with session data (synchronous)
+          this.hydrateUserFromSession(session);
+          this.loadProfileInBackground(session.user.id);
 
           // Emit auth event
           masterBus.emit('AUTH_STATE_CHANGED', {
@@ -230,7 +231,11 @@ class IdentityDNACore {
               }
               this.isHydrating = true;
               try {
-                await this.hydrateUserFromSession(session);
+                // CRITICAL: hydrateUserFromSession is now SYNCHRONOUS (no await needed).
+                // It only sets basic user info from the JWT. Profile loading from DB
+                // happens in background to avoid the initialization deadlock.
+                this.hydrateUserFromSession(session);
+                this.loadProfileInBackground(session.user.id);
                 this.updateStatus(true, session);
 
                 // Set Sentry user context
@@ -291,20 +296,9 @@ class IdentityDNACore {
 
           case 'TOKEN_REFRESHED':
             if (session) {
-              // CRITICAL: Re-hydrate the user store on token refresh.
-              // Without this, the Zustand store's isAuthenticated can become stale
-              // after the JWT rotates, causing AuthGuard to redirect to /auth.
-              // Use timeout to prevent profile load from blocking all auth events.
-              try {
-                const hydratePromise = this.hydrateUserFromSession(session);
-                const timeoutPromise = new Promise<void>((_, reject) =>
-                  setTimeout(() => reject(new Error('Profile hydration timeout')), 5000)
-                );
-                await Promise.race([hydratePromise, timeoutPromise]);
-              } catch (err) {
-                console.warn('[IdentityDNA] TOKEN_REFRESHED hydration issue:', err);
-                // Still update status — user is authenticated even if profile load stalls
-              }
+              // Re-hydrate basic user info (synchronous) and load profile in background
+              this.hydrateUserFromSession(session);
+              this.loadProfileInBackground(session.user.id);
               this.updateStatus(true, session);
 
               // Re-emit auth state to ensure all listeners know we're still active
@@ -356,7 +350,8 @@ class IdentityDNACore {
 
           case 'USER_UPDATED':
             if (session) {
-              await this.hydrateUserFromSession(session);
+              this.hydrateUserFromSession(session);
+              this.loadProfileInBackground(session.user.id);
               masterBus.emit('USER_PROFILE_LOADED', {
                 userId: session.user.id,
               });
@@ -368,38 +363,60 @@ class IdentityDNACore {
   }
 
   /**
-   * Hydrate user store from session and load full profile
+   * Hydrate user store from session — synchronous part only.
+   * Sets basic user info from the JWT/session immediately.
+   *
+   * CRITICAL: This method must NOT make any Supabase queries because it runs
+   * inside _notifyAllSubscribers() during SDK initialization. Supabase queries
+   * internally call getSession() → await initializePromise → DEADLOCK because
+   * init hasn't finished yet (it's waiting for us to return).
+   *
+   * Profile loading happens separately via loadProfileInBackground().
    */
-  private async hydrateUserFromSession(session: Session): Promise<void> {
+  private hydrateUserFromSession(session: Session): void {
     const userId = session.user.id;
     const email = session.user.email;
     const metadata = session.user.user_metadata;
 
-    // First, set basic info from session
+    // Set basic info from session — instant, no SDK calls
     useUserStore.getState().setUser({
       id: userId,
       username: email?.split('@')[0] || 'Player',
       display_name: metadata?.display_name || metadata?.full_name || null,
       avatar_url: metadata?.avatar_url || null,
     });
+  }
 
-    // Then, try to load full profile from database
-    try {
-      const profile = await this.loadUserProfile(userId);
-      if (profile) {
-        useUserStore.getState().setUser({
-          id: profile.id,
-          username: profile.username,
-          display_name: profile.display_name,
-          avatar_url: profile.avatar_url,
-          vip_level: ((profile as any).tier ||
-            profile.vip_level ||
-            'bronze') as UserProfile['vip_level'], // DB uses `tier`, not `vip_level`
-        });
+  /**
+   * Load full user profile from database in the background.
+   * This is separated from hydrateUserFromSession to avoid the initialization
+   * deadlock — see the CRITICAL note above.
+   *
+   * Uses a small delay (setTimeout 0) to ensure the SDK's initializePromise
+   * has resolved before making any Supabase queries.
+   */
+  private loadProfileInBackground(userId: string): void {
+    // Use setTimeout(0) to break out of the _notifyAllSubscribers synchronous chain.
+    // This ensures initializePromise resolves before we call getSession() via a query.
+    setTimeout(async () => {
+      try {
+        const profile = await this.loadUserProfile(userId);
+        if (profile) {
+          useUserStore.getState().setUser({
+            id: profile.id,
+            username: profile.username,
+            display_name: profile.display_name,
+            avatar_url: profile.avatar_url,
+            vip_level: ((profile as any).tier ||
+              profile.vip_level ||
+              'bronze') as UserProfile['vip_level'],
+          });
+          console.log('[IdentityDNA] ✅ Full profile loaded from database');
+        }
+      } catch (e) {
+        console.warn('🧬 [PROFILE] Could not load from database, using session data');
       }
-    } catch (e) {
-      console.warn('🧬 [PROFILE] Could not load from database, using session data');
-    }
+    }, 0);
   }
 
   /**

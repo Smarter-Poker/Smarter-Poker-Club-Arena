@@ -58,18 +58,32 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
       const resolvedId = await resolveClubUUID(clubId);
       const { data, error } = await supabase
         .from('club_members')
-        .select('*, player:profiles!user_id(username, avatar_url)')
+        .select(
+          'user_id, role, chip_balance, hands_played, created_at, last_active, is_banned, balance, total_rake'
+        )
         .eq('club_id', resolvedId)
         .order('created_at', { ascending: true });
 
       if (!error && data && isMounted.current) {
+        // Batch-fetch profiles (no FK between club_members → profiles)
+        const cmUserIds = data.map((m: any) => m.user_id);
+        const cmProfileMap: Record<string, any> = {};
+        if (cmUserIds.length > 0) {
+          const { data: cmProfiles } = await supabase
+            .from('profiles')
+            .select('id, username, avatar_url')
+            .in('id', cmUserIds);
+          if (cmProfiles) {
+            for (const p of cmProfiles) cmProfileMap[p.id] = p;
+          }
+        }
         setMembers(
-          data.map((m) => {
-            const player = Array.isArray(m.player) ? m.player[0] : m.player;
+          data.map((m: any) => {
+            const profile = cmProfileMap[m.user_id];
             return {
               id: m.user_id,
-              username: player?.username || 'Unknown',
-              avatarUrl: player?.avatar_url || '',
+              username: profile?.username || 'Unknown',
+              avatarUrl: profile?.avatar_url || '',
               role: m.role || 'member',
               balance: m.balance || 0,
               totalRake: m.total_rake || 0,
@@ -106,8 +120,7 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
       masterBus.emit('CLUB_UPDATED', { clubId });
       loadMembers();
     } catch (err) {
-
-      console.error("[ClubMemberManagement] Error:", err);
+      console.error('[ClubMemberManagement] Error:', err);
       if (isMounted.current) toast.error('Failed to update role');
     }
   };
@@ -127,8 +140,7 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
       masterBus.emit('CLUB_UPDATED', { clubId });
       loadMembers();
     } catch (err) {
-
-      console.error("[ClubMemberManagement] Error:", err);
+      console.error('[ClubMemberManagement] Error:', err);
       if (isMounted.current) toast.error('Failed to update ban status');
     }
   };
@@ -148,8 +160,7 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
       masterBus.emit('CLUB_UPDATED', { clubId });
       loadMembers();
     } catch (err) {
-
-      console.error("[ClubMemberManagement] Error:", err);
+      console.error('[ClubMemberManagement] Error:', err);
       if (isMounted.current) toast.error('Failed to remove member');
     }
   };

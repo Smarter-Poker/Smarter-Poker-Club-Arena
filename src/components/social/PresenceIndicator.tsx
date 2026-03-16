@@ -74,7 +74,7 @@ export default function PresenceIndicator({
 
     // Subscribe to realtime changes with a unique key per component instance
     // This prevents one unmounting component from killing the channel for other components showing the same user
-    const channelKey = `presence:${userId}-${Math.random().toString(36).substring(7)}`;
+    const channelKey = `social-presence:${userId}`;
 
     const channel = masterBus.getOrCreateChannel(channelKey);
     channel

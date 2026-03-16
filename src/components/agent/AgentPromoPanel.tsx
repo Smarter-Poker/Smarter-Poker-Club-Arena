@@ -86,13 +86,33 @@ export default function AgentPromoPanel({
 
       const { data: players } = await supabase
         .from('club_members')
-        .select('user_id, chip_balance, profiles(display_name, username, avatar_url)')
+        .select('user_id, chip_balance')
         .eq('club_id', clubId)
         .eq('agent_id', userId)
         .eq('role', 'player')
         .order('chip_balance', { ascending: false })
         .limit(1000);
-      if (isMounted.current) setDownline((players as DownlinePlayer[]) || []);
+      // Batch-fetch profiles (no FK between club_members → profiles)
+      const playerProfileMap: Record<string, any> = {};
+      if (players && players.length > 0) {
+        const pIds = players.map((p: any) => p.user_id);
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, display_name, username, avatar_url')
+          .in('id', pIds);
+        if (profiles) {
+          for (const pr of profiles) playerProfileMap[pr.id] = pr;
+        }
+      }
+      const downlineData = (players || []).map((p: any) => ({
+        ...p,
+        profiles: playerProfileMap[p.user_id] || {
+          display_name: null,
+          username: 'Unknown',
+          avatar_url: null,
+        },
+      }));
+      if (isMounted.current) setDownline(downlineData as DownlinePlayer[]);
     } catch (e) {
       console.error('[AgentPromoPanel] Load error:', e);
     } finally {

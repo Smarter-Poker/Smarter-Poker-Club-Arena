@@ -421,10 +421,7 @@ export async function getClubMembers(clubId: string): Promise<ClubMember[]> {
   const { data, error } = await supabase
     .from('club_members')
     .select(
-      `
-      club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, reputation_xp, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, parent_agent_id, hands_played, chips_won, chips_lost, total_rake_paid,
-      profile:profiles(username, avatar_url)
-    `
+      'club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, reputation_xp, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, parent_agent_id, hands_played, chips_won, chips_lost, total_rake_paid'
     )
     .eq('club_id', resolvedId)
     .order('reputation_xp', { ascending: false })
@@ -435,7 +432,28 @@ export async function getClubMembers(clubId: string): Promise<ClubMember[]> {
     throw new Error('Failed to get club members');
   }
 
-  return data || [];
+  // Batch-fetch profiles (no FK between club_members → profiles)
+  const members = data || [];
+  if (members.length > 0) {
+    const userIds = members.map((m: any) => m.user_id);
+    const profileMap: Record<string, any> = {};
+    const chunkSize = 150;
+    for (let i = 0; i < userIds.length; i += chunkSize) {
+      const chunk = userIds.slice(i, i + chunkSize);
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, username, avatar_url')
+        .in('id', chunk);
+      if (profiles) {
+        for (const p of profiles) profileMap[p.id] = p;
+      }
+    }
+    for (const m of members) {
+      (m as any).profile = profileMap[(m as any).user_id] || null;
+    }
+  }
+
+  return members;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -479,10 +497,7 @@ export async function getClubLeaderboard(
   const { data, error } = await supabase
     .from('club_members')
     .select(
-      `
-      club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, reputation_xp, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, parent_agent_id, hands_played, chips_won, chips_lost, total_rake_paid,
-      profile:profiles(username, avatar_url)
-    `
+      'club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, reputation_xp, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, parent_agent_id, hands_played, chips_won, chips_lost, total_rake_paid'
     )
     .eq('club_id', resolvedId)
     .order('reputation_xp', { ascending: false })
@@ -493,7 +508,24 @@ export async function getClubLeaderboard(
     throw new Error('Failed to get leaderboard');
   }
 
-  return data || [];
+  // Batch-fetch profiles (no FK between club_members → profiles)
+  const members = data || [];
+  if (members.length > 0) {
+    const userIds = members.map((m: any) => m.user_id);
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, username, avatar_url')
+      .in('id', userIds);
+    const profileMap: Record<string, any> = {};
+    if (profiles) {
+      for (const p of profiles) profileMap[p.id] = p;
+    }
+    for (const m of members) {
+      (m as any).profile = profileMap[(m as any).user_id] || null;
+    }
+  }
+
+  return members;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

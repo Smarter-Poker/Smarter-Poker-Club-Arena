@@ -1296,11 +1296,27 @@ function HierarchyTab({ clubId }: { clubId: string }) {
       const uuid = await resolveClubUUID(clubId);
       const { data, error } = await supabase
         .from('club_members')
-        .select('user_id, role, parent_agent_id, profiles(display_name, username)')
+        .select('user_id, role, parent_agent_id')
         .eq('club_id', uuid)
         .in('role', ['owner', 'admin', 'super_agent', 'agent', 'sub_agent']);
       if (error) throw error;
-      if (isMounted.current) setTree(data || []);
+      // Batch-fetch profiles (no FK between club_members → profiles)
+      const treeData = data || [];
+      if (treeData.length > 0) {
+        const treeUserIds = treeData.map((m: any) => m.user_id);
+        const { data: treeProfiles } = await supabase
+          .from('profiles')
+          .select('id, display_name, username')
+          .in('id', treeUserIds);
+        const treeProfileMap: Record<string, any> = {};
+        if (treeProfiles) {
+          for (const p of treeProfiles) treeProfileMap[p.id] = p;
+        }
+        for (const m of treeData) {
+          (m as any).profiles = treeProfileMap[(m as any).user_id] || null;
+        }
+      }
+      if (isMounted.current) setTree(treeData);
     } catch (err: any) {
       if (isMounted.current) setLoadError(err.message);
     } finally {

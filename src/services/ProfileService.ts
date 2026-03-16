@@ -271,9 +271,10 @@ class ProfileServiceClass {
 
     const totalHands = data.length;
     const wins = data.filter((h: any) => h.is_winner).length;
-    const winRate = (wins / totalHands) * 100;
+    const winRate = totalHands > 0 ? (wins / totalHands) * 100 : 0;
     const profits = data.map((h: any) => (h.chips_won || 0) - (h.chips_lost || 0));
-    const avgProfit = profits.reduce((sum: number, p: number) => sum + p, 0) / totalHands;
+    const avgProfit =
+      totalHands > 0 ? profits.reduce((sum: number, p: number) => sum + p, 0) / totalHands : 0;
     const biggestWin = Math.max(...profits, 0);
 
     // Find favorite variant from joined hands data

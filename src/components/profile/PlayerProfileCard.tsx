@@ -65,10 +65,6 @@ export function PlayerProfileCard({
 
       if (!error && data) {
         const stats = Array.isArray(data.player_stats) ? data.player_stats[0] : data.player_stats;
-        const presence = Array.isArray(data.player_presence)
-          ? data.player_presence[0]
-          : data.player_presence;
-
         setProfile({
           id: data.id,
           username: data.username || 'Unknown',
@@ -76,14 +72,14 @@ export function PlayerProfileCard({
           level: data.level || 1,
 
           isVIP: data.is_vip || false,
-          status: presence?.status || 'offline',
+          status: data.is_online ? 'online' : 'offline',
           stats: {
             handsPlayed: stats?.hands_played || 0,
             vpip: stats?.vpip || 0,
             pfr: stats?.pfr || 0,
             winRate: stats?.win_rate || 0,
           },
-          currentTable: presence?.table_name,
+          currentTable: undefined,
         });
       }
     } catch (error) {

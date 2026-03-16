@@ -611,17 +611,31 @@ export default function ClubDetailPage() {
       if (getIsMounted && !getIsMounted()) return;
       setClub(mappedClub);
 
-      // Load members
+      // Load members (no FK between club_members → profiles; batch-fetch)
       const { data: memberData } = await supabase
         .from('club_members')
-        .select('*, profiles(username, display_name)')
+        .select('user_id, role, chip_balance, status, created_at, last_active')
         .eq('club_id', resolvedId)
         .limit(50);
 
       if (memberData) {
+        const mUserIds = memberData.map((m: any) => m.user_id);
+        const memberProfileMap: Record<string, any> = {};
+        if (mUserIds.length > 0) {
+          const { data: mProfiles } = await supabase
+            .from('profiles')
+            .select('id, username, display_name')
+            .in('id', mUserIds);
+          if (mProfiles) {
+            for (const p of mProfiles) memberProfileMap[p.id] = p;
+          }
+        }
         const mappedMembers: ClubMember[] = memberData.map((m: any) => ({
           id: m.user_id,
-          username: m.profiles?.display_name || m.profiles?.username || 'Unknown',
+          username:
+            memberProfileMap[m.user_id]?.display_name ||
+            memberProfileMap[m.user_id]?.username ||
+            'Unknown',
           role: m.role || 'member',
           chipBalance: m.chip_balance || 0,
           status: m.status || 'active',

@@ -1684,7 +1684,9 @@ class HorseOrchestrator {
 
   /** Roll weighted random multiplier for Spin */
   private rollSpinMultiplier(multipliers: { multiplier: number; weight: number }[]): number {
+    if (!multipliers || multipliers.length === 0) return 1;
     const totalWeight = multipliers.reduce((sum, m) => sum + m.weight, 0);
+    if (totalWeight <= 0) return multipliers[0].multiplier;
     let roll = Math.random() * totalWeight;
     for (const m of multipliers) {
       roll -= m.weight;
@@ -2450,7 +2452,8 @@ class HorseOrchestrator {
         const horseIdSet = new Set((horseProfiles || []).map((p) => p.id));
         const horseWins = recentHands.filter((h) => horseIdSet.has(h.winner_id));
         const totalPotWon = horseWins.reduce((acc, h) => acc + (h.pot_size || 0), 0);
-        const winRate = Math.round((horseWins.length / recentHands.length) * 100);
+        const winRate =
+          recentHands.length > 0 ? Math.round((horseWins.length / recentHands.length) * 100) : 0;
 
         console.debug(
           `[Orchestrator] Horse Fleet: ${seatedCount || 0} seated, ` +

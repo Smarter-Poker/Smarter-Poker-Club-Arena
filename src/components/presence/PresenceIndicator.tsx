@@ -30,7 +30,7 @@ export const PresenceIndicator: React.FC<PresenceIndicatorProps> = ({
     fetchPresence();
 
     // Subscribe to presence changes with a unique channel key
-    const channelKey = `presence:${userId}-${Math.random().toString(36).substring(7)}`;
+    const channelKey = `presence-indicator:${userId}`;
 
     const channel = masterBus.getOrCreateChannel(channelKey);
     channel

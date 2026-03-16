@@ -492,20 +492,7 @@ export default function ClubMembersPage() {
           () =>
             supabase
               .from('club_members')
-              .select(
-                `
-                    user_id,
-                    role,
-                    chip_balance,
-                    joined_at,
-                    parent_agent_id,
-                    profiles!inner (
-                        username,
-                        avatar_url,
-                        is_horse
-                    )
-                `
-              )
+              .select('user_id, role, chip_balance, joined_at, parent_agent_id')
               .eq('club_id', resolvedId)
               .not('status', 'in', '("banned","suspended")')
               .limit(5000)
@@ -515,11 +502,27 @@ export default function ClubMembersPage() {
 
         if (getIsMounted && !getIsMounted()) return;
         if (!error && data) {
+          // Batch-fetch profiles (no FK between club_members → profiles)
+          const userIds = data.map((m: any) => m.user_id);
+          const profileMap: Record<string, any> = {};
+          if (userIds.length > 0) {
+            const chunkSize = 150;
+            for (let i = 0; i < userIds.length; i += chunkSize) {
+              const chunk = userIds.slice(i, i + chunkSize);
+              const { data: profiles } = await supabase
+                .from('profiles')
+                .select('id, username, avatar_url, is_horse')
+                .in('id', chunk);
+              if (profiles) {
+                for (const p of profiles) profileMap[p.id] = p;
+              }
+            }
+          }
           const mapped = data.map((m: any) => ({
             id: m.user_id,
             user_id: m.user_id,
-            username: m.profiles?.username || 'Unknown',
-            avatar_url: m.profiles?.avatar_url,
+            username: profileMap[m.user_id]?.username || 'Unknown',
+            avatar_url: profileMap[m.user_id]?.avatar_url,
             role: m.role || 'member',
             chip_balance: m.chip_balance || 0,
             joined_at: m.joined_at,

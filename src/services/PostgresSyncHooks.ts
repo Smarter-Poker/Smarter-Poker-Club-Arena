@@ -20,6 +20,7 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 class PostgresSyncHooksService {
   private channel: RealtimeChannel | null = null;
   private initialized: boolean = false;
+  private _userId: string | null = null; // FIX: Track current user for re-init detection
 
   // Phase 11: Internal debounce timers to batch rapid-fire events
   private debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -47,15 +48,16 @@ class PostgresSyncHooksService {
   }
 
   init(userId: string) {
-    // Guard: If already initialized with a live channel, skip.
-    // We set initialized=true synchronously to prevent race conditions
-    // from rapid auth state changes (e.g., two SIGNED_IN events in quick succession).
-    if (this.initialized && this.channel) return;
+    // Guard: If already initialized with a live channel FOR THE SAME USER, skip.
+    // FIX: Also track userId to detect user switches (e.g., logout → login as different user)
+    if (this.initialized && this.channel && this._userId === userId) return;
 
     // Clean up any prior stale channel before creating a new one (idempotent)
     this.destroy();
 
+    // FIX: Set initialized BEFORE any async work to prevent re-entrancy
     this.initialized = true;
+    this._userId = userId;
 
     // Use a deterministic global channel name scoped to the user to avoid leaks/re-subs
     this.channel = supabase.channel(`global_db_sync:${userId}`);
@@ -202,6 +204,7 @@ class PostgresSyncHooksService {
     this.debounceTimers.forEach((timer) => clearTimeout(timer));
     this.debounceTimers.clear();
     this.initialized = false;
+    this._userId = null;
   }
 }
 

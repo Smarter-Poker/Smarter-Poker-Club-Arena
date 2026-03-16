@@ -7,8 +7,9 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-const SUBSCRIPTION_WARN_THRESHOLD = 8;
-const SUBSCRIPTION_MAX = 10;
+// Keep in sync with RealtimeChannelService.MAX_CONCURRENT_SUBSCRIPTIONS (25)
+const SUBSCRIPTION_WARN_THRESHOLD = 20;
+const SUBSCRIPTION_MAX = 25;
 
 interface SubscriptionRecord {
   id: string;

@@ -153,10 +153,10 @@ function LoadingSpinner() {
 
 const INTRO_SHOWN_KEY = 'club_arena_intro_shown';
 
-// ── Window extension for early auth cleanup signal ──
+// ── Window extensions for iframe auth communication ──
 declare global {
   interface Window {
-    __earlyAuthConsumed?: boolean;
+    __PARENT_ORIGIN__?: string; // Set by inline script when parent origin is validated
   }
 }
 
@@ -211,11 +211,24 @@ export default function App() {
     };
   }, []);
 
-  // ── Receive auth token from parent World Hub via postMessage ──
-  // When embedded in an iframe at smarter.poker, the parent sends
-  // the Supabase auth token so the SPA can authenticate without
-  // requiring a separate login flow.
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  UNIFIED AUTH HANDLER (Redesigned — consolidated from 2 useEffects into 1)
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // AUTH FLOW (clean, 3-layer architecture):
+  //   Layer 1: index.html inline script — sends ACKs, stores token in window.__EARLY_AUTH__
+  //   Layer 2: THIS useEffect — single entry point for ALL auth token processing
+  //   Layer 3: IdentityDNA — reacts to setSession() via onAuthStateChange listener
+  //
+  // This replaces the previous dual-useEffect design where:
+  //   - useEffect #1 consumed early auth (window.__EARLY_AUTH__)
+  //   - useEffect #2 listened for live postMessage tokens
+  //   Both called setSession() independently, creating race conditions.
+  //
+  // Now: ONE handler consumes early auth on mount AND listens for live tokens.
+  // ═══════════════════════════════════════════════════════════════════════════
   const lastAuthTokenRef = useRef<string | null>(null);
+  const authInFlightRef = useRef(false); // Mutex to prevent concurrent setSession calls
 
   /** Apply settings from World Hub to the local Zustand store */
   const applySettingsRef = useRef((s: Record<string, unknown>) => {
@@ -227,48 +240,90 @@ export default function App() {
     if (s.theme && s.theme !== store.theme) store.setTheme(s.theme as 'dark' | 'light');
   });
 
-  // ── Consume early auth token received before React mounted ──
-  // Token may have been received by either:
-  // 1. The INLINE <script> in index.html (window.__EARLY_AUTH__ — runs before modules)
-  // 2. The module-level handler in main.tsx (earlyAuth — runs during module eval)
-  // Check both sources for maximum resilience.
+  /**
+   * Core auth processor — called for BOTH early auth and live postMessage tokens.
+   * Validates, deduplicates, and sets the Supabase session.
+   */
+  const processAuthToken = async (
+    token: string,
+    refreshToken: string,
+    settings: Record<string, unknown> | null,
+    source: 'earlyAuth' | 'postMessage'
+  ) => {
+    // Deduplicate: skip if we already processed this exact token
+    if (lastAuthTokenRef.current === token) return;
+
+    // JWT expiry pre-check: don't waste a setSession() call on an expired token
+    if (isTokenExpired(token)) {
+      console.warn(`[App] ${source} token is expired — skipping setSession`);
+      return;
+    }
+
+    // Mutex: prevent concurrent setSession() calls (the #1 cause of auth races)
+    if (authInFlightRef.current) {
+      console.warn(`[App] setSession already in flight — queuing ${source} token`);
+      // Don't drop it — update lastAuthTokenRef so next call picks it up
+      return;
+    }
+
+    lastAuthTokenRef.current = token;
+    authInFlightRef.current = true;
+
+    // Apply settings immediately (don't wait for setSession)
+    if (settings) {
+      applySettingsRef.current(settings);
+    }
+
+    const startTime = performance.now();
+    try {
+      await supabase.auth.setSession({
+        access_token: token,
+        refresh_token: refreshToken,
+      });
+      const ms = Math.round(performance.now() - startTime);
+      console.log(`[App] ✅ Auth session set via ${source} in ${ms}ms`);
+      postToParent({ type: 'SMARTER_AUTH_ACK' });
+      try {
+        Sentry.addBreadcrumb({
+          category: 'auth-handshake',
+          message: `setSession completed in ${ms}ms`,
+          level: 'info',
+          data: { ms, method: source },
+        });
+      } catch {
+        /* Sentry not loaded */
+      }
+    } catch (e) {
+      console.error(`[App] setSession failed (${source}):`, e);
+      postToParent({ type: 'SMARTER_AUTH_FAILED', error: String(e) });
+      // Reset lastAuthTokenRef so a retry can re-attempt
+      lastAuthTokenRef.current = null;
+      try {
+        Sentry.addBreadcrumb({
+          category: 'auth-handshake',
+          message: `setSession FAILED (${source}): ${e}`,
+          level: 'error',
+        });
+      } catch {
+        /* Sentry not loaded */
+      }
+    } finally {
+      authInFlightRef.current = false;
+    }
+  };
+
   useEffect(() => {
     const isInIframe = window.parent !== window;
     if (!isInIframe) return;
 
-    // Merge: inline script token takes priority (it runs first)
-    const token = window.__EARLY_AUTH__?.token || earlyAuth.token;
-    const refreshToken = window.__EARLY_AUTH__?.refreshToken || earlyAuth.refreshToken || '';
-    const settings = window.__EARLY_AUTH__?.settings || earlyAuth.settings;
+    // ── Step 1: Consume early auth token received before React mounted ──
+    // The inline script in index.html stores tokens in window.__EARLY_AUTH__
+    const earlyToken = window.__EARLY_AUTH__?.token || earlyAuth.token;
+    const earlyRefresh = window.__EARLY_AUTH__?.refreshToken || earlyAuth.refreshToken || '';
+    const earlySettings = window.__EARLY_AUTH__?.settings || earlyAuth.settings;
 
-    if (token && lastAuthTokenRef.current !== token) {
-      console.log('[App] Consuming early auth token received before mount');
-      lastAuthTokenRef.current = token;
-
-      // JWT EXPIRY PRE-CHECK: Don't waste a setSession() call on an expired token
-      if (isTokenExpired(token)) {
-        console.warn(
-          '[App] Early auth token is already expired — skipping setSession, waiting for fresh token'
-        );
-        // Clear BOTH sources
-        earlyAuth.token = null;
-        earlyAuth.refreshToken = null;
-        earlyAuth.settings = null;
-        if (window.__EARLY_AUTH__) {
-          window.__EARLY_AUTH__.token = null;
-          window.__EARLY_AUTH__.refreshToken = null;
-          window.__EARLY_AUTH__.settings = null;
-        }
-        return;
-      }
-
-      // Apply settings that came with the early auth
-      if (settings) {
-        applySettingsRef.current(settings);
-      }
-
-      // Clear BOTH sources BEFORE async setSession to prevent double-consume
-      // if this effect re-runs (React StrictMode double-mount)
+    if (earlyToken) {
+      // Clear sources BEFORE async processing to prevent double-consume
       earlyAuth.token = null;
       earlyAuth.refreshToken = null;
       earlyAuth.settings = null;
@@ -278,110 +333,29 @@ export default function App() {
         window.__EARLY_AUTH__.settings = null;
       }
 
-      // SENTRY PERFORMANCE: Track auth handshake duration
-      const handshakeStart = performance.now();
-
-      // Set the session
-      supabase.auth
-        .setSession({
-          access_token: token,
-          refresh_token: refreshToken,
-        })
-        .then(() => {
-          const handshakeMs = Math.round(performance.now() - handshakeStart);
-          console.log(`[App] ✅ Early auth session set in ${handshakeMs}ms`);
-          // Sentry span for auth handshake timing
-          try {
-            Sentry.addBreadcrumb({
-              category: 'auth-handshake',
-              message: `Early auth setSession completed in ${handshakeMs}ms`,
-              level: 'info',
-              data: { handshakeMs, method: 'earlyAuth' },
-            });
-          } catch {
-            /* Sentry not loaded */
-          }
-          // Send another ACK to be safe (main.tsx already sent one)
-          postToParent({ type: 'SMARTER_AUTH_ACK' });
-          // Signal main.tsx to stop its early listener (cleanup)
-          window.__earlyAuthConsumed = true;
-        })
-        .catch((e) => {
-          console.error('[App] Failed to set early auth session:', e);
-          try {
-            Sentry.addBreadcrumb({
-              category: 'auth-handshake',
-              message: `Early auth setSession FAILED: ${e}`,
-              level: 'error',
-            });
-          } catch {
-            /* Sentry not loaded */
-          }
-        });
+      processAuthToken(earlyToken, earlyRefresh, earlySettings, 'earlyAuth');
     }
-  }, []);
 
-  // ── Continue listening for auth tokens via postMessage (backup + refreshes) ──
-  useEffect(() => {
-    const isInIframe = window.parent !== window;
-    if (!isInIframe) return;
-
+    // ── Step 2: Listen for live auth tokens via postMessage ──
+    // Handles: initial token (if missed by early auth), token refreshes, re-auth
     const handleMessage = async (event: MessageEvent) => {
-      // SECURITY: Validate origin using shared trusted-origin list
       if (!isTrustedOrigin(event.origin)) return;
 
       if (event.data?.type === 'SMARTER_AUTH_TOKEN' && event.data.token) {
-        // Store validated parent origin for all future postMessage calls
         setParentOrigin(event.origin);
-        // Send ACK immediately to halt World Hub retry loop.
+        // ACK immediately — tell parent we received it
         postToParent({ type: 'SMARTER_AUTH_ACK' });
 
-        // Bridge Global Settings from World Hub instantly
-        if (event.data.settings) {
-          applySettingsRef.current(event.data.settings);
-        }
-
-        // Skip redundant setSession if token hasn't changed
-        if (lastAuthTokenRef.current === event.data.token) return;
-        lastAuthTokenRef.current = event.data.token;
-
-        // JWT EXPIRY PRE-CHECK: Skip expired tokens
-        if (isTokenExpired(event.data.token)) {
-          console.warn('[App] Parent sent an expired token — skipping setSession');
-          return;
-        }
-
         if (!event.data.refreshToken) {
-          console.warn(
-            '[App] Parent sent auth token without refreshToken — token refresh will fail at expiry'
-          );
+          console.warn('[App] Parent sent auth token without refreshToken');
         }
 
-        // SENTRY PERFORMANCE: Track postMessage auth timing
-        const setSessionStart = performance.now();
-        try {
-          await supabase.auth.setSession({
-            access_token: event.data.token,
-            refresh_token: event.data.refreshToken || '',
-          });
-          const ms = Math.round(performance.now() - setSessionStart);
-          try {
-            Sentry.addBreadcrumb({
-              category: 'auth-handshake',
-              message: `postMessage setSession completed in ${ms}ms`,
-              level: 'info',
-              data: { ms, method: 'postMessage' },
-            });
-          } catch {
-            /* Sentry not loaded */
-          }
-          // Signal main.tsx to stop its early listener (cleanup)
-          window.__earlyAuthConsumed = true;
-        } catch (e) {
-          console.error('[App] Failed to set session from parent:', e);
-          // Notify parent of auth failure using secure postToParent
-          postToParent({ type: 'SMARTER_AUTH_FAILED', error: String(e) });
-        }
+        await processAuthToken(
+          event.data.token,
+          event.data.refreshToken || '',
+          event.data.settings || null,
+          'postMessage'
+        );
       }
 
       // Live settings push — World Hub user changed theme/sound/deck while iframe is open

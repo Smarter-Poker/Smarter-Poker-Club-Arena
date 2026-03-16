@@ -503,14 +503,17 @@ function HomePageInner() {
     async function fetchSharkClubStats() {
       try {
         // Find Shark Club by club_id = 25450
-        const { data: club } = await supabase
+        console.log('[SHARK-INIT] Fetching Shark Club stats...');
+        const { data: club, error: clubError } = await supabase
           .from('clubs')
           .select('id')
           .eq('club_id', 25450)
           .maybeSingle();
 
+        console.log('[SHARK-INIT] Club query result:', club, 'error:', clubError);
         if (!club || !isMounted) return;
         setSharkClubId(club.id);
+        console.log('[SHARK-INIT] setSharkClubId =', club.id);
 
         // Parallelize independent queries: member count + active players
         const [memberResult, tablesResult] = await Promise.allSettled([
@@ -540,7 +543,7 @@ function HomePageInner() {
           activePlayers,
         });
       } catch (err) {
-        console.error('Failed to fetch Shark Club stats:', err);
+        console.error('[SHARK-INIT] Failed to fetch Shark Club stats:', err);
       }
     }
     fetchSharkClubStats().catch(() => {

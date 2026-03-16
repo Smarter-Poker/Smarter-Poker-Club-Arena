@@ -207,8 +207,15 @@ class RealtimeChannelService {
       return () => this.unsubscribeFromClub(clubId);
     }
 
-    // Enforce subscription limit before creating new subscription
-    this.enforceSubscriptionLimit();
+    // Enforce subscription limit before creating new subscription.
+    // enforceSubscriptionLimit() is async (awaits channel.unsubscribe()), but the
+    // internal Map bookkeeping is synchronous, so the limit check is still correct.
+    // We fire-and-forget here because the subscribe methods must stay synchronous
+    // (callers expect a sync cleanup function). The old channel will unsubscribe
+    // in the background — Supabase handles overlapping subscriptions gracefully.
+    this.enforceSubscriptionLimit().catch((e) =>
+      console.error('[RealtimeChannelService] enforceSubscriptionLimit failed:', e)
+    );
 
     const channel = supabase.channel(channelName, {
       config: { presence: { key: userId } },
@@ -337,8 +344,10 @@ class RealtimeChannelService {
       return () => this.unsubscribeFromTournament(tournamentId);
     }
 
-    // Enforce subscription limit before creating new subscription
-    this.enforceSubscriptionLimit();
+    // Enforce subscription limit (see subscribeToClub for rationale on fire-and-forget)
+    this.enforceSubscriptionLimit().catch((e) =>
+      console.error('[RealtimeChannelService] enforceSubscriptionLimit failed:', e)
+    );
 
     const channel = supabase.channel(channelName);
 
@@ -456,6 +465,19 @@ class RealtimeChannelService {
   ): () => void {
     const channelName = `hand:${handId}`;
 
+    // Initialize cleanup on first subscription (was missing for hand replays)
+    this.initializeCleanupInterval();
+
+    // Prevent duplicate subscriptions
+    if (this.subscriptions.has(channelName)) {
+      return () => this.unsubscribeFromHand(handId);
+    }
+
+    // Enforce subscription limit (see subscribeToClub for rationale on fire-and-forget)
+    this.enforceSubscriptionLimit().catch((e) =>
+      console.error('[RealtimeChannelService] enforceSubscriptionLimit failed:', e)
+    );
+
     const channel = supabase.channel(channelName);
 
     channel.on('broadcast', { event: 'hand_event' }, ({ payload }) => {
@@ -474,6 +496,11 @@ class RealtimeChannelService {
       entityId: handId,
       onEvent: callbacks.onEvent || (() => {}),
     });
+
+    // Track subscription for monitoring (was missing — hand replays were invisible to
+    // the stale-subscription cleanup and subscription monitor)
+    this.subscriptionTimestamps.set(channelName, Date.now());
+    subscriptionMonitor.register(channelName, 'hand');
 
     return () => this.unsubscribeFromHand(handId);
   }
@@ -545,8 +572,10 @@ class RealtimeChannelService {
       return () => this.unsubscribeFromLobby();
     }
 
-    // Enforce subscription limit before creating new subscription
-    this.enforceSubscriptionLimit();
+    // Enforce subscription limit (see subscribeToClub for rationale on fire-and-forget)
+    this.enforceSubscriptionLimit().catch((e) =>
+      console.error('[RealtimeChannelService] enforceSubscriptionLimit failed:', e)
+    );
 
     const channel = supabase.channel(channelName);
 

@@ -26,6 +26,7 @@ const FAST_RETRY_INTERVALS = [5_000, 10_000, 20_000]; // Aggressive retry on fai
 class SupabaseConnectionWatchdog {
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  private onlineCheckTimer: ReturnType<typeof setTimeout> | null = null; // FIX: Track handleOnline timer
   private consecutiveFailures = 0;
   private isConnected = true;
   private started = false;
@@ -63,6 +64,11 @@ class SupabaseConnectionWatchdog {
     if (this.retryTimer) {
       clearTimeout(this.retryTimer);
       this.retryTimer = null;
+    }
+    // FIX: Clear the handleOnline timer to prevent fire-after-stop
+    if (this.onlineCheckTimer) {
+      clearTimeout(this.onlineCheckTimer);
+      this.onlineCheckTimer = null;
     }
     window.removeEventListener('online', this.handleOnline);
     window.removeEventListener('offline', this.handleOffline);
@@ -201,8 +207,13 @@ class SupabaseConnectionWatchdog {
 
   private handleOnline = (): void => {
     console.log('[Watchdog] Browser went online — checking health');
-    // Don't immediately mark as connected — verify with actual health check
-    setTimeout(() => this.checkHealth(), 500);
+    // FIX: Store timer ID so stop() can clear it. Previously this timer
+    // was fire-and-forget and could fire after stop() was called.
+    if (this.onlineCheckTimer) clearTimeout(this.onlineCheckTimer);
+    this.onlineCheckTimer = setTimeout(() => {
+      this.onlineCheckTimer = null;
+      this.checkHealth();
+    }, 500);
   };
 
   private handleOffline = (): void => {

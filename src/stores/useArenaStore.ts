@@ -171,36 +171,38 @@ export const useArenaStore = create<ArenaState>()(
       },
 
       recordAnswer: async (questionId, isCorrect) => {
-        const { currentSession, currentStreak, bestStreak, previouslySeenQuestionIds } = get();
+        const { currentSession } = get();
 
         if (!currentSession) {
           throw new Error('No active session');
         }
 
-        // Track this question as seen (Never-Repeat Law)
-        const newSeenIds = new Set(previouslySeenQuestionIds);
-        newSeenIds.add(questionId);
-
-        // Update streak
-        const newStreak = isCorrect ? currentStreak + 1 : 0;
-        const newBestStreak = Math.max(bestStreak, newStreak);
-
         // Record answer in backend
         const result = await ArenaTrainingController.recordAnswer(currentSession.id, isCorrect);
 
-        set((state) => ({
-          questionsAttempted: state.questionsAttempted + 1,
-          correctAnswers: state.correctAnswers + (isCorrect ? 1 : 0),
-          currentStreak: newStreak,
-          bestStreak: newBestStreak,
-          previouslySeenQuestionIds: newSeenIds,
-          trainingStatus:
-            state.questionsAttempted + 1 >= MIN_QUESTIONS
-              ? result.passed
-                ? 'complete'
-                : 'failed'
-              : 'active',
-        }));
+        // FIX: Use the set() updater form to capture CURRENT state, not pre-await snapshot.
+        // Previously, streak/seen values were computed before the await, causing stale state
+        // if two rapid recordAnswer() calls overlapped.
+        set((state) => {
+          const newSeenIds = new Set(state.previouslySeenQuestionIds);
+          newSeenIds.add(questionId);
+          const newStreak = isCorrect ? state.currentStreak + 1 : 0;
+          const newBestStreak = Math.max(state.bestStreak, newStreak);
+
+          return {
+            questionsAttempted: state.questionsAttempted + 1,
+            correctAnswers: state.correctAnswers + (isCorrect ? 1 : 0),
+            currentStreak: newStreak,
+            bestStreak: newBestStreak,
+            previouslySeenQuestionIds: newSeenIds,
+            trainingStatus:
+              state.questionsAttempted + 1 >= MIN_QUESTIONS
+                ? result.passed
+                  ? 'complete'
+                  : 'failed'
+                : 'active',
+          };
+        });
 
         // If passed, update unlocked level
         if (result.passed) {

@@ -476,6 +476,7 @@ export default function CarouselSection({
         className={styles.carouselCardFeatured}
         ref={sharkCardRef}
         onClick={async () => {
+          console.log('[SHARK-CLICK] onClick handler FIRED! sharkClubId =', sharkClubId);
           haptic.success();
           PremiumSFX.navigate();
           if (sharkClubId) {
@@ -483,24 +484,29 @@ export default function CarouselSection({
             localStorage.setItem(LAST_CLUB_KEY, sharkClubId);
             navigate(`/clubs/${sharkClubId}`);
           } else {
+            // Fallback: query DB with a timeout to prevent indefinite hangs
+            console.log('[SHARK-CLICK] sharkClubId is null — attempting DB lookup with timeout...');
             try {
-              const { data: sharkClub } = await supabase
-                .from('clubs')
-                .select('id')
-                .eq('club_id', 25450)
-                .maybeSingle();
+              const fetchWithTimeout = Promise.race([
+                supabase.from('clubs').select('id').eq('club_id', 25450).maybeSingle(),
+                new Promise<never>((_, reject) =>
+                  setTimeout(() => reject(new Error('Shark Club lookup timed out after 5s')), 5000)
+                ),
+              ]);
+              const { data: sharkClub, error } = await fetchWithTimeout;
+              console.log('[SHARK-CLICK] DB result:', sharkClub, 'error:', error);
               if (sharkClub?.id) {
                 localStorage.setItem(LAST_VISITED_KEY, sharkClub.id);
                 localStorage.setItem(LAST_CLUB_KEY, sharkClub.id);
                 navigate(`/clubs/${sharkClub.id}`);
-              } else {
-                console.error('[HomePage] Shark Club (25450) not found in DB');
-                toast.error('Shark Club not found');
+                return;
               }
             } catch (err) {
-              console.error('[HomePage] Shark Club lookup failed:', err);
-              toast.error('Could not load Shark Club');
+              console.error('[SHARK-CLICK] Fallback lookup failed:', err);
             }
+            // If all else fails, navigate using the integer club_id via the resolver route
+            console.log('[SHARK-CLICK] Using integer club_id fallback route');
+            navigate('/clubs/25450');
           }
         }}
       >

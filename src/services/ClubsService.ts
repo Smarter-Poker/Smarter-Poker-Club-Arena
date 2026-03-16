@@ -345,7 +345,7 @@ export async function leaveClub(clubId: string): Promise<void> {
 }
 
 /**
- * Get user's club memberships
+ * Get user's club memberships — enriched with LIVE member counts
  */
 export async function getUserMemberships(): Promise<(ClubMember & { club: Club })[]> {
   const { data: user } = await supabase.auth.getUser();
@@ -366,7 +366,42 @@ export async function getUserMemberships(): Promise<(ClubMember & { club: Club }
     throw new Error('Failed to get memberships');
   }
 
-  return (data || []) as unknown as (ClubMember & { club: Club })[];
+  const memberships = (data || []) as unknown as (ClubMember & { club: Club })[];
+
+  // Enrich with LIVE member counts from club_members table
+  // The clubs.member_count column is a denormalized counter that can go stale
+  if (memberships.length > 0) {
+    const clubIds = memberships.map((m) => (m.club as any)?.id).filter(Boolean) as string[];
+
+    if (clubIds.length > 0) {
+      try {
+        // Batch count: one query per club (Supabase doesn't support GROUP BY in PostgREST)
+        const countResults = await Promise.all(
+          clubIds.map(async (cid) => {
+            const { count } = await supabase
+              .from('club_members')
+              .select('*', { count: 'exact', head: true })
+              .eq('club_id', cid);
+            return { clubId: cid, count: count || 0 };
+          })
+        );
+
+        const countMap = new Map(countResults.map((r) => [r.clubId, r.count]));
+
+        // Override stale member_count with live count
+        for (const m of memberships) {
+          const club = m.club as any;
+          if (club?.id && countMap.has(club.id)) {
+            club.member_count = countMap.get(club.id);
+          }
+        }
+      } catch (e) {
+        console.warn('[ClubsService] Live member count enrichment failed (using stale counts):', e);
+      }
+    }
+  }
+
+  return memberships;
 }
 
 /**
@@ -524,14 +559,23 @@ export async function updateClub(clubId: string, updates: Record<string, any>): 
   }
 
   if (club.owner_id !== user.user.id) {
-    console.error(`[ClubsService] Unauthorized updateClub attempt by ${user.user.id} on club ${clubId}`);
+    console.error(
+      `[ClubsService] Unauthorized updateClub attempt by ${user.user.id} on club ${clubId}`
+    );
     throw new Error('Only the club owner can update club settings');
   }
 
   // Whitelist allowed update fields to prevent arbitrary column injection
   const ALLOWED_FIELDS = [
-    'name', 'description', 'slug', 'is_public', 'requires_approval',
-    'color_theme', 'avatar_url', 'banner_url', 'settings',
+    'name',
+    'description',
+    'slug',
+    'is_public',
+    'requires_approval',
+    'color_theme',
+    'avatar_url',
+    'banner_url',
+    'settings',
   ];
   const sanitizedUpdates: Record<string, any> = {};
   for (const key of Object.keys(updates)) {

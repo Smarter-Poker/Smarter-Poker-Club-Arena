@@ -15,6 +15,7 @@ import { replayOfflineQueue } from './utils/offlineQueue';
 import { busEventLogger } from './services/BusEventLogger';
 import GlobalWaitlistListener from './components/common/GlobalWaitlistListener';
 import WaitlistBanner from './components/common/WaitlistBanner';
+import { earlyAuth } from './core/earlyAuthBridge';
 
 // Intro Video — lazy-loaded (only shown once per session, not needed for initial paint)
 const IntroVideo = lazy(() => import('./components/IntroVideo'));
@@ -203,50 +204,49 @@ export default function App() {
   // ── Consume early auth token received before React mounted ──
   // The early listener in main.tsx may have already received and ACK'd
   // the auth token. We still need to actually call setSession() here.
+  // Uses a STATIC import of earlyAuthBridge (zero-dependency module) to
+  // guarantee same module instance and eliminate async delay.
   useEffect(() => {
     const isInIframe = window.parent !== window;
     if (!isInIframe) return;
 
-    // Import from the shared bridge module (no circular dependency)
-    import('./core/earlyAuthBridge')
-      .then(({ earlyAuth }) => {
-        if (earlyAuth.token && lastAuthTokenRef.current !== earlyAuth.token) {
-          console.log('[App] Consuming early auth token received before mount');
-          lastAuthTokenRef.current = earlyAuth.token;
+    // earlyAuth is a static import — guaranteed same instance as main.tsx
+    if (earlyAuth.token && lastAuthTokenRef.current !== earlyAuth.token) {
+      console.log('[App] Consuming early auth token received before mount');
+      const tokenToSet = earlyAuth.token;
+      const refreshToSet = earlyAuth.refreshToken || '';
+      lastAuthTokenRef.current = tokenToSet;
 
-          // Apply settings that came with the early auth
-          if (earlyAuth.settings) {
-            applySettingsRef.current(earlyAuth.settings);
+      // Apply settings that came with the early auth
+      if (earlyAuth.settings) {
+        applySettingsRef.current(earlyAuth.settings);
+      }
+
+      // Clear early auth BEFORE async setSession to prevent double-consume
+      // if this effect re-runs (React StrictMode double-mount)
+      earlyAuth.token = null;
+      earlyAuth.refreshToken = null;
+      earlyAuth.settings = null;
+
+      // Set the session
+      supabase.auth
+        .setSession({
+          access_token: tokenToSet,
+          refresh_token: refreshToSet,
+        })
+        .then(() => {
+          console.log('[App] ✅ Early auth session set successfully');
+          // Send another ACK to be safe (main.tsx already sent one)
+          try {
+            window.parent.postMessage({ type: 'SMARTER_AUTH_ACK' }, '*');
+          } catch {
+            /* best effort */
           }
-
-          // Set the session
-          supabase.auth
-            .setSession({
-              access_token: earlyAuth.token,
-              refresh_token: earlyAuth.refreshToken || '',
-            })
-            .then(() => {
-              console.log('[App] ✅ Early auth session set successfully');
-              // Send another ACK to be safe (main.tsx already sent one)
-              try {
-                window.parent.postMessage({ type: 'SMARTER_AUTH_ACK' }, '*');
-              } catch {
-                /* best effort */
-              }
-            })
-            .catch((e) => {
-              console.error('[App] Failed to set early auth session:', e);
-            });
-
-          // Clear the early auth so it doesn't get consumed again
-          earlyAuth.token = null;
-          earlyAuth.refreshToken = null;
-          earlyAuth.settings = null;
-        }
-      })
-      .catch(() => {
-        console.warn('[App] Could not import earlyAuthBridge — relying on postMessage handler');
-      });
+        })
+        .catch((e) => {
+          console.error('[App] Failed to set early auth session:', e);
+        });
+    }
   }, []);
 
   // ── Continue listening for auth tokens via postMessage (backup + refreshes) ──

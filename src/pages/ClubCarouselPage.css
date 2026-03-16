@@ -513,7 +513,270 @@
   }
 }
 
-/* ═══════ PREMIUM ANIMATIONS ═══════ */
+/* ═══════ #10: PREMIUM 3D CARD ENTRANCE ═══════ */
+.cards-container {
+  perspective: 1200px;
+}
+
+.club-card {
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+}
+
+@keyframes cardEnter {
+  from {
+    opacity: 0;
+    transform: translateY(30px) rotateX(15deg) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) rotateX(0deg) scale(1);
+  }
+}
+
+.hidden {
+  opacity: 0;
+  transform: translateY(30px) rotateX(15deg) scale(0.9);
+}
+
+.card-enter {
+  animation: cardEnter 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+/* ═══════ #2: SKELETON LOADING ═══════ */
+.carousel-skeleton {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2rem;
+  padding: 2rem;
+  width: 100%;
+  max-width: 400px;
+  margin: 0 auto;
+}
+
+.skeleton-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.skeleton-avatar {
+  width: 60px;
+  height: 60px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.skeleton-text-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  flex: 1;
+}
+
+.skeleton-line {
+  height: 14px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.skeleton-line.w60 {
+  width: 60%;
+}
+.skeleton-line.w40 {
+  width: 40%;
+}
+
+.skeleton-cards {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  width: 100%;
+}
+
+.skeleton-card {
+  width: 240px;
+  height: 340px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.skeleton-card.side {
+  width: 180px;
+  height: 280px;
+  opacity: 0.5;
+}
+
+.skeleton-dots {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.skeleton-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200px 0;
+  }
+  100% {
+    background-position: 200px 0;
+  }
+}
+
+.shimmer {
+  background-image: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.04) 0%,
+    rgba(255, 255, 255, 0.12) 50%,
+    rgba(255, 255, 255, 0.04) 100%
+  );
+  background-size: 200px 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+/* ═══════ #3: OFFLINE BANNER ═══════ */
+.carousel-offline-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem 1rem;
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  border-radius: 8px;
+  margin: 0.5rem 1rem;
+  color: #f59e0b;
+  font-size: 0.85rem;
+  font-weight: 500;
+  animation: fadeInUp 0.3s ease-out;
+}
+
+/* ═══════ #9: CONNECTION HEALTH DOT ═══════ */
+.ws-status-dot {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  z-index: 100;
+  transition:
+    background-color 0.3s ease,
+    box-shadow 0.3s ease;
+}
+
+.ws-status-dot.connected {
+  background: #10b981;
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.5);
+}
+
+.ws-status-dot.disconnected {
+  background: #ef4444;
+  box-shadow: 0 0 6px rgba(239, 68, 68, 0.5);
+  animation: pulse-dot 1.5s infinite;
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+/* ═══════ #5: SEARCH BAR ═══════ */
+.carousel-search-bar {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.carousel-search-input {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  padding: 0.5rem 2rem 0.5rem 0.75rem;
+  color: white;
+  font-size: 0.85rem;
+  outline: none;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.carousel-search-input::placeholder {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.carousel-search-input:focus {
+  border-color: #1877f2;
+  box-shadow: 0 0 0 2px rgba(24, 119, 242, 0.2);
+}
+
+.carousel-search-clear {
+  position: absolute;
+  right: 6px;
+  background: rgba(255, 255, 255, 0.15);
+  border: none;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  color: white;
+  font-size: 0.8rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s ease;
+}
+
+.carousel-search-clear:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* ═══════ #8: NOTIFICATION BADGES ═══════ */
+.club-card__badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 20;
+  min-width: 22px;
+  height: 22px;
+  border-radius: 11px;
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  color: white;
+  font-size: 0.7rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.4);
+  animation: badge-pop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes badge-pop {
+  0% {
+    transform: scale(0);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* ═══════ PREMIUM fadeInUp (kept for fallback) ═══════ */
 @keyframes fadeInUp {
   from {
     opacity: 0;
@@ -523,11 +786,6 @@
     opacity: 1;
     transform: translateY(0);
   }
-}
-
-.hidden {
-  opacity: 0;
-  transform: translateY(8px);
 }
 
 .fadeInUp {

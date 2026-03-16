@@ -209,6 +209,13 @@ export default function ClubCarouselPage() {
         },
         500
       ),
+      masterBus.subscribeDebounced(
+        'CLUB_SETTINGS_UPDATED',
+        () => {
+          if (isMounted.current) loadUserData();
+        },
+        500
+      ),
     ];
     return () => unsubs.forEach((u) => u());
   }, []);

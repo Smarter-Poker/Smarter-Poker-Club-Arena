@@ -114,6 +114,11 @@ export default function ClubCarouselPage() {
 
   const isMounted = useIsMounted();
 
+  // Request deduplication — prevent concurrent loadUserData() from realtime events
+  const loadingRef = useRef(false);
+  // Differentiate initial load (skeleton) from background refresh (silent)
+  const initialLoadDone = useRef(false);
+
   useEffect(() => {
     loadUserData();
   }, []);
@@ -167,6 +172,13 @@ export default function ClubCarouselPage() {
       ),
       masterBus.subscribeDebounced(
         'UNION_UPDATED',
+        () => {
+          if (isMounted.current) loadUserData();
+        },
+        500
+      ),
+      masterBus.subscribeDebounced(
+        'CLUB_SETTINGS_UPDATED',
         () => {
           if (isMounted.current) loadUserData();
         },
@@ -271,7 +283,13 @@ export default function ClubCarouselPage() {
   );
 
   const loadUserData = async () => {
-    setLoading(true);
+    // Skip if already loading (prevents concurrent calls from realtime)
+    if (loadingRef.current) return;
+    loadingRef.current = true;
+
+    // Only show skeleton on initial load, not background refreshes
+    if (!initialLoadDone.current) setLoading(true);
+
     try {
       const {
         data: { user: authUser },
@@ -374,6 +392,8 @@ export default function ClubCarouselPage() {
       console.error('Error loading user data:', error);
       toast.error('Failed to load club data');
     } finally {
+      loadingRef.current = false;
+      initialLoadDone.current = true;
       if (isMounted.current) setLoading(false);
     }
   };

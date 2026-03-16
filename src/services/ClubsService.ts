@@ -330,9 +330,13 @@ export async function leaveClub(clubId: string): Promise<void> {
   // trigger on DELETE from club_members. No manual decrement needed.
 
   // 8. Real-time sync — emit both CLUB_LEFT and CLUB_UPDATED so all listeners react
-  const { masterBus } = await import('../core/MasterBus');
-  masterBus.emit('CLUB_LEFT', { clubId: resolvedId, action: 'member_left' });
-  masterBus.emit('CLUB_UPDATED', { clubId: resolvedId, action: 'member_left' });
+  try {
+    const { masterBus } = await import('../core/MasterBus');
+    masterBus.emit('CLUB_LEFT', { clubId: resolvedId, action: 'member_left' });
+    masterBus.emit('CLUB_UPDATED', { clubId: resolvedId, action: 'member_left' });
+  } catch (e) {
+    console.warn('[ClubsService] leaveClub: bus emit failed (non-critical):', e);
+  }
 }
 
 /**

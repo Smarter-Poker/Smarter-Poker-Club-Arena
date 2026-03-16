@@ -7,7 +7,7 @@
  * NO HARDCODED DATA - All data comes from Supabase
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { waitForAuth } from '../utils/waitForAuth';
@@ -87,6 +87,11 @@ export default function ClubsPage() {
   const [createError, setCreateError] = useState<string | null>(null);
   const [visibleClubCards, setVisibleClubCards] = useState(new Set<number>());
 
+  // #3: Request deduplication — prevent concurrent loadMyClubs() from stacking
+  const loadingRef = useRef(false);
+  // #5: Differentiate initial load (skeleton) from background refresh (silent)
+  const initialLoadDone = useRef(false);
+
   // Handle intro completion
   const handleIntroComplete = () => {
     sessionStorage.setItem(INTRO_SHOWN_KEY, 'true');
@@ -104,7 +109,13 @@ export default function ClubsPage() {
   }, [myClubs.length, myUnions.length]);
 
   const loadMyClubs = async (getIsMounted?: () => boolean) => {
-    setIsLoading(true);
+    // #3: Skip if already loading (prevents concurrent calls from realtime)
+    if (loadingRef.current) return;
+    loadingRef.current = true;
+
+    // #5: Only show skeleton on initial load, not on background refreshes
+    if (!initialLoadDone.current) setIsLoading(true);
+
     try {
       // In iframe context, wait for auth to be set by the parent via postMessage.
       const authReady = await waitForAuth(getIsMounted || undefined);
@@ -137,6 +148,8 @@ export default function ClubsPage() {
       setMyClubs([]);
       setMyUnions([]);
     } finally {
+      loadingRef.current = false;
+      initialLoadDone.current = true;
       if (!getIsMounted || getIsMounted()) setIsLoading(false);
     }
   };
@@ -550,7 +563,18 @@ export default function ClubsPage() {
                 </div>
               ) : myUnions.length === 0 ? (
                 <NoClubsEmpty onCreate={() => setActiveTab('create')} />
-              ) : null}
+              ) : (
+                <p
+                  style={{
+                    color: '#6a7a8a',
+                    textAlign: 'center',
+                    padding: '20px 0',
+                    fontSize: '0.85rem',
+                  }}
+                >
+                  Your clubs are nested under your unions below.
+                </p>
+              )}
 
               {/* ── Unions Section ── */}
               {myUnions.length > 0 && (
@@ -674,7 +698,7 @@ export default function ClubsPage() {
                               <div
                                 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#b388ff' }}
                               >
-                                {union.onlineCount || 0}
+                                {union.totalRake ? `$${union.totalRake.toLocaleString()}` : '—'}
                               </div>
                               <div
                                 style={{
@@ -683,7 +707,7 @@ export default function ClubsPage() {
                                   textTransform: 'uppercase',
                                 }}
                               >
-                                Online
+                                Total Rake
                               </div>
                             </div>
                           </div>

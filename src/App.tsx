@@ -227,42 +227,55 @@ export default function App() {
   });
 
   // ── Consume early auth token received before React mounted ──
-  // The early listener in main.tsx may have already received and ACK'd
-  // the auth token. We still need to actually call setSession() here.
-  // Uses a STATIC import of earlyAuthBridge (zero-dependency module) to
-  // guarantee same module instance and eliminate async delay.
+  // Token may have been received by either:
+  // 1. The INLINE <script> in index.html (window.__EARLY_AUTH__ — runs before modules)
+  // 2. The module-level handler in main.tsx (earlyAuth — runs during module eval)
+  // Check both sources for maximum resilience.
   useEffect(() => {
     const isInIframe = window.parent !== window;
     if (!isInIframe) return;
 
-    // earlyAuth is a static import — guaranteed same instance as main.tsx
-    if (earlyAuth.token && lastAuthTokenRef.current !== earlyAuth.token) {
+    // Merge: inline script token takes priority (it runs first)
+    const token = window.__EARLY_AUTH__?.token || earlyAuth.token;
+    const refreshToken = window.__EARLY_AUTH__?.refreshToken || earlyAuth.refreshToken || '';
+    const settings = window.__EARLY_AUTH__?.settings || earlyAuth.settings;
+
+    if (token && lastAuthTokenRef.current !== token) {
       console.log('[App] Consuming early auth token received before mount');
-      const tokenToSet = earlyAuth.token;
-      const refreshToSet = earlyAuth.refreshToken || '';
-      lastAuthTokenRef.current = tokenToSet;
+      lastAuthTokenRef.current = token;
 
       // JWT EXPIRY PRE-CHECK: Don't waste a setSession() call on an expired token
-      if (isTokenExpired(tokenToSet)) {
+      if (isTokenExpired(token)) {
         console.warn(
           '[App] Early auth token is already expired — skipping setSession, waiting for fresh token'
         );
+        // Clear BOTH sources
         earlyAuth.token = null;
         earlyAuth.refreshToken = null;
         earlyAuth.settings = null;
+        if (window.__EARLY_AUTH__) {
+          window.__EARLY_AUTH__.token = null;
+          window.__EARLY_AUTH__.refreshToken = null;
+          window.__EARLY_AUTH__.settings = null;
+        }
         return;
       }
 
       // Apply settings that came with the early auth
-      if (earlyAuth.settings) {
-        applySettingsRef.current(earlyAuth.settings);
+      if (settings) {
+        applySettingsRef.current(settings);
       }
 
-      // Clear early auth BEFORE async setSession to prevent double-consume
+      // Clear BOTH sources BEFORE async setSession to prevent double-consume
       // if this effect re-runs (React StrictMode double-mount)
       earlyAuth.token = null;
       earlyAuth.refreshToken = null;
       earlyAuth.settings = null;
+      if (window.__EARLY_AUTH__) {
+        window.__EARLY_AUTH__.token = null;
+        window.__EARLY_AUTH__.refreshToken = null;
+        window.__EARLY_AUTH__.settings = null;
+      }
 
       // SENTRY PERFORMANCE: Track auth handshake duration
       const handshakeStart = performance.now();
@@ -270,8 +283,8 @@ export default function App() {
       // Set the session
       supabase.auth
         .setSession({
-          access_token: tokenToSet,
-          refresh_token: refreshToSet,
+          access_token: token,
+          refresh_token: refreshToken,
         })
         .then(() => {
           const handshakeMs = Math.round(performance.now() - handshakeStart);
@@ -293,9 +306,20 @@ export default function App() {
           } catch {
             /* best effort */
           }
+          // Signal main.tsx to stop its early listener (cleanup)
+          window.__earlyAuthConsumed = true;
         })
         .catch((e) => {
           console.error('[App] Failed to set early auth session:', e);
+          try {
+            Sentry.addBreadcrumb({
+              category: 'auth-handshake',
+              message: `Early auth setSession FAILED: ${e}`,
+              level: 'error',
+            });
+          } catch {
+            /* Sentry not loaded */
+          }
         });
     }
   }, []);

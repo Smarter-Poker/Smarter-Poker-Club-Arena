@@ -858,6 +858,53 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
         <div style={dividerStyle} />
 
         {/* ═══════════════════════════════════════════════════════════════
+                    KEYBOARD SHORTCUTS
+                ═══════════════════════════════════════════════════════════════ */}
+        <div style={sectionHeaderStyle}>Keyboard Shortcuts</div>
+        {[
+          { key: '?', desc: 'Show Shortcuts' },
+          { key: 'Esc', desc: 'Close Menu / Modal' },
+          { key: 'H', desc: 'Go Home' },
+          { key: 'L', desc: 'Go to Lobby' },
+          { key: 'T', desc: 'Go to Tournaments' },
+          { key: 'P', desc: 'Go to Profile' },
+          { key: 'S', desc: 'Go to Settings' },
+        ].map((shortcut, i) => (
+          <div
+            key={`shortcut-${i}`}
+            style={{
+              ...menuItemStyle,
+              cursor: 'default',
+              justifyContent: 'space-between',
+              animation: isOpen
+                ? `slideInLeft 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) ${(i + 34) * 30}ms both`
+                : 'none',
+            }}
+          >
+            <span style={{ fontSize: 14, color: colors.textSecondary }}>{shortcut.desc}</span>
+            <kbd
+              style={{
+                display: 'inline-block',
+                padding: '2px 8px',
+                fontSize: 12,
+                fontWeight: 700,
+                fontFamily: 'monospace',
+                color: colors.text,
+                background: colors.bgHover,
+                borderRadius: 6,
+                border: `1px solid ${colors.divider}`,
+                minWidth: 28,
+                textAlign: 'center',
+              }}
+            >
+              {shortcut.key}
+            </kbd>
+          </div>
+        ))}
+
+        <div style={dividerStyle} />
+
+        {/* ═══════════════════════════════════════════════════════════════
                     SUPPORT & LEGAL
                 ═══════════════════════════════════════════════════════════════ */}
         <div style={sectionHeaderStyle}>Support & Legal</div>

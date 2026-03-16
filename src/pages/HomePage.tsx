@@ -215,10 +215,6 @@ interface CarouselSectionProps {
   handleContextMenu: (e: React.MouseEvent, club: UserClub) => void;
   handleLongPressStart: (club: UserClub, e: React.TouchEvent) => void;
   handleLongPressEnd: () => void;
-  handleClubHoverStart: (clubId: string) => void;
-  handleClubHoverEnd: () => void;
-  handleTooltipEnter: (club: UserClub, e: React.MouseEvent) => void;
-  handleTooltipLeave: () => void;
   onOpenJoinModal: () => void;
   onOpenCreateModal: () => void;
 }
@@ -235,10 +231,6 @@ function CarouselSection({
   handleContextMenu,
   handleLongPressStart,
   handleLongPressEnd,
-  handleClubHoverStart,
-  handleClubHoverEnd,
-  handleTooltipEnter,
-  handleTooltipLeave,
   onOpenJoinModal,
   onOpenCreateModal,
 }: CarouselSectionProps) {
@@ -431,14 +423,6 @@ function CarouselSection({
         onTouchStart={(e) => handleLongPressStart(club, e)}
         onTouchEnd={handleLongPressEnd}
         onTouchCancel={handleLongPressEnd}
-        onMouseEnter={(e) => {
-          handleClubHoverStart(club.id);
-          handleTooltipEnter(club, e);
-        }}
-        onMouseLeave={() => {
-          handleClubHoverEnd();
-          handleTooltipLeave();
-        }}
         draggable
         onDragStart={() => handleDragStart(club.id)}
         onDragOver={(e) => handleDragOver(e, club.id)}
@@ -723,11 +707,6 @@ function HomePageInner() {
     club: UserClub;
   } | null>(null);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Enhancement #1: Pull-to-refresh
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const pullStartY = useRef(0);
-  const containerRef = useRef<HTMLDivElement>(null);
 
   // Enhancement #8: Notification badges (unread counts)
   const [tileBadges, setTileBadges] = useState<Record<string, number>>({});
@@ -1049,15 +1028,15 @@ function HomePageInner() {
         // Find Shark Club by club_id = 25450
         const { data: club } = await supabase
           .from('clubs')
-          .select('id, member_count')
+          .select('id')
           .eq('club_id', 25450)
           .maybeSingle();
 
         if (!club || !isMounted) return;
         setSharkClubId(club.id);
 
-        // 1. Real member count from clubs table (bypasses RLS on club_members)
-        const memberCount = club.member_count || 0;
+        // 1. LIVE member count via SECURITY DEFINER RPC (bypasses RLS)
+        const memberCount = await ClubsService.getLiveMemberCount(club.id);
 
         // 2. Real active players: count occupied seats for THIS CLUB only
         let activePlayers = 0;
@@ -1145,36 +1124,6 @@ function HomePageInner() {
       masterBus.removeRegisteredChannel(allClubsKey);
     };
   }, [fetchUserData]);
-
-  // ═══════════════════════════════════════════════════════════════════════════════
-  // Enhancement #1: Pull-to-Refresh handlers
-  // ═══════════════════════════════════════════════════════════════════════════════
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    if (containerRef.current && containerRef.current.scrollTop <= 0) {
-      pullStartY.current = e.touches[0].clientY;
-    }
-  }, []);
-
-  const handleTouchMove = useCallback(
-    (e: React.TouchEvent) => {
-      if (pullStartY.current && !isRefreshing) {
-        const delta = e.touches[0].clientY - pullStartY.current;
-        if (delta > 80 && containerRef.current && containerRef.current.scrollTop <= 0) {
-          setIsRefreshing(true);
-          haptic.medium();
-          fetchUserData(true).finally(() => {
-            setTimeout(() => setIsRefreshing(false), 800);
-          });
-          pullStartY.current = 0;
-        }
-      }
-    },
-    [isRefreshing, fetchUserData]
-  );
-
-  const handleTouchEnd = useCallback(() => {
-    pullStartY.current = 0;
-  }, []);
 
   // ═══════════════════════════════════════════════════════════════════════════════
   // Enhancement #2: Context Menu handlers
@@ -1312,47 +1261,6 @@ function HomePageInner() {
     [toast, fetchUserData]
   );
 
-  // #7: Prefetch club lobby data on hover
-  const prefetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const handleClubHoverStart = useCallback((clubId: string) => {
-    prefetchTimerRef.current = setTimeout(async () => {
-      try {
-        // Prefetch basic club data into browser fetch cache
-        const { data } = await supabase
-          .from('club_members')
-          .select('*, club:clubs(*)', { count: 'exact', head: false })
-          .eq('club_id', await resolveClubUUID(clubId))
-          .limit(5);
-        // Store in sessionStorage for instant lobby render
-        if (data) {
-          try {
-            sessionStorage.setItem(`prefetch_club_${clubId}`, JSON.stringify(data));
-          } catch {
-            /* */
-          }
-        }
-      } catch {
-        /* silent prefetch */
-      }
-    }, 300);
-  }, []);
-
-  const handleClubHoverEnd = useCallback(() => {
-    if (prefetchTimerRef.current) {
-      clearTimeout(prefetchTimerRef.current);
-      prefetchTimerRef.current = null;
-    }
-  }, []);
-
-  // BUG FIX #1: Cleanup prefetch timer on unmount
-  useEffect(() => {
-    return () => {
-      if (prefetchTimerRef.current) {
-        clearTimeout(prefetchTimerRef.current);
-      }
-    };
-  }, []);
-
   // #11: Toggle sound effects
   const toggleSounds = useCallback(() => {
     setSoundsEnabled((prev) => {
@@ -1362,14 +1270,6 @@ function HomePageInner() {
       else PremiumSFX.toggleOff();
       return next;
     });
-  }, []);
-
-  // #13: Tooltip for desktop hover (club stats)
-  const handleTooltipEnter = useCallback((club: UserClub, e: React.MouseEvent) => {
-    setTooltipClub({ club, x: e.clientX, y: e.clientY });
-  }, []);
-  const handleTooltipLeave = useCallback(() => {
-    setTooltipClub(null);
   }, []);
 
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -1530,10 +1430,6 @@ function HomePageInner() {
   return (
     <div
       className={styles.container}
-      ref={containerRef}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
       style={
         SEASONAL_GRADIENTS[seasonalTheme]
           ? { background: SEASONAL_GRADIENTS[seasonalTheme] }
@@ -1594,18 +1490,6 @@ function HomePageInner() {
                 MAIN CONTENT — Scrollable card layout
             ═══════════════════════════════════════════════════════════════════════ */}
       <div className={styles.mainContent}>
-        {/* Enhancement #1: Pull-to-Refresh Indicator */}
-        <div
-          className={`${styles.pullToRefresh} ${isRefreshing ? styles.pullToRefreshActive : ''}`}
-        >
-          {isRefreshing && (
-            <>
-              <div className={styles.pullSpinner}></div>
-              <span className={styles.pullText}>Refreshing</span>
-            </>
-          )}
-        </div>
-
         {/* ═══════════════════════════════════════════════════════════════════════
                     HORIZONTAL ACTION BAR
                 ═══════════════════════════════════════════════════════════════════════ */}
@@ -1657,10 +1541,6 @@ function HomePageInner() {
           handleContextMenu={handleContextMenu}
           handleLongPressStart={handleLongPressStart}
           handleLongPressEnd={handleLongPressEnd}
-          handleClubHoverStart={handleClubHoverStart}
-          handleClubHoverEnd={handleClubHoverEnd}
-          handleTooltipEnter={handleTooltipEnter}
-          handleTooltipLeave={handleTooltipLeave}
           onOpenJoinModal={() => setShowJoinModal(true)}
           onOpenCreateModal={() => setShowCreateClubModal(true)}
         />

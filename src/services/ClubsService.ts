@@ -762,6 +762,47 @@ export async function canJoinMoreClubs(): Promise<{
   };
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// 🔢 LIVE MEMBER COUNT (bypasses RLS via SECURITY DEFINER RPC)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Get the LIVE member count for a club using the fn_get_club_member_count RPC.
+ * This bypasses RLS so non-members can see public club stats.
+ * Falls back to the denormalized clubs.member_count if the RPC is not available.
+ */
+export async function getLiveMemberCount(clubId: string): Promise<number> {
+  try {
+    const { data, error } = await supabase.rpc('fn_get_club_member_count', {
+      p_club_id: clubId,
+    });
+
+    if (!error && typeof data === 'number') {
+      return data;
+    }
+
+    // RPC not deployed yet — fall back to denormalized column
+    console.warn(
+      '[ClubsService] fn_get_club_member_count RPC unavailable, using stale column:',
+      error?.message
+    );
+  } catch (e) {
+    console.warn('[ClubsService] getLiveMemberCount RPC call failed:', e);
+  }
+
+  // Fallback: read from clubs table (may be stale)
+  try {
+    const { data: club } = await supabase
+      .from('clubs')
+      .select('member_count')
+      .eq('id', clubId)
+      .maybeSingle();
+    return club?.member_count || 0;
+  } catch {
+    return 0;
+  }
+}
+
 // Export service object for cleaner imports
 export const ClubsService = {
   discoverNearby: discoverNearbyClubs,
@@ -780,4 +821,5 @@ export const ClubsService = {
   uploadBanner: uploadClubBanner,
   updateClub,
   canJoinMoreClubs,
+  getLiveMemberCount,
 };

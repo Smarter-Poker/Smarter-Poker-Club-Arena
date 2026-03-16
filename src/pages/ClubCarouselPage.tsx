@@ -11,6 +11,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import HamburgerMenu from '../components/navigation/HamburgerMenu';
 import { useNavigate } from 'react-router-dom';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -18,7 +19,6 @@ import { unionService } from '../services/UnionService';
 import type { Union } from '../services/UnionService';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
-import IntroVideo from '../components/IntroVideo';
 import './ClubCarouselPage.css';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
@@ -47,9 +47,6 @@ interface UserProfile {
   vip_level: string;
 }
 
-// Session key for intro video
-const INTRO_SHOWN_KEY = 'club_arena_intro_shown';
-
 // Frame images for club cards (randomly assigned per club)
 // Use BASE_URL for correct path resolution with Vite base path
 const FRAME_IMAGES = [
@@ -73,6 +70,7 @@ export default function ClubCarouselPage() {
     if (user?.id) loadUserData();
   });
   const toast = useToast();
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const [clubs, setClubs] = useState<UserClub[]>([]);
   const [userUnions, setUserUnions] = useState<Union[]>([]);
@@ -81,18 +79,6 @@ export default function ClubCarouselPage() {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [wallet, setWallet] = useState<UserWallet>({ gold: 0, diamonds: 0 });
   const [visibleCards, setVisibleCards] = useState<Set<string>>(new Set());
-
-  // Intro video state - only show once per session
-  const [showIntro, setShowIntro] = useState(() => {
-    const shown = sessionStorage.getItem(INTRO_SHOWN_KEY);
-    return !shown; // Show intro if not shown yet
-  });
-
-  // Handle intro completion
-  const handleIntroComplete = () => {
-    sessionStorage.setItem(INTRO_SHOWN_KEY, 'true');
-    setShowIntro(false);
-  };
 
   const isMounted = useIsMounted();
 
@@ -242,6 +228,12 @@ export default function ClubCarouselPage() {
         // Track actual displayed club count for activeIndex clamping
         let displayedClubCount = clubs.length; // fallback to current state
 
+        // Extract loaded unions first (needed for club filtering below)
+        let loadedUnions: Union[] = [];
+        if (unionsResult.status === 'fulfilled') {
+          loadedUnions = unionsResult.value;
+        }
+
         // Process clubs
         if (memberResult.status === 'fulfilled') {
           const { data: memberData, error: memberError } = memberResult.value;
@@ -259,19 +251,19 @@ export default function ClubCarouselPage() {
               }));
 
             // ── Enrich with LIVE member counts (clubs.member_count can be stale) ──
+            // Single batched query instead of N individual count queries
             if (allUserClubs.length > 0) {
               try {
-                const countResults = await Promise.all(
-                  allUserClubs.map(async (c) => {
-                    const { count } = await supabase
-                      .from('club_members')
-                      .select('*', { count: 'exact', head: true })
-                      .eq('club_id', c.id);
-                    return { clubId: c.id, count: count || 0 };
-                  })
-                );
+                const clubIds = allUserClubs.map((c) => c.id);
+                const { data: memberRows } = await supabase
+                  .from('club_members')
+                  .select('club_id')
+                  .in('club_id', clubIds);
                 if (!isMounted.current) return;
-                const countMap = new Map(countResults.map((r) => [r.clubId, r.count]));
+                const countMap = new Map<string, number>();
+                for (const row of memberRows || []) {
+                  countMap.set(row.club_id, (countMap.get(row.club_id) || 0) + 1);
+                }
                 for (const club of allUserClubs) {
                   if (countMap.has(club.id)) {
                     club.member_count = countMap.get(club.id)!;
@@ -282,21 +274,31 @@ export default function ClubCarouselPage() {
               }
             }
 
-            // Filter out clubs that belong to a union (they'll appear under the union card)
+            // Filter out clubs that belong to a union — BUT only if that union
+            // was successfully loaded. This prevents clubs from vanishing when
+            // the union query fails (root cause of Club JAQK / Midway Union disappearing).
             let filteredClubs = allUserClubs;
-            if (allUserClubs.length > 0) {
+            if (allUserClubs.length > 0 && loadedUnions.length > 0) {
               try {
                 const { data: ucRows } = await supabase
                   .from('union_clubs')
-                  .select('club_id')
+                  .select('club_id, union_id')
                   .in(
                     'club_id',
                     allUserClubs.map((c) => c.id)
                   );
                 if (!isMounted.current) return;
                 if (ucRows && ucRows.length > 0) {
-                  const unionClubIdSet = new Set(ucRows.map((r) => r.club_id));
-                  filteredClubs = allUserClubs.filter((c) => !unionClubIdSet.has(c.id));
+                  // Build a map: club_id → union_id
+                  const clubToUnionMap = new Map(ucRows.map((r) => [r.club_id, r.union_id]));
+                  // Set of union IDs that actually loaded successfully
+                  const loadedUnionIds = new Set(loadedUnions.map((u) => u.id));
+                  // Only filter out a club if its parent union is in the loaded set
+                  filteredClubs = allUserClubs.filter((c) => {
+                    const parentUnionId = clubToUnionMap.get(c.id);
+                    if (!parentUnionId) return true; // not in any union — keep
+                    return !loadedUnionIds.has(parentUnionId); // hide only if union loaded
+                  });
                 }
               } catch {
                 // Fail-open: show all clubs if union lookup fails
@@ -316,11 +318,15 @@ export default function ClubCarouselPage() {
 
         // Process unions
         let newUnionCount = userUnions.length;
-        if (unionsResult.status === 'fulfilled') {
-          setUserUnions(unionsResult.value);
-          newUnionCount = unionsResult.value.length;
-        } else {
+        if (loadedUnions.length > 0) {
+          setUserUnions(loadedUnions);
+          newUnionCount = loadedUnions.length;
+        } else if (unionsResult.status === 'rejected') {
           console.warn('[ClubCarouselPage] Failed to load unions:', unionsResult.reason);
+        } else {
+          // Unions loaded successfully but returned empty array
+          setUserUnions([]);
+          newUnionCount = 0;
         }
 
         // Clamp activeIndex to valid range after clubs/unions change
@@ -378,15 +384,7 @@ export default function ClubCarouselPage() {
 
   return (
     <>
-      {/* Intro Video - plays on first entry while content loads in background */}
-      {showIntro && (
-        <IntroVideo
-          videoSrc="/videos/club-arena-intro.mp4"
-          minDuration={3000}
-          onComplete={handleIntroComplete}
-        />
-      )}
-
+      <HamburgerMenu isOpen={menuOpen} onClose={() => setMenuOpen(false)} />
       <div className="club-carousel">
         {/* ═══════════════════════════════════════════════════════════════════
                     HEADER - Player Info + Wallet
@@ -407,7 +405,9 @@ export default function ClubCarouselPage() {
               </span>
             </div>
           </div>
-          <button className="header__menu">≡</button>
+          <button className="header__menu" onClick={() => setMenuOpen(true)}>
+            ≡
+          </button>
         </header>
 
         {/* Wallet Row */}

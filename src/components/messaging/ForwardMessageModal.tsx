@@ -33,10 +33,16 @@ export default function ForwardMessageModal({
 
   useEffect(() => {
     if (!user?.id) return;
-    messagingService.getConversations(user.id).then((convs) => {
-      setConversations(convs);
-      setLoading(false);
-    });
+    messagingService
+      .getConversations(user.id)
+      .then((convs) => {
+        setConversations(convs);
+        setLoading(false);
+      })
+      .catch((err) => {
+        console.error('[ForwardMessageModal] Failed to load conversations:', err);
+        setLoading(false);
+      });
   }, [user?.id]);
 
   const handleForward = async (targetConversationId: string) => {

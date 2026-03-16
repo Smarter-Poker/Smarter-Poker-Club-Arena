@@ -45,7 +45,11 @@ export default function ClubBottomNav({
       .select('id', { count: 'exact', head: true })
       .eq('user_id', user.id)
       .eq('read', false)
-      .then(({ count }) => {
+      .then(({ count, error }) => {
+        if (error) {
+          console.warn('[ClubBottomNav] Unread count query error:', error.message);
+          return;
+        }
         setUnreadCount(count || 0);
       });
 

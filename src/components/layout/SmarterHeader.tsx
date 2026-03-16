@@ -35,8 +35,18 @@ export default function SmarterHeader({
   useEffect(() => {
     if (user?.id) {
       // Load unread counts
-      notificationService.getUnreadCount(user.id).then(setUnreadNotifications);
-      messagingService.getUnreadCount(user.id).then(setUnreadMessages);
+      notificationService
+        .getUnreadCount(user.id)
+        .then(setUnreadNotifications)
+        .catch((err) => {
+          console.warn('[SmarterHeader] Failed to get unread notification count:', err);
+        });
+      messagingService
+        .getUnreadCount(user.id)
+        .then(setUnreadMessages)
+        .catch((err) => {
+          console.warn('[SmarterHeader] Failed to get unread message count:', err);
+        });
     }
   }, [user?.id]);
 

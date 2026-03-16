@@ -40,7 +40,7 @@ export function SpinItWheel({ tiers, result, isSpinning, onSpinComplete }: SpinI
   const wheelRef = useRef<HTMLDivElement>(null);
   const hasSpunRef = useRef(false);
 
-  const segmentAngle = 360 / tiers.length;
+  const segmentAngle = tiers.length > 0 ? 360 / tiers.length : 360;
 
   // Calculate rotation to land on winning segment
   const getTargetRotation = useCallback(

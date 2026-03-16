@@ -121,8 +121,10 @@ export function LobbyTableList({ clubId, gameType, onJoinTable }: LobbyTableList
       case 'pot':
         return b.avgPot - a.avgPot;
       default: {
-        const aStakes = parseInt(a.stakes.split('/')[1]);
-        const bStakes = parseInt(b.stakes.split('/')[1]);
+        const aParts = a.stakes?.split('/') || [];
+        const bParts = b.stakes?.split('/') || [];
+        const aStakes = parseInt(aParts[1] || aParts[0] || '0', 10) || 0;
+        const bStakes = parseInt(bParts[1] || bParts[0] || '0', 10) || 0;
         return aStakes - bStakes;
       }
     }

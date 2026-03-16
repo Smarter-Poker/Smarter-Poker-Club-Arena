@@ -146,7 +146,12 @@ export const PlayerNotes: React.FC<PlayerNotesProps> = ({ playerId, onClose, mod
 
   const deleteNote = async (noteId: string) => {
     try {
-      const { error } = await supabase.from('player_notes').delete().eq('id', noteId);
+      // SECURITY: Scope to current user to prevent deleting other users' notes
+      const { error } = await supabase
+        .from('player_notes')
+        .delete()
+        .eq('id', noteId)
+        .eq('author_id', user?.id || '');
 
       if (error) throw error;
 

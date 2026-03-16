@@ -125,7 +125,7 @@ export default function AdminCommandPalette({ clubId, isOwner }: AdminCommandPal
           label: 'Invite Players',
           icon: '📨',
           description: 'Send club invite links',
-          action: () => navigate(`/clubs/${clubId}/invite`),
+          action: () => navigate(`/invite/${clubId}`),
           category: 'Actions',
         },
         {

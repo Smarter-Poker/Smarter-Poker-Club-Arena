@@ -31,10 +31,11 @@ class TournamentTimerServiceClass {
   private readonly TICK_INTERVAL_MS = 1000; // Check every second
   private breakIntervals: Map<string, number> = new Map(); // configurable break every N levels
   private headsUpTriggered: Set<string> = new Set(); // Guard against duplicate HEADS_UP_SWITCH emissions
+  private playerEliminatedUnsub: (() => void) | null = null;
 
   constructor() {
     // Listen for player eliminations to trigger final table / heads-up detection
-    masterBus.subscribe('PLAYER_ELIMINATED', (event) => {
+    this.playerEliminatedUnsub = masterBus.subscribe('PLAYER_ELIMINATED', (event) => {
       const tournamentId = event.payload?.tournamentId;
       if (tournamentId && this.activeTimers.has(tournamentId)) {
         // Debounce: small delay to let DB state settle after elimination
@@ -391,6 +392,11 @@ class TournamentTimerServiceClass {
     const ids = [...this.activeTimers.keys()];
     for (const id of ids) {
       this.stopTimer(id);
+    }
+    // Clean up global bus subscription to prevent memory leak
+    if (this.playerEliminatedUnsub) {
+      this.playerEliminatedUnsub();
+      this.playerEliminatedUnsub = null;
     }
   }
 

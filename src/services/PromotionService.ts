@@ -170,8 +170,11 @@ class PromotionServiceClass {
     if (error) throw error;
   }
 
-  async deletePromotion(promotionId: string): Promise<void> {
-    const { error } = await supabase.from('promotions').delete().eq('id', promotionId);
+  async deletePromotion(promotionId: string, clubId?: string): Promise<void> {
+    let query = supabase.from('promotions').delete().eq('id', promotionId);
+    // SECURITY: Scope to club to prevent cross-club deletion
+    if (clubId) query = query.eq('club_id', clubId);
+    const { error } = await query;
 
     if (error) throw error;
   }

@@ -79,7 +79,12 @@ export const FavoriteTablesWidget: React.FC<FavoriteTablesWidgetProps> = ({ onJo
   };
 
   const removeFavorite = async (favoriteId: string) => {
-    const { error } = await supabase.from('favorite_tables').delete().eq('id', favoriteId);
+    // SECURITY: Scope to current user
+    const { error } = await supabase
+      .from('favorite_tables')
+      .delete()
+      .eq('id', favoriteId)
+      .eq('user_id', user?.id || '');
     if (error) {
       console.error('Failed to remove favorite:', error);
       return;

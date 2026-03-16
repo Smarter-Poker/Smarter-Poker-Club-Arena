@@ -97,7 +97,10 @@ export function ClubAnnouncementsList({ clubId, isAdmin, limit = 10 }: ClubAnnou
     if (!isAdmin) return;
 
     try {
-      const { error } = await supabase.from('club_announcements').delete().eq('id', id);
+      // SECURITY: Scope to club to prevent cross-club deletion
+      let delQuery = supabase.from('club_announcements').delete().eq('id', id);
+      if (clubId) delQuery = delQuery.eq('club_id', clubId);
+      const { error } = await delQuery;
       if (error) throw error;
       toast.success('Announcement deleted');
       loadAnnouncements();

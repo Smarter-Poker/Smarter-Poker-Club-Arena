@@ -986,7 +986,9 @@ export default function CashierPage() {
     startCooldown();
   };
 
-  const DIAMOND_RATE = 38 / 100;
+  // Use integer arithmetic to avoid floating-point precision issues: (chips * 38) / 100
+  const DIAMOND_RATE_NUM = 38;
+  const DIAMOND_RATE_DEN = 100;
   const preset = [100, 500, 1000, 5000];
 
   const filteredTransactions =
@@ -1678,7 +1680,7 @@ export default function CashierPage() {
 
               {action === 'mint' && amount && (
                 <div className="cashier-message info">
-                  {Math.ceil(parseFloat(amount || '0') * DIAMOND_RATE).toLocaleString()} diamonds
+                  {Math.ceil((parseFloat(amount || '0') * DIAMOND_RATE_NUM) / DIAMOND_RATE_DEN).toLocaleString()} diamonds
                   required
                 </div>
               )}

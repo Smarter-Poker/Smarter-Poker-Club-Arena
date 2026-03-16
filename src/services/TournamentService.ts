@@ -1521,8 +1521,6 @@ class TournamentService {
       );
     }
 
-    masterBus.emit('BALANCE_UPDATED', { source: 'tournament_rebuy', userId });
-
     // Process rebuy via ATOMIC RPC
     // (This RPC handles the wallet deduction and logging natively. It rolls back automatically on failure.)
     const { data, error } = await retryAsync(
@@ -1540,10 +1538,11 @@ class TournamentService {
 
     if (error) {
       console.error('[TournamentService] Rebuy RPC failed. No chips were deducted:', error);
-      // Reverse the UI balance optimistic update
-      masterBus.emit('BALANCE_UPDATED', { source: 'tournament_rebuy_rollback', userId });
       throw error;
     }
+
+    // Emit AFTER confirmed success — never optimistically before RPC
+    masterBus.emit('BALANCE_UPDATED', { source: 'tournament_rebuy', userId });
 
     // Recalculate prize pool: rebuy cost goes to pool
     await this.recalculatePrizePool(tournamentId);
@@ -1635,8 +1634,6 @@ class TournamentService {
       );
     }
 
-    masterBus.emit('BALANCE_UPDATED', { source: 'tournament_addon', userId });
-
     // Process addon via ATOMIC RPC
     // (This handles wallet deduction, logging, and rollback natively)
     const { data, error } = await retryAsync(
@@ -1654,10 +1651,11 @@ class TournamentService {
 
     if (error) {
       console.error('[TournamentService] Add-on process failed. No chips were deducted:', error);
-      // Reverse the UI balance optimistic update
-      masterBus.emit('BALANCE_UPDATED', { source: 'tournament_addon_rollback', userId });
       throw error;
     }
+
+    // Emit AFTER confirmed success — never optimistically before RPC
+    masterBus.emit('BALANCE_UPDATED', { source: 'tournament_addon', userId });
 
     // Recalculate prize pool: add-on cost goes to pool
     await this.recalculatePrizePool(tournamentId);

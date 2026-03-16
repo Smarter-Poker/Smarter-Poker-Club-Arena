@@ -1433,7 +1433,9 @@ export default function App() {
                   path="legal/tos"
                   element={
                     <AuthGuard>
-                      <TermsOfServicePage />
+                      <PageErrorBoundary pageName="TermsOfService">
+                        <TermsOfServicePage />
+                      </PageErrorBoundary>
                     </AuthGuard>
                   }
                 />
@@ -1441,7 +1443,9 @@ export default function App() {
                   path="legal/promotions"
                   element={
                     <AuthGuard>
-                      <ClubPromotionRulesPage />
+                      <PageErrorBoundary pageName="ClubPromotionRules">
+                        <ClubPromotionRulesPage />
+                      </PageErrorBoundary>
                     </AuthGuard>
                   }
                 />
@@ -1449,7 +1453,9 @@ export default function App() {
                   path="legal/fair-gaming"
                   element={
                     <AuthGuard>
-                      <FairGamingPage />
+                      <PageErrorBoundary pageName="FairGaming">
+                        <FairGamingPage />
+                      </PageErrorBoundary>
                     </AuthGuard>
                   }
                 />
@@ -1457,7 +1463,9 @@ export default function App() {
                   path="legal/privacy"
                   element={
                     <AuthGuard>
-                      <PrivacyPolicyPage />
+                      <PageErrorBoundary pageName="PrivacyPolicy">
+                        <PrivacyPolicyPage />
+                      </PageErrorBoundary>
                     </AuthGuard>
                   }
                 />

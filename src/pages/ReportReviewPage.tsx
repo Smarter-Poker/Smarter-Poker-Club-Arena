@@ -250,7 +250,7 @@ export default function ReportReviewPage() {
               {selectedReport.hand_id && (
                 <div className="detail-row">
                   <label>Hand ID:</label>
-                  <Link to={`/hand/${selectedReport.hand_id}`}>{selectedReport.hand_id}</Link>
+                  <Link to={`/share/hand/${selectedReport.hand_id}`}>{selectedReport.hand_id}</Link>
                 </div>
               )}
               <div className="detail-row full">

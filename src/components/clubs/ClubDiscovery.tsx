@@ -8,6 +8,7 @@ import { supabase } from '../../lib/supabase';
 import { ClubsService } from '../../services/ClubsService';
 import { masterBus } from '../../core/MasterBus';
 import { getClubLevel } from '../../utils/clubLevels';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import './ClubDiscovery.css';
 
 interface Club {
@@ -37,6 +38,7 @@ export const ClubDiscovery: React.FC<ClubDiscoveryProps> = ({ onJoinRequest, onV
   const [stakeFilter, setStakeFilter] = useState<'all' | 'micro' | 'low' | 'mid' | 'high'>('all');
   const [loading, setLoading] = useState(true);
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
+  const isMounted = useIsMounted();
 
   useEffect(() => {
     loadClubs();
@@ -131,15 +133,18 @@ export const ClubDiscovery: React.FC<ClubDiscoveryProps> = ({ onJoinRequest, onV
               }
             });
 
+      if (!isMounted.current) return;
       setClubs(stakeFilteredClubs);
       setVisibleItems(new Set());
       stakeFilteredClubs.forEach((_, i) => {
-        setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60);
+        setTimeout(() => {
+          if (isMounted.current) setVisibleItems((prev) => new Set(prev).add(i));
+        }, i * 60);
       });
     } catch (error) {
       console.error('Failed to load clubs:', error);
     } finally {
-      setLoading(false);
+      if (isMounted.current) setLoading(false);
     }
   };
 

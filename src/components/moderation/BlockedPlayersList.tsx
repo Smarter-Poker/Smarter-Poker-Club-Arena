@@ -79,7 +79,12 @@ export const BlockedPlayersList: React.FC<BlockedPlayersListProps> = ({ onUnbloc
   const handleUnblock = async (player: BlockedPlayer) => {
     setUnblocking(player.id);
     try {
-      const { error } = await supabase.from('user_blocks').delete().eq('id', player.id);
+      // SECURITY: Scope to current user to prevent unblocking others' blocks
+      const { error } = await supabase
+        .from('user_blocks')
+        .delete()
+        .eq('id', player.id)
+        .eq('blocker_id', user?.id || '');
 
       if (error) throw error;
 

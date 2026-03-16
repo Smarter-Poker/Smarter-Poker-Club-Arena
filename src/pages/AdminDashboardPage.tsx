@@ -1009,7 +1009,10 @@ function AnnouncementsTab({ clubId }: { clubId: string }) {
     if (!confirm('Delete this announcement?')) return;
     setActionError(null);
     try {
-      const { error: delErr } = await supabase.from('club_announcements').delete().eq('id', id);
+      // SECURITY: Scope to club to prevent cross-club deletion
+      let delQuery = supabase.from('club_announcements').delete().eq('id', id);
+      if (clubId) delQuery = delQuery.eq('club_id', clubId);
+      const { error: delErr } = await delQuery;
       if (delErr) throw delErr;
       load();
       masterBus.emit('ANNOUNCEMENT_CHANGED', { clubId, action: 'deleted' });

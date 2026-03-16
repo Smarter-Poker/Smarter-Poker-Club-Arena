@@ -228,7 +228,13 @@ function FriendListPanelInner({
   };
 
   const handleRemoveFriend = async (friendshipId: string) => {
-    const { error } = await supabase.from('friendships').delete().eq('id', friendshipId);
+    if (!user?.id) return;
+    // SECURITY: Only allow deleting friendships the current user is part of
+    const { error } = await supabase
+      .from('friendships')
+      .delete()
+      .eq('id', friendshipId)
+      .or(`user_id.eq.${user.id},friend_id.eq.${user.id}`);
     if (error) {
       console.error('Failed to remove friend:', error);
       return;

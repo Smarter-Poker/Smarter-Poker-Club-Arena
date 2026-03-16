@@ -809,7 +809,7 @@ export default function ClubDetailPage() {
         <div className={styles.heroActions}>
           <button
             className={styles.heroActionBtn}
-            onClick={() => navigate(`/clubs/${clubId}/invite`)}
+            onClick={() => navigate(`/invite/${clubId}`)}
             title="Invite"
           >
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none">

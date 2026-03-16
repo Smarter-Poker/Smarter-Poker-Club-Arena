@@ -131,19 +131,45 @@ class UnionServiceClass {
 
     if (adminError) throw adminError;
 
+    // Get unions via club membership: user → club_members → union_clubs → unions
+    let memberUnionIds: string[] = [];
+    try {
+      const { data: memberClubs } = await supabase
+        .from('club_members')
+        .select('club_id')
+        .eq('user_id', userId);
+
+      if (memberClubs && memberClubs.length > 0) {
+        const clubIds = memberClubs.map((m) => m.club_id);
+        const { data: ucRows } = await supabase
+          .from('union_clubs')
+          .select('union_id')
+          .in('club_id', clubIds);
+        if (ucRows && ucRows.length > 0) {
+          memberUnionIds = [...new Set(ucRows.map((r) => r.union_id))];
+        }
+      }
+    } catch (err) {
+      console.warn('[UnionService] Failed to resolve unions via club membership:', err);
+    }
+
     // Combine and dedupe
     const unionMap = new Map<string, any>();
     (owned || []).forEach((u) => unionMap.set(u.id, u));
 
-    // Fetch full union data for admin unions not already in the map
-    for (const a of adminOf || []) {
-      if (!unionMap.has(a.union_id)) {
+    // Collect all union IDs we need to fetch (from admin + club membership paths)
+    const missingUnionIds = [...(adminOf || []).map((a) => a.union_id), ...memberUnionIds];
+    const uniqueMissingIds = [...new Set(missingUnionIds)];
+
+    // Fetch full union data for any unions not already in the map
+    for (const unionId of uniqueMissingIds) {
+      if (!unionMap.has(unionId)) {
         const { data: unionData } = await supabase
           .from('unions')
           .select(
             'id, name, description, owner_id, avatar_url, is_public, member_count, online_count, club_count, total_rake, settings, created_at, updated_at'
           )
-          .eq('id', a.union_id)
+          .eq('id', unionId)
           .maybeSingle();
         if (unionData) {
           unionMap.set(unionData.id, unionData);

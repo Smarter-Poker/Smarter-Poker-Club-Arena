@@ -629,10 +629,12 @@ function CarouselSection({
                 localStorage.setItem(LAST_CLUB_KEY, sharkClub.id);
                 navigate(`/clubs/${sharkClub.id}`);
               } else {
-                toast.info('Shark Club not found. Join or create a club!');
+                console.error('[HomePage] Shark Club (25450) not found in DB');
+                toast.error('Shark Club not found');
               }
-            } catch {
-              toast.info('Shark Club not found. Join or create a club!');
+            } catch (err) {
+              console.error('[HomePage] Shark Club lookup failed:', err);
+              toast.error('Could not load Shark Club');
             }
           }
         }}

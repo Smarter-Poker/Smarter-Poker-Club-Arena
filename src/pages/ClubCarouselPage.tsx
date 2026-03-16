@@ -223,7 +223,7 @@ export default function ClubCarouselPage() {
         if (memberResult.status === 'fulfilled') {
           const { data: memberData, error: memberError } = memberResult.value;
           if (!memberError && memberData) {
-            const userClubs: UserClub[] = memberData
+            const allUserClubs: UserClub[] = memberData
               .filter((m: any) => m.clubs)
               .map((m: any) => ({
                 id: m.clubs.id,
@@ -234,7 +234,27 @@ export default function ClubCarouselPage() {
                 member_count: m.clubs.member_count || 0,
                 role: m.role,
               }));
-            setClubs(userClubs);
+
+            // Filter out clubs that belong to a union (they'll appear under the union card)
+            let filteredClubs = allUserClubs;
+            if (allUserClubs.length > 0) {
+              try {
+                const { data: ucRows } = await supabase
+                  .from('union_clubs')
+                  .select('club_id')
+                  .in(
+                    'club_id',
+                    allUserClubs.map((c) => c.id)
+                  );
+                if (ucRows && ucRows.length > 0) {
+                  const unionClubIdSet = new Set(ucRows.map((r) => r.club_id));
+                  filteredClubs = allUserClubs.filter((c) => !unionClubIdSet.has(c.id));
+                }
+              } catch {
+                // Fail-open: show all clubs if union lookup fails
+              }
+            }
+            setClubs(filteredClubs);
 
             const totalGold = memberData.reduce(
               (sum: number, m: any) => sum + (m.chip_balance || 0),

@@ -113,44 +113,56 @@ class UnionServiceClass {
    * Get unions where user is owner or admin
    */
   async getMyUnions(userId: string): Promise<Union[]> {
-    // Get unions where user is owner
-    const { data: owned, error: ownedError } = await supabase
-      .from('unions')
-      .select(
-        'id, name, description, owner_id, avatar_url, is_public, member_count, online_count, club_count, total_rake, settings, created_at, updated_at'
-      )
-      .eq('owner_id', userId);
-
-    if (ownedError) throw ownedError;
-
-    // Get unions where user is admin
-    const { data: adminOf, error: adminError } = await supabase
-      .from('union_admins')
-      .select('union_id')
-      .eq('user_id', userId);
-
-    if (adminError) throw adminError;
-
-    // Get unions via club membership: user → club_members → union_clubs → unions
-    let memberUnionIds: string[] = [];
-    try {
-      const { data: memberClubs } = await supabase
-        .from('club_members')
-        .select('club_id')
-        .eq('user_id', userId);
-
-      if (memberClubs && memberClubs.length > 0) {
+    // Run all 3 discovery paths in parallel (no data dependency between them)
+    const [ownedResult, adminResult, memberResult] = await Promise.allSettled([
+      // Path 1: unions where user is owner
+      supabase
+        .from('unions')
+        .select(
+          'id, name, description, owner_id, avatar_url, is_public, member_count, online_count, club_count, total_rake, settings, created_at, updated_at'
+        )
+        .eq('owner_id', userId),
+      // Path 2: unions where user is admin
+      supabase.from('union_admins').select('union_id').eq('user_id', userId),
+      // Path 3: unions via club membership → union_clubs
+      (async () => {
+        const { data: memberClubs } = await supabase
+          .from('club_members')
+          .select('club_id')
+          .eq('user_id', userId);
+        if (!memberClubs || memberClubs.length === 0) return { data: [] as { union_id: string }[] };
         const clubIds = memberClubs.map((m) => m.club_id);
-        const { data: ucRows } = await supabase
-          .from('union_clubs')
-          .select('union_id')
-          .in('club_id', clubIds);
-        if (ucRows && ucRows.length > 0) {
-          memberUnionIds = [...new Set(ucRows.map((r) => r.union_id))];
-        }
+        return supabase.from('union_clubs').select('union_id').in('club_id', clubIds);
+      })(),
+    ]);
+
+    // Extract owned unions
+    const owned =
+      ownedResult.status === 'fulfilled' && !ownedResult.value.error
+        ? ownedResult.value.data || []
+        : [];
+    if (ownedResult.status === 'fulfilled' && ownedResult.value.error) {
+      throw ownedResult.value.error;
+    }
+
+    // Extract admin union IDs
+    const adminOf =
+      adminResult.status === 'fulfilled' && !adminResult.value.error
+        ? adminResult.value.data || []
+        : [];
+
+    // Extract club-membership union IDs
+    let memberUnionIds: string[] = [];
+    if (memberResult.status === 'fulfilled') {
+      const ucRows = memberResult.value.data;
+      if (ucRows && ucRows.length > 0) {
+        memberUnionIds = [...new Set(ucRows.map((r: any) => r.union_id))];
       }
-    } catch (err) {
-      console.warn('[UnionService] Failed to resolve unions via club membership:', err);
+    } else {
+      console.warn(
+        '[UnionService] Failed to resolve unions via club membership:',
+        memberResult.reason
+      );
     }
 
     // Combine and dedupe

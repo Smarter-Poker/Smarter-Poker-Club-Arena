@@ -57,6 +57,8 @@ window.addEventListener('unhandledrejection', (event) => {
 import { earlyAuth } from './core/earlyAuthBridge';
 
 if (window.parent !== window) {
+  let authReceived = false;
+
   const earlyAuthHandler = (event: MessageEvent) => {
     // Validate origin: same checks as App.tsx
     const origin = event.origin;
@@ -69,10 +71,11 @@ if (window.parent !== window) {
     if (!isValidOrigin) return;
 
     if (event.data?.type === 'SMARTER_AUTH_TOKEN' && event.data.token) {
-      // ACK immediately — this is the critical response the Hub is waiting for
+      authReceived = true;
+      // ACK immediately — send to BOTH specific origin AND wildcard to cover all cases
       try {
-        window.parent.postMessage({ type: 'SMARTER_AUTH_ACK' }, event.origin);
-        console.log('[EARLY-AUTH] ✅ ACK sent to parent before boot completed');
+        window.parent.postMessage({ type: 'SMARTER_AUTH_ACK' }, '*');
+        console.log('[EARLY-AUTH] ✅ ACK sent to parent (wildcard) before boot');
       } catch {
         /* cross-origin safety */
       }
@@ -84,9 +87,34 @@ if (window.parent !== window) {
     }
   };
   window.addEventListener('message', earlyAuthHandler);
-  // Also send an immediate heartbeat so the Hub knows we're alive
+
+  // PROACTIVE ACK PULSE: Send periodic ACKs so the Hub receives one
+  // regardless of timing. The Hub may start its retry loop before our
+  // listener is registered, so we pulse ACKs until auth is received.
+  let pulseCount = 0;
+  const ackPulse = setInterval(() => {
+    if (authReceived || pulseCount > 30) {
+      clearInterval(ackPulse);
+      return;
+    }
+    pulseCount++;
+    try {
+      // Send heartbeat AND unsolicited ACK so the Hub knows we're alive
+      window.parent.postMessage({ type: 'CLUB_ARENA_HEARTBEAT' }, '*');
+      // If auth was already received by the App.tsx handler (after boot),
+      // also send a fresh ACK
+      if (earlyAuth.token) {
+        window.parent.postMessage({ type: 'SMARTER_AUTH_ACK' }, '*');
+      }
+    } catch {
+      /* best effort */
+    }
+  }, 500);
+
+  // Send an immediate heartbeat so the Hub knows we're alive
   try {
     window.parent.postMessage({ type: 'CLUB_ARENA_HEARTBEAT' }, '*');
+    console.log('[EARLY-AUTH] Heartbeat sent, waiting for auth token...');
   } catch {
     /* best effort */
   }

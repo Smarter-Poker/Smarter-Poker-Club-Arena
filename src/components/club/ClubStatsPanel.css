@@ -1,86 +1,87 @@
 .club-stats-panel {
-    position: relative;
-    width: 100%;
-    /* Lock aspect ratio to match the v25 card image (604:1024) */
-    aspect-ratio: 604 / 1024;
-    display: block;
-    overflow: hidden;
+  position: relative;
+  width: 100%;
+  /* Lock aspect ratio to match the v25 card image (604:1024) */
+  aspect-ratio: 604 / 1024;
+  display: block;
+  overflow: hidden;
+  pointer-events: none;
 }
 
 .club-stats-bg {
-    width: 100%;
-    height: 100%;
-    display: block;
-    object-fit: cover;
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
 }
 
 .stats-overlay {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    pointer-events: none;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
 }
 
 .stat-label {
-    font-family: 'Inter', 'Roboto', sans-serif;
-    font-weight: 600;
-    font-size: 11px;
-    letter-spacing: 0.5px;
-    color: #A5EFF0;
-    /* Paler cyan matching original */
-    margin-bottom: 2px;
-    text-shadow: 0 0 5px rgba(0, 212, 255, 0.4),
-                 0 0 10px rgba(0, 212, 255, 0.2);
-    text-transform: uppercase;
-    white-space: nowrap;
-    line-height: 1.3;
+  font-family: 'Inter', 'Roboto', sans-serif;
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  color: #a5eff0;
+  /* Paler cyan matching original */
+  margin-bottom: 2px;
+  text-shadow:
+    0 0 5px rgba(0, 212, 255, 0.4),
+    0 0 10px rgba(0, 212, 255, 0.2);
+  text-transform: uppercase;
+  white-space: nowrap;
+  line-height: 1.3;
 }
 
 .stats-group {
-    position: absolute;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
 }
 
 .members-group {
-    top: 79.5%;
-    left: 20%;
-    transform: translateX(-50%);
+  top: 79.5%;
+  left: 20%;
+  transform: translateX(-50%);
 }
 
 .level-group {
-    top: 79.5%;
-    left: 50%;
-    transform: translateX(-50%);
+  top: 79.5%;
+  left: 50%;
+  transform: translateX(-50%);
 }
 
 .active-group {
-    top: 79.5%;
-    left: 80%;
-    transform: translateX(-50%);
+  top: 79.5%;
+  left: 80%;
+  transform: translateX(-50%);
 }
 
-
 .stat-value {
-    font-family: 'Inter', 'Roboto', sans-serif;
-    font-weight: 700;
-    font-size: 24px;
-    letter-spacing: 1px;
-    color: #ADF9F9;
-    /* Extracted exact neon white-cyan */
-    text-shadow:
-        0 0 4px rgba(0, 255, 255, 0.8),
-        0 0 12px rgba(0, 212, 255, 0.9),
-        0 0 20px rgba(0, 150, 255, 0.7);
+  font-family: 'Inter', 'Roboto', sans-serif;
+  font-weight: 700;
+  font-size: 24px;
+  letter-spacing: 1px;
+  color: #adf9f9;
+  /* Extracted exact neon white-cyan */
+  text-shadow:
+    0 0 4px rgba(0, 255, 255, 0.8),
+    0 0 12px rgba(0, 212, 255, 0.9),
+    0 0 20px rgba(0, 150, 255, 0.7);
 }
 
 .level-group .stat-value {
-    font-size: 56px;
-    line-height: 1;
-    margin-top: 8px;
+  font-size: 56px;
+  line-height: 1;
+  margin-top: 8px;
 }

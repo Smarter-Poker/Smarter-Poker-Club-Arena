@@ -209,22 +209,8 @@ export async function joinClub(clubId: string, role: MemberRole = 'member'): Pro
     throw new Error('Failed to join club');
   }
 
-  // Increment club member count (mirrors decrement in leaveClub)
-  try {
-    const { data: currentClub } = await supabase
-      .from('clubs')
-      .select('member_count')
-      .eq('id', clubId)
-      .maybeSingle();
-    if (currentClub) {
-      await supabase
-        .from('clubs')
-        .update({ member_count: (currentClub.member_count || 0) + 1 })
-        .eq('id', clubId);
-    }
-  } catch (e: unknown) {
-    console.warn('[ClubsService] joinClub: member count increment failed (non-critical):', e);
-  }
+  // NOTE: clubs.member_count is auto-synced by the trg_sync_club_member_count
+  // trigger on INSERT to club_members. No manual increment needed.
 
   // Emit CLUB_JOINED for cross-page reactivity (lobby, carousel, detail pages)
   try {
@@ -340,12 +326,8 @@ export async function leaveClub(clubId: string): Promise<void> {
     throw new Error('Failed to leave club');
   }
 
-  // 7. Decrement club member count (fire-and-forget)
-  try {
-    await supabase.rpc('decrement_club_member_count', { p_club_id: resolvedId });
-  } catch (e: unknown) {
-    console.warn('[ClubsService] leaveClub: member count decrement failed (non-critical):', e);
-  }
+  // NOTE: clubs.member_count is auto-synced by the trg_sync_club_member_count
+  // trigger on DELETE from club_members. No manual decrement needed.
 
   // 8. Real-time sync — emit both CLUB_LEFT and CLUB_UPDATED so all listeners react
   const { masterBus } = await import('../core/MasterBus');

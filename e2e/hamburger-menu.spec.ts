@@ -121,6 +121,16 @@ test.describe('Hamburger Menu — Navigation Links', () => {
     // Player
     { label: 'My Profile', path: '/profile' },
     { label: 'My Wallet', path: '/wallet' },
+    { label: 'Achievements', path: '/achievements' },
+    { label: 'Player Stats', path: '/stats' },
+    { label: 'VIP Status', path: '/vip' },
+    { label: 'Rakeback', path: '/rakeback' },
+    { label: 'Promotions', path: '/promotions' },
+    { label: 'Bonuses', path: '/bonuses' },
+    { label: 'Transactions', path: '/transactions' },
+    { label: 'Friends', path: '/friends' },
+    { label: 'Waitlist', path: '/waitlist' },
+    { label: 'Invite Players', path: '/invite' },
     // Agent & Admin
     { label: 'Agent Management', path: '/agent-management' },
     { label: 'Club Dashboard', path: '/data' },
@@ -130,6 +140,10 @@ test.describe('Hamburger Menu — Navigation Links', () => {
     { label: 'Notifications', path: '/notifications' },
     // Support & Legal
     { label: 'Help & FAQ', path: '/help' },
+    { label: 'Terms of Service', path: '/legal/tos' },
+    { label: 'Privacy Policy', path: '/legal/privacy' },
+    { label: 'Fair Gaming', path: '/legal/fair-gaming' },
+    { label: 'Promotion Rules', path: '/legal/promotions' },
   ];
 
   for (const link of allNavLinks) {

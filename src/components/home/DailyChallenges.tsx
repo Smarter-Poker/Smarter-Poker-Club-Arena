@@ -10,7 +10,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
-import { supabase } from '../../lib/supabase';
+import { supabase, getAuthUser } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { retryAsync } from '../../utils/retryAsync';
 import styles from '../../pages/HomePage.module.css';
@@ -81,7 +81,7 @@ export default function DailyChallenges() {
     try {
       const {
         data: { user },
-      } = await supabase.auth.getUser();
+      } = await getAuthUser();
       if (user) {
         const { data, error: progressErr } = await supabase
           .from('daily_challenge_progress')
@@ -105,8 +105,7 @@ export default function DailyChallenges() {
         }
       }
     } catch (err) {
-
-      console.error("[DailyChallenges] Error:", err);
+      console.error('[DailyChallenges] Error:', err);
       // Supabase unavailable -- fallback to localStorage
     }
 
@@ -117,8 +116,7 @@ export default function DailyChallenges() {
       const storedClaimed = JSON.parse(localStorage.getItem(`${dayKey}_claimed`) || '{}');
       setClaimed(storedClaimed);
     } catch (err) {
-
-      console.error("[DailyChallenges] Error:", err);
+      console.error('[DailyChallenges] Error:', err);
       localStorage.removeItem(dayKey);
     }
   }, [dayKey]);
@@ -132,8 +130,7 @@ export default function DailyChallenges() {
       try {
         localStorage.setItem(dayKey, JSON.stringify(newProgress));
       } catch (err) {
-
-        console.error("[DailyChallenges] Error:", err);
+        console.error('[DailyChallenges] Error:', err);
         /* */
       }
 
@@ -141,7 +138,7 @@ export default function DailyChallenges() {
       try {
         const {
           data: { user },
-        } = await supabase.auth.getUser();
+        } = await getAuthUser();
         if (!user) return;
 
         const upserts = Object.entries(newProgress).map(([idx, prog]) => ({
@@ -160,8 +157,7 @@ export default function DailyChallenges() {
             .upsert(upserts, { onConflict: 'user_id,day_key,challenge_index' });
         }
       } catch (err) {
-
-        console.error("[DailyChallenges] Error:", err);
+        console.error('[DailyChallenges] Error:', err);
         // Silent — localStorage is the fallback
       }
     },
@@ -274,7 +270,7 @@ export default function DailyChallenges() {
       try {
         const {
           data: { user },
-        } = await supabase.auth.getUser();
+        } = await getAuthUser();
         if (user) {
           // STEP 1: Mark claimed in DB FIRST (idempotent upsert — safe to re-run)
           // This MUST happen before diamonds are incremented to prevent double-reward exploit.
@@ -312,8 +308,7 @@ export default function DailyChallenges() {
             try {
               localStorage.setItem(`${dayKey}_claimed`, JSON.stringify(next));
             } catch (err) {
-
-              console.error("[DailyChallenges] Error:", err);
+              console.error('[DailyChallenges] Error:', err);
               /* */
             }
             return next;

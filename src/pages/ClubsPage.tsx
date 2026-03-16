@@ -9,7 +9,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { supabase, getAuthUser } from '../lib/supabase';
 import { waitForAuth } from '../utils/waitForAuth';
 import { masterBus } from '../core/MasterBus';
 import { ClubsService } from '../services/ClubsService';
@@ -115,7 +115,7 @@ export default function ClubsPage() {
       // Fetch clubs AND unions in parallel
       const {
         data: { user: authUser },
-      } = await supabase.auth.getUser();
+      } = await getAuthUser();
       const [memberships, unions] = await Promise.all([
         ClubsService.getUserMemberships(),
         authUser

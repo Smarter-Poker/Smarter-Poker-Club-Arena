@@ -12,7 +12,7 @@
 
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { supabase, getAuthUser } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { unionService } from '../services/UnionService';
 import type { Union } from '../services/UnionService';
@@ -176,7 +176,7 @@ export default function ClubCarouselPage() {
     try {
       const {
         data: { user: authUser },
-      } = await supabase.auth.getUser();
+      } = await getAuthUser();
       if (!isMounted.current) return;
       if (!authUser) {
         // Don't manually redirect to /auth — AuthGuard handles this.

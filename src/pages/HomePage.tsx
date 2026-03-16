@@ -22,7 +22,7 @@ import {
   type ErrorInfo,
 } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { supabase, getAuthUser } from '../lib/supabase';
 import { waitForAuth } from '../utils/waitForAuth';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { ClubsService } from '../services/ClubsService';
@@ -851,7 +851,7 @@ function HomePageInner() {
 
         const {
           data: { user: authUser },
-        } = await supabase.auth.getUser();
+        } = await getAuthUser();
         if (authUser) {
           const memberships = await ClubsService.getUserMemberships();
           const clubs =
@@ -932,7 +932,7 @@ function HomePageInner() {
     const setupRealtimeSubscription = async () => {
       const {
         data: { user: authUser },
-      } = await supabase.auth.getUser();
+      } = await getAuthUser();
       if (!authUser?.id) return;
 
       const channelKey = `home-clubs-${authUser.id}`;
@@ -1027,7 +1027,7 @@ function HomePageInner() {
       if (channel) {
         channel.unsubscribe();
       }
-      supabase.auth.getUser().then(({ data: { user: authUser } }) => {
+      getAuthUser().then(({ data: { user: authUser } }) => {
         if (authUser?.id) {
           masterBus.removeRegisteredChannel(`home-clubs-${authUser.id}`);
         }

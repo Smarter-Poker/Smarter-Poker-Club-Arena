@@ -13,7 +13,7 @@ import { tableService } from '../services/TableService';
 import { clubService } from '../services/ClubService';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { presenceService } from '../services/PresenceService';
-import { supabase } from '../lib/supabase';
+import { supabase, getAuthUser } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import type { PokerTable, Club, Tournament } from '../types/database.types';
@@ -111,14 +111,10 @@ export default function UnionDetailPage() {
 
     const setupPresence = async () => {
       try {
-        // Timeout getUser to prevent hanging
-        const userPromise = supabase.auth.getUser();
-        const timeoutPromise = new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('getUser timeout')), 5000)
-        );
+        // Use getAuthUser() which has built-in 6s timeout + getSession() fallback
         const {
           data: { user: authUser },
-        } = await Promise.race([userPromise, timeoutPromise]);
+        } = await getAuthUser();
         if (!authUser) return;
 
         await presenceService.joinUnion(unionId, authUser.id, {

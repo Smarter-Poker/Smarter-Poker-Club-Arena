@@ -214,7 +214,7 @@ export default function ProfilePage() {
   useVisibilityRefresh(async () => {
     const {
       data: { user: au },
-    } = await supabase.auth.getUser();
+    } = await getAuthUser();
     if (!au) return;
     const { data: p } = await supabase
       .from('profiles')
@@ -707,7 +707,7 @@ export default function ProfilePage() {
       try {
         const {
           data: { user: authUser },
-        } = await supabase.auth.getUser();
+        } = await getAuthUser();
         if (!authUser || !isMounted) return;
 
         activeChannelKey = `profile-${authUser.id}`;

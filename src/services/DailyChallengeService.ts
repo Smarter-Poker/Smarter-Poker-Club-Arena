@@ -245,7 +245,7 @@ class DailyChallengeServiceClass {
     // Check if challenges already assigned
     const { data: existing, error: existErr } = await supabase
       .from('user_daily_challenges')
-      .select('*, challenge:challenge_id(*)')
+      .select('*')
       .eq('user_id', userId)
       .eq('assigned_date', today);
     if (existErr)
@@ -289,7 +289,7 @@ class DailyChallengeServiceClass {
 
     const { data: existing, error: wkErr } = await supabase
       .from('user_daily_challenges')
-      .select('*, challenge:challenge_id(*)')
+      .select('*')
       .eq('user_id', userId)
       .eq('assigned_date', weekKey);
     if (wkErr) console.warn('[DailyChallenge] getWeeklyChallenges fetch error:', wkErr.message);
@@ -333,7 +333,7 @@ class DailyChallengeServiceClass {
 
     const { data: existing, error: moErr } = await supabase
       .from('user_daily_challenges')
-      .select('*, challenge:challenge_id(*)')
+      .select('*')
       .eq('user_id', userId)
       .eq('assigned_date', monthKey);
     if (moErr) console.warn('[DailyChallenge] getMonthlyChallenges fetch error:', moErr.message);
@@ -385,7 +385,7 @@ class DailyChallengeServiceClass {
     // Get today's/week's/month's active challenges of this type
     const { data: challenges, error: chErr } = await supabase
       .from('user_daily_challenges')
-      .select('*, challenge:challenge_id(*)')
+      .select('*')
       .eq('user_id', userId)
       .in('assigned_date', [today, weekKey, monthKey])
       .eq('completed', false);

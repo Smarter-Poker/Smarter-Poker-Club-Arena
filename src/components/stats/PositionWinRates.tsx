@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { supabase } from '../../lib/supabase';
+import { supabase, getAuthUser } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import './PositionWinRates.css';
 
@@ -98,7 +98,7 @@ const PositionWinRates: React.FC = () => {
   const [hoveredPosition, setHoveredPosition] = useState<number | null>(null);
 
   const loadPositionStats = useCallback(async () => {
-    const { data: userResp } = await supabase.auth.getUser();
+    const { data: userResp } = await getAuthUser();
     if (!userResp.user) return;
 
     const { data: posData, error } = await supabase

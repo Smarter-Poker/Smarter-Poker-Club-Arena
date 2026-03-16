@@ -4,7 +4,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { supabase } from '../lib/supabase';
+import { supabase, getAuthUser } from '../lib/supabase';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -99,7 +99,7 @@ export const InviteService = {
       // Create the invite first
       const {
         data: { user },
-      } = await supabase.auth.getUser();
+      } = await getAuthUser();
       if (!user) throw new Error('Not authenticated');
 
       const invite = await this.createInvite(params.clubId, user.id, params.email);

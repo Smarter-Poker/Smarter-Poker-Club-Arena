@@ -5,7 +5,7 @@
  * Training session state machine with 85% Mastery Gate enforcement
  */
 
-import { supabase } from '@/lib/supabase';
+import { supabase, getAuthUser } from '@/lib/supabase';
 import { retryAsync } from '../utils/retryAsync';
 import type {
   TrainingSession,
@@ -137,7 +137,7 @@ export async function startTrainingSession(
   level: number,
   clubId?: string
 ): Promise<TrainingSession> {
-  const { data: user } = await supabase.auth.getUser();
+  const { data: user } = await getAuthUser();
   if (!user.user) throw new Error('Authentication required');
 
   // Check if user has unlocked this level (85% on previous)
@@ -258,7 +258,7 @@ async function recordSessionCompletion(
   level: number,
   masteryRate: number
 ): Promise<void> {
-  const { data: user } = await supabase.auth.getUser();
+  const { data: user } = await getAuthUser();
   if (!user.user) return;
 
   // Call the record_arena_session RPC for Diamond rewards

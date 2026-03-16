@@ -5,7 +5,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { supabase } from '../lib/supabase';
+import { supabase, getAuthUser } from '../lib/supabase';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { clubMessagingPermissions } from './ClubMessagingPermissions';
 import { masterBus } from '../core/MasterBus';
@@ -415,7 +415,7 @@ class MessagingServiceClass {
    * Toggle a reaction on a message (add if not exists, remove if exists)
    */
   async toggleReaction(messageId: string, reaction: string): Promise<boolean> {
-    const userId = (await supabase.auth.getUser()).data?.user?.id;
+    const userId = (await getAuthUser()).data?.user?.id;
     if (!userId) {
       console.error('[Messaging] No user ID available for reaction');
       return false;

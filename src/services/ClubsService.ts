@@ -5,7 +5,7 @@
  * Primary service layer for club management, discovery, and membership
  */
 
-import { supabase } from '@/lib/supabase';
+import { supabase, getAuthUser } from '@/lib/supabase';
 import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import type {
@@ -111,7 +111,7 @@ export async function createClub(clubData: {
   city?: string;
   country?: string;
 }): Promise<Club> {
-  const { data: user } = await supabase.auth.getUser();
+  const { data: user } = await getAuthUser();
   if (!user.user) throw new Error('Authentication required');
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -167,7 +167,7 @@ export async function createClub(clubData: {
  * Join a club with role assignment
  */
 export async function joinClub(clubId: string, role: MemberRole = 'member'): Promise<ClubMember> {
-  const { data: user } = await supabase.auth.getUser();
+  const { data: user } = await getAuthUser();
   if (!user.user) throw new Error('Authentication required');
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -241,7 +241,7 @@ export async function joinClub(clubId: string, role: MemberRole = 'member'): Pro
  *  8. Emit CLUB_UPDATED for real-time sync
  */
 export async function leaveClub(clubId: string): Promise<void> {
-  const { data: user } = await supabase.auth.getUser();
+  const { data: user } = await getAuthUser();
   if (!user.user) throw new Error('Authentication required');
 
   const resolvedId = await resolveClubUUID(clubId);
@@ -348,7 +348,7 @@ export async function leaveClub(clubId: string): Promise<void> {
  * Get user's club memberships — enriched with LIVE member counts
  */
 export async function getUserMemberships(): Promise<(ClubMember & { club: Club })[]> {
-  const { data: user } = await supabase.auth.getUser();
+  const { data: user } = await getAuthUser();
   if (!user.user) return [];
 
   const { data, error } = await supabase
@@ -496,7 +496,7 @@ export async function getClubLeaderboard(
  * Removes all members first, then deletes the club
  */
 export async function deleteClub(clubId: string): Promise<void> {
-  const { data: user } = await supabase.auth.getUser();
+  const { data: user } = await getAuthUser();
   if (!user.user) throw new Error('Authentication required');
 
   // Verify ownership
@@ -542,7 +542,7 @@ export async function deleteClub(clubId: string): Promise<void> {
  * Update club settings
  */
 export async function updateClub(clubId: string, updates: Record<string, any>): Promise<Club> {
-  const { data: user } = await supabase.auth.getUser();
+  const { data: user } = await getAuthUser();
   if (!user.user) throw new Error('Authentication required');
 
   // SECURITY: Verify caller is club owner before allowing any updates.
@@ -614,7 +614,7 @@ export async function updateClub(clubId: string, updates: Record<string, any>): 
  * @returns URL of the uploaded logo
  */
 export async function uploadClubLogo(clubId: string, file: File): Promise<string> {
-  const { data: user } = await supabase.auth.getUser();
+  const { data: user } = await getAuthUser();
   if (!user.user) throw new Error('Authentication required');
 
   // Validate file type
@@ -666,7 +666,7 @@ export async function uploadClubLogo(clubId: string, file: File): Promise<string
  * Upload club banner/cover image
  */
 export async function uploadClubBanner(clubId: string, file: File): Promise<string> {
-  const { data: user } = await supabase.auth.getUser();
+  const { data: user } = await getAuthUser();
   if (!user.user) throw new Error('Authentication required');
 
   // Validate file type
@@ -732,7 +732,7 @@ export async function canJoinMoreClubs(): Promise<{
 }> {
   const MAX_CLUBS = 4;
 
-  const { data: user } = await supabase.auth.getUser();
+  const { data: user } = await getAuthUser();
   if (!user.user) return { canJoin: false, currentCount: 0, maxClubs: MAX_CLUBS };
 
   const { count, error } = await supabase

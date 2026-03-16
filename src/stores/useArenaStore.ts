@@ -7,7 +7,7 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { supabase } from '@/lib/supabase';
+import { supabase, getAuthUser } from '@/lib/supabase';
 import type {
   ArenaStats,
   TrainingSession,
@@ -95,7 +95,7 @@ export const useArenaStore = create<ArenaState>()(
       loadStats: async () => {
         set({ isLoadingStats: true });
         try {
-          const { data: user } = await supabase.auth.getUser();
+          const { data: user } = await getAuthUser();
           if (!user.user) return;
 
           // Try get_user_level_stats first, fall back to defaults if not available
@@ -230,7 +230,7 @@ export const useArenaStore = create<ArenaState>()(
 
       loadUnlockedLevel: async () => {
         try {
-          const { data: user } = await supabase.auth.getUser();
+          const { data: user } = await getAuthUser();
           if (!user.user) return;
 
           const level = await ArenaTrainingController.getUnlockedLevel(user.user.id);

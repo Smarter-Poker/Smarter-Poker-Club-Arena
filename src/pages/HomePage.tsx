@@ -120,6 +120,15 @@ function HomePageInner() {
   const navigate = useNavigate();
   const toast = useToast();
 
+  // Component-level mount guard — prevents setState after unmount in user-triggered handlers
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
   // Detect if running inside iframe (World Hub embedding)
   const [isInIframe, setIsInIframe] = useState(false);
 
@@ -533,11 +542,42 @@ function HomePageInner() {
           if (isMounted) fetchSharkClubStats();
         }
       )
+      // BUG FIX: Also listen to club_members changes so member count refreshes
+      // when horses join/leave Shark Club
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'club_members',
+        },
+        () => {
+          if (isMounted) fetchSharkClubStats();
+        }
+      )
       .subscribe();
+
+    // Bus listeners: refresh Shark Club stats when members join/leave any club
+    const unsubSharkJoined = masterBus.subscribeDebounced(
+      'CLUB_JOINED',
+      () => {
+        if (isMounted) fetchSharkClubStats();
+      },
+      1000
+    );
+    const unsubSharkLeft = masterBus.subscribeDebounced(
+      'CLUB_LEFT',
+      () => {
+        if (isMounted) fetchSharkClubStats();
+      },
+      1000
+    );
 
     return () => {
       isMounted = false;
       masterBus.removeRegisteredChannel(sharkChannelKey);
+      unsubSharkJoined();
+      unsubSharkLeft();
     };
   }, []);
 
@@ -697,11 +737,13 @@ function HomePageInner() {
     async (club: UserClub) => {
       try {
         await ClubsService.leave(club.id);
+        if (!isMountedRef.current) return;
         toast.success('Left the club');
         masterBus.emit('CLUB_LEFT', { clubId: club.id });
-        fetchUserData(true);
+        fetchUserData(true, () => isMountedRef.current);
         setLeaveConfirm(null);
       } catch (err: any) {
+        if (!isMountedRef.current) return;
         toast.error(err.message || 'Failed to leave club');
       }
     },
@@ -769,6 +811,7 @@ function HomePageInner() {
         localStorage.setItem(`referral_${validClubId}`, referralCode);
       }
       await ClubsService.join(validClubId);
+      if (!isMountedRef.current) return;
       toast.success('Successfully joined the club!');
       setShowJoinModal(false);
       setShowReferralPrompt(false);
@@ -776,8 +819,9 @@ function HomePageInner() {
       setReferralCode('');
       masterBus.emit('CLUB_JOINED', { clubId: validClubId });
       setValidClubId(null);
-      fetchUserData(true);
+      fetchUserData(true, () => isMountedRef.current);
     } catch (err: any) {
+      if (!isMountedRef.current) return;
       toast.error(err.message || 'Failed to join club');
     }
   };

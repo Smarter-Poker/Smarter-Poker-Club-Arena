@@ -121,102 +121,46 @@ if (window.parent !== window) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-//  ANTI-GRAVITY BOOT SEQUENCE — MUST COMPLETE BEFORE RENDER
+//  INSTANT RENDER — Boot runs in background, React paints IMMEDIATELY
 // ═══════════════════════════════════════════════════════════════════════════════
-async function boot() {
-  // PHASE 0: Initialize Sentry (FIRST - before any errors can occur)
-  initSentry();
-  initWebVitals();
+// PHASE 0: Sentry + WebVitals (synchronous, fast)
+initSentry();
+initWebVitals();
 
-  console.log('[BOOT] Phase 1: AntiGravity...');
-  // PHASE 1: Anti-Gravity Core
-  const status = await initAntiGravity();
-  console.log('[BOOT] Phase 1 complete:', status.antigravityOk, status.supabaseOk);
+// PHASE 1: AntiGravity env-var check (synchronous — no network calls)
+const bootStatus = initAntiGravity();
 
-  // PHASE 2 + 3: Run MasterBus and IdentityDNA in parallel
-  // MasterBus is synchronous (no network calls) so it completes instantly.
-  // IdentityDNA calls getSession() which may be slow in iframe context.
-  // Running them in parallel shaves ~100-200ms off boot time.
-  console.log('[BOOT] Phase 2+3: MasterBus + IdentityDNA (parallel)...');
-  const busStatus = initMasterBus();
-  console.log('[BOOT] Phase 2 complete:', busStatus?.online);
+const root = ReactDOM.createRoot(document.getElementById('root')!);
 
-  const dnaStatus = await initIdentityDNA();
-  console.log('[BOOT] Phase 3 complete');
+if (bootStatus.antigravityOk) {
+  // RENDER IMMEDIATELY — don't wait for MasterBus or IdentityDNA.
+  // The app has AuthGuard, ErrorBoundary, Connection Watchdog, and Offline
+  // Banner that gracefully handle degraded state. Blocking rendering for
+  // boot phases caused 2-10s blank screens — completely unacceptable.
+  root.render(
+    <ErrorBoundary>
+      <BrowserRouter basename="/hub/club-arena">
+        <App />
+      </BrowserRouter>
+    </ErrorBoundary>
+  );
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // FINAL SYSTEM INTEGRITY CHECK
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  const root = ReactDOM.createRoot(document.getElementById('root')!);
-
-  const systemOnline = isSystemOnline();
-  const busOnline = isMasterBusOnline();
-  console.log('[BOOT] System online:', systemOnline, 'Bus online:', busOnline);
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // ZERO-TOLERANCE RENDERING DECISION
-  // ═══════════════════════════════════════════════════════════════════════════
-  // The app must ALWAYS render. The ONLY exception is if environment variables
-  // are completely missing (antigravityOk=false), which is a build/deploy
-  // configuration error — not a runtime/connectivity issue.
-  //
-  // Transient Supabase connectivity issues are handled by:
-  // - AuthGuard (redirects unauthenticated users to /auth)
-  // - Connection Watchdog (monitors and auto-reconnects)
-  // - Offline Banner (visible warning to users)
-  // - Offline Queue (queues mutations for replay)
-  //
-  // Showing SystemOffline for a connectivity blip is CATASTROPHIC and must
-  // never happen. Only a true misconfiguration should trigger it.
-  // ═══════════════════════════════════════════════════════════════════════════
-  const envVarsOk = status.antigravityOk;
-
-  if (envVarsOk) {
-    // ALWAYS render the app if env vars are configured correctly.
-    // Supabase connectivity and auth are handled at the app layer.
-    if (!systemOnline || !busOnline) {
-      console.warn('[BOOT] Degraded mode — rendering app anyway (connectivity will auto-recover)');
+  // BACKGROUND BOOT: Initialize state management + auth after first paint.
+  // MasterBus is synchronous (instant). IdentityDNA is async but the auth
+  // listener it sets up will handle setSession from the parent postMessage.
+  Promise.resolve().then(async () => {
+    try {
+      console.log('[BOOT] Background: MasterBus...');
+      initMasterBus();
+      console.log('[BOOT] Background: IdentityDNA...');
+      await initIdentityDNA();
+      console.log('[BOOT] Background: Complete ✅');
+    } catch (err) {
+      console.error('[BOOT] Background boot error (app already rendered):', err);
     }
-    root.render(
-      <ErrorBoundary>
-        <BrowserRouter basename="/hub/club-arena">
-          <App />
-        </BrowserRouter>
-      </ErrorBoundary>
-    );
-  } else {
-    // ONLY show SystemOffline for missing env vars (build/deploy misconfiguration)
-    console.error('[BOOT] Missing environment variables — rendering diagnostic screen');
-    root.render(<SystemOffline status={status} />);
-  }
+  });
+} else {
+  // ONLY show SystemOffline for missing env vars (build/deploy misconfiguration)
+  console.error('[BOOT] Missing environment variables — rendering diagnostic screen');
+  root.render(<SystemOffline status={bootStatus} />);
 }
-
-// Execute the boot sequence with top-level error catch
-boot().catch((err) => {
-  console.error('[BOOT] FATAL: boot() threw an unhandled error:', err);
-  // ZERO TOLERANCE: Even if the boot sequence throws, try to render the app.
-  // The app has its own ErrorBoundary, AuthGuard, and Connection Watchdog that
-  // can handle degraded state far better than a dead "Boot Failed" screen.
-  try {
-    const root = ReactDOM.createRoot(document.getElementById('root')!);
-    root.render(
-      <ErrorBoundary>
-        <BrowserRouter basename="/hub/club-arena">
-          <App />
-        </BrowserRouter>
-      </ErrorBoundary>
-    );
-  } catch {
-    // Absolute last resort — show retry button
-    document.body.innerHTML = `
-      <div style="color:#fff;padding:2rem;text-align:center;font-family:system-ui">
-        <h1>Loading Club Arena...</h1>
-        <p style="color:#aaa">Temporary issue — please retry</p>
-        <button onclick="window.location.reload()" style="padding:0.75rem 1.5rem;margin-top:1rem;background:#667eea;color:#fff;border:none;border-radius:8px;font-size:1rem;cursor:pointer">
-          Retry
-        </button>
-      </div>
-    `;
-  }
-});

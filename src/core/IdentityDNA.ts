@@ -90,35 +90,57 @@ class IdentityDNACore {
     }
 
     try {
-      // Timeout protection — getSession() can hang if navigator.locks contend
-      const sessionPromise = supabase.auth.getSession();
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('getSession timeout (8s)')), 8000)
-      );
-      const {
-        data: { session },
-        error,
-      } = await Promise.race([sessionPromise, timeoutPromise]);
-
-      if (session && !error) {
-        authenticated = true;
-        userId = session.user.id;
-        username = session.user.email?.split('@')[0] || null;
-        sessionExpiresAt = session.expires_at
-          ? new Date(session.expires_at * 1000).toISOString()
-          : null;
-
-        // Hydrate user store with session data
-        await this.hydrateUserFromSession(session);
-
-        // Emit auth event
-        masterBus.emit('AUTH_STATE_CHANGED', {
-          userId,
-          isAuthenticated: true,
+      // ── IFRAME FAST PATH ──
+      // In iframe context with a valid SSO session from localStorage, skip
+      // getSession() entirely. The onAuthStateChange listener (already registered
+      // above) will handle the real session when App.tsx calls setSession()
+      // after receiving the auth token from the parent via postMessage.
+      // This eliminates the 8s getSession() timeout — the #1 bottleneck.
+      const isInIframe = typeof window !== 'undefined' && window.parent !== window;
+      if (isInIframe && localSession) {
+        console.log(
+          '[IdentityDNA] ⚡ Iframe fast path — skipping getSession, auth listener will handle setSession'
+        );
+        // Set basic user info from localStorage JWT immediately so the UI
+        // can show the user's name/avatar before the full profile loads
+        useUserStore.getState().setUser({
+          id: localSession.userId,
+          username: localSession.username || 'Player',
+          display_name: null,
+          avatar_url: null,
         });
       } else {
-        // no-op — if localStorage had a session but getSession returned null,
-        // the onAuthStateChange listener will handle sign-in when setSession runs
+        // ── STANDARD PATH (standalone or no localStorage session) ──
+        // Timeout protection — getSession() can hang if navigator.locks contend
+        const sessionPromise = supabase.auth.getSession();
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('getSession timeout (8s)')), 8000)
+        );
+        const {
+          data: { session },
+          error,
+        } = await Promise.race([sessionPromise, timeoutPromise]);
+
+        if (session && !error) {
+          authenticated = true;
+          userId = session.user.id;
+          username = session.user.email?.split('@')[0] || null;
+          sessionExpiresAt = session.expires_at
+            ? new Date(session.expires_at * 1000).toISOString()
+            : null;
+
+          // Hydrate user store with session data
+          await this.hydrateUserFromSession(session);
+
+          // Emit auth event
+          masterBus.emit('AUTH_STATE_CHANGED', {
+            userId,
+            isAuthenticated: true,
+          });
+        } else {
+          // no-op — if localStorage had a session but getSession returned null,
+          // the onAuthStateChange listener will handle sign-in when setSession runs
+        }
       }
     } catch (e: any) {
       // AbortError is benign — suppress it

@@ -161,19 +161,17 @@ class UnionServiceClass {
     const missingUnionIds = [...(adminOf || []).map((a) => a.union_id), ...memberUnionIds];
     const uniqueMissingIds = [...new Set(missingUnionIds)];
 
-    // Fetch full union data for any unions not already in the map
-    for (const unionId of uniqueMissingIds) {
-      if (!unionMap.has(unionId)) {
-        const { data: unionData } = await supabase
-          .from('unions')
-          .select(
-            'id, name, description, owner_id, avatar_url, is_public, member_count, online_count, club_count, total_rake, settings, created_at, updated_at'
-          )
-          .eq('id', unionId)
-          .maybeSingle();
-        if (unionData) {
-          unionMap.set(unionData.id, unionData);
-        }
+    // Fetch full union data for any unions not already in the map (single batch query)
+    const idsToFetch = uniqueMissingIds.filter((id) => !unionMap.has(id));
+    if (idsToFetch.length > 0) {
+      const { data: batchUnions } = await supabase
+        .from('unions')
+        .select(
+          'id, name, description, owner_id, avatar_url, is_public, member_count, online_count, club_count, total_rake, settings, created_at, updated_at'
+        )
+        .in('id', idsToFetch);
+      if (batchUnions) {
+        batchUnions.forEach((u) => unionMap.set(u.id, u));
       }
     }
 

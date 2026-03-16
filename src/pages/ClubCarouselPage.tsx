@@ -267,6 +267,7 @@ export default function ClubCarouselPage() {
                     return { clubId: c.id, count: count || 0 };
                   })
                 );
+                if (!isMounted.current) return;
                 const countMap = new Map(countResults.map((r) => [r.clubId, r.count]));
                 for (const club of allUserClubs) {
                   if (countMap.has(club.id)) {

@@ -32,13 +32,16 @@ let supabaseClient: SupabaseClient | null = null;
 
 /**
  * PRIMARY BOOT ENTRYPOINT
- * Must be AWAITED before app renders. No async race conditions.
- * Returns the boot status for absolute fail-closed logic.
+ * Synchronous env-var validation. No network calls.
+ * Returns the boot status for fail-closed logic.
+ *
+ * HISTORY: Previously called getSession() as a "health check", but that
+ * was redundant with IdentityDNA.init() and always returned supabaseOk=true
+ * regardless of outcome. Removed to eliminate 2-8s blocking at startup.
  */
-export async function initAntiGravity(): Promise<BootStatus> {
+export function initAntiGravity(): BootStatus {
   const errors: string[] = [];
   let antigravityOk = false;
-  let supabaseOk = false;
 
   // ═══════════════════════════════════════════════════════════════════════════
   // PHASE 1: VERIFY ENV VARS (Required)
@@ -64,99 +67,24 @@ export async function initAntiGravity(): Promise<BootStatus> {
     antigravityOk = true;
   }
 
-  // DETERMINISTIC PROOF: ANTIGRAVITY_OK
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // PHASE 2: SUPABASE PROOF (Real Health Check)
-  // ═══════════════════════════════════════════════════════════════════════════
+  // Store the shared Supabase client reference for getSupabaseClient()
   if (SUPABASE_URL && SUPABASE_ANON_KEY) {
-    try {
-      // Use the shared Supabase client (from lib/supabase.ts) — DO NOT create a second client.
-      supabaseClient = supabase;
-
-      // Health check — with navigator.locks bypassed in supabase.ts,
-      // getSession() should resolve promptly. Keep a safety timeout anyway.
-      // In iframe context, the session won't exist until the parent sends it
-      // via postMessage AFTER load, so use a shorter timeout to avoid stalling boot.
-      const isInIframe = typeof window !== 'undefined' && window.parent !== window;
-      const SESSION_TIMEOUT_MS = isInIframe ? 2000 : 5000;
-      const sessionPromise = supabaseClient.auth.getSession();
-      const timeoutPromise = new Promise<{ error: { message: string } }>((_, reject) =>
-        setTimeout(
-          () => reject(new Error(`Supabase getSession timeout (${SESSION_TIMEOUT_MS / 1000}s)`)),
-          SESSION_TIMEOUT_MS
-        )
-      );
-
-      const { error } = await Promise.race([sessionPromise, timeoutPromise]);
-
-      if (error) {
-        errors.push(`Supabase Health Check Warning: ${error.message}`);
-        // ZERO TOLERANCE: Even if getSession returns an error, the app MUST render.
-        // Common errors like "Invalid Refresh Token" or "Session not found" are
-        // auth-level issues that AuthGuard handles gracefully. They must NOT
-        // trigger the SystemOffline screen. Only missing env vars should do that.
-        supabaseOk = true;
-        console.warn('[ANTIGRAVITY] getSession returned error, proceeding anyway:', error.message);
-      } else {
-        supabaseOk = true;
-      }
-    } catch (e: any) {
-      errors.push(`Supabase Connection Exception: ${e.message}`);
-
-      // HARDENED: Only proceed if the user has a cached session in localStorage.
-      // If localStorage has a valid JWT, we can trust that Supabase was reachable
-      // at some point and the timeout is likely due to navigator.locks contention.
-      // If there's NO cached session AND we're online, Supabase is truly unreachable.
-      const AUTH_KEY = 'smarter-poker-auth';
-      const hasCachedSession = (() => {
-        try {
-          const raw = localStorage.getItem(AUTH_KEY);
-          if (!raw) return false;
-          const data = JSON.parse(raw);
-          return !!data?.access_token;
-        } catch {
-          return false;
-        }
-      })();
-
-      // ZERO TOLERANCE: The app must ALWAYS render. A transient Supabase timeout
-      // must NEVER show the SystemOffline screen — that's catastrophic for users.
-      // The app will render, AuthGuard will redirect unauthenticated users to /auth,
-      // the Connection Watchdog will monitor recovery, and the offline banner will
-      // inform users of degraded state. This is infinitely better than a dead screen.
-      supabaseOk = true;
-      if (hasCachedSession) {
-        console.warn(
-          '[ANTIGRAVITY] getSession timed out, proceeding with cached session:',
-          e.message
-        );
-      } else {
-        console.warn(
-          '[ANTIGRAVITY] getSession timed out, proceeding in degraded mode — AuthGuard handles auth:',
-          e.message
-        );
-      }
-    }
-  } else {
-    errors.push('Supabase credentials missing, health check skipped');
-    supabaseOk = false;
+    supabaseClient = supabase;
   }
 
-  // DETERMINISTIC PROOF: SUPABASE_OK
+  // ═══════════════════════════════════════════════════════════════════════════
+  // BUILD BOOT STATUS
+  // ═══════════════════════════════════════════════════════════════════════════
+  // supabaseOk is always true when env vars are present — actual connectivity
+  // is validated by IdentityDNA.init() and handled by the Connection Watchdog.
+  const supabaseOk = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // PHASE 3: BUILD BOOT STATUS
-  // ═══════════════════════════════════════════════════════════════════════════
   bootStatus = {
     antigravityOk,
     supabaseOk,
     errors,
     timestamp: new Date().toISOString(),
   };
-
-  // DETERMINISTIC PROOF: HEARTBEAT
-  const heartbeat = antigravityOk && supabaseOk ? 'ONLINE' : 'OFFLINE';
 
   // Log errors if any
   if (errors.length > 0) {

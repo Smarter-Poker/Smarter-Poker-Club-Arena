@@ -110,7 +110,7 @@ export default function InvitePage() {
       if (user?.id) {
         const { data: membership } = await supabase
           .from('club_members')
-          .select('id')
+          .select('user_id')
           .eq('club_id', clubData.id)
           .eq('user_id', user.id)
           .maybeSingle();
@@ -188,7 +188,7 @@ export default function InvitePage() {
       const { error: joinError } = await supabase.from('club_members').insert({
         club_id: club.id,
         user_id: user.id,
-        role: 'player',
+        role: 'member',
         status: club.is_public ? 'active' : 'pending',
       });
 

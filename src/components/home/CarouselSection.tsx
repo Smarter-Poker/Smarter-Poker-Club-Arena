@@ -7,9 +7,10 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo, Suspense, lazy } from 'react';
 import { supabase } from '../../lib/supabase';
-import { useToast } from '../common/Toast';
+import type { useToast } from '../common/Toast';
 import haptic from '../../services/HapticService';
 import PremiumSFX from '../../services/PremiumSFX';
+import { formatTimeAgo } from '../../utils/formatTimeAgo';
 import styles from '../../pages/HomePage.module.css';
 
 // Lazy-load heavy component
@@ -260,11 +261,21 @@ export default function CarouselSection({
   }, []);
 
   // Enhancement #3: Tap handler — single tap flips, double tap navigates
+  // Timer ref for cleanup on unmount (prevents setState-after-unmount)
+  const tapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (tapTimerRef.current) clearTimeout(tapTimerRef.current);
+    };
+  }, []);
+
   const handleCardTap = useCallback(
     (club: UserClub) => {
       const now = Date.now();
       const last = lastTapRef.current;
       if (last.id === club.id && now - last.time < 350) {
+        // Double-tap — navigate
+        if (tapTimerRef.current) clearTimeout(tapTimerRef.current);
         haptic.medium();
         PremiumSFX.doubleTap();
         localStorage.setItem(LAST_VISITED_KEY, club.id);
@@ -272,8 +283,9 @@ export default function CarouselSection({
         navigate(`/clubs/${club.id}`);
         lastTapRef.current = { id: '', time: 0 };
       } else {
+        // Single-tap — wait 350ms then flip
         lastTapRef.current = { id: club.id, time: now };
-        setTimeout(() => {
+        tapTimerRef.current = setTimeout(() => {
           if (lastTapRef.current.id === club.id && lastTapRef.current.time === now) {
             haptic.light();
             PremiumSFX.tapFlip();
@@ -284,6 +296,7 @@ export default function CarouselSection({
               return next;
             });
           }
+          tapTimerRef.current = null;
         }, 350);
       }
     },
@@ -363,17 +376,7 @@ export default function CarouselSection({
                 <div className={styles.statsBackRow}>
                   <span className={styles.statsBackLabel}>Activity</span>
                   <span className={styles.statsBackValue}>
-                    {club.last_active_at
-                      ? (() => {
-                          const diff = Date.now() - new Date(club.last_active_at).getTime();
-                          const mins = Math.floor(diff / 60000);
-                          if (mins < 1) return 'Now';
-                          if (mins < 60) return `${mins}m`;
-                          const hrs = Math.floor(mins / 60);
-                          if (hrs < 24) return `${hrs}h`;
-                          return `${Math.floor(hrs / 24)}d`;
-                        })()
-                      : '—'}
+                    {club.last_active_at ? formatTimeAgo(club.last_active_at, true) : '—'}
                   </span>
                 </div>
                 <span className={styles.statsBackHint}>Double-tap to enter</span>
@@ -432,15 +435,7 @@ export default function CarouselSection({
                   )}
                   {club.last_active_at && (
                     <div className={styles.clubCardTimestamp}>
-                      {(() => {
-                        const diff = Date.now() - new Date(club.last_active_at).getTime();
-                        const mins = Math.floor(diff / 60000);
-                        if (mins < 1) return 'Active now';
-                        if (mins < 60) return `${mins}m ago`;
-                        const hrs = Math.floor(mins / 60);
-                        if (hrs < 24) return `${hrs}h ago`;
-                        return `${Math.floor(hrs / 24)}d ago`;
-                      })()}
+                      {formatTimeAgo(club.last_active_at)}
                     </div>
                   )}
                 </div>
@@ -508,7 +503,7 @@ export default function CarouselSection({
         }}
       >
         <div className={styles.carouselFeaturedPedestal}></div>
-        <Suspense fallback={<div className={styles.cardSkeleton}>Loading...</div>}>
+        <Suspense fallback={<div className={styles.cardSkeleton} />}>
           <ClubStatsPanel
             totalMembers={sharkClubStats.totalMembers}
             clubLevel={sharkClubStats.clubLevel}

@@ -51,6 +51,12 @@ const PINNED_CLUBS_KEY = 'club_arena_pinned_clubs';
 const SOUNDS_ENABLED_KEY = 'club_arena_sounds';
 const CARD_COLOR_KEY = 'club_arena_card_color';
 
+// Typed shape for the user preferences JSON column
+interface UserPreferences {
+  card_color_preset?: string;
+  [key: string]: unknown;
+}
+
 // Action button images
 const ACTION_BAR_HORIZONTAL = `${import.meta.env.BASE_URL}images/icons/action-bar-horizontal.png`;
 
@@ -333,9 +339,10 @@ function HomePageInner() {
           // Process card color sync
           if (
             colorResult.status === 'fulfilled' &&
-            (colorResult.value.data?.preferences as any)?.card_color_preset
+            (colorResult.value.data?.preferences as UserPreferences | null)?.card_color_preset
           ) {
-            const preset = (colorResult.value.data?.preferences as any)?.card_color_preset;
+            const preset = (colorResult.value.data?.preferences as UserPreferences)
+              .card_color_preset!;
             if (preset !== localStorage.getItem(CARD_COLOR_KEY)) {
               localStorage.setItem(CARD_COLOR_KEY, preset);
               setCardColorPreset(preset);
@@ -744,19 +751,25 @@ function HomePageInner() {
   // #4: Leave club with confirmation
   const handleLeaveClub = useCallback(
     async (club: UserClub) => {
+      // #2: Optimistic UI — immediately remove from list
+      const previousClubs = [...userClubs];
+      setUserClubs((prev) => prev.filter((c) => c.id !== club.id));
       try {
         await ClubsService.leave(club.id);
         if (!isMountedRef.current) return;
         toast.success('Left the club');
         masterBus.emit('CLUB_LEFT', { clubId: club.id });
+        // Background refresh to reconcile server state
         fetchUserData(true, () => isMountedRef.current);
         setLeaveConfirm(null);
       } catch (err: any) {
         if (!isMountedRef.current) return;
+        // Rollback optimistic update
+        setUserClubs(previousClubs);
         toast.error(err.message || 'Failed to leave club');
       }
     },
-    [toast, fetchUserData]
+    [toast, fetchUserData, userClubs]
   );
 
   // #11: Toggle sound effects
@@ -795,6 +808,8 @@ function HomePageInner() {
         .eq('club_id', numericCode)
         .maybeSingle();
 
+      if (!isMountedRef.current) return;
+
       if (error || !club) {
         toast.error('Invalid club code. Please check and try again.');
         setIsValidatingCode(false);
@@ -805,10 +820,11 @@ function HomePageInner() {
       setValidClubId(club.id);
       setShowReferralPrompt(true);
     } catch (err) {
+      if (!isMountedRef.current) return;
       console.error('Error validating club code:', err);
       toast.error('Failed to validate club code');
     } finally {
-      setIsValidatingCode(false);
+      if (isMountedRef.current) setIsValidatingCode(false);
     }
   };
 
@@ -821,6 +837,16 @@ function HomePageInner() {
       }
       await ClubsService.join(validClubId);
       if (!isMountedRef.current) return;
+      // #2: Optimistic UI — add placeholder club immediately
+      const optimisticClub: UserClub = {
+        id: validClubId,
+        club_id: 0,
+        name: 'Loading...',
+        avatar_url: null,
+        member_count: 1,
+        is_owner: false,
+      } as UserClub;
+      setUserClubs((prev) => [...prev, optimisticClub]);
       toast.success('Successfully joined the club!');
       setShowJoinModal(false);
       setShowReferralPrompt(false);
@@ -828,6 +854,7 @@ function HomePageInner() {
       setReferralCode('');
       masterBus.emit('CLUB_JOINED', { clubId: validClubId });
       setValidClubId(null);
+      // Background refresh to get real club data
       fetchUserData(true, () => isMountedRef.current);
     } catch (err: any) {
       if (!isMountedRef.current) return;
@@ -863,6 +890,12 @@ function HomePageInner() {
   // ═══════════════════════════════════════════════════════════════════════════════
   // Enhancement #5: Staggered card flip after data loads
   // ═══════════════════════════════════════════════════════════════════════════════
+  // Use a ref so sound toggle doesn't re-trigger the entire flip animation
+  const soundsEnabledRef = useRef(soundsEnabled);
+  useEffect(() => {
+    soundsEnabledRef.current = soundsEnabled;
+  }, [soundsEnabled]);
+
   useEffect(() => {
     if (!isLoading && displayClubs.length > 0) {
       const timerIds: ReturnType<typeof setTimeout>[] = [];
@@ -872,7 +905,7 @@ function HomePageInner() {
             setFlippedCards((prev) => new Set(prev).add(idx));
             // #10: Haptic on each card flip
             haptic.light();
-            if (soundsEnabled) PremiumSFX.cardFlip();
+            if (soundsEnabledRef.current) PremiumSFX.cardFlip();
           },
           300 + idx * 150
         );
@@ -882,7 +915,7 @@ function HomePageInner() {
         timerIds.forEach((id) => clearTimeout(id));
       };
     }
-  }, [isLoading, displayClubs.length, soundsEnabled]);
+  }, [isLoading, displayClubs.length]);
   // Tile action handlers (for bottom row tiles using LOBBY_TILES config)
   const tileActions: Record<string, () => void> = useMemo(
     () => ({
@@ -1068,18 +1101,7 @@ function HomePageInner() {
 
         {/* Phase 8 #7: Search empty state */}
         {searchQuery.trim() && displayClubs.length === 0 && (
-          <div
-            style={{
-              textAlign: 'center',
-              padding: '24px 16px',
-              color: 'rgba(176, 179, 184, 0.6)',
-              fontSize: '0.85rem',
-              fontWeight: 600,
-              letterSpacing: '0.03em',
-            }}
-          >
-            No clubs match "{searchQuery}"
-          </div>
+          <div className={styles.searchEmptyState}>No clubs match "{searchQuery}"</div>
         )}
 
         {/* ═══════════════════════════════════════════════════════════════════════

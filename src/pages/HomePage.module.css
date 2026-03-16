@@ -2250,6 +2250,15 @@
   padding: 4px 8px;
 }
 
+.searchEmptyState {
+  text-align: center;
+  padding: 24px 16px;
+  color: rgba(176, 179, 184, 0.6);
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
 /* Phase 7 #10: Offline Banner with pulse animation */
 .offlineBanner {
   position: fixed;

@@ -13,6 +13,8 @@ import { supabase } from '../lib/supabase';
 import { waitForAuth } from '../utils/waitForAuth';
 import { masterBus } from '../core/MasterBus';
 import { ClubsService } from '../services/ClubsService';
+import { unionService } from '../services/UnionService';
+import type { Union } from '../services/UnionService';
 import { LoadingState, NoClubsEmpty } from '../components/common/EmptyState';
 import { CardSkeleton } from '../components/skeletons/CardSkeleton';
 import { useToast } from '../components/common/Toast';
@@ -46,7 +48,7 @@ interface Club {
 }
 
 interface Membership {
-  id: string;
+  id?: string;
   club_id: string;
   role: string;
   club: Club;
@@ -72,6 +74,7 @@ export default function ClubsPage() {
 
   // Real data states
   const [myClubs, setMyClubs] = useState<Membership[]>([]);
+  const [myUnions, setMyUnions] = useState<Union[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   // Create club form
@@ -89,14 +92,15 @@ export default function ClubsPage() {
     setShowIntro(false);
   };
 
-  // Stagger club cards on render
+  // Stagger club + union cards on render
   useEffect(() => {
     setVisibleClubCards(new Set());
-    const timers = myClubs.map((_, i) =>
+    const totalItems = myClubs.length + myUnions.length;
+    const timers = Array.from({ length: totalItems }, (_, i) =>
       setTimeout(() => setVisibleClubCards((prev) => new Set([...prev, i])), i * 60)
     );
     return () => timers.forEach((t) => clearTimeout(t));
-  }, [myClubs.length]);
+  }, [myClubs.length, myUnions.length]);
 
   const loadMyClubs = async (getIsMounted?: () => boolean) => {
     setIsLoading(true);
@@ -107,14 +111,29 @@ export default function ClubsPage() {
         console.warn('[ClubsPage] Auth not ready — proceeding anyway');
       }
       if (getIsMounted && !getIsMounted()) return;
-      const memberships = await ClubsService.getUserMemberships();
+
+      // Fetch clubs AND unions in parallel
+      const {
+        data: { user: authUser },
+      } = await supabase.auth.getUser();
+      const [memberships, unions] = await Promise.all([
+        ClubsService.getUserMemberships(),
+        authUser
+          ? unionService.getMyUnions(authUser.id).catch((err) => {
+              console.warn('[ClubsPage] Failed to load unions:', err);
+              return [] as Union[];
+            })
+          : Promise.resolve([] as Union[]),
+      ]);
       if (getIsMounted && !getIsMounted()) return;
       setMyClubs(memberships);
+      setMyUnions(unions);
     } catch (err) {
       console.error('[CLUBS] Failed to load memberships:', err);
       toast.error('Failed to load your clubs');
       if (getIsMounted && !getIsMounted()) return;
       setMyClubs([]);
+      setMyUnions([]);
     } finally {
       if (!getIsMounted || getIsMounted()) setIsLoading(false);
     }
@@ -363,7 +382,7 @@ export default function ClubsPage() {
 
                     return (
                       <div
-                        key={membership.id}
+                        key={membership.club_id || membership.id || `club-${index}`}
                         style={{
                           opacity: visibleClubCards.has(index) ? 1 : 0,
                           transform: visibleClubCards.has(index)
@@ -522,8 +541,162 @@ export default function ClubsPage() {
                     );
                   })}
                 </div>
-              ) : (
+              ) : myUnions.length === 0 ? (
                 <NoClubsEmpty onCreate={() => setActiveTab('create')} />
+              ) : null}
+
+              {/* ── Unions Section ── */}
+              {myUnions.length > 0 && (
+                <div className={styles.clubsGrid}>
+                  {myUnions.map((union, index) => (
+                    <div
+                      key={union.id}
+                      style={{
+                        opacity: visibleClubCards.has(myClubs.length + index) ? 1 : 0,
+                        transform: visibleClubCards.has(myClubs.length + index)
+                          ? 'translateY(0)'
+                          : 'translateY(8px)',
+                        transition: 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+                      }}
+                    >
+                      <MetalCard size="md" glow>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                          {/* Union Header */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <div
+                              style={{
+                                width: '50px',
+                                height: '50px',
+                                fontSize: '24px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                background: 'linear-gradient(135deg, #2a1a3a 0%, #150d20 100%)',
+                                border: '1px solid #4a2a6a',
+                                borderRadius: '10px',
+                              }}
+                            >
+                              🏛️
+                            </div>
+                            <div style={{ flex: 1 }}>
+                              <h3
+                                style={{
+                                  margin: 0,
+                                  fontSize: '1.1rem',
+                                  color: '#fff',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '8px',
+                                }}
+                              >
+                                {union.name}
+                                <span
+                                  style={{
+                                    fontSize: '0.6rem',
+                                    padding: '2px 8px',
+                                    borderRadius: '12px',
+                                    background: 'linear-gradient(135deg, #9b59b6, #8e44ad)',
+                                    color: '#fff',
+                                    fontWeight: 700,
+                                    letterSpacing: '0.5px',
+                                    textShadow: '0 1px 2px rgba(0,0,0,0.5)',
+                                  }}
+                                >
+                                  UNION
+                                </span>
+                              </h3>
+                            </div>
+                            <span
+                              style={{
+                                fontSize: '0.7rem',
+                                fontWeight: 600,
+                                color: '#b388ff',
+                                padding: '4px 10px',
+                                background: 'rgba(179, 136, 255, 0.15)',
+                                border: '1px solid rgba(179, 136, 255, 0.4)',
+                                borderRadius: '20px',
+                              }}
+                            >
+                              OWNER
+                            </span>
+                          </div>
+
+                          {/* Stats Row */}
+                          <div
+                            style={{
+                              display: 'flex',
+                              justifyContent: 'space-around',
+                              padding: '12px 0',
+                              borderTop: '1px solid rgba(255,255,255,0.1)',
+                              borderBottom: '1px solid rgba(255,255,255,0.1)',
+                            }}
+                          >
+                            <div style={{ textAlign: 'center' }}>
+                              <div
+                                style={{ fontSize: '1.25rem', fontWeight: 700, color: '#b388ff' }}
+                              >
+                                {union.clubCount || 0}
+                              </div>
+                              <div
+                                style={{
+                                  fontSize: '0.65rem',
+                                  color: '#6a7a8a',
+                                  textTransform: 'uppercase',
+                                }}
+                              >
+                                Clubs
+                              </div>
+                            </div>
+                            <div style={{ textAlign: 'center' }}>
+                              <div
+                                style={{ fontSize: '1.25rem', fontWeight: 700, color: '#b388ff' }}
+                              >
+                                {union.memberCount || 0}
+                              </div>
+                              <div
+                                style={{
+                                  fontSize: '0.65rem',
+                                  color: '#6a7a8a',
+                                  textTransform: 'uppercase',
+                                }}
+                              >
+                                Members
+                              </div>
+                            </div>
+                            <div style={{ textAlign: 'center' }}>
+                              <div
+                                style={{ fontSize: '1.25rem', fontWeight: 700, color: '#b388ff' }}
+                              >
+                                {union.onlineCount || 0}
+                              </div>
+                              <div
+                                style={{
+                                  fontSize: '0.65rem',
+                                  color: '#6a7a8a',
+                                  textTransform: 'uppercase',
+                                }}
+                              >
+                                Online
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Enter Button */}
+                          <MetalButton
+                            variant="primary"
+                            fullWidth
+                            onClick={() => {
+                              haptic.success();
+                              navigate(`/unions/${union.id}`);
+                            }}
+                          >
+                            MANAGE UNION
+                          </MetalButton>
+                        </div>
+                      </MetalCard>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           )}

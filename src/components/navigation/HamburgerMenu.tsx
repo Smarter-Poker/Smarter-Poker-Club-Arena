@@ -89,32 +89,34 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     if (user?.id) {
       supabase
         .from('profiles')
-        .select(
-          'avatar_url, username, sounds_enabled, vibrations_enabled, show_stack_bb, is_vip, diamonds'
-        )
+        .select('*')
         .eq('id', user.id)
         .maybeSingle()
         .then(({ data, error }) => {
           if (error) {
-            console.error('[HamburgerMenu] Failed to load profile:', error);
+            console.warn(
+              '[HamburgerMenu] Profile load failed (using localStorage fallback):',
+              error.message
+            );
             return;
           }
           if (data) {
             setAvatarUrl(data.avatar_url);
-            setUserName(data.username || 'Player');
-            if (data.sounds_enabled !== null) {
+            setUserName(data.username || data.display_name || 'Player');
+            // These columns may not exist on profiles — use optional chaining with defaults
+            if (data.sounds_enabled !== undefined && data.sounds_enabled !== null) {
               setSoundsEnabled(data.sounds_enabled);
               localStorage.setItem('soundsEnabled', String(data.sounds_enabled));
             }
-            if (data.vibrations_enabled !== null) {
+            if (data.vibrations_enabled !== undefined && data.vibrations_enabled !== null) {
               setVibrationsEnabled(data.vibrations_enabled);
               localStorage.setItem('vibrationsEnabled', String(data.vibrations_enabled));
             }
-            if (data.show_stack_bb !== null) {
+            if (data.show_stack_bb !== undefined && data.show_stack_bb !== null) {
               setShowBBEnabled(data.show_stack_bb);
               localStorage.setItem('showStackInBB', String(data.show_stack_bb));
             }
-            setIsVIP(data.is_vip || false);
+            setIsVIP(data.is_vip || data.tier === 'vip' || false);
             setDiamondBalance(data.diamonds || 0);
           }
         });

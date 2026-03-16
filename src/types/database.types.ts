@@ -69,7 +69,7 @@ export interface ClubSettings {
 }
 
 export interface ClubMember {
-  id: string;
+  id?: string; // Optional — column may not exist in all DB schemas
   club_id: string;
   user_id: string;
   role: MemberRole;

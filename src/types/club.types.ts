@@ -88,7 +88,7 @@ export interface UnionRules {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export interface ClubMember {
-  id: string;
+  id?: string; // Optional — column may not exist in all DB schemas
   user_id: string;
   club_id: string;
   role: MemberRole;

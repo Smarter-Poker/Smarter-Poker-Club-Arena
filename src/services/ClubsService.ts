@@ -209,6 +209,23 @@ export async function joinClub(clubId: string, role: MemberRole = 'member'): Pro
     throw new Error('Failed to join club');
   }
 
+  // Increment club member count (mirrors decrement in leaveClub)
+  try {
+    const { data: currentClub } = await supabase
+      .from('clubs')
+      .select('member_count')
+      .eq('id', clubId)
+      .maybeSingle();
+    if (currentClub) {
+      await supabase
+        .from('clubs')
+        .update({ member_count: (currentClub.member_count || 0) + 1 })
+        .eq('id', clubId);
+    }
+  } catch (e: unknown) {
+    console.warn('[ClubsService] joinClub: member count increment failed (non-critical):', e);
+  }
+
   return data;
 }
 
@@ -233,7 +250,7 @@ export async function leaveClub(clubId: string): Promise<void> {
   // 1. Get membership record
   const { data: member, error: memErr } = await supabase
     .from('club_members')
-    .select('id, role, chip_balance, credit_used')
+    .select('role, chip_balance, credit_used')
     .eq('club_id', resolvedId)
     .eq('user_id', userId)
     .maybeSingle();
@@ -338,7 +355,7 @@ export async function getUserMemberships(): Promise<(ClubMember & { club: Club }
     .from('club_members')
     .select(
       `
-      id, club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, reputation_xp, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, parent_agent_id, hands_played, chips_won, chips_lost, total_rake_paid,
+      club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, reputation_xp, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, parent_agent_id, hands_played, chips_won, chips_lost, total_rake_paid,
       club:clubs(id, club_id, name, slug, description, avatar_url, banner_url, color_theme, member_count, table_count, chip_treasury, is_public, requires_approval, owner_id, settings, created_at, updated_at)
     `
     )
@@ -361,7 +378,7 @@ export async function getClubMembers(clubId: string): Promise<ClubMember[]> {
     .from('club_members')
     .select(
       `
-      id, club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, reputation_xp, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, parent_agent_id, hands_played, chips_won, chips_lost, total_rake_paid,
+      club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, reputation_xp, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, parent_agent_id, hands_played, chips_won, chips_lost, total_rake_paid,
       profile:profiles(username, avatar_url)
     `
     )
@@ -419,7 +436,7 @@ export async function getClubLeaderboard(
     .from('club_members')
     .select(
       `
-      id, club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, reputation_xp, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, parent_agent_id, hands_played, chips_won, chips_lost, total_rake_paid,
+      club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, reputation_xp, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, parent_agent_id, hands_played, chips_won, chips_lost, total_rake_paid,
       profile:profiles(username, avatar_url)
     `
     )

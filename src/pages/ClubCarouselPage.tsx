@@ -14,6 +14,8 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
+import { unionService } from '../services/UnionService';
+import type { Union } from '../services/UnionService';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import IntroVideo from '../components/IntroVideo';
@@ -73,6 +75,7 @@ export default function ClubCarouselPage() {
   const toast = useToast();
 
   const [clubs, setClubs] = useState<UserClub[]>([]);
+  const [userUnions, setUserUnions] = useState<Union[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
@@ -135,17 +138,18 @@ export default function ClubCarouselPage() {
     return () => unsubs.forEach((u) => u());
   }, []);
 
-  // Stagger animation for club cards
+  // Stagger animation for club + union cards
   useEffect(() => {
-    if (clubs.length === 0) return;
+    if (clubs.length === 0 && userUnions.length === 0) return;
     setVisibleCards(new Set());
-    const timers = clubs.map((club, index) =>
+    const allItems = [...clubs.map((c) => c.id), ...userUnions.map((u) => u.id)];
+    const timers = allItems.map((itemId, index) =>
       setTimeout(() => {
-        setVisibleCards((prev) => new Set(prev).add(club.id));
+        setVisibleCards((prev) => new Set(prev).add(itemId));
       }, index * 60)
     );
     return () => timers.forEach((t) => clearTimeout(t));
-  }, [clubs]);
+  }, [clubs, userUnions]);
 
   const loadUserData = async () => {
     setLoading(true);
@@ -190,49 +194,61 @@ export default function ClubCarouselPage() {
 
       if (!isMounted.current) return;
 
-      // Load user's clubs (where they are a member)
+      // Load user's clubs (where they are a member) AND unions in parallel
       try {
-        const { data: memberData, error: memberError } = await supabase
-          .from('club_members')
-          .select(
-            `
-                        club_id,
-                        role,
-                        chip_balance,
-                        clubs (
-                            id,
-                            club_id,
-                            name,
-                            avatar_url,
-                            member_count
-                        )
-                    `
-          )
-          .eq('user_id', authUser.id);
+        const [memberResult, unionsResult] = await Promise.allSettled([
+          supabase
+            .from('club_members')
+            .select(
+              `
+                          club_id,
+                          role,
+                          chip_balance,
+                          clubs (
+                              id,
+                              club_id,
+                              name,
+                              avatar_url,
+                              member_count
+                          )
+                      `
+            )
+            .eq('user_id', authUser.id),
+          unionService.getMyUnions(authUser.id),
+        ]);
 
         if (!isMounted.current) return;
-        if (memberError) {
-          // Memberships query returned non-critical error
-        } else if (memberData) {
-          const userClubs: UserClub[] = memberData
-            .filter((m: any) => m.clubs)
-            .map((m: any) => ({
-              id: m.clubs.id,
-              club_id: m.clubs.club_id,
-              name: m.clubs.name,
-              avatar_url: m.clubs.avatar_url,
-              level: 0, // Club level from settings
-              member_count: m.clubs.member_count || 0,
-              role: m.role,
-            }));
-          setClubs(userClubs);
 
-          // Calculate total gold from all clubs
-          const totalGold = memberData.reduce(
-            (sum: number, m: any) => sum + (m.chip_balance || 0),
-            0
-          );
-          setWallet((prev) => ({ ...prev, gold: totalGold }));
+        // Process clubs
+        if (memberResult.status === 'fulfilled') {
+          const { data: memberData, error: memberError } = memberResult.value;
+          if (!memberError && memberData) {
+            const userClubs: UserClub[] = memberData
+              .filter((m: any) => m.clubs)
+              .map((m: any) => ({
+                id: m.clubs.id,
+                club_id: m.clubs.club_id,
+                name: m.clubs.name,
+                avatar_url: m.clubs.avatar_url,
+                level: 0,
+                member_count: m.clubs.member_count || 0,
+                role: m.role,
+              }));
+            setClubs(userClubs);
+
+            const totalGold = memberData.reduce(
+              (sum: number, m: any) => sum + (m.chip_balance || 0),
+              0
+            );
+            setWallet((prev) => ({ ...prev, gold: totalGold }));
+          }
+        }
+
+        // Process unions
+        if (unionsResult.status === 'fulfilled') {
+          setUserUnions(unionsResult.value);
+        } else {
+          console.warn('[ClubCarouselPage] Failed to load unions:', unionsResult.reason);
         }
       } catch (err) {
         // Non-critical memberships load error
@@ -246,12 +262,14 @@ export default function ClubCarouselPage() {
     }
   };
 
+  const totalCards = clubs.length + userUnions.length;
+
   const handlePrev = () => {
-    setActiveIndex((prev) => (prev > 0 ? prev - 1 : clubs.length - 1));
+    setActiveIndex((prev) => (prev > 0 ? prev - 1 : totalCards - 1));
   };
 
   const handleNext = () => {
-    setActiveIndex((prev) => (prev < clubs.length - 1 ? prev + 1 : 0));
+    setActiveIndex((prev) => (prev < totalCards - 1 ? prev + 1 : 0));
   };
 
   const handleClubClick = (club: UserClub) => {
@@ -345,7 +363,7 @@ export default function ClubCarouselPage() {
                 CLUB CAROUSEL
             ═══════════════════════════════════════════════════════════════════ */}
         <div className="club-carousel__cards">
-          {clubs.length === 0 ? (
+          {clubs.length === 0 && userUnions.length === 0 ? (
             <div className="no-clubs">
               <p>You haven't joined any clubs yet</p>
               <button className="join-btn" onClick={handleSearch}>
@@ -355,14 +373,15 @@ export default function ClubCarouselPage() {
           ) : (
             <>
               {/* Left Arrow */}
-              {clubs.length > 1 && (
+              {clubs.length + userUnions.length > 1 && (
                 <button className="carousel-arrow left" onClick={handlePrev}>
                   ‹
                 </button>
               )}
 
-              {/* Club Cards */}
+              {/* Club + Union Cards */}
               <div className="cards-container">
+                {/* Club Cards */}
                 {clubs.map((club, index) => {
                   const offset = index - activeIndex;
                   const isActive = index === activeIndex;
@@ -423,10 +442,75 @@ export default function ClubCarouselPage() {
                     </div>
                   );
                 })}
+
+                {/* Union Cards */}
+                {userUnions.map((union, unionIdx) => {
+                  const index = clubs.length + unionIdx;
+                  const offset = index - activeIndex;
+                  const isActive = index === activeIndex;
+
+                  return (
+                    <div
+                      key={`union-${union.id}`}
+                      className={`club-card ${isActive ? 'active' : ''} ${visibleCards.has(union.id) ? 'fadeInUp' : 'hidden'}`}
+                      style={{
+                        transform: `translateX(${offset * 120}%) scale(${isActive ? 1 : 0.8})`,
+                        opacity: visibleCards.has(union.id)
+                          ? Math.abs(offset) > 1
+                            ? 0
+                            : isActive
+                              ? 1
+                              : 0.6
+                          : 0,
+                        zIndex: isActive ? 10 : 5 - Math.abs(offset),
+                      }}
+                      onClick={() => isActive && navigate(`/unions/${union.id}`)}
+                    >
+                      {/* Union-specific card content */}
+                      <div
+                        className="club-card__content"
+                        style={{
+                          background:
+                            'linear-gradient(135deg, rgba(155, 89, 182, 0.15) 0%, rgba(142, 68, 173, 0.08) 100%)',
+                        }}
+                      >
+                        <div className="club-card__id" style={{ color: '#b388ff' }}>
+                          UNION
+                        </div>
+                        <div className="club-card__graphic">
+                          {union.avatarUrl ? (
+                            <img src={union.avatarUrl} alt={union.name} loading="lazy" />
+                          ) : (
+                            <div className="club-card__placeholder">
+                              <span className="chip-icon" style={{ fontSize: '2rem' }}>
+                                🏛️
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                        <div className="club-card__footer">
+                          <div
+                            className="club-avatar"
+                            style={{ background: 'linear-gradient(135deg, #9b59b6, #8e44ad)' }}
+                          >
+                            <span>🏛️</span>
+                          </div>
+                          <div className="club-info">
+                            <span className="club-name">{union.name}</span>
+                            <span className="club-meta">
+                              {union.clubCount || 0} clubs
+                              <span className="member-count">{union.memberCount || 0}</span>
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
 
               {/* Right Arrow */}
-              {clubs.length > 1 && (
+              {clubs.length + userUnions.length > 1 && (
                 <button className="carousel-arrow right" onClick={handleNext}>
                   ›
                 </button>

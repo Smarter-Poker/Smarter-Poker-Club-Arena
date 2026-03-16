@@ -464,7 +464,7 @@ export default function ClubHomePage() {
             supabase.from('union_clubs').select('club_id').eq('union_id', unionId),
             supabase
               .from('club_members')
-              .select('id', { count: 'exact', head: true })
+              .select('user_id', { count: 'exact', head: true })
               .eq('club_id', resolvedId) // Will be updated below if union has multiple clubs
               .in('status', ['active', 'approved']),
           ]);
@@ -477,7 +477,7 @@ export default function ClubHomePage() {
               try {
                 const { count: totalMembers } = await supabase
                   .from('club_members')
-                  .select('id', { count: 'exact', head: true })
+                  .select('user_id', { count: 'exact', head: true })
                   .in('club_id', unionClubIds)
                   .in('status', ['active', 'approved']);
 

@@ -311,10 +311,25 @@ export default function ClubCarouselPage() {
         }
 
         // Process unions
+        let newUnionCount = userUnions.length;
         if (unionsResult.status === 'fulfilled') {
           setUserUnions(unionsResult.value);
+          newUnionCount = unionsResult.value.length;
         } else {
           console.warn('[ClubCarouselPage] Failed to load unions:', unionsResult.reason);
+        }
+
+        // Clamp activeIndex to valid range after clubs/unions change
+        // Use freshly computed counts (not stale state) to avoid out-of-bounds
+        const newClubCount =
+          memberResult.status === 'fulfilled' && !memberResult.value.error
+            ? (memberResult.value.data || []).filter((m: any) => m.clubs).length
+            : clubs.length;
+        const newTotal = newClubCount + newUnionCount;
+        if (newTotal > 0) {
+          setActiveIndex((prev) => Math.min(prev, newTotal - 1));
+        } else {
+          setActiveIndex(0);
         }
       } catch (err) {
         // Non-critical memberships load error

@@ -239,6 +239,9 @@ export default function ClubCarouselPage() {
 
         if (!isMounted.current) return;
 
+        // Track actual displayed club count for activeIndex clamping
+        let displayedClubCount = clubs.length; // fallback to current state
+
         // Process clubs
         if (memberResult.status === 'fulfilled') {
           const { data: memberData, error: memberError } = memberResult.value;
@@ -301,6 +304,7 @@ export default function ClubCarouselPage() {
             }
             if (!isMounted.current) return;
             setClubs(filteredClubs);
+            displayedClubCount = filteredClubs.length;
 
             const totalGold = memberData.reduce(
               (sum: number, m: any) => sum + (m.chip_balance || 0),
@@ -320,12 +324,7 @@ export default function ClubCarouselPage() {
         }
 
         // Clamp activeIndex to valid range after clubs/unions change
-        // Use freshly computed counts (not stale state) to avoid out-of-bounds
-        const newClubCount =
-          memberResult.status === 'fulfilled' && !memberResult.value.error
-            ? (memberResult.value.data || []).filter((m: any) => m.clubs).length
-            : clubs.length;
-        const newTotal = newClubCount + newUnionCount;
+        const newTotal = displayedClubCount + newUnionCount;
         if (newTotal > 0) {
           setActiveIndex((prev) => Math.min(prev, newTotal - 1));
         } else {

@@ -145,7 +145,7 @@ class RealtimeChannelService {
   /**
    * Enforce subscription limit by removing oldest if necessary
    */
-  private enforceSubscriptionLimit(): void {
+  private async enforceSubscriptionLimit(): Promise<void> {
     if (this.subscriptions.size >= MAX_CONCURRENT_SUBSCRIPTIONS) {
       // Find oldest subscription
       let oldestKey: string | null = null;
@@ -162,13 +162,16 @@ class RealtimeChannelService {
       if (oldestKey) {
         const oldest = this.subscriptions.get(oldestKey);
         if (oldest) {
-          oldest.channel
-            .unsubscribe()
-            .catch((e) => console.error('[RealtimeChannel] Cleanup failed:', e));
+          // Remove from registry first, then await unsubscribe to prevent zombie channels
           this.subscriptions.delete(oldestKey);
           this.subscriptionTimestamps.delete(oldestKey);
           subscriptionMonitor.unregister(oldestKey);
-          console.error(
+          try {
+            await oldest.channel.unsubscribe();
+          } catch (e) {
+            console.error('[RealtimeChannel] Cleanup failed for', oldestKey, ':', e);
+          }
+          console.warn(
             `[RealtimeChannelService] Max subscriptions (${MAX_CONCURRENT_SUBSCRIPTIONS}) reached. ` +
               `Removed oldest subscription: ${oldestKey}`
           );

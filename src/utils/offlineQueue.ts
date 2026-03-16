@@ -98,8 +98,13 @@ export async function replayOfflineQueue(): Promise<void> {
         const { retryAsync } = await import('../utils/retryAsync');
         const { supabase } = await import('../lib/supabase');
 
+        let mutationError: any = null;
+
         if (item.mutation === 'INSERT' && item.variables?.table) {
-          await supabase.from(item.variables.table).insert(item.variables.data || {});
+          const { error } = await supabase
+            .from(item.variables.table)
+            .insert(item.variables.data || {});
+          mutationError = error;
         } else if (item.mutation === 'UPDATE' && item.variables?.table && item.variables?.id) {
           // SECURITY: Scope updates to the user who queued them
           let query = supabase
@@ -108,14 +113,20 @@ export async function replayOfflineQueue(): Promise<void> {
             .eq('id', item.variables.id);
           if (item.variables.user_id) query = query.eq('user_id', item.variables.user_id);
           if (item.variables.club_id) query = query.eq('club_id', item.variables.club_id);
-          await query;
+          const { error } = await query;
+          mutationError = error;
         } else if (item.mutation === 'DELETE' && item.variables?.table && item.variables?.id) {
           let delQuery = supabase.from(item.variables.table).delete().eq('id', item.variables.id);
           if (item.variables.user_id) delQuery = delQuery.eq('user_id', item.variables.user_id);
           if (item.variables.club_id) delQuery = delQuery.eq('club_id', item.variables.club_id);
-          await delQuery;
+          const { error } = await delQuery;
+          mutationError = error;
         } else if (item.mutation === 'RPC' && item.variables?.fn) {
           await retryAsync(() => supabase.rpc(item.variables!.fn, item.variables!.args || {}), 3);
+        }
+
+        if (mutationError) {
+          throw mutationError;
         }
         success = true;
       } catch (e) {

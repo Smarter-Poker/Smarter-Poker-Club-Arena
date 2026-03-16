@@ -60,6 +60,30 @@ import { postToParent, setParentOrigin, isTrustedOrigin } from './utils/parentOr
 if (window.parent !== window) {
   let authReceived = false;
 
+  // ── SSO PRE-CHECK: If we already have a valid session from shared localStorage,
+  // send ACKs proactively. The parent's getUser() can fail with AbortError,
+  // preventing it from ever sending SMARTER_AUTH_TOKEN. But since we share the
+  // same storageKey ('smarter-poker-auth'), we already have auth and should
+  // tell the parent immediately to prevent the "Connection Problem" overlay.
+  let hasSSO = false;
+  try {
+    const raw = localStorage.getItem('smarter-poker-auth');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      const token = parsed?.access_token;
+      if (token && typeof token === 'string' && token.split('.').length === 3) {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        if (typeof payload.exp === 'number' && payload.exp * 1000 > Date.now() - 60000) {
+          hasSSO = true;
+          console.log('[EARLY-AUTH] ✅ SSO session found — sending proactive ACK');
+          postToParent({ type: 'SMARTER_AUTH_ACK' });
+        }
+      }
+    }
+  } catch {
+    /* localStorage unavailable or corrupt token */
+  }
+
   const earlyAuthHandler = (event: MessageEvent) => {
     // Validate origin: same checks as App.tsx
     if (!isTrustedOrigin(event.origin)) return;
@@ -83,25 +107,26 @@ if (window.parent !== window) {
   // PROACTIVE ACK PULSE: Send periodic ACKs so the Hub receives one
   // regardless of timing. The Hub may start its retry loop before our
   // listener is registered, so we pulse ACKs until auth is received.
+  // CRITICAL: Also send ACK when we have SSO session (even without token from parent).
   let pulseCount = 0;
   const ackPulse = setInterval(() => {
-    if (authReceived || pulseCount > 30) {
+    if ((authReceived && pulseCount > 5) || pulseCount > 30) {
       clearInterval(ackPulse);
       return;
     }
     pulseCount++;
-    // Send heartbeat AND unsolicited ACK so the Hub knows we're alive
-    // Uses getParentOrigin() which defaults to 'https://smarter.poker'
     postToParent({ type: 'CLUB_ARENA_HEARTBEAT' });
-    // If auth was already received by the App.tsx handler (after boot),
-    // also send a fresh ACK
-    if (earlyAuth.token) {
+    // Send ACK if we have auth from any source (token from parent OR SSO)
+    if (earlyAuth.token || hasSSO) {
       postToParent({ type: 'SMARTER_AUTH_ACK' });
     }
   }, 500);
 
-  // Send an immediate heartbeat so the Hub knows we're alive
+  // Send an immediate heartbeat + ACK if we have SSO
   postToParent({ type: 'CLUB_ARENA_HEARTBEAT' });
+  if (hasSSO) {
+    postToParent({ type: 'SMARTER_AUTH_ACK' });
+  }
   console.log('[EARLY-AUTH] Heartbeat sent, waiting for auth token...');
 
   // CLEANUP: Once App.tsx has consumed the early auth and taken over message

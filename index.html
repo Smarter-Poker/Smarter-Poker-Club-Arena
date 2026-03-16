@@ -67,6 +67,26 @@
 
       var acked = false;
 
+      // ── SSO PRE-CHECK: If we share localStorage with the parent (same-origin),
+      // we may already have a valid auth session. In that case, send ACK
+      // immediately so the parent doesn't show "Connection Problem" while
+      // waiting for its own getUser() call (which can fail with AbortError).
+      try {
+        var raw = localStorage.getItem('smarter-poker-auth');
+        if (raw) {
+          var parsed = JSON.parse(raw);
+          var token = parsed && parsed.access_token;
+          if (token && typeof token === 'string' && token.split('.').length === 3) {
+            // Verify not expired (with 60s buffer)
+            var payload = JSON.parse(atob(token.split('.')[1]));
+            if (typeof payload.exp === 'number' && payload.exp * 1000 > Date.now() - 60000) {
+              acked = true;
+              console.log('[INLINE-AUTH] SSO session found in localStorage — sending proactive ACK');
+            }
+          }
+        }
+      } catch(e) { /* localStorage unavailable or corrupt token */ }
+
       // Send ACK to parent — fires for every SMARTER_AUTH_TOKEN received
       window.addEventListener('message', function(event) {
         var data = event.data;
@@ -80,25 +100,32 @@
 
         // ACK to wildcard — covers all origin edge cases
         try { window.parent.postMessage({ type: 'SMARTER_AUTH_ACK' }, '*'); } catch(e) {}
-        console.log('[INLINE-AUTH] ACK sent to parent');
+        console.log('[INLINE-AUTH] ACK sent to parent (token received)');
       });
 
-      // Proactive heartbeat pulse — send heartbeat every 500ms for 30s
+      // Proactive pulse — send heartbeat + ACK every 500ms for 30s
+      // CRITICAL: Always send ACK alongside heartbeat when we have auth (SSO or token).
+      // The parent may fail to send SMARTER_AUTH_TOKEN (AbortError on its getUser()),
+      // but it still listens for our ACK to dismiss the "Connection Problem" overlay.
       var pulses = 0;
       var pulse = setInterval(function() {
         if (pulses > 60) { clearInterval(pulse); return; }
         pulses++;
         try {
           window.parent.postMessage({ type: 'CLUB_ARENA_HEARTBEAT' }, '*');
-          // If auth already received, re-send ACK for good measure
           if (acked) {
             window.parent.postMessage({ type: 'SMARTER_AUTH_ACK' }, '*');
           }
         } catch(e) {}
       }, 500);
 
-      // Immediate heartbeat
-      try { window.parent.postMessage({ type: 'CLUB_ARENA_HEARTBEAT' }, '*'); } catch(e) {}
+      // Immediate heartbeat + ACK if SSO session exists
+      try {
+        window.parent.postMessage({ type: 'CLUB_ARENA_HEARTBEAT' }, '*');
+        if (acked) {
+          window.parent.postMessage({ type: 'SMARTER_AUTH_ACK' }, '*');
+        }
+      } catch(e) {}
     })();
   </script>
 

@@ -47,7 +47,7 @@ interface ClubMember {
   parent_agent_id?: string;
 }
 
-type MemberFilter = 'all' | 'online' | 'agents' | 'admins';
+type MemberFilter = 'all' | 'online' | 'agents' | 'admins' | 'horses';
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    ROLE HIERARCHY & PERMISSIONS
@@ -523,6 +523,7 @@ export default function ClubMembersPage() {
             user_id: m.user_id,
             username: profileMap[m.user_id]?.username || 'Unknown',
             avatar_url: profileMap[m.user_id]?.avatar_url,
+            is_horse: profileMap[m.user_id]?.is_horse || false,
             role: m.role || 'member',
             chip_balance: m.chip_balance || 0,
             joined_at: m.joined_at,
@@ -682,6 +683,7 @@ export default function ClubMembersPage() {
         if (filter === 'agents' && !['super_agent', 'agent', 'sub_agent'].includes(m.role))
           return false;
         if (filter === 'admins' && !['owner', 'admin'].includes(m.role)) return false;
+        if (filter === 'horses' && !(m as any).is_horse) return false;
         if (searchQuery && !(m.username || '').toLowerCase().includes(searchQuery.toLowerCase()))
           return false;
         return true;
@@ -727,10 +729,13 @@ export default function ClubMembersPage() {
       </div>
 
       <div className="members-filters">
-        {(['all', 'online', 'agents', 'admins'] as MemberFilter[]).map((f) => (
+        {(['all', 'online', 'agents', 'admins', 'horses'] as MemberFilter[]).map((f) => (
           <button key={f} className={filter === f ? 'active' : ''} onClick={() => setFilter(f)}>
             {f.charAt(0).toUpperCase() + f.slice(1)}
             {f === 'agents' && agentCount > 0 ? ` (${agentCount})` : ''}
+            {f === 'horses'
+              ? ` (${membersWithStatus.filter((m) => (m as any).is_horse).length})`
+              : ''}
           </button>
         ))}
         {filteredMembers.length > 0 && (
@@ -778,7 +783,9 @@ export default function ClubMembersPage() {
                   ? 'No admins found'
                   : filter === 'online'
                     ? 'No members online'
-                    : 'No members found'}
+                    : filter === 'horses'
+                      ? 'No horse (bot) players in this club'
+                      : 'No members found'}
             </p>
           </div>
         ) : (
@@ -808,6 +815,23 @@ export default function ClubMembersPage() {
                       {getRoleBadgeIcon(member.role)}
                     </span>{' '}
                     {member.username}
+                    {(member as any).is_horse && (
+                      <span
+                        title="Horse (Bot Player)"
+                        style={{
+                          marginLeft: 4,
+                          fontSize: '0.7em',
+                          padding: '1px 4px',
+                          borderRadius: 4,
+                          background: 'rgba(139, 92, 246, 0.15)',
+                          color: '#a78bfa',
+                          fontWeight: 600,
+                          letterSpacing: '0.02em',
+                        }}
+                      >
+                        HORSE
+                      </span>
+                    )}
                   </span>
                   <span className="member-role" style={{ color: getRoleColor(member.role) }}>
                     {getRoleLabel(member.role)}

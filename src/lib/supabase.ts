@@ -43,11 +43,39 @@ export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '', {
 
 /**
  * Timeout-protected getUser() wrapper with getSession() fallback.
- * In iframe context, getUser() (API call) can hang/timeout.
- * Falls back to getSession() (localStorage, instant) when getUser() fails.
- * Returns null user only if BOTH methods fail.
+ *
+ * CRITICAL FIX: In iframe context, getUser() (Supabase API call) ALWAYS hangs
+ * until the 6s timeout because the request is blocked by the iframe sandbox.
+ * This caused a 6-second delay PER call, and since getUserMemberships() calls
+ * getAuthUser() again internally, the total delay was 12+ seconds — exceeding
+ * the HomePage safety timeout and showing an empty "Welcome" screen.
+ *
+ * Fix: In iframe context, skip getUser() entirely and use getSession() which
+ * reads from localStorage (instant, no network call). getSession() is populated
+ * by setSession() from the parent's postMessage auth token.
  */
 export async function getAuthUser(timeoutMs = 6000) {
+  const inIframe = typeof window !== 'undefined' && window.parent !== window;
+
+  // ── IFRAME FAST PATH ──
+  // getUser() always hangs in iframe context. Skip it entirely.
+  if (inIframe) {
+    try {
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession();
+      if (session?.user) {
+        return { data: { user: session.user }, error: null };
+      }
+      return { data: { user: null }, error: sessionError };
+    } catch (sessionErr) {
+      console.warn('[getAuthUser] iframe getSession() failed:', sessionErr);
+      return { data: { user: null }, error: sessionErr };
+    }
+  }
+
+  // ── STANDALONE PATH (non-iframe) ──
   try {
     const userPromise = supabase.auth.getUser();
     const timeoutPromise = new Promise<never>((_, reject) =>

@@ -118,7 +118,7 @@ export default function ClubsPage() {
         data: { user: authUser },
       } = await getAuthUser();
       const [memberships, unions] = await Promise.all([
-        ClubsService.getUserMemberships(),
+        ClubsService.getUserMemberships(authUser),
         authUser
           ? unionService.getMyUnions(authUser.id).catch((err) => {
               console.warn('[ClubsPage] Failed to load unions:', err);

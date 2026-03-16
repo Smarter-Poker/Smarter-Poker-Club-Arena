@@ -270,7 +270,7 @@ export default function LeaderboardPage() {
   const loadUserClubs = async (getIsMounted?: () => boolean) => {
     setClubsLoading(true);
     try {
-      const memberships = await getUserMemberships();
+      const memberships = await getUserMemberships(user);
       const clubs = memberships
         .map((m: any) => ({
           id: m.club?.id || m.club_id,

@@ -336,11 +336,21 @@ export async function leaveClub(clubId: string): Promise<void> {
 }
 
 /**
- * Get user's club memberships — enriched with LIVE member counts
+ * Get user's club memberships — enriched with LIVE member counts.
+ * Accepts an optional pre-resolved user to avoid redundant getAuthUser() calls.
+ * This is critical in iframe context where getAuthUser() can be slow.
  */
-export async function getUserMemberships(): Promise<(ClubMember & { club: Club })[]> {
-  const { data: user } = await getAuthUser();
-  if (!user.user) return [];
+export async function getUserMemberships(
+  preResolvedUser?: { id: string } | null
+): Promise<(ClubMember & { club: Club })[]> {
+  let userId: string;
+  if (preResolvedUser?.id) {
+    userId = preResolvedUser.id;
+  } else {
+    const { data: user } = await getAuthUser();
+    if (!user.user) return [];
+    userId = user.user.id;
+  }
 
   const { data, error } = await supabase
     .from('club_members')
@@ -350,7 +360,7 @@ export async function getUserMemberships(): Promise<(ClubMember & { club: Club }
       club:clubs(id, club_id, name, slug, description, avatar_url, banner_url, color_theme, member_count, table_count, chip_treasury, is_public, requires_approval, owner_id, settings, created_at, updated_at)
     `
     )
-    .eq('user_id', user.user.id);
+    .eq('user_id', userId);
 
   if (error) {
     console.error('[ClubsService] Get memberships failed:', error);

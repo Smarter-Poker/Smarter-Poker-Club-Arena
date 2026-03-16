@@ -290,7 +290,7 @@ function HomePageInner() {
           data: { user: authUser },
         } = await getAuthUser();
         if (authUser) {
-          const memberships = await ClubsService.getUserMemberships();
+          const memberships = await ClubsService.getUserMemberships(authUser);
           const clubs =
             memberships?.map(
               (m) =>

@@ -160,7 +160,7 @@ export default function ClubCarouselPage() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'club_members' }, () => {
         if (isMounted.current) loadUserData();
       })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'clubs' }, () => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'clubs' }, () => {
         if (isMounted.current) loadUserData();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'unions' }, () => {

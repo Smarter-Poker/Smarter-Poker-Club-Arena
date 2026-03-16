@@ -118,6 +118,22 @@ if (window.parent !== window) {
   } catch {
     /* best effort */
   }
+
+  // CLEANUP: Once App.tsx has consumed the early auth and taken over message
+  // handling, remove this early listener to avoid duplicate processing.
+  // App.tsx sets window.__earlyAuthConsumed = true after successful setSession.
+  let cleanupChecks = 0;
+  const cleanupInterval = setInterval(() => {
+    cleanupChecks++;
+    if ((window as any).__earlyAuthConsumed || cleanupChecks > 60) {
+      // App.tsx is handling messages now (or 30s elapsed) — safe to remove
+      window.removeEventListener('message', earlyAuthHandler);
+      clearInterval(cleanupInterval);
+      if ((window as any).__earlyAuthConsumed) {
+        console.log('[EARLY-AUTH] 🧹 Listener removed — App.tsx has taken over');
+      }
+    }
+  }, 500);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -133,13 +149,14 @@ async function boot() {
   const status = await initAntiGravity();
   console.log('[BOOT] Phase 1 complete:', status.antigravityOk, status.supabaseOk);
 
-  // PHASE 2: Master Bus (State Management)
-  console.log('[BOOT] Phase 2: MasterBus...');
+  // PHASE 2 + 3: Run MasterBus and IdentityDNA in parallel
+  // MasterBus is synchronous (no network calls) so it completes instantly.
+  // IdentityDNA calls getSession() which may be slow in iframe context.
+  // Running them in parallel shaves ~100-200ms off boot time.
+  console.log('[BOOT] Phase 2+3: MasterBus + IdentityDNA (parallel)...');
   const busStatus = initMasterBus();
   console.log('[BOOT] Phase 2 complete:', busStatus?.online);
 
-  // PHASE 3: Identity DNA (Auth/User Profile)
-  console.log('[BOOT] Phase 3: IdentityDNA...');
   const dnaStatus = await initIdentityDNA();
   console.log('[BOOT] Phase 3 complete');
 

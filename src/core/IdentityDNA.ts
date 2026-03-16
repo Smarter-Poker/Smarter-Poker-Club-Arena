@@ -73,6 +73,22 @@ class IdentityDNACore {
     // Set up auth state listener FIRST
     this.setupAuthListener();
 
+    // ── FAST PATH: localStorage session warming ──
+    // In same-origin iframe context, the Hub's session already exists in
+    // localStorage under 'smarter-poker-auth'. Reading it directly is instant
+    // (no API call, no navigator.locks contention). We only skip this and
+    // fall back to getSession() if localStorage is empty or the JWT is expired.
+    const localSession = this.readLocalSession();
+    if (localSession) {
+      console.log('[IdentityDNA] ⚡ Fast path: session found in localStorage');
+      authenticated = true;
+      userId = localSession.userId;
+      username = localSession.username;
+      sessionExpiresAt = localSession.expiresAt;
+      // Note: We still call getSession() below to get the full Session object
+      // for hydration, but we already have the user info for the status.
+    }
+
     try {
       // Timeout protection — getSession() can hang if navigator.locks contend
       const sessionPromise = supabase.auth.getSession();
@@ -101,7 +117,8 @@ class IdentityDNACore {
           isAuthenticated: true,
         });
       } else {
-        // no-op
+        // no-op — if localStorage had a session but getSession returned null,
+        // the onAuthStateChange listener will handle sign-in when setSession runs
       }
     } catch (e: any) {
       // AbortError is benign — suppress it
@@ -127,6 +144,51 @@ class IdentityDNACore {
     // DETERMINISTIC PROOF
 
     return this.status;
+  }
+
+  /**
+   * Read session from localStorage directly — instant, no API call needed.
+   * The shared storageKey 'smarter-poker-auth' is written by both Hub and Club Arena.
+   * Returns basic user info if a non-expired JWT exists, or null.
+   */
+  private readLocalSession(): {
+    userId: string;
+    username: string | null;
+    expiresAt: string | null;
+  } | null {
+    try {
+      const AUTH_KEY = 'smarter-poker-auth';
+      const raw = localStorage.getItem(AUTH_KEY);
+      if (!raw) return null;
+      const data = JSON.parse(raw);
+      const token = data?.access_token;
+      if (!token || typeof token !== 'string') return null;
+
+      // Validate JWT structure
+      const parts = token.split('.');
+      if (parts.length !== 3) return null;
+
+      // Parse payload
+      const payload = JSON.parse(atob(parts[1]));
+
+      // Check expiry (60s buffer for clock skew)
+      if (typeof payload.exp === 'number' && payload.exp * 1000 < Date.now() - 60_000) {
+        return null; // Expired
+      }
+
+      // Extract user info from JWT sub claim
+      const userId = payload.sub;
+      if (!userId || typeof userId !== 'string') return null;
+
+      const email = payload.email as string | undefined;
+      const username = email?.split('@')[0] || null;
+      const expiresAt =
+        typeof payload.exp === 'number' ? new Date(payload.exp * 1000).toISOString() : null;
+
+      return { userId, username, expiresAt };
+    } catch {
+      return null; // Corrupted localStorage or malformed JWT
+    }
   }
 
   /**

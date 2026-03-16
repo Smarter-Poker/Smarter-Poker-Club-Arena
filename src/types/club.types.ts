@@ -16,14 +16,15 @@ export interface Club {
   name: string;
   slug: string;
   description?: string;
-  avatar_url?: string;
+  logo_url?: string;
   banner_url?: string;
   owner_id: string;
-  theme: ClubTheme;
+  color_theme?: string; // DB column name (not ClubTheme enum)
   is_public: boolean;
   requires_approval: boolean;
   member_count: number;
-  total_chips: number;
+  table_count?: number;
+  chip_treasury?: number; // DB column name (was 'total_chips')
 
   // 50-Level System Capacity Metrics
   level?: number;
@@ -93,9 +94,8 @@ export interface ClubMember {
   role: MemberRole;
   status?: string;
   tier?: string | null;
-  chip_balance?: number;
+  chip_balance?: number; // DB column name (was 'chips')
   credit_used?: number;
-  chips: number;
   diamonds?: number;
   reputation_xp?: number;
   trust_score?: number;
@@ -103,10 +103,10 @@ export interface ClubMember {
   sessions_played?: number;
   orange_ball_status?: string | null;
   parent_agent_id?: string | null;
-  total_hands: number;
-  total_won: number;
-  total_lost: number;
-  rake_generated: number;
+  hands_played?: number; // DB column name (was 'total_hands')
+  chips_won?: number; // DB column name (was 'total_won')
+  chips_lost?: number; // DB column name (was 'total_lost')
+  total_rake_paid?: number; // DB column name (was 'rake_generated')
   notes?: string; // Admin notes
   joined_at: string;
   last_active?: string;

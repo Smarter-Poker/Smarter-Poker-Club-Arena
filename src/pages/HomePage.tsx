@@ -895,7 +895,7 @@ function HomePageInner() {
             colorResult.status === 'fulfilled' &&
             (colorResult.value.data?.preferences as any)?.card_color_preset
           ) {
-            const preset = (colorResult.value.data.preferences as any).card_color_preset;
+            const preset = (colorResult.value.data?.preferences as any)?.card_color_preset;
             if (preset !== localStorage.getItem(CARD_COLOR_KEY)) {
               localStorage.setItem(CARD_COLOR_KEY, preset);
               setCardColorPreset(preset);

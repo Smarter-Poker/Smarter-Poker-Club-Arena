@@ -49,6 +49,59 @@
 
 <body>
   <div id="root"></div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       INLINE AUTH ACK — MUST run BEFORE the Vite module bundle
+       ═══════════════════════════════════════════════════════════════════════
+       This inline script handles the World Hub ↔ Club Arena auth handshake
+       INDEPENDENTLY of the React app. If the module bundle fails to parse
+       or evaluate (any import throws), this still fires.
+       ═══════════════════════════════════════════════════════════════════════ -->
+  <script>
+    (function() {
+      // Only run in iframe context
+      if (window.parent === window) return;
+
+      // Storage for auth received before React mounts
+      window.__EARLY_AUTH__ = { token: null, refreshToken: null, settings: null };
+
+      var acked = false;
+
+      // Send ACK to parent — fires for every SMARTER_AUTH_TOKEN received
+      window.addEventListener('message', function(event) {
+        var data = event.data;
+        if (!data || typeof data !== 'object') return;
+        if (data.type !== 'SMARTER_AUTH_TOKEN' || !data.token) return;
+
+        acked = true;
+        window.__EARLY_AUTH__.token = data.token;
+        window.__EARLY_AUTH__.refreshToken = data.refreshToken || null;
+        window.__EARLY_AUTH__.settings = data.settings || null;
+
+        // ACK to wildcard — covers all origin edge cases
+        try { window.parent.postMessage({ type: 'SMARTER_AUTH_ACK' }, '*'); } catch(e) {}
+        console.log('[INLINE-AUTH] ACK sent to parent');
+      });
+
+      // Proactive heartbeat pulse — send heartbeat every 500ms for 30s
+      var pulses = 0;
+      var pulse = setInterval(function() {
+        if (pulses > 60) { clearInterval(pulse); return; }
+        pulses++;
+        try {
+          window.parent.postMessage({ type: 'CLUB_ARENA_HEARTBEAT' }, '*');
+          // If auth already received, re-send ACK for good measure
+          if (acked) {
+            window.parent.postMessage({ type: 'SMARTER_AUTH_ACK' }, '*');
+          }
+        } catch(e) {}
+      }, 500);
+
+      // Immediate heartbeat
+      try { window.parent.postMessage({ type: 'CLUB_ARENA_HEARTBEAT' }, '*'); } catch(e) {}
+    })();
+  </script>
+
   <script type="module" src="/src/main.tsx"></script>
 </body>
 

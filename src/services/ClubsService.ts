@@ -339,7 +339,7 @@ export async function getUserMemberships(): Promise<(ClubMember & { club: Club }
     .select(
       `
       id, club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, reputation_xp, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, parent_agent_id, hands_played, chips_won, chips_lost, total_rake_paid,
-      club:clubs(id, club_id, name, slug, description, logo_url, banner_url, color_theme, member_count, table_count, chip_treasury, is_public, requires_approval, owner_id, settings, created_at, updated_at)
+      club:clubs(id, club_id, name, slug, description, avatar_url, banner_url, color_theme, member_count, table_count, chip_treasury, is_public, requires_approval, owner_id, settings, created_at, updated_at)
     `
     )
     .eq('user_id', user.user.id);
@@ -557,7 +557,7 @@ export async function uploadClubLogo(clubId: string, file: File): Promise<string
   // Update club record with new logo URL
   const { error: updateErr } = await supabase
     .from('clubs')
-    .update({ logo_url: logoUrl })
+    .update({ avatar_url: logoUrl })
     .eq('id', clubId);
   if (updateErr) {
     console.error('[ClubsService] Logo uploaded but failed to save URL to club record:', updateErr);

@@ -118,20 +118,19 @@ export default function ConversationList({
 
       try {
         const { data, error } = await supabase
-          .from('conversation_participants')
+          .from('social_conversation_participants')
           .select(
             `
                     conversation_id,
-                    unread_count,
                     is_pinned,
-                    conversations(
+                    last_read_at,
+                    social_conversations(
                         id,
-                        name,
+                        group_name,
                         is_group,
-                        last_message,
-                        last_message_time,
-                        last_message_user_id,
-                        conversation_participants(
+                        last_message_preview,
+                        last_message_at,
+                        social_conversation_participants(
                             user_id,
                             profiles(id, username, avatar_url, is_online)
                         )
@@ -139,30 +138,30 @@ export default function ConversationList({
                 `
           )
           .eq('user_id', user.id)
-          .order('conversations(last_message_time)', { ascending: false })
+          .order('social_conversations(last_message_at)', { ascending: false })
           .range(currentOffset, currentOffset + 19);
 
         if (!error && data) {
           const mapped: Conversation[] = data
             .map((item: any) => {
-              const conv = item.conversations;
+              const conv = item.social_conversations;
               // Get other participant for 1:1 chats
-              const otherParticipant = conv?.conversation_participants?.find(
+              const otherParticipant = conv?.social_conversation_participants?.find(
                 (p: any) => p.user_id !== user.id
               )?.profiles;
 
               return {
                 id: conv?.id,
-                name: conv?.is_group ? conv?.name : otherParticipant?.username || 'Unknown',
+                name: conv?.is_group ? conv?.group_name : otherParticipant?.username || 'Unknown',
                 picture: otherParticipant?.avatar_url || '/default-avatar.png',
                 isOnline: otherParticipant?.is_online || false,
-                lastMessage: conv?.last_message || '',
-                lastMessageTime: conv?.last_message_time,
-                lastMessageUserId: conv?.last_message_user_id,
-                unreadCount: item.unread_count || 0,
+                lastMessage: conv?.last_message_preview || '',
+                lastMessageTime: conv?.last_message_at,
+                lastMessageUserId: '', // Not available in social_conversations
+                unreadCount: 0, // unread_count column doesn't exist; compute from last_read_at
                 isGroup: conv?.is_group || false,
                 isPinned: item.is_pinned || false,
-                participantCount: conv?.conversation_participants?.length,
+                participantCount: conv?.social_conversation_participants?.length,
               };
             })
             .filter((c: Conversation) => c.id);

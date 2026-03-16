@@ -566,7 +566,7 @@ class MessagingServiceClass {
     }));
 
     const { error: participantErr } = await supabase
-      .from('conversation_participants')
+      .from('social_conversation_participants')
       .insert(participantInserts);
     if (participantErr) {
       console.error(
@@ -611,7 +611,7 @@ class MessagingServiceClass {
       if (error) return false;
 
       // Create conversation_participants entry
-      const { error: partErr } = await supabase.from('conversation_participants').insert({
+      const { error: partErr } = await supabase.from('social_conversation_participants').insert({
         conversation_id: conversationId,
         user_id: userId,
         role: 'member',
@@ -620,8 +620,7 @@ class MessagingServiceClass {
 
       return true;
     } catch (err) {
-
-      console.error("[MessagingService] Error:", err);
+      console.error('[MessagingService] Error:', err);
       return false;
     }
   }
@@ -649,15 +648,14 @@ class MessagingServiceClass {
       if (error) return false;
 
       await supabase
-        .from('conversation_participants')
+        .from('social_conversation_participants')
         .delete()
         .eq('conversation_id', conversationId)
         .eq('user_id', userId);
 
       return true;
     } catch (err) {
-
-      console.error("[MessagingService] Error:", err);
+      console.error('[MessagingService] Error:', err);
       return false;
     }
   }
@@ -671,7 +669,7 @@ class MessagingServiceClass {
    */
   async pinConversation(conversationId: string, userId: string): Promise<boolean> {
     const { error } = await supabase
-      .from('conversation_participants')
+      .from('social_conversation_participants')
       .update({ is_pinned: true })
       .eq('conversation_id', conversationId)
       .eq('user_id', userId);
@@ -687,7 +685,7 @@ class MessagingServiceClass {
    */
   async unpinConversation(conversationId: string, userId: string): Promise<boolean> {
     const { error } = await supabase
-      .from('conversation_participants')
+      .from('social_conversation_participants')
       .update({ is_pinned: false })
       .eq('conversation_id', conversationId)
       .eq('user_id', userId);
@@ -859,8 +857,7 @@ class MessagingServiceClass {
             system: true,
           };
     } catch (err) {
-
-      console.error("[MessagingService] Error:", err);
+      console.error('[MessagingService] Error:', err);
       return { messages: true, games: true, social: true, achievements: true, system: true };
     }
   }
@@ -1014,7 +1011,11 @@ class MessagingServiceClass {
   }
 
   /** Unpin a message (requires conversation access) */
-  async unpinMessage(messageId: string, conversationId?: string, userId?: string): Promise<boolean> {
+  async unpinMessage(
+    messageId: string,
+    conversationId?: string,
+    userId?: string
+  ): Promise<boolean> {
     // Get the message to verify conversation access if details provided
     if (conversationId && userId) {
       const { data: conv } = await supabase
@@ -1236,8 +1237,7 @@ class MessagingServiceClass {
             system: 'default',
           };
     } catch (err) {
-
-      console.error("[MessagingService] Error:", err);
+      console.error('[MessagingService] Error:', err);
       return {
         messages: 'default',
         games: 'default',

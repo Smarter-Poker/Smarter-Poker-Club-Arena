@@ -93,7 +93,7 @@ export default function MessageThread({ conversationId, onBack }: MessageThreadP
     try {
       // Load participants
       const { data: participantData } = await supabase
-        .from('conversation_participants')
+        .from('social_conversation_participants')
         .select(
           `
                     user_id,
@@ -316,7 +316,7 @@ export default function MessageThread({ conversationId, onBack }: MessageThreadP
     if (!user?.id || !conversationId) return;
     try {
       await supabase
-        .from('conversation_participants')
+        .from('social_conversation_participants')
         .update({ is_typing: isTyping })
         .eq('conversation_id', conversationId)
         .eq('user_id', user.id);

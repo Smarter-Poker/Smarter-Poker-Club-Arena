@@ -602,19 +602,19 @@ export const RakeService = {
             const resolvedClubId = await resolveClubUUID(clubId);
             const { data: memberRow } = await supabase
               .from('club_members')
-              .select('rake_generated')
+              .select('total_rake_paid')
               .eq('club_id', resolvedClubId)
               .eq('user_id', attr.userId)
               .maybeSingle();
-            const currentRake = Number(memberRow?.rake_generated) || 0;
+            const currentRake = Number(memberRow?.total_rake_paid) || 0;
             const { error: fallbackErr } = await supabase
               .from('club_members')
-              .update({ rake_generated: currentRake + attr.rakeCredit })
+              .update({ total_rake_paid: currentRake + attr.rakeCredit })
               .eq('club_id', resolvedClubId)
               .eq('user_id', attr.userId);
             if (fallbackErr) {
               console.error(
-                `[RakeService] CRITICAL: All atomic patterns failed for rake_generated update. ` +
+                `[RakeService] CRITICAL: All atomic patterns failed for total_rake_paid update. ` +
                   `User: ${attr.userId.substring(0, 8)}, Amount: ${attr.rakeCredit}. ` +
                   `Manual reconciliation may be needed.`
               );
@@ -622,7 +622,7 @@ export const RakeService = {
           }
         } catch (e: unknown) {
           console.error(
-            `[RakeService] Failed to update rake_generated for ${attr.userId.substring(0, 8)}:`,
+            `[RakeService] Failed to update total_rake_paid for ${attr.userId.substring(0, 8)}:`,
             e
           );
         }
@@ -836,8 +836,7 @@ export const RakeService = {
           console.error('[RakeService] increment_club_rake RPC failed (may not exist):', rpcError);
         }
       } catch (err) {
-
-        console.error("[RakeService] Error:", err);
+        console.error('[RakeService] Error:', err);
         /* RPC may not exist — non-blocking */
       }
       return true;
@@ -873,8 +872,7 @@ export const RakeService = {
         created_at: new Date().toISOString(),
       });
     } catch (err) {
-
-      console.error("[RakeService] Error:", err);
+      console.error('[RakeService] Error:', err);
       console.error('[RakeService] rake_rate_audit insert failed (table may not exist)');
     }
   },

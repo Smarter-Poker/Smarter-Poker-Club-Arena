@@ -100,7 +100,7 @@ export default function ClubCarouselPage() {
     loadUserData();
   }, []);
 
-  // Realtime: refresh when club data changes
+  // Realtime: refresh when club, union, or union_clubs data changes
   useEffect(() => {
     const channelKey = 'club-carousel-live';
     const channel = masterBus.getOrCreateChannel(channelKey);
@@ -109,6 +109,12 @@ export default function ClubCarouselPage() {
         if (isMounted.current) loadUserData();
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'clubs' }, () => {
+        if (isMounted.current) loadUserData();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'unions' }, () => {
+        if (isMounted.current) loadUserData();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'union_clubs' }, () => {
         if (isMounted.current) loadUserData();
       })
       .subscribe();
@@ -129,6 +135,20 @@ export default function ClubCarouselPage() {
       ),
       masterBus.subscribeDebounced(
         'CLUB_LEFT',
+        () => {
+          if (isMounted.current) loadUserData();
+        },
+        500
+      ),
+      masterBus.subscribeDebounced(
+        'CLUB_UPDATED',
+        () => {
+          if (isMounted.current) loadUserData();
+        },
+        500
+      ),
+      masterBus.subscribeDebounced(
+        'UNION_UPDATED',
         () => {
           if (isMounted.current) loadUserData();
         },
@@ -235,6 +255,29 @@ export default function ClubCarouselPage() {
                 role: m.role,
               }));
 
+            // ── Enrich with LIVE member counts (clubs.member_count can be stale) ──
+            if (allUserClubs.length > 0) {
+              try {
+                const countResults = await Promise.all(
+                  allUserClubs.map(async (c) => {
+                    const { count } = await supabase
+                      .from('club_members')
+                      .select('*', { count: 'exact', head: true })
+                      .eq('club_id', c.id);
+                    return { clubId: c.id, count: count || 0 };
+                  })
+                );
+                const countMap = new Map(countResults.map((r) => [r.clubId, r.count]));
+                for (const club of allUserClubs) {
+                  if (countMap.has(club.id)) {
+                    club.member_count = countMap.get(club.id)!;
+                  }
+                }
+              } catch (e) {
+                console.warn('[ClubCarouselPage] Live member count enrichment failed:', e);
+              }
+            }
+
             // Filter out clubs that belong to a union (they'll appear under the union card)
             let filteredClubs = allUserClubs;
             if (allUserClubs.length > 0) {
@@ -246,6 +289,7 @@ export default function ClubCarouselPage() {
                     'club_id',
                     allUserClubs.map((c) => c.id)
                   );
+                if (!isMounted.current) return;
                 if (ucRows && ucRows.length > 0) {
                   const unionClubIdSet = new Set(ucRows.map((r) => r.club_id));
                   filteredClubs = allUserClubs.filter((c) => !unionClubIdSet.has(c.id));
@@ -254,6 +298,7 @@ export default function ClubCarouselPage() {
                 // Fail-open: show all clubs if union lookup fails
               }
             }
+            if (!isMounted.current) return;
             setClubs(filteredClubs);
 
             const totalGold = memberData.reduce(

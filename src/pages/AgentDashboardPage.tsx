@@ -58,7 +58,7 @@ interface AgentProfile {
   display_name?: string;
   username?: string;
   avatar_url?: string;
-  last_seen_at?: string;
+  last_seen?: string;
 }
 interface DownlineMember {
   user_id: string;
@@ -206,7 +206,7 @@ export default function AgentDashboardPage() {
             () =>
               supabase
                 .from('profiles')
-                .select('id, display_name, username, avatar_url, last_seen_at')
+                .select('id, display_name, username, avatar_url, last_seen')
                 .in('id', allUserIds)
                 .then((r) => r),
             { maxRetries: 2, isMountedRef: mountedRef }
@@ -463,7 +463,7 @@ export default function AgentDashboardPage() {
   const paginatedTx = recentTx.slice(0, txPage * TX_PER_PAGE);
   const totalPlayerChips = players.reduce((sum, p) => sum + (p.chip_balance || 0), 0);
   const onlinePlayers = players.filter((p) => {
-    const lastSeen = p.profile?.last_seen_at;
+    const lastSeen = p.profile?.last_seen;
     if (!lastSeen) return false;
     return Date.now() - new Date(lastSeen).getTime() < 300000;
   });
@@ -824,7 +824,7 @@ export default function AgentDashboardPage() {
                 <div className="admin-stat-value" style={{ color: '#31A24C' }}>
                   {
                     filteredPlayers.filter((p) => {
-                      const ls = p.profile?.last_seen_at;
+                      const ls = p.profile?.last_seen;
                       return ls && Date.now() - new Date(ls).getTime() < 300000;
                     }).length
                   }
@@ -865,8 +865,8 @@ export default function AgentDashboardPage() {
                   const name =
                     p.profile?.display_name || p.profile?.username || p.user_id?.substring(0, 8);
                   const isOnline =
-                    p.profile?.last_seen_at &&
-                    Date.now() - new Date(p.profile.last_seen_at).getTime() < 300000;
+                    p.profile?.last_seen &&
+                    Date.now() - new Date(p.profile.last_seen).getTime() < 300000;
                   return (
                     <div key={p.user_id} className="admin-card" style={{ padding: '14px 16px' }}>
                       <div
@@ -909,7 +909,7 @@ export default function AgentDashboardPage() {
                         }}
                       >
                         <span>💰 {fmtChips(p.chip_balance)}</span>
-                        <span>⏱ {timeAgo(p.profile?.last_seen_at)}</span>
+                        <span>⏱ {timeAgo(p.profile?.last_seen)}</span>
                       </div>
                     </div>
                   );
@@ -1071,7 +1071,7 @@ export default function AgentDashboardPage() {
                 <div className="admin-stat-value" style={{ color: '#F7C52A' }}>
                   {fmt(
                     players.filter((p: any) => {
-                      const ls = p.profile?.last_seen_at;
+                      const ls = p.profile?.last_seen;
                       if (!ls) return false;
                       const days = (Date.now() - new Date(ls).getTime()) / 86400000;
                       return days >= 5 && days < 14;
@@ -1084,7 +1084,7 @@ export default function AgentDashboardPage() {
                 <div className="admin-stat-value" style={{ color: '#FA383E' }}>
                   {fmt(
                     players.filter((p: any) => {
-                      const ls = p.profile?.last_seen_at;
+                      const ls = p.profile?.last_seen;
                       if (!ls) return true;
                       return (Date.now() - new Date(ls).getTime()) / 86400000 >= 14;
                     }).length
@@ -1114,7 +1114,7 @@ export default function AgentDashboardPage() {
                   </thead>
                   <tbody>
                     {players.map((p: any, i: number) => {
-                      const lastSeen = p.profile?.last_seen_at;
+                      const lastSeen = p.profile?.last_seen;
                       const daysSince = lastSeen
                         ? Math.floor((Date.now() - new Date(lastSeen).getTime()) / 86400000)
                         : 999;

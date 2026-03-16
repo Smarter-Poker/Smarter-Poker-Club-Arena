@@ -9,7 +9,7 @@
 
 import { useState, useEffect, useMemo, useCallback, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { supabase, getAuthUser } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { LoadingState } from '../components/common/EmptyState';
 import DailyBonusWheel from '../components/bonus/DailyBonusWheel';
@@ -269,14 +269,24 @@ export default function ProfilePage() {
   // Load profile data from Supabase
   useEffect(() => {
     let isMounted = true;
+
+    // Safety net: force loading off after 12s to prevent infinite spinner
+    const safetyTimer = setTimeout(() => {
+      if (isMounted) {
+        console.warn('[PROFILE] Safety timeout — forcing loading off after 12s');
+        setIsLoading(false);
+      }
+    }, 12000);
+
     async function loadProfile() {
       setIsLoading(true);
 
       // SWR: Show cached profile instantly while loading fresh data
       try {
+        // Timeout-protected getUser() — prevents hanging in iframe context
         const {
           data: { user: authUser },
-        } = await supabase.auth.getUser();
+        } = await getAuthUser();
         if (!authUser || !isMounted) return;
 
         const swrKey = `profile_cache_${authUser.id}`;
@@ -451,6 +461,7 @@ export default function ProfilePage() {
     loadProfile();
     return () => {
       isMounted = false;
+      clearTimeout(safetyTimer);
     };
   }, []);
 

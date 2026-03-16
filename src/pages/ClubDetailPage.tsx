@@ -299,7 +299,7 @@ function useCountAnimation(target: number, duration: number = 800) {
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
 
-import { supabase } from '../lib/supabase';
+import { supabase, getAuthUser } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { presenceService } from '../services/PresenceService';
 import ClubActivityFeed from '../components/club/ClubActivityFeed';
@@ -466,7 +466,7 @@ export default function ClubDetailPage() {
       try {
         const {
           data: { user },
-        } = await supabase.auth.getUser();
+        } = await getAuthUser();
         if (!user) return;
 
         await presenceService.joinClub(clubId, user.id, {
@@ -635,7 +635,7 @@ export default function ClubDetailPage() {
         // Determine current user's role in this club
         const {
           data: { user },
-        } = await supabase.auth.getUser();
+        } = await getAuthUser();
         if (user && (!getIsMounted || getIsMounted())) {
           const currentUserMember = memberData.find((m: any) => m.user_id === user.id);
           if (currentUserMember) {

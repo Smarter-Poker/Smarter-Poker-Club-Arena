@@ -40,7 +40,6 @@ interface TournamentResult {
   position: number | null;
   prize: number;
   status: string;
-  bounty_earned: number;
 }
 
 interface HandHistoryRecord {
@@ -176,7 +175,7 @@ export default function TournamentResultsPage() {
     try {
       const { data } = await supabase
         .from('tournament_players')
-        .select('user_id, username, position, prize, status, bounty_earned')
+        .select('user_id, username, position, prize, status')
         .eq('tournament_id', selectedTournament!.id)
         .order('position', { ascending: true, nullsFirst: false })
         .limit(1000);
@@ -640,11 +639,6 @@ export default function TournamentResultsPage() {
                                   </span>
                                 </div>
                                 <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                                  {r.bounty_earned > 0 && (
-                                    <span style={{ color: '#f59e0b', fontSize: '11px' }}>
-                                      +{formatAmount(r.bounty_earned)} bounty
-                                    </span>
-                                  )}
                                   <span
                                     style={{
                                       color: r.prize > 0 ? '#10b981' : '#475569',

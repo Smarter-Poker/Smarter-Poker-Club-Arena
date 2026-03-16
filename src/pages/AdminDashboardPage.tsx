@@ -1504,9 +1504,13 @@ function BrandingTab({ clubId }: { clubId: string }) {
     (async () => {
       try {
         const uuid = await resolveClubUUID(clubId);
-        const { data } = await supabase.from('clubs').select('theme').eq('id', uuid).maybeSingle();
+        const { data } = await supabase
+          .from('clubs')
+          .select('color_theme')
+          .eq('id', uuid)
+          .maybeSingle();
         if (isMounted.current) {
-          setTheme(data?.theme || {});
+          setTheme(data?.color_theme || {});
           setLoading(false);
         }
       } catch (err) {
@@ -1522,7 +1526,7 @@ function BrandingTab({ clubId }: { clubId: string }) {
     setMsg(null);
     try {
       const uuid = await resolveClubUUID(clubId);
-      const { error } = await supabase.from('clubs').update({ theme }).eq('id', uuid);
+      const { error } = await supabase.from('clubs').update({ color_theme: theme }).eq('id', uuid);
       if (error) throw error;
       masterBus.emit('CLUB_UPDATED', { clubId: uuid });
       if (isMounted.current) setMsg('Branding saved!');

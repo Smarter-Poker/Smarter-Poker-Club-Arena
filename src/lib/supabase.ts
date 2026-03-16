@@ -41,6 +41,24 @@ export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '', {
   },
 });
 
+/**
+ * Timeout-protected getUser() wrapper.
+ * Prevents pages from hanging forever in iframe context where auth can stall.
+ * Returns null user (instead of hanging) if the call exceeds timeoutMs.
+ */
+export async function getAuthUser(timeoutMs = 8000) {
+  try {
+    const userPromise = supabase.auth.getUser();
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`getUser timeout (${timeoutMs}ms)`)), timeoutMs)
+    );
+    return await Promise.race([userPromise, timeoutPromise]);
+  } catch (err) {
+    console.warn('[getAuthUser] Timed out or failed:', err);
+    return { data: { user: null }, error: err };
+  }
+}
+
 // Filter options for realtime subscriptions
 interface SubscribeFilter {
   column: string;

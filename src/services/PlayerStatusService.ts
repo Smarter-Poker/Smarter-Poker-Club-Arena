@@ -52,32 +52,18 @@ class PlayerStatusServiceClass {
 
   /**
    * Update the user's "playing at" table status
+   * NOTE: current_table and current_table_id columns do not exist in profiles table.
+   * This method is retained for API compatibility but does not perform any updates.
    */
   async setPlayingAt(
     userId: string,
     tableName: string | null,
     tableId: string | null
   ): Promise<void> {
-    const { error } = await supabase
-      .from('profiles')
-      .update({
-        current_table: tableName,
-        current_table_id: tableId,
-      })
-      .eq('id', userId);
-
-    if (error) {
-      console.error('[PlayerStatus] setPlayingAt error:', error);
-      return;
-    }
-
+    // No-op: profiles table does not have current_table or current_table_id columns
     this.currentStatus = this.currentStatus
       ? { ...this.currentStatus, playingAt: tableName, playingAtTableId: tableId }
       : null;
-    masterBus.emit('PROFILE_UPDATED', {
-      userId,
-      updates: { current_table: tableName, current_table_id: tableId } as Record<string, unknown>,
-    });
   }
 
   /**
@@ -93,7 +79,7 @@ class PlayerStatusServiceClass {
   async getPlayerStatus(userId: string): Promise<PlayerStatus | null> {
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, status_text, current_table, current_table_id, is_online, last_seen')
+      .select('id, status_text, is_online, last_seen')
       .eq('id', userId)
       .maybeSingle();
 
@@ -102,8 +88,8 @@ class PlayerStatusServiceClass {
     return {
       userId: data.id,
       statusText: data.status_text || null,
-      playingAt: data.current_table || null,
-      playingAtTableId: data.current_table_id || null,
+      playingAt: null,
+      playingAtTableId: null,
       isOnline: data.is_online || false,
       lastSeen: data.last_seen || new Date().toISOString(),
     };
@@ -139,7 +125,7 @@ class PlayerStatusServiceClass {
     // Step 2: Batch-fetch profiles for all friend IDs
     const { data: profiles, error } = await supabase
       .from('profiles')
-      .select('id, status_text, current_table, current_table_id, is_online, last_seen')
+      .select('id, status_text, is_online, last_seen')
       .in('id', Array.from(friendIds))
       .eq('is_online', true);
 
@@ -148,8 +134,8 @@ class PlayerStatusServiceClass {
     return profiles.map((p: any) => ({
       userId: p.id,
       statusText: p.status_text || null,
-      playingAt: p.current_table || null,
-      playingAtTableId: p.current_table_id || null,
+      playingAt: null,
+      playingAtTableId: null,
       isOnline: true,
       lastSeen: p.last_seen || new Date().toISOString(),
     }));

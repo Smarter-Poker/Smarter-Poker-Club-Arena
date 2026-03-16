@@ -289,14 +289,13 @@ export default function FriendsPage() {
           const friendIds = Array.from(uniqueMap.keys());
           const { data: statusData } = await supabase
             .from('profiles')
-            .select('id, current_table, status_text')
+            .select('id, status_text')
             .in('id', friendIds);
 
           if (statusData) {
             statusData.forEach((s: any) => {
               const friend = uniqueMap.get(s.id);
               if (friend) {
-                friend.current_table = s.current_table || undefined;
                 friend.status_text = s.status_text || undefined;
               }
             });

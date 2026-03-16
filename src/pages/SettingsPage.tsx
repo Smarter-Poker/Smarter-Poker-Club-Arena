@@ -7,7 +7,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { supabase, getAuthUser } from '../lib/supabase';
 import { identityDNA } from '../core/IdentityDNA';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -384,7 +384,7 @@ export default function SettingsPage() {
     try {
       const {
         data: { user },
-      } = await supabase.auth.getUser();
+      } = await getAuthUser();
       if (!user) return;
 
       // Fetch user data from various tables
@@ -510,7 +510,7 @@ export default function SettingsPage() {
     try {
       const {
         data: { user },
-      } = await supabase.auth.getUser();
+      } = await getAuthUser();
       if (!user) return;
 
       const { data: factors } = await supabase.auth.mfa.listFactors();
@@ -630,7 +630,7 @@ export default function SettingsPage() {
       // Sync to Supabase profiles table
       const {
         data: { user },
-      } = await supabase.auth.getUser();
+      } = await getAuthUser();
       if (user) {
         const { error: profileErr } = await supabase
           .from('profiles')

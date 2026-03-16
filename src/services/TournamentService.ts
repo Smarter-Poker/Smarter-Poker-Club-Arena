@@ -425,8 +425,7 @@ class TournamentService {
             ? JSON.parse(unionData.settings)
             : unionData.settings || {};
       } catch (err) {
-
-        console.error("[TournamentService] Error:", err);
+        console.error('[TournamentService] Error:', err);
         settings = {};
       }
       if (settings && settings.crossClubTournaments === false) {
@@ -621,7 +620,7 @@ class TournamentService {
     const { data, error } = await supabase
       .from('tournament_players')
       .select(
-        'id, tournament_id, user_id, username, status, stack, seat_number, table_id, position, prize, bounty_earned, current_bounty, mystery_bounty_value, rebuys, add_ons, hands_played, chips_won, chips, registered_at, created_at'
+        'id, tournament_id, user_id, username, status, chips, table_id, position, prize, current_bounty, mystery_bounty_value, rebuys, registered_at'
       )
       .eq('id', atomicPlayerId)
       .maybeSingle();
@@ -828,7 +827,6 @@ class TournamentService {
             table_id: openTable.id,
             user_id: userId,
             seat_number: seatNumber,
-            stack: tournament.starting_chips,
           });
 
           if (seatErr) {
@@ -1125,7 +1123,7 @@ class TournamentService {
     const { data: players } = await supabase
       .from('tournament_players')
       .select(
-        'id, tournament_id, user_id, username, status, stack, seat_number, table_id, position, prize, bounty_earned, current_bounty, mystery_bounty_value, rebuys, add_ons, hands_played, chips_won, chips, registered_at, created_at'
+        'id, tournament_id, user_id, username, status, chips, table_id, position, prize, current_bounty, mystery_bounty_value, rebuys, registered_at'
       )
       .eq('tournament_id', tournamentId)
       .eq('status', 'registered');
@@ -1191,7 +1189,6 @@ class TournamentService {
         table_id: tableAssign.tableId,
         seat_number: tableAssign.nextSeat,
         user_id: player.user_id,
-        stack: tournament.starting_chips,
       });
       if (seatErr)
         console.error(`[TournamentService] Failed to seat player ${player.user_id}:`, seatErr);
@@ -1242,8 +1239,7 @@ class TournamentService {
         try {
           return JSON.parse(raw);
         } catch (err) {
-
-          console.error("[TournamentService] Error:", err);
+          console.error('[TournamentService] Error:', err);
           return [];
         }
       }
@@ -1891,9 +1887,10 @@ class TournamentService {
       if (!tournament) return { finalTableId: null };
 
       // Safe access: blind_structure may be null/empty for misconfigured tournaments
-      const blinds = Array.isArray(tournament.blind_structure) && tournament.blind_structure.length > 0
-        ? tournament.blind_structure[0]
-        : { smallBlind: 10, bigBlind: 20 }; // Fallback defaults
+      const blinds =
+        Array.isArray(tournament.blind_structure) && tournament.blind_structure.length > 0
+          ? tournament.blind_structure[0]
+          : { smallBlind: 10, bigBlind: 20 }; // Fallback defaults
 
       const { data: newTable } = await supabase
         .from('tables')

@@ -72,7 +72,7 @@ interface ProfileRow {
   username?: string;
   display_name?: string;
   avatar_url?: string;
-  last_seen_at?: string;
+  last_seen?: string;
 }
 interface ActiveTable {
   id: string;
@@ -227,7 +227,7 @@ export default function PlayerSessionsPage() {
             () =>
               supabase
                 .from('profiles')
-                .select('id, username, display_name, avatar_url, last_seen_at')
+                .select('id, username, display_name, avatar_url, last_seen')
                 .in('id', userIds)
                 .then((r) => r),
             { maxRetries: 2, isMountedRef: mountedRef }
@@ -256,7 +256,7 @@ export default function PlayerSessionsPage() {
         const now = Date.now();
         const sessionData: PlayerSession[] = (members || []).map((m: MemberRow) => {
           const profile = profileMap[m.user_id] || {};
-          const lastSeen = profile.last_seen_at ? new Date(profile.last_seen_at).getTime() : 0;
+          const lastSeen = profile.last_seen ? new Date(profile.last_seen).getTime() : 0;
           const minutesSince = lastSeen ? (now - lastSeen) / 60000 : 99999;
           let status: PlayerSession['status'] = 'offline';
           if (minutesSince < 5) status = 'online';
@@ -271,7 +271,7 @@ export default function PlayerSessionsPage() {
             status,
             role: m.role || 'player',
             chipBalance: m.chip_balance || 0,
-            lastActive: profile.last_seen_at || m.created_at,
+            lastActive: profile.last_seen || m.created_at,
             txCount24h: 0,
             volume24h: 0,
             is_active: m.is_active,
@@ -355,7 +355,7 @@ export default function PlayerSessionsPage() {
             () =>
               supabase
                 .from('profiles')
-                .select('id, display_name, username, last_seen_at')
+                .select('id, display_name, username, last_seen')
                 .in('id', userIds)
                 .then((r) => r),
             { maxRetries: 2, isMountedRef: mountedRef }
@@ -375,7 +375,7 @@ export default function PlayerSessionsPage() {
 
         (members || []).forEach((m: RetentionMemberRow) => {
           const profile = profileMap[m.user_id] || {};
-          const lastSeen = profile.last_seen_at ? new Date(profile.last_seen_at).getTime() : 0;
+          const lastSeen = profile.last_seen ? new Date(profile.last_seen).getTime() : 0;
           const daysSince = lastSeen ? Math.floor((now - lastSeen) / 86400000) : 999;
 
           const playerInfo = {

@@ -14,7 +14,7 @@
 
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { supabase, getAuthUser } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { useToast } from '../components/common/Toast';
 import { resolveClubUUID } from '../utils/clubIdResolver';
@@ -308,7 +308,10 @@ export default function TableConfigPage() {
   const [checkingUnion, setCheckingUnion] = useState(true);
 
   useEffect(() => {
-    if (!clubId) { setCheckingUnion(false); return; }
+    if (!clubId) {
+      setCheckingUnion(false);
+      return;
+    }
     let isMounted = true;
     (async () => {
       try {
@@ -325,10 +328,14 @@ export default function TableConfigPage() {
           toast.error('Union clubs cannot create standalone tables.');
           navigate(`/clubs/${clubId}`);
         }
-      } catch { /* fail-open */ }
+      } catch {
+        /* fail-open */
+      }
       if (isMounted) setCheckingUnion(false);
     })();
-    return () => { isMounted = false; };
+    return () => {
+      isMounted = false;
+    };
   }, [clubId]);
 
   const gameInfo = GAME_TYPE_LABELS[gameType || 'nlh'] || GAME_TYPE_LABELS.nlh;
@@ -439,7 +446,7 @@ export default function TableConfigPage() {
     try {
       const {
         data: { user },
-      } = await supabase.auth.getUser();
+      } = await getAuthUser();
       if (!user) throw new Error('Not authenticated');
 
       const templateData = {
@@ -638,7 +645,7 @@ export default function TableConfigPage() {
     try {
       const {
         data: { user },
-      } = await supabase.auth.getUser();
+      } = await getAuthUser();
       if (!user) throw new Error('Not authenticated');
 
       // Runtime union check — prevents race if navigation guard was bypassed
@@ -689,7 +696,7 @@ export default function TableConfigPage() {
     try {
       const {
         data: { user },
-      } = await supabase.auth.getUser();
+      } = await getAuthUser();
       if (!user) throw new Error('Not authenticated');
 
       // Runtime union check — prevents race if navigation guard was bypassed

@@ -20,7 +20,7 @@ import type { SeatPlayer, Card, LastAction, PositionBadge } from '../components/
 import type { SidePot } from '../components/table/PotDisplay';
 import type { BoardStage } from '../components/table/CommunityCards';
 import { useTableWebSocket } from '../services/TableWebSocket';
-import { supabase, subscribeToHandState, broadcastHandState } from '../lib/supabase';
+import { supabase, subscribeToHandState, broadcastHandState, getAuthUser } from '../lib/supabase';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { masterBus } from '../core/MasterBus';
 import { playerStatusService } from '../services/PlayerStatusService';
@@ -377,7 +377,7 @@ export default function TablePage({
     async function initUser() {
       const {
         data: { user },
-      } = await supabase.auth.getUser();
+      } = await getAuthUser();
       if (user) {
         if (isMounted.current) setUserId(user.id);
         const { data: profile } = await supabase
@@ -4165,7 +4165,12 @@ export default function TablePage({
                 </button>
 
                 {/* Time Bank */}
-                <button className="control-strip__btn" title="Time Bank" onClick={handleActivateTimeBank} disabled={timeBanksRemaining <= 0 || timeBankActive}>
+                <button
+                  className="control-strip__btn"
+                  title="Time Bank"
+                  onClick={handleActivateTimeBank}
+                  disabled={timeBanksRemaining <= 0 || timeBankActive}
+                >
                   <span className="control-strip__icon">⏱</span>
                   <span className="control-strip__count">{timeBanksRemaining}</span>
                 </button>
@@ -4181,7 +4186,14 @@ export default function TablePage({
                 <div className="control-strip__spacer" />
 
                 {/* Rabbit Hunt */}
-                <button className="control-strip__btn" title="Rabbit Hunt" onClick={() => { if (isRabbitAvailable) handleRabbitReveal(); }} disabled={!isRabbitAvailable}>
+                <button
+                  className="control-strip__btn"
+                  title="Rabbit Hunt"
+                  onClick={() => {
+                    if (isRabbitAvailable) handleRabbitReveal();
+                  }}
+                  disabled={!isRabbitAvailable}
+                >
                   <span className="control-strip__icon">🐰</span>
                 </button>
 
@@ -4303,12 +4315,19 @@ export default function TablePage({
             <button className="menu-item" onClick={() => setIsSoundEnabled(!isSoundEnabled)}>
               <span className="menu-item-icon">♪</span>
               <span className="menu-item-label">Sounds</span>
-              <span className={`menu-item-toggle ${isSoundEnabled ? 'on' : ''}`}>{isSoundEnabled ? 'ON' : 'OFF'}</span>
+              <span className={`menu-item-toggle ${isSoundEnabled ? 'on' : ''}`}>
+                {isSoundEnabled ? 'ON' : 'OFF'}
+              </span>
             </button>
-            <button className="menu-item" onClick={() => setIsVibrationEnabled(!isVibrationEnabled)}>
+            <button
+              className="menu-item"
+              onClick={() => setIsVibrationEnabled(!isVibrationEnabled)}
+            >
               <span className="menu-item-icon">⋆</span>
               <span className="menu-item-label">Vibrations</span>
-              <span className={`menu-item-toggle ${isVibrationEnabled ? 'on' : ''}`}>{isVibrationEnabled ? 'ON' : 'OFF'}</span>
+              <span className={`menu-item-toggle ${isVibrationEnabled ? 'on' : ''}`}>
+                {isVibrationEnabled ? 'ON' : 'OFF'}
+              </span>
             </button>
             <button className="menu-item" onClick={() => setIsChatMuted(!isChatMuted)}>
               <span className="menu-item-icon">💬</span>
@@ -4317,23 +4336,32 @@ export default function TablePage({
                 {isChatMuted ? 'MUTED' : 'ON'}
               </span>
             </button>
-            <button className="menu-item" onClick={() => {
-              const shareUrl = `${window.location.origin}/hub/club-arena/table/${tableId}`;
-              navigator.clipboard?.writeText(shareUrl).then(() => {
-                toast.success('Table link copied to clipboard!');
-              }).catch(() => {
-                toast.info('Share: ' + shareUrl);
-              });
-              setIsSideMenuOpen(false);
-            }}>
+            <button
+              className="menu-item"
+              onClick={() => {
+                const shareUrl = `${window.location.origin}/hub/club-arena/table/${tableId}`;
+                navigator.clipboard
+                  ?.writeText(shareUrl)
+                  .then(() => {
+                    toast.success('Table link copied to clipboard!');
+                  })
+                  .catch(() => {
+                    toast.info('Share: ' + shareUrl);
+                  });
+                setIsSideMenuOpen(false);
+              }}
+            >
               <span className="menu-item-icon">↗</span>
               <span className="menu-item-label">Share</span>
               <span className="menu-item-arrow">›</span>
             </button>
-            <button className="menu-item" onClick={() => {
-              toast.info('VIP features coming soon!');
-              setIsSideMenuOpen(false);
-            }}>
+            <button
+              className="menu-item"
+              onClick={() => {
+                toast.info('VIP features coming soon!');
+                setIsSideMenuOpen(false);
+              }}
+            >
               <span className="menu-item-icon">★</span>
               <span className="menu-item-label">VIP</span>
               <span className="menu-item-arrow">›</span>

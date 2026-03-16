@@ -14,7 +14,7 @@
 
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { supabase, getAuthUser } from '../lib/supabase';
 import { waitForAuth } from '../utils/waitForAuth';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -341,7 +341,7 @@ export default function ClubHomePage() {
     try {
       const {
         data: { user: authUser },
-      } = await supabase.auth.getUser();
+      } = await getAuthUser();
       if (!authUser) return;
 
       const { data: profileData } = await retryFetch(
@@ -414,7 +414,7 @@ export default function ClubHomePage() {
       // Check if current user is owner
       const {
         data: { user: authUser },
-      } = await supabase.auth.getUser();
+      } = await getAuthUser();
       if (authUser) {
         if (getIsMounted && !getIsMounted()) return;
         setIsOwner(clubData.owner_id === authUser.id);

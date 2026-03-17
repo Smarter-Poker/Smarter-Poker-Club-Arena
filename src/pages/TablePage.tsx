@@ -675,6 +675,8 @@ export default function TablePage({
     handleSendChatMessage,
     activeReactions,
     parseIncomingMessage,
+    unreadCount,
+    clearUnread,
   } = useTableChat(tableId, userId, tableState.players);
 
   // Reaction picker state
@@ -4733,6 +4735,7 @@ export default function TablePage({
         onToggleCollapse={() => setIsChatCollapsed(!isChatCollapsed)}
         placeholder="Say something..."
         isMuted={isChatMuted}
+        unreadCount={unreadCount}
       />
 
       {/* Table Reactions — floating emoji picker + active reactions */}

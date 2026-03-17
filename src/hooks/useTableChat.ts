@@ -25,6 +25,20 @@ export interface ReactionEvent {
 const REACTION_MSG_REGEX = /^\[REACTION:(.+):(\d+)\]$/;
 const THROW_MSG_REGEX = /^\[THROW:.+:\d+\]$/;
 const REACTION_LIFETIME_MS = 2500;
+const RATE_LIMIT_MS = 1000; // 1 message per second
+
+// ── Basic profanity filter (client-side, additive safety net) ──
+const PROFANITY_LIST = [
+  'fuck', 'shit', 'bitch', 'asshole', 'bastard', 'dick', 'pussy',
+  'cunt', 'nigger', 'faggot', 'retard', 'whore', 'slut',
+];
+const PROFANITY_REGEX = new RegExp(
+  `\\b(${PROFANITY_LIST.join('|')})\\b`,
+  'gi'
+);
+function censorMessage(text: string): string {
+  return text.replace(PROFANITY_REGEX, (match) => match[0] + '*'.repeat(match.length - 1));
+}
 
 export interface UseTableChatReturn {
   chatMessages: ChatMessage[];
@@ -37,6 +51,9 @@ export interface UseTableChatReturn {
   // Reaction parsing
   activeReactions: ReactionEvent[];
   parseIncomingMessage: (content: string, senderId: string) => boolean;
+  // Unread tracking
+  unreadCount: number;
+  clearUnread: () => void;
 }
 
 export function useTableChat(
@@ -48,8 +65,20 @@ export function useTableChat(
   const [isChatCollapsed, setIsChatCollapsed] = useState(true);
   const [isChatMuted, setIsChatMuted] = useState(false);
   const [activeReactions, setActiveReactions] = useState<ReactionEvent[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const reactionIdRef = useRef(0);
   const pendingTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
+  const lastSendTimestampRef = useRef(0);
+  const isChatCollapsedRef = useRef(isChatCollapsed);
+
+  // Keep ref in sync with state for use in subscription callbacks
+  useEffect(() => {
+    isChatCollapsedRef.current = isChatCollapsed;
+    // When user opens chat, clear unread
+    if (!isChatCollapsed) setUnreadCount(0);
+  }, [isChatCollapsed]);
+
+  const clearUnread = useCallback(() => setUnreadCount(0), []);
 
   const playersRef = useRef(players);
   useEffect(() => {
@@ -135,6 +164,10 @@ export function useTableChat(
               content: m.message,
               timestamp: new Date(m.created_at),
             };
+            // Track unread if chat is collapsed
+            if (isChatCollapsedRef.current && m.user_id !== userId) {
+              setUnreadCount((c) => c + 1);
+            }
             return [...filtered.slice(-49), newMsg];
           });
         }
@@ -211,11 +244,57 @@ export function useTableChat(
       });
     });
 
+    // ── Dealer Narration: announce hand winners ──
+    const unsubHandWon = masterBus.subscribe('HAND_WON', (event) => {
+      const data = event.payload as any;
+      if (!isMounted || !data || (tableId && data.tableId && data.tableId !== tableId)) return;
+      const winnerNames = (data.winners || []).map((wId: string) => {
+        const p = playersRef.current.find((pl) => pl && pl.id === wId);
+        return p?.name || wId.substring(0, 6);
+      });
+      const potStr = typeof data.pot === 'number' ? ` — pot ${data.pot.toLocaleString()}` : '';
+      const msg = winnerNames.length > 1
+        ? `${winnerNames.join(' & ')} split the pot${potStr}`
+        : `${winnerNames[0] || 'Unknown'} wins${potStr}`;
+      setChatMessages((prev) => [
+        ...prev.slice(-49),
+        {
+          id: `dealer-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          type: 'DEALER',
+          playerName: 'Dealer',
+          content: msg,
+          timestamp: new Date(),
+        },
+      ]);
+    });
+
+    const unsubShowdown = masterBus.subscribe('SHOWDOWN_START', (event) => {
+      const data = event.payload as any;
+      if (!isMounted || !data || (tableId && data.tableId && data.tableId !== tableId)) return;
+      const showdownPlayers = (data.players || [])
+        .filter((p: any) => p.isWinner)
+        .map((p: any) => `${p.username || 'Player'} (${p.handName || 'Unknown'})`);
+      if (showdownPlayers.length > 0) {
+        setChatMessages((prev) => [
+          ...prev.slice(-49),
+          {
+            id: `dealer-sd-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            type: 'DEALER',
+            playerName: 'Dealer',
+            content: `Showdown: ${showdownPlayers.join(' vs ')}`,
+            timestamp: new Date(),
+          },
+        ]);
+      }
+    });
+
     return () => {
       isMounted = false;
       unsubPreAction();
       unsubStraddle();
       unsubTimeBank();
+      unsubHandWon();
+      unsubShowdown();
     };
   }, [tableId]);
 
@@ -258,7 +337,15 @@ export function useTableChat(
     async (message: string) => {
       if (!tableId || !userId) return;
 
-      const tempId = `msg_${Date.now()}`;
+      // Rate limiter: enforce 1 message/second
+      const now = Date.now();
+      if (now - lastSendTimestampRef.current < RATE_LIMIT_MS) return;
+      lastSendTimestampRef.current = now;
+
+      // Apply profanity filter
+      const cleanMessage = censorMessage(message);
+
+      const tempId = `msg_${now}`;
       const pName = players.find((p) => p && p.id === userId)?.name || 'Player';
 
       // Optimistically add to local state
@@ -269,7 +356,7 @@ export function useTableChat(
           type: 'PLAYER' as const,
           playerId: userId,
           playerName: pName,
-          content: message,
+          content: cleanMessage,
           timestamp: new Date(),
         },
       ]);
@@ -281,7 +368,7 @@ export function useTableChat(
         const { error } = await supabase.from('table_chat').insert({
           table_id: tableId,
           user_id: userId,
-          message: message,
+          message: cleanMessage,
           message_type: 'player',
         });
 
@@ -306,5 +393,7 @@ export function useTableChat(
     handleSendChatMessage,
     activeReactions,
     parseIncomingMessage,
+    unreadCount,
+    clearUnread,
   };
 }

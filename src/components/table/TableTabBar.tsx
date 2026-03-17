@@ -55,7 +55,6 @@ export function TableTabBar({
   maxTables = 4,
 }: TableTabBarProps) {
   const emptySlots = maxTables - tabs.length;
-  const emptySlots = maxTables - tabs.length;
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 

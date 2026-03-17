@@ -132,7 +132,11 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 
   const showToast = useCallback((message: string, type: ToastType = 'info', duration = 4000) => {
     const id = `toast-${++toastIdRef.current}`;
-    setToasts((prev) => [...prev, { id, type, message, duration }]);
+    setToasts((prev) => {
+      const next = [...prev, { id, type, message, duration }];
+      // Cap at 5 visible toasts — dismiss oldest if overflow
+      return next.length > 5 ? next.slice(-5) : next;
+    });
   }, []);
 
   const success = useCallback(

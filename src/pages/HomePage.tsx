@@ -40,7 +40,7 @@ import LOBBY_TILES from '../config/lobbyTiles.config';
 import { postToParent } from '../utils/parentOrigin';
 import CarouselSection from '../components/home/CarouselSection';
 import { getClubLevel } from '../utils/clubLevels';
-import type { UserClub } from '../components/home/CarouselSection';
+import type { UserClub, ClubStats } from '../components/home/CarouselSection';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { STORAGE_KEYS } from '../lib/storage';
@@ -172,8 +172,8 @@ function HomePageInner() {
     return [];
   });
 
-  // Enhancement #5: Card flip — track which cards have flipped
-  const [flippedCards, setFlippedCards] = useState<Set<number>>(new Set());
+  // Per-club stats for featured card rendering
+  const [clubStats, setClubStats] = useState<Record<string, ClubStats>>({});
 
   // Enhancement #2: Context menu state
   const [contextMenu, setContextMenu] = useState<{
@@ -955,34 +955,81 @@ function HomePageInner() {
   }, [userClubs, sharkClubId, searchQuery, pinnedClubIds]);
 
   // ═══════════════════════════════════════════════════════════════════════════════
-  // Enhancement #5: Staggered card flip after data loads
+  // Per-club stats fetching — member count, club level, active players
   // ═══════════════════════════════════════════════════════════════════════════════
-  // Use a ref so sound toggle doesn't re-trigger the entire flip animation
+  useEffect(() => {
+    if (displayClubs.length === 0) return;
+    let isMounted = true;
+
+    async function fetchAllClubStats() {
+      const clubIds = displayClubs.map((c) => c.id);
+      try {
+        // Batch fetch club rows for level info
+        const { data: clubRows } = await supabase
+          .from('clubs')
+          .select(
+            'id, member_count, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
+          )
+          .in('id', clubIds);
+
+        if (!isMounted || !clubRows) return;
+
+        const statsMap: Record<string, ClubStats> = {};
+
+        // Process each club in parallel
+        await Promise.allSettled(
+          clubRows.map(async (club: any) => {
+            const memberCount = club.member_count || 0;
+
+            // Try RPC for active player count
+            let activePlayers = 0;
+            try {
+              const { data: rpcCount } = await supabase.rpc('fn_get_active_player_count', {
+                p_club_id: club.id,
+              });
+              activePlayers = Number(rpcCount) || 0;
+            } catch {
+              // RPC not deployed — skip
+            }
+
+            // Compute club level
+            const levelInfo = getClubLevel({
+              level: club.level || 1,
+              playerCount: memberCount,
+              hierarchyUnits: club.hierarchy_units_rounded_up || 0,
+              playerThresholdCurrent: club.player_threshold_current || 0,
+              playerThresholdNext: club.player_threshold_next || 0,
+              hierarchyThresholdCurrent: club.hierarchy_threshold_current || 0,
+              hierarchyThresholdNext: club.hierarchy_threshold_next || 0,
+            });
+
+            if (isMounted) {
+              statsMap[club.id] = {
+                totalMembers: memberCount,
+                clubLevel: levelInfo.level,
+                activePlayers,
+              };
+            }
+          })
+        );
+
+        if (isMounted) setClubStats(statsMap);
+      } catch (err) {
+        console.error('[HomePage] Failed to fetch club stats:', err);
+      }
+    }
+
+    fetchAllClubStats();
+    return () => {
+      isMounted = false;
+    };
+  }, [displayClubs.length, displayClubs.map((c) => c.id).join(',')]);
+
+  // Sound effects ref for other uses
   const soundsEnabledRef = useRef(soundsEnabled);
   useEffect(() => {
     soundsEnabledRef.current = soundsEnabled;
   }, [soundsEnabled]);
-
-  useEffect(() => {
-    if (!isLoading && displayClubs.length > 0) {
-      const timerIds: ReturnType<typeof setTimeout>[] = [];
-      displayClubs.forEach((_: UserClub, idx: number) => {
-        const id = setTimeout(
-          () => {
-            setFlippedCards((prev) => new Set(prev).add(idx));
-            // #10: Haptic on each card flip
-            haptic.light();
-            if (soundsEnabledRef.current) PremiumSFX.cardFlip();
-          },
-          300 + idx * 150
-        );
-        timerIds.push(id);
-      });
-      return () => {
-        timerIds.forEach((id) => clearTimeout(id));
-      };
-    }
-  }, [isLoading, displayClubs.length]);
   // Tile action handlers (for bottom row tiles using LOBBY_TILES config)
   const tileActions: Record<string, () => void> = useMemo(
     () => ({
@@ -1127,9 +1174,8 @@ function HomePageInner() {
           displayClubs={displayClubs}
           sharkClubId={sharkClubId}
           sharkClubStats={sharkClubStats}
-          flippedCards={flippedCards}
+          clubStats={clubStats}
           pinnedClubIds={pinnedClubIds}
-          cardColorPreset={cardColorPreset}
           navigate={navigate}
           toast={toast}
           handleContextMenu={handleContextMenu}

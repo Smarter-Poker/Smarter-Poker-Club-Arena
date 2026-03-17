@@ -138,6 +138,7 @@ export function TableChat({
   const inputRef = useRef<HTMLInputElement>(null);
   const previousMessagesLengthRef = useRef(0);
   const animationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSentRef = useRef<number>(0);
 
   // Auto-scroll to bottom on new messages and track which are new
   useEffect(() => {
@@ -174,6 +175,10 @@ export function TableChat({
 
   // Handle send
   const handleSend = useCallback(() => {
+    const now = Date.now();
+    if (now - lastSentRef.current < 300) return; // 300ms cooldown
+    lastSentRef.current = now;
+
     if (inputValue.trim() && !isDisabled) {
       onSendMessage(inputValue.trim());
       setInputValue('');

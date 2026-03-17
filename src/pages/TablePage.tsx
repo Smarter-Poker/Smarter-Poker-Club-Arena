@@ -3651,6 +3651,7 @@ export default function TablePage({
 
       switch (action) {
         case 'fold':
+          if (!validateAndExecuteAction('fold')) return;
           startTransition(() => {
             if (handControllerRef.current)
               handControllerRef.current.performAction(heroSeat, 'fold');

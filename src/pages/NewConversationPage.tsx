@@ -15,6 +15,7 @@ import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import { PlayerAvatar } from '../components/avatars/PlayerAvatar';
 import { useDebounce } from '../hooks/useDebounce';
+import { sanitizeInput } from '../utils/sanitizeInput';
 import './NewConversationPage.css';
 
 interface UserResult {
@@ -102,11 +103,12 @@ export default function NewConversationPage() {
     try {
       if (isGroup) {
         // Create group conversation
-        const name = groupName.trim() || selectedUsers.map((u) => u.username).join(', ');
+        const safeName =
+          sanitizeInput(groupName.trim()) || selectedUsers.map((u) => u.username).join(', ');
         const conv = await messagingService.createGroupConversation(
           user.id,
           selectedUsers.map((u) => u.id),
-          name
+          safeName
         );
         if (conv) {
           masterBus.emit('CONVERSATION_UPDATED', { conversationId: conv.id });

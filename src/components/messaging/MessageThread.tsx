@@ -11,6 +11,7 @@ import { masterBus } from '../../core/MasterBus';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { messagingService } from '../../services/MessagingService';
+import { sanitizeInput } from '../../utils/sanitizeInput';
 import MessageBubble from './MessageBubble';
 import MessageInput from './MessageInput';
 import { PlayerAvatar } from '../avatars/PlayerAvatar';
@@ -245,6 +246,9 @@ export default function MessageThread({ conversationId, onBack }: MessageThreadP
 
     setSending(true);
     try {
+      const safeContent = sanitizeInput(text.trim());
+      if (!safeContent && !imageUrl && !audioUrl) return;
+
       const otherParticipant = participants.find((p) => p.userId !== user.id);
       const receiverId = otherParticipant?.userId || null;
 
@@ -254,7 +258,7 @@ export default function MessageThread({ conversationId, onBack }: MessageThreadP
           conversation_id: conversationId,
           sender_id: user.id,
           receiver_id: receiverId,
-          content: text.trim(),
+          content: safeContent,
           image_url: imageUrl || null,
           audio_url: audioUrl || null,
           reply_to_message_id: replyingToId || null,

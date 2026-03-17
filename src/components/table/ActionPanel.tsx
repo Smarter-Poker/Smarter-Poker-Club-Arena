@@ -4,7 +4,7 @@
  * Professional 3-button horizontal layout with raise mode sub-panel
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { haptic } from '../../services/SoundService';
 import './ActionPanel.css';
 
@@ -95,12 +95,15 @@ export default function ActionPanel({
   const isDesktop = windowWidth >= 768;
 
   // Smart presets — adapt to street context
-  const presets = [
-    { label: '⅓ Pot', value: Math.round(pot * 0.33) },
-    { label: '½ Pot', value: Math.round(pot * 0.5) },
-    { label: '¾ Pot', value: Math.round(pot * 0.75) },
-    { label: 'Pot', value: pot },
-  ];
+  const presets = useMemo(
+    () => [
+      { label: '⅓ Pot', value: Math.round(pot * 0.33) },
+      { label: '½ Pot', value: Math.round(pot * 0.5) },
+      { label: '¾ Pot', value: Math.round(pot * 0.75) },
+      { label: 'Pot', value: pot },
+    ],
+    [pot]
+  );
 
   // Track last slider value for haptic snap feedback
   const lastSnapRef = useRef<number>(minRaise);
@@ -199,10 +202,15 @@ export default function ActionPanel({
               setPendingAllIn(false);
               setIsRaiseMode(false);
             }}
+            aria-label={`Confirm all in ${formatChips(maxRaise)}`}
           >
             CONFIRM ALL-IN ({formatChips(maxRaise)})
           </button>
-          <button className="raise-cancel" onClick={() => setPendingAllIn(false)}>
+          <button
+            className="raise-cancel"
+            onClick={() => setPendingAllIn(false)}
+            aria-label="Cancel all in"
+          >
             Cancel
           </button>
         </div>
@@ -249,6 +257,11 @@ export default function ActionPanel({
             value={raiseAmount}
             onChange={handleSliderChange}
             style={{ '--slider-progress': `${sliderProgress}%` } as React.CSSProperties}
+            aria-label="Raise amount"
+            aria-valuemin={minRaise}
+            aria-valuemax={maxRaise}
+            aria-valuenow={raiseAmount}
+            aria-valuetext={`Raise to ${formatChips(raiseAmount)}`}
           />
           {/* Tick marks */}
           <div className="raise-slider-ticks">
@@ -268,21 +281,30 @@ export default function ActionPanel({
                 className="raise-preset"
                 onClick={() => setPreset(p.value)}
                 disabled={p.value > maxRaise || p.value < minRaise}
+                aria-label={`Bet ${p.label}`}
               >
                 {p.label}
               </button>
             ))}
-            <button className="raise-preset raise-preset--allin" onClick={handleAllIn}>
+            <button
+              className="raise-preset raise-preset--allin"
+              onClick={handleAllIn}
+              aria-label="Bet all in"
+            >
               ALL IN
             </button>
           </div>
         )}
         {/* Confirm / Cancel Row */}
         <div className="raise-actions">
-          <button className="raise-cancel" onClick={() => setIsRaiseMode(false)}>
+          <button className="raise-cancel" onClick={() => setIsRaiseMode(false)} aria-label="Back">
             Back
           </button>
-          <button className="raise-confirm" onClick={handleConfirmRaise}>
+          <button
+            className="raise-confirm"
+            onClick={handleConfirmRaise}
+            aria-label={`Raise ${formatChips(raiseAmount)}`}
+          >
             Raise {formatChips(raiseAmount)}
           </button>
         </div>
@@ -305,6 +327,7 @@ export default function ActionPanel({
           }}
           disabled={!canFold}
           title={isDesktop ? 'F' : undefined}
+          aria-label="Fold"
         >
           <span className="action-btn__label">Fold</span>
           {isDesktop && <span className="action-btn__shortcut">F</span>}
@@ -319,6 +342,7 @@ export default function ActionPanel({
               onAction('check');
             }}
             title={isDesktop ? 'C' : undefined}
+            aria-label="Check"
           >
             <span className="action-btn__label">Check</span>
             {isDesktop && <span className="action-btn__shortcut">C</span>}
@@ -331,6 +355,7 @@ export default function ActionPanel({
               onAction('call');
             }}
             title={isDesktop ? 'C' : undefined}
+            aria-label={`Call ${formatChips(callAmount)}`}
           >
             <span className="action-btn__label">Call</span>
             <span className="action-btn__amount">{formatChips(callAmount)}</span>
@@ -356,6 +381,7 @@ export default function ActionPanel({
             className="action-btn action-btn--allin"
             onClick={handleAllIn}
             title={isDesktop ? 'R' : undefined}
+            aria-label="All in"
           >
             <span className="action-btn__label">All In</span>
             <span className="action-btn__amount">{formatChips(maxRaise)}</span>
@@ -367,6 +393,7 @@ export default function ActionPanel({
             onClick={handleRaiseClick}
             disabled={!canRaise}
             title={isDesktop ? 'R' : undefined}
+            aria-label="Open raise panel"
           >
             <span className="action-btn__label">Raise</span>
             {minRaise > 0 && bigBlind > 0 && (

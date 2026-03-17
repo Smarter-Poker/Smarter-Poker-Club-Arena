@@ -2421,6 +2421,31 @@ const httpServer = createServer(async (req, res) => {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
+  // POST /timebank — Activate Time Bank extension
+  // Body: { tableId, userId }
+  // ─────────────────────────────────────────────────────────────────────────
+  if (method === 'POST' && url === '/timebank') {
+    try {
+      const body = JSON.parse(await readBody(req));
+      const { tableId, userId } = body;
+
+      if (!tableId || !userId) {
+        return sendJSON(res, 400, { success: false, error: 'Missing tableId or userId' });
+      }
+
+      const engine = gameServer.getTableEngine(tableId);
+      if (!engine) {
+        return sendJSON(res, 404, { success: false, error: 'Table engine not found' });
+      }
+
+      const result = engine.activateTimeBank(userId);
+      return sendJSON(res, result.success ? 200 : 400, result);
+    } catch (err) {
+      return sendJSON(res, 500, { success: false, error: 'Invalid request body' });
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
   // GET /actions/:tableId/:userId — Get available actions for a player
   // ─────────────────────────────────────────────────────────────────────────
   const actionsMatch = url.match(/^\/actions\/([^/]+)\/([^/]+)$/);

@@ -102,7 +102,7 @@ export async function loadTable(tableId: string) {
   const { data, error } = await supabase
     .from('tables')
     .select(
-      'id, club_id, small_blind, big_blind, game_variant, max_players, ante, game_type, tournament_id'
+      'id, club_id, small_blind, big_blind, game_variant, max_players, ante, game_type, tournament_id, action_time_seconds, time_bank_seconds'
     )
     .eq('id', tableId)
     .single();
@@ -117,7 +117,7 @@ export async function loadTable(tableId: string) {
 export async function loadSeatedPlayers(tableId: string) {
   const { data: seats, error } = await supabase
     .from('table_seats')
-    .select('user_id, stack, seat_number')
+    .select('user_id, stack, seat_number, time_bank_remaining, time_bank_uses_remaining')
     .eq('table_id', tableId)
     .is('left_at', null)
     .order('seat_number', { ascending: true });
@@ -143,6 +143,8 @@ export async function loadSeatedPlayers(tableId: string) {
         seat_number: seat.seat_number || 1,
         is_horse: profile.is_horse || false,
         horse_profile: profile.horse_profile || 'balanced',
+        time_bank_remaining: seat.time_bank_remaining || 0,
+        time_bank_uses_remaining: seat.time_bank_uses_remaining || 0,
       };
     });
 }
@@ -152,17 +154,21 @@ export async function loadSeatedPlayers(tableId: string) {
  */
 export async function syncStacks(
   tableId: string,
-  players: { user_id: string; stack: number }[]
+  players: { user_id: string; stack: number; time_bank_uses_remaining?: number }[]
 ): Promise<void> {
   const results = await Promise.allSettled(
-    players.map((player) =>
-      supabase
+    players.map((player) => {
+      const updatePayload: any = { stack: player.stack };
+      if (player.time_bank_uses_remaining !== undefined) {
+        updatePayload.time_bank_uses_remaining = player.time_bank_uses_remaining;
+      }
+      return supabase
         .from('table_seats')
-        .update({ stack: player.stack })
+        .update(updatePayload)
         .eq('table_id', tableId)
         .eq('user_id', player.user_id)
-        .is('left_at', null)
-    )
+        .is('left_at', null);
+    })
   );
   const failures = results.filter((r) => r.status === 'rejected');
   if (failures.length > 0) {

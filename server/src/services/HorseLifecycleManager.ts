@@ -118,7 +118,13 @@ export class HorseLifecycleManager {
 
           for (const profile of profiles) {
             const reset = await this.evaluateHorseStatus(profile.id);
-            if (reset) horsesReset++;
+            if (reset) {
+              horsesReset++;
+              await this.persistLifecycleLog(profile.id, 'tournament_reset', {
+                tournamentId: tournament.id,
+                tournamentName: tournament.name,
+              });
+            }
           }
 
           // Clean up tournament_players for horses
@@ -188,9 +194,20 @@ export class HorseLifecycleManager {
 
           if (activeTournaments && activeTournaments.length > 0) continue; // Still in tournament
 
+          // Calculate how long stuck
+          const stuckSinceMs = Date.now() - new Date(horse.updated_at).getTime();
+          const stuckSinceHours = stuckSinceMs / (60 * 60 * 1000);
+
           // Force reset
           const reset = await this.forceResetHorse(horse.id);
-          if (reset) forcedResets++;
+          if (reset) {
+            forcedResets++;
+            await this.persistLifecycleLog(horse.id, 'stuck_horse_reset', {
+              previousStatus: horse.horse_status,
+              stuckSinceHours: Math.round(stuckSinceHours * 10) / 10,
+              lastUpdated: horse.updated_at,
+            });
+          }
         } catch {
           // Skip individual horse errors
         }
@@ -201,6 +218,38 @@ export class HorseLifecycleManager {
       }
     } catch (err) {
       console.error('[Lifecycle] detectStuckHorses error:', err);
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // LOGGING & PERSISTENCE
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Persist lifecycle event to horse_bug_reports for post-mortem debugging.
+   */
+  private async persistLifecycleLog(
+    horseId: string,
+    event: string,
+    details: Record<string, unknown>
+  ): Promise<void> {
+    try {
+      const { v4: uuidv4 } = await import('uuid');
+      await supabase.from('horse_bug_reports').insert({
+        id: uuidv4(),
+        horse_id: horseId,
+        horse_name: `HORSE_${horseId.slice(0, 8)}`,
+        table_id: 'lifecycle',
+        table_name: 'HorseLifecycleManager',
+        hand_number: 0,
+        category: 'lifecycle_event',
+        severity: 'low',
+        title: event,
+        description: JSON.stringify(details),
+        context: details,
+      });
+    } catch (err) {
+      console.warn('[Lifecycle] Failed to persist log:', err);
     }
   }
 

@@ -78,6 +78,12 @@ export class ServerTableEngine {
   private handForHandPaused: boolean = false;
   private handForHandResolve: (() => void) | null = null;
 
+  // Real Player Turn Management
+  private playerTurnTimer: NodeJS.Timeout | null = null;
+  private playerTurnStartTime: number = 0;
+  private playerTurnDuration: number = 0;
+  private timeBankActivatedThisTurn: boolean = false;
+
   constructor(tableId: string) {
     this.tableId = tableId;
     console.log(`[ServerTableEngine] Created for table ${tableId}`);
@@ -119,6 +125,7 @@ export class ServerTableEngine {
   async stop(): Promise<void> {
     if (!this.running) return;
     this.running = false;
+    this.clearTurnTimer();
     this.handController = null;
     cleanupChannel(this.tableId);
     console.log(`[ServerTableEngine:${this.tableId}] Stopped. Dealt ${this.handCount} hands.`);
@@ -158,6 +165,105 @@ export class ServerTableEngine {
 
   private isTournamentTable(): boolean {
     return !!(this.tableInfo?.tournament_id || this.tableInfo?.game_type === 'tournament');
+  }
+
+  // ═════════════════════════════════════════════════════════════════════════════
+  // TURN TIMER MANAGEMENT
+  // ═════════════════════════════════════════════════════════════════════════════
+
+  private clearTurnTimer(): void {
+    if (this.playerTurnTimer) {
+      clearTimeout(this.playerTurnTimer);
+      this.playerTurnTimer = null;
+    }
+  }
+
+  private startTurnTimer(userId: string, seat: number, durationSeconds: number): void {
+    this.clearTurnTimer();
+    this.timeBankActivatedThisTurn = false;
+    this.playerTurnStartTime = Date.now();
+    this.playerTurnDuration = Math.max(0, durationSeconds);
+
+    // Safety fallback: if no duration, default to 15s to prevent infinite loops
+    const safeDurationSeconds = this.playerTurnDuration > 0 ? this.playerTurnDuration : 15;
+
+    this.playerTurnTimer = setTimeout(() => {
+      this.playerTurnTimer = null;
+      if (!this.running || !this.handController) return;
+
+      const state = this.handController.getState();
+      if (state.currentPlayerSeat === seat) {
+        console.warn(
+          `[ServerTableEngine:${this.tableId}] Player ${userId} timed out. Auto-folding.`
+        );
+        try {
+          this.handController.performAction(seat, 'fold');
+        } catch (err) {
+          console.error(`[ServerTableEngine:${this.tableId}] Auto-fold failed:`, err);
+        }
+      }
+    }, safeDurationSeconds * 1000);
+  }
+
+  /**
+   * Activate Time Bank triggered by the client HTTP POST to `/timebank`
+   */
+  public activateTimeBank(userId: string): { success: boolean; error?: string } {
+    if (!this.handController || !this.tableInfo) {
+      return { success: false, error: 'No active hand or table info missing' };
+    }
+
+    const state = this.handController.getState();
+    const player = state.players.find((p) => p.user_id === userId);
+
+    if (!player || state.currentPlayerSeat !== player.seat) {
+      return { success: false, error: 'Not your turn' };
+    }
+
+    const seatedPlayer = this.seatedPlayers.find((p) => p.user_id === userId);
+    if (!seatedPlayer) return { success: false, error: 'Player not seated' };
+
+    if (this.timeBankActivatedThisTurn) {
+      return { success: false, error: 'Time bank already activated this turn' };
+    }
+
+    // Check if they have uses remaining
+    if ((seatedPlayer.time_bank_uses_remaining || 0) <= 0) {
+      return { success: false, error: 'No time bank uses remaining' };
+    }
+
+    // Deduct a use on the server state
+    seatedPlayer.time_bank_uses_remaining = (seatedPlayer.time_bank_uses_remaining || 0) - 1;
+    this.timeBankActivatedThisTurn = true;
+
+    // Extend timer based on table's time bank setting
+    const bankDuration = this.tableInfo.time_bank_seconds || 60;
+
+    // Calculate how much normal time was already used
+    const elapsed = (Date.now() - this.playerTurnStartTime) / 1000;
+    const remainingBeforeBank = Math.max(0, this.playerTurnDuration - elapsed);
+
+    // New duration is remaining normal time PLUS full time bank
+    const newDuration = remainingBeforeBank + bankDuration;
+    console.log(
+      `[ServerTableEngine:${this.tableId}] Player ${userId} activated time bank. Adding ${bankDuration}s. Total new countdown: ${Math.round(newDuration)}s`
+    );
+
+    this.startTurnTimer(userId, player.seat, newDuration);
+
+    // Broadcast a master UI event via standard table channel so OTHER players see the timer reload
+    try {
+      supabase
+        .channel(`table:${this.tableId}`)
+        .send({
+          type: 'broadcast',
+          event: 'time_bank_activated',
+          payload: { player_id: userId, table_id: this.tableId, additional_seconds: bankDuration },
+        })
+        .catch(() => {});
+    } catch (e) {}
+
+    return { success: true };
   }
 
   // ═════════════════════════════════════════════════════════════════════════════
@@ -221,6 +327,7 @@ export class ServerTableEngine {
     }
 
     try {
+      this.clearTurnTimer();
       this.handController.performAction(seat, normalizedAction as any, amount);
       console.log(
         `[ServerTableEngine:${this.tableId}] Player ${userId} → ${normalizedAction}${amount ? ` ${amount}` : ''}`
@@ -442,6 +549,7 @@ export class ServerTableEngine {
           unsub();
 
           // Fire hand-complete callback for tournament chip sync
+          this.clearTurnTimer();
           if (this.handCompleteCallback) {
             const finalStacks = players.map((p) => ({
               user_id: p.user_id,
@@ -559,8 +667,12 @@ export class ServerTableEngine {
     const enginePlayer = state.players.find((p) => p.seat === seat);
     if (!enginePlayer) return;
 
-    // Only horses get auto-played — real players use WebSocket actions
-    if (!player.is_horse) return;
+    // Only horses get auto-played — real players get an authoritative timer and wait for WebSocket/HTTP actions
+    if (!player.is_horse) {
+      const actionTime = this.tableInfo?.action_time_seconds || 15;
+      this.startTurnTimer(player.user_id, seat, actionTime);
+      return;
+    }
 
     const toCall = Math.max(0, state.currentBet - enginePlayer.bet);
 
@@ -657,6 +769,8 @@ export class ServerTableEngine {
       current_player: currentSeatPlayer?.user_id ?? null,
       dealer_seat: state.dealerSeat ?? this.currentHandDealerSeat,
       stage: state.stage ?? 'preflop',
+      turn_start_time_ms: this.playerTurnStartTime,
+      turn_duration_ms: this.playerTurnDuration,
       players: (state.players ?? []).map((p) => ({
         seat: p.seat,
         user_id: p.user_id,
@@ -679,7 +793,11 @@ export class ServerTableEngine {
     // 1. Sync stacks to database
     await syncStacks(
       this.tableId,
-      players.map((p) => ({ user_id: p.user_id, stack: p.stack }))
+      players.map((p) => ({
+        user_id: p.user_id,
+        stack: p.stack,
+        time_bank_uses_remaining: p.time_bank_uses_remaining,
+      }))
     );
 
     // 2. Log rake collection — every penny documented

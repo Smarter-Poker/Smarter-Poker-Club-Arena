@@ -115,7 +115,7 @@ import SpectatorBadge from '../components/table/SpectatorBadge';
 import HandStrengthIndicator from '../components/table/HandStrengthIndicator';
 import SessionTimer from '../components/table/SessionTimer';
 import { horseBugReporter } from '../services/HorseBugReporter';
-import { submitAction } from '../services/GameServerAPI';
+import GameServerAPI, { submitAction } from '../services/GameServerAPI';
 import { retryAsync } from '../utils/retryAsync';
 import { monteCarloEquity } from '../engine/MonteCarloEquity';
 import './TablePage.css';
@@ -1580,6 +1580,22 @@ export default function TablePage({
           isHandInProgress: stage !== 'preflop' || pot > 0,
         };
       });
+
+      // --- NEW LOGIC: Hydrate the exact remaining time from the server payload ---
+      const serverTurnStart = handState.turn_start_time_ms as number | undefined;
+      const serverTurnDuration = handState.turn_duration_ms as number | undefined;
+      const cpId = handState.current_player as string | null;
+
+      if (cpId) {
+        if (serverTurnStart && serverTurnDuration) {
+          const elapsed = Date.now() - serverTurnStart;
+          const remainingSeconds = Math.max(0, Math.ceil((serverTurnDuration - elapsed) / 1000));
+          resetTimer(remainingSeconds);
+        } else {
+          // Fallback if the server didn't send precise timing
+          resetTimer(actionTimeSeconds);
+        }
+      }
     });
 
     return () => unsubscribe();
@@ -2119,10 +2135,19 @@ export default function TablePage({
   });
 
   useMasterBusSubscription('TIME_BANK_ACTIVATED', (payload: any) => {
-    if (payload.tableId !== tableId || payload.playerId !== userId) return;
-    setTimeBankActive(true);
-    setTimeBankTimeRemaining(payload.secondsGranted ?? 15);
-    setTimeBanksRemaining(payload.usesRemaining ?? 0);
+    if (payload.tableId !== tableId) return;
+
+    // Always extend the visual timer for ANY player who activated it
+    const seconds =
+      payload.secondsGranted ?? payload.additionalSeconds ?? payload.secondsAdded ?? 15;
+    extendTimer(seconds);
+
+    // Only update the Hero's specific localized UI if they are the one activating it
+    if (payload.playerId === userId) {
+      setTimeBankActive(true);
+      setTimeBankTimeRemaining(seconds);
+      setTimeBanksRemaining(payload.usesRemaining ?? 0);
+    }
   });
 
   // TIME_BANK_STOPPED / DEPLETED / EXPIRED: Update UI + persist hero's time bank state to Supabase
@@ -3433,7 +3458,9 @@ export default function TablePage({
     timeRemaining: actionTimeRemaining,
     timerProgress: actionTimerProgress,
     resetTimer,
+    extendTimer,
   } = useTableTimer({
+    isActiveTurn: tableState?.currentPlayerSeat != null && tableState?.isHandInProgress,
     isHeroTurn: isHeroTurnContext && !timeBankActive,
     isSoundEnabled,
     onTimeout: () => {
@@ -3444,7 +3471,9 @@ export default function TablePage({
           userId,
           handleTimerAutoFold
         );
-        if (!didActivate) {
+        if (didActivate) {
+          GameServerAPI.activateTimeBank(tableId, userId).catch(console.error);
+        } else {
           handleTimerAutoFold();
         }
       } else {
@@ -3460,6 +3489,7 @@ export default function TablePage({
     const activated = timeBankEngine.activate(tableId, userId, handleTimerAutoFold);
     if (activated) {
       soundService.playChips();
+      GameServerAPI.activateTimeBank(tableId, userId).catch(console.error);
     }
   }, [tableId, userId, handleTimerAutoFold]);
 

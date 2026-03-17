@@ -17,6 +17,8 @@ import { masterBus, type BusEventType } from '../core/MasterBus';
 import { getOfflineQueue, clearOfflineQueue, getOfflineQueueSize } from '../utils/offlineQueue';
 import { busEventLogger } from '../services/BusEventLogger';
 import { formatRelativeShort as formatTime } from '@/lib/date';
+import { useAuthUser } from '../hooks/useAuthUser';
+import { supabase } from '../lib/supabase';
 import './BusDevToolsPage.css';
 
 interface EventLogItem {
@@ -53,6 +55,8 @@ const TEST_EVENTS: { type: BusEventType; label: string }[] = [
 ];
 
 export default function BusDevToolsPage() {
+  const { user } = useAuthUser();
+  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   const [diagnostics, setDiagnostics] = useState<DiagSnapshot | null>(null);
   const [eventLog, setEventLog] = useState<EventLogItem[]>([]);
   const [offlineCount, setOfflineCount] = useState(0);
@@ -65,6 +69,25 @@ export default function BusDevToolsPage() {
   const scrollToBottom = useCallback(() => {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, []);
+
+  // Check admin role
+  useEffect(() => {
+    if (!user?.id) {
+      setIsAdmin(false);
+      return;
+    }
+    supabase
+      .from('club_members')
+      .select('role')
+      .eq('user_id', user.id)
+      .in('role', ['owner', 'admin'])
+      .limit(1)
+      .maybeSingle()
+      .then(
+        ({ data }) => setIsAdmin(!!data),
+        () => setIsAdmin(false)
+      );
+  }, [user?.id]);
 
   // Refresh diagnostics every 2s
   useEffect(() => {
@@ -146,6 +169,36 @@ export default function BusDevToolsPage() {
     ? Object.entries(diagnostics.subscribers).sort((a, b) => b[1] - a[1])
     : [];
   const maxSubscribers = Math.max(1, ...subscriberEntries.map(([, v]) => v));
+
+  if (isAdmin === null)
+    return (
+      <div
+        style={{
+          padding: 40,
+          color: '#aaa',
+          background: '#111',
+          minHeight: '100vh',
+          fontFamily: 'monospace',
+        }}
+      >
+        Checking access...
+      </div>
+    );
+  if (!isAdmin)
+    return (
+      <div
+        style={{
+          padding: 40,
+          color: '#FA383E',
+          background: '#111',
+          minHeight: '100vh',
+          fontFamily: 'monospace',
+        }}
+      >
+        <h2>Access Denied</h2>
+        <p>Admin or owner role required to view Bus DevTools.</p>
+      </div>
+    );
 
   return (
     <div className="bus-devtools">

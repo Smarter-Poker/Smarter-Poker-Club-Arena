@@ -91,6 +91,34 @@ export async function submitAction(
 }
 
 /**
+ * Activate the Time Bank for the current player's turn.
+ * Asks the game server to extend their authoritative timer.
+ *
+ * @param tableId - The table UUID
+ * @param userId - The player's user UUID
+ * @returns ActionResult with success status and optional error message
+ */
+export async function activateTimeBank(tableId: string, userId: string): Promise<ActionResult> {
+  try {
+    const response = await fetch(`${GAME_SERVER_URL}/timebank`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tableId, userId }),
+    });
+
+    if (!response.ok) {
+      return { success: false, error: `Server error (${response.status})` };
+    }
+
+    const result = await response.json();
+    return result as ActionResult;
+  } catch (err: unknown) {
+    console.error('[GameServerAPI] Failed to activate time bank:', err);
+    return { success: false, error: 'Server unreachable' };
+  }
+}
+
+/**
  * Get available actions for a player at a specific table.
  * Used to populate the ActionPanel with valid options.
  *
@@ -220,6 +248,7 @@ export function getWebSocketStatus(): string | null {
 
 export default {
   submitAction,
+  activateTimeBank,
   getAvailableActions,
   getServerStatus,
   connectTableWebSocket,

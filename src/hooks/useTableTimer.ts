@@ -17,7 +17,8 @@ import { soundService } from '../services/SoundService';
  */
 
 export interface UseTableTimerProps {
-  isHeroTurn: boolean;
+  isActiveTurn: boolean; // is ANYONE acting? (runs visual ticking)
+  isHeroTurn: boolean; // is HERO acting? (triggers auto-fold)
   isSoundEnabled: boolean;
   onTimeout: () => void;
   initialTime?: number;
@@ -28,6 +29,7 @@ export interface UseTableTimerReturn {
   timeRemaining: number;
   setTimeRemaining: (time: number) => void;
   resetTimer: (time?: number) => void;
+  extendTimer: (extraSeconds: number) => void;
   isUrgent: boolean; // true when < urgencyThreshold seconds
   timerProgress: number; // 0-100 percentage
 }
@@ -36,6 +38,7 @@ const DEFAULT_INITIAL_TIME = 15;
 const DEFAULT_URGENCY_THRESHOLD = 5;
 
 export function useTableTimer({
+  isActiveTurn,
   isHeroTurn,
   isSoundEnabled,
   onTimeout,
@@ -43,32 +46,46 @@ export function useTableTimer({
   urgencyThreshold = DEFAULT_URGENCY_THRESHOLD,
 }: UseTableTimerProps): UseTableTimerReturn {
   const [timeRemaining, setTimeRemaining] = useState(initialTime);
+  const [totalTime, setTotalTime] = useState(initialTime);
   const onTimeoutRef = useRef(onTimeout);
   onTimeoutRef.current = onTimeout;
 
   const isUrgent = isHeroTurn && timeRemaining <= urgencyThreshold && timeRemaining > 0;
 
-  // Calculate progress as percentage (0-100)
-  const timerProgress = Math.max(0, Math.min(100, (timeRemaining / initialTime) * 100));
+  // Calculate progress as percentage (0-100) based on TOTAL current time allowance
+  const timerProgress = Math.max(0, Math.min(100, (timeRemaining / totalTime) * 100));
 
   // Reset timer to initial time or custom time
   const resetTimer = useCallback(
     (newTime?: number) => {
-      setTimeRemaining(newTime ?? initialTime);
+      const t = newTime ?? initialTime;
+      setTotalTime(t);
+      setTimeRemaining(t);
     },
     [initialTime]
   );
 
-  // Timer countdown — only runs when it's hero's turn
+  // Extend the timer (e.g. Time Bank activation)
+  const extendTimer = useCallback((extraSeconds: number) => {
+    setTimeRemaining((prev) => {
+      const newRemaining = prev + extraSeconds;
+      setTotalTime(newRemaining); // Recalculate full circle from the new extended baseline
+      return newRemaining;
+    });
+  }, []);
+
+  // Timer countdown — ticks whenever ANYONE is acting
   useEffect(() => {
-    if (!isHeroTurn) return;
+    if (!isActiveTurn) return;
 
     const interval = setInterval(() => {
       setTimeRemaining((prev) => {
         if (prev <= 0) return 0;
         const newValue = prev - 1;
         if (newValue <= 0) {
-          onTimeoutRef.current();
+          if (isHeroTurn) {
+            onTimeoutRef.current();
+          }
           return 0;
         }
         return newValue;
@@ -76,7 +93,7 @@ export function useTableTimer({
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [isHeroTurn]);
+  }, [isActiveTurn, isHeroTurn]);
 
   // Timer warning sound
   useEffect(() => {
@@ -92,6 +109,7 @@ export function useTableTimer({
     timeRemaining,
     setTimeRemaining,
     resetTimer,
+    extendTimer,
     isUrgent,
     timerProgress,
   };

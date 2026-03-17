@@ -936,7 +936,11 @@ export default function SettlementDashboardPage() {
           </p>
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '24px' }}>
+        <div
+          style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '24px' }}
+          role="table"
+          aria-label="Agent payouts"
+        >
           {agentPayouts.map((agent, idx) => {
             const statusStyle = getStatusColor(agent.status);
             return (
@@ -954,6 +958,7 @@ export default function SettlementDashboardPage() {
                   transform: visibleRows.has(idx) ? 'translateY(0)' : 'translateY(6px)',
                   transition: 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
                 }}
+                role="row"
               >
                 <span
                   style={{
@@ -969,10 +974,11 @@ export default function SettlementDashboardPage() {
                     boxShadow: statusStyle.shadow,
                     flexShrink: 0,
                   }}
+                  role="cell"
                 >
                   {agent.status}
                 </span>
-                <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ flex: 1, minWidth: 0 }} role="cell">
                   <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#fff' }}>
                     {agent.agentName}
                   </div>
@@ -988,11 +994,13 @@ export default function SettlementDashboardPage() {
                     fontFamily: 'monospace',
                     flexShrink: 0,
                   }}
+                  role="cell"
                 >
                   {agent.netSettlement.toLocaleString()}
                 </div>
                 <span
                   style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.3)', flexShrink: 0 }}
+                  role="cell"
                 >
                   {formatDateTime(agent.updatedAt)}
                 </span>
@@ -1031,7 +1039,11 @@ export default function SettlementDashboardPage() {
           </p>
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <div
+          style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}
+          role="table"
+          aria-label="Settlement period history"
+        >
           {periodHistory.map((period) => {
             const statusStyle = getStatusColor(period.status);
             return (
@@ -1048,6 +1060,7 @@ export default function SettlementDashboardPage() {
                   cursor: 'pointer',
                   transition: 'all 0.2s',
                 }}
+                role="row"
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                   <span
@@ -1064,10 +1077,11 @@ export default function SettlementDashboardPage() {
                       boxShadow: statusStyle.shadow,
                       flexShrink: 0,
                     }}
+                    role="cell"
                   >
                     {period.status}
                   </span>
-                  <div style={{ flex: 1 }}>
+                  <div style={{ flex: 1 }} role="cell">
                     <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#fff' }}>
                       {formatDate(period.start)} — {formatDate(period.end)}
                     </span>
@@ -1079,10 +1093,11 @@ export default function SettlementDashboardPage() {
                       color: '#8b5cf6',
                       fontFamily: 'monospace',
                     }}
+                    role="cell"
                   >
                     {period.totalDisbursed.toLocaleString()}
                   </span>
-                  <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: '0.8rem' }}>
+                  <span style={{ color: 'rgba(255,255,255,0.2)', fontSize: '0.8rem' }} role="cell">
                     {expandedPeriodId === period.id ? '▾' : '▸'}
                   </span>
                 </div>

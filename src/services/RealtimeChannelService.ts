@@ -143,6 +143,42 @@ class RealtimeChannelService {
   }
 
   /**
+   * Synchronous pre-check: if at limit, remove oldest from Maps immediately.
+   * The actual channel.unsubscribe() still happens async, but the slot is freed
+   * synchronously so new subscriptions won't overshoot the limit.
+   */
+  private enforceSubscriptionLimitSync(): void {
+    if (this.subscriptions.size < MAX_CONCURRENT_SUBSCRIPTIONS) return;
+
+    let oldestKey: string | null = null;
+    let oldestTime = Infinity;
+    this.subscriptionTimestamps.forEach((timestamp, key) => {
+      if (timestamp < oldestTime) {
+        oldestTime = timestamp;
+        oldestKey = key;
+      }
+    });
+
+    if (oldestKey) {
+      const oldest = this.subscriptions.get(oldestKey);
+      // Remove from registry synchronously
+      this.subscriptions.delete(oldestKey);
+      this.subscriptionTimestamps.delete(oldestKey);
+      subscriptionMonitor.unregister(oldestKey);
+      // Fire-and-forget the actual unsubscribe
+      if (oldest) {
+        oldest.channel
+          .unsubscribe()
+          .catch((e) =>
+            console.warn('[RealtimeChannel] Async cleanup failed for', oldestKey, ':', e)
+          );
+      }
+      console.warn(`[RealtimeChannelService] Sync limit enforcement: removed oldest ${oldestKey}`);
+    }
+  }
+
+  /**
+   * @deprecated Use enforceSubscriptionLimitSync() instead. Kept for backward compatibility.
    * Enforce subscription limit by removing oldest if necessary
    */
   private async enforceSubscriptionLimit(): Promise<void> {
@@ -207,15 +243,10 @@ class RealtimeChannelService {
       return () => this.unsubscribeFromClub(clubId);
     }
 
-    // Enforce subscription limit before creating new subscription.
-    // enforceSubscriptionLimit() is async (awaits channel.unsubscribe()), but the
-    // internal Map bookkeeping is synchronous, so the limit check is still correct.
-    // We fire-and-forget here because the subscribe methods must stay synchronous
-    // (callers expect a sync cleanup function). The old channel will unsubscribe
-    // in the background — Supabase handles overlapping subscriptions gracefully.
-    this.enforceSubscriptionLimit().catch((e) =>
-      console.error('[RealtimeChannelService] enforceSubscriptionLimit failed:', e)
-    );
+    // Enforce subscription limit synchronously: if at capacity, the oldest subscription
+    // is immediately removed from Maps. The actual channel.unsubscribe() happens async
+    // in the background, but the slot is freed synchronously to prevent overshooting.
+    this.enforceSubscriptionLimitSync();
 
     const channel = supabase.channel(channelName, {
       config: { presence: { key: userId } },
@@ -344,10 +375,8 @@ class RealtimeChannelService {
       return () => this.unsubscribeFromTournament(tournamentId);
     }
 
-    // Enforce subscription limit (see subscribeToClub for rationale on fire-and-forget)
-    this.enforceSubscriptionLimit().catch((e) =>
-      console.error('[RealtimeChannelService] enforceSubscriptionLimit failed:', e)
-    );
+    // Enforce subscription limit synchronously
+    this.enforceSubscriptionLimitSync();
 
     const channel = supabase.channel(channelName);
 
@@ -473,10 +502,8 @@ class RealtimeChannelService {
       return () => this.unsubscribeFromHand(handId);
     }
 
-    // Enforce subscription limit (see subscribeToClub for rationale on fire-and-forget)
-    this.enforceSubscriptionLimit().catch((e) =>
-      console.error('[RealtimeChannelService] enforceSubscriptionLimit failed:', e)
-    );
+    // Enforce subscription limit synchronously
+    this.enforceSubscriptionLimitSync();
 
     const channel = supabase.channel(channelName);
 
@@ -572,10 +599,8 @@ class RealtimeChannelService {
       return () => this.unsubscribeFromLobby();
     }
 
-    // Enforce subscription limit (see subscribeToClub for rationale on fire-and-forget)
-    this.enforceSubscriptionLimit().catch((e) =>
-      console.error('[RealtimeChannelService] enforceSubscriptionLimit failed:', e)
-    );
+    // Enforce subscription limit synchronously
+    this.enforceSubscriptionLimitSync();
 
     const channel = supabase.channel(channelName);
 

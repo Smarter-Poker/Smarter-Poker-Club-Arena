@@ -23,6 +23,7 @@ import styles from './UnionDetailPage.module.css';
 import { useToast } from '../components/common/Toast';
 import ConfirmModal from '../components/common/ConfirmModal';
 import CreateTournamentModal from '../components/club/CreateTournamentModal';
+import { ensureMidwayUnionSetup } from '../services/HorseOrchestrator';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -143,7 +144,17 @@ export default function UnionDetailPage() {
     const loadData = async () => {
       if (isMounted) setLoading(true);
       try {
-        const unionData = await unionService.getUnion(unionId);
+        let unionData = await unionService.getUnion(unionId);
+
+        // Self-healing: if Midway Union is missing, auto-create it
+        if (!unionData && unionId === 'fade0000-0000-0000-0000-000000000001') {
+          console.warn('[UnionDetailPage] Midway Union missing — auto-creating...');
+          const ok = await ensureMidwayUnionSetup();
+          if (ok) {
+            unionData = await unionService.getUnion(unionId);
+          }
+        }
+
         const clubsData = await unionService.getUnionClubs(unionId);
         const tablesData = await tableService.getUnionTables(unionId);
 

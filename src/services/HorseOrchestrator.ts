@@ -1113,6 +1113,121 @@ class HorseOrchestrator {
     return id;
   }
 
+  /**
+   * Ensure the Midway Union exists in Supabase and both clubs are attached.
+   * This is idempotent — safe to call on every launch.
+   */
+  async ensureUnionSetup(): Promise<void> {
+    console.debug('[Orchestrator] Ensuring Midway Union setup...');
+
+    // 1. Upsert the union record (create if missing, no-op if exists)
+    const { data: existingUnion, error: fetchErr } = await supabase
+      .from('unions')
+      .select('id')
+      .eq('id', this.unionId)
+      .maybeSingle();
+
+    if (fetchErr) {
+      console.error('[Orchestrator] Failed to check union existence:', fetchErr);
+    }
+
+    if (!existingUnion) {
+      console.debug('[Orchestrator] Midway Union not found — creating...');
+      const { error: insertErr } = await supabase.from('unions').insert({
+        id: this.unionId,
+        name: MIDWAY_UNION.name,
+        description: MIDWAY_UNION.description,
+        owner_id: MIDWAY_UNION.ownerId,
+        is_public: MIDWAY_UNION.isPublic,
+        club_count: 2,
+        member_count: 0,
+        settings: {
+          revenue_share_percent: MIDWAY_UNION.settings.revenueSharePercent,
+          shared_player_pool: MIDWAY_UNION.settings.sharedPlayerPool,
+          cross_club_tournaments: MIDWAY_UNION.settings.crossClubTournaments,
+        },
+      });
+
+      if (insertErr) {
+        console.error('[Orchestrator] Failed to create Midway Union:', insertErr);
+        // Non-fatal: tables can still be created per-club
+      } else {
+        console.debug('[Orchestrator] Midway Union created successfully');
+
+        // Add Dan as union_lead
+        await supabase
+          .from('union_admins')
+          .upsert(
+            {
+              union_id: this.unionId,
+              user_id: MIDWAY_UNION.ownerId,
+              role: 'union_lead',
+              permissions: { manageClubs: true, manageSettlements: true },
+            },
+            { onConflict: 'union_id,user_id' }
+          )
+          .then(({ error }) => {
+            if (error) console.warn('[Orchestrator] union_admins upsert:', error.message);
+          });
+      }
+    } else {
+      console.debug('[Orchestrator] Midway Union already exists');
+    }
+
+    // 2. Ensure both clubs are attached to the union
+    for (const clubId of [this.sharkClubId, this.jaqkClubId]) {
+      const clubLabel = clubId === this.sharkClubId ? 'Shark Club' : 'Club JAQK';
+
+      // Check if already in union_clubs
+      const { data: existing } = await supabase
+        .from('union_clubs')
+        .select('club_id')
+        .eq('union_id', this.unionId)
+        .eq('club_id', clubId)
+        .maybeSingle();
+
+      if (!existing) {
+        console.debug(`[Orchestrator] Attaching ${clubLabel} to Midway Union...`);
+        const { error: attachErr } = await supabase.from('union_clubs').insert({
+          union_id: this.unionId,
+          club_id: clubId,
+        });
+
+        if (attachErr) {
+          console.error(`[Orchestrator] Failed to attach ${clubLabel}:`, attachErr);
+        } else {
+          // Also set clubs.union_id for fast lookup
+          await supabase
+            .from('clubs')
+            .update({ union_id: this.unionId })
+            .eq('id', clubId);
+          console.debug(`[Orchestrator] ${clubLabel} attached to Midway Union`);
+        }
+      } else {
+        // Ensure clubs.union_id is also set (belt-and-suspenders)
+        await supabase
+          .from('clubs')
+          .update({ union_id: this.unionId })
+          .eq('id', clubId);
+      }
+    }
+
+    // 3. Update union club_count from actual count
+    const { count } = await supabase
+      .from('union_clubs')
+      .select('*', { count: 'exact', head: true })
+      .eq('union_id', this.unionId);
+
+    if (count !== null) {
+      await supabase
+        .from('unions')
+        .update({ club_count: count })
+        .eq('id', this.unionId);
+    }
+
+    console.debug('[Orchestrator] Midway Union setup complete');
+  }
+
   /** Launch the full orchestrator — ALL horses across ALL tables */
   async launch(
     configs: TableConfig[] = DEFAULT_TABLES
@@ -1132,6 +1247,9 @@ class HorseOrchestrator {
     console.debug(
       `[Orchestrator] Launching with ${configs.length} table configs across Shark Club + Club JAQK via Midway Union (${this.unionId})`
     );
+
+    // Ensure the Midway Union exists and both clubs are attached
+    await this.ensureUnionSetup();
 
     // Ensure horses are members of BOTH clubs
     await this.ensureHorsesInBothClubs();
@@ -2472,3 +2590,24 @@ class HorseOrchestrator {
 export const horseOrchestrator = new HorseOrchestrator();
 export { DEFAULT_TABLES, TOURNAMENT_CONFIGS, SNG_CONFIGS, SPIN_CONFIGS };
 export type { OrchestratorTable, OrchestratorStats, TableConfig };
+
+/**
+ * Standalone helper — ensure the Midway Union exists and both clubs are attached.
+ * Can be called independently (from admin panel, browser console, etc.)
+ * without launching the full orchestrator.
+ */
+export async function ensureMidwayUnionSetup(): Promise<boolean> {
+  try {
+    await horseOrchestrator.ensureUnionSetup();
+    console.log('[MidwayUnion] Setup verified — union exists, both clubs attached');
+    return true;
+  } catch (err) {
+    console.error('[MidwayUnion] Setup failed:', err);
+    return false;
+  }
+}
+
+// Expose on window for admin/debug access
+if (typeof window !== 'undefined') {
+  (window as unknown as Record<string, unknown>).ensureMidwayUnionSetup = ensureMidwayUnionSetup;
+}

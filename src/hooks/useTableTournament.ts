@@ -51,8 +51,6 @@ export interface Announcement {
 
 export interface UseTableTournamentReturn {
   // Rebuy
-  showTournamentRebuy: boolean;
-  setShowTournamentRebuy: React.Dispatch<React.SetStateAction<boolean>>;
   rebuyProcessing: boolean;
   setRebuyProcessing: React.Dispatch<React.SetStateAction<boolean>>;
   showRebuyModal: boolean;
@@ -86,7 +84,6 @@ export interface UseTableTournamentReturn {
 
 export function useTableTournament(): UseTableTournamentReturn {
   // Rebuy
-  const [showTournamentRebuy, setShowTournamentRebuy] = useState(false);
   const [rebuyProcessing, setRebuyProcessing] = useState(false);
   const [showRebuyModal, setShowRebuyModal] = useState(false);
   const [rebuyData, setRebuyData] = useState<RebuyData | null>(null);
@@ -116,8 +113,6 @@ export function useTableTournament(): UseTableTournamentReturn {
   const [tournamentWinner, setTournamentWinner] = useState<TournamentWinner | null>(null);
 
   return {
-    showTournamentRebuy,
-    setShowTournamentRebuy,
     rebuyProcessing,
     setRebuyProcessing,
     showRebuyModal,

@@ -602,8 +602,6 @@ export default function TablePage({
 
   // Tournament — extracted to useTableTournament hook
   const {
-    showTournamentRebuy,
-    setShowTournamentRebuy,
     rebuyProcessing,
     setRebuyProcessing,
     tournamentBreak,
@@ -1298,7 +1296,7 @@ export default function TablePage({
       }
       await tournamentService.processAddOn(tableState.tournamentId, userId);
       toast?.success('Add-on successful — chips added');
-      setShowTournamentRebuy(false);
+      setShowRebuyModal(false);
     } catch (err) {
       toast?.error((err as Error).message || 'Add-on failed');
     } finally {

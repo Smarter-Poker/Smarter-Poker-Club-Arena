@@ -12,7 +12,7 @@
  * - Active tables/games grid
  */
 
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { waitForAuth } from '../utils/waitForAuth';
@@ -177,9 +177,7 @@ export default function ClubHomePage() {
     tableName: string | null;
   }>({ show: false, tableId: null, tableName: null });
 
-  // User profile data
-  const [userProfile, setUserProfile] = useState<UserProfileData | null>(null);
-  const [playerNumber, setPlayerNumber] = useState<string>('0000000');
+
 
   const filters: GameFilter[] = ['ALL', "Hold'em", 'Omaha', 'Mixed', 'MTT', 'Spin-It', 'SN'];
 
@@ -190,14 +188,7 @@ export default function ClubHomePage() {
     800
   );
 
-  // Load user profile on mount
-  useEffect(() => {
-    let isMounted = true;
-    loadUserProfile(() => isMounted);
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+
 
   useEffect(() => {
     if (clubId) {
@@ -361,43 +352,12 @@ export default function ClubHomePage() {
     };
   }, []);
 
-  const loadUserProfile = async (getIsMounted?: () => boolean) => {
-    try {
-      const {
-        data: { user: authUser },
-      } = await getAuthUser();
-      if (!authUser) return;
 
-      const { data: profileData } = await retryFetch(
-        () =>
-          supabase
-            .from('profiles')
-            .select('id, username, display_name, avatar_url, player_number')
-            .eq('id', authUser.id)
-            .maybeSingle()
-            .then((r) => r),
-        { maxRetries: 2, isMountedRef }
-      );
-
-      if (getIsMounted && !getIsMounted()) return;
-      if (profileData) {
-        setUserProfile(profileData as UserProfileData);
-        const pNum =
-          (profileData as any).player_number ||
-          Math.abs(
-            [...profileData.id].reduce((h, c) => (h << 5) - h + c.charCodeAt(0), 0) % 9999999
-          ) + 1;
-        setPlayerNumber(pNum.toString());
-      }
-    } catch (err: any) {
-      console.error('[ClubHomePage] loadUserProfile error:', err);
-      // Non-critical — profile data is supplementary; toast as warning
-    }
-  };
 
   const loadClubData = async (getIsMounted?: () => boolean) => {
     if (!clubId) return;
-    if (!getIsMounted || getIsMounted()) setLoading(true);
+    // Only show loading spinner on initial load (no cached data), not background refreshes
+    if (!hasDataRef.current && (!getIsMounted || getIsMounted())) setLoading(true);
 
     try {
       // In iframe context, wait for auth to be set by the parent via postMessage.

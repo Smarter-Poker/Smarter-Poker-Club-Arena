@@ -5,18 +5,31 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import styles from './ClubDetailPage.module.css';
 import { getLocalStorage, setLocalStorage } from '../lib/storage';
 import { useSwipeTabs } from '../hooks/useSwipeTabs';
-import ClubHome from '../components/club/ClubHome';
 import ActivityHeatmap from '../components/common/ActivityHeatmap';
 import CircularGauge from '../components/common/CircularGauge';
 import SecurityDashboard from '../components/admin/SecurityDashboard';
 import AdminCommandPalette from '../components/admin/AdminCommandPalette';
-import CurrencyStore from '../components/club/CurrencyStore';
 import TableOperationsPanel from '../components/club/TableOperationsPanel';
+import { supabase, getAuthUser } from '../lib/supabase';
+import { masterBus } from '../core/MasterBus';
+import { presenceService } from '../services/PresenceService';
+import ClubActivityFeed from '../components/club/ClubActivityFeed';
+import { MembershipService } from '../services/MembershipService';
+import { AgentService, type Agent } from '../services/AgentService';
+import { useToast } from '../components/common/Toast';
+import { ClubsService } from '../services/ClubsService';
+import DailyChallengesWidget from '../components/rewards/DailyChallengesWidget';
+import ClubBottomNav from '../components/club/ClubBottomNav';
+import ConfirmModal from '../components/common/ConfirmModal';
+import PageSkeleton from '../components/common/PageSkeleton';
+import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
+import { resolveClubIdFilter, resolveClubUUID } from '../utils/clubIdResolver';
+import GlobalUXIndicators from '../components/common/GlobalUXIndicators';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -295,33 +308,7 @@ function useCountAnimation(target: number, duration: number = 800) {
   return display;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// MAIN COMPONENT
-// ═══════════════════════════════════════════════════════════════════════════════
 
-import { supabase, getAuthUser } from '../lib/supabase';
-import { masterBus } from '../core/MasterBus';
-import { presenceService } from '../services/PresenceService';
-import ClubActivityFeed from '../components/club/ClubActivityFeed';
-// CreateTableModal replaced by full TableConfigPage navigation
-import { MembershipService } from '../services/MembershipService';
-import { ClubService } from '../services/ClubService';
-import ClubAnnouncementBanner from '../components/club/ClubAnnouncementBanner';
-import MissionPanel from '../components/club/MissionPanel';
-import ClubStatsCards from '../components/club/ClubStatsCards';
-import { useClubStore } from '../stores/useClubStore';
-import MemberList from '../components/club/MemberList';
-import AgentManager from '../components/club/AgentManager';
-import { AgentService, type Agent } from '../services/AgentService';
-import { useToast } from '../components/common/Toast';
-import { ClubsService } from '../services/ClubsService';
-import DailyChallengesWidget from '../components/rewards/DailyChallengesWidget';
-import ClubBottomNav from '../components/club/ClubBottomNav';
-import ConfirmModal from '../components/common/ConfirmModal';
-import PageSkeleton from '../components/common/PageSkeleton';
-import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
-import { resolveClubIdFilter, resolveClubUUID } from '../utils/clubIdResolver';
-import GlobalUXIndicators from '../components/common/GlobalUXIndicators';
 
 export default function ClubDetailPage() {
   const { clubId } = useParams();
@@ -355,7 +342,6 @@ export default function ClubDetailPage() {
   const [showAgentManager, setShowAgentManager] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date());
-  const [editedSettings, setEditedSettings] = useState<Partial<ClubSettings>>({});
   const [showMemberMenu, setShowMemberMenu] = useState<string | null>(null);
   const [userRole, setUserRole] = useState<'owner' | 'admin' | 'agent' | 'member'>('member');
   const [isInUnion, setIsInUnion] = useState(false);

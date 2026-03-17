@@ -345,12 +345,27 @@ export const RakeService = {
     bigBlind: number;
     wentToFlop: boolean;
     players: DealtInPlayer[];
+    /** If provided, use this pre-calculated rake from HandController instead of re-calculating.
+     *  Ensures rake is based on the FINAL pot at hand end (single source of truth). */
+    preCalculatedRake?: number;
   }): Promise<WaterfallResult> {
     const { handId, tableId, clubId, unionId, potSize, bigBlind, wentToFlop, players } = params;
     const sb = params.smallBlind ?? bigBlind / 2;
 
     // STEP 1: Calculate rake and BBJ using official stake-based chart
     const calculation = this.calculateRake(potSize, bigBlind, wentToFlop, sb);
+
+    // If HandController already calculated rake from the FINAL pot, use that as authority
+    if (typeof params.preCalculatedRake === 'number' && params.preCalculatedRake >= 0) {
+      calculation.cappedRake = params.preCalculatedRake;
+      // Recalculate BBJ drop proportionally based on the authoritative rake
+      if (calculation.rawRake > 0) {
+        const ratio = params.preCalculatedRake / calculation.rawRake;
+        calculation.bbjDrop = Math.round(calculation.bbjDrop * ratio * 100) / 100;
+      }
+      calculation.totalDeduction = calculation.cappedRake + calculation.bbjDrop;
+      calculation.netPot = potSize - calculation.totalDeduction;
+    }
 
     // STEP 2: Execute pot drops (if there's rake to take)
     if (calculation.cappedRake > 0) {

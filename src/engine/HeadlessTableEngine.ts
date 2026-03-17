@@ -87,6 +87,7 @@ export class HeadlessTableEngine {
   // Per-hand rake tracking
   private currentHandWentToFlop: boolean = false;
   private currentHandPotSize: number = 0;
+  private currentHandRake: number = 0; // Authoritative rake from HandController
   private currentHandPlayers: SeatedPlayer[] = [];
   // Current hand's dealer seat number (frozen at deal time, not advanced mid-hand)
   private currentHandDealerSeat: number = 0;
@@ -528,6 +529,7 @@ export class HeadlessTableEngine {
     // Reset per-hand rake tracking
     this.currentHandWentToFlop = false;
     this.currentHandPotSize = 0;
+    this.currentHandRake = 0;
     this.currentHandPlayers = players;
 
     // Capture initial stacks BEFORE hand begins — critical for accurate chip delta
@@ -1091,6 +1093,15 @@ export class HeadlessTableEngine {
         break;
 
       case 'HAND_COMPLETE': {
+        // Capture the AUTHORITATIVE pot and rake from HandController
+        // These are the final values calculated at hand end — use these for all downstream
+        if (typeof event.pot === 'number' && event.pot > 0) {
+          this.currentHandPotSize = event.pot;
+        }
+        if (typeof event.rake === 'number' && event.rake >= 0) {
+          this.currentHandRake = event.rake;
+        }
+
         // Record hand timing for telemetry
         const handDuration = Date.now() - (this as any)._handStartTime;
         engineTelemetry.recordHandTiming(this.tableId, 0, 0, handDuration);
@@ -1778,6 +1789,9 @@ export class HeadlessTableEngine {
         potSize,
         wentToFlop,
         players: dealtInPlayers,
+        // Pass HandController's authoritative rake so waterfall doesn't re-calculate
+        // This ensures rake is based on the FINAL pot at hand end (single source of truth)
+        preCalculatedRake: this.currentHandRake > 0 ? this.currentHandRake : undefined,
       });
 
       if (result.calculation.cappedRake > 0) {

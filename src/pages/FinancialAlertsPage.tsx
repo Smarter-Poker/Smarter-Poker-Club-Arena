@@ -6,7 +6,7 @@
  * and auto-refresh via Supabase real-time subscription on `financial_alerts`.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { FinancialAlertService, FinancialAlert } from '../services/FinancialAlertService';
@@ -28,7 +28,11 @@ export default function FinancialAlertsPage() {
   const [exporting, setExporting] = useState(false);
   const [filter, setFilter] = useState<'all' | 'critical' | 'warning' | 'info'>('all');
 
+  const loadingRef = useRef(false);
+
   const loadAlerts = useCallback(async (getIsMounted?: () => boolean) => {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     setLoading(true);
     try {
       const data = await FinancialAlertService.getUnresolved(100);
@@ -38,9 +42,10 @@ export default function FinancialAlertsPage() {
       if (getIsMounted && !getIsMounted()) return;
       console.error('[FinancialAlerts] Failed to load alerts:', err);
       toast.error('Failed to load financial alerts');
+    } finally {
+      loadingRef.current = false;
+      if (!getIsMounted || getIsMounted()) setLoading(false);
     }
-    if (getIsMounted && !getIsMounted()) return;
-    setLoading(false);
   }, []);
 
   useEffect(() => {

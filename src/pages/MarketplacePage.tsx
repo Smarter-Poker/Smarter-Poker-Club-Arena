@@ -6,7 +6,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { retryAsync } from '../utils/retryAsync';
@@ -83,10 +83,14 @@ export default function MarketplacePage() {
 
   const mountedRef = useIsMounted();
 
+  const loadingRef = useRef(false);
+
   const loadMarketplace = useCallback(
     async (cId?: string, silent = false) => {
       const targetClub = cId || clubId;
       if (!targetClub || !user) return;
+      if (loadingRef.current) return;
+      loadingRef.current = true;
       try {
         if (!silent) {
           setLoading(true);
@@ -123,6 +127,7 @@ export default function MarketplacePage() {
       } catch (err: any) {
         if (!silent) toast.error(err.message);
       } finally {
+        loadingRef.current = false;
         if (mountedRef.current) setLoading(false);
       }
     },

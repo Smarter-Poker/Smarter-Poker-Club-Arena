@@ -53,8 +53,12 @@ export default function RakebackPage() {
   // Refs to avoid stale closures
   const loadRakebackDataRef = useRef<() => void>(() => {});
 
+  const loadingRef = useRef(false);
+
   const loadRakebackData = async (getIsMounted?: () => boolean) => {
     if (!user?.id) return;
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     if (!getIsMounted || getIsMounted()) setLoading(true);
     try {
       const { data, error } = await supabase
@@ -77,8 +81,10 @@ export default function RakebackPage() {
     } catch (error) {
       console.error('Failed to load rakeback:', error);
       if (!getIsMounted || getIsMounted()) toast.error('Failed to load rakeback data.');
+    } finally {
+      loadingRef.current = false;
+      if (!getIsMounted || getIsMounted()) setLoading(false);
     }
-    if (!getIsMounted || getIsMounted()) setLoading(false);
   };
 
   // Store ref for callback use

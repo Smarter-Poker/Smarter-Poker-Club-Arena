@@ -309,8 +309,12 @@ export default function AchievementsPage() {
     }
   }, [user?.id]);
 
+  const loadingRef = useRef(false);
+
   const loadAchievements = async () => {
     if (!user?.id) return;
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     // SWR: show cached instantly
     const cached = getCachedAch(user.id);
     if (cached && cached.length > 0) {
@@ -354,8 +358,10 @@ export default function AchievementsPage() {
     } catch (error) {
       console.error('Failed to load achievements:', error);
       if (isMounted.current) toast?.error('Failed to load achievements');
+    } finally {
+      loadingRef.current = false;
+      if (isMounted.current) setLoading(false);
     }
-    if (isMounted.current) setLoading(false);
   };
 
   // Store loadAchievements in ref for use in realtime callbacks

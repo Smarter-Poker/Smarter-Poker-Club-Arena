@@ -7,7 +7,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -190,9 +190,13 @@ export default function PlayerSessionsPage() {
     setNotes({});
   }, [clubId]);
 
+  const loadingRef = useRef(false);
+
   // ── Load Sessions (Primary Data) ──────────────────────────
   const loadSessions = useCallback(
     async (cId: string | null, silent = false) => {
+      if (loadingRef.current) return;
+      loadingRef.current = true;
       try {
         if (!silent) {
           setLoading(true);
@@ -325,6 +329,7 @@ export default function PlayerSessionsPage() {
       } catch (err: any) {
         if (mountedRef.current) setError(err.message);
       } finally {
+        loadingRef.current = false;
         if (mountedRef.current) setLoading(false);
       }
     },

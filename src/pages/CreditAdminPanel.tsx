@@ -66,7 +66,11 @@ export default function CreditAdminPanel() {
     if (authorized) loadAgents();
   });
 
+  const loadingRef = useRef(false);
+
   const loadAgents = useCallback(async () => {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     setLoading(true);
     try {
       const { data } = await retryFetch(
@@ -121,8 +125,10 @@ export default function CreditAdminPanel() {
     } catch (err) {
       console.error('[CreditAdmin] Load failed:', err);
       if (isMounted.current) toast.error('Failed to load agents');
+    } finally {
+      loadingRef.current = false;
+      if (isMounted.current) setLoading(false);
     }
-    if (isMounted.current) setLoading(false);
 
     // Load audit log
     try {

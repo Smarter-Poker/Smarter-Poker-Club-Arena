@@ -2,7 +2,7 @@
  *  BONUS PAGE — Daily Bonuses & Rewards
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -103,7 +103,11 @@ export default function BonusPage() {
     };
   }, []);
 
+  const loadingRef = useRef(false);
+
   const loadBonuses = async (getIsMounted?: () => boolean) => {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     if (!getIsMounted || getIsMounted()) setLoading(true);
     try {
       const { data: profile } = await supabase
@@ -151,8 +155,10 @@ export default function BonusPage() {
     } catch (error) {
       console.error('Failed to load bonuses:', error);
       if (!getIsMounted || getIsMounted()) toast.error('Failed to load bonuses');
+    } finally {
+      loadingRef.current = false;
+      if (!getIsMounted || getIsMounted()) setLoading(false);
     }
-    if (!getIsMounted || getIsMounted()) setLoading(false);
   };
 
   const claimDailyBonus = async () => {

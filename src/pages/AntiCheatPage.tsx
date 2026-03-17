@@ -6,7 +6,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -151,11 +151,15 @@ export default function AntiCheatPage() {
 
   const mountedRef = useIsMounted();
 
+  const loadingRef = useRef(false);
+
   // ── Load Stats ──────────────────────────────────────────
   const loadStats = useCallback(
     async (cId?: string) => {
       const targetClub = cId || clubId;
       if (!targetClub) return;
+      if (loadingRef.current) return;
+      loadingRef.current = true;
       try {
         setLoading(true);
         const { data, error } = await retryFetch(
@@ -182,6 +186,7 @@ export default function AntiCheatPage() {
           });
         }
       } finally {
+        loadingRef.current = false;
         if (mountedRef.current) setLoading(false);
       }
     },

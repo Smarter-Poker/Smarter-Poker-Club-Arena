@@ -118,9 +118,21 @@ export default function BadBeatJackpotPage() {
     }
   }, [clubId]);
 
+  const loadingRef = useRef(false);
+
+  // ── CRITICAL: Reset per-club state when navigating between clubs ──
+  useEffect(() => {
+    setJustUpdated(false);
+    setPlayerContribution(0);
+    setVisibleHistoryRows(new Set());
+    loadingRef.current = false;
+  }, [clubId]);
+
   const loadJackpotData = useCallback(
     async (getIsMounted?: () => boolean) => {
       if (!clubId) return;
+      if (loadingRef.current) return;
+      loadingRef.current = true;
       if (!getIsMounted || getIsMounted()) setLoading(true);
       try {
         const resolvedId = await resolveClubUUID(clubId);
@@ -168,8 +180,10 @@ export default function BadBeatJackpotPage() {
       } catch (error) {
         console.error('Failed to load jackpot:', error);
         if (!getIsMounted || getIsMounted()) toast.error('Failed to load jackpot data.');
+      } finally {
+        loadingRef.current = false;
+        if (!getIsMounted || getIsMounted()) setLoading(false);
       }
-      if (!getIsMounted || getIsMounted()) setLoading(false);
     },
     [clubId]
   );

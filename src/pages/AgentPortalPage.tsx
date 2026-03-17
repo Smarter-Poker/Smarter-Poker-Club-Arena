@@ -6,7 +6,7 @@
  *  with a proper transfer modal, and adds bus listeners for real-time updates.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -109,14 +109,22 @@ export default function AgentPortalPage() {
     };
   }, [user?.id, agentPkId]);
 
+  const loadingRef = useRef(false);
+
   const loadData = async () => {
     if (!user?.id) return;
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     setLoading(true);
-    // loadWallet FIRST — it resolves the agents.id PK needed by loadCommissionHistory
-    const resolvedPkId = await loadWallet();
-    // Pass resolved PK directly — agentPkId state won't be updated until next render
-    await loadCommissionHistory(resolvedPkId ?? undefined);
-    if (isMounted.current) setLoading(false);
+    try {
+      // loadWallet FIRST — it resolves the agents.id PK needed by loadCommissionHistory
+      const resolvedPkId = await loadWallet();
+      // Pass resolved PK directly — agentPkId state won't be updated until next render
+      await loadCommissionHistory(resolvedPkId ?? undefined);
+    } finally {
+      loadingRef.current = false;
+      if (isMounted.current) setLoading(false);
+    }
   };
 
   const loadWallet = async (): Promise<string | null> => {

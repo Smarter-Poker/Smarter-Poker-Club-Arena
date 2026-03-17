@@ -90,8 +90,12 @@ export default function WaitlistPage() {
     return () => unsubs.forEach((u) => u());
   }, []);
 
+  const loadingRef = useRef(false);
+
   const loadWaitlist = async (getIsMounted?: () => boolean) => {
     if (!user?.id) return;
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     if (!getIsMounted || getIsMounted()) setLoading(true);
     try {
       const waitlists = await waitlistService.getUserWaitlists(user.id);
@@ -110,8 +114,10 @@ export default function WaitlistPage() {
       );
     } catch (error) {
       console.error('Failed to load waitlist:', error);
+    } finally {
+      loadingRef.current = false;
+      if (!getIsMounted || getIsMounted()) setLoading(false);
     }
-    if (!getIsMounted || getIsMounted()) setLoading(false);
   };
 
   const leaveWaitlist = async (tableId: string, entryId: string) => {

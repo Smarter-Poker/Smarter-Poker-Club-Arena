@@ -6,7 +6,7 @@
  * mutual friends, and action buttons (Add Friend, Message, Block)
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { useParams, useNavigate } from 'react-router-dom';
 import { profileService } from '../services/ProfileService';
@@ -64,6 +64,8 @@ export default function PublicProfilePage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [playerStatus, setPlayerStatus] = useState<PlayerStatus | null>(null);
 
+  const loadingRef = useRef(false);
+
   useVisibilityRefresh(() => loadProfile());
   const loadProfile = useCallback(async () => {
     if (!userId || !user?.id) return;
@@ -74,6 +76,8 @@ export default function PublicProfilePage() {
       return;
     }
 
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     setLoading(true);
     try {
       const [profileData, statsData, mutuals, blocked, friendship, status] = await Promise.all([
@@ -95,8 +99,10 @@ export default function PublicProfilePage() {
     } catch (err) {
       console.error('[PublicProfile] Load error:', err);
       if (isMounted.current) toast.error('Failed to load profile');
+    } finally {
+      loadingRef.current = false;
+      if (isMounted.current) setLoading(false);
     }
-    if (isMounted.current) setLoading(false);
   }, [userId, user?.id]);
 
   useEffect(() => {
@@ -110,7 +116,9 @@ export default function PublicProfilePage() {
       () => {
         // Re-check friendship status when any request is accepted
         if (user?.id && userId) {
-          checkFriendship(user.id, userId).then(setFriendStatus).catch((e) => console.warn('[PublicProfile] Friendship check failed:', e));
+          checkFriendship(user.id, userId)
+            .then(setFriendStatus)
+            .catch((e) => console.warn('[PublicProfile] Friendship check failed:', e));
         }
       },
       300
@@ -147,7 +155,10 @@ export default function PublicProfilePage() {
       'PROFILE_UPDATED',
       (event) => {
         if (event.payload?.userId === userId) {
-          playerStatusService.getPlayerStatus(userId).then(setPlayerStatus).catch((e) => console.warn('[PublicProfile] Player status refresh failed:', e));
+          playerStatusService
+            .getPlayerStatus(userId)
+            .then(setPlayerStatus)
+            .catch((e) => console.warn('[PublicProfile] Player status refresh failed:', e));
         }
       },
       500

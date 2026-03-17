@@ -19,6 +19,7 @@ import { masterBus } from '../../core/MasterBus';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import haptic from '../../utils/haptic';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
+import { useToast } from '../../components/common/Toast';
 
 const FB = {
   bg: '#18191A',
@@ -294,6 +295,7 @@ function ConfigModal({
   clubId: string;
 }) {
   const { user } = useAuthUser();
+  const toast = useToast();
   const [tab, setTab] = useState('regular');
   const [creating, setCreating] = useState(false);
   const isMounted = useIsMounted();
@@ -328,7 +330,9 @@ function ConfigModal({
         .limit(1)
         .maybeSingle();
       if (unionCheck) {
-        throw new Error('Clubs inside a union cannot create standalone games. Tables and tournaments are managed at the union level.');
+        throw new Error(
+          'Clubs inside a union cannot create standalone games. Tables and tournaments are managed at the union level.'
+        );
       }
 
       const bb = parseFloat(bigBlind) || 2;
@@ -395,7 +399,7 @@ function ConfigModal({
       onClose();
     } catch (err: any) {
       haptic('error');
-      alert('Failed: ' + (err.message || 'Unknown error'));
+      toast.error('Failed: ' + (err.message || 'Unknown error'));
     } finally {
       if (isMounted.current) setCreating(false);
     }

@@ -10,7 +10,7 @@
  * - Real-time updates via Supabase subscription
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -50,7 +50,11 @@ export default function DisputeManagementPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const isMounted = useIsMounted();
 
+  const loadingRef = useRef(false);
+
   const loadDisputes = useCallback(async () => {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     setLoading(true);
     try {
       if (clubId) {
@@ -65,8 +69,10 @@ export default function DisputeManagementPage() {
     } catch (err) {
       console.error('[Disputes] Load failed:', err);
       if (isMounted.current) toast.error('Failed to load disputes');
+    } finally {
+      loadingRef.current = false;
+      if (isMounted.current) setLoading(false);
     }
-    if (isMounted.current) setLoading(false);
   }, [clubId, user?.id]);
 
   useVisibilityRefresh(() => loadDisputes());

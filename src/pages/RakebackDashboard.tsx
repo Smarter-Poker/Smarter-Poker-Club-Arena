@@ -5,7 +5,7 @@
  *  Shows the player their current rakeback tier, pending rakeback, and history.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -106,8 +106,12 @@ export default function RakebackDashboard() {
     };
   }, [user?.id]);
 
+  const loadingRef = useRef(false);
+
   const loadData = async () => {
     if (!user?.id) return;
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     setLoading(true);
     try {
       // Count rake from wallet transactions
@@ -180,8 +184,10 @@ export default function RakebackDashboard() {
       if (!isMounted.current) return;
       console.error('[RakebackDashboard] Load failed:', err);
       toast.error('Failed to load rakeback data');
+    } finally {
+      loadingRef.current = false;
+      if (isMounted.current) setLoading(false);
     }
-    if (isMounted.current) setLoading(false);
   };
 
   const currentTierData = TIERS.find((t) => t.name === stats.currentTier) || TIERS[0];

@@ -64,7 +64,11 @@ export default function SettlementHistoryPage() {
     };
   }, []);
 
+  const loadingRef = useRef(false);
+
   const loadHistory = async () => {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     setLoading(true);
     try {
       const { data } = await supabase
@@ -101,8 +105,10 @@ export default function SettlementHistoryPage() {
       if (!isMounted.current) return;
       console.error('[SettlementHistory] Load failed:', err);
       toast.error('Failed to load settlement history');
+    } finally {
+      loadingRef.current = false;
+      if (isMounted.current) setLoading(false);
     }
-    if (isMounted.current) setLoading(false);
   };
 
   const totalRakeAllTime = cycles.reduce((s, c) => s + c.totalRake, 0);

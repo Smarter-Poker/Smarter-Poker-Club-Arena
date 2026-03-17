@@ -6,7 +6,7 @@
  *  Quick links to: Alerts, Health, Disputes, Rate Audit, Settlements, Financials.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -145,8 +145,12 @@ export default function FinancialAdminHub() {
   const [visibleNavs, setVisibleNavs] = useState<Set<number>>(new Set());
   const [revenueData, setRevenueData] = useState<{ day: string; amount: number }[]>([]);
 
+  const loadingRef = useRef(false);
+
   // ── loadStats: parallelized queries (~4x faster than sequential) ──
   const loadStats = useCallback(async () => {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     setLoading(true);
     try {
       // All KPI counts + data in parallel
@@ -271,8 +275,10 @@ export default function FinancialAdminHub() {
     } catch (err) {
       console.error('[FinancialAdminHub] Stats load failed:', err);
       if (isMounted.current) toast.error('Failed to load financial stats');
+    } finally {
+      loadingRef.current = false;
+      if (isMounted.current) setLoading(false);
     }
-    if (isMounted.current) setLoading(false);
   }, [toast]);
 
   useVisibilityRefresh(loadStats);

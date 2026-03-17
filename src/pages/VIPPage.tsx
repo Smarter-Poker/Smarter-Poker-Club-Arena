@@ -2,7 +2,7 @@
  *  VIP PAGE — VIP Tier Progression, Benefits, and Rewards Marketplace
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -140,11 +140,15 @@ export default function VIPPage() {
     return unsubVIP;
   }, [user?.id]);
 
+  const loadingRef = useRef(false);
+
   const loadVIPStatus = async (getIsMounted?: () => boolean) => {
     if (!user?.id) {
       if (!getIsMounted || getIsMounted()) setLoading(false);
       return;
     }
+    if (loadingRef.current) return;
+    loadingRef.current = true;
 
     if (!getIsMounted || getIsMounted()) setLoading(true);
     try {
@@ -202,8 +206,10 @@ export default function VIPPage() {
       }
     } catch (error) {
       if (!getIsMounted || getIsMounted()) toast.error('Failed to load VIP status');
+    } finally {
+      loadingRef.current = false;
+      if (!getIsMounted || getIsMounted()) setLoading(false);
     }
-    if (!getIsMounted || getIsMounted()) setLoading(false);
   };
 
   const handlePurchase = async (feature: VIPFeature) => {

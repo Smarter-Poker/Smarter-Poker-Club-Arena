@@ -186,8 +186,12 @@ export default function NotificationsPage() {
     };
   }, []);
 
+  const loadingRef = useRef(false);
+
   const loadNotifications = async (getIsMounted?: () => boolean) => {
     if (!user?.id) return;
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     if (!hasDataRef.current) setLoading(true);
     try {
       const { data, error } = await retryFetch(
@@ -213,9 +217,12 @@ export default function NotificationsPage() {
     } catch (error) {
       console.error('Failed to load notifications:', error);
       if (isMounted.current) toast.error('Failed to load notifications');
+    } finally {
+      loadingRef.current = false;
+      if (!getIsMounted || getIsMounted()) {
+        if (isMounted.current) setLoading(false);
+      }
     }
-    if (getIsMounted && !getIsMounted()) return;
-    if (isMounted.current) setLoading(false);
   };
 
   const markAsRead = async (id: string) => {

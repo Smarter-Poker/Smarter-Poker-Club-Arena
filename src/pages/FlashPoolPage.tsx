@@ -10,7 +10,7 @@
  * - Connects to FlashPoolEngine for instant fold → reassign flow
  */
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
@@ -54,8 +54,12 @@ export default function FlashPoolPage() {
   const [userBalance, setUserBalance] = useState<number | null>(null);
   const isMounted = useIsMounted();
 
+  const loadingRef = useRef(false);
+
   // ── Load available pools ──
   const loadPools = useCallback(async () => {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     try {
       const { data, error } = await supabase
         .from('flash_pools')
@@ -87,6 +91,7 @@ export default function FlashPoolPage() {
       toast.error('Failed to load pools');
       setPools([]);
     } finally {
+      loadingRef.current = false;
       setLoading(false);
     }
   }, []);

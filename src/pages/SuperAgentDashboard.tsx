@@ -2,7 +2,7 @@
  * SUPER AGENT DASHBOARD — Agent Network Management with Live Updates
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
@@ -177,7 +177,11 @@ export default function SuperAgentDashboard() {
     };
   }, [clubId, user?.id]);
 
+  const loadingRef = useRef(false);
+
   const loadDashboardData = async () => {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     setLoading(true);
     try {
       const agents = await AgentService.getAgents(clubId!);
@@ -196,8 +200,10 @@ export default function SuperAgentDashboard() {
     } catch (error) {
       console.error('Failed to load dashboard:', error);
       if (isMounted.current) toast.error('Failed to load dashboard data');
+    } finally {
+      loadingRef.current = false;
+      if (isMounted.current) setLoading(false);
     }
-    if (isMounted.current) setLoading(false);
   };
 
   const handleTransfer = async () => {

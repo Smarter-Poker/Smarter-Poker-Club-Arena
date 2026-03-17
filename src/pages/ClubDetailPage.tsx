@@ -692,8 +692,19 @@ export default function ClubDetailPage() {
         if (getIsMounted && !getIsMounted()) return;
         setMembers(mappedMembersResult);
 
-        // Update member count to reflect actual data (clubs.member_count may be stale)
-        setClub((prev) => (prev ? { ...prev, memberCount: mappedMembersResult.length } : null));
+        // Update member count with LIVE RPC count (not members.length which is capped at .limit(50))
+        try {
+          const { data: counts } = await supabase.rpc('fn_batch_club_member_counts', {
+            p_club_ids: [resolvedId],
+          });
+          if (counts && counts.length > 0) {
+            setClub((prev) =>
+              prev ? { ...prev, memberCount: Number(counts[0].member_count) } : null
+            );
+          }
+        } catch {
+          // Fall back to denormalized member_count from initial club query
+        }
 
         // Determine current user's role in this club
         const {

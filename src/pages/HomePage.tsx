@@ -518,7 +518,7 @@ function HomePageInner() {
 
   useEffect(() => {
     let isMounted = true;
-    async function fetchSharkClubStats() {
+    async function fetchSharkClubStats(retryOnFail = false) {
       try {
         // Wait for auth to be ready before querying — prevents RLS null results in iframe
         await waitForAuth(() => isMounted);
@@ -589,15 +589,15 @@ function HomePageInner() {
         }
       } catch (err) {
         console.error('[HomePage] Failed to fetch Shark Club stats:', err);
-        throw err; // Re-throw so the .catch() retry handler fires
+        // Single retry after 3s — only on initial mount, not on real-time refreshes
+        if (retryOnFail && isMounted) {
+          setTimeout(() => {
+            if (isMounted) fetchSharkClubStats(false);
+          }, 3000);
+        }
       }
     }
-    fetchSharkClubStats().catch(() => {
-      // Single retry after 3s for cold-start / network blip
-      setTimeout(() => {
-        if (isMounted) fetchSharkClubStats();
-      }, 3000);
-    });
+    fetchSharkClubStats(true);
 
     // Real-time clubs table updates via MasterBus channel registry
     const sharkChannelKey = 'clubs-live-stats';

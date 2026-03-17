@@ -220,6 +220,14 @@ export default function ClubCarouselPage() {
     return () => unsubs.forEach((u) => u());
   }, []);
 
+  // #5: Filtered clubs based on search
+  // MUST be declared before keyboard nav, deep link, stagger animation, and clamp effects
+  const displayedClubs = useMemo(() => {
+    if (!searchQuery.trim()) return clubs;
+    const q = searchQuery.toLowerCase();
+    return clubs.filter((c) => c.name?.toLowerCase().includes(q) || String(c.club_id).includes(q));
+  }, [clubs, searchQuery]);
+
   // #6: Keyboard navigation
   // BUG FIX: Must use displayedClubs (filtered), not clubs (unfiltered).
   // Otherwise Enter navigates to wrong club when search is active.
@@ -262,27 +270,39 @@ export default function ClubCarouselPage() {
     return () => window.removeEventListener('keydown', handler);
   });
 
+  // Clamp activeIndex when search narrows the list
+  useEffect(() => {
+    const maxIdx = displayedClubs.length + userUnions.length - 1;
+    if (maxIdx < 0) {
+      setActiveIndex(0);
+    } else {
+      setActiveIndex((prev) => Math.min(prev, maxIdx));
+    }
+  }, [displayedClubs.length, userUnions.length]);
+
   // #7: Deep link support — ?club=UUID jumps to that club
   useEffect(() => {
     const deepClubId = searchParams.get('club');
-    if (deepClubId && clubs.length > 0) {
-      const idx = clubs.findIndex((c) => c.id === deepClubId);
+    if (deepClubId && displayedClubs.length > 0) {
+      const idx = displayedClubs.findIndex((c) => c.id === deepClubId);
       if (idx >= 0) setActiveIndex(idx);
     }
-  }, [clubs, searchParams]);
+  }, [displayedClubs, searchParams]);
 
   // #10: Stagger premium 3D card entrance animation
+  // BUG FIX: Must use displayedClubs (filtered), not clubs (unfiltered)
+  // Otherwise filtered cards get IDs not in visibleCards → stuck with 'hidden' class
   useEffect(() => {
-    if (clubs.length === 0 && userUnions.length === 0) return;
+    if (displayedClubs.length === 0 && userUnions.length === 0) return;
     setVisibleCards(new Set());
-    const allItems = [...clubs.map((c) => c.id), ...userUnions.map((u) => u.id)];
+    const allItems = [...displayedClubs.map((c) => c.id), ...userUnions.map((u) => u.id)];
     const timers = allItems.map((itemId, index) =>
       setTimeout(() => {
         setVisibleCards((prev) => new Set(prev).add(itemId));
       }, index * 80)
     );
     return () => timers.forEach((t) => clearTimeout(t));
-  }, [clubs, userUnions]);
+  }, [displayedClubs, userUnions]);
 
   // #8: Fetch notification badges per club
   useEffect(() => {
@@ -309,24 +329,6 @@ export default function ClubCarouselPage() {
       }
     })();
   }, [clubs, isMounted]);
-
-  // #5: Filtered clubs based on search
-  const displayedClubs = useMemo(() => {
-    if (!searchQuery.trim()) return clubs;
-    const q = searchQuery.toLowerCase();
-    return clubs.filter((c) => c.name?.toLowerCase().includes(q) || String(c.club_id).includes(q));
-  }, [clubs, searchQuery]);
-
-  // BUG FIX: Clamp activeIndex when search narrows the list
-  // Without this, activeIndex can exceed displayedClubs.length → blank carousel
-  useEffect(() => {
-    const maxIdx = displayedClubs.length + userUnions.length - 1;
-    if (maxIdx < 0) {
-      setActiveIndex(0);
-    } else {
-      setActiveIndex((prev) => Math.min(prev, maxIdx));
-    }
-  }, [displayedClubs.length, userUnions.length]);
 
   // ── #6: Decomposed data loading helpers ──
   const loadProfile = useCallback(

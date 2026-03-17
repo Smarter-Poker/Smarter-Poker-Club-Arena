@@ -289,10 +289,12 @@ export async function leaveClub(clubId: string): Promise<void> {
         () =>
           supabase.rpc('atomic_deduct_wallet_and_log', {
             p_user_id: userId,
-            p_club_id: resolvedId,
             p_amount: balance,
-            p_action_type: 'leave_club_refund',
-            p_note: 'Chips returned to treasury on club departure',
+            p_category: 'transfer',
+            p_description: 'Chips returned to treasury on club departure',
+            p_table_id: null,
+            p_hand_id: null,
+            p_related_entity_id: resolvedId,
           }),
         2
       );

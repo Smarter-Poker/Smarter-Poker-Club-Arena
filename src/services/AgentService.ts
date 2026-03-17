@@ -850,10 +850,10 @@ class AgentServiceClass {
     const { error } = await retryAsync(
       () =>
         supabase.rpc('wallet_internal_transfer', {
-          p_agent_id: agentId,
-          p_amount: amount,
+          p_user_id: agentId,
           p_from_wallet: fromWallet,
           p_to_wallet: toWallet,
+          p_amount: amount,
         }),
       3
     );

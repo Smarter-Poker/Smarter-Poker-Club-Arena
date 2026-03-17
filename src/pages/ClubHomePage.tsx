@@ -1028,9 +1028,9 @@ export default function ClubHomePage() {
 
         {/* TOURNAMENT CARDS — Dynamic PokerBros-style cards */}
         {filteredTournaments.map((tournament, idx) => {
-          const isSNG =
-            tournament.name.toLowerCase().includes('sng') || tournament.max_players <= 10;
-          const isSpin = tournament.name.toLowerCase().includes('spin');
+          const tName = (tournament.name || '').toLowerCase();
+          const isSNG = tName.includes('sng') || tournament.max_players <= 10;
+          const isSpin = tName.includes('spin');
           const staggerIdx = filteredTables.length + idx;
 
           return (

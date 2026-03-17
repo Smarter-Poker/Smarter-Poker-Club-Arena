@@ -396,6 +396,10 @@ export default function TablePage({
     return () => horseBugReporter.stopCapturing();
   }, []);
 
+  /** Safely extract big blind from blinds string (e.g. "1/2" → 2). Never crashes on undefined/null. */
+  const safeBB = (blindsStr?: string | null, fallback = 2): number =>
+    parseFloat((blindsStr || '?/?').split('/')[1] || String(fallback)) || fallback;
+
   // WebSocket connection for real-time game state
   const { isConnected, presence, lastEvent, sendAction, sendChat, updateSeat } = useTableWebSocket(
     tableId || '',
@@ -1008,7 +1012,7 @@ export default function TablePage({
   const playWinSound = (potAmount?: number) => {
     // NEW-BUG-2 FIX: use dynamic isEnabled() not stale isSoundEnabled closure
     if (!soundService.isEnabled()) return;
-    const bb = parseFloat(tableState.blinds.split('/')[1]) || 2;
+    const bb = safeBB(tableState.blinds);
     const bbWon = (potAmount || tableState.pot) / bb;
 
     if (bbWon >= 50) {
@@ -1060,7 +1064,7 @@ export default function TablePage({
     players: Array<{ userId: string; clubId: string; agentId?: string }>
   ) => {
     // Parse blinds from string (e.g., "0.25/0.50" -> sb=0.25, bb=0.50)
-    const blindParts = tableState.blinds.split('/');
+    const blindParts = (tableState.blinds || '?/?').split('/');
     const smallBlind = parseFloat(blindParts[0]) || 1;
     const bigBlind = parseFloat(blindParts[1]) || 2;
 
@@ -3399,10 +3403,10 @@ export default function TablePage({
         currentBet: state.currentBet,
         playerBet: heroPlayer.bet,
         playerStack: heroPlayer.stack,
-        bigBlind: parseFloat(tableState.blinds.split('/')[1] || '2'),
+        bigBlind: safeBB(tableState.blinds),
         minRaise: Math.max(
-          parseFloat(tableState.blinds.split('/')[1] || '2'),
-          state.lastRaise || parseFloat(tableState.blinds.split('/')[1] || '2')
+          safeBB(tableState.blinds),
+          state.lastRaise || safeBB(tableState.blinds)
         ),
         pot: state.pot,
         canCheck: state.currentBet - heroPlayer.bet <= 0,
@@ -4022,7 +4026,7 @@ export default function TablePage({
                   <PotDisplay
                     mainPot={tableState.pot}
                     sidePots={tableState.sidePots}
-                    bigBlind={parseFloat(tableState.blinds.split('/')[1]) || 0}
+                    bigBlind={safeBB(tableState.blinds, 0)}
                     displayMode={userSettings.showStackInBB ? 'bb' : 'chips'}
                     onToggleDisplayMode={() =>
                       updateSetting('showStackInBB', !userSettings.showStackInBB)
@@ -4111,7 +4115,7 @@ export default function TablePage({
                       tableId={tableId}
                       userId={userId}
                       initialStack={tableState.players[tableState.heroSeat - 1]?.stack || 0}
-                      bigBlind={Number(tableState.blinds.split('/')[1]) || 2}
+                      bigBlind={safeBB(tableState.blinds)}
                     />
                   </TableErrorBoundary>
                 )}
@@ -4149,7 +4153,7 @@ export default function TablePage({
                   timerProgress={
                     seatNumber === tableState.currentPlayerSeat ? actionTimerProgress : undefined
                   }
-                  bigBlind={parseFloat(tableState.blinds.split('/')[1]) || 2}
+                  bigBlind={safeBB(tableState.blinds)}
                   isTournament={tableState.isTournament}
                   bountyValue={
                     tableState.isBountyTournament && player
@@ -4288,7 +4292,7 @@ export default function TablePage({
                     handState?.players.find((p) => p.user_id === userId)?.bet || 0;
                   const callAmount = Math.max(0, currentBet - myEngineBet);
                   const heroStack = getPlayerAtSeat(tableState.heroSeat)?.stack || 0;
-                  const bb = parseFloat(tableState.blinds.split('/')[1]) || 2;
+                  const bb = safeBB(tableState.blinds);
                   const minRaise = Math.max(bb, currentBet > 0 ? currentBet * 2 : bb * 2);
 
                   return (
@@ -4567,11 +4571,11 @@ export default function TablePage({
         variant="No Limit Hold'em"
         stakes="1/2"
         minBuyIn={(() => {
-          const bb = parseFloat(tableState.blinds.split('/')[1]) || 2;
+          const bb = safeBB(tableState.blinds);
           return bb * 40;
         })()}
         maxBuyIn={(() => {
-          const bb = parseFloat(tableState.blinds.split('/')[1]) || 2;
+          const bb = safeBB(tableState.blinds);
           return bb * 100;
         })()}
         rakePercentage={5}
@@ -4773,15 +4777,15 @@ export default function TablePage({
         currentStack={tableState.players[tableState.heroSeat - 1]?.stack || 0}
         accountBalance={accountBalance}
         minBuyIn={(() => {
-          const bb = parseFloat(tableState.blinds.split('/')[1]) || 2;
+          const bb = safeBB(tableState.blinds);
           return bb * 40;
         })()}
         maxBuyIn={(() => {
-          const bb = parseFloat(tableState.blinds.split('/')[1]) || 2;
+          const bb = safeBB(tableState.blinds);
           return bb * 100;
         })()}
         maxStack={(() => {
-          const bb = parseFloat(tableState.blinds.split('/')[1]) || 2;
+          const bb = safeBB(tableState.blinds);
           return bb * 200;
         })()}
       />
@@ -4917,17 +4921,17 @@ export default function TablePage({
         }}
         tableName={tableState.tableName}
         minBuyIn={(() => {
-          const bb = parseFloat(tableState.blinds.split('/')[1]) || 2;
+          const bb = safeBB(tableState.blinds);
           return bb * 40;
         })()}
         maxBuyIn={(() => {
-          const bb = parseFloat(tableState.blinds.split('/')[1]) || 2;
+          const bb = safeBB(tableState.blinds);
           return bb * 100;
         })()}
         accountBalance={
           tableId === 'demo' || !tableId?.match(/^[0-9a-f-]{36}$/i) ? 10000 : accountBalance
         }
-        bigBlind={parseFloat(tableState.blinds.split('/')[1]) || 2}
+        bigBlind={safeBB(tableState.blinds)}
       />
 
       {/* Rabbit Hunt (post-hand card reveal) */}

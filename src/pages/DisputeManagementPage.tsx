@@ -174,10 +174,10 @@ export default function DisputeManagementPage() {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
     return (
-      d.submitterName.toLowerCase().includes(q) ||
-      d.reason.toLowerCase().includes(q) ||
-      d.targetType.toLowerCase().includes(q) ||
-      d.amount.toString().includes(q)
+      (d.submitterName || '').toLowerCase().includes(q) ||
+      (d.reason || '').toLowerCase().includes(q) ||
+      (d.targetType || '').toLowerCase().includes(q) ||
+      String(d.amount || 0).includes(q)
     );
   });
 

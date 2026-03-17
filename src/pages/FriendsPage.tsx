@@ -411,7 +411,7 @@ export default function FriendsPage() {
   }));
 
   const filteredFriends = friendsWithStatus.filter((f) =>
-    f.username.toLowerCase().includes(searchQuery.toLowerCase())
+    (f.username || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   // Stagger friend rows on render

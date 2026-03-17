@@ -537,7 +537,7 @@ export default function TournamentLobbyPage() {
       // Text search
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
-        if (!t.name.toLowerCase().includes(query) && !t.clubName.toLowerCase().includes(query)) {
+        if (!(t.name || '').toLowerCase().includes(query) && !(t.clubName || '').toLowerCase().includes(query)) {
           return false;
         }
       }

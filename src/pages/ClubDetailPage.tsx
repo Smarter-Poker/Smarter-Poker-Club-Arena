@@ -256,7 +256,7 @@ const RoleBadge = ({ role }: { role: string }) => {
   };
   return (
     <span className={styles.roleBadge} style={{ backgroundColor: colors[role] || colors.member }}>
-      {role.toUpperCase()}
+      {(role || 'member').toUpperCase()}
     </span>
   );
 };
@@ -468,7 +468,7 @@ export default function ClubDetailPage() {
       setFilteredMembers(members);
     } else {
       const search = memberSearch.toLowerCase();
-      setFilteredMembers(members.filter((m) => m.username.toLowerCase().includes(search)));
+      setFilteredMembers(members.filter((m) => (m.username || '').toLowerCase().includes(search)));
     }
   }, [memberSearch, members]);
 

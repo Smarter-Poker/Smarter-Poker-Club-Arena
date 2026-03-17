@@ -414,6 +414,56 @@ export default function TablePage({
     };
   }, []);
 
+  // ─── SCREEN WAKE LOCK — Prevent screen dimming during active poker play ───
+  useEffect(() => {
+    let wakeLock: WakeLockSentinel | null = null;
+
+    const requestWakeLock = async () => {
+      try {
+        if ('wakeLock' in navigator) {
+          wakeLock = await navigator.wakeLock.request('screen');
+        }
+      } catch {
+        // Wake Lock not supported or denied — ignore
+      }
+    };
+
+    // Reacquire wake lock when tab becomes visible again
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        requestWakeLock();
+      }
+    };
+
+    requestWakeLock();
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      wakeLock?.release().catch(() => {});
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
+
+  // ─── BACKGROUND TAB DETECTION — Pause animations when tab is hidden (saves battery) ───
+  useEffect(() => {
+    const tablePage = document.querySelector('.table-page');
+    if (!tablePage) return;
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        tablePage.classList.add('table-page--backgrounded');
+      } else {
+        tablePage.classList.remove('table-page--backgrounded');
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+      tablePage.classList.remove('table-page--backgrounded');
+    };
+  }, []);
+
   // Get current user
   const [userId, setUserId] = useState<string>('guest');
   const [username, setUsername] = useState<string>('Player');

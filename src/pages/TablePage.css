@@ -1321,3 +1321,30 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   GPU COMPOSITING HINTS — Promote frequently-animated elements to own layers
+   Only on mobile (avoid unnecessary layer creation on desktop)
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 768px) and (pointer: coarse) {
+  .community-cards__card,
+  .pot-display,
+  .pot-display__chip-stack,
+  .dealer-button,
+  .action-panel,
+  .seat__cards--hero .seat__card {
+    will-change: transform;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   BACKGROUND TAB — Freeze animations when tab is hidden (battery savings)
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.table-page--backgrounded *,
+.table-page--backgrounded *::before,
+.table-page--backgrounded *::after {
+  animation-play-state: paused !important;
+  transition: none !important;
+}

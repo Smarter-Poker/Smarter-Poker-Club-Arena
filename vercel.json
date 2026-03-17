@@ -23,6 +23,14 @@
       "destination": "/videos/:path*"
     },
     {
+      "source": "/hub/club-arena/cards/:path*",
+      "destination": "/cards/:path*"
+    },
+    {
+      "source": "/hub/club-arena/sounds/:path*",
+      "destination": "/sounds/:path*"
+    },
+    {
       "source": "/club-stats-panel.svg",
       "destination": "/club-stats-panel.svg"
     },

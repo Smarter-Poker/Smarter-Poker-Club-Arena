@@ -633,7 +633,18 @@ function SettlementsTab({ clubId }: { clubId: string }) {
 
   return (
     <div className="admin-tab-content">
-      {error && <div className="admin-error-banner">{error}</div>}
+      {error && (
+        <div className="admin-error-banner">
+          {error}{' '}
+          <button
+            onClick={load}
+            className="admin-btn admin-btn-primary"
+            style={{ marginLeft: '12px', padding: '4px 14px', fontSize: '0.8rem' }}
+          >
+            ↻ Retry
+          </button>
+        </div>
+      )}
 
       <div className="admin-card" style={{ marginBottom: '24px' }}>
         <h3 className="admin-card-title">

@@ -381,7 +381,7 @@ function HomePageInner() {
   );
 
   // ── Visibility Refresh — refresh data when user returns to tab ──
-  useVisibilityRefresh(() => fetchUserData(true));
+  const { isRefreshing } = useVisibilityRefresh(() => fetchUserData(true));
 
   useEffect(() => {
     let isMounted = true;

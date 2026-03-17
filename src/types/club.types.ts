@@ -397,7 +397,7 @@ export interface ChipTransaction {
   amount: number;
   balance_before: number;
   balance_after: number;
-  reference_id?: string; // Table ID, Tournament ID, etc.
+  related_entity_id?: string; // Table ID, Tournament ID, etc.
   notes?: string;
   created_by: string;
   created_at: string;

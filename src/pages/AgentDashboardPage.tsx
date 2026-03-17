@@ -97,7 +97,6 @@ interface ChipTransaction {
   amount: number;
   transaction_type: string;
   notes?: string;
-  reference_id?: string;
   created_at: string;
 }
 

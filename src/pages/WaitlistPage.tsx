@@ -87,9 +87,26 @@ export default function WaitlistPage() {
         300
       ),
       masterBus.subscribeDebounced('TABLE_SEATED', () => loadWaitlistRef.current(), 300),
+      masterBus.subscribeDebounced(
+        'WAITLIST_PROMOTED',
+        (event) => {
+          // Refresh the list (the promoted entry will be removed)
+          loadWaitlistRef.current();
+          // If the promoted player is the current user, toast + auto-navigate
+          const data = event?.payload;
+          if (data?.userId === user?.id && data?.tableId) {
+            toast.success('🎉 You have been auto-seated! Redirecting to your table...');
+            haptic.heavy();
+            setTimeout(() => {
+              navigate(`/table/${data.tableId}`);
+            }, 2000);
+          }
+        },
+        300
+      ),
     ];
     return () => unsubs.forEach((u) => u());
-  }, []);
+  }, [user?.id, navigate, toast]);
 
   useVisibilityRefresh(() => loadWaitlistRef.current());
 

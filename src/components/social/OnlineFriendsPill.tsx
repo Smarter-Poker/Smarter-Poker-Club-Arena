@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  ONLINE FRIENDS PILL — Shows online friend avatars on LobbyPage
+ *  ONLINE FRIENDS PILL — Shows online friend avatars on HomePage
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 

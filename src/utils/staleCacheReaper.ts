@@ -23,7 +23,7 @@
  *   members_cache_  → ClubMembersPage (Phase 4)
  *   tx_cache_       → TransactionHistoryPage (Phase 8)
  *   club_home_cache_ → ClubHomePage (Phase 8)
- *   lobby_tables_cache → LobbyPage (Phase 8)
+ *   online_friends_pill_cache_ → OnlineFriendsPill (Shows online friend avatars on HomePage)
  */
 
 const SWR_PREFIXES = [

@@ -633,7 +633,7 @@ export default function TablePage({
         break;
       case 'REBUY':
         if (tableState.isTournament) {
-          setShowTournamentRebuy(true);
+          handleTournamentRebuy();
         } else {
           setShowBuyInModal(true);
         }

@@ -64,7 +64,8 @@ const RANK_MAP: Record<string, string> = {
 export function getCardImagePath(card: Card, deckStyle: DeckStyle = '4color'): string {
   const suitName = SUIT_MAP[card.suit];
   const rankName = RANK_MAP[card.rank];
-  return `/cards/${deckStyle}/${suitName}_${rankName}.png`;
+  const base = import.meta.env.BASE_URL || '/';
+  return `${base}cards/${deckStyle}/${suitName}_${rankName}.png`;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

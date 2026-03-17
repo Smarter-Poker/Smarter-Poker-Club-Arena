@@ -1,7 +1,15 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- * PREMIUM SFX ENGINE — Web Audio API Synthesizer
+ * PREMIUM SFX ENGINE — Web Audio API Synthesizer (UI-TIER)
  * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * ARCHITECTURE NOTE — This is the UI-tier sound layer, separate from:
+ *   1. SoundService.ts     — Poker table game sounds (deal, fold, all-in, etc.)
+ *   2. SoundPackService.ts — Sound profile/preset manager (wraps SoundService)
+ *   3. PremiumSFX.ts (THIS) — UI interaction sounds (card flip, navigate, toggle)
+ *
+ * Intentionally INDEPENDENT of SoundService — has its own AudioContext and
+ * localStorage flag to avoid coupling home/UI sounds with table game logic.
  *
  * Zero-dependency sound engine that generates pleasant, premium UI sounds
  * using the Web Audio API. No external .mp3/.wav files needed.
@@ -53,8 +61,7 @@ function getCtx(): AudioContext | null {
     }
     return _ctx;
   } catch (err) {
-
-    console.error("[PremiumSFX] Error:", err);
+    console.error('[PremiumSFX] Error:', err);
     return null; // Web Audio API not supported
   }
 }
@@ -64,8 +71,7 @@ function isEnabled(): boolean {
   try {
     return localStorage.getItem(SOUNDS_ENABLED_KEY) !== 'false';
   } catch (err) {
-
-    console.error("[PremiumSFX] Error:", err);
+    console.error('[PremiumSFX] Error:', err);
     return true;
   }
 }

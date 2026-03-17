@@ -6,8 +6,9 @@
 
 // Club & Union Management
 export { ClubsService } from './ClubsService';
-// ClubService uses named export as object
-export * from './ClubService';
+// NOTE: ClubService is DEPRECATED — use ClubsService for all club operations.
+// ClubService is still importable directly for its unique methods (updateChipBalance,
+// handleMembershipRequest, etc.) but is no longer re-exported from the barrel.
 // UnionService uses named export as object
 export * from './UnionService';
 // MembershipService for member management & permissions

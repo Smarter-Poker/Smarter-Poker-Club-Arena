@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  CLUB ENGINE — Club Service (ADMIN / LOW-LEVEL)
+ *  CLUB ENGINE — Club Service (DEPRECATED — Use ClubsService)
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * @deprecated For frontend-facing club operations, use ClubsService instead.
@@ -8,12 +8,15 @@
  *   - searchClubs   → ClubsService.search()
  *   - getClub       → ClubsService.get()
  *   - createClub    → ClubsService.create()  (with 4-club limit)
- *   - updateClub    → ClubsService.update()  (with owner verification)
+ *   - updateClub    → ClubsService.update()  (with owner verification + field whitelist)
  *   - deleteClub    → ClubsService.delete()  (with owner verification)
- *   - getMyClubs    → ClubsService.getUserMemberships()
+ *   - getMyClubs    → ClubsService.getUserMemberships()  (with live member counts)
  *
- * This service is retained ONLY for admin-level operations that bypass
- * auth checks: addMember, updateMemberRole, updateChipBalance, etc.
+ * This service is retained ONLY for admin-level operations not yet ported:
+ *   - updateChipBalance (wallet credit/debit via atomic RPCs)
+ *   - handleMembershipRequest (approve/reject join requests)
+ *   - addMember, updateMemberRole, removeMember
+ *   - getOnlineCount, getMemberCount
  */
 
 import { supabase } from '../lib/supabase';

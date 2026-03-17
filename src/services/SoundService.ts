@@ -1,7 +1,15 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  CLUB ARENA — Premium Sound Service
+ *  CLUB ARENA — Premium Sound Service (TABLE-TIER)
  * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * ARCHITECTURE NOTE — Three-tier sound system:
+ *   1. SoundService.ts  (THIS FILE) — Poker table game sounds (deal, fold, all-in, etc.)
+ *   2. SoundPackService.ts           — Sound profile/preset manager (wraps SoundService)
+ *   3. PremiumSFX.ts                 — UI-tier interaction sounds (card flip, navigate, toggle)
+ *
+ * These are INTENTIONALLY separate to avoid coupling table game logic with UI sounds.
+ * PremiumSFX has its own AudioContext and localStorage flag — independent of this service.
  *
  * Full procedural audio generation for all poker actions using Web Audio API.
  * No external audio files needed — all sounds are synthesized in real-time.

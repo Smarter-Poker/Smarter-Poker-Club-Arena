@@ -231,13 +231,6 @@ export function TableChat({
       {/* Header */}
       <div className="table-chat__header">
         <span className="table-chat__title">Table Chat</span>
-        <div className="table-chat__actions">
-          {onToggleCollapse && (
-            <button className="table-chat__minimize" onClick={onToggleCollapse}>
-              —
-            </button>
-          )}
-        </div>
       </div>
 
       {/* Messages */}

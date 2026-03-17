@@ -69,12 +69,20 @@ export function TableTabBar({
   const handleClose = useCallback(
     (e: React.MouseEvent, tabId: string) => {
       e.stopPropagation();
-      // Don't close if it's the only table
       if (tabs.length <= 1) return;
-      onTabClose(tabId);
+
+      // Route X-button clicks through the secure cashout layer,
+      // bypassing the instant component teardown in MultiTablePage
+      masterBus.emit('TABLE_MENU_ACTION' as any, {
+        tableId: tabId,
+        action: 'FORCE_LEAVE_TABLE',
+      });
     },
-    [tabs.length, onTabClose]
+    [tabs.length]
   );
+
+  const handleMenuClose = useCallback(() => setIsMenuOpen(false), []);
+  const handleMenuToggle = useCallback(() => setIsMenuOpen((prev) => !prev), []);
 
   const menuSections = useMemo(
     () =>
@@ -188,8 +196,8 @@ export function TableTabBar({
       <div className="table-tab-bar__menu-container">
         <TableMenu
           isOpen={isMenuOpen}
-          onClose={() => setIsMenuOpen(false)}
-          onToggle={() => setIsMenuOpen((prev) => !prev)}
+          onClose={handleMenuClose}
+          onToggle={handleMenuToggle}
           sections={menuSections}
           position="bottom-left"
           tableName={tabs.find((t) => t.id === activeTabId)?.name || 'Table'}

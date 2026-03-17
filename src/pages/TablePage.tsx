@@ -39,7 +39,6 @@ import { waitlistService } from '../services/WaitlistService';
 import { roomService, type RoomMessage } from '../services/RoomService';
 import { HydraService } from '../services/HydraService';
 import TableChat, { type ChatMessage } from '../components/table/TableChat';
-import TableChatHUD from '../components/table/TableChatHUD';
 import InsuranceModal, { type InsuranceOffer } from '../components/table/InsuranceModal';
 import { RunItTwicePrompt } from '../components/table/RunItTwice';
 import BadBeatJackpot from '../components/table/BadBeatJackpot';
@@ -651,6 +650,9 @@ export default function TablePage({
         break;
       case 'LEAVE_TABLE':
         handleLeaveTable();
+        break;
+      case 'FORCE_LEAVE_TABLE':
+        handleForceLeaveTable();
         break;
     }
   });
@@ -1319,8 +1321,7 @@ export default function TablePage({
       if (result.success) {
         console.debug(`[Leave] Success — ${result.chipsReturned} chips returned to wallet`);
 
-        // Notify system
-        masterBus.emit('TABLE_LEFT', { tableId, seat: tableState.heroSeat });
+        // Notify system (TABLE_LEFT is deliberately delayed until Session Summary closes)
         masterBus.emit('SESSION_ENDED', { tableId, userId });
 
         // Q3: Clear "Playing At" status when leaving table
@@ -1339,6 +1340,26 @@ export default function TablePage({
     } catch (error) {
       console.error('[Leave] Exception:', error);
       setLeaveNotice('Error leaving table. Please try again.');
+    }
+  };
+
+  // Handle force leave (triggered by closing tab 'X' button or when already cashed out)
+  const handleForceLeaveTable = async () => {
+    if (!tableId || !userId) return;
+    try {
+      if (showSessionSummary) {
+        // Player already explicitly left and is viewing summary; just close the tab.
+        masterBus.emit('TABLE_LEFT', { tableId, seat: tableState.heroSeat });
+        return;
+      }
+      // Force cashout instantly without triggering the UI summary
+      await tableService.leaveTable(tableId, tableState.heroSeat, userId);
+      masterBus.emit('TABLE_LEFT', { tableId, seat: tableState.heroSeat });
+      masterBus.emit('SESSION_ENDED', { tableId, userId });
+      playerStatusService.clearPlayingAt(userId);
+    } catch {
+      // Fallback: forcefully close tab to prevent freeze
+      masterBus.emit('TABLE_LEFT', { tableId, seat: tableState.heroSeat });
     }
   };
 
@@ -4677,17 +4698,6 @@ export default function TablePage({
         isMuted={isChatMuted}
       />
 
-      {/* Compact Chat HUD — visible when main chat is collapsed */}
-      {isChatCollapsed && tableId && (
-        <TableChatHUD
-          tableId={tableId}
-          userId={userId}
-          isMuted={isChatMuted}
-          messages={chatMessages}
-          onSendMessage={handleSendChatMessage}
-        />
-      )}
-
       {/* Table Reactions — floating emoji picker + active reactions */}
       <TableReactions
         tableId={tableId}
@@ -5396,10 +5406,13 @@ export default function TablePage({
             sessionStartRef.current = Date.now();
             setShowSessionSummary(false);
 
-            // Notify system
+            // Notify system to gracefully unmount tab AFTER user clicks close
+            masterBus.emit('TABLE_LEFT', { tableId, seat: tableState.heroSeat });
             masterBus.emit('SESSION_SUMMARY_DISMISSED', { tableId: tableId ?? '' });
 
-            navigate('/');
+            if (window.location.pathname.includes('/table/')) {
+              navigate('/');
+            }
           }}
         />
       )}

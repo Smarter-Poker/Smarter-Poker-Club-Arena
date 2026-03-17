@@ -108,14 +108,19 @@ export function useTableChat(
 
           setChatMessages((prev) => {
             // Deduplicate: remove the optimistic local clone, and append the real Supabase record
-            const filtered = prev.filter(
-              (msg) =>
-                !(
-                  msg.id.startsWith('msg_') &&
-                  msg.playerId === m.user_id &&
-                  msg.content === m.message
-                )
-            );
+            let removedOne = false;
+            const filtered = prev.filter((msg) => {
+              if (
+                !removedOne &&
+                msg.id.startsWith('msg_') &&
+                msg.playerId === m.user_id &&
+                msg.content === m.message
+              ) {
+                removedOne = true;
+                return false;
+              }
+              return true;
+            });
 
             const pName = playersRef.current.find((p) => p && p.id === m.user_id)?.name || 'Player';
             const newMsg: ChatMessage = {

@@ -281,7 +281,7 @@ export default function App() {
         refresh_token: refreshToken,
       });
       const ms = Math.round(performance.now() - startTime);
-      console.log(`[App] ✅ Auth session set via ${source} in ${ms}ms`);
+      console.debug(`[App] ✅ Auth session set via ${source} in ${ms}ms`);
       postToParent({ type: 'SMARTER_AUTH_ACK' });
       addBreadcrumb({
         category: 'auth-handshake',
@@ -353,7 +353,7 @@ export default function App() {
       // Live settings push — World Hub user changed theme/sound/deck while iframe is open
       if (event.data?.type === 'SMARTER_SETTINGS_UPDATE' && event.data.settings) {
         applySettingsRef.current(event.data.settings);
-        console.log('[App] Live settings update received from World Hub');
+        console.debug('[App] Live settings update received from World Hub');
       }
     };
 

@@ -9,6 +9,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
+import { useMasterBusChannel } from '../../hooks/useMasterBusChannel';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { formatRelativeShort as formatTime } from '@/lib/date';
 import styles from './NotificationDropdown.module.css';
@@ -40,10 +41,6 @@ export default function NotificationDropdown({ onNavigate }: NotificationDropdow
   useEffect(() => {
     if (user?.id) {
       loadNotifications();
-      const cleanup = subscribeToNotifications();
-      return () => {
-        cleanup();
-      };
     }
   }, [user?.id]);
 
@@ -86,42 +83,32 @@ export default function NotificationDropdown({ onNavigate }: NotificationDropdow
     if (isMounted.current) setLoading(false);
   };
 
-  const subscribeToNotifications = () => {
-    const channelKey = `notifications:${user?.id}`;
-
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'notifications',
-          filter: `user_id=eq.${user?.id}`,
-        },
-        (payload) => {
-          const n = payload.new as any;
-          setNotifications((prev) =>
-            [
-              {
-                id: n.id,
-                type: n.type,
-                title: n.title,
-                message: n.message,
-                data: n.data,
-                isRead: false,
-                createdAt: n.created_at,
-              },
-              ...prev,
-            ].slice(0, 20)
-          );
-          setUnreadCount((prev) => prev + 1);
-        }
-      )
-      .subscribe();
-
-    return () => masterBus.removeRegisteredChannel(channelKey);
-  };
+  // Real-time subscription for new notifications
+  useMasterBusChannel({
+    channelName: user?.id ? `notifications:${user.id}` : null,
+    table: 'notifications',
+    filter: user?.id ? `user_id=eq.${user.id}` : null,
+    event: 'INSERT',
+    onPayload: (payload) => {
+      const n = payload.new as any;
+      setNotifications((prev) =>
+        [
+          {
+            id: n.id,
+            type: n.type,
+            title: n.title,
+            message: n.message,
+            data: n.data,
+            isRead: false,
+            createdAt: n.created_at,
+          },
+          ...prev,
+        ].slice(0, 20)
+      );
+      setUnreadCount((prev) => prev + 1);
+    },
+    enabled: !!user?.id,
+  });
 
   const markAsRead = async (id: string) => {
     const { error } = await supabase.from('notifications').update({ is_read: true }).eq('id', id);

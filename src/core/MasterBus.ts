@@ -1569,7 +1569,7 @@ class MasterBusCore {
         const factory = this.channelFactoryRegistry.get(key);
         this.removeRegisteredChannel(key);
         if (factory) {
-          console.log(`[BUS HEALTH] Auto-recovering channel: "${key}"`);
+          console.debug(`[BUS HEALTH] Auto-recovering channel: "${key}"`);
           try {
             factory();
             // Emit REALTIME_CONNECTED after successful recovery

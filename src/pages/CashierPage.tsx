@@ -21,6 +21,10 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams, useParams } from 'react-router-dom';
 import { masterBus } from '../core/MasterBus';
+import {
+  useMasterBusSubscription,
+  useMasterBusSubscriptions,
+} from '../hooks/useMasterBusSubscription';
 import { useWalletStore } from '../stores/useWalletStore';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { WalletService as _WalletService } from '../services/WalletService';
@@ -251,21 +255,13 @@ export default function CashierPage() {
   }, [clubId, user?.id, action]);
 
   // Subscribe to wallet updates (BALANCE_UPDATED is handled by debounced subscriber below)
-  useEffect(() => {
-    if (!user?.id) return;
-
-    const unsubscribe2 = masterBus.subscribeDebounced(
-      'WALLET_REFRESHED',
-      () => {
-        loadBalances(user.id);
-      },
-      500
-    );
-
-    return () => {
-      unsubscribe2?.();
-    };
-  }, [loadBalances, user?.id]);
+  useMasterBusSubscription(
+    'WALLET_REFRESHED',
+    () => {
+      if (user?.id) loadBalances(user.id);
+    },
+    { debounce: 500 }
+  );
 
   const loadPendingCashouts = useCallback(async () => {
     if (!clubId || !user?.id) return;
@@ -584,118 +580,69 @@ export default function CashierPage() {
   }, [user?.id, loadBalances, loadTransactions]);
 
   // ── Bus Listeners: instant balance refresh from engine events ──
+  // Load balances only
+  useMasterBusSubscriptions(
+    [
+      'BALANCE_UPDATED',
+      'CHIPS_ADDED',
+      'CHIPS_WITHDRAWN',
+      'CASHIER_BALANCE_CHANGED',
+      'RAKEBACK_CLAIMED',
+      'DAILY_REWARD_CLAIMED',
+    ],
+    () => {
+      if (user?.id) loadBalances(user.id);
+    },
+    { debounce: 500 }
+  );
+
+  // Load balances and pending cashouts
+  useMasterBusSubscriptions(
+    ['WALLET_REFRESHED', 'CHIPS_DISTRIBUTED', 'CASHOUT_CANCELLED', 'CASHOUT_APPROVED'],
+    () => {
+      if (user?.id) {
+        loadBalances(user.id);
+        loadPendingCashouts();
+      }
+    },
+    { debounce: 500 }
+  );
+
+  // Load pending cashouts only
+  useMasterBusSubscription(
+    'CASHOUT_REQUESTED',
+    () => {
+      if (user?.id) loadPendingCashouts();
+    },
+    { debounce: 500 }
+  );
+
+  // Load balances and transactions (HAND_COMPLETED debounces at 1000ms, others at 500ms)
+  useMasterBusSubscription(
+    'HAND_COMPLETED',
+    () => {
+      if (user?.id) {
+        loadBalances(user.id);
+        loadTransactions();
+      }
+    },
+    { debounce: 1000 }
+  );
+
+  useMasterBusSubscriptions(
+    ['SETTLEMENT_COMPLETED', 'COMMISSION_PAID'],
+    () => {
+      if (user?.id) {
+        loadBalances(user.id);
+        loadTransactions();
+      }
+    },
+    { debounce: 500 }
+  );
+
+  // Supabase Realtime channel for chip_transactions (cross-device sync)
   useEffect(() => {
     if (!user?.id) return;
-    const unsubBalance = masterBus.subscribeDebounced(
-      'BALANCE_UPDATED',
-      () => {
-        loadBalances(user.id);
-      },
-      500
-    );
-    const unsubWallet = masterBus.subscribeDebounced(
-      'WALLET_REFRESHED',
-      () => {
-        loadBalances(user.id);
-        loadPendingCashouts();
-      },
-      500
-    );
-    const unsubHand = masterBus.subscribeDebounced(
-      'HAND_COMPLETED',
-      () => {
-        loadBalances(user.id);
-        loadTransactions();
-      },
-      1000
-    );
-    const unsubChipsAdded = masterBus.subscribeDebounced(
-      'CHIPS_ADDED',
-      () => {
-        loadBalances(user.id);
-      },
-      500
-    );
-    const unsubChipsWithdrawn = masterBus.subscribeDebounced(
-      'CHIPS_WITHDRAWN',
-      () => {
-        loadBalances(user.id);
-      },
-      500
-    );
-    // ── Ported from World Hub cashier.js: cross-page refresh on admin actions ──
-    const unsubChipsDistributed = masterBus.subscribeDebounced(
-      'CHIPS_DISTRIBUTED',
-      () => {
-        loadBalances(user.id);
-        loadPendingCashouts();
-      },
-      500
-    );
-    const unsubCashoutRequested = masterBus.subscribeDebounced(
-      'CASHOUT_REQUESTED',
-      () => {
-        loadPendingCashouts();
-      },
-      500
-    );
-    const unsubCashoutCancelled = masterBus.subscribeDebounced(
-      'CASHOUT_CANCELLED',
-      () => {
-        loadBalances(user.id);
-        loadPendingCashouts();
-      },
-      500
-    );
-    const unsubCashierBalance = masterBus.subscribeDebounced(
-      'CASHIER_BALANCE_CHANGED',
-      () => {
-        loadBalances(user.id);
-      },
-      500
-    );
-    const unsubRakebackClaimed = masterBus.subscribeDebounced(
-      'RAKEBACK_CLAIMED',
-      () => {
-        loadBalances(user.id);
-      },
-      500
-    );
-    const unsubDailyReward = masterBus.subscribeDebounced(
-      'DAILY_REWARD_CLAIMED',
-      () => {
-        loadBalances(user.id);
-      },
-      500
-    );
-    // Cashout approval listener: agent approves → refresh pending list (same-user edge case)
-    const unsubCashoutApproved = masterBus.subscribeDebounced(
-      'CASHOUT_APPROVED',
-      () => {
-        loadBalances(user.id);
-        loadPendingCashouts();
-      },
-      500
-    );
-    // Settlement completion listener: balances may change after settlement
-    const unsubSettlement = masterBus.subscribeDebounced(
-      'SETTLEMENT_COMPLETED',
-      () => {
-        loadBalances(user.id);
-        loadTransactions();
-      },
-      500
-    );
-    // Commission payout listener: agent's wallet credited after commission execution
-    const unsubCommission = masterBus.subscribeDebounced(
-      'COMMISSION_PAID',
-      () => {
-        loadBalances(user.id);
-        loadTransactions();
-      },
-      500
-    );
-    // Supabase Realtime channel for chip_transactions (cross-device sync)
     const chipTxnChannel = masterBus
       .getOrCreateChannel(`cashier-chip-txns-${user.id}`)
       .on(
@@ -713,23 +660,9 @@ export default function CashierPage() {
       )
       .subscribe();
     return () => {
-      unsubBalance();
-      unsubWallet();
-      unsubHand();
-      unsubChipsAdded();
-      unsubChipsWithdrawn();
-      unsubChipsDistributed();
-      unsubCashoutRequested();
-      unsubCashoutCancelled();
-      unsubCashierBalance();
-      unsubRakebackClaimed();
-      unsubDailyReward();
-      unsubCashoutApproved();
-      unsubSettlement();
-      unsubCommission();
       masterBus.removeRegisteredChannel(`cashier-chip-txns-${user.id}`);
     };
-  }, [user?.id, loadBalances, loadTransactions, loadPendingCashouts]);
+  }, [user?.id, loadBalances, loadTransactions]);
 
   // ─────────────────────────────────────────────────────────────────────────────
   // DETERMINE AVAILABLE TABS

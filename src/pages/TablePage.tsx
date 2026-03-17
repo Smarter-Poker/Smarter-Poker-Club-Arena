@@ -23,6 +23,10 @@ import { useTableWebSocket } from '../services/TableWebSocket';
 import { supabase, subscribeToHandState, broadcastHandState, getAuthUser } from '../lib/supabase';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { masterBus } from '../core/MasterBus';
+import {
+  useMasterBusSubscription,
+  useMasterBusSubscriptions,
+} from '../hooks/useMasterBusSubscription';
 import { playerStatusService } from '../services/PlayerStatusService';
 import { avatarService } from '../services/AvatarService';
 import PlayerNotesPanel from '../components/gameplay/PlayerNotesPanel';
@@ -1675,13 +1679,7 @@ export default function TablePage({
                   try {
                     let walBal = 0;
                     if (userId && userId !== 'guest') {
-                      const { data: w } = await supabase
-                        .from('wallets')
-                        .select('balance')
-                        .eq('user_id', userId)
-                        .eq('wallet_type', 'PLAYER')
-                        .maybeSingle();
-                      walBal = w?.balance || 0;
+                      walBal = await WalletService.getPlayerBalance(userId);
                     }
                     setAddOnPeriod({
                       active: true,
@@ -1841,16 +1839,8 @@ export default function TablePage({
 
         // Load user's Player Wallet balance for buy-in
         if (userId && userId !== 'guest') {
-          const { data: walletData } = await supabase
-            .from('wallets')
-            .select('balance')
-            .eq('user_id', userId)
-            .eq('wallet_type', 'PLAYER')
-            .maybeSingle();
-
-          if (walletData) {
-            setAccountBalance(walletData.balance || 0);
-          }
+          const balance = await WalletService.getPlayerBalance(userId);
+          setAccountBalance(balance);
         }
 
         // ─── Load existing seated players from DB (reconnection support) ───
@@ -2032,107 +2022,83 @@ export default function TablePage({
   }, [tableId, userId, tableState.heroSeat]);
 
   // ── Bus Listener: live settings sync (theme, sound, deck changes) ──
-  useEffect(() => {
-    const unsub = masterBus.subscribe('SETTINGS_UPDATED', (event) => {
-      const s = (event as any)?.payload?.settings || (event as any)?.settings;
-      if (!s) return;
-      // Apply sound preference if changed
-      if (typeof s.soundEnabled === 'boolean') {
-        localStorage.setItem('club_arena_sounds', String(s.soundEnabled));
-      }
-      // Apply deck/theme preference if changed
-      if (s.deckStyle) {
-        localStorage.setItem('club_arena_deck', s.deckStyle);
-      }
-    });
-    return () => {
-      unsub();
-    };
-  }, []);
+  useMasterBusSubscription('SETTINGS_UPDATED', (payload: any) => {
+    const s = payload?.settings || payload;
+    if (!s) return;
+    // Apply sound preference if changed
+    if (typeof s.soundEnabled === 'boolean') {
+      localStorage.setItem('club_arena_sounds', String(s.soundEnabled));
+    }
+    // Apply deck/theme preference if changed
+    if (s.deckStyle) {
+      localStorage.setItem('club_arena_deck', s.deckStyle);
+    }
+  });
 
   // ── Bus Listeners: Phase 8 — Action Rejection + Timer Events ──
-  useEffect(() => {
-    if (!tableId) return;
+  useMasterBusSubscription('ACTION_REJECTED', (payload: any) => {
+    if (payload.tableId !== tableId) return;
+    if (payload.playerId === userId) {
+      toast?.warning?.(`Action rejected: ${payload.reason || 'Invalid action'}`);
+    }
+  });
 
-    // ACTION_REJECTED: Show toast when a player action is rejected
-    const unsubRejected = masterBus.subscribe('ACTION_REJECTED', (event) => {
-      const payload = (event as any)?.payload || event;
-      if (payload.tableId !== tableId) return;
-      if (payload.playerId === userId) {
-        toast?.warning?.(`Action rejected: ${payload.reason || 'Invalid action'}`);
-      }
-    });
+  useMasterBusSubscription('ACTION_TIMER_STARTED', (payload: any) => {
+    if (payload.tableId !== tableId) return;
+    setTableState((prev) => ({
+      ...prev,
+      actionTimerDeadline: payload.deadline,
+      actionTimerPlayerId: payload.playerId,
+    }));
+  });
 
-    // ACTION_TIMER_STARTED: Update timer UI for current player
-    const unsubTimerStart = masterBus.subscribe('ACTION_TIMER_STARTED', (event) => {
-      const payload = (event as any)?.payload || event;
-      if (payload.tableId !== tableId) return;
-      setTableState((prev) => ({
-        ...prev,
-        actionTimerDeadline: payload.deadline,
-        actionTimerPlayerId: payload.playerId,
-      }));
-    });
+  useMasterBusSubscription('ACTION_TIMER_EXPIRED', (payload: any) => {
+    if (payload.tableId !== tableId) return;
+    setTableState((prev) => ({
+      ...prev,
+      actionTimerDeadline: undefined,
+      actionTimerPlayerId: undefined,
+    }));
+  });
 
-    // ACTION_TIMER_EXPIRED: Clear timer and log expiry
-    const unsubTimerExpired = masterBus.subscribe('ACTION_TIMER_EXPIRED', (event) => {
-      const payload = (event as any)?.payload || event;
-      if (payload.tableId !== tableId) return;
-      setTableState((prev) => ({
-        ...prev,
-        actionTimerDeadline: undefined,
-        actionTimerPlayerId: undefined,
-      }));
-    });
+  useMasterBusSubscription('STATE_INTEGRITY_VIOLATION', (payload: any) => {
+    if (payload.tableId !== tableId) return;
+    console.error(
+      `[StateVerifier] ⚠️ INTEGRITY VIOLATION hand #${payload.handNumber}:`,
+      payload.violations
+    );
+  });
 
-    // STATE_INTEGRITY_VIOLATION: Critical alert — log to console (admin-only visibility)
-    const unsubIntegrity = masterBus.subscribe('STATE_INTEGRITY_VIOLATION', (event) => {
-      const payload = (event as any)?.payload || event;
-      if (payload.tableId !== tableId) return;
-      console.error(
-        `[StateVerifier] ⚠️ INTEGRITY VIOLATION hand #${payload.handNumber}:`,
-        payload.violations
-      );
-    });
+  useMasterBusSubscription('SESSION_STATS_UPDATE', (payload: any) => {
+    if (payload.tableId !== tableId) return;
+    setTableState((prev) => ({
+      ...prev,
+      sessionPL: payload.stats?.profitLoss ?? prev.sessionPL,
+      sessionHands: payload.stats?.handsPlayed ?? prev.sessionHands,
+    }));
+  });
 
-    // SESSION_STATS_UPDATE: Live session P&L for player HUD
-    const unsubSession = masterBus.subscribe('SESSION_STATS_UPDATE', (event) => {
-      const payload = (event as any)?.payload || event;
-      if (payload.tableId !== tableId) return;
-      setTableState((prev) => ({
-        ...prev,
-        sessionPL: payload.stats?.profitLoss ?? prev.sessionPL,
-        sessionHands: payload.stats?.handsPlayed ?? prev.sessionHands,
-      }));
-    });
+  useMasterBusSubscription('PRE_ACTION_SET', (payload: any) => {
+    if (payload.tableId !== tableId || payload.playerId !== userId) return;
+    setPreAction(payload.action);
+  });
 
-    // PRE_ACTION_SET: Update local pre-action state
-    const unsubPreAction = masterBus.subscribe('PRE_ACTION_SET', (event) => {
-      const payload = (event as any)?.payload || event;
-      if (payload.tableId !== tableId || payload.playerId !== userId) return;
-      setPreAction(payload.action);
-    });
+  useMasterBusSubscription('INSURANCE_OFFERED', (payload: any) => {
+    if (payload.tableId !== tableId || payload.playerId !== userId) return;
+    setInsuranceOffer(payload.offer);
+    setShowInsurance(true);
+  });
 
-    // INSURANCE_OFFERED: Show insurance modal to the hero
-    const unsubInsurance = masterBus.subscribe('INSURANCE_OFFERED', (event) => {
-      const payload = (event as any)?.payload || event;
-      if (payload.tableId !== tableId || payload.playerId !== userId) return;
-      setInsuranceOffer(payload.offer);
-      setShowInsurance(true);
-    });
+  useMasterBusSubscription('TIME_BANK_ACTIVATED', (payload: any) => {
+    if (payload.tableId !== tableId || payload.playerId !== userId) return;
+    setTimeBankActive(true);
+    setTimeBankTimeRemaining(payload.secondsGranted ?? 15);
+    setTimeBanksRemaining(payload.usesRemaining ?? 0);
+  });
 
-    // TIME_BANK_ACTIVATED: Show time bank UI
-    const unsubTimeBank = masterBus.subscribe('TIME_BANK_ACTIVATED', (event) => {
-      const payload = (event as any)?.payload || event;
-      if (payload.tableId !== tableId || payload.playerId !== userId) return;
-      setTimeBankActive(true);
-      setTimeBankTimeRemaining(payload.secondsGranted ?? 15);
-      setTimeBanksRemaining(payload.usesRemaining ?? 0);
-    });
-
-    // TIME_BANK_STOPPED / DEPLETED: Update UI + persist hero's time bank state to Supabase
-    const persistTimeBankState = async (event: any) => {
-      const payload = (event as any)?.payload || event;
+  // TIME_BANK_STOPPED / DEPLETED / EXPIRED: Update UI + persist hero's time bank state to Supabase
+  const persistTimeBankState = useCallback(
+    async (payload: any) => {
       if (payload.tableId !== tableId || payload.playerId !== userId) return;
       setTimeBankActive(false);
       setTimeBanksRemaining(payload.usesRemaining ?? 0);
@@ -2152,74 +2118,48 @@ export default function TablePage({
       } catch (err) {
         console.error('[TablePage] Failed to persist time bank state:', err);
       }
-    };
-    const unsubTimeBankStopped = masterBus.subscribe('TIME_BANK_STOPPED', persistTimeBankState);
-    const unsubTimeBankDepleted = masterBus.subscribe('TIME_BANK_DEPLETED', persistTimeBankState);
-    const unsubTimeBankExpired = masterBus.subscribe('TIME_BANK_EXPIRED', persistTimeBankState);
+    },
+    [tableId, userId]
+  );
 
-    // TIME_BANK_EXTENDED: VIP/diamond extension purchased — update UI state
-    const unsubTimeBankExtended = masterBus.subscribe('TIME_BANK_EXTENDED', (event) => {
-      const payload = (event as any)?.payload || event;
-      if (payload.tableId !== tableId || payload.playerId !== userId) return;
-      setTimeBanksRemaining(payload.usesRemaining ?? 0);
-      setTimeBankTimeRemaining(payload.remainingSeconds ?? 0);
-      setShowTimeBank(true);
-      const msg =
-        payload.diamondsCharged > 0
-          ? `Time Bank Extended! (${payload.diamondsCharged} 💎)`
-          : 'Time Bank Extended! (VIP)';
-      toast?.success?.(msg);
-    });
+  useMasterBusSubscriptions(
+    ['TIME_BANK_STOPPED', 'TIME_BANK_DEPLETED', 'TIME_BANK_EXPIRED'],
+    persistTimeBankState
+  );
 
-    // TIME_BANK_EXTENSION_DENIED: Show error toast
-    const unsubTimeBankDenied = masterBus.subscribe('TIME_BANK_EXTENSION_DENIED', (event) => {
-      const payload = (event as any)?.payload || event;
-      if (payload.tableId !== tableId || payload.playerId !== userId) return;
-      toast?.error?.('Not enough Diamonds for Time Bank extension');
-    });
+  useMasterBusSubscription('TIME_BANK_EXTENDED', (payload: any) => {
+    if (payload.tableId !== tableId || payload.playerId !== userId) return;
+    setTimeBanksRemaining(payload.usesRemaining ?? 0);
+    setTimeBankTimeRemaining(payload.remainingSeconds ?? 0);
+    setShowTimeBank(true);
+    const msg =
+      payload.diamondsCharged > 0
+        ? `Time Bank Extended! (${payload.diamondsCharged} 💎)`
+        : 'Time Bank Extended! (VIP)';
+    toast?.success?.(msg);
+  });
 
-    // STRADDLE_TOGGLED: Update straddle toggle UI
-    const unsubStraddle = masterBus.subscribe('STRADDLE_TOGGLED', (event) => {
-      const payload = (event as any)?.payload || event;
-      if (payload.tableId !== tableId || payload.playerId !== userId) return;
-      setIsStraddleEnabled(payload.enabled);
-    });
+  useMasterBusSubscription('TIME_BANK_EXTENSION_DENIED', (payload: any) => {
+    if (payload.tableId !== tableId || payload.playerId !== userId) return;
+    toast?.error?.('Not enough Diamonds for Time Bank extension');
+  });
 
-    // RAKEBACK_DISTRIBUTED: Show toast when rakeback hits wallet
-    const unsubRakeback = masterBus.subscribe('RAKEBACK_DISTRIBUTED', (event) => {
-      const payload = (event as any)?.payload || event;
-      if (payload.distributions && payload.distributions[userId]) {
-        toast?.success?.(`Received +$${payload.distributions[userId].toFixed(2)} rakeback!`);
-      }
-    });
+  useMasterBusSubscription('STRADDLE_TOGGLED', (payload: any) => {
+    if (payload.tableId !== tableId || payload.playerId !== userId) return;
+    setIsStraddleEnabled(payload.enabled);
+  });
 
-    // TABLE_BALANCE_EXECUTED: Show toast if table was rebalanced
-    const unsubBalance = masterBus.subscribe('TABLE_BALANCE_EXECUTED', (event) => {
-      const payload = (event as any)?.payload || event;
-      if (payload.moves?.some((m: any) => m.playerId === userId)) {
-        toast?.info?.('You were moved to balance the tables.');
-      }
-    });
+  useMasterBusSubscription('RAKEBACK_DISTRIBUTED', (payload: any) => {
+    if (payload.distributions && payload.distributions[userId]) {
+      toast?.success?.(`Received +$${payload.distributions[userId].toFixed(2)} rakeback!`);
+    }
+  });
 
-    return () => {
-      unsubRejected();
-      unsubTimerStart();
-      unsubTimerExpired();
-      unsubIntegrity();
-      unsubSession();
-      unsubPreAction();
-      unsubInsurance();
-      unsubTimeBank();
-      unsubTimeBankStopped();
-      unsubTimeBankDepleted();
-      unsubTimeBankExpired();
-      unsubTimeBankExtended();
-      unsubTimeBankDenied();
-      unsubStraddle();
-      unsubRakeback();
-      unsubBalance();
-    };
-  }, [tableId, userId]);
+  useMasterBusSubscription('TABLE_BALANCE_EXECUTED', (payload: any) => {
+    if (payload.moves?.some((m: any) => m.playerId === userId)) {
+      toast?.info?.('You were moved to balance the tables.');
+    }
+  });
 
   // ── BUG-02 FIX: Action timer countdown ──────────────────────────────────
   // REMOVED: Duplicate timer lived here, conflicting with the timer at line ~3035.

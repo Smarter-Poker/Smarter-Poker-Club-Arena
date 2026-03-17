@@ -38,7 +38,7 @@ export function addToOfflineQueue(mutation: QueuedMutation): void {
     }
 
     localStorage.setItem(QUEUE_KEY, JSON.stringify(queue));
-    console.log('[Offline Queue] Added mutation. Queue size:', queue.length);
+    console.debug('[Offline Queue] Added mutation. Queue size:', queue.length);
   } catch (error) {
     console.error('[Offline Queue] Failed to add mutation:', error);
   }
@@ -61,7 +61,7 @@ export function getOfflineQueue(): QueuedMutation[] {
 export function clearOfflineQueue(): void {
   try {
     localStorage.removeItem(QUEUE_KEY);
-    console.log('[Offline Queue] Cleared');
+    console.debug('[Offline Queue] Cleared');
   } catch (error) {
     console.error('[Offline Queue] Failed to clear:', error);
   }
@@ -89,7 +89,7 @@ export async function replayOfflineQueue(): Promise<void> {
   const queue = getOfflineQueue();
   if (queue.length === 0) return;
 
-  console.log('[Offline Queue] Replaying', queue.length, 'queued mutations');
+  console.debug('[Offline Queue] Replaying', queue.length, 'queued mutations');
 
   const failed: QueuedMutation[] = [];
   for (const item of queue) {
@@ -155,6 +155,6 @@ export async function replayOfflineQueue(): Promise<void> {
       addToOfflineQueue(f);
     }
   } else {
-    console.log('[Offline Queue] All mutations replayed successfully');
+    console.debug('[Offline Queue] All mutations replayed successfully');
   }
 }

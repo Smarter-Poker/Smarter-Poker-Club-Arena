@@ -10,6 +10,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
+import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import { formatRelativeShort as formatTime } from '@/lib/date';
@@ -184,33 +185,26 @@ export default function ClubMessagesPage() {
     [user?.id]
   );
 
+  // Load club conversations on mount
   useEffect(() => {
     let isMounted = true;
     loadClubConversations(() => isMounted);
-
-    const channelKey = 'club-messages-updates';
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'messages',
-          filter: `receiver_id=eq.${user?.id}`,
-        },
-        () => {
-          if (!isMounted) return;
-          loadClubConversations(() => isMounted);
-        }
-      )
-      .subscribe();
-
     return () => {
       isMounted = false;
-      masterBus.removeRegisteredChannel(channelKey);
     };
   }, [loadClubConversations]);
+
+  // Real-time updates when receiving messages
+  useMasterBusChannel({
+    channelName: user?.id ? 'club-messages-updates' : null,
+    table: 'messages',
+    filter: user?.id ? `receiver_id=eq.${user.id}` : null,
+    event: '*',
+    onPayload: () => {
+      loadClubConversations();
+    },
+    enabled: !!user?.id,
+  });
 
   // ── Bus Listeners: cross-page message event reactivity (debounced) ──
   useEffect(() => {

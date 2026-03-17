@@ -63,7 +63,7 @@ function logToConsole(metric: Metric) {
   const unit = metric.name === 'CLS' ? '' : 'ms';
   const value = metric.name === 'CLS' ? metric.value.toFixed(3) : Math.round(metric.value);
 
-  console.log(
+  console.debug(
     `%c[WebVitals] ${metric.name}: ${value}${unit} (${metric.rating})`,
     colors[metric.rating] || ''
   );

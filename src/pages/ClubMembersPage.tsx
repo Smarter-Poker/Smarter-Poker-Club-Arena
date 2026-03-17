@@ -8,6 +8,11 @@ import { supabase } from '../lib/supabase';
 import { useUserStore } from '../stores/useUserStore';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { masterBus } from '../core/MasterBus';
+import {
+  useMasterBusSubscription,
+  useMasterBusSubscriptions,
+} from '../hooks/useMasterBusSubscription';
+import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
 import { useToast } from '../components/common/Toast';
 import { useVirtualScroll } from '../hooks/useVirtualScroll';
 import PageSkeleton from '../components/common/PageSkeleton';
@@ -450,6 +455,7 @@ export default function ClubMembersPage() {
   const [userRole, setUserRole] = useState<MemberRole>('member');
   const [visibleMembers, setVisibleMembers] = useState<Set<string>>(new Set());
   const [selectedMember, setSelectedMember] = useState<ClubMember | null>(null);
+  const [resolvedClubId, setResolvedClubId] = useState<string | null>(null);
 
   const loadingRef = useRef(false);
 
@@ -472,6 +478,9 @@ export default function ClubMembersPage() {
       if (!getIsMounted || getIsMounted()) setLoading(true);
       try {
         const resolvedId = await resolveClubUUID(clubId);
+        // Update resolved ID for realtime subscriptions
+        if (getIsMounted && !getIsMounted()) return;
+        setResolvedClubId(resolvedId);
 
         // SWR: Show cached members instantly while loading fresh data
         const swrKey = `members_cache_${resolvedId}`;
@@ -576,35 +585,44 @@ export default function ClubMembersPage() {
     let isMounted = true;
     if (clubId) loadMembers(() => isMounted);
 
-    // Subscribe to bus-level events for cross-component sync
-    const reload = (event?: any) => {
-      if (!clubId || !event?.payload?.clubId || event.payload.clubId === clubId) {
-        if (isMounted) {
-          setIsRefreshing(true);
-          loadMembers(() => isMounted).finally(() => {
-            if (isMounted) setIsRefreshing(false);
-          });
-        }
-      }
-    };
-
-    const unsubs = [
-      masterBus.subscribeDebounced('CLUB_UPDATED', reload, 500),
-      masterBus.subscribeDebounced('CLUB_JOINED', reload, 500),
-      masterBus.subscribeDebounced('CLUB_LEFT', reload, 500),
-      masterBus.subscribeDebounced('BALANCE_UPDATED', reload, 500),
-      masterBus.subscribeDebounced('CHIPS_ADDED', reload, 500),
-      masterBus.subscribeDebounced('CHIPS_WITHDRAWN', reload, 500),
-      // Phase 4: Cross-page sync (ported from World Hub players.js)
-      masterBus.subscribeDebounced('CHIPS_DISTRIBUTED', reload, 500),
-      masterBus.subscribeDebounced('CASHOUT_APPROVED', reload, 500),
-    ];
-
     return () => {
       isMounted = false;
-      unsubs.forEach((unsub) => unsub());
     };
   }, [clubId, loadMembers]);
+
+  // Subscribe to bus-level events for cross-component sync
+  useMasterBusSubscriptions(
+    [
+      'CLUB_JOINED',
+      'CLUB_LEFT',
+      'BALANCE_UPDATED',
+      'CHIPS_ADDED',
+      'CHIPS_WITHDRAWN',
+      'CHIPS_DISTRIBUTED',
+      'CASHOUT_APPROVED',
+    ],
+    () => {
+      if (!clubId) return;
+      setIsRefreshing(true);
+      loadMembers(() => true).finally(() => {
+        setIsRefreshing(false);
+      });
+    },
+    { debounce: 500 }
+  );
+
+  useMasterBusSubscription(
+    'CLUB_UPDATED',
+    (payload: any) => {
+      if (!clubId || !payload?.clubId || payload.clubId === clubId) {
+        setIsRefreshing(true);
+        loadMembers(() => true).finally(() => {
+          setIsRefreshing(false);
+        });
+      }
+    },
+    { debounce: 500 }
+  );
 
   // Stagger animation for members
   useEffect(() => {
@@ -618,41 +636,17 @@ export default function ClubMembersPage() {
     return () => timers.forEach(clearTimeout);
   }, [members]);
 
-  // Real-time club members table updates
-  useEffect(() => {
-    if (!clubId) return;
-    let isMounted = true;
-
-    const channelKey = `club-members-sync-${clubId}`;
-
-    const setupRealtime = async () => {
-      const resolvedId = await resolveClubUUID(clubId);
-      if (!isMounted) return;
-
-      const channel = masterBus.getOrCreateChannel(channelKey);
-      channel
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'club_members',
-            filter: `club_id=eq.${resolvedId}`,
-          },
-          () => {
-            if (isMounted) loadMembers(() => isMounted);
-          }
-        )
-        .subscribe();
-    };
-
-    setupRealtime().catch((e) => console.warn('[ClubMembersPage] Realtime setup failed:', e));
-
-    return () => {
-      isMounted = false;
-      masterBus.removeRegisteredChannel(channelKey);
-    };
-  }, [clubId, loadMembers]);
+  // Real-time club members table updates using hook
+  useMasterBusChannel({
+    channelName: resolvedClubId ? `club-members-sync-${clubId}` : null,
+    table: 'club_members',
+    filter: resolvedClubId ? `club_id=eq.${resolvedClubId}` : null,
+    event: '*',
+    onPayload: () => {
+      loadMembers(() => true);
+    },
+    enabled: !!resolvedClubId,
+  });
 
   // Real-time presence tracking for club members
   useEffect(() => {

@@ -9,6 +9,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
+import { useMasterBusChannel } from '../../hooks/useMasterBusChannel';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { messagingService } from '../../services/MessagingService';
 import { formatRelativeShort } from '../../lib/date';
@@ -218,30 +219,6 @@ export default function ConversationList({
     loadClubMessagesCount();
     initHeartbeat();
 
-    // Real-time subscription for new messages — debounced to prevent stampede
-    const channelKey = 'conversations-updates';
-
-    const debouncedReload = () => {
-      if (realtimeDebounceRef.current) clearTimeout(realtimeDebounceRef.current);
-      realtimeDebounceRef.current = setTimeout(() => {
-        loadConversations(true);
-        loadClubMessagesCount();
-      }, 500); // 500ms debounce — coalesces rapid message events
-    };
-
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'messages',
-        },
-        debouncedReload
-      )
-      .subscribe();
-
     // Bus listeners for cross-component sync (instant, no RT delay)
     const unsubSent = masterBus.subscribe('MESSAGE_SENT', () => {
       loadConversations(true);
@@ -261,13 +238,29 @@ export default function ConversationList({
     return () => {
       if (heartbeatRef.current) clearInterval(heartbeatRef.current);
       if (realtimeDebounceRef.current) clearTimeout(realtimeDebounceRef.current);
-      masterBus.removeRegisteredChannel(channelKey);
       unsubSent();
       unsubReceived();
       unsubDeleted();
       unsubUpdated();
     };
   }, [loadConversations, loadClubMessagesCount, initHeartbeat]);
+
+  // Real-time subscription for new messages — debounced to prevent stampede
+  useMasterBusChannel({
+    channelName: 'conversations-updates',
+    table: 'messages',
+    filter: null, // Listen to all message changes
+    event: '*',
+    onPayload: () => {
+      // Apply debouncing to prevent rapid reloads
+      if (realtimeDebounceRef.current) clearTimeout(realtimeDebounceRef.current);
+      realtimeDebounceRef.current = setTimeout(() => {
+        loadConversations(true);
+        loadClubMessagesCount();
+      }, 500); // 500ms debounce — coalesces rapid message events
+    },
+    enabled: true,
+  });
 
   // Filter by search
   // Q3: Pin/unpin handler

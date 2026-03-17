@@ -81,7 +81,7 @@ class IdentityDNACore {
     // fall back to getSession() if localStorage is empty or the JWT is expired.
     const localSession = this.readLocalSession();
     if (localSession) {
-      console.log('[IdentityDNA] ⚡ Fast path: session found in localStorage');
+      console.debug('[IdentityDNA] ⚡ Fast path: session found in localStorage');
       authenticated = true;
       userId = localSession.userId;
       username = localSession.username;
@@ -99,7 +99,7 @@ class IdentityDNACore {
       // This eliminates the 8s getSession() timeout — the #1 bottleneck.
       const isInIframe = typeof window !== 'undefined' && window.parent !== window;
       if (isInIframe && localSession) {
-        console.log(
+        console.debug(
           '[IdentityDNA] ⚡ Iframe fast path — skipping getSession, auth listener will handle setSession'
         );
         // Set basic user info from localStorage JWT immediately so the UI
@@ -304,7 +304,7 @@ class IdentityDNACore {
                   try {
                     postgresSyncHooks.destroy(); // Clean up any partial state
                     postgresSyncHooks.init(session.user.id);
-                    console.log('[IdentityDNA] PostgresSyncHooks re-init succeeded on retry');
+                    console.debug('[IdentityDNA] PostgresSyncHooks re-init succeeded on retry');
                   } catch (retryErr) {
                     console.error(
                       '[IdentityDNA] PostgresSyncHooks re-init FAILED on retry — realtime may be degraded:',
@@ -385,7 +385,7 @@ class IdentityDNACore {
               profile.vip_level ||
               'bronze') as UserProfile['vip_level'],
           });
-          console.log('[IdentityDNA] ✅ Full profile loaded from database');
+          console.debug('[IdentityDNA] ✅ Full profile loaded from database');
         }
       } catch (e) {
         console.warn('🧬 [PROFILE] Could not load from database, using session data');

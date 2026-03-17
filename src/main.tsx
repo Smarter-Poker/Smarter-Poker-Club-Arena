@@ -69,7 +69,7 @@ import { postToParent } from './utils/parentOrigin';
 if (window.parent !== window) {
   postToParent({ type: 'SMARTER_AUTH_ACK' });
   postToParent({ type: 'CLUB_ARENA_HEARTBEAT' });
-  console.log('[MAIN] Backup ACK + heartbeat sent (inline script is primary)');
+  console.debug('[MAIN] Backup ACK + heartbeat sent (inline script is primary)');
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

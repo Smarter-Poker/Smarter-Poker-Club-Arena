@@ -8,6 +8,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
+import { useMasterBusChannel } from '../../hooks/useMasterBusChannel';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { isToday, isYesterday } from '../../lib/date';
 import styles from './MessagesPanel.module.css';
@@ -67,42 +68,27 @@ export default function MessagesPanel({ initialConversationId, onClose }: Messag
     });
   }, [messages]);
 
-  // Real-time subscription
-  useEffect(() => {
-    if (!selectedConvo) return;
-
-    const channelKey = `messages:${selectedConvo.id}`;
-
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on(
-        'postgres_changes',
+  // Real-time subscription for new messages in conversation
+  useMasterBusChannel({
+    channelName: selectedConvo ? `messages:${selectedConvo.id}` : null,
+    table: 'messages',
+    filter: selectedConvo ? `conversation_id=eq.${selectedConvo.id}` : null,
+    event: 'INSERT',
+    onPayload: (payload) => {
+      const msg = payload.new as any;
+      setMessages((prev) => [
+        ...prev,
         {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'messages',
-          filter: `conversation_id=eq.${selectedConvo.id}`,
+          id: msg.id,
+          senderId: msg.sender_id,
+          content: msg.content,
+          createdAt: msg.created_at,
+          isOwn: msg.sender_id === user?.id,
         },
-        (payload) => {
-          const msg = payload.new as any;
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: msg.id,
-              senderId: msg.sender_id,
-              content: msg.content,
-              createdAt: msg.created_at,
-              isOwn: msg.sender_id === user?.id,
-            },
-          ]);
-        }
-      )
-      .subscribe();
-
-    return () => {
-      masterBus.removeRegisteredChannel(channelKey);
-    };
-  }, [selectedConvo?.id, user?.id]);
+      ]);
+    },
+    enabled: !!selectedConvo,
+  });
 
   const loadConversations = async () => {
     setLoading(true);

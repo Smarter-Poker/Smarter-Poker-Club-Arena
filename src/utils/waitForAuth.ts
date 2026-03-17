@@ -43,7 +43,7 @@ export async function waitForAuth(isMountedCheck?: () => boolean): Promise<boole
     // Fast check: session might already be in localStorage
     const session = readLocalSession();
     if (session) {
-      console.log('[waitForAuth] ✅ Session found in localStorage (instant)');
+      console.debug('[waitForAuth] ✅ Session found in localStorage (instant)');
       return true;
     }
 
@@ -57,7 +57,7 @@ export async function waitForAuth(isMountedCheck?: () => boolean): Promise<boole
 
       const polledSession = readLocalSession();
       if (polledSession) {
-        console.log(`[waitForAuth] ✅ Session found after ${Date.now() - start}ms`);
+        console.debug(`[waitForAuth] ✅ Session found after ${Date.now() - start}ms`);
         return true;
       }
     }

@@ -318,7 +318,7 @@ if (typeof window !== 'undefined') {
 
       if (timeUntilExpiry < REFRESH_BUFFER && timeUntilExpiry > 0) {
         lastRefreshAttempt = Date.now();
-        console.log(
+        console.debug(
           `[Supabase] Proactive token refresh — expires in ${Math.round(timeUntilExpiry / 1000)}s`
         );
         supabase.auth.refreshSession().catch((err) => {
@@ -367,7 +367,7 @@ if (typeof window !== 'undefined') {
         // If less than 10 minutes until expiry, refresh on tab focus
         if (timeUntilExpiry < 10 * 60_000) {
           lastRefreshAttempt = Date.now();
-          console.log('[Supabase] Tab visible — refreshing session proactively');
+          console.debug('[Supabase] Tab visible — refreshing session proactively');
           supabase.auth.refreshSession().catch((e) => {
             console.warn('[Supabase] Proactive refresh on tab focus failed:', e);
           });

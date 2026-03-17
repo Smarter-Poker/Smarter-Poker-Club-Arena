@@ -120,7 +120,7 @@ export function useTabKeepAlive(): void {
       /* ok */
     }
 
-    console.log('[KeepAlive] Tab keepalive active (Worker + AudioContext + WorkerTimeout)');
+    console.debug('[KeepAlive] Tab keepalive active (Worker + AudioContext + WorkerTimeout)');
 
     return () => {
       if (workerRef.current) {
@@ -133,7 +133,7 @@ export function useTabKeepAlive(): void {
           .catch((e) => console.warn('[KeepAlive] Failed to close AudioContext:', e));
         audioCtxRef.current = null;
       }
-      console.log('[KeepAlive] Tab keepalive stopped');
+      console.debug('[KeepAlive] Tab keepalive stopped');
     };
   }, []);
 }

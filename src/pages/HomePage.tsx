@@ -32,6 +32,7 @@ import haptic from '../services/HapticService';
 
 import PremiumSFX from '../services/PremiumSFX';
 import { masterBus } from '../core/MasterBus';
+import { useMasterBusSubscription } from '../hooks/useMasterBusSubscription';
 import DailyChallenges from '../components/home/DailyChallenges';
 import PresenceHub from '../components/home/PresenceHub';
 import ClubContextMenu from '../components/home/ClubContextMenu';
@@ -267,17 +268,14 @@ function HomePageInner() {
   }, []);
 
   // #6: Listen for card color changes from hamburger menu (debounced)
-  useEffect(() => {
-    const unsubColor = masterBus.subscribeDebounced(
-      'CARD_COLOR_CHANGED',
-      (event) => {
-        const preset = event.payload?.preset as string;
-        if (preset) setCardColorPreset(preset);
-      },
-      300
-    );
-    return () => unsubColor();
-  }, []);
+  useMasterBusSubscription(
+    'CARD_COLOR_CHANGED',
+    (payload: any) => {
+      const preset = payload?.preset as string;
+      if (preset) setCardColorPreset(preset);
+    },
+    { debounce: 300 }
+  );
 
   // ═══════════════════════════════════════════════════════════════════════════════
   // DATA FETCHING (with SWR cache)
@@ -420,69 +418,6 @@ function HomePageInner() {
     // MASTER BUS LISTENERS — cross-page state sync
     // ═══════════════════════════════════════════════════════════════════════
 
-    const unsubJoined = masterBus.subscribeDebounced(
-      'CLUB_JOINED',
-      () => {
-        if (isMounted) fetchUserData(true, () => isMounted);
-      },
-      500
-    );
-
-    const unsubLeft = masterBus.subscribeDebounced(
-      'CLUB_LEFT',
-      () => {
-        if (isMounted) fetchUserData(true, () => isMounted);
-      },
-      500
-    );
-
-    const unsubUpdated = masterBus.subscribeDebounced(
-      'CLUB_UPDATED',
-      () => {
-        if (isMounted) fetchUserData(true, () => isMounted);
-      },
-      500
-    );
-
-    // AUTH_STATE_CHANGED: kept as immediate (auth state must propagate instantly)
-    const unsubAuth = masterBus.subscribeDebounced(
-      'AUTH_STATE_CHANGED',
-      (event) => {
-        if (!isMounted) return;
-        if (event.payload.isAuthenticated) {
-          fetchUserData(false, () => isMounted);
-        } else {
-          setUserClubs([]);
-        }
-      },
-      300
-    );
-
-    // Enhancement #8: Listen for notification badge updates (debounced)
-    const unsubNotif = masterBus.subscribeDebounced(
-      'NOTIFICATION_READ',
-      () => {
-        // Clear all badges when notifications are read
-        if (isMounted) setTileBadges({});
-      },
-      500
-    );
-
-    // Phase 8 #5: Listen for diamond balance changes from challenge claims (debounced)
-    const unsubDiamond = masterBus.subscribeDebounced(
-      'DIAMOND_BALANCE_CHANGED',
-      (event) => {
-        const delta = event.payload?.delta as number;
-        if (delta && delta > 0 && isMounted) {
-          setTileBadges((prev) => ({
-            ...prev,
-            'Player Stats': (prev['Player Stats'] || 0) + 1,
-          }));
-        }
-      },
-      500
-    );
-
     return () => {
       isMounted = false;
       if (channel) {
@@ -493,14 +428,70 @@ function HomePageInner() {
       if (cachedAuthUserId) {
         masterBus.removeRegisteredChannel(`home-clubs-${cachedAuthUserId}`);
       }
-      unsubJoined();
-      unsubLeft();
-      unsubUpdated();
-      unsubAuth();
-      unsubNotif();
-      unsubDiamond();
     };
   }, [fetchUserData]);
+
+  useMasterBusSubscription(
+    'CLUB_JOINED',
+    () => {
+      fetchUserData(true);
+    },
+    { debounce: 500 }
+  );
+
+  useMasterBusSubscription(
+    'CLUB_LEFT',
+    () => {
+      fetchUserData(true);
+    },
+    { debounce: 500 }
+  );
+
+  useMasterBusSubscription(
+    'CLUB_UPDATED',
+    () => {
+      fetchUserData(true);
+    },
+    { debounce: 500 }
+  );
+
+  // AUTH_STATE_CHANGED: kept as immediate (auth state must propagate instantly)
+  useMasterBusSubscription(
+    'AUTH_STATE_CHANGED',
+    (payload: any) => {
+      if (payload.isAuthenticated) {
+        fetchUserData(false);
+      } else {
+        setUserClubs([]);
+      }
+    },
+    { debounce: 300 }
+  );
+
+  // Enhancement #8: Listen for notification badge updates (debounced)
+  useMasterBusSubscription(
+    'NOTIFICATION_READ',
+    () => {
+      // Clear all badges when notifications are read
+      setTileBadges({});
+    },
+    { debounce: 500 }
+  );
+
+  // Phase 8 #5: Listen for diamond balance changes from challenge claims (debounced)
+  useMasterBusSubscription(
+    'DIAMOND_BALANCE_CHANGED',
+    (payload: any) => {
+      const delta = payload?.delta as number;
+      if (delta && delta > 0) {
+        setTileBadges((prev) => ({
+          ...prev,
+          'Player Stats': (prev['Player Stats'] || 0) + 1,
+        }));
+      }
+    },
+    { debounce: 500 }
+  );
 
   // Fetch Shark Club stats — ALL data from live Supabase queries
   // Hardcoded club_id for Shark Club — permanent fixture of the platform
@@ -654,14 +645,14 @@ function HomePageInner() {
       .subscribe();
 
     // Bus listeners: refresh Shark Club stats when members join/leave any club
-    const unsubSharkJoined = masterBus.subscribeDebounced(
+    const unsubJoined = masterBus.subscribeDebounced(
       'CLUB_JOINED',
       () => {
         if (isMounted) fetchSharkClubStats();
       },
       1000
     );
-    const unsubSharkLeft = masterBus.subscribeDebounced(
+    const unsubLeft = masterBus.subscribeDebounced(
       'CLUB_LEFT',
       () => {
         if (isMounted) fetchSharkClubStats();
@@ -672,9 +663,9 @@ function HomePageInner() {
     return () => {
       isMounted = false;
       if (sharkDebounce) clearTimeout(sharkDebounce);
+      unsubJoined();
+      unsubLeft();
       masterBus.removeRegisteredChannel(sharkChannelKey);
-      unsubSharkJoined();
-      unsubSharkLeft();
     };
   }, []);
 

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, memo } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
+import { useMasterBusChannel } from '../../hooks/useMasterBusChannel';
 import { useNavigate } from 'react-router-dom';
 import { formatRelativeShort as formatTime } from '@/lib/date';
 import NotificationGrouper, { type NotificationCategory } from './NotificationGrouper';
@@ -48,31 +49,18 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
     }
   }, [isOpen, userId]);
 
-  useEffect(() => {
-    // Real-time subscription
-    const channelKey = `notifications:${userId}`;
-
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'notifications',
-          filter: `user_id=eq.${userId}`,
-        },
-        (payload) => {
-          const newNotif = mapNotification(payload.new);
-          setNotifications((prev) => [newNotif, ...prev]);
-        }
-      )
-      .subscribe();
-
-    return () => {
-      masterBus.removeRegisteredChannel(channelKey);
-    };
-  }, [userId]);
+  // Real-time subscription for new notifications
+  useMasterBusChannel({
+    channelName: userId ? `notifications:${userId}` : null,
+    table: 'notifications',
+    filter: userId ? `user_id=eq.${userId}` : null,
+    event: 'INSERT',
+    onPayload: (payload) => {
+      const newNotif = mapNotification(payload.new);
+      setNotifications((prev) => [newNotif, ...prev]);
+    },
+    enabled: !!userId,
+  });
 
   const loadNotifications = async () => {
     setLoading(true);

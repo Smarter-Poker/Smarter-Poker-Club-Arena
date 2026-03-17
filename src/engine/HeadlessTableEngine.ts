@@ -1547,20 +1547,15 @@ export class HeadlessTableEngine {
 
       try {
         // 1. Check horse's Player Wallet balance
-        const { data: walletData, error: walletError } = await this.supabaseClient
-          .from('wallets')
-          .select('balance')
-          .eq('user_id', horse.user_id)
-          .eq('wallet_type', 'PLAYER')
-          .maybeSingle();
-
-        if (walletError || !walletData) {
+        const balance = await WalletService.getWallet(horse.user_id, 'PLAYER');
+        if (!balance) {
           console.error(
             `[HeadlessTableEngine:${this.tableId}] Horse ${horse.username} has no Player Wallet — cannot rebuy`
           );
           await this.markHorseAsLeft(horse.user_id, 'no_wallet');
           continue;
         }
+        const walletData = balance;
 
         const walletBalance = walletData.balance || 0;
         if (walletBalance < rebuyAmount) {

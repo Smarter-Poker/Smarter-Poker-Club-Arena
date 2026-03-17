@@ -141,7 +141,7 @@ class SupabaseConnectionWatchdog {
     }
 
     if (wasDisconnected) {
-      console.log('[Watchdog] Supabase connection restored');
+      console.debug('[Watchdog] Supabase connection restored');
       masterBus.emit('WS_CONNECTED', { url: import.meta.env.VITE_SUPABASE_URL || '' });
       masterBus.emit('REALTIME_CONNECTED', { channelName: 'watchdog' });
       masterBus.emit('CONNECTION_RESTORED', { timestamp: Date.now() });
@@ -187,7 +187,7 @@ class SupabaseConnectionWatchdog {
     try {
       const channels = supabase.getChannels();
       if (channels.length > 0) {
-        console.log(`[Watchdog] Reconnecting ${channels.length} realtime channels...`);
+        console.debug(`[Watchdog] Reconnecting ${channels.length} realtime channels...`);
         channels.forEach((channel) => {
           const state = (channel as any).state;
           if (state === 'closed' || state === 'errored') {
@@ -205,7 +205,7 @@ class SupabaseConnectionWatchdog {
   }
 
   private handleOnline = (): void => {
-    console.log('[Watchdog] Browser went online — checking health');
+    console.debug('[Watchdog] Browser went online — checking health');
     // FIX: Store timer ID so stop() can clear it. Previously this timer
     // was fire-and-forget and could fire after stop() was called.
     if (this.onlineCheckTimer) clearTimeout(this.onlineCheckTimer);
@@ -216,7 +216,7 @@ class SupabaseConnectionWatchdog {
   };
 
   private handleOffline = (): void => {
-    console.log('[Watchdog] Browser went offline');
+    console.debug('[Watchdog] Browser went offline');
     // Don't immediately show disconnected — just increment failure and retry
     this.markFailure();
     // Schedule aggressive retry — browser may come back online quickly

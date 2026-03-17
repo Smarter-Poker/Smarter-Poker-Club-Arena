@@ -2684,7 +2684,7 @@ export type { OrchestratorTable, OrchestratorStats, TableConfig };
 export async function ensureMidwayUnionSetup(): Promise<boolean> {
   try {
     await horseOrchestrator.ensureUnionSetup();
-    console.log('[MidwayUnion] Setup verified — union exists, both clubs attached');
+    console.debug('[MidwayUnion] Setup verified — union exists, both clubs attached');
     return true;
   } catch (err) {
     console.error('[MidwayUnion] Setup failed:', err);

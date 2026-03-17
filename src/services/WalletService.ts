@@ -714,6 +714,55 @@ export const WalletService = {
   },
 
   // ─────────────────────────────────────────────────────────────────────────────
+  // DIRECT WALLET READS (routed from bypassing queries)
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Get a specific wallet for a user (raw balance fields)
+   */
+  async getWallet(
+    userId: string,
+    walletType: WalletType
+  ): Promise<{ balance: number; locked_balance: number } | null> {
+    const { data, error } = await supabase
+      .from('wallets')
+      .select('balance, locked_balance')
+      .eq('user_id', userId)
+      .eq('wallet_type', walletType)
+      .maybeSingle();
+    if (error) {
+      console.error(`[WalletService] Failed to get ${walletType} wallet for ${userId}:`, error);
+      return null;
+    }
+    return data;
+  },
+
+  /**
+   * Get all wallets for a user
+   */
+  async getWallets(
+    userId: string
+  ): Promise<Array<{ wallet_type: string; balance: number; locked_balance: number }>> {
+    const { data, error } = await supabase
+      .from('wallets')
+      .select('wallet_type, balance, locked_balance')
+      .eq('user_id', userId);
+    if (error) {
+      console.error(`[WalletService] Failed to get wallets for ${userId}:`, error);
+      return [];
+    }
+    return data || [];
+  },
+
+  /**
+   * Get player wallet balance (shorthand for the most common query)
+   */
+  async getPlayerBalance(userId: string): Promise<number> {
+    const wallet = await this.getWallet(userId, 'PLAYER');
+    return wallet?.balance ?? 0;
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────────
   // WALLET PROVISIONING
   // ─────────────────────────────────────────────────────────────────────────────
 

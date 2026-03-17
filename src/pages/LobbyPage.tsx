@@ -15,6 +15,10 @@ import LobbyHeroBanner from '../components/lobby/LobbyHeroBanner';
 import { tableService } from '../services/TableService';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
+import {
+  useMasterBusSubscription,
+  useMasterBusSubscriptions,
+} from '../hooks/useMasterBusSubscription';
 import { dailyChallengeService } from '../services/DailyChallengeService';
 import { useAuthUser } from '../hooks/useAuthUser';
 import type { PokerTable } from '../types/database.types';
@@ -168,27 +172,34 @@ export default function LobbyPage() {
     // Trigger push notification event if daily reset is available
     dailyChallengeService.emitDailyResetReminder();
 
-    // Listen for balance updates (e.g., from wheel spins or daily claims) to force profile refresh (debounced)
-    const unsubBalance = masterBus.subscribeDebounced(
-      'BALANCE_UPDATED',
-      () => {
-        masterBus.emit('PROFILE_UPDATED', { userId: user.id || '', updates: {} });
-      },
-      500
-    );
-
-    // ── EventBus listeners ported from World Hub lobby.js ──
-    // These cross-page events trigger a lobby refresh when admin/cashier actions
-    // occur elsewhere in the app (table created, chips distributed, etc.)
-    const refreshTables = () => {
-      tableService
-        .getActiveTables()
-        .then((t) => {
-          if (isMounted.current) setTables(t);
-        })
-        .catch((e) => console.warn('[Lobby] Refresh tables failed:', e));
+    return () => {
+      // cleanup happens in hooks now
     };
-    const LOBBY_REFRESH_EVENTS = [
+  }, [user?.id]);
+
+  // Listen for balance updates (e.g., from wheel spins or daily claims) to force profile refresh (debounced)
+  useMasterBusSubscription(
+    'BALANCE_UPDATED',
+    () => {
+      masterBus.emit('PROFILE_UPDATED', { userId: user?.id || '', updates: {} });
+    },
+    { debounce: 500 }
+  );
+
+  // ── EventBus listeners ported from World Hub lobby.js ──
+  // These cross-page events trigger a lobby refresh when admin/cashier actions
+  // occur elsewhere in the app (table created, chips distributed, etc.)
+  const refreshTables = useCallback(() => {
+    tableService
+      .getActiveTables()
+      .then((t) => {
+        if (isMounted.current) setTables(t);
+      })
+      .catch((e) => console.warn('[Lobby] Refresh tables failed:', e));
+  }, []);
+
+  useMasterBusSubscriptions(
+    [
       'TABLE_CREATED',
       'TABLE_UPDATED',
       'ANNOUNCEMENT_CHANGED',
@@ -197,16 +208,10 @@ export default function LobbyPage() {
       'TABLE_DELETED',
       'TABLE_CLOSED',
       'CLUB_SETTINGS_UPDATED',
-    ] as const;
-    const unsubEvents = LOBBY_REFRESH_EVENTS.map((ev) =>
-      masterBus.subscribeDebounced(ev, refreshTables, 500)
-    );
-
-    return () => {
-      unsubBalance();
-      unsubEvents.forEach((unsub) => unsub());
-    };
-  }, [user?.id]);
+    ],
+    refreshTables,
+    { debounce: 500 }
+  );
 
   // ── Detect user role for admin controls ──
   useEffect(() => {

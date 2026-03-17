@@ -13,6 +13,7 @@ import React, { useState, useEffect, useCallback, memo } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
+import { useMasterBusSubscriptions } from '../../hooks/useMasterBusSubscription';
 import haptic from '../../utils/haptic';
 
 const TABS = [
@@ -163,20 +164,17 @@ function GameLobbyGridInner({ clubId, onGamePress }: GameLobbyGridProps) {
       )
       .subscribe();
 
-    // MasterBus listeners for cross-page events
-    const unsubs = [
-      masterBus.subscribeDebounced('TABLE_CREATED', loadGames, 500),
-      masterBus.subscribeDebounced('TABLE_UPDATED', loadGames, 500),
-      masterBus.subscribeDebounced('TABLE_DELETED', loadGames, 500),
-      masterBus.subscribeDebounced('TOURNAMENT_UPDATED', loadGames, 500),
-      masterBus.subscribeDebounced('CHIPS_DISTRIBUTED', loadGames, 500),
-    ];
-
     return () => {
       masterBus.removeRegisteredChannel(channelKey);
-      unsubs.forEach((u) => u());
     };
   }, [loadGames, clubId]);
+
+  // MasterBus listeners for cross-page events
+  useMasterBusSubscriptions(
+    ['TABLE_CREATED', 'TABLE_UPDATED', 'TABLE_DELETED', 'TOURNAMENT_UPDATED', 'CHIPS_DISTRIBUTED'],
+    loadGames,
+    { debounce: 500 }
+  );
 
   const visible = games.filter((g) => matchesTab(g, activeTab));
   const countForTab = (id: string) =>

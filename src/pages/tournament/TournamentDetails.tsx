@@ -6,6 +6,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { tournamentService } from '../../services/TournamentService';
+import { WalletService } from '../../services/WalletService';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import type { Tournament } from '../../types/database.types';
@@ -103,13 +104,8 @@ export default function TournamentDetails() {
   const loadWalletBalance = async () => {
     if (!user?.id) return;
     try {
-      const { data } = await supabase
-        .from('wallets')
-        .select('balance')
-        .eq('user_id', user.id)
-        .eq('wallet_type', 'PLAYER')
-        .maybeSingle();
-      if (data) setWalletBalance(data.balance || 0);
+      const balance = await WalletService.getPlayerBalance(user.id);
+      setWalletBalance(balance);
     } catch {
       /* ignore */
     }

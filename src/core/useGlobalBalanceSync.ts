@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { masterBus } from './MasterBus';
 import { useUserStore } from '../stores/useUserStore';
+import { WalletService } from '../services/WalletService';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -22,18 +23,8 @@ export function useGlobalBalanceSync() {
 
     const fetchTrueBalance = async () => {
       try {
-        const { data, error } = await supabase
-          .from('wallets')
-          .select('balance')
-          .eq('user_id', user.id)
-          .eq('wallet_type', 'PLAYER')
-          .maybeSingle();
-
-        if (error) throw error;
-
-        if (data && data.balance !== undefined) {
-          useUserStore.getState().updateTotalChips(Number(data.balance));
-        }
+        const balance = await WalletService.getPlayerBalance(user.id);
+        useUserStore.getState().updateTotalChips(Number(balance));
       } catch (err) {
         console.error('[GlobalBalanceSync] Failed to fetch atomic ledger balance:', err);
       }

@@ -20,6 +20,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
 import { ChipFlowService } from '../../services/ChipFlowService';
+import { WalletService } from '../../services/WalletService';
 import { resolveClubIdFilter, resolveClubUUID } from '../../utils/clubIdResolver';
 import './ChipTransferModal.css';
 
@@ -90,13 +91,8 @@ export default function ChipTransferModal({
     if (!user?.id) return;
     try {
       // Get sender's PLAYER wallet balance
-      const { data: wallet } = await supabase
-        .from('wallets')
-        .select('balance')
-        .eq('user_id', user.id)
-        .eq('wallet_type', 'PLAYER')
-        .maybeSingle();
-      setSenderBalance(wallet?.balance || 0);
+      const balance = await WalletService.getPlayerBalance(user.id);
+      setSenderBalance(balance);
 
       // Get sender's role in this club
       const resolvedId = await resolveClubUUID(clubId);

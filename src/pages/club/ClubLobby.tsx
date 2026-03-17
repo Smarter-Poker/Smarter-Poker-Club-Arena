@@ -8,9 +8,15 @@ import { useParams, Link, useSearchParams, useNavigate } from 'react-router-dom'
 import { ClubsService } from '../../services/ClubsService';
 import { tableService } from '../../services/TableService';
 import { tournamentService } from '../../services/TournamentService';
+import { WalletService } from '../../services/WalletService';
 import { supabase } from '../../lib/supabase';
 import { waitForAuth } from '../../utils/waitForAuth';
 import { masterBus } from '../../core/MasterBus';
+import {
+  useMasterBusSubscription,
+  useMasterBusSubscriptions,
+} from '../../hooks/useMasterBusSubscription';
+import { useMasterBusChannel } from '../../hooks/useMasterBusChannel';
 import { useUserStore } from '../../stores/useUserStore';
 import type { Club } from '../../types/club.types';
 import type { PokerTable, Tournament } from '../../types/database.types';
@@ -46,6 +52,7 @@ export default function ClubLobby() {
   const isMountedRef = useIsMounted();
   const [userRole, setUserRole] = useState<'owner' | 'admin' | 'agent' | 'member'>('member');
   const loadingRef = useRef(false);
+  const [resolvedClubId, setResolvedClubId] = useState<string | null>(null);
 
   // UNION-FIRST: Check if this club is in a union and redirect
   // Combined with initial data load to prevent race condition where
@@ -53,6 +60,7 @@ export default function ClubLobby() {
   useEffect(() => {
     if (!clubId) {
       setIsLoading(false);
+      setResolvedClubId(null);
       return;
     }
 
@@ -70,6 +78,10 @@ export default function ClubLobby() {
       try {
         const resolvedId = await resolveClubUUID(clubId);
         if (cancelled || !isMountedRef.current) return;
+
+        // Set resolved ID for realtime subscriptions
+        setResolvedClubId(resolvedId);
+
         const { data: ucRow } = await supabase
           .from('union_clubs')
           .select('union_id')
@@ -103,123 +115,93 @@ export default function ClubLobby() {
   });
 
   // ── Bus Listeners: cross-page reactivity ──
-  useEffect(() => {
-    if (!clubId) return;
-    const reload = () => loadClubData();
-    const unsubs = [
-      masterBus.subscribeDebounced(
-        'BALANCE_UPDATED',
-        () => {
-          if (!currentUser?.id) return;
-          Promise.all([
-            supabase
-              .from('wallets')
-              .select('balance')
-              .eq('user_id', currentUser.id)
-              .eq('wallet_type', 'PLAYER')
-              .maybeSingle(),
-            supabase
-              .from('diamond_wallets')
-              .select('balance')
-              .eq('user_id', currentUser.id)
-              .maybeSingle(),
-          ])
-            .then(([chipRes, diamondRes]) => {
-              if (!isMountedRef.current) return;
-              if (chipRes.data) setChipBalance(chipRes.data.balance || 0);
-              if (diamondRes.data) setDiamondBalance(diamondRes.data.balance || 0);
-            })
-            .catch((e) => console.warn('[ClubLobby] Failed to refresh wallet balances:', e));
-        },
-        500
-      ),
-      masterBus.subscribeDebounced('TABLE_SEATED', reload, 300),
-      masterBus.subscribeDebounced('TABLE_LEFT', reload, 300),
-      masterBus.subscribeDebounced(
-        'CLUB_UPDATED',
-        (payload: any) => {
-          if (!payload?.clubId || payload.clubId === clubId) reload();
-        },
-        300
-      ),
-      masterBus.subscribeDebounced(
-        'TOURNAMENT_UPDATED',
-        () => {
-          // Reload when any tournament changes — payload has tournamentId, not clubId
-          reload();
-        },
-        300
-      ),
-      masterBus.subscribeDebounced('ANNOUNCEMENT_CHANGED', reload, 300),
-    ];
-    return () => unsubs.forEach((u) => u());
-  }, [clubId, currentUser?.id]);
+  const reload = useCallback(() => loadClubData(), []);
 
-  // ── Realtime subscription: live table and tournament updates ──
-  useEffect(() => {
-    if (!clubId) return;
-    let cancelled = false;
-    let activeChannelKey: string | null = null;
+  useMasterBusSubscription(
+    'BALANCE_UPDATED',
+    () => {
+      if (!clubId || !currentUser?.id) return;
+      Promise.all([
+        WalletService.getPlayerBalance(currentUser.id).then((balance) => ({ data: { balance } })),
+        supabase
+          .from('diamond_wallets')
+          .select('balance')
+          .eq('user_id', currentUser.id)
+          .maybeSingle(),
+      ])
+        .then(([chipRes, diamondRes]) => {
+          if (!isMountedRef.current) return;
+          if (chipRes.data) setChipBalance(chipRes.data.balance || 0);
+          if (diamondRes.data) setDiamondBalance(diamondRes.data.balance || 0);
+        })
+        .catch((e) => console.warn('[ClubLobby] Failed to refresh wallet balances:', e));
+    },
+    { debounce: 500 }
+  );
 
-    const setup = async () => {
-      // Resolve to UUID so the WS filter works even when clubId is a short code
-      const resolvedId = await resolveClubUUID(clubId);
-      if (cancelled) return;
+  useMasterBusSubscriptions(
+    ['TABLE_SEATED', 'TABLE_LEFT', 'ANNOUNCEMENT_CHANGED'],
+    () => {
+      if (clubId) reload();
+    },
+    { debounce: 300 }
+  );
 
-      const channelKey = `club-lobby-${resolvedId}`;
-      activeChannelKey = channelKey;
-      const channel = masterBus.getOrCreateChannel(channelKey);
-      channel
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'tables',
-            filter: `club_id=eq.${resolvedId}`,
-          },
-          (payload) => {
-            if (payload.eventType === 'UPDATE' && payload.new) {
-              setTables((prev) =>
-                prev.map((t) => (t.id === payload.new.id ? { ...t, ...payload.new } : t))
-              );
-            } else if (payload.eventType === 'INSERT' && payload.new) {
-              setTables((prev) => [payload.new as any, ...prev]);
-            } else if (payload.eventType === 'DELETE' && payload.old) {
-              setTables((prev) => prev.filter((t) => t.id !== (payload.old as any).id));
-            }
-          }
-        )
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'tournaments',
-            filter: `club_id=eq.${resolvedId}`,
-          },
-          (payload) => {
-            if (payload.eventType === 'UPDATE' && payload.new) {
-              setTournaments((prev) =>
-                prev.map((t) => (t.id === payload.new.id ? { ...t, ...payload.new } : t))
-              );
-            } else if (payload.eventType === 'INSERT' && payload.new) {
-              setTournaments((prev) => [payload.new as any, ...prev]);
-            } else if (payload.eventType === 'DELETE' && payload.old) {
-              setTournaments((prev) => prev.filter((t) => t.id !== (payload.old as any).id));
-            }
-          }
-        )
-        .subscribe();
-    };
+  useMasterBusSubscription(
+    'CLUB_UPDATED',
+    (payload: any) => {
+      if (!clubId || !payload?.clubId || payload.clubId === clubId) reload();
+    },
+    { debounce: 300 }
+  );
 
-    setup();
+  useMasterBusSubscription(
+    'TOURNAMENT_UPDATED',
+    () => {
+      if (clubId) reload();
+    },
+    { debounce: 300 }
+  );
 
-    return () => {
-      cancelled = true;
-      if (activeChannelKey) masterBus.removeRegisteredChannel(activeChannelKey);
-    };
-  }, [clubId]);
+  // ── Realtime subscriptions: live table and tournament updates ──
+  // Using useMasterBusChannel hook for cleaner, safer subscription management
+  useMasterBusChannel({
+    channelName: resolvedClubId ? `club-lobby-${resolvedClubId}` : null,
+    table: 'tables',
+    filter: resolvedClubId ? `club_id=eq.${resolvedClubId}` : null,
+    event: '*',
+    onPayload: (payload) => {
+      if (payload.eventType === 'UPDATE' && payload.new) {
+        setTables((prev) =>
+          prev.map((t) => (t.id === payload.new.id ? { ...t, ...payload.new } : t))
+        );
+      } else if (payload.eventType === 'INSERT' && payload.new) {
+        setTables((prev) => [payload.new as any, ...prev]);
+      } else if (payload.eventType === 'DELETE' && payload.old) {
+        setTables((prev) => prev.filter((t) => t.id !== (payload.old as any).id));
+      }
+    },
+    enabled: !!resolvedClubId,
+  });
+
+  useMasterBusChannel({
+    channelName: resolvedClubId ? `club-lobby-${resolvedClubId}` : null,
+    table: 'tournaments',
+    filter: resolvedClubId ? `club_id=eq.${resolvedClubId}` : null,
+    event: '*',
+    onPayload: (payload) => {
+      if (payload.eventType === 'UPDATE' && payload.new) {
+        setTournaments((prev) =>
+          prev.map((t) => (t.id === payload.new.id ? { ...t, ...payload.new } : t))
+        );
+      } else if (payload.eventType === 'INSERT' && payload.new) {
+        setTournaments((prev) => [payload.new as any, ...prev]);
+      } else if (payload.eventType === 'DELETE' && payload.old) {
+        setTournaments((prev) => prev.filter((t) => t.id !== (payload.old as any).id));
+      }
+    },
+    enabled: !!resolvedClubId,
+  });
 
   const loadClubData = useCallback(async () => {
     if (!clubId) return;
@@ -238,13 +220,8 @@ export default function ClubLobby() {
       setTournaments(tournamentData);
 
       if (currentUser?.id) {
-        const { data: walletData } = await supabase
-          .from('wallets')
-          .select('wallet_type, balance')
-          .eq('user_id', currentUser.id)
-          .eq('wallet_type', 'PLAYER')
-          .maybeSingle();
-        if (isMountedRef.current && walletData) setChipBalance(walletData.balance || 0);
+        const walletBalance = await WalletService.getPlayerBalance(currentUser.id);
+        if (isMountedRef.current) setChipBalance(walletBalance);
 
         const { data: diamondData } = await supabase
           .from('diamond_wallets')

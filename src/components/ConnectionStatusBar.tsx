@@ -11,6 +11,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { masterBus } from '../core/MasterBus';
+import { useMasterBusSubscription } from '../hooks/useMasterBusSubscription';
 
 type ConnStatus = 'connected' | 'idle';
 
@@ -18,19 +19,17 @@ export function ConnectionStatusBar() {
   const [status, setStatus] = useState<ConnStatus>('idle');
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  useMasterBusSubscription('WS_CONNECTED', () => {
+    setStatus('connected');
+    if (hideTimer.current) clearTimeout(hideTimer.current);
+    hideTimer.current = setTimeout(() => setStatus('idle'), 2000);
+  });
+
+  // Ignore disconnect/reconnecting events — users should never see these
+  // The watchdog handles reconnection silently
+
   useEffect(() => {
-    // Only show the bar on successful reconnection (green flash)
-    const unsub1 = masterBus.subscribe('WS_CONNECTED', () => {
-      setStatus('connected');
-      if (hideTimer.current) clearTimeout(hideTimer.current);
-      hideTimer.current = setTimeout(() => setStatus('idle'), 2000);
-    });
-
-    // Ignore disconnect/reconnecting events — users should never see these
-    // The watchdog handles reconnection silently
-
     return () => {
-      unsub1();
       if (hideTimer.current) clearTimeout(hideTimer.current);
     };
   }, []);

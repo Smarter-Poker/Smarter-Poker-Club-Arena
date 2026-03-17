@@ -12,6 +12,7 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { masterBus } from '../../core/MasterBus';
+import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import './TableChat.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -178,115 +179,101 @@ export function TableChat({
   // ── Internal state for bus-received messages from other players ──
   const [busMessages, setBusMessages] = useState<ChatMessage[]>([]);
 
-  // ── Bus listener: receive incoming chat messages and reactions from other players ──
-  useEffect(() => {
-    const unsubChat = masterBus.subscribe('TABLE_CHAT_MESSAGE', (event: any) => {
-      const data = event?.payload;
-      // QuickChatPresets emits { tableId, userId, message, type }
-      // Guard: if myPlayerId is undefined, skip to prevent own-message duplication
-      // Enhancement #4: filter by tableId to prevent cross-table message leaks
-      if (
-        data &&
-        myPlayerId &&
-        data.userId !== myPlayerId &&
-        (!tableId || data.tableId === tableId)
-      ) {
-        setBusMessages((prev) => {
-          const newMsg: ChatMessage = {
-            id: `bus-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-            type: 'PLAYER',
-            playerId: data.userId,
-            playerName: data.playerName || 'Player',
-            content: data.message,
-            timestamp: new Date(),
-          };
-          return [...prev, newMsg].slice(-50); // Cap at 50 bus messages
-        });
-      }
-    });
-    const unsubReaction = masterBus.subscribe('TABLE_REACTION', (event: any) => {
-      const data = event?.payload;
-      // QuickChatPresets emits { tableId, userId, emoji }
-      if (
-        data &&
-        myPlayerId &&
-        data.userId !== myPlayerId &&
-        (!tableId || data.tableId === tableId)
-      ) {
-        setBusMessages((prev) => {
-          const reactionMsg: ChatMessage = {
-            id: `react-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-            type: 'EMOJI',
-            playerId: data.userId,
-            playerName: data.playerName || 'Player',
-            content: data.emoji || '👏',
-            timestamp: new Date(),
-          };
-          return [...prev, reactionMsg].slice(-50);
-        });
-      }
-    });
+  // ── Bus listener: receive incoming chat messages from other players ──
+  useMasterBusSubscription('TABLE_CHAT_MESSAGE', (data: any) => {
+    // QuickChatPresets emits { tableId, userId, message, type }
+    // Guard: if myPlayerId is undefined, skip to prevent own-message duplication
+    // Enhancement #4: filter by tableId to prevent cross-table message leaks
+    if (
+      data &&
+      myPlayerId &&
+      data.userId !== myPlayerId &&
+      (!tableId || data.tableId === tableId)
+    ) {
+      setBusMessages((prev) => {
+        const newMsg: ChatMessage = {
+          id: `bus-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          type: 'PLAYER',
+          playerId: data.userId,
+          playerName: data.playerName || 'Player',
+          content: data.message,
+          timestamp: new Date(),
+        };
+        return [...prev, newMsg].slice(-50); // Cap at 50 bus messages
+      });
+    }
+  });
 
-    const unsubPreAction = masterBus.subscribe('PRE_ACTION_EXECUTED', (event: any) => {
-      const data = event?.payload;
-      if (data && (!tableId || data.tableId === tableId)) {
-        const actionText =
-          data.action === 'fold'
-            ? 'auto-folded'
-            : data.action === 'check'
-              ? 'auto-checked'
-              : 'auto-called';
+  useMasterBusSubscription('TABLE_REACTION', (data: any) => {
+    // QuickChatPresets emits { tableId, userId, emoji }
+    if (
+      data &&
+      myPlayerId &&
+      data.userId !== myPlayerId &&
+      (!tableId || data.tableId === tableId)
+    ) {
+      setBusMessages((prev) => {
+        const reactionMsg: ChatMessage = {
+          id: `react-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          type: 'EMOJI',
+          playerId: data.userId,
+          playerName: data.playerName || 'Player',
+          content: data.emoji || '👏',
+          timestamp: new Date(),
+        };
+        return [...prev, reactionMsg].slice(-50);
+      });
+    }
+  });
 
-        setBusMessages((prev) => {
-          const sysMsg: ChatMessage = {
-            id: `sys-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-            type: 'SYSTEM',
-            content: `Player ${data.playerId.substring(0, 4)} ${actionText}`,
-            timestamp: new Date(),
-          };
-          return [...prev, sysMsg].slice(-50);
-        });
-      }
-    });
+  useMasterBusSubscription('PRE_ACTION_EXECUTED', (data: any) => {
+    if (data && (!tableId || data.tableId === tableId)) {
+      const actionText =
+        data.action === 'fold'
+          ? 'auto-folded'
+          : data.action === 'check'
+            ? 'auto-checked'
+            : 'auto-called';
 
-    const unsubStraddle = masterBus.subscribe('STRADDLE_TOGGLED', (event: any) => {
-      const data = event?.payload;
-      if (data && (!tableId || data.tableId === tableId)) {
-        setBusMessages((prev) => {
-          const sysMsg: ChatMessage = {
-            id: `sys-straddle-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-            type: 'SYSTEM',
-            content: `Player ${data.playerId.substring(0, 4)} turned ${data.enabled ? 'ON' : 'OFF'} Auto-Straddle`,
-            timestamp: new Date(),
-          };
-          return [...prev, sysMsg].slice(-50);
-        });
-      }
-    });
+      setBusMessages((prev) => {
+        const sysMsg: ChatMessage = {
+          id: `sys-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          type: 'SYSTEM',
+          content: `Player ${data.playerId.substring(0, 4)} ${actionText}`,
+          timestamp: new Date(),
+        };
+        return [...prev, sysMsg].slice(-50);
+      });
+    }
+  });
 
-    const unsubTimeBank = masterBus.subscribe('TIME_BANK_ACTIVATED', (event: any) => {
-      const data = event?.payload;
-      if (data && (!tableId || data.tableId === tableId)) {
-        setBusMessages((prev) => {
-          const sysMsg: ChatMessage = {
-            id: `sys-timebank-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-            type: 'SYSTEM',
-            content: `Player ${data.playerId.substring(0, 4)} activated Time Bank (+${data.addedSeconds}s)`,
-            timestamp: new Date(),
-          };
-          return [...prev, sysMsg].slice(-50);
-        });
-      }
-    });
+  useMasterBusSubscription('STRADDLE_TOGGLED', (data: any) => {
+    if (data && (!tableId || data.tableId === tableId)) {
+      setBusMessages((prev) => {
+        const sysMsg: ChatMessage = {
+          id: `sys-straddle-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          type: 'SYSTEM',
+          content: `Player ${data.playerId.substring(0, 4)} turned ${data.enabled ? 'ON' : 'OFF'} Auto-Straddle`,
+          timestamp: new Date(),
+        };
+        return [...prev, sysMsg].slice(-50);
+      });
+    }
+  });
 
-    return () => {
-      unsubChat();
-      unsubReaction();
-      unsubPreAction();
-      unsubStraddle();
-      unsubTimeBank();
-    };
-  }, [myPlayerId, tableId]);
+  useMasterBusSubscription('TIME_BANK_ACTIVATED', (data: any) => {
+    if (data && (!tableId || data.tableId === tableId)) {
+      setBusMessages((prev) => {
+        const sysMsg: ChatMessage = {
+          id: `sys-timebank-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          type: 'SYSTEM',
+          content: `Player ${data.playerId.substring(0, 4)} activated Time Bank (+${data.addedSeconds}s)`,
+          timestamp: new Date(),
+        };
+        return [...prev, sysMsg].slice(-50);
+      });
+    }
+  });
 
   // Merge prop messages with bus-received messages, trim to max
   const allMessages = [...messages, ...busMessages].sort(

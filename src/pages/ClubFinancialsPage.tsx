@@ -20,6 +20,7 @@ import './ClubFinancialsPage.css';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { retryFetch } from '../utils/retryFetch';
+import { formatDateShort as formatDate } from '../utils/format';
 
 interface FinancialSummary {
   period: string;
@@ -357,13 +358,6 @@ export default function ClubFinancialsPage() {
       loadingRef.current = false;
       if (isMounted.current) setLoading(false);
     }
-  };
-
-  const formatDate = (dateStr: string): string => {
-    return new Date(dateStr).toLocaleDateString(undefined, {
-      month: 'short',
-      day: 'numeric',
-    });
   };
 
   const getTypeIcon = (type: string): string => {

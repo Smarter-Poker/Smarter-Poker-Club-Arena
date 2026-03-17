@@ -14,6 +14,7 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import './TransactionHistoryPage.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import PageSkeleton from '../components/common/PageSkeleton';
+import { formatDateTime as formatDate } from '../utils/format';
 
 interface Transaction {
   id: string;
@@ -304,16 +305,6 @@ export default function TransactionHistoryPage() {
       default:
         return { symbol: '●', color: '#6a7a8a', bg: 'rgba(106,122,138,0.12)' };
     }
-  };
-
-  const formatDate = (dateStr: string): string => {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
   };
 
   const getCurrencySymbol = (currency: string): string => {

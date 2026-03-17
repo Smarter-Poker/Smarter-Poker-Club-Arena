@@ -10,8 +10,7 @@
  * Format a number with locale-aware separators.
  * @example fmt(12345) → "12,345"
  */
-export const fmt = (n: number | null | undefined): string =>
-  Number(n || 0).toLocaleString();
+export const fmt = (n: number | null | undefined): string => Number(n || 0).toLocaleString();
 
 /**
  * Format a chip amount with K/M abbreviation.
@@ -40,7 +39,7 @@ export const timeAgo = (ts: string | null | undefined): string => {
 };
 
 /**
- * Format a date for display.
+ * Format a date with year.
  * @example formatDate("2026-03-17T10:00:00Z") → "Mar 17, 2026"
  */
 export const formatDate = (ts: string | null | undefined): string => {
@@ -52,3 +51,36 @@ export const formatDate = (ts: string | null | undefined): string => {
     year: 'numeric',
   });
 };
+
+/**
+ * Format a date without year (compact).
+ * @example formatDateShort("2026-03-17T10:00:00Z") → "Mar 17"
+ */
+export const formatDateShort = (ts: string | null | undefined): string => {
+  if (!ts) return '';
+  return new Date(ts).toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+  });
+};
+
+/**
+ * Format a date with time (no year).
+ * @example formatDateTime("2026-03-17T10:30:00Z") → "Mar 17, 10:30 AM"
+ */
+export const formatDateTime = (ts: string | null | undefined): string => {
+  if (!ts) return '';
+  return new Date(ts).toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+};
+
+/**
+ * Format percentage from a 0-1 decimal.
+ * @example pct(0.253) → "25.3%"
+ */
+export const pct = (n: number | null | undefined): string =>
+  `${((Number(n) || 0) * 100).toFixed(1)}%`;

@@ -16,6 +16,7 @@ import '../components/common/ButtonSpinner.css';
 import { useToast } from '../components/common/Toast';
 import ClubBottomNav from '../components/club/ClubBottomNav';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
+import { formatDateShort as formatDate } from '../utils/format';
 import SecurityBadge from '../components/common/SecurityBadge';
 import SettlementReceipt from '../components/settlement/SettlementReceipt';
 import SettlementTimeline from '../components/settlement/SettlementTimeline';
@@ -536,10 +537,6 @@ export default function SettlementPage() {
   const formatMoney = (amount: number) => {
     const prefix = amount < 0 ? '-' : '';
     return prefix + Math.abs(amount).toLocaleString('en-US', { minimumFractionDigits: 2 });
-  };
-
-  const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
 
   const handleExecutePayouts = async () => {

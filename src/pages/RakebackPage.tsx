@@ -14,6 +14,7 @@ import './RakebackPage.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { retryAsync } from '../utils/retryAsync';
+import { formatDateShort as formatDate } from '../utils/format';
 
 interface RakebackPeriod {
   id: string;
@@ -163,13 +164,6 @@ export default function RakebackPage() {
       isMounted = false;
     };
   }, [user?.id]);
-
-  const formatDate = (dateStr: string): string => {
-    return new Date(dateStr).toLocaleDateString(undefined, {
-      month: 'short',
-      day: 'numeric',
-    });
-  };
 
   // Chart data (reversed for chronological order)
   const chartData = useMemo(() => {

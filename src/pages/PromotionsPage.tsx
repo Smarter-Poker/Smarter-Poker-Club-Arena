@@ -16,6 +16,7 @@ import ClubBottomNav from '../components/club/ClubBottomNav';
 import './PromotionsPage.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { resolveClubUUID } from '../utils/clubIdResolver';
+import { formatDateShort as formatDate } from '../utils/format';
 import PageSkeleton from '../components/common/PageSkeleton';
 
 interface Promotion {
@@ -163,13 +164,6 @@ export default function PromotionsPage() {
     return (
       labels[type.toLowerCase()] || type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
     );
-  };
-
-  const formatDate = (dateStr: string): string => {
-    return new Date(dateStr).toLocaleDateString(undefined, {
-      month: 'short',
-      day: 'numeric',
-    });
   };
 
   const getTimeRemaining = (endDate: string): string => {

@@ -13,6 +13,7 @@ import { sanitizeInput } from '../utils/sanitizeInput';
 import ConfirmModal from '../components/common/ConfirmModal';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { resolveClubUUID } from '../utils/clubIdResolver';
+import { formatDate } from '../utils/format';
 import './ClubAnnouncementsPage.css';
 import PageSkeleton from '../components/common/PageSkeleton';
 
@@ -254,15 +255,6 @@ export default function ClubAnnouncementsPage() {
       console.error('Failed to post announcement:', error);
     }
     setPosting(false);
-  };
-
-  const formatDate = (dateStr: string): string => {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    });
   };
 
   const handleTogglePin = async (id: string, currentlyPinned: boolean) => {

@@ -16,6 +16,7 @@ import { notificationService } from '../services/NotificationService';
 import { retryFetch } from '../utils/retryFetch';
 import { useIsMounted } from '../hooks/useIsMounted';
 import NotificationSettingsPanel from '../components/social/NotificationSettingsPanel';
+import { timeAgo } from '../utils/format';
 import './NotificationsPage.css';
 
 type NotifCategory = 'all' | 'games' | 'social' | 'achievements' | 'system';
@@ -283,21 +284,6 @@ export default function NotificationsPage() {
     return catObj ? catObj.icon : '📋';
   };
 
-  const formatDate = (dateStr: string): string => {
-    const date = new Date(dateStr);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
-
-    if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays < 7) return `${diffDays}d ago`;
-    return date.toLocaleDateString();
-  };
-
   const unreadCount = notifications.filter((n) => !n.read).length;
 
   // Filter by category, then apply notification grouping
@@ -481,7 +467,7 @@ export default function NotificationsPage() {
                       visible={visibleNotifications.has(globalIndex)}
                       newHighlight={newNotifId === notif.id}
                       icon={getRichIcon(notif)}
-                      timeStr={formatDate(notif.created_at)}
+                      timeStr={timeAgo(notif.created_at)}
                       onRead={() => {
                         markAsRead(notif.id);
                         if (notif.action_url) navigate(notif.action_url);

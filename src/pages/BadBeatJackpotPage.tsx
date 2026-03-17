@@ -13,6 +13,7 @@ import './BadBeatJackpotPage.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import PageSkeleton from '../components/common/PageSkeleton';
+import { formatDate } from '../utils/format';
 
 interface JackpotInfo {
   id: string;
@@ -209,14 +210,6 @@ export default function BadBeatJackpotPage() {
     );
     return () => timers.forEach((t) => clearTimeout(t));
   }, [history.length]);
-
-  const formatDate = (dateStr: string): string => {
-    return new Date(dateStr).toLocaleDateString(undefined, {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    });
-  };
 
   if (loading) {
     return (

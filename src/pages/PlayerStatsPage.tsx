@@ -8,7 +8,7 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -137,6 +137,7 @@ function useCountUpNumber(target: number, duration: number = 400) {
 export default function PlayerStatsPage() {
   const { userId } = useParams();
   const { user } = useAuthUser();
+  const navigate = useNavigate();
 
   const targetUserId = userId || user?.id;
   const [stats, setStats] = useState<DetailedStats | null>(null);
@@ -496,6 +497,7 @@ export default function PlayerStatsPage() {
       {/* Stats Content — Swipeable */}
       <div className="stats-content" {...statsSwipeHandlers}>
         {category === 'overview' && stats && (
+          <>
           <div className="stats-grid">
             <StatRow label="VPIP" value={`${((stats.vpip || 0) * 100).toFixed(1)}%`} />
             <StatRow label="PFR" value={`${((stats.pfr || 0) * 100).toFixed(1)}%`} />
@@ -504,6 +506,41 @@ export default function PlayerStatsPage() {
             <StatRow label="Showdown Win %" value={`${showdownWinRate}%`} />
             <StatRow label="BB/100" value={(stats.bb_per_100 || 0).toFixed(2)} highlight />
           </div>
+
+          {/* Quick-link to Hand Histories */}
+          <button
+            onClick={() => navigate('/hands')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              width: '100%',
+              padding: '12px 16px',
+              marginTop: 16,
+              background: 'linear-gradient(135deg, rgba(65, 105, 225, 0.15) 0%, rgba(139, 92, 246, 0.15) 100%)',
+              border: '1px solid rgba(65, 105, 225, 0.3)',
+              borderRadius: 10,
+              color: '#a5b4fc',
+              fontSize: '0.85rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              fontFamily: "'Orbitron', monospace",
+              letterSpacing: '0.5px',
+              transition: 'all 0.2s ease',
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.background = 'linear-gradient(135deg, rgba(65, 105, 225, 0.25) 0%, rgba(139, 92, 246, 0.25) 100%)';
+              (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(65, 105, 225, 0.5)';
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.background = 'linear-gradient(135deg, rgba(65, 105, 225, 0.15) 0%, rgba(139, 92, 246, 0.15) 100%)';
+              (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(65, 105, 225, 0.3)';
+            }}
+          >
+            📋 View Hand Histories
+          </button>
+          </>
         )}
 
         {/* ── Performance Tab (merged: preflop + postflop + results) ── */}

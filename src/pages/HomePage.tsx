@@ -60,7 +60,7 @@ interface UserPreferences {
 
 // Action button images
 const ACTION_BAR_HORIZONTAL = `${import.meta.env.BASE_URL}images/icons/action-bar-horizontal.png`;
-const DAILY_CHALLENGES_ICON = `${import.meta.env.BASE_URL}images/icons/daily-challenges-icon.png`;
+
 
 // #12: Seasonal theme detection
 function getSeasonalTheme(): string {
@@ -1232,24 +1232,6 @@ function HomePageInner() {
                     BOTTOM ROW — from lobbyTiles.config.ts (#18)
                 ═══════════════════════════════════════════════════════════════════════ */}
         <div className={styles.bottomRow} role="navigation" aria-label="Quick actions">
-          {/* Daily Challenges tile — first in bottom row */}
-          <button
-            className={styles.tileCard}
-            onClick={() => {
-              haptic.light();
-              PremiumSFX.navigate();
-              navigate('/profile');
-            }}
-            aria-label="Daily Challenges"
-            style={{ animationDelay: '320ms' }}
-          >
-            <div className={styles.tilePedestal}></div>
-            <div className={styles.tileImageWrapper}>
-              <img src={DAILY_CHALLENGES_ICON} alt="Daily Challenges" className={styles.tileImage} />
-              <span className={styles.tileLabel}>Daily Challenges</span>
-            </div>
-            <div className={styles.tileEdge}></div>
-          </button>
           {LOBBY_TILES.map((tile) => (
             <button
               key={tile.alt}

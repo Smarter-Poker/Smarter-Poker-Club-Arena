@@ -120,6 +120,7 @@ export default function ClubLobby() {
   const loadingRef = useRef(false);
   const [resolvedClubId, setResolvedClubId] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const loadClubDataRef = useRef<() => void>(() => {});
 
   const hasAdminAccess = userRole === 'owner' || userRole === 'admin';
 
@@ -154,12 +155,13 @@ export default function ClubLobby() {
           .maybeSingle();
 
         if (ucRow && !cancelled && isMountedRef.current) {
+          setIsInUnion(true);
           navigate(`/unions/${ucRow.union_id}`, { replace: true });
           return;
         }
 
-        // Track union membership (don't redirect, just flag it)
-        setIsInUnion(!!ucRow);
+        // Not in union — flag it
+        setIsInUnion(false);
       } catch {
         // Fail-open for standalone clubs
       }
@@ -183,7 +185,7 @@ export default function ClubLobby() {
   });
 
   // ── Bus Listeners: cross-page reactivity ──
-  const reload = useCallback(() => loadClubData(), []);
+  const reload = useCallback(() => loadClubDataRef.current(), []);
 
   useMasterBusSubscription(
     'BALANCE_UPDATED',
@@ -390,6 +392,11 @@ export default function ClubLobby() {
       if (isMountedRef.current) setIsLoading(false);
     }
   }, [clubId, currentUser?.id]);
+
+  // Keep ref synced so bus listeners always call the latest version
+  useEffect(() => {
+    loadClubDataRef.current = loadClubData;
+  }, [loadClubData]);
 
   const filters: GameFilter[] = ['ALL', "Hold'em", 'Omaha', 'Mixed', 'MTT', 'Spin-It', 'SN'];
 
@@ -762,6 +769,7 @@ function TableCardItem({ table }: { table: PokerTable }) {
     const start = displayCount;
     const duration = 400;
     const startTime = performance.now();
+    let rafId: number;
 
     const animate = (currentTime: number) => {
       const elapsed = currentTime - startTime;
@@ -770,11 +778,13 @@ function TableCardItem({ table }: { table: PokerTable }) {
       setDisplayCount(current);
 
       if (progress < 1) {
-        requestAnimationFrame(animate);
+        rafId = requestAnimationFrame(animate);
       }
     };
 
-    requestAnimationFrame(animate);
+    rafId = requestAnimationFrame(animate);
+
+    return () => cancelAnimationFrame(rafId);
   }, [table.current_players, displayCount]);
 
   return (

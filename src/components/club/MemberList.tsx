@@ -144,7 +144,15 @@ function MemberListInner({
                 >
                   <div className="member-avatar">
                     {member.avatar ? (
-                      <img loading="lazy" decoding="async" src={member.avatar} alt="" />
+                      <img
+                        loading="lazy"
+                        decoding="async"
+                        src={member.avatar}
+                        alt=""
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).src = '/default-avatar.png';
+                        }}
+                      />
                     ) : (
                       <span>{(member.name || '?')[0]?.toUpperCase() || '?'}</span>
                     )}

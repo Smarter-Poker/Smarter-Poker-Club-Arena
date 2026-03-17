@@ -8,6 +8,7 @@
 import { supabase } from '../lib/supabase';
 import type { RealtimeChannel, RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 import { masterBus } from '../core/MasterBus';
+import { STORAGE_KEYS } from '../lib/storage';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -352,7 +353,7 @@ class NotificationServiceClass {
    */
   clearDnd(): void {
     this.dndUntil = null;
-    localStorage.removeItem('dnd_until');
+    localStorage.removeItem(STORAGE_KEYS.DND_UNTIL);
   }
 
   /**
@@ -361,7 +362,7 @@ class NotificationServiceClass {
   isDndActive(): boolean {
     if (this.dndUntil === null) {
       // Rehydrate from localStorage
-      const saved = localStorage.getItem('dnd_until');
+      const saved = localStorage.getItem(STORAGE_KEYS.DND_UNTIL);
       if (saved) this.dndUntil = Number(saved);
     }
     if (this.dndUntil && Date.now() < this.dndUntil) return true;
@@ -454,8 +455,7 @@ class NotificationServiceClass {
       const { messagingService } = await import('./MessagingService');
       if (messagingService.isNotificationTypeMuted(notification.type)) return;
     } catch (err) {
-
-      console.error("[NotificationService] Error:", err);
+      console.error('[NotificationService] Error:', err);
       /* service not loaded — allow notification */
     }
 

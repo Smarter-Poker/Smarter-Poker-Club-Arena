@@ -8,6 +8,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { supabase, getAuthUser } from '../lib/supabase';
+import { STORAGE_KEYS } from '../lib/storage';
 import { identityDNA } from '../core/IdentityDNA';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -326,7 +327,7 @@ export default function SettingsPage() {
   // Load settings from localStorage on mount
   useEffect(() => {
     let isMounted = true;
-    const saved = localStorage.getItem('club-arena-settings');
+    const saved = localStorage.getItem(STORAGE_KEYS.SETTINGS);
     if (saved) {
       try {
         setSettings(validateSettings(JSON.parse(saved)));
@@ -352,7 +353,7 @@ export default function SettingsPage() {
   useEffect(() => {
     let isMounted = true;
     const reloadSettings = () => {
-      const saved = localStorage.getItem('club-arena-settings');
+      const saved = localStorage.getItem(STORAGE_KEYS.SETTINGS);
       if (saved) {
         try {
           setSettings(validateSettings(JSON.parse(saved)));
@@ -380,7 +381,7 @@ export default function SettingsPage() {
 
   // Refresh data when user returns to tab
   useVisibilityRefresh(() => {
-    const saved = localStorage.getItem('club-arena-settings');
+    const saved = localStorage.getItem(STORAGE_KEYS.SETTINGS);
     if (saved) {
       try {
         setSettings(validateSettings(JSON.parse(saved)));
@@ -522,7 +523,7 @@ export default function SettingsPage() {
           keys.forEach((k) => {
             if (k.startsWith('profile_cache_')) sessionStorage.removeItem(k);
           });
-          localStorage.removeItem('club-arena-settings');
+          localStorage.removeItem(STORAGE_KEYS.SETTINGS);
         } catch {
           /* cleanup best-effort */
         }
@@ -677,7 +678,7 @@ export default function SettingsPage() {
     setSaving(true);
     try {
       // Save to localStorage
-      localStorage.setItem('club-arena-settings', JSON.stringify(settings));
+      localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
 
       // Sync theme to Zustand store so Shell.tsx applies it immediately
       const { setTheme, toggleSound, toggleFourColorDeck, toggleNotifications } =

@@ -14,6 +14,7 @@ import { identityDNA } from '../../core/IdentityDNA';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
 import { masterBus } from '../../core/MasterBus';
+import { STORAGE_KEYS } from '../../lib/storage';
 
 interface HamburgerMenuProps {
   isOpen: boolean;
@@ -49,7 +50,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   const [diamondBalance, setDiamondBalance] = useState(0);
   const [selectedCardColor, setSelectedCardColor] = useState(() => {
     try {
-      return localStorage.getItem('club_arena_card_color') || 'default';
+      return localStorage.getItem(STORAGE_KEYS.CARD_COLOR) || 'default';
     } catch (err) {
       console.error('[HamburgerMenu] Error:', err);
       return 'default';
@@ -79,9 +80,9 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
 
   // Load user data and settings
   useEffect(() => {
-    const sounds = localStorage.getItem('club_arena_sounds');
-    const vibrations = localStorage.getItem('vibrationsEnabled');
-    const showBB = localStorage.getItem('showStackInBB');
+    const sounds = localStorage.getItem(STORAGE_KEYS.SOUNDS);
+    const vibrations = localStorage.getItem(STORAGE_KEYS.VIBRATIONS);
+    const showBB = localStorage.getItem(STORAGE_KEYS.SHOW_STACK_BB);
     if (sounds !== null) setSoundsEnabled(sounds === 'true');
     if (vibrations !== null) setVibrationsEnabled(vibrations === 'true');
     if (showBB !== null) setShowBBEnabled(showBB === 'true');
@@ -106,15 +107,15 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             // These columns may not exist on profiles — use optional chaining with defaults
             if (data.sounds_enabled !== undefined && data.sounds_enabled !== null) {
               setSoundsEnabled(data.sounds_enabled);
-              localStorage.setItem('club_arena_sounds', String(data.sounds_enabled));
+              localStorage.setItem(STORAGE_KEYS.SOUNDS, String(data.sounds_enabled));
             }
             if (data.vibrations_enabled !== undefined && data.vibrations_enabled !== null) {
               setVibrationsEnabled(data.vibrations_enabled);
-              localStorage.setItem('vibrationsEnabled', String(data.vibrations_enabled));
+              localStorage.setItem(STORAGE_KEYS.VIBRATIONS, String(data.vibrations_enabled));
             }
             if (data.show_stack_bb !== undefined && data.show_stack_bb !== null) {
               setShowBBEnabled(data.show_stack_bb);
-              localStorage.setItem('showStackInBB', String(data.show_stack_bb));
+              localStorage.setItem(STORAGE_KEYS.SHOW_STACK_BB, String(data.show_stack_bb));
             }
             setIsVIP(data.is_vip || data.tier === 'vip' || false);
             setDiamondBalance(data.diamonds || 0);
@@ -166,26 +167,26 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   const handleSoundsToggle = () => {
     const newValue = !soundsEnabled;
     setSoundsEnabled(newValue);
-    updateSetting('club_arena_sounds', 'sounds_enabled', newValue);
+    updateSetting(STORAGE_KEYS.SOUNDS, 'sounds_enabled', newValue);
     masterBus.emit('SETTINGS_CHANGED', { setting: 'isSoundEnabled', value: newValue });
   };
 
   const handleVibrationsToggle = () => {
     const newValue = !vibrationsEnabled;
     setVibrationsEnabled(newValue);
-    updateSetting('vibrationsEnabled', 'vibrations_enabled', newValue);
+    updateSetting(STORAGE_KEYS.VIBRATIONS, 'vibrations_enabled', newValue);
     masterBus.emit('SETTINGS_CHANGED', { setting: 'vibrationsEnabled', value: newValue });
   };
 
   const handleShowBBToggle = () => {
     const newValue = !showBBEnabled;
     setShowBBEnabled(newValue);
-    updateSetting('showStackInBB', 'show_stack_bb', newValue);
+    updateSetting(STORAGE_KEYS.SHOW_STACK_BB, 'show_stack_bb', newValue);
     masterBus.emit('SETTINGS_CHANGED', { setting: 'showStackInBB', value: newValue });
   };
 
   const handleResetTutorial = async () => {
-    localStorage.removeItem('club_arena_intro_shown');
+    localStorage.removeItem(STORAGE_KEYS.INTRO_SHOWN);
     localStorage.removeItem('tutorial_completed');
     if (user?.id) {
       try {
@@ -782,7 +783,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                 }}
                 onClick={async () => {
                   setSelectedCardColor(preset.id);
-                  localStorage.setItem('club_arena_card_color', preset.id);
+                  localStorage.setItem(STORAGE_KEYS.CARD_COLOR, preset.id);
                   try {
                     masterBus.emit('CARD_COLOR_CHANGED', { preset: preset.id });
                   } catch (err) {

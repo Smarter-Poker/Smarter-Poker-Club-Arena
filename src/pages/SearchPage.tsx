@@ -5,6 +5,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useDebounce } from '../hooks/useDebounce';
 import { useNavigate } from 'react-router-dom';
+import { STORAGE_KEYS } from '../lib/storage';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { useToast } from '../components/common/Toast';
@@ -60,12 +61,12 @@ export default function SearchPage() {
   };
 
   useEffect(() => {
-    const saved = localStorage.getItem('recentSearches');
+    const saved = localStorage.getItem(STORAGE_KEYS.RECENT_SEARCHES);
     if (saved) {
       try {
         setRecentSearches(JSON.parse(saved));
       } catch {
-        localStorage.removeItem('recentSearches');
+        localStorage.removeItem(STORAGE_KEYS.RECENT_SEARCHES);
       }
     }
   }, []);
@@ -147,7 +148,7 @@ export default function SearchPage() {
         if (searchQuery.length >= 2) {
           setRecentSearches((prev) => {
             const updated = [searchQuery, ...prev.filter((s) => s !== searchQuery)].slice(0, 5);
-            localStorage.setItem('recentSearches', JSON.stringify(updated));
+            localStorage.setItem(STORAGE_KEYS.RECENT_SEARCHES, JSON.stringify(updated));
             return updated;
           });
         }
@@ -321,7 +322,7 @@ export default function SearchPage() {
                 <button
                   onClick={() => {
                     setRecentSearches([]);
-                    localStorage.removeItem('recentSearches');
+                    localStorage.removeItem(STORAGE_KEYS.RECENT_SEARCHES);
                   }}
                   style={{
                     background: 'none',

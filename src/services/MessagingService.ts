@@ -10,6 +10,7 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 import { clubMessagingPermissions } from './ClubMessagingPermissions';
 import { masterBus } from '../core/MasterBus';
 import { resolveClubUUID } from '../utils/clubIdResolver';
+import { STORAGE_KEYS } from '../lib/storage';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -890,7 +891,7 @@ class MessagingServiceClass {
    */
   getNotificationPreferences(): Record<string, boolean> {
     try {
-      const raw = localStorage.getItem('notif_preferences');
+      const raw = localStorage.getItem(STORAGE_KEYS.NOTIF_PREFERENCES);
       return raw
         ? JSON.parse(raw)
         : {
@@ -1302,7 +1303,7 @@ class MessagingServiceClass {
 
   /** Get/set notification digest mode (batch non-urgent into hourly/daily) */
   getDigestMode(): 'instant' | 'hourly' | 'daily' {
-    return (localStorage.getItem('notif_digest_mode') as any) || 'instant';
+    return (localStorage.getItem(STORAGE_KEYS.NOTIF_DIGEST_MODE) as any) || 'instant';
   }
 
   setDigestMode(mode: 'instant' | 'hourly' | 'daily'): void {
@@ -1312,7 +1313,7 @@ class MessagingServiceClass {
   /** Get/set notification sound preferences */
   getSoundPreferences(): Record<string, string> {
     try {
-      const raw = localStorage.getItem('notif_sounds');
+      const raw = localStorage.getItem(STORAGE_KEYS.NOTIF_SOUNDS);
       return raw
         ? JSON.parse(raw)
         : {

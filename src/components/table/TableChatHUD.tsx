@@ -7,6 +7,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
+import { STORAGE_KEYS } from '../../lib/storage';
 import { triggerHaptic } from '../../services/HapticService';
 import { masterBus } from '../../core/MasterBus';
 import { useIsMounted } from '../../hooks/useIsMounted';
@@ -41,7 +42,7 @@ export default function TableChatHUD({
   useEffect(() => {
     const loadMutes = () => {
       try {
-        const mutedStr = localStorage.getItem('ca_muted_players');
+        const mutedStr = localStorage.getItem(STORAGE_KEYS.MUTED_PLAYERS);
         setMutedPlayers(mutedStr ? JSON.parse(mutedStr) : []);
       } catch (err) {
         console.error('[TableChatHUD] Error:', err);

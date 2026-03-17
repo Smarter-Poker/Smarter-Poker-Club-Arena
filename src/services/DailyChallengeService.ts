@@ -11,6 +11,7 @@ import { supabase } from '../lib/supabase';
 import { WalletService } from './WalletService';
 import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
+import { STORAGE_KEYS } from '../lib/storage';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -530,7 +531,7 @@ class DailyChallengeServiceClass {
   public emitDailyResetReminder(): void {
     try {
       const today = this.getTodayKey();
-      const lastReminder = localStorage.getItem('last_daily_reset_reminder');
+      const lastReminder = localStorage.getItem(STORAGE_KEYS.LAST_DAILY_RESET_REMINDER);
 
       if (lastReminder !== today) {
         masterBus.emit('DAILY_RESET_AVAILABLE', { date: today });

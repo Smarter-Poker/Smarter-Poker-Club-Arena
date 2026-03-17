@@ -11,6 +11,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { STORAGE_KEYS } from '../../lib/storage';
 import './InstallPrompt.css';
 
 interface BeforeInstallPromptEvent extends Event {
@@ -35,26 +36,25 @@ export const InstallPrompt: React.FC = () => {
   useEffect(() => {
     try {
       // Already installed (user clicked Install or appinstalled fired)
-      if (localStorage.getItem('pwa_installed')) return;
+      if (localStorage.getItem(STORAGE_KEYS.PWA_INSTALLED)) return;
 
       // Check if already installed as PWA
       if (window.matchMedia('(display-mode: standalone)').matches) {
-        localStorage.setItem('pwa_installed', 'true');
+        localStorage.setItem(STORAGE_KEYS.PWA_INSTALLED, 'true');
         return;
       }
 
       // Escalating dismissal logic
-      const dismissCount = parseInt(localStorage.getItem('pwa_dismiss_count') || '0');
+      const dismissCount = parseInt(localStorage.getItem(STORAGE_KEYS.PWA_DISMISS_COUNT) || '0');
       if (dismissCount >= 2) return; // Permanently dismissed after 2nd "Later"
 
-      const dismissedAt = localStorage.getItem('pwa_prompt_dismissed');
+      const dismissedAt = localStorage.getItem(STORAGE_KEYS.PWA_PROMPT_DISMISSED);
       if (dismissedAt) {
         const cooldown = 30 * 24 * 60 * 60 * 1000; // 30 days
         if (Date.now() - parseInt(dismissedAt) < cooldown) return;
       }
     } catch (err) {
-
-      console.error("[InstallPrompt] Error:", err);
+      console.error('[InstallPrompt] Error:', err);
       // localStorage disabled (Safari private browsing, quota exceeded) — don't show
       return;
     }
@@ -87,10 +87,9 @@ export const InstallPrompt: React.FC = () => {
   useEffect(() => {
     const onInstalled = () => {
       try {
-        localStorage.setItem('pwa_installed', 'true');
+        localStorage.setItem(STORAGE_KEYS.PWA_INSTALLED, 'true');
       } catch (err) {
-
-        console.error("[InstallPrompt] Error:", err);
+        console.error('[InstallPrompt] Error:', err);
         /* ignore */
       }
       setShowPrompt(false);
@@ -107,15 +106,14 @@ export const InstallPrompt: React.FC = () => {
       setShowPrompt(false);
       try {
         if (outcome === 'accepted') {
-          localStorage.setItem('pwa_installed', 'true');
+          localStorage.setItem(STORAGE_KEYS.PWA_INSTALLED, 'true');
         } else {
-          const count = parseInt(localStorage.getItem('pwa_dismiss_count') || '0') + 1;
-          localStorage.setItem('pwa_dismiss_count', count.toString());
-          localStorage.setItem('pwa_prompt_dismissed', Date.now().toString());
+          const count = parseInt(localStorage.getItem(STORAGE_KEYS.PWA_DISMISS_COUNT) || '0') + 1;
+          localStorage.setItem(STORAGE_KEYS.PWA_DISMISS_COUNT, count.toString());
+          localStorage.setItem(STORAGE_KEYS.PWA_PROMPT_DISMISSED, Date.now().toString());
         }
       } catch (err) {
-
-        console.error("[InstallPrompt] Error:", err);
+        console.error('[InstallPrompt] Error:', err);
         /* localStorage disabled */
       }
     }
@@ -124,12 +122,11 @@ export const InstallPrompt: React.FC = () => {
   const handleDismiss = () => {
     setShowPrompt(false);
     try {
-      const count = parseInt(localStorage.getItem('pwa_dismiss_count') || '0') + 1;
-      localStorage.setItem('pwa_dismiss_count', count.toString());
-      localStorage.setItem('pwa_prompt_dismissed', Date.now().toString());
+      const count = parseInt(localStorage.getItem(STORAGE_KEYS.PWA_DISMISS_COUNT) || '0') + 1;
+      localStorage.setItem(STORAGE_KEYS.PWA_DISMISS_COUNT, count.toString());
+      localStorage.setItem(STORAGE_KEYS.PWA_PROMPT_DISMISSED, Date.now().toString());
     } catch (err) {
-
-      console.error("[InstallPrompt] Error:", err);
+      console.error('[InstallPrompt] Error:', err);
       /* localStorage disabled */
     }
   };

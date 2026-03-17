@@ -7,6 +7,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
+import { STORAGE_KEYS } from '../lib/storage';
 import styles from './LobbyPage.module.css';
 import TableCard from '../components/lobby/TableCard';
 import GameTypeTabs from '../components/lobby/GameTypeTabs';
@@ -115,7 +116,7 @@ export default function LobbyPage() {
   // Favorite Tables (stored in localStorage)
   const [favorites, setFavorites] = useState<Set<string>>(() => {
     try {
-      const stored = JSON.parse(localStorage.getItem('favorite_tables') || '[]');
+      const stored = JSON.parse(localStorage.getItem(STORAGE_KEYS.FAVORITE_TABLES) || '[]');
       return new Set(stored);
     } catch {
       return new Set();
@@ -127,7 +128,7 @@ export default function LobbyPage() {
       const next = new Set(prev);
       if (next.has(tableId)) next.delete(tableId);
       else next.add(tableId);
-      localStorage.setItem('favorite_tables', JSON.stringify([...next]));
+      localStorage.setItem(STORAGE_KEYS.FAVORITE_TABLES, JSON.stringify([...next]));
       return next;
     });
   };

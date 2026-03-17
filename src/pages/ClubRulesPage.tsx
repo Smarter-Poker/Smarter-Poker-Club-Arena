@@ -121,6 +121,7 @@ export default function ClubRulesPage() {
       setRules(editValue);
       setIsEditing(false);
       toast.success('Club rules updated!');
+      masterBus.emit('CLUB_UPDATED', { clubId });
     } catch (err) {
       console.error('Failed to save rules:', err);
       toast.error('Failed to save rules');

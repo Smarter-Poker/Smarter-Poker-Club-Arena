@@ -241,7 +241,10 @@ export default function ClubAnnouncementsPage() {
     try {
       // SECURITY: Scope delete to club to prevent cross-club deletion
       let delQuery = supabase.from('club_announcements').delete().eq('id', id);
-      if (clubId) delQuery = delQuery.eq('club_id', clubId);
+      if (clubId) {
+        const resolvedId = await resolveClubUUID(clubId);
+        delQuery = delQuery.eq('club_id', resolvedId);
+      }
       const { error } = await delQuery;
 
       if (!error) {

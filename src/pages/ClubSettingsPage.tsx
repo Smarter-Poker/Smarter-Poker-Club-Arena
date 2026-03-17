@@ -14,7 +14,6 @@ import PageSkeleton from '../components/common/PageSkeleton';
 import ClubBottomNav from '../components/club/ClubBottomNav';
 import AuditLog from '../components/admin/AuditLog';
 import { StatsExport } from '../components/admin/StatsExport';
-import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { resolveClubIdFilter, resolveClubUUID } from '../utils/clubIdResolver';
 import '../components/common/ButtonSpinner.css';
 import './ClubSettingsPage.css';
@@ -87,7 +86,6 @@ export default function ClubSettingsPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [confirmText, setConfirmText] = useState('');
   const [userRole, setUserRole] = useState<'owner' | 'admin' | 'agent' | 'member'>('member');
-  const [visibleSections, setVisibleSections] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     let isMounted = true;
@@ -96,19 +94,6 @@ export default function ClubSettingsPage() {
       isMounted = false;
     };
   }, [clubId]);
-
-  // Section entrance animation
-  useEffect(() => {
-    if (!loading) {
-      const sections = ['basic', 'gameplay', 'advanced', 'danger'];
-      const timers = sections.map((section, index) =>
-        setTimeout(() => {
-          setVisibleSections((prev) => new Set(prev).add(section));
-        }, index * 80)
-      );
-      return () => timers.forEach(clearTimeout);
-    }
-  }, [loading]);
 
   // ── Realtime: live club settings changes ──
   useEffect(() => {

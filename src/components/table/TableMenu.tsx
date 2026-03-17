@@ -184,6 +184,8 @@ export function TableMenu({
   const handleActionClick = useCallback(
     (action: MenuAction) => {
       if (action.disabled) return;
+      // Haptic feedback for premium feel
+      if (typeof navigator !== 'undefined' && 'vibrate' in navigator) navigator.vibrate(8);
       action.onClick();
       onClose();
     },

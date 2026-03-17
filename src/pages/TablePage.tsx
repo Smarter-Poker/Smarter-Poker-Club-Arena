@@ -640,7 +640,7 @@ export default function TablePage({
   } = useTableTournament();
 
   // ─── Table Menu Actions ────────────────────────────────────────────────
-  useMasterBusSubscription('TABLE_MENU_ACTION' as any, (event: any) => {
+  useMasterBusSubscription('TABLE_MENU_ACTION', (event: any) => {
     if (event.tableId !== tableId) return;
 
     switch (event.action) {

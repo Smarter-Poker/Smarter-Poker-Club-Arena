@@ -3683,7 +3683,7 @@ export default function TablePage({
           }
         }
       });
-      soundService.playChips();
+      soundService.playRaise();
       haptic?.light();
       // PRIMARY: Broadcast via Supabase Realtime
       broadcastLocalHandState();
@@ -3716,6 +3716,7 @@ export default function TablePage({
       });
       soundService.playAllIn();
       haptic?.light();
+      setIsAllInMode(true);
       // PRIMARY: Broadcast via Supabase Realtime
       broadcastLocalHandState();
       // SECONDARY: Fire-and-forget server call

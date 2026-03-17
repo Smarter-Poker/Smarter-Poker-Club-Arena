@@ -14,6 +14,7 @@ import { useToast } from '../components/common/Toast';
 import ClubBottomNav from '../components/club/ClubBottomNav';
 import { sanitizeInput } from '../utils/sanitizeInput';
 import { resolveClubIdFilter, resolveClubUUID } from '../utils/clubIdResolver';
+import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import './ClubRulesPage.css';
 import PageSkeleton from '../components/common/PageSkeleton';
 
@@ -27,6 +28,11 @@ export default function ClubRulesPage() {
   const { clubId } = useParams<{ clubId: string }>();
   const { user } = useAuthUser();
   const toast = useToast();
+
+  // Re-fetch rules when user tabs back (covers WS disconnect gap)
+  useVisibilityRefresh(() => {
+    if (clubId && user?.id) loadRules();
+  });
 
   const [rules, setRules] = useState('');
   const [isEditing, setIsEditing] = useState(false);

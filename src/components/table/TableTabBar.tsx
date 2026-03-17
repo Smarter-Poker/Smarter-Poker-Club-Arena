@@ -96,7 +96,11 @@ export function TableTabBar({
           }),
         onHelp: () =>
           masterBus.emit('TABLE_MENU_ACTION' as any, { tableId: activeTabId, action: 'HELP' }),
-        onLeaveTable: () => onTabClose(activeTabId),
+        onLeaveTable: () =>
+          masterBus.emit('TABLE_MENU_ACTION' as any, {
+            tableId: activeTabId,
+            action: 'LEAVE_TABLE',
+          }),
       }),
     [activeTabId, onTabClose]
   );

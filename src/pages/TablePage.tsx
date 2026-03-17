@@ -600,32 +600,6 @@ export default function TablePage({
     }>
   >([]);
 
-  // ─── Table Menu Actions ────────────────────────────────────────────────
-  useMasterBusSubscription('TABLE_MENU_ACTION' as any, (event: any) => {
-    if (event.tableId !== tableId) return;
-
-    switch (event.action) {
-      case 'SIT_OUT':
-        setShowSitOut(true);
-        break;
-      case 'REBUY':
-        setShowBuyInModal(true);
-        break;
-      case 'LEADERBOARD':
-        setShowLeaderboard(true);
-        break;
-      case 'SETTINGS':
-        masterBus.emit('TABLE_SETTINGS_OPEN' as any, { tableId });
-        break;
-      case 'HAND_HISTORY':
-        setShowHandReplay(true);
-        break;
-      case 'HELP':
-        setShowGameRules(true);
-        break;
-    }
-  });
-
   // Tournament — extracted to useTableTournament hook
   const {
     showTournamentRebuy,
@@ -648,6 +622,39 @@ export default function TablePage({
     tournamentWinner,
     setTournamentWinner,
   } = useTableTournament();
+
+  // ─── Table Menu Actions ────────────────────────────────────────────────
+  useMasterBusSubscription('TABLE_MENU_ACTION' as any, (event: any) => {
+    if (event.tableId !== tableId) return;
+
+    switch (event.action) {
+      case 'SIT_OUT':
+        setShowSitOut(true);
+        break;
+      case 'REBUY':
+        if (tableState.isTournament) {
+          setShowTournamentRebuy(true);
+        } else {
+          setShowBuyInModal(true);
+        }
+        break;
+      case 'LEADERBOARD':
+        setShowLeaderboard(true);
+        break;
+      case 'SETTINGS':
+        masterBus.emit('TABLE_SETTINGS_OPEN' as any, { tableId });
+        break;
+      case 'HAND_HISTORY':
+        setShowHandReplay(true);
+        break;
+      case 'HELP':
+        setShowGameRules(true);
+        break;
+      case 'LEAVE_TABLE':
+        handleLeaveTable();
+        break;
+    }
+  });
 
   // Buy-in processing lock to prevent double-click
   const buyInProcessingRef = useRef(false);

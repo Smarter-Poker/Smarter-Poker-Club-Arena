@@ -11,7 +11,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { triggerHaptic } from '../services/HapticService';
-import { useMasterBusSubscription } from '../hooks/useMasterBusSubscription';
+import { masterBus } from '../core/MasterBus';
 import type { ChatMessage } from '../components/table/TableChat';
 
 // Reaction event type (shared with TableReactions)
@@ -99,17 +99,15 @@ export function useTableChat(
           if (!isMounted) return;
 
           setChatMessages((prev) => {
-            // Deduplicate optimistic inserts
-            if (
-              prev.some(
-                (msg) =>
+            // Deduplicate: remove the optimistic local clone, and append the real Supabase record
+            const filtered = prev.filter(
+              (msg) =>
+                !(
                   msg.id.startsWith('msg_') &&
                   msg.playerId === m.sender_id &&
                   msg.content === m.message
-              )
-            ) {
-              return prev;
-            }
+                )
+            );
 
             const newMsg: ChatMessage = {
               id: m.id,
@@ -123,7 +121,7 @@ export function useTableChat(
               content: m.message,
               timestamp: new Date(m.created_at),
             };
-            return [...prev.slice(-49), newMsg];
+            return [...filtered.slice(-49), newMsg];
           });
         }
       )
@@ -138,8 +136,13 @@ export function useTableChat(
   }, [tableId]);
 
   // ── Bus listeners: receive incoming system events representing game actions ──
-  useMasterBusSubscription('PRE_ACTION_EXECUTED', (data: any) => {
-    if (data && (!tableId || data.tableId === tableId)) {
+  useEffect(() => {
+    let isMounted = true;
+
+    const unsubPreAction = masterBus.subscribe('PRE_ACTION_EXECUTED', (event) => {
+      const data = event.payload as any;
+      if (!isMounted || !data || (tableId && data.tableId !== tableId)) return;
+
       const actionText =
         data.action === 'fold'
           ? 'auto-folded'
@@ -158,11 +161,12 @@ export function useTableChat(
         };
         return [...prev.slice(-49), sysMsg];
       });
-    }
-  });
+    });
 
-  useMasterBusSubscription('STRADDLE_TOGGLED', (data: any) => {
-    if (data && (!tableId || data.tableId === tableId)) {
+    const unsubStraddle = masterBus.subscribe('STRADDLE_TOGGLED', (event) => {
+      const data = event.payload as any;
+      if (!isMounted || !data || (tableId && data.tableId !== tableId)) return;
+
       setChatMessages((prev) => {
         const sysMsg: ChatMessage = {
           id: `sys-straddle-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -174,11 +178,12 @@ export function useTableChat(
         };
         return [...prev.slice(-49), sysMsg];
       });
-    }
-  });
+    });
 
-  useMasterBusSubscription('TIME_BANK_ACTIVATED', (data: any) => {
-    if (data && (!tableId || data.tableId === tableId)) {
+    const unsubTimeBank = masterBus.subscribe('TIME_BANK_ACTIVATED', (event) => {
+      const data = event.payload as any;
+      if (!isMounted || !data || (tableId && data.tableId !== tableId)) return;
+
       setChatMessages((prev) => {
         const sysMsg: ChatMessage = {
           id: `sys-timebank-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -190,8 +195,15 @@ export function useTableChat(
         };
         return [...prev.slice(-49), sysMsg];
       });
-    }
-  });
+    });
+
+    return () => {
+      isMounted = false;
+      unsubPreAction();
+      unsubStraddle();
+      unsubTimeBank();
+    };
+  }, [tableId]);
 
   // Parse incoming messages — returns true if message was a special command (reaction/throw)
   const parseIncomingMessage = useCallback((content: string, _senderId: string): boolean => {

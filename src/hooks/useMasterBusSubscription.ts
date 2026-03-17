@@ -134,5 +134,5 @@ export function useMasterBusSubscriptions(
       isMountedRef.current = false;
       unsubscribers.forEach((unsub) => unsub());
     };
-  }, [eventTypes.length, options?.debounce]); // eventTypes.length as key to detect changes
+  }, [eventTypes.join(','), options?.debounce]); // Safely detect exact array changes
 }

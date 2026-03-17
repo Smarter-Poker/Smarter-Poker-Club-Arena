@@ -48,6 +48,14 @@ export interface TableMenuProps {
   sections: MenuSection[];
   position?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
   tableName?: string;
+  /** WebSocket connection status */
+  connectionStatus?: 'connected' | 'disconnected' | 'reconnecting';
+  /** Notification badge count on trigger */
+  badgeCount?: number;
+  /** Current hand number for display in header */
+  handNumber?: number;
+  /** Session duration string (e.g. "1h 23m") */
+  sessionDuration?: string;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -152,7 +160,38 @@ export function TableMenu({
   sections,
   position = 'top-right',
   tableName,
+  connectionStatus,
+  badgeCount,
+  handNumber,
+  sessionDuration,
 }: TableMenuProps) {
+  const prevOpenRef = useRef(false);
+
+  // Sound cue on menu open
+  useEffect(() => {
+    if (isOpen && !prevOpenRef.current) {
+      // Respect user sound settings
+      const soundOff = localStorage.getItem('table_sound_muted') === 'true';
+      if (!soundOff) {
+        try {
+          const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.frequency.value = 880;
+          osc.type = 'sine';
+          gain.gain.value = 0.04;
+          osc.start();
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.06);
+          osc.stop(ctx.currentTime + 0.06);
+        } catch {
+          /* audio unavailable */
+        }
+      }
+    }
+    prevOpenRef.current = isOpen;
+  }, [isOpen]);
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
 
   useEffect(() => {
@@ -219,6 +258,12 @@ export function TableMenu({
           <span />
           <span />
         </span>
+        {/* Notification badge */}
+        {badgeCount != null && badgeCount > 0 && (
+          <span className="table-menu__badge" aria-label={`${badgeCount} notifications`}>
+            {badgeCount > 9 ? '9+' : badgeCount}
+          </span>
+        )}
       </button>
 
       {/* Backdrop overlay for mobile focus */}
@@ -228,9 +273,31 @@ export function TableMenu({
       {isOpen && (
         <div className="table-menu__dropdown" role="menu" aria-label={tableName || 'Table menu'}>
           {/* Header */}
-          {tableName && (
+          {/* Header with table name, connection, and hand info */}
+          {(tableName || connectionStatus) && (
             <div className="table-menu__header">
-              <span className="table-menu__table-name">{tableName}</span>
+              <div className="table-menu__header-row">
+                {tableName && <span className="table-menu__table-name">{tableName}</span>}
+                {connectionStatus && (
+                  <span className={`table-menu__conn table-menu__conn--${connectionStatus}`}>
+                    <span className="table-menu__conn-dot" />
+                    {connectionStatus === 'connected'
+                      ? 'Live'
+                      : connectionStatus === 'reconnecting'
+                        ? 'Reconnecting…'
+                        : 'Offline'}
+                  </span>
+                )}
+              </div>
+              {(handNumber != null || sessionDuration) && (
+                <div className="table-menu__header-meta">
+                  {handNumber != null && <span>Hand #{handNumber}</span>}
+                  {handNumber != null && sessionDuration && (
+                    <span className="table-menu__meta-sep">·</span>
+                  )}
+                  {sessionDuration && <span>{sessionDuration}</span>}
+                </div>
+              )}
             </div>
           )}
 

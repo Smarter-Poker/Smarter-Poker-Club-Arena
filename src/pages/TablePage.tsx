@@ -3645,6 +3645,12 @@ export default function TablePage({
   const handleActionPanelAction = useCallback(
     async (action: 'fold' | 'check' | 'call' | 'raise' | 'allin', amount?: number) => {
       if (actionLockRef.current) return; // Debounce guard
+      // Set lock immediately to prevent rapid double-taps — matches standalone handler pattern.
+      // Even if validate rejects, the 300ms lockout prevents action spam.
+      actionLockRef.current = true;
+      setTimeout(() => {
+        actionLockRef.current = false;
+      }, 300);
       const heroSeat = tableState.heroSeat;
       const hero = getPlayerAtSeat(heroSeat);
       const heroStack = hero?.stack || 0;

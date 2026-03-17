@@ -16,6 +16,7 @@ import { DailyChallenges } from './DailyChallenges';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../../components/common/Toast';
 import { masterBus } from '../../core/MasterBus';
+import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { supabase } from '../../lib/supabase';
 
 interface Challenge {
@@ -52,15 +53,6 @@ export const DailyChallengesWidget: React.FC = () => {
     // Use ref for initial load to avoid stale closure (loadChallenges not in deps)
     initTimerRef.current = setTimeout(() => loadChallengesRef.current?.(), 0);
 
-    const unsubHand = masterBus.subscribe('HAND_COMPLETED', () => {
-      if (isMounted.current && user?.id) loadChallengesRef.current?.();
-    });
-    // Debounced — BALANCE_UPDATED fires twice per claim (RPC + WalletService)
-    const unsubBalance = masterBus.subscribe('BALANCE_UPDATED', debouncedRefresh);
-    const unsubReset = masterBus.subscribe('DAILY_RESET_AVAILABLE', () => {
-      if (isMounted.current && user?.id) loadChallengesRef.current?.();
-    });
-
     // Supabase Realtime — cross-tab sync
     const channelKey = `widget-challenges-${user.id}`;
     if (user?.id) {
@@ -82,14 +74,23 @@ export const DailyChallengesWidget: React.FC = () => {
     }
 
     return () => {
-      unsubHand();
-      unsubBalance();
-      unsubReset();
       if (debounceRef.current) clearTimeout(debounceRef.current);
       if (initTimerRef.current) clearTimeout(initTimerRef.current);
       masterBus.removeRegisteredChannel(channelKey);
     };
   }, [user?.id, debouncedRefresh]);
+
+  // Bus listeners for challenge progress
+  useMasterBusSubscription('HAND_COMPLETED', () => {
+    if (isMounted.current && user?.id) loadChallengesRef.current?.();
+  });
+
+  // Debounced — BALANCE_UPDATED fires twice per claim (RPC + WalletService)
+  useMasterBusSubscription('BALANCE_UPDATED', debouncedRefresh);
+
+  useMasterBusSubscription('DAILY_RESET_AVAILABLE', () => {
+    if (isMounted.current && user?.id) loadChallengesRef.current?.();
+  });
 
   const loadChallengesRef = useRef<(() => Promise<void>) | null>(null);
 

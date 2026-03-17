@@ -429,3 +429,18 @@ export {
 
 // Re-export masterBus subscription hooks
 export { useMasterBusSubscription, useMasterBusSubscriptions } from './useMasterBusSubscription';
+
+// Re-export utility hooks
+export { useAuthUser } from './useAuthUser';
+export { useDebounce } from './useDebounce';
+export { useFocusTrap } from './useFocusTrap';
+export { useIsMounted } from './useIsMounted';
+export { useOptimisticMutation } from './useOptimisticMutation';
+export { useVirtualScroll } from './useVirtualScroll';
+export { useVisibilityRefresh } from './useVisibilityRefresh';
+export { useSwipeAction } from './useSwipeAction';
+export { useSwipeTabs } from './useSwipeTabs';
+export { usePrefetch } from './usePrefetch';
+export { useMessageDraft } from './useMessageDraft';
+export { useRealtimeRecovery } from './useRealtimeRecovery';
+export { useTabKeepAlive } from './useTabKeepAlive';

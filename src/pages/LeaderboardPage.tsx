@@ -6,10 +6,11 @@
  * Supports Clubs, Charities, and Home Game venue types with appropriate metrics.
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
+import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
 import { LeaderboardService } from '../services/LeaderboardService';
 import type {
   LeaderboardEntry,
@@ -178,59 +179,45 @@ export default function LeaderboardPage() {
     };
   }, []);
 
-  // Set up real-time Push/Pull Subscriptions ONCE
+  // Callback for leaderboard updates
+  const handleLeaderboardUpdate = useCallback(() => {
+    if (activeTabRef.current === 'rankings') loadLeaderboardRef.current(true, () => true);
+  }, []);
+
+  useMasterBusChannel({
+    channelName: 'leaderboard-updates',
+    table: 'promotion_leaderboards',
+    filter: null,
+    event: '*',
+    onPayload: handleLeaderboardUpdate,
+    enabled: true,
+  });
+
+  // Callback for tournament updates
+  const handleTournamentLeaderboardUpdate = useCallback(() => {
+    if (activeTabRef.current === 'tournaments') loadTournamentStatsRef.current(() => true);
+  }, []);
+
+  useMasterBusChannel({
+    channelName: 'tournament-leaderboard-updates',
+    table: 'tournament_players',
+    filter: null,
+    event: '*',
+    onPayload: handleTournamentLeaderboardUpdate,
+    enabled: true,
+  });
+
+  // Auto-refresh every 30 seconds
   useEffect(() => {
-    let isMounted = true;
-    const channelKey = 'leaderboard-updates';
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'promotion_leaderboards',
-        },
-        () => {
-          if (!isMounted) return;
-          if (activeTabRef.current === 'rankings')
-            loadLeaderboardRef.current(true, () => isMounted);
-        }
-      )
-      .subscribe();
-
-    const tourneyChannelKey = 'tournament-leaderboard-updates';
-    const tourneyChannel = masterBus.getOrCreateChannel(tourneyChannelKey);
-    tourneyChannel
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'tournament_players',
-        },
-        () => {
-          if (!isMounted) return;
-          if (activeTabRef.current === 'tournaments')
-            loadTournamentStatsRef.current(() => isMounted);
-        }
-      )
-      .subscribe();
-
-    // Auto-refresh every 30 seconds
     refreshTimerRef.current = setInterval(() => {
-      if (!isMounted) return;
       if (activeTabRef.current === 'rankings') {
-        loadLeaderboardRef.current(true, () => isMounted);
+        loadLeaderboardRef.current(true, () => true);
       } else {
-        loadTournamentStatsRef.current(() => isMounted);
+        loadTournamentStatsRef.current(() => true);
       }
     }, 30000);
 
     return () => {
-      isMounted = false;
-      masterBus.removeRegisteredChannel(channelKey);
-      masterBus.removeRegisteredChannel(tourneyChannelKey);
       if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
     };
   }, []);

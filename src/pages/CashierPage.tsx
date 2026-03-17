@@ -21,6 +21,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams, useParams } from 'react-router-dom';
 import { masterBus } from '../core/MasterBus';
+import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
 import {
   useMasterBusSubscription,
   useMasterBusSubscriptions,
@@ -518,66 +519,67 @@ export default function CashierPage() {
   // ─────────────────────────────────────────────────────────────────────────────
   // Subscribes to both wallets and wallet_transactions tables for live updates
 
+  // Initial load
   useEffect(() => {
     if (!user?.id) return;
-
-    // Initial load
     loadBalances(user.id);
     loadTransactions();
-
-    // #1: Use Channel Registry for deduplication
-    const channelKey = `cashier-realtime-${user.id}`;
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'wallets',
-          filter: `user_id=eq.${user.id}`,
-        },
-        (payload) => {
-          if (payload.eventType === 'UPDATE' || payload.eventType === 'INSERT') {
-            loadBalances(user.id);
-          }
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'wallet_transactions',
-          filter: `user_id=eq.${user.id}`,
-        },
-        (payload) => {
-          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-            loadBalances(user.id);
-            loadTransactions();
-          }
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'cashout_requests',
-          filter: `player_id=eq.${user.id}`,
-        },
-        (_payload) => {
-          // Auto-refresh pending cashouts when status changes
-          loadPendingCashouts();
-        }
-      )
-      .subscribe();
-
-    // Cleanup: remove channel via registry on unmount
-    return () => {
-      masterBus.removeRegisteredChannel(`cashier-realtime-${user.id}`);
-    };
   }, [user?.id, loadBalances, loadTransactions]);
+
+  // Wallets channel
+  const handleWalletUpdate = useCallback(
+    (payload: any) => {
+      if (payload.eventType === 'UPDATE' || payload.eventType === 'INSERT') {
+        if (user?.id) loadBalances(user.id);
+      }
+    },
+    [user?.id, loadBalances]
+  );
+
+  useMasterBusChannel({
+    channelName: user?.id ? `cashier-realtime-wallets-${user.id}` : null,
+    table: 'wallets',
+    filter: user?.id ? `user_id=eq.${user.id}` : null,
+    event: '*',
+    onPayload: handleWalletUpdate,
+    enabled: !!user?.id,
+  });
+
+  // Wallet transactions channel
+  const handleTransactionUpdate = useCallback(
+    (payload: any) => {
+      if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+        if (user?.id) {
+          loadBalances(user.id);
+          loadTransactions();
+        }
+      }
+    },
+    [user?.id, loadBalances, loadTransactions]
+  );
+
+  useMasterBusChannel({
+    channelName: user?.id ? `cashier-realtime-transactions-${user.id}` : null,
+    table: 'wallet_transactions',
+    filter: user?.id ? `user_id=eq.${user.id}` : null,
+    event: '*',
+    onPayload: handleTransactionUpdate,
+    enabled: !!user?.id,
+  });
+
+  // Cashout requests channel
+  const handleCashoutUpdate = useCallback(() => {
+    loadPendingCashouts();
+  }, [loadPendingCashouts]);
+
+  useMasterBusChannel({
+    channelName: user?.id ? `cashier-realtime-cashouts-${user.id}` : null,
+    table: 'cashout_requests',
+    filter: user?.id ? `player_id=eq.${user.id}` : null,
+    event: '*',
+    onPayload: handleCashoutUpdate,
+    enabled: !!user?.id,
+  });
 
   // ── Bus Listeners: instant balance refresh from engine events ──
   // Load balances only

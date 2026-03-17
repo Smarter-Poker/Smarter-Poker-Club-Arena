@@ -11,6 +11,7 @@ import { useToast } from '../common/Toast';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { useStaggerAnimation } from '../../hooks/useStaggerAnimation';
 import { masterBus } from '../../core/MasterBus';
+import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import './TransactionHistory.css';
 
 interface TransactionHistoryProps {
@@ -119,23 +120,16 @@ function TransactionHistoryInner({ walletId, limit = 20 }: TransactionHistoryPro
   }, [user?.id, walletId]);
 
   // Bus listeners: auto-refresh on wallet events
-  useEffect(() => {
-    const debouncedRefresh = () => {
-      if (refreshTimer.current) clearTimeout(refreshTimer.current);
-      refreshTimer.current = setTimeout(() => {
-        if (isMounted.current) loadRef.current();
-      }, 500);
-    };
-    const unsubs = [
-      masterBus.subscribe('BALANCE_UPDATED', debouncedRefresh),
-      masterBus.subscribe('WALLET_REFRESHED', debouncedRefresh),
-      masterBus.subscribe('CHIPS_DISTRIBUTED', debouncedRefresh),
-    ];
-    return () => {
-      unsubs.forEach((u) => u());
-      if (refreshTimer.current) clearTimeout(refreshTimer.current);
-    };
-  }, []);
+  const debouncedRefresh = useCallback(() => {
+    if (refreshTimer.current) clearTimeout(refreshTimer.current);
+    refreshTimer.current = setTimeout(() => {
+      if (isMounted.current) loadRef.current();
+    }, 500);
+  }, [isMounted]);
+
+  useMasterBusSubscription('BALANCE_UPDATED', debouncedRefresh);
+  useMasterBusSubscription('WALLET_REFRESHED', debouncedRefresh);
+  useMasterBusSubscription('CHIPS_DISTRIBUTED', debouncedRefresh);
 
   const loadTransactions = async () => {
     if (!user?.id && !walletId) return;

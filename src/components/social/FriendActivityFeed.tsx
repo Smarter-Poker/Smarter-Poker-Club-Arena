@@ -11,6 +11,7 @@ import { useIsMounted } from '../../hooks/useIsMounted';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
+import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import './FriendActivityFeed.css';
 
 interface ActivityItem {
@@ -131,65 +132,58 @@ export default function FriendActivityFeed({ friends }: { friends: any[] }) {
 
   useEffect(() => {
     loadRealActivities();
-
-    // Real-time bus listeners — augment feed with live events
-    const unsubComplete = masterBus.subscribe('HAND_COMPLETED', (payload: any) => {
-      if (!isMounted.current) return;
-      if (payload?.winnerId && friendMap.current.has(payload.winnerId)) {
-        const friend = friendMap.current.get(payload.winnerId)!;
-        setActivities((prev) =>
-          [
-            {
-              id: `live-${Date.now()}`,
-              userId: payload.winnerId,
-              username: friend.username,
-              avatar: friend.avatar_url,
-              action: 'won a massive pot',
-              timestamp: new Date(),
-              icon: '💰',
-            },
-            ...prev,
-          ].slice(0, 20)
-        );
-      }
-    });
-
-    const unsubFriend = masterBus.subscribe('FRIEND_REQUEST_ACCEPTED', (payload: any) => {
-      if (!isMounted.current) return;
-      if (payload?.friendId || payload?.username) {
-        setActivities((prev) =>
-          [
-            {
-              id: `live-${Date.now()}`,
-              userId: payload.friendId || '',
-              username: payload.username || 'A player',
-              avatar: payload.avatarUrl,
-              action: 'became friends with you',
-              timestamp: new Date(),
-              icon: '🤝',
-            },
-            ...prev,
-          ].slice(0, 20)
-        );
-      }
-    });
-
-    // Refresh feed when achievements are unlocked
-    const unsubAchieve = masterBus.subscribe('ACHIEVEMENT_UNLOCKED', () => {
-      if (!isMounted.current) return;
-      if (achieveTimerRef.current) clearTimeout(achieveTimerRef.current);
-      achieveTimerRef.current = setTimeout(() => {
-        if (isMounted.current) loadRealActivities();
-      }, 1500);
-    });
-
-    return () => {
-      unsubComplete();
-      unsubFriend();
-      unsubAchieve();
-      if (achieveTimerRef.current) clearTimeout(achieveTimerRef.current);
-    };
   }, [friends, loadRealActivities]);
+
+  // Real-time bus listeners — augment feed with live events
+  useMasterBusSubscription('HAND_COMPLETED', (payload: any) => {
+    if (!isMounted.current) return;
+    if (payload?.winnerId && friendMap.current.has(payload.winnerId)) {
+      const friend = friendMap.current.get(payload.winnerId)!;
+      setActivities((prev) =>
+        [
+          {
+            id: `live-${Date.now()}`,
+            userId: payload.winnerId,
+            username: friend.username,
+            avatar: friend.avatar_url,
+            action: 'won a massive pot',
+            timestamp: new Date(),
+            icon: '💰',
+          },
+          ...prev,
+        ].slice(0, 20)
+      );
+    }
+  });
+
+  useMasterBusSubscription('FRIEND_REQUEST_ACCEPTED', (payload: any) => {
+    if (!isMounted.current) return;
+    if (payload?.friendId || payload?.username) {
+      setActivities((prev) =>
+        [
+          {
+            id: `live-${Date.now()}`,
+            userId: payload.friendId || '',
+            username: payload.username || 'A player',
+            avatar: payload.avatarUrl,
+            action: 'became friends with you',
+            timestamp: new Date(),
+            icon: '🤝',
+          },
+          ...prev,
+        ].slice(0, 20)
+      );
+    }
+  });
+
+  // Refresh feed when achievements are unlocked
+  useMasterBusSubscription('ACHIEVEMENT_UNLOCKED', () => {
+    if (!isMounted.current) return;
+    if (achieveTimerRef.current) clearTimeout(achieveTimerRef.current);
+    achieveTimerRef.current = setTimeout(() => {
+      if (isMounted.current) loadRealActivities();
+    }, 1500);
+  });
 
   if (loading) {
     return (

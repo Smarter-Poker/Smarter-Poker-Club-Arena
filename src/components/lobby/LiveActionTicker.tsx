@@ -14,6 +14,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
+import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 
 interface TickerMessage {
   id: string;
@@ -55,32 +56,22 @@ export default function LiveActionTicker({
   };
 
   // 1. Listen to MasterBus for immediate optimistic UI updates
-  useEffect(() => {
-    const unsub1 = masterBus.subscribe('TABLE_CREATED', (e) => {
-      const payload = e.payload as Record<string, unknown>;
-      const table = payload.table as Record<string, unknown> | undefined;
-      const name = (table?.name as string) || 'A new table';
-      const style = (table?.game_type as string) || 'NLH';
-      addMessage(`🃏 ${name} (${style}) just opened!`, 'action');
-    });
+  useMasterBusSubscription('TABLE_CREATED', (payload: Record<string, unknown>) => {
+    const table = payload.table as Record<string, unknown> | undefined;
+    const name = (table?.name as string) || 'A new table';
+    const style = (table?.game_type as string) || 'NLH';
+    addMessage(`🃏 ${name} (${style}) just opened!`, 'action');
+  });
 
-    const unsub2 = masterBus.subscribe('TOURNAMENT_UPDATED', (e) => {
-      const payload = e.payload as Record<string, unknown>;
-      if (payload.status === 'starting') {
-        addMessage(`🏆 Tournament approaching start time!`, 'action');
-      }
-    });
+  useMasterBusSubscription('TOURNAMENT_UPDATED', (payload: Record<string, unknown>) => {
+    if (payload.status === 'starting') {
+      addMessage(`🏆 Tournament approaching start time!`, 'action');
+    }
+  });
 
-    const unsub3 = masterBus.subscribe('DATA_MUTATED', () => {
-      // Reserved for future table action events
-    });
-
-    return () => {
-      unsub1();
-      unsub2();
-      unsub3();
-    };
-  }, []);
+  useMasterBusSubscription('DATA_MUTATED', () => {
+    // Reserved for future table action events
+  });
 
   // 2. Listen to Supabase Realtime for Global Network events
   useEffect(() => {

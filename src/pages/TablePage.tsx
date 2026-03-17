@@ -27,6 +27,7 @@ import {
   useMasterBusSubscription,
   useMasterBusSubscriptions,
 } from '../hooks/useMasterBusSubscription';
+import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
 import { playerStatusService } from '../services/PlayerStatusService';
 import { avatarService } from '../services/AvatarService';
 import PlayerNotesPanel from '../components/gameplay/PlayerNotesPanel';
@@ -1379,57 +1380,57 @@ export default function TablePage({
 
   // 🛡️ SECURE HOLE CARD PROVISIONING RECEIVER (ANTI-GOD-MODE) 🛡️
   // Subscribes directly to Postgres RLS-protected table to bypass public WebSocket leak
+
+  // Callback for handling new hole cards
+  const handleHoleCardPayload = useCallback(
+    (payload: any) => {
+      const row = payload.new;
+      if (row && row.user_id === userId && row.cards) {
+        // Play deal sound if enabled
+        if (soundService.isEnabled()) soundService.playDeal();
+
+        setTableState((prev) => {
+          const updatedPlayers = [...prev.players];
+          const heroIdx = updatedPlayers.findIndex((p) => p && p.id === userId);
+
+          if (heroIdx >= 0 && updatedPlayers[heroIdx]) {
+            let rawCards = [];
+            try {
+              rawCards = typeof row.cards === 'string' ? JSON.parse(row.cards) : row.cards;
+            } catch (e) {
+              rawCards = row.cards as any;
+            }
+
+            const formattedCards = (rawCards || []).map((c: any) => ({
+              rank: c.rank,
+              suit: ENGINE_SUIT_MAP[c.suit] || (c.suit as 'h' | 'd' | 'c' | 's'),
+            }));
+
+            updatedPlayers[heroIdx] = {
+              ...updatedPlayers[heroIdx]!,
+              holeCards: formattedCards,
+              showCards: true,
+            };
+          }
+          return { ...prev, players: updatedPlayers };
+        });
+      }
+    },
+    [userId]
+  );
+
+  useMasterBusChannel({
+    channelName: `table-cards-secure-${tableId}-${userId}`,
+    table: 'table_hole_cards',
+    filter: tableId ? `table_id=eq.${tableId}` : null,
+    event: 'INSERT',
+    onPayload: handleHoleCardPayload,
+    enabled: !!tableId && !!userId,
+  });
+
+  // Fallback: Check active hand if page reloads mid-hand and misses the INSERT event
   useEffect(() => {
     if (!tableId || !userId) return;
-
-    // Direct channel bypassing the public 'hand_state'
-    const channel = masterBus.getOrCreateChannel(`table-cards-secure-${tableId}-${userId}`);
-    channel
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'table_hole_cards',
-          filter: `table_id=eq.${tableId}`,
-        },
-        (payload) => {
-          const row = payload.new;
-          if (row && row.user_id === userId && row.cards) {
-            // Play deal sound if enabled
-            if (soundService.isEnabled()) soundService.playDeal();
-
-            setTableState((prev) => {
-              const updatedPlayers = [...prev.players];
-              const heroIdx = updatedPlayers.findIndex((p) => p && p.id === userId);
-
-              if (heroIdx >= 0 && updatedPlayers[heroIdx]) {
-                let rawCards = [];
-                try {
-                  rawCards = typeof row.cards === 'string' ? JSON.parse(row.cards) : row.cards;
-                } catch (e) {
-                  rawCards = row.cards as any;
-                }
-
-                const formattedCards = (rawCards || []).map((c: any) => ({
-                  rank: c.rank,
-                  suit: ENGINE_SUIT_MAP[c.suit] || (c.suit as 'h' | 'd' | 'c' | 's'),
-                }));
-
-                updatedPlayers[heroIdx] = {
-                  ...updatedPlayers[heroIdx]!,
-                  holeCards: formattedCards,
-                  showCards: true,
-                };
-              }
-              return { ...prev, players: updatedPlayers };
-            });
-          }
-        }
-      )
-      .subscribe();
-
-    // Fallback: Check active hand if page reloads mid-hand and misses the INSERT event
     const fetchExistingHand = async () => {
       if (!tableStateRef.current.isHandInProgress) return;
       const { data } = await supabase
@@ -1472,15 +1473,6 @@ export default function TablePage({
       }
     };
     fetchExistingHand();
-
-    return () => {
-      // Component unmount cleanup — both unsubscribe AND remove from MasterBus registry
-      const channelKey = `table-cards-secure-${tableId}-${userId}`;
-      channel
-        .unsubscribe()
-        .catch((e) => console.warn('[TablePage] Failed to unsubscribe from table channel:', e));
-      masterBus.removeRegisteredChannel(channelKey);
-    };
   }, [tableId, userId]);
 
   // Subscribe to server-side hand state broadcast (ServerTableEngine deals on the server)

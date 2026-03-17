@@ -8,6 +8,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
+import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import './PlayerActivityFeed.css';
 
 interface ActivityItem {
@@ -142,24 +143,14 @@ export default function PlayerActivityFeed({ userId }: PlayerActivityFeedProps) 
   }, [userId, loadActivity]);
 
   // Auto-refresh when gamification events fire
-  useEffect(() => {
-    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
-    const debouncedRefresh = () => {
-      if (refreshTimer) clearTimeout(refreshTimer);
-      refreshTimer = setTimeout(() => loadActivity(), 1500);
-    };
-    const unsubs = [
-      masterBus.subscribe('MISSION_CLAIMED', debouncedRefresh),
-      masterBus.subscribe('DAILY_REWARD_CLAIMED', debouncedRefresh),
-      masterBus.subscribe('WHEEL_SPIN_RESULT', debouncedRefresh),
-    ];
-    return () => {
-      if (refreshTimer) clearTimeout(refreshTimer);
-      unsubs.forEach((u) => {
-        if (typeof u === 'function') u();
-      });
-    };
+  const debouncedRefresh = useCallback(() => {
+    const timer = setTimeout(() => loadActivity(), 1500);
+    return () => clearTimeout(timer);
   }, [loadActivity]);
+
+  useMasterBusSubscription('MISSION_CLAIMED', debouncedRefresh);
+  useMasterBusSubscription('DAILY_REWARD_CLAIMED', debouncedRefresh);
+  useMasterBusSubscription('WHEEL_SPIN_RESULT', debouncedRefresh);
 
   if (loading) {
     return (

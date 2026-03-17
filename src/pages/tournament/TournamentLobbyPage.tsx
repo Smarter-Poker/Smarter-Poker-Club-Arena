@@ -10,6 +10,7 @@ import { useParams, Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useAuthUser } from '../../hooks/useAuthUser';
+import { useMasterBusChannel } from '../../hooks/useMasterBusChannel';
 import { tournamentService } from '../../services/TournamentService';
 import TournamentLobbyCard from '../../components/tournament/TournamentLobbyCard';
 import { CardSkeleton } from '../../components/skeletons/CardSkeleton';
@@ -111,42 +112,39 @@ export default function TournamentLobbyPage() {
     loadTournaments();
   }, [clubId, statusFilter]);
 
+  // Callback for tournament updates
+  const handleTournamentUpdate = useCallback((payload: any) => {
+    if (payload.eventType === 'UPDATE' && payload.new) {
+      // Update tournament in list
+      setTournaments((prev) =>
+        prev.map((t) =>
+          t.id === payload.new.id
+            ? {
+                ...t,
+                currentPlayers: payload.new.current_players,
+                prizePool: payload.new.prize_pool,
+                status: payload.new.status,
+              }
+            : t
+        )
+      );
+    } else if (payload.eventType === 'INSERT') {
+      // Reload to get new tournament with club name (uses ref to get current filter)
+      loadTournamentsRef.current();
+    }
+  }, []);
+
+  useMasterBusChannel({
+    channelName: 'tournament-lobby-updates',
+    table: 'tournaments',
+    filter: null,
+    event: '*',
+    onPayload: handleTournamentUpdate,
+    enabled: true,
+  });
+
   // Subscribe to realtime tournament updates
   useEffect(() => {
-    const channelKey = 'tournament-lobby-updates';
-
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'tournaments',
-        },
-        (payload) => {
-          if (payload.eventType === 'UPDATE' && payload.new) {
-            // Update tournament in list
-            setTournaments((prev) =>
-              prev.map((t) =>
-                t.id === payload.new.id
-                  ? {
-                      ...t,
-                      currentPlayers: payload.new.current_players,
-                      prizePool: payload.new.prize_pool,
-                      status: payload.new.status,
-                    }
-                  : t
-              )
-            );
-          } else if (payload.eventType === 'INSERT') {
-            // Reload to get new tournament with club name (uses ref to get current filter)
-            loadTournamentsRef.current();
-          }
-        }
-      )
-      .subscribe();
-
     // ── Bus event subscriptions for faster local updates ──
     const unsubElim = masterBus.subscribeDebounced(
       'PLAYER_ELIMINATED',
@@ -182,7 +180,6 @@ export default function TournamentLobbyPage() {
     );
 
     return () => {
-      masterBus.removeRegisteredChannel(channelKey);
       unsubElim();
       unsubMerge();
       unsubBalance();

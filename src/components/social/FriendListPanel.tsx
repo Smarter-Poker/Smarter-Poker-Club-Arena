@@ -9,6 +9,7 @@ import { useState, useEffect, useRef, memo } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
+import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { PlayerAvatar } from '../avatars/PlayerAvatar';
 import { haptic } from '../../services/HapticService';
@@ -72,26 +73,21 @@ function FriendListPanelInner({
   });
 
   // ── Bus Listeners: cross-page friend list reactivity ──
-  useEffect(() => {
-    const unsubAccepted = masterBus.subscribe('FRIEND_REQUEST_ACCEPTED', () => {
-      loadFriendsRef.current();
-    });
-    const unsubSent = masterBus.subscribe('FRIEND_REQUEST_SENT', () => {
-      loadFriendsRef.current();
-    });
-    const unsubSeated = masterBus.subscribe('TABLE_SEATED', () => {
-      loadFriendsRef.current(); // Refresh to pick up "playing" status
-    });
-    const unsubLeft = masterBus.subscribe('TABLE_LEFT', () => {
-      loadFriendsRef.current();
-    });
-    return () => {
-      unsubAccepted();
-      unsubSent();
-      unsubSeated();
-      unsubLeft();
-    };
-  }, []);
+  useMasterBusSubscription('FRIEND_REQUEST_ACCEPTED', () => {
+    loadFriendsRef.current();
+  });
+
+  useMasterBusSubscription('FRIEND_REQUEST_SENT', () => {
+    loadFriendsRef.current();
+  });
+
+  useMasterBusSubscription('TABLE_SEATED', () => {
+    loadFriendsRef.current(); // Refresh to pick up "playing" status
+  });
+
+  useMasterBusSubscription('TABLE_LEFT', () => {
+    loadFriendsRef.current();
+  });
 
   const loadFriends = async () => {
     if (!user?.id) return;

@@ -10,6 +10,10 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
+import {
+  useMasterBusSubscription,
+  useMasterBusSubscriptions,
+} from '../../hooks/useMasterBusSubscription';
 import { supabase, getAuthUser } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { retryAsync } from '../../utils/retryAsync';
@@ -194,70 +198,67 @@ export default function DailyChallenges() {
   );
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // MasterBus subscriptions for real-time challenge tracking
+  // Load progress on mount
   // ═══════════════════════════════════════════════════════════════════════════
   useEffect(() => {
     loadProgress();
+  }, [loadProgress]);
 
-    // Core game events
-    const unsubHandCompleted = masterBus.subscribe('HAND_COMPLETED', () => {
-      incrementByEvent('HAND_COMPLETED');
-    });
+  // ═══════════════════════════════════════════════════════════════════════════
+  // MasterBus subscriptions for real-time challenge tracking
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Core game events
+  useMasterBusSubscription('HAND_COMPLETED', () => {
+    incrementByEvent('HAND_COMPLETED');
+  });
 
-    const unsubHandWon = masterBus.subscribe('HAND_WON', () => {
-      incrementByEvent('HAND_WON');
-    });
+  useMasterBusSubscription('HAND_WON', () => {
+    incrementByEvent('HAND_WON');
+  });
 
-    const unsubFlopSeen = masterBus.subscribe('FLOP_SEEN', () => {
-      incrementByEvent('FLOP_SEEN');
-    });
+  useMasterBusSubscription('FLOP_SEEN', () => {
+    incrementByEvent('FLOP_SEEN');
+  });
 
-    const unsubAllInWon = masterBus.subscribe('ALL_IN_WON', () => {
-      incrementByEvent('ALL_IN_WON');
-    });
+  useMasterBusSubscription('ALL_IN_WON', () => {
+    incrementByEvent('ALL_IN_WON');
+  });
 
-    const unsubBigPot = masterBus.subscribe('BIG_POT_WON', () => {
-      incrementByEvent('BIG_POT_WON');
-    });
+  useMasterBusSubscription('BIG_POT_WON', () => {
+    incrementByEvent('BIG_POT_WON');
+  });
 
-    const unsubPreflopWin = masterBus.subscribe('PREFLOP_WIN', () => {
-      incrementByEvent('PREFLOP_WIN');
-    });
+  useMasterBusSubscription('PREFLOP_WIN', () => {
+    incrementByEvent('PREFLOP_WIN');
+  });
 
-    const unsubFlushWin = masterBus.subscribe('FLUSH_WIN', () => {
-      incrementByEvent('FLUSH_WIN');
-    });
+  useMasterBusSubscription('FLUSH_WIN', () => {
+    incrementByEvent('FLUSH_WIN');
+  });
 
-    // Table session tracking
-    const unsubSeated = masterBus.subscribe('TABLE_SEATED', () => {
-      incrementByEvent('TABLE_SEATED');
-      tableSessionStart.current = Date.now();
-    });
+  // Table session tracking
+  useMasterBusSubscription('TABLE_SEATED', () => {
+    incrementByEvent('TABLE_SEATED');
+    tableSessionStart.current = Date.now();
+  });
 
-    const unsubLeft = masterBus.subscribe('TABLE_LEFT', () => {
-      // Calculate play minutes when leaving a table
-      if (tableSessionStart.current) {
-        const minutes = Math.floor((Date.now() - tableSessionStart.current) / 60000);
-        if (minutes > 0) {
-          incrementByEvent('PLAY_MINUTES', minutes);
-        }
-        tableSessionStart.current = null;
+  useMasterBusSubscription('TABLE_LEFT', () => {
+    // Calculate play minutes when leaving a table
+    if (tableSessionStart.current) {
+      const minutes = Math.floor((Date.now() - tableSessionStart.current) / 60000);
+      if (minutes > 0) {
+        incrementByEvent('PLAY_MINUTES', minutes);
       }
-    });
+      tableSessionStart.current = null;
+    }
+  });
 
+  // Cleanup claim timer on unmount
+  useEffect(() => {
     return () => {
-      unsubHandCompleted();
-      unsubHandWon();
-      unsubFlopSeen();
-      unsubAllInWon();
-      unsubBigPot();
-      unsubPreflopWin();
-      unsubFlushWin();
-      unsubSeated();
-      unsubLeft();
       if (claimTimerRef.current) clearTimeout(claimTimerRef.current);
     };
-  }, [loadProgress, incrementByEvent]);
+  }, []);
 
   // Phase 7 #4: Claim challenge reward
   const claimReward = useCallback(

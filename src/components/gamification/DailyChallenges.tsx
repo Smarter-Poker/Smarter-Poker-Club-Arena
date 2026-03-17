@@ -17,6 +17,7 @@ import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
 import dailyChallengeService from '../../services/DailyChallengeService';
 import { masterBus } from '../../core/MasterBus';
+import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { supabase } from '../../lib/supabase';
 import './DailyChallenges.css';
 
@@ -146,16 +147,6 @@ export const DailyChallenges: React.FC = () => {
       loadChallenges();
     }
 
-    // Bus listeners for real-time progress sync
-    const unsubHand = masterBus.subscribe('HAND_COMPLETED', () => {
-      if (isMounted.current && user?.id) loadChallenges();
-    });
-    // Item 2: BALANCE_UPDATED is debounced (fires twice per claim — once from RPC, once from WalletService)
-    const unsubBalance = masterBus.subscribe('BALANCE_UPDATED', debouncedRefresh);
-    const unsubReset = masterBus.subscribe('DAILY_RESET_AVAILABLE', () => {
-      if (isMounted.current && user?.id) loadChallenges();
-    });
-
     // Item 7: Supabase Realtime subscription for cross-tab sync
     const channelKey = `daily-challenges-${user?.id || 'anon'}`;
     if (user?.id) {
@@ -177,9 +168,6 @@ export const DailyChallenges: React.FC = () => {
     }
 
     return () => {
-      unsubHand();
-      unsubBalance();
-      unsubReset();
       if (debounceRef.current) clearTimeout(debounceRef.current);
       // Item 9: Clear animation timers
       animTimers.current.forEach(clearTimeout);
@@ -188,6 +176,18 @@ export const DailyChallenges: React.FC = () => {
       masterBus.removeRegisteredChannel(channelKey);
     };
   }, [user?.id, loadChallenges, debouncedRefresh]);
+
+  // Bus listeners for real-time progress sync
+  useMasterBusSubscription('HAND_COMPLETED', () => {
+    if (isMounted.current && user?.id) loadChallenges();
+  });
+
+  // Item 2: BALANCE_UPDATED is debounced (fires twice per claim — once from RPC, once from WalletService)
+  useMasterBusSubscription('BALANCE_UPDATED', debouncedRefresh);
+
+  useMasterBusSubscription('DAILY_RESET_AVAILABLE', () => {
+    if (isMounted.current && user?.id) loadChallenges();
+  });
 
   // Guard against double-claim — Set tracks in-flight claims before React state updates
   const claimingRef = useRef<Set<string>>(new Set());

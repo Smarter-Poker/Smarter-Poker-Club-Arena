@@ -8,6 +8,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
+import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { messagingService } from '../../services/MessagingService';
 import MessageBubble from './MessageBubble';
@@ -508,58 +509,49 @@ export default function MessageThread({ conversationId, onBack }: MessageThreadP
   }, [conversationId, loadConversation, loadMessages, user?.id]);
 
   // ── Bus Listener: cross-tab message sync ──
-  useEffect(() => {
-    const unsubReceived = masterBus.subscribe('MESSAGE_RECEIVED', () => {
-      loadMessages(true);
-    });
-    const unsubSent = masterBus.subscribe('MESSAGE_SENT', (ev) => {
-      if (ev.payload.conversationId === conversationId) {
-        setMessages((prev) => {
-          // Prevent duplicate from optimistic UI
-          if (prev.some((m) => m.id === (ev.payload.message as any).id)) return prev;
-          return [...prev, ev.payload.message as unknown as Message];
-        });
-        setTimeout(() => {
-          scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
-        }, 50);
-      }
-    });
+  useMasterBusSubscription('MESSAGE_RECEIVED', () => {
+    loadMessages(true);
+  });
 
-    // Q3 Phase 15: Bus listener for edited messages
-    const unsubEdited = masterBus.subscribe('MESSAGE_SENT', (ev) => {
-      if ((ev.payload.message as any)?.edited) {
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === (ev.payload.message as any).id
-              ? { ...m, content: (ev.payload.message as any).content, isEdited: true }
-              : m
-          )
-        );
-      }
-    });
+  useMasterBusSubscription('MESSAGE_SENT', (payload) => {
+    if (payload.conversationId === conversationId) {
+      setMessages((prev) => {
+        // Prevent duplicate from optimistic UI
+        if (prev.some((m) => m.id === (payload.message as any).id)) return prev;
+        return [...prev, payload.message as unknown as Message];
+      });
+      setTimeout(() => {
+        scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
+      }, 50);
+    }
+  });
 
-    // Q3 Phase 15: Bus listener for deleted messages
-    const unsubDeleted = masterBus.subscribe('MESSAGE_DELETED', (ev) => {
-      if (ev.payload?.messageId) {
-        setMessages((prev) => prev.filter((m) => m.id !== ev.payload.messageId));
-      }
-    });
+  // Q3 Phase 15: Bus listener for edited messages
+  useMasterBusSubscription('MESSAGE_SENT', (payload) => {
+    if ((payload.message as any)?.edited) {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === (payload.message as any).id
+            ? { ...m, content: (payload.message as any).content, isEdited: true }
+            : m
+        )
+      );
+    }
+  });
 
-    // Q3 Phase 15: Bus listener for conversation metadata updates
-    const unsubConvUpdated = masterBus.subscribe('CONVERSATION_UPDATED', (ev) => {
-      if (ev.payload?.conversationId === conversationId) {
-        loadConversation();
-      }
-    });
+  // Q3 Phase 15: Bus listener for deleted messages
+  useMasterBusSubscription('MESSAGE_DELETED', (payload) => {
+    if (payload?.messageId) {
+      setMessages((prev) => prev.filter((m) => m.id !== payload.messageId));
+    }
+  });
 
-    return () => {
-      unsubReceived();
-      unsubSent();
-      unsubEdited();
-      unsubDeleted();
-      unsubConvUpdated();
-    };
-  }, [loadMessages, conversationId]);
+  // Q3 Phase 15: Bus listener for conversation metadata updates
+  useMasterBusSubscription('CONVERSATION_UPDATED', (payload) => {
+    if (payload?.conversationId === conversationId) {
+      loadConversation();
+    }
+  });
 
   // Auto-scroll on new messages
   useEffect(() => {

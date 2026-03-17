@@ -16,6 +16,7 @@ import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useAuthUser } from '../../hooks/useAuthUser';
+import { useMasterBusChannel } from '../../hooks/useMasterBusChannel';
 import { getLocalStorage, setLocalStorage } from '../../lib/storage';
 import ClubStatsCards from '../../components/club/ClubStatsCards';
 import ClubActivityFeed from '../../components/club/ClubActivityFeed';
@@ -104,78 +105,47 @@ export default function ClubDashboard() {
   }, [topPlayers]);
 
   // Real-time subscription for table, member, and hand changes
+  const [resolvedClubId, setResolvedClubId] = useState<string | null>(null);
+
   useEffect(() => {
-    if (!clubId) return;
-    let isMounted = true;
-
-    const setupRealtime = async () => {
-      const resolvedId = await resolveClubUUID(clubId);
-      if (!isMounted) return;
-
-      // Tables channel
-      const tablesKey = `club-dashboard-tables-${clubId}`;
-      const tablesChannel = masterBus.getOrCreateChannel(tablesKey);
-      tablesChannel
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'tables',
-            filter: `club_id=eq.${resolvedId}`,
-          },
-          () => {
-            loadDashboardData();
-          }
-        )
-        .subscribe();
-
-      // Members channel
-      const membersKey = `club-dashboard-members-${clubId}`;
-      const membersChannel = masterBus.getOrCreateChannel(membersKey);
-      membersChannel
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'club_members',
-            filter: `club_id=eq.${resolvedId}`,
-          },
-          () => {
-            loadDashboardData();
-          }
-        )
-        .subscribe();
-
-      // Hand history channel
-      const handsKey = `club-dashboard-hands-${clubId}`;
-      const handsChannel = masterBus.getOrCreateChannel(handsKey);
-      handsChannel
-        .on(
-          'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'hand_history',
-            filter: `club_id=eq.${resolvedId}`,
-          },
-          () => {
-            loadDashboardData();
-          }
-        )
-        .subscribe();
-    };
-
-    setupRealtime().catch((e) => console.warn('[ClubDashboard] Realtime setup failed:', e));
-
-    return () => {
-      isMounted = false;
-      masterBus.removeRegisteredChannel(`club-dashboard-tables-${clubId}`);
-      masterBus.removeRegisteredChannel(`club-dashboard-members-${clubId}`);
-      masterBus.removeRegisteredChannel(`club-dashboard-hands-${clubId}`);
-    };
+    if (!clubId) {
+      setResolvedClubId(null);
+      return;
+    }
+    resolveClubUUID(clubId)
+      .then(setResolvedClubId)
+      .catch((e) => console.warn('[ClubDashboard] Failed to resolve clubId:', e));
   }, [clubId]);
+
+  // Tables channel
+  useMasterBusChannel({
+    channelName: `club-dashboard-tables-${clubId}`,
+    table: 'tables',
+    filter: resolvedClubId ? `club_id=eq.${resolvedClubId}` : null,
+    event: '*',
+    onPayload: () => loadDashboardData(),
+    enabled: !!resolvedClubId,
+  });
+
+  // Members channel
+  useMasterBusChannel({
+    channelName: `club-dashboard-members-${clubId}`,
+    table: 'club_members',
+    filter: resolvedClubId ? `club_id=eq.${resolvedClubId}` : null,
+    event: '*',
+    onPayload: () => loadDashboardData(),
+    enabled: !!resolvedClubId,
+  });
+
+  // Hand history channel
+  useMasterBusChannel({
+    channelName: `club-dashboard-hands-${clubId}`,
+    table: 'hand_history',
+    filter: resolvedClubId ? `club_id=eq.${resolvedClubId}` : null,
+    event: 'INSERT',
+    onPayload: () => loadDashboardData(),
+    enabled: !!resolvedClubId,
+  });
 
   // ── Bus Listeners: cross-page event reactivity (debounced, scoped by clubId) ──
   useEffect(() => {

@@ -2,11 +2,12 @@
  *  RAKEBACK PAGE — Player Rakeback Dashboard with Charts
  */
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
+import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
 import { useToast } from '../components/common/Toast';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import './RakebackPage.css';
@@ -92,49 +93,33 @@ export default function RakebackPage() {
     loadRakebackDataRef.current = loadRakebackData;
   }, [user?.id]);
 
-  // Setup subscriptions to rakeback and wallet changes
-  useEffect(() => {
-    if (!user?.id) return;
+  // Real-time updates when rakeback periods change
+  const handleRakebackUpdate = useCallback(() => {
+    loadRakebackDataRef.current();
+  }, []);
 
-    // Real-time updates when rakeback periods change
-    const rakebackChannelKey = `rakeback-updates-${user.id}`;
+  useMasterBusChannel({
+    channelName: user?.id ? `rakeback-updates-${user.id}` : null,
+    table: 'rakeback_periods',
+    filter: user?.id ? `user_id=eq.${user.id}` : null,
+    event: '*',
+    onPayload: handleRakebackUpdate,
+    enabled: !!user?.id,
+  });
 
-    const rakebackChannel = masterBus.getOrCreateChannel(rakebackChannelKey);
-    rakebackChannel
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'rakeback_periods',
-          filter: `user_id=eq.${user.id}`,
-        },
-        () => loadRakebackDataRef.current()
-      )
-      .subscribe();
+  // Real-time updates when wallet changes (balance/earnings)
+  const handleWalletUpdate = useCallback(() => {
+    loadRakebackDataRef.current();
+  }, []);
 
-    // Real-time updates when wallet changes (balance/earnings)
-    const walletChannelKey = `wallet-updates-${user.id}`;
-
-    const walletChannel = masterBus.getOrCreateChannel(walletChannelKey);
-    walletChannel
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'wallets',
-          filter: `user_id=eq.${user.id}`,
-        },
-        () => loadRakebackDataRef.current()
-      )
-      .subscribe();
-
-    return () => {
-      masterBus.removeRegisteredChannel(rakebackChannelKey);
-      masterBus.removeRegisteredChannel(walletChannelKey);
-    };
-  }, [user?.id]);
+  useMasterBusChannel({
+    channelName: user?.id ? `wallet-updates-${user.id}` : null,
+    table: 'wallets',
+    filter: user?.id ? `user_id=eq.${user.id}` : null,
+    event: 'UPDATE',
+    onPayload: handleWalletUpdate,
+    enabled: !!user?.id,
+  });
 
   // Bus listeners: reload when balance changes or settlements complete
   useEffect(() => {

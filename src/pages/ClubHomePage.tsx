@@ -12,11 +12,12 @@
  * - Active tables/games grid
  */
 
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { waitForAuth } from '../utils/waitForAuth';
 import { masterBus } from '../core/MasterBus';
+import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
 import haptic from '../services/HapticService';
 import ClubBottomNav from '../components/club/ClubBottomNav';
 import {
@@ -250,43 +251,30 @@ export default function ClubHomePage() {
   }, [clubId]);
 
   // ── Realtime subscription: club member count updates ──
+  const [resolvedClubId, setResolvedClubId] = useState<string | null>(null);
+
   useEffect(() => {
-    if (!clubId) return;
-    let isMounted = true;
-
-    const setupMemberRealtime = async () => {
-      const resolvedId = await resolveClubUUID(clubId);
-      if (!isMounted) return;
-
-      const memberChannelKey = `club-members-${clubId}`;
-      const memberChannel = masterBus.getOrCreateChannel(memberChannelKey);
-      memberChannel
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'club_members',
-            filter: `club_id=eq.${resolvedId}`,
-          },
-          (payload) => {
-            if (payload.eventType === 'INSERT' || payload.eventType === 'DELETE') {
-              loadClubData();
-            }
-          }
-        )
-        .subscribe();
-    };
-
-    setupMemberRealtime().catch((e) =>
-      console.warn('[ClubHomePage] Member realtime setup failed:', e)
-    );
-
-    return () => {
-      isMounted = false;
-      masterBus.removeRegisteredChannel(`club-members-${clubId}`);
-    };
+    if (!clubId) {
+      setResolvedClubId(null);
+      return;
+    }
+    resolveClubUUID(clubId)
+      .then(setResolvedClubId)
+      .catch((e) => console.warn('[ClubHomePage] Failed to resolve clubId:', e));
   }, [clubId]);
+
+  const handleMemberUpdate = useCallback(() => {
+    loadClubData();
+  }, []);
+
+  useMasterBusChannel({
+    channelName: clubId ? `club-members-${clubId}` : null,
+    table: 'club_members',
+    filter: resolvedClubId ? `club_id=eq.${resolvedClubId}` : null,
+    event: '*',
+    onPayload: handleMemberUpdate,
+    enabled: !!resolvedClubId,
+  });
 
   // ── Bus Listeners: cross-page event reactivity (subscribeDebounced) ──
   useEffect(() => {

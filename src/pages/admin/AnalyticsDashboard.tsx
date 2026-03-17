@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
+import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { useToast } from '../../components/common/Toast';
 import './AnalyticsDashboard.css';
 
@@ -246,35 +247,34 @@ export default function AnalyticsDashboard() {
     return () => clearInterval(interval);
   }, [refreshAll]);
 
+  // Debounced refresh helper
   useEffect(() => {
-    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-    const debouncedRefresh = () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(refreshAll, 5000);
-    };
+    const debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
-    const unsubHand = masterBus.subscribe('HAND_COMPLETED', debouncedRefresh);
-    const unsubSettlement = masterBus.subscribeDebounced('SETTLEMENT_COMPLETED', refreshAll, 1000);
-    const unsubVip = masterBus.subscribeDebounced('MILESTONE_UNLOCKED', refreshAll, 1000);
-
-    // Admin listeners
-    const unsubCrash = masterBus.subscribe('COMPONENT_CRASH', (event) => {
-      const data = event.payload;
-      if (data && data.componentName) {
-        toast.error(`Crash: ${data.componentName}`);
-      }
-    });
-    const unsubStats = masterBus.subscribe('SESSION_STATS_UPDATE', debouncedRefresh);
+    // Create a ref to store the timer for cleanup
+    const cleanupRef = { timer: null as ReturnType<typeof setTimeout> | null };
 
     return () => {
-      unsubHand();
-      unsubSettlement();
-      unsubVip();
-      unsubCrash();
-      unsubStats();
-      if (debounceTimer) clearTimeout(debounceTimer);
+      if (cleanupRef.timer) clearTimeout(cleanupRef.timer);
     };
-  }, [refreshAll, toast]);
+  }, []);
+
+  // Bus listeners
+  const debouncedRefreshRef = { timer: null as ReturnType<typeof setTimeout> | null };
+  const debouncedRefresh = useCallback(() => {
+    if (debouncedRefreshRef.timer) clearTimeout(debouncedRefreshRef.timer);
+    debouncedRefreshRef.timer = setTimeout(refreshAll, 5000);
+  }, [refreshAll]);
+
+  useMasterBusSubscription('HAND_COMPLETED', debouncedRefresh);
+  useMasterBusSubscription('SETTLEMENT_COMPLETED', refreshAll, { debounce: 1000 });
+  useMasterBusSubscription('MILESTONE_UNLOCKED', refreshAll, { debounce: 1000 });
+  useMasterBusSubscription('COMPONENT_CRASH', (payload) => {
+    if (payload && payload.componentName) {
+      toast.error(`Crash: ${payload.componentName}`);
+    }
+  });
+  useMasterBusSubscription('SESSION_STATS_UPDATE', debouncedRefresh);
 
   // ── Enhancement #5: CSV Export ─────────────────────────────────────────
 

@@ -17,6 +17,7 @@ import React, { useState, useCallback, useRef, useEffect, useMemo, lazy, Suspens
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { TableTabBar, type TabInfo } from '../components/table/TableTabBar';
 import { masterBus } from '../core/MasterBus';
+import { useMasterBusSubscription } from '../hooks/useMasterBusSubscription';
 import './MultiTablePage.css';
 
 // Lazy-load TablePage for code splitting
@@ -101,76 +102,66 @@ export default function MultiTablePage() {
   }, [tables.length]);
 
   // Listen for table seating events from other pages
-  useEffect(() => {
-    // Type-safe bus handler types (extended beyond base BusPayloadMap)
-    interface SeatedPayload {
-      tableId: string;
-      tableName?: string;
-      seat?: number;
-    }
-    interface LeftPayload {
-      tableId: string;
-    }
-    interface HandPayload {
-      handId: string;
-      tableId: string;
-      pot?: number;
-    }
+  // Type-safe bus handler types (extended beyond base BusPayloadMap)
+  interface SeatedPayload {
+    tableId: string;
+    tableName?: string;
+    seat?: number;
+  }
+  interface LeftPayload {
+    tableId: string;
+  }
+  interface HandPayload {
+    handId: string;
+    tableId: string;
+    pot?: number;
+  }
 
-    const unsubSeated = masterBus.subscribe('TABLE_SEATED', (event) => {
-      const e =
-        (event as unknown as { payload: SeatedPayload }).payload ??
-        (event as unknown as SeatedPayload);
-      if (!e.tableId) return;
-      // Functional updater handles dedup check via prev.find — no closure dep needed
-      setTables((prev) => {
-        if (prev.length >= MAX_TABLES || prev.find((t) => t.id === e.tableId)) return prev;
-        return [
-          ...prev,
-          {
-            id: e.tableId,
-            name: e.tableName || `Table ${prev.length + 1}`,
-            stakes: '',
-            isMyTurn: false,
-            pot: 0,
-          },
-        ];
-      });
+  useMasterBusSubscription('TABLE_SEATED', (payload: SeatedPayload) => {
+    const e = payload;
+    if (!e.tableId) return;
+    // Functional updater handles dedup check via prev.find — no closure dep needed
+    setTables((prev) => {
+      if (prev.length >= MAX_TABLES || prev.find((t) => t.id === e.tableId)) return prev;
+      return [
+        ...prev,
+        {
+          id: e.tableId,
+          name: e.tableName || `Table ${prev.length + 1}`,
+          stakes: '',
+          isMyTurn: false,
+          pot: 0,
+        },
+      ];
     });
-    const unsubLeft = masterBus.subscribe('TABLE_LEFT', (event) => {
-      const e =
-        (event as unknown as { payload: LeftPayload }).payload ?? (event as unknown as LeftPayload);
-      if (e.tableId) {
-        setTables((prev) => prev.filter((t) => t.id !== e.tableId));
+  });
+
+  useMasterBusSubscription('TABLE_LEFT', (payload: LeftPayload) => {
+    const e = payload;
+    if (e.tableId) {
+      setTables((prev) => prev.filter((t) => t.id !== e.tableId));
+    }
+  });
+
+  useMasterBusSubscription(
+    'HAND_COMPLETED',
+    (payload: HandPayload) => {
+      const e = payload;
+      if (e.tableId && typeof e.pot === 'number') {
+        setTables((prev) => prev.map((t) => (t.id === e.tableId ? { ...t, pot: e.pot! } : t)));
       }
-    });
-    const unsubHandComplete = masterBus.subscribeDebounced(
-      'HAND_COMPLETED',
-      (event) => {
-        const e =
-          (event as unknown as { payload: HandPayload }).payload ??
-          (event as unknown as HandPayload);
-        if (e.tableId && typeof e.pot === 'number') {
-          setTables((prev) => prev.map((t) => (t.id === e.tableId ? { ...t, pot: e.pot! } : t)));
-        }
-      },
-      300
-    );
-    const unsubWsDisconnected = masterBus.subscribe('WS_DISCONNECTED', () => {
-      // Force re-render to show disconnection indicator
-      setTables((prev) => [...prev]);
-    });
-    const unsubWsReconnecting = masterBus.subscribe('WS_RECONNECTING', () => {
-      setTables((prev) => [...prev]);
-    });
-    return () => {
-      unsubSeated();
-      unsubLeft();
-      unsubHandComplete();
-      unsubWsDisconnected();
-      unsubWsReconnecting();
-    };
-  }, []);
+    },
+    { debounce: 300 }
+  );
+
+  useMasterBusSubscription('WS_DISCONNECTED', () => {
+    // Force re-render to show disconnection indicator
+    setTables((prev) => [...prev]);
+  });
+
+  useMasterBusSubscription('WS_RECONNECTING', () => {
+    setTables((prev) => [...prev]);
+  });
 
   // ─── Derived state ───────────────────────────────────────────────────
   const activeTableId = tables[activeIndex]?.id || '';

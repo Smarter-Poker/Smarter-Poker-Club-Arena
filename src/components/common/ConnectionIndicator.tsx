@@ -13,6 +13,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { masterBus } from '../../core/MasterBus';
+import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import './ConnectionIndicator.css';
 
 type ConnectionState = 'connected' | 'disconnected' | 'reconnecting';
@@ -28,51 +29,45 @@ export default function ConnectionIndicator() {
   const offlineTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    const clearAllTimers = () => {
+    return () => {
+      // Cleanup timers on unmount
       if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
       if (offlineTimerRef.current) clearTimeout(offlineTimerRef.current);
     };
+  }, []);
 
-    const unsubConnected = masterBus.subscribe('REALTIME_CONNECTED', () => {
-      // Connection restored — immediately hide any offline indicator
-      if (offlineTimerRef.current) clearTimeout(offlineTimerRef.current);
-      setConnState('connected');
-      // Brief green flash to confirm reconnection, then hide
-      if (visible) {
-        setVisible(true);
-        if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
-        hideTimerRef.current = setTimeout(() => setVisible(false), 2000);
-      }
-    });
+  useMasterBusSubscription('REALTIME_CONNECTED', () => {
+    // Connection restored — immediately hide any offline indicator
+    if (offlineTimerRef.current) clearTimeout(offlineTimerRef.current);
+    setConnState('connected');
+    // Brief green flash to confirm reconnection, then hide
+    if (visible) {
+      setVisible(true);
+      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = setTimeout(() => setVisible(false), 2000);
+    }
+  });
 
-    const unsubDisconnected = masterBus.subscribe('REALTIME_DISCONNECTED', () => {
-      // Start the long timer — only show "Offline" if disconnected for 60+ seconds.
-      // Silently reconnect in the background. Users should never know about blips.
-      if (offlineTimerRef.current) clearTimeout(offlineTimerRef.current);
-      offlineTimerRef.current = setTimeout(() => {
-        setConnState('disconnected');
-        setVisible(true);
-      }, OFFLINE_DISPLAY_THRESHOLD_MS);
-    });
+  useMasterBusSubscription('REALTIME_DISCONNECTED', () => {
+    // Start the long timer — only show "Offline" if disconnected for 60+ seconds.
+    // Silently reconnect in the background. Users should never know about blips.
+    if (offlineTimerRef.current) clearTimeout(offlineTimerRef.current);
+    offlineTimerRef.current = setTimeout(() => {
+      setConnState('disconnected');
+      setVisible(true);
+    }, OFFLINE_DISPLAY_THRESHOLD_MS);
+  });
 
-    // Also listen for reconnecting events — same silent treatment
-    const unsubReconnecting = masterBus.subscribe('WS_RECONNECTING', () => {
-      // Cancel the offline timer — we're actively trying to reconnect
-      // Only show if it's been a really long time
-      if (offlineTimerRef.current) clearTimeout(offlineTimerRef.current);
-      offlineTimerRef.current = setTimeout(() => {
-        setConnState('reconnecting');
-        setVisible(true);
-      }, OFFLINE_DISPLAY_THRESHOLD_MS);
-    });
-
-    return () => {
-      unsubConnected();
-      unsubDisconnected();
-      unsubReconnecting();
-      clearAllTimers();
-    };
-  }, [visible]);
+  // Also listen for reconnecting events — same silent treatment
+  useMasterBusSubscription('WS_RECONNECTING', () => {
+    // Cancel the offline timer — we're actively trying to reconnect
+    // Only show if it's been a really long time
+    if (offlineTimerRef.current) clearTimeout(offlineTimerRef.current);
+    offlineTimerRef.current = setTimeout(() => {
+      setConnState('reconnecting');
+      setVisible(true);
+    }, OFFLINE_DISPLAY_THRESHOLD_MS);
+  });
 
   if (!visible) return null;
 

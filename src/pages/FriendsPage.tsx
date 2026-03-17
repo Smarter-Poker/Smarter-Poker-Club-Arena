@@ -2,12 +2,13 @@
  * 👫 FRIENDS PAGE — Friends List & Management with Real-Time Status
  */
 
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { masterBus } from '../core/MasterBus';
 import { useToast } from '../components/common/Toast';
+import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
 import { retryFetch } from '../utils/retryFetch';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { exportToCSV } from '../lib/export';
@@ -135,35 +136,19 @@ export default function FriendsPage() {
   }, [user?.id]);
 
   // Real-time friend request notifications
-  useEffect(() => {
-    let isMounted = true;
-    if (!user?.id) return;
+  const handleFriendRequest = useCallback(() => {
+    if (loadFriendsRef.current) loadFriendsRef.current();
+    toast.success('New friend request received!');
+  }, [toast]);
 
-    const channelKey = `friend-requests-${user.id}`;
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'friendships',
-          filter: `friend_id=eq.${user.id}`,
-        },
-        (payload) => {
-          if (!isMounted) return;
-          // New friend request!
-          if (loadFriendsRef.current) loadFriendsRef.current();
-          toast.success('New friend request received!');
-        }
-      )
-      .subscribe();
-
-    return () => {
-      isMounted = false;
-      masterBus.removeRegisteredChannel(channelKey);
-    };
-  }, [user?.id]);
+  useMasterBusChannel({
+    channelName: user?.id ? `friend-requests-${user.id}` : null,
+    table: 'friendships',
+    filter: user?.id ? `friend_id=eq.${user.id}` : null,
+    event: 'INSERT',
+    onPayload: handleFriendRequest,
+    enabled: !!user?.id,
+  });
 
   // ── Bus Listeners: cross-page friend reactivity (debounced) ──
   useEffect(() => {

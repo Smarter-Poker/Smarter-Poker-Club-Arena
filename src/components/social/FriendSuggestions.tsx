@@ -16,6 +16,7 @@ import { useAuthUser } from '../../hooks/useAuthUser';
 import { supabase } from '../../lib/supabase';
 import { useToast } from '../common/Toast';
 import { masterBus } from '../../core/MasterBus';
+import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import styles from './FriendSuggestions.module.css';
 
 export default function FriendSuggestions() {
@@ -41,36 +42,38 @@ export default function FriendSuggestions() {
       .finally(() => {
         if (isMounted.current) setLoading(false);
       });
+  }, [user?.id, isMounted]);
 
-    // Auto-dismiss when friend request sent/accepted elsewhere
-    const unsubSent = masterBus.subscribe('FRIEND_REQUEST_SENT', (event: any) => {
-      if (isMounted.current) {
-        setDismissed((prev) => new Set(prev).add(event.payload?.toUserId));
-      }
-    });
-    const unsubAccepted = masterBus.subscribe('FRIEND_REQUEST_ACCEPTED', () => {
-      // Refresh suggestions after an acceptance (friend list changed)
-      if (isMounted.current && user?.id) {
-        friendSuggestionService.getSuggestions(user.id, 12).then((s) => {
-          if (isMounted.current) setSuggestions(s);
-        }).catch((e) => console.warn('[FriendSuggestions] Refresh after accept failed:', e));
-      }
-    });
-    const unsubProfile = masterBus.subscribe('PROFILE_UPDATED', () => {
-      // Refresh suggestions when profiles change — scores may shift
-      if (isMounted.current && user?.id) {
-        friendSuggestionService.getSuggestions(user.id, 12).then((s) => {
-          if (isMounted.current) setSuggestions(s);
-        }).catch((e) => console.warn('[FriendSuggestions] Refresh after profile update failed:', e));
-      }
-    });
+  // Auto-dismiss when friend request sent/accepted elsewhere
+  useMasterBusSubscription('FRIEND_REQUEST_SENT', (payload: any) => {
+    if (isMounted.current) {
+      setDismissed((prev) => new Set(prev).add(payload?.toUserId));
+    }
+  });
 
-    return () => {
-      unsubSent();
-      unsubAccepted();
-      unsubProfile();
-    };
-  }, [user?.id]);
+  useMasterBusSubscription('FRIEND_REQUEST_ACCEPTED', () => {
+    // Refresh suggestions after an acceptance (friend list changed)
+    if (isMounted.current && user?.id) {
+      friendSuggestionService
+        .getSuggestions(user.id, 12)
+        .then((s) => {
+          if (isMounted.current) setSuggestions(s);
+        })
+        .catch((e) => console.warn('[FriendSuggestions] Refresh after accept failed:', e));
+    }
+  });
+
+  useMasterBusSubscription('PROFILE_UPDATED', () => {
+    // Refresh suggestions when profiles change — scores may shift
+    if (isMounted.current && user?.id) {
+      friendSuggestionService
+        .getSuggestions(user.id, 12)
+        .then((s) => {
+          if (isMounted.current) setSuggestions(s);
+        })
+        .catch((e) => console.warn('[FriendSuggestions] Refresh after profile update failed:', e));
+    }
+  });
 
   const handleAddFriend = async (userId: string) => {
     if (!user?.id) return;

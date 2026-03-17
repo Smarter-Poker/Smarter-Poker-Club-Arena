@@ -10,6 +10,7 @@ import {
   type ConnectionState,
 } from '../../services/DisconnectProtectionService';
 import { masterBus } from '../../core/MasterBus';
+import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { haptic } from '../../services/SoundService';
 import './ConnectionHUD.css';
 
@@ -67,48 +68,42 @@ export const ConnectionHUD: React.FC<ConnectionHUDProps> = ({ tableId, userId })
   }, [tableId, userId]);
 
   // ── Listen for disconnect events ──
-  useEffect(() => {
-    const unsubDC = masterBus.subscribe('PLAYER_DISCONNECTED', (event: any) => {
-      const data = event?.payload;
-      if (data?.userId === userId && data?.tableId === tableId) {
-        hasTimedOutRef.current = false; // Reset on new disconnect
-        setAutoActionText(null); // Reset action text
-        setShowDisconnectWarning(true);
-        haptic.double(); // Haptic: disconnect warning
-      }
-    });
-    const unsubRC = masterBus.subscribe('PLAYER_RECONNECTED', (event: any) => {
-      const data = event?.payload;
-      if (data?.userId === userId && data?.tableId === tableId) {
-        hasTimedOutRef.current = false; // Reset on reconnect
-        setAutoActionText(null); // Reset action text
-        setShowDisconnectWarning(false);
-        haptic.medium(); // Haptic: reconnected confirmation
-      }
-    });
-    // Feature 2b: Listen for grace period expiry — display auto-action taken
-    const unsubTimeout = masterBus.subscribe('DISCONNECT_TIMEOUT', (event: any) => {
-      const data = event?.payload;
-      if (data?.userId === userId && data?.tableId === tableId) {
-        hasTimedOutRef.current = true; // Lock the countdown at 0
-        setGraceCountdown(0); // Force countdown to 0 to show timeout message
-        // Enhancement #1: Store the actual action for display
-        const action = data.action || 'check_fold';
-        const actionLabel = action
-          .replace(/_/g, '/')
-          .replace(/\b\w/g, (c: string) => c.toUpperCase());
-        setAutoActionText(actionLabel);
-        haptic.strong(); // Haptic: timeout warning
-        console.debug(`[ConnectionHUD] Disconnect timeout — auto-action: ${action}`);
-      }
-    });
+  useMasterBusSubscription('PLAYER_DISCONNECTED', (payload: any) => {
+    const data = payload;
+    if (data?.userId === userId && data?.tableId === tableId) {
+      hasTimedOutRef.current = false; // Reset on new disconnect
+      setAutoActionText(null); // Reset action text
+      setShowDisconnectWarning(true);
+      haptic.double(); // Haptic: disconnect warning
+    }
+  });
 
-    return () => {
-      if (typeof unsubDC === 'function') unsubDC();
-      if (typeof unsubRC === 'function') unsubRC();
-      if (typeof unsubTimeout === 'function') unsubTimeout();
-    };
-  }, [tableId, userId]);
+  useMasterBusSubscription('PLAYER_RECONNECTED', (payload: any) => {
+    const data = payload;
+    if (data?.userId === userId && data?.tableId === tableId) {
+      hasTimedOutRef.current = false; // Reset on reconnect
+      setAutoActionText(null); // Reset action text
+      setShowDisconnectWarning(false);
+      haptic.medium(); // Haptic: reconnected confirmation
+    }
+  });
+
+  // Feature 2b: Listen for grace period expiry — display auto-action taken
+  useMasterBusSubscription('DISCONNECT_TIMEOUT', (payload: any) => {
+    const data = payload;
+    if (data?.userId === userId && data?.tableId === tableId) {
+      hasTimedOutRef.current = true; // Lock the countdown at 0
+      setGraceCountdown(0); // Force countdown to 0 to show timeout message
+      // Enhancement #1: Store the actual action for display
+      const action = data.action || 'check_fold';
+      const actionLabel = action
+        .replace(/_/g, '/')
+        .replace(/\b\w/g, (c: string) => c.toUpperCase());
+      setAutoActionText(actionLabel);
+      haptic.strong(); // Haptic: timeout warning
+      console.debug(`[ConnectionHUD] Disconnect timeout — auto-action: ${action}`);
+    }
+  });
 
   // ── Auto-reconnect with exponential backoff ──
   useEffect(() => {

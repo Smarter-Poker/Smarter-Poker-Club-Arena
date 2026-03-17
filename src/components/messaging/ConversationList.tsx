@@ -9,6 +9,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
+import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { useMasterBusChannel } from '../../hooks/useMasterBusChannel';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { messagingService } from '../../services/MessagingService';
@@ -219,31 +220,30 @@ export default function ConversationList({
     loadClubMessagesCount();
     initHeartbeat();
 
-    // Bus listeners for cross-component sync (instant, no RT delay)
-    const unsubSent = masterBus.subscribe('MESSAGE_SENT', () => {
-      loadConversations(true);
-    });
-    const unsubReceived = masterBus.subscribe('MESSAGE_RECEIVED', () => {
-      loadConversations(true);
-      loadClubMessagesCount();
-    });
-    const unsubDeleted = masterBus.subscribe('MESSAGE_DELETED', () => {
-      loadConversations(true);
-    });
-    const unsubUpdated = masterBus.subscribe('CONVERSATION_UPDATED', () => {
-      loadConversations(true);
-      loadClubMessagesCount();
-    });
-
     return () => {
       if (heartbeatRef.current) clearInterval(heartbeatRef.current);
       if (realtimeDebounceRef.current) clearTimeout(realtimeDebounceRef.current);
-      unsubSent();
-      unsubReceived();
-      unsubDeleted();
-      unsubUpdated();
     };
   }, [loadConversations, loadClubMessagesCount, initHeartbeat]);
+
+  // Bus listeners for cross-component sync (instant, no RT delay)
+  useMasterBusSubscription('MESSAGE_SENT', () => {
+    loadConversations(true);
+  });
+
+  useMasterBusSubscription('MESSAGE_RECEIVED', () => {
+    loadConversations(true);
+    loadClubMessagesCount();
+  });
+
+  useMasterBusSubscription('MESSAGE_DELETED', () => {
+    loadConversations(true);
+  });
+
+  useMasterBusSubscription('CONVERSATION_UPDATED', () => {
+    loadConversations(true);
+    loadClubMessagesCount();
+  });
 
   // Real-time subscription for new messages — debounced to prevent stampede
   useMasterBusChannel({

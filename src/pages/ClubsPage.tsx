@@ -58,6 +58,10 @@ interface Membership {
 // Local aliases for centralized storage keys
 
 export default function ClubsPage() {
+  useEffect(() => {
+    document.title = 'Clubs | Smarter Poker';
+  }, []);
+
   const navigate = useNavigate();
   const toast = useToast();
   useVisibilityRefresh(() => loadMyClubs());

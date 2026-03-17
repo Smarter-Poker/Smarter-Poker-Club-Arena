@@ -355,6 +355,7 @@ export default function ClubAnnouncementsPage() {
             value={newTitle}
             onChange={(e) => setNewTitle(e.target.value)}
             className="composer-title"
+            maxLength={100}
           />
           <textarea
             placeholder="Write your announcement..."
@@ -362,6 +363,7 @@ export default function ClubAnnouncementsPage() {
             onChange={(e) => setNewContent(e.target.value)}
             rows={4}
             className="composer-content"
+            maxLength={2000}
           />
           <div className="composer-actions">
             <button className="btn btn-ghost" onClick={() => setShowComposer(false)}>

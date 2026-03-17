@@ -207,6 +207,10 @@ const AchievementCard = ({ achievement }: { achievement: Achievement }) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export default function ProfilePage() {
+  useEffect(() => {
+    document.title = 'Profile | Smarter Poker';
+  }, []);
+
   const navigate = useNavigate();
   const isMountedRef = useIsMounted();
 
@@ -827,6 +831,9 @@ export default function ProfilePage() {
               alt={user.displayName}
               className={styles.avatar}
               loading="lazy"
+              onError={(e) => {
+                (e.target as HTMLImageElement).src = '/default-avatar.png';
+              }}
             />
           ) : (
             <div className={styles.avatarDefault}>{user.displayName.charAt(0).toUpperCase()}</div>

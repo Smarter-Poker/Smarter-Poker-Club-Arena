@@ -5,7 +5,7 @@
  * Club-scoped messaging - NOT connected to smarter.poker social messaging
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import ConversationList from '../components/messaging/ConversationList';
 import MessageThread from '../components/messaging/MessageThread';
@@ -19,6 +19,10 @@ const conversationAnimationStyle = (index: number) => ({
 });
 
 export default function MessagesPage() {
+  useEffect(() => {
+    document.title = 'Messages | Smarter Poker';
+  }, []);
+
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { clubId: routeClubId, conversationId } = useParams<{

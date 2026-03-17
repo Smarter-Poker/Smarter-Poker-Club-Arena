@@ -34,13 +34,14 @@ export interface TableChatProps {
   messages: ChatMessage[];
   onSendMessage: (message: string) => void;
   myPlayerId?: string;
-  tableId?: string; // Enhancement #4: filter bus messages by table
+  tableId?: string;
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
   maxMessages?: number;
   isDisabled?: boolean;
   placeholder?: string;
   isMuted?: boolean;
+  unreadCount?: number;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -101,7 +102,15 @@ function MessageRow({ message, isOwnMessage, isNew = false }: MessageRowProps) {
       {!isOwnMessage && (
         <div className="chat-message__avatar">
           {message.playerAvatar ? (
-            <img loading="lazy" decoding="async" src={message.playerAvatar} alt="Player avatar" />
+            <img
+              loading="lazy"
+              decoding="async"
+              src={message.playerAvatar}
+              alt="Player avatar"
+              onError={(e) => {
+                (e.target as HTMLImageElement).src = '/default-avatar.png';
+              }}
+            />
           ) : (
             <span>{message.playerName?.[0]?.toUpperCase() || '?'}</span>
           )}
@@ -131,10 +140,13 @@ export function TableChat({
   isDisabled = false,
   placeholder = 'Type a message...',
   isMuted = false,
+  unreadCount = 0,
 }: TableChatProps) {
   const [inputValue, setInputValue] = useState('');
   const [newMessageIds, setNewMessageIds] = useState<Set<string>>(new Set());
+  const [isScrolledUp, setIsScrolledUp] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const previousMessagesLengthRef = useRef(0);
   const animationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -158,7 +170,10 @@ export function TableChat({
       }, 600);
     }
     previousMessagesLengthRef.current = messages.length;
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    // Only auto-scroll if user hasn't scrolled up
+    if (!isScrolledUp) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
 
     return () => {
       if (animationTimerRef.current) {
@@ -166,7 +181,20 @@ export function TableChat({
         animationTimerRef.current = null;
       }
     };
-  }, [messages.length]);
+  }, [messages.length, isScrolledUp]);
+
+  // Track scroll position to show/hide scroll-to-bottom FAB
+  const handleScroll = useCallback(() => {
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    setIsScrolledUp(distFromBottom > 60);
+  }, []);
+
+  const scrollToBottom = useCallback(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    setIsScrolledUp(false);
+  }, []);
 
   // Trim messages to max limit before rendering
   const displayMessages = [...messages]
@@ -212,7 +240,7 @@ export function TableChat({
     return (
       <button className="chat-collapsed" onClick={onToggleCollapse}>
         <span className="chat-collapsed__icon">✉</span>
-        {messages.length > 0 && <span className="chat-collapsed__badge">{messages.length}</span>}
+        {unreadCount > 0 && <span className="chat-collapsed__badge">{unreadCount}</span>}
       </button>
     );
   }
@@ -225,7 +253,7 @@ export function TableChat({
       </div>
 
       {/* Messages */}
-      <div className="table-chat__messages">
+      <div className="table-chat__messages" ref={messagesContainerRef} onScroll={handleScroll}>
         {displayMessages.length === 0 ? (
           <div className="table-chat__empty">
             <span>No messages yet</span>
@@ -242,12 +270,20 @@ export function TableChat({
           ))
         )}
         <div ref={messagesEndRef} />
+
+        {/* Scroll-to-bottom FAB */}
+        {isScrolledUp && (
+          <button
+            className="table-chat__scroll-fab"
+            onClick={scrollToBottom}
+            title="Jump to latest"
+          >
+            ↓
+          </button>
+        )}
       </div>
 
-      {/* Quick Emojis removed */}
-
       {/* Input */}
-      {/* Quick Chat Phrases removed */}
 
       <div className="table-chat__input-container">
         {/* Emoji toggle removed */}

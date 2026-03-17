@@ -560,6 +560,7 @@ function ConfigModal({
                       outline: 'none',
                     }}
                     placeholder="SB"
+                    inputMode="decimal"
                   />
                   <span style={{ color: FB.textDim, lineHeight: '32px' }}>/</span>
                   <input
@@ -579,6 +580,7 @@ function ConfigModal({
                       outline: 'none',
                     }}
                     placeholder="BB"
+                    inputMode="decimal"
                   />
                 </div>
               </div>

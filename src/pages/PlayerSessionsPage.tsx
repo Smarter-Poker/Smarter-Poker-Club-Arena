@@ -19,24 +19,7 @@ import { exportToCSV } from '../lib/export';
 import './AdminDashboardPage.css'; // reuse admin styles
 import { useIsMounted } from '../hooks/useIsMounted';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
-
-// ── Helpers ─────────────────────────────────────────────────
-const fmt = (n: number | null | undefined) => Number(n || 0).toLocaleString();
-const fmtChips = (n: number | null | undefined) => {
-  const v = Number(n || 0);
-  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
-  if (v >= 1_000) return `${(v / 1_000).toFixed(1)}K`;
-  return fmt(v);
-};
-const timeAgo = (ts: string | null | undefined) => {
-  if (!ts) return 'Never';
-  const mins = Math.floor((Date.now() - new Date(ts).getTime()) / 60000);
-  if (mins < 1) return 'Just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
-};
+import { fmt, fmtChips, timeAgo } from '../utils/format';
 
 interface PlayerSession {
   userId: string;

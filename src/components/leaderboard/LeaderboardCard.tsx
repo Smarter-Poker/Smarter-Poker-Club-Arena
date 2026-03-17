@@ -148,7 +148,15 @@ function LeaderboardCardInner({
                 <div className={styles.playerCol}>
                   <div className={styles.avatar}>
                     {entry.avatarUrl ? (
-                      <img loading="lazy" decoding="async" src={entry.avatarUrl} alt="" />
+                      <img
+                        loading="lazy"
+                        decoding="async"
+                        src={entry.avatarUrl}
+                        alt=""
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).src = '/default-avatar.png';
+                        }}
+                      />
                     ) : (
                       <span>●</span>
                     )}
@@ -182,7 +190,15 @@ function LeaderboardCardInner({
             <div className={styles.playerCol}>
               <div className={styles.avatar}>
                 {userRank.avatarUrl ? (
-                  <img loading="lazy" decoding="async" src={userRank.avatarUrl} alt="" />
+                  <img
+                    loading="lazy"
+                    decoding="async"
+                    src={userRank.avatarUrl}
+                    alt=""
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = '/default-avatar.png';
+                    }}
+                  />
                 ) : (
                   <span>●</span>
                 )}

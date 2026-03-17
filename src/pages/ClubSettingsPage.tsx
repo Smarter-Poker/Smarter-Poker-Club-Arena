@@ -385,6 +385,7 @@ export default function ClubSettingsPage() {
               value={settings.name}
               onChange={(e) => updateSetting('name', e.target.value)}
               disabled={!isOwner}
+              maxLength={50}
             />
           </div>
           <div className="form-group">
@@ -394,6 +395,7 @@ export default function ClubSettingsPage() {
               onChange={(e) => updateSetting('description', e.target.value)}
               rows={3}
               disabled={!isOwner}
+              maxLength={500}
             />
           </div>
         </section>

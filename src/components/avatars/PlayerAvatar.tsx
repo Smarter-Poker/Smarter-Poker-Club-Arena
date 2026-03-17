@@ -197,7 +197,14 @@ export const PlayerAvatar: React.FC<PlayerAvatarProps> = ({
       {/* Avatar Image/Initials */}
       <div className="player-avatar-image">
         {src ? (
-          <img src={src} alt={alt} loading="lazy" />
+          <img
+            src={src}
+            alt={alt}
+            loading="lazy"
+            onError={(e) => {
+              (e.target as HTMLImageElement).src = '/default-avatar.png';
+            }}
+          />
         ) : (
           <span className="player-avatar-initials">{initials}</span>
         )}

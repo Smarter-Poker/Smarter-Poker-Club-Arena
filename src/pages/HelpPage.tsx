@@ -62,6 +62,10 @@ const FAQ_ITEMS: FAQItem[] = [
 ];
 
 export default function HelpPage() {
+  useEffect(() => {
+    document.title = 'Help | Smarter Poker';
+  }, []);
+
   const navigate = useNavigate();
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');

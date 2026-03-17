@@ -252,6 +252,7 @@ export default function CreateUnionPage() {
                   value={form.description}
                   onChange={(e) => updateForm({ description: e.target.value })}
                   rows={4}
+                  maxLength={500}
                 />
               </div>
 

@@ -150,7 +150,15 @@ export function PlayerStats({
         <div className="player-stats__header">
           <div className="player-stats__avatar">
             {avatar ? (
-              <img loading="lazy" decoding="async" src={avatar} alt="" />
+              <img
+                loading="lazy"
+                decoding="async"
+                src={avatar}
+                alt=""
+                onError={(e) => {
+                  (e.target as HTMLImageElement).src = '/default-avatar.png';
+                }}
+              />
             ) : (
               <span>{playerName[0]?.toUpperCase()}</span>
             )}

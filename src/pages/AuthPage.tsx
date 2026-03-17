@@ -508,6 +508,7 @@ export default function AuthPage() {
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="your@email.com"
                 required
+                autoComplete="email"
               />
             </div>
 

@@ -124,6 +124,10 @@ class HomePageErrorBoundary extends Component<{ children: ReactNode }, ErrorBoun
 }
 
 function HomePageInner() {
+  useEffect(() => {
+    document.title = 'Home | Smarter Poker';
+  }, []);
+
   const navigate = useNavigate();
   const toast = useToast();
 

@@ -260,7 +260,16 @@ export class ServerTableEngine {
         .send({
           type: 'broadcast',
           event: 'time_bank_activated',
-          payload: { player_id: userId, table_id: this.tableId, additional_seconds: bankDuration },
+          payload: {
+            player_id: userId,
+            table_id: this.tableId,
+            additional_seconds: bankDuration,
+            uses_remaining: seatedPlayer.time_bank_uses_remaining ?? 0,
+            total_remaining:
+              (seatedPlayer.time_bank_uses_remaining ?? 0) > 0
+                ? (seatedPlayer.time_bank_uses_remaining ?? 0) * bankDuration
+                : 0,
+          },
         })
         .catch(() => {});
     } catch (e) {}

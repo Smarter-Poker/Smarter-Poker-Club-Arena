@@ -49,10 +49,6 @@ function getLobbyCache(): any[] | null {
   }
 }
 
-export default function LobbyPage() {
-  useEffect(() => {
-    document.title = 'Lobby | Smarter Poker';
-  }, []);
 function setLobbyCache(data: any[]) {
   try {
     sessionStorage.setItem('lobby_tables_cache', JSON.stringify(data.slice(0, 50)));
@@ -62,6 +58,10 @@ function setLobbyCache(data: any[]) {
 }
 
 export default function LobbyPage() {
+  useEffect(() => {
+    document.title = 'Lobby | Smarter Poker';
+  }, []);
+
   const navigate = useNavigate();
   const toast = useToast();
   const { user } = useAuthUser();

@@ -102,7 +102,15 @@ export function UserProfileEdit({ isOpen, onClose, initialData, onSave }: UserPr
         <div className="profile-content">
           <div className="avatar-section">
             <div className="current-avatar">
-              <img loading="lazy" decoding="async" src={formData.avatarUrl} alt="Avatar" />
+              <img
+                loading="lazy"
+                decoding="async"
+                src={formData.avatarUrl}
+                alt="Avatar"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).src = '/default-avatar.png';
+                }}
+              />
               <button
                 className="edit-avatar-btn"
                 onClick={() => setShowAvatarPicker(!showAvatarPicker)}

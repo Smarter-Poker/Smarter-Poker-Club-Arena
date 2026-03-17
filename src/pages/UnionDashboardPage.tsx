@@ -15,20 +15,10 @@ import { useAuthUser } from '../hooks/useAuthUser';
 import './AdminDashboardPage.css';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
+import { fmt, timeAgo } from '../utils/format';
 
 // ── Helpers ─────────────────────────────────────────────────
-const fmt = (n: number | null | undefined) => Number(n || 0).toLocaleString();
 const pct = (n: number | null | undefined) => `${((Number(n) || 0) * 100).toFixed(1)}%`;
-
-const timeAgo = (ts: string | null | undefined) => {
-  if (!ts) return '';
-  const mins = Math.floor((Date.now() - new Date(ts).getTime()) / 60000);
-  if (mins < 1) return 'Just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
-};
 
 type UnionTab =
   | 'overview'

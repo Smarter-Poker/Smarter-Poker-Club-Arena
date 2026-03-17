@@ -21,15 +21,9 @@ import './AdminDashboardPage.css';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { retryFetch } from '../utils/retryFetch';
+import { fmt, fmtChips } from '../utils/format';
 
 // ── Helpers ─────────────────────────────────────────────────
-const fmt = (n: number | null | undefined) => Number(n || 0).toLocaleString();
-const fmtChips = (n: number | null | undefined) => {
-  const v = Number(n || 0);
-  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
-  if (v >= 1_000) return `${(v / 1_000).toFixed(1)}K`;
-  return fmt(v);
-};
 const formatDate = (ts: string | null | undefined) => {
   if (!ts) return '';
   const d = new Date(ts);
@@ -2222,6 +2216,10 @@ function MintChipsTab({ clubId }: { clubId: string }) {
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function AdminDashboardPage() {
+  useEffect(() => {
+    document.title = 'Admin Dashboard | Smarter Poker';
+  }, []);
+
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { user } = useAuthUser();

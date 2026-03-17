@@ -42,7 +42,15 @@ export const NotificationItem: React.FC<NotificationItemProps> = ({
     >
       <div className="notif-icon">
         {avatarUrl ? (
-          <img loading="lazy" decoding="async" src={avatarUrl} alt="" />
+          <img
+            loading="lazy"
+            decoding="async"
+            src={avatarUrl}
+            alt=""
+            onError={(e) => {
+              (e.target as HTMLImageElement).src = '/default-avatar.png';
+            }}
+          />
         ) : (
           <span>{TYPE_ICONS[type] || ''}</span>
         )}

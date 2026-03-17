@@ -17,14 +17,8 @@ import PageSkeleton from '../components/common/PageSkeleton';
 import styles from './XMTTPage.module.css';
 
 import { useIsMounted } from '../hooks/useIsMounted';
+import { fmt, fmtChips } from '../utils/format';
 
-const fmt = (n: number) => Number(n || 0).toLocaleString();
-const fmtChips = (n: number) => {
-  const v = Number(n || 0);
-  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
-  if (v >= 1_000) return `${(v / 1_000).toFixed(1)}K`;
-  return fmt(v);
-};
 const formatDate = (ts: string | null) => {
   if (!ts) return '';
   return new Date(ts).toLocaleDateString(undefined, {

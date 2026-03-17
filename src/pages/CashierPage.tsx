@@ -132,6 +132,10 @@ function useCountAnimation(target: number, duration: number = 800) {
 }
 
 export default function CashierPage() {
+  useEffect(() => {
+    document.title = 'Cashier | Smarter Poker';
+  }, []);
+
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { clubId: routeClubId } = useParams<{ clubId?: string }>();
@@ -1214,6 +1218,7 @@ export default function CashierPage() {
               placeholder="0"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
+              inputMode="decimal"
             />
 
             {/* Quick amounts */}
@@ -1331,6 +1336,7 @@ export default function CashierPage() {
                 placeholder="Enter chip amount"
                 value={amount}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAmount(e.target.value)}
+                inputMode="decimal"
               />
             </div>
 
@@ -1668,6 +1674,7 @@ export default function CashierPage() {
                 placeholder="0"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
+                inputMode="decimal"
               />
 
               {action === 'mint' && amount && (

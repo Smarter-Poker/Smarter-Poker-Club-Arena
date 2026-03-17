@@ -86,6 +86,10 @@ function UnionCard({ union, idx }: { union: Union; idx: number }) {
 }
 
 export default function UnionsPage() {
+  useEffect(() => {
+    document.title = 'Unions | Smarter Poker';
+  }, []);
+
   const navigate = useNavigate();
   const toast = useToast();
   const [unions, setUnions] = useState<Union[]>([]);

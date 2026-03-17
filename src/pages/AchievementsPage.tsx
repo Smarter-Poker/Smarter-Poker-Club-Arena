@@ -233,6 +233,10 @@ const ACHIEVEMENTS: Omit<Achievement, 'progress' | 'unlocked' | 'unlockedAt'>[] 
 ];
 
 export default function AchievementsPage() {
+  useEffect(() => {
+    document.title = 'Achievements | Smarter Poker';
+  }, []);
+
   const navigate = useNavigate();
   useVisibilityRefresh(() => loadAchievements());
   const { user } = useAuthUser();

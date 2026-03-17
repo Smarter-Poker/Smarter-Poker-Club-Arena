@@ -36,7 +36,15 @@ export const PlayerCard: React.FC<PlayerCardProps> = ({
     <div className="player-card" onClick={onClick}>
       <div className="player-avatar">
         {avatarUrl ? (
-          <img loading="lazy" decoding="async" src={avatarUrl} alt={displayName} />
+          <img
+            loading="lazy"
+            decoding="async"
+            src={avatarUrl}
+            alt={displayName}
+            onError={(e) => {
+              (e.target as HTMLImageElement).src = '/default-avatar.png';
+            }}
+          />
         ) : (
           <span>{displayName[0]}</span>
         )}

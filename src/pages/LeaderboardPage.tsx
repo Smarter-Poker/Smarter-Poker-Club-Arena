@@ -94,6 +94,10 @@ const PERIOD_OPTIONS: { value: LeaderboardPeriod; label: string }[] = [
 ];
 
 export default function LeaderboardPage() {
+  useEffect(() => {
+    document.title = 'Leaderboard | Smarter Poker';
+  }, []);
+
   const navigate = useNavigate();
   useVisibilityRefresh(() => loadLeaderboard());
   const { user } = useAuthUser();

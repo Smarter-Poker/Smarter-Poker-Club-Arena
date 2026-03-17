@@ -135,15 +135,18 @@ export class TableWebSocket {
         })
         .on('broadcast', { event: 'time_bank_activated' }, ({ payload }) => {
           // Fire MasterBus event so UI timers reload for opponents!
-          import('../core/MasterBus').then(({ masterBus }) => {
-            masterBus.emit('TIME_BANK_ACTIVATED', {
-              playerId: payload.player_id,
-              tableId: payload.table_id,
-              secondsGranted: payload.additional_seconds,
-              usesRemaining: payload.uses_remaining ?? 0,
-              totalRemaining: payload.total_remaining ?? 0,
-            });
-          });
+          import('../core/MasterBus').then(
+            ({ masterBus }) => {
+              masterBus.emit('TIME_BANK_ACTIVATED', {
+                playerId: payload.player_id,
+                tableId: payload.table_id,
+                secondsGranted: payload.additional_seconds,
+                usesRemaining: payload.uses_remaining ?? 0,
+                totalRemaining: payload.total_remaining ?? 0,
+              });
+            },
+            (err) => console.warn('[TableWS] Failed to import MasterBus:', err)
+          );
         })
         .on('presence', { event: 'sync' }, () => {
           this.handlePresenceSync();

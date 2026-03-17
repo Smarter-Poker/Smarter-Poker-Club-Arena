@@ -262,6 +262,10 @@ const ColorPicker = ({
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export default function SettingsPage() {
+  useEffect(() => {
+    document.title = 'Settings | Smarter Poker';
+  }, []);
+
   const [searchParams] = useSearchParams();
   const toast = useToast();
   const { user: authUser } = useAuthUser();

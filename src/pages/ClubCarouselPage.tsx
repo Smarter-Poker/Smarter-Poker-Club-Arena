@@ -67,6 +67,10 @@ const getFrameForClub = (clubId: number): string => {
 };
 
 export default function ClubCarouselPage() {
+  useEffect(() => {
+    document.title = 'My Clubs | Smarter Poker';
+  }, []);
+
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { user } = useAuthUser();

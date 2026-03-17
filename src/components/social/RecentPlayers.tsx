@@ -114,7 +114,15 @@ export const RecentPlayers: React.FC<RecentPlayersProps> = ({
             >
               <div className="player-avatar">
                 {player.avatar ? (
-                  <img loading="lazy" decoding="async" src={player.avatar} alt={player.username} />
+                  <img
+                    loading="lazy"
+                    decoding="async"
+                    src={player.avatar}
+                    alt={player.username}
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = '/default-avatar.png';
+                    }}
+                  />
                 ) : (
                   <span>{player.username[0]}</span>
                 )}

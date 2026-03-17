@@ -378,6 +378,11 @@ export default function TablePage({
   // Prevent Chrome from throttling this tab (keeps horse timers alive)
   useTabKeepAlive();
 
+  // ─── PAGE TITLE ───
+  useEffect(() => {
+    document.title = tableId ? `${tableId} | Smarter Poker` : 'Table | Smarter Poker';
+  }, [tableId]);
+
   // ─── MOBILE VIEWPORT LOCK — Prevent accidental pinch-zoom during poker play ───
   useEffect(() => {
     const meta = document.querySelector('meta[name="viewport"]');

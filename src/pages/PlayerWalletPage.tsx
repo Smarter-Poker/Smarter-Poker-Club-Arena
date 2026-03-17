@@ -166,6 +166,10 @@ function WalletCard({
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export default function PlayerWalletPage() {
+  useEffect(() => {
+    document.title = 'Wallet | Smarter Poker';
+  }, []);
+
   const navigate = useNavigate();
   const { user } = useAuthUser();
   const { balances, diamonds, loadBalances, loadDiamonds, internalTransfer } = useWalletStore();
@@ -469,6 +473,7 @@ export default function PlayerWalletPage() {
                   value={transferAmount}
                   onChange={(e) => setTransferAmount(e.target.value)}
                   aria-label="Transfer amount"
+                  inputMode="decimal"
                 />
               </div>
 

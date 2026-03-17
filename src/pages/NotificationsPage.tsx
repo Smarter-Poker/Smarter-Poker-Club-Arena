@@ -70,6 +70,10 @@ function setCachedNotifs(userId: string, data: any) {
 }
 
 export default function NotificationsPage() {
+  useEffect(() => {
+    document.title = 'Notifications | Smarter Poker';
+  }, []);
+
   const navigate = useNavigate();
   const { user } = useAuthUser();
   const toast = useToast();

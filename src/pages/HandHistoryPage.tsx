@@ -46,6 +46,10 @@ function setCachedHands(userId: string, data: HandRecord[]) {
 type HistoryFilter = 'all' | 'won' | 'lost' | 'big-pots';
 
 export default function HandHistoryPage() {
+  useEffect(() => {
+    document.title = 'Hand History | Smarter Poker';
+  }, []);
+
   const navigate = useNavigate();
   const { user } = useAuthUser();
   const toast = useToast();

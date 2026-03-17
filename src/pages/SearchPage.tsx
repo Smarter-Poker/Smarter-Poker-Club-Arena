@@ -24,6 +24,10 @@ interface SearchResult {
 }
 
 export default function SearchPage() {
+  useEffect(() => {
+    document.title = 'Search | Smarter Poker';
+  }, []);
+
   const navigate = useNavigate();
   const toast = useToast();
   const [query, setQuery] = useState('');

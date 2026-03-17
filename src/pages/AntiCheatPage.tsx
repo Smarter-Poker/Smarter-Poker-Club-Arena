@@ -19,24 +19,7 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import { retryFetch } from '../utils/retryFetch';
 import { exportToCSV } from '../lib/export';
 import { resolveClubUUID } from '../utils/clubIdResolver';
-
-// ── Helpers ─────────────────────────────────────────────────
-const fmt = (n: number) => Number(n || 0).toLocaleString();
-const timeAgo = (ts: string | null) => {
-  if (!ts) return '—';
-  const mins = Math.floor((Date.now() - new Date(ts).getTime()) / 60000);
-  if (mins < 1) return 'Just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
-};
-const fmtChips = (n: number) => {
-  const v = Number(n || 0);
-  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
-  if (v >= 1_000) return `${(v / 1_000).toFixed(1)}K`;
-  return fmt(v);
-};
+import { fmt, fmtChips, timeAgo } from '../utils/format';
 
 type Severity = 'critical' | 'high' | 'medium' | 'low';
 

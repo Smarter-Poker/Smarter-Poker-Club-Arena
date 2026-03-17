@@ -32,6 +32,10 @@ type TournFilter = 'all' | 'freeroll' | 'micro' | 'highroller';
 const GUEST_USER = { id: 'guest', username: 'Guest' };
 
 export default function TournamentPage() {
+  useEffect(() => {
+    document.title = 'Tournaments | Smarter Poker';
+  }, []);
+
   const { clubId, tournamentId } = useParams();
   const navigate = useNavigate();
   const { user } = useAuthUser();

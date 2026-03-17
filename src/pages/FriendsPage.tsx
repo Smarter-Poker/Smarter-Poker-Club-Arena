@@ -67,6 +67,10 @@ function setCachedFriends(userId: string, data: any) {
 }
 
 export default function FriendsPage() {
+  useEffect(() => {
+    document.title = 'Friends | Smarter Poker';
+  }, []);
+
   const navigate = useNavigate();
   useVisibilityRefresh(() => loadFriends());
   const { user } = useAuthUser();

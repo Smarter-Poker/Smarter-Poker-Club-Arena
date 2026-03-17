@@ -11,6 +11,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { triggerHaptic } from '../services/HapticService';
+import { useMasterBusSubscription } from '../hooks/useMasterBusSubscription';
 import type { ChatMessage } from '../components/table/TableChat';
 
 // Reaction event type (shared with TableReactions)
@@ -135,6 +136,62 @@ export function useTableChat(
       pendingTimersRef.current.clear();
     };
   }, [tableId]);
+
+  // ── Bus listeners: receive incoming system events representing game actions ──
+  useMasterBusSubscription('PRE_ACTION_EXECUTED', (data: any) => {
+    if (data && (!tableId || data.tableId === tableId)) {
+      const actionText =
+        data.action === 'fold'
+          ? 'auto-folded'
+          : data.action === 'check'
+            ? 'auto-checked'
+            : 'auto-called';
+
+      setChatMessages((prev) => {
+        const sysMsg: ChatMessage = {
+          id: `sys-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          type: 'SYSTEM',
+          playerId: data.playerId,
+          playerName: 'System',
+          content: `Player ${data.playerId.substring(0, 4)} ${actionText}`,
+          timestamp: new Date(),
+        };
+        return [...prev.slice(-49), sysMsg];
+      });
+    }
+  });
+
+  useMasterBusSubscription('STRADDLE_TOGGLED', (data: any) => {
+    if (data && (!tableId || data.tableId === tableId)) {
+      setChatMessages((prev) => {
+        const sysMsg: ChatMessage = {
+          id: `sys-straddle-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          type: 'SYSTEM',
+          playerId: data.playerId,
+          playerName: 'System',
+          content: `Player ${data.playerId.substring(0, 4)} turned ${data.enabled ? 'ON' : 'OFF'} Auto-Straddle`,
+          timestamp: new Date(),
+        };
+        return [...prev.slice(-49), sysMsg];
+      });
+    }
+  });
+
+  useMasterBusSubscription('TIME_BANK_ACTIVATED', (data: any) => {
+    if (data && (!tableId || data.tableId === tableId)) {
+      setChatMessages((prev) => {
+        const sysMsg: ChatMessage = {
+          id: `sys-timebank-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          type: 'SYSTEM',
+          playerId: data.playerId,
+          playerName: 'System',
+          content: `Player ${data.playerId.substring(0, 4)} activated Time Bank (+${data.addedSeconds}s)`,
+          timestamp: new Date(),
+        };
+        return [...prev.slice(-49), sysMsg];
+      });
+    }
+  });
 
   // Parse incoming messages — returns true if message was a special command (reaction/throw)
   const parseIncomingMessage = useCallback((content: string, _senderId: string): boolean => {

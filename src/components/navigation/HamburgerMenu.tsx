@@ -406,8 +406,11 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           { label: 'Tournament Lobby', path: '/tournament-lobby' },
           { label: 'Tournament Results', path: '/tournament-results' },
           { label: 'Hand History', path: '/hand-history' },
+          { label: 'Hand Replayer', path: '/hands' },
           { label: 'Session History', path: '/history' },
+          { label: 'Player Sessions', path: '/player-sessions' },
           { label: 'Leaderboard', path: '/leaderboard' },
+          { label: 'Marketplace', path: '/marketplace' },
         ].map((item, i) => (
           <div
             key={`games-${i}`}
@@ -443,6 +446,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
         {[
           { label: 'My Clubs', path: '/clubs' },
           { label: 'Create Club', path: '/clubs/create' },
+          { label: 'Find Player', path: '/search' },
           { label: 'Messages', path: '/messages' },
           { label: 'Club Messages', path: '/messages/clubs' },
           { label: 'Players', path: '/players' },
@@ -562,8 +566,10 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
         <div style={sectionHeaderStyle}>Agent & Admin</div>
         {[
           { label: 'Agent Management', path: '/agent-management' },
+          { label: 'Agent Dashboard', path: '/agent-dashboard' },
           { label: 'Club Dashboard', path: '/data' },
           { label: 'Club Settings', path: '/admin' },
+          { label: 'Anti-Cheat', path: '/anti-cheat' },
         ].map((item, i) => (
           <div
             key={`admin-${i}`}

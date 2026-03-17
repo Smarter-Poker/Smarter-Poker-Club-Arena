@@ -11,7 +11,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import HamburgerMenu from '../components/navigation/HamburgerMenu';
+
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -75,7 +75,6 @@ export default function ClubCarouselPage() {
     if (user?.id) loadUserData();
   });
   const toast = useToast();
-  const [menuOpen, setMenuOpen] = useState(false);
 
   // SWR — instant render from cache
   const [clubs, setClubs] = useState<UserClub[]>(() => {
@@ -679,7 +678,6 @@ export default function ClubCarouselPage() {
 
   return (
     <>
-      <HamburgerMenu isOpen={menuOpen} onClose={() => setMenuOpen(false)} />
       <div
         className="club-carousel"
         ref={containerRef}
@@ -737,9 +735,6 @@ export default function ClubCarouselPage() {
               </span>
             </div>
           </div>
-          <button className="header__menu" onClick={() => setMenuOpen(true)}>
-            ≡
-          </button>
         </header>
 
         {/* Wallet Row */}

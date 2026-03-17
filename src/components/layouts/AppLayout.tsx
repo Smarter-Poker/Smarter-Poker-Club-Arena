@@ -16,6 +16,7 @@ import styles from './AppLayout.module.css';
 import ClubArenaWelcomeModal, { useClubArenaWelcome } from '../modals/ClubArenaWelcomeModal';
 import ClubAnnouncementBanner from '../club/ClubAnnouncementBanner';
 import GlobalHeader from '../navigation/GlobalHeader';
+import FloatingHamburger from '../navigation/FloatingHamburger';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { masterBus } from '../../core/MasterBus';
 
@@ -89,6 +90,9 @@ export default function AppLayout() {
           ⚠️ You are offline — changes will sync when connection is restored
         </div>
       )}
+
+      {/* Floating Hamburger — Always visible, even in iframe mode */}
+      <FloatingHamburger />
 
       {/* Main Content */}
       <main id="main-content" className={styles.main}>

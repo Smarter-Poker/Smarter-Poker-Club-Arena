@@ -502,14 +502,16 @@ function HomePageInner() {
   // Hardcoded club_id for Shark Club — permanent fixture of the platform
   const SHARK_CLUB_NUMERIC_ID = 25450;
   const SHARK_SWR_KEY = 'shark_club_stats_swr';
+  const SWR_TTL_MS = 5 * 60 * 1000; // 5-minute cache TTL
 
-  // SWR: show cached Shark Club stats instantly on mount
+  // SWR: show cached Shark Club stats instantly on mount (skip if >5 min old)
   useEffect(() => {
     try {
       const cached = sessionStorage.getItem(SHARK_SWR_KEY);
       if (cached) {
         const parsed = JSON.parse(cached);
-        if (parsed.totalMembers > 0) setSharkClubStats(parsed);
+        const age = parsed.cachedAt ? Date.now() - parsed.cachedAt : Infinity;
+        if (parsed.totalMembers > 0 && age < SWR_TTL_MS) setSharkClubStats(parsed);
       }
     } catch {
       /* */
@@ -552,14 +554,23 @@ function HomePageInner() {
         }
 
         let activePlayers = 0;
-        if (tablesResult.status === 'fulfilled' && tablesResult.value.data?.length) {
-          const tableIds = tablesResult.value.data.map((t: any) => t.id);
-          const { count: seatCount } = await supabase
-            .from('table_seats')
-            .select('*', { count: 'exact', head: true })
-            .in('table_id', tableIds)
-            .is('left_at', null);
-          activePlayers = seatCount || 0;
+        // Try batch RPC first (single query), fall back to 2-query pattern if RPC not deployed
+        try {
+          const { data: rpcCount } = await supabase.rpc('fn_get_active_player_count', {
+            p_club_id: club.id,
+          });
+          activePlayers = Number(rpcCount) || 0;
+        } catch {
+          // RPC not deployed yet — use legacy 2-query fallback
+          if (tablesResult.status === 'fulfilled' && tablesResult.value.data?.length) {
+            const tableIds = tablesResult.value.data.map((t: any) => t.id);
+            const { count: seatCount } = await supabase
+              .from('table_seats')
+              .select('*', { count: 'exact', head: true })
+              .in('table_id', tableIds)
+              .is('left_at', null);
+            activePlayers = seatCount || 0;
+          }
         }
 
         // Compute live club level from DB thresholds
@@ -581,9 +592,9 @@ function HomePageInner() {
         };
         setSharkClubStats(stats);
 
-        // SWR: cache for instant display on revisit
+        // SWR: cache for instant display on revisit (with TTL timestamp)
         try {
-          sessionStorage.setItem(SHARK_SWR_KEY, JSON.stringify(stats));
+          sessionStorage.setItem(SHARK_SWR_KEY, JSON.stringify({ ...stats, cachedAt: Date.now() }));
         } catch {
           /* */
         }

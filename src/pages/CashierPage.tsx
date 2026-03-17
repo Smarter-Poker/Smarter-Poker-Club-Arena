@@ -429,8 +429,12 @@ export default function CashierPage() {
   // LOAD TRANSACTIONS
   // ─────────────────────────────────────────────────────────────────────────────
 
+  const txLoadingRef = useRef(false); // Prevent duplicate loadTransactions calls
+
   const loadTransactions = useCallback(async () => {
     if (!user?.id) return;
+    if (txLoadingRef.current) return; // Deduplication — skip if already loading
+    txLoadingRef.current = true;
     setLoadingTx(true);
     try {
       const { data, error } = await retryFetch(
@@ -449,9 +453,15 @@ export default function CashierPage() {
 
       if (!error && data && isMounted.current) {
         setTransactions(data);
-        // SWR: cache for instant display on revisit
+        // SWR: cache for instant display on revisit (with TTL timestamp)
         try {
-          sessionStorage.setItem(`cashier_tx_cache_${user.id}`, JSON.stringify(data.slice(0, 30)));
+          sessionStorage.setItem(
+            `cashier_tx_cache_${user.id}`,
+            JSON.stringify({
+              data: data.slice(0, 30),
+              cachedAt: Date.now(),
+            })
+          );
         } catch {
           /* storage full */
         }
@@ -459,19 +469,23 @@ export default function CashierPage() {
     } catch {
       /* silent */
     }
+    txLoadingRef.current = false;
     if (isMounted.current) setLoadingTx(false);
   }, [user?.id]);
 
   useEffect(() => {
     if (action === 'history') {
       // SWR: show cached transactions instantly while fresh data loads
+      // TTL: skip caches older than 5 minutes
+      const SWR_TTL_MS = 5 * 60 * 1000;
       if (user?.id) {
         try {
           const cached = sessionStorage.getItem(`cashier_tx_cache_${user.id}`);
           if (cached) {
             const parsed = JSON.parse(cached);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              setTransactions(parsed);
+            const age = parsed.cachedAt ? Date.now() - parsed.cachedAt : Infinity;
+            if (Array.isArray(parsed.data) && parsed.data.length > 0 && age < SWR_TTL_MS) {
+              setTransactions(parsed.data);
             }
           }
         } catch {

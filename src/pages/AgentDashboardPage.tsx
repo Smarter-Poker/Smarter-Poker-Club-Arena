@@ -142,6 +142,7 @@ export default function AgentDashboardPage() {
   const [agents, setAgents] = useState<DownlineMember[]>([]);
 
   const mountedRef = useIsMounted();
+  const SWR_TTL_MS = 5 * 60 * 1000; // 5-minute cache TTL
 
   // Auto-clear success
   useEffect(() => {
@@ -279,6 +280,25 @@ export default function AgentDashboardPage() {
         setCommissions(comms || []);
         setRecentTx(txns || []);
         setAgents(agentList);
+
+        // SWR: cache successful load for instant display on revisit
+        try {
+          const cacheKey = `agent_dashboard_swr_${user?.id}_${targetClubId}`;
+          sessionStorage.setItem(
+            cacheKey,
+            JSON.stringify({
+              players: enrichedPlayers.slice(0, 30),
+              pendingCashouts: cashouts || [],
+              commissions: (comms || []).slice(0, 20),
+              recentTx: (txns || []).slice(0, 30),
+              agents: agentList.slice(0, 20),
+              role: membership?.role || 'agent',
+              cachedAt: Date.now(),
+            })
+          );
+        } catch {
+          /* storage full */
+        }
       } catch (err: any) {
         if (mountedRef.current) setError(err.message);
       } finally {
@@ -323,6 +343,30 @@ export default function AgentDashboardPage() {
       cancelled = true;
     };
   }, [user?.id, searchParams, loadDashboard]);
+
+  // SWR: try to display cached data instantly on mount
+  useEffect(() => {
+    if (!user?.id || !clubId) return;
+    try {
+      const cacheKey = `agent_dashboard_swr_${user.id}_${clubId}`;
+      const cached = sessionStorage.getItem(cacheKey);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        const age = parsed.cachedAt ? Date.now() - parsed.cachedAt : Infinity;
+        if (age < SWR_TTL_MS && parsed.players) {
+          setPlayers(parsed.players);
+          if (parsed.pendingCashouts) setPendingCashouts(parsed.pendingCashouts);
+          if (parsed.commissions) setCommissions(parsed.commissions);
+          if (parsed.recentTx) setRecentTx(parsed.recentTx);
+          if (parsed.agents) setAgents(parsed.agents);
+          if (parsed.role) setRole(parsed.role);
+          setLoading(false);
+        }
+      }
+    } catch {
+      /* corrupt cache */
+    }
+  }, [user?.id, clubId]);
 
   // ── Bus Listeners (debounced + clubId-filtered) ──────────
   // Use non-blocking refresh for bus events (doesn't show full loading skeleton)

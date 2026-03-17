@@ -25,6 +25,7 @@ import { PlayerAvatar } from '../components/avatars/PlayerAvatar';
 import PlayerBlockModal from '../components/social/PlayerBlockModal';
 import './PublicProfilePage.css';
 import PageSkeleton from '../components/common/PageSkeleton';
+import { generateDefaultAvatar } from '../utils/avatarGenerator';
 
 // VIP tier colors
 const VIP_COLORS: Record<string, string> = {
@@ -322,7 +323,7 @@ export default function PublicProfilePage() {
         </button>
         <div className="profile-hero">
           <PlayerAvatar
-            src={profile.avatarUrl || '/default-avatar.png'}
+            src={profile.avatarUrl || generateDefaultAvatar()}
             name={profile.username}
             size="xl"
             showPresence={false}
@@ -468,11 +469,11 @@ export default function PublicProfilePage() {
                 onClick={() => navigate(`/profile/${friend.id}`)}
               >
                 <img
-                  src={friend.avatarUrl || '/default-avatar.png'}
+                  src={friend.avatarUrl || generateDefaultAvatar()}
                   alt={friend.username}
                   className="mutual-avatar"
                   onError={(e) => {
-                    (e.target as HTMLImageElement).src = '/default-avatar.png';
+                    (e.target as HTMLImageElement).src = generateDefaultAvatar();
                   }}
                 />
                 <span>{friend.username}</span>

@@ -13,6 +13,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { haptic } from '../../services/SoundService';
 import './WaitListModal.css';
+import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -172,7 +173,7 @@ export function WaitListModal({
                           src={player.avatar}
                           alt=""
                           onError={(e) => {
-                            (e.target as HTMLImageElement).src = '/default-avatar.png';
+                            (e.target as HTMLImageElement).src = generateDefaultAvatar();
                           }}
                         />
                       ) : (

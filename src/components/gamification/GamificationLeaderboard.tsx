@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { supabase } from '../../lib/supabase';
 import './GamificationLeaderboard.css';
+import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 
 interface LeaderboardEntry {
   id: string;
@@ -139,11 +140,11 @@ export default function GamificationLeaderboard() {
               <img
                 loading="lazy"
                 decoding="async"
-                src={entry.avatarUrl || '/assets/default-avatar.png'}
+                src={entry.avatarUrl || generateDefaultAvatar()}
                 alt={entry.username}
                 className="gl-avatar"
                 onError={(e) => {
-                  (e.target as HTMLImageElement).src = '/assets/default-avatar.png';
+                  (e.target as HTMLImageElement).src = generateDefaultAvatar();
                 }}
               />
               <div className="gl-info">

@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 import './AvatarCustomizer.css';
 
 interface AvatarCustomizerProps {
@@ -83,7 +84,7 @@ export const AvatarCustomizer: React.FC<AvatarCustomizerProps> = ({ currentAvata
             src={customImage}
             alt="Custom avatar"
             onError={(e) => {
-              (e.target as HTMLImageElement).src = '/default-avatar.png';
+              (e.target as HTMLImageElement).src = generateDefaultAvatar();
             }}
           />
         ) : (

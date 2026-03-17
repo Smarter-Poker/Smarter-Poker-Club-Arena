@@ -8,6 +8,7 @@ import { useIsMounted } from '../../hooks/useIsMounted';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { formatRelativeShort as formatTime } from '@/lib/date';
 import './RecentPlayers.css';
+import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 
 interface RecentPlayer {
   id: string;
@@ -120,7 +121,7 @@ export const RecentPlayers: React.FC<RecentPlayersProps> = ({
                     src={player.avatar}
                     alt={player.username}
                     onError={(e) => {
-                      (e.target as HTMLImageElement).src = '/default-avatar.png';
+                      (e.target as HTMLImageElement).src = generateDefaultAvatar();
                     }}
                   />
                 ) : (

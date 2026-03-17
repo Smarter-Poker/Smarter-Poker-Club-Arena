@@ -1,5 +1,6 @@
 import React from 'react';
 import './Comment.css';
+import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 
 interface CommentProps {
   author: {
@@ -31,7 +32,7 @@ export const Comment: React.FC<CommentProps> = ({
             src={author.avatar}
             alt={author.name}
             onError={(e) => {
-              (e.target as HTMLImageElement).src = '/default-avatar.png';
+              (e.target as HTMLImageElement).src = generateDefaultAvatar();
             }}
           />
         ) : (

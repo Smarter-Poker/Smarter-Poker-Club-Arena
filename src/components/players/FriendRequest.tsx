@@ -1,6 +1,7 @@
 import React from 'react';
 import { formatRelativeShort } from '../../lib/date';
 import './FriendRequest.css';
+import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 
 interface FriendRequestProps {
   id: string;
@@ -37,7 +38,7 @@ export const FriendRequest: React.FC<FriendRequestProps> = ({
             src={avatarUrl}
             alt={displayName}
             onError={(e) => {
-              (e.target as HTMLImageElement).src = '/default-avatar.png';
+              (e.target as HTMLImageElement).src = generateDefaultAvatar();
             }}
           />
         ) : (

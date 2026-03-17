@@ -14,6 +14,7 @@
  */
 
 import React, { useMemo } from 'react';
+import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 import './PlayerAvatar.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -202,7 +203,7 @@ export const PlayerAvatar: React.FC<PlayerAvatarProps> = ({
             alt={alt}
             loading="lazy"
             onError={(e) => {
-              (e.target as HTMLImageElement).src = '/default-avatar.png';
+              (e.target as HTMLImageElement).src = generateDefaultAvatar();
             }}
           />
         ) : (

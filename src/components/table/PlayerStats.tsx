@@ -12,6 +12,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import './PlayerStats.css';
+import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -156,7 +157,7 @@ export function PlayerStats({
                 src={avatar}
                 alt=""
                 onError={(e) => {
-                  (e.target as HTMLImageElement).src = '/default-avatar.png';
+                  (e.target as HTMLImageElement).src = generateDefaultAvatar();
                 }}
               />
             ) : (

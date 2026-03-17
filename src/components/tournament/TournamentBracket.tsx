@@ -10,6 +10,7 @@ import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import styles from './TournamentBracket.module.css';
+import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 
 interface BracketPlayer {
   userId: string;
@@ -192,7 +193,7 @@ export default function TournamentBracket({ tournamentId, totalPlayers }: Tourna
                     src={player.avatarUrl}
                     alt=""
                     onError={(e) => {
-                      (e.target as HTMLImageElement).src = '/default-avatar.png';
+                      (e.target as HTMLImageElement).src = generateDefaultAvatar();
                     }}
                   />
                 ) : (
@@ -232,7 +233,7 @@ export default function TournamentBracket({ tournamentId, totalPlayers }: Tourna
                       src={player.avatarUrl}
                       alt=""
                       onError={(e) => {
-                        (e.target as HTMLImageElement).src = '/default-avatar.png';
+                        (e.target as HTMLImageElement).src = generateDefaultAvatar();
                       }}
                     />
                   ) : (

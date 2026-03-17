@@ -22,6 +22,7 @@ import { useAuthUser } from '../../hooks/useAuthUser';
 import { postToParent } from '../../utils/parentOrigin';
 import HamburgerMenu from './HamburgerMenu';
 import styles from './GlobalHeader.module.css';
+import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -218,7 +219,7 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
                   alt=""
                   className={styles.profileImg}
                   onError={(e) => {
-                    (e.target as HTMLImageElement).src = '/default-avatar.png';
+                    (e.target as HTMLImageElement).src = generateDefaultAvatar();
                   }}
                 />
               ) : (

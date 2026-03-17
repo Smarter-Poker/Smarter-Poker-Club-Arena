@@ -41,6 +41,7 @@ import { retryFetch } from '../utils/retryFetch';
 import styles from './ProfilePage.module.css';
 
 import { useIsMounted } from '../hooks/useIsMounted';
+import { generateDefaultAvatar } from '../utils/avatarGenerator';
 
 // #5: Lazy-load Recharts (387KB) — only imported when History tab is opened
 const LazyProfitChart = lazy(() => import('../components/profile/ProfitChart'));
@@ -832,7 +833,7 @@ export default function ProfilePage() {
               className={styles.avatar}
               loading="lazy"
               onError={(e) => {
-                (e.target as HTMLImageElement).src = '/default-avatar.png';
+                (e.target as HTMLImageElement).src = generateDefaultAvatar();
               }}
             />
           ) : (

@@ -21,6 +21,7 @@ import MessageSearchBar from './MessageSearchBar';
 import ForwardMessageModal from './ForwardMessageModal';
 import ScheduledMessagePanel from './ScheduledMessagePanel';
 import styles from './MessageThread.module.css';
+import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 
 interface Reaction {
   emoji: string;
@@ -111,7 +112,7 @@ export default function MessageThread({ conversationId, onBack }: MessageThreadP
           participantData.map((p: any) => ({
             userId: p.user_id,
             username: p.profiles?.username || 'Unknown',
-            avatar: p.profiles?.avatar_url || '/default-avatar.png',
+            avatar: p.profiles?.avatar_url || generateDefaultAvatar(),
             isOnline: p.profiles?.is_online || false,
             isTyping: p.is_typing || false,
           }))
@@ -165,7 +166,7 @@ export default function MessageThread({ conversationId, onBack }: MessageThreadP
               conversationId: m.conversation_id,
               userId: m.sender_id,
               userFullname: m.profiles?.username || 'Unknown',
-              userPicture: m.profiles?.avatar_url || '/default-avatar.png',
+              userPicture: m.profiles?.avatar_url || generateDefaultAvatar(),
               content: m.content,
               imageUrl: m.image_url,
               audioUrl: m.audio_url,
@@ -275,7 +276,7 @@ export default function MessageThread({ conversationId, onBack }: MessageThreadP
           conversationId: data.conversation_id,
           userId: data.sender_id,
           userFullname: user.username || 'You',
-          userPicture: user.avatar_url || '/default-avatar.png',
+          userPicture: user.avatar_url || generateDefaultAvatar(),
           content: data.content,
           imageUrl: data.image_url,
           audioUrl: data.audio_url,

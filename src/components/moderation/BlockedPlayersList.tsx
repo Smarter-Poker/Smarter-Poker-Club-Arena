@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
 import './BlockedPlayersList.css';
+import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 
 interface BlockedPlayer {
   id: string;
@@ -134,7 +135,7 @@ export const BlockedPlayersList: React.FC<BlockedPlayersListProps> = ({ onUnbloc
                     src={player.avatar}
                     alt=""
                     onError={(e) => {
-                      (e.target as HTMLImageElement).src = '/default-avatar.png';
+                      (e.target as HTMLImageElement).src = generateDefaultAvatar();
                     }}
                   />
                 ) : (

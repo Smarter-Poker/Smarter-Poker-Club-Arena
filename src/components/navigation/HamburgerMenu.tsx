@@ -15,6 +15,7 @@ import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
 import { masterBus } from '../../core/MasterBus';
 import { STORAGE_KEYS } from '../../lib/storage';
+import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 
 interface HamburgerMenuProps {
   isOpen: boolean;
@@ -339,7 +340,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           <img
             loading="lazy"
             decoding="async"
-            src={avatarUrl || '/default-avatar.png'}
+            src={avatarUrl || generateDefaultAvatar()}
             alt=""
             style={{
               width: 48,

@@ -9,6 +9,7 @@
  */
 
 import React from 'react';
+import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 🎨 FACEBOOK COLOR PALETTE
@@ -47,7 +48,7 @@ export const FBAvatar: React.FC<FBAvatarProps> = ({ src, name, size = 40, online
     <img
       loading="lazy"
       decoding="async"
-      src={src || '/default-avatar.png'}
+      src={src || generateDefaultAvatar()}
       alt={name || ''}
       style={{
         width: size,

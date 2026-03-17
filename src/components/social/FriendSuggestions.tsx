@@ -18,6 +18,7 @@ import { useToast } from '../common/Toast';
 import { masterBus } from '../../core/MasterBus';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import styles from './FriendSuggestions.module.css';
+import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 
 export default function FriendSuggestions() {
   const navigate = useNavigate();
@@ -123,12 +124,12 @@ export default function FriendSuggestions() {
             <img
               loading="lazy"
               decoding="async"
-              src={suggestion.avatarUrl || '/default-avatar.png'}
+              src={suggestion.avatarUrl || generateDefaultAvatar()}
               alt={suggestion.username}
               className={styles.avatar}
               onClick={() => navigate(`/profile/${suggestion.userId}`)}
               onError={(e) => {
-                (e.target as HTMLImageElement).src = '/default-avatar.png';
+                (e.target as HTMLImageElement).src = generateDefaultAvatar();
               }}
             />
             <span className={styles.name} onClick={() => navigate(`/profile/${suggestion.userId}`)}>

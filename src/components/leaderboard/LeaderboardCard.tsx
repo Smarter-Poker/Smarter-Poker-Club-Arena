@@ -11,6 +11,7 @@ import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { promotionService, LeaderboardEntry } from '../../services/PromotionService';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import styles from './LeaderboardCard.module.css';
+import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 
 interface LeaderboardCardProps {
   promotionId: string;
@@ -154,7 +155,7 @@ function LeaderboardCardInner({
                         src={entry.avatarUrl}
                         alt=""
                         onError={(e) => {
-                          (e.target as HTMLImageElement).src = '/default-avatar.png';
+                          (e.target as HTMLImageElement).src = generateDefaultAvatar();
                         }}
                       />
                     ) : (
@@ -196,7 +197,7 @@ function LeaderboardCardInner({
                     src={userRank.avatarUrl}
                     alt=""
                     onError={(e) => {
-                      (e.target as HTMLImageElement).src = '/default-avatar.png';
+                      (e.target as HTMLImageElement).src = generateDefaultAvatar();
                     }}
                   />
                 ) : (

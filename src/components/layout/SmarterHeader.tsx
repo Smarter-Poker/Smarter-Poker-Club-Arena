@@ -14,6 +14,7 @@ import { messagingService } from '../../services/MessagingService';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { useState, useEffect } from 'react';
 import './SmarterHeader.css';
+import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 
 interface SmarterHeaderProps {
   showBackButton?: boolean;
@@ -113,7 +114,7 @@ export default function SmarterHeader({
               src={user.avatar_url}
               alt=""
               onError={(e) => {
-                (e.target as HTMLImageElement).src = '/default-avatar.png';
+                (e.target as HTMLImageElement).src = generateDefaultAvatar();
               }}
             />
           ) : (

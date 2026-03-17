@@ -16,6 +16,7 @@ import { avatarService, type Avatar } from '../../services/AvatarService';
 import { masterBus } from '../../core/MasterBus';
 import { haptic } from '../../services/SoundService';
 import './AvatarGallery.css';
+import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -206,7 +207,7 @@ export function AvatarGallery({
                       alt={avatar.name}
                       className="ag-item__img"
                       onError={(e) => {
-                        (e.target as HTMLImageElement).src = '/default-avatar.png';
+                        (e.target as HTMLImageElement).src = generateDefaultAvatar();
                       }}
                     />
                     {isLocked && <div className="ag-item__lock">👑</div>}

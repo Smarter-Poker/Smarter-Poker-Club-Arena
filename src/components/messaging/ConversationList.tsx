@@ -14,6 +14,7 @@ import { useAuthUser } from '../../hooks/useAuthUser';
 import { messagingService } from '../../services/MessagingService';
 import { formatRelativeShort } from '../../lib/date';
 import styles from './ConversationList.module.css';
+import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 
 interface Conversation {
   id: string;
@@ -155,7 +156,7 @@ export default function ConversationList({
               return {
                 id: conv?.id,
                 name: conv?.is_group ? conv?.group_name : otherParticipant?.username || 'Unknown',
-                picture: otherParticipant?.avatar_url || '/default-avatar.png',
+                picture: otherParticipant?.avatar_url || generateDefaultAvatar(),
                 isOnline: otherParticipant?.is_online || false,
                 lastMessage: conv?.last_message_preview || '',
                 lastMessageTime: conv?.last_message_at,
@@ -394,7 +395,7 @@ export default function ConversationList({
                   alt={conv.name}
                   className={styles.avatar}
                   onError={(e) => {
-                    (e.target as HTMLImageElement).src = '/default-avatar.png';
+                    (e.target as HTMLImageElement).src = generateDefaultAvatar();
                   }}
                 />
                 {conv.isOnline && !conv.isGroup && <span className={styles.onlineIndicator} />}

@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useToast } from '../common/Toast';
 import './WaitlistManager.css';
+import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 
 interface VisibleItemsState {
   [key: string]: Set<number>;
@@ -217,7 +218,7 @@ export const WaitlistManager: React.FC<WaitlistManagerProps> = ({
                     src={entry.avatarUrl}
                     alt={entry.displayName}
                     onError={(e) => {
-                      (e.target as HTMLImageElement).src = '/default-avatar.png';
+                      (e.target as HTMLImageElement).src = generateDefaultAvatar();
                     }}
                   />
                 ) : (

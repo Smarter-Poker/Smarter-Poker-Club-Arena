@@ -8,6 +8,7 @@
 import { useState, useEffect } from 'react';
 import { AgentService, type Agent } from '../../services/AgentService';
 import styles from './AgentTree.module.css';
+import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -146,7 +147,7 @@ function TreeNode({
               src={node.avatarUrl}
               alt=""
               onError={(e) => {
-                (e.target as HTMLImageElement).src = '/default-avatar.png';
+                (e.target as HTMLImageElement).src = generateDefaultAvatar();
               }}
             />
           ) : (

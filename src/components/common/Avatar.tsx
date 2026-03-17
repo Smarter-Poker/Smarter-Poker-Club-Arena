@@ -6,6 +6,7 @@
 
 import React from 'react';
 import './Avatar.css';
+import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 
 interface AvatarProps {
   src?: string | null;
@@ -83,7 +84,7 @@ export function Avatar({
           alt={alt}
           className="avatar-image"
           onError={(e) => {
-            (e.target as HTMLImageElement).src = '/default-avatar.png';
+            (e.target as HTMLImageElement).src = generateDefaultAvatar();
           }}
         />
       ) : (

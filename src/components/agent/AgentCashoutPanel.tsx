@@ -13,6 +13,7 @@ import { masterBus } from '../../core/MasterBus';
 import { supabase } from '../../lib/supabase';
 import { formatRelativeShort as formatTime } from '@/lib/date';
 import './AgentCashoutPanel.css';
+import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 
 interface AgentCashoutPanelProps {
   clubId?: string;
@@ -163,7 +164,7 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
                   <img
                     loading="lazy"
                     decoding="async"
-                    src={cashout.playerAvatar || '/default-avatar.png'}
+                    src={cashout.playerAvatar || generateDefaultAvatar()}
                     alt=""
                     className="player-avatar"
                   />

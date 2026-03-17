@@ -12,6 +12,7 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import './TableChat.css';
+import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -108,7 +109,7 @@ function MessageRow({ message, isOwnMessage, isNew = false }: MessageRowProps) {
               src={message.playerAvatar}
               alt="Player avatar"
               onError={(e) => {
-                (e.target as HTMLImageElement).src = '/default-avatar.png';
+                (e.target as HTMLImageElement).src = generateDefaultAvatar();
               }}
             />
           ) : (

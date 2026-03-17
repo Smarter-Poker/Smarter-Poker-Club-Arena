@@ -10,6 +10,7 @@ import { masterBus } from '../../core/MasterBus';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
 import styles from './ForwardMessageModal.module.css';
+import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 
 interface ForwardMessageModalProps {
   messageId: string;
@@ -123,11 +124,11 @@ export default function ForwardMessageModal({
                   <img
                     loading="lazy"
                     decoding="async"
-                    src={otherUser?.avatarUrl || '/default-avatar.png'}
+                    src={otherUser?.avatarUrl || generateDefaultAvatar()}
                     alt={otherUser?.displayName}
                     className={styles.avatar}
                     onError={(e) => {
-                      (e.target as HTMLImageElement).src = '/default-avatar.png';
+                      (e.target as HTMLImageElement).src = generateDefaultAvatar();
                     }}
                   />
                   <span className={styles.name}>{otherUser?.displayName || 'Unknown'}</span>

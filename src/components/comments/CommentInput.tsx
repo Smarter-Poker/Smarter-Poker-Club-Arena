@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import './CommentInput.css';
+import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 
 interface CommentInputProps {
   onSubmit: (text: string) => void;
@@ -30,7 +31,7 @@ export const CommentInput: React.FC<CommentInputProps> = ({
             src={avatar}
             alt=""
             onError={(e) => {
-              (e.target as HTMLImageElement).src = '/default-avatar.png';
+              (e.target as HTMLImageElement).src = generateDefaultAvatar();
             }}
           />
         </div>

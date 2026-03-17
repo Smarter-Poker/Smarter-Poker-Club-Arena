@@ -12,6 +12,7 @@ import { ImageThumbnail, ImageLightbox } from './ImageMessage';
 import EmojiReactions from './EmojiReactions';
 import { ReadReceipt } from './ReadReceipt';
 import LinkPreview, { extractUrl } from './LinkPreview';
+import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 
 interface Reaction {
   emoji: string;
@@ -159,7 +160,7 @@ export default function MessageBubble({
           alt={message.userFullname}
           className={styles.avatar}
           onError={(e) => {
-            (e.target as HTMLImageElement).src = '/default-avatar.png';
+            (e.target as HTMLImageElement).src = generateDefaultAvatar();
           }}
         />
       )}

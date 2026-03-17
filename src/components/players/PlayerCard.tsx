@@ -1,5 +1,6 @@
 import React from 'react';
 import './PlayerCard.css';
+import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 
 interface PlayerCardProps {
   id: string;
@@ -42,7 +43,7 @@ export const PlayerCard: React.FC<PlayerCardProps> = ({
             src={avatarUrl}
             alt={displayName}
             onError={(e) => {
-              (e.target as HTMLImageElement).src = '/default-avatar.png';
+              (e.target as HTMLImageElement).src = generateDefaultAvatar();
             }}
           />
         ) : (

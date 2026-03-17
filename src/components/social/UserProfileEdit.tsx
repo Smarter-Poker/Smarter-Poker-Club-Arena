@@ -13,6 +13,7 @@
 import React, { useState, useEffect } from 'react';
 import { sanitizeInput } from '../../utils/sanitizeInput';
 import './UserProfileEdit.css';
+import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 
 export interface UserProfileData {
   id: string;
@@ -108,7 +109,7 @@ export function UserProfileEdit({ isOpen, onClose, initialData, onSave }: UserPr
                 src={formData.avatarUrl}
                 alt="Avatar"
                 onError={(e) => {
-                  (e.target as HTMLImageElement).src = '/default-avatar.png';
+                  (e.target as HTMLImageElement).src = generateDefaultAvatar();
                 }}
               />
               <button

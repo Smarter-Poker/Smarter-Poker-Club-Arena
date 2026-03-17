@@ -12,6 +12,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { haptic } from '../../services/SoundService';
 import './LeaderboardPanel.css';
+import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -111,7 +112,7 @@ function PlayerRow({ player, currency, index = 0 }: PlayerRowProps) {
               src={player.avatar}
               alt=""
               onError={(e) => {
-                (e.target as HTMLImageElement).src = '/default-avatar.png';
+                (e.target as HTMLImageElement).src = generateDefaultAvatar();
               }}
             />
           ) : (
@@ -223,7 +224,7 @@ export function LeaderboardPanel({
                             src={player.avatar}
                             alt=""
                             onError={(e) => {
-                              (e.target as HTMLImageElement).src = '/default-avatar.png';
+                              (e.target as HTMLImageElement).src = generateDefaultAvatar();
                             }}
                           />
                         ) : (

@@ -17,6 +17,7 @@ import { PlayerAvatar } from '../components/avatars/PlayerAvatar';
 import { useDebounce } from '../hooks/useDebounce';
 import { sanitizeInput } from '../utils/sanitizeInput';
 import './NewConversationPage.css';
+import { generateDefaultAvatar } from '../utils/avatarGenerator';
 
 interface UserResult {
   id: string;
@@ -157,11 +158,11 @@ export default function NewConversationPage() {
           {selectedUsers.map((u) => (
             <div key={u.id} className="user-chip">
               <img
-                src={u.avatarUrl || '/default-avatar.png'}
+                src={u.avatarUrl || generateDefaultAvatar()}
                 alt={u.username}
                 className="chip-avatar"
                 onError={(e) => {
-                  (e.target as HTMLImageElement).src = '/default-avatar.png';
+                  (e.target as HTMLImageElement).src = generateDefaultAvatar();
                 }}
               />
               <span>{u.username}</span>
@@ -208,7 +209,7 @@ export default function NewConversationPage() {
           searchResults.map((result) => (
             <div key={result.id} className="result-item" onClick={() => selectUser(result)}>
               <PlayerAvatar
-                src={result.avatarUrl || '/default-avatar.png'}
+                src={result.avatarUrl || generateDefaultAvatar()}
                 name={result.username}
                 size="sm"
                 presenceStatus={result.isOnline ? 'online' : 'offline'}

@@ -7,6 +7,7 @@ import React, { useState, useCallback, useEffect } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import './PlayerSearch.css';
+import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 
 interface Player {
   id: string;
@@ -224,7 +225,7 @@ export const PlayerSearch: React.FC<PlayerSearchProps> = ({
                     src={player.avatar}
                     alt={player.username}
                     onError={(e) => {
-                      (e.target as HTMLImageElement).src = '/default-avatar.png';
+                      (e.target as HTMLImageElement).src = generateDefaultAvatar();
                     }}
                   />
                 ) : (

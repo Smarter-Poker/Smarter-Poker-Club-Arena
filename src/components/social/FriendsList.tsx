@@ -11,6 +11,7 @@
 
 import React, { useState } from 'react';
 import './FriendsList.css';
+import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 
 export interface Friend {
   id: string;
@@ -214,7 +215,7 @@ function FriendItem({
               src={friend.avatar}
               alt={friend.name}
               onError={(e) => {
-                (e.target as HTMLImageElement).src = '/default-avatar.png';
+                (e.target as HTMLImageElement).src = generateDefaultAvatar();
               }}
             />
           ) : (

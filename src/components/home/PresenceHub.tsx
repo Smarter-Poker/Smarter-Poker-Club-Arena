@@ -5,6 +5,7 @@ import { useAuthUser } from '../../hooks/useAuthUser';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import './PresenceHub.css';
+import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 
 interface OnlineFriend {
   id: string;
@@ -153,7 +154,7 @@ export default function PresenceHub() {
                 src={friend.avatar}
                 alt={friend.username}
                 onError={(e) => {
-                  (e.target as HTMLImageElement).src = '/default-avatar.png';
+                  (e.target as HTMLImageElement).src = generateDefaultAvatar();
                 }}
               />
             ) : (

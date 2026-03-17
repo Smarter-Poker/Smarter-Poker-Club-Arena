@@ -8,6 +8,7 @@
 
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
+import { generateDefaultAvatar } from '../utils/avatarGenerator';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -169,7 +170,7 @@ class PlayerStatusServiceClass {
       type: 'profile_card',
       userId: profile.userId,
       username: profile.username,
-      avatarUrl: profile.avatarUrl || '/default-avatar.png',
+      avatarUrl: profile.avatarUrl || generateDefaultAvatar(),
       level: profile.level || 1,
       link: this.generateProfileLink(profile.userId),
     };

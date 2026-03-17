@@ -9,6 +9,7 @@ import { useIsMounted } from '../../hooks/useIsMounted';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { supabase } from '../../lib/supabase';
 import './OnlineFriendsPill.css';
+import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 
 interface OnlineFriend {
   id: string;
@@ -100,7 +101,7 @@ export default function OnlineFriendsPill({ userId, onFriendClick }: OnlineFrien
                 alt={friend.displayName}
                 className="ofp-avatar-img"
                 onError={(e) => {
-                  (e.target as HTMLImageElement).src = '/default-avatar.png';
+                  (e.target as HTMLImageElement).src = generateDefaultAvatar();
                 }}
               />
             ) : (

@@ -11,6 +11,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import haptic from '../../services/HapticService';
 import styles from './FindPlayerModal.module.css';
+import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 
 interface FindPlayerModalProps {
   isOpen: boolean;
@@ -212,7 +213,7 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
                         src={searchResult.avatar_url}
                         alt=""
                         onError={(e) => {
-                          (e.target as HTMLImageElement).src = '/default-avatar.png';
+                          (e.target as HTMLImageElement).src = generateDefaultAvatar();
                         }}
                       />
                     ) : (

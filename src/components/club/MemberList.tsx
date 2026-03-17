@@ -12,6 +12,7 @@
 import React, { useState, useMemo, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import './MemberList.css';
+import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -150,7 +151,7 @@ function MemberListInner({
                         src={member.avatar}
                         alt=""
                         onError={(e) => {
-                          (e.target as HTMLImageElement).src = '/default-avatar.png';
+                          (e.target as HTMLImageElement).src = generateDefaultAvatar();
                         }}
                       />
                     ) : (

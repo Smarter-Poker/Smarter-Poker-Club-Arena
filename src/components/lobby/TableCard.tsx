@@ -93,7 +93,8 @@ function TableCardInner({ table }: TableCardProps) {
       .select('id', { count: 'exact', head: true })
       .eq('table_id', table.id)
       .eq('status', 'waiting')
-      .then(({ count }) => {
+      .then(({ count, error }) => {
+        if (error) { console.warn('[TableCard] Waitlist count error:', error.message); return; }
         if (isMounted && count !== null) setWaiting(count);
       });
 
@@ -106,7 +107,8 @@ function TableCardInner({ table }: TableCardProps) {
       .gt('pot', 0)
       .order('ended_at', { ascending: false })
       .limit(20)
-      .then(({ data }) => {
+      .then(({ data, error }) => {
+        if (error) { console.warn('[TableCard] Avg pot error:', error.message); return; }
         if (isMounted && data && data.length > 0) {
           const avg = data.reduce((sum, h) => sum + (h.pot || 0), 0) / data.length;
           setAvgPot(Math.trunc(avg * 100) / 100);
@@ -120,7 +122,8 @@ function TableCardInner({ table }: TableCardProps) {
       .eq('table_id', table.id)
       .eq('status', 'active')
       .limit(6)
-      .then(({ data }) => {
+      .then(({ data, error }) => {
+        if (error) { console.warn('[TableCard] Player avatars error:', error.message); return; }
         if (isMounted && data && data.length > 0) {
           setPlayerAvatars(
             data.map((p: any) => ({
@@ -139,7 +142,8 @@ function TableCardInner({ table }: TableCardProps) {
         .select('id', { count: 'exact', head: true })
         .eq('table_id', table.id)
         .eq('status', 'waiting')
-        .then(({ count }) => {
+        .then(({ count, error }) => {
+          if (error) { console.warn('[TableCard] Waitlist refresh error:', error.message); return; }
           if (isMounted && count !== null) setWaiting(count);
         });
       supabase
@@ -148,7 +152,8 @@ function TableCardInner({ table }: TableCardProps) {
         .eq('table_id', table.id)
         .eq('status', 'active')
         .limit(6)
-        .then(({ data }) => {
+        .then(({ data, error }) => {
+          if (error) { console.warn('[TableCard] Avatars refresh error:', error.message); return; }
           if (isMounted && data && data.length > 0) {
             setPlayerAvatars(
               data.map((p: any) => ({

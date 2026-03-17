@@ -2323,6 +2323,7 @@ export default function TablePage({
 
     // Read latest state from ref (avoids stale closures)
     const currentState = tableStateRef.current;
+    if (!currentState || !currentState.players) return; // Guard against null/undefined ref
     const seatedPlayers = currentState.players.filter((p) => p && p.stack > 0);
     if (seatedPlayers.length < 2) return;
 
@@ -2332,7 +2333,7 @@ export default function TablePage({
     _win.__pokerLocks.lastHandStartMs = now;
 
     // Parse table settings
-    const blindParts = currentState.blinds.split('/');
+    const blindParts = (currentState.blinds || '1/2').split('/');
     const smallBlind = parseFloat(blindParts[0]) || 1;
     const bigBlind = parseFloat(blindParts[1]) || 2;
 
@@ -2600,7 +2601,7 @@ export default function TablePage({
             const isHorse = actingPlayer?.isHorse || !!horseInfo;
             // Horse auto-action detection
             if (isHorse && handControllerRef.current) {
-              const bigBlind = parseFloat(currentState.blinds.split('/')[1]) || 0.5;
+              const bigBlind = safeBB(currentState.blinds, 0.5);
               const activePlayers = currentState.players.filter(
                 (p) => p && (p as any).status !== 'folded'
               ).length;

@@ -57,7 +57,7 @@ export default function SmarterHeader({
     });
     const unsubMsg = masterBus.subscribe('MESSAGE_RECEIVED', () => {
       // Refresh count on any new message
-      if (user?.id) messagingService.getUnreadCount(user.id).then(setUnreadMessages);
+      if (user?.id) messagingService.getUnreadCount(user.id).then(setUnreadMessages).catch((e) => console.warn('[SmarterHeader] Unread DM count refresh failed:', e));
     });
     return () => {
       unsubDM();

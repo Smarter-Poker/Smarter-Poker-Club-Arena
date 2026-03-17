@@ -54,7 +54,7 @@ export function AvatarGallery({
   // Load avatars
   useEffect(() => {
     if (!isOpen) return;
-    avatarService.getAvatarLibrary(userId).then(setAvatars);
+    avatarService.getAvatarLibrary(userId).then(setAvatars).catch((e) => console.warn('[AvatarGallery] Failed to load avatars:', e));
   }, [isOpen, userId]);
 
   // Filter by tab

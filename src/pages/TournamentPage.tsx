@@ -1114,7 +1114,7 @@ export default function TournamentPage() {
           onClose={() => setShowCreateModal(false)}
           onSuccess={() => {
             setShowCreateModal(false);
-            tournamentService.getTournaments(clubId).then(setTournaments);
+            tournamentService.getTournaments(clubId).then(setTournaments).catch((e) => console.warn('[TournamentPage] Refresh after create failed:', e));
           }}
         />
       )}

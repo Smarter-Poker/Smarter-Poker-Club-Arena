@@ -37,6 +37,7 @@ export default function FriendSuggestions() {
       .then((s) => {
         if (isMounted.current) setSuggestions(s);
       })
+      .catch((e) => console.warn('[FriendSuggestions] Failed to load suggestions:', e))
       .finally(() => {
         if (isMounted.current) setLoading(false);
       });
@@ -52,7 +53,7 @@ export default function FriendSuggestions() {
       if (isMounted.current && user?.id) {
         friendSuggestionService.getSuggestions(user.id, 12).then((s) => {
           if (isMounted.current) setSuggestions(s);
-        });
+        }).catch((e) => console.warn('[FriendSuggestions] Refresh after accept failed:', e));
       }
     });
     const unsubProfile = masterBus.subscribe('PROFILE_UPDATED', () => {
@@ -60,7 +61,7 @@ export default function FriendSuggestions() {
       if (isMounted.current && user?.id) {
         friendSuggestionService.getSuggestions(user.id, 12).then((s) => {
           if (isMounted.current) setSuggestions(s);
-        });
+        }).catch((e) => console.warn('[FriendSuggestions] Refresh after profile update failed:', e));
       }
     });
 

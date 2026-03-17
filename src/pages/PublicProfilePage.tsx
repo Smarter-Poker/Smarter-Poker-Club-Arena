@@ -110,7 +110,7 @@ export default function PublicProfilePage() {
       () => {
         // Re-check friendship status when any request is accepted
         if (user?.id && userId) {
-          checkFriendship(user.id, userId).then(setFriendStatus);
+          checkFriendship(user.id, userId).then(setFriendStatus).catch((e) => console.warn('[PublicProfile] Friendship check failed:', e));
         }
       },
       300
@@ -147,7 +147,7 @@ export default function PublicProfilePage() {
       'PROFILE_UPDATED',
       (event) => {
         if (event.payload?.userId === userId) {
-          playerStatusService.getPlayerStatus(userId).then(setPlayerStatus);
+          playerStatusService.getPlayerStatus(userId).then(setPlayerStatus).catch((e) => console.warn('[PublicProfile] Player status refresh failed:', e));
         }
       },
       500

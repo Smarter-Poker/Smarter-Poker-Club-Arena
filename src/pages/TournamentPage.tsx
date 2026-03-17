@@ -225,6 +225,7 @@ export default function TournamentPage() {
             (async () => {
               try {
                 const data = await tournamentService.getTournaments(clubId);
+                if (!isMounted) return;
                 setTournaments(data);
                 // Update selected tournament if it changed
                 const updated = data.find((t) => t.id === selectedTournamentRef.current?.id);
@@ -255,6 +256,7 @@ export default function TournamentPage() {
       async () => {
         try {
           const data = await tournamentService.getTournaments(clubId);
+          if (!isMounted) return;
           setTournaments(data);
         } catch {
           /* silent */
@@ -267,6 +269,7 @@ export default function TournamentPage() {
       async () => {
         try {
           const data = await tournamentService.getTournaments(clubId);
+          if (!isMounted) return;
           setTournaments(data);
           const updated = data.find((t) => t.id === selectedTournamentRef.current?.id);
           if (updated) setSelectedTournament(updated);

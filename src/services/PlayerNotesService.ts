@@ -97,13 +97,26 @@ class PlayerNotesServiceClass {
     color: string = '#3b82f6',
     tags: string[] = []
   ): Promise<void> {
+    // Map hex color to label (DB constraint: none, red, orange, yellow, green, blue, purple)
+    const hexToLabel: Record<string, string> = {
+      '#ef4444': 'red',
+      '#f97316': 'orange',
+      '#eab308': 'yellow',
+      '#22c55e': 'green',
+      '#3b82f6': 'blue',
+      '#a855f7': 'purple',
+      '#ec4899': 'purple',
+      '#6b7280': 'none',
+    };
+    const colorLabel = hexToLabel[color] || NOTE_COLORS.find((c) => c.id === color)?.id || 'blue';
+
     await retryAsync(
       () =>
         supabase.rpc('fn_save_player_note', {
           p_user_id: userId,
           p_target_user_id: targetId,
           p_note: note,
-          p_color: color,
+          p_color: colorLabel,
           p_tags: tags,
         }),
       3

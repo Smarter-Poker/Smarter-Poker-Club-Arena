@@ -68,7 +68,7 @@ export default function PlayerNotesPanel({
   const [notes, setNotes] = useState<PlayerNote[]>([]);
   const [currentNote, setCurrentNote] = useState('');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
-  const [selectedColor, setSelectedColor] = useState('#6b7280');
+  const [selectedColor, setSelectedColor] = useState('none');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -104,7 +104,7 @@ export default function PlayerNotesPanel({
     if (data) {
       setCurrentNote(data.notes || '');
       setSelectedTags(data.tags || []);
-      setSelectedColor(data.color_label || '#6b7280');
+      setSelectedColor(data.color_label || 'none');
     }
     setLoading(false);
   };

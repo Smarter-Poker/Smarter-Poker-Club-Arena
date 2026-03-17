@@ -2056,8 +2056,23 @@ class TournamentService {
       return { success: false };
     }
 
-    // Payouts are processed automatically by the settlement system
-    // via the tournament_payouts table populated during eliminations
+    // Distribute prize money to winners via atomic RPC
+    try {
+      const { data: prizeResult, error: prizeError } = await supabase.rpc(
+        'distribute_tournament_prizes',
+        {
+          p_tournament_id: tournamentId,
+        }
+      );
+      if (prizeError) {
+        console.error('[TournamentService] Prize distribution failed:', prizeError);
+      } else {
+        console.debug('[TournamentService] Prizes distributed:', prizeResult);
+        masterBus.emit('BALANCE_UPDATED' as any, { source: 'tournament_prizes', tournamentId });
+      }
+    } catch (prizeErr) {
+      console.error('[TournamentService] Prize distribution exception:', prizeErr);
+    }
 
     // Submit all placements to POY leaderboard system
     try {

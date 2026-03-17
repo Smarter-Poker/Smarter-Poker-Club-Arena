@@ -425,6 +425,24 @@ export const RakeService = {
           contributions,
           totalContributions > 0 ? totalContributions : calculation.cappedRake
         );
+
+        // Persist rake attributions to DB (non-blocking — survives server restart)
+        const attrPayload = attributions.map((a) => ({
+          user_id: a.userId,
+          rake_amount: a.rakeCredit,
+          pot_contribution: contributions.get(a.userId) || 0,
+        }));
+        supabase
+          .rpc('record_hand_rake_attribution', {
+            p_hand_id: params.handId || null,
+            p_table_id: params.tableId || null,
+            p_club_id: clubId,
+            p_attributions: attrPayload,
+          })
+          .then(({ error: attrErr }) => {
+            if (attrErr)
+              console.warn('[RakeService] Rake attribution persist failed:', attrErr.message);
+          });
       } catch (rbErr) {
         console.error('[RakeService] RakebackEngine recording failed:', rbErr);
       }

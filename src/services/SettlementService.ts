@@ -358,9 +358,10 @@ export const SettlementService = {
 
       try {
         const { error: payoutError } = await supabase.rpc('atomic_pay_agent_settlement', {
-          p_settlement_id: settlement.id,
           p_agent_id: settlement.agent_id,
           p_amount: settlement.net_settlement,
+          p_period_id: periodId,
+          p_settlement_id: settlement.id,
         });
 
         if (payoutError) throw payoutError;

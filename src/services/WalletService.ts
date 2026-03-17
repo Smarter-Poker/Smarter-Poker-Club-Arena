@@ -224,21 +224,42 @@ export const WalletService = {
     if (request.amount <= 0) throw new Error('Transfer amount must be positive');
     if (request.fromWallet === request.toWallet) throw new Error('Cannot transfer to same wallet');
 
-    const { error } = await retryAsync(async () => {
-      const res = await supabase.rpc('wallet_internal_transfer', {
+    // Atomic self-transfer between wallet types (same user)
+    // The DB's wallet_internal_transfer RPC is user-to-user, so we use atomic_deduct + atomic_credit
+    const desc = request.note || `Transfer ${request.fromWallet} → ${request.toWallet}`;
+    const { data: deducted, error: deductErr } = await retryAsync(async () => {
+      // Deduct from source wallet
+      const res = await supabase.rpc('atomic_deduct_wallet_and_log', {
         p_user_id: userId,
-        p_from_wallet: request.fromWallet,
-        p_to_wallet: request.toWallet,
         p_amount: request.amount,
-        p_note: request.note || null,
+        p_category: 'transfer',
+        p_description: desc,
+        p_table_id: null,
+        p_hand_id: null,
+        p_related_entity_id: null,
+      });
+      return res;
+    });
+    if (deductErr || deducted === false) {
+      throw new Error(deductErr?.message || 'Insufficient balance for transfer');
+    }
+    // Credit destination wallet
+    const { error } = await retryAsync(async () => {
+      const res = await supabase.rpc('atomic_credit_wallet_and_log', {
+        p_user_id: userId,
+        p_amount: request.amount,
+        p_category: 'transfer',
+        p_description: desc,
+        p_table_id: null,
+        p_hand_id: null,
+        p_related_entity_id: null,
       });
       return res;
     });
 
     if (error) throw error;
 
-    // Log both sides of the transfer
-    const desc = request.note || `Transfer ${request.fromWallet} → ${request.toWallet}`;
+    // Log both sides of the transfer (RPCs already log, but this provides app-level audit trail)
     await this.logTransaction(
       userId,
       request.fromWallet,
@@ -585,7 +606,7 @@ export const WalletService = {
         supabase.rpc('credit_agent_commission', {
           p_agent_id: agentId,
           p_amount: amount,
-          p_period_id: periodId,
+          p_description: `Commission for period ${periodId}`,
         }),
       3
     );

@@ -255,8 +255,7 @@ export const OfflineQueueService = {
             supabase.rpc('credit_agent_commission', {
               p_agent_id: agentId,
               p_amount: amount,
-              p_period_id: periodId,
-              p_club_id: clubId,
+              p_description: `Commission for period ${periodId} club ${clubId}`,
             }),
           3
         );

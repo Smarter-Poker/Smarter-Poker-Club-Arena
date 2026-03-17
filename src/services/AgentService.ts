@@ -846,21 +846,46 @@ class AgentServiceClass {
     if (amount <= 0) throw new Error('Transfer amount must be positive');
     if (fromWallet === toWallet) throw new Error('Cannot transfer to the same wallet');
 
-    // Use RPC for atomic wallet-to-wallet transfer to prevent race conditions
-    const { error } = await retryAsync(
+    // DB wallet_internal_transfer has user-to-user signature, not wallet-to-wallet.
+    // Use atomic_deduct + atomic_credit pair instead for wallet-to-wallet transfers.
+    const desc = `Agent self-transfer ${fromWallet} → ${toWallet}`;
+
+    const { data: deducted, error: deductErr } = await retryAsync(
       () =>
-        supabase.rpc('wallet_internal_transfer', {
+        supabase.rpc('atomic_deduct_wallet_and_log', {
           p_user_id: agentId,
-          p_from_wallet: fromWallet,
-          p_to_wallet: toWallet,
           p_amount: amount,
+          p_category: 'transfer',
+          p_description: desc,
+          p_table_id: null,
+          p_hand_id: null,
+          p_related_entity_id: null,
         }),
       3
     );
 
-    if (error) {
-      console.error('[AgentService] selfTransfer failed:', error);
-      throw new Error(error.message || 'Self-transfer failed');
+    if (deductErr || deducted === false) {
+      console.error('[AgentService] selfTransfer deduct failed:', deductErr);
+      throw new Error(deductErr?.message || 'Insufficient balance for self-transfer');
+    }
+
+    const { error: creditErr } = await retryAsync(
+      () =>
+        supabase.rpc('atomic_credit_wallet_and_log', {
+          p_user_id: agentId,
+          p_amount: amount,
+          p_category: 'transfer',
+          p_description: desc,
+          p_table_id: null,
+          p_hand_id: null,
+          p_related_entity_id: null,
+        }),
+      3
+    );
+
+    if (creditErr) {
+      console.error('[AgentService] selfTransfer credit failed:', creditErr);
+      throw new Error(creditErr.message || 'Self-transfer credit failed');
     }
 
     return true;

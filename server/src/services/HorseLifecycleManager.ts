@@ -290,6 +290,9 @@ export class HorseLifecycleManager {
           console.error(`[Lifecycle] Failed to reset horse ${horseId}:`, error.message);
           return false;
         }
+        await this.persistLifecycleLog(horseId, 'natural_reset', {
+          reason: 'tournament_completed_no_active_games',
+        });
         return true; // Horse was reset to available
       }
       return false; // Horse remains seated/active
@@ -334,6 +337,13 @@ export class HorseLifecycleManager {
         .from('profiles')
         .update({ horse_status: 'available', updated_at: new Date().toISOString() })
         .eq('id', horseId);
+
+      if (!error) {
+        await this.persistLifecycleLog(horseId, 'force_reset_stuck_horse', {
+          seatsForceCleared: activeSeats?.length || 0,
+          chipStack: activeSeats?.reduce((sum: number, s: any) => sum + (s.stack || 0), 0) || 0,
+        });
+      }
 
       return !error;
     } catch {
@@ -393,6 +403,12 @@ export class HorseLifecycleManager {
             .eq('id', sng.id);
 
           cancelled++;
+          await this.persistLifecycleLog('system', 'stale_sng_cancelled', {
+            sngId: sng.id,
+            sngName: sng.name,
+            refundsIssued: players?.length || 0,
+            refundAmount: buyInAmount,
+          });
         } catch {
           // Skip individual errors
         }
@@ -452,6 +468,12 @@ export class HorseLifecycleManager {
 
           if (profile?.is_horse) {
             await this.evaluateHorseStatus(seat.user_id);
+            await this.persistLifecycleLog(seat.user_id, 'stale_seat_cleanup', {
+              tableId: seat.table_id,
+              seatNumber: seat.seat_number,
+              stackCleared: seat.stack,
+              joinedAt: seat.joined_at,
+            });
           }
         } catch {
           // Skip individual errors

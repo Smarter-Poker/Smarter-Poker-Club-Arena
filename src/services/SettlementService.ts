@@ -660,7 +660,9 @@ export const SettlementService = {
       if (rakeBack <= 0) continue;
 
       // Estimate original rake from rakeback (reverse: rakeBack = rake * 0.9)
-      const clubRake = Math.trunc(rakeBack / 0.9 * 100) / 100;
+      // Use integer-cents to avoid float division by 0.9 precision loss
+      const rakeBackCents = Math.trunc(rakeBack * 100);
+      const clubRake = Math.trunc((rakeBackCents * 10) / 9) / 100;
       totalCollected += clubRake;
 
       if (rakeBack > 0 && club.owner_id) {
@@ -680,7 +682,8 @@ export const SettlementService = {
         );
 
         if (transferError || transferResult === false) {
-          const errMsg = transferError?.message || 'transferResult === false (insufficient balance?)';
+          const errMsg =
+            transferError?.message || 'transferResult === false (insufficient balance?)';
           console.error(
             `[Settlement] CRITICAL: Transfer failed from Union owner to ${club.name}: ${errMsg}`
           );

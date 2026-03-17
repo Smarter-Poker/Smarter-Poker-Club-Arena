@@ -152,7 +152,7 @@ function TransactionHistoryInner({ walletId, limit = 20 }: TransactionHistoryPro
       let query = supabase
         .from('wallet_transactions')
         .select(
-          'id, type, category, amount, balance_after, description, created_at, wallet_id, user_id, reference_id, wallet_type'
+          'id, type, category, amount, balance_after, description, created_at, user_id, related_entity_id, wallet_type'
         )
         .order('created_at', { ascending: false })
         .limit(limit);

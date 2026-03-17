@@ -121,7 +121,7 @@ class PlayerNotesServiceClass {
   async getAllNotes(userId: string): Promise<Map<string, PlayerNote>> {
     const { data, error } = await supabase
       .from('player_notes')
-      .select('target_user_id, note, color, tags, hands_played, last_seen')
+      .select('target_user_id, notes, color_label, tags')
       .eq('user_id', userId)
       .limit(2000);
 
@@ -130,11 +130,11 @@ class PlayerNotesServiceClass {
     if (!error && data) {
       for (const row of data) {
         notes.set(row.target_user_id, {
-          note: row.note || '',
-          color: row.color || '#3b82f6',
+          note: row.notes || '',
+          color: row.color_label || '#3b82f6',
           tags: row.tags || [],
-          handsPlayed: row.hands_played || 0,
-          lastSeen: row.last_seen ? new Date(row.last_seen) : null,
+          handsPlayed: 0,
+          lastSeen: null,
         });
       }
     }

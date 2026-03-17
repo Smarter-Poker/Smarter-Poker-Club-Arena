@@ -249,7 +249,26 @@ export default function UnionGamesPage() {
       masterBus.subscribeDebounced('TOURNAMENT_COMPLETE', refresh, 500),
       masterBus.subscribeDebounced('TABLE_UPDATED', refresh, 500),
     ];
-    return () => unsubs.forEach((u) => u());
+
+    // WebSocket: live tournament updates for this union
+    const channelKey = `union-games-${unionId}`;
+    const channel = masterBus.getOrCreateChannel(channelKey);
+    channel
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'tournaments',
+        },
+        () => refresh()
+      )
+      .subscribe();
+
+    return () => {
+      unsubs.forEach((u) => u());
+      masterBus.removeRegisteredChannel(channelKey);
+    };
   }, [unionId, loadUnionData]);
 
   useVisibilityRefresh(async () => {

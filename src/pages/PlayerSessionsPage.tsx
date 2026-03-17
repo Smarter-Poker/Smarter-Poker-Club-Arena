@@ -307,7 +307,7 @@ export default function PlayerSessionsPage() {
             const { data: notesData } = await supabase
               .from('player_notes')
               .select('target_user_id, player_type, color_label, notes')
-              .eq('club_id', uuid)
+              .eq('user_id', user?.id)
               .in('target_user_id', userIds);
             if (mountedRef.current && notesData) {
               const noteMap: Record<string, PlayerNote> = {};

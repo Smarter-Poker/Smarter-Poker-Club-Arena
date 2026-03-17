@@ -58,9 +58,26 @@ export default function SettlementHistoryPage() {
       () => loadHistory(),
       1000
     );
+
+    // WebSocket: live settlement updates
+    const channelKey = 'settlement-history-updates';
+    const channel = masterBus.getOrCreateChannel(channelKey);
+    channel
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'club_settlements',
+        },
+        () => loadHistory()
+      )
+      .subscribe();
+
     return () => {
       unsub();
       unsub2();
+      masterBus.removeRegisteredChannel(channelKey);
     };
   }, []);
 

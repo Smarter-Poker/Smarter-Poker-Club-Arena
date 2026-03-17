@@ -84,11 +84,11 @@ export const PlayerNotes: React.FC<PlayerNotesProps> = ({ playerId, onClose, mod
     try {
       let query = supabase
         .from('player_notes')
-        .select('id, user_id, player_id, note, color, tags, updated_at, created_at')
+        .select('id, user_id, target_user_id, notes, color_label, tags, updated_at, created_at')
         .eq('user_id', user.id);
 
       if (playerId) {
-        query = query.eq('player_id', playerId);
+        query = query.eq('target_user_id', playerId);
       }
 
       const { data, error } = await query.order('updated_at', { ascending: false });
@@ -100,10 +100,10 @@ export const PlayerNotes: React.FC<PlayerNotesProps> = ({ playerId, onClose, mod
       setNotes(
         (data || []).map((d: any) => ({
           id: d.id,
-          playerId: d.player_id,
+          playerId: d.target_user_id,
           playerName: '',
-          noteColor: d.color || 'blue',
-          note: d.note || '',
+          noteColor: d.color_label || 'blue',
+          note: d.notes || '',
           tags: d.tags || [],
           createdAt: d.created_at,
           updatedAt: d.updated_at,
@@ -122,15 +122,15 @@ export const PlayerNotes: React.FC<PlayerNotesProps> = ({ playerId, onClose, mod
     try {
       const noteData = {
         user_id: user.id,
-        player_id: playerId,
-        note_color: selectedColor,
-        note: editingNote,
+        target_user_id: playerId,
+        color_label: selectedColor,
+        notes: editingNote,
         tags: selectedTags,
       };
 
       const { error } = await supabase
         .from('player_notes')
-        .upsert(noteData, { onConflict: 'user_id,player_id' });
+        .upsert(noteData, { onConflict: 'user_id,target_user_id' });
 
       if (error) throw error;
 

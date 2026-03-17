@@ -2547,11 +2547,11 @@ class HorseOrchestrator {
       // Find horses that have been seated for > 30 minutes
       const cutoff = new Date(Date.now() - ROTATION_THRESHOLD_MS).toISOString();
       const { data: staleHorses } = await supabase
-        .from('table_players')
+        .from('table_seats')
         .select('id, user_id, table_id')
-        .eq('is_horse', true)
+        .not('horse_id', 'is', null)
         .eq('status', 'active')
-        .lt('seated_at', cutoff);
+        .lt('joined_at', cutoff);
 
       if (!staleHorses || staleHorses.length === 0) return 0;
 
@@ -2578,8 +2578,8 @@ class HorseOrchestrator {
 
         // Seat new horse in same position
         await supabase
-          .from('table_players')
-          .update({ user_id: fresh.id, seated_at: new Date().toISOString() })
+          .from('table_seats')
+          .update({ user_id: fresh.id, joined_at: new Date().toISOString() })
           .eq('id', stale.id);
 
         // Mark new horse as seated

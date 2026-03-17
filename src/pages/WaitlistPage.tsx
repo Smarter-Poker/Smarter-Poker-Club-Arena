@@ -10,6 +10,7 @@ import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import { haptic } from '../services/HapticService';
+import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import './WaitlistPage.css';
 import PageSkeleton from '../components/common/PageSkeleton';
 
@@ -89,6 +90,8 @@ export default function WaitlistPage() {
     ];
     return () => unsubs.forEach((u) => u());
   }, []);
+
+  useVisibilityRefresh(() => loadWaitlistRef.current());
 
   const loadingRef = useRef(false);
 

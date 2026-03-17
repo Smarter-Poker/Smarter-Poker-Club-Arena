@@ -119,10 +119,21 @@ export default function ClubAnnouncementsPage() {
       },
       500
     );
+    // Cross-tab sync: reload when announcements are changed from another component
+    const unsubAnnouncement = masterBus.subscribeDebounced(
+      'ANNOUNCEMENT_CHANGED',
+      (event) => {
+        if (event.payload?.clubId === clubId) {
+          loadAnnouncements();
+        }
+      },
+      500
+    );
     return () => {
       unsubJoined();
+      unsubAnnouncement();
     };
-  }, []);
+  }, [clubId]);
 
   const loadAnnouncements = async (getIsMounted?: () => boolean) => {
     if (!clubId) return;

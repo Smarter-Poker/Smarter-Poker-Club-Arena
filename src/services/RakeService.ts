@@ -313,7 +313,7 @@ export const RakeService = {
       rakeCap: tier.maxAmount,
       bbjDrop: bbjDropScaled / 100,
       totalDeduction: totalDeductionScaled / 100,
-      netPot: potSize - totalDeductionScaled / 100,
+      netPot: Math.max(0, potSize - totalDeductionScaled / 100),
     };
   },
 
@@ -361,7 +361,7 @@ export const RakeService = {
       // Recalculate BBJ drop proportionally based on the authoritative rake
       if (calculation.rawRake > 0) {
         const ratio = params.preCalculatedRake / calculation.rawRake;
-        calculation.bbjDrop = Math.round(calculation.bbjDrop * ratio * 100) / 100;
+        calculation.bbjDrop = Math.trunc(calculation.bbjDrop * ratio * 100) / 100;
       }
       calculation.totalDeduction = calculation.cappedRake + calculation.bbjDrop;
       calculation.netPot = potSize - calculation.totalDeduction;

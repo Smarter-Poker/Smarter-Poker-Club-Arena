@@ -440,9 +440,7 @@ class TournamentService {
         0
       );
       if (totalPercent > 0 && Math.abs(totalPercent - 100) > 1) {
-        throw new Error(
-          `Payout percentages must sum to 100% (got ${totalPercent.toFixed(1)}%)`
-        );
+        throw new Error(`Payout percentages must sum to 100% (got ${totalPercent.toFixed(1)}%)`);
       }
     }
 
@@ -488,7 +486,7 @@ class TournamentService {
       config.type === 'mystery_bounty';
 
     // FIX: Use resolvedClubId from union guard above — raw clubId may not be a UUID
-    const finalClubId = config.isXmtt ? clubId : (await resolveClubUUID(clubId));
+    const finalClubId = config.isXmtt ? clubId : await resolveClubUUID(clubId);
     const { data, error } = await supabase
       .from('tournaments')
       .insert({
@@ -1118,7 +1116,7 @@ class TournamentService {
       .from('tournaments')
       .update({
         status: 'CANCELLED',
-        cancelled_at: new Date().toISOString(),
+        ended_at: new Date().toISOString(),
         prize_pool: 0,
       })
       .eq('id', tournamentId);

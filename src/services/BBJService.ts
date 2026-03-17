@@ -308,9 +308,14 @@ export const BBJService = {
 
     // Apply allocation ratios based on current pool size
     const ratios = this.getAllocationRatios(params.currentMainBalance);
-    const mainPortion = Math.trunc(contribution * ratios.MAIN * 100) / 100;
-    const backupPortion = Math.trunc(contribution * ratios.BACKUP * 100) / 100;
-    const promoPortion = contribution - mainPortion - backupPortion; // remainder to ensure precision
+    // Integer-cents arithmetic to prevent float precision loss
+    const contributionScaled = Math.trunc(contribution * 100);
+    const mainScaled = Math.trunc(contributionScaled * ratios.MAIN);
+    const backupScaled = Math.trunc(contributionScaled * ratios.BACKUP);
+    const promoScaled = contributionScaled - mainScaled - backupScaled; // remainder guarantees sum === total
+    const mainPortion = mainScaled / 100;
+    const backupPortion = backupScaled / 100;
+    const promoPortion = promoScaled / 100;
 
     // Call RPC to atomically update pool and record contribution
     // add_bbj_contribution now supports triple-bank allocation (MAIN/BACKUP/PROMO)
@@ -460,7 +465,14 @@ export const BBJService = {
       return null;
     }
 
-    const totalAmount = pool.main_balance;
+    const totalAmount = Number(pool.main_balance) || 0;
+    if (totalAmount <= 0) {
+      console.error(
+        'BBJService.executePayout: Pool main_balance is zero or invalid:',
+        pool.main_balance
+      );
+      return null;
+    }
     // Share calculations are documented here for reference; the award_bbj RPC
     // performs the actual split atomically to prevent partial payouts.
     const _tableShare = totalAmount * PAYOUT_SHARES.TABLE;
@@ -570,12 +582,14 @@ export const BBJService = {
       return false; // Stop before printing any money
     }
 
-    // Phase 2: Distribute promo payout to each recipient — precise chip division
+    // Phase 2: Distribute promo payout to each recipient — integer-cents chip division
     const recipientCount = params.recipientUserIds.length;
-    const basePerPlayer = Math.trunc((params.amount / recipientCount) * 100) / 100;
-    // Remainder chips go to first recipients to ensure total is exactly distributed
-    const distributed = basePerPlayer * recipientCount;
-    const remainder = Math.round((params.amount - distributed) * 100) / 100;
+    const totalCents = Math.trunc(params.amount * 100);
+    const baseCentsPerPlayer = Math.trunc(totalCents / recipientCount);
+    const remainderCents = totalCents - baseCentsPerPlayer * recipientCount;
+    const basePerPlayer = baseCentsPerPlayer / 100;
+    // Remainder chips (in cents) go to first recipients to ensure total is exactly distributed
+    const remainder = remainderCents / 100;
     let lastError: Error | null = null;
 
     for (let i = 0; i < recipientCount; i++) {

@@ -456,9 +456,29 @@ export default function UnionDetailPage() {
       500
     );
 
+    // Refresh online count + tables when a table changes across union clubs
+    const unsubTable = masterBus.subscribeDebounced(
+      'TABLE_UPDATED',
+      () => {
+        void reloadUnionClubs();
+      },
+      1000
+    );
+
+    // Refresh financial summary when a settlement completes
+    const unsubSettlement = masterBus.subscribeDebounced(
+      'SETTLEMENT_COMPLETED',
+      () => {
+        void reloadUnion();
+      },
+      1000
+    );
+
     return () => {
       masterBus.removeRegisteredChannel(channelKey);
       unsubUnion();
+      unsubTable();
+      unsubSettlement();
     };
   }, [unionId, union?.settings?.crossClubTournaments, clubs]);
 

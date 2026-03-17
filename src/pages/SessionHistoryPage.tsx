@@ -140,12 +140,33 @@ export default function SessionHistoryPage() {
   // Bus listener: refresh when a session ends or balance changes (debounced)
   // Uses loadSessions from useCallback so deps stay stable
   useEffect(() => {
+    if (!user?.id) return;
     const unsubs = [
       masterBus.subscribeDebounced('SESSION_ENDED', () => loadSessions(), 500),
       masterBus.subscribeDebounced('BALANCE_UPDATED', () => loadSessions(), 2000),
     ];
-    return () => unsubs.forEach((u) => u());
-  }, [loadSessions]);
+
+    // WebSocket: live session history updates
+    const channelKey = `session-history-${user.id}`;
+    const channel = masterBus.getOrCreateChannel(channelKey);
+    channel
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'session_history',
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => loadSessions()
+      )
+      .subscribe();
+
+    return () => {
+      unsubs.forEach((u) => u());
+      masterBus.removeRegisteredChannel(channelKey);
+    };
+  }, [user?.id, loadSessions]);
 
   // Aggregate stats
   const totalPL = sessions.reduce((sum, s) => sum + (s.profit_loss || 0), 0);

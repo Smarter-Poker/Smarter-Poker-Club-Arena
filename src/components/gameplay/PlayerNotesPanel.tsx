@@ -96,15 +96,15 @@ export default function PlayerNotesPanel({
     setLoading(true);
     const { data } = await supabase
       .from('player_notes')
-      .select('id, user_id, target_user_id, note, color, tags')
+      .select('id, user_id, target_user_id, notes, color_label, tags')
       .eq('user_id', user?.id)
       .eq('target_user_id', targetUserId)
       .maybeSingle();
 
     if (data) {
-      setCurrentNote(data.note || '');
+      setCurrentNote(data.notes || '');
       setSelectedTags(data.tags || []);
-      setSelectedColor(data.color || '#6b7280');
+      setSelectedColor(data.color_label || '#6b7280');
     }
     setLoading(false);
   };
@@ -113,7 +113,7 @@ export default function PlayerNotesPanel({
     setLoading(true);
     const { data, error } = await supabase
       .from('player_notes')
-      .select('id, target_user_id, note, tags, color, updated_at')
+      .select('id, target_user_id, notes, tags, color_label, updated_at')
       .eq('user_id', user?.id)
       .order('updated_at', { ascending: false });
 
@@ -137,9 +137,9 @@ export default function PlayerNotesPanel({
         targetUserId: n.target_user_id,
         targetName: pMap[n.target_user_id]?.display_name || 'Unknown',
         targetAvatar: pMap[n.target_user_id]?.avatar_url,
-        note: n.note,
+        note: n.notes,
         tags: n.tags || [],
-        color: n.color || '#6b7280',
+        color: n.color_label || '#6b7280',
         lastUpdated: n.updated_at,
       }));
       setNotes(mapped);
@@ -160,9 +160,9 @@ export default function PlayerNotesPanel({
       {
         user_id: user.id,
         target_user_id: targetUserId,
-        note: currentNote.trim(),
+        notes: currentNote.trim(),
         tags: selectedTags,
-        color: selectedColor,
+        color_label: selectedColor,
         updated_at: new Date().toISOString(),
       },
       { onConflict: 'user_id,target_user_id' }

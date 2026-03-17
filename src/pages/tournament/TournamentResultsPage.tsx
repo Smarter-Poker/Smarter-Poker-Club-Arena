@@ -100,7 +100,8 @@ export default function TournamentResultsPage() {
 
       const { data } = await query;
       if (!isMounted.current) return;
-      let completedList = (data || []) as CompletedTournament[];
+      if (!data) return;
+      let completedList = data as CompletedTournament[];
 
       // If "mine" filter, only show tournaments user participated in
       if (filter === 'mine' && user?.id) {
@@ -157,10 +158,10 @@ export default function TournamentResultsPage() {
           )
           .eq('id', tournamentId)
           .maybeSingle();
-        if (isMounted.current && data) {
-          setSelectedTournament(data as CompletedTournament);
-          deepLinkedRef.current = true;
-        }
+        if (!isMounted.current) return;
+        if (!data) return;
+        setSelectedTournament(data as CompletedTournament);
+        deepLinkedRef.current = true;
       })();
     }
   }, [tournaments, searchParams]);

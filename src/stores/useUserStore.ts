@@ -155,6 +155,11 @@ export const useUserStore = create<UserState>()(
             return null;
           }
 
+          if (!data) {
+            set({ isLoading: false });
+            return null;
+          }
+
           const profile: UserProfile = {
             id: data.id,
             username: data.username || 'Player',

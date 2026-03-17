@@ -9,6 +9,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { triggerHaptic } from '../../services/HapticService';
 import { masterBus } from '../../core/MasterBus';
+import { useIsMounted } from '../../hooks/useIsMounted';
 
 const Z_FLOATING_CHAT = 900;
 
@@ -37,6 +38,7 @@ export default function TableChatHUD({ tableId, userId, isMuted = false }: Table
   const chatRef = useRef<HTMLDivElement>(null);
   const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
   const isOpenRef = useRef(isOpen);
+  const isMounted = useIsMounted();
 
   useEffect(() => {
     const loadMutes = () => {
@@ -62,6 +64,7 @@ export default function TableChatHUD({ tableId, userId, isMuted = false }: Table
         .eq('table_id', tableId)
         .order('created_at', { ascending: false })
         .limit(50);
+      if (!isMounted.current) return;
       if (data) setMessages((data as ChatMessage[]).reverse());
     };
     loadMessages();
@@ -154,12 +157,12 @@ export default function TableChatHUD({ tableId, userId, isMuted = false }: Table
       });
       if (error) {
         console.error('Failed to send:', error);
-        setMessages((prev) => prev.filter((m) => m.id !== tempId));
+        if (isMounted.current) setMessages((prev) => prev.filter((m) => m.id !== tempId));
       }
     } catch (err) {
       console.error('[TableChatHUD] Error:', err);
       // Rollback on network/exception failure
-      setMessages((prev) => prev.filter((m) => m.id !== tempId));
+      if (isMounted.current) setMessages((prev) => prev.filter((m) => m.id !== tempId));
     }
   };
 
@@ -184,12 +187,12 @@ export default function TableChatHUD({ tableId, userId, isMuted = false }: Table
         .insert({ table_id: tableId, sender_id: userId, message: phrase, message_type: 'player' });
       if (error) {
         console.error('[TableChat] Quick phrase failed:', error);
-        setMessages((prev) => prev.filter((m) => m.id !== tempId));
+        if (isMounted.current) setMessages((prev) => prev.filter((m) => m.id !== tempId));
       }
     } catch (err) {
       console.error('[TableChatHUD] Error:', err);
       // Rollback on network/exception failure
-      setMessages((prev) => prev.filter((m) => m.id !== tempId));
+      if (isMounted.current) setMessages((prev) => prev.filter((m) => m.id !== tempId));
     }
   };
 

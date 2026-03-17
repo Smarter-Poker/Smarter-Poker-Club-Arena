@@ -93,13 +93,16 @@ function TableCardInner({ table }: TableCardProps) {
       .select('id', { count: 'exact', head: true })
       .eq('table_id', table.id)
       .eq('status', 'waiting')
-      .then(({ count, error }) => {
-        if (error) {
-          console.warn('[TableCard] Waitlist count error:', error.message);
-          return;
-        }
-        if (isMounted && count !== null) setWaiting(count);
-      });
+      .then(
+        ({ count, error }) => {
+          if (error) {
+            console.warn('[TableCard] Waitlist count error:', error.message);
+            return;
+          }
+          if (isMounted && count !== null) setWaiting(count);
+        },
+        (err: any) => console.warn('[TableCard] Waitlist fetch failed:', err)
+      );
 
     // Fetch average pot from last 20 completed hands
     supabase
@@ -110,16 +113,19 @@ function TableCardInner({ table }: TableCardProps) {
       .gt('pot', 0)
       .order('ended_at', { ascending: false })
       .limit(20)
-      .then(({ data, error }) => {
-        if (error) {
-          console.warn('[TableCard] Avg pot error:', error.message);
-          return;
-        }
-        if (isMounted && data && data.length > 0) {
-          const avg = data.reduce((sum, h) => sum + (h.pot || 0), 0) / data.length;
-          setAvgPot(Math.trunc(avg * 100) / 100);
-        }
-      });
+      .then(
+        ({ data, error }) => {
+          if (error) {
+            console.warn('[TableCard] Avg pot error:', error.message);
+            return;
+          }
+          if (isMounted && data && data.length > 0) {
+            const avg = data.reduce((sum, h) => sum + (h.pot || 0), 0) / data.length;
+            setAvgPot(Math.trunc(avg * 100) / 100);
+          }
+        },
+        (err: any) => console.warn('[TableCard] Avg pot fetch failed:', err)
+      );
 
     // Fetch active player avatars
     supabase
@@ -129,56 +135,10 @@ function TableCardInner({ table }: TableCardProps) {
       .eq('status', 'active')
       .is('left_at', null)
       .limit(6)
-      .then(async ({ data, error }) => {
-        if (error) {
-          console.warn('[TableCard] Player avatars error:', error.message);
-          return;
-        }
-        if (isMounted && data && data.length > 0) {
-          const userIds = data.map((p: any) => p.user_id).filter(Boolean);
-          const { data: profs } = await supabase
-            .from('profiles')
-            .select('id, avatar_url, display_name, username')
-            .in('id', userIds);
-          const profMap: Record<string, any> = {};
-          if (profs)
-            profs.forEach((p: any) => {
-              profMap[p.id] = p;
-            });
-          setPlayerAvatars(
-            data.map((p: any) => ({
-              id: p.user_id,
-              url: profMap[p.user_id]?.avatar_url,
-              name: profMap[p.user_id]?.display_name || profMap[p.user_id]?.username || '?',
-            }))
-          );
-        }
-      });
-
-    // Store refresh function for bus listeners
-    refreshRef.current = () => {
-      supabase
-        .from('table_waitlists')
-        .select('id', { count: 'exact', head: true })
-        .eq('table_id', table.id)
-        .eq('status', 'waiting')
-        .then(({ count, error }) => {
+      .then(
+        async ({ data, error }) => {
           if (error) {
-            console.warn('[TableCard] Waitlist refresh error:', error.message);
-            return;
-          }
-          if (isMounted && count !== null) setWaiting(count);
-        });
-      supabase
-        .from('table_seats')
-        .select('user_id')
-        .eq('table_id', table.id)
-        .eq('status', 'active')
-        .is('left_at', null)
-        .limit(6)
-        .then(async ({ data, error }) => {
-          if (error) {
-            console.warn('[TableCard] Avatars refresh error:', error.message);
+            console.warn('[TableCard] Player avatars error:', error.message);
             return;
           }
           if (isMounted && data && data.length > 0) {
@@ -199,10 +159,65 @@ function TableCardInner({ table }: TableCardProps) {
                 name: profMap[p.user_id]?.display_name || profMap[p.user_id]?.username || '?',
               }))
             );
-          } else if (isMounted) {
-            setPlayerAvatars([]);
           }
-        });
+        },
+        (err: any) => console.warn('[TableCard] Player avatars fetch failed:', err)
+      );
+
+    // Store refresh function for bus listeners
+    refreshRef.current = () => {
+      supabase
+        .from('table_waitlists')
+        .select('id', { count: 'exact', head: true })
+        .eq('table_id', table.id)
+        .eq('status', 'waiting')
+        .then(
+          ({ count, error }) => {
+            if (error) {
+              console.warn('[TableCard] Waitlist refresh error:', error.message);
+              return;
+            }
+            if (isMounted && count !== null) setWaiting(count);
+          },
+          (err: any) => console.warn('[TableCard] Waitlist refresh failed:', err)
+        );
+      supabase
+        .from('table_seats')
+        .select('user_id')
+        .eq('table_id', table.id)
+        .eq('status', 'active')
+        .is('left_at', null)
+        .limit(6)
+        .then(
+          async ({ data, error }) => {
+            if (error) {
+              console.warn('[TableCard] Avatars refresh error:', error.message);
+              return;
+            }
+            if (isMounted && data && data.length > 0) {
+              const userIds = data.map((p: any) => p.user_id).filter(Boolean);
+              const { data: profs } = await supabase
+                .from('profiles')
+                .select('id, avatar_url, display_name, username')
+                .in('id', userIds);
+              const profMap: Record<string, any> = {};
+              if (profs)
+                profs.forEach((p: any) => {
+                  profMap[p.id] = p;
+                });
+              setPlayerAvatars(
+                data.map((p: any) => ({
+                  id: p.user_id,
+                  url: profMap[p.user_id]?.avatar_url,
+                  name: profMap[p.user_id]?.display_name || profMap[p.user_id]?.username || '?',
+                }))
+              );
+            } else if (isMounted) {
+              setPlayerAvatars([]);
+            }
+          },
+          (err: any) => console.warn('[TableCard] Avatars refresh failed:', err)
+        );
     };
 
     return () => {
@@ -232,11 +247,14 @@ function TableCardInner({ table }: TableCardProps) {
       .eq('club_id', table.club_id)
       .eq('user_id', user.id)
       .maybeSingle()
-      .then(({ data }) => {
-        if (!cancelled && data && ['owner', 'admin'].includes(data.role)) {
-          setAdminRole(data.role);
-        }
-      });
+      .then(
+        ({ data }) => {
+          if (!cancelled && data && ['owner', 'admin'].includes(data.role)) {
+            setAdminRole(data.role);
+          }
+        },
+        (err: any) => console.warn('[TableCard] Admin role check failed:', err)
+      );
     return () => {
       cancelled = true;
     };

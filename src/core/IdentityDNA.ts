@@ -236,9 +236,7 @@ class IdentityDNACore {
                   .then(() => {
                     pushNotificationService.setExternalUserId(session.user.id);
                   })
-                  .catch(() => {
-                    /* OneSignal not configured */
-                  });
+                  .catch((err) => console.warn('[IdentityDNA] Auth fallback error:', err));
 
                 // Phase 7: Absolute Realtime Perfection (Listen to external/Admin Postgres mutations)
                 // FIX 5: Wrapped in try/catch — don't let realtime init failure crash the auth flow
@@ -411,6 +409,7 @@ class IdentityDNACore {
       return null;
     }
 
+    if (!data) return null;
     return data as UserProfile;
   }
 

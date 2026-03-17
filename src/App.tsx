@@ -199,9 +199,9 @@ export default function App() {
     const goOnline = () => {
       setIsOffline(false);
       // Replay queued mutations on reconnect
-      OfflineQueueService.replayQueue().catch(() => {
-        /* best effort */
-      });
+      OfflineQueueService.replayQueue().catch((err) =>
+        console.warn('[App] Offline queue replay error:', err)
+      );
     };
     window.addEventListener('offline', goOffline);
     window.addEventListener('online', goOnline);
@@ -393,9 +393,9 @@ export default function App() {
   useEffect(() => {
     const handleBeforeUnload = () => {
       try {
-        realtimeChannelService.unsubscribeAll().catch(() => {
-          /* best effort cleanup */
-        });
+        realtimeChannelService
+          .unsubscribeAll()
+          .catch((err) => console.warn('[App] Cleanup error:', err));
       } catch (e) {
         console.warn('[App] Error during subscription cleanup on unload:', e);
       }
@@ -432,9 +432,9 @@ export default function App() {
         import.meta.env.BASE_URL && import.meta.env.BASE_URL !== '/'
           ? `${import.meta.env.BASE_URL}sw-bus.js`
           : '/sw-bus.js';
-      navigator.serviceWorker.register(swPath).catch((_err) => {
-        void 0; /* SW not supported or blocked */
-      });
+      navigator.serviceWorker
+        .register(swPath)
+        .catch((err) => console.warn('[App] Service worker registration failed:', err));
     }
 
     // Boot all engine services

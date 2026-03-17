@@ -329,7 +329,9 @@ function ConfigModal({
         .eq('club_id', resolvedId)
         .limit(1)
         .maybeSingle();
-      if (unionCheck) {
+      if (!unionCheck) {
+        // No union data returned, proceed normally
+      } else {
         throw new Error(
           'Clubs inside a union cannot create standalone games. Tables and tournaments are managed at the union level.'
         );

@@ -66,8 +66,8 @@ export default function AppLayout() {
         <ClubArenaWelcomeModal isOpen={showWelcome} onAccept={acceptWelcome} />
       )}
 
-      {/* Global Header — Always visible (contains hamburger menu trigger) */}
-      <GlobalHeader pageDepth={2} />
+      {/* Global Header — Always visible outside iframes */}
+      {!isInIframe && <GlobalHeader pageDepth={2} />}
 
       {/* Global Announcement Banner (shows club announcements when in a club context) */}
       <ClubAnnouncementBanner />

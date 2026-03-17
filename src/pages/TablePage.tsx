@@ -4836,10 +4836,7 @@ export default function TablePage({
       {/* Hole Card Reveal (staggered showdown flip) */}
       {tableId && <HoleCardReveal tableId={tableId} revealDelayMs={600} />}
 
-      {/* Quick Chat Presets (one-tap messages) */}
-      {tableId && userId !== 'guest' && (
-        <QuickChatPresets tableId={tableId} userId={userId} playerName={username} />
-      )}
+      {/* Quick Chat Presets removed per user request */}
 
       {/* Throwable Selector */}
       {showThrowableSelector && userId && (

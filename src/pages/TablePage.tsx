@@ -1870,7 +1870,6 @@ export default function TablePage({
                         console.debug(
                           `[TablePage] User moved from ${tableId} to ${playerData.table_id}`
                         );
-                        const cId = actualClubIdRef.current || tableId || 'demo';
                         navigate(`/table/${playerData.table_id}`); // FIX: was /clubs/:clubId/table/:tableId which is not a defined route
                       } else if (playerData?.table_id === tableId) {
                         // User stayed at this table — just refresh seats
@@ -2531,7 +2530,7 @@ export default function TablePage({
     _win.__pokerLocks.activeHC = hand;
 
     // Wire persistence service — use ACTUAL club_id, not table_id
-    const clubId = actualClubIdRef.current || tableId || 'demo';
+    const clubId = actualClubIdRef.current || tableId || 'unknown';
     handPersistenceService.wireToHandController(hand, {
       tableId: tableId || 'anonymous',
       clubId,
@@ -3242,7 +3241,7 @@ export default function TablePage({
             const currentPlayers = tableStateRef.current.players.filter(
               (p): p is NonNullable<typeof p> => p != null && p.stack > 0
             );
-            const rakeClubId = actualClubIdRef.current || tableId || 'demo';
+            const rakeClubId = actualClubIdRef.current || tableId || 'unknown';
             const rakePlayers = currentPlayers.map((p) => ({
               userId: p.id,
               clubId: rakeClubId,

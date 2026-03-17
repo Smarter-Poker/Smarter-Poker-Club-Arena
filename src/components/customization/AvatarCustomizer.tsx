@@ -6,7 +6,24 @@ interface AvatarCustomizerProps {
   onSave?: (avatarUrl: string) => void;
 }
 
-const PRESET_AVATARS = ['', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''];
+const PRESET_AVATARS = [
+  '\u2660\uFE0F',
+  '\u2665\uFE0F',
+  '\u2666\uFE0F',
+  '\u2663\uFE0F',
+  '\uD83C\uDCA0',
+  '\uD83E\uDD88',
+  '\uD83E\uDD81',
+  '\uD83D\uDC3A',
+  '\uD83E\uDD85',
+  '\uD83D\uDC09',
+  '\uD83E\uDD8A',
+  '\uD83D\uDC27',
+  '\uD83D\uDE0E',
+  '\uD83E\uDD20',
+  '\uD83E\uDD77',
+  '\uD83D\uDC51',
+];
 
 const AVATAR_BACKGROUNDS = [
   '#ef4444',

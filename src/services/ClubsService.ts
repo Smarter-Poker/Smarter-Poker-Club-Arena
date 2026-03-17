@@ -632,6 +632,7 @@ export async function updateClub(clubId: string, updates: Record<string, any>): 
     'time_bank_seconds',
     'allow_straddle',
     'allow_run_it_twice',
+    'allow_rabbit_hunt',
   ];
   const sanitizedUpdates: Record<string, any> = {};
   for (const key of Object.keys(updates)) {

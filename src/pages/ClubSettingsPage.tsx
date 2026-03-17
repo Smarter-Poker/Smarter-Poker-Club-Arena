@@ -15,7 +15,7 @@ import ClubBottomNav from '../components/club/ClubBottomNav';
 import AuditLog from '../components/admin/AuditLog';
 import { StatsExport } from '../components/admin/StatsExport';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
-import { resolveClubIdFilter } from '../utils/clubIdResolver';
+import { resolveClubIdFilter, resolveClubUUID } from '../utils/clubIdResolver';
 import '../components/common/ButtonSpinner.css';
 import './ClubSettingsPage.css';
 
@@ -115,21 +115,30 @@ export default function ClubSettingsPage() {
     if (!clubId) return;
     let isMounted = true;
     const channelKey = `club-settings-${clubId}`;
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'clubs',
-          filter: `id=eq.${clubId}`,
-        },
-        () => {
-          if (isMounted) loadClubSettings(() => isMounted);
-        }
-      )
-      .subscribe();
+
+    // Resolve UUID for realtime filter (integer club IDs need translation)
+    const setupRealtime = async () => {
+      const resolvedId = await resolveClubUUID(clubId);
+      if (!isMounted) return;
+      const channel = masterBus.getOrCreateChannel(channelKey);
+      channel
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'clubs',
+            filter: `id=eq.${resolvedId}`,
+          },
+          () => {
+            if (isMounted) loadClubSettings(() => isMounted);
+          }
+        )
+        .subscribe();
+    };
+
+    setupRealtime().catch((e) => console.warn('[ClubSettingsPage] Realtime setup failed:', e));
+
     return () => {
       isMounted = false;
       masterBus.removeRegisteredChannel(channelKey);

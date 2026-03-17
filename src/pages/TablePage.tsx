@@ -1347,10 +1347,12 @@ export default function TablePage({
     fetchExistingHand();
 
     return () => {
-      // Component unmount cleanup
+      // Component unmount cleanup — both unsubscribe AND remove from MasterBus registry
+      const channelKey = `table-cards-secure-${tableId}-${userId}`;
       channel
         .unsubscribe()
         .catch((e) => console.warn('[TablePage] Failed to unsubscribe from table channel:', e));
+      masterBus.removeRegisteredChannel(channelKey);
     };
   }, [tableId, userId]);
 
@@ -1910,7 +1912,9 @@ export default function TablePage({
       roomService.leaveRoom(tableId);
       timeBankEngine.dispose(tableId); // Clean up timer entries to prevent zombie accumulation
       if (breakChannelRef.current) {
-        masterBus.removeRegisteredChannel(`t-break-${tableState.tournamentId || tableId}`);
+        // BUG-C FIX: Read tournamentId from tableStateRef (fresh) instead of stale closure
+        const tournId = tableStateRef.current.tournamentId || tableId;
+        masterBus.removeRegisteredChannel(`t-break-${tournId}`);
         breakChannelRef.current = null;
       }
       if (addOnChannelRef.current) {
@@ -1918,7 +1922,9 @@ export default function TablePage({
         addOnChannelRef.current = null;
       }
       if (bountyChannelRef.current) {
-        masterBus.removeRegisteredChannel(`bounty-${tableState.tournamentId || tableId}`);
+        // BUG-C FIX: Read tournamentId from tableStateRef (fresh) instead of stale closure
+        const tournId = tableStateRef.current.tournamentId || tableId;
+        masterBus.removeRegisteredChannel(`bounty-${tournId}`);
         bountyChannelRef.current = null;
       }
     };
@@ -2907,6 +2913,9 @@ export default function TablePage({
           break;
 
         case 'HAND_COMPLETE':
+          // BUG-D FIX: Increment hand number BEFORE any processing
+          // This ref controls dealer button rotation and hand identity
+          handNumberRef.current += 1;
           // Close raise slider on hand complete
           setShowRaiseSlider(false);
           // First, keep cards visible for 3 seconds so players can see showdown

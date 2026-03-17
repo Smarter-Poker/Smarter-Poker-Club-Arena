@@ -290,19 +290,20 @@ export default function ClubCarouselPage() {
   }, [displayedClubs, searchParams]);
 
   // #10: Stagger premium 3D card entrance animation
-  // BUG FIX: Must use displayedClubs (filtered), not clubs (unfiltered)
-  // Otherwise filtered cards get IDs not in visibleCards → stuck with 'hidden' class
+  // Uses `clubs` (not displayedClubs) to avoid re-staggering on every search keystroke.
+  // The JSX renders displayedClubs and checks visibleCards.has(id), which works because
+  // all displayedClubs IDs are a subset of clubs IDs already in the Set.
   useEffect(() => {
-    if (displayedClubs.length === 0 && userUnions.length === 0) return;
+    if (clubs.length === 0 && userUnions.length === 0) return;
     setVisibleCards(new Set());
-    const allItems = [...displayedClubs.map((c) => c.id), ...userUnions.map((u) => u.id)];
+    const allItems = [...clubs.map((c) => c.id), ...userUnions.map((u) => u.id)];
     const timers = allItems.map((itemId, index) =>
       setTimeout(() => {
         setVisibleCards((prev) => new Set(prev).add(itemId));
       }, index * 80)
     );
     return () => timers.forEach((t) => clearTimeout(t));
-  }, [displayedClubs, userUnions]);
+  }, [clubs, userUnions]);
 
   // #8: Fetch notification badges per club
   useEffect(() => {

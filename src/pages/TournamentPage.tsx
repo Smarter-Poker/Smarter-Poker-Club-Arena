@@ -202,7 +202,7 @@ export default function TournamentPage() {
   // ── Realtime subscription: live tournament updates ──
   useEffect(() => {
     if (!clubId) return;
-    const isMounted = true;
+    let isMounted = true;
 
     const channelKey = `tournament-page-${clubId}`;
 
@@ -355,7 +355,7 @@ export default function TournamentPage() {
       );
       setIsRegistered(true);
 
-      // Update tournament in list (prize pool = buy_in minus rake)
+      // Update tournament in list (prize pool = buy_in + rake)
       const prizeContribution = selectedTournament.buy_in_amount;
       setTournaments((prev) =>
         prev.map((t) =>

@@ -424,6 +424,10 @@ export default function ClubDetailPage() {
     setMemberLimit(50);
     setMemberSearch('');
     setShowMemberMenu(null);
+    setDeleteTableConfirm({ show: false, tableId: null, tableName: null });
+    setDeletingTableId(null);
+    setSavingSettings(false);
+    setShowAgentManager(false);
     initialLoadDone.current = false;
     // CRITICAL: reset loadingRef so the new club's loadClubData isn't blocked
     // by an in-flight request from the PREVIOUS club

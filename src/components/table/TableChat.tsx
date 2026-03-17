@@ -59,16 +59,8 @@ function formatTime(date: Date): string {
 // Quick emoji buttons
 const QUICK_EMOJIS = ['', '', 'nh', 'ty', 'gg', '😂', '', ''];
 
-// Quick Chat preset phrases for one-tap sending
-const QUICK_CHAT_PHRASES = [
-  'Nice hand 👏',
-  'Good game',
-  'Well played!',
-  'Unlucky 😬',
-  'LOL 😂',
-  'Thanks!',
-  'Ship it! 🚀',
-];
+// Quick Chat preset phrases for one-tap sending (REMOVED as per request)
+const QUICK_CHAT_PHRASES: string[] = [];
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SUB-COMPONENTS
@@ -116,7 +108,7 @@ function MessageRow({ message, isOwnMessage, isNew = false }: MessageRowProps) {
       {!isOwnMessage && (
         <div className="chat-message__avatar">
           {message.playerAvatar ? (
-            <img loading="lazy" decoding="async" src={message.playerAvatar} alt="" />
+            <img loading="lazy" decoding="async" src={message.playerAvatar} alt="Player avatar" />
           ) : (
             <span>{message.playerName?.[0]?.toUpperCase() || '?'}</span>
           )}
@@ -399,39 +391,7 @@ export function TableChat({
       )}
 
       {/* Input */}
-      {/* Quick Chat Phrases */}
-      <div
-        className="table-chat__quick-phrases"
-        style={{
-          display: 'flex',
-          gap: 6,
-          padding: '4px 8px',
-          overflowX: 'auto',
-          scrollbarWidth: 'none',
-        }}
-      >
-        {QUICK_CHAT_PHRASES.map((phrase, i) => (
-          <button
-            key={`qc-${i}`}
-            onClick={() => onSendMessage(phrase)}
-            disabled={isDisabled}
-            style={{
-              padding: '4px 10px',
-              borderRadius: 12,
-              background: 'rgba(0,212,255,0.1)',
-              border: '1px solid rgba(0,212,255,0.2)',
-              color: '#8ad4e8',
-              fontSize: '0.65rem',
-              fontWeight: 600,
-              whiteSpace: 'nowrap',
-              cursor: 'pointer',
-              flexShrink: 0,
-            }}
-          >
-            {phrase}
-          </button>
-        ))}
-      </div>
+      {/* Quick Chat Phrases removed */}
 
       <div className="table-chat__input-container">
         <button

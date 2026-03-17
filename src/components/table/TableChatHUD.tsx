@@ -193,7 +193,7 @@ export default function TableChatHUD({ tableId, userId, isMuted = false }: Table
     }
   };
 
-  if (isMobile && !isOpen) {
+  if (!isOpen) {
     return (
       <button onClick={() => setIsOpen(true)} style={S.chatBubble}>
         💬{unreadCount > 0 && <span style={S.badge}>{unreadCount}</span>}
@@ -205,11 +205,9 @@ export default function TableChatHUD({ tableId, userId, isMuted = false }: Table
     <div style={{ ...S.container, ...(isMobile ? S.mobileFull : S.desktop) }}>
       <div style={S.header}>
         <span style={{ fontSize: 12, fontWeight: 700, color: '#E4E6EB' }}>Table Chat</span>
-        {isMobile && (
-          <button onClick={() => setIsOpen(false)} style={S.closeBtn}>
-            ×
-          </button>
-        )}
+        <button onClick={() => setIsOpen(false)} style={S.closeBtn}>
+          ×
+        </button>
       </div>
       <div style={S.messageList} ref={chatRef} aria-live="polite">
         {messages.length === 0 && <div style={S.empty}>No messages yet. Say hi!</div>}
@@ -265,27 +263,7 @@ export default function TableChatHUD({ tableId, userId, isMuted = false }: Table
         <div style={S.muted}>You are muted from table chat.</div>
       ) : (
         <form onSubmit={handleSendMessage} style={S.input}>
-          <div style={{ display: 'flex', gap: 3, marginBottom: 4, flexWrap: 'wrap' }}>
-            {['nh', 'ty', 'gg', 'lol', 'wp', 'gl'].map((p) => (
-              <button
-                key={p}
-                type="button"
-                onClick={() => sendQuickPhrase(p)}
-                style={{
-                  background: 'rgba(255,255,255,0.08)',
-                  color: '#B0B3B8',
-                  border: '1px solid rgba(255,255,255,0.1)',
-                  borderRadius: 10,
-                  padding: '2px 8px',
-                  fontSize: 10,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                }}
-              >
-                {p}
-              </button>
-            ))}
-          </div>
+          {/* Quick Chat Phrases removed */}
           <div style={{ display: 'flex', gap: 6 }}>
             <input
               type="text"

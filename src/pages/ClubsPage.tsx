@@ -56,6 +56,8 @@ interface Membership {
 
 // Check if user has seen intro in this session
 const INTRO_SHOWN_KEY = 'club_arena_intro_shown';
+const SWR_CLUBS_KEY = 'clubs_page_clubs_cache';
+const SWR_UNIONS_KEY = 'clubs_page_unions_cache';
 
 export default function ClubsPage() {
   const navigate = useNavigate();
@@ -73,8 +75,31 @@ export default function ClubsPage() {
   });
 
   // Real data states
-  const [myClubs, setMyClubs] = useState<Membership[]>([]);
-  const [myUnions, setMyUnions] = useState<Union[]>([]);
+  // SWR — instant render from cache on revisit
+  const [myClubs, setMyClubs] = useState<Membership[]>(() => {
+    try {
+      const cached = localStorage.getItem(SWR_CLUBS_KEY);
+      if (cached) {
+        const p = JSON.parse(cached);
+        if (Array.isArray(p) && p.length > 0) return p;
+      }
+    } catch {
+      /* ignore */
+    }
+    return [];
+  });
+  const [myUnions, setMyUnions] = useState<Union[]>(() => {
+    try {
+      const cached = localStorage.getItem(SWR_UNIONS_KEY);
+      if (cached) {
+        const p = JSON.parse(cached);
+        if (Array.isArray(p) && p.length > 0) return p;
+      }
+    } catch {
+      /* ignore */
+    }
+    return [];
+  });
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -139,8 +164,37 @@ export default function ClubsPage() {
       ]);
       if (getIsMounted && !getIsMounted()) return;
       setCurrentUserId(authUser?.id || null);
-      setMyClubs(memberships);
+
+      // Deduplicate: filter standalone clubs that belong to a loaded union
+      let displayedClubs = memberships;
+      if (unions.length > 0 && memberships.length > 0) {
+        try {
+          const unionClubIds = new Set<string>();
+          const unionIds = unions.map((u) => u.id);
+          const { data: ucRows } = await supabase
+            .from('union_clubs')
+            .select('club_id')
+            .in('union_id', unionIds);
+          if (ucRows) ucRows.forEach((r) => unionClubIds.add(r.club_id));
+          displayedClubs = memberships.filter((m) => !unionClubIds.has((m.club as any)?.id));
+        } catch {
+          /* fail-open: show all clubs if dedup fails */
+        }
+      }
+
+      setMyClubs(displayedClubs);
       setMyUnions(unions);
+      // SWR cache write
+      try {
+        localStorage.setItem(SWR_CLUBS_KEY, JSON.stringify(displayedClubs));
+      } catch {
+        /* quota */
+      }
+      try {
+        localStorage.setItem(SWR_UNIONS_KEY, JSON.stringify(unions));
+      } catch {
+        /* quota */
+      }
     } catch (err) {
       console.error('[CLUBS] Failed to load memberships:', err);
       toast.error('Failed to load your clubs');
@@ -166,13 +220,7 @@ export default function ClubsPage() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'club_members' }, () => {
         if (isMounted) loadMyClubs(() => isMounted);
       })
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'clubs' }, () => {
-        if (isMounted) loadMyClubs(() => isMounted);
-      })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'clubs' }, () => {
-        if (isMounted) loadMyClubs(() => isMounted);
-      })
-      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'clubs' }, () => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'clubs' }, () => {
         if (isMounted) loadMyClubs(() => isMounted);
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'unions' }, () => {
@@ -257,6 +305,7 @@ export default function ClubsPage() {
         name: clubName.trim(),
         description: clubDescription.trim() || undefined,
         is_public: isPublic,
+        requires_approval: requiresApproval,
       });
 
       // Navigate to the new club
@@ -514,7 +563,11 @@ export default function ClubsPage() {
                                 <div
                                   style={{ fontSize: '1.25rem', fontWeight: 700, color: '#00d4ff' }}
                                 >
-                                  {membership.club.online_count || 0}
+                                  {membership.role === 'owner'
+                                    ? '👑'
+                                    : membership.role === 'admin'
+                                      ? '⚙️'
+                                      : '🎮'}
                                 </div>
                                 <div
                                   style={{
@@ -523,14 +576,18 @@ export default function ClubsPage() {
                                     textTransform: 'uppercase',
                                   }}
                                 >
-                                  Online
+                                  {membership.role === 'owner'
+                                    ? 'Owner'
+                                    : membership.role === 'admin'
+                                      ? 'Admin'
+                                      : 'Player'}
                                 </div>
                               </div>
                               <div style={{ textAlign: 'center' }}>
                                 <div
                                   style={{ fontSize: '1.25rem', fontWeight: 700, color: '#00d4ff' }}
                                 >
-                                  {membership.club.table_count || 0}
+                                  Lv.{membership.club.level || 1}
                                 </div>
                                 <div
                                   style={{
@@ -539,7 +596,7 @@ export default function ClubsPage() {
                                     textTransform: 'uppercase',
                                   }}
                                 >
-                                  Tables
+                                  Level
                                 </div>
                               </div>
                             </div>

@@ -107,6 +107,7 @@ export async function createClub(clubData: {
   description?: string;
   color_theme?: string;
   is_public?: boolean;
+  requires_approval?: boolean;
   location?: ClubLocation;
   city?: string;
   country?: string;
@@ -142,7 +143,7 @@ export async function createClub(clubData: {
       description: clubData.description,
       color_theme: clubData.color_theme || 'royal-blue',
       is_public: clubData.is_public ?? true,
-      requires_approval: false,
+      requires_approval: clubData.requires_approval ?? false,
       owner_id: user.user.id,
     })
     .select()
@@ -564,6 +565,15 @@ export async function deleteClub(clubId: string): Promise<void> {
   if (error) {
     console.error('[ClubsService] Delete club failed:', error);
     throw new Error('Failed to delete club');
+  }
+
+  // Emit bus events so all open lobby/carousel tabs refresh immediately
+  try {
+    const { masterBus } = await import('../core/MasterBus');
+    masterBus.emit('CLUB_LEFT', { clubId, action: 'club_deleted' });
+    masterBus.emit('CLUB_UPDATED', { clubId, action: 'club_deleted' });
+  } catch (e) {
+    console.warn('[ClubsService] deleteClub: bus emit failed (non-critical):', e);
   }
 }
 

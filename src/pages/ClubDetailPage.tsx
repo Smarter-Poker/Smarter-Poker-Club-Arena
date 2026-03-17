@@ -413,6 +413,20 @@ export default function ClubDetailPage() {
   const animatedMemberCount = useCountAnimation(club?.memberCount || 0, 800);
   const animatedTableCount = useCountAnimation(club?.activeTableCount || 0, 800);
 
+  // ── CRITICAL: Reset per-club state when navigating between clubs ──
+  // React Router reuses the same component instance on param change (`/clubs/A` → `/clubs/B`),
+  // so state from club A leaks into club B without this explicit reset.
+  useEffect(() => {
+    setIsInUnion(false);
+    setUserRole('member');
+    setAgents([]);
+    setAgentsLoading(false);
+    setMemberLimit(50);
+    setMemberSearch('');
+    setShowMemberMenu(null);
+    initialLoadDone.current = false;
+  }, [clubId]);
+
   // SWR: show cached club data instantly on mount while fresh data loads
   // TTL: skip caches older than 5 minutes to prevent very stale flash
   const SWR_TTL_MS = 5 * 60 * 1000;

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { supabase } from '../../lib/supabase';
-import { masterBus } from '../../core/MasterBus';
 import './GamificationLeaderboard.css';
 
 interface LeaderboardEntry {
@@ -16,98 +16,88 @@ export default function GamificationLeaderboard() {
   const [activeTab, setActiveTab] = useState<'wheel' | 'missions'>('wheel');
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Hook calls at top level
+  useMasterBusSubscription('WHEEL_SPIN_RESULT', () => {
+    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+    refreshTimerRef.current = setTimeout(() => {
+      fetchLeaderboard();
+    }, 1500);
+  });
+
+  useMasterBusSubscription('MISSION_CLAIMED', () => {
+    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+    refreshTimerRef.current = setTimeout(() => {
+      fetchLeaderboard();
+    }, 1500);
+  });
+
+  const fetchLeaderboard = useCallback(async () => {
+    try {
+      if (activeTab === 'wheel') {
+        // Fetch top wheel spinners
+        const { data, error } = await supabase
+          .from('user_lucky_wheel_spins')
+          .select(
+            `
+            user_id,
+            total_spins,
+            profiles (
+              username,
+              avatar_url
+            )
+          `
+          )
+          .order('total_spins', { ascending: false })
+          .limit(10);
+
+        if (error) throw error;
+
+        setEntries(
+          data.map((row: any, index: number) => ({
+            id: `wheel-${row.user_id}`,
+            rank: index + 1,
+            userId: row.user_id,
+            username: row.profiles?.username || 'Unknown Player',
+            avatarUrl: row.profiles?.avatar_url || null,
+            score: row.total_spins || 0,
+          }))
+        );
+      } else {
+        // Fetch top mission completers (mocking this slightly by counting completed tasks)
+        // In a real scenario, this might need a dedicated aggregated table.
+        // For now, we count rows in user_daily_challenges where completed=true
+        const { data, error } = await supabase.rpc('get_top_mission_completers');
+
+        if (error) throw error;
+
+        setEntries(
+          data.map((row: any, index: number) => ({
+            id: `mission-${row.user_id}`,
+            rank: index + 1,
+            userId: row.user_id,
+            username: row.username || 'Unknown Player',
+            avatarUrl: row.avatar_url || null,
+            score: row.completed_count || 0,
+          }))
+        );
+      }
+    } catch (err) {
+      console.error('[Leaderboard] Failed to fetch:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [activeTab]);
 
   useEffect(() => {
-    let isMounted = true;
-    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
     setLoading(true);
-
-    const fetchLeaderboard = async () => {
-      try {
-        if (activeTab === 'wheel') {
-          // Fetch top wheel spinners
-          const { data, error } = await supabase
-            .from('user_lucky_wheel_spins')
-            .select(
-              `
-              user_id,
-              total_spins,
-              profiles (
-                username,
-                avatar_url
-              )
-            `
-            )
-            .order('total_spins', { ascending: false })
-            .limit(10);
-
-          if (error) throw error;
-
-          if (isMounted && data) {
-            setEntries(
-              data.map((row: any, index: number) => ({
-                id: `wheel-${row.user_id}`,
-                rank: index + 1,
-                userId: row.user_id,
-                username: row.profiles?.username || 'Unknown Player',
-                avatarUrl: row.profiles?.avatar_url || null,
-                score: row.total_spins || 0,
-              }))
-            );
-          }
-        } else {
-          // Fetch top mission completers (mocking this slightly by counting completed tasks)
-          // In a real scenario, this might need a dedicated aggregated table.
-          // For now, we count rows in user_daily_challenges where completed=true
-          const { data, error } = await supabase.rpc('get_top_mission_completers');
-
-          if (error) throw error;
-
-          if (isMounted && data) {
-            setEntries(
-              data.map((row: any, index: number) => ({
-                id: `mission-${row.user_id}`,
-                rank: index + 1,
-                userId: row.user_id,
-                username: row.username || 'Unknown Player',
-                avatarUrl: row.avatar_url || null,
-                score: row.completed_count || 0,
-              }))
-            );
-          }
-        }
-      } catch (err) {
-        console.error('[Leaderboard] Failed to fetch:', err);
-      } finally {
-        if (isMounted) setLoading(false);
-      }
-    };
-
     fetchLeaderboard();
 
-    // Bus listeners — auto-refresh when relevant events fire
-    const unsubWheel = masterBus.subscribe('WHEEL_SPIN_RESULT', () => {
-      if (!isMounted) return;
-      if (refreshTimer) clearTimeout(refreshTimer);
-      refreshTimer = setTimeout(() => {
-        if (isMounted) fetchLeaderboard();
-      }, 1500);
-    });
-    const unsubMission = masterBus.subscribe('MISSION_CLAIMED', () => {
-      if (!isMounted) return;
-      if (refreshTimer) clearTimeout(refreshTimer);
-      refreshTimer = setTimeout(() => {
-        if (isMounted) fetchLeaderboard();
-      }, 1500);
-    });
-
     return () => {
-      isMounted = false;
-      if (refreshTimer) clearTimeout(refreshTimer);
-      unsubWheel();
-      unsubMission();
+      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
     };
-  }, [activeTab]);
+  }, [activeTab, fetchLeaderboard]);
 
   return (
     <div className="gl-container">

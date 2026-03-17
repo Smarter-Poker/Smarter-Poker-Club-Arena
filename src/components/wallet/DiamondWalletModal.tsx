@@ -11,9 +11,9 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
+import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
-import { masterBus } from '../../core/MasterBus';
 import './DiamondWalletModal.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -214,12 +214,9 @@ export default function DiamondWalletModal({
   }, [isOpen, fetchTransactions]);
 
   // Refresh when diamond balance changes from another component
-  useEffect(() => {
-    const unsub = masterBus.subscribe('DIAMOND_BALANCE_CHANGED', () => {
-      if (isMounted.current && isOpen) fetchTransactions();
-    });
-    return () => unsub();
-  }, [isOpen, fetchTransactions]);
+  useMasterBusSubscription('DIAMOND_BALANCE_CHANGED', () => {
+    if (isMounted.current && isOpen) fetchTransactions();
+  });
 
   // Client-side filter
   const filteredTx = transactions.filter((tx) => {

@@ -8,10 +8,10 @@
  *  - Uses direct Supabase instead of Hub auth
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { supabase } from '../../lib/supabase';
-import { masterBus } from '../../core/MasterBus';
 import { useAuthUser } from '../../hooks/useAuthUser';
 
 const FB = {
@@ -69,39 +69,32 @@ export default function ClubArenaBottomNav({ clubId, userRole }: ClubArenaBottom
   const location = useLocation();
   const { user } = useAuthUser();
 
+  const fetchUnread = useCallback(async () => {
+    if (!clubId || !user?.id) return;
+    try {
+      const { count } = await supabase
+        .from('social_conversation_participants')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .gt('unread_count', 0);
+
+      setUnreadCount(count || 0);
+    } catch (e) {
+      console.error('[BottomNav] Failed to fetch unread:', e);
+    }
+  }, [clubId, user?.id]);
+
+  // Hook calls at top level
+  useMasterBusSubscription('MESSAGE_RECEIVED', () => setUnreadCount((prev) => prev + 1));
+  useMasterBusSubscription('DATA_MUTATED', (payload) => {
+    const entity = (payload as any)?.entity;
+    if (entity === 'message_read' || entity === 'message_sent') fetchUnread();
+  });
+
   useEffect(() => {
     if (!clubId || !user?.id) return;
-    let isMounted = true;
-
-    const fetchUnread = async () => {
-      try {
-        const { count } = await supabase
-          .from('social_conversation_participants')
-          .select('*', { count: 'exact', head: true })
-          .eq('user_id', user.id)
-          .gt('unread_count', 0);
-
-        if (isMounted) setUnreadCount(count || 0);
-      } catch (e) {
-        console.error('[BottomNav] Failed to fetch unread:', e);
-      }
-    };
     fetchUnread();
-
-    const unsub1 = masterBus.subscribe('MESSAGE_RECEIVED', () =>
-      setUnreadCount((prev) => prev + 1)
-    );
-    const unsub2 = masterBus.subscribe('DATA_MUTATED', (payload) => {
-      const entity = (payload as any)?.entity;
-      if (entity === 'message_read' || entity === 'message_sent') fetchUnread();
-    });
-
-    return () => {
-      isMounted = false;
-      unsub1();
-      unsub2();
-    };
-  }, [clubId, user?.id]);
+  }, [clubId, user?.id, fetchUnread]);
 
   if (!clubId) return null;
 

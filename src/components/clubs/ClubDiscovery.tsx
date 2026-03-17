@@ -6,7 +6,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { ClubsService } from '../../services/ClubsService';
-import { masterBus } from '../../core/MasterBus';
+import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { getClubLevel } from '../../utils/clubLevels';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import './ClubDiscovery.css';
@@ -45,12 +45,9 @@ export const ClubDiscovery: React.FC<ClubDiscoveryProps> = ({ onJoinRequest, onV
   }, [filter, stakeFilter]);
 
   // Q3 Phase 10: Bus listener for cross-page club updates
-  useEffect(() => {
-    const unsub = masterBus.subscribe('CLUB_UPDATED', () => {
-      loadClubs();
-    });
-    return () => unsub();
-  }, [filter, stakeFilter]);
+  useMasterBusSubscription('CLUB_UPDATED', () => {
+    loadClubs();
+  });
 
   const loadClubs = async () => {
     setLoading(true);

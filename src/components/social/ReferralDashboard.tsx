@@ -6,7 +6,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
-import { masterBus } from '../../core/MasterBus';
+import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import {
   referralService,
   type ReferralStats,
@@ -36,17 +36,14 @@ export default function ReferralDashboard({ userId }: ReferralDashboardProps) {
     if (!userId) return;
     loadData();
 
-    const unsubs = [
-      masterBus.subscribe('BALANCE_UPDATED', () => {
-        if (isMounted.current) loadData();
-      }),
-    ];
-
     return () => {
-      unsubs.forEach((u) => u());
       if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
     };
   }, [userId]);
+
+  useMasterBusSubscription('BALANCE_UPDATED', () => {
+    if (isMounted.current) loadData();
+  });
 
   const loadData = async () => {
     setLoading(true);
@@ -76,8 +73,7 @@ export default function ReferralDashboard({ userId }: ReferralDashboardProps) {
         if (isMounted.current) setCopied(false);
       }, 2000);
     } catch (err) {
-
-      console.error("[ReferralDashboard] Error:", err);
+      console.error('[ReferralDashboard] Error:', err);
       if (isMounted.current) toast.error('Failed to copy');
     }
   };
@@ -96,8 +92,7 @@ export default function ReferralDashboard({ userId }: ReferralDashboardProps) {
         if (isMounted.current) toast.success('Invite link copied!');
       }
     } catch (err) {
-
-      console.error("[ReferralDashboard] Error:", err);
+      console.error('[ReferralDashboard] Error:', err);
       // user cancelled
     }
   };

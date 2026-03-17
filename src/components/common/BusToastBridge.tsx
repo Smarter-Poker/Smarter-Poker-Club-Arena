@@ -7,8 +7,7 @@
  * Subscribes to SHOW_TOAST bus events and routes them to the toast UI.
  */
 
-import { useEffect } from 'react';
-import { masterBus } from '../../core/MasterBus';
+import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { useToast, type ToastType } from './Toast';
 
 const SEVERITY_TO_TYPE: Record<string, ToastType> = {
@@ -20,20 +19,14 @@ const SEVERITY_TO_TYPE: Record<string, ToastType> = {
 export function BusToastBridge() {
   const { showToast } = useToast();
 
-  useEffect(() => {
-    const unsub = masterBus.subscribe('SHOW_TOAST', (event) => {
-      const payload =
-        (
-          event as unknown as {
-            payload: { severity: string; message: string; durationMs?: number };
-          }
-        ).payload ??
-        (event as unknown as { severity: string; message: string; durationMs?: number });
-      const type = SEVERITY_TO_TYPE[payload.severity] || 'info';
-      showToast(payload.message, type, payload.durationMs || 5000);
-    });
-    return () => unsub();
-  }, [showToast]);
+  useMasterBusSubscription('SHOW_TOAST', (payload: any) => {
+    const actualPayload =
+      payload && 'severity' in payload
+        ? payload
+        : (payload as unknown as { severity: string; message: string; durationMs?: number });
+    const type = SEVERITY_TO_TYPE[actualPayload.severity] || 'info';
+    showToast(actualPayload.message, type, actualPayload.durationMs || 5000);
+  });
 
   return null; // Invisible bridge component
 }

@@ -15,7 +15,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { masterBus } from '../../core/MasterBus';
+import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { CardImage, CardBack } from '../table/CardImage';
 import type { Card } from '../table/SeatSlot';
 import './HoleCardReveal.css';
@@ -58,52 +58,48 @@ export const HoleCardReveal: React.FC<HoleCardRevealProps> = ({ tableId, revealD
   }, []);
 
   // Listen for showdown events
-  useEffect(() => {
-    const unsub = masterBus.subscribe('SHOWDOWN_START', (event: any) => {
-      if (event.payload.tableId !== tableId) return;
+  useMasterBusSubscription('SHOWDOWN_START', (payload: any) => {
+    if (payload.tableId !== tableId) return;
 
-      const players = (event.payload.players || []) as ShowdownPlayer[];
-      if (players.length === 0) return;
+    const players = (payload.players || []) as ShowdownPlayer[];
+    if (players.length === 0) return;
 
-      // Sort: losers first, winner last (dramatic reveal)
-      const sorted = [...players].sort((a, b) => {
-        if (a.isWinner && !b.isWinner) return 1;
-        if (!a.isWinner && b.isWinner) return -1;
-        return a.handRank - b.handRank; // Lower rank = better hand
-      });
-
-      // Clear previous state
-      timerRefs.current.forEach(clearTimeout);
-      timerRefs.current = [];
-      setShowdownPlayers(sorted);
-      setRevealedIndices(new Set());
-      setIsActive(true);
-
-      // Stagger reveals
-      sorted.forEach((_, index) => {
-        const timer = setTimeout(
-          () => {
-            setRevealedIndices((prev) => new Set(prev).add(index));
-          },
-          index * revealDelayMs + 200
-        );
-        timerRefs.current.push(timer);
-      });
-
-      // Auto-hide after all reveals + viewing time
-      const hideTimer = setTimeout(
-        () => {
-          setIsActive(false);
-          setShowdownPlayers([]);
-          setRevealedIndices(new Set());
-        },
-        sorted.length * revealDelayMs + 4000
-      );
-      timerRefs.current.push(hideTimer);
+    // Sort: losers first, winner last (dramatic reveal)
+    const sorted = [...players].sort((a, b) => {
+      if (a.isWinner && !b.isWinner) return 1;
+      if (!a.isWinner && b.isWinner) return -1;
+      return a.handRank - b.handRank; // Lower rank = better hand
     });
 
-    return unsub;
-  }, [tableId, revealDelayMs]);
+    // Clear previous state
+    timerRefs.current.forEach(clearTimeout);
+    timerRefs.current = [];
+    setShowdownPlayers(sorted);
+    setRevealedIndices(new Set());
+    setIsActive(true);
+
+    // Stagger reveals
+    sorted.forEach((_, index) => {
+      const timer = setTimeout(
+        () => {
+          setRevealedIndices((prev) => new Set(prev).add(index));
+        },
+        index * revealDelayMs + 200
+      );
+      timerRefs.current.push(timer);
+    });
+
+    // Auto-hide after all reveals + viewing time
+    const hideTimer = setTimeout(
+      () => {
+        setIsActive(false);
+        setShowdownPlayers([]);
+        setRevealedIndices(new Set());
+      },
+      sorted.length * revealDelayMs + 4000
+    );
+    timerRefs.current.push(hideTimer);
+  });
 
   // Dismiss manually
   const handleDismiss = useCallback(() => {

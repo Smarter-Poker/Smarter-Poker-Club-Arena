@@ -7,8 +7,8 @@
  * Shows emotes from all players at the table.
  */
 
-import { useState, useEffect, useCallback } from 'react';
-import { masterBus } from '../../core/MasterBus';
+import { useState, useCallback } from 'react';
+import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import './EmoteBroadcast.css';
 
 interface FloatingEmote {
@@ -66,16 +66,11 @@ export function EmoteBroadcast({ tableId }: EmoteBroadcastProps) {
     }, 2500);
   }, []);
 
-  useEffect(() => {
-    const unsub = masterBus.subscribe('TABLE_EMOTE', (event) => {
-      if (event?.payload?.tableId === tableId) {
-        addEmote(event.payload.emoji || event.payload.emoteId || '', event.payload.playerName);
-      }
-    });
-    return () => {
-      if (typeof unsub === 'function') unsub();
-    };
-  }, [tableId, addEmote]);
+  useMasterBusSubscription('TABLE_EMOTE', (payload) => {
+    if (payload?.tableId === tableId) {
+      addEmote(payload.emoji || payload.emoteId || '', payload.playerName);
+    }
+  });
 
   if (floatingEmotes.length === 0) return null;
 

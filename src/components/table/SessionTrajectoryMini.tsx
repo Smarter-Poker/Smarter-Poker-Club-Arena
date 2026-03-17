@@ -10,7 +10,7 @@
 
 import { memo, useCallback, useEffect, useState } from 'react';
 import { sessionStatsService, type SessionStats } from '../../services/SessionStatsService';
-import { masterBus } from '../../core/MasterBus';
+import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import './SessionTrajectoryMini.css';
 
 interface SessionTrajectoryMiniProps {
@@ -26,15 +26,13 @@ export const SessionTrajectoryMini = memo(function SessionTrajectoryMini({
 
   useEffect(() => {
     setStats(sessionStatsService.getStats(tableId));
-    const unsub = masterBus.subscribe('SESSION_STATS_UPDATE', (event: any) => {
-      if (event?.payload?.tableId === tableId) {
-        setStats(event.payload.stats);
-      }
-    });
-    return () => {
-      if (typeof unsub === 'function') unsub();
-    };
   }, [tableId]);
+
+  useMasterBusSubscription('SESSION_STATS_UPDATE', (payload: any) => {
+    if (payload?.tableId === tableId) {
+      setStats(payload.stats);
+    }
+  });
 
   const renderPath = useCallback(() => {
     if (!stats || stats.trajectory.length < 3) return null;

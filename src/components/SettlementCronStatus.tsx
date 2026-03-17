@@ -8,8 +8,8 @@
  */
 
 import { useEffect, useState, useCallback } from 'react';
+import { useMasterBusSubscription } from '../hooks/useMasterBusSubscription';
 import { SettlementCronService } from '../services/SettlementCronService';
-import { masterBus } from '../core/MasterBus';
 
 interface CronStatusData {
   isRunning: boolean;
@@ -50,16 +50,14 @@ export function SettlementCronStatus() {
     refresh();
     const timer = setInterval(refresh, 30_000);
 
-    // Also refresh on settlement events
-    const unsubComplete = masterBus.subscribe('SETTLEMENT_CYCLE_COMPLETED', refresh);
-    const unsubStarted = masterBus.subscribe('SETTLEMENT_CYCLE_STARTED', refresh);
-
     return () => {
       clearInterval(timer);
-      unsubComplete();
-      unsubStarted();
     };
   }, [refresh]);
+
+  // Also refresh on settlement events
+  useMasterBusSubscription('SETTLEMENT_CYCLE_COMPLETED', refresh);
+  useMasterBusSubscription('SETTLEMENT_CYCLE_STARTED', refresh);
 
   // Enhancement #2: Visual urgency based on time remaining
   const getUrgencyColor = (countdown: string, type: 'snapshot' | 'payout'): string => {

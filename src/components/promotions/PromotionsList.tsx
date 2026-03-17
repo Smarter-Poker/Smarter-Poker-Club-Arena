@@ -9,12 +9,12 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
+import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import {
   promotionService,
   type Promotion,
   type PromotionClaim,
 } from '../../services/PromotionService';
-import { masterBus } from '../../core/MasterBus';
 import PromotionDetail from './PromotionDetail';
 import './PromotionsList.css';
 
@@ -65,12 +65,11 @@ export default function PromotionsList({ userId, clubId }: PromotionsListProps) 
 
   useEffect(() => {
     loadData();
-
-    const unsub = masterBus.subscribe('BALANCE_UPDATED', () => {
-      if (isMounted.current) loadData();
-    });
-    return () => unsub();
   }, [loadData]);
+
+  useMasterBusSubscription('BALANCE_UPDATED', () => {
+    if (isMounted.current) loadData();
+  });
 
   const getTimeRemaining = (endDate: string): string => {
     const diff = new Date(endDate).getTime() - Date.now();

@@ -8,8 +8,8 @@
  * v2.0: Supports multiple simultaneous waitlists with stacked display.
  */
 
-import { useState, useEffect } from 'react';
-import { masterBus } from '../../core/MasterBus';
+import { useState } from 'react';
+import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 
 interface WaitlistInfo {
   tableId: string;
@@ -20,25 +20,19 @@ interface WaitlistInfo {
 export default function WaitlistBanner() {
   const [waitlistEntries, setWaitlistEntries] = useState<Map<string, WaitlistInfo>>(new Map());
 
-  useEffect(() => {
-    const unsubscribe = masterBus.subscribe('WAITLIST_POSITION_CHANGED', (event) => {
-      const { tableId, position, tableName } = event.payload || ({} as any);
-      setWaitlistEntries((prev) => {
-        const next = new Map(prev);
-        if (position && position > 0) {
-          next.set(tableId, { tableId, position, tableName });
-        } else {
-          // Position 0 or null means user was seated or removed from waitlist
-          next.delete(tableId);
-        }
-        return next;
-      });
+  useMasterBusSubscription('WAITLIST_POSITION_CHANGED', (payload) => {
+    const { tableId, position, tableName } = payload || ({} as any);
+    setWaitlistEntries((prev) => {
+      const next = new Map(prev);
+      if (position && position > 0) {
+        next.set(tableId, { tableId, position, tableName });
+      } else {
+        // Position 0 or null means user was seated or removed from waitlist
+        next.delete(tableId);
+      }
+      return next;
     });
-
-    return () => {
-      unsubscribe();
-    };
-  }, []);
+  });
 
   const dismiss = (tableId: string) => {
     setWaitlistEntries((prev) => {

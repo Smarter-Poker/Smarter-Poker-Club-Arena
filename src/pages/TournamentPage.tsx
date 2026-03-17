@@ -281,6 +281,7 @@ export default function TournamentPage() {
     );
 
     return () => {
+      isMounted = false;
       masterBus.removeRegisteredChannel(channelKey);
       unsubBalance();
       unsubChipsDistributed();

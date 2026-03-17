@@ -4,13 +4,12 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
+import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
-import { masterBus } from '../../core/MasterBus';
 import { useToast } from '../common/Toast';
-import { formatRelativeShort } from '../../lib/date';
 import './ConversationList.css';
 
 interface ConversationListProps {
@@ -47,19 +46,13 @@ export function ConversationList({ onSelectConversation }: ConversationListProps
   }, [user?.id]);
 
   // Q3: Bus listener — refresh list when a message is sent from any source
-  useEffect(() => {
-    const unsubSent = masterBus.subscribe('MESSAGE_SENT', () => {
-      loadConversations();
-    });
-    const unsubProfile = masterBus.subscribe('PROFILE_UPDATED', () => {
-      // Friend status changes may affect display name / avatar
-      loadConversations();
-    });
-    return () => {
-      unsubSent();
-      unsubProfile();
-    };
-  }, [user?.id]);
+  useMasterBusSubscription('MESSAGE_SENT', () => {
+    loadConversations();
+  });
+  useMasterBusSubscription('PROFILE_UPDATED', () => {
+    // Friend status changes may affect display name / avatar
+    loadConversations();
+  });
 
   const loadConversations = async () => {
     if (!user?.id) return;

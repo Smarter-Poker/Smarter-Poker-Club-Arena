@@ -7,9 +7,9 @@
 
 import { useState, useEffect, useRef, useCallback, memo } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
+import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { promotionService, LeaderboardEntry } from '../../services/PromotionService';
 import { useAuthUser } from '../../hooks/useAuthUser';
-import { masterBus } from '../../core/MasterBus';
 import styles from './LeaderboardCard.module.css';
 
 interface LeaderboardCardProps {
@@ -69,21 +69,20 @@ function LeaderboardCardInner({
   useEffect(() => {
     loadLeaderboard();
 
-    const unsubBalance = masterBus.subscribe('BALANCE_UPDATED', () => {
-      if (!isMounted.current) return;
-      if (refreshTimer.current) clearTimeout(refreshTimer.current);
-      refreshTimer.current = setTimeout(() => {
-        if (isMounted.current) loadLeaderboard();
-      }, 2000);
-    });
-
     return () => {
-      unsubBalance();
       if (refreshTimer.current) clearTimeout(refreshTimer.current);
       animTimers.current.forEach(clearTimeout);
       animTimers.current = [];
     };
   }, [loadLeaderboard]);
+
+  useMasterBusSubscription('BALANCE_UPDATED', () => {
+    if (!isMounted.current) return;
+    if (refreshTimer.current) clearTimeout(refreshTimer.current);
+    refreshTimer.current = setTimeout(() => {
+      if (isMounted.current) loadLeaderboard();
+    }, 2000);
+  });
 
   const getMedalIcon = (rank: number): string => {
     switch (rank) {

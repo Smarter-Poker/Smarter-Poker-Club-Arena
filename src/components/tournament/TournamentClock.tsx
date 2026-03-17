@@ -14,9 +14,9 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { formatDuration as formatTime } from '@/lib/date';
+import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { tournamentTimerService } from '../../services/TournamentTimerService';
 import { tournamentService } from '../../services/TournamentService';
-import { masterBus } from '../../core/MasterBus';
 import './TournamentClock.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -137,30 +137,23 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
   }, [refreshState]);
 
   // ── Listen for tournament update bus events ──
-  useEffect(() => {
-    const unsubTournament = masterBus.subscribe('TOURNAMENT_UPDATED', (event: any) => {
-      if (event?.payload?.tournamentId === tournamentId) {
-        refreshState();
-      }
-    });
-    // Instant blind-level update (no DB round-trip latency)
-    const unsubBlinds = masterBus.subscribe('BLIND_LEVEL_CHANGE', (event: any) => {
-      const data = event?.payload;
-      if (data?.tournamentId === tournamentId) {
-        setClock((prev) => ({
-          ...prev,
-          currentLevel: data.level,
-          smallBlind: data.smallBlind,
-          bigBlind: data.bigBlind,
-          ante: data.ante,
-        }));
-      }
-    });
-    return () => {
-      if (typeof unsubTournament === 'function') unsubTournament();
-      if (typeof unsubBlinds === 'function') unsubBlinds();
-    };
-  }, [tournamentId, refreshState]);
+  useMasterBusSubscription('TOURNAMENT_UPDATED', (payload: any) => {
+    if (payload?.tournamentId === tournamentId) {
+      refreshState();
+    }
+  });
+  // Instant blind-level update (no DB round-trip latency)
+  useMasterBusSubscription('BLIND_LEVEL_CHANGE', (payload: any) => {
+    if (payload?.tournamentId === tournamentId) {
+      setClock((prev) => ({
+        ...prev,
+        currentLevel: payload.level,
+        smallBlind: payload.smallBlind,
+        bigBlind: payload.bigBlind,
+        ante: payload.ante,
+      }));
+    }
+  });
 
   // ── Format chip count with K/M abbreviations ──
   const formatChips = (n: number): string => {

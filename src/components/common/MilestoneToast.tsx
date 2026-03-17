@@ -8,7 +8,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { masterBus } from '../../core/MasterBus';
+import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { soundService, haptic } from '../../services/SoundService';
 import './MilestoneToast.css';
 
@@ -33,39 +33,37 @@ export const MilestoneToast: React.FC = () => {
     }
   }, []);
 
+  useMasterBusSubscription('MILESTONE_UNLOCKED', (data: any) => {
+    if (!data) return;
+
+    const notification: MilestoneNotification = {
+      id: `milestone-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      title: data.title || data.milestoneName || 'Milestone Unlocked!',
+      description: data.description || data.message || 'You reached a new milestone!',
+      icon: data.icon || '🏆',
+      reward: data.reward || data.rewardText,
+    };
+
+    setNotifications((prev) => [...prev.slice(-4), notification]); // Max 5 at a time
+
+    // Enhancement #2: Play unlock chime + haptic on milestone
+    soundService.playTimeBankActivated();
+    haptic.medium();
+
+    // Auto-dismiss after 5 seconds
+    const timerId = setTimeout(() => {
+      dismissNotification(notification.id);
+    }, 5000);
+    timerRefs.current.set(notification.id, timerId);
+  });
+
   useEffect(() => {
-    const unsub = masterBus.subscribe('MILESTONE_UNLOCKED', (event: any) => {
-      const data = event?.payload;
-      if (!data) return;
-
-      const notification: MilestoneNotification = {
-        id: `milestone-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        title: data.title || data.milestoneName || 'Milestone Unlocked!',
-        description: data.description || data.message || 'You reached a new milestone!',
-        icon: data.icon || '🏆',
-        reward: data.reward || data.rewardText,
-      };
-
-      setNotifications((prev) => [...prev.slice(-4), notification]); // Max 5 at a time
-
-      // Enhancement #2: Play unlock chime + haptic on milestone
-      soundService.playTimeBankActivated();
-      haptic.medium();
-
-      // Auto-dismiss after 5 seconds
-      const timerId = setTimeout(() => {
-        dismissNotification(notification.id);
-      }, 5000);
-      timerRefs.current.set(notification.id, timerId);
-    });
-
     return () => {
-      unsub();
-      // Clean up all active timers
+      // Clean up all active timers on unmount
       timerRefs.current.forEach((timer) => clearTimeout(timer));
       timerRefs.current.clear();
     };
-  }, [dismissNotification]);
+  }, []);
 
   if (notifications.length === 0) return null;
 

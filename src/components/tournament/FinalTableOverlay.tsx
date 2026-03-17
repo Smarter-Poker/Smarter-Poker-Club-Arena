@@ -14,7 +14,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { masterBus } from '../../core/MasterBus';
+import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import {
   playerStyleClassifier,
   type PlayerStyleResult,
@@ -73,29 +73,25 @@ export const FinalTableOverlay: React.FC<FinalTableOverlayProps> = ({
   }, []);
 
   // Listen for FINAL_TABLE bus event
-  useEffect(() => {
-    const unsub = masterBus.subscribe('FINAL_TABLE_REACHED', (event: any) => {
-      if (event.payload.tournamentId !== tournamentId) return;
+  useMasterBusSubscription('FINAL_TABLE_REACHED', (payload: any) => {
+    if (payload.tournamentId !== tournamentId) return;
 
-      const ftPlayers = (event.payload.players || []) as FinalTablePlayer[];
-      // Sort by chips descending — spread first to avoid mutating source array
-      const sorted = [...ftPlayers].sort((a, b) => b.chips - a.chips);
-      setPlayers(sorted);
-      setPhase('enter');
-      setIsVisible(true);
+    const ftPlayers = (payload.players || []) as FinalTablePlayer[];
+    // Sort by chips descending — spread first to avoid mutating source array
+    const sorted = [...ftPlayers].sort((a, b) => b.chips - a.chips);
+    setPlayers(sorted);
+    setPhase('enter');
+    setIsVisible(true);
 
-      // Clear any previous timers
-      timerRefs.current.forEach(clearTimeout);
-      timerRefs.current = [];
+    // Clear any previous timers
+    timerRefs.current.forEach(clearTimeout);
+    timerRefs.current = [];
 
-      // Phase transitions — tracked for cleanup
-      timerRefs.current.push(setTimeout(() => setPhase('show'), 800));
-      timerRefs.current.push(setTimeout(() => setPhase('exit'), 7200));
-      timerRefs.current.push(setTimeout(() => setIsVisible(false), 8000));
-    });
-
-    return unsub;
-  }, [tournamentId]);
+    // Phase transitions — tracked for cleanup
+    timerRefs.current.push(setTimeout(() => setPhase('show'), 800));
+    timerRefs.current.push(setTimeout(() => setPhase('exit'), 7200));
+    timerRefs.current.push(setTimeout(() => setIsVisible(false), 8000));
+  });
 
   // Dismiss on tap
   const handleDismiss = useCallback(() => {

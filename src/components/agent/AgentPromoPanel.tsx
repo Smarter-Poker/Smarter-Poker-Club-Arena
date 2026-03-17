@@ -12,6 +12,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { retryAsync } from '../../utils/retryAsync';
+import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { masterBus } from '../../core/MasterBus';
 import { triggerHaptic } from '../../services/HapticService';
 import { resolveAvatarDisplay } from '../../utils/avatarUtils';
@@ -125,14 +126,11 @@ export default function AgentPromoPanel({
   }, [loadData]);
 
   // MasterBus: Auto-refresh on local data mutations
-  useEffect(() => {
-    const unsub = masterBus.subscribe('DATA_MUTATED', (e) => {
-      const relevant = ['promo_distributed', 'promo_granted', 'chips_distributed', 'chips_minted'];
-      const action = String(e?.payload?.action || '');
-      if (relevant.includes(action)) loadData();
-    });
-    return () => unsub();
-  }, [loadData]);
+  useMasterBusSubscription('DATA_MUTATED', (payload) => {
+    const relevant = ['promo_distributed', 'promo_granted', 'chips_distributed', 'chips_minted'];
+    const action = String(payload?.action || '');
+    if (relevant.includes(action)) loadData();
+  });
 
   // Realtime Sync: Listen for REMOTE balance changes
   useEffect(() => {

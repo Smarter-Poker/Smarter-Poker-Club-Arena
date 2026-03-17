@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
-import { masterBus } from '../../core/MasterBus';
+import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { formatRelativeShort as formatTime } from '@/lib/date';
 import './RecentPlayers.css';
 
@@ -45,19 +45,18 @@ export const RecentPlayers: React.FC<RecentPlayersProps> = ({
   }, []);
 
   // Bus listeners: auto-refresh on table activity
+  const debouncedRefresh = useRef(() => {
+    if (refreshTimer.current) clearTimeout(refreshTimer.current);
+    refreshTimer.current = setTimeout(() => {
+      if (isMounted.current) loadRecentPlayers();
+    }, 1000);
+  });
+
+  useMasterBusSubscription('TABLE_LEFT', debouncedRefresh.current);
+  useMasterBusSubscription('TABLE_SEATED', debouncedRefresh.current);
+
   useEffect(() => {
-    const debouncedRefresh = () => {
-      if (refreshTimer.current) clearTimeout(refreshTimer.current);
-      refreshTimer.current = setTimeout(() => {
-        if (isMounted.current) loadRecentPlayers();
-      }, 1000);
-    };
-    const unsubs = [
-      masterBus.subscribe('TABLE_LEFT', debouncedRefresh),
-      masterBus.subscribe('TABLE_SEATED', debouncedRefresh),
-    ];
     return () => {
-      unsubs.forEach((u) => u());
       if (refreshTimer.current) clearTimeout(refreshTimer.current);
     };
   }, []);

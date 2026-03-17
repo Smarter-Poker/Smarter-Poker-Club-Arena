@@ -16,6 +16,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
+import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { useWalletStore } from '../../stores/useWalletStore';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { postToParent } from '../../utils/parentOrigin';
@@ -83,10 +84,7 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
 
     loadUserData();
 
-    // ─── MASTER BUS LISTENERS (#4: Debounced balance refresh) ───
-    let unsubWallet: (() => void) | null = null;
-    let unsubProfile: (() => void) | null = null;
-
+    // ─── MASTER BUS LISTENERS ───
     const activeChannelKey = `header-sync-${userId}`;
     const channel = masterBus.getOrCreateChannel(activeChannelKey);
 
@@ -129,28 +127,26 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
       )
       .subscribe();
 
-    // #4: Debounced — collapses rapid-fire wallet refreshes into one call
-    unsubWallet = masterBus.subscribeDebounced(
-      'WALLET_REFRESHED',
-      () => {
-        if (mounted) loadBalances(userId);
-      },
-      300
-    );
-
-    unsubProfile = masterBus.subscribe('USER_PROFILE_LOADED', (event) => {
-      if (mounted && event.payload?.avatarUrl) {
-        setAvatarUrl(event.payload.avatarUrl);
-      }
-    });
-
     return () => {
       mounted = false;
-      unsubWallet?.();
-      unsubProfile?.();
       masterBus.removeRegisteredChannel(activeChannelKey);
     };
   }, [authUser?.id, loadBalances, loadDiamonds]);
+
+  // #4: Debounced — collapses rapid-fire wallet refreshes into one call
+  useMasterBusSubscription(
+    'WALLET_REFRESHED',
+    () => {
+      if (authUser?.id) loadBalances(authUser.id);
+    },
+    { debounce: 300 }
+  );
+
+  useMasterBusSubscription('USER_PROFILE_LOADED', (payload) => {
+    if (payload?.avatarUrl) {
+      setAvatarUrl(payload.avatarUrl);
+    }
+  });
 
   const handleHubClick = () => {
     navigateToHub('/hub');

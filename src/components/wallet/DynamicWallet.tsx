@@ -15,8 +15,8 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
+import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { supabase } from '../../lib/supabase';
-import { masterBus } from '../../core/MasterBus';
 import './DynamicWallet.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -212,18 +212,12 @@ export default function DynamicWallet({
   }, [fetchData]);
 
   // ── MasterBus: Refresh on balance changes ──────────────────────────────────
-  useEffect(() => {
-    const unsubBalance = masterBus.subscribe('BALANCE_UPDATED', () => {
-      fetchData();
-    });
-    const unsubDiamond = masterBus.subscribe('DIAMOND_BALANCE_CHANGED', () => {
-      fetchData();
-    });
-    return () => {
-      unsubBalance();
-      unsubDiamond();
-    };
-  }, [fetchData]);
+  useMasterBusSubscription('BALANCE_UPDATED', () => {
+    fetchData();
+  });
+  useMasterBusSubscription('DIAMOND_BALANCE_CHANGED', () => {
+    fetchData();
+  });
 
   // ── Realtime subscriptions ─────────────────────────────────────────────────
   useEffect(() => {

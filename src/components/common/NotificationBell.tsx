@@ -12,6 +12,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
+import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { masterBus } from '../../core/MasterBus';
 
 export default function NotificationBell() {
@@ -58,15 +59,6 @@ export default function NotificationBell() {
       )
       .subscribe();
 
-    // masterBus subscriber for NOTIFICATION_READ (sole source of mark-read sync)
-    const unsubNotifRead = masterBus.subscribe('NOTIFICATION_READ', (event) => {
-      if (event.payload?.allRead) {
-        setUnreadCount(0);
-      } else {
-        setUnreadCount((prev) => Math.max(0, prev - 1));
-      }
-    });
-
     // #6: Refetch on window focus — catches reads on other tabs/devices
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
@@ -77,10 +69,18 @@ export default function NotificationBell() {
 
     return () => {
       masterBus.removeRegisteredChannel(channelKey);
-      unsubNotifRead();
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [user?.id, fetchCount]);
+
+  // masterBus subscriber for NOTIFICATION_READ (sole source of mark-read sync)
+  useMasterBusSubscription('NOTIFICATION_READ', (payload) => {
+    if (payload?.allRead) {
+      setUnreadCount(0);
+    } else {
+      setUnreadCount((prev) => Math.max(0, prev - 1));
+    }
+  });
 
   return (
     <button

@@ -12,8 +12,8 @@
  *  - Timer ring for active player
  */
 
-import React, { useState, useEffect } from 'react';
-import { masterBus } from '../../core/MasterBus';
+import React, { useState } from 'react';
+import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 
 // Card helpers
 const RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A'];
@@ -142,14 +142,11 @@ export default function TableMiniView({
   ensureKeyframes();
   const [themeIdx, setThemeIdx] = useState(0);
 
-  useEffect(() => {
-    const unsub = masterBus.subscribe('UI_THEME_CHANGED', (payload: any) => {
-      if (payload?.key === 'miniViewTheme' && payload.value !== undefined) {
-        setThemeIdx(payload.value);
-      }
-    });
-    return () => unsub();
-  }, []);
+  useMasterBusSubscription('UI_THEME_CHANGED', (payload: any) => {
+    if (payload?.key === 'miniViewTheme' && payload.value !== undefined) {
+      setThemeIdx(payload.value);
+    }
+  });
 
   if (!miniState) {
     return (

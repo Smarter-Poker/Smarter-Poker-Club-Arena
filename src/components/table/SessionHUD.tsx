@@ -5,8 +5,8 @@
  */
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { sessionStatsService, type SessionStats } from '../../services/SessionStatsService';
-import { masterBus } from '../../core/MasterBus';
 import './SessionHUD.css';
 
 interface SessionHUDProps {
@@ -59,28 +59,18 @@ export const SessionHUD: React.FC<SessionHUDProps> = ({
   }, [tableId, userId, bigBlind]); // initialStack intentionally omitted — captured in ref
 
   // ── Listen for stats updates ──
-  useEffect(() => {
-    const unsub = masterBus.subscribe('SESSION_STATS_UPDATE', (event: any) => {
-      if (event?.payload?.tableId === tableId) {
-        setStats(event.payload.stats);
-      }
-    });
-    return () => {
-      if (typeof unsub === 'function') unsub();
-    };
-  }, [tableId]);
+  useMasterBusSubscription('SESSION_STATS_UPDATE', (payload: any) => {
+    if (payload?.tableId === tableId) {
+      setStats(payload.stats);
+    }
+  });
 
   // ── Also refresh on HAND_COMPLETED for real-time profit updates ──
-  useEffect(() => {
-    const unsub = masterBus.subscribe('HAND_COMPLETED', (event: any) => {
-      if (event?.payload?.tableId === tableId) {
-        setStats(sessionStatsService.getStats(tableId));
-      }
-    });
-    return () => {
-      if (typeof unsub === 'function') unsub();
-    };
-  }, [tableId]);
+  useMasterBusSubscription('HAND_COMPLETED', (payload: any) => {
+    if (payload?.tableId === tableId) {
+      setStats(sessionStatsService.getStats(tableId));
+    }
+  });
 
   // ── Session duration timer (updates every second) ──
   useEffect(() => {

@@ -7,7 +7,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { masterBus } from '../../core/MasterBus';
+import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import haptic from '../../utils/haptic';
 
 const FB = { bg: '#18191A', card: '#242526', text: '#E4E6EB', dim: '#B0B3B8' };
@@ -153,21 +153,17 @@ export default function MysteryBountyReveal({
     ensureKeyframes();
   }, []);
 
-  useEffect(() => {
-    const unsub = masterBus.subscribe('MYSTERY_BOUNTY_REVEALED', (event) => {
-      const payload = event.payload;
-      if (payload?.playerName && payload?.amount) {
-        setBusReveal({
-          playerName: payload.playerName,
-          amount: payload.amount,
-          tierLabel: payload.tierLabel,
-          isJackpot: payload.isJackpot,
-          avgBounty: payload.avgBounty,
-        });
-      }
-    });
-    return () => unsub();
-  }, []);
+  useMasterBusSubscription('MYSTERY_BOUNTY_REVEALED', (payload) => {
+    if (payload?.playerName && payload?.amount) {
+      setBusReveal({
+        playerName: payload.playerName,
+        amount: payload.amount,
+        tierLabel: payload.tierLabel,
+        isJackpot: payload.isJackpot,
+        avgBounty: payload.avgBounty,
+      });
+    }
+  });
 
   useEffect(() => {
     if (!reveal) {

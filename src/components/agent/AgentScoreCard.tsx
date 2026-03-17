@@ -11,8 +11,8 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
+import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { supabase } from '../../lib/supabase';
-import { masterBus } from '../../core/MasterBus';
 import './AgentScoreCard.css';
 
 interface AgentScoreCardProps {
@@ -138,17 +138,14 @@ export default function AgentScoreCard({ userId, clubId }: AgentScoreCardProps) 
 
   useEffect(() => {
     loadScore();
-
-    const unsubs = [
-      masterBus.subscribe('CHIPS_DISTRIBUTED', () => {
-        if (isMounted.current) loadScore();
-      }),
-      masterBus.subscribe('BALANCE_UPDATED', () => {
-        if (isMounted.current) loadScore();
-      }),
-    ];
-    return () => unsubs.forEach((u) => u());
   }, [loadScore]);
+
+  useMasterBusSubscription('CHIPS_DISTRIBUTED', () => {
+    if (isMounted.current) loadScore();
+  });
+  useMasterBusSubscription('BALANCE_UPDATED', () => {
+    if (isMounted.current) loadScore();
+  });
 
   const getScoreColor = (score: number) => {
     if (score >= 80) return '#31A24C';

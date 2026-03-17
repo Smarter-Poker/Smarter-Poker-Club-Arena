@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { masterBus } from '../../core/MasterBus';
+import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import './HeadsUpOverlay.css';
 
 interface HeadsUpPlayer {
@@ -31,27 +31,23 @@ export const HeadsUpOverlay: React.FC<HeadsUpOverlayProps> = ({
   }, []);
 
   // Listen for HEADS_UP_SWITCH event
-  useEffect(() => {
-    const unsub = masterBus.subscribe('HEADS_UP_SWITCH', (event: any) => {
-      if (event.payload.tournamentId !== tournamentId) return;
+  useMasterBusSubscription('HEADS_UP_SWITCH', (payload: any) => {
+    if (payload.tournamentId !== tournamentId) return;
 
-      setPlayer1(event.payload.player1);
-      setPlayer2(event.payload.player2);
+    setPlayer1(payload.player1);
+    setPlayer2(payload.player2);
 
-      setPhase('enter');
-      setIsVisible(true);
+    setPhase('enter');
+    setIsVisible(true);
 
-      timerRefs.current.forEach(clearTimeout);
-      timerRefs.current = [];
+    timerRefs.current.forEach(clearTimeout);
+    timerRefs.current = [];
 
-      // Sequences matching FinalTableOverlay
-      timerRefs.current.push(setTimeout(() => setPhase('show'), 800));
-      timerRefs.current.push(setTimeout(() => setPhase('exit'), 7200));
-      timerRefs.current.push(setTimeout(() => setIsVisible(false), 8000));
-    });
-
-    return unsub;
-  }, [tournamentId]);
+    // Sequences matching FinalTableOverlay
+    timerRefs.current.push(setTimeout(() => setPhase('show'), 800));
+    timerRefs.current.push(setTimeout(() => setPhase('exit'), 7200));
+    timerRefs.current.push(setTimeout(() => setIsVisible(false), 8000));
+  });
 
   const handleDismiss = useCallback(() => {
     timerRefs.current.forEach(clearTimeout);

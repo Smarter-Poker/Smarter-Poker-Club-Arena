@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { masterBus } from '../../core/MasterBus';
+import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { soundService, haptic } from '../../services/SoundService';
 import './BombPotOverlay.css';
 
@@ -20,47 +20,43 @@ export const BombPotOverlay: React.FC<BombPotOverlayProps> = ({ tableId }) => {
   const [bbMultiplier, setBBMultiplier] = useState(0);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  useMasterBusSubscription('BOMB_POT_TRIGGERED', (payload: any) => {
+    if (payload?.tableId === tableId) {
+      setAnteAmount(payload.anteAmount || 0);
+      setDoubleBoard(payload.doubleBoard || false);
+      setBBMultiplier(payload.bbMultiplier || 0);
+      setVisible(true);
+
+      // Enhancement #3: Dramatic sound + haptic on bomb pot trigger
+      soundService.playAllIn();
+      haptic.strong();
+
+      // Clear any existing hide timer
+      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+
+      // Auto-hide after 4 seconds
+      hideTimerRef.current = setTimeout(() => setVisible(false), 4000);
+    }
+  });
+
+  // Feature 2: Listen for BOMB_POT_COMPLETED to dismiss overlay immediately
+  useMasterBusSubscription('BOMB_POT_COMPLETED', (payload: any) => {
+    if (payload?.tableId === tableId) {
+      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = null;
+      setVisible(false);
+    }
+  });
+
   useEffect(() => {
-    const unsubTriggered = masterBus.subscribe('BOMB_POT_TRIGGERED', (event: any) => {
-      const data = event?.payload;
-      if (data?.tableId === tableId) {
-        setAnteAmount(data.anteAmount || 0);
-        setDoubleBoard(data.doubleBoard || false);
-        setBBMultiplier(data.bbMultiplier || 0);
-        setVisible(true);
-
-        // Enhancement #3: Dramatic sound + haptic on bomb pot trigger
-        soundService.playAllIn();
-        haptic.strong();
-
-        // Clear any existing hide timer
-        if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
-
-        // Auto-hide after 4 seconds
-        hideTimerRef.current = setTimeout(() => setVisible(false), 4000);
-      }
-    });
-
-    // Feature 2: Listen for BOMB_POT_COMPLETED to dismiss overlay immediately
-    const unsubCompleted = masterBus.subscribe('BOMB_POT_COMPLETED', (event: any) => {
-      const data = event?.payload;
-      if (data?.tableId === tableId) {
-        if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
-        hideTimerRef.current = null;
-        setVisible(false);
-      }
-    });
-
     return () => {
-      unsubTriggered();
-      unsubCompleted();
       // Feature 5: Clean up timer on unmount — prevents setState-after-unmount
       if (hideTimerRef.current) {
         clearTimeout(hideTimerRef.current);
         hideTimerRef.current = null;
       }
     };
-  }, [tableId]);
+  }, []);
 
   if (!visible) return null;
 

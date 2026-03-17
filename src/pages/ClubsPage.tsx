@@ -319,6 +319,9 @@ export default function ClubsPage() {
         requires_approval: requiresApproval,
       });
 
+      // Emit bus event so ClubCarouselPage, ClubHomePage, etc. react to the new club
+      masterBus.emit('CLUB_JOINED', { clubId: club.id, action: 'club_created' });
+
       // Navigate to the new club
       navigate(`/clubs/${club.id}`);
     } catch (err: any) {

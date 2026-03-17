@@ -15,6 +15,7 @@ import ClubBottomNav from '../components/club/ClubBottomNav';
 import AuditLog from '../components/admin/AuditLog';
 import { StatsExport } from '../components/admin/StatsExport';
 import { resolveClubIdFilter, resolveClubUUID } from '../utils/clubIdResolver';
+import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import '../components/common/ButtonSpinner.css';
 import './ClubSettingsPage.css';
 
@@ -87,6 +88,9 @@ export default function ClubSettingsPage() {
   const [confirmText, setConfirmText] = useState('');
   const [userRole, setUserRole] = useState<'owner' | 'admin' | 'agent' | 'member'>('member');
 
+  // Re-fetch settings when user tabs back (covers WS disconnect gap)
+  useVisibilityRefresh(() => loadClubSettings());
+
   useEffect(() => {
     let isMounted = true;
     if (clubId) loadClubSettings(() => isMounted);
@@ -139,6 +143,7 @@ export default function ClubSettingsPage() {
     const unsubs = [
       masterBus.subscribeDebounced('CLUB_JOINED', handler, 500),
       masterBus.subscribeDebounced('CLUB_LEFT', handler, 500),
+      masterBus.subscribeDebounced('CLUB_SETTINGS_UPDATED', handler, 500),
     ];
     return () => {
       isMounted = false;

@@ -220,3 +220,44 @@
   border-radius: 12px;
   border: 1px dashed rgba(255, 255, 255, 0.06);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   RESPONSIVE — Mobile
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 480px) {
+  .financial-health-page {
+    padding: 12px;
+  }
+
+  .fh-header h2 {
+    font-size: 1.05rem;
+  }
+
+  .fh-refresh-btn {
+    width: 36px;
+    height: 36px;
+  }
+
+  .fh-status-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .fh-status-item {
+    padding: 12px;
+  }
+
+  .fh-status-value {
+    font-size: 1.1rem;
+  }
+
+  .fh-action-btn {
+    min-height: 36px;
+    padding: 6px 12px;
+  }
+
+  .fh-section-title {
+    font-size: 0.82rem;
+  }
+}

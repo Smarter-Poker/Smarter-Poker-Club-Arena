@@ -256,5 +256,57 @@
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   RESPONSIVE — Mobile
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 480px) {
+  .financial-alerts-page {
+    padding: 16px 12px;
+  }
+
+  .alerts-header h2 {
+    font-size: 1.2rem;
+  }
+
+  .alerts-header .refresh-btn {
+    min-height: 36px;
+    min-width: 36px;
+  }
+
+  .alerts-filter-bar {
+    padding: 6px 12px;
+    gap: 6px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .alert-filter-btn {
+    min-height: 32px;
+    padding: 4px 10px;
+    font-size: 0.75rem;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .alert-card {
+    padding: 12px;
+  }
+
+  .alert-title {
+    font-size: 0.82rem;
+  }
+
+  .alert-description {
+    font-size: 0.72rem;
+  }
+
+  .alert-meta {
+    font-size: 0.68rem;
+  }
 }

@@ -273,3 +273,52 @@
     transform: translateY(-50%) rotate(360deg);
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   RESPONSIVE — Mobile
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 480px) {
+  .new-conv-header {
+    padding: 10px 12px;
+  }
+
+  .new-conv-header .back-btn {
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    min-height: 36px;
+  }
+
+  .create-btn {
+    min-height: 36px;
+    padding: 8px 14px;
+  }
+
+  .search-section input {
+    font-size: 16px;
+    min-height: 44px;
+  }
+
+  .selected-users {
+    padding: 8px 12px;
+  }
+
+  .user-chip {
+    padding: 4px 10px;
+    font-size: 0.72rem;
+  }
+
+  .user-item {
+    padding: 10px 12px;
+    min-height: 44px;
+  }
+
+  .user-name {
+    font-size: 0.82rem;
+  }
+
+  .user-status {
+    font-size: 0.68rem;
+  }
+}

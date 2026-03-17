@@ -131,6 +131,9 @@ const NewConversationPage = lazy(() => import('./pages/NewConversationPage'));
 // Shared/Public Pages
 const HandReplayerPage = lazy(() => import('./pages/share/HandReplayerPage'));
 
+// System Pages
+const HealthCheckPage = lazy(() => import('./pages/HealthCheckPage'));
+
 // Legal Pages
 const TermsOfServicePage = lazy(() => import('./pages/legal/TermsOfServicePage'));
 const ClubPromotionRulesPage = lazy(() => import('./pages/legal/PromotionsPage'));
@@ -1459,6 +1462,16 @@ export default function App() {
                         <BusDevToolsPage />
                       </PageErrorBoundary>
                     </AuthGuard>
+                  }
+                />
+
+                {/* Health Check — public, no AuthGuard (for uptime monitors) */}
+                <Route
+                  path="health"
+                  element={
+                    <PageErrorBoundary pageName="HealthCheck">
+                      <HealthCheckPage />
+                    </PageErrorBoundary>
                   }
                 />
 

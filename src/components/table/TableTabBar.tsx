@@ -60,9 +60,10 @@ export function TableTabBar({
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   useEffect(() => {
-    tabs.forEach((_, i) => {
-      setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60);
-    });
+    const timeouts = tabs.map((_, i) =>
+      setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60)
+    );
+    return () => timeouts.forEach((t) => clearTimeout(t));
   }, [tabs.length]);
 
   const handleClose = useCallback(

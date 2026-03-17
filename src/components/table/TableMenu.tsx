@@ -122,9 +122,10 @@ export function TableMenu({
 
   useEffect(() => {
     const allActions = sections.flatMap((s) => s.actions);
-    allActions.forEach((_, i) => {
-      setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 40);
-    });
+    const timeouts = allActions.map((_, i) =>
+      setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 40)
+    );
+    return () => timeouts.forEach((t) => clearTimeout(t));
   }, [sections.length]);
   const menuRef = useRef<HTMLDivElement>(null);
 

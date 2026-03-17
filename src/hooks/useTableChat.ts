@@ -51,6 +51,11 @@ export function useTableChat(
   const reactionIdRef = useRef(0);
   const pendingTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
 
+  const playersRef = useRef(players);
+  useEffect(() => {
+    playersRef.current = players;
+  }, [players]);
+
   // Fetch history and listen to Supabase real-time chat (Unified architecture)
   useEffect(() => {
     if (!tableId) return;
@@ -67,7 +72,7 @@ export function useTableChat(
       if (!isMounted) return;
       if (data) {
         const formatted = data.reverse().map((m: any) => {
-          const pName = players.find((p) => p && p.id === m.user_id)?.name || 'Player';
+          const pName = playersRef.current.find((p) => p && p.id === m.user_id)?.name || 'Player';
           return {
             id: m.id,
             type: (m.message_type === 'dealer'
@@ -112,7 +117,7 @@ export function useTableChat(
                 )
             );
 
-            const pName = players.find((p) => p && p.id === m.user_id)?.name || 'Player';
+            const pName = playersRef.current.find((p) => p && p.id === m.user_id)?.name || 'Player';
             const newMsg: ChatMessage = {
               id: m.id,
               type: (m.message_type === 'dealer'

@@ -697,7 +697,7 @@ export default function ClubDetailPage() {
         .from('club_members')
         .select('user_id, role, chip_balance, status, created_at, last_active')
         .eq('club_id', resolvedId)
-        .limit(50);
+        .limit(500);
 
       if (memberData) {
         const mUserIds = memberData.map((m: any) => m.user_id);
@@ -727,7 +727,7 @@ export default function ClubDetailPage() {
         if (getIsMounted && !getIsMounted()) return;
         setMembers(mappedMembersResult);
 
-        // Update member count with LIVE RPC count (not members.length which is capped at .limit(50))
+        // Update member count with LIVE RPC count (not members.length which is capped at .limit(500))
         try {
           const { data: counts } = await supabase.rpc('fn_batch_club_member_counts', {
             p_club_ids: [resolvedId],
@@ -785,7 +785,7 @@ export default function ClubDetailPage() {
         try {
           const cachePayload = {
             club: mappedClub,
-            members: mappedMembers.slice(0, 50),
+            members: mappedMembers.slice(0, 100),
             tables: mappedTables.map((t: ClubTable) => ({ ...t })),
             cachedAt: Date.now(),
           };
@@ -856,27 +856,35 @@ export default function ClubDetailPage() {
     setShowMemberMenu(null);
     try {
       switch (action) {
-        case 'promote':
-          await MembershipService.updateRole(clubId, memberUserId, 'admin' as any);
+        case 'promote': {
+          const ok = await MembershipService.updateRole(clubId, memberUserId, 'admin' as any);
+          if (!ok) throw new Error('Failed to promote member');
           toast.success('Member promoted to admin');
           break;
-        case 'demote':
-          await MembershipService.updateRole(clubId, memberUserId, 'member' as any);
+        }
+        case 'demote': {
+          const ok = await MembershipService.updateRole(clubId, memberUserId, 'member' as any);
+          if (!ok) throw new Error('Failed to demote member');
           toast.success('Member demoted');
           break;
-        case 'suspend':
-          await MembershipService.updateStatus(clubId, memberUserId, 'suspended' as any);
+        }
+        case 'suspend': {
+          const ok = await MembershipService.updateStatus(clubId, memberUserId, 'suspended' as any);
+          if (!ok) throw new Error('Failed to suspend member');
           toast.success('Member suspended');
           break;
-        case 'remove':
-          await MembershipService.removeMember(clubId, memberUserId);
-          // Optimistic member count decrement for instant feedback
+        }
+        case 'remove': {
+          const ok = await MembershipService.removeMember(clubId, memberUserId);
+          if (!ok) throw new Error('Failed to remove member');
+          // Optimistic UI — only after server confirms success
           setClub((prev) =>
             prev ? { ...prev, memberCount: Math.max(0, prev.memberCount - 1) } : null
           );
           setMembers((prev) => prev.filter((m) => m.id !== memberUserId));
           toast.success('Member removed');
           break;
+        }
       }
       loadClubData();
     } catch (error) {

@@ -375,6 +375,19 @@ export const OfflineQueueService = {
       await this.remove(all[0].id);
     }
   },
+
+  /**
+   * Clear all queued mutations (used by DevTools clear button)
+   */
+  clearAll(): Promise<void> {
+    return new Promise((resolve) => {
+      if (!this.db) return resolve();
+      const tx = this.db.transaction(STORE_NAME, 'readwrite');
+      tx.objectStore(STORE_NAME).clear();
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    });
+  },
 };
 
 export default OfflineQueueService;

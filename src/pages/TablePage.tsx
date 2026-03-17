@@ -99,6 +99,7 @@ import {
   HelpIcon,
   LeaveTableIcon,
 } from '../components/table/TableMenuIcons';
+import LeaveTableConfirm from '../components/table/LeaveTableConfirm';
 import PresenceIndicator from '../components/social/PresenceIndicator';
 import { useTableStore } from '../stores/useTableStore';
 import { useToast } from '../components/common/Toast';

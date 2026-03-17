@@ -14,7 +14,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { masterBus, type BusEventType } from '../core/MasterBus';
-import { getOfflineQueue, clearOfflineQueue, getOfflineQueueSize } from '../utils/offlineQueue';
+import { OfflineQueueService } from '../services/OfflineQueueService';
 import { busEventLogger } from '../services/BusEventLogger';
 import { formatRelativeShort as formatTime } from '@/lib/date';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -91,9 +91,10 @@ export default function BusDevToolsPage() {
 
   // Refresh diagnostics every 2s
   useEffect(() => {
-    const refresh = () => {
+    const refresh = async () => {
       setDiagnostics(masterBus.getDiagnostics());
-      setOfflineCount(getOfflineQueueSize());
+      const count = await OfflineQueueService.getCount();
+      setOfflineCount(count);
       setLoggerBatchSize(busEventLogger.getBatchSize());
     };
     refresh();
@@ -160,8 +161,8 @@ export default function BusDevToolsPage() {
     setEventLog([]);
   };
 
-  const handleClearOfflineQueue = () => {
-    clearOfflineQueue();
+  const handleClearOfflineQueue = async () => {
+    await OfflineQueueService.clearAll();
     setOfflineCount(0);
   };
 

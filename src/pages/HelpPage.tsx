@@ -2,7 +2,7 @@
  * ❓ HELP PAGE
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import FeedbackForm from '../components/support/FeedbackForm';
 import SystemStatus from '../components/support/SystemStatus';

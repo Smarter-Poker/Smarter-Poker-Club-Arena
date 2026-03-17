@@ -76,6 +76,19 @@ const RANK_MAP: Record<string, string> = {
 export function getCardImagePath(card: Card, deckStyle: DeckStyle = '4color'): string {
   const suitName = SUIT_MAP[card.suit];
   const rankName = RANK_MAP[card.rank];
+
+  // Safety guard: if lookup failed, warn and fall back to Ace of Spades
+  if (!suitName || !rankName) {
+    console.warn(`[CardImage] Unknown card format: rank="${card.rank}" suit="${card.suit}"`);
+    const safeSuit = suitName || 'spades';
+    const safeRank = rankName || 'a';
+    const isProduction = typeof window !== 'undefined' && window.location.hostname !== 'localhost';
+    const base = isProduction
+      ? 'https://club-arena.vercel.app/hub/club-arena/'
+      : import.meta.env.BASE_URL || '/';
+    return `${base}cards/${deckStyle}/${safeSuit}_${safeRank}.png`;
+  }
+
   // In production, serve card images directly from club-arena.vercel.app
   // to avoid World Hub's Next.js rewrite stripping binary content-type
   const isProduction = typeof window !== 'undefined' && window.location.hostname !== 'localhost';

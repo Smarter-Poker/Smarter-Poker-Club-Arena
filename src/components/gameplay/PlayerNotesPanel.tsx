@@ -8,8 +8,10 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
+import { useStaggerAnimation } from '../../hooks/useStaggerAnimation';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { vipService, FEATURE_PRICING } from '../../services/VIPService';
+import { NOTE_COLORS, PLAYER_TAGS } from '../../services/PlayerNotesService';
 import { showDiamondTopUp } from '../common/DiamondTopUpToast';
 import { useToast } from '../common/Toast';
 import styles from './PlayerNotesPanel.module.css';
@@ -33,30 +35,8 @@ interface PlayerNotesPanelProps {
   compact?: boolean;
 }
 
-const NOTE_COLORS = [
-  { name: 'Default', value: 'none', hex: '#6b7280' },
-  { name: 'Green', value: 'green', hex: '#10b981' },
-  { name: 'Yellow', value: 'yellow', hex: '#fbbf24' },
-  { name: 'Red', value: 'red', hex: '#ef4444' },
-  { name: 'Blue', value: 'blue', hex: '#3b82f6' },
-  { name: 'Purple', value: 'purple', hex: '#a855f7' },
-  { name: 'Orange', value: 'orange', hex: '#f97316' },
-];
-
-const PRESET_TAGS = [
-  'Fish',
-  'Shark',
-  'Tight',
-  'Loose',
-  'Aggressive',
-  'Passive',
-  'Bluffs',
-  'Value Heavy',
-  'Tilts Easy',
-  'Station',
-  'Nit',
-  'LAG',
-];
+// Use canonical constants from PlayerNotesService
+const PRESET_TAGS = PLAYER_TAGS;
 
 export default function PlayerNotesPanel({
   targetUserId,
@@ -74,9 +54,9 @@ export default function PlayerNotesPanel({
   const [saving, setSaving] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isVIP, setIsVIP] = useState(false);
-  const [visibleNotes, setVisibleNotes] = useState<Set<number>>(new Set());
   const navigate = useNavigate();
   const toast = useToast();
+  const { style: staggerStyle } = useStaggerAnimation(notes.length);
 
   useEffect(() => {
     if (user?.id) {
@@ -144,11 +124,7 @@ export default function PlayerNotesPanel({
         lastUpdated: n.updated_at,
       }));
       setNotes(mapped);
-      // Stagger entrance
-      setVisibleNotes(new Set());
-      mapped.forEach((_, i) => {
-        setTimeout(() => setVisibleNotes((prev) => new Set(prev).add(i)), i * 50);
-      });
+      // Stagger entrance is now handled by useStaggerAnimation hook
     }
     setLoading(false);
   };
@@ -327,9 +303,7 @@ export default function PlayerNotesPanel({
               className={styles.noteCard}
               style={{
                 borderLeftColor: note.color,
-                opacity: visibleNotes.has(idx) ? 1 : 0,
-                transform: visibleNotes.has(idx) ? 'translateY(0)' : 'translateY(8px)',
-                transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+                ...staggerStyle(idx),
               }}
             >
               <div className={styles.noteHeader}>

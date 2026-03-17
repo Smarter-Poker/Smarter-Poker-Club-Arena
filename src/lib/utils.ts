@@ -70,53 +70,12 @@ export function formatPercent(value: number, decimals = 1): string {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// DATE/TIME FORMATTING
+// DATE/TIME FORMATTING — Delegated to lib/date.ts (canonical source)
+// These re-exports preserve backward compatibility for any code importing from
+// lib/utils while consolidating the implementations in one place.
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/**
- * Format a date relative to now (e.g., "5 minutes ago")
- */
-export function formatRelativeTime(date: Date | string): string {
-  const now = new Date();
-  const then = new Date(date);
-  const diffMs = now.getTime() - then.getTime();
-  const diffSec = Math.floor(diffMs / 1000);
-  const diffMin = Math.floor(diffSec / 60);
-  const diffHour = Math.floor(diffMin / 60);
-  const diffDay = Math.floor(diffHour / 24);
-
-  if (diffSec < 60) return 'just now';
-  if (diffMin < 60) return `${diffMin}m ago`;
-  if (diffHour < 24) return `${diffHour}h ago`;
-  if (diffDay < 7) return `${diffDay}d ago`;
-
-  return then.toLocaleDateString();
-}
-
-/**
- * Format duration in HH:MM:SS
- */
-export function formatDuration(seconds: number): string {
-  const hrs = Math.floor(seconds / 3600);
-  const mins = Math.floor((seconds % 3600) / 60);
-  const secs = seconds % 60;
-
-  if (hrs > 0) {
-    return `${hrs}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  }
-  return `${mins}:${secs.toString().padStart(2, '0')}`;
-}
-
-/**
- * Format time for display (e.g., "2:30 PM")
- */
-export function formatTime(date: Date | string): string {
-  return new Date(date).toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-  });
-}
+export { formatRelative as formatRelativeTime, formatDuration, formatTime } from './date';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // STRING UTILITIES

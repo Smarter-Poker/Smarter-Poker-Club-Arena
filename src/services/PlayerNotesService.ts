@@ -15,33 +15,41 @@ export interface PlayerNote {
   lastSeen: Date | null;
 }
 
+/**
+ * Canonical NOTE_COLORS — the single source of truth for player note colors.
+ * `value` must match the DB CHECK constraint: none, red, orange, yellow, green, blue, purple.
+ * `hex` is for UI rendering only.
+ */
 export const NOTE_COLORS = [
-  { id: 'blue', hex: '#3b82f6', name: 'Blue' },
-  { id: 'green', hex: '#22c55e', name: 'Green' },
-  { id: 'yellow', hex: '#eab308', name: 'Yellow' },
-  { id: 'orange', hex: '#f97316', name: 'Orange' },
-  { id: 'red', hex: '#ef4444', name: 'Red' },
-  { id: 'purple', hex: '#a855f7', name: 'Purple' },
-  { id: 'pink', hex: '#ec4899', name: 'Pink' },
-  { id: 'gray', hex: '#6b7280', name: 'Gray' },
+  { id: 'none', value: 'none', hex: '#6b7280', name: 'Default' },
+  { id: 'green', value: 'green', hex: '#22c55e', name: 'Green' },
+  { id: 'yellow', value: 'yellow', hex: '#eab308', name: 'Yellow' },
+  { id: 'orange', value: 'orange', hex: '#f97316', name: 'Orange' },
+  { id: 'red', value: 'red', hex: '#ef4444', name: 'Red' },
+  { id: 'blue', value: 'blue', hex: '#3b82f6', name: 'Blue' },
+  { id: 'purple', value: 'purple', hex: '#a855f7', name: 'Purple' },
 ];
 
+/**
+ * Canonical PLAYER_TAGS — the single source of truth for player tags.
+ * Used by PlayerNotes, PlayerNotesPanel, and exported for external consumers.
+ */
 export const PLAYER_TAGS = [
-  '🐟 Fish',
-  ' Shark',
-  ' Gambler',
-  '🧊 Tight',
-  ' Aggro',
-  '🐢 Passive',
-  ' Whale',
-  ' Tricky',
-  ' Slow',
-  '🏃 Fast',
-  ' Improving',
-  ' Tilting',
-  ' Bluffer',
-  ' Nit',
-  '🌊 Calling Station',
+  'Fish',
+  'Shark',
+  'Tight',
+  'Loose',
+  'Aggressive',
+  'Passive',
+  'Bluffs',
+  'Value Heavy',
+  'Tilts Easy',
+  'Station',
+  'Nit',
+  'LAG',
+  'Whale',
+  'Gambler',
+  'Tricky',
 ];
 
 const DEFAULT_NOTE: PlayerNote = {

@@ -3,6 +3,13 @@
  *  RETRY FETCH — Exponential backoff wrapper for Supabase queries
  * ═══════════════════════════════════════════════════════════════════════════════
  *
+ * CANONICAL RETRY UTILITY for component-level (React) Supabase queries.
+ * Use this when you need:
+ *   - Supabase-aware retry (detects `{ error }` responses, not just thrown errors)
+ *   - isMounted guard to prevent state updates after unmount
+ *
+ * For service-level retries (non-React, thrown-error only), see retryAsync.ts.
+ *
  * Wraps any async function with automatic retry on failure.
  * Uses exponential backoff: 1s → 2s → 4s (configurable).
  * Respects isMounted ref to avoid retrying after unmount.

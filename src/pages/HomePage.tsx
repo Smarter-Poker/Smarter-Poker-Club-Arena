@@ -1038,6 +1038,20 @@ function HomePageInner() {
       <div className={styles.gridFloor}></div>
       <div className={styles.volumetricLight}></div>
       <div className={styles.vignette}></div>
+      {isRefreshing && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            zIndex: 9999,
+            height: '2px',
+            background: 'linear-gradient(90deg, transparent, #00d4ff, #8b5cf6, transparent)',
+            opacity: 0.8,
+          }}
+        />
+      )}
       {/* Enhancement #6: Circuit brain background overlay */}
       <div className={styles.circuitOverlay}></div>
       {/* Enhancement #1: Neuron lights — traveling cyan pulses */}

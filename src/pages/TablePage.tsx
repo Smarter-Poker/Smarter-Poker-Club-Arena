@@ -5207,6 +5207,7 @@ export default function TablePage({
             biggestPotRef.current = 0;
             peakStackRef.current = 0;
             sessionPLRef.current = 0;
+            totalBuyInRef.current = 0;
             handsWonRef.current = 0;
             totalRebuysRef.current = 0;
             sessionStartRef.current = Date.now();

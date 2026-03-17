@@ -8,6 +8,8 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
+import { CardImage } from '../table/CardImage';
+import type { Card } from '../table/CardImage';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import './HandHistoryViewer.css';
 
@@ -104,15 +106,20 @@ export function HandHistoryViewer({
     return true;
   });
 
-  const formatCards = (cards: string[]) => {
-    return cards
-      .map((c) => {
-        const suit = c.slice(-1);
-        const suitEmoji = suit === 'h' ? '♥' : suit === 'd' ? '♦' : suit === 'c' ? '♣' : '♠';
-        return c.slice(0, -1) + suitEmoji;
-      })
-      .join(' ');
+  const parseCard = (cardStr: string): Card => {
+    const suit = cardStr.slice(-1) as Card['suit'];
+    let rank = cardStr.slice(0, -1);
+    if (rank === '10') rank = 'T';
+    return { rank: rank as Card['rank'], suit };
   };
+
+  const renderCards = (cards: string[]) => (
+    <span style={{ display: 'inline-flex', gap: '2px', alignItems: 'center' }}>
+      {cards.map((c, i) => (
+        <CardImage key={i} card={parseCard(c)} deckStyle="4color" size="xs" />
+      ))}
+    </span>
+  );
 
   if (loading) {
     return <div className="hand-history loading">Loading...</div>;
@@ -156,9 +163,9 @@ export function HandHistoryViewer({
                 <span className="position">{hand.position}</span>
               </div>
               <div className="cards">
-                <span className="hole-cards">{formatCards(hand.holeCards)}</span>
+                <span className="hole-cards">{renderCards(hand.holeCards)}</span>
                 {hand.communityCards.length > 0 && (
-                  <span className="board">{formatCards(hand.communityCards)}</span>
+                  <span className="board">{renderCards(hand.communityCards)}</span>
                 )}
               </div>
               <div className="result">

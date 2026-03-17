@@ -7,6 +7,8 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
+import { CardImage } from '../table/CardImage';
+import type { Card } from '../table/CardImage';
 import styles from './HandReplayViewer.module.css';
 
 interface HandAction {
@@ -205,17 +207,11 @@ export default function HandReplayViewer({
     }
   };
 
-  const renderCard = (card: string) => {
-    const suit = card.slice(-1);
-    const rank = card.slice(0, -1);
-    const suitSymbols: Record<string, string> = { h: '♥', d: '♦', c: '♣', s: '♠' };
-    const isRed = suit === 'h' || suit === 'd';
-    return (
-      <span className={`${styles.card} ${isRed ? styles.red : styles.black}`}>
-        {rank}
-        {suitSymbols[suit] || suit}
-      </span>
-    );
+  const parseCard = (cardStr: string): Card => {
+    const suit = cardStr.slice(-1) as Card['suit'];
+    let rank = cardStr.slice(0, -1);
+    if (rank === '10') rank = 'T';
+    return { rank: rank as Card['rank'], suit };
   };
 
   if (loading) {
@@ -259,7 +255,7 @@ export default function HandReplayViewer({
           {visibleCards.length > 0 ? (
             visibleCards.map((card, i) => (
               <div key={i} className={styles.cardWrapper}>
-                {renderCard(card)}
+                <CardImage card={parseCard(card)} deckStyle="4color" size="sm" />
               </div>
             ))
           ) : (

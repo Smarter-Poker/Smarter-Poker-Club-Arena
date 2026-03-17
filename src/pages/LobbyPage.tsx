@@ -453,7 +453,11 @@ export default function LobbyPage() {
         },
         (payload) => {
           if (payload.eventType === 'INSERT' && payload.new) {
-            setTables((prev) => [...prev, payload.new as PokerTable]);
+            setTables((prev) => {
+              // Deduplicate: avoid adding if already fetched by initial load
+              if (prev.some((t) => t.id === (payload.new as any).id)) return prev;
+              return [...prev, payload.new as PokerTable];
+            });
           } else if (payload.eventType === 'UPDATE' && payload.new) {
             setTables((prev) =>
               prev.map((t) => (t.id === payload.new.id ? (payload.new as PokerTable) : t))

@@ -5,6 +5,8 @@
 
 import { useState, useEffect, useRef } from 'react';
 import type { Card, CardSuit, CardRank } from '../../types/database.types';
+import { CardImage } from '../table/CardImage';
+import type { Card as CardImageCard } from '../table/CardImage';
 import './HandReplay.css';
 import { useToast } from '../common/Toast';
 
@@ -45,25 +47,30 @@ interface HandReplayProps {
   onClose?: () => void;
 }
 
-// Helper to convert suit name to symbol
-function getSuitSymbol(suit: CardSuit): string {
-  switch (suit) {
-    case 'hearts':
-      return '♥';
-    case 'diamonds':
-      return '♦';
-    case 'clubs':
-      return '♣';
-    case 'spades':
-      return '♠';
-    default:
-      return suit;
-  }
+// Helper to convert full suit name to abbreviation for CardImage
+const SUIT_ABBREV: Record<string, CardImageCard['suit']> = {
+  hearts: 'h',
+  diamonds: 'd',
+  clubs: 'c',
+  spades: 's',
+  h: 'h',
+  d: 'd',
+  c: 'c',
+  s: 's',
+};
+
+// Normalize rank for CardImage ('10' → 'T')
+function normalizeRank(rank: string): CardImageCard['rank'] {
+  if (rank === '10') return 'T';
+  return rank as CardImageCard['rank'];
 }
 
-// Color helper for suits
-function getSuitColor(suit: CardSuit): 'red' | 'black' {
-  return suit === 'hearts' || suit === 'diamonds' ? 'red' : 'black';
+// Convert database Card to CardImage Card
+function toCardImage(card: Card): CardImageCard {
+  return {
+    rank: normalizeRank(card.rank),
+    suit: SUIT_ABBREV[card.suit] || 's',
+  };
 }
 
 // Position badge colors
@@ -237,8 +244,7 @@ export default function HandReplay({
           url: shareUrl,
         });
       } catch (err) {
-
-        console.error("[HandReplay] Error:", err);
+        console.error('[HandReplay] Error:', err);
         copyToClipboard(shareUrl);
       }
     } else {
@@ -353,9 +359,8 @@ export default function HandReplay({
             <div className="player-hole-cards">
               {player.hole_cards.length > 0 ? (
                 player.hole_cards.map((card, idx) => (
-                  <div key={idx} className={`card ${getSuitColor(card.suit)}`}>
-                    <span className="card-rank">{card.rank}</span>
-                    <span className="card-suit">{getSuitSymbol(card.suit)}</span>
+                  <div key={idx} className="card">
+                    <CardImage card={toCardImage(card)} deckStyle="4color" size="xs" />
                   </div>
                 ))
               ) : (
@@ -372,9 +377,8 @@ export default function HandReplay({
             {/* Community Cards (repeated per row for visual) */}
             <div className="community-cards-row">
               {getVisibleCommunityCards().map((card, idx) => (
-                <div key={idx} className={`card small ${getSuitColor(card.suit)}`}>
-                  <span className="card-rank">{card.rank}</span>
-                  <span className="card-suit">{getSuitSymbol(card.suit)}</span>
+                <div key={idx} className="card small">
+                  <CardImage card={toCardImage(card)} deckStyle="4color" size="xs" />
                 </div>
               ))}
             </div>

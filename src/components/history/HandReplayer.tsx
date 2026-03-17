@@ -7,6 +7,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useToast } from '../common/Toast';
+import { CardImage } from '../table/CardImage';
+import type { Card } from '../table/CardImage';
 import './HandReplayer.css';
 
 interface HandReplayerProps {
@@ -133,11 +135,11 @@ export function HandReplayer({ handId, isOpen, onClose }: HandReplayerProps) {
     setIsPlaying(false);
   };
 
-  const formatCard = (card: string) => {
-    const suit = card.slice(-1);
-    const suitChar = suit === 'h' ? '♥' : suit === 'd' ? '♦' : suit === 'c' ? '♣' : '♠';
-    const suitColor = suit === 'h' || suit === 'd' ? '#ef4444' : '#1a1a2e';
-    return { rank: card.slice(0, -1), suit: suitChar, color: suitColor };
+  const parseCard = (cardStr: string): Card => {
+    const suit = cardStr.slice(-1) as Card['suit'];
+    let rank = cardStr.slice(0, -1);
+    if (rank === '10') rank = 'T';
+    return { rank: rank as Card['rank'], suit };
   };
 
   if (!isOpen) return null;
@@ -175,11 +177,9 @@ export function HandReplayer({ handId, isOpen, onClose }: HandReplayerProps) {
         <div className="replayer__table">
           <div className="community-cards">
             {visibleCards.map((card, idx) => {
-              const { rank, suit, color } = formatCard(card);
               return (
-                <div key={idx} className="card" style={{ color }}>
-                  <span className="rank">{rank}</span>
-                  <span className="suit">{suit}</span>
+                <div key={idx} className="card">
+                  <CardImage card={parseCard(card)} deckStyle="4color" size="sm" />
                 </div>
               );
             })}

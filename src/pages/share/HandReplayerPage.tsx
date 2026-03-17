@@ -8,6 +8,8 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { handHistoryService } from '../../services/HandHistoryService';
 import { PositionAnalysis, OddsDisplay, ShareableHighlight } from '../../components/hand-replayer';
+import { CardImage } from '../../components/table/CardImage';
+import type { Card } from '../../components/table/CardImage';
 import './HandReplayerPage.css';
 
 const playerSeatAnimationStyle = (index: number) => ({
@@ -156,12 +158,11 @@ export default function HandReplayerPage() {
     }
   };
 
-  const getCardDisplay = (card: string) => {
-    const rank = card.slice(0, -1);
-    const suit = card.slice(-1);
-    const suitSymbols: Record<string, string> = { h: '♥', d: '♦', c: '♣', s: '♠' };
-    const isRed = suit === 'h' || suit === 'd';
-    return { rank, symbol: suitSymbols[suit] || suit, isRed };
+  const parseCard = (cardStr: string): Card => {
+    let rank = cardStr.slice(0, -1);
+    const suit = cardStr.slice(-1) as Card['suit'];
+    if (rank === '10') rank = 'T';
+    return { rank: rank as Card['rank'], suit };
   };
 
   const shareUrl = `https://smarter.poker/hub/club-arena/share/hand/${handId}`;
@@ -264,15 +265,11 @@ export default function HandReplayerPage() {
                   </div>
                   {/* Community cards */}
                   <div className="community-cards">
-                    {hand.community_cards.map((card, idx) => {
-                      const { rank, symbol, isRed } = getCardDisplay(card);
-                      return (
-                        <div key={idx} className={`card ${isRed ? 'red' : 'black'}`}>
-                          <span className="card-rank">{rank}</span>
-                          <span className="card-suit">{symbol}</span>
-                        </div>
-                      );
-                    })}
+                    {hand.community_cards.map((card, idx) => (
+                      <div key={idx} className="card">
+                        <CardImage card={parseCard(card)} deckStyle="4color" size="sm" />
+                      </div>
+                    ))}
                   </div>
                 </div>
               </div>
@@ -291,17 +288,11 @@ export default function HandReplayerPage() {
                   </div>
                   {player.cards && (
                     <div className="player-cards">
-                      {player.cards.map((card, cIdx) => {
-                        const { rank, symbol, isRed } = getCardDisplay(card);
-                        return (
-                          <div key={cIdx} className={`hole-card ${isRed ? 'red' : 'black'}`}>
-                            <span>
-                              {rank}
-                              {symbol}
-                            </span>
-                          </div>
-                        );
-                      })}
+                      {player.cards.map((card, cIdx) => (
+                        <div key={cIdx} className="hole-card">
+                          <CardImage card={parseCard(card)} deckStyle="4color" size="xs" />
+                        </div>
+                      ))}
                     </div>
                   )}
                   {/* Action bubble for current step */}

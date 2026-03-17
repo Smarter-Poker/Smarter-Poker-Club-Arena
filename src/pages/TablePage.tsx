@@ -3665,8 +3665,8 @@ export default function TablePage({
     if (clampedRaise <= 0) return;
 
     // Validate before executing
-    if (!validateAndExecuteAction('raise', clampedRaise)) return;
     if (actionLockRef.current) return;
+    if (!validateAndExecuteAction('raise', clampedRaise)) return;
     actionLockRef.current = true;
     setTimeout(() => {
       actionLockRef.current = false;

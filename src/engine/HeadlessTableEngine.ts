@@ -1643,9 +1643,8 @@ export class HeadlessTableEngine {
         const { data: returnedChips, error: cashoutError } = await this.supabaseClient.rpc(
           'atomic_table_cashout',
           {
-            p_user_id: seat.user_id,
             p_table_id: this.tableId,
-            p_seat_number: seat.seat_number,
+            p_user_id: seat.user_id,
           }
         );
 

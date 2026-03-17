@@ -576,8 +576,8 @@ export const HydraService = {
     const { data: rpcAmount, error: cashoutError } = await retryAsync(
       () =>
         supabase.rpc('atomic_table_cashout', {
-          p_user_id: horseId,
           p_table_id: tableId,
+          p_user_id: horseId,
         }),
       3
     );

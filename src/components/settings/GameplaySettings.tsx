@@ -20,6 +20,8 @@ interface GameplaySettingsProps {
   onChange?: (config: GameplayConfig) => void;
 }
 
+const GAMEPLAY_STORAGE_KEY = 'sp_gameplay_settings';
+
 export const GameplaySettings: React.FC<GameplaySettingsProps> = ({ onChange }) => {
   const [config, setConfig] = useState<GameplayConfig>({
     autoMuck: true,
@@ -38,12 +40,19 @@ export const GameplaySettings: React.FC<GameplaySettingsProps> = ({ onChange }) 
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    try {
+      const stored = localStorage.getItem(GAMEPLAY_STORAGE_KEY);
+      if (stored) setConfig(JSON.parse(stored));
+    } catch {
+      /* ignore corrupt data */
+    }
     setTimeout(() => setMounted(true), 50);
   }, []);
 
   const updateConfig = <K extends keyof GameplayConfig>(key: K, value: GameplayConfig[K]) => {
     const newConfig = { ...config, [key]: value };
     setConfig(newConfig);
+    localStorage.setItem(GAMEPLAY_STORAGE_KEY, JSON.stringify(newConfig));
     onChange?.(newConfig);
   };
 

@@ -20,6 +20,8 @@ interface NotificationSettingsProps {
   onChange?: (config: NotificationConfig) => void;
 }
 
+const NOTIF_STORAGE_KEY = 'sp_notification_settings';
+
 export const NotificationSettings: React.FC<NotificationSettingsProps> = ({ onChange }) => {
   const [config, setConfig] = useState<NotificationConfig>({
     pushEnabled: true,
@@ -38,12 +40,19 @@ export const NotificationSettings: React.FC<NotificationSettingsProps> = ({ onCh
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    try {
+      const stored = localStorage.getItem(NOTIF_STORAGE_KEY);
+      if (stored) setConfig(JSON.parse(stored));
+    } catch {
+      /* ignore corrupt data */
+    }
     setTimeout(() => setMounted(true), 50);
   }, []);
 
   const updateConfig = (key: keyof NotificationConfig, value: boolean | string) => {
     const newConfig = { ...config, [key]: value };
     setConfig(newConfig);
+    localStorage.setItem(NOTIF_STORAGE_KEY, JSON.stringify(newConfig));
     onChange?.(newConfig);
   };
 

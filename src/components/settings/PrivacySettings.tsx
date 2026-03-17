@@ -16,6 +16,8 @@ interface PrivacySettingsProps {
   onChange?: (config: PrivacyConfig) => void;
 }
 
+const PRIVACY_STORAGE_KEY = 'sp_privacy_settings';
+
 export const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onChange }) => {
   const [config, setConfig] = useState<PrivacyConfig>({
     profileVisibility: 'friends',
@@ -30,12 +32,19 @@ export const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onChange }) =>
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    try {
+      const stored = localStorage.getItem(PRIVACY_STORAGE_KEY);
+      if (stored) setConfig(JSON.parse(stored));
+    } catch {
+      /* ignore corrupt data */
+    }
     setTimeout(() => setMounted(true), 50);
   }, []);
 
   const updateConfig = <K extends keyof PrivacyConfig>(key: K, value: PrivacyConfig[K]) => {
     const newConfig = { ...config, [key]: value };
     setConfig(newConfig);
+    localStorage.setItem(PRIVACY_STORAGE_KEY, JSON.stringify(newConfig));
     onChange?.(newConfig);
   };
 

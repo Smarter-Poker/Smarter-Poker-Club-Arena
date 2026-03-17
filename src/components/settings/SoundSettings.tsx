@@ -17,6 +17,8 @@ interface SoundConfig {
   enableWinSound: boolean;
 }
 
+const SOUND_STORAGE_KEY = 'sp_sound_settings';
+
 export const SoundSettings: React.FC<SoundSettingsProps> = ({ onChange }) => {
   const [config, setConfig] = useState<SoundConfig>({
     masterVolume: 80,
@@ -32,12 +34,19 @@ export const SoundSettings: React.FC<SoundSettingsProps> = ({ onChange }) => {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    try {
+      const stored = localStorage.getItem(SOUND_STORAGE_KEY);
+      if (stored) setConfig(JSON.parse(stored));
+    } catch {
+      /* ignore corrupt data */
+    }
     setTimeout(() => setMounted(true), 50);
   }, []);
 
   const updateConfig = (key: keyof SoundConfig, value: number | boolean) => {
     const newConfig = { ...config, [key]: value };
     setConfig(newConfig);
+    localStorage.setItem(SOUND_STORAGE_KEY, JSON.stringify(newConfig));
     onChange?.(newConfig);
   };
 

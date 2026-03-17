@@ -179,6 +179,8 @@ function HomePageInner() {
 
   // Per-club stats for featured card rendering
   const [clubStats, setClubStats] = useState<Record<string, ClubStats>>({});
+  // Refresh counter — incremented on each fetchUserData call to force stats re-fetch
+  const [statsRefreshKey, setStatsRefreshKey] = useState(0);
 
   // Enhancement #2: Context menu state
   const [contextMenu, setContextMenu] = useState<{
@@ -211,11 +213,6 @@ function HomePageInner() {
 
   // #9: Search/filter
   const [searchQuery, setSearchQuery] = useState('');
-
-  // #11: Sound effects toggle
-  const [soundsEnabled, setSoundsEnabled] = useState(() => {
-    return localStorage.getItem(STORAGE_KEYS.SOUNDS) !== 'false';
-  });
 
   // #12: Seasonal theme
   const seasonalTheme = useMemo(() => getSeasonalTheme(), []);
@@ -844,17 +841,6 @@ function HomePageInner() {
     [toast, fetchUserData, userClubs]
   );
 
-  // #11: Toggle sound effects
-  const toggleSounds = useCallback(() => {
-    setSoundsEnabled((prev) => {
-      const next = !prev;
-      localStorage.setItem(STORAGE_KEYS.SOUNDS, String(next));
-      if (next) PremiumSFX.toggleOn();
-      else PremiumSFX.toggleOff();
-      return next;
-    });
-  }, []);
-
   // ═══════════════════════════════════════════════════════════════════════════════
   // JOIN A CLUB LOGIC
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -1028,13 +1014,10 @@ function HomePageInner() {
     return () => {
       isMounted = false;
     };
-  }, [displayClubs.length, displayClubs.map((c) => c.id).join(',')]);
+  }, [displayClubs.length, displayClubs.map((c) => c.id).join(','), statsRefreshKey]);
 
   // Sound effects ref for other uses
-  const soundsEnabledRef = useRef(soundsEnabled);
-  useEffect(() => {
-    soundsEnabledRef.current = soundsEnabled;
-  }, [soundsEnabled]);
+
   // Tile action handlers (for bottom row tiles using LOBBY_TILES config)
   const tileActions: Record<string, () => void> = useMemo(
     () => ({
@@ -1325,32 +1308,6 @@ function HomePageInner() {
               <div className={styles.tileEdge}></div>
             </button>
           ))}
-        </div>
-
-        {/* #11: Sound toggle + #1: Shortcut hint button */}
-        <div className={styles.controlsRow}>
-          <button
-            className={styles.controlButton}
-            onClick={toggleSounds}
-            aria-label={soundsEnabled ? 'Mute sounds' : 'Enable sounds'}
-            title={soundsEnabled ? 'Sounds On' : 'Sounds Off'}
-          >
-            {soundsEnabled ? 'ON' : 'OFF'}
-            <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: '0.03em' }}>
-              {soundsEnabled ? 'Sound On' : 'Sound Off'}
-            </span>
-          </button>
-          <button
-            className={styles.controlButton}
-            onClick={() => setShowShortcutHint(true)}
-            aria-label="Keyboard shortcuts"
-            title="Keyboard Shortcuts (?)"
-          >
-            ?
-            <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: '0.03em' }}>
-              Shortcuts
-            </span>
-          </button>
         </div>
       </div>
 

@@ -100,7 +100,7 @@ class UnionServiceClass {
     const { data, error } = await supabase
       .from('unions')
       .select(
-        'id, name, description, owner_id, avatar_url, is_public, member_count, online_count, club_count, total_rake, settings, created_at, updated_at'
+        'id, name, description, owner_id, avatar_url, is_public, member_count, club_count, total_rake, settings, created_at, updated_at'
       )
       .order('created_at', { ascending: false })
       .limit(100);
@@ -120,7 +120,7 @@ class UnionServiceClass {
       supabase
         .from('unions')
         .select(
-          'id, name, description, owner_id, avatar_url, is_public, member_count, online_count, club_count, total_rake, settings, created_at, updated_at'
+          'id, name, description, owner_id, avatar_url, is_public, member_count, club_count, total_rake, settings, created_at, updated_at'
         )
         .eq('owner_id', userId),
       // Path 2: unions where user is admin
@@ -180,7 +180,7 @@ class UnionServiceClass {
       const { data: batchUnions } = await supabase
         .from('unions')
         .select(
-          'id, name, description, owner_id, avatar_url, is_public, member_count, online_count, club_count, total_rake, settings, created_at, updated_at'
+          'id, name, description, owner_id, avatar_url, is_public, member_count, club_count, total_rake, settings, created_at, updated_at'
         )
         .in('id', idsToFetch);
       if (batchUnions) {
@@ -251,7 +251,7 @@ class UnionServiceClass {
     const { data, error } = await supabase
       .from('unions')
       .select(
-        'id, name, description, owner_id, avatar_url, is_public, member_count, online_count, club_count, total_rake, settings, created_at, updated_at'
+        'id, name, description, owner_id, avatar_url, is_public, member_count, club_count, total_rake, settings, created_at, updated_at'
       )
       .eq('id', unionId)
       .maybeSingle();

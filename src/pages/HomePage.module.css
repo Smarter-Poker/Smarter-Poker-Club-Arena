@@ -2354,50 +2354,6 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   #11: Controls Row — Sound Toggle + Keyboard Shortcuts
-   ═══════════════════════════════════════════════════════════════════════════════ */
-
-.controlsRow {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 12px;
-  margin: 8px 0 24px;
-  z-index: 10;
-}
-
-.controlButton {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 8px 16px;
-  background: linear-gradient(145deg, rgba(8, 20, 40, 0.7), rgba(5, 12, 28, 0.8));
-  border: 1px solid rgba(0, 212, 255, 0.15);
-  border-radius: 10px;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  cursor: pointer;
-  font-size: 18px;
-  color: rgba(224, 232, 240, 0.8);
-  transition:
-    background 0.25s ease,
-    border-color 0.25s ease,
-    transform 0.25s ease,
-    box-shadow 0.25s ease;
-  min-width: 44px;
-  min-height: 44px;
-  box-shadow:
-    0 4px 16px rgba(0, 0, 0, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
-}
-
-.controlButton:active {
-  transform: scale(0.96);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════════
    PHASE 4 — VISUAL IMPROVEMENTS (Depth, Atmosphere, Motion)
    ═══════════════════════════════════════════════════════════════════════════════ */
 

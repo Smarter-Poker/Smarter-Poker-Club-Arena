@@ -38,6 +38,7 @@ import MilestoneToast from './components/common/MilestoneToast';
 import { bootServices, shutdownServices } from './services/ServiceBootstrap';
 import { GlobalBalanceSync } from './core/useGlobalBalanceSync';
 import { supabaseConnectionWatchdog } from './utils/supabaseConnectionWatchdog';
+import FloatingHamburger from './components/navigation/FloatingHamburger';
 
 // Auth Guards
 import { AuthGuard, GuestGuard } from './components/auth/AuthGuard';
@@ -481,6 +482,7 @@ export default function App() {
         <TOSGuard>
           <GlobalWaitlistListener />
           <WaitlistBanner />
+          <FloatingHamburger />
           {/* Offline Banner — subtle amber bar, only for navigator.onLine === false */}
           {isOffline && (
             <div

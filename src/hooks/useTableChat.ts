@@ -249,6 +249,7 @@ export function useTableChat(
       if (!tableId || !userId) return;
 
       const tempId = `msg_${Date.now()}`;
+      const pName = players.find((p) => p && p.id === userId)?.name || 'Player';
 
       // Optimistically add to local state
       setChatMessages((prev) => [
@@ -257,7 +258,7 @@ export function useTableChat(
           id: tempId,
           type: 'PLAYER' as const,
           playerId: userId,
-          playerName: heroName || 'You',
+          playerName: pName,
           content: message,
           timestamp: new Date(),
         },
@@ -269,8 +270,7 @@ export function useTableChat(
       try {
         const { error } = await supabase.from('table_chat').insert({
           table_id: tableId,
-          sender_id: userId,
-          username: heroName,
+          user_id: userId,
           message: message,
           message_type: 'player',
         });
@@ -283,7 +283,7 @@ export function useTableChat(
         setChatMessages((prev) => prev.filter((m) => m.id !== tempId));
       }
     },
-    [tableId, userId, heroName]
+    [tableId, userId, players]
   );
 
   return {

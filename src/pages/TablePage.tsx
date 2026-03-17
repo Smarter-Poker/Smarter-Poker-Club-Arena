@@ -664,7 +664,6 @@ export default function TablePage({
   const [actionTimeSeconds, setActionTimeSeconds] = useState(15);
 
   // Chat — extracted to useTableChat hook
-  const heroName = tableState.players[tableState.heroSeat - 1]?.name || 'You';
   const {
     chatMessages,
     setChatMessages,
@@ -675,7 +674,7 @@ export default function TablePage({
     handleSendChatMessage,
     activeReactions,
     parseIncomingMessage,
-  } = useTableChat(tableId, userId, heroName);
+  } = useTableChat(tableId, userId, tableState.players);
 
   // Reaction picker state
   const [isReactionPickerOpen, setIsReactionPickerOpen] = useState(false);

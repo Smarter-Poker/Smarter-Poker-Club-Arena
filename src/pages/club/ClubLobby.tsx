@@ -220,31 +220,29 @@ export default function ClubLobby() {
       setTournaments(tournamentData);
 
       if (currentUser?.id) {
-        const walletBalance = await WalletService.getPlayerBalance(currentUser.id);
-        if (isMountedRef.current) setChipBalance(walletBalance);
-
-        const { data: diamondData } = await supabase
-          .from('diamond_wallets')
-          .select('balance')
-          .eq('user_id', currentUser.id)
-          .maybeSingle();
-        if (isMountedRef.current && diamondData) setDiamondBalance(diamondData.balance || 0);
-
-        // Fetch user role for BottomNav — reuse clubData.id (UUID) instead of re-resolving
-        if (clubData)
-          try {
-            const { data: membership } = await supabase
-              .from('club_members')
-              .select('role')
-              .eq('club_id', clubData.id)
-              .eq('user_id', currentUser.id)
-              .maybeSingle();
-            if (isMountedRef.current && membership?.role) {
-              setUserRole(membership.role as 'owner' | 'admin' | 'agent' | 'member');
-            }
-          } catch {
-            /* non-critical */
-          }
+        // Batch all user-specific fetches in parallel instead of sequentially
+        const [walletBalance, diamondResult, membershipResult] = await Promise.all([
+          WalletService.getPlayerBalance(currentUser.id),
+          supabase
+            .from('diamond_wallets')
+            .select('balance')
+            .eq('user_id', currentUser.id)
+            .maybeSingle(),
+          clubData
+            ? supabase
+                .from('club_members')
+                .select('role')
+                .eq('club_id', clubData.id)
+                .eq('user_id', currentUser.id)
+                .maybeSingle()
+            : Promise.resolve({ data: null }),
+        ]);
+        if (!isMountedRef.current) return;
+        setChipBalance(walletBalance);
+        if (diamondResult.data) setDiamondBalance(diamondResult.data.balance || 0);
+        if (membershipResult.data?.role) {
+          setUserRole(membershipResult.data.role as 'owner' | 'admin' | 'agent' | 'member');
+        }
       }
     } catch (err) {
       console.error('[ClubLobby] Failed to load club data:', err);

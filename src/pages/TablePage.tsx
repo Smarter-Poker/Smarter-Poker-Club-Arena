@@ -374,6 +374,43 @@ export default function TablePage({
   // Prevent Chrome from throttling this tab (keeps horse timers alive)
   useTabKeepAlive();
 
+  // ─── MOBILE VIEWPORT LOCK — Prevent accidental pinch-zoom during poker play ───
+  useEffect(() => {
+    const meta = document.querySelector('meta[name="viewport"]');
+    const originalContent = meta?.getAttribute('content') || '';
+    const pokerViewport =
+      'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover';
+
+    if (meta) {
+      meta.setAttribute('content', pokerViewport);
+    } else {
+      const newMeta = document.createElement('meta');
+      newMeta.name = 'viewport';
+      newMeta.content = pokerViewport;
+      document.head.appendChild(newMeta);
+    }
+
+    // Try to lock orientation to portrait (non-blocking, fails silently on unsupported browsers)
+    try {
+      (screen.orientation as any)?.lock?.('portrait').catch(() => {});
+    } catch {
+      // Orientation lock not supported — ignore
+    }
+
+    return () => {
+      // Restore original viewport when leaving the table
+      const restoreMeta = document.querySelector('meta[name="viewport"]');
+      if (restoreMeta && originalContent) {
+        restoreMeta.setAttribute('content', originalContent);
+      }
+      try {
+        screen.orientation?.unlock?.();
+      } catch {
+        // Ignore
+      }
+    };
+  }, []);
+
   // Get current user
   const [userId, setUserId] = useState<string>('guest');
   const [username, setUsername] = useState<string>('Player');
@@ -656,6 +693,7 @@ export default function TablePage({
     if (showInsurance) {
       // Auto-decline after 15 seconds
       insuranceTimeoutRef.current = workerTimeout(() => {
+        if (!isMounted.current) return;
         console.debug('[Insurance] Auto-declined after 15s timeout');
         handleInsuranceDecline();
       }, 15000);
@@ -2632,6 +2670,7 @@ export default function TablePage({
 
               // Execute after think time (workerTimeout is throttle-proof)
               workerTimeout(() => {
+                if (!isMounted.current) return;
                 if (handControllerRef.current) {
                   let finalAction = decision.action as string;
                   let finalAmount = decision.amount;
@@ -2896,7 +2935,17 @@ export default function TablePage({
               .filter((w: any) => w.userId === userId)
               .reduce((sum: number, w: any) => sum + (w.amount || 0), 0);
             if (heroWinTotal > 0) {
-              toast?.success?.(`+$${heroWinTotal.toFixed(2)}`);
+              const formatted =
+                heroWinTotal >= 1000
+                  ? `+$${heroWinTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                  : `+$${heroWinTotal.toFixed(2)}`;
+              toast?.success?.(formatted);
+            } else if (heroWinTotal === 0 && event.winners.length > 0) {
+              // Hero was in the hand but didn't win — show loss feedback
+              const heroInHand = tableStateRef.current.players[tableState.heroSeat - 1];
+              if (heroInHand && heroInHand.status !== 'sitting_out') {
+                toast?.info?.('Better luck next hand');
+              }
             }
           }
           // Trigger achievements for winners
@@ -3048,6 +3097,7 @@ export default function TablePage({
 
           // Delayed cleanup: clear board and cards after 3 seconds, then start next hand
           workerTimeout(() => {
+            if (!isMounted.current) return; // Guard: skip if unmounted
             // Clear ALL locks to allow next hand
             handInProgressRef.current = false;
             handControllerRef.current = null;
@@ -3433,6 +3483,7 @@ export default function TablePage({
   };
 
   const handleFold = async () => {
+    if (!validateAndExecuteAction('fold')) return;
     const heroSeat = tableState.heroSeat;
     setShowRaiseSlider(false);
     startTransition(() => {
@@ -3509,6 +3560,7 @@ export default function TablePage({
               handControllerRef.current.performAction(heroSeat, 'fold');
           });
           soundService.playFold();
+          haptic?.light();
           broadcastLocalHandState();
           if (tableId)
             submitAction(tableId, userId, 'fold').catch((e) =>
@@ -3522,6 +3574,7 @@ export default function TablePage({
               handControllerRef.current.performAction(heroSeat, 'check');
           });
           soundService.playCheck();
+          haptic?.light();
           broadcastLocalHandState();
           if (tableId)
             submitAction(tableId, userId, 'check').catch((e) =>
@@ -3535,6 +3588,7 @@ export default function TablePage({
               handControllerRef.current.performAction(heroSeat, 'call');
           });
           soundService.playChips();
+          haptic?.light();
           broadcastLocalHandState();
           if (tableId)
             submitAction(tableId, userId, 'call').catch((e) =>
@@ -3552,6 +3606,7 @@ export default function TablePage({
               }
             });
             soundService.playRaise();
+            haptic?.light();
             broadcastLocalHandState();
             if (tableId)
               submitAction(tableId, userId, 'raise', clamped).catch((e) =>
@@ -3567,6 +3622,7 @@ export default function TablePage({
               handControllerRef.current.performAction(heroSeat, 'all_in');
           });
           soundService.playAllIn();
+          haptic?.light();
           setIsAllInMode(true);
           broadcastLocalHandState();
           if (tableId)
@@ -3628,7 +3684,7 @@ export default function TablePage({
           handControllerRef.current.performAction(heroSeat, 'all_in');
         }
       });
-      soundService.playChips();
+      soundService.playAllIn();
       haptic?.light();
       // PRIMARY: Broadcast via Supabase Realtime
       broadcastLocalHandState();
@@ -3643,6 +3699,7 @@ export default function TablePage({
 
     // Check for all-in scenario triggers (after slight delay to let state update)
     workerTimeout(() => {
+      if (!isMounted.current) return;
       // Use tableStateRef.current instead of stale tableState closure
       const currentState = tableStateRef.current;
       const activePlayers = currentState.players.filter(

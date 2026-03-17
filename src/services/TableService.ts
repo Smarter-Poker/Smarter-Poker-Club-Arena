@@ -428,7 +428,7 @@ class TableService {
               title: 'You Have Been Seated!',
               message:
                 'A seat opened up and you have been automatically seated at your waitlisted table.',
-              data: { table_id: tableId },
+              link: `/table/${tableId}`,
             });
 
             // Emit bus event so the promoted player's client gets a real-time toast

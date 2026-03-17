@@ -1635,7 +1635,8 @@ export default function TablePage({
                 if (elimData.userId === userId) {
                   if (elimData.position === 1) {
                     // Current user won the tournament
-                    const tournamentName = tableState.tableName || 'Tournament';
+                    // BUG-G FIX: Use tableStateRef for fresh name (closure has 'Loading...')
+                    const tournamentName = tableStateRef.current.tableName || 'Tournament';
                     setTournamentWinner({
                       prize: elimData.prize || 0,
                       name: tournamentName,
@@ -1655,7 +1656,8 @@ export default function TablePage({
                     }
                     // Auto-redirect to results after 5 seconds
                     setTimeout(() => {
-                      const tournId = tableState.tournamentId;
+                      // BUG-G FIX: Use table.tournament_id (local var) — not stale closure
+                      const tournId = table.tournament_id;
                       if (tournId) {
                         navigate(`/tournament-results?id=${tournId}`);
                       }
@@ -1677,11 +1679,13 @@ export default function TablePage({
                 console.debug('[TablePage] Table rebalance detected');
                 (async () => {
                   try {
-                    if (userId && tableState.tournamentId) {
+                    // BUG-G FIX: Use table.tournament_id (closure-safe local)
+                    // instead of stale tableState.tournamentId
+                    if (userId && table.tournament_id) {
                       const { data: playerData } = await supabase
                         .from('tournament_players')
                         .select('table_id')
-                        .eq('tournament_id', tableState.tournamentId)
+                        .eq('tournament_id', table.tournament_id)
                         .eq('user_id', userId)
                         .maybeSingle();
 

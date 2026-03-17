@@ -18,6 +18,7 @@ import styles from './AntiCheatPage.module.css';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { retryFetch } from '../utils/retryFetch';
 import { exportToCSV } from '../lib/export';
+import { resolveClubUUID } from '../utils/clubIdResolver';
 
 // ── Helpers ─────────────────────────────────────────────────
 const fmt = (n: number) => Number(n || 0).toLocaleString();
@@ -448,29 +449,45 @@ export default function AntiCheatPage() {
   // ── Supabase Realtime — cross-user WebSocket updates ──
   useEffect(() => {
     if (!clubId) return;
+    let isMounted = true;
     const channelKey = `anti-cheat-${clubId}`;
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'anti_cheat_flags', filter: `club_id=eq.${clubId}` },
-        () => {
-          loadStats(clubId);
-          setFlagsLoaded(false);
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'anti_cheat_events',
-          filter: `club_id=eq.${clubId}`,
-        },
-        () => setEventsLoaded(false)
-      )
-      .subscribe();
+
+    const setupRealtime = async () => {
+      const resolvedId = await resolveClubUUID(clubId);
+      if (!isMounted) return;
+
+      const channel = masterBus.getOrCreateChannel(channelKey);
+      channel
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'anti_cheat_flags',
+            filter: `club_id=eq.${resolvedId}`,
+          },
+          () => {
+            loadStats(clubId);
+            setFlagsLoaded(false);
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'anti_cheat_events',
+            filter: `club_id=eq.${resolvedId}`,
+          },
+          () => setEventsLoaded(false)
+        )
+        .subscribe();
+    };
+
+    setupRealtime().catch((e) => console.warn('[AntiCheatPage] Realtime setup failed:', e));
+
     return () => {
+      isMounted = false;
       masterBus.removeRegisteredChannel(channelKey);
     };
   }, [clubId, loadStats]);

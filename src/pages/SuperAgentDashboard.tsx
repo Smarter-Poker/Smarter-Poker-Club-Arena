@@ -17,6 +17,7 @@ import CreditRequestWidget from '../components/agent/CreditRequestWidget';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import ClubBottomNav from '../components/club/ClubBottomNav';
+import { resolveClubUUID } from '../utils/clubIdResolver';
 import './SuperAgentDashboard.css';
 
 type DashboardTab = 'overview' | 'agents' | 'players' | 'commissions' | 'transfers';
@@ -76,32 +77,41 @@ export default function SuperAgentDashboard() {
       loadDashboardData();
 
       // Real-time updates for agent activity
+      let isMounted = true;
       const channelKey = 'super-agent-live';
 
-      const channel = masterBus.getOrCreateChannel(channelKey);
-      channel
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'club_members',
-            filter: `club_id=eq.${clubId}`,
-          },
-          () => loadDashboardData()
-        )
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'chip_transactions',
-          },
-          () => loadDashboardData()
-        )
-        .subscribe();
+      const setupRealtime = async () => {
+        const resolvedId = await resolveClubUUID(clubId);
+        if (!isMounted) return;
+
+        const channel = masterBus.getOrCreateChannel(channelKey);
+        channel
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'club_members',
+              filter: `club_id=eq.${resolvedId}`,
+            },
+            () => loadDashboardData()
+          )
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'chip_transactions',
+            },
+            () => loadDashboardData()
+          )
+          .subscribe();
+      };
+
+      setupRealtime().catch((e) => console.warn('[SuperAgentDashboard] Realtime setup failed:', e));
 
       return () => {
+        isMounted = false;
         masterBus.removeRegisteredChannel(channelKey);
       };
     }

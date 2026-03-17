@@ -26,6 +26,7 @@ import {
 } from '../services/DisputeService';
 import './DisputeManagementPage.css';
 import PageSkeleton from '../components/common/PageSkeleton';
+import { resolveClubUUID } from '../utils/clubIdResolver';
 
 import { useIsMounted } from '../hooks/useIsMounted';
 
@@ -77,16 +78,27 @@ export default function DisputeManagementPage() {
   // Real-time subscription
   useEffect(() => {
     if (!clubId) return; // RT subscription only for club-scoped route
+    let isMounted = true;
     const channelKey = `disputes-${clubId}`;
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'disputes', filter: `club_id=eq.${clubId}` },
-        () => loadDisputes()
-      )
-      .subscribe();
+
+    const setupRealtime = async () => {
+      const resolvedId = await resolveClubUUID(clubId);
+      if (!isMounted) return;
+
+      const channel = masterBus.getOrCreateChannel(channelKey);
+      channel
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'disputes', filter: `club_id=eq.${resolvedId}` },
+          () => loadDisputes()
+        )
+        .subscribe();
+    };
+
+    setupRealtime().catch((e) => console.warn('[DisputeManagementPage] Realtime setup failed:', e));
+
     return () => {
+      isMounted = false;
       masterBus.removeRegisteredChannel(channelKey);
     };
   }, [clubId, loadDisputes]);

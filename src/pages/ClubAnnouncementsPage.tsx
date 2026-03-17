@@ -54,29 +54,39 @@ export default function ClubAnnouncementsPage() {
       loadAnnouncements(() => isMounted);
 
       const channelKey = `announcements-${clubId}`;
-      const channel = masterBus.getOrCreateChannel(channelKey);
-      channel
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'club_announcements',
-            filter: `club_id=eq.${clubId}`,
-          },
-          (payload) => {
-            if (!isMounted) return;
-            if (payload.eventType === 'INSERT') {
-              toast.info(' New announcement posted!');
-            } else if (payload.eventType === 'UPDATE') {
-              toast.info(' Announcement updated!');
-            } else if (payload.eventType === 'DELETE') {
-              toast.info(' Announcement removed!');
+
+      const setupRealtime = async () => {
+        const resolvedId = await resolveClubUUID(clubId);
+        if (!isMounted) return;
+
+        const channel = masterBus.getOrCreateChannel(channelKey);
+        channel
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'club_announcements',
+              filter: `club_id=eq.${resolvedId}`,
+            },
+            (payload) => {
+              if (!isMounted) return;
+              if (payload.eventType === 'INSERT') {
+                toast.info(' New announcement posted!');
+              } else if (payload.eventType === 'UPDATE') {
+                toast.info(' Announcement updated!');
+              } else if (payload.eventType === 'DELETE') {
+                toast.info(' Announcement removed!');
+              }
+              loadAnnouncements(() => isMounted);
             }
-            loadAnnouncements(() => isMounted);
-          }
-        )
-        .subscribe();
+          )
+          .subscribe();
+      };
+
+      setupRealtime().catch((e) =>
+        console.warn('[ClubAnnouncementsPage] Realtime setup failed:', e)
+      );
 
       return () => {
         isMounted = false;

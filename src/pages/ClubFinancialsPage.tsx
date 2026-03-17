@@ -104,37 +104,47 @@ export default function ClubFinancialsPage() {
   // ── Realtime subscription: live financial data updates ──
   useEffect(() => {
     if (!clubId) return;
+    let isMounted = true;
 
     const channelKey = `club-financials-${clubId}`;
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'wallet_transactions',
-          filter: `club_id=eq.${clubId}`,
-        },
-        () => {
-          loadFinancials();
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'rake_history',
-          filter: `club_id=eq.${clubId}`,
-        },
-        () => {
-          loadFinancials();
-        }
-      )
-      .subscribe();
+
+    const setupRealtime = async () => {
+      const resolvedId = await resolveClubUUID(clubId);
+      if (!isMounted) return;
+
+      const channel = masterBus.getOrCreateChannel(channelKey);
+      channel
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'wallet_transactions',
+            filter: `club_id=eq.${resolvedId}`,
+          },
+          () => {
+            loadFinancials();
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'rake_history',
+            filter: `club_id=eq.${resolvedId}`,
+          },
+          () => {
+            loadFinancials();
+          }
+        )
+        .subscribe();
+    };
+
+    setupRealtime().catch((e) => console.warn('[ClubFinancialsPage] Realtime setup failed:', e));
 
     return () => {
+      isMounted = false;
       masterBus.removeRegisteredChannel(channelKey);
     };
   }, [clubId]);

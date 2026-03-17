@@ -160,35 +160,43 @@ export default function TournamentPage() {
   // ── Realtime subscription: live tournament updates ──
   useEffect(() => {
     if (!clubId) return;
+    const isMounted = true;
 
     const channelKey = `tournament-page-${clubId}`;
 
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'tournaments',
-          filter: `club_id=eq.${clubId}`,
-        },
-        (payload) => {
-          // Refresh tournaments on any change
-          (async () => {
-            try {
-              const data = await tournamentService.getTournaments(clubId);
-              setTournaments(data);
-              // Update selected tournament if it changed
-              const updated = data.find((t) => t.id === selectedTournamentRef.current?.id);
-              if (updated) setSelectedTournament(updated);
-            } catch (error) {
-              console.error('Failed to refresh tournaments:', error);
-            }
-          })();
-        }
-      )
-      .subscribe();
+    const setupRealtime = async () => {
+      const resolvedId = await resolveClubUUID(clubId);
+      if (!isMounted) return;
+
+      const channel = masterBus.getOrCreateChannel(channelKey);
+      channel
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'tournaments',
+            filter: `club_id=eq.${resolvedId}`,
+          },
+          (payload) => {
+            // Refresh tournaments on any change
+            (async () => {
+              try {
+                const data = await tournamentService.getTournaments(clubId);
+                setTournaments(data);
+                // Update selected tournament if it changed
+                const updated = data.find((t) => t.id === selectedTournamentRef.current?.id);
+                if (updated) setSelectedTournament(updated);
+              } catch (error) {
+                console.error('Failed to refresh tournaments:', error);
+              }
+            })();
+          }
+        )
+        .subscribe();
+    };
+
+    setupRealtime().catch((e) => console.warn('[TournamentPage] Realtime setup failed:', e));
 
     // Refresh profile/wallet when balance changes (e.g., after register/unregister/rebuy)
     const unsubBalance = masterBus.subscribeDebounced(

@@ -322,42 +322,68 @@ function DashboardTab({ clubId }: { clubId: string }) {
   // ── Supabase Realtime — cross-user WebSocket updates ──
   useEffect(() => {
     if (!clubId) return;
-    const channelKey = `admin-dashboard-${clubId}`;
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'tables', filter: `club_id=eq.${clubId}` },
-        () => load()
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'club_members', filter: `club_id=eq.${clubId}` },
-        () => load()
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'cashout_requests', filter: `club_id=eq.${clubId}` },
-        () => load()
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'tournaments', filter: `club_id=eq.${clubId}` },
-        () => load()
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'settlement_periods',
-          filter: `club_id=eq.${clubId}`,
-        },
-        () => load()
-      )
-      .subscribe();
+    let isMounted = true;
+
+    const setupRealtime = async () => {
+      const resolvedId = await resolveClubUUID(clubId);
+      if (!isMounted) return;
+
+      const channelKey = `admin-dashboard-${clubId}`;
+      const channel = masterBus.getOrCreateChannel(channelKey);
+      channel
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'tables', filter: `club_id=eq.${resolvedId}` },
+          () => load()
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'club_members',
+            filter: `club_id=eq.${resolvedId}`,
+          },
+          () => load()
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'cashout_requests',
+            filter: `club_id=eq.${resolvedId}`,
+          },
+          () => load()
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'tournaments',
+            filter: `club_id=eq.${resolvedId}`,
+          },
+          () => load()
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'settlement_periods',
+            filter: `club_id=eq.${resolvedId}`,
+          },
+          () => load()
+        )
+        .subscribe();
+    };
+
+    setupRealtime().catch((e) => console.warn('[AdminDashboardPage] Realtime setup failed:', e));
+
     return () => {
-      masterBus.removeRegisteredChannel(channelKey);
+      isMounted = false;
+      masterBus.removeRegisteredChannel(`admin-dashboard-${clubId}`);
     };
   }, [clubId, load]);
 

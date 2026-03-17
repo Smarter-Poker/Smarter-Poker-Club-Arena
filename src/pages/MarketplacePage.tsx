@@ -17,6 +17,7 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import PageSkeleton from '../components/common/PageSkeleton';
 import styles from './MarketplacePage.module.css';
 import { useIsMounted } from '../hooks/useIsMounted';
+import { resolveClubUUID } from '../utils/clubIdResolver';
 
 const fmt = (n: number) => Number(n || 0).toLocaleString();
 const fmtChips = (n: number) => {
@@ -175,24 +176,34 @@ export default function MarketplacePage() {
   // Supabase real-time for marketplace item changes (stock updates, new items)
   useEffect(() => {
     if (!clubId) return;
+    let isMounted = true;
     const channelKey = `marketplace-live-${clubId}`;
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'marketplace_items',
-          filter: `club_id=eq.${clubId}`,
-        },
-        () => {
-          loadMarketplace(clubId, true);
-        }
-      )
-      .subscribe();
+
+    const setupRealtime = async () => {
+      const resolvedId = await resolveClubUUID(clubId);
+      if (!isMounted) return;
+
+      const channel = masterBus.getOrCreateChannel(channelKey);
+      channel
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'marketplace_items',
+            filter: `club_id=eq.${resolvedId}`,
+          },
+          () => {
+            loadMarketplace(clubId, true);
+          }
+        )
+        .subscribe();
+    };
+
+    setupRealtime().catch((e) => console.warn('[MarketplacePage] Realtime setup failed:', e));
 
     return () => {
+      isMounted = false;
       masterBus.removeRegisteredChannel(channelKey);
     };
   }, [clubId, loadMarketplace]);

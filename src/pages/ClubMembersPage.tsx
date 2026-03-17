@@ -621,21 +621,29 @@ export default function ClubMembersPage() {
     let isMounted = true;
 
     const channelKey = `club-members-sync-${clubId}`;
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'club_members',
-          filter: `club_id=eq.${clubId}`,
-        },
-        () => {
-          if (isMounted) loadMembers(() => isMounted);
-        }
-      )
-      .subscribe();
+
+    const setupRealtime = async () => {
+      const resolvedId = await resolveClubUUID(clubId);
+      if (!isMounted) return;
+
+      const channel = masterBus.getOrCreateChannel(channelKey);
+      channel
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'club_members',
+            filter: `club_id=eq.${resolvedId}`,
+          },
+          () => {
+            if (isMounted) loadMembers(() => isMounted);
+          }
+        )
+        .subscribe();
+    };
+
+    setupRealtime().catch((e) => console.warn('[ClubMembersPage] Realtime setup failed:', e));
 
     return () => {
       isMounted = false;

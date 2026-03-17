@@ -59,46 +59,53 @@ export default function BadBeatJackpotPage() {
 
       const channelKey = 'jackpot-live';
 
-      const channel = masterBus.getOrCreateChannel(channelKey);
-      channel
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'bbj_pools',
-            filter: `club_id=eq.${clubId}`,
-          },
-          (payload) => {
-            if (!isMounted) return;
-            const newData = payload.new as JackpotInfo;
-            if ((newData.main_balance || 0) > prevAmountRef.current) {
-              setJustUpdated(true);
-              if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
-              flashTimerRef.current = setTimeout(() => {
-                setJustUpdated(false);
-                flashTimerRef.current = null;
-              }, 2000);
+      const setupRealtime = async () => {
+        const resolvedId = await resolveClubUUID(clubId);
+        if (!isMounted) return;
+
+        const channel = masterBus.getOrCreateChannel(channelKey);
+        channel
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'bbj_pools',
+              filter: `club_id=eq.${resolvedId}`,
+            },
+            (payload) => {
+              if (!isMounted) return;
+              const newData = payload.new as JackpotInfo;
+              if ((newData.main_balance || 0) > prevAmountRef.current) {
+                setJustUpdated(true);
+                if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+                flashTimerRef.current = setTimeout(() => {
+                  setJustUpdated(false);
+                  flashTimerRef.current = null;
+                }, 2000);
+              }
+              prevAmountRef.current = newData.main_balance || 0;
+              setJackpot(newData);
             }
-            prevAmountRef.current = newData.main_balance || 0;
-            setJackpot(newData);
-          }
-        )
-        .on(
-          'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'bbj_winners',
-            filter: `club_id=eq.${clubId}`,
-          },
-          (payload) => {
-            if (!isMounted) return;
-            toast.success(' BAD BEAT JACKPOT HIT!');
-            loadJackpotData(() => isMounted);
-          }
-        )
-        .subscribe();
+          )
+          .on(
+            'postgres_changes',
+            {
+              event: 'INSERT',
+              schema: 'public',
+              table: 'bbj_winners',
+              filter: `club_id=eq.${resolvedId}`,
+            },
+            (payload) => {
+              if (!isMounted) return;
+              toast.success(' BAD BEAT JACKPOT HIT!');
+              loadJackpotData(() => isMounted);
+            }
+          )
+          .subscribe();
+      };
+
+      setupRealtime().catch((e) => console.warn('[BadBeatJackpotPage] Realtime setup failed:', e));
 
       return () => {
         isMounted = false;

@@ -223,35 +223,42 @@ export default function AgentManagementPage() {
 
     const channelKey = `agent-mgmt-${clubId}`;
 
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'club_members',
-          filter: `club_id=eq.${clubId}`,
-        },
-        (payload) => {
-          // Agents are club members with agent roles - reload on any change
-          loadAgentsData();
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'wallet_transactions',
-          filter: `club_id=eq.${clubId}`,
-        },
-        (payload) => {
-          // Commission tracking - reload on any transaction change for this club
-          loadAgentsData();
-        }
-      )
-      .subscribe();
+    const setupRealtime = async () => {
+      const resolvedId = await resolveClubUUID(clubId);
+      if (!isMounted.current) return;
+
+      const channel = masterBus.getOrCreateChannel(channelKey);
+      channel
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'club_members',
+            filter: `club_id=eq.${resolvedId}`,
+          },
+          (payload) => {
+            // Agents are club members with agent roles - reload on any change
+            loadAgentsData();
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'wallet_transactions',
+            filter: `club_id=eq.${resolvedId}`,
+          },
+          (payload) => {
+            // Commission tracking - reload on any transaction change for this club
+            loadAgentsData();
+          }
+        )
+        .subscribe();
+    };
+
+    setupRealtime().catch((e) => console.warn('[AgentManagementPage] Realtime setup failed:', e));
 
     // Bus event listeners for cross-component sync (debounced to prevent rapid-fire reloads)
     const unsubWallet = masterBus.subscribeDebounced(

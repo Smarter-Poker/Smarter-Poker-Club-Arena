@@ -363,27 +363,43 @@ export default function AgentDashboardPage() {
   // ── Supabase Realtime — cross-user WebSocket updates ──
   useEffect(() => {
     if (!clubId) return;
-    const channelKey = `agent-dashboard-${clubId}`;
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'cashout_requests', filter: `club_id=eq.${clubId}` },
-        () => loadDashboard(clubId)
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'chip_transactions',
-          filter: `club_id=eq.${clubId}`,
-        },
-        () => loadDashboard(clubId)
-      )
-      .subscribe();
+    let isMounted = true;
+
+    const setupRealtime = async () => {
+      const resolvedId = await resolveClubUUID(clubId);
+      if (!isMounted) return;
+
+      const channelKey = `agent-dashboard-${clubId}`;
+      const channel = masterBus.getOrCreateChannel(channelKey);
+      channel
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'cashout_requests',
+            filter: `club_id=eq.${resolvedId}`,
+          },
+          () => loadDashboard(clubId)
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'chip_transactions',
+            filter: `club_id=eq.${resolvedId}`,
+          },
+          () => loadDashboard(clubId)
+        )
+        .subscribe();
+    };
+
+    setupRealtime().catch((e) => console.warn('[AgentDashboardPage] Realtime setup failed:', e));
+
     return () => {
-      masterBus.removeRegisteredChannel(channelKey);
+      isMounted = false;
+      masterBus.removeRegisteredChannel(`agent-dashboard-${clubId}`);
     };
   }, [clubId, loadDashboard]);
 

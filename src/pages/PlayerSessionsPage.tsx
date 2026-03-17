@@ -506,21 +506,42 @@ export default function PlayerSessionsPage() {
   // ── Supabase Realtime — cross-user WebSocket updates ──
   useEffect(() => {
     if (!clubId) return;
+    let isMounted = true;
     const channelKey = `player-sessions-${clubId}`;
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'club_members', filter: `club_id=eq.${clubId}` },
-        () => loadSessions(clubId, true)
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'cashout_requests', filter: `club_id=eq.${clubId}` },
-        () => loadSessions(clubId, true)
-      )
-      .subscribe();
+
+    const setupRealtime = async () => {
+      const resolvedId = await resolveClubUUID(clubId);
+      if (!isMounted) return;
+
+      const channel = masterBus.getOrCreateChannel(channelKey);
+      channel
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'club_members',
+            filter: `club_id=eq.${resolvedId}`,
+          },
+          () => loadSessions(clubId, true)
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'cashout_requests',
+            filter: `club_id=eq.${resolvedId}`,
+          },
+          () => loadSessions(clubId, true)
+        )
+        .subscribe();
+    };
+
+    setupRealtime().catch((e) => console.warn('[PlayerSessionsPage] Realtime setup failed:', e));
+
     return () => {
+      isMounted = false;
       masterBus.removeRegisteredChannel(channelKey);
     };
   }, [clubId, loadSessions]);

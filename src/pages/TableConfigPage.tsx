@@ -373,18 +373,21 @@ export default function TableConfigPage() {
     let isMounted = true;
     const channelKey = `table-config-${clubId}`;
 
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'table_templates',
-          filter: `club_id=eq.${clubId}`,
-        },
-        () => {
-          resolveClubUUID(clubId!).then((resolvedId) => {
+    const setupRealtime = async () => {
+      const resolvedId = await resolveClubUUID(clubId);
+      if (!isMounted) return;
+
+      const channel = masterBus.getOrCreateChannel(channelKey);
+      channel
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'table_templates',
+            filter: `club_id=eq.${resolvedId}`,
+          },
+          () => {
             supabase
               .from('table_templates')
               .select('id, name, game_type, game_mode, config, club_id, is_deleted, created_at')
@@ -394,10 +397,13 @@ export default function TableConfigPage() {
               .then(({ data }) => {
                 if (isMounted && data) setTemplates(data);
               });
-          });
-        }
-      )
-      .subscribe();
+          }
+        )
+        .subscribe();
+    };
+
+    setupRealtime().catch((e) => console.warn('[TableConfigPage] Realtime setup failed:', e));
+
     return () => {
       isMounted = false;
       masterBus.removeRegisteredChannel(channelKey);

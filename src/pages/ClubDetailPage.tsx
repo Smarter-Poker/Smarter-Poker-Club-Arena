@@ -1663,7 +1663,7 @@ export default function ClubDetailPage() {
                 const { data } = await supabase
                   .from('tables')
                   .select(
-                    'id, name, game_type, stakes, current_players, max_players, status, created_at'
+                    'id, name, game_variant, stakes, current_players, max_players, status, created_at'
                   )
                   .eq('club_id', resolvedId)
                   .eq('is_deleted', false)
@@ -1673,7 +1673,7 @@ export default function ClubDetailPage() {
                     data.map((t: any) => ({
                       id: t.id,
                       name: t.name || 'Table',
-                      gameVariant: t.game_type || 'NLH',
+                      gameVariant: t.game_variant || 'NLH',
                       stakes: t.stakes || '1/2',
                       currentPlayers: t.current_players || 0,
                       maxPlayers: t.max_players || 6,

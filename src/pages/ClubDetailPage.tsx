@@ -518,52 +518,62 @@ export default function ClubDetailPage() {
   // Supabase Realtime subscriptions for auto-updates
   useEffect(() => {
     if (!clubId) return;
+    let isMounted = true;
 
-    const channelKey = `club-detail-${clubId}`;
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'clubs',
-          filter: `id=eq.${clubId}`,
-        },
-        () => {
-          loadClubData();
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'club_members',
-          filter: `club_id=eq.${clubId}`,
-        },
-        () => {
-          loadClubData();
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'tables',
-          filter: `club_id=eq.${clubId}`,
-        },
-        () => {
-          loadClubData();
-        }
-      )
-      .subscribe((status) => {
-        setWsConnected(status === 'SUBSCRIBED');
-      });
+    // Resolve UUID for realtime filters (integer club IDs need translation)
+    const setupRealtime = async () => {
+      const resolvedId = await resolveClubUUID(clubId);
+      if (!isMounted) return;
+
+      const channelKey = `club-detail-${clubId}`;
+      const channel = masterBus.getOrCreateChannel(channelKey);
+      channel
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'clubs',
+            filter: `id=eq.${resolvedId}`,
+          },
+          () => {
+            loadClubData();
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'club_members',
+            filter: `club_id=eq.${resolvedId}`,
+          },
+          () => {
+            loadClubData();
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'tables',
+            filter: `club_id=eq.${resolvedId}`,
+          },
+          () => {
+            loadClubData();
+          }
+        )
+        .subscribe((status) => {
+          setWsConnected(status === 'SUBSCRIBED');
+        });
+    };
+
+    setupRealtime().catch((e) => console.warn('[ClubDetailPage] Realtime setup failed:', e));
 
     return () => {
-      masterBus.removeRegisteredChannel(channelKey);
+      isMounted = false;
+      masterBus.removeRegisteredChannel(`club-detail-${clubId}`);
     };
   }, [clubId]);
 

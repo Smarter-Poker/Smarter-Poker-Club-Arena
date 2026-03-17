@@ -201,6 +201,17 @@ export default function ClubsPage() {
       if (getIsMounted && !getIsMounted()) return;
       setMyClubs([]);
       setMyUnions([]);
+      // Clear SWR cache on error so stale data isn't shown on next visit
+      try {
+        localStorage.removeItem(SWR_CLUBS_KEY);
+      } catch {
+        /* ignore */
+      }
+      try {
+        localStorage.removeItem(SWR_UNIONS_KEY);
+      } catch {
+        /* ignore */
+      }
     } finally {
       loadingRef.current = false;
       initialLoadDone.current = true;

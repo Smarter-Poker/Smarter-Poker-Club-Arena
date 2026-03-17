@@ -533,11 +533,14 @@ export async function deleteClub(clubId: string): Promise<void> {
   const { data: user } = await getAuthUser();
   if (!user.user) throw new Error('Authentication required');
 
+  // Resolve to UUID first — clubId from URL may be integer (e.g., "25450")
+  const resolvedId = await resolveClubUUID(clubId);
+
   // Verify ownership
   const { data: club, error: clubError } = await supabase
     .from('clubs')
     .select('owner_id')
-    .eq('id', clubId)
+    .eq('id', resolvedId)
     .maybeSingle();
 
   if (clubError || !club) {
@@ -549,7 +552,6 @@ export async function deleteClub(clubId: string): Promise<void> {
   }
 
   // Delete all members first (cascade should handle this, but explicit is safer)
-  const resolvedId = await resolveClubUUID(clubId);
   const { error: memberErr } = await supabase
     .from('club_members')
     .delete()
@@ -560,7 +562,7 @@ export async function deleteClub(clubId: string): Promise<void> {
   }
 
   // Delete the club
-  const { error } = await supabase.from('clubs').delete().eq('id', clubId);
+  const { error } = await supabase.from('clubs').delete().eq('id', resolvedId);
 
   if (error) {
     console.error('[ClubsService] Delete club failed:', error);

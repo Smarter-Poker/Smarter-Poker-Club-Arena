@@ -387,6 +387,23 @@ export class HeadlessTableEngine {
 
     const profileMap = new Map(profiles?.map((p) => [p.id, p]) || []);
 
+    // Fetch agent_id from club_members for commission tracking
+    const agentMap = new Map<string, string>();
+    if (this.tableInfo?.club_id) {
+      const { data: members } = await this.supabaseClient
+        .from('club_members')
+        .select('user_id, agent_id')
+        .eq('club_id', this.tableInfo.club_id)
+        .in('user_id', userIds)
+        .not('agent_id', 'is', null);
+
+      if (members) {
+        for (const m of members) {
+          if (m.agent_id) agentMap.set(m.user_id, m.agent_id);
+        }
+      }
+    }
+
     // Identify busted seats (stack <= 0) — only for cash game tables
     // (Tournament table stack=0 is handled by elimination logic in TournamentEngine)
     if (!this.isTournamentTable()) {
@@ -417,6 +434,7 @@ export class HeadlessTableEngine {
           seat_number: seat.seat_number || 1, // Use actual DB seat number
           is_horse: profile.is_horse || false,
           horse_profile: profile.horse_profile || 'balanced',
+          agent_id: agentMap.get(seat.user_id), // Agent for commission tracking
           time_bank_remaining: seat.time_bank_remaining,
           time_bank_uses_remaining: seat.time_bank_uses_remaining,
         };

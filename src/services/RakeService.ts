@@ -390,6 +390,11 @@ export const RakeService = {
     // STEP 3.5: Record per-player contributions for rakeback engine
     if (calculation.cappedRake > 0 && attributions.length > 0 && clubId) {
       try {
+        // Auto-configure rakeback for this club if not yet enabled
+        if (!rakebackEngine.isEnabled(clubId)) {
+          rakebackEngine.configure(clubId, { enabled: true });
+        }
+
         // Build contribution map from rake attributions (each attribution has userId + share)
         const contributions = new Map<string, number>();
         let totalContributions = 0;
@@ -671,7 +676,13 @@ export const RakeService = {
       }
 
       // No agents at this table — nothing to credit
-      if (byAgent.size === 0) return true;
+      if (byAgent.size === 0) {
+        console.debug(
+          `[RakeService] No agent-linked players in hand ${params.handId.substring(0, 8)}... ` +
+            `(${params.players.length} players, rake=$${params.rakeAmount.toFixed(2)})`
+        );
+        return true;
+      }
 
       // Increment each agent's rake_generated in the agents table
       // This provides real-time tracking; weekly settlement reads from here

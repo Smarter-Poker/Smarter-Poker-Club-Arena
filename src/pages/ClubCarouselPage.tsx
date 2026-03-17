@@ -221,26 +221,29 @@ export default function ClubCarouselPage() {
   }, []);
 
   // #6: Keyboard navigation
+  // BUG FIX: Must use displayedClubs (filtered), not clubs (unfiltered).
+  // Otherwise Enter navigates to wrong club when search is active.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement) return; // don't hijack search input
-      // Placeholder for handlePrev, handleNext, handleClubClick, totalCards
-      // These functions/variables are assumed to be defined elsewhere in the component
-      const totalCards = clubs.length + userUnions.length;
-      const handlePrev = () => setActiveIndex((prev) => Math.max(0, prev - 1));
-      const handleNext = () => setActiveIndex((prev) => Math.min(totalCards - 1, prev + 1));
-      const handleClubClick = (club: UserClub) => navigate(`/clubs/${club.id}`);
+      const tc = displayedClubs.length + userUnions.length;
+      // Wrap-around to match arrow button behavior
+      const kbPrev = () => setActiveIndex((prev) => (prev > 0 ? prev - 1 : tc - 1));
+      const kbNext = () => setActiveIndex((prev) => (prev < tc - 1 ? prev + 1 : 0));
 
       if (e.key === 'ArrowLeft') {
-        handlePrev();
+        kbPrev();
         haptic.light();
       } else if (e.key === 'ArrowRight') {
-        handleNext();
+        kbNext();
         haptic.light();
-      } else if (e.key === 'Enter' && totalCards > 0) {
-        if (activeIndex < clubs.length) handleClubClick(clubs[activeIndex]);
-        else {
-          const uIdx = activeIndex - clubs.length;
+      } else if (e.key === 'Enter' && tc > 0) {
+        // Use displayedClubs — matches what's rendered in the carousel
+        if (activeIndex < displayedClubs.length) {
+          navigate(`/clubs/${displayedClubs[activeIndex].id}`);
+          haptic.medium();
+        } else {
+          const uIdx = activeIndex - displayedClubs.length;
           if (userUnions[uIdx]) navigate(`/unions/${userUnions[uIdx].id}`);
         }
       } else if (e.key === 'Escape') setSearchQuery('');
@@ -249,7 +252,7 @@ export default function ClubCarouselPage() {
         setSearchQuery(''); /* focus search input */
       } else if (/^[1-9]$/.test(e.key)) {
         const idx = parseInt(e.key, 10) - 1;
-        if (idx < totalCards) {
+        if (idx < tc) {
           setActiveIndex(idx);
           haptic.light();
         }
@@ -313,6 +316,17 @@ export default function ClubCarouselPage() {
     const q = searchQuery.toLowerCase();
     return clubs.filter((c) => c.name?.toLowerCase().includes(q) || String(c.club_id).includes(q));
   }, [clubs, searchQuery]);
+
+  // BUG FIX: Clamp activeIndex when search narrows the list
+  // Without this, activeIndex can exceed displayedClubs.length → blank carousel
+  useEffect(() => {
+    const maxIdx = displayedClubs.length + userUnions.length - 1;
+    if (maxIdx < 0) {
+      setActiveIndex(0);
+    } else {
+      setActiveIndex((prev) => Math.min(prev, maxIdx));
+    }
+  }, [displayedClubs.length, userUnions.length]);
 
   // ── #6: Decomposed data loading helpers ──
   const loadProfile = useCallback(

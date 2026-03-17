@@ -173,7 +173,7 @@ class TableService {
         name,
         game_type: 'cash',
         game_variant: gameVariant,
-        stakes: `${smallBlind}/${bigBlind}`,
+        stakes: smallBlind != null && bigBlind != null ? `${smallBlind}/${bigBlind}` : '1/2',
         small_blind: smallBlind,
         big_blind: bigBlind,
         min_buy_in: bigBlind * 40,

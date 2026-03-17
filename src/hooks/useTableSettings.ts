@@ -38,7 +38,7 @@ const DEFAULT_SETTINGS: TableUserSettings = {
   isSoundEnabled: true,
   soundVolume: 70,
   animationSpeed: 1,
-  theme: 'green',
+  theme: 'black',
   fourColorDeck: false,
   showHUD: true,
   showPotOdds: false,

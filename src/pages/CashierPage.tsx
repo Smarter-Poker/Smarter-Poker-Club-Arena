@@ -449,6 +449,12 @@ export default function CashierPage() {
 
       if (!error && data && isMounted.current) {
         setTransactions(data);
+        // SWR: cache for instant display on revisit
+        try {
+          sessionStorage.setItem(`cashier_tx_cache_${user.id}`, JSON.stringify(data.slice(0, 30)));
+        } catch {
+          /* storage full */
+        }
       }
     } catch {
       /* silent */
@@ -457,7 +463,23 @@ export default function CashierPage() {
   }, [user?.id]);
 
   useEffect(() => {
-    if (action === 'history') loadTransactions();
+    if (action === 'history') {
+      // SWR: show cached transactions instantly while fresh data loads
+      if (user?.id) {
+        try {
+          const cached = sessionStorage.getItem(`cashier_tx_cache_${user.id}`);
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setTransactions(parsed);
+            }
+          }
+        } catch {
+          /* */
+        }
+      }
+      loadTransactions();
+    }
   }, [action, loadTransactions]);
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -1680,8 +1702,10 @@ export default function CashierPage() {
 
               {action === 'mint' && amount && (
                 <div className="cashier-message info">
-                  {Math.ceil((parseFloat(amount || '0') * DIAMOND_RATE_NUM) / DIAMOND_RATE_DEN).toLocaleString()} diamonds
-                  required
+                  {Math.ceil(
+                    (parseFloat(amount || '0') * DIAMOND_RATE_NUM) / DIAMOND_RATE_DEN
+                  ).toLocaleString()}{' '}
+                  diamonds required
                 </div>
               )}
 

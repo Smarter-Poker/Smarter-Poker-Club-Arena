@@ -388,8 +388,25 @@ export default function ClubDetailPage() {
   const animatedMemberCount = useCountAnimation(club?.memberCount || 0, 800);
   const animatedTableCount = useCountAnimation(club?.activeTableCount || 0, 800);
 
+  // SWR: show cached club data instantly on mount while fresh data loads
   useEffect(() => {
     let isMounted = true;
+    if (clubId) {
+      try {
+        const cached = sessionStorage.getItem(`club_detail_cache_${clubId}`);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (parsed.club) {
+            setClub(parsed.club);
+            if (parsed.members) setMembers(parsed.members);
+            if (parsed.tables) setTables(parsed.tables);
+            setLoading(false); // Show cached data instantly
+          }
+        }
+      } catch {
+        /* corrupt cache */
+      }
+    }
     loadClubData(() => isMounted);
     return () => {
       isMounted = false;
@@ -554,6 +571,8 @@ export default function ClubDetailPage() {
       masterBus.subscribeDebounced('TABLE_LEFT', () => loadClubData(), 300),
       masterBus.subscribeDebounced('CLUB_UPDATED', () => loadClubData(), 300),
       masterBus.subscribeDebounced('ANNOUNCEMENT_CHANGED', () => loadClubData(), 300),
+      masterBus.subscribeDebounced('CLUB_SETTINGS_UPDATED', () => loadClubData(), 300),
+      masterBus.subscribeDebounced('AGENT_UPDATED', () => loadClubData(), 500),
     ];
     return () => unsubs.forEach((u) => u());
   }, []);
@@ -688,10 +707,26 @@ export default function ClubDetailPage() {
         const activeCount = mappedTables.filter((t) => t.status === 'running').length;
         setClub((prev) => (prev ? { ...prev, activeTableCount: activeCount } : null));
       }
+      // SWR: cache the loaded data for instant display on revisit
+      if (clubId) {
+        try {
+          const cachePayload = {
+            club: mappedClub,
+            members: members.slice(0, 50),
+            tables: tables.map((t) => ({ ...t })),
+          };
+          sessionStorage.setItem(`club_detail_cache_${clubId}`, JSON.stringify(cachePayload));
+        } catch {
+          /* storage full */
+        }
+      }
     } catch (error) {
       console.error('[ClubDetailPage] Error loading data:', error);
     } finally {
-      if (!getIsMounted || getIsMounted()) setLoading(false);
+      if (!getIsMounted || getIsMounted()) {
+        setLoading(false);
+        setLastRefreshed(new Date());
+      }
     }
   };
 

@@ -28,7 +28,6 @@ import { waitForAuth } from '../utils/waitForAuth';
 import { ClubsService } from '../services/ClubsService';
 import { useToast } from '../components/common/Toast';
 import GlobalHeader from '../components/navigation/GlobalHeader';
-import FloatingHamburger from '../components/navigation/FloatingHamburger';
 import haptic from '../services/HapticService';
 
 import PremiumSFX from '../services/PremiumSFX';
@@ -1048,9 +1047,6 @@ function HomePageInner() {
 
       {/* GLOBAL HEADER - Hub-style, hide when embedded in iframe */}
       {!isInIframe && <GlobalHeader />}
-
-      {/* Floating Hamburger — Always visible, even in iframe mode */}
-      <FloatingHamburger />
 
       {/* #15: Offline indicator banner */}
       {!isOnline && (

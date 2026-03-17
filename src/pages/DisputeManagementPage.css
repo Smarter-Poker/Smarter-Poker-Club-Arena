@@ -275,3 +275,42 @@
   margin-bottom: 12px;
   opacity: 0.4;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   RESPONSIVE — Mobile
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 480px) {
+  .dispute-management-page {
+    padding: 16px 12px;
+  }
+
+  .dm-header h2 {
+    font-size: 1.1rem;
+  }
+
+  .tab-btn {
+    min-height: 36px;
+    padding: 8px 14px;
+    font-size: 0.78rem;
+  }
+
+  .dispute-card {
+    padding: 12px;
+  }
+
+  .action-btn {
+    min-height: 36px;
+    padding: 6px 12px;
+  }
+
+  .adjustment-row select,
+  .adjustment-row input {
+    font-size: 16px;
+    min-height: 44px;
+  }
+
+  .dispute-meta {
+    font-size: 0.7rem;
+  }
+}

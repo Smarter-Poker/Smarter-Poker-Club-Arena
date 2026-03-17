@@ -358,3 +358,41 @@
   font-size: 14px;
   color: #b0b3b8;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   RESPONSIVE — Mobile
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 480px) {
+  .page {
+    padding: 12px;
+  }
+
+  .header h2 {
+    font-size: 1.1rem;
+  }
+
+  .filterGrid {
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 6px;
+  }
+
+  .gamesGrid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .modal {
+    width: 96%;
+    max-width: none;
+  }
+
+  .btnPrimary,
+  .btnGhost,
+  .btnRegister {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+}

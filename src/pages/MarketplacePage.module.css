@@ -428,3 +428,54 @@
   font-size: 14px;
   color: #b0b3b8;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   RESPONSIVE — Mobile
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 480px) {
+  .page {
+    padding: 12px;
+  }
+
+  .header h2 {
+    font-size: 1.1rem;
+  }
+
+  .grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .modal {
+    width: 96%;
+    max-width: none;
+    padding: 16px;
+  }
+
+  .modalGrid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .btnPrimary,
+  .btnGhost {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .btnActiveToggle,
+  .btnInactiveToggle,
+  .btnDeleteSmall {
+    min-height: 36px;
+  }
+
+  .modalInput,
+  .modalTextarea,
+  .modalSelect {
+    font-size: 16px;
+    min-height: 44px;
+  }
+}

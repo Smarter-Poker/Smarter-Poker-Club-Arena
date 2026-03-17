@@ -657,6 +657,9 @@ export default function TablePage({
       case 'LEADERBOARD':
         setShowLeaderboard(true);
         break;
+      case 'SESSION_STATS':
+        setShowSessionStats(true);
+        break;
       case 'SETTINGS':
         masterBus.emit('TABLE_SETTINGS_OPEN' as any, { tableId });
         break;
@@ -665,6 +668,9 @@ export default function TablePage({
         break;
       case 'HELP':
         setShowGameRules(true);
+        break;
+      case 'ADD_ON':
+        handleTournamentAddOn();
         break;
       case 'LEAVE_TABLE':
         setShowLeaveConfirm(true);

@@ -57,6 +57,8 @@ export interface TableMenuProps {
 export function createDefaultMenuSections(handlers: {
   onSitOut?: () => void;
   onRebuy?: () => void;
+  onAddOn?: () => void;
+  onSessionStats?: () => void;
   onSettings?: () => void;
   onHandHistory?: () => void;
   onLeaderboard?: () => void;
@@ -96,6 +98,16 @@ export function createDefaultMenuSections(handlers: {
           icon: <LeaderboardIcon />,
           onClick: handlers.onLeaderboard || (() => {}),
         },
+        ...(handlers.onSessionStats
+          ? [
+              {
+                id: 'session-stats',
+                label: 'Session Stats',
+                icon: <SettingsIcon />,
+                onClick: handlers.onSessionStats,
+              },
+            ]
+          : []),
         {
           id: 'settings',
           label: 'Settings',

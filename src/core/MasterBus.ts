@@ -922,7 +922,7 @@ export interface BusPayloadMap {
   // Table menu bus actions
   TABLE_MENU_ACTION: {
     tableId: string;
-    action: 'SIT_OUT' | 'REBUY' | 'LEADERBOARD' | 'SETTINGS' | 'HAND_HISTORY' | 'HELP' | 'LEAVE_TABLE' | 'FORCE_LEAVE_TABLE';
+    action: 'SIT_OUT' | 'REBUY' | 'ADD_ON' | 'SESSION_STATS' | 'LEADERBOARD' | 'SETTINGS' | 'HAND_HISTORY' | 'HELP' | 'LEAVE_TABLE' | 'FORCE_LEAVE_TABLE';
   };
 }
 

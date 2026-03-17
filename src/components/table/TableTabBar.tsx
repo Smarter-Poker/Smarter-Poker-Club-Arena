@@ -70,7 +70,7 @@ export function TableTabBar({
 
       // Route X-button clicks through the secure cashout layer,
       // bypassing the instant component teardown in MultiTablePage
-      masterBus.emit('TABLE_MENU_ACTION' as any, {
+      masterBus.emit('TABLE_MENU_ACTION', {
         tableId: tabId,
         action: 'FORCE_LEAVE_TABLE',
       });
@@ -85,25 +85,29 @@ export function TableTabBar({
     () =>
       createDefaultMenuSections({
         onSitOut: () =>
-          masterBus.emit('TABLE_MENU_ACTION' as any, { tableId: activeTabId, action: 'SIT_OUT' }),
+          masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'SIT_OUT' }),
         onRebuy: () =>
-          masterBus.emit('TABLE_MENU_ACTION' as any, { tableId: activeTabId, action: 'REBUY' }),
+          masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'REBUY' }),
+        onAddOn: () =>
+          masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'ADD_ON' }),
+        onSessionStats: () =>
+          masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'SESSION_STATS' }),
         onSettings: () =>
-          masterBus.emit('TABLE_MENU_ACTION' as any, { tableId: activeTabId, action: 'SETTINGS' }),
+          masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'SETTINGS' }),
         onHandHistory: () =>
-          masterBus.emit('TABLE_MENU_ACTION' as any, {
+          masterBus.emit('TABLE_MENU_ACTION', {
             tableId: activeTabId,
             action: 'HAND_HISTORY',
           }),
         onLeaderboard: () =>
-          masterBus.emit('TABLE_MENU_ACTION' as any, {
+          masterBus.emit('TABLE_MENU_ACTION', {
             tableId: activeTabId,
             action: 'LEADERBOARD',
           }),
         onHelp: () =>
-          masterBus.emit('TABLE_MENU_ACTION' as any, { tableId: activeTabId, action: 'HELP' }),
+          masterBus.emit('TABLE_MENU_ACTION', { tableId: activeTabId, action: 'HELP' }),
         onLeaveTable: () =>
-          masterBus.emit('TABLE_MENU_ACTION' as any, {
+          masterBus.emit('TABLE_MENU_ACTION', {
             tableId: activeTabId,
             action: 'LEAVE_TABLE',
           }),

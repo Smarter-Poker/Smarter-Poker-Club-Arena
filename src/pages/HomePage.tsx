@@ -1121,7 +1121,10 @@ function HomePageInner() {
         {/* ═══════════════════════════════════════════════════════════════════════
                     HORIZONTAL ACTION BAR
                 ═══════════════════════════════════════════════════════════════════════ */}
-        <div className={styles.actionBarRow} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div
+          className={styles.actionBarRow}
+          style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+        >
           {/* Daily Challenges — clickable icon navigates to Profile (Daily Missions) */}
           <button
             onClick={() => {
@@ -1153,10 +1156,11 @@ function HomePageInner() {
               src={DAILY_CHALLENGES_ICON}
               alt="Daily Challenges"
               style={{
-                width: 48,
+                width: 52,
                 height: 'auto',
                 display: 'block',
                 pointerEvents: 'none',
+                borderRadius: 8,
               }}
             />
           </button>
@@ -1265,7 +1269,6 @@ function HomePageInner() {
         </div>
         {/* P4-4: Section separator */}
         <div className={styles.sectionSeparator}></div>
-
 
         {/* ═══════════════════════════════════════════════════════════════════════
                     BOTTOM ROW — from lobbyTiles.config.ts (#18)

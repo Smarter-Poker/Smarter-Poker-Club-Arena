@@ -64,7 +64,12 @@ const RANK_MAP: Record<string, string> = {
 export function getCardImagePath(card: Card, deckStyle: DeckStyle = '4color'): string {
   const suitName = SUIT_MAP[card.suit];
   const rankName = RANK_MAP[card.rank];
-  const base = import.meta.env.BASE_URL || '/';
+  // In production, serve card images directly from club-arena.vercel.app
+  // to avoid World Hub's Next.js rewrite stripping binary content-type
+  const isProduction = typeof window !== 'undefined' && window.location.hostname !== 'localhost';
+  const base = isProduction
+    ? 'https://club-arena.vercel.app/hub/club-arena/'
+    : import.meta.env.BASE_URL || '/';
   return `${base}cards/${deckStyle}/${suitName}_${rankName}.png`;
 }
 

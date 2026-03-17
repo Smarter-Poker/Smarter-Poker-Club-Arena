@@ -166,7 +166,15 @@ export function WaitListModal({
                   <div className="waitlist-modal__player-info">
                     <div className="waitlist-modal__player-avatar">
                       {player.avatar ? (
-                        <img loading="lazy" decoding="async" src={player.avatar} alt="" />
+                        <img
+                          loading="lazy"
+                          decoding="async"
+                          src={player.avatar}
+                          alt=""
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src = '/default-avatar.png';
+                          }}
+                        />
                       ) : (
                         <span>{player.playerName[0]?.toUpperCase()}</span>
                       )}

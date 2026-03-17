@@ -25,7 +25,15 @@ export const Comment: React.FC<CommentProps> = ({
     <div className="comment">
       <div className="comment-avatar">
         {author.avatar ? (
-          <img loading="lazy" decoding="async" src={author.avatar} alt={author.name} />
+          <img
+            loading="lazy"
+            decoding="async"
+            src={author.avatar}
+            alt={author.name}
+            onError={(e) => {
+              (e.target as HTMLImageElement).src = '/default-avatar.png';
+            }}
+          />
         ) : (
           <span>{author.name[0]}</span>
         )}

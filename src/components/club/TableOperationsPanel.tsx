@@ -618,6 +618,9 @@ export default function TableOperationsPanel({ clubId }: Props) {
                                 src={profile.avatar_url}
                                 alt=""
                                 style={{ width: '100%', height: '100%', borderRadius: '50%' }}
+                                onError={(e) => {
+                                  (e.target as HTMLImageElement).src = '/default-avatar.png';
+                                }}
                               />
                             ) : (
                               name.charAt(0).toUpperCase()

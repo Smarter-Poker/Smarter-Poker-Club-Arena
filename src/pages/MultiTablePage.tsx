@@ -211,29 +211,6 @@ export default function MultiTablePage() {
     [tables, activeIndex]
   );
 
-  const handleTabClose = useCallback(
-    (tabId: string) => {
-      if (tables.length <= 1) return;
-
-      setTables((prev) => {
-        const newTables = prev.filter((t) => t.id !== tabId);
-        return newTables;
-      });
-
-      // Adjust active index if needed
-      const closedIdx = tables.findIndex((t) => t.id === tabId);
-      if (closedIdx <= activeIndex && activeIndex > 0) {
-        setActiveIndex((prev) => prev - 1);
-      }
-
-      // If we closed the last table, navigate back to lobby
-      if (tables.length <= 1) {
-        navigate('/lobby');
-      }
-    },
-    [tables, activeIndex, navigate]
-  );
-
   const handleAddTable = useCallback(() => {
     if (tables.length >= MAX_TABLES) return;
     // Navigate to lobby to pick a table
@@ -403,7 +380,6 @@ export default function MultiTablePage() {
             tabs={tabInfos}
             activeTabId={activeTableId}
             onTabSelect={handleTabSelect}
-            onTabClose={handleTabClose}
             onAddTable={handleAddTable}
           />
           {tables.length > 1 && (

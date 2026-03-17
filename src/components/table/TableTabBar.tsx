@@ -35,7 +35,6 @@ export interface TableTabBarProps {
   tabs: TabInfo[];
   activeTabId: string;
   onTabSelect: (tabId: string) => void;
-  onTabClose: (tabId: string) => void;
   onAddTable: () => void;
   jackpotAmount?: number;
   maxTables?: number;
@@ -49,7 +48,6 @@ export function TableTabBar({
   tabs,
   activeTabId,
   onTabSelect,
-  onTabClose,
   onAddTable,
   jackpotAmount,
   maxTables = 4,

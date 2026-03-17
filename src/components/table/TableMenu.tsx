@@ -11,6 +11,15 @@
  */
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
+import {
+  SitOutIcon,
+  RebuyIcon,
+  HandHistoryIcon,
+  LeaderboardIcon,
+  SettingsIcon,
+  HelpIcon,
+  LeaveTableIcon,
+} from './TableMenuIcons';
 import './TableMenu.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -20,7 +29,7 @@ import './TableMenu.css';
 export interface MenuAction {
   id: string;
   label: string;
-  icon: string;
+  icon: React.ReactNode;
   onClick: () => void;
   danger?: boolean;
   disabled?: boolean;
@@ -61,10 +70,15 @@ export function createDefaultMenuSections(handlers: {
         {
           id: 'sitout',
           label: 'Sit Out Next Hand',
-          icon: '',
+          icon: <SitOutIcon />,
           onClick: handlers.onSitOut || (() => {}),
         },
-        { id: 'rebuy', label: 'Add Chips', icon: '', onClick: handlers.onRebuy || (() => {}) },
+        {
+          id: 'rebuy',
+          label: 'Add Chips',
+          icon: <RebuyIcon />,
+          onClick: handlers.onRebuy || (() => {}),
+        },
       ],
     },
     {
@@ -73,22 +87,32 @@ export function createDefaultMenuSections(handlers: {
         {
           id: 'history',
           label: 'Hand History',
-          icon: '',
+          icon: <HandHistoryIcon />,
           onClick: handlers.onHandHistory || (() => {}),
         },
         {
           id: 'leaderboard',
           label: 'Leaderboard',
-          icon: '',
+          icon: <LeaderboardIcon />,
           onClick: handlers.onLeaderboard || (() => {}),
         },
-        { id: 'settings', label: 'Settings', icon: '', onClick: handlers.onSettings || (() => {}) },
+        {
+          id: 'settings',
+          label: 'Settings',
+          icon: <SettingsIcon />,
+          onClick: handlers.onSettings || (() => {}),
+        },
       ],
     },
     {
       title: 'Support',
       actions: [
-        { id: 'help', label: 'Help & Rules', icon: '❓', onClick: handlers.onHelp || (() => {}) },
+        {
+          id: 'help',
+          label: 'Help & Rules',
+          icon: <HelpIcon />,
+          onClick: handlers.onHelp || (() => {}),
+        },
       ],
     },
     {
@@ -96,7 +120,7 @@ export function createDefaultMenuSections(handlers: {
         {
           id: 'leave',
           label: 'Leave Table',
-          icon: '',
+          icon: <LeaveTableIcon />,
           onClick: handlers.onLeaveTable || (() => {}),
           danger: true,
         },
@@ -172,7 +196,9 @@ export function TableMenu({
       <button
         className={`table-menu__trigger ${isOpen ? 'table-menu__trigger--active' : ''}`}
         onClick={onToggle}
-        aria-label="Menu"
+        aria-label="Table menu"
+        aria-haspopup="menu"
+        aria-expanded={isOpen}
       >
         <span className="table-menu__hamburger">
           <span />
@@ -181,9 +207,12 @@ export function TableMenu({
         </span>
       </button>
 
+      {/* Backdrop overlay for mobile focus */}
+      {isOpen && <div className="table-menu__backdrop" onClick={onClose} aria-hidden="true" />}
+
       {/* Dropdown */}
       {isOpen && (
-        <div className="table-menu__dropdown">
+        <div className="table-menu__dropdown" role="menu" aria-label={tableName || 'Table menu'}>
           {/* Header */}
           {tableName && (
             <div className="table-menu__header">
@@ -194,7 +223,12 @@ export function TableMenu({
           {/* Sections */}
           <div className="table-menu__body">
             {sections.map((section, sIdx) => (
-              <div key={sIdx} className="table-menu__section">
+              <div
+                key={sIdx}
+                className="table-menu__section"
+                role="group"
+                aria-label={section.title}
+              >
                 {section.title && (
                   <span className="table-menu__section-title">{section.title}</span>
                 )}
@@ -205,6 +239,7 @@ export function TableMenu({
                   return (
                     <button
                       key={action.id}
+                      role="menuitem"
                       className={`table-menu__action ${action.danger ? 'table-menu__action--danger' : ''} ${action.disabled ? 'table-menu__action--disabled' : ''}`}
                       onClick={() => handleActionClick(action)}
                       disabled={action.disabled}

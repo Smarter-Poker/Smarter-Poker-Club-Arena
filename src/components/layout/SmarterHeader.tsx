@@ -107,7 +107,15 @@ export default function SmarterHeader({
         {/* Avatar */}
         <button className="header-avatar" onClick={() => navigate('/profile')}>
           {user?.avatar_url ? (
-            <img loading="lazy" decoding="async" src={user.avatar_url} alt="" />
+            <img
+              loading="lazy"
+              decoding="async"
+              src={user.avatar_url}
+              alt=""
+              onError={(e) => {
+                (e.target as HTMLImageElement).src = '/default-avatar.png';
+              }}
+            />
           ) : (
             <span>●</span>
           )}

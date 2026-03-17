@@ -216,6 +216,9 @@ export const WaitlistManager: React.FC<WaitlistManagerProps> = ({
                     decoding="async"
                     src={entry.avatarUrl}
                     alt={entry.displayName}
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = '/default-avatar.png';
+                    }}
                   />
                 ) : (
                   <span>{(entry.displayName || '?')[0]}</span>

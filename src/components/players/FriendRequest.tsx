@@ -31,7 +31,15 @@ export const FriendRequest: React.FC<FriendRequestProps> = ({
     <div className="friend-request">
       <div className="request-avatar">
         {avatarUrl ? (
-          <img loading="lazy" decoding="async" src={avatarUrl} alt={displayName} />
+          <img
+            loading="lazy"
+            decoding="async"
+            src={avatarUrl}
+            alt={displayName}
+            onError={(e) => {
+              (e.target as HTMLImageElement).src = '/default-avatar.png';
+            }}
+          />
         ) : (
           <span>{displayName[0]}</span>
         )}

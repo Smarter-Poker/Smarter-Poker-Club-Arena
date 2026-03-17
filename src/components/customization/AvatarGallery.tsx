@@ -54,7 +54,10 @@ export function AvatarGallery({
   // Load avatars
   useEffect(() => {
     if (!isOpen) return;
-    avatarService.getAvatarLibrary(userId).then(setAvatars).catch((e) => console.warn('[AvatarGallery] Failed to load avatars:', e));
+    avatarService
+      .getAvatarLibrary(userId)
+      .then(setAvatars)
+      .catch((e) => console.warn('[AvatarGallery] Failed to load avatars:', e));
   }, [isOpen, userId]);
 
   // Filter by tab
@@ -202,6 +205,9 @@ export function AvatarGallery({
                       src={avatar.imageUrl}
                       alt={avatar.name}
                       className="ag-item__img"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = '/default-avatar.png';
+                      }}
                     />
                     {isLocked && <div className="ag-item__lock">👑</div>}
                     {isSelected && <div className="ag-item__check">✓</div>}

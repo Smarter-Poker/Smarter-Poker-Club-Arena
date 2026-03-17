@@ -88,6 +88,17 @@ import PreActionBar from '../components/table/PreActionBar';
 import ShareHand from '../components/table/ShareHand';
 import SettingsPanel from '../components/table/SettingsPanel';
 import TableMenu from '../components/table/TableMenu';
+import {
+  SitOutIcon,
+  RebuyIcon,
+  AddOnIcon,
+  HandHistoryIcon,
+  LeaderboardIcon,
+  SessionStatsIcon,
+  SettingsIcon,
+  HelpIcon,
+  LeaveTableIcon,
+} from '../components/table/TableMenuIcons';
 import PresenceIndicator from '../components/social/PresenceIndicator';
 import { useTableStore } from '../stores/useTableStore';
 import { useToast } from '../components/common/Toast';
@@ -5190,17 +5201,32 @@ export default function TablePage({
           {
             title: 'Quick Actions',
             actions: [
-              { id: 'sitout', label: 'Sit Out', icon: '', onClick: () => setShowSitOut(true) },
+              {
+                id: 'sitout',
+                label: 'Sit Out',
+                icon: <SitOutIcon />,
+                onClick: () => setShowSitOut(true),
+              },
               ...(tableState.isTournament
                 ? [
-                    { id: 'rebuy', label: 'Rebuy', icon: '', onClick: handleTournamentRebuy },
-                    { id: 'addon', label: 'Add-On', icon: '', onClick: handleTournamentAddOn },
+                    {
+                      id: 'rebuy',
+                      label: 'Rebuy',
+                      icon: <RebuyIcon />,
+                      onClick: handleTournamentRebuy,
+                    },
+                    {
+                      id: 'addon',
+                      label: 'Add-On',
+                      icon: <AddOnIcon />,
+                      onClick: handleTournamentAddOn,
+                    },
                   ]
                 : [
                     {
                       id: 'rebuy',
                       label: 'Add Chips',
-                      icon: '',
+                      icon: <RebuyIcon />,
                       onClick: () => setShowCashier(true),
                     },
                   ]),
@@ -5212,13 +5238,13 @@ export default function TablePage({
               {
                 id: 'history',
                 label: 'Hand History',
-                icon: '',
+                icon: <HandHistoryIcon />,
                 onClick: () => setShowHandReplay(true),
               },
               {
                 id: 'leaderboard',
                 label: 'Leaderboard',
-                icon: '',
+                icon: <LeaderboardIcon />,
                 onClick: () => setShowLeaderboard(true),
               },
               ...(!tableState.isTournament
@@ -5226,12 +5252,17 @@ export default function TablePage({
                     {
                       id: 'session-stats',
                       label: 'Session Stats',
-                      icon: '📊',
+                      icon: <SessionStatsIcon />,
                       onClick: () => setShowSessionStats(true),
                     },
                   ]
                 : []),
-              { id: 'settings', label: 'Settings', icon: '', onClick: () => setShowSettings(true) },
+              {
+                id: 'settings',
+                label: 'Settings',
+                icon: <SettingsIcon />,
+                onClick: () => setShowSettings(true),
+              },
             ],
           },
           {
@@ -5240,7 +5271,7 @@ export default function TablePage({
               {
                 id: 'help',
                 label: 'Help & Rules',
-                icon: '❓',
+                icon: <HelpIcon />,
                 onClick: () => setShowGameRules(true),
               },
             ],
@@ -5250,7 +5281,7 @@ export default function TablePage({
               {
                 id: 'leave',
                 label: 'Leave Table',
-                icon: '',
+                icon: <LeaveTableIcon />,
                 onClick: handleLeaveTable,
                 danger: true,
               },

@@ -213,7 +213,14 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
           <button className={styles.orbBtn} onClick={() => navigateToHub('/hub/profile')}>
             <div className={styles.profileOrb}>
               {avatarUrl ? (
-                <img src={avatarUrl} alt="" className={styles.profileImg} />
+                <img
+                  src={avatarUrl}
+                  alt=""
+                  className={styles.profileImg}
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).src = '/default-avatar.png';
+                  }}
+                />
               ) : (
                 <span className={styles.profilePlaceholder}>👤</span>
               )}

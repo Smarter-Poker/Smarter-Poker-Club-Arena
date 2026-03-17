@@ -60,7 +60,15 @@ export const AvatarCustomizer: React.FC<AvatarCustomizerProps> = ({ currentAvata
 
       <div className="avatar-preview-large">
         {activeTab === 'custom' && customImage ? (
-          <img loading="lazy" decoding="async" src={customImage} alt="Custom avatar" />
+          <img
+            loading="lazy"
+            decoding="async"
+            src={customImage}
+            alt="Custom avatar"
+            onError={(e) => {
+              (e.target as HTMLImageElement).src = '/default-avatar.png';
+            }}
+          />
         ) : (
           <div className="preset-avatar-preview" style={{ background: selectedBg }}>
             <span>{selectedEmoji}</span>

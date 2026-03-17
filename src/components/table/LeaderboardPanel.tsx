@@ -105,7 +105,15 @@ function PlayerRow({ player, currency, index = 0 }: PlayerRowProps) {
       <div className="leaderboard-row__player">
         <div className="leaderboard-row__avatar">
           {player.avatar ? (
-            <img loading="lazy" decoding="async" src={player.avatar} alt="" />
+            <img
+              loading="lazy"
+              decoding="async"
+              src={player.avatar}
+              alt=""
+              onError={(e) => {
+                (e.target as HTMLImageElement).src = '/default-avatar.png';
+              }}
+            />
           ) : (
             <span>{player.playerName[0]?.toUpperCase()}</span>
           )}
@@ -209,7 +217,15 @@ export function LeaderboardPanel({
                     >
                       <div className="leaderboard-podium__avatar">
                         {player.avatar ? (
-                          <img loading="lazy" decoding="async" src={player.avatar} alt="" />
+                          <img
+                            loading="lazy"
+                            decoding="async"
+                            src={player.avatar}
+                            alt=""
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).src = '/default-avatar.png';
+                            }}
+                          />
                         ) : (
                           <span>{player.playerName[0]?.toUpperCase()}</span>
                         )}

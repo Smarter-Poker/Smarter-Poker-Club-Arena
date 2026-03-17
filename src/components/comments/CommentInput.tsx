@@ -24,7 +24,15 @@ export const CommentInput: React.FC<CommentInputProps> = ({
     <div className="comment-input">
       {avatar && (
         <div className="input-avatar">
-          <img loading="lazy" decoding="async" src={avatar} alt="" />
+          <img
+            loading="lazy"
+            decoding="async"
+            src={avatar}
+            alt=""
+            onError={(e) => {
+              (e.target as HTMLImageElement).src = '/default-avatar.png';
+            }}
+          />
         </div>
       )}
       <div className="input-field-wrapper">

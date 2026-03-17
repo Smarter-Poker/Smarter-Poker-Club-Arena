@@ -43,6 +43,7 @@ export default function ClubLobby() {
   const [diamondBalance, setDiamondBalance] = useState(0);
   const currentUser = useUserStore((s) => s.user);
   const isMountedRef = useIsMounted();
+  const [userRole, setUserRole] = useState<'owner' | 'admin' | 'agent' | 'member'>('member');
 
   // UNION-FIRST: Check if this club is in a union and redirect
   // Combined with initial data load to prevent race condition where
@@ -247,6 +248,22 @@ export default function ClubLobby() {
           .eq('user_id', currentUser.id)
           .maybeSingle();
         if (isMountedRef.current && diamondData) setDiamondBalance(diamondData.balance || 0);
+
+        // Fetch user role for BottomNav
+        try {
+          const resolvedId = await resolveClubUUID(clubId);
+          const { data: membership } = await supabase
+            .from('club_members')
+            .select('role')
+            .eq('club_id', resolvedId)
+            .eq('user_id', currentUser.id)
+            .maybeSingle();
+          if (isMountedRef.current && membership?.role) {
+            setUserRole(membership.role as 'owner' | 'admin' | 'agent' | 'member');
+          }
+        } catch {
+          /* non-critical */
+        }
       }
     } catch (err) {
       console.error('[ClubLobby] Failed to load club data:', err);
@@ -390,7 +407,7 @@ export default function ClubLobby() {
       </div>
 
       {/* Bottom Navigation */}
-      {clubId && <ClubBottomNav clubId={clubId} />}
+      {clubId && <ClubBottomNav clubId={clubId} userRole={userRole} />}
     </div>
   );
 }

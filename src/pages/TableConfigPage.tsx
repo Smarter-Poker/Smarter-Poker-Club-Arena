@@ -307,6 +307,18 @@ export default function TableConfigPage() {
   const [isInUnion, setIsInUnion] = useState(false);
   const [checkingUnion, setCheckingUnion] = useState(true);
 
+  // ── CRITICAL: Reset per-club state when navigating between clubs ──
+  useEffect(() => {
+    setSaving(false);
+    setStarting(false);
+    setSelectedTemplateId('');
+    setSavingTemplate(false);
+    setShowDeleteConfirm(false);
+    setDeleting(false);
+    setIsInUnion(false);
+    setCheckingUnion(true);
+  }, [clubId]);
+
   useEffect(() => {
     if (!clubId) {
       setCheckingUnion(false);

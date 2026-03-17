@@ -179,6 +179,18 @@ export default function SuperAgentDashboard() {
 
   const loadingRef = useRef(false);
 
+  // ── CRITICAL: Reset per-club state when navigating between clubs ──
+  useEffect(() => {
+    setActiveTab('overview');
+    setTransferPlayerId('');
+    setTransferAmount('');
+    setIsTransferring(false);
+    setVisibleStatCards(new Set());
+    setVisibleAgentRows(new Set());
+    setVisiblePlayerRows(new Set());
+    loadingRef.current = false;
+  }, [clubId]);
+
   const loadDashboardData = async () => {
     if (loadingRef.current) return;
     loadingRef.current = true;

@@ -316,6 +316,7 @@ function HomePageInner() {
           setUserClubs(clubs);
           // Enhancement #9: Update SWR cache
           try {
+            setStatsRefreshKey((k) => k + 1);
             localStorage.setItem(STORAGE_KEYS.CLUBS_CACHE, JSON.stringify(clubs));
             localStorage.setItem(STORAGE_KEYS.CLUBS_CACHE_TS, String(Date.now()));
           } catch {

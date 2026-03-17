@@ -52,7 +52,8 @@ const DEFAULT_SETTINGS: TableUserSettings = {
   autoRebuy: false,
 };
 
-const STORAGE_KEY = 'club-arena-table-settings';
+import { STORAGE_KEYS } from '../lib/storage';
+const STORAGE_KEY = STORAGE_KEYS.TABLE_SETTINGS;
 const CSS_VAR_ANIMATION_SPEED = '--animation-speed';
 const DOM_ATTR_THEME = 'data-theme';
 

@@ -11,14 +11,11 @@ import type { useToast } from '../common/Toast';
 import haptic from '../../services/HapticService';
 import PremiumSFX from '../../services/PremiumSFX';
 import { formatTimeAgo } from '../../utils/formatTimeAgo';
+import { STORAGE_KEYS } from '../../lib/storage';
 import styles from '../../pages/HomePage.module.css';
 
 // Lazy-load heavy component
 const ClubStatsPanel = lazy(() => import('../club/ClubStatsPanel'));
-
-const LAST_VISITED_KEY = 'club_arena_last_visited';
-const LAST_CLUB_KEY = 'club_arena_last_club';
-const CLUB_ORDER_KEY = 'club_arena_club_order';
 
 // Card color presets — gradient pairs for club card faces
 const CARD_COLOR_PRESETS: { id: string; name: string; bg: string; overlay: string }[] = [
@@ -149,7 +146,9 @@ export default function CarouselSection({
   // Keep orderedClubs in sync with displayClubs (respecting saved order)
   useEffect(() => {
     try {
-      const savedOrder: string[] = JSON.parse(localStorage.getItem(CLUB_ORDER_KEY) || '[]');
+      const savedOrder: string[] = JSON.parse(
+        localStorage.getItem(STORAGE_KEYS.CLUB_ORDER) || '[]'
+      );
       if (savedOrder.length > 0) {
         const orderMap = new Map(savedOrder.map((id, idx) => [id, idx]));
         const sorted = [...displayClubs].sort((a, b) => {
@@ -241,7 +240,7 @@ export default function CarouselSection({
         const [moved] = arr.splice(fromIdx, 1);
         arr.splice(toIdx, 0, moved);
         try {
-          localStorage.setItem(CLUB_ORDER_KEY, JSON.stringify(arr.map((c) => c.id)));
+          localStorage.setItem(STORAGE_KEYS.CLUB_ORDER, JSON.stringify(arr.map((c) => c.id)));
         } catch {
           /* */
         }
@@ -278,8 +277,8 @@ export default function CarouselSection({
         if (tapTimerRef.current) clearTimeout(tapTimerRef.current);
         haptic.medium();
         PremiumSFX.doubleTap();
-        localStorage.setItem(LAST_VISITED_KEY, club.id);
-        localStorage.setItem(LAST_CLUB_KEY, club.id);
+        localStorage.setItem(STORAGE_KEYS.LAST_VISITED, club.id);
+        localStorage.setItem(STORAGE_KEYS.LAST_CLUB, club.id);
         navigate(`/clubs/${club.id}`);
         lastTapRef.current = { id: '', time: 0 };
       } else {
@@ -479,8 +478,8 @@ export default function CarouselSection({
           haptic.success();
           PremiumSFX.navigate();
           if (sharkClubId) {
-            localStorage.setItem(LAST_VISITED_KEY, sharkClubId);
-            localStorage.setItem(LAST_CLUB_KEY, sharkClubId);
+            localStorage.setItem(STORAGE_KEYS.LAST_VISITED, sharkClubId);
+            localStorage.setItem(STORAGE_KEYS.LAST_CLUB, sharkClubId);
             navigate(`/clubs/${sharkClubId}`);
           } else {
             // Fallback: query DB with a 5s timeout to prevent indefinite hangs
@@ -493,8 +492,8 @@ export default function CarouselSection({
               ]);
               const { data: sharkClub } = await fetchWithTimeout;
               if (sharkClub?.id) {
-                localStorage.setItem(LAST_VISITED_KEY, sharkClub.id);
-                localStorage.setItem(LAST_CLUB_KEY, sharkClub.id);
+                localStorage.setItem(STORAGE_KEYS.LAST_VISITED, sharkClub.id);
+                localStorage.setItem(STORAGE_KEYS.LAST_CLUB, sharkClub.id);
                 navigate(`/clubs/${sharkClub.id}`);
                 return;
               }

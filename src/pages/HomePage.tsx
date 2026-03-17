@@ -43,19 +43,14 @@ import { getClubLevel } from '../utils/clubLevels';
 import type { UserClub } from '../components/home/CarouselSection';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
+import { STORAGE_KEYS } from '../lib/storage';
 import styles from './HomePage.module.css';
 
 // Lazy-load heavy components to reduce initial bundle
 const CreateClubModal = lazy(() => import('../components/modals/CreateClubModal'));
 const FindPlayerModal = lazy(() => import('../components/modals/FindPlayerModal'));
 
-const LAST_CLUB_KEY = 'club_arena_last_club';
-const SWR_CACHE_KEY = 'club_arena_clubs_cache';
-const SWR_CACHE_TS_KEY = 'club_arena_clubs_cache_ts';
 const SWR_CACHE_TTL = 60 * 60 * 1000; // 1 hour — skip stale cache from old sessions
-const PINNED_CLUBS_KEY = 'club_arena_pinned_clubs';
-const SOUNDS_ENABLED_KEY = 'club_arena_sounds';
-const CARD_COLOR_KEY = 'club_arena_card_color';
 
 // Typed shape for the user preferences JSON column
 interface UserPreferences {
@@ -164,8 +159,8 @@ function HomePageInner() {
     const inIframe = window.parent !== window;
     if (inIframe) return [];
     try {
-      const cached = localStorage.getItem(SWR_CACHE_KEY);
-      const cacheTs = localStorage.getItem(SWR_CACHE_TS_KEY);
+      const cached = localStorage.getItem(STORAGE_KEYS.CLUBS_CACHE);
+      const cacheTs = localStorage.getItem(STORAGE_KEYS.CLUBS_CACHE_TS);
       const isFresh = cacheTs && Date.now() - Number(cacheTs) < SWR_CACHE_TTL;
       if (cached && isFresh) {
         const parsed = JSON.parse(cached);
@@ -198,7 +193,7 @@ function HomePageInner() {
   // #2: Pinned clubs (persisted in localStorage)
   const [pinnedClubIds, setPinnedClubIds] = useState<string[]>(() => {
     try {
-      return JSON.parse(localStorage.getItem(PINNED_CLUBS_KEY) || '[]');
+      return JSON.parse(localStorage.getItem(STORAGE_KEYS.PINNED_CLUBS) || '[]');
     } catch {
       return [];
     }
@@ -214,7 +209,7 @@ function HomePageInner() {
 
   // #11: Sound effects toggle
   const [soundsEnabled, setSoundsEnabled] = useState(() => {
-    return localStorage.getItem(SOUNDS_ENABLED_KEY) !== 'false';
+    return localStorage.getItem(STORAGE_KEYS.SOUNDS) !== 'false';
   });
 
   // #12: Seasonal theme
@@ -227,7 +222,7 @@ function HomePageInner() {
 
   // #6: Card color preset
   const [cardColorPreset, setCardColorPreset] = useState<string>(() => {
-    return localStorage.getItem(CARD_COLOR_KEY) || 'default';
+    return localStorage.getItem(STORAGE_KEYS.CARD_COLOR) || 'default';
   });
 
   // JOIN A CLUB modal state
@@ -319,8 +314,8 @@ function HomePageInner() {
           setUserClubs(clubs);
           // Enhancement #9: Update SWR cache
           try {
-            localStorage.setItem(SWR_CACHE_KEY, JSON.stringify(clubs));
-            localStorage.setItem(SWR_CACHE_TS_KEY, String(Date.now()));
+            localStorage.setItem(STORAGE_KEYS.CLUBS_CACHE, JSON.stringify(clubs));
+            localStorage.setItem(STORAGE_KEYS.CLUBS_CACHE_TS, String(Date.now()));
           } catch {
             /* quota */
           }
@@ -353,8 +348,8 @@ function HomePageInner() {
           ) {
             const preset = (colorResult.value.data?.preferences as UserPreferences)
               .card_color_preset!;
-            if (preset !== localStorage.getItem(CARD_COLOR_KEY)) {
-              localStorage.setItem(CARD_COLOR_KEY, preset);
+            if (preset !== localStorage.getItem(STORAGE_KEYS.CARD_COLOR)) {
+              localStorage.setItem(STORAGE_KEYS.CARD_COLOR, preset);
               setCardColorPreset(preset);
             }
           }
@@ -362,7 +357,7 @@ function HomePageInner() {
           if (getIsMounted && !getIsMounted()) return;
           setUserClubs([]);
           try {
-            localStorage.removeItem(SWR_CACHE_KEY);
+            localStorage.removeItem(STORAGE_KEYS.CLUBS_CACHE);
           } catch {
             /* */
           }
@@ -496,7 +491,7 @@ function HomePageInner() {
   // Fetch Shark Club stats — ALL data from live Supabase queries
   // Hardcoded club_id for Shark Club — permanent fixture of the platform
   const SHARK_CLUB_NUMERIC_ID = 25450;
-  const SHARK_SWR_KEY = 'shark_club_stats_swr';
+  const SHARK_SWR_KEY = STORAGE_KEYS.SHARK_STATS_SWR;
   const SWR_TTL_MS = 5 * 60 * 1000; // 5-minute cache TTL
 
   // SWR: show cached Shark Club stats instantly on mount (skip if >5 min old)
@@ -755,7 +750,7 @@ function HomePageInner() {
           break;
         case '3': {
           haptic.light();
-          const lastClub = localStorage.getItem(LAST_CLUB_KEY);
+          const lastClub = localStorage.getItem(STORAGE_KEYS.LAST_CLUB);
           if (lastClub) navigate(`/clubs/${lastClub}/cashier`);
           else if (userClubs.length > 0) navigate(`/clubs/${userClubs[0].id}/cashier`);
           break;
@@ -812,7 +807,7 @@ function HomePageInner() {
     setPinnedClubIds((prev) => {
       const next = prev.includes(clubId) ? prev.filter((id) => id !== clubId) : [...prev, clubId];
       try {
-        localStorage.setItem(PINNED_CLUBS_KEY, JSON.stringify(next));
+        localStorage.setItem(STORAGE_KEYS.PINNED_CLUBS, JSON.stringify(next));
       } catch {
         /* */
       }
@@ -848,7 +843,7 @@ function HomePageInner() {
   const toggleSounds = useCallback(() => {
     setSoundsEnabled((prev) => {
       const next = !prev;
-      localStorage.setItem(SOUNDS_ENABLED_KEY, String(next));
+      localStorage.setItem(STORAGE_KEYS.SOUNDS, String(next));
       if (next) PremiumSFX.toggleOn();
       else PremiumSFX.toggleOff();
       return next;
@@ -994,7 +989,7 @@ function HomePageInner() {
       Cashier: () => {
         haptic.light();
         PremiumSFX.navigate();
-        const lastClub = localStorage.getItem(LAST_CLUB_KEY);
+        const lastClub = localStorage.getItem(STORAGE_KEYS.LAST_CLUB);
         if (lastClub) navigate(`/clubs/${lastClub}/cashier`);
         else if (userClubs.length > 0) navigate(`/clubs/${userClubs[0].id}/cashier`);
         else toast.info('Join a club first to access the cashier');

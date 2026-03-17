@@ -9,6 +9,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import { STORAGE_KEYS } from '../../lib/storage';
 import styles from './ClubArenaWelcomeModal.module.css';
 
 interface ClubArenaWelcomeModalProps {
@@ -119,13 +120,12 @@ export default function ClubArenaWelcomeModal({ isOpen, onAccept }: ClubArenaWel
  * Hook to manage first-time Club Arena entry
  */
 export function useClubArenaWelcome() {
-  const STORAGE_KEY = 'club_arena_welcome_accepted';
   const [showWelcome, setShowWelcome] = useState(false);
   const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
     // Check if user has already accepted
-    const hasAccepted = localStorage.getItem(STORAGE_KEY) === 'true';
+    const hasAccepted = localStorage.getItem(STORAGE_KEYS.WELCOME_ACCEPTED) === 'true';
     if (!hasAccepted) {
       setShowWelcome(true);
     }
@@ -133,12 +133,12 @@ export function useClubArenaWelcome() {
   }, []);
 
   const acceptWelcome = () => {
-    localStorage.setItem(STORAGE_KEY, 'true');
+    localStorage.setItem(STORAGE_KEYS.WELCOME_ACCEPTED, 'true');
     setShowWelcome(false);
   };
 
   const resetWelcome = () => {
-    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(STORAGE_KEYS.WELCOME_ACCEPTED);
     setShowWelcome(true);
   };
 

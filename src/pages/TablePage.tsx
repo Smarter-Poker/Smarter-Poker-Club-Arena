@@ -48,6 +48,7 @@ import { ThrowAnimationContainer } from '../components/table/ThrowAnimation';
 import { throwableService, type Throwable, type ThrowEvent } from '../services/ThrowableService';
 import { useTabKeepAlive, workerTimeout, cancelWorkerTimeout } from '../hooks/useTabKeepAlive';
 import TipDealer from '../components/table/TipDealer';
+import { STORAGE_KEYS } from '../lib/storage';
 import StraddleToggle from '../components/table/StraddleToggle';
 import TimeBank from '../components/table/TimeBank';
 import CashierModal from '../components/table/CashierModal';
@@ -2034,11 +2035,11 @@ export default function TablePage({
     if (!s) return;
     // Apply sound preference if changed
     if (typeof s.soundEnabled === 'boolean') {
-      localStorage.setItem('club_arena_sounds', String(s.soundEnabled));
+      localStorage.setItem(STORAGE_KEYS.SOUNDS, String(s.soundEnabled));
     }
     // Apply deck/theme preference if changed
     if (s.deckStyle) {
-      localStorage.setItem('club_arena_deck', s.deckStyle);
+      localStorage.setItem(STORAGE_KEYS.DECK_STYLE, s.deckStyle);
     }
   });
 

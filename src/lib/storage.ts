@@ -167,9 +167,11 @@ export const STORAGE_KEYS = {
   ACTIVE_CLUB_ID: 'club_arena_active_club',
   RECENT_TABLES: 'club_arena_recent_tables',
   LAST_CLUB: 'club_arena_last_club', // Last visited club ID
+  LAST_VISITED: 'club_arena_last_visited', // Last visited club (carousel)
   PINNED_CLUBS: 'club_arena_pinned_clubs', // Pinned clubs JSON array
   CLUB_ORDER: 'club_arena_club_order', // Custom carousel order
   INTRO_SHOWN: 'club_arena_intro_shown', // Intro tutorial completed
+  TUTORIAL_COMPLETED: 'tutorial_completed', // Legacy tutorial flag
   WELCOME_ACCEPTED: 'club_arena_welcome_accepted', // Welcome modal dismissed
   QUICK_ACTIONS_RECENT: 'quickActionsRecent', // Recent quick actions
 

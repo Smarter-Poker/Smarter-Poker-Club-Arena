@@ -7,7 +7,8 @@
  * See: src/services/OfflineQueueService.ts
  */
 
-const QUEUE_KEY = 'offline_mutation_queue';
+import { STORAGE_KEYS } from '../lib/storage';
+const QUEUE_KEY = STORAGE_KEYS.OFFLINE_QUEUE;
 const MAX_QUEUE_SIZE = 50;
 
 export interface QueuedMutation {

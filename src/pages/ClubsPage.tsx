@@ -25,6 +25,7 @@ import ClubDiscovery from '../components/clubs/ClubDiscovery';
 import { getClubLevel } from '../utils/clubLevels';
 import styles from './ClubsPage.module.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
+import { STORAGE_KEYS } from '../lib/storage';
 
 type Tab = 'discover' | 'my-clubs' | 'create';
 
@@ -54,10 +55,7 @@ interface Membership {
   club: Club;
 }
 
-// Check if user has seen intro in this session
-const INTRO_SHOWN_KEY = 'club_arena_intro_shown';
-const SWR_CLUBS_KEY = 'clubs_page_clubs_cache';
-const SWR_UNIONS_KEY = 'clubs_page_unions_cache';
+// Local aliases for centralized storage keys
 
 export default function ClubsPage() {
   const navigate = useNavigate();
@@ -70,7 +68,7 @@ export default function ClubsPage() {
 
   // Intro video state - only show once per session
   const [showIntro, setShowIntro] = useState(() => {
-    const shown = sessionStorage.getItem(INTRO_SHOWN_KEY);
+    const shown = sessionStorage.getItem(STORAGE_KEYS.INTRO_SHOWN);
     return !shown; // Show intro if not shown yet
   });
 
@@ -78,7 +76,7 @@ export default function ClubsPage() {
   // SWR — instant render from cache on revisit
   const [myClubs, setMyClubs] = useState<Membership[]>(() => {
     try {
-      const cached = localStorage.getItem(SWR_CLUBS_KEY);
+      const cached = localStorage.getItem(STORAGE_KEYS.CLUBS_PAGE_CACHE);
       if (cached) {
         const p = JSON.parse(cached);
         if (Array.isArray(p) && p.length > 0) return p;
@@ -90,7 +88,7 @@ export default function ClubsPage() {
   });
   const [myUnions, setMyUnions] = useState<Union[]>(() => {
     try {
-      const cached = localStorage.getItem(SWR_UNIONS_KEY);
+      const cached = localStorage.getItem(STORAGE_KEYS.CLUBS_PAGE_UNIONS_CACHE);
       if (cached) {
         const p = JSON.parse(cached);
         if (Array.isArray(p) && p.length > 0) return p;
@@ -119,7 +117,7 @@ export default function ClubsPage() {
 
   // Handle intro completion
   const handleIntroComplete = () => {
-    sessionStorage.setItem(INTRO_SHOWN_KEY, 'true');
+    sessionStorage.setItem(STORAGE_KEYS.INTRO_SHOWN, 'true');
     setShowIntro(false);
   };
 
@@ -186,12 +184,12 @@ export default function ClubsPage() {
       setMyUnions(unions);
       // SWR cache write
       try {
-        localStorage.setItem(SWR_CLUBS_KEY, JSON.stringify(displayedClubs));
+        localStorage.setItem(STORAGE_KEYS.CLUBS_PAGE_CACHE, JSON.stringify(displayedClubs));
       } catch {
         /* quota */
       }
       try {
-        localStorage.setItem(SWR_UNIONS_KEY, JSON.stringify(unions));
+        localStorage.setItem(STORAGE_KEYS.CLUBS_PAGE_UNIONS_CACHE, JSON.stringify(unions));
       } catch {
         /* quota */
       }
@@ -203,12 +201,12 @@ export default function ClubsPage() {
       setMyUnions([]);
       // Clear SWR cache on error so stale data isn't shown on next visit
       try {
-        localStorage.removeItem(SWR_CLUBS_KEY);
+        localStorage.removeItem(STORAGE_KEYS.CLUBS_PAGE_CACHE);
       } catch {
         /* ignore */
       }
       try {
-        localStorage.removeItem(SWR_UNIONS_KEY);
+        localStorage.removeItem(STORAGE_KEYS.CLUBS_PAGE_UNIONS_CACHE);
       } catch {
         /* ignore */
       }

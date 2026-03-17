@@ -23,7 +23,7 @@
  * Respects the user's sound preference via localStorage.
  */
 
-const SOUNDS_ENABLED_KEY = 'club_arena_sounds';
+import { STORAGE_KEYS } from '../lib/storage';
 
 // Musical note frequencies (Hz) — equal temperament tuning
 const NOTE = {
@@ -69,7 +69,7 @@ function getCtx(): AudioContext | null {
 /** Check if sounds are enabled */
 function isEnabled(): boolean {
   try {
-    return localStorage.getItem(SOUNDS_ENABLED_KEY) !== 'false';
+    return localStorage.getItem(STORAGE_KEYS.SOUNDS) !== 'false';
   } catch (err) {
     console.error('[PremiumSFX] Error:', err);
     return true;

@@ -14,7 +14,8 @@ interface PlayerStatsMap {
   [playerId: string]: MiniHUDStats;
 }
 
-const STORAGE_KEY = 'club-arena-player-stats';
+import { STORAGE_KEYS } from '../lib/storage';
+const STORAGE_KEY = STORAGE_KEYS.PLAYER_STATS_SWR;
 
 function createEmptyStats(): MiniHUDStats {
   return {

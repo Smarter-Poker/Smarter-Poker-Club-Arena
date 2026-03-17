@@ -911,7 +911,7 @@ class MessagingServiceClass {
    * Set user's notification preferences
    */
   setNotificationPreferences(prefs: Record<string, boolean>): void {
-    localStorage.setItem('notif_preferences', JSON.stringify(prefs));
+    localStorage.setItem(STORAGE_KEYS.NOTIF_PREFERENCES, JSON.stringify(prefs));
   }
 
   /**
@@ -1307,7 +1307,7 @@ class MessagingServiceClass {
   }
 
   setDigestMode(mode: 'instant' | 'hourly' | 'daily'): void {
-    localStorage.setItem('notif_digest_mode', mode);
+    localStorage.setItem(STORAGE_KEYS.NOTIF_DIGEST_MODE, mode);
   }
 
   /** Get/set notification sound preferences */
@@ -1336,7 +1336,7 @@ class MessagingServiceClass {
   }
 
   setSoundPreferences(prefs: Record<string, string>): void {
-    localStorage.setItem('notif_sounds', JSON.stringify(prefs));
+    localStorage.setItem(STORAGE_KEYS.NOTIF_SOUNDS, JSON.stringify(prefs));
   }
 
   // ═══════════════════════════════════════════════════════════════════════════

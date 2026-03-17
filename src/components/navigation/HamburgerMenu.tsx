@@ -187,7 +187,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
 
   const handleResetTutorial = async () => {
     localStorage.removeItem(STORAGE_KEYS.INTRO_SHOWN);
-    localStorage.removeItem('tutorial_completed');
+    localStorage.removeItem(STORAGE_KEYS.TUTORIAL_COMPLETED);
     if (user?.id) {
       try {
         const { error: resetErr } = await supabase

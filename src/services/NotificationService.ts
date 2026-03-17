@@ -344,7 +344,7 @@ class NotificationServiceClass {
    */
   setDnd(durationMinutes: number): void {
     this.dndUntil = Date.now() + durationMinutes * 60_000;
-    localStorage.setItem('dnd_until', String(this.dndUntil));
+    localStorage.setItem(STORAGE_KEYS.DND_UNTIL, String(this.dndUntil));
     console.info(`[DND] Notifications muted for ${durationMinutes} minutes`);
   }
 

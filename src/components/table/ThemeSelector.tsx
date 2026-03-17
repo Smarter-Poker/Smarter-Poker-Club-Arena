@@ -67,7 +67,8 @@ const THEMES: ThemeOption[] = [
   },
 ];
 
-const STORAGE_KEY = 'club-arena-table-theme';
+import { STORAGE_KEYS } from '../../lib/storage';
+const STORAGE_KEY = STORAGE_KEYS.TABLE_FELT_THEME;
 
 interface ThemeSelectorProps {
   onThemeChange?: (themeId: string) => void;
@@ -78,8 +79,7 @@ export function ThemeSelector({ onThemeChange }: ThemeSelectorProps) {
     try {
       return localStorage.getItem(STORAGE_KEY) || 'green';
     } catch (err) {
-
-      console.error("[ThemeSelector] Error:", err);
+      console.error('[ThemeSelector] Error:', err);
       return 'green';
     }
   });
@@ -98,8 +98,7 @@ export function ThemeSelector({ onThemeChange }: ThemeSelectorProps) {
     try {
       localStorage.setItem(STORAGE_KEY, themeId);
     } catch (err) {
-
-      console.error("[ThemeSelector] Error:", err);
+      console.error('[ThemeSelector] Error:', err);
       /* localStorage unavailable */
     }
   };

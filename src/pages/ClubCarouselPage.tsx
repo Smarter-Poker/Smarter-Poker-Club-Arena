@@ -23,9 +23,8 @@ import './ClubCarouselPage.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { useIsMounted } from '../hooks/useIsMounted';
 import haptic from '../services/HapticService';
+import { STORAGE_KEYS } from '../lib/storage';
 
-const SWR_CAROUSEL_KEY = 'club_carousel_clubs_cache';
-const SWR_UNIONS_KEY = 'club_carousel_unions_cache';
 const SWIPE_THRESHOLD = 50; // px minimum for a horizontal swipe
 
 interface UserClub {
@@ -79,7 +78,7 @@ export default function ClubCarouselPage() {
   // SWR — instant render from cache
   const [clubs, setClubs] = useState<UserClub[]>(() => {
     try {
-      const cached = localStorage.getItem(SWR_CAROUSEL_KEY);
+      const cached = localStorage.getItem(STORAGE_KEYS.CAROUSEL_CLUBS_CACHE);
       if (cached) {
         const p = JSON.parse(cached);
         if (Array.isArray(p) && p.length > 0) return p;
@@ -91,7 +90,7 @@ export default function ClubCarouselPage() {
   });
   const [userUnions, setUserUnions] = useState<Union[]>(() => {
     try {
-      const cached = localStorage.getItem(SWR_UNIONS_KEY);
+      const cached = localStorage.getItem(STORAGE_KEYS.CAROUSEL_UNIONS_CACHE);
       if (cached) {
         const p = JSON.parse(cached);
         if (Array.isArray(p) && p.length > 0) return p;
@@ -481,7 +480,7 @@ export default function ClubCarouselPage() {
 
           // #7: SWR cache write
           try {
-            localStorage.setItem(SWR_CAROUSEL_KEY, JSON.stringify(filtered));
+            localStorage.setItem(STORAGE_KEYS.CAROUSEL_CLUBS_CACHE, JSON.stringify(filtered));
           } catch {
             /* quota */
           }
@@ -499,7 +498,7 @@ export default function ClubCarouselPage() {
         setUserUnions(loadedUnions);
         newUnionCount = loadedUnions.length;
         try {
-          localStorage.setItem(SWR_UNIONS_KEY, JSON.stringify(loadedUnions));
+          localStorage.setItem(STORAGE_KEYS.CAROUSEL_UNIONS_CACHE, JSON.stringify(loadedUnions));
         } catch {
           /* quota */
         }
@@ -522,12 +521,12 @@ export default function ClubCarouselPage() {
       toast.error('Failed to load club data');
       // Clear SWR cache on error so stale data isn't shown on next visit
       try {
-        localStorage.removeItem(SWR_CAROUSEL_KEY);
+        localStorage.removeItem(STORAGE_KEYS.CAROUSEL_CLUBS_CACHE);
       } catch {
         /* ignore */
       }
       try {
-        localStorage.removeItem(SWR_UNIONS_KEY);
+        localStorage.removeItem(STORAGE_KEYS.CAROUSEL_UNIONS_CACHE);
       } catch {
         /* ignore */
       }

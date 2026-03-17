@@ -154,7 +154,8 @@ function LoadingSpinner() {
   );
 }
 
-const INTRO_SHOWN_KEY = 'club_arena_intro_shown';
+// Imported from centralized storage keys
+import { STORAGE_KEYS } from './lib/storage';
 
 // ── Window extensions for iframe auth communication ──
 declare global {
@@ -184,13 +185,13 @@ export default function App() {
   // Check if intro video has been shown this session
   const [showIntro, setShowIntro] = useState(() => {
     // Only show intro if not viewed this session and not in iframe
-    const alreadyShown = sessionStorage.getItem(INTRO_SHOWN_KEY);
+    const alreadyShown = sessionStorage.getItem(STORAGE_KEYS.INTRO_SHOWN);
     const inIframe = window.parent !== window;
     return !alreadyShown && !inIframe;
   });
 
   const handleIntroComplete = () => {
-    sessionStorage.setItem(INTRO_SHOWN_KEY, 'true');
+    sessionStorage.setItem(STORAGE_KEYS.INTRO_SHOWN, 'true');
     setShowIntro(false);
   };
 

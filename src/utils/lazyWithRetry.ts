@@ -19,8 +19,9 @@
  */
 
 import { lazy, ComponentType } from 'react';
+import { STORAGE_KEYS } from '../lib/storage';
 
-const RELOAD_KEY = 'club_arena_chunk_reload';
+const RELOAD_KEY = STORAGE_KEYS.CHUNK_RELOAD;
 const MAX_RELOADS = 2; // Max full-page reloads before giving up
 
 function getReloadCount(): number {

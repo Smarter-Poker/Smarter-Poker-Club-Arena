@@ -531,6 +531,7 @@ export default function TablePage({
   const totalBuyInRef = useRef(0); // Track total chips invested for accurate session P/L
   const handsWonRef = useRef(0); // Session hands won by hero
   const totalRebuysRef = useRef(0); // Add-chips/rebuy count for session summary
+  const actionLockRef = useRef(false); // Debounce rapid action button taps (300ms)
   const [waitListPlayers, setWaitListPlayers] = useState<
     Array<{
       playerId: string;
@@ -3483,7 +3484,12 @@ export default function TablePage({
   };
 
   const handleFold = async () => {
+    if (actionLockRef.current) return;
     if (!validateAndExecuteAction('fold')) return;
+    actionLockRef.current = true;
+    setTimeout(() => {
+      actionLockRef.current = false;
+    }, 300);
     const heroSeat = tableState.heroSeat;
     setShowRaiseSlider(false);
     startTransition(() => {
@@ -3501,7 +3507,12 @@ export default function TablePage({
   };
 
   const handleCheck = async () => {
+    if (actionLockRef.current) return;
     if (!validateAndExecuteAction('check')) return;
+    actionLockRef.current = true;
+    setTimeout(() => {
+      actionLockRef.current = false;
+    }, 300);
     const heroSeat = tableState.heroSeat;
     setShowRaiseSlider(false);
     startTransition(() => {
@@ -3519,7 +3530,12 @@ export default function TablePage({
   };
 
   const handleCall = async () => {
+    if (actionLockRef.current) return;
     if (!validateAndExecuteAction('call')) return;
+    actionLockRef.current = true;
+    setTimeout(() => {
+      actionLockRef.current = false;
+    }, 300);
     const heroSeat = tableState.heroSeat;
     setShowRaiseSlider(false);
     startTransition(() => {
@@ -3673,11 +3689,16 @@ export default function TablePage({
   };
 
   const handleAllIn = async () => {
+    if (actionLockRef.current) return;
     const heroSeat = tableState.heroSeat;
     const hero = getPlayerAtSeat(heroSeat);
     const heroStack = hero?.stack || 0;
     if (heroStack <= 0) return;
     if (!validateAndExecuteAction('allin')) return;
+    actionLockRef.current = true;
+    setTimeout(() => {
+      actionLockRef.current = false;
+    }, 300);
     try {
       startTransition(() => {
         if (handControllerRef.current) {
@@ -3848,6 +3869,55 @@ export default function TablePage({
     }, 5000);
     return () => clearInterval(interval);
   }, []);
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // KEYBOARD SHORTCUTS — F=fold, X/K=check, C=call, R=raise, A=all-in
+  // ═══════════════════════════════════════════════════════════════════════════
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore when typing in inputs/textareas or when modals are open
+      const target = e.target as HTMLElement;
+      if (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.contentEditable === 'true' ||
+        showBuyInModal ||
+        showSessionSummary
+      )
+        return;
+
+      // Only fire when it's hero's turn
+      if (tableState.currentPlayerSeat !== tableState.heroSeat || tableState.heroSeat <= 0) return;
+
+      const key = e.key.toLowerCase();
+      switch (key) {
+        case 'f':
+          e.preventDefault();
+          handleFold();
+          break;
+        case 'x':
+        case 'k':
+          e.preventDefault();
+          handleCheck();
+          break;
+        case 'c':
+          e.preventDefault();
+          handleCall();
+          break;
+        case 'r':
+          e.preventDefault();
+          handleRaise();
+          break;
+        case 'a':
+          e.preventDefault();
+          handleAllIn();
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [tableState.currentPlayerSeat, tableState.heroSeat, showBuyInModal, showSessionSummary]);
 
   // Load waitlist data
   const loadWaitlist = useCallback(async () => {

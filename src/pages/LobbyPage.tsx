@@ -525,15 +525,42 @@ export default function LobbyPage() {
         }
       });
 
-    // Cleanup — untrack presence + remove channels + clear debounce
+    // ── Background auto-poll every 30s to catch any missed real-time events ──
+    const pollInterval = setInterval(() => {
+      if (!isMounted.current || fetchLoadingRef.current) return;
+      tableService
+        .getActiveTables()
+        .then((t) => {
+          if (isMounted.current) {
+            setTables(t);
+            setLobbyCache(t);
+          }
+        })
+        .catch(() => {});
+    }, 30_000);
+
+    // Cleanup — untrack presence + remove channels + clear debounce + clear poll
     return () => {
       clearTimeout(loadingTimeout);
+      clearInterval(pollInterval);
       presenceChannel.untrack().catch((e) => console.warn('[Lobby] Untrack presence failed:', e));
       masterBus.removeRegisteredChannel(tableChannelKey);
       masterBus.removeRegisteredChannel(presenceKey);
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
   }, []);
+
+  // ── Reconnection toast: notify user when real-time connection is restored ──
+  const prevWsConnectedRef = useRef(true);
+  useEffect(() => {
+    if (wsConnected && !prevWsConnectedRef.current) {
+      toast.success('Real-time connection restored');
+      refreshTables();
+    } else if (!wsConnected && prevWsConnectedRef.current) {
+      toast.error('Real-time connection lost — retrying...');
+    }
+    prevWsConnectedRef.current = wsConnected;
+  }, [wsConnected]);
 
   const filteredTables = tables.filter((table) => {
     if (activeFilter === 'favorites') return favorites.has(table.id);

@@ -303,7 +303,7 @@ export default function SettlementDashboardPage() {
     }
   }, []);
 
-  useVisibilityRefresh(() => loadData());
+  const { isRefreshing } = useVisibilityRefresh(() => loadData());
 
   useEffect(() => {
     // SWR: show cached period indicator instantly while fresh data loads
@@ -567,6 +567,20 @@ export default function SettlementDashboardPage() {
 
   return (
     <div style={{ padding: '16px', maxWidth: '900px', margin: '0 auto', paddingBottom: '100px' }}>
+      {isRefreshing && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            zIndex: 9999,
+            height: '2px',
+            background: 'linear-gradient(90deg, transparent, #00d4ff, #8b5cf6, transparent)',
+            opacity: 0.8,
+          }}
+        />
+      )}
       {/* Header */}
       <div style={{ marginBottom: '20px' }}>
         <button

@@ -156,8 +156,11 @@ export default function AntiCheatPage() {
         );
         if (error) throw error;
         if (mountedRef.current) setStats(data || null);
-      } catch (err: any) {
-        console.warn('[AntiCheat] Stats load failed:', err.message);
+      } catch (err: unknown) {
+        console.warn(
+          '[AntiCheat] Stats load failed:',
+          err instanceof Error ? err.message : String(err)
+        );
         // Fallback: build stats from flags table
         if (mountedRef.current) {
           setStats({
@@ -198,7 +201,9 @@ export default function AntiCheatPage() {
 
         // Batch-fetch player profiles (no FK hint needed)
         if (data && data.length > 0) {
-          const playerIds = [...new Set(data.map((f: any) => f.player_id).filter(Boolean))];
+          const playerIds = [
+            ...new Set(data.map((f: AntiCheatFlag) => f.player_id).filter(Boolean)),
+          ];
           const playerNames: Record<string, string> = {};
           if (playerIds.length > 0) {
             try {
@@ -216,7 +221,10 @@ export default function AntiCheatPage() {
           }
           if (mountedRef.current) {
             setFlags(
-              data.map((f: any) => ({ ...f, player: { display_name: playerNames[f.player_id] } }))
+              data.map((f: AntiCheatFlag) => ({
+                ...f,
+                player: { display_name: playerNames[f.player_id] },
+              }))
             );
             setFlagsLoaded(true);
           }
@@ -224,8 +232,11 @@ export default function AntiCheatPage() {
           setFlags([]);
           setFlagsLoaded(true);
         }
-      } catch (err: any) {
-        console.warn('[AntiCheat] Flags load failed:', err.message);
+      } catch (err: unknown) {
+        console.warn(
+          '[AntiCheat] Flags load failed:',
+          err instanceof Error ? err.message : String(err)
+        );
         if (mountedRef.current) {
           setFlags([]);
           setFlagsLoaded(true);
@@ -249,7 +260,9 @@ export default function AntiCheatPage() {
 
       // Batch-fetch player profiles (no FK hint needed)
       if (data && data.length > 0) {
-        const playerIds = [...new Set(data.map((e: any) => e.player_id).filter(Boolean))];
+        const playerIds = [
+          ...new Set(data.map((e: AntiCheatEvent) => e.player_id).filter(Boolean)),
+        ];
         const playerNames: Record<string, string> = {};
         if (playerIds.length > 0) {
           try {
@@ -266,7 +279,10 @@ export default function AntiCheatPage() {
         }
         if (mountedRef.current) {
           setEvents(
-            data.map((e: any) => ({ ...e, player: { display_name: playerNames[e.player_id] } }))
+            data.map((e: AntiCheatEvent) => ({
+              ...e,
+              player: { display_name: e.player_id ? playerNames[e.player_id] : undefined },
+            }))
           );
           setEventsLoaded(true);
         }
@@ -274,8 +290,11 @@ export default function AntiCheatPage() {
         setEvents([]);
         setEventsLoaded(true);
       }
-    } catch (err: any) {
-      console.warn('[AntiCheat] Events load failed:', err.message);
+    } catch (err: unknown) {
+      console.warn(
+        '[AntiCheat] Events load failed:',
+        err instanceof Error ? err.message : String(err)
+      );
       if (mountedRef.current) {
         setEvents([]);
         setEventsLoaded(true);
@@ -304,8 +323,11 @@ export default function AntiCheatPage() {
         setAnalyzedHands(data?.analyzed_hands || 0);
         setCollusionLoaded(true);
       }
-    } catch (err: any) {
-      console.warn('[AntiCheat] Collusion load failed:', err.message);
+    } catch (err: unknown) {
+      console.warn(
+        '[AntiCheat] Collusion load failed:',
+        err instanceof Error ? err.message : String(err)
+      );
       if (mountedRef.current) {
         setCollusionPairs([]);
         setCollusionLoaded(true);
@@ -332,8 +354,11 @@ export default function AntiCheatPage() {
         setAnomalies(data || []);
         setAnomaliesLoaded(true);
       }
-    } catch (err: any) {
-      console.warn('[AntiCheat] Anomalies load failed:', err.message);
+    } catch (err: unknown) {
+      console.warn(
+        '[AntiCheat] Anomalies load failed:',
+        err instanceof Error ? err.message : String(err)
+      );
       if (mountedRef.current) {
         setAnomalies([]);
         setAnomaliesLoaded(true);
@@ -502,8 +527,8 @@ export default function AntiCheatPage() {
       setFlagsLoaded(false);
       loadFlags();
       loadStats(clubId);
-    } catch (err: any) {
-      toast.error(err.message);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : String(err));
     } finally {
       setProcessing(false);
     }
@@ -534,8 +559,8 @@ export default function AntiCheatPage() {
 
       toast.success('Player removed.');
       masterBus.emit('PLAYER_KICKED', { clubId: clubId ?? '', userId: playerId });
-    } catch (err: any) {
-      toast.error(err.message);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : String(err));
     } finally {
       setProcessing(false);
     }

@@ -65,6 +65,16 @@ interface Recipient {
   balance: number;
 }
 
+// Supabase club_members query with user join
+interface ClubMemberWithUser {
+  user_id: string;
+  role: string;
+  users: {
+    id: string;
+    username?: string | null;
+  };
+}
+
 const CATEGORY_LABELS: Record<string, string> = {
   buyin: 'Buy-In',
   cashout: 'Cash-Out',
@@ -400,7 +410,9 @@ export default function CashierPage() {
       );
 
       // Get wallet balances for all recipients
-      const recipientIds = (data || []).map((m: any) => m.users?.id).filter(Boolean);
+      const recipientIds = ((data as unknown as ClubMemberWithUser[]) || [])
+        .map((m) => m.users?.id)
+        .filter(Boolean);
       const { data: wallets } = await retryFetch(
         () =>
           supabase
@@ -413,13 +425,13 @@ export default function CashierPage() {
       );
 
       const walletMap: Record<string, number> = {};
-      (wallets || []).forEach((w: any) => {
+      (wallets || []).forEach((w: { user_id: string; balance: number }) => {
         walletMap[w.user_id] = w.balance;
       });
 
-      const list: Recipient[] = (data || [])
-        .filter((m: any) => m.users?.id)
-        .map((m: any) => ({
+      const list: Recipient[] = ((data as unknown as ClubMemberWithUser[]) || [])
+        .filter((m) => m.users?.id)
+        .map((m) => ({
           id: m.users.id,
           username: m.users.username || 'Unknown',
           role: m.role,
@@ -439,9 +451,9 @@ export default function CashierPage() {
       if (isMounted.current) {
         setRecipients(list);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to load recipients:', err);
-      toast.error(err.message || 'Failed to load eligible recipients');
+      toast.error(err instanceof Error ? err.message : 'Failed to load eligible recipients');
     }
     if (isMounted.current) setLoadingRecipients(false);
   };
@@ -532,7 +544,7 @@ export default function CashierPage() {
 
   // Wallets channel
   const handleWalletUpdate = useCallback(
-    (payload: any) => {
+    (payload: { eventType: string }) => {
       if (payload.eventType === 'UPDATE' || payload.eventType === 'INSERT') {
         if (user?.id) loadBalances(user.id);
       }
@@ -551,7 +563,7 @@ export default function CashierPage() {
 
   // Wallet transactions channel
   const handleTransactionUpdate = useCallback(
-    (payload: any) => {
+    (payload: { eventType: string }) => {
       if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
         if (user?.id) {
           loadBalances(user.id);
@@ -924,18 +936,24 @@ export default function CashierPage() {
             loadBalances(user.id);
             loadPendingCashouts();
             notifyWalletChange(user.id, value);
-          } catch (err: any) {
+          } catch (err: unknown) {
             if (isMounted.current)
-              setMessage({ type: 'error', text: err.message || 'Cashout request failed.' });
+              setMessage({
+                type: 'error',
+                text:
+                  (err instanceof Error ? err.message : String(err)) || 'Cashout request failed.',
+              });
           }
         }
       }
       setAmount('');
-    } catch (error: any) {
+    } catch (error: unknown) {
       if (isMounted.current)
         setMessage({
           type: 'error',
-          text: error.message || 'Transaction failed. Please try again.',
+          text:
+            (error instanceof Error ? error.message : String(error)) ||
+            'Transaction failed. Please try again.',
         });
     }
     if (isMounted.current) setIsProcessing(false);
@@ -974,9 +992,14 @@ export default function CashierPage() {
       loadPendingCashouts();
       notifyWalletChange(user.id, value);
       setAmount('');
-    } catch (error: any) {
+    } catch (error: unknown) {
       if (isMounted.current)
-        setMessage({ type: 'error', text: error.message || 'Cashout failed. Please try again.' });
+        setMessage({
+          type: 'error',
+          text:
+            (error instanceof Error ? error.message : String(error)) ||
+            'Cashout failed. Please try again.',
+        });
     }
     if (isMounted.current) setIsProcessing(false);
     startCooldown();
@@ -1390,8 +1413,9 @@ export default function CashierPage() {
                   loadBalances(user.id);
                   loadRecipients();
                   startCooldown();
-                } catch (err: any) {
-                  const msg = err.message || 'Distribution failed';
+                } catch (err: unknown) {
+                  const msg =
+                    (err instanceof Error ? err.message : String(err)) || 'Distribution failed';
                   // Parse specific RPC errors into user-friendly messages
                   if (msg.includes('Rate limit')) {
                     if (isMounted.current)

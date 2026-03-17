@@ -19,6 +19,31 @@ import { QUERY_LIMITS } from '../lib/constants';
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
 
+interface PlayerStatsRow {
+  user_id: string;
+  hands_played: number;
+  total_winnings: number;
+  total_losses: number;
+  total_rake?: number;
+  vpip: number;
+  pfr: number;
+  tournaments_played?: number;
+  tournaments_won: number;
+  club_id?: string;
+}
+
+interface ProfileRow {
+  id: string;
+  username: string;
+  avatar_url?: string;
+  level?: number;
+  tier?: string;
+}
+
+interface UnionClubRow {
+  club_id: string;
+}
+
 export type LeaderboardPeriod = 'daily' | 'weekly' | 'monthly' | 'all_time';
 export type LeaderboardMetric =
   | 'profit'
@@ -125,16 +150,16 @@ export const LeaderboardService = {
       }
 
       // Get usernames for the user IDs
-      const userIds = statsData.map((s: any) => s.user_id);
+      const userIds = statsData.map((s: PlayerStatsRow) => s.user_id);
       const { data: profiles } = await supabase
         .from('profiles')
         .select('id, username, avatar_url, level, tier')
         .in('id', userIds);
 
-      const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]));
+      const profileMap = new Map((profiles || []).map((p: ProfileRow) => [p.id, p]));
 
-      return statsData.map((row: any, index: number) => {
-        const profile = profileMap.get(row.user_id) || ({} as any);
+      return statsData.map((row: PlayerStatsRow, index: number) => {
+        const profile = profileMap.get(row.user_id) || ({} as ProfileRow);
         let value = 0;
         if (metric === 'profit')
           value = Math.trunc(((row.total_winnings || 0) - (row.total_losses || 0)) * 100) / 100;
@@ -187,7 +212,7 @@ export const LeaderboardService = {
 
       if (!unionClubs || unionClubs.length === 0) return [];
 
-      const clubIds = unionClubs.map((uc: any) => uc.club_id);
+      const clubIds = unionClubs.map((uc: UnionClubRow) => uc.club_id);
       const metricToColumn: Record<string, string> = {
         profit: 'total_winnings',
         hands_played: 'hands_played',
@@ -209,16 +234,16 @@ export const LeaderboardService = {
 
       if (statsError || !statsData) return [];
 
-      const userIds = statsData.map((s: any) => s.user_id);
+      const userIds = statsData.map((s: PlayerStatsRow) => s.user_id);
       const { data: profiles } = await supabase
         .from('profiles')
         .select('id, username, avatar_url, level, tier')
         .in('id', userIds);
 
-      const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]));
+      const profileMap = new Map((profiles || []).map((p: ProfileRow) => [p.id, p]));
 
-      return statsData.map((row: any, index: number) => {
-        const profile = profileMap.get(row.user_id) || ({} as any);
+      return statsData.map((row: PlayerStatsRow, index: number) => {
+        const profile = profileMap.get(row.user_id) || ({} as ProfileRow);
         let value = 0;
         if (metric === 'profit')
           value = Math.trunc(((row.total_winnings || 0) - (row.total_losses || 0)) * 100) / 100;
@@ -329,7 +354,7 @@ export const LeaderboardService = {
           clubName: result.clubName,
           profit: result.profit,
         });
-      } catch (e: unknown) {
+      } catch (_e: unknown) {
         // Silent fail for POY tracking
       }
     }
@@ -369,7 +394,7 @@ export const LeaderboardService = {
         return null;
       }
 
-      const userIndex = allStats.findIndex((s: any) => s.user_id === userId);
+      const userIndex = allStats.findIndex((s: PlayerStatsRow) => s.user_id === userId);
       if (userIndex === -1) return null;
 
       return {
@@ -377,7 +402,10 @@ export const LeaderboardService = {
         total: allStats.length,
       };
     } catch (err: unknown) {
-      console.error('LeaderboardService.getUserRank error:', err);
+      console.error(
+        'LeaderboardService.getUserRank error:',
+        err instanceof Error ? err.message : String(err)
+      );
       return null;
     }
   },
@@ -430,9 +458,9 @@ export const LeaderboardService = {
       >();
 
       playerResults.forEach((result: any) => {
-        const userId = result.user_id;
+        const userId = result.user_id as string;
         // Supabase returns a single object for many-to-one joins, not an array
-        const tourn = result.tournaments as any;
+        const tourn = result.tournaments;
 
         // Skip if no tournament data (filtered out by club_id)
         if (!tourn) return;
@@ -494,7 +522,7 @@ export const LeaderboardService = {
         .select('id, username, avatar_url')
         .in('id', userIds);
 
-      const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]));
+      const profileMap = new Map((profiles || []).map((p: ProfileRow) => [p.id, p]));
 
       // Merge profile data and sort by totalPrizes descending
       return statsArray

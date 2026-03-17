@@ -57,7 +57,7 @@ function getCachedFriends(userId: string) {
     return null;
   }
 }
-function setCachedFriends(userId: string, data: any) {
+function setCachedFriends(userId: string, data: Friend[]) {
   try {
     sessionStorage.setItem(FR_CACHE_PREFIX + userId, JSON.stringify(data));
     sessionStorage.setItem(FR_CACHE_TS_PREFIX + userId, String(Date.now()));
@@ -228,9 +228,11 @@ export default function FriendsPage() {
       ]);
 
       // Collect all friend user IDs for batch profile lookup
-      const sentFriendIds = (sentResult.data || []).map((f: any) => f.friend_id);
-      const receivedFriendIds = (receivedResult.data || []).map((f: any) => f.user_id);
-      const pendingUserIds = (pendingResult.data || []).map((p: any) => p.user_id);
+      const sentFriendIds = (sentResult.data || []).map((f: { friend_id: string }) => f.friend_id);
+      const receivedFriendIds = (receivedResult.data || []).map(
+        (f: { user_id: string }) => f.user_id
+      );
+      const pendingUserIds = (pendingResult.data || []).map((p: { user_id: string }) => p.user_id);
       const allProfileIds = [
         ...new Set([...sentFriendIds, ...receivedFriendIds, ...pendingUserIds]),
       ];
@@ -253,7 +255,7 @@ export default function FriendsPage() {
       }
 
       // Map sent friendships (friend_id is the other person)
-      const sentMapped = (sentResult.data || []).map((f: any) => ({
+      const sentMapped = (sentResult.data || []).map((f: { id: string; friend_id: string }) => ({
         ...f,
         friend: {
           id: f.friend_id,
@@ -262,14 +264,16 @@ export default function FriendsPage() {
         },
       }));
       // Map received friendships (user_id is the other person)
-      const receivedMapped = (receivedResult.data || []).map((f: any) => ({
-        ...f,
-        friend: {
-          id: f.user_id,
-          username: profileMap[f.user_id]?.username,
-          avatar_url: profileMap[f.user_id]?.avatar_url,
-        },
-      }));
+      const receivedMapped = (receivedResult.data || []).map(
+        (f: { id: string; user_id: string }) => ({
+          ...f,
+          friend: {
+            id: f.user_id,
+            username: profileMap[f.user_id]?.username,
+            avatar_url: profileMap[f.user_id]?.avatar_url,
+          },
+        })
+      );
 
       const allFriendships = [...sentMapped, ...receivedMapped];
 
@@ -278,17 +282,19 @@ export default function FriendsPage() {
 
       if (allFriendships.length > 0) {
         const uniqueMap = new Map();
-        allFriendships.forEach((f: any) => {
-          if (f.friend?.id && !uniqueMap.has(f.friend.id)) {
-            uniqueMap.set(f.friend.id, {
-              id: f.id,
-              user_id: f.friend.id,
-              username: f.friend.username || 'Unknown',
-              avatar_url: f.friend.avatar_url,
-              is_online: onlineUserIds.has(f.friend.id),
-            });
+        allFriendships.forEach(
+          (f: (typeof sentMapped)[number] | (typeof receivedMapped)[number]) => {
+            if (f.friend?.id && !uniqueMap.has(f.friend.id)) {
+              uniqueMap.set(f.friend.id, {
+                id: f.id,
+                user_id: f.friend.id,
+                username: f.friend.username || 'Unknown',
+                avatar_url: f.friend.avatar_url,
+                is_online: onlineUserIds.has(f.friend.id),
+              });
+            }
           }
-        });
+        );
 
         // NOTE: status_text column does not exist in profiles table yet (future feature).
         // Skipping status enrichment until the column is added.
@@ -308,7 +314,7 @@ export default function FriendsPage() {
 
       if (pending) {
         setPendingRequests(
-          pending.map((p: any) => ({
+          pending.map((p: { id: string; user_id: string }) => ({
             id: p.id,
             user_id: p.user_id,
             username: profileMap[p.user_id]?.username || 'Unknown',
@@ -664,7 +670,23 @@ export default function FriendsPage() {
   );
 }
 
-function SwipeableFriendRow({ friend, visible, onMessage, onRemove, onChallenge, navigate }: any) {
+interface SwipeableFriendRowProps {
+  friend: Friend;
+  visible: boolean;
+  onMessage: () => void;
+  onRemove: () => void;
+  onChallenge?: () => void;
+  navigate: (path: string) => void;
+}
+
+function SwipeableFriendRow({
+  friend,
+  visible,
+  onMessage,
+  onRemove,
+  onChallenge,
+  navigate,
+}: SwipeableFriendRowProps) {
   const { handlers, rowStyle, offset, reset } = useSwipeAction({
     actionWidth: 80,
     threshold: 40,

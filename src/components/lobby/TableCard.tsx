@@ -16,6 +16,32 @@ import styles from './TableCard.module.css';
 import type { PokerTable } from '../../types/database.types';
 import { useToast } from '../common/Toast';
 
+interface TableSeatRow {
+  user_id: string;
+}
+
+interface TableWaitlistResponse {
+  count: number | null;
+  error: unknown;
+}
+
+interface HandRow {
+  pot: number;
+}
+
+interface ProfileRow {
+  id: string;
+  avatar_url?: string;
+  display_name?: string;
+  username: string;
+}
+
+interface MasterBusEvent {
+  payload?: {
+    tableId?: string;
+  };
+}
+
 interface TableCardProps {
   table: PokerTable;
 }
@@ -94,14 +120,21 @@ function TableCardInner({ table }: TableCardProps) {
       .eq('table_id', table.id)
       .eq('status', 'waiting')
       .then(
-        ({ count, error }) => {
+        ({ count, error }: TableWaitlistResponse) => {
           if (error) {
-            console.warn('[TableCard] Waitlist count error:', error.message);
+            console.warn(
+              '[TableCard] Waitlist count error:',
+              error instanceof Error ? error.message : String(error)
+            );
             return;
           }
           if (isMounted && count !== null) setWaiting(count);
         },
-        (err: any) => console.warn('[TableCard] Waitlist fetch failed:', err)
+        (err: unknown) =>
+          console.warn(
+            '[TableCard] Waitlist fetch failed:',
+            err instanceof Error ? err.message : String(err)
+          )
       );
 
     // Fetch average pot from last 20 completed hands
@@ -114,17 +147,25 @@ function TableCardInner({ table }: TableCardProps) {
       .order('ended_at', { ascending: false })
       .limit(20)
       .then(
-        ({ data, error }) => {
+        ({ data, error }: { data: HandRow[] | null; error: unknown }) => {
           if (error) {
-            console.warn('[TableCard] Avg pot error:', error.message);
+            console.warn(
+              '[TableCard] Avg pot error:',
+              error instanceof Error ? error.message : String(error)
+            );
             return;
           }
           if (isMounted && data && data.length > 0) {
-            const avg = data.reduce((sum, h) => sum + (h.pot || 0), 0) / data.length;
+            const avg =
+              data.reduce((sum: number, h: HandRow) => sum + (h.pot || 0), 0) / data.length;
             setAvgPot(Math.trunc(avg * 100) / 100);
           }
         },
-        (err: any) => console.warn('[TableCard] Avg pot fetch failed:', err)
+        (err: unknown) =>
+          console.warn(
+            '[TableCard] Avg pot fetch failed:',
+            err instanceof Error ? err.message : String(err)
+          )
       );
 
     // Fetch active player avatars
@@ -136,24 +177,27 @@ function TableCardInner({ table }: TableCardProps) {
       .is('left_at', null)
       .limit(6)
       .then(
-        async ({ data, error }) => {
+        async ({ data, error }: { data: TableSeatRow[] | null; error: unknown }) => {
           if (error) {
-            console.warn('[TableCard] Player avatars error:', error.message);
+            console.warn(
+              '[TableCard] Player avatars error:',
+              error instanceof Error ? error.message : String(error)
+            );
             return;
           }
           if (isMounted && data && data.length > 0) {
-            const userIds = data.map((p: any) => p.user_id).filter(Boolean);
+            const userIds = data.map((p: TableSeatRow) => p.user_id).filter(Boolean);
             const { data: profs } = await supabase
               .from('profiles')
               .select('id, avatar_url, display_name, username')
               .in('id', userIds);
-            const profMap: Record<string, any> = {};
+            const profMap: Record<string, ProfileRow> = {};
             if (profs)
-              profs.forEach((p: any) => {
+              profs.forEach((p: ProfileRow) => {
                 profMap[p.id] = p;
               });
             setPlayerAvatars(
-              data.map((p: any) => ({
+              data.map((p: TableSeatRow) => ({
                 id: p.user_id,
                 url: profMap[p.user_id]?.avatar_url,
                 name: profMap[p.user_id]?.display_name || profMap[p.user_id]?.username || '?',
@@ -161,7 +205,11 @@ function TableCardInner({ table }: TableCardProps) {
             );
           }
         },
-        (err: any) => console.warn('[TableCard] Player avatars fetch failed:', err)
+        (err: unknown) =>
+          console.warn(
+            '[TableCard] Player avatars fetch failed:',
+            err instanceof Error ? err.message : String(err)
+          )
       );
 
     // Store refresh function for bus listeners
@@ -172,14 +220,21 @@ function TableCardInner({ table }: TableCardProps) {
         .eq('table_id', table.id)
         .eq('status', 'waiting')
         .then(
-          ({ count, error }) => {
+          ({ count, error }: TableWaitlistResponse) => {
             if (error) {
-              console.warn('[TableCard] Waitlist refresh error:', error.message);
+              console.warn(
+                '[TableCard] Waitlist refresh error:',
+                error instanceof Error ? error.message : String(error)
+              );
               return;
             }
             if (isMounted && count !== null) setWaiting(count);
           },
-          (err: any) => console.warn('[TableCard] Waitlist refresh failed:', err)
+          (err: unknown) =>
+            console.warn(
+              '[TableCard] Waitlist refresh failed:',
+              err instanceof Error ? err.message : String(err)
+            )
         );
       supabase
         .from('table_seats')
@@ -189,24 +244,27 @@ function TableCardInner({ table }: TableCardProps) {
         .is('left_at', null)
         .limit(6)
         .then(
-          async ({ data, error }) => {
+          async ({ data, error }: { data: TableSeatRow[] | null; error: unknown }) => {
             if (error) {
-              console.warn('[TableCard] Avatars refresh error:', error.message);
+              console.warn(
+                '[TableCard] Avatars refresh error:',
+                error instanceof Error ? error.message : String(error)
+              );
               return;
             }
             if (isMounted && data && data.length > 0) {
-              const userIds = data.map((p: any) => p.user_id).filter(Boolean);
+              const userIds = data.map((p: TableSeatRow) => p.user_id).filter(Boolean);
               const { data: profs } = await supabase
                 .from('profiles')
                 .select('id, avatar_url, display_name, username')
                 .in('id', userIds);
-              const profMap: Record<string, any> = {};
+              const profMap: Record<string, ProfileRow> = {};
               if (profs)
-                profs.forEach((p: any) => {
+                profs.forEach((p: ProfileRow) => {
                   profMap[p.id] = p;
                 });
               setPlayerAvatars(
-                data.map((p: any) => ({
+                data.map((p: TableSeatRow) => ({
                   id: p.user_id,
                   url: profMap[p.user_id]?.avatar_url,
                   name: profMap[p.user_id]?.display_name || profMap[p.user_id]?.username || '?',
@@ -216,7 +274,11 @@ function TableCardInner({ table }: TableCardProps) {
               setPlayerAvatars([]);
             }
           },
-          (err: any) => console.warn('[TableCard] Avatars refresh failed:', err)
+          (err: unknown) =>
+            console.warn(
+              '[TableCard] Avatars refresh failed:',
+              err instanceof Error ? err.message : String(err)
+            )
         );
     };
 
@@ -227,7 +289,7 @@ function TableCardInner({ table }: TableCardProps) {
 
   // Bus listeners for live table updates
   useEffect(() => {
-    const refresh = (event?: any) => {
+    const refresh = (event?: MasterBusEvent) => {
       // If the event specifically targets another table, ignore it
       if (event?.payload?.tableId && event.payload.tableId !== table.id) return;
       refreshRef.current?.();
@@ -253,12 +315,16 @@ function TableCardInner({ table }: TableCardProps) {
       .eq('user_id', user.id)
       .maybeSingle()
       .then(
-        ({ data }) => {
+        ({ data }: { data: { role: string } | null }) => {
           if (!cancelled && data && ['owner', 'admin'].includes(data.role)) {
             setAdminRole(data.role);
           }
         },
-        (err: any) => console.warn('[TableCard] Admin role check failed:', err)
+        (err: unknown) =>
+          console.warn(
+            '[TableCard] Admin role check failed:',
+            err instanceof Error ? err.message : String(err)
+          )
       );
     return () => {
       cancelled = true;
@@ -294,8 +360,9 @@ function TableCardInner({ table }: TableCardProps) {
         } else {
           toast.error(`Failed to ${action} table — may have changed status`);
         }
-      } catch (err: any) {
-        toast.error(err.message || `Failed to ${action} table`);
+      } catch (err: unknown) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        toast.error(errMsg || `Failed to ${action} table`);
       } finally {
         setAdminProcessing(false);
       }

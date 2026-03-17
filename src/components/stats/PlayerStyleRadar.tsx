@@ -43,18 +43,16 @@ function getCached(userId: string): RadarAxis[] | null {
   try {
     const raw = sessionStorage.getItem(CACHE_PREFIX + userId);
     return raw ? JSON.parse(raw) : null;
-  } catch (err) {
-
-    console.error("[PlayerStyleRadar] Error:", err);
+  } catch (err: unknown) {
+    console.error('[PlayerStyleRadar] Error:', err instanceof Error ? err.message : String(err));
     return null;
   }
 }
 function setCache(userId: string, data: RadarAxis[]) {
   try {
     sessionStorage.setItem(CACHE_PREFIX + userId, JSON.stringify(data));
-  } catch (err) {
-
-    console.error("[PlayerStyleRadar] Error:", err);
+  } catch (err: unknown) {
+    console.error('[PlayerStyleRadar] Error:', err instanceof Error ? err.message : String(err));
     /* quota exceeded — ignore */
   }
 }
@@ -125,14 +123,18 @@ export default function PlayerStyleRadar({ userId }: PlayerStyleRadarProps) {
       }
 
       // Calculate aggregate stats
-      const totalHands = sess.reduce((s: number, r: any) => s + r.hands_played, 0) || 1;
-      const totalWon = sess.reduce((s: number, r: any) => s + r.hands_won, 0);
+      const totalHands =
+        sess.reduce((s: number, r: { hands_played: number }) => s + r.hands_played, 0) || 1;
+      const totalWon = sess.reduce((s: number, r: { hands_won: number }) => s + r.hands_won, 0);
       const avgVPIP =
-        sess.reduce((s: number, r: any) => s + r.vpip_percent, 0) / (sess.length || 1);
-      const avgPFR = sess.reduce((s: number, r: any) => s + r.pfr_percent, 0) / (sess.length || 1);
+        sess.reduce((s: number, r: { vpip_percent: number }) => s + r.vpip_percent, 0) /
+        (sess.length || 1);
+      const avgPFR =
+        sess.reduce((s: number, r: { pfr_percent: number }) => s + r.pfr_percent, 0) /
+        (sess.length || 1);
 
       // Position awareness: variance in VPIP across positions (higher = more aware)
-      const posVPIPs = pos.map((p: any) =>
+      const posVPIPs = pos.map((p: { hands_played: number; vpip_count: number }) =>
         p.hands_played > 0 ? (p.vpip_count / p.hands_played) * 100 : 0
       );
       const posAwarenessVariance =
@@ -167,10 +169,19 @@ export default function PlayerStyleRadar({ userId }: PlayerStyleRadarProps) {
       }
 
       // Classify overall style
-      const totalPosHands = pos.reduce((s: number, r: any) => s + r.hands_played, 0);
-      const totalPosVPIP = pos.reduce((s: number, r: any) => s + r.vpip_count, 0);
-      const totalPosPFR = pos.reduce((s: number, r: any) => s + r.pfr_count, 0);
-      const total3Bet = pos.reduce((s: number, r: any) => s + r.three_bet_count, 0);
+      const totalPosHands = pos.reduce(
+        (s: number, r: { hands_played: number }) => s + r.hands_played,
+        0
+      );
+      const totalPosVPIP = pos.reduce(
+        (s: number, r: { vpip_count: number }) => s + r.vpip_count,
+        0
+      );
+      const totalPosPFR = pos.reduce((s: number, r: { pfr_count: number }) => s + r.pfr_count, 0);
+      const total3Bet = pos.reduce(
+        (s: number, r: { three_bet_count: number }) => s + r.three_bet_count,
+        0
+      );
 
       if (isMounted.current) {
         setStyle(
@@ -182,8 +193,8 @@ export default function PlayerStyleRadar({ userId }: PlayerStyleRadarProps) {
           })
         );
       }
-    } catch (err) {
-      console.error('[PlayerStyleRadar] Error:', err);
+    } catch (err: unknown) {
+      console.error('[PlayerStyleRadar] Error:', err instanceof Error ? err.message : String(err));
       if (isMounted.current) setAxes([]);
     } finally {
       if (isMounted.current) setLoading(false);

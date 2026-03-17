@@ -16,6 +16,19 @@ import { QUERY_LIMITS } from '../lib/constants';
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
 
+interface FriendshipRow {
+  user_id?: string;
+  friend_id?: string;
+}
+
+interface ProfileRow {
+  id: string;
+  username: string;
+  display_name?: string | null;
+  avatar_url?: string | null;
+  is_online?: boolean;
+}
+
 export interface FriendSuggestion {
   userId: string;
   username: string;
@@ -134,11 +147,16 @@ class FriendSuggestionServiceClass {
         .or(`user_id.eq.${userId},friend_id.eq.${userId}`)
         .eq('status', 'accepted');
       if (error) console.warn('[FriendSuggestions] getExistingFriendIds error:', error.message);
-      (data || []).forEach((row: any) => {
-        ids.add(row.user_id === userId ? row.friend_id : row.user_id);
+      (data || []).forEach((row: FriendshipRow) => {
+        if (row.user_id && row.friend_id) {
+          ids.add(row.user_id === userId ? row.friend_id : row.user_id);
+        }
       });
-    } catch (err) {
-      console.warn('[FriendSuggestions] getExistingFriendIds unexpected error:', err);
+    } catch (err: unknown) {
+      console.warn(
+        '[FriendSuggestions] getExistingFriendIds unexpected error:',
+        err instanceof Error ? err.message : String(err)
+      );
     }
     ids.add(userId); // exclude self
     return ids;
@@ -177,7 +195,7 @@ class FriendSuggestionServiceClass {
 
       // Batch-fetch profiles (no FK between club_members and profiles)
       const userIds = (members || []).map((m: any) => m.user_id);
-      const profileMap: Record<string, any> = {};
+      const profileMap: Record<string, ProfileRow> = {};
       if (userIds.length > 0) {
         try {
           const { data: profiles } = await supabase
@@ -185,25 +203,31 @@ class FriendSuggestionServiceClass {
             .select('id, username, display_name, avatar_url, is_online')
             .in('id', [...new Set(userIds)]);
           if (profiles) {
-            for (const p of profiles) profileMap[p.id] = p;
+            for (const p of profiles) profileMap[p.id] = p as ProfileRow;
           }
         } catch {
           /* non-critical */
         }
       }
 
-      return (members || []).map((m: any) => ({
-        userId: m.user_id,
-        username: profileMap[m.user_id]?.username || 'Unknown',
-        displayName: profileMap[m.user_id]?.display_name,
-        avatarUrl: profileMap[m.user_id]?.avatar_url,
-        isOnline: profileMap[m.user_id]?.is_online || false,
-        score: 0,
-        reasons: [],
-        clubName: clubNames.get(m.club_id) || 'Club',
-      }));
-    } catch (err) {
-      console.warn('[FriendSuggestions] getSharedClubUsers unexpected error:', err);
+      return (members || []).map((m: any) => {
+        const userId = m.user_id as string;
+        return {
+          userId,
+          username: profileMap[userId]?.username || 'Unknown',
+          displayName: profileMap[userId]?.display_name ?? undefined,
+          avatarUrl: profileMap[userId]?.avatar_url ?? undefined,
+          isOnline: profileMap[userId]?.is_online || false,
+          score: 0,
+          reasons: [],
+          clubName: clubNames.get(m.club_id) || 'Club',
+        };
+      });
+    } catch (err: unknown) {
+      console.warn(
+        '[FriendSuggestions] getSharedClubUsers unexpected error:',
+        err instanceof Error ? err.message : String(err)
+      );
       return [];
     }
   }
@@ -226,7 +250,7 @@ class FriendSuggestionServiceClass {
 
       if (!myHands || myHands.length === 0) return [];
 
-      const handIds = myHands.map((h: any) => h.hand_id);
+      const handIds = myHands.map((h: { hand_id: string }) => h.hand_id);
 
       // Get other players from those hands
       const { data: opponents, error: oErr } = await supabase
@@ -252,16 +276,19 @@ class FriendSuggestionServiceClass {
           return true;
         })
         .map((o: any) => ({
-          userId: o.user_id,
+          userId: o.user_id as string,
           username: o.profiles?.username || 'Unknown',
-          displayName: o.profiles?.display_name,
-          avatarUrl: o.profiles?.avatar_url,
+          displayName: o.profiles?.display_name ?? undefined,
+          avatarUrl: o.profiles?.avatar_url ?? undefined,
           isOnline: o.profiles?.is_online || false,
           score: 0,
           reasons: [],
         }));
-    } catch (err) {
-      console.warn('[FriendSuggestions] getRecentOpponents unexpected error:', err);
+    } catch (err: unknown) {
+      console.warn(
+        '[FriendSuggestions] getRecentOpponents unexpected error:',
+        err instanceof Error ? err.message : String(err)
+      );
       return [];
     }
   }
@@ -283,7 +310,9 @@ class FriendSuggestionServiceClass {
 
       const myFriendIds = new Set<string>();
       (myFriends || []).forEach((row: any) => {
-        myFriendIds.add(row.user_id === userId ? row.friend_id : row.user_id);
+        if (row.user_id && row.friend_id) {
+          myFriendIds.add(row.user_id === userId ? row.friend_id : row.user_id);
+        }
       });
 
       // Get friends of otherUserId
@@ -295,7 +324,9 @@ class FriendSuggestionServiceClass {
 
       const theirFriendIds = new Set<string>();
       (theirFriends || []).forEach((row: any) => {
-        theirFriendIds.add(row.user_id === otherUserId ? row.friend_id : row.user_id);
+        if (row.user_id && row.friend_id) {
+          theirFriendIds.add(row.user_id === otherUserId ? row.friend_id : row.user_id);
+        }
       });
 
       // Intersection
@@ -309,9 +340,9 @@ class FriendSuggestionServiceClass {
         .in('id', mutualIds);
 
       return (profiles || []).map((p: any) => ({
-        id: p.id,
-        username: p.username,
-        avatarUrl: p.avatar_url,
+        id: p.id as string,
+        username: p.username as string,
+        avatarUrl: p.avatar_url as string | undefined,
       }));
     } catch (err: unknown) {
       console.error('[FriendSuggestions] getMutualFriends error:', err);

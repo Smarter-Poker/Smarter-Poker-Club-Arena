@@ -277,8 +277,8 @@ export default function AgentDashboardPage() {
         } catch {
           /* storage full */
         }
-      } catch (err: any) {
-        if (mountedRef.current) setError(err.message);
+      } catch (err: unknown) {
+        if (mountedRef.current) setError(err instanceof Error ? err.message : String(err));
       } finally {
         dashLoadingRef.current = false;
         if (mountedRef.current) setLoading(false);
@@ -438,8 +438,8 @@ export default function AgentDashboardPage() {
       await cashoutService.approveCashout(cashoutId, user?.id || '');
       setSuccess('Cashout approved successfully.');
       loadDashboard(clubId);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setProcessing(false);
     }
@@ -453,8 +453,8 @@ export default function AgentDashboardPage() {
       await cashoutService.rejectCashout(cashoutId, user?.id || '', 'Denied by agent');
       setSuccess('Cashout denied and chips refunded to player.');
       loadDashboard(clubId);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setProcessing(false);
     }
@@ -477,8 +477,8 @@ export default function AgentDashboardPage() {
       setTransferAmount('');
       setTransferNotes('');
       loadDashboard(clubId);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setProcessing(false);
     }
@@ -1069,7 +1069,7 @@ export default function AgentDashboardPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {commissions.map((c: any, i: number) => (
+                    {commissions.map((c: AgentCommission, i: number) => (
                       <tr key={c.id || i}>
                         <td style={{ fontWeight: 700, color: '#31A24C' }}>{fmtChips(c.amount)}</td>
                         <td>
@@ -1109,7 +1109,7 @@ export default function AgentDashboardPage() {
               <div className="admin-stat-card">
                 <div className="admin-stat-value" style={{ color: '#F7C52A' }}>
                   {fmt(
-                    players.filter((p: any) => {
+                    players.filter((p: DownlineMember) => {
                       const ls = p.profile?.last_seen;
                       if (!ls) return false;
                       const days = (Date.now() - new Date(ls).getTime()) / 86400000;
@@ -1122,7 +1122,7 @@ export default function AgentDashboardPage() {
               <div className="admin-stat-card">
                 <div className="admin-stat-value" style={{ color: '#FA383E' }}>
                   {fmt(
-                    players.filter((p: any) => {
+                    players.filter((p: DownlineMember) => {
                       const ls = p.profile?.last_seen;
                       if (!ls) return true;
                       return (Date.now() - new Date(ls).getTime()) / 86400000 >= 14;
@@ -1152,7 +1152,7 @@ export default function AgentDashboardPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {players.map((p: any, i: number) => {
+                    {players.map((p: DownlineMember, i: number) => {
                       const lastSeen = p.profile?.last_seen;
                       const daysSince = lastSeen
                         ? Math.floor((Date.now() - new Date(lastSeen).getTime()) / 86400000)
@@ -1214,7 +1214,7 @@ export default function AgentDashboardPage() {
                   onChange={(e) => setCreditTarget(e.target.value)}
                 >
                   <option value="">Select agent...</option>
-                  {agents.map((a: any) => (
+                  {agents.map((a: DownlineMember) => (
                     <option key={a.user_id} value={a.user_id}>
                       {a.profile?.display_name || a.profile?.username || a.user_id?.slice(0, 8)} (
                       {fmtChips(a.chip_balance)} chips)
@@ -1266,8 +1266,8 @@ export default function AgentDashboardPage() {
                       setCreditTarget('');
                       setCreditAmount('');
                       loadDashboard(clubId);
-                    } catch (err: any) {
-                      setError(err.message);
+                    } catch (err: unknown) {
+                      setError(err instanceof Error ? err.message : String(err));
                     } finally {
                       setProcessing(false);
                     }
@@ -1291,7 +1291,7 @@ export default function AgentDashboardPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {agents.map((a: any) => (
+                      {agents.map((a: DownlineMember) => (
                         <tr key={a.user_id}>
                           <td style={{ fontWeight: 600 }}>
                             {a.profile?.display_name ||
@@ -1340,7 +1340,7 @@ export default function AgentDashboardPage() {
                     onChange={(e) => setCreditTarget(e.target.value)}
                   >
                     <option value="">Select agent...</option>
-                    {agents.map((a: any) => (
+                    {agents.map((a: DownlineMember) => (
                       <option key={a.user_id} value={a.user_id}>
                         {a.profile?.display_name || a.profile?.username || a.user_id?.slice(0, 8)} —{' '}
                         {a.role}
@@ -1417,8 +1417,8 @@ export default function AgentDashboardPage() {
                       setCreditAmount('');
                       setCreditNotes('');
                       loadDashboard(clubId);
-                    } catch (err: any) {
-                      setError(err.message);
+                    } catch (err: unknown) {
+                      setError(err instanceof Error ? err.message : String(err));
                     } finally {
                       setProcessing(false);
                     }

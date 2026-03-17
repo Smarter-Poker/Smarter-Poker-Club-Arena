@@ -13,6 +13,46 @@ import type { Card } from '../types/database.types';
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
 
+interface HandPlayerDB {
+  seat: number;
+  user_id: string;
+  hole_cards: Card[];
+  final_hand?: string | null;
+  result: number;
+  is_winner: boolean;
+}
+
+interface HandActionDB {
+  player_id: string;
+  action: string;
+  amount?: number | null;
+  street: string;
+  created_at: string;
+}
+
+interface TableDB {
+  name: string;
+  game_type: string;
+  stakes: string;
+  club_id?: string;
+}
+
+interface HandDB {
+  id: string;
+  serial_number?: string;
+  table_id: string;
+  created_at: string;
+  hand_number?: number;
+  total_hands?: number;
+  pot_size?: number;
+  side_pots?: number[];
+  community_cards?: Card[];
+  button_seat?: number;
+  hand_players?: HandPlayerDB[];
+  hand_actions?: HandActionDB[];
+  tables?: TableDB;
+}
+
 export interface HandPlayer {
   seat: number;
   user_id: string;
@@ -92,7 +132,7 @@ class HandHistoryServiceClass {
     if (error || !data) return null;
 
     // Fetch profile names for all players in this hand
-    const userIds = (data.hand_players || []).map((hp: any) => hp.user_id);
+    const userIds = (data.hand_players || []).map((hp: unknown) => (hp as HandPlayerDB).user_id);
     const profileMap = await this.fetchProfileMap(userIds);
 
     return this.mapHandRecord(data, profileMap);
@@ -131,14 +171,18 @@ class HandHistoryServiceClass {
     if (error || !data) return [];
 
     // Collect all user_ids across all hands
-    const allUserIds = data.flatMap((d: any) =>
-      (d.hands?.hand_players || []).map((hp: any) => hp.user_id)
-    );
+    const allUserIds = data.flatMap((d: unknown) => {
+      const row = d as any;
+      return (row.hands?.hand_players || []).map((hp: any) => hp.user_id);
+    });
     const profileMap = await this.fetchProfileMap(allUserIds);
 
     return data
-      .map((d: any) => this.mapHandRecord(d.hands, profileMap))
-      .filter(Boolean) as HandRecord[];
+      .map((d: unknown) => {
+        const row = d as any;
+        return this.mapHandRecord(row.hands, profileMap);
+      })
+      .filter((h: HandRecord | null): h is HandRecord => h !== null);
   }
 
   /**
@@ -171,12 +215,15 @@ class HandHistoryServiceClass {
 
     if (error || !data) return [];
 
-    const allUserIds = data.flatMap((d: any) =>
-      (d.hand_players || []).map((hp: any) => hp.user_id)
-    );
+    const allUserIds = data.flatMap((d: unknown) => {
+      const row = d as HandDB;
+      return (row.hand_players || []).map((hp: HandPlayerDB) => hp.user_id);
+    });
     const profileMap = await this.fetchProfileMap(allUserIds);
 
-    return data.map((d: any) => this.mapHandRecord(d, profileMap));
+    return data
+      .map((d: unknown) => this.mapHandRecord(d as HandDB, profileMap))
+      .filter((h: HandRecord | null): h is HandRecord => h !== null);
   }
 
   /**
@@ -212,14 +259,18 @@ class HandHistoryServiceClass {
 
     if (error || !data) return [];
 
-    const allUserIds = data.flatMap((d: any) =>
-      (d.hands?.hand_players || []).map((hp: any) => hp.user_id)
-    );
+    const allUserIds = data.flatMap((d: unknown) => {
+      const row = d as any;
+      return (row.hands?.hand_players || []).map((hp: any) => hp.user_id);
+    });
     const profileMap = await this.fetchProfileMap(allUserIds);
 
     return data
-      .map((d: any) => this.mapHandRecord(d.hands, profileMap))
-      .filter(Boolean) as HandRecord[];
+      .map((d: unknown) => {
+        const row = d as any;
+        return this.mapHandRecord(row.hands, profileMap);
+      })
+      .filter((h: HandRecord | null): h is HandRecord => h !== null);
   }
 
   /**
@@ -279,16 +330,22 @@ class HandHistoryServiceClass {
 
     if (error || !data) return [];
 
-    const allUserIds = data.flatMap((d: any) =>
-      (d.hand_players || []).map((hp: any) => hp.user_id)
-    );
+    const allUserIds = data.flatMap((d: unknown) => {
+      const row = d as HandDB;
+      return (row.hand_players || []).map((hp: HandPlayerDB) => hp.user_id);
+    });
     const profileMap = await this.fetchProfileMap(allUserIds);
 
-    let results = data.map((d: any) => this.mapHandRecord(d, profileMap));
+    let results = data
+      .map((d: unknown) => this.mapHandRecord(d as HandDB, profileMap))
+      .filter((h: HandRecord | null): h is HandRecord => h !== null);
 
     // Filter by clubId if provided (post-query filter)
     if (filters.clubId) {
-      results = results.filter((h: any) => h._table?.club_id === filters.clubId);
+      results = results.filter(
+        (h: HandRecord) =>
+          (h as unknown as { _table?: { club_id: string } })._table?.club_id === filters.clubId
+      );
     }
 
     return results;
@@ -299,11 +356,12 @@ class HandHistoryServiceClass {
   // ─────────────────────────────────────────────────────────────────────────────
 
   private mapHandRecord(
-    data: any,
+    data: HandDB | undefined,
     profileMap?: Map<string, { username: string; avatar_url: string | null }>
-  ): HandRecord {
-    const table = data.tables || {};
-    const players: HandPlayer[] = (data.hand_players || []).map((hp: any) => {
+  ): HandRecord | null {
+    if (!data) return null;
+    const table: TableDB = data.tables || { name: 'Unknown', game_type: 'NLH', stakes: '1/2' };
+    const players: HandPlayer[] = (data.hand_players || []).map((hp: HandPlayerDB): HandPlayer => {
       const profile = profileMap?.get(hp.user_id);
       return {
         seat: hp.seat,
@@ -316,17 +374,17 @@ class HandHistoryServiceClass {
           (data.hand_players || []).length
         ),
         hole_cards: hp.hole_cards || [],
-        final_hand: hp.final_hand,
+        final_hand: hp.final_hand || undefined,
         result: hp.result || 0,
         is_winner: hp.is_winner || false,
       };
     });
 
-    const actions: HandAction[] = (data.hand_actions || []).map((a: any) => ({
+    const actions: HandAction[] = (data.hand_actions || []).map((a: HandActionDB) => ({
       player_id: a.player_id,
-      action: a.action,
-      amount: a.amount,
-      street: a.street,
+      action: a.action as HandAction['action'],
+      amount: a.amount || undefined,
+      street: a.street as HandAction['street'],
       timestamp: new Date(a.created_at).getTime(),
     }));
 
@@ -367,8 +425,11 @@ class HandHistoryServiceClass {
       for (const p of data || []) {
         map.set(p.id, { username: p.username, avatar_url: p.avatar_url });
       }
-    } catch (err) {
-      console.error('[HandHistoryService] Error:', err);
+    } catch (err: unknown) {
+      console.error(
+        '[HandHistoryService] Error:',
+        err instanceof Error ? err.message : String(err)
+      );
       // Non-critical — names will fall back to truncated user_id
     }
 

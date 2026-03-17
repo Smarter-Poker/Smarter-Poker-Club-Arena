@@ -378,10 +378,14 @@
    FELT COLOR THEMES — Apply via data-felt-theme attribute on .table-page
    ═══════════════════════════════════════════════════════════════════════════════ */
 
-/* Default: Classic Green */
-.table-page[data-felt-theme='green'],
-.table-page:not([data-felt-theme]) {
+/* Classic Green */
+.table-page[data-felt-theme='green'] {
   --felt-gradient: radial-gradient(ellipse at 50% 40%, #1a7a4a 0%, #0f5132 50%, #0a3d24 100%);
+}
+
+/* Default: Midnight Black (fallback when no theme set) */
+.table-page:not([data-felt-theme]) {
+  --felt-gradient: radial-gradient(ellipse at 50% 40%, #2a2a2e 0%, #1a1a1e 50%, #0e0e12 100%);
 }
 
 /* Blue Royale */
@@ -421,7 +425,7 @@
     /* Noise layer 2 for depth */
     repeating-conic-gradient(rgba(0, 0, 0, 0.02) 0% 25%, transparent 0% 50%) 1px 1px / 4px 4px,
     /* Main radial felt gradient — uses theme tokens */
-    var(--felt-gradient, radial-gradient(ellipse at 50% 40%, #1a7a4a 0%, #0f5132 50%, #0a3d24 100%));
+    var(--felt-gradient, radial-gradient(ellipse at 50% 40%, #2a2a2e 0%, #1a1a1e 50%, #0e0e12 100%));
   border-radius: 44% / 34%;
   display: flex;
   flex-direction: column;

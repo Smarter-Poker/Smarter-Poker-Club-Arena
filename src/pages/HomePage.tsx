@@ -589,6 +589,7 @@ function HomePageInner() {
         }
       } catch (err) {
         console.error('[HomePage] Failed to fetch Shark Club stats:', err);
+        throw err; // Re-throw so the .catch() retry handler fires
       }
     }
     fetchSharkClubStats().catch(() => {

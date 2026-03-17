@@ -1464,10 +1464,13 @@ export default function TablePage({
           isTournament: table.game_type === 'tournament' || !!table.tournament_id,
           tournamentId: table.tournament_id || undefined,
           blinds:
-            table.stakes ||
-            (table.small_blind != null && table.big_blind != null
-              ? `${table.small_blind}/${table.big_blind}`
-              : '?/?'),
+            table.stakes &&
+            table.stakes !== 'undefined/undefined' &&
+            !table.stakes.includes('undefined')
+              ? table.stakes
+              : table.small_blind != null && table.big_blind != null
+                ? `${table.small_blind}/${table.big_blind}`
+                : '?/?',
           maxPlayers: table.max_players || 6,
           players: createEmptySeats(table.max_players || 6),
           positions: Array(table.max_players || 6).fill(null),

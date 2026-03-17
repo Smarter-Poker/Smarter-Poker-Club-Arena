@@ -177,6 +177,7 @@ export default function UnionDashboardPage() {
   >([]);
 
   const mountedRef = useIsMounted();
+  const SWR_TTL_MS = 5 * 60 * 1000; // 5-minute cache TTL
 
   // Auto-clear success
   useEffect(() => {
@@ -269,6 +270,7 @@ export default function UnionDashboardPage() {
     if (mountedRef.current) setClubs(enrichedClubs);
 
     // Load agents across clubs
+    let loadedAgents: UnionAgent[] = [];  // Hoisted for SWR cache write
     const clubIds = enrichedClubs.map((c) => c.id).filter(Boolean);
     if (clubIds.length > 0) {
       const { data: agentRows } = await supabase
@@ -294,7 +296,10 @@ export default function UnionDashboardPage() {
         }
       }
 
-      if (mountedRef.current) setAgents(agentRows || []);
+      if (mountedRef.current) {
+        loadedAgents = agentRows || [];
+        setAgents(loadedAgents);
+      }
     }
 
     // Load admins
@@ -324,11 +329,43 @@ export default function UnionDashboardPage() {
       .order('created_at', { ascending: false })
       .limit(30);
     if (mountedRef.current) setRecentPeriods(periods || []);
+
+    // SWR: cache successful load for instant display on revisit
+    if (mountedRef.current) {
+      try {
+        sessionStorage.setItem(`union_dashboard_swr_${user?.id}`, JSON.stringify({
+          union: unionRow,
+          unionId: uid,
+          adminRole,
+          clubs: enrichedClubs.slice(0, 30),
+          agents: loadedAgents.slice(0, 30),
+          wallets: walletRow,
+          cachedAt: Date.now(),
+        }));
+      } catch { /* storage full */ }
+    }
   };
 
-  // ── Initial Load ───────────────────────────────────────────
+  // ── Initial Load + SWR Cache ──────────────────────────────
   useEffect(() => {
     if (!user?.id) return;
+    // SWR: show cached data instantly while fresh data loads
+    try {
+      const cached = sessionStorage.getItem(`union_dashboard_swr_${user.id}`);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        const age = parsed.cachedAt ? Date.now() - parsed.cachedAt : Infinity;
+        if (age < SWR_TTL_MS && parsed.union) {
+          setUnion(parsed.union);
+          if (parsed.unionId) setUnionId(parsed.unionId);
+          if (parsed.adminRole) setAdminRole(parsed.adminRole);
+          if (parsed.clubs) setClubs(parsed.clubs);
+          if (parsed.agents) setAgents(parsed.agents);
+          if (parsed.wallets) setWallets(parsed.wallets);
+          setLoading(false); // Show cached data instantly
+        }
+      }
+    } catch { /* corrupt cache */ }
     loadDashboard();
   }, [user?.id, loadDashboard]);
 

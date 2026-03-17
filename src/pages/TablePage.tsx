@@ -5056,48 +5056,9 @@ export default function TablePage({
               userId,
               selectedSeat,
               isGuest: userId === 'guest',
-              tableIdMatch: tableId?.match(/^[0-9a-f-]{36}$/i) ? 'UUID' : 'NOT-UUID',
             });
 
-            // Demo mode bypass - skip wallet RPC for demo tables
-            const isDemoTable = tableId === 'demo' || !tableId?.match(/^[0-9a-f-]{36}$/i);
-
-            console.debug('[BuyIn] isDemoTable:', isDemoTable);
-            console.debug(
-              '[BuyIn] Will attempt real buy-in:',
-              !isDemoTable && !!(userId && userId !== 'guest' && tableId && selectedSeat)
-            );
-
-            if (isDemoTable) {
-              // Directly set chips for demo mode
-              setAccountBalance(amount);
-              if (selectedSeat && selectedSeat > 0) {
-                setTableState((prev) => {
-                  if (selectedSeat > prev.players.length) return prev;
-                  const updatedPlayers = [...prev.players];
-                  updatedPlayers[selectedSeat - 1] = {
-                    id: userId || 'demo-player',
-                    name: username || 'You',
-                    avatar: '',
-                    stack: amount,
-                    status: 'active',
-                    isHero: true,
-                    showCards: false,
-                  };
-                  return { ...prev, players: updatedPlayers, heroSeat: selectedSeat };
-                });
-                roomService.joinRoom(
-                  tableId || 'demo',
-                  userId || 'demo-player',
-                  username || 'You',
-                  selectedSeat,
-                  amount
-                );
-
-                // Notify all consumers (MultiTablePage tabs, WaitlistPage, ClubLobby, DailyChallenges, etc.)
-                masterBus.emit('TABLE_SEATED', { tableId: tableId || 'demo', seat: selectedSeat });
-              }
-            } else if (userId && userId !== 'guest' && tableId && selectedSeat) {
+            if (userId && userId !== 'guest' && tableId && selectedSeat) {
               try {
                 console.debug('[BuyIn] Calling atomic_table_buyin:', {
                   userId,
@@ -5166,7 +5127,6 @@ export default function TablePage({
               }
             } else {
               console.error('[BuyIn] FELL THROUGH - no branch matched:', {
-                isDemoTable,
                 userId,
                 isGuest: userId === 'guest',
                 tableId,
@@ -5192,9 +5152,7 @@ export default function TablePage({
           const bb = safeBB(tableState.blinds);
           return bb * 100;
         })()}
-        accountBalance={
-          tableId === 'demo' || !tableId?.match(/^[0-9a-f-]{36}$/i) ? 10000 : accountBalance
-        }
+        accountBalance={accountBalance}
         bigBlind={safeBB(tableState.blinds)}
       />
 

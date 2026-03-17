@@ -31,6 +31,7 @@ import LobbyStatsBar from '../components/lobby/LobbyStatsBar';
 import CreateGameModal from '../components/lobby/CreateGameModal';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { retryFetch } from '../utils/retryFetch';
+import GlobalUXIndicators from '../components/common/GlobalUXIndicators';
 type GameFilter = 'all' | 'nlh' | 'plo' | 'ofc' | 'tournaments' | 'favorites';
 
 // SWR cache helpers for instant lobby display
@@ -69,6 +70,7 @@ export default function LobbyPage() {
   const [onlinePlayers, setOnlinePlayers] = useState(0);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasDataRef = useRef(false);
+  const [wsConnected, setWsConnected] = useState(true);
 
   // SWR: show cached table list instantly on mount
   useEffect(() => {
@@ -466,7 +468,9 @@ export default function LobbyPage() {
           }, 500);
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        setWsConnected(status === 'SUBSCRIBED');
+      });
 
     // Get online player count via Channel Registry
     const presenceKey = 'online-users';
@@ -520,6 +524,7 @@ export default function LobbyPage() {
 
   return (
     <div className={styles.lobby}>
+      <GlobalUXIndicators wsConnected={wsConnected} />
       {/* Hero Section */}
       <section className={styles.hero}>
         <div className={styles.heroContent}>

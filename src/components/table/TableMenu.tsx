@@ -47,7 +47,6 @@ export interface TableMenuProps {
 
 export function createDefaultMenuSections(handlers: {
   onSitOut?: () => void;
-  onStandUp?: () => void;
   onRebuy?: () => void;
   onSettings?: () => void;
   onHandHistory?: () => void;

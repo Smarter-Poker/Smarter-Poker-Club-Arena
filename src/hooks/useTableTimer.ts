@@ -53,7 +53,9 @@ export function useTableTimer({
   const isUrgent = isHeroTurn && timeRemaining <= urgencyThreshold && timeRemaining > 0;
 
   // Calculate progress as percentage (0-100) based on TOTAL current time allowance
-  const timerProgress = Math.max(0, Math.min(100, (timeRemaining / totalTime) * 100));
+  // Guard against division by zero (NaN would break CircularTimer CSS)
+  const timerProgress =
+    totalTime > 0 ? Math.max(0, Math.min(100, (timeRemaining / totalTime) * 100)) : 0;
 
   // Reset timer to initial time or custom time
   const resetTimer = useCallback(

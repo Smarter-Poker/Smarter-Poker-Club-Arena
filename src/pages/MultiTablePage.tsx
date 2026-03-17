@@ -88,6 +88,10 @@ export default function MultiTablePage() {
   const [isTileView, setIsTileView] = useState(false);
   const [tabEntranceComplete, setTabEntranceComplete] = useState(false);
 
+  // Keep a ref to tables for use in bus handlers that may fire between renders
+  const tablesRef = useRef(tables);
+  tablesRef.current = tables;
+
   // Swipe tracking refs
   const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -148,7 +152,8 @@ export default function MultiTablePage() {
       });
       // Adjust activeIndex to prevent out-of-bounds or pointing at wrong tab
       setActiveIndex((prevIdx) => {
-        const closedIdx = tables.findIndex((t) => t.id === e.tableId);
+        const currentTables = tablesRef.current;
+        const closedIdx = currentTables.findIndex((t) => t.id === e.tableId);
         if (closedIdx === -1) return prevIdx;
         if (closedIdx < prevIdx) return prevIdx - 1;
         if (closedIdx === prevIdx && prevIdx > 0) return prevIdx - 1;

@@ -1,0 +1,165 @@
+/* ═══════════════════════════════════════════════════════════════════════════════
+   ClubCardPanel — Reusable club card with metal frame background + stats overlay
+   Generalized from ClubStatsPanel (Shark Club) for any club
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.club-card-panel {
+  position: relative;
+  width: 100%;
+  /* Lock aspect ratio to match the card frame template (604:1024) */
+  aspect-ratio: 604 / 1024;
+  display: block;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.club-card-panel-bg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+/* ── Club Name Overlay (top area of the card) ─────────────────────────────── */
+
+.club-card-name-overlay {
+  position: absolute;
+  top: 8%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 75%;
+  text-align: center;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.club-card-name {
+  font-family: 'Inter', 'Roboto', sans-serif;
+  font-weight: 800;
+  font-size: 16px;
+  letter-spacing: 1.5px;
+  color: #fff;
+  text-transform: uppercase;
+  text-shadow:
+    0 0 8px rgba(0, 212, 255, 0.6),
+    0 0 18px rgba(0, 212, 255, 0.3),
+    0 2px 6px rgba(0, 0, 0, 0.8);
+  line-height: 1.3;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+/* ── Optional Club Logo (center of the card) ──────────────────────────────── */
+
+.club-card-logo-container {
+  position: absolute;
+  top: 35%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 80px;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.club-card-logo-img {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+  border-radius: 10px;
+  filter: drop-shadow(0 0 12px rgba(0, 212, 255, 0.4));
+}
+
+.club-card-logo-fallback {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(0, 212, 255, 0.12) 0%,
+    rgba(0, 212, 255, 0.02) 60%,
+    transparent 80%
+  );
+  border: 2px solid rgba(0, 212, 255, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  color: rgba(0, 212, 255, 0.7);
+  filter: drop-shadow(0 0 12px rgba(0, 212, 255, 0.3));
+}
+
+/* ── Stats Overlay (bottom area — mirrors ClubStatsPanel) ─────────────────── */
+
+.club-card-stats-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.club-card-stats-group {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.club-card-stat-label {
+  font-family: 'Inter', 'Roboto', sans-serif;
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  color: #a5eff0;
+  margin-bottom: 2px;
+  text-shadow:
+    0 0 5px rgba(0, 212, 255, 0.4),
+    0 0 10px rgba(0, 212, 255, 0.2);
+  text-transform: uppercase;
+  white-space: nowrap;
+  line-height: 1.3;
+}
+
+.club-card-stat-value {
+  font-family: 'Inter', 'Roboto', sans-serif;
+  font-weight: 700;
+  font-size: 24px;
+  letter-spacing: 1px;
+  color: #adf9f9;
+  text-shadow:
+    0 0 4px rgba(0, 255, 255, 0.8),
+    0 0 12px rgba(0, 212, 255, 0.9),
+    0 0 20px rgba(0, 150, 255, 0.7);
+}
+
+/* Position groups exactly like ClubStatsPanel */
+.club-card-members-group {
+  top: 79.5%;
+  left: 20%;
+  transform: translateX(-50%);
+}
+
+.club-card-level-group {
+  top: 79.5%;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.club-card-level-group .club-card-stat-value {
+  font-size: 56px;
+  line-height: 1;
+  margin-top: 8px;
+}
+
+.club-card-active-group {
+  top: 79.5%;
+  left: 80%;
+  transform: translateX(-50%);
+}

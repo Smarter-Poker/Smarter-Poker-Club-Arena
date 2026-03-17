@@ -1,8 +1,10 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- * CAROUSEL SECTION — Club cards flanking the Shark Club in one swipeable row
+ * CAROUSEL SECTION — All club cards rendered as fully displayed featured cards
  * ═══════════════════════════════════════════════════════════════════════════════
- * Extracted from HomePage.tsx for maintainability.
+ * Every club (Shark Club, Club JAQK, Midway Union, user-created clubs, etc.)
+ * renders as a premium, clickable card with the metal-frame background and
+ * live stats. Single-click navigates to the club's lobby.
  */
 
 import { useState, useEffect, useRef, useCallback, useMemo, Suspense, lazy } from 'react';
@@ -10,81 +12,12 @@ import { supabase } from '../../lib/supabase';
 import type { useToast } from '../common/Toast';
 import haptic from '../../services/HapticService';
 import PremiumSFX from '../../services/PremiumSFX';
-import { formatTimeAgo } from '../../utils/formatTimeAgo';
 import { STORAGE_KEYS } from '../../lib/storage';
 import styles from '../../pages/HomePage.module.css';
 
 // Lazy-load heavy component
 const ClubStatsPanel = lazy(() => import('../club/ClubStatsPanel'));
-
-// Card color presets — gradient pairs for club card faces
-const CARD_COLOR_PRESETS: { id: string; name: string; bg: string; overlay: string }[] = [
-  {
-    id: 'default',
-    name: 'Deep Ocean',
-    bg: 'linear-gradient(145deg, rgba(8, 20, 40, 0.9), rgba(5, 12, 28, 0.95))',
-    overlay:
-      'linear-gradient(135deg, rgba(0, 212, 255, 0.06) 0%, transparent 50%, rgba(0, 255, 136, 0.04) 100%)',
-  },
-  {
-    id: 'emerald',
-    name: 'Emerald Night',
-    bg: 'linear-gradient(145deg, rgba(5, 30, 20, 0.9), rgba(3, 18, 12, 0.95))',
-    overlay:
-      'linear-gradient(135deg, rgba(0, 255, 136, 0.08) 0%, transparent 50%, rgba(0, 212, 180, 0.05) 100%)',
-  },
-  {
-    id: 'crimson',
-    name: 'Crimson Velvet',
-    bg: 'linear-gradient(145deg, rgba(40, 8, 15, 0.9), rgba(28, 5, 10, 0.95))',
-    overlay:
-      'linear-gradient(135deg, rgba(255, 60, 80, 0.08) 0%, transparent 50%, rgba(255, 100, 50, 0.05) 100%)',
-  },
-  {
-    id: 'royal',
-    name: 'Royal Purple',
-    bg: 'linear-gradient(145deg, rgba(20, 8, 40, 0.9), rgba(12, 5, 28, 0.95))',
-    overlay:
-      'linear-gradient(135deg, rgba(140, 80, 255, 0.08) 0%, transparent 50%, rgba(180, 100, 255, 0.05) 100%)',
-  },
-  {
-    id: 'gold',
-    name: 'Gold Rush',
-    bg: 'linear-gradient(145deg, rgba(35, 28, 8, 0.9), rgba(24, 18, 5, 0.95))',
-    overlay:
-      'linear-gradient(135deg, rgba(255, 200, 50, 0.08) 0%, transparent 50%, rgba(255, 160, 30, 0.05) 100%)',
-  },
-  {
-    id: 'midnight',
-    name: 'Midnight Ice',
-    bg: 'linear-gradient(145deg, rgba(5, 10, 35, 0.9), rgba(3, 6, 22, 0.95))',
-    overlay:
-      'linear-gradient(135deg, rgba(80, 140, 255, 0.08) 0%, transparent 50%, rgba(60, 180, 255, 0.05) 100%)',
-  },
-  {
-    id: 'obsidian',
-    name: 'Obsidian',
-    bg: 'linear-gradient(145deg, rgba(15, 15, 15, 0.9), rgba(8, 8, 8, 0.95))',
-    overlay:
-      'linear-gradient(135deg, rgba(255, 255, 255, 0.04) 0%, transparent 50%, rgba(200, 200, 200, 0.03) 100%)',
-  },
-  {
-    id: 'neon',
-    name: 'Neon Cyber',
-    bg: 'linear-gradient(145deg, rgba(5, 15, 25, 0.9), rgba(3, 8, 18, 0.95))',
-    overlay:
-      'linear-gradient(135deg, rgba(0, 255, 200, 0.08) 0%, transparent 50%, rgba(255, 0, 200, 0.05) 100%)',
-  },
-];
-
-// Unique gradient CSS classes for logo-less club cards
-const GRADIENT_CLASSES = [
-  styles.clubCardGradient1,
-  styles.clubCardGradient2,
-  styles.clubCardGradient3,
-  styles.clubCardGradient4,
-  styles.clubCardGradient5,
-] as const;
+const ClubCardPanel = lazy(() => import('../club/ClubCardPanel'));
 
 // ── Types ─────────────────────────────────────────
 export interface UserClub {
@@ -99,13 +32,18 @@ export interface UserClub {
   [key: string]: unknown;
 }
 
+export interface ClubStats {
+  totalMembers: number;
+  clubLevel: number;
+  activePlayers: number;
+}
+
 export interface CarouselSectionProps {
   displayClubs: UserClub[];
   sharkClubId: string | null;
   sharkClubStats: { totalMembers: number; clubLevel: number; activePlayers: number };
-  flippedCards: Set<number>;
+  clubStats: Record<string, ClubStats>;
   pinnedClubIds: string[];
-  cardColorPreset: string;
   navigate: (path: string) => void;
   toast: ReturnType<typeof useToast>;
   handleContextMenu: (e: React.MouseEvent, club: UserClub) => void;
@@ -119,9 +57,8 @@ export default function CarouselSection({
   displayClubs,
   sharkClubId,
   sharkClubStats,
-  flippedCards,
+  clubStats,
   pinnedClubIds,
-  cardColorPreset,
   navigate,
   toast,
   handleContextMenu,
@@ -133,10 +70,6 @@ export default function CarouselSection({
   const carouselRef = useRef<HTMLDivElement>(null);
   const sharkCardRef = useRef<HTMLDivElement>(null);
   const hasScrolledRef = useRef(false);
-
-  // Enhancement #3: Quick-flip toggle (single tap = flip, double tap = navigate)
-  const [quickFlipped, setQuickFlipped] = useState<Set<string>>(new Set());
-  const lastTapRef = useRef<{ id: string; time: number }>({ id: '', time: 0 });
 
   // Enhancement #8: Drag-to-reorder state
   const [draggedId, setDraggedId] = useState<string | null>(null);
@@ -259,71 +192,35 @@ export default function CarouselSection({
     setDragOverId(null);
   }, []);
 
-  // Enhancement #3: Tap handler — single tap flips, double tap navigates
-  // Timer ref for cleanup on unmount (prevents setState-after-unmount)
-  const tapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    return () => {
-      if (tapTimerRef.current) clearTimeout(tapTimerRef.current);
-    };
-  }, []);
-
-  const handleCardTap = useCallback(
+  // Single-click handler: navigate directly to club lobby
+  const handleClubCardClick = useCallback(
     (club: UserClub) => {
-      const now = Date.now();
-      const last = lastTapRef.current;
-      if (last.id === club.id && now - last.time < 350) {
-        // Double-tap — navigate
-        if (tapTimerRef.current) clearTimeout(tapTimerRef.current);
-        haptic.medium();
-        PremiumSFX.doubleTap();
-        localStorage.setItem(STORAGE_KEYS.LAST_VISITED, club.id);
-        localStorage.setItem(STORAGE_KEYS.LAST_CLUB, club.id);
-        navigate(`/clubs/${club.id}`);
-        lastTapRef.current = { id: '', time: 0 };
-      } else {
-        // Single-tap — wait 350ms then flip
-        lastTapRef.current = { id: club.id, time: now };
-        tapTimerRef.current = setTimeout(() => {
-          if (lastTapRef.current.id === club.id && lastTapRef.current.time === now) {
-            haptic.light();
-            PremiumSFX.tapFlip();
-            setQuickFlipped((prev) => {
-              const next = new Set(prev);
-              if (next.has(club.id)) next.delete(club.id);
-              else next.add(club.id);
-              return next;
-            });
-          }
-          tapTimerRef.current = null;
-        }, 350);
-      }
+      haptic.success();
+      PremiumSFX.navigate();
+      localStorage.setItem(STORAGE_KEYS.LAST_VISITED, club.id);
+      localStorage.setItem(STORAGE_KEYS.LAST_CLUB, club.id);
+      navigate(`/clubs/${club.id}`);
     },
     [navigate]
   );
 
-  // Render a single user club card in carousel style
-  const renderClubCard = (club: UserClub, idx: number) => {
-    const isFlipped = flippedCards.has(idx);
-    const isQuickFlipped = quickFlipped.has(club.id);
-    const isLive = (club.active_tables || 0) > 0;
+  // Render a single user club card as a featured-style card
+  const renderClubCard = (club: UserClub) => {
     const isDragging = draggedId === club.id;
     const isDragTarget = dragOverId === club.id;
+    const stats = clubStats[club.id];
 
     return (
       <div
         key={club.id}
         className={[
-          styles.carouselCard,
-          isFlipped ? styles.clubCardFlipped : '',
-          isQuickFlipped ? styles.carouselCardQuickFlipped : '',
-          isLive ? styles.carouselCardLive : '',
+          styles.carouselCardFeatured,
           isDragging ? styles.cardDragging : '',
           isDragTarget ? styles.cardDragOver : '',
         ]
           .filter(Boolean)
           .join(' ')}
-        onClick={() => handleCardTap(club)}
+        onClick={() => handleClubCardClick(club)}
         onContextMenu={(e) => handleContextMenu(e, club)}
         onTouchStart={(e) => handleLongPressStart(club, e)}
         onTouchEnd={handleLongPressEnd}
@@ -334,13 +231,10 @@ export default function CarouselSection({
         onDrop={() => handleDrop(club.id)}
         onDragEnd={handleDragEnd}
         role="button"
-        aria-label={`${club.name || 'Club'} — ${club.is_owner ? 'Owner' : 'Member'}${isLive ? ' — Live' : ''}`}
+        aria-label={`${club.name || 'Club'} — Click to enter lobby`}
         tabIndex={0}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            haptic.medium();
-            navigate(`/clubs/${club.id}`);
-          }
+          if (e.key === 'Enter') handleClubCardClick(club);
         }}
       >
         {pinnedClubIds.includes(club.id) && (
@@ -348,102 +242,16 @@ export default function CarouselSection({
             *
           </span>
         )}
-        {isLive && <span className={styles.liveIndicator} title="Live tables active" />}
-        <div className={styles.carouselCardPedestal}></div>
-        <div className={styles.clubCardFlipInner} style={{ height: '100%' }}>
-          <div className={styles.clubCardFront}>
-            <div className={styles.clubCardBackFace}></div>
-          </div>
-          <div className={styles.clubCardBack}>
-            {isQuickFlipped ? (
-              <div className={styles.carouselCardStatsBack}>
-                <span className={styles.statsBackTitle}>STATS</span>
-                <div className={styles.statsBackRow}>
-                  <span className={styles.statsBackLabel}>Members</span>
-                  <span className={styles.statsBackValue}>
-                    {(club.member_count || 0).toLocaleString()}
-                  </span>
-                </div>
-                <div className={styles.statsBackRow}>
-                  <span className={styles.statsBackLabel}>Tables</span>
-                  <span className={styles.statsBackValue}>{club.active_tables || 0}</span>
-                </div>
-                <div className={styles.statsBackRow}>
-                  <span className={styles.statsBackLabel}>Role</span>
-                  <span className={styles.statsBackValue}>
-                    {club.is_owner ? 'Owner' : 'Member'}
-                  </span>
-                </div>
-                <div className={styles.statsBackRow}>
-                  <span className={styles.statsBackLabel}>Activity</span>
-                  <span className={styles.statsBackValue}>
-                    {club.last_active_at ? formatTimeAgo(club.last_active_at, true) : '—'}
-                  </span>
-                </div>
-                <span className={styles.statsBackHint}>Double-tap to enter</span>
-              </div>
-            ) : (
-              <div
-                className={styles.carouselCardFace}
-                style={
-                  cardColorPreset !== 'default'
-                    ? {
-                        background: CARD_COLOR_PRESETS.find((p) => p.id === cardColorPreset)?.bg,
-                      }
-                    : undefined
-                }
-              >
-                {cardColorPreset !== 'default' && (
-                  <div
-                    style={{
-                      position: 'absolute',
-                      inset: 0,
-                      borderRadius: 12,
-                      pointerEvents: 'none',
-                      background: CARD_COLOR_PRESETS.find((p) => p.id === cardColorPreset)?.overlay,
-                    }}
-                  />
-                )}
-                <h3 className={styles.carouselCardTitle}>
-                  {club.name?.toUpperCase() || 'MY CLUB'}
-                </h3>
-                <span className={styles.carouselCardRole}>
-                  {club.is_owner ? 'OWNER' : 'MEMBER'}
-                </span>
-                <div className={styles.carouselCardCenter}>
-                  {club.logo_url ? (
-                    <img
-                      src={club.logo_url}
-                      alt=""
-                      className={styles.carouselCardLogo}
-                      loading="lazy"
-                    />
-                  ) : (
-                    <div
-                      className={`${styles.carouselCardIcon} ${GRADIENT_CLASSES[idx % GRADIENT_CLASSES.length]}`}
-                    >
-                      ♣
-                    </div>
-                  )}
-                </div>
-                <div className={styles.carouselCardMeta}>
-                  <span>{(club.member_count || 0).toLocaleString()} MEMBERS</span>
-                  {(club.active_tables || 0) > 0 && (
-                    <div className={styles.activeTablesBadge}>
-                      <span className={styles.activeTablesDot}></span>
-                      <span>{club.active_tables} Live</span>
-                    </div>
-                  )}
-                  {club.last_active_at && (
-                    <div className={styles.clubCardTimestamp}>
-                      {formatTimeAgo(club.last_active_at)}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+        <div className={styles.carouselFeaturedPedestal}></div>
+        <Suspense fallback={<div className={styles.cardSkeleton} />}>
+          <ClubCardPanel
+            clubName={club.name?.toUpperCase() || 'MY CLUB'}
+            totalMembers={stats?.totalMembers ?? club.member_count ?? 0}
+            clubLevel={stats?.clubLevel ?? 1}
+            activePlayers={stats?.activePlayers ?? 0}
+            logoUrl={club.logo_url}
+          />
+        </Suspense>
       </div>
     );
   };
@@ -468,7 +276,7 @@ export default function CarouselSection({
         </div>
       )}
 
-      {leftClubs.map((club, idx) => renderClubCard(club, idx))}
+      {leftClubs.map((club) => renderClubCard(club))}
 
       {/* SHARK CLUB — featured center card */}
       <div
@@ -515,7 +323,7 @@ export default function CarouselSection({
         </Suspense>
       </div>
 
-      {rightClubs.map((club, idx) => renderClubCard(club, leftClubs.length + idx))}
+      {rightClubs.map((club) => renderClubCard(club))}
 
       {orderedClubs.length === 0 && (
         <div

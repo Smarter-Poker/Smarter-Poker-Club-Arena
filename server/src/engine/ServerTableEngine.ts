@@ -773,7 +773,7 @@ export class ServerTableEngine {
       dealer_seat: state.dealerSeat ?? this.currentHandDealerSeat,
       stage: state.stage ?? 'preflop',
       turn_start_time_ms: this.playerTurnStartTime,
-      turn_duration_ms: this.playerTurnDuration,
+      turn_duration_ms: this.playerTurnDuration * 1000, // Convert seconds → milliseconds
       players: (state.players ?? []).map((p) => ({
         seat: p.seat,
         user_id: p.user_id,

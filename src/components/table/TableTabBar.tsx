@@ -54,7 +54,7 @@ export function TableTabBar({
   jackpotAmount,
   maxTables = 4,
 }: TableTabBarProps) {
-  const canAddMore = tabs.length < maxTables;
+  const emptySlots = maxTables - tabs.length;
   const emptySlots = maxTables - tabs.length;
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
   const [isMenuOpen, setIsMenuOpen] = useState(false);

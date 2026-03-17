@@ -41,6 +41,7 @@ import CarouselSection from '../components/home/CarouselSection';
 import { getClubLevel } from '../utils/clubLevels';
 import type { UserClub } from '../components/home/CarouselSection';
 import { useFocusTrap } from '../hooks/useFocusTrap';
+import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import styles from './HomePage.module.css';
 
 // Lazy-load heavy components to reduce initial bundle
@@ -378,6 +379,9 @@ function HomePageInner() {
     },
     [toast]
   );
+
+  // ── Visibility Refresh — refresh data when user returns to tab ──
+  useVisibilityRefresh(() => fetchUserData(true));
 
   useEffect(() => {
     let isMounted = true;

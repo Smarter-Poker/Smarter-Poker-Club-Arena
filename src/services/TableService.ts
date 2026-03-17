@@ -331,7 +331,7 @@ class TableService {
       // Get club_id from table (needed for chip credit + tournament leave + transaction log)
       const { data: tableData } = await supabase
         .from('tables')
-        .select('club_id, tournament_id')
+        .select('club_id, tournament_id, name')
         .eq('id', tableId)
         .maybeSingle();
 
@@ -428,14 +428,14 @@ class TableService {
               title: 'You Have Been Seated!',
               message:
                 'A seat opened up and you have been automatically seated at your waitlisted table.',
-              link: `/table/${tableId}`,
+              action_url: `/table/${tableId}`,
             });
 
             // Emit bus event so the promoted player's client gets a real-time toast
             masterBus.emit('WAITLIST_PROMOTED', {
               tableId,
               userId: promotedUserId,
-              tableName: '',
+              tableName: tableData?.name || 'your table',
             });
           }
         } catch (promoError) {

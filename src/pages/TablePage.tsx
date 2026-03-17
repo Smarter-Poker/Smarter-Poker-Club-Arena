@@ -1091,6 +1091,13 @@ export default function TablePage({
       return true;
     }
   });
+  const [isAutoRebuyEnabled, setIsAutoRebuyEnabled] = useState(() => {
+    try {
+      return localStorage.getItem('ca_auto_rebuy') === 'true';
+    } catch {
+      /* localStorage unavailable */ return false;
+    }
+  });
 
   // Play turn alert when it's hero's turn
   const playTurnAlert = () => {
@@ -4564,12 +4571,20 @@ export default function TablePage({
               isChatVisible={!isChatCollapsed}
               isHandStrengthVisible={userSettings.showHUD}
               isStatsVisible={userSettings.showHUD}
-              isAutoRebuyEnabled={false}
+              isAutoRebuyEnabled={isAutoRebuyEnabled}
               onToggleSound={() => setIsSoundEnabled((prev) => !prev)}
               onToggleChat={() => setIsChatCollapsed((prev) => !prev)}
               onToggleHandStrength={() => updateSetting('showHUD', !userSettings.showHUD)}
               onToggleStats={() => updateSetting('showHUD', !userSettings.showHUD)}
-              onToggleAutoRebuy={() => {}}
+              onToggleAutoRebuy={() => {
+                const next = !isAutoRebuyEnabled;
+                setIsAutoRebuyEnabled(next);
+                try {
+                  localStorage.setItem('ca_auto_rebuy', String(next));
+                } catch {
+                  /* localStorage unavailable */
+                }
+              }}
               onOpenSettings={() => setShowSettings(true)}
             />
 

@@ -83,7 +83,10 @@ export default function WaitlistPage() {
     const unsubs = [
       masterBus.subscribeDebounced(
         'WAITLIST_POSITION_CHANGED',
-        () => loadWaitlistRef.current(),
+        () => {
+          loadWaitlistRef.current();
+          haptic.light();
+        },
         300
       ),
       masterBus.subscribeDebounced('TABLE_SEATED', () => loadWaitlistRef.current(), 300),
@@ -129,7 +132,7 @@ export default function WaitlistPage() {
           game_type: 'NLH',
           position: e.position,
           joined_at: e.joinedAt,
-          estimated_wait: e.position * 5,
+          estimated_wait: Math.min(120, Math.ceil(e.position * 3 + Math.log2(e.position + 1) * 2)),
         }))
       );
     } catch (error) {

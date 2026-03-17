@@ -39,6 +39,7 @@ import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { useVisibilityRefresh } from '../../hooks/useVisibilityRefresh';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import PageSkeleton from '../../components/common/PageSkeleton';
+import { FavoriteTablesWidget } from '../../components/quickactions';
 import './ClubLobby.css';
 
 // Animation utilities
@@ -543,6 +544,9 @@ export default function ClubLobby() {
           </button>
         ))}
       </div>
+
+      {/* Favorite Tables Widget */}
+      <FavoriteTablesWidget onJoinTable={(tableId) => navigate(`/table/${tableId}`)} />
 
       {/* Fix #10: Create Table action for admins/owners */}
       {hasAdminAccess && (

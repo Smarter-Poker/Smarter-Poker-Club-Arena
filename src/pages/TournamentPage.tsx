@@ -112,6 +112,21 @@ export default function TournamentPage() {
 
   // Load tournaments
   const loadingRef = useRef(false);
+
+  // ── CRITICAL: Reset per-club state when navigating between clubs ──
+  useEffect(() => {
+    setFilter('all');
+    setSelectedTournament(null);
+    setShowCreateModal(false);
+    setIsRegistered(false);
+    setIsOwner(false);
+    setIsInUnion(false);
+    setCanRebuyNow(false);
+    setCanAddOnNow(false);
+    setIsProcessingRebuy(false);
+    setVisibleTournaments(new Set());
+    loadingRef.current = false;
+  }, [clubId]);
   useEffect(() => {
     let isMounted = true;
     async function loadTournaments() {
@@ -126,9 +141,14 @@ export default function TournamentPage() {
           const cached = sessionStorage.getItem(swrKey);
           if (cached) {
             const c = JSON.parse(cached);
-            if (Array.isArray(c)) { setTournaments(c); setIsLoading(false); }
+            if (Array.isArray(c)) {
+              setTournaments(c);
+              setIsLoading(false);
+            }
           }
-        } catch { /* corrupt cache */ }
+        } catch {
+          /* corrupt cache */
+        }
 
         const data = await tournamentService.getTournaments(clubId);
         if (!isMounted) return;
@@ -137,7 +157,9 @@ export default function TournamentPage() {
         // SWR: cache successful fetch
         try {
           sessionStorage.setItem(swrKey, JSON.stringify(data.slice(0, 20)));
-        } catch { /* storage full */ }
+        } catch {
+          /* storage full */
+        }
 
         if (tournamentId) {
           const tourn = data.find((t) => t.id === tournamentId);
@@ -1134,7 +1156,10 @@ export default function TournamentPage() {
           onClose={() => setShowCreateModal(false)}
           onSuccess={() => {
             setShowCreateModal(false);
-            tournamentService.getTournaments(clubId).then(setTournaments).catch((e) => console.warn('[TournamentPage] Refresh after create failed:', e));
+            tournamentService
+              .getTournaments(clubId)
+              .then(setTournaments)
+              .catch((e) => console.warn('[TournamentPage] Refresh after create failed:', e));
           }}
         />
       )}

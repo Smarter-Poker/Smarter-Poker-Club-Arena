@@ -139,6 +139,20 @@ export default function UnionDetailPage() {
 
   const loadingRef = useRef(false);
 
+  // ── CRITICAL: Reset per-union state when navigating between unions ──
+  useEffect(() => {
+    setShowClubSelector(false);
+    setApplying(false);
+    setVisibleClubs(new Set());
+    setConfirmJoin({ show: false, club: null });
+    setRemoveConfirm({ show: false, clubId: null, clubName: null });
+    setRemovingClubId(null);
+    setIsUpdatingSettings(false);
+    setShowXmttModal(false);
+    setOnlineCount(0);
+    loadingRef.current = false;
+  }, [unionId]);
+
   useEffect(() => {
     if (!unionId) return;
     let isMounted = true;

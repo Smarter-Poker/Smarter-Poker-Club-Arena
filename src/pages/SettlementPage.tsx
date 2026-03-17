@@ -238,6 +238,18 @@ export default function SettlementPage() {
 
   const loadingRef = useRef(false);
 
+  // ── CRITICAL: Reset per-entity state when navigating between clubs/unions ──
+  useEffect(() => {
+    setActiveTab('overview');
+    setSelectedPeriod(null);
+    setIsProcessing(false);
+    setAutoSettlement(false);
+    setTogglingAutoSettle(false);
+    setVisibleWires(new Set());
+    setVisiblePayouts(new Set());
+    loadingRef.current = false;
+  }, [unionId, clubId]);
+
   // Load data from SettlementService
   const loadSettlementData = useCallback(async () => {
     if (loadingRef.current) return;

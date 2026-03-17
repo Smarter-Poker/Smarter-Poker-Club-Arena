@@ -215,6 +215,25 @@ export default function CashierPage() {
   >([]);
   const [_loadingContext, setLoadingContext] = useState(true); // U-01 FIX: loading skeleton
 
+  // ── CRITICAL: Reset per-club state when navigating between clubs ──
+  // Prevents financial state (userRole, pending cashouts) from carrying over.
+  useEffect(() => {
+    setAction('send');
+    setAmount('');
+    setIsProcessing(false);
+    setCooldown(0);
+    setMessage(null);
+    setCashoutConfirm({ show: false, value: 0 });
+    setShowCashoutModal(false);
+    setUserRole('member');
+    setIsInUnion(false);
+    setIsUnionOwner(false);
+    setSelectedRecipient('');
+    setTxFilter('all');
+    setPendingCashouts([]);
+    setLoadingContext(true);
+  }, [clubId]);
+
   // ─────────────────────────────────────────────────────────────────────────────
   // LOAD ROLE, UNION STATUS, AND RECIPIENTS
   // ─────────────────────────────────────────────────────────────────────────────

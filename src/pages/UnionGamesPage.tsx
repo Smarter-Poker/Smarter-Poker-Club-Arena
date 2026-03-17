@@ -6,7 +6,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -112,11 +112,22 @@ export default function UnionGamesPage() {
 
   const mountedRef = useIsMounted();
 
+  const loadingRef = useRef(false);
+
+  // ── CRITICAL: Reset per-union state when navigating between unions ──
+  useEffect(() => {
+    setTab('tournaments');
+    setTournFilter('all');
+    loadingRef.current = false;
+  }, [paramUnionId]);
+
   // ── Load Data ────────────────────────────────────────────
   const loadUnionData = useCallback(
     async (uId?: string) => {
       const targetUnion = uId || unionId;
       if (!targetUnion) return;
+      if (loadingRef.current) return;
+      loadingRef.current = true;
       try {
         setLoading(true);
 
@@ -181,6 +192,7 @@ export default function UnionGamesPage() {
       } catch (err: any) {
         console.warn('[UnionGames] Load fail:', err.message);
       } finally {
+        loadingRef.current = false;
         if (mountedRef.current) setLoading(false);
       }
     },

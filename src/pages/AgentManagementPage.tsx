@@ -117,6 +117,20 @@ export default function AgentManagementPage() {
   // Stagger animation for agents list
   const isMounted = useIsMounted();
 
+  // ── CRITICAL: Reset per-club state when navigating between clubs ──
+  useEffect(() => {
+    setActiveTab('agents');
+    setError(null);
+    setSelectedAgent(null);
+    setShowAddModal(false);
+    setShowTransferModal(false);
+    setShowCommissionModal(false);
+    setShowPlayerInviteModal(false);
+    setConfirmAction(null);
+    setVisibleAgents(new Set());
+    setClawbackProcessing(null);
+  }, [clubId]);
+
   // Load agents from Supabase
   useEffect(() => {
     if (!clubId) return;

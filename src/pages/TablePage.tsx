@@ -4885,6 +4885,7 @@ export default function TablePage({
                 console.debug('[BuyIn] atomic_table_buyin SUCCESS');
 
                 setAccountBalance((prev) => Math.max(0, prev - amount));
+                totalBuyInRef.current += amount; // Track initial buy-in for session P/L
 
                 // Add player to local table state
                 const newPlayers = [...tableState.players];

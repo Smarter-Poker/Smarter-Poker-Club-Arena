@@ -377,6 +377,90 @@ const DEFAULT_TABLES: TableConfig[] = [
     horsesPerTable: 8,
     gameVariant: 'plo4',
   },
+
+  // ─── PLO6 TABLES ──────────────────────────────────────────────────────────
+  {
+    name: 'PLO6 0.50/1.00',
+    smallBlind: 0.5,
+    bigBlind: 1.0,
+    maxPlayers: 6,
+    horsesPerTable: 5,
+    gameVariant: 'plo6',
+  },
+  {
+    name: 'PLO6 1/2',
+    smallBlind: 1,
+    bigBlind: 2,
+    maxPlayers: 6,
+    horsesPerTable: 5,
+    gameVariant: 'plo6',
+  },
+
+  // ─── PLO HI-LO TABLES ────────────────────────────────────────────────────
+  {
+    name: 'PLO Hi-Lo 5/10',
+    smallBlind: 5,
+    bigBlind: 10,
+    maxPlayers: 6,
+    horsesPerTable: 5,
+    gameVariant: 'plo_hilo',
+  },
+
+  // ─── FIXED LIMIT HOLD'EM ─────────────────────────────────────────────────
+  {
+    name: 'FLH 1/2',
+    smallBlind: 1,
+    bigBlind: 2,
+    maxPlayers: 9,
+    horsesPerTable: 7,
+    gameVariant: 'flh',
+  },
+  {
+    name: 'FLH 2/4',
+    smallBlind: 2,
+    bigBlind: 4,
+    maxPlayers: 9,
+    horsesPerTable: 7,
+    gameVariant: 'flh',
+  },
+
+  // ─── PINEAPPLE & CRAZY PINEAPPLE ─────────────────────────────────────────
+  {
+    name: 'Pineapple 1/2',
+    smallBlind: 1,
+    bigBlind: 2,
+    maxPlayers: 9,
+    horsesPerTable: 7,
+    gameVariant: 'pineapple',
+  },
+  {
+    name: 'Crazy Pineapple 1/2',
+    smallBlind: 1,
+    bigBlind: 2,
+    maxPlayers: 9,
+    horsesPerTable: 7,
+    gameVariant: 'crazy_pineapple',
+  },
+
+  // ─── DOUBLE BOARD ─────────────────────────────────────────────────────────
+  {
+    name: 'Double Board NLH 1/2',
+    smallBlind: 1,
+    bigBlind: 2,
+    maxPlayers: 6,
+    horsesPerTable: 5,
+    gameVariant: 'double_board',
+  },
+
+  // ─── MIXED GAMES (HORSE) ─────────────────────────────────────────────────
+  {
+    name: 'HORSE Mixed 1/2',
+    smallBlind: 1,
+    bigBlind: 2,
+    maxPlayers: 9,
+    horsesPerTable: 7,
+    gameVariant: 'mixed',
+  },
 ];
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1449,9 +1533,16 @@ class HorseOrchestrator {
         nlh: 'NLH',
         plo4: 'PLO4',
         plo5: 'PLO5',
+        plo6: 'PLO6',
         plo8: 'PLO8',
+        plo_hilo: 'PLO_HILO',
         ofc_pineapple: 'OFC_PINEAPPLE',
         short_deck: 'SHORT_DECK',
+        flh: 'FLH',
+        pineapple: 'PINEAPPLE',
+        crazy_pineapple: 'CRAZY_PINEAPPLE',
+        double_board: 'DOUBLE_BOARD',
+        mixed: 'MIXED',
       };
       const dbGameType = gameTypeMap[config.gameVariant || 'nlh'] || 'NLH';
 

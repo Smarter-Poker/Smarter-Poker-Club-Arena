@@ -6,6 +6,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
+import { useStaggerAnimation } from '../../hooks/useStaggerAnimation';
 import { supabase } from '../../lib/supabase';
 import { retryAsync } from '../../utils/retryAsync';
 import { masterBus } from '../../core/MasterBus';
@@ -53,8 +54,11 @@ export function AgentCommissionDashboard() {
   const [subAgents, setSubAgents] = useState<SubAgent[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'summary' | 'records' | 'subagents'>('summary');
-  const [visibleCards, setVisibleCards] = useState<boolean[]>([]);
-  const [visibleRows, setVisibleRows] = useState<boolean[]>([]);
+
+  // Stagger animations for each tab
+  const { style: summaryStyle } = useStaggerAnimation(summary ? 4 : 0);
+  const { style: recordsStyle } = useStaggerAnimation(records.length);
+  const { style: subagentsStyle } = useStaggerAnimation(subAgents.length);
 
   useEffect(() => {
     if (user?.id) {
@@ -111,42 +115,6 @@ export function AgentCommissionDashboard() {
       unsubBalance();
     };
   }, [user?.id]);
-
-  useEffect(() => {
-    if (activeTab === 'summary' && summary) {
-      setVisibleCards([]);
-      const timers = [0, 1, 2, 3].map((i) =>
-        setTimeout(() => {
-          setVisibleCards((prev) => [...prev, true]);
-        }, i * 60)
-      );
-      return () => timers.forEach((t) => clearTimeout(t));
-    }
-  }, [activeTab, summary]);
-
-  useEffect(() => {
-    if (activeTab === 'records' && records.length > 0) {
-      setVisibleRows([]);
-      const timers = records.map((_, i) =>
-        setTimeout(() => {
-          setVisibleRows((prev) => [...prev, true]);
-        }, i * 60)
-      );
-      return () => timers.forEach((t) => clearTimeout(t));
-    }
-  }, [activeTab, records]);
-
-  useEffect(() => {
-    if (activeTab === 'subagents' && subAgents.length > 0) {
-      setVisibleCards([]);
-      const timers = subAgents.map((_, i) =>
-        setTimeout(() => {
-          setVisibleCards((prev) => [...prev, true]);
-        }, i * 60)
-      );
-      return () => timers.forEach((t) => clearTimeout(t));
-    }
-  }, [activeTab, subAgents]);
 
   const loadData = async () => {
     if (!user?.id) return;
@@ -315,15 +283,7 @@ export function AgentCommissionDashboard() {
             { className: '', label: 'This Month', value: summary.thisMonth },
             { className: 'pending', label: 'Pending Payout', value: summary.pendingPayout },
           ].map((card, idx) => (
-            <div
-              key={idx}
-              className={`summary-card ${card.className}`}
-              style={{
-                opacity: visibleCards[idx] ? 1 : 0,
-                transform: visibleCards[idx] ? 'translateY(0)' : 'translateY(8px)',
-                transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-              }}
-            >
+            <div key={idx} className={`summary-card ${card.className}`} style={summaryStyle(idx)}>
               <span className="label">{card.label}</span>
               <span className="value">{card.value.toLocaleString()}</span>
               {card.className === 'pending' && summary.pendingPayout > 0 && (
@@ -462,14 +422,7 @@ export function AgentCommissionDashboard() {
               </thead>
               <tbody>
                 {records.map((record, idx) => (
-                  <tr
-                    key={record.id}
-                    style={{
-                      opacity: visibleRows[idx] ? 1 : 0,
-                      transform: visibleRows[idx] ? 'translateY(0)' : 'translateY(8px)',
-                      transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-                    }}
-                  >
+                  <tr key={record.id} style={recordsStyle(idx)}>
                     <td>
                       <span
                         style={{
@@ -505,15 +458,7 @@ export function AgentCommissionDashboard() {
           ) : (
             <div className="subagent-grid">
               {subAgents.map((agent, idx) => (
-                <div
-                  key={agent.id}
-                  className="subagent-card"
-                  style={{
-                    opacity: visibleCards[idx] ? 1 : 0,
-                    transform: visibleCards[idx] ? 'translateY(0)' : 'translateY(8px)',
-                    transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-                  }}
-                >
+                <div key={agent.id} className="subagent-card" style={subagentsStyle(idx)}>
                   <span className="avatar">{agent.avatarUrl}</span>
                   <div className="info">
                     <span className="name">{agent.username}</span>

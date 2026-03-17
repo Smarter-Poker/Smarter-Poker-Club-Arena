@@ -17,6 +17,7 @@
 
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
+import { OfflineQueueService } from '../services/OfflineQueueService';
 
 const HEARTBEAT_INTERVAL = 30_000; // 30 seconds (was 45s — more frequent now)
 const PING_TIMEOUT = 8_000; // 8 seconds max for health check
@@ -149,10 +150,8 @@ class SupabaseConnectionWatchdog {
       this.reconnectRealtimeChannels();
 
       // Replay offline queue
-      import('../utils/offlineQueue').then(({ replayOfflineQueue }) => {
-        replayOfflineQueue().catch((err) => {
-          console.warn('[Watchdog] Offline queue replay failed:', err);
-        });
+      OfflineQueueService.replayQueue().catch((err) => {
+        console.warn('[Watchdog] Offline queue replay failed:', err);
       });
     }
   }

@@ -737,7 +737,7 @@ export const WalletService = {
           balance: 0,
           locked_balance: 0,
         },
-        { onConflict: 'user_id,wallet_type' }
+        { onConflict: 'user_id,wallet_type', ignoreDuplicates: true }
       );
       if (error) {
         console.error(

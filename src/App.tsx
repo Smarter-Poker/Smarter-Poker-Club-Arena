@@ -11,7 +11,7 @@ import { Suspense, useState, useEffect, useRef } from 'react';
 import { lazyWithRetry as lazy } from './utils/lazyWithRetry';
 import { supabase } from './lib/supabase';
 import { realtimeChannelService } from './services/RealtimeChannelService';
-import { replayOfflineQueue } from './utils/offlineQueue';
+import { OfflineQueueService } from './services/OfflineQueueService';
 import { busEventLogger } from './services/BusEventLogger';
 import GlobalWaitlistListener from './components/common/GlobalWaitlistListener';
 import WaitlistBanner from './components/common/WaitlistBanner';
@@ -199,7 +199,7 @@ export default function App() {
     const goOnline = () => {
       setIsOffline(false);
       // Replay queued mutations on reconnect
-      replayOfflineQueue().catch(() => {
+      OfflineQueueService.replayQueue().catch(() => {
         /* best effort */
       });
     };

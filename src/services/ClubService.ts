@@ -23,7 +23,8 @@ import { supabase } from '../lib/supabase';
 import { WalletService } from './WalletService';
 import { masterBus } from '../core/MasterBus';
 import { BBJService } from './BBJService';
-import type { Club, ClubMember, ClubSettings, MemberRole } from '../types/database.types';
+import type { Club } from '../types/club.types';
+import type { ClubMember, ClubSettings, MemberRole } from '../types/database.types';
 import { retryAsync } from '../utils/retryAsync';
 import { resolveClubIdFilter, resolveClubUUID } from '../utils/clubIdResolver';
 

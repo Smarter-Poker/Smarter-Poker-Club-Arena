@@ -3,6 +3,8 @@
  * TypeScript types for Supabase tables
  */
 
+import type { Club } from './club.types';
+
 export interface Database {
   public: {
     Tables: {
@@ -39,24 +41,7 @@ export interface Database {
 // Core Types
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export interface Club {
-  id: string;
-  club_id: number; // 6-digit public ID
-  name: string;
-  description: string | null;
-  avatar_url: string | null;
-  banner_url: string | null;
-  owner_id: string;
-  is_public: boolean;
-  requires_approval: boolean;
-  gps_restricted: boolean;
-  member_count: number;
-  online_count: number;
-  union_id: string | null;
-  created_at: string;
-  updated_at: string;
-  settings: ClubSettings;
-}
+export type { Club } from './club.types'; // Re-export Club for backward compatibility
 
 export interface ClubSettings {
   default_rake_percent: number;

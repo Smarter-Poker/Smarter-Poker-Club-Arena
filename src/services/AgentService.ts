@@ -10,7 +10,7 @@
  * - Agent assigns: credit limit → Sub-Agent
  */
 
-import { supabase } from '../lib/supabase';
+import { supabase, getAuthUser } from '../lib/supabase';
 import { WalletService } from './WalletService';
 import { ChipFlowService } from './ChipFlowService';
 import { masterBus } from '../core/MasterBus';
@@ -409,6 +409,9 @@ class AgentServiceClass {
     creditLimit: number; // REQUIRED: credit line amount (0 if pre-paid)
     isPrepaid: boolean; // REQUIRED: pre-paid or credit
   }): Promise<Agent> {
+    const user = await getAuthUser();
+    if (!user) throw new Error('[AgentService] Authentication required');
+
     const {
       userId,
       clubId,

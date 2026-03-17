@@ -651,7 +651,7 @@ export default function TablePage({
         if (tableState.isTournament) {
           handleTournamentRebuy();
         } else {
-          setShowBuyInModal(true);
+          setShowCashier(true);
         }
         break;
       case 'LEADERBOARD':

@@ -426,6 +426,8 @@ export default function ClubDetailPage() {
             if (parsed.members) setMembers(parsed.members);
             if (parsed.tables) setTables(parsed.tables);
             setLoading(false); // Show cached data instantly
+            // Mark initial load done so loadClubData() won't re-show skeleton
+            initialLoadDone.current = true;
           }
         }
       } catch {

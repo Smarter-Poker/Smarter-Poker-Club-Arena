@@ -313,6 +313,33 @@ export default function ClubHomePage() {
         },
         300
       ),
+      masterBus.subscribeDebounced(
+        'CLUB_SETTINGS_UPDATED',
+        (event) => {
+          if (!clubIdRef.current || event.payload?.clubId === clubIdRef.current) {
+            reload();
+          }
+        },
+        300
+      ),
+      masterBus.subscribeDebounced(
+        'TABLE_CREATED',
+        (event) => {
+          if (!clubIdRef.current || event.payload?.clubId === clubIdRef.current) {
+            reload();
+          }
+        },
+        300
+      ),
+      masterBus.subscribeDebounced(
+        'TABLE_DELETED',
+        (event) => {
+          if (!clubIdRef.current || event.payload?.clubId === clubIdRef.current) {
+            reload();
+          }
+        },
+        300
+      ),
     ];
     return () => {
       isMounted = false;

@@ -79,7 +79,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
 
   // Load user data and settings
   useEffect(() => {
-    const sounds = localStorage.getItem('soundsEnabled');
+    const sounds = localStorage.getItem('club_arena_sounds');
     const vibrations = localStorage.getItem('vibrationsEnabled');
     const showBB = localStorage.getItem('showStackInBB');
     if (sounds !== null) setSoundsEnabled(sounds === 'true');
@@ -106,7 +106,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             // These columns may not exist on profiles — use optional chaining with defaults
             if (data.sounds_enabled !== undefined && data.sounds_enabled !== null) {
               setSoundsEnabled(data.sounds_enabled);
-              localStorage.setItem('soundsEnabled', String(data.sounds_enabled));
+              localStorage.setItem('club_arena_sounds', String(data.sounds_enabled));
             }
             if (data.vibrations_enabled !== undefined && data.vibrations_enabled !== null) {
               setVibrationsEnabled(data.vibrations_enabled);
@@ -166,7 +166,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   const handleSoundsToggle = () => {
     const newValue = !soundsEnabled;
     setSoundsEnabled(newValue);
-    updateSetting('soundsEnabled', 'sounds_enabled', newValue);
+    updateSetting('club_arena_sounds', 'sounds_enabled', newValue);
     masterBus.emit('SETTINGS_CHANGED', { setting: 'isSoundEnabled', value: newValue });
   };
 

@@ -134,40 +134,85 @@ export function getWithExpiry<T>(key: string, defaultValue: T): T {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const STORAGE_KEYS = {
-  // Auth
+  // ── Auth ──
   AUTH_TOKEN: 'club_arena_auth_token',
   REFRESH_TOKEN: 'club_arena_refresh_token',
   USER_PROFILE: 'club_arena_user_profile',
+  SSO_AUTH: 'smarter-poker-auth', // Shared SSO key with World Hub
+  SUPABASE_AUTH_MIGRATION: 'supabase_auth_migration_done',
 
-  // Preferences
+  // ── User Preferences ──
   THEME: 'club_arena_theme',
-  SOUND_ENABLED: 'club_arena_sound_enabled',
+  SOUNDS: 'club_arena_sounds', // Canonical sound toggle (NOT 'soundsEnabled')
+  SOUND_ENABLED: 'club_arena_sound_enabled', // Legacy — prefer SOUNDS
+  VIBRATIONS: 'vibrationsEnabled', // Haptic feedback toggle
+  SHOW_STACK_BB: 'showStackInBB', // Display stack in big blinds
   NOTIFICATIONS_ENABLED: 'club_arena_notifications_enabled',
   LANGUAGE: 'club_arena_language',
+  CARD_COLOR: 'club_arena_card_color', // Card back color preset
 
-  // Table Settings
+  // ── Table Settings ──
   TABLE_THEME: 'club_arena_table_theme',
+  TABLE_FELT_THEME: 'club-arena-table-theme', // Table felt color
+  TABLE_SETTINGS: 'club-arena-table-settings', // Combined table settings JSON
   CARD_STYLE: 'club_arena_card_style',
+  DECK_STYLE: 'club_arena_deck', // Deck style selection
   AUTO_MUCK: 'club_arena_auto_muck',
   SHOW_BIG_BLINDS: 'club_arena_show_bbs',
   FOUR_COLOR_DECK: 'club_arena_four_color',
+  MUTED_PLAYERS: 'ca_muted_players', // JSON array of muted player IDs
 
-  // UI State
+  // ── UI State ──
   SIDEBAR_COLLAPSED: 'club_arena_sidebar_collapsed',
   ACTIVE_CLUB_ID: 'club_arena_active_club',
   RECENT_TABLES: 'club_arena_recent_tables',
+  LAST_CLUB: 'club_arena_last_club', // Last visited club ID
+  PINNED_CLUBS: 'club_arena_pinned_clubs', // Pinned clubs JSON array
+  CLUB_ORDER: 'club_arena_club_order', // Custom carousel order
+  INTRO_SHOWN: 'club_arena_intro_shown', // Intro tutorial completed
+  WELCOME_ACCEPTED: 'club_arena_welcome_accepted', // Welcome modal dismissed
+  QUICK_ACTIONS_RECENT: 'quickActionsRecent', // Recent quick actions
 
-  // Cache
+  // ── Cache ──
   LOBBY_CACHE: 'club_arena_lobby_cache',
   PLAYER_STATS_CACHE: 'club_arena_player_stats',
+  CLUBS_CACHE: 'club_arena_clubs_cache', // Cached club list
+  CLUBS_CACHE_TS: 'club_arena_clubs_cache_ts', // Cache timestamp
+  CLUBS_PAGE_CACHE: 'clubs_page_clubs_cache',
+  CAROUSEL_CLUBS_CACHE: 'club_carousel_clubs_cache',
+  CAROUSEL_UNIONS_CACHE: 'club_carousel_unions_cache',
+  CLUBS_PAGE_UNIONS_CACHE: 'clubs_page_unions_cache',
+  SHARK_STATS_SWR: 'shark_club_stats_swr',
+  PLAYER_STATS_SWR: 'club-arena-player-stats', // usePlayerStats hook cache
 
-  // Filter Persistence (localStorage backup for UX)
-  LOBBY_FILTER: 'club_arena_lobby_filter', // game type filter (ALL, NLH, PLO, etc.)
-  LOBBY_SORT: 'club_arena_lobby_sort', // sort preference (players, stakes, name)
-  HAND_HISTORY_FILTER: 'club_arena_hh_filter', // { period, resultFilter, gameType }
-  LEADERBOARD_PREFS: 'club_arena_leaderboard', // { metric, sortDir }
-  CHAT_PREFS: 'club_arena_chat_prefs', // { mutedRooms: string[] }
-  TOURNAMENT_FILTER: 'club_arena_tournament_filter', // tournament status filter
+  // ── Filter Persistence ──
+  LOBBY_FILTER: 'club_arena_lobby_filter',
+  LOBBY_SORT: 'club_arena_lobby_sort',
+  HAND_HISTORY_FILTER: 'club_arena_hh_filter',
+  LEADERBOARD_PREFS: 'club_arena_leaderboard',
+  CHAT_PREFS: 'club_arena_chat_prefs',
+  TOURNAMENT_FILTER: 'club_arena_tournament_filter',
+  FAVORITE_TABLES: 'favorite_tables',
+  RECENT_SEARCHES: 'recentSearches',
+
+  // ── Notifications ──
+  NOTIF_PREFERENCES: 'notif_preferences',
+  NOTIF_DIGEST_MODE: 'notif_digest_mode',
+  NOTIF_SOUNDS: 'notif_sounds',
+  DND_UNTIL: 'dnd_until',
+  LAST_DAILY_RESET_REMINDER: 'last_daily_reset_reminder',
+
+  // ── PWA ──
+  PWA_INSTALLED: 'pwa_installed',
+  PWA_DISMISS_COUNT: 'pwa_dismiss_count',
+  PWA_PROMPT_DISMISSED: 'pwa_prompt_dismissed',
+
+  // ── Settings Page ──
+  SETTINGS: 'club-arena-settings',
+
+  // ── Offline & Recovery ──
+  OFFLINE_QUEUE: 'offline_mutation_queue',
+  CHUNK_RELOAD: 'club_arena_chunk_reload',
 } as const;
 
 // ═══════════════════════════════════════════════════════════════════════════════

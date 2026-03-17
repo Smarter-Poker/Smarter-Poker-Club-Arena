@@ -80,7 +80,6 @@ export type {
 } from './HydraService';
 
 // Arena & Training
-export * from './ArenaLobbyEngine';
 export * from './ArenaTrainingController';
 
 // Audio
@@ -142,10 +141,6 @@ export { waitlistService } from './WaitlistService';
 export { vipService, VIP_GOLD_LIMITS, FEATURE_PRICING } from './VIPService';
 export type { VIPStatus, VIPMonthlyLimits, VIPFeature, FeatureAccess } from './VIPService';
 
-// Table Settings
-export { tableSettingsService } from './TableSettingsService';
-export type { TableSettingsData } from './TableSettingsService';
-
 // Player Notes
 export { playerNotesService, NOTE_COLORS, PLAYER_TAGS } from './PlayerNotesService';
 export type { PlayerNote } from './PlayerNotesService';
@@ -153,10 +148,6 @@ export type { PlayerNote } from './PlayerNotesService';
 // Credit Requests
 export { creditRequestService } from './CreditRequestService';
 export type { CreditRequest, CreditRequestCreate } from './CreditRequestService';
-
-// Invites
-export { InviteService } from './InviteService';
-export type { ClubInvite, SendInviteParams } from './InviteService';
 
 // Push Notifications
 export { pushNotificationService } from './PushNotificationService';
@@ -183,10 +174,6 @@ export { achievementTriggerService } from './AchievementTriggerService';
 export { payoutEngine } from './PayoutEngine';
 export type { PayoutEntry, PayoutTemplate, ICMResult, OverlayStatus } from './PayoutEngine';
 
-// Bomb Pot Engine (scheduling, double board, pot distribution)
-export { bombPotEngine } from './BombPotEngine';
-export type { BombPotConfig, BombPotState, BombPotResult } from './BombPotEngine';
-
 // Session Stats (real-time P&L, VPIP/PFR, trajectory)
 export { sessionStatsService } from './SessionStatsService';
 export type { SessionStats } from './SessionStatsService';
@@ -194,21 +181,3 @@ export type { SessionStats } from './SessionStatsService';
 // Disconnect Protection (heartbeat, grace period, offline queue)
 export { disconnectProtectionService } from './DisconnectProtectionService';
 export type { ConnectionState, DisconnectConfig, DCAction } from './DisconnectProtectionService';
-
-// Grind Rewards (rake race, tournament points, milestones)
-export { grindRewardsService, MILESTONES } from './GrindRewardsService';
-export type {
-  RakeRaceEntry,
-  TournamentPointEntry,
-  GrindMilestone,
-  GrindPeriod,
-} from './GrindRewardsService';
-
-// Snapshot Service (hand state capture, replay, export)
-export { snapshotService } from './SnapshotService';
-export type {
-  HandSnapshot,
-  StreetSnapshot,
-  ActionSnapshot,
-  PlayerSnapshot,
-} from './SnapshotService';

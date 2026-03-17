@@ -6,6 +6,11 @@
  */
 
 import { createClient, RealtimeChannel } from '@supabase/supabase-js';
+import {
+  readLocalSession as readLocalSessionShared,
+  getTokenExpiry,
+  AUTH_STORAGE_KEY,
+} from './authUtils';
 
 // Environment validation - follows VITE_ prefix law
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
@@ -65,12 +70,15 @@ export async function getAuthUser(timeoutMs = 6000) {
     const retryInterval = 200; // ms
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
-        const raw = localStorage.getItem('smarter-poker-auth');
-        if (raw) {
-          const data = JSON.parse(raw);
-          if (data?.user?.id) {
-            return { data: { user: data.user }, error: null };
-          }
+        // Use shared readLocalSession() — single source of truth for JWT parsing
+        const localSession = readLocalSessionShared();
+        if (localSession) {
+          // Reconstruct user object from JWT claims for backward compatibility
+          const rawData = localSession.rawData as Record<string, any>;
+          const user = rawData?.user?.id
+            ? rawData.user
+            : { id: localSession.userId, email: localSession.email };
+          return { data: { user }, error: null };
         }
         // If no session yet and we have retries left, wait briefly
         // (setSession from postMessage may be in-flight)
@@ -255,7 +263,7 @@ if (typeof window !== 'undefined') {
   // Users who logged in before the SSO update may have their session stored
   // under the default Supabase key. This migrates them to the shared key.
   const OLD_DEFAULT_KEY = 'sb-kuklfnapbkmacvwxktbh-auth-token';
-  const NEW_SHARED_KEY = 'smarter-poker-auth';
+  const NEW_SHARED_KEY = AUTH_STORAGE_KEY;
   const MIGRATION_FLAG = 'smarter_poker_auth_migration';
 
   try {
@@ -291,17 +299,7 @@ if (typeof window !== 'undefined') {
   let lastRefreshAttempt = 0;
   const REFRESH_DEBOUNCE = 5_000; // 5s debounce to prevent duplicate refreshes
 
-  /** Safely parse JWT expiry. Returns null if token is malformed. */
-  function getTokenExpiry(token: string): number | null {
-    try {
-      const parts = token.split('.');
-      if (parts.length !== 3) return null;
-      const payload = JSON.parse(atob(parts[1]));
-      return typeof payload.exp === 'number' ? payload.exp * 1000 : null;
-    } catch {
-      return null;
-    }
-  }
+  // getTokenExpiry is now imported from lib/authUtils — single source of truth
 
   setInterval(() => {
     try {

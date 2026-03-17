@@ -350,7 +350,6 @@ class TableService {
             supabase.rpc('atomic_table_cashout', {
               p_user_id: userId,
               p_table_id: tableId,
-              p_seat_number: seatNumber,
             }),
           3
         );

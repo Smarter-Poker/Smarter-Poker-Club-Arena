@@ -181,8 +181,7 @@ export const OfflineQueueService = {
           mutationsFailed: failed,
         });
       } catch (err) {
-
-        console.error("[OfflineQueueService] Error:", err);
+        console.error('[OfflineQueueService] Error:', err);
         /* non-fatal */
       }
 
@@ -275,8 +274,7 @@ export const OfflineQueueService = {
             supabase.rpc('credit_player_rakeback', {
               p_user_id: userId,
               p_amount: amount,
-              p_period_id: periodId,
-              p_club_id: clubId,
+              p_description: `Rakeback payout for period ${periodId}`,
             }),
           3
         );

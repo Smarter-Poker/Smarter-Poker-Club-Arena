@@ -167,7 +167,7 @@ export default function BonusPage() {
     try {
       // Update streak and claim bonus
       const { error: claimErr } = await retryAsync(
-        () => supabase.rpc('claim_daily_bonus', { user_id: user?.id }),
+        () => supabase.rpc('claim_daily_bonus', { p_user_id: user?.id }),
         3
       );
       if (claimErr) {

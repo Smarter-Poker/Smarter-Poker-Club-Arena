@@ -101,7 +101,7 @@ class PlayerNotesServiceClass {
       () =>
         supabase.rpc('fn_save_player_note', {
           p_user_id: userId,
-          p_target_id: targetId,
+          p_target_user_id: targetId,
           p_note: note,
           p_color: color,
           p_tags: tags,

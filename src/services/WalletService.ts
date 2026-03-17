@@ -602,9 +602,9 @@ export const WalletService = {
     const { error } = await retryAsync(
       () =>
         supabase.rpc('credit_player_rakeback', {
-          p_player_id: playerId,
+          p_user_id: playerId,
           p_amount: amount,
-          p_period_id: periodId,
+          p_description: `Rakeback payout for period ${periodId}`,
         }),
       3
     );

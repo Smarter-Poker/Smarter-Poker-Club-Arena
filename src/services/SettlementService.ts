@@ -361,7 +361,6 @@ export const SettlementService = {
           p_settlement_id: settlement.id,
           p_agent_id: settlement.agent_id,
           p_amount: settlement.net_settlement,
-          p_period_id: periodId,
         });
 
         if (payoutError) throw payoutError;
@@ -440,10 +439,8 @@ export const SettlementService = {
       try {
         // Atomically pay the rakeback and mark the snapshot as paid
         const { error: payoutError } = await supabase.rpc('atomic_pay_player_rakeback', {
-          p_snapshot_id: snapshot.id,
-          p_player_id: snapshot.player_id,
+          p_user_id: snapshot.player_id,
           p_amount: snapshot.rakeback_earned,
-          p_period_id: periodId,
         });
 
         if (payoutError) {

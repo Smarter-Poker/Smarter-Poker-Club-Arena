@@ -3,8 +3,9 @@
  * Track all admin actions in the club
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { formatDateTime as formatTime } from '../../lib/date';
+import { supabase } from '../../lib/supabase';
 import './AuditLog.css';
 
 interface AuditEntry {
@@ -19,6 +20,16 @@ interface AuditEntry {
 
 type ActionType = 'all' | 'player' | 'table' | 'finance' | 'settings' | 'security';
 
+/** Map filter category to action_type prefixes in the audit_logs table */
+const FILTER_PREFIXES: Record<ActionType, string[]> = {
+  all: [],
+  player: ['player', 'ban', 'kick', 'mute', 'unmute', 'role_change'],
+  table: ['table', 'seat', 'game'],
+  finance: ['balance', 'deposit', 'withdraw', 'transfer', 'settlement', 'rake'],
+  settings: ['settings', 'config', 'update_club'],
+  security: ['login', 'security', 'password', 'ip', 'auth'],
+};
+
 interface AuditLogProps {
   clubId: string;
 }
@@ -30,23 +41,81 @@ export const AuditLog: React.FC<AuditLogProps> = ({ clubId }) => {
   const [loading, setLoading] = useState(true);
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
 
-  useEffect(() => {
-    loadAuditLog();
-  }, [clubId, filter]);
-
-  const loadAuditLog = async () => {
+  const loadAuditLog = useCallback(async () => {
     setLoading(true);
     try {
-      // Replaced mock data with dynamic initialization
-      const liveEntries: AuditEntry[] = [];
-      setEntries(liveEntries);
+      const query = supabase
+        .from('audit_logs')
+        .select(
+          'id, action_type, user_id, target_user_id, amount, ip_address, metadata, created_at'
+        )
+        .eq('club_id', clubId)
+        .order('created_at', { ascending: false })
+        .limit(200);
+
+      const { data, error } = await query;
+      if (error) throw error;
+
+      // Resolve usernames for actors and targets
+      const userIds = [
+        ...new Set(
+          (data || []).flatMap((row: any) => [row.user_id, row.target_user_id]).filter(Boolean)
+        ),
+      ];
+      const profileMap: Record<string, string> = {};
+      if (userIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, username, display_name')
+          .in('id', userIds);
+        (profiles || []).forEach((p: any) => {
+          profileMap[p.id] = p.display_name || p.username || p.id.slice(0, 8);
+        });
+      }
+
+      const mapped: AuditEntry[] = (data || []).map((row: any) => {
+        const meta = row.metadata || {};
+        const details =
+          meta.description ||
+          meta.reason ||
+          (row.amount != null ? `Amount: ${row.amount}` : row.action_type.replace(/_/g, ' '));
+        return {
+          id: row.id,
+          action: row.action_type,
+          actor: {
+            id: row.user_id || 'system',
+            username: profileMap[row.user_id] || 'System',
+          },
+          target: row.target_user_id
+            ? {
+                type: 'user',
+                id: row.target_user_id,
+                name: profileMap[row.target_user_id] || row.target_user_id.slice(0, 8),
+              }
+            : undefined,
+          details,
+          ipAddress: row.ip_address || '',
+          timestamp: row.created_at,
+        };
+      });
+
+      setEntries(mapped);
       setVisibleItems(new Set());
+
+      // Stagger visibility
+      mapped.forEach((_, i) => {
+        setTimeout(() => setVisibleItems((prev) => new Set([...prev, i])), i * 40);
+      });
     } catch (error) {
       console.error('Failed to load audit log:', error);
     } finally {
       setLoading(false);
     }
-  };
+  }, [clubId]);
+
+  useEffect(() => {
+    loadAuditLog();
+  }, [loadAuditLog, filter]);
 
   const getActionIcon = (action: string) => {
     if (action.includes('banned')) return '🚫';
@@ -59,21 +128,10 @@ export const AuditLog: React.FC<AuditLogProps> = ({ clubId }) => {
 
   const filteredEntries = entries.filter((entry) => {
     if (filter !== 'all') {
-      if (
-        filter === 'player' &&
-        !entry.action.includes('player') &&
-        !entry.action.includes('banned')
-      )
-        return false;
-      if (filter === 'table' && !entry.action.includes('table')) return false;
-      if (filter === 'finance' && !entry.action.includes('balance')) return false;
-      if (filter === 'settings' && !entry.action.includes('settings')) return false;
-      if (
-        filter === 'security' &&
-        !entry.action.includes('login') &&
-        !entry.action.includes('security')
-      )
-        return false;
+      const prefixes = FILTER_PREFIXES[filter] || [];
+      const actionLower = entry.action.toLowerCase();
+      const matchesFilter = prefixes.some((prefix) => actionLower.includes(prefix));
+      if (!matchesFilter) return false;
     }
     if (search) {
       const searchLower = search.toLowerCase();

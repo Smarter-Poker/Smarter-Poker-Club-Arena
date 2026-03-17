@@ -3,6 +3,7 @@ import { SoundSettings } from './SoundSettings';
 import { NotificationSettings } from './NotificationSettings';
 import { PrivacySettings } from './PrivacySettings';
 import { GameplaySettings } from './GameplaySettings';
+import { AppearanceSettings } from './AppearanceSettings';
 import './SettingsPanel.css';
 
 type SettingsTab = 'general' | 'sound' | 'notifications' | 'privacy' | 'gameplay' | 'appearance';
@@ -121,8 +122,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
         {activeTab === 'appearance' && (
           <div className="settings-section">
-            <h3>Appearance Settings</h3>
-            <p className="settings-placeholder">Appearance settings component</p>
+            <AppearanceSettings />
           </div>
         )}
       </div>

@@ -11,6 +11,7 @@ import {
 } from '../../services/DisconnectProtectionService';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { haptic } from '../../services/SoundService';
+import { useToast } from '../common/Toast';
 import './ConnectionHUD.css';
 
 interface ConnectionHUDProps {
@@ -35,6 +36,7 @@ const QUALITY_LABELS: Record<string, string> = {
 };
 
 export const ConnectionHUD: React.FC<ConnectionHUDProps> = ({ tableId, userId }) => {
+  const toast = useToast();
   const [conn, setConn] = useState<ConnectionState | null>(null);
   const [graceCountdown, setGraceCountdown] = useState<number | null>(null);
   const [showDisconnectWarning, setShowDisconnectWarning] = useState(false);
@@ -44,6 +46,10 @@ export const ConnectionHUD: React.FC<ConnectionHUDProps> = ({ tableId, userId })
   const [autoActionText, setAutoActionText] = useState<string | null>(null);
   /** Prevents the polling interval from overwriting the DISCONNECT_TIMEOUT state */
   const hasTimedOutRef = useRef(false);
+  /** Track whether we were disconnected (for reconnect toast) */
+  const wasDisconnectedRef = useRef(false);
+  /** Track stale data state for banner */
+  const [showStaleBanner, setShowStaleBanner] = useState(false);
 
   // ── Poll connection state ──
   useEffect(() => {
@@ -73,6 +79,7 @@ export const ConnectionHUD: React.FC<ConnectionHUDProps> = ({ tableId, userId })
       hasTimedOutRef.current = false; // Reset on new disconnect
       setAutoActionText(null); // Reset action text
       setShowDisconnectWarning(true);
+      wasDisconnectedRef.current = true;
       haptic.double(); // Haptic: disconnect warning
     }
   });
@@ -84,6 +91,15 @@ export const ConnectionHUD: React.FC<ConnectionHUDProps> = ({ tableId, userId })
       setAutoActionText(null); // Reset action text
       setShowDisconnectWarning(false);
       haptic.medium(); // Haptic: reconnected confirmation
+
+      // Show reconnect toast and stale data banner
+      if (wasDisconnectedRef.current) {
+        wasDisconnectedRef.current = false;
+        toast.success('Connection restored — table data syncing...');
+        setShowStaleBanner(true);
+        // Auto-hide stale banner after 5s (data should be fresh by then)
+        setTimeout(() => setShowStaleBanner(false), 5000);
+      }
     }
   });
 
@@ -164,6 +180,47 @@ export const ConnectionHUD: React.FC<ConnectionHUDProps> = ({ tableId, userId })
         <span className="conn-latency">{conn.latencyMs}ms</span>
         <span className="conn-label">{QUALITY_LABELS[conn.quality]}</span>
       </div>
+
+      {/* ── Stale Data Banner (after reconnect) ── */}
+      {showStaleBanner && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            zIndex: 50,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 8,
+            padding: '6px 12px',
+            background:
+              'linear-gradient(135deg, rgba(217, 119, 6, 0.9) 0%, rgba(245, 158, 11, 0.9) 100%)',
+            color: '#fff',
+            fontSize: '0.8rem',
+            fontWeight: 600,
+            animation: 'slideInDown 0.3s ease-out',
+          }}
+        >
+          <span>⚡</span>
+          Reconnected — syncing latest table state...
+          <button
+            onClick={() => setShowStaleBanner(false)}
+            style={{
+              background: 'rgba(255,255,255,0.2)',
+              border: 'none',
+              color: '#fff',
+              borderRadius: 4,
+              padding: '2px 8px',
+              cursor: 'pointer',
+              fontSize: '0.75rem',
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* ── Disconnect Warning Overlay ── */}
       {showDisconnectWarning && (

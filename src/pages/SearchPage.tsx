@@ -13,11 +13,11 @@ import { useAuthUser } from '../hooks/useAuthUser';
 import './SearchPage.css';
 import PageSkeleton from '../components/common/PageSkeleton';
 
-type SearchCategory = 'all' | 'clubs' | 'players' | 'tables';
+type SearchCategory = 'all' | 'clubs' | 'players' | 'tables' | 'tournaments';
 
 interface SearchResult {
   id: string;
-  type: 'club' | 'player' | 'table';
+  type: 'club' | 'player' | 'table' | 'tournament';
   name: string;
   subtitle?: string;
   avatar?: string;
@@ -146,6 +146,26 @@ export default function SearchPage() {
           }
         }
 
+        if (category === 'all' || category === 'tournaments') {
+          const { data: tournaments } = await supabase
+            .from('tournaments')
+            .select('id, name, buy_in_amount, status, current_players, max_players')
+            .ilike('name', `%${sanitized}%`)
+            .in('status', ['ANNOUNCED', 'REGISTERING', 'RUNNING'])
+            .limit(10);
+
+          if (tournaments) {
+            allResults.push(
+              ...tournaments.map((t) => ({
+                id: t.id,
+                type: 'tournament' as const,
+                name: t.name,
+                subtitle: `${t.status} • ${t.buy_in_amount || 0} buy-in • ${t.current_players || 0}/${t.max_players || '∞'}`,
+              }))
+            );
+          }
+        }
+
         if (getIsMounted && !getIsMounted()) return;
         setResults(allResults);
 
@@ -204,6 +224,8 @@ export default function SearchPage() {
         return '●';
       case 'table':
         return '■';
+      case 'tournament':
+        return '🏆';
       default:
         return '○';
     }
@@ -220,6 +242,9 @@ export default function SearchPage() {
       case 'table':
         navigate(`/table/${result.id}`);
         break;
+      case 'tournament':
+        navigate(`/tournaments/${result.id}`);
+        break;
     }
   };
 
@@ -228,7 +253,7 @@ export default function SearchPage() {
       <div className="search-bar">
         <input
           type="text"
-          placeholder="Search clubs, players, tables..."
+          placeholder="Search clubs, players, tables, tournaments..."
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onFocus={() => setSearchFocused(true)}
@@ -247,7 +272,7 @@ export default function SearchPage() {
       </div>
 
       <div className="category-tabs">
-        {(['all', 'clubs', 'players', 'tables'] as SearchCategory[]).map((cat) => (
+        {(['all', 'clubs', 'players', 'tables', 'tournaments'] as SearchCategory[]).map((cat) => (
           <button
             key={cat}
             className={category === cat ? 'active' : ''}

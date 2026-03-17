@@ -30,6 +30,7 @@ import PageSkeleton from '../components/common/PageSkeleton';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { resolveClubIdFilter, resolveClubUUID } from '../utils/clubIdResolver';
 import GlobalUXIndicators from '../components/common/GlobalUXIndicators';
+import { retryFetch } from '../utils/retryFetch';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -350,6 +351,8 @@ export default function ClubDetailPage() {
   const setActiveTab = (t: typeof activeTab) => {
     setActiveTabRaw(t);
     setLocalStorage('ca_club_detail_tab', t);
+    // Reset member search when leaving members tab
+    if (t !== 'members' && memberSearch) setMemberSearch('');
   };
 
   // Swipe gesture support for tab navigation
@@ -501,13 +504,21 @@ export default function ClubDetailPage() {
 
   // Load agents when agents tab is selected
   useEffect(() => {
+    let isMounted = true;
     if (activeTab === 'agents' && clubId && agents.length === 0 && !agentsLoading) {
       setAgentsLoading(true);
       AgentService.getAgents(clubId)
-        .then(setAgents)
+        .then((data) => {
+          if (isMounted) setAgents(data);
+        })
         .catch((err) => console.error('Failed to load agents:', err))
-        .finally(() => setAgentsLoading(false));
+        .finally(() => {
+          if (isMounted) setAgentsLoading(false);
+        });
     }
+    return () => {
+      isMounted = false;
+    };
   }, [activeTab, clubId]);
 
   // Real-time presence tracking
@@ -695,11 +706,19 @@ export default function ClubDetailPage() {
       setClub(mappedClub);
 
       // Load members (no FK between club_members → profiles; batch-fetch)
-      const { data: memberData } = await supabase
-        .from('club_members')
-        .select('user_id, role, chip_balance, status, created_at, last_active')
-        .eq('club_id', resolvedId)
-        .limit(500);
+      const memberData = await retryFetch(
+        () =>
+          supabase
+            .from('club_members')
+            .select('user_id, role, chip_balance, status, created_at, last_active')
+            .eq('club_id', resolvedId)
+            .limit(500)
+            .then(({ data, error }) => {
+              if (error) throw error;
+              return data;
+            }),
+        { maxRetries: 2 }
+      );
 
       if (memberData) {
         const mUserIds = memberData.map((m: any) => m.user_id);
@@ -1288,49 +1307,58 @@ export default function ClubDetailPage() {
               )}
             </div>
             <div className={styles.tablesGrid}>
-              {tables.map((table, idx) => (
-                <div
-                  key={table.id}
-                  className={styles.tableCard}
-                  style={{ animation: `slideInUp 0.5s ease-out ${idx * 0.06}s both` }}
-                >
-                  <div className={styles.tableCardHeader}>
-                    <h4>{table.name}</h4>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <StatusBadge status={table.status} />
-                      {(userRole === 'owner' || userRole === 'admin') && (
-                        <button
-                          className={styles.deleteTableBtn}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setDeleteTableConfirm({
-                              show: true,
-                              tableId: table.id,
-                              tableName: table.name,
-                            });
-                          }}
-                          disabled={deletingTableId === table.id}
-                          title="Delete table"
-                        >
-                          {deletingTableId === table.id ? '...' : '✕'}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  <div className={styles.tableCardBody}>
-                    <div className={styles.tableInfo}>
-                      <span>{table.gameVariant}</span>
-                      <span>{table.stakes}</span>
-                    </div>
-                    <div className={styles.tableSeats}>
-                      {table.currentPlayers}/{table.maxPlayers} players
-                    </div>
-                  </div>
-                  <Link to={`/table/${table.id}`} className={styles.joinButton}>
-                    {table.currentPlayers < table.maxPlayers ? 'Join' : 'Watch'}
-                  </Link>
+              {tables.length === 0 ? (
+                <div className={styles.emptyState}>
+                  <p>No tables yet</p>
+                  <p className={styles.emptyHint}>
+                    Create a table to start hosting games for your club members.
+                  </p>
                 </div>
-              ))}
+              ) : (
+                tables.map((table, idx) => (
+                  <div
+                    key={table.id}
+                    className={styles.tableCard}
+                    style={{ animation: `slideInUp 0.5s ease-out ${idx * 0.06}s both` }}
+                  >
+                    <div className={styles.tableCardHeader}>
+                      <h4>{table.name}</h4>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <StatusBadge status={table.status} />
+                        {(userRole === 'owner' || userRole === 'admin') && (
+                          <button
+                            className={styles.deleteTableBtn}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeleteTableConfirm({
+                                show: true,
+                                tableId: table.id,
+                                tableName: table.name,
+                              });
+                            }}
+                            disabled={deletingTableId === table.id}
+                            title="Delete table"
+                          >
+                            {deletingTableId === table.id ? '...' : '✕'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <div className={styles.tableCardBody}>
+                      <div className={styles.tableInfo}>
+                        <span>{table.gameVariant}</span>
+                        <span>{table.stakes}</span>
+                      </div>
+                      <div className={styles.tableSeats}>
+                        {table.currentPlayers}/{table.maxPlayers} players
+                      </div>
+                    </div>
+                    <Link to={`/table/${table.id}`} className={styles.joinButton}>
+                      {table.currentPlayers < table.maxPlayers ? 'Join' : 'Watch'}
+                    </Link>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         )}
@@ -1348,87 +1376,100 @@ export default function ClubDetailPage() {
                 onChange={(e) => setMemberSearch(e.target.value)}
               />
             </div>
-            <table className={styles.membersTable}>
-              <thead>
-                <tr>
-                  <th>Player</th>
-                  <th>Role</th>
-                  <th>Balance</th>
-                  <th>Status</th>
-                  <th>Joined</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredMembers.slice(0, memberLimit).map((member, idx) => (
-                  <tr
-                    key={member.id}
-                    style={{ animation: `slideInUp 0.5s ease-out ${idx * 0.05}s both` }}
-                  >
-                    <td>
-                      <div className={styles.memberCell}>
-                        <div className={styles.memberAvatarSmall}>{member.username.charAt(0)}</div>
-                        {member.username}
-                      </div>
-                    </td>
-                    <td>
-                      <RoleBadge role={member.role} />
-                    </td>
-                    <td className={styles.balanceCell}>{member.chipBalance.toLocaleString()}</td>
-                    <td>
-                      <StatusBadge status={member.status} />
-                    </td>
-                    <td className={styles.dateCell}>
-                      {new Date(member.joinedAt).toLocaleDateString()}
-                    </td>
-                    <td style={{ position: 'relative' }}>
-                      <button
-                        className={styles.actionBtn}
-                        onClick={() =>
-                          setShowMemberMenu(showMemberMenu === member.id ? null : member.id)
-                        }
+            {filteredMembers.length === 0 && memberSearch ? (
+              <div className={styles.emptyState}>
+                <p>No members found for "{memberSearch}"</p>
+                <p className={styles.emptyHint}>Try a different search term.</p>
+              </div>
+            ) : (
+              <>
+                <table className={styles.membersTable}>
+                  <thead>
+                    <tr>
+                      <th>Player</th>
+                      <th>Role</th>
+                      <th>Balance</th>
+                      <th>Status</th>
+                      <th>Joined</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredMembers.slice(0, memberLimit).map((member, idx) => (
+                      <tr
+                        key={member.id}
+                        style={{ animation: `slideInUp 0.5s ease-out ${idx * 0.05}s both` }}
                       >
-                        ⋮
-                      </button>
-                      {showMemberMenu === member.id && (
-                        <div className={styles.memberMenu}>
-                          {member.role !== 'admin' && member.role !== 'owner' && (
-                            <button onClick={() => handleMemberAction(member.id, 'promote')}>
-                              {' '}
-                              Promote
-                            </button>
+                        <td>
+                          <div className={styles.memberCell}>
+                            <div className={styles.memberAvatarSmall}>
+                              {member.username.charAt(0)}
+                            </div>
+                            {member.username}
+                          </div>
+                        </td>
+                        <td>
+                          <RoleBadge role={member.role} />
+                        </td>
+                        <td className={styles.balanceCell}>
+                          {member.chipBalance.toLocaleString()}
+                        </td>
+                        <td>
+                          <StatusBadge status={member.status} />
+                        </td>
+                        <td className={styles.dateCell}>
+                          {new Date(member.joinedAt).toLocaleDateString()}
+                        </td>
+                        <td style={{ position: 'relative' }}>
+                          <button
+                            className={styles.actionBtn}
+                            onClick={() =>
+                              setShowMemberMenu(showMemberMenu === member.id ? null : member.id)
+                            }
+                          >
+                            ⋮
+                          </button>
+                          {showMemberMenu === member.id && (
+                            <div className={styles.memberMenu}>
+                              {member.role !== 'admin' && member.role !== 'owner' && (
+                                <button onClick={() => handleMemberAction(member.id, 'promote')}>
+                                  {' '}
+                                  Promote
+                                </button>
+                              )}
+                              {member.role === 'admin' && (
+                                <button onClick={() => handleMemberAction(member.id, 'demote')}>
+                                  {' '}
+                                  Demote
+                                </button>
+                              )}
+                              {member.status === 'active' && member.role !== 'owner' && (
+                                <button onClick={() => handleMemberAction(member.id, 'suspend')}>
+                                  Suspend
+                                </button>
+                              )}
+                              {member.role !== 'owner' && (
+                                <button onClick={() => handleMemberAction(member.id, 'remove')}>
+                                  Remove
+                                </button>
+                              )}
+                            </div>
                           )}
-                          {member.role === 'admin' && (
-                            <button onClick={() => handleMemberAction(member.id, 'demote')}>
-                              {' '}
-                              Demote
-                            </button>
-                          )}
-                          {member.status === 'active' && member.role !== 'owner' && (
-                            <button onClick={() => handleMemberAction(member.id, 'suspend')}>
-                              Suspend
-                            </button>
-                          )}
-                          {member.role !== 'owner' && (
-                            <button onClick={() => handleMemberAction(member.id, 'remove')}>
-                              Remove
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {/* #3: Load More button when members exceed limit */}
-            {filteredMembers.length > memberLimit && (
-              <button
-                className={styles.loadMoreBtn}
-                onClick={() => setMemberLimit((prev) => Math.min(prev + 50, 500))}
-              >
-                Show More ({filteredMembers.length - memberLimit} remaining)
-              </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {/* #3: Load More button when members exceed limit */}
+                {filteredMembers.length > memberLimit && (
+                  <button
+                    className={styles.loadMoreBtn}
+                    onClick={() => setMemberLimit((prev) => Math.min(prev + 50, 500))}
+                  >
+                    Show More ({filteredMembers.length - memberLimit} remaining)
+                  </button>
+                )}
+              </>
             )}
           </div>
         )}

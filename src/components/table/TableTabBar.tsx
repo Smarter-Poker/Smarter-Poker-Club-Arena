@@ -14,6 +14,8 @@
  */
 
 import React, { useCallback, useMemo, useState, useEffect } from 'react';
+import TableMenu, { createDefaultMenuSections } from './TableMenu';
+import { masterBus } from '../../core/MasterBus';
 import './TableTabBar.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -55,6 +57,7 @@ export function TableTabBar({
   const canAddMore = tabs.length < maxTables;
   const emptySlots = maxTables - tabs.length;
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   useEffect(() => {
     tabs.forEach((_, i) => {
@@ -70,6 +73,34 @@ export function TableTabBar({
       onTabClose(tabId);
     },
     [tabs.length, onTabClose]
+  );
+
+  const menuSections = useMemo(
+    () =>
+      createDefaultMenuSections({
+        onSitOut: () =>
+          masterBus.emit('TABLE_MENU_ACTION' as any, { tableId: activeTabId, action: 'SIT_OUT' }),
+        onStandUp: () =>
+          masterBus.emit('TABLE_MENU_ACTION' as any, { tableId: activeTabId, action: 'STAND_UP' }),
+        onRebuy: () =>
+          masterBus.emit('TABLE_MENU_ACTION' as any, { tableId: activeTabId, action: 'REBUY' }),
+        onSettings: () =>
+          masterBus.emit('TABLE_MENU_ACTION' as any, { tableId: activeTabId, action: 'SETTINGS' }),
+        onHandHistory: () =>
+          masterBus.emit('TABLE_MENU_ACTION' as any, {
+            tableId: activeTabId,
+            action: 'HAND_HISTORY',
+          }),
+        onLeaderboard: () =>
+          masterBus.emit('TABLE_MENU_ACTION' as any, {
+            tableId: activeTabId,
+            action: 'LEADERBOARD',
+          }),
+        onHelp: () =>
+          masterBus.emit('TABLE_MENU_ACTION' as any, { tableId: activeTabId, action: 'HELP' }),
+        onLeaveTable: () => onTabClose(activeTabId),
+      }),
+    [activeTabId, onTabClose]
   );
 
   return (
@@ -149,6 +180,18 @@ export function TableTabBar({
           </span>
         </div>
       )}
+
+      {/* Table Menu */}
+      <div className="table-tab-bar__menu-container">
+        <TableMenu
+          isOpen={isMenuOpen}
+          onClose={() => setIsMenuOpen(false)}
+          onToggle={() => setIsMenuOpen((prev) => !prev)}
+          sections={menuSections}
+          position="bottom-left"
+          tableName={tabs.find((t) => t.id === activeTabId)?.name || 'Table'}
+        />
+      </div>
     </div>
   );
 }

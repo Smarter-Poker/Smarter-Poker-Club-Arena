@@ -9,43 +9,48 @@
    ───────────────────────────────────────────────────────────────────────────── */
 
 .table-tab-bar {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 12px;
-    padding-top: calc(6px + env(safe-area-inset-top, 0));
-    background: linear-gradient(180deg, rgba(8, 10, 16, 0.96) 0%, rgba(14, 17, 24, 0.93) 100%);
-    backdrop-filter: blur(12px) saturate(1.2);
-    -webkit-backdrop-filter: blur(12px) saturate(1.2);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-    min-height: 48px;
-    -webkit-tap-highlight-color: transparent;
-    z-index: 200;
-    position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  padding-top: calc(6px + env(safe-area-inset-top, 0));
+  background: linear-gradient(180deg, rgba(8, 10, 16, 0.96) 0%, rgba(14, 17, 24, 0.93) 100%);
+  backdrop-filter: blur(12px) saturate(1.2);
+  -webkit-backdrop-filter: blur(12px) saturate(1.2);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  min-height: 48px;
+  -webkit-tap-highlight-color: transparent;
+  z-index: 200;
+  position: relative;
 }
 
 .table-tab-bar::after {
-    content: '';
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    height: 1px;
-    background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.04) 50%, transparent 100%);
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.04) 50%,
+    transparent 100%
+  );
 }
 
 .table-tab-bar__tabs {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    flex: 1;
-    overflow-x: auto;
-    scrollbar-width: none;
-    -ms-overflow-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 
 .table-tab-bar__tabs::-webkit-scrollbar {
-    display: none;
+  display: none;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -53,77 +58,81 @@
    ───────────────────────────────────────────────────────────────────────────── */
 
 .table-tab-bar__tab {
-    position: relative;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    min-width: 100px;
-    max-width: 160px;
-    height: 36px;
-    padding: 0 14px;
-    border: 1.5px solid rgba(255, 255, 255, 0.12);
-    border-radius: 20px;
-    background: rgba(255, 255, 255, 0.06);
-    color: rgba(255, 255, 255, 0.55);
-    font-size: 0.8125rem;
-    font-weight: 600;
-    white-space: nowrap;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    flex-shrink: 0;
-    touch-action: manipulation;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 100px;
+  max-width: 160px;
+  height: 36px;
+  padding: 0 14px;
+  border: 1.5px solid rgba(255, 255, 255, 0.12);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+  touch-action: manipulation;
 }
 
 .table-tab-bar__tab:hover {
-    background: rgba(255, 255, 255, 0.1);
-    border-color: rgba(255, 255, 255, 0.2);
-    color: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.8);
 }
 
 /* Active Tab */
 .table-tab-bar__tab--active {
-    background: linear-gradient(180deg, #2563EB 0%, #1D4ED8 100%);
-    border-color: #3B82F6;
-    color: #FFFFFF;
-    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  background: linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%);
+  border-color: #3b82f6;
+  color: #ffffff;
+  box-shadow:
+    0 2px 8px rgba(37, 99, 235, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15);
 }
 
 .table-tab-bar__tab--active:hover {
-    background: linear-gradient(180deg, #3B82F6 0%, #2563EB 100%);
-    border-color: #60A5FA;
-    color: #FFFFFF;
+  background: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
+  border-color: #60a5fa;
+  color: #ffffff;
 }
 
 /* Turn Indicator Tab (action on you at another table) */
 .table-tab-bar__tab--turn {
-    border-color: rgba(34, 197, 94, 0.5);
-    animation: tabTurnPulse 1.5s ease-in-out infinite;
+  border-color: rgba(34, 197, 94, 0.5);
+  animation: tabTurnPulse 1.5s ease-in-out infinite;
 }
 
 @keyframes tabTurnPulse {
-    0%, 100% {
-        box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
-    }
-    50% {
-        box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.25);
-    }
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.25);
+  }
 }
 
 /* Urgent — time running out */
 .table-tab-bar__tab--urgent {
-    border-color: rgba(239, 68, 68, 0.6);
-    animation: tabUrgentPulse 0.8s ease-in-out infinite;
+  border-color: rgba(239, 68, 68, 0.6);
+  animation: tabUrgentPulse 0.8s ease-in-out infinite;
 }
 
 @keyframes tabUrgentPulse {
-    0%, 100% {
-        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
-        border-color: rgba(239, 68, 68, 0.6);
-    }
-    50% {
-        box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.3);
-        border-color: rgba(239, 68, 68, 0.9);
-    }
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+    border-color: rgba(239, 68, 68, 0.6);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.3);
+    border-color: rgba(239, 68, 68, 0.9);
+  }
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -131,71 +140,85 @@
    ───────────────────────────────────────────────────────────────────────────── */
 
 .table-tab-bar__tab-name {
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    line-height: 1.2;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.2;
 }
 
 /* Turn dot / timer badge */
 .table-tab-bar__turn-dot {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 8px;
-    height: 18px;
-    padding: 0 4px;
-    border-radius: 9px;
-    background: #22C55E;
-    color: #FFFFFF;
-    font-size: 0.625rem;
-    font-weight: 700;
-    animation: turnDotPulse 1s ease-in-out infinite;
-    flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 8px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 9px;
+  background: #22c55e;
+  color: #ffffff;
+  font-size: 0.625rem;
+  font-weight: 700;
+  animation: turnDotPulse 1s ease-in-out infinite;
+  flex-shrink: 0;
 }
 
 .table-tab-bar__tab--urgent .table-tab-bar__turn-dot {
-    background: #EF4444;
-    animation: turnDotUrgent 0.5s ease-in-out infinite;
+  background: #ef4444;
+  animation: turnDotUrgent 0.5s ease-in-out infinite;
 }
 
 @keyframes turnDotPulse {
-    0%, 100% { opacity: 1; transform: scale(1); }
-    50% { opacity: 0.7; transform: scale(0.85); }
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(0.85);
+  }
 }
 
 @keyframes turnDotUrgent {
-    0%, 100% { opacity: 1; transform: scale(1); }
-    50% { opacity: 0.6; transform: scale(0.8); }
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(0.8);
+  }
 }
 
 /* Close button */
 .table-tab-bar__close {
-    display: none;
-    align-items: center;
-    justify-content: center;
-    width: 18px;
-    height: 18px;
-    border: none;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.15);
-    color: rgba(255, 255, 255, 0.6);
-    font-size: 0.75rem;
-    font-weight: 700;
-    cursor: pointer;
-    transition: all 0.15s ease;
-    flex-shrink: 0;
-    padding: 0;
-    line-height: 1;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+  padding: 0;
+  line-height: 1;
 }
 
 .table-tab-bar__tab:hover .table-tab-bar__close {
-    display: flex;
+  display: flex;
 }
 
 .table-tab-bar__close:hover {
-    background: rgba(239, 68, 68, 0.5);
-    color: #FFFFFF;
+  background: rgba(239, 68, 68, 0.5);
+  color: #ffffff;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -203,32 +226,32 @@
    ───────────────────────────────────────────────────────────────────────────── */
 
 .table-tab-bar__add {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 36px;
-    height: 36px;
-    border: 1.5px dashed rgba(255, 255, 255, 0.15);
-    border-radius: 50%;
-    background: transparent;
-    color: rgba(255, 255, 255, 0.3);
-    font-size: 1.25rem;
-    font-weight: 300;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    flex-shrink: 0;
-    touch-action: manipulation;
-    padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1.5px dashed rgba(255, 255, 255, 0.15);
+  border-radius: 50%;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 1.25rem;
+  font-weight: 300;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+  touch-action: manipulation;
+  padding: 0;
 }
 
 .table-tab-bar__add:hover {
-    border-color: rgba(255, 255, 255, 0.3);
-    color: rgba(255, 255, 255, 0.6);
-    background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .table-tab-bar__add:active {
-    transform: scale(0.92);
+  transform: scale(0.92);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -236,57 +259,79 @@
    ───────────────────────────────────────────────────────────────────────────── */
 
 .table-tab-bar__jackpot {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    padding: 4px 10px;
-    background: linear-gradient(135deg, #B8860B 0%, #FFD700 50%, #DAA520 100%);
-    background-size: 200% 100%;
-    border-radius: 12px;
-    flex-shrink: 0;
-    box-shadow: 0 2px 8px rgba(255, 215, 0, 0.25);
-    animation: jackpotShimmer 4s ease-in-out infinite;
-    position: relative;
-    overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  background: linear-gradient(135deg, #b8860b 0%, #ffd700 50%, #daa520 100%);
+  background-size: 200% 100%;
+  border-radius: 12px;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(255, 215, 0, 0.25);
+  animation: jackpotShimmer 4s ease-in-out infinite;
+  position: relative;
+  overflow: hidden;
 }
 
 .table-tab-bar__jackpot::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: -100%;
-    width: 50%;
-    height: 100%;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-    animation: jackpotSweep 3s ease-in-out infinite;
-    pointer-events: none;
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 50%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  animation: jackpotSweep 3s ease-in-out infinite;
+  pointer-events: none;
 }
 
 @keyframes jackpotShimmer {
-    0%, 100% { background-position: 0% 50%; }
-    50% { background-position: 100% 50%; }
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
 }
 
 @keyframes jackpotSweep {
-    0%, 100% { left: -100%; }
-    50% { left: 150%; }
+  0%,
+  100% {
+    left: -100%;
+  }
+  50% {
+    left: 150%;
+  }
 }
 
 .table-tab-bar__jackpot-label {
-    font-size: 0.5625rem;
-    font-weight: 900;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    color: rgba(0, 0, 0, 0.7);
-    line-height: 1;
+  font-size: 0.5625rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: rgba(0, 0, 0, 0.7);
+  line-height: 1;
 }
 
 .table-tab-bar__jackpot-amount {
-    font-size: 0.6875rem;
-    font-weight: 800;
-    color: #000;
-    font-family: 'JetBrains Mono', 'SF Mono', monospace;
-    line-height: 1;
+  font-size: 0.6875rem;
+  font-weight: 800;
+  color: #000;
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  line-height: 1;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   MENU CONTAINER
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.table-tab-bar__menu-container {
+  margin-left: auto; /* Push to the right */
+  display: flex;
+  align-items: center;
+  position: relative;
+  z-index: 300;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -294,57 +339,57 @@
    ───────────────────────────────────────────────────────────────────────────── */
 
 @media (max-width: 480px) {
-    .table-tab-bar {
-        padding: 4px 8px;
-        padding-top: calc(4px + env(safe-area-inset-top, 0));
-        gap: 6px;
-        min-height: 44px;
-    }
+  .table-tab-bar {
+    padding: 4px 8px;
+    padding-top: calc(4px + env(safe-area-inset-top, 0));
+    gap: 6px;
+    min-height: 44px;
+  }
 
-    .table-tab-bar__tabs {
-        gap: 4px;
-    }
+  .table-tab-bar__tabs {
+    gap: 4px;
+  }
 
-    .table-tab-bar__tab {
-        min-width: 80px;
-        max-width: 130px;
-        height: 32px;
-        padding: 0 10px;
-        font-size: 0.75rem;
-        border-radius: 16px;
-    }
+  .table-tab-bar__tab {
+    min-width: 80px;
+    max-width: 130px;
+    height: 32px;
+    padding: 0 10px;
+    font-size: 0.75rem;
+    border-radius: 16px;
+  }
 
-    .table-tab-bar__add {
-        width: 32px;
-        height: 32px;
-        font-size: 1.1rem;
-    }
+  .table-tab-bar__add {
+    width: 32px;
+    height: 32px;
+    font-size: 1.1rem;
+  }
 
-    .table-tab-bar__jackpot {
-        padding: 3px 8px;
-        border-radius: 10px;
-    }
+  .table-tab-bar__jackpot {
+    padding: 3px 8px;
+    border-radius: 10px;
+  }
 
-    .table-tab-bar__jackpot-label {
-        font-size: 0.5rem;
-    }
+  .table-tab-bar__jackpot-label {
+    font-size: 0.5rem;
+  }
 
-    .table-tab-bar__jackpot-amount {
-        font-size: 0.625rem;
-    }
+  .table-tab-bar__jackpot-amount {
+    font-size: 0.625rem;
+  }
 }
 
 @media (max-width: 380px) {
-    .table-tab-bar__tab {
-        min-width: 70px;
-        max-width: 110px;
-        height: 30px;
-        padding: 0 8px;
-        font-size: 0.6875rem;
-    }
+  .table-tab-bar__tab {
+    min-width: 70px;
+    max-width: 110px;
+    height: 30px;
+    padding: 0 8px;
+    font-size: 0.6875rem;
+  }
 
-    .table-tab-bar__add {
-        width: 30px;
-        height: 30px;
-    }
+  .table-tab-bar__add {
+    width: 30px;
+    height: 30px;
+  }
 }

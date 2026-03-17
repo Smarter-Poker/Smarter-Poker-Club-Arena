@@ -59,6 +59,12 @@ export default function AppLayout() {
   const { user } = useAuthUser();
   const { showWelcome, isReady, acceptWelcome } = useClubArenaWelcome();
 
+  // Hide global header on table and tournament play pages
+  const isTablePage =
+    location.pathname.startsWith('/table') ||
+    (location.pathname.startsWith('/tournaments/') && location.pathname.endsWith('/play'));
+  const showGlobalHeader = !isInIframe && !isTablePage;
+
   return (
     <div className={`${styles.layout} ${isInIframe ? styles.embedded : ''}`}>
       {/* First-time Welcome Modal - Always show regardless of iframe */}
@@ -66,8 +72,8 @@ export default function AppLayout() {
         <ClubArenaWelcomeModal isOpen={showWelcome} onAccept={acceptWelcome} />
       )}
 
-      {/* Global Header — Always visible outside iframes */}
-      {!isInIframe && <GlobalHeader pageDepth={2} />}
+      {/* Global Header — Always visible outside iframes, except on active table pages */}
+      {showGlobalHeader && <GlobalHeader pageDepth={2} />}
 
       {/* Global Announcement Banner (shows club announcements when in a club context) */}
       <ClubAnnouncementBanner />

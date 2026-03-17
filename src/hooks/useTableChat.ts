@@ -9,7 +9,8 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { roomService } from '../services/RoomService';
+import { supabase } from '../lib/supabase';
+import { triggerHaptic } from '../services/HapticService';
 import type { ChatMessage } from '../components/table/TableChat';
 
 // Reaction event type (shared with TableReactions)
@@ -49,13 +50,91 @@ export function useTableChat(
   const reactionIdRef = useRef(0);
   const pendingTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
 
-  // Cleanup all pending reaction timers on unmount
+  // Fetch history and listen to Supabase real-time chat (Unified architecture)
   useEffect(() => {
+    if (!tableId) return;
+    let isMounted = true;
+
+    const loadMessages = async () => {
+      const { data } = await supabase
+        .from('table_chat')
+        .select('id, table_id, user_id, message, created_at, sender_id, message_type, username')
+        .eq('table_id', tableId)
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (!isMounted) return;
+      if (data) {
+        const formatted = data.reverse().map((m: any) => ({
+          id: m.id,
+          type: (m.message_type === 'dealer'
+            ? 'DEALER'
+            : m.message_type === 'system'
+              ? 'SYSTEM'
+              : 'PLAYER') as 'DEALER' | 'SYSTEM' | 'PLAYER',
+          playerId: m.sender_id,
+          playerName: m.username || 'Player',
+          content: m.message,
+          timestamp: new Date(m.created_at),
+        }));
+        setChatMessages(formatted);
+      }
+    };
+    loadMessages();
+
+    // The persistent chat websocket listener
+    const channel = supabase
+      .channel(`table_chat_hook:${tableId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'table_chat',
+          filter: `table_id=eq.${tableId}`,
+        },
+        (payload) => {
+          const m = payload.new as any;
+          if (!isMounted) return;
+
+          setChatMessages((prev) => {
+            // Deduplicate optimistic inserts
+            if (
+              prev.some(
+                (msg) =>
+                  msg.id.startsWith('msg_') &&
+                  msg.playerId === m.sender_id &&
+                  msg.content === m.message
+              )
+            ) {
+              return prev;
+            }
+
+            const newMsg: ChatMessage = {
+              id: m.id,
+              type: (m.message_type === 'dealer'
+                ? 'DEALER'
+                : m.message_type === 'system'
+                  ? 'SYSTEM'
+                  : 'PLAYER') as 'DEALER' | 'SYSTEM' | 'PLAYER',
+              playerId: m.sender_id,
+              playerName: m.username || 'Player',
+              content: m.message,
+              timestamp: new Date(m.created_at),
+            };
+            return [...prev.slice(-49), newMsg];
+          });
+        }
+      )
+      .subscribe();
+
     return () => {
+      isMounted = false;
+      supabase.removeChannel(channel);
       pendingTimersRef.current.forEach(clearTimeout);
       pendingTimersRef.current.clear();
     };
-  }, []);
+  }, [tableId]);
 
   // Parse incoming messages — returns true if message was a special command (reaction/throw)
   const parseIncomingMessage = useCallback((content: string, _senderId: string): boolean => {
@@ -93,16 +172,16 @@ export function useTableChat(
   }, []);
 
   const handleSendChatMessage = useCallback(
-    (message: string) => {
+    async (message: string) => {
       if (!tableId || !userId) return;
 
-      roomService.sendChat(tableId, userId, message);
+      const tempId = `msg_${Date.now()}`;
 
       // Optimistically add to local state
       setChatMessages((prev) => [
-        ...prev,
+        ...prev.slice(-49),
         {
-          id: `msg_${Date.now()}`,
+          id: tempId,
           type: 'PLAYER' as const,
           playerId: userId,
           playerName: heroName || 'You',
@@ -110,6 +189,26 @@ export function useTableChat(
           timestamp: new Date(),
         },
       ]);
+
+      triggerHaptic('light');
+
+      // Persist to Supabase so mobile and desktop components stay synced
+      try {
+        const { error } = await supabase.from('table_chat').insert({
+          table_id: tableId,
+          sender_id: userId,
+          username: heroName,
+          message: message,
+          message_type: 'player',
+        });
+
+        if (error) {
+          console.error('Failed to send chat:', error);
+          setChatMessages((prev) => prev.filter((m) => m.id !== tempId));
+        }
+      } catch (err) {
+        setChatMessages((prev) => prev.filter((m) => m.id !== tempId));
+      }
     },
     [tableId, userId, heroName]
   );

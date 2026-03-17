@@ -600,6 +600,29 @@ export default function TablePage({
     }>
   >([]);
 
+  // ─── Table Menu Actions ────────────────────────────────────────────────
+  useMasterBusSubscription('TABLE_MENU_ACTION' as any, (event: any) => {
+    if (event.tableId !== tableId) return;
+
+    switch (event.action) {
+      case 'SIT_OUT':
+        setShowSitOut(true);
+        break;
+      case 'REBUY':
+        setShowBuyInModal(true);
+        break;
+      case 'SETTINGS':
+        masterBus.emit('TABLE_SETTINGS_OPEN' as any, { tableId });
+        break;
+      case 'HAND_HISTORY':
+        setShowHandReplay(true);
+        break;
+      case 'HELP':
+        setShowGameRules(true);
+        break;
+    }
+  });
+
   // Tournament — extracted to useTableTournament hook
   const {
     showTournamentRebuy,
@@ -4673,7 +4696,13 @@ export default function TablePage({
 
       {/* Compact Chat HUD — visible when main chat is collapsed */}
       {isChatCollapsed && tableId && (
-        <TableChatHUD tableId={tableId} userId={userId} isMuted={isChatMuted} />
+        <TableChatHUD
+          tableId={tableId}
+          userId={userId}
+          isMuted={isChatMuted}
+          messages={chatMessages}
+          onSendMessage={handleSendChatMessage}
+        />
       )}
 
       {/* Table Reactions — floating emoji picker + active reactions */}

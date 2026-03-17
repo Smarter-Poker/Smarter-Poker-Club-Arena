@@ -10,27 +10,25 @@ import { supabase } from '../../lib/supabase';
 import { triggerHaptic } from '../../services/HapticService';
 import { masterBus } from '../../core/MasterBus';
 import { useIsMounted } from '../../hooks/useIsMounted';
+import type { ChatMessage } from './TableChat';
 
 const Z_FLOATING_CHAT = 900;
-
-interface ChatMessage {
-  id: string;
-  table_id: string;
-  sender_id: string;
-  sender_name?: string;
-  message: string;
-  message_type: 'player' | 'dealer' | 'system';
-  created_at: string;
-}
 
 interface TableChatHUDProps {
   tableId: string;
   userId: string;
   isMuted?: boolean;
+  messages: ChatMessage[];
+  onSendMessage: (msg: string) => void;
 }
 
-export default function TableChatHUD({ tableId, userId, isMuted = false }: TableChatHUDProps) {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+export default function TableChatHUD({
+  tableId,
+  userId,
+  isMuted = false,
+  messages,
+  onSendMessage,
+}: TableChatHUDProps) {
   const [newMessage, setNewMessage] = useState('');
   const [isOpen, setIsOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -38,7 +36,7 @@ export default function TableChatHUD({ tableId, userId, isMuted = false }: Table
   const chatRef = useRef<HTMLDivElement>(null);
   const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
   const isOpenRef = useRef(isOpen);
-  const isMounted = useIsMounted();
+  const prevMessageCountRef = useRef(messages.length);
 
   useEffect(() => {
     const loadMutes = () => {
@@ -55,73 +53,28 @@ export default function TableChatHUD({ tableId, userId, isMuted = false }: Table
     return () => window.removeEventListener('ca_mute_updated', loadMutes);
   }, []);
 
+  // Unread badge logic based on incoming props messages
   useEffect(() => {
-    if (!tableId) return;
-    const loadMessages = async () => {
-      const { data } = await supabase
-        .from('table_chat')
-        .select('id, table_id, user_id, username, message, created_at, sender_id, message_type')
-        .eq('table_id', tableId)
-        .order('created_at', { ascending: false })
-        .limit(50);
-      if (!isMounted.current) return;
-      if (data) setMessages((data as ChatMessage[]).reverse());
-    };
-    loadMessages();
-
-    const channel = supabase
-      .channel(`table_chat:${tableId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'table_chat',
-          filter: `table_id=eq.${tableId}`,
-        },
-        (payload) => {
-          const msg = payload.new as ChatMessage;
-          setMessages((prev) => {
-            // Remove optimistic temp message from same sender to prevent duplicates
-            const filtered = prev.filter(
-              (m) =>
-                !(
-                  m.id.startsWith('temp-') &&
-                  m.sender_id === msg.sender_id &&
-                  m.message === msg.message
-                )
-            );
-            return [...filtered.slice(-49), msg];
-          });
-          try {
-            masterBus.emit('CHAT_MESSAGE_RECEIVED', {
-              clubId: msg.table_id || tableId,
-              senderId: msg.sender_id,
-              message: msg.message,
-            });
-          } catch (err) {
-            console.error('[TableChatHUD] Error:', err);
-            /* */
-          }
-          if (!isOpenRef.current) {
-            setUnreadCount((c) => c + 1);
-            triggerHaptic(
-              msg.message_type === 'dealer' || msg.message_type === 'system' ? 'warning' : 'light'
-            );
-          }
-          setTimeout(() => {
-            if (chatRef.current) {
-              chatRef.current.scrollTop = chatRef.current.scrollHeight;
-            }
-          }, 50);
+    if (messages.length > prevMessageCountRef.current) {
+      if (!isOpenRef.current) {
+        setUnreadCount((c) => c + 1);
+        const lastMsg = messages[messages.length - 1];
+        if (lastMsg && lastMsg.type) {
+          triggerHaptic(
+            lastMsg.type === 'DEALER' || lastMsg.type === 'SYSTEM' ? 'warning' : 'light'
+          );
+        } else {
+          triggerHaptic('light');
         }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [tableId]);
+      }
+      setTimeout(() => {
+        if (chatRef.current) {
+          chatRef.current.scrollTop = chatRef.current.scrollHeight;
+        }
+      }, 50);
+    }
+    prevMessageCountRef.current = messages.length;
+  }, [messages.length]);
 
   useEffect(() => {
     isOpenRef.current = isOpen;
@@ -131,70 +84,15 @@ export default function TableChatHUD({ tableId, userId, isMuted = false }: Table
     }
   }, [isOpen]);
 
-  const handleSendMessage = async (e: React.FormEvent) => {
+  const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMessage.trim() || isMuted || !userId) return;
     const text = newMessage.trim();
     setNewMessage('');
-    const tempId = `temp-${Date.now()}`;
-    const optMsg: ChatMessage = {
-      id: tempId,
-      table_id: tableId,
-      sender_id: userId,
-      sender_name: 'You',
-      message: text,
-      message_type: 'player',
-      created_at: new Date().toISOString(),
-    };
-    setMessages((prev) => [...prev.slice(-49), optMsg]);
-    triggerHaptic('light');
-    try {
-      const { error } = await supabase.from('table_chat').insert({
-        table_id: tableId,
-        sender_id: userId,
-        message: text,
-        message_type: 'player',
-      });
-      if (error) {
-        console.error('Failed to send:', error);
-        if (isMounted.current) setMessages((prev) => prev.filter((m) => m.id !== tempId));
-      }
-    } catch (err) {
-      console.error('[TableChatHUD] Error:', err);
-      // Rollback on network/exception failure
-      if (isMounted.current) setMessages((prev) => prev.filter((m) => m.id !== tempId));
-    }
+    onSendMessage(text);
   };
 
-  const sendQuickPhrase = async (phrase: string) => {
-    const tempId = `temp-${Date.now()}`;
-    setMessages((prev) => [
-      ...prev.slice(-49),
-      {
-        id: tempId,
-        table_id: tableId,
-        sender_id: userId,
-        sender_name: 'You',
-        message: phrase,
-        message_type: 'player' as const,
-        created_at: new Date().toISOString(),
-      },
-    ]);
-    triggerHaptic('light');
-    try {
-      const { error } = await supabase
-        .from('table_chat')
-        .insert({ table_id: tableId, sender_id: userId, message: phrase, message_type: 'player' });
-      if (error) {
-        console.error('[TableChat] Quick phrase failed:', error);
-        if (isMounted.current) setMessages((prev) => prev.filter((m) => m.id !== tempId));
-      }
-    } catch (err) {
-      console.error('[TableChatHUD] Error:', err);
-      // Rollback on network/exception failure
-      if (isMounted.current) setMessages((prev) => prev.filter((m) => m.id !== tempId));
-    }
-  };
+  // Removed sendQuickPhrase entirely
 
   if (!isOpen) {
     return (
@@ -215,10 +113,10 @@ export default function TableChatHUD({ tableId, userId, isMuted = false }: Table
       <div style={S.messageList} ref={chatRef} aria-live="polite">
         {messages.length === 0 && <div style={S.empty}>No messages yet. Say hi!</div>}
         {messages
-          .filter((m) => !mutedPlayers.includes(m.sender_id))
+          .filter((m) => !mutedPlayers.includes(m.playerId || ''))
           .map((msg) => {
-            const isDealer = msg.message_type === 'dealer' || msg.message_type === 'system';
-            const isMe = msg.sender_id === userId;
+            const isDealer = msg.type === 'DEALER' || msg.type === 'SYSTEM';
+            const isMe = msg.playerId === userId;
             return (
               <div
                 key={msg.id}
@@ -230,7 +128,7 @@ export default function TableChatHUD({ tableId, userId, isMuted = false }: Table
                 {isDealer ? (
                   <div style={S.dealer}>
                     <span style={{ color: '#F1C40F', marginRight: 4 }}>♠️</span>
-                    {msg.message}
+                    {msg.content}
                   </div>
                 ) : (
                   <div
@@ -243,7 +141,7 @@ export default function TableChatHUD({ tableId, userId, isMuted = false }: Table
                   >
                     {!isMe && (
                       <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.5)', marginBottom: 2 }}>
-                        {msg.sender_name || 'Player'}
+                        {msg.playerName || 'Player'}
                       </div>
                     )}
                     <div
@@ -254,7 +152,7 @@ export default function TableChatHUD({ tableId, userId, isMuted = false }: Table
                         color: '#FFF',
                       }}
                     >
-                      {msg.message}
+                      {msg.content}
                     </div>
                   </div>
                 )}

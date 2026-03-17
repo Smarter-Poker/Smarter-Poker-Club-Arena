@@ -220,8 +220,36 @@ function TableCardInner({ table }: TableCardProps) {
         );
     };
 
+    // ── Real-time PostgreSQL Subscriptions for this specific table ──
+    const channelKey = `table-card-${table.id}`;
+    const channel = masterBus.getOrCreateChannel(channelKey);
+
+    channel
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'table_waitlists',
+          filter: `table_id=eq.${table.id}`,
+        },
+        () => refreshRef.current?.()
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'table_seats',
+          filter: `table_id=eq.${table.id}`,
+        },
+        () => refreshRef.current?.()
+      )
+      .subscribe();
+
     return () => {
       isMounted = false;
+      masterBus.removeRegisteredChannel(channelKey);
     };
   }, [table.id]);
 

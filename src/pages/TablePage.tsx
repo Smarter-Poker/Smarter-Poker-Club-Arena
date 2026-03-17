@@ -2996,9 +2996,11 @@ export default function TablePage({
               toast?.success?.(formatted);
             } else if (heroWinTotal === 0 && event.winners.length > 0) {
               // Hero was in the hand but didn't win — show loss feedback
+              // Only show if hero saw at least the flop (suppress for preflop folds)
               const currentHeroSeat = tableStateRef.current.heroSeat;
               const heroInHand = tableStateRef.current.players[currentHeroSeat - 1];
-              if (heroInHand && heroInHand.status !== 'sitting_out') {
+              const sawFlop = tableStateRef.current.boardStage !== 'preflop';
+              if (heroInHand && heroInHand.status !== 'sitting_out' && sawFlop) {
                 toast?.info?.('Better luck next hand');
               }
             }
@@ -3156,6 +3158,7 @@ export default function TablePage({
             // Clear ALL locks to allow next hand
             handInProgressRef.current = false;
             handControllerRef.current = null;
+            actionLockRef.current = false; // Reset debounce lock for next hand
             _win.__pokerLocks.handActive = false;
             _win.__pokerLocks.activeHC = null;
             // Clear winner highlights
@@ -3414,6 +3417,7 @@ export default function TablePage({
     tableState.currentPlayerSeat === tableState.heroSeat && tableState.isHandInProgress;
 
   const handleTimerAutoFold = useCallback(() => {
+    if (actionLockRef.current) return; // Prevent race with manual fold
     if (handControllerRef.current) {
       try {
         const foldResult = handControllerRef.current.performAction(tableState.heroSeat, 'fold');
@@ -3619,6 +3623,7 @@ export default function TablePage({
   // → fire-and-forget server call (SECONDARY, for when game server is deployed)
   const handleActionPanelAction = useCallback(
     async (action: 'fold' | 'check' | 'call' | 'raise' | 'allin', amount?: number) => {
+      if (actionLockRef.current) return; // Debounce guard
       const heroSeat = tableState.heroSeat;
       const hero = getPlayerAtSeat(heroSeat);
       const heroStack = hero?.stack || 0;
@@ -3872,10 +3877,37 @@ export default function TablePage({
       showRaiseSlider ||
       isSideMenuOpen,
     onFold: handleFold,
-    onCallCheck: handleCall,
+    onCallCheck: () => {
+      // Smart check/call routing: detect whether hero should check or call
+      if (handControllerRef.current) {
+        const state = handControllerRef.current.getState();
+        const heroPlayer = state.players?.find((p: any) => p && p.seat === tableState.heroSeat);
+        const canCheck = heroPlayer ? (state.currentBet || 0) - (heroPlayer.bet || 0) <= 0 : false;
+        if (canCheck) {
+          handleCheck();
+        } else {
+          handleCall();
+        }
+      } else {
+        handleCall(); // Fallback
+      }
+    },
     onRaise: handleRaise,
     onAllIn: handleAllIn,
     onToggleSound: () => setIsSoundEnabled((prev) => !prev),
+    onToggleHandStrength: () => updateSetting('showHUD', !userSettings.showHUD),
+    onToggleStats: () => updateSetting('showHUD', !userSettings.showHUD),
+    onBetPreset: (preset: number) => {
+      // Bet presets: 0=1/3 pot, 1=1/2 pot, 2=3/4 pot, 3=pot
+      if (!handControllerRef.current) return;
+      const state = handControllerRef.current.getState();
+      const pot = state.pot || 0;
+      const fractions = [1 / 3, 1 / 2, 3 / 4, 1];
+      const fraction = fractions[preset] ?? 0.5;
+      const betAmount = Math.max(safeBB(tableState.blinds), Math.round(pot * fraction * 100) / 100);
+      setRaiseAmount(betAmount);
+      setShowRaiseSlider(true);
+    },
     onClosePanel: () => {
       setIsChatCollapsed(true);
       setShowSettings(false);
@@ -5035,6 +5067,7 @@ export default function TablePage({
 
                 setAccountBalance((prev) => Math.max(0, prev - amount));
                 totalBuyInRef.current += amount; // Track initial buy-in for session P/L
+                if (amount > peakStackRef.current) peakStackRef.current = amount; // Init peak stack
 
                 // Add player to local table state
                 const newPlayers = [...tableState.players];

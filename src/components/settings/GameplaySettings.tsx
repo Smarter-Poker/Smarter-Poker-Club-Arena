@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { masterBus } from '../../core/MasterBus';
 import './GameplaySettings.css';
 
 interface GameplayConfig {
@@ -53,6 +54,9 @@ export const GameplaySettings: React.FC<GameplaySettingsProps> = ({ onChange }) 
     const newConfig = { ...config, [key]: value };
     setConfig(newConfig);
     localStorage.setItem(GAMEPLAY_STORAGE_KEY, JSON.stringify(newConfig));
+    masterBus.emit('SETTINGS_UPDATED', {
+      settings: newConfig as unknown as Record<string, unknown>,
+    });
     onChange?.(newConfig);
   };
 

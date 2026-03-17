@@ -5,6 +5,8 @@
 
 import React, { useMemo } from 'react';
 import { countOuts, calculateEquity, classifyDrawType } from '../../utils/pokerOdds';
+import { CardImage } from '../table/CardImage';
+import type { Card } from '../table/CardImage';
 import './OddsDisplay.css';
 
 interface OddsDisplayProps {
@@ -53,12 +55,11 @@ export default function OddsDisplay({
   const recommendation = getRecommendation();
   const cardsTocome = 5 - boardCards.length;
 
-  const getCardDisplay = (card: string) => {
-    const rank = card.slice(0, -1);
-    const suit = card.slice(-1);
-    const suitSymbols: Record<string, string> = { h: '♥', d: '♦', c: '♣', s: '♠' };
-    const isRed = suit === 'h' || suit === 'd';
-    return { rank, symbol: suitSymbols[suit] || suit, isRed };
+  const parseCard = (cardStr: string): Card => {
+    let rank = cardStr.slice(0, -1);
+    const suit = cardStr.slice(-1) as Card['suit'];
+    if (rank === '10') rank = 'T';
+    return { rank: rank as Card['rank'], suit };
   };
 
   const getDrawTypeLabel = (type?: string) => {
@@ -147,15 +148,11 @@ export default function OddsDisplay({
 
       {/* Hand cards display */}
       <div className="hole-cards-mini">
-        {holeCards.map((card, idx) => {
-          const { rank, symbol, isRed } = getCardDisplay(card);
-          return (
-            <div key={idx} className={`mini-card ${isRed ? 'red' : 'black'}`}>
-              <span className="rank">{rank}</span>
-              <span className="suit">{symbol}</span>
-            </div>
-          );
-        })}
+        {holeCards.map((card, idx) => (
+          <div key={idx} className="mini-card">
+            <CardImage card={parseCard(card)} deckStyle="4color" size="xs" />
+          </div>
+        ))}
       </div>
     </div>
   );

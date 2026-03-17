@@ -11,6 +11,7 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { CardImage } from './CardImage';
 import './PlayerCard.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -38,11 +39,12 @@ export interface PlayerCardProps {
 // UTILITIES
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const SUIT_CONFIG: Record<string, { symbol: string; color: string }> = {
-  h: { symbol: '♥', color: '#DC143C' },
-  d: { symbol: '♦', color: '#DC143C' },
-  c: { symbol: '♣', color: '#1C1C1C' },
-  s: { symbol: '♠', color: '#1C1C1C' },
+// Size map for CardImage sizes
+const CARD_IMAGE_SIZE: Record<string, 'xs' | 'sm' | 'md' | 'lg'> = {
+  small: 'xs',
+  medium: 'sm',
+  large: 'md',
+  hero: 'lg',
 };
 
 const RANK_DISPLAY: Record<string, string> = {
@@ -129,9 +131,10 @@ export function PlayerCard({
     return classes.join(' ');
   }, [isHero, isWinner, isDealing, hasDealt, isFlipping, isFlipped, isVisible, size]);
 
-  // Get suit config if card is provided
-  const suit = card ? SUIT_CONFIG[card.suit] : null;
-  const rank = card ? RANK_DISPLAY[card.rank] : null;
+  // Get CardImage size
+  const cardImageSize = CARD_IMAGE_SIZE[size] || 'sm';
+
+  // We no longer need suit config for face rendering — CardImage handles it
 
   return (
     <div
@@ -153,43 +156,15 @@ export function PlayerCard({
           </div>
         </div>
 
-        {/* Card Face */}
-        <div
-          className="player-card__face"
-          style={
-            {
-              '--card-color': suit?.color || '#000',
-              fontSize: sizeConfig.fontSize,
-            } as React.CSSProperties
-          }
-        >
+        {/* Card Face — Custom PNG Deck Image */}
+        <div className="player-card__face">
           {card && (
-            <>
-              {/* Top Left Corner */}
-              <div className="player-card__corner player-card__corner--top">
-                <span className="player-card__rank" style={{ color: suit?.color }}>
-                  {rank}
-                </span>
-                <span className="player-card__suit" style={{ color: suit?.color }}>
-                  {suit?.symbol}
-                </span>
-              </div>
-
-              {/* Center Suit */}
-              <div className="player-card__center" style={{ color: suit?.color }}>
-                {suit?.symbol}
-              </div>
-
-              {/* Bottom Right Corner (Inverted) */}
-              <div className="player-card__corner player-card__corner--bottom">
-                <span className="player-card__rank" style={{ color: suit?.color }}>
-                  {rank}
-                </span>
-                <span className="player-card__suit" style={{ color: suit?.color }}>
-                  {suit?.symbol}
-                </span>
-              </div>
-            </>
+            <CardImage
+              card={card}
+              deckStyle="4color"
+              size={cardImageSize}
+              isHighlighted={isWinner}
+            />
           )}
         </div>
       </div>

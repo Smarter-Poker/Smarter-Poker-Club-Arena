@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { masterBus } from '../../core/MasterBus';
 import './SoundSettings.css';
 
 interface SoundSettingsProps {
@@ -47,6 +48,9 @@ export const SoundSettings: React.FC<SoundSettingsProps> = ({ onChange }) => {
     const newConfig = { ...config, [key]: value };
     setConfig(newConfig);
     localStorage.setItem(SOUND_STORAGE_KEY, JSON.stringify(newConfig));
+    masterBus.emit('SETTINGS_UPDATED', {
+      settings: newConfig as unknown as Record<string, unknown>,
+    });
     onChange?.(newConfig);
   };
 

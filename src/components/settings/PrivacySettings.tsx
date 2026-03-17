@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { masterBus } from '../../core/MasterBus';
 import './PrivacySettings.css';
 
 interface PrivacyConfig {
@@ -45,6 +46,9 @@ export const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onChange }) =>
     const newConfig = { ...config, [key]: value };
     setConfig(newConfig);
     localStorage.setItem(PRIVACY_STORAGE_KEY, JSON.stringify(newConfig));
+    masterBus.emit('SETTINGS_UPDATED', {
+      settings: newConfig as unknown as Record<string, unknown>,
+    });
     onChange?.(newConfig);
   };
 

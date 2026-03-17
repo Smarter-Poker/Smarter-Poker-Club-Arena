@@ -1017,8 +1017,6 @@ function HomePageInner() {
     };
   }, [displayClubs.length, displayClubs.map((c) => c.id).join(','), statsRefreshKey]);
 
-  // Sound effects ref for other uses
-
   // Tile action handlers (for bottom row tiles using LOBBY_TILES config)
   const tileActions: Record<string, () => void> = useMemo(
     () => ({

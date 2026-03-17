@@ -205,8 +205,9 @@ export default function SearchPage() {
 
   // ── Bus Listeners: re-search when data changes from other pages (debounced) ──
   useEffect(() => {
+    let isMounted = true;
     const refresh = () => {
-      if (query.trim()) search(query);
+      if (isMounted && query.trim()) search(query, () => isMounted);
     };
     const unsubs = [
       masterBus.subscribeDebounced('CLUB_UPDATED', refresh, 500),
@@ -214,7 +215,10 @@ export default function SearchPage() {
       masterBus.subscribeDebounced('CLUB_JOINED', refresh, 500),
       masterBus.subscribeDebounced('TOURNAMENT_UPDATED', refresh, 500),
     ];
-    return () => unsubs.forEach((u) => u());
+    return () => {
+      isMounted = false;
+      unsubs.forEach((u) => u());
+    };
   }, [query, search]);
 
   const getIcon = (type: string): string => {

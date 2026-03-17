@@ -4,6 +4,8 @@
  */
 
 import React, { useState } from 'react';
+import { CardImage } from '../table/CardImage';
+import type { Card } from '../table/CardImage';
 import './ShareableHighlight.css';
 
 interface ShareableHighlightProps {
@@ -29,12 +31,11 @@ export default function ShareableHighlight({
 }: ShareableHighlightProps) {
   const [copied, setCopied] = useState(false);
 
-  const getCardDisplay = (card: string) => {
-    const rank = card.slice(0, -1);
-    const suit = card.slice(-1);
-    const suitSymbols: Record<string, string> = { h: '♥', d: '♦', c: '♣', s: '♠' };
-    const isRed = suit === 'h' || suit === 'd';
-    return { rank, symbol: suitSymbols[suit] || suit, isRed };
+  const parseCard = (cardStr: string): Card => {
+    let rank = cardStr.slice(0, -1);
+    const suit = cardStr.slice(-1) as Card['suit'];
+    if (rank === '10') rank = 'T';
+    return { rank: rank as Card['rank'], suit };
   };
 
   const shareUrl = `https://smarter.poker/hub/club-arena/share/hand/${handId}`;
@@ -74,8 +75,7 @@ export default function ShareableHighlight({
       const date = new Date(dateStr);
       return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     } catch (err) {
-
-      console.error("[ShareableHighlight] Error:", err);
+      console.error('[ShareableHighlight] Error:', err);
       return 'Recent';
     }
   };
@@ -104,15 +104,11 @@ export default function ShareableHighlight({
       <div className="highlight-cards-section">
         <span className="section-label">Your Hand</span>
         <div className="highlight-cards">
-          {playerCards.map((card, idx) => {
-            const { rank, symbol, isRed } = getCardDisplay(card);
-            return (
-              <div key={idx} className={`highlight-card ${isRed ? 'red' : 'black'}`}>
-                <span className="rank">{rank}</span>
-                <span className="suit">{symbol}</span>
-              </div>
-            );
-          })}
+          {playerCards.map((card, idx) => (
+            <div key={idx} className="highlight-card">
+              <CardImage card={parseCard(card)} deckStyle="4color" size="sm" />
+            </div>
+          ))}
         </div>
       </div>
 
@@ -120,15 +116,11 @@ export default function ShareableHighlight({
       <div className="highlight-board-section">
         <span className="section-label">Board</span>
         <div className="highlight-board">
-          {boardCards.map((card, idx) => {
-            const { rank, symbol, isRed } = getCardDisplay(card);
-            return (
-              <div key={idx} className={`highlight-card ${isRed ? 'red' : 'black'}`}>
-                <span className="rank">{rank}</span>
-                <span className="suit">{symbol}</span>
-              </div>
-            );
-          })}
+          {boardCards.map((card, idx) => (
+            <div key={idx} className="highlight-card">
+              <CardImage card={parseCard(card)} deckStyle="4color" size="sm" />
+            </div>
+          ))}
         </div>
       </div>
 

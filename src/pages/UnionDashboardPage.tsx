@@ -240,6 +240,12 @@ export default function UnionDashboardPage() {
         }
       } catch (err: any) {
         if (mountedRef.current) setError(err.message);
+        // Clear stale SWR cache on error to prevent ghost data
+        try {
+          sessionStorage.removeItem(`union_dashboard_swr_${user?.id}`);
+        } catch {
+          /* ignore */
+        }
       } finally {
         if (mountedRef.current) setLoading(false);
       }
@@ -270,7 +276,7 @@ export default function UnionDashboardPage() {
     if (mountedRef.current) setClubs(enrichedClubs);
 
     // Load agents across clubs
-    let loadedAgents: UnionAgent[] = [];  // Hoisted for SWR cache write
+    let loadedAgents: UnionAgent[] = []; // Hoisted for SWR cache write
     const clubIds = enrichedClubs.map((c) => c.id).filter(Boolean);
     if (clubIds.length > 0) {
       const { data: agentRows } = await supabase
@@ -333,16 +339,21 @@ export default function UnionDashboardPage() {
     // SWR: cache successful load for instant display on revisit
     if (mountedRef.current) {
       try {
-        sessionStorage.setItem(`union_dashboard_swr_${user?.id}`, JSON.stringify({
-          union: unionRow,
-          unionId: uid,
-          adminRole,
-          clubs: enrichedClubs.slice(0, 30),
-          agents: loadedAgents.slice(0, 30),
-          wallets: walletRow,
-          cachedAt: Date.now(),
-        }));
-      } catch { /* storage full */ }
+        sessionStorage.setItem(
+          `union_dashboard_swr_${user?.id}`,
+          JSON.stringify({
+            union: unionRow,
+            unionId: uid,
+            adminRole,
+            clubs: enrichedClubs.slice(0, 30),
+            agents: loadedAgents.slice(0, 30),
+            wallets: walletRow,
+            cachedAt: Date.now(),
+          })
+        );
+      } catch {
+        /* storage full */
+      }
     }
   };
 
@@ -365,7 +376,9 @@ export default function UnionDashboardPage() {
           setLoading(false); // Show cached data instantly
         }
       }
-    } catch { /* corrupt cache */ }
+    } catch {
+      /* corrupt cache */
+    }
     loadDashboard();
   }, [user?.id, loadDashboard]);
 

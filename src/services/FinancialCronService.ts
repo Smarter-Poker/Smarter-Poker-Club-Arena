@@ -17,6 +17,7 @@ import { ChipFlowService } from './ChipFlowService';
 import { CreditService } from './CreditService';
 import { FinancialAlertService } from './FinancialAlertService';
 import { masterBus } from '../core/MasterBus';
+import { rakebackEngine } from '../engine/RakebackEngine';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -51,6 +52,7 @@ export const FinancialCronService = {
   _reconciliationTimer: null as ReturnType<typeof setInterval> | null,
   _suspensionTimer: null as ReturnType<typeof setInterval> | null,
   _disputeEscalationTimer: null as ReturnType<typeof setInterval> | null,
+  _rakebackSettlementTimer: null as ReturnType<typeof setInterval> | null,
   _startupTimer: null as ReturnType<typeof setTimeout> | null,
   _isRunning: false,
   _lastReconciliation: null as ReconciliationResult | null,
@@ -103,6 +105,12 @@ export const FinancialCronService = {
       this._config.suspensionCheckIntervalMs
     );
 
+    // Settle rakeback weekly (every 7 days) — persists in-memory rakeback to rakeback_periods table
+    this._rakebackSettlementTimer = setInterval(
+      () => this.settleAllClubRakebacks(),
+      7 * 24 * 60 * 60 * 1000 // 7 days
+    );
+
     this._isRunning = true;
   },
 
@@ -114,10 +122,12 @@ export const FinancialCronService = {
     if (this._reconciliationTimer) clearInterval(this._reconciliationTimer);
     if (this._suspensionTimer) clearInterval(this._suspensionTimer);
     if (this._disputeEscalationTimer) clearInterval(this._disputeEscalationTimer);
+    if (this._rakebackSettlementTimer) clearInterval(this._rakebackSettlementTimer);
     this._startupTimer = null;
     this._reconciliationTimer = null;
     this._suspensionTimer = null;
     this._disputeEscalationTimer = null;
+    this._rakebackSettlementTimer = null;
     this._isRunning = false;
     console.debug('[FinancialCron] Stopped');
   },
@@ -271,6 +281,54 @@ export const FinancialCronService = {
       console.error('[FinancialCron] Audit insert failed:', err);
       console.error('[FinancialCron] commission_rate_audit insert failed (table may not exist)');
     }
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // WEEKLY RAKEBACK SETTLEMENT — Persist in-memory rakeback to DB
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Settle rakeback for ALL active clubs. Queries the clubs table for active clubs,
+   * then calls rakebackEngine.settleRakeback() for each, which persists accumulated
+   * rakeback to the `rakeback_periods` table for player claiming via RakebackPage.
+   */
+  async settleAllClubRakebacks(): Promise<{ clubsSettled: number; totalDistributed: number }> {
+    let clubsSettled = 0;
+    let totalDistributed = 0;
+
+    try {
+      const { data: clubs } = await supabase
+        .from('clubs')
+        .select('id')
+        .eq('status', 'active')
+        .limit(500);
+
+      if (!clubs || clubs.length === 0) return { clubsSettled, totalDistributed };
+
+      for (const club of clubs) {
+        try {
+          const distribution = await rakebackEngine.settleRakeback(club.id);
+          if (distribution.size > 0) {
+            clubsSettled++;
+            for (const amount of distribution.values()) {
+              totalDistributed += amount;
+            }
+          }
+        } catch (err) {
+          console.error(`[FinancialCron] Rakeback settlement failed for club ${club.id}:`, err);
+        }
+      }
+
+      if (clubsSettled > 0) {
+        console.debug(
+          `[FinancialCron] Rakeback settled for ${clubsSettled} clubs, total distributed: $${totalDistributed.toFixed(2)}`
+        );
+      }
+    } catch (err) {
+      console.error('[FinancialCron] settleAllClubRakebacks failed:', err);
+    }
+
+    return { clubsSettled, totalDistributed };
   },
 
   // ─────────────────────────────────────────────────────────────────────────────

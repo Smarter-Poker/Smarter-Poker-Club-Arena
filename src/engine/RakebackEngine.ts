@@ -11,6 +11,7 @@
  */
 
 import { masterBus } from '../core/MasterBus';
+import { supabase } from '../lib/supabase';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -153,13 +154,29 @@ class RakebackEngineClass {
 
   /**
    * Calculate and distribute pending rakeback for all players in a club.
+   * Persists each player's rakeback period to the `rakeback_periods` table
+   * so the RakebackPage UI can display and players can claim.
    * Returns the distribution for processing.
    */
-  settleRakeback(clubId: string): Map<string, number> {
+  async settleRakeback(clubId: string): Promise<Map<string, number>> {
     const config = this.configs.get(clubId) || this.DEFAULT_CONFIG;
     const distribution = new Map<string, number>();
     let totalDistributed = 0;
     let playersCount = 0;
+
+    const now = new Date();
+    const periodEnd = now.toISOString();
+    const rows: Array<{
+      user_id: string;
+      club_id: string;
+      period_start: string;
+      period_end: string;
+      rake_generated: number;
+      rakeback_rate: number;
+      rakeback_earned: number;
+      total_rake_paid: number;
+      status: string;
+    }> = [];
 
     for (const [key, record] of this.playerRecords) {
       if (!key.startsWith(`${clubId}:`)) continue;
@@ -168,6 +185,20 @@ class RakebackEngineClass {
         distribution.set(record.playerId, record.pendingRakeback);
         totalDistributed += record.pendingRakeback;
         playersCount++;
+
+        const rakebackRate = record.currentTier.rakebackPercent / 100;
+
+        rows.push({
+          user_id: record.playerId,
+          club_id: clubId,
+          period_start: new Date(record.periodStart).toISOString(),
+          period_end: periodEnd,
+          rake_generated: Math.round(record.rakeContributed * 100) / 100,
+          rakeback_rate: rakebackRate,
+          rakeback_earned: Math.round(record.pendingRakeback * 100) / 100,
+          total_rake_paid: Math.round(record.rakeContributed * 100) / 100,
+          status: 'pending',
+        });
 
         masterBus.emit('RAKEBACK_CALCULATED', {
           playerId: record.playerId,
@@ -182,6 +213,25 @@ class RakebackEngineClass {
         record.rakeContributed = 0;
         record.potsContributed = 0;
         record.periodStart = Date.now();
+      }
+    }
+
+    // Persist to rakeback_periods table so RakebackPage can display them
+    if (rows.length > 0) {
+      try {
+        const { error } = await supabase
+          .from('rakeback_periods')
+          .insert(rows);
+
+        if (error) {
+          console.error('[RakebackEngine] Failed to persist rakeback periods:', error.message);
+        } else {
+          console.debug(
+            `[RakebackEngine] Persisted ${rows.length} rakeback periods for club ${clubId.substring(0, 8)}...`
+          );
+        }
+      } catch (err) {
+        console.error('[RakebackEngine] Exception persisting rakeback periods:', err);
       }
     }
 

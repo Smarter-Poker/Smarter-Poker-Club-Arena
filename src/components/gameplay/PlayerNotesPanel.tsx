@@ -34,12 +34,13 @@ interface PlayerNotesPanelProps {
 }
 
 const NOTE_COLORS = [
-  { name: 'Default', value: '#6b7280' },
-  { name: 'Green', value: '#10b981' },
-  { name: 'Yellow', value: '#fbbf24' },
-  { name: 'Red', value: '#ef4444' },
-  { name: 'Blue', value: '#3b82f6' },
-  { name: 'Purple', value: '#a855f7' },
+  { name: 'Default', value: 'none', hex: '#6b7280' },
+  { name: 'Green', value: 'green', hex: '#10b981' },
+  { name: 'Yellow', value: 'yellow', hex: '#fbbf24' },
+  { name: 'Red', value: 'red', hex: '#ef4444' },
+  { name: 'Blue', value: 'blue', hex: '#3b82f6' },
+  { name: 'Purple', value: 'purple', hex: '#a855f7' },
+  { name: 'Orange', value: 'orange', hex: '#f97316' },
 ];
 
 const PRESET_TAGS = [
@@ -276,7 +277,7 @@ export default function PlayerNotesPanel({
             <button
               key={color.value}
               className={`${styles.colorBtn} ${selectedColor === color.value ? styles.selected : ''}`}
-              style={{ backgroundColor: color.value }}
+              style={{ backgroundColor: color.hex }}
               onClick={() => setSelectedColor(color.value)}
               title={color.name}
             />

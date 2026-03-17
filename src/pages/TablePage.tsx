@@ -830,6 +830,9 @@ export default function TablePage({
       setAccountBalance((prev) => Math.max(0, prev - amount));
       totalBuyInRef.current += amount; // Track for session P/L
       totalRebuysRef.current += 1; // Track rebuy count for session summary
+      // Update peak stack if rebuy pushes hero above previous peak
+      const newPeakCandidate = (tableState.players[tableState.heroSeat - 1]?.stack || 0) + amount;
+      if (newPeakCandidate > peakStackRef.current) peakStackRef.current = newPeakCandidate;
       // Update hero's table stack in local state AND sync to DB
       setTableState((prev) => {
         const updatedPlayers = [...prev.players];

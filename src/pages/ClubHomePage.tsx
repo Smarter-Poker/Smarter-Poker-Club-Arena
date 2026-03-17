@@ -12,7 +12,7 @@
  * - Active tables/games grid
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { waitForAuth } from '../utils/waitForAuth';
@@ -61,6 +61,14 @@ interface ClubData {
   avatar_url: string;
   member_count: number;
   online_count: number;
+  owner_id: string;
+  level: number;
+  hierarchy_units_rounded_up: number;
+  player_threshold_current: number;
+  player_threshold_next: number;
+  hierarchy_threshold_current: number;
+  hierarchy_threshold_next: number;
+  created_at: string;
 }
 
 interface TableData {
@@ -126,6 +134,7 @@ export default function ClubHomePage() {
   const [clubLevel, setClubLevel] = useState<ClubLevelInfo | null>(null);
   const toast = useToast();
   const hasDataRef = useRef(false);
+  const loadingRef = useRef(false);
   const [wsConnected, setWsConnected] = useState(true);
 
   // SWR: show cached club data instantly on mount
@@ -313,6 +322,9 @@ export default function ClubHomePage() {
 
   const loadClubData = async (getIsMounted?: () => boolean) => {
     if (!clubId) return;
+    // Request deduplication — skip if already loading
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     // Only show loading spinner on initial load (no cached data), not background refreshes
     if (!hasDataRef.current && (!getIsMounted || getIsMounted())) setLoading(true);
 
@@ -542,6 +554,7 @@ export default function ClubHomePage() {
       console.error('Error loading club data:', error);
       toast.error(error.message || 'Failed to load club data');
     } finally {
+      loadingRef.current = false;
       if (!getIsMounted || getIsMounted()) setLoading(false);
     }
   };
@@ -549,71 +562,80 @@ export default function ClubHomePage() {
   // Filter tables (hide tables when MTT/Spin-It/SN tab is active)
   const showTournaments =
     activeFilter === 'MTT' || activeFilter === 'SN' || activeFilter === 'Spin-It';
-  const filteredTables = tables.filter((table) => {
-    if (showTournaments) return false; // Hide tables when viewing tournaments
+  const filteredTables = useMemo(
+    () =>
+      tables.filter((table) => {
+        if (showTournaments) return false; // Hide tables when viewing tournaments
 
-    // Game type filter
-    let passesGameFilter = true;
-    if (activeFilter === "Hold'em")
-      passesGameFilter =
-        table.game_variant?.toLowerCase().includes('nlh') ||
-        table.game_variant?.toLowerCase().includes('holdem');
-    else if (activeFilter === 'Omaha')
-      passesGameFilter =
-        table.game_variant?.toLowerCase().includes('plo') ||
-        table.game_variant?.toLowerCase().includes('omaha');
-    else if (activeFilter === 'Mixed') {
-      const v = table.game_variant?.toLowerCase() || '';
-      passesGameFilter =
-        v.includes('pineapple') ||
-        v.includes('short_deck') ||
-        v.includes('ofc') ||
-        v.includes('mixed') ||
-        v.includes('double');
-    }
-    if (!passesGameFilter) return false;
+        // Game type filter
+        let passesGameFilter = true;
+        if (activeFilter === "Hold'em")
+          passesGameFilter =
+            table.game_variant?.toLowerCase().includes('nlh') ||
+            table.game_variant?.toLowerCase().includes('holdem');
+        else if (activeFilter === 'Omaha')
+          passesGameFilter =
+            table.game_variant?.toLowerCase().includes('plo') ||
+            table.game_variant?.toLowerCase().includes('omaha');
+        else if (activeFilter === 'Mixed') {
+          const v = table.game_variant?.toLowerCase() || '';
+          passesGameFilter =
+            v.includes('pineapple') ||
+            v.includes('short_deck') ||
+            v.includes('ofc') ||
+            v.includes('mixed') ||
+            v.includes('double');
+        }
+        if (!passesGameFilter) return false;
 
-    // Cash game sub-filter
-    if (cashSubFilter === 'live') return table.current_players > 0;
-    if (cashSubFilter === 'empty') return table.current_players === 0;
-    if (cashSubFilter === 'full') return table.current_players >= table.max_players;
-    return true; // 'all'
-  });
+        // Cash game sub-filter
+        if (cashSubFilter === 'live') return table.current_players > 0;
+        if (cashSubFilter === 'empty') return table.current_players === 0;
+        if (cashSubFilter === 'full') return table.current_players >= table.max_players;
+        return true; // 'all'
+      }),
+    [tables, activeFilter, showTournaments, cashSubFilter]
+  );
 
   // Filter tournaments for MTT/SN/Spin-It tabs
-  const filteredTournaments = tournaments.filter((t) => {
-    const isSpin = t.name.toLowerCase().includes('spin');
-    const isSNG = !isSpin && (t.name.toLowerCase().includes('sng') || t.max_players <= 10);
-    const isMTT = !isSpin && !isSNG;
+  const filteredTournaments = useMemo(
+    () =>
+      tournaments.filter((t) => {
+        const isSpin = t.name.toLowerCase().includes('spin');
+        const isSNG = !isSpin && (t.name.toLowerCase().includes('sng') || t.max_players <= 10);
+        const isMTT = !isSpin && !isSNG;
 
-    // Game type filter
-    let passesGameFilter = false;
-    if (activeFilter === 'MTT') passesGameFilter = isMTT;
-    else if (activeFilter === 'SN') passesGameFilter = isSNG;
-    else if (activeFilter === 'Spin-It') passesGameFilter = isSpin;
-    else if (activeFilter === 'ALL') passesGameFilter = true;
-    if (!passesGameFilter) return false;
+        // Game type filter
+        let passesGameFilter = false;
+        if (activeFilter === 'MTT') passesGameFilter = isMTT;
+        else if (activeFilter === 'SN') passesGameFilter = isSNG;
+        else if (activeFilter === 'Spin-It') passesGameFilter = isSpin;
+        else if (activeFilter === 'ALL') passesGameFilter = true;
+        if (!passesGameFilter) return false;
 
-    // Tournament sub-filter
-    if (tournamentSubFilter === 'all') return true;
-    const status = (t.status || '').toUpperCase();
-    const startTime = new Date(t.start_time).getTime();
-    const now = Date.now();
-    const minutesUntilStart = (startTime - now) / 60000;
+        // Tournament sub-filter
+        if (tournamentSubFilter === 'all') return true;
+        const status = (t.status || '').toUpperCase();
+        const startTime = new Date(t.start_time).getTime();
+        const now = Date.now();
+        const minutesUntilStart = (startTime - now) / 60000;
 
-    if (tournamentSubFilter === 'running') return status === 'RUNNING' || status === 'IN_PROGRESS';
-    if (tournamentSubFilter === 'registering')
-      return status === 'REGISTERING' || status === 'OPEN' || status === 'PENDING';
-    if (tournamentSubFilter === 'late_reg')
-      return status === 'LATE_REG' || status === 'LATE_REGISTRATION';
-    if (tournamentSubFilter === 'starting_soon')
-      return (
-        (status === 'REGISTERING' || status === 'OPEN' || status === 'PENDING') &&
-        minutesUntilStart > 0 &&
-        minutesUntilStart <= 60
-      );
-    return true;
-  });
+        if (tournamentSubFilter === 'running')
+          return status === 'RUNNING' || status === 'IN_PROGRESS';
+        if (tournamentSubFilter === 'registering')
+          return status === 'REGISTERING' || status === 'OPEN' || status === 'PENDING';
+        if (tournamentSubFilter === 'late_reg')
+          return status === 'LATE_REG' || status === 'LATE_REGISTRATION';
+        if (tournamentSubFilter === 'starting_soon')
+          return (
+            (status === 'REGISTERING' || status === 'OPEN' || status === 'PENDING') &&
+            minutesUntilStart > 0 &&
+            minutesUntilStart <= 60
+          );
+        return true;
+      }),
+    [tournaments, activeFilter, tournamentSubFilter]
+  );
 
   const formatNumber = (num: number) => {
     return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -696,9 +718,44 @@ export default function ClubHomePage() {
     return (
       <div className="club-home error">
         <h2>Club Not Found</h2>
-        <Link to="/clubs" className="btn btn-primary">
-          Back to Clubs
-        </Link>
+        <p style={{ color: '#888', fontSize: '0.9rem', margin: '0 0 1rem' }}>
+          The club may have been moved or deleted.
+        </p>
+        <div style={{ display: 'flex', gap: '0.75rem' }}>
+          <button
+            className="btn btn-primary"
+            onClick={() => {
+              loadingRef.current = false;
+              loadClubData();
+            }}
+            style={{
+              background: '#1877f2',
+              border: 'none',
+              color: 'white',
+              padding: '0.6rem 1.2rem',
+              borderRadius: 8,
+              cursor: 'pointer',
+              fontWeight: 600,
+            }}
+          >
+            Retry
+          </button>
+          <Link
+            to="/clubs"
+            className="btn btn-primary"
+            style={{
+              background: 'rgba(255,255,255,0.1)',
+              border: '1px solid rgba(255,255,255,0.2)',
+              color: 'white',
+              padding: '0.6rem 1.2rem',
+              borderRadius: 8,
+              textDecoration: 'none',
+              fontWeight: 600,
+            }}
+          >
+            Back to Clubs
+          </Link>
+        </div>
       </div>
     );
   }
@@ -706,14 +763,7 @@ export default function ClubHomePage() {
   return (
     <div className="club-home">
       <GlobalUXIndicators wsConnected={wsConnected} />
-      <style>{`
-                @keyframes slideInUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
-                @keyframes slideInLeft { from { opacity: 0; transform: translateX(-16px); } to { opacity: 1; transform: translateX(0); } }
-                .club-home__stats-animated { animation: slideInUp 0.6s cubic-bezier(0.34, 1.56, 0.64, 1); }
-                .club-home__games-item-animated { animation: slideInUp 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards; opacity: 0; }
-                @keyframes shimmer { 0% { background-position: -1000px 0; } 100% { background-position: 1000px 0; } }
-                .club-home__skeleton { background: linear-gradient(90deg, rgba(255,255,255,0.1) 25%, rgba(255,255,255,0.2) 50%, rgba(255,255,255,0.1) 75%, rgba(255,255,255,0.1)); background-size: 1000px 100%; animation: shimmer 2s infinite; }
-            `}</style>
+      {/* Animations moved to ClubHomePage.css */}
       {/* ═══════════════════════════════════════════════════════════════════
                 QUICK ACTION ICONS ROW
             ═══════════════════════════════════════════════════════════════════ */}
@@ -728,10 +778,24 @@ export default function ClubHomePage() {
           ‹‹
         </button>
         <div className="club-home__quick-icons">
-          <button className="quick-icon" title="Events" onClick={() => haptic.selection()}>
+          <button
+            className="quick-icon"
+            title="Events"
+            onClick={() => {
+              haptic.selection();
+              navigate(`/clubs/${clubId}/detail`);
+            }}
+          >
             <span className="icon-events"></span>
           </button>
-          <button className="quick-icon" title="Leaderboard" onClick={() => haptic.selection()}>
+          <button
+            className="quick-icon"
+            title="Leaderboard"
+            onClick={() => {
+              haptic.selection();
+              navigate('/leaderboard');
+            }}
+          >
             <span className="icon-leaderboard"></span>
           </button>
         </div>
@@ -773,7 +837,28 @@ export default function ClubHomePage() {
                   </span>
                 )}
               </span>
-              <button className="club-card__share" title="Share" onClick={() => haptic.medium()}>
+              <button
+                className="club-card__share"
+                title="Share"
+                onClick={async () => {
+                  haptic.medium();
+                  const shareUrl = `${window.location.origin}/clubs/${clubId}`;
+                  try {
+                    if (navigator.share) {
+                      await navigator.share({
+                        title: club.name,
+                        text: `Join ${club.name} on Smarter Poker!`,
+                        url: shareUrl,
+                      });
+                    } else {
+                      await navigator.clipboard.writeText(shareUrl);
+                      toast.success('Club link copied!');
+                    }
+                  } catch {
+                    /* user cancelled share */
+                  }
+                }}
+              >
                 <span className="icon-link"></span>
               </button>
             </div>
@@ -803,14 +888,26 @@ export default function ClubHomePage() {
           <div className="wallet-row gold">
             <span className="wallet-icon gold-icon"></span>
             <span className="wallet-amount">{formatNumber(wallet.gold)}</span>
-            <button className="wallet-add-btn" onClick={() => haptic.medium()}>
+            <button
+              className="wallet-add-btn"
+              onClick={() => {
+                haptic.medium();
+                navigate(`/clubs/${clubId}/detail`);
+              }}
+            >
               +
             </button>
           </div>
           <div className="wallet-row diamond">
             <span className="wallet-icon diamond-icon"></span>
             <span className="wallet-amount">{formatNumber(wallet.diamonds)}</span>
-            <button className="wallet-add-btn" onClick={() => haptic.medium()}>
+            <button
+              className="wallet-add-btn"
+              onClick={() => {
+                haptic.medium();
+                navigate(`/clubs/${clubId}/detail`);
+              }}
+            >
               +
             </button>
           </div>
@@ -989,10 +1086,14 @@ export default function ClubHomePage() {
             setDeleteTableConfirm({ show: false, tableId: null, tableName: null });
             setDeletingTableId(id);
             try {
-              const { error } = await supabase
+              // Defense-in-depth: scope delete to this club's tables
+              const resolvedClubId = club?.id;
+              let query = supabase
                 .from('tables')
                 .update({ status: 'deleted', is_active: false, is_deleted: true })
                 .eq('id', id);
+              if (resolvedClubId) query = query.eq('club_id', resolvedClubId);
+              const { error } = await query;
               if (error) throw error;
               setTables((prev) => prev.filter((t) => t.id !== id));
               toast.success('Table deleted');

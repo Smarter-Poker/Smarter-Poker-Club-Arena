@@ -190,6 +190,16 @@ function getRakeConfigForBlinds(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// ENGINE SUIT MAP — Shared constant eliminates 7 duplicate inline declarations
+// ═══════════════════════════════════════════════════════════════════════════════
+const ENGINE_SUIT_MAP: Record<string, 'h' | 'd' | 'c' | 's'> = {
+  hearts: 'h',
+  diamonds: 'd',
+  clubs: 'c',
+  spades: 's',
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // GAME VARIANT LABEL HELPER
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -482,6 +492,8 @@ export default function TablePage({
   const peakStackRef = useRef(0);
   const sessionPLRef = useRef(0);
   const totalBuyInRef = useRef(0); // Track total chips invested for accurate session P/L
+  const handsWonRef = useRef(0); // Session hands won by hero
+  const totalRebuysRef = useRef(0); // Add-chips/rebuy count for session summary
   const [waitListPlayers, setWaitListPlayers] = useState<
     Array<{
       playerId: string;
@@ -725,6 +737,7 @@ export default function TablePage({
       await WalletService.lockForBuyIn(userId, tableId, amount);
       setAccountBalance((prev) => Math.max(0, prev - amount));
       totalBuyInRef.current += amount; // Track for session P/L
+      totalRebuysRef.current += 1; // Track rebuy count for session summary
       // Update hero's table stack in local state AND sync to DB
       setTableState((prev) => {
         const updatedPlayers = [...prev.players];
@@ -1012,8 +1025,10 @@ export default function TablePage({
   const playWinSound = (potAmount?: number) => {
     // NEW-BUG-2 FIX: use dynamic isEnabled() not stale isSoundEnabled closure
     if (!soundService.isEnabled()) return;
-    const bb = safeBB(tableState.blinds);
-    const bbWon = (potAmount || tableState.pot) / bb;
+    // Use ref for fresh blinds (this function is called from event handlers that may have stale closures)
+    const currentBlinds = tableStateRef.current.blinds;
+    const bb = safeBB(currentBlinds);
+    const bbWon = (potAmount || tableStateRef.current.pot) / bb;
 
     if (bbWon >= 50) {
       soundService.playBigWin();
@@ -1064,7 +1079,9 @@ export default function TablePage({
     players: Array<{ userId: string; clubId: string; agentId?: string }>
   ) => {
     // Parse blinds from string (e.g., "0.25/0.50" -> sb=0.25, bb=0.50)
-    const blindParts = (tableState.blinds || '?/?').split('/');
+    // Use ref for fresh blinds (this function is called from event handler closures)
+    const currentBlinds = tableStateRef.current.blinds || '?/?';
+    const blindParts = currentBlinds.split('/');
     const smallBlind = parseFloat(blindParts[0]) || 1;
     const bigBlind = parseFloat(blindParts[1]) || 2;
 
@@ -2902,10 +2919,21 @@ export default function TablePage({
             });
           }
 
-          // Track wins for HUD stats
+          // Track wins for HUD stats + hero session wins
           for (const winner of event.winners) {
             if (winner.userId) {
               recordHUDWin(winner.userId);
+              // Track hero wins for session summary
+              if (winner.userId === userId) {
+                handsWonRef.current += 1;
+              }
+            }
+          }
+          // Show hero P/L toast after each hand
+          {
+            const heroWin = event.winners.find((w: any) => w.userId === userId);
+            if (heroWin && heroWin.amount > 0) {
+              toast?.success?.(`+$${heroWin.amount.toFixed(2)}`, { autoClose: 2000 });
             }
           }
           // Trigger achievements for winners
@@ -3450,6 +3478,7 @@ export default function TablePage({
       }
     });
     soundService.playFold();
+    haptic?.light();
     broadcastLocalHandState();
     if (tableId)
       submitAction(tableId, userId, 'fold').catch((e) =>
@@ -3467,6 +3496,7 @@ export default function TablePage({
       }
     });
     soundService.playCheck();
+    haptic?.light();
     broadcastLocalHandState();
     if (tableId)
       submitAction(tableId, userId, 'check').catch((e) =>
@@ -3484,6 +3514,7 @@ export default function TablePage({
       }
     });
     soundService.playChips();
+    haptic?.light();
     broadcastLocalHandState();
     if (tableId)
       submitAction(tableId, userId, 'call').catch((e) =>
@@ -3594,6 +3625,9 @@ export default function TablePage({
     const clampedRaise = Math.min(raiseAmount, heroStack);
     if (clampedRaise <= 0) return;
 
+    // Validate before executing
+    if (!validateAndExecuteAction('raise', clampedRaise)) return;
+
     // Close slider immediately
     setShowRaiseSlider(false);
     try {
@@ -3606,6 +3640,7 @@ export default function TablePage({
         }
       });
       soundService.playChips();
+      haptic?.light();
       // PRIMARY: Broadcast via Supabase Realtime
       broadcastLocalHandState();
       // SECONDARY: Fire-and-forget server call
@@ -3623,6 +3658,7 @@ export default function TablePage({
     const hero = getPlayerAtSeat(heroSeat);
     const heroStack = hero?.stack || 0;
     if (heroStack <= 0) return;
+    if (!validateAndExecuteAction('allin')) return;
     try {
       startTransition(() => {
         if (handControllerRef.current) {
@@ -3774,6 +3810,22 @@ export default function TablePage({
 
   const handleAnimationComplete = useCallback((id: string) => {
     setChipAnimations((prev) => prev.filter((a) => a.id !== id));
+  }, []);
+
+  // Safety cleanup: remove chip animations older than 5 seconds (e.g. if CSS event missed)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setChipAnimations((prev) => {
+        if (prev.length === 0) return prev;
+        const cutoff = Date.now() - 5000;
+        const fresh = prev.filter((a) => {
+          const ts = parseInt(a.id.split('_')[1] || '0', 10);
+          return ts > cutoff;
+        });
+        return fresh.length === prev.length ? prev : fresh;
+      });
+    }, 5000);
+    return () => clearInterval(interval);
   }, []);
 
   // Load waitlist data
@@ -5180,8 +5232,8 @@ export default function TablePage({
         <SessionSummary
           duration={Math.floor((Date.now() - sessionStartRef.current) / 1000)}
           handsPlayed={handsPlayedRef.current}
-          handsWon={0}
-          totalRebuys={0}
+          handsWon={handsWonRef.current}
+          totalRebuys={totalRebuysRef.current}
           profitLoss={sessionPLRef.current}
           biggestPot={biggestPotRef.current}
           peakStack={peakStackRef.current}
@@ -5191,6 +5243,8 @@ export default function TablePage({
             biggestPotRef.current = 0;
             peakStackRef.current = 0;
             sessionPLRef.current = 0;
+            handsWonRef.current = 0;
+            totalRebuysRef.current = 0;
             sessionStartRef.current = Date.now();
             setShowSessionSummary(false);
 

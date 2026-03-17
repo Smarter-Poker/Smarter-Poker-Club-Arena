@@ -308,8 +308,6 @@ function useCountAnimation(target: number, duration: number = 800) {
   return display;
 }
 
-
-
 export default function ClubDetailPage() {
   const { clubId } = useParams();
   useVisibilityRefresh(() => loadClubData());
@@ -380,6 +378,8 @@ export default function ClubDetailPage() {
   const animatedTableCount = useCountAnimation(club?.activeTableCount || 0, 800);
 
   // SWR: show cached club data instantly on mount while fresh data loads
+  // TTL: skip caches older than 5 minutes to prevent very stale flash
+  const SWR_TTL_MS = 5 * 60 * 1000;
   useEffect(() => {
     let isMounted = true;
     if (clubId) {
@@ -387,7 +387,8 @@ export default function ClubDetailPage() {
         const cached = sessionStorage.getItem(`club_detail_cache_${clubId}`);
         if (cached) {
           const parsed = JSON.parse(cached);
-          if (parsed.club) {
+          const age = parsed.cachedAt ? Date.now() - parsed.cachedAt : Infinity;
+          if (parsed.club && age < SWR_TTL_MS) {
             setClub(parsed.club);
             if (parsed.members) setMembers(parsed.members);
             if (parsed.tables) setTables(parsed.tables);
@@ -448,14 +449,19 @@ export default function ClubDetailPage() {
     }
   }, [club?.name, club?.settings]);
 
-  // Filter members when search changes
+  // Filter members when search changes (debounced 200ms to reduce re-renders)
   useEffect(() => {
-    if (!memberSearch.trim()) {
-      setFilteredMembers(members);
-    } else {
-      const search = memberSearch.toLowerCase();
-      setFilteredMembers(members.filter((m) => (m.username || '').toLowerCase().includes(search)));
-    }
+    const timerId = setTimeout(() => {
+      if (!memberSearch.trim()) {
+        setFilteredMembers(members);
+      } else {
+        const search = memberSearch.toLowerCase();
+        setFilteredMembers(
+          members.filter((m) => (m.username || '').toLowerCase().includes(search))
+        );
+      }
+    }, 200);
+    return () => clearTimeout(timerId);
   }, [memberSearch, members]);
 
   // Load agents when agents tab is selected
@@ -756,6 +762,12 @@ export default function ClubDetailPage() {
       }
     } catch (error) {
       console.error('[ClubDetailPage] Error loading data:', error);
+      // Clear stale session cache on error to prevent ghost data on next visit
+      try {
+        sessionStorage.removeItem(`club_detail_cache_${clubId}`);
+      } catch {
+        /* ignore */
+      }
     } finally {
       loadingRef.current = false;
       initialLoadDone.current = true;
@@ -824,6 +836,11 @@ export default function ClubDetailPage() {
           break;
         case 'remove':
           await MembershipService.removeMember(clubId, memberUserId);
+          // Optimistic member count decrement for instant feedback
+          setClub((prev) =>
+            prev ? { ...prev, memberCount: Math.max(0, prev.memberCount - 1) } : null
+          );
+          setMembers((prev) => prev.filter((m) => m.id !== memberUserId));
           toast.success('Member removed');
           break;
       }

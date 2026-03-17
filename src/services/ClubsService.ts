@@ -187,10 +187,11 @@ export async function joinClub(clubId: string, role: MemberRole = 'member'): Pro
     }
   }
 
+  const resolvedId = await resolveClubUUID(clubId);
   const { data, error } = await supabase
     .from('club_members')
     .insert({
-      club_id: clubId,
+      club_id: resolvedId,
       user_id: user.user.id,
       role,
       tier: 'bronze',

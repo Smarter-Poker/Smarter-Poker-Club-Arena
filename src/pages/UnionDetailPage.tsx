@@ -178,7 +178,7 @@ export default function UnionDetailPage() {
         });
         setTables(sortedTables);
 
-        if (unionData?.settings?.crossClubTournaments) {
+        if (unionData?.settings?.crossClubTournaments && clubsData && clubsData.length > 0) {
           const clubIds = clubsData.map((c) => c.clubId);
           const [{ data: clubTournaments }, { data: xmttTournaments }] = await Promise.all([
             supabase

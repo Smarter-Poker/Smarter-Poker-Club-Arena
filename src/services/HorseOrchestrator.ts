@@ -1281,18 +1281,12 @@ class HorseOrchestrator {
           console.error(`[Orchestrator] Failed to attach ${clubLabel}:`, attachErr);
         } else {
           // Also set clubs.union_id for fast lookup
-          await supabase
-            .from('clubs')
-            .update({ union_id: this.unionId })
-            .eq('id', clubId);
+          await supabase.from('clubs').update({ union_id: this.unionId }).eq('id', clubId);
           console.debug(`[Orchestrator] ${clubLabel} attached to Midway Union`);
         }
       } else {
         // Ensure clubs.union_id is also set (belt-and-suspenders)
-        await supabase
-          .from('clubs')
-          .update({ union_id: this.unionId })
-          .eq('id', clubId);
+        await supabase.from('clubs').update({ union_id: this.unionId }).eq('id', clubId);
       }
     }
 
@@ -1303,10 +1297,7 @@ class HorseOrchestrator {
       .eq('union_id', this.unionId);
 
     if (count !== null) {
-      await supabase
-        .from('unions')
-        .update({ club_count: count })
-        .eq('id', this.unionId);
+      await supabase.from('unions').update({ club_count: count }).eq('id', this.unionId);
     }
 
     console.debug('[Orchestrator] Midway Union setup complete');

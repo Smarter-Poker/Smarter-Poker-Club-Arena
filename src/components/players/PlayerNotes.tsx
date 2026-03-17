@@ -3,10 +3,12 @@
  * Personal notes system for tracking opponents
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
+import { useStaggerAnimation } from '../../hooks/useStaggerAnimation';
 import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
+import { NOTE_COLORS, PLAYER_TAGS } from '../../services/PlayerNotesService';
 import { useToast } from '../common/Toast';
 import './PlayerNotes.css';
 
@@ -39,40 +41,15 @@ export const PlayerNotes: React.FC<PlayerNotesProps> = ({ playerId, onClose, mod
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const isMounted = useIsMounted();
-  const [visibleNotes, setVisibleNotes] = useState<Set<number>>(new Set());
-  const animTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const { style: staggerStyle } = useStaggerAnimation(notes.length);
 
-  useEffect(() => {
-    animTimers.current.forEach(clearTimeout);
-    animTimers.current = [];
-    notes.forEach((_, i) => {
-      const t = setTimeout(() => setVisibleNotes((prev) => new Set(prev).add(i)), i * 50);
-      animTimers.current.push(t);
-    });
-    return () => {
-      animTimers.current.forEach(clearTimeout);
-      animTimers.current = [];
-    };
-  }, [notes.length]);
+  // Use canonical color/tag constants from PlayerNotesService
+  const colors = NOTE_COLORS.filter((c) => c.id !== 'none').map((c) => ({
+    id: c.id as PlayerNote['noteColor'],
+    label: c.name,
+  }));
 
-  const colors: { id: PlayerNote['noteColor']; label: string }[] = [
-    { id: 'green', label: 'Fish' },
-    { id: 'yellow', label: 'Unknown' },
-    { id: 'red', label: 'Shark' },
-    { id: 'blue', label: 'Reg' },
-    { id: 'purple', label: 'Whale' },
-  ];
-
-  const commonTags = [
-    'Tight',
-    'Loose',
-    'Aggressive',
-    'Passive',
-    'Bluffer',
-    'Calling Station',
-    'Tilts Easy',
-    'Good Player',
-  ];
+  const commonTags = PLAYER_TAGS;
 
   useEffect(() => {
     loadNotes();
@@ -227,11 +204,7 @@ export const PlayerNotes: React.FC<PlayerNotesProps> = ({ playerId, onClose, mod
               key={note.id}
               className={`note-card color-${note.noteColor}`}
               onClick={() => setSelectedNote(note)}
-              style={{
-                opacity: visibleNotes.has(i) ? 1 : 0,
-                transform: visibleNotes.has(i) ? 'translateY(0)' : 'translateY(8px)',
-                transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-              }}
+              style={staggerStyle(i)}
             >
               <div className="note-header">
                 <div className="player-info">

@@ -4,6 +4,10 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  * Wraps async functions with automatic retry on transient network errors.
  * Only retries on network/timeout failures — NOT on auth/validation errors.
+ *
+ * USE THIS for service-layer retries (non-React) where errors are thrown.
+ * For component-level Supabase retries (detects `{ error }` in response),
+ * use retryFetch.ts instead.
  */
 
 /** Errors that are safe to retry (transient network issues) */

@@ -416,3 +416,6 @@ export default {
 
 // Re-export responsive hooks
 export * from './useResponsive';
+
+// Re-export animation hooks
+export { useStaggerAnimation } from './useStaggerAnimation';

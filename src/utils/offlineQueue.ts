@@ -1,6 +1,10 @@
 /**
- * Offline Mutation Queue Utilities
- * Manages queuing and replaying mutations when offline
+ * Offline Mutation Queue Utilities (localStorage-based)
+ *
+ * @deprecated Prefer OfflineQueueService (IndexedDB-based) for new code.
+ * This module is kept for backward compatibility with App.tsx, BusDevToolsPage,
+ * and OfflineQueueBadge. It will be removed in a future refactor.
+ * See: src/services/OfflineQueueService.ts
  */
 
 const QUEUE_KEY = 'offline_mutation_queue';

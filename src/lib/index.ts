@@ -16,7 +16,9 @@ export * from './constants';
 // Form Validation
 export * from './validation';
 
-// Date/Time Utilities (exclude duplicates from utils)
+// Date/Time Utilities
+// formatDuration, formatTime, and formatRelativeTime (alias for formatRelative)
+// are already re-exported via ./utils to avoid duplicate export errors.
 export {
   formatDate,
   formatDateTime,

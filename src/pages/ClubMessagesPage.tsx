@@ -50,6 +50,15 @@ export default function ClubMessagesPage() {
   const [loadError, setLoadError] = useState(false);
   const loadingRef = useRef(false);
 
+  // ── CRITICAL: Reset per-club state when navigating between clubs ──
+  useEffect(() => {
+    setUserRole('member');
+    setSelectedConversation(null);
+    setVisibleConversations(new Set());
+    setLoadError(false);
+    loadingRef.current = false;
+  }, [urlClubId]);
+
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
 
   // Hydrate userRole from club_members so BottomNav shows correct tabs

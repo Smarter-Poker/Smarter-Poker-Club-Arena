@@ -61,6 +61,14 @@ export default function ClubFinancialsPage() {
   const isMounted = useIsMounted();
   const loadingRef = useRef(false);
 
+  // ── CRITICAL: Reset per-club state when navigating between clubs ──
+  useEffect(() => {
+    setUserRole('member');
+    setExporting(false);
+    setVisibleTransactions(new Set());
+    loadingRef.current = false;
+  }, [clubId]);
+
   useEffect(() => {
     if (clubId) loadFinancials();
   }, [clubId, period]);

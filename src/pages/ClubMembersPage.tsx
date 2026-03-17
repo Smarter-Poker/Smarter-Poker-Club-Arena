@@ -467,6 +467,17 @@ export default function ClubMembersPage() {
 
   const loadingRef = useRef(false);
 
+  // ── CRITICAL: Reset per-club state when navigating between clubs ──
+  useEffect(() => {
+    setUserRole('member');
+    setFilter('all');
+    setSearchQuery('');
+    setSelectedMember(null);
+    setVisibleMembers(new Set());
+    setIsRefreshing(false);
+    loadingRef.current = false;
+  }, [clubId]);
+
   const loadMembers = useCallback(
     async (getIsMounted?: () => boolean) => {
       if (!clubId) return;

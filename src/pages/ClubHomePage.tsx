@@ -137,6 +137,21 @@ export default function ClubHomePage() {
   const loadingRef = useRef(false);
   const [wsConnected, setWsConnected] = useState(true);
 
+  // ── CRITICAL: Reset per-club state when navigating between clubs ──
+  // React Router reuses the component when only the clubId param changes.
+  useEffect(() => {
+    setIsOwner(false);
+    setUserRole('member');
+    setIsInUnion(false);
+    setDeletingTableId(null);
+    setDeleteTableConfirm({ show: false, tableId: null, tableName: null });
+    setClubLevel(null);
+    setWallet({ gold: 0, diamonds: 0 });
+    setJackpotAmount(0);
+    loadingRef.current = false;
+    hasDataRef.current = false;
+  }, [clubId]);
+
   // SWR: show cached club data instantly on mount
   useEffect(() => {
     if (!clubId) return;

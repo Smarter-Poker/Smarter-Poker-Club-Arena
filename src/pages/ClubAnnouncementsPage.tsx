@@ -50,6 +50,19 @@ export default function ClubAnnouncementsPage() {
   const [loadError, setLoadError] = useState(false);
   const loadingRef = useRef(false);
 
+  // ── CRITICAL: Reset per-club state when navigating between clubs ──
+  useEffect(() => {
+    setIsAdmin(false);
+    setUserRole('member');
+    setPosting(false);
+    setShowComposer(false);
+    setNewTitle('');
+    setNewContent('');
+    setDeleteTarget(null);
+    setLoadError(false);
+    loadingRef.current = false;
+  }, [clubId]);
+
   useEffect(() => {
     if (clubId) {
       let isMounted = true;

@@ -45,6 +45,16 @@ export default function ClubRulesPage() {
   const [loadError, setLoadError] = useState(false);
   const loadingRef = useRef(false);
 
+  // ── CRITICAL: Reset per-club state when navigating between clubs ──
+  useEffect(() => {
+    setIsAdmin(false);
+    setUserRole('member');
+    setIsEditing(false);
+    setSaving(false);
+    setLoadError(false);
+    loadingRef.current = false;
+  }, [clubId]);
+
   useEffect(() => {
     let isMounted = true;
     if (clubId && user?.id) loadRules(() => isMounted);

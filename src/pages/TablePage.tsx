@@ -1674,7 +1674,7 @@ export default function TablePage({
                   setTableState((prev) => ({
                     ...prev,
                     players: prev.players.map((seat: any) =>
-                      seat?.userId === elimData.userId ? { ...seat, status: 'eliminated' } : seat
+                      seat?.id === elimData.userId ? { ...seat, status: 'eliminated' } : seat
                     ),
                   }));
                 }
@@ -3405,10 +3405,7 @@ export default function TablePage({
         playerBet: heroPlayer.bet,
         playerStack: heroPlayer.stack,
         bigBlind: safeBB(tableState.blinds),
-        minRaise: Math.max(
-          safeBB(tableState.blinds),
-          state.lastRaise || safeBB(tableState.blinds)
-        ),
+        minRaise: Math.max(safeBB(tableState.blinds), state.lastRaise || safeBB(tableState.blinds)),
         pot: state.pot,
         canCheck: state.currentBet - heroPlayer.bet <= 0,
         actionDeadline: 0,

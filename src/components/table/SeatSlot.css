@@ -1329,12 +1329,10 @@
 
   /* Hide verbose style badge label on mobile — show icon only */
   .seat__style-badge {
-    font-size: 0;
-    padding: 2px 4px;
-    line-height: 1;
-  }
-  .seat__style-badge::first-letter {
-    font-size: 0.6rem;
+    max-width: 22px;
+    overflow: hidden;
+    padding: 1px 3px;
+    text-overflow: clip;
   }
 }
 

@@ -1470,45 +1470,37 @@ export default function App() {
                   }
                 />
 
-                {/* Legal Pages */}
+                {/* Legal Pages — public (no AuthGuard) so users can read terms before signup */}
                 <Route
                   path="legal/tos"
                   element={
-                    <AuthGuard>
-                      <PageErrorBoundary pageName="TermsOfService">
-                        <TermsOfServicePage />
-                      </PageErrorBoundary>
-                    </AuthGuard>
+                    <PageErrorBoundary pageName="TermsOfService">
+                      <TermsOfServicePage />
+                    </PageErrorBoundary>
                   }
                 />
                 <Route
                   path="legal/promotions"
                   element={
-                    <AuthGuard>
-                      <PageErrorBoundary pageName="ClubPromotionRules">
-                        <ClubPromotionRulesPage />
-                      </PageErrorBoundary>
-                    </AuthGuard>
+                    <PageErrorBoundary pageName="ClubPromotionRules">
+                      <ClubPromotionRulesPage />
+                    </PageErrorBoundary>
                   }
                 />
                 <Route
                   path="legal/fair-gaming"
                   element={
-                    <AuthGuard>
-                      <PageErrorBoundary pageName="FairGaming">
-                        <FairGamingPage />
-                      </PageErrorBoundary>
-                    </AuthGuard>
+                    <PageErrorBoundary pageName="FairGaming">
+                      <FairGamingPage />
+                    </PageErrorBoundary>
                   }
                 />
                 <Route
                   path="legal/privacy"
                   element={
-                    <AuthGuard>
-                      <PageErrorBoundary pageName="PrivacyPolicy">
-                        <PrivacyPolicyPage />
-                      </PageErrorBoundary>
-                    </AuthGuard>
+                    <PageErrorBoundary pageName="PrivacyPolicy">
+                      <PrivacyPolicyPage />
+                    </PageErrorBoundary>
                   }
                 />
 

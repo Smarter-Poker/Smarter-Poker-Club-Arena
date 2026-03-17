@@ -28,7 +28,7 @@ export const useSettingsStore = create<SettingsState>()(
         set((state) => ({ notificationsEnabled: !state.notificationsEnabled })),
       setTheme: (theme) => {
         set({ theme });
-        masterBus.emit('UI_THEME_CHANGED' as any, { key: 'theme', value: theme });
+        masterBus.emit('UI_THEME_CHANGED', { key: 'theme', value: theme });
       },
     }),
     {

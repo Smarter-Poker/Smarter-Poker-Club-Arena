@@ -203,7 +203,7 @@ export default function AnalyticsDashboard() {
         )
       );
 
-      // Enhancement #9: Live active player count from table_players
+      // Enhancement #9: Live active player count from table_seats
       const { count: liveCount } = await supabase
         .from('table_seats')
         .select('id', { count: 'exact', head: true })

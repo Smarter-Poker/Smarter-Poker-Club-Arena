@@ -53,11 +53,15 @@ export default function SmarterHeader({
   // Q3: Real-time DM badge updates via MasterBus
   useEffect(() => {
     const unsubDM = masterBus.subscribe('UNREAD_DM_COUNT_CHANGED', (ev) => {
-      setUnreadMessages(ev.payload.count);
+      setUnreadMessages(ev.payload.count ?? 0);
     });
     const unsubMsg = masterBus.subscribe('MESSAGE_RECEIVED', () => {
       // Refresh count on any new message
-      if (user?.id) messagingService.getUnreadCount(user.id).then(setUnreadMessages).catch((e) => console.warn('[SmarterHeader] Unread DM count refresh failed:', e));
+      if (user?.id)
+        messagingService
+          .getUnreadCount(user.id)
+          .then(setUnreadMessages)
+          .catch((e) => console.warn('[SmarterHeader] Unread DM count refresh failed:', e));
     });
     return () => {
       unsubDM();

@@ -821,7 +821,7 @@ export class TournamentEngine {
         bigBlind: level.bigBlind,
         ante: level.ante || 0,
       });
-      masterBus.emit('TOURNAMENT_LEVEL_CHANGE' as any, {
+      masterBus.emit('TOURNAMENT_LEVEL_CHANGE', {
         tournamentId: this.tournamentId,
         level: newLevel + 1,
         smallBlind: level.smallBlind,
@@ -1748,7 +1748,7 @@ export class TournamentEngine {
       .update({ status: 'closed', current_players: 0 })
       .eq('id', sourceTable.tableId);
 
-    masterBus.emit('TABLE_MERGED' as any, {
+    masterBus.emit('TABLE_MERGED', {
       tournamentId: this.tournamentId,
       sourceTableId: sourceTable.tableId,
       tablesRemaining: this.tables.length,

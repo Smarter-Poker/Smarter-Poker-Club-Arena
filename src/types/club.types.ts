@@ -389,32 +389,8 @@ export interface TournamentEntry {
 //  ECONOMY
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export interface ChipTransaction {
-  id: string;
-  user_id: string;
-  club_id: string;
-  type: TransactionType;
-  amount: number;
-  balance_before: number;
-  balance_after: number;
-  related_entity_id?: string; // Table ID, Tournament ID, etc.
-  notes?: string;
-  created_by: string;
-  created_at: string;
-}
-
-export type TransactionType =
-  | 'deposit'
-  | 'withdrawal'
-  | 'table_buy_in'
-  | 'table_cash_out'
-  | 'tournament_entry'
-  | 'tournament_prize'
-  | 'rake'
-  | 'rakeback'
-  | 'transfer_in'
-  | 'transfer_out'
-  | 'bonus';
+// ChipTransaction + TransactionType: canonical definition in database.types.ts
+// (removed duplicate — use `import { ChipTransaction } from './database.types'`)
 
 export interface DiamondTransaction {
   id: string;

@@ -105,7 +105,7 @@ export const ChipFlowService = {
     });
     masterBus.emit('BALANCE_UPDATED', { source: 'chip_transfer', userId: toUserId, amount: amt });
     // CASHIER_BALANCE_CHANGED: Specific event for MarketplacePage and cashier-aware components
-    masterBus.emit('CASHIER_BALANCE_CHANGED' as any, { clubId: relatedEntityId || '' });
+    masterBus.emit('CASHIER_BALANCE_CHANGED', { clubId: relatedEntityId || '' });
 
     // 5. Get final balances
     const { data: fromWallet } = await supabase

@@ -136,7 +136,7 @@ export type BusEventType =
   // Tournament notification hooks
   | 'TOURNAMENT_STARTING_24H'
   | 'TOURNAMENT_STARTING_1H'
-  // VIP points events
+  // VIP points events — @deprecated: superseded by VIP_POINTS_UPDATED (no emitters or subscribers)
   | 'VIP_POINTS_AWARDED'
   // Horse fleet events
   | 'HORSE_SEATED'
@@ -225,7 +225,7 @@ export type BusEventType =
   // Phase Q1: OFC dealing events
   | 'OFC_HAND_STARTED'
   | 'OFC_CARDS_DEALT'
-  | 'OFC_PLACEMENT_TIMER'
+  | 'OFC_PLACEMENT_TIMER' // @deprecated: no emitters or subscribers — reserved for future OFC implementation
   | 'OFC_TURN_CHANGE'
   | 'OFC_SCORING_COMPLETE'
   | 'OFC_FANTASYLAND_ENTERED'
@@ -271,7 +271,7 @@ export type BusEventType =
   | 'TOURNAMENT_STARTED'
   | 'TOURNAMENT_COMPLETE'
   | 'ANTI_CHEAT_FLAG_CREATED'
-  | 'ANNOUNCEMENT_CREATED'
+  | 'ANNOUNCEMENT_CREATED' // @deprecated: no emitters or subscribers — reserved for future use
   | 'CREDIT_UPDATED'
   // Phase 4: Remaining native page event types (Hub → Club Arena)
   | 'TOURNAMENT_CANCELLED'
@@ -315,7 +315,13 @@ export interface BusPayloadMap {
   NOTIFICATION_READ: { notifId: string | null; allRead: boolean };
   WAITLIST_POSITION_CHANGED: { tableId: string; position: number; tableName: string };
   SESSION_SUMMARY_DISMISSED: { tableId: string };
-  TABLE_EMOTE: { tableId: string; userId: string; emoteId: string };
+  TABLE_EMOTE: {
+    tableId: string;
+    userId: string;
+    emoji: string;
+    playerName: string;
+    emoteId?: string;
+  };
   ACHIEVEMENT_UNLOCKED: {
     userId: string;
     achievementId: string;
@@ -385,8 +391,9 @@ export interface BusPayloadMap {
   TABLE_MERGED: {
     tournamentId: string;
     sourceTableId: string;
-    targetTableId: string;
-    playersMoved: number;
+    tablesRemaining: number;
+    targetTableId?: string;
+    playersMoved?: number;
   };
   // Cashier events
   CHIPS_ADDED: { tableId: string; userId: string; amount: number; newStack: number };
@@ -496,7 +503,7 @@ export interface BusPayloadMap {
   // Tournament notification hooks
   TOURNAMENT_STARTING_24H: { tournamentId: string; name: string; startsAt: string };
   TOURNAMENT_STARTING_1H: { tournamentId: string; name: string; startsAt: string };
-  // VIP points events
+  /** @deprecated superseded by VIP_POINTS_UPDATED */
   VIP_POINTS_AWARDED: { userId: string; amount: number; source: string };
   // Horse fleet events
   HORSE_SEATED: { tableId: string; horseId: string; horseName: string };
@@ -661,7 +668,7 @@ export interface BusPayloadMap {
   CONVERSATION_CREATED: { conversationId: string; isGroup: boolean };
   CONVERSATION_PINNED: { conversationId: string };
   CONVERSATION_UNPINNED: { conversationId: string };
-  UNREAD_DM_COUNT_CHANGED: { count: number };
+  UNREAD_DM_COUNT_CHANGED: { userId: string; count?: number };
   // Phase Q1: Disconnect & Time Bank engine payloads
   PLAYER_SAT_OUT: {
     tableId: string;
@@ -862,8 +869,14 @@ export interface BusPayloadMap {
   ANTI_CHEAT_FLAG_CREATED: { clubId: string; flagId?: string; severity?: string };
   ANNOUNCEMENT_CREATED: { clubId: string; action?: string };
   // Phase 4: Remaining native page event payloads
-  TOURNAMENT_CANCELLED: { tournamentId: string; clubId?: string };
-  TOURNAMENT_LEVEL_CHANGE: { tournamentId: string; level?: number };
+  TOURNAMENT_CANCELLED: { tournamentId: string; clubId?: string; reason?: string };
+  TOURNAMENT_LEVEL_CHANGE: {
+    tournamentId: string;
+    level?: number;
+    smallBlind?: number;
+    bigBlind?: number;
+    ante?: number;
+  };
   MEMBER_UPDATED: { clubId: string; userId?: string; role?: string };
   HAND_REPLAYED: { handId: string; clubId?: string };
   HAND_COMPLETE: { tableId?: string; clubId?: string; handNumber?: number };
@@ -872,11 +885,14 @@ export interface BusPayloadMap {
   CLUB_SETTINGS_UPDATED: { clubId?: string; setting?: string; value?: unknown };
   // Phase 4 deep-sweep: overlay + theme payloads
   MYSTERY_BOUNTY_REVEALED: {
-    playerName: string;
+    playerName?: string;
     amount: number;
     tierLabel?: string;
     isJackpot?: boolean;
     avgBounty?: number;
+    tournamentId?: string;
+    eliminatedPlayerId?: string;
+    collectorPlayerId?: string;
   };
   UI_THEME_CHANGED: { key: string; value?: unknown };
   // Phase 8 Deep Sweep: flash pool game state event
@@ -1658,4 +1674,16 @@ export function getMasterBusStatus(): MasterBusStatus | null {
 
 export function isMasterBusOnline(): boolean {
   return masterBus.isOnline();
+}
+
+/**
+ * Convenience helper: show a toast via the MasterBus → BusToastBridge pipeline.
+ * Services can call this without importing the React toast hook.
+ */
+export function busToast(
+  message: string,
+  severity: 'critical' | 'warning' | 'info' = 'info',
+  durationMs?: number
+): void {
+  masterBus.emit('SHOW_TOAST', { message, severity, source: 'busToast', durationMs });
 }

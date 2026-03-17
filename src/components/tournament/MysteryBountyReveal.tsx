@@ -154,7 +154,8 @@ export default function MysteryBountyReveal({
   }, []);
 
   useEffect(() => {
-    const unsub = masterBus.subscribe('MYSTERY_BOUNTY_REVEALED', (payload: any) => {
+    const unsub = masterBus.subscribe('MYSTERY_BOUNTY_REVEALED', (event) => {
+      const payload = event.payload;
       if (payload?.playerName && payload?.amount) {
         setBusReveal({
           playerName: payload.playerName,

@@ -71,7 +71,7 @@ export const QuickChatPresets: React.FC<QuickChatPresetsProps> = ({
         playerName: playerName || 'Player',
         emoji,
       });
-      masterBus.emit('TABLE_EMOTE' as any, {
+      masterBus.emit('TABLE_EMOTE', {
         tableId,
         userId,
         playerName: playerName || 'Player',

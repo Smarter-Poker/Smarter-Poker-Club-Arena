@@ -45,7 +45,8 @@ export interface CashoutRequest {
   cancelledAt?: string;
 }
 
-export interface ChipTransaction {
+/** Cashout-specific transaction (distinct from the canonical ChipTransaction in database.types) */
+export interface CashoutTransaction {
   id: string;
   clubId: string;
   fromUserId?: string;

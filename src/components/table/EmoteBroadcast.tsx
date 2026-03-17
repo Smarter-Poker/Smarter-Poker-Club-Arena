@@ -51,8 +51,9 @@ interface EmoteBroadcastProps {
 export function EmoteBroadcast({ tableId }: EmoteBroadcastProps) {
   const [floatingEmotes, setFloatingEmotes] = useState<FloatingEmote[]>([]);
 
-  const addEmote = useCallback((emoteId: string, username?: string) => {
-    const emoji = EMOTE_MAP[emoteId] || '😀';
+  const addEmote = useCallback((emojiOrId: string, username?: string) => {
+    // Support both direct emoji and emote ID lookup
+    const emoji = EMOTE_MAP[emojiOrId] || emojiOrId;
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     setFloatingEmotes((prev) => [
       ...prev.slice(-5),
@@ -66,9 +67,9 @@ export function EmoteBroadcast({ tableId }: EmoteBroadcastProps) {
   }, []);
 
   useEffect(() => {
-    const unsub = masterBus.subscribe('TABLE_EMOTE', (event: any) => {
+    const unsub = masterBus.subscribe('TABLE_EMOTE', (event) => {
       if (event?.payload?.tableId === tableId) {
-        addEmote(event.payload.emoteId, event.payload.username);
+        addEmote(event.payload.emoji || event.payload.emoteId || '', event.payload.playerName);
       }
     });
     return () => {

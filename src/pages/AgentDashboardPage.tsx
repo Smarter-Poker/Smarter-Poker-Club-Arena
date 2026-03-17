@@ -13,6 +13,7 @@ import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { resolveClubUUID } from '../utils/clubIdResolver';
+import type { ChipTransaction } from '../types/database.types';
 import { cashoutService } from '../services/CashoutService';
 import { WalletService } from '../services/WalletService';
 import { CreditService } from '../services/CreditService';
@@ -89,16 +90,7 @@ interface AgentCommission {
   notes?: string;
   created_at: string;
 }
-interface ChipTransaction {
-  id: string;
-  from_user_id?: string;
-  to_user_id?: string;
-  club_id: string;
-  amount: number;
-  transaction_type: string;
-  notes?: string;
-  created_at: string;
-}
+// ChipTransaction imported from types/database.types (canonical definition)
 
 export default function AgentDashboardPage() {
   const navigate = useNavigate();
@@ -260,7 +252,7 @@ export default function AgentDashboardPage() {
             supabase
               .from('chip_transactions')
               .select(
-                'id, from_user_id, to_user_id, club_id, amount, transaction_type, notes, created_at'
+                'id, from_user_id, to_user_id, club_id, amount, type, transaction_type, notes, created_at'
               )
               .eq('club_id', uuid)
               .order('created_at', { ascending: false })
@@ -281,7 +273,7 @@ export default function AgentDashboardPage() {
         setPlayers(enrichedPlayers);
         setPendingCashouts(cashouts || []);
         setCommissions(comms || []);
-        setRecentTx(txns || []);
+        setRecentTx((txns || []) as ChipTransaction[]);
         setAgents(agentList);
 
         // SWR: cache successful load for instant display on revisit

@@ -361,7 +361,7 @@ class MessagingServiceClass {
         console.error('[Messaging] Failed to mark as read:', error);
         return false;
       }
-      masterBus.emit('UNREAD_DM_COUNT_CHANGED' as any, { userId });
+      masterBus.emit('UNREAD_DM_COUNT_CHANGED', { userId });
       return true;
     } catch (err: unknown) {
       console.error('[Messaging] markAsRead error:', err);
@@ -1141,7 +1141,9 @@ class MessagingServiceClass {
       .eq('id', conversationId)
       .maybeSingle();
     if (!conv || conv.category !== 'club_announcement') {
-      console.error('[Messaging] postAnnouncement: Invalid conversation or not an announcement channel');
+      console.error(
+        '[Messaging] postAnnouncement: Invalid conversation or not an announcement channel'
+      );
       return false;
     }
     // Verify admin is a club owner/admin

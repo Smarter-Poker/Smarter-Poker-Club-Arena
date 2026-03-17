@@ -56,7 +56,7 @@ export default function ConnectionIndicator() {
     });
 
     // Also listen for reconnecting events — same silent treatment
-    const unsubReconnecting = masterBus.subscribe('WS_RECONNECTING' as any, () => {
+    const unsubReconnecting = masterBus.subscribe('WS_RECONNECTING', () => {
       // Cancel the offline timer — we're actively trying to reconnect
       // Only show if it's been a really long time
       if (offlineTimerRef.current) clearTimeout(offlineTimerRef.current);

@@ -1126,7 +1126,7 @@ class TournamentService {
     );
 
     // Emit completion event (cancelled = complete from a lifecycle perspective)
-    masterBus.emit('TOURNAMENT_CANCELLED' as any, {
+    masterBus.emit('TOURNAMENT_CANCELLED', {
       tournamentId,
       clubId: tournament.club_id,
       reason,
@@ -2068,7 +2068,7 @@ class TournamentService {
         console.error('[TournamentService] Prize distribution failed:', prizeError);
       } else {
         console.debug('[TournamentService] Prizes distributed:', prizeResult);
-        masterBus.emit('BALANCE_UPDATED' as any, { source: 'tournament_prizes', tournamentId });
+        masterBus.emit('BALANCE_UPDATED', { source: 'tournament_prizes', tournamentId });
       }
     } catch (prizeErr) {
       console.error('[TournamentService] Prize distribution exception:', prizeErr);
@@ -2282,7 +2282,7 @@ class TournamentService {
         console.error('[TournamentService] Failed to record mystery bounty:', mysteryInsErr);
 
       // Notify UI to show mystery bounty reveal animation
-      masterBus.emit('MYSTERY_BOUNTY_REVEALED' as any, {
+      masterBus.emit('MYSTERY_BOUNTY_REVEALED', {
         tournamentId,
         eliminatedPlayerId,
         collectorPlayerId,

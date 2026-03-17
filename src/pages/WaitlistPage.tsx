@@ -223,7 +223,7 @@ export default function WaitlistPage() {
             <span className="empty-icon">☰</span>
             <h3>No Active Waitlists</h3>
             <p>You're not on any table waitlists</p>
-            <button className="btn btn-primary" onClick={() => navigate('/lobby')}>
+            <button className="btn btn-primary" onClick={() => navigate('/')}>
               Browse Tables
             </button>
           </div>

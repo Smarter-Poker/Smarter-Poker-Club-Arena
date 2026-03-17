@@ -310,9 +310,9 @@ class NotificationServiceClass {
 
     switch (type) {
       case 'waitlist_ready':
-        return metadata.tableId ? `/table/${metadata.tableId}` : '/lobby';
+        return metadata.tableId ? `/table/${metadata.tableId}` : '/';
       case 'table_invite':
-        return metadata.tableId ? `/table/${metadata.tableId}` : '/lobby';
+        return metadata.tableId ? `/table/${metadata.tableId}` : '/';
       case 'club_announcement':
         return metadata.clubId ? `/club/${metadata.clubId}` : '/clubs';
       case 'message':

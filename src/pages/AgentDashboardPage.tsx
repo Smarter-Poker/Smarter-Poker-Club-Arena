@@ -623,7 +623,7 @@ export default function AgentDashboardPage() {
             </span>
           </div>
           <div className="admin-header-actions">
-            <button onClick={() => navigate('/lobby')} className="admin-btn admin-btn-ghost">
+            <button onClick={() => navigate('/')} className="admin-btn admin-btn-ghost">
               🏠 Lobby
             </button>
             <button onClick={() => setShowTransfer(true)} className="admin-btn admin-btn-ghost">

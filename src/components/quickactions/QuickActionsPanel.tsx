@@ -31,7 +31,7 @@ export const QuickActionsPanel: React.FC = () => {
         icon: '🎰',
         label: 'Lobby',
         shortcut: 'L',
-        action: () => navigateRef.current('/lobby'),
+        action: () => navigateRef.current('/'),
       },
       {
         id: 'create',

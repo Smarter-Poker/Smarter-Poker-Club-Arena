@@ -823,7 +823,7 @@ export default function PlayerSessionsPage() {
             )}
           </div>
           <div className="admin-header-actions">
-            <button onClick={() => navigate('/lobby')} className="admin-btn admin-btn-ghost">
+            <button onClick={() => navigate('/')} className="admin-btn admin-btn-ghost">
               🏠 Lobby
             </button>
             <button onClick={() => loadSessions(clubId)} className="admin-btn admin-btn-ghost">

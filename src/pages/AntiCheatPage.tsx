@@ -594,7 +594,7 @@ export default function AntiCheatPage() {
           </h1>
         </div>
         <div className={styles.headerActions}>
-          <Link to="/lobby" className={styles.btnGhost}>
+          <Link to="/" className={styles.btnGhost}>
             🏠 Lobby
           </Link>
           <Link to="/admin" className={styles.btnGhost}>

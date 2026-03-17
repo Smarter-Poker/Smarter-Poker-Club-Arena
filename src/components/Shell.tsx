@@ -158,7 +158,7 @@ function ShellContent() {
               Home
             </NavLink>
             <NavLink
-              to="/lobby"
+              to="/"
               className={({ isActive }) => `shell-nav-link ${isActive ? 'active' : ''}`}
             >
               Play
@@ -278,7 +278,7 @@ function ShellContent() {
               {' '}
               Home
             </NavLink>
-            <NavLink to="/lobby" onClick={() => setMobileMenuOpen(false)}>
+            <NavLink to="/" onClick={() => setMobileMenuOpen(false)}>
               {' '}
               Play
             </NavLink>

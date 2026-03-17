@@ -150,7 +150,7 @@ export default function MultiTablePage() {
         const newTables = prev.filter((t) => t.id !== e.tableId);
         // If all tables closed, navigate to lobby
         if (newTables.length === 0) {
-          navigate('/lobby');
+          navigate('/');
         }
         return newTables;
       });
@@ -219,7 +219,7 @@ export default function MultiTablePage() {
     if (tables.length >= MAX_TABLES) return;
     // Navigate to lobby to pick a table
     // The lobby will redirect back here with the new table ID
-    navigate('/lobby?returnToMulti=true');
+    navigate('/?returnToMulti=true');
   }, [tables.length, navigate]);
 
   // ─── Update table info (called by child TablePage instances) ─────────
@@ -365,7 +365,7 @@ export default function MultiTablePage() {
     return (
       <div className="multi-table-page multi-table-page--empty">
         <p>No tables open</p>
-        <button onClick={() => navigate('/lobby')}>Go to Lobby</button>
+        <button onClick={() => navigate('/')}>Go to Lobby</button>
       </div>
     );
   }

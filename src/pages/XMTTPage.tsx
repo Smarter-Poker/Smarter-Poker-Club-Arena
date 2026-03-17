@@ -310,7 +310,7 @@ export default function XMTTPage() {
           <Link to="/tournaments" className={styles.btnGhost}>
             📋 All Tournaments
           </Link>
-          <Link to="/lobby" className={styles.btnGhost}>
+          <Link to="/" className={styles.btnGhost}>
             🏠 Lobby
           </Link>
         </div>
@@ -346,7 +346,7 @@ export default function XMTTPage() {
             <div className={styles.emptyState}>
               <span className={styles.emptyIcon}>🏆</span>
               <span className={styles.emptyText}>No MTT tournaments found for this filter.</span>
-              <Link to="/lobby" className={styles.btnPrimary} style={{ marginTop: 12 }}>
+              <Link to="/" className={styles.btnPrimary} style={{ marginTop: 12 }}>
                 🏠 Go to Lobby
               </Link>
             </div>

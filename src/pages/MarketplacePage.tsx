@@ -275,7 +275,7 @@ export default function MarketplacePage() {
           </h1>
         </div>
         <div className={styles.headerActions}>
-          <Link to="/lobby" className={styles.btnGhost}>
+          <Link to="/" className={styles.btnGhost}>
             🏠 Lobby
           </Link>
           <button onClick={() => loadMarketplace(clubId || undefined)} className={styles.btnGhost}>

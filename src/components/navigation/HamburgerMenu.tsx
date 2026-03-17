@@ -403,7 +403,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                 ═══════════════════════════════════════════════════════════════ */}
         <div style={sectionHeaderStyle}>Game Modes</div>
         {[
-          { label: 'Lobby', path: '/lobby' },
+          { label: 'Lobby', path: '/' },
           { label: 'Tournaments', path: '/tournaments' },
           { label: 'Tournament Lobby', path: '/tournament-lobby' },
           { label: 'Tournament Results', path: '/tournament-results' },

@@ -6,7 +6,7 @@
  * Root application with routing, auth guards, and global providers
  */
 
-import { Routes, Route, useLocation, Link } from 'react-router-dom';
+import { Routes, Route, useLocation, Link, Navigate } from 'react-router-dom';
 import { Suspense, useState, useEffect, useRef } from 'react';
 import { lazyWithRetry as lazy } from './utils/lazyWithRetry';
 import { supabase } from './lib/supabase';
@@ -47,7 +47,7 @@ import TOSGuard from './components/legal/TOSGuard';
 // Pages (lazy loaded for performance)
 const AuthPage = lazy(() => import('./pages/AuthPage'));
 const HomePage = lazy(() => import('./pages/HomePage'));
-const LobbyPage = lazy(() => import('./pages/LobbyPage'));
+// LobbyPage removed — /lobby redirects to / (HomePage). Real lobby is ClubLobby at /clubs/:clubId.
 const ClubsPage = lazy(() => import('./pages/ClubsPage'));
 const ClubCarouselPage = lazy(() => import('./pages/ClubCarouselPage'));
 const ClubHomePage = lazy(() => import('./pages/ClubHomePage'));
@@ -563,17 +563,8 @@ export default function App() {
               {/* Protected routes with AppLayout shell — RouteErrorBoundary on each */}
               <Route element={<AppLayout />}>
                 {/* RouteErrorBoundary wraps all AppLayout children */}
-                {/* Lobby */}
-                <Route
-                  path="lobby"
-                  element={
-                    <AuthGuard>
-                      <PageErrorBoundary pageName="Lobby">
-                        <LobbyPage />
-                      </PageErrorBoundary>
-                    </AuthGuard>
-                  }
-                />
+                {/* Lobby — redirect to HomePage; real lobby is ClubLobby at /clubs/:clubId */}
+                <Route path="lobby" element={<Navigate to="/" replace />} />
 
                 {/* Clubs */}
                 <Route
@@ -1542,10 +1533,10 @@ export default function App() {
                       <h1 className="text-6xl font-bold mb-4">404</h1>
                       <p className="text-xl text-gray-400 mb-8">Page not found</p>
                       <Link
-                        to="/lobby"
+                        to="/"
                         className="px-6 py-3 bg-green-600 rounded-lg hover:bg-green-700 transition-colors"
                       >
-                        Back to Lobby
+                        Back to Home
                       </Link>
                     </div>
                   }

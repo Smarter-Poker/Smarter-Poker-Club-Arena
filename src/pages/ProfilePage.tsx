@@ -1398,7 +1398,7 @@ export default function ProfilePage() {
               <div className={styles.emptyHistory}>
                 <span className={styles.emptyIcon}></span>
                 <p>No recent transactions to display.</p>
-                <button className={styles.playButton} onClick={() => navigate('/lobby')}>
+                <button className={styles.playButton} onClick={() => navigate('/')}>
                   Start Playing
                 </button>
               </div>

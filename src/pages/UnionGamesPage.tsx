@@ -322,7 +322,7 @@ export default function UnionGamesPage() {
               🏛️ Union
             </Link>
           )}
-          <Link to="/lobby" className={styles.btnGhost}>
+          <Link to="/" className={styles.btnGhost}>
             🏠 Lobby
           </Link>
           <button onClick={() => loadUnionData(unionId || undefined)} className={styles.btnGhost}>

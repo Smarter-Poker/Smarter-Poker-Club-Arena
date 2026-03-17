@@ -2405,7 +2405,7 @@ export default function AdminDashboardPage() {
             <div className="admin-error-icon">🛡️</div>
             <div style={{ fontWeight: 700, fontSize: '16px', color: '#FA383E' }}>{error}</div>
             <button
-              onClick={() => navigate('/lobby')}
+              onClick={() => navigate('/')}
               className="admin-btn admin-btn-primary"
               style={{ marginTop: '16px' }}
             >
@@ -2429,7 +2429,7 @@ export default function AdminDashboardPage() {
         <div className="admin-page-header">
           <div className="admin-page-title">⚙️ Admin & Operations</div>
           <div className="admin-header-actions">
-            <button onClick={() => navigate('/lobby')} className="admin-btn admin-btn-ghost">
+            <button onClick={() => navigate('/')} className="admin-btn admin-btn-ghost">
               🏠 Lobby
             </button>
           </div>

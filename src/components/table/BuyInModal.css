@@ -461,6 +461,22 @@
   box-shadow: none;
 }
 
+.buy-in-modal__confirm--processing {
+  background: linear-gradient(135deg, #4a9eff 0%, #1877f2 100%);
+  cursor: wait;
+  animation: processingPulse 1.2s ease-in-out infinite;
+}
+
+@keyframes processingPulse {
+  0%,
+  100% {
+    opacity: 0.85;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════════
    TOP UP BUTTON
    ═══════════════════════════════════════════════════════════════════════════════ */

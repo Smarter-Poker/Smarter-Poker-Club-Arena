@@ -1,4 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import { SoundSettings } from './SoundSettings';
+import { NotificationSettings } from './NotificationSettings';
+import { PrivacySettings } from './PrivacySettings';
+import { GameplaySettings } from './GameplaySettings';
 import './SettingsPanel.css';
 
 type SettingsTab = 'general' | 'sound' | 'notifications' | 'privacy' | 'gameplay' | 'appearance';
@@ -93,29 +97,25 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
         {activeTab === 'sound' && (
           <div className="settings-section">
-            <h3>Sound Settings</h3>
-            <p className="settings-placeholder">Sound settings component</p>
+            <SoundSettings />
           </div>
         )}
 
         {activeTab === 'notifications' && (
           <div className="settings-section">
-            <h3>Notification Settings</h3>
-            <p className="settings-placeholder">Notification settings component</p>
+            <NotificationSettings />
           </div>
         )}
 
         {activeTab === 'privacy' && (
           <div className="settings-section">
-            <h3>Privacy Settings</h3>
-            <p className="settings-placeholder">Privacy settings component</p>
+            <PrivacySettings />
           </div>
         )}
 
         {activeTab === 'gameplay' && (
           <div className="settings-section">
-            <h3>Gameplay Settings</h3>
-            <p className="settings-placeholder">Gameplay settings component</p>
+            <GameplaySettings />
           </div>
         )}
 

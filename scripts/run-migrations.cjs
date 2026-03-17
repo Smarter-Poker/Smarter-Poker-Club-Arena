@@ -61,10 +61,10 @@ async function bootstrapExecSQL() {
   try {
     const { Pool } = require('pg');
     const pool = new Pool({
-      host: 'db.kuklfnapbkmacvwxktbh.supabase.co',
+      host: 'aws-0-us-east-1.pooler.supabase.com',
       port: 5432,
       database: 'postgres',
-      user: 'postgres',
+      user: 'postgres.kuklfnapbkmacvwxktbh',
       password: DB_PASSWORD,
       ssl: { rejectUnauthorized: false },
       connectionTimeoutMillis: 15000,

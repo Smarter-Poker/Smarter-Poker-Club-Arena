@@ -66,6 +66,7 @@ export function BuyInModal({
     defaultBuyIn || Math.min(minBuyIn * 2, maxBuyIn)
   );
   const [isConfirmPulsing, setIsConfirmPulsing] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   const animationFrameRef = useRef<number>(0);
   const countStartRef = useRef<number>(0);
 
@@ -139,12 +140,18 @@ export function BuyInModal({
   );
 
   // Handle confirm
-  const handleConfirm = useCallback(() => {
-    if (hasEnoughBalance) {
-      haptic.medium();
-      onConfirm(clampedBuyIn, autoRebuy);
+  const handleConfirm = useCallback(async () => {
+    if (!hasEnoughBalance || isProcessing) return;
+    haptic.medium();
+    setIsProcessing(true);
+    try {
+      await onConfirm(clampedBuyIn, autoRebuy);
+    } catch (err) {
+      console.error('[BuyInModal] onConfirm threw:', err);
+    } finally {
+      setIsProcessing(false);
     }
-  }, [clampedBuyIn, autoRebuy, hasEnoughBalance, onConfirm]);
+  }, [clampedBuyIn, autoRebuy, hasEnoughBalance, isProcessing, onConfirm]);
 
   if (!isOpen) return null;
 
@@ -248,11 +255,11 @@ export function BuyInModal({
 
         {/* Confirm Button */}
         <button
-          className={`buy-in-modal__confirm ${!hasEnoughBalance ? 'buy-in-modal__confirm--disabled' : ''} ${isConfirmPulsing ? 'buy-in-modal__confirm--pulse' : ''}`}
+          className={`buy-in-modal__confirm ${!hasEnoughBalance ? 'buy-in-modal__confirm--disabled' : ''} ${isConfirmPulsing ? 'buy-in-modal__confirm--pulse' : ''} ${isProcessing ? 'buy-in-modal__confirm--processing' : ''}`}
           onClick={handleConfirm}
-          disabled={!hasEnoughBalance}
+          disabled={!hasEnoughBalance || isProcessing}
         >
-          {hasEnoughBalance ? 'Buy Chips' : 'Insufficient Balance'}
+          {isProcessing ? 'Joining...' : hasEnoughBalance ? 'Buy Chips' : 'Insufficient Balance'}
         </button>
 
         {/* Top Up Link */}

@@ -3409,20 +3409,24 @@ export default function TablePage({
   );
 
   // Handle seat click (sit down at empty seat)
-  const handleSeatClick = async (seatNumber: number) => {
+  const handleSeatClick = (seatNumber: number) => {
     // Validate seat is empty before showing buy-in modal
     const seatIdx = seatNumber - 1;
     if (seatIdx >= 0 && seatIdx < tableState.players.length && tableState.players[seatIdx]) {
       // Seat is occupied — ignore click
+      console.debug('[Seat] Seat', seatNumber, 'is occupied — ignoring click');
       return;
     }
     // Don't allow sitting if already seated at this table
     if (tableState.heroSeat > 0) {
+      console.debug('[Seat] Hero already seated at seat', tableState.heroSeat, '— ignoring click');
       return;
     }
+    console.debug('[Seat] Opening buy-in modal for seat', seatNumber);
     setSelectedSeat(seatNumber);
     setShowBuyInModal(true);
-    await updateSeat(seatNumber);
+    // Fire-and-forget: update presence (non-blocking — do NOT await)
+    updateSeat(seatNumber).catch((e) => console.warn('[Seat] Presence update failed:', e));
   };
 
   // Broadcast current hand state via Supabase Realtime — PRIMARY sync mechanism
@@ -5036,8 +5040,12 @@ export default function TablePage({
         isOpen={showBuyInModal}
         onClose={() => setShowBuyInModal(false)}
         onConfirm={async (amount, autoRebuy) => {
+          console.debug('[BuyIn] onConfirm FIRED — amount:', amount, 'autoRebuy:', autoRebuy);
           // Debounce protection: prevent double-click
-          if (buyInProcessingRef.current) return;
+          if (buyInProcessingRef.current) {
+            console.warn('[BuyIn] Debounce: buyInProcessingRef is true — ignoring duplicate click');
+            return;
+          }
           buyInProcessingRef.current = true;
           try {
             // DEBUG: Log all buy-in conditions
@@ -5156,7 +5164,12 @@ export default function TablePage({
                 tableId,
                 selectedSeat,
               });
+              toast.error('Unable to complete buy-in. Please try again.');
             }
+            setShowBuyInModal(false);
+          } catch (outerErr) {
+            console.error('[BuyIn] UNHANDLED error in onConfirm:', outerErr);
+            toast.error('An unexpected error occurred. Please try again.');
             setShowBuyInModal(false);
           } finally {
             buyInProcessingRef.current = false;

@@ -3679,6 +3679,26 @@ export default function TablePage({
     setShowRaiseSlider(true);
   };
 
+  // ── Keyboard Shortcuts for Table Actions ──
+  // F = Fold | C = Check/Call | R = Raise/Bet | A = All-in
+  // Only active when it's hero's turn, not typing in an input
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      // Don't trigger if user is typing in an input/textarea
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (!isHeroTurnContext) return;
+      if (actionLockRef.current) return;
+
+      const key = e.key.toLowerCase();
+      if (key === 'f') { e.preventDefault(); handleFold(); }
+      else if (key === 'c') { e.preventDefault(); handleCheck(); handleCall(); }
+      else if (key === 'r') { e.preventDefault(); handleRaise(); }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isHeroTurnContext, handleFold, handleCheck, handleCall]);
+
   // Unified action handler for ActionPanel component
   // Architecture: LOCAL engine is authoritative → broadcast via Supabase Realtime (PRIMARY)
   // → fire-and-forget server call (SECONDARY, for when game server is deployed)
@@ -4623,7 +4643,7 @@ export default function TablePage({
               <span className="menu-item-label">Table Rules</span>
               <span className="menu-item-arrow">›</span>
             </button>
-            <button className="menu-item" onClick={() => setIsSoundEnabled(!isSoundEnabled)}>
+            <button className="menu-item" onClick={() => { const next = !isSoundEnabled; setIsSoundEnabled(next); try { localStorage.setItem('ca_sound_enabled', String(next)); } catch {} }}>
               <span className="menu-item-icon">♪</span>
               <span className="menu-item-label">Sounds</span>
               <span className={`menu-item-toggle ${isSoundEnabled ? 'on' : ''}`}>
@@ -4632,7 +4652,7 @@ export default function TablePage({
             </button>
             <button
               className="menu-item"
-              onClick={() => setIsVibrationEnabled(!isVibrationEnabled)}
+              onClick={() => { const next = !isVibrationEnabled; setIsVibrationEnabled(next); try { localStorage.setItem('ca_vibration_enabled', String(next)); } catch {} }}
             >
               <span className="menu-item-icon">⋆</span>
               <span className="menu-item-label">Vibrations</span>

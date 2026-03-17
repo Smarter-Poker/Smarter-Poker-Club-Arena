@@ -212,6 +212,7 @@ export default function SearchPage() {
       masterBus.subscribeDebounced('CLUB_UPDATED', refresh, 500),
       masterBus.subscribeDebounced('PROFILE_UPDATED', refresh, 500),
       masterBus.subscribeDebounced('CLUB_JOINED', refresh, 500),
+      masterBus.subscribeDebounced('TOURNAMENT_UPDATED', refresh, 500),
     ];
     return () => unsubs.forEach((u) => u());
   }, [query, search]);

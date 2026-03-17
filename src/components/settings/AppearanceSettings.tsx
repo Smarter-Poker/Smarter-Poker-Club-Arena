@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { masterBus } from '../../core/MasterBus';
 
 interface AppearanceConfig {
   theme: 'dark' | 'midnight' | 'forest';
@@ -27,6 +28,7 @@ const FELT_COLORS: { id: AppearanceConfig['feltColor']; label: string; hex: stri
 export const AppearanceSettings: React.FC = () => {
   const [config, setConfig] = useState<AppearanceConfig>(DEFAULT_CONFIG);
   const [saved, setSaved] = useState(false);
+  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     try {
@@ -35,15 +37,23 @@ export const AppearanceSettings: React.FC = () => {
     } catch {
       /* ignore corrupt data */
     }
+    return () => {
+      if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+    };
   }, []);
 
-  const update = (partial: Partial<AppearanceConfig>) => {
-    const next = { ...config, ...partial };
-    setConfig(next);
-    localStorage.setItem('sp_appearance_settings', JSON.stringify(next));
+  const update = useCallback((partial: Partial<AppearanceConfig>) => {
+    setConfig((prev) => {
+      const next = { ...prev, ...partial };
+      localStorage.setItem('sp_appearance_settings', JSON.stringify(next));
+      // Emit bus event so other pages (table, etc.) can react to appearance changes
+      masterBus.emit('SETTINGS_UPDATED', { settings: next as unknown as Record<string, unknown> });
+      return next;
+    });
     setSaved(true);
-    setTimeout(() => setSaved(false), 1500);
-  };
+    if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+    savedTimerRef.current = setTimeout(() => setSaved(false), 1500);
+  }, []);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>

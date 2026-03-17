@@ -50,6 +50,8 @@ export const ConnectionHUD: React.FC<ConnectionHUDProps> = ({ tableId, userId })
   const wasDisconnectedRef = useRef(false);
   /** Track stale data state for banner */
   const [showStaleBanner, setShowStaleBanner] = useState(false);
+  /** Stale banner auto-dismiss timer ref */
+  const staleBannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Poll connection state ──
   useEffect(() => {
@@ -69,7 +71,10 @@ export const ConnectionHUD: React.FC<ConnectionHUDProps> = ({ tableId, userId })
       }
     }, 1000);
 
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      if (staleBannerTimerRef.current) clearTimeout(staleBannerTimerRef.current);
+    };
   }, [tableId, userId]);
 
   // ── Listen for disconnect events ──
@@ -98,7 +103,8 @@ export const ConnectionHUD: React.FC<ConnectionHUDProps> = ({ tableId, userId })
         toast.success('Connection restored — table data syncing...');
         setShowStaleBanner(true);
         // Auto-hide stale banner after 5s (data should be fresh by then)
-        setTimeout(() => setShowStaleBanner(false), 5000);
+        if (staleBannerTimerRef.current) clearTimeout(staleBannerTimerRef.current);
+        staleBannerTimerRef.current = setTimeout(() => setShowStaleBanner(false), 5000);
       }
     }
   });

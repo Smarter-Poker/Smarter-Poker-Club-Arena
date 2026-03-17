@@ -3,9 +3,10 @@
  * Track all admin actions in the club
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { formatDateTime as formatTime } from '../../lib/date';
 import { supabase } from '../../lib/supabase';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import './AuditLog.css';
 
 interface AuditEntry {
@@ -40,9 +41,15 @@ export const AuditLog: React.FC<AuditLogProps> = ({ clubId }) => {
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
+  const isMounted = useIsMounted();
+  const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   const loadAuditLog = useCallback(async () => {
     setLoading(true);
+    // Clear any existing stagger timers
+    staggerTimersRef.current.forEach((t) => clearTimeout(t));
+    staggerTimersRef.current = [];
+
     try {
       const query = supabase
         .from('audit_logs')
@@ -55,6 +62,7 @@ export const AuditLog: React.FC<AuditLogProps> = ({ clubId }) => {
 
       const { data, error } = await query;
       if (error) throw error;
+      if (!isMounted.current) return;
 
       // Resolve usernames for actors and targets
       const userIds = [
@@ -68,6 +76,7 @@ export const AuditLog: React.FC<AuditLogProps> = ({ clubId }) => {
           .from('profiles')
           .select('id, username, display_name')
           .in('id', userIds);
+        if (!isMounted.current) return;
         (profiles || []).forEach((p: any) => {
           profileMap[p.id] = p.display_name || p.username || p.id.slice(0, 8);
         });
@@ -99,23 +108,31 @@ export const AuditLog: React.FC<AuditLogProps> = ({ clubId }) => {
         };
       });
 
+      if (!isMounted.current) return;
       setEntries(mapped);
       setVisibleItems(new Set());
 
-      // Stagger visibility
-      mapped.forEach((_, i) => {
-        setTimeout(() => setVisibleItems((prev) => new Set([...prev, i])), i * 40);
-      });
+      // Stagger visibility with cleanup
+      staggerTimersRef.current = mapped.map((_, i) =>
+        setTimeout(() => {
+          if (isMounted.current) {
+            setVisibleItems((prev) => new Set([...prev, i]));
+          }
+        }, i * 40)
+      );
     } catch (error) {
       console.error('Failed to load audit log:', error);
     } finally {
-      setLoading(false);
+      if (isMounted.current) setLoading(false);
     }
-  }, [clubId]);
+  }, [clubId, isMounted]);
 
   useEffect(() => {
     loadAuditLog();
-  }, [loadAuditLog, filter]);
+    return () => {
+      staggerTimersRef.current.forEach((t) => clearTimeout(t));
+    };
+  }, [loadAuditLog]);
 
   const getActionIcon = (action: string) => {
     if (action.includes('banned')) return '🚫';

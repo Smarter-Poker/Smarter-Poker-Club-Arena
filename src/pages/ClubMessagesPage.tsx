@@ -50,6 +50,33 @@ export default function ClubMessagesPage() {
 
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
 
+  // Hydrate userRole from club_members so BottomNav shows correct tabs
+  useEffect(() => {
+    if (!clubId || !user?.id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { resolveClubUUID } = await import('../utils/clubIdResolver');
+        const resolvedId = await resolveClubUUID(clubId);
+        if (cancelled) return;
+        const { data } = await supabase
+          .from('club_members')
+          .select('role')
+          .eq('club_id', resolvedId)
+          .eq('user_id', user.id)
+          .maybeSingle();
+        if (!cancelled && data?.role) {
+          setUserRole(data.role as 'owner' | 'admin' | 'agent' | 'member');
+        }
+      } catch {
+        /* non-critical */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [clubId, user?.id]);
+
   // Load club conversations
   const loadClubConversations = useCallback(
     async (getIsMounted?: () => boolean) => {

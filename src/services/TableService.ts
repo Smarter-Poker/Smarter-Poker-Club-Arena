@@ -405,24 +405,39 @@ class TableService {
         }
       }
 
-      // Check waitlist and notify next player
-      const { data: nextWaiter } = await supabase
-        .from('table_waitlists')
-        .select('user_id')
-        .eq('table_id', tableId)
-        .order('position', { ascending: true })
-        .limit(1)
-        .maybeSingle();
+      // ── WAITLIST AUTO-SEAT: Promote next waitlisted player into the opened seat ──
+      try {
+        const { data: promotedUserId, error: promoErr } = await supabase.rpc(
+          'promote_next_waitlisted_player',
+          { p_table_id: tableId }
+        );
 
-      if (nextWaiter) {
-        // Send notification to next in waitlist
-        await supabase.from('notifications').insert({
-          user_id: nextWaiter.user_id,
-          type: 'seat_available',
-          title: 'Seat Available!',
-          message: 'A seat has opened up at your table.',
-          data: { table_id: tableId },
-        });
+        if (promoErr) {
+          console.warn('[TableService] Waitlist auto-promote RPC failed:', promoErr.message);
+        } else if (promotedUserId) {
+          console.debug(
+            `[TableService] Waitlist auto-seated player ${promotedUserId} at table ${tableId}`
+          );
+
+          // Notify the promoted player via notification
+          await supabase.from('notifications').insert({
+            user_id: promotedUserId,
+            type: 'seat_available',
+            title: 'You Have Been Seated!',
+            message:
+              'A seat opened up and you have been automatically seated at your waitlisted table.',
+            data: { table_id: tableId },
+          });
+
+          // Emit bus event so the promoted player's client gets a real-time toast
+          masterBus.emit('WAITLIST_PROMOTED', {
+            tableId,
+            userId: promotedUserId,
+            tableName: '',
+          });
+        }
+      } catch (promoError) {
+        console.warn('[TableService] Waitlist auto-promote failed:', promoError);
       }
 
       // Record in table history

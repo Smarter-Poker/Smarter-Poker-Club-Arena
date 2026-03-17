@@ -46,6 +46,7 @@ export type BusEventType =
   | 'HORSE_BUG_REPORT'
   | 'NOTIFICATION_READ'
   | 'WAITLIST_POSITION_CHANGED'
+  | 'WAITLIST_PROMOTED'
   | 'SESSION_SUMMARY_DISMISSED'
   | 'TABLE_EMOTE'
   | 'ACHIEVEMENT_UNLOCKED'
@@ -316,6 +317,7 @@ export interface BusPayloadMap {
   HORSE_BUG_REPORT: Record<string, unknown>;
   NOTIFICATION_READ: { notifId: string | null; allRead: boolean };
   WAITLIST_POSITION_CHANGED: { tableId: string; position: number; tableName: string };
+  WAITLIST_PROMOTED: { tableId: string; userId: string; tableName: string };
   SESSION_SUMMARY_DISMISSED: { tableId: string };
   TABLE_EMOTE: {
     tableId: string;
@@ -922,7 +924,17 @@ export interface BusPayloadMap {
   // Table menu bus actions
   TABLE_MENU_ACTION: {
     tableId: string;
-    action: 'SIT_OUT' | 'REBUY' | 'ADD_ON' | 'SESSION_STATS' | 'LEADERBOARD' | 'SETTINGS' | 'HAND_HISTORY' | 'HELP' | 'LEAVE_TABLE' | 'FORCE_LEAVE_TABLE';
+    action:
+      | 'SIT_OUT'
+      | 'REBUY'
+      | 'ADD_ON'
+      | 'SESSION_STATS'
+      | 'LEADERBOARD'
+      | 'SETTINGS'
+      | 'HAND_HISTORY'
+      | 'HELP'
+      | 'LEAVE_TABLE'
+      | 'FORCE_LEAVE_TABLE';
   };
 }
 

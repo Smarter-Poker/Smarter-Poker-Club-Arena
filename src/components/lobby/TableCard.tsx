@@ -456,6 +456,7 @@ function TableCardInner({ table }: TableCardProps) {
               key={p.id}
               className={styles.miniAvatar}
               style={{ zIndex: 5 - idx, marginLeft: idx > 0 ? '-8px' : 0 }}
+              title={p.name}
             >
               <PlayerAvatar
                 src={p.url}

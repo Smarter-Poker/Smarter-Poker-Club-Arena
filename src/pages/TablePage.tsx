@@ -3697,9 +3697,17 @@ export default function TablePage({
       if (actionLockRef.current) return;
 
       const key = e.key.toLowerCase();
-      if (key === 'f') { e.preventDefault(); handleFold(); }
-      else if (key === 'c') { e.preventDefault(); handleCheck(); handleCall(); }
-      else if (key === 'r') { e.preventDefault(); handleRaise(); }
+      if (key === 'f') {
+        e.preventDefault();
+        handleFold();
+      } else if (key === 'c') {
+        e.preventDefault();
+        handleCheck();
+        handleCall();
+      } else if (key === 'r') {
+        e.preventDefault();
+        handleRaise();
+      }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
@@ -4465,6 +4473,10 @@ export default function TablePage({
                     // Open throwable selector targeting this seat
                     setThrowTargetSeat(seatNumber);
                     setShowThrowableSelector(true);
+                    // Also record clicked player for Player Notes targeting
+                    if (player && !player.isHero) {
+                      setSelectedPlayerForNotes({ id: player.id, name: player.name });
+                    }
                   }}
                 />
               </div>
@@ -4649,7 +4661,18 @@ export default function TablePage({
               <span className="menu-item-label">Table Rules</span>
               <span className="menu-item-arrow">›</span>
             </button>
-            <button className="menu-item" onClick={() => { const next = !isSoundEnabled; setIsSoundEnabled(next); try { localStorage.setItem('ca_sound_enabled', String(next)); } catch {} }}>
+            <button
+              className="menu-item"
+              onClick={() => {
+                const next = !isSoundEnabled;
+                setIsSoundEnabled(next);
+                try {
+                  localStorage.setItem('ca_sound_enabled', String(next));
+                } catch {
+                  /* localStorage unavailable */
+                }
+              }}
+            >
               <span className="menu-item-icon">♪</span>
               <span className="menu-item-label">Sounds</span>
               <span className={`menu-item-toggle ${isSoundEnabled ? 'on' : ''}`}>
@@ -4658,7 +4681,15 @@ export default function TablePage({
             </button>
             <button
               className="menu-item"
-              onClick={() => { const next = !isVibrationEnabled; setIsVibrationEnabled(next); try { localStorage.setItem('ca_vibration_enabled', String(next)); } catch {} }}
+              onClick={() => {
+                const next = !isVibrationEnabled;
+                setIsVibrationEnabled(next);
+                try {
+                  localStorage.setItem('ca_vibration_enabled', String(next));
+                } catch {
+                  /* localStorage unavailable */
+                }
+              }}
             >
               <span className="menu-item-icon">⋆</span>
               <span className="menu-item-label">Vibrations</span>

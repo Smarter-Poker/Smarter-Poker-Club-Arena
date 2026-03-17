@@ -5407,7 +5407,7 @@ export default function TablePage({
             setShowSessionSummary(false);
 
             // Notify system to gracefully unmount tab AFTER user clicks close
-            masterBus.emit('TABLE_LEFT', { tableId, seat: tableState.heroSeat });
+            masterBus.emit('TABLE_LEFT', { tableId: tableId ?? '', seat: tableState.heroSeat });
             masterBus.emit('SESSION_SUMMARY_DISMISSED', { tableId: tableId ?? '' });
 
             if (window.location.pathname.includes('/table/')) {

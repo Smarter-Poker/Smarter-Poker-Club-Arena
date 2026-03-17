@@ -214,9 +214,52 @@ export default function ClubCarouselPage() {
         },
         500
       ),
+      // Refresh notification badges when a notification arrives
+      masterBus.subscribeDebounced(
+        'NOTIFICATION_RECEIVED',
+        () => {
+          if (!isMounted.current || clubs.length === 0) return;
+          (async () => {
+            try {
+              const {
+                data: { user: authUser },
+              } = await getAuthUser();
+              if (!authUser || !isMounted.current) return;
+              const { data: notifs } = await supabase
+                .from('notifications')
+                .select('club_id')
+                .eq('user_id', authUser.id)
+                .eq('is_read', false);
+              if (!isMounted.current || !notifs) return;
+              const badges: Record<string, number> = {};
+              for (const n of notifs) {
+                if (n.club_id) badges[n.club_id] = (badges[n.club_id] || 0) + 1;
+              }
+              setClubBadges(badges);
+            } catch {
+              /* non-critical */
+            }
+          })();
+        },
+        500
+      ),
+      // Refresh wallet balance when it changes from another tab/page
+      masterBus.subscribeDebounced(
+        'BALANCE_UPDATED',
+        (payload: any) => {
+          if (!isMounted.current) return;
+          if (payload?.diamonds !== undefined) {
+            setWallet((prev) => ({ ...prev, diamonds: payload.diamonds }));
+          }
+          if (payload?.gold !== undefined) {
+            setWallet((prev) => ({ ...prev, gold: payload.gold }));
+          }
+        },
+        500
+      ),
     ];
     return () => unsubs.forEach((u) => u());
-  }, []);
+  }, [clubs]);
 
   // #5: Filtered clubs based on search
   // MUST be declared before keyboard nav, deep link, stagger animation, and clamp effects

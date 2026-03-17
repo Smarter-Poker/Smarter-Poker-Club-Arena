@@ -24,6 +24,7 @@
     "migrate": "node scripts/migrate.js",
     "migrate:all": "node scripts/migrate.js --all",
     "types:generate": "npx supabase gen types typescript --project-id kuklfnapbkmacvwxktbh --schema public > src/types/supabase.ts",
+    "db:push": "node scripts/orb-sql-deploy.cjs",
     "prepare": "husky"
   },
   "dependencies": {

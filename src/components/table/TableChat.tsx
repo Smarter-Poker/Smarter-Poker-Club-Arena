@@ -57,8 +57,8 @@ function formatTime(date: Date): string {
   });
 }
 
-// Quick emoji buttons
-const QUICK_EMOJIS = ['', '', 'nh', 'ty', 'gg', '😂', '', ''];
+// Quick emoji buttons (REMOVED as per request)
+const QUICK_EMOJIS: string[] = [];
 
 // Quick Chat preset phrases for one-tap sending (REMOVED as per request)
 const QUICK_CHAT_PHRASES: string[] = [];
@@ -362,30 +362,13 @@ export function TableChat({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Quick Emojis */}
-      {showEmojis && (
-        <div className="table-chat__emojis">
-          {QUICK_EMOJIS.map((emoji, index) => (
-            <button
-              key={`emoji-${index}`}
-              className="table-chat__emoji-btn"
-              onClick={() => handleQuickEmoji(emoji)}
-            >
-              {emoji}
-            </button>
-          ))}
-        </div>
-      )}
+      {/* Quick Emojis removed */}
 
       {/* Input */}
       {/* Quick Chat Phrases removed */}
 
       <div className="table-chat__input-container">
-        <button
-          className={`table-chat__emoji-toggle ${showEmojis ? 'table-chat__emoji-toggle--active' : ''}`}
-          onClick={() => setShowEmojis(!showEmojis)}
-          aria-label="Toggle emoji picker"
-        ></button>
+        {/* Emoji toggle removed */}
         <input
           ref={inputRef}
           type="text"

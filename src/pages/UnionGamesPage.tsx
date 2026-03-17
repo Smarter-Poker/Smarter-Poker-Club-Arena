@@ -156,9 +156,9 @@ export default function UnionGamesPage() {
           supabase
             .from('tables')
             .select(
-              'id, name, status, game_type, game_variant, small_blind, big_blind, max_players, current_players, club_id'
+              'id, name, status, game_type, game_variant, small_blind, big_blind, max_players, current_players, club_id, union_id'
             )
-            .in('club_id', cIds)
+            .eq('union_id', targetUnion)
             .order('current_players', { ascending: false }),
           supabase.rpc('get_bbj_pool', { p_union_id: targetUnion }).maybeSingle(),
         ]);

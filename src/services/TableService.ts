@@ -66,25 +66,16 @@ class TableService {
    * Get all active tables in a union
    */
   async getUnionTables(unionId: string): Promise<PokerTable[]> {
-    // Get all clubs in the union, then get their tables
-    const { data: clubs, error: clubError } = await supabase
-      .from('union_clubs')
-      .select('club_id')
-      .eq('union_id', unionId);
-
-    if (clubError || !clubs?.length) {
-      return [];
-    }
-
-    const clubIds = clubs.map((c) => c.club_id);
+    // Query tables directly by union_id (union tables have club_id=NULL)
     const { data, error } = await supabase
       .from('tables')
       .select(
-        'id, club_id, name, game_type, game_variant, stakes, small_blind, big_blind, min_buy_in, max_buy_in, max_players, current_players, status, settings, created_at'
+        'id, club_id, union_id, name, game_type, game_variant, stakes, small_blind, big_blind, min_buy_in, max_buy_in, max_players, current_players, status, settings, created_at'
       )
-      .in('club_id', clubIds)
+      .eq('union_id', unionId)
       .eq('is_deleted', false)
-      .neq('status', 'closed');
+      .neq('status', 'closed')
+      .order('created_at', { ascending: false });
 
     if (error) {
       console.error('[TableService] Error fetching union tables:', error);
@@ -328,18 +319,16 @@ class TableService {
 
       const chipsToReturn = seat.stack || 0;
 
-      // Get club_id from table (needed for chip credit + tournament leave + transaction log)
+      // Get table context (needed for tournament leave + transaction log)
       const { data: tableData } = await supabase
         .from('tables')
-        .select('club_id, tournament_id, name')
+        .select('club_id, union_id, tournament_id, name')
         .eq('id', tableId)
         .maybeSingle();
 
       const clubId = tableData?.club_id;
-      if (!clubId) {
-        console.error('[TableService] Cannot return chips — table has no club_id');
-        return { success: false, chipsReturned: 0 };
-      }
+      // Union tables may have club_id=NULL — that's OK for cash games
+      // (atomic_table_cashout uses table_id directly, doesn't need club_id)
 
       let returnedChips = 0;
 

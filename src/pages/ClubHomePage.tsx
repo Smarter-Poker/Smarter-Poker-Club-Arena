@@ -194,6 +194,22 @@ export default function ClubHomePage() {
       const resolvedId = await resolveClubUUID(clubId);
       if (!isMounted) return;
 
+      // Check if this club is in a union — if so, listen on union_id for tables
+      let tableFilter = `club_id=eq.${resolvedId}`;
+      try {
+        const { data: ucCheck } = await supabase
+          .from('union_clubs')
+          .select('union_id')
+          .eq('club_id', resolvedId)
+          .limit(1)
+          .maybeSingle();
+        if (ucCheck?.union_id) {
+          tableFilter = `union_id=eq.${ucCheck.union_id}`;
+        }
+      } catch {
+        /* standalone club — use club_id filter */
+      }
+
       const channelKey = `club-tables-${clubId}`;
       const channel = masterBus.getOrCreateChannel(channelKey);
       channel
@@ -203,7 +219,7 @@ export default function ClubHomePage() {
             event: '*',
             schema: 'public',
             table: 'tables',
-            filter: `club_id=eq.${resolvedId}`,
+            filter: tableFilter,
           },
           (payload) => {
             if (payload.eventType === 'UPDATE' && payload.new) {
@@ -489,15 +505,21 @@ export default function ClubHomePage() {
       }
 
       // ── Batch: tables + tournaments + BBJ in parallel ──
+      // Build table query: use union_id for union clubs, club_id for standalone
+      const tableQuery = supabase
+        .from('tables')
+        .select(
+          'id, name, game_variant, stakes, current_players, max_players, status, small_blind, big_blind, min_buy_in, max_buy_in, settings, created_at'
+        );
+      if (unionId) {
+        tableQuery.eq('union_id', unionId);
+      } else {
+        tableQuery.in('club_id', unionClubIds);
+      }
+      tableQuery.eq('is_deleted', false).order('created_at', { ascending: false });
+
       const [tableResult, clubTournamentResult, bbjResult, ...xmttResults] = await Promise.all([
-        supabase
-          .from('tables')
-          .select(
-            'id, name, game_variant, stakes, current_players, max_players, status, small_blind, big_blind, min_buy_in, max_buy_in, settings, created_at'
-          )
-          .in('club_id', unionClubIds)
-          .eq('is_deleted', false)
-          .order('created_at', { ascending: false }),
+        tableQuery,
         supabase
           .from('tournaments')
           .select(

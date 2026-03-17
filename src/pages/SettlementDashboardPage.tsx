@@ -306,6 +306,21 @@ export default function SettlementDashboardPage() {
   useVisibilityRefresh(() => loadData());
 
   useEffect(() => {
+    // SWR: show cached period indicator instantly while fresh data loads
+    const SWR_TTL_MS = 5 * 60 * 1000;
+    try {
+      const cached = sessionStorage.getItem('settlement_dashboard_swr');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        const age = parsed.cachedAt ? Date.now() - parsed.cachedAt : Infinity;
+        if (age < SWR_TTL_MS && parsed.currentPeriod) {
+          // Mark that we have some data so skeleton is skipped
+          setCurrentPeriod(parsed.currentPeriod);
+        }
+      }
+    } catch {
+      /* corrupt */
+    }
     loadData();
   }, [loadData]);
 

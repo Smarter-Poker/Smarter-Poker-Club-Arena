@@ -165,7 +165,7 @@ export interface ChipTransaction {
   to_user_id: string;
   amount: number;
   type: TransactionType;
-  reference_id: string | null; // Related table/tournament ID
+  transaction_type: string; // Transaction category
   notes: string | null;
   created_at: string;
 }

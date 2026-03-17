@@ -532,10 +532,11 @@ export default function AntiCheatPage() {
     try {
       if (tableId) {
         const { error } = await supabase
-          .from('table_players')
-          .delete()
-          .eq('player_id', playerId)
-          .eq('table_id', tableId);
+          .from('table_seats')
+          .update({ left_at: new Date().toISOString(), status: 'kicked' })
+          .eq('user_id', playerId)
+          .eq('table_id', tableId)
+          .is('left_at', null);
         if (error) throw error;
       }
 

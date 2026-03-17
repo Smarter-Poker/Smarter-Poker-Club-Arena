@@ -2439,10 +2439,11 @@ class HorseOrchestrator {
       for (const table of tables) {
         // Count current players (real + horses)
         const { count } = await supabase
-          .from('table_players')
+          .from('table_seats')
           .select('id', { count: 'exact', head: true })
           .eq('table_id', table.id)
-          .eq('status', 'active');
+          .eq('status', 'active')
+          .is('left_at', null);
 
         const currentPlayers = count || 0;
         if (currentPlayers < MIN_PLAYERS) {
@@ -2494,15 +2495,16 @@ class HorseOrchestrator {
   async smartSeatSelection(tableId: string, maxPlayers: number): Promise<number> {
     try {
       const { data: players } = await supabase
-        .from('table_players')
-        .select('seat_number, is_horse')
+        .from('table_seats')
+        .select('seat_number, horse_id')
         .eq('table_id', tableId)
-        .eq('status', 'active');
+        .eq('status', 'active')
+        .is('left_at', null);
 
       if (!players || players.length === 0) return 1; // Empty table, seat 1
 
       const occupied = new Set(players.map((p) => p.seat_number));
-      const realPlayerSeats = players.filter((p) => !p.is_horse).map((p) => p.seat_number);
+      const realPlayerSeats = players.filter((p) => !p.horse_id).map((p) => p.seat_number);
 
       // Score each empty seat based on adjacency to real players
       let bestSeat = 1;
@@ -2628,10 +2630,11 @@ class HorseOrchestrator {
     try {
       // Count total active horse seats
       const { count: seatedCount } = await supabase
-        .from('table_players')
+        .from('table_seats')
         .select('id', { count: 'exact', head: true })
-        .eq('is_horse', true)
-        .eq('status', 'active');
+        .not('horse_id', 'is', null)
+        .eq('status', 'active')
+        .is('left_at', null);
 
       // Count horse wins in recent hands (last 100 hands across all tables)
       const { data: recentHands } = await supabase

@@ -158,7 +158,7 @@ function TransactionHistoryInner({ walletId, limit = 20 }: TransactionHistoryPro
         .limit(limit);
 
       if (walletId) {
-        query = query.eq('wallet_id', walletId);
+        query = query.eq('user_id', walletId);
       } else {
         query = query.eq('user_id', user?.id);
       }

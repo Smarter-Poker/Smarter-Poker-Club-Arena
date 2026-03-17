@@ -44,6 +44,14 @@ export function triggerHaptic(type: HapticType = 'light'): boolean {
     return false;
   }
 
+  // Respect user's vibration preference from HamburgerMenu toggle
+  try {
+    const vibrationPref = localStorage.getItem('vibrationsEnabled');
+    if (vibrationPref === 'false') return false;
+  } catch {
+    // localStorage unavailable — allow vibration
+  }
+
   try {
     const pattern = HAPTIC_PATTERNS[type];
     navigator.vibrate(pattern);

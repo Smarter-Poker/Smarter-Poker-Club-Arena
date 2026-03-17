@@ -297,28 +297,31 @@ function DashboardTab({ clubId }: { clubId: string }) {
   // Bus listener for cross-page sync (ported from World Hub admin.js)
   useEffect(() => {
     const unsubs = [
+      // User-initiated: fast response (500ms)
       masterBus.subscribeDebounced('TABLE_CREATED', load, 500),
       masterBus.subscribeDebounced('TABLE_UPDATED', load, 500),
       masterBus.subscribeDebounced('TABLE_DELETED', load, 500),
       masterBus.subscribeDebounced('TABLE_CLOSED', load, 500),
-      masterBus.subscribeDebounced('CHIPS_DISTRIBUTED', load, 500),
-      masterBus.subscribeDebounced('AGENT_UPDATED', load, 500),
+      masterBus.subscribeDebounced('ADMIN_ACTION', load, 500),
       masterBus.subscribeDebounced('ANNOUNCEMENT_CHANGED', load, 500),
+      masterBus.subscribeDebounced('AGENT_UPDATED', load, 500),
       masterBus.subscribeDebounced('CLUB_UPDATED', load, 500),
       masterBus.subscribeDebounced('SETTINGS_CHANGED', load, 500),
-      masterBus.subscribeDebounced('CREDIT_UPDATED', load, 500),
-      masterBus.subscribeDebounced('CASHOUT_REQUESTED', load, 500),
-      masterBus.subscribeDebounced('CASHOUT_APPROVED', load, 500),
-      masterBus.subscribeDebounced('BALANCE_UPDATED', load, 500),
-      masterBus.subscribeDebounced('TOURNAMENT_REGISTERED', load, 500),
-      masterBus.subscribeDebounced('TOURNAMENT_STARTED', load, 500),
-      masterBus.subscribeDebounced('TOURNAMENT_COMPLETE', load, 500),
-      masterBus.subscribeDebounced('SETTLEMENT_COMPLETED', load, 500),
-      masterBus.subscribeDebounced('SETTLEMENT_PAYOUT_FAILED', load, 500),
-      masterBus.subscribeDebounced('RAKEBACK_CLAIMED', load, 500),
       masterBus.subscribeDebounced('CLUB_SETTINGS_UPDATED', load, 500),
       masterBus.subscribeDebounced('COLLUSION_DETECTED', load, 500),
-      masterBus.subscribeDebounced('ADMIN_ACTION', load, 500),
+      // Financial events: medium debounce (1500ms)
+      masterBus.subscribeDebounced('CASHOUT_REQUESTED', load, 1500),
+      masterBus.subscribeDebounced('CASHOUT_APPROVED', load, 1500),
+      masterBus.subscribeDebounced('SETTLEMENT_COMPLETED', load, 1500),
+      masterBus.subscribeDebounced('SETTLEMENT_PAYOUT_FAILED', load, 1500),
+      masterBus.subscribeDebounced('TOURNAMENT_REGISTERED', load, 1500),
+      masterBus.subscribeDebounced('TOURNAMENT_STARTED', load, 1500),
+      masterBus.subscribeDebounced('TOURNAMENT_COMPLETE', load, 1500),
+      // High-frequency: longer debounce (2000ms) — fires on every hand
+      masterBus.subscribeDebounced('BALANCE_UPDATED', load, 2000),
+      masterBus.subscribeDebounced('CHIPS_DISTRIBUTED', load, 2000),
+      masterBus.subscribeDebounced('CREDIT_UPDATED', load, 2000),
+      masterBus.subscribeDebounced('RAKEBACK_CLAIMED', load, 2000),
     ];
     return () => unsubs.forEach((u) => u());
   }, [load]);

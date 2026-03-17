@@ -193,6 +193,7 @@ export default function SettlementDashboardPage() {
   const [periodHistory, setPeriodHistory] = useState<PeriodHistoryItem[]>([]);
   const [canaryResult, setCanaryResult] = useState<CanaryResult | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [runningCanary, setRunningCanary] = useState(false);
   const [runningSettlement, setRunningSettlement] = useState(false);
   const [expandedPeriodId, setExpandedPeriodId] = useState<string | null>(null);
@@ -205,6 +206,7 @@ export default function SettlementDashboardPage() {
     if (loadingRef.current) return;
     loadingRef.current = true;
     setLoading(true);
+    setLoadError(null);
     let loadedPeriodId: string | null = null;
     try {
       // Load current period
@@ -274,9 +276,27 @@ export default function SettlementDashboardPage() {
       } catch {
         /* service method may not return expected shape */
       }
+
+      // SWR: cache for instant display on revisit (5-min TTL)
+      if (isMounted.current) {
+        try {
+          sessionStorage.setItem(
+            'settlement_dashboard_swr',
+            JSON.stringify({
+              currentPeriod: loadedPeriodId ? { id: loadedPeriodId } : null,
+              cachedAt: Date.now(),
+            })
+          );
+        } catch {
+          /* storage full */
+        }
+      }
     } catch (err) {
       console.error('[Settlement] Load failed:', err);
-      if (isMounted.current) toast.error('Failed to load settlement data');
+      if (isMounted.current) {
+        setLoadError((err as Error).message || 'Failed to load settlement data');
+        toast.error('Failed to load settlement data');
+      }
     } finally {
       loadingRef.current = false;
       if (isMounted.current) setLoading(false);
@@ -483,11 +503,49 @@ export default function SettlementDashboardPage() {
 
   // ─── Render ─────────────────────────────────────────────────────────────────
 
-  if (loading && !currentPeriod) {
+  if (loading && !currentPeriod && !loadError) {
     return (
       <div style={{ padding: '16px', maxWidth: '900px', margin: '0 auto' }}>
         <h1 style={{ fontSize: '1.4rem', fontWeight: 700 }}>⚖️ Settlement Center</h1>
         <PageSkeleton variant="financial" />
+      </div>
+    );
+  }
+
+  if (loadError && !currentPeriod) {
+    return (
+      <div style={{ padding: '16px', maxWidth: '900px', margin: '0 auto' }}>
+        <h1 style={{ fontSize: '1.4rem', fontWeight: 700 }}>⚖️ Settlement Center</h1>
+        <div
+          style={{
+            padding: '32px',
+            textAlign: 'center',
+            background: 'rgba(239,68,68,0.08)',
+            borderRadius: '12px',
+            border: '1px solid rgba(239,68,68,0.2)',
+            marginTop: '20px',
+          }}
+        >
+          <div style={{ fontSize: '2rem', marginBottom: '8px' }}>⚠️</div>
+          <div style={{ color: '#ef4444', marginBottom: '12px', fontSize: '0.9rem' }}>
+            {loadError}
+          </div>
+          <button
+            onClick={loadData}
+            style={{
+              padding: '8px 24px',
+              borderRadius: '8px',
+              background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
+              color: '#fff',
+              border: 'none',
+              cursor: 'pointer',
+              fontWeight: 600,
+              fontSize: '0.85rem',
+            }}
+          >
+            ↻ Retry
+          </button>
+        </div>
       </div>
     );
   }

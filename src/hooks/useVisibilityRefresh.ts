@@ -7,9 +7,13 @@
  *
  * Performance: Uses useRef to store the callback so the event listener is
  * registered ONCE on mount, not re-registered on every render.
+ *
+ * Returns: { markFresh, isRefreshing }
+ *  - markFresh: call after manual data fetch to reset the staleness timer
+ *  - isRefreshing: true while background refresh is in progress (for UI indicator)
  */
 
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 
 const STALE_THRESHOLD_MS = 30_000; // 30 seconds
 
@@ -17,6 +21,7 @@ export function useVisibilityRefresh(refreshFn: () => void | Promise<void>) {
   const refreshFnRef = useRef(refreshFn);
   const lastFetchRef = useRef(Date.now());
   const isRefreshingRef = useRef(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Always keep ref in sync with latest callback (no effect re-run needed)
   refreshFnRef.current = refreshFn;
@@ -38,6 +43,7 @@ export function useVisibilityRefresh(refreshFn: () => void | Promise<void>) {
       if (elapsed < STALE_THRESHOLD_MS) return;
 
       isRefreshingRef.current = true;
+      setIsRefreshing(true);
       try {
         await refreshFnRef.current();
         lastFetchRef.current = Date.now();
@@ -45,6 +51,7 @@ export function useVisibilityRefresh(refreshFn: () => void | Promise<void>) {
         console.warn('[useVisibilityRefresh] Refresh failed:', err);
       } finally {
         isRefreshingRef.current = false;
+        setIsRefreshing(false);
       }
     };
 
@@ -54,5 +61,5 @@ export function useVisibilityRefresh(refreshFn: () => void | Promise<void>) {
     };
   }, []); // Mount-only — callback accessed via ref
 
-  return { markFresh };
+  return { markFresh, isRefreshing };
 }

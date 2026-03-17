@@ -580,6 +580,7 @@ export default function TablePage({
 
   // Session tracking for end-of-session summary
   const [showSessionSummary, setShowSessionSummary] = useState(false);
+  const [showSessionHUD, setShowSessionHUD] = useState(false);
   const sessionStartRef = useRef(Date.now());
   const handsPlayedRef = useRef(0);
   const biggestPotRef = useRef(0);
@@ -1545,6 +1546,7 @@ export default function TablePage({
   const [showSettings, setShowSettings] = useState(false);
   const [showShareHand, setShowShareHand] = useState(false);
   const [showTableMenu, setShowTableMenu] = useState(false);
+  const [showSessionStats, setShowSessionStats] = useState(false);
   const [sharedHandData, setSharedHandData] = useState<any>(null);
 
   // Load table info from Supabase on mount
@@ -4271,24 +4273,6 @@ export default function TablePage({
                     </div>
                   )}
 
-                {/* Session Timer */}
-                <SessionTimer
-                  breakInterval={60}
-                  onBreakSuggested={() => console.debug('Break suggested')}
-                />
-
-                {/* Session Stats HUD (cash games) */}
-                {!tableState.isTournament && tableId && userId !== 'guest' && (
-                  <TableErrorBoundary componentName="SessionHUD">
-                    <SessionHUD
-                      tableId={tableId}
-                      userId={userId}
-                      initialStack={tableState.players[tableState.heroSeat - 1]?.stack || 0}
-                      bigBlind={safeBB(tableState.blinds)}
-                    />
-                  </TableErrorBoundary>
-                )}
-
                 {/* Connection Quality HUD */}
                 {tableId && userId !== 'guest' && (
                   <TableErrorBoundary componentName="ConnectionHUD">
@@ -4616,6 +4600,17 @@ export default function TablePage({
             >
               <span className="menu-item-icon">♠</span>
               <span className="menu-item-label">Hand History</span>
+              <span className="menu-item-arrow">›</span>
+            </button>
+            <button
+              className="menu-item"
+              onClick={() => {
+                setShowSessionHUD(true);
+                setIsSideMenuOpen(false);
+              }}
+            >
+              <span className="menu-item-icon">📊</span>
+              <span className="menu-item-label">Live Stats</span>
               <span className="menu-item-arrow">›</span>
             </button>
             <button
@@ -5156,6 +5151,16 @@ export default function TablePage({
                 icon: '',
                 onClick: () => setShowLeaderboard(true),
               },
+              ...(!tableState.isTournament
+                ? [
+                    {
+                      id: 'session-stats',
+                      label: 'Session Stats',
+                      icon: '📊',
+                      onClick: () => setShowSessionStats(true),
+                    },
+                  ]
+                : []),
               { id: 'settings', label: 'Settings', icon: '', onClick: () => setShowSettings(true) },
             ],
           },
@@ -5173,6 +5178,18 @@ export default function TablePage({
         ]}
         tableName={tableState.tableName}
       />
+
+      {/* Session Stats Modal (Cash Games) */}
+      {tableId && userId !== 'guest' && (
+        <SessionHUD
+          isOpen={showSessionStats}
+          onClose={() => setShowSessionStats(false)}
+          tableId={tableId}
+          userId={userId}
+          initialStack={tableState.players[tableState.heroSeat - 1]?.stack || 0}
+          bigBlind={safeBB(tableState.blinds)}
+        />
+      )}
 
       {/* Settings Panel */}
       <SettingsPanel
@@ -5376,6 +5393,19 @@ export default function TablePage({
             navigate('/');
           }}
         />
+      )}
+      {/* Session HUD Modal (Cash Games Only) */}
+      {!tableState.isTournament && tableId && userId !== 'guest' && (
+        <TableErrorBoundary componentName="SessionHUD">
+          <SessionHUD
+            isOpen={showSessionHUD}
+            onClose={() => setShowSessionHUD(false)}
+            tableId={tableId}
+            userId={userId}
+            initialStack={tableState.players[tableState.heroSeat - 1]?.stack || 0}
+            bigBlind={safeBB(tableState.blinds)}
+          />
+        </TableErrorBoundary>
       )}
     </div>
   );

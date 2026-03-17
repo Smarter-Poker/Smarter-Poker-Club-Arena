@@ -10,6 +10,8 @@ import { masterBus } from '../../core/MasterBus';
 import './SessionHUD.css';
 
 interface SessionHUDProps {
+  isOpen: boolean;
+  onClose: () => void;
   tableId: string;
   userId: string;
   initialStack: number;
@@ -31,13 +33,14 @@ function getPfrTier(pfr: number): string {
 }
 
 export const SessionHUD: React.FC<SessionHUDProps> = ({
+  isOpen,
+  onClose,
   tableId,
   userId,
   initialStack,
   bigBlind,
 }) => {
   const [stats, setStats] = useState<SessionStats | null>(null);
-  const [minimized, setMinimized] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [sessionDuration, setSessionDuration] = useState('0m');
   const [sessionStartTime] = useState(() => Date.now());
@@ -136,111 +139,104 @@ export const SessionHUD: React.FC<SessionHUDProps> = ({
     );
   }, [stats]);
 
-  if (!stats) return null;
+  if (!isOpen || !stats) return null;
 
   const plClass = stats.profitLoss >= 0 ? 'sh-positive' : 'sh-negative';
 
-  if (minimized) {
-    return (
-      <div className="session-hud sh-minimized" onClick={() => setMinimized(false)}>
-        <span className={`sh-mini-pl ${plClass}`}>{formatPL(stats.profitLoss)}</span>
-        <span className="sh-mini-hands">{stats.handsPlayed}h</span>
-      </div>
-    );
-  }
-
   return (
-    <div className="session-hud">
-      {/* ── Header ── */}
-      <div className="sh-header">
-        <span className="sh-title">Session Stats</span>
-        <div className="sh-controls">
-          <button
-            className="sh-toggle"
-            onClick={() => setShowAdvanced(!showAdvanced)}
-            title={showAdvanced ? 'Hide details' : 'Show details'}
-          >
-            {showAdvanced ? '▾' : '▸'}
-          </button>
-          <button className="sh-minimize" onClick={() => setMinimized(true)} title="Minimize">
-            —
-          </button>
+    <div className="session-hud-overlay" onClick={onClose}>
+      <div className="session-hud" onClick={(e) => e.stopPropagation()}>
+        {/* ── Header ── */}
+        <div className="sh-header">
+          <span className="sh-title">Session Stats</span>
+          <div className="sh-controls">
+            <button
+              className="sh-toggle"
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              title={showAdvanced ? 'Hide details' : 'Show details'}
+            >
+              {showAdvanced ? '▾' : '▸'}
+            </button>
+            <button className="sh-minimize" onClick={onClose} title="Close">
+              ×
+            </button>
+          </div>
         </div>
-      </div>
 
-      {/* ── P&L Display ── */}
-      <div className="sh-pl-section">
-        <span className={`sh-pl-value ${plClass}`}>{formatPL(stats.profitLoss)}</span>
-        <span className="sh-pl-bb">({formatPL(stats.bigBlindsWon)} BB)</span>
-      </div>
+        {/* ── P&L Display ── */}
+        <div className="sh-pl-section">
+          <span className={`sh-pl-value ${plClass}`}>{formatPL(stats.profitLoss)}</span>
+          <span className="sh-pl-bb">({formatPL(stats.bigBlindsWon)} BB)</span>
+        </div>
 
-      {/* ── Sparkline ── */}
-      <div className="sh-sparkline-wrapper">{renderSparkline()}</div>
+        {/* ── Sparkline ── */}
+        <div className="sh-sparkline-wrapper">{renderSparkline()}</div>
 
-      {/* ── Quick Stats ── */}
-      <div className="sh-quick-stats">
-        <div className="sh-qstat">
-          <span className="sh-qstat-value">{stats.handsPlayed}</span>
-          <span className="sh-qstat-label">Hands</span>
+        {/* ── Quick Stats ── */}
+        <div className="sh-quick-stats">
+          <div className="sh-qstat">
+            <span className="sh-qstat-value">{stats.handsPlayed}</span>
+            <span className="sh-qstat-label">Hands</span>
+          </div>
+          <div className="sh-qstat">
+            <span className="sh-qstat-value">{stats.handsPerHour}</span>
+            <span className="sh-qstat-label">H/Hr</span>
+          </div>
+          <div className="sh-qstat">
+            <span className="sh-qstat-value">{stats.handsWon}</span>
+            <span className="sh-qstat-label">Won</span>
+          </div>
+          <div className="sh-qstat">
+            <span className="sh-qstat-value">{sessionDuration}</span>
+            <span className="sh-qstat-label">Time</span>
+          </div>
+          <div className="sh-qstat">
+            <span className={`sh-qstat-value ${stats.handsPlayed > 0 ? plClass : ''}`}>
+              {stats.handsPlayed > 0
+                ? ((stats.bigBlindsWon / stats.handsPlayed) * 100).toFixed(1)
+                : '0.0'}
+            </span>
+            <span className="sh-qstat-label">BB/100</span>
+          </div>
         </div>
-        <div className="sh-qstat">
-          <span className="sh-qstat-value">{stats.handsPerHour}</span>
-          <span className="sh-qstat-label">H/Hr</span>
-        </div>
-        <div className="sh-qstat">
-          <span className="sh-qstat-value">{stats.handsWon}</span>
-          <span className="sh-qstat-label">Won</span>
-        </div>
-        <div className="sh-qstat">
-          <span className="sh-qstat-value">{sessionDuration}</span>
-          <span className="sh-qstat-label">Time</span>
-        </div>
-        <div className="sh-qstat">
-          <span className={`sh-qstat-value ${stats.handsPlayed > 0 ? plClass : ''}`}>
-            {stats.handsPlayed > 0
-              ? ((stats.bigBlindsWon / stats.handsPlayed) * 100).toFixed(1)
-              : '0.0'}
-          </span>
-          <span className="sh-qstat-label">BB/100</span>
-        </div>
-      </div>
 
-      {/* ── Advanced Stats (togglable) ── */}
-      {showAdvanced && (
-        <div className="sh-advanced">
-          <div className="sh-adv-row">
-            <span className="sh-adv-label">VPIP</span>
-            <div className="sh-adv-bar">
-              <div
-                className="sh-adv-fill sh-vpip-fill"
-                data-vpip-tier={getVpipTier(stats.vpipPercent)}
-                style={{ width: `${Math.min(stats.vpipPercent, 100)}%` }}
-              />
+        {/* ── Advanced Stats (togglable) ── */}
+        {showAdvanced && (
+          <div className="sh-advanced">
+            <div className="sh-adv-row">
+              <span className="sh-adv-label">VPIP</span>
+              <div className="sh-adv-bar">
+                <div
+                  className="sh-adv-fill sh-vpip-fill"
+                  data-vpip-tier={getVpipTier(stats.vpipPercent)}
+                  style={{ width: `${Math.min(stats.vpipPercent, 100)}%` }}
+                />
+              </div>
+              <span className="sh-adv-value">{stats.vpipPercent}%</span>
+              {stats.handsWon >= 3 &&
+                stats.handsPlayed > 0 &&
+                stats.handsWon / stats.handsPlayed > 0.4 && (
+                  <span className="sh-hot-streak">{stats.handsWon}W</span>
+                )}
             </div>
-            <span className="sh-adv-value">{stats.vpipPercent}%</span>
-            {stats.handsWon >= 3 &&
-              stats.handsPlayed > 0 &&
-              stats.handsWon / stats.handsPlayed > 0.4 && (
-                <span className="sh-hot-streak">{stats.handsWon}W</span>
-              )}
-          </div>
-          <div className="sh-adv-row">
-            <span className="sh-adv-label">PFR</span>
-            <div className="sh-adv-bar">
-              <div
-                className="sh-adv-fill sh-pfr-fill"
-                data-pfr-tier={getPfrTier(stats.pfrPercent)}
-                style={{ width: `${Math.min(stats.pfrPercent, 100)}%` }}
-              />
+            <div className="sh-adv-row">
+              <span className="sh-adv-label">PFR</span>
+              <div className="sh-adv-bar">
+                <div
+                  className="sh-adv-fill sh-pfr-fill"
+                  data-pfr-tier={getPfrTier(stats.pfrPercent)}
+                  style={{ width: `${Math.min(stats.pfrPercent, 100)}%` }}
+                />
+              </div>
+              <span className="sh-adv-value">{stats.pfrPercent}%</span>
             </div>
-            <span className="sh-adv-value">{stats.pfrPercent}%</span>
+            <div className="sh-adv-row">
+              <span className="sh-adv-label">Buy-In</span>
+              <span className="sh-adv-value">{stats.buyInTotal.toLocaleString()}</span>
+            </div>
           </div>
-          <div className="sh-adv-row">
-            <span className="sh-adv-label">Buy-In</span>
-            <span className="sh-adv-value">{stats.buyInTotal.toLocaleString()}</span>
-          </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 };

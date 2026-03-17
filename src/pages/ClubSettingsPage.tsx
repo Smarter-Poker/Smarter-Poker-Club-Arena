@@ -88,9 +88,23 @@ export default function ClubSettingsPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [confirmText, setConfirmText] = useState('');
   const [userRole, setUserRole] = useState<'owner' | 'admin' | 'agent' | 'member'>('member');
+  const [loadError, setLoadError] = useState(false);
+  const loadingRef = useRef(false);
 
   // Re-fetch settings when user tabs back (covers WS disconnect gap)
   useVisibilityRefresh(() => loadClubSettings());
+
+  // Keyboard shortcut: Ctrl+S to save settings
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        if (isOwner && hasUnsavedChanges && !saving) saveSettings();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [isOwner, hasUnsavedChanges, saving]);
 
   useEffect(() => {
     let isMounted = true;
@@ -135,10 +149,11 @@ export default function ClubSettingsPage() {
     };
   }, [clubId]);
 
-  // ── Bus Listeners: cross-page event reactivity (debounced) ──
+  // ── Bus Listeners: cross-page event reactivity (debounced, scoped by clubId) ──
   useEffect(() => {
     let isMounted = true;
-    const handler = () => {
+    const handler = (payload?: any) => {
+      if (payload?.clubId && payload.clubId !== clubId) return;
       if (isMounted) loadClubSettings(() => isMounted);
     };
     const unsubs = [
@@ -151,9 +166,12 @@ export default function ClubSettingsPage() {
       isMounted = false;
       unsubs.forEach((u) => u());
     };
-  }, []);
+  }, [clubId]);
 
   const loadClubSettings = async (getIsMounted?: () => boolean) => {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
+    setLoadError(false);
     if (!getIsMounted || getIsMounted()) setLoading(true);
     try {
       const { column: clubCol, value: clubVal } = resolveClubIdFilter(clubId!);
@@ -228,9 +246,12 @@ export default function ClubSettingsPage() {
       }
     } catch (error) {
       console.error('Failed to load club settings:', error);
+      setLoadError(true);
       if (!getIsMounted || getIsMounted()) toast.error('Failed to load club settings');
+    } finally {
+      loadingRef.current = false;
+      if (!getIsMounted || getIsMounted()) setLoading(false);
     }
-    if (!getIsMounted || getIsMounted()) setLoading(false);
   };
 
   const saveSettings = async () => {
@@ -306,6 +327,32 @@ export default function ClubSettingsPage() {
     return (
       <div className="club-settings-page">
         <PageSkeleton variant="settings" />
+      </div>
+    );
+  }
+
+  if (loadError && !loading) {
+    return (
+      <div className="club-settings-page">
+        <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text-secondary)' }}>
+          <p style={{ fontSize: '1.1rem', marginBottom: '16px' }}>Failed to load settings</p>
+          <button
+            onClick={() => loadClubSettings()}
+            style={{
+              padding: '10px 24px',
+              borderRadius: '8px',
+              background: 'var(--accent-blue, #3b82f6)',
+              color: '#fff',
+              border: 'none',
+              cursor: 'pointer',
+              fontSize: '0.95rem',
+              fontWeight: 600,
+            }}
+          >
+            🔄 Retry
+          </button>
+        </div>
+        {clubId && <ClubBottomNav clubId={clubId} userRole={userRole} />}
       </div>
     );
   }

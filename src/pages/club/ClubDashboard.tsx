@@ -67,6 +67,8 @@ export default function ClubDashboard() {
   );
   const [visiblePlayers, setVisiblePlayers] = useState<Set<number>>(new Set());
   const [isRecalculating, setIsRecalculating] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+  const loadingRef = useRef(false);
   useEffect(() => {
     setLocalStorage('ca_dashboard_tab', activeTab);
   }, [activeTab]);
@@ -175,9 +177,12 @@ export default function ClubDashboard() {
     };
   }, [clubId]);
 
-  // ── Bus Listeners: cross-page event reactivity (debounced to prevent rapid reloads) ──
+  // ── Bus Listeners: cross-page event reactivity (debounced, scoped by clubId) ──
   useEffect(() => {
-    const reload = () => loadDashboardData();
+    const reload = (payload?: any) => {
+      if (payload?.clubId && payload.clubId !== clubId) return;
+      loadDashboardData();
+    };
     const unsubs = [
       masterBus.subscribeDebounced('CLUB_UPDATED', reload, 500),
       masterBus.subscribeDebounced('CLUB_JOINED', reload, 500),
@@ -194,7 +199,7 @@ export default function ClubDashboard() {
     return () => {
       unsubs.forEach((unsub) => unsub());
     };
-  }, []);
+  }, [clubId]);
 
   const handleRecalculateLevel = async () => {
     if (!clubId || isRecalculating) return;
@@ -230,6 +235,9 @@ export default function ClubDashboard() {
 
   const loadDashboardData = async () => {
     if (!clubId) return;
+    if (loadingRef.current) return;
+    loadingRef.current = true;
+    setLoadError(false);
     setLoading(true);
     try {
       // Load club info
@@ -330,9 +338,12 @@ export default function ClubDashboard() {
       }
     } catch (error) {
       console.error('Failed to load dashboard:', error);
+      setLoadError(true);
       toast.error('Failed to load dashboard data');
+    } finally {
+      loadingRef.current = false;
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const formatChips = (num: number): string => {
@@ -350,6 +361,32 @@ export default function ClubDashboard() {
     return (
       <div className={styles.loading}>
         <PageSkeleton variant="dashboard" />
+      </div>
+    );
+  }
+
+  if (loadError && !loading) {
+    return (
+      <div className={styles.dashboard}>
+        <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text-secondary)' }}>
+          <p style={{ fontSize: '1.1rem', marginBottom: '16px' }}>Failed to load dashboard</p>
+          <button
+            onClick={() => loadDashboardData()}
+            style={{
+              padding: '10px 24px',
+              borderRadius: '8px',
+              background: 'var(--accent-blue, #3b82f6)',
+              color: '#fff',
+              border: 'none',
+              cursor: 'pointer',
+              fontSize: '0.95rem',
+              fontWeight: 600,
+            }}
+          >
+            🔄 Retry
+          </button>
+        </div>
+        {clubId && <ClubBottomNav clubId={clubId} userRole={userRole} />}
       </div>
     );
   }

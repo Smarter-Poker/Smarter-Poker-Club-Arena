@@ -88,6 +88,21 @@ export default function ClubMessagesPage() {
       setLoadError(false);
       if (!getIsMounted || getIsMounted()) setLoading(true);
       try {
+        // SWR: show cached conversations instantly
+        const swrKey = `msg_cache_${user.id}`;
+        try {
+          const cached = sessionStorage.getItem(swrKey);
+          if (cached) {
+            const c = JSON.parse(cached);
+            if (Array.isArray(c)) {
+              setConversations(c);
+              setLoading(false);
+            }
+          }
+        } catch {
+          /* corrupt cache */
+        }
+
         const { data: clubConvs, error: convError } = await supabase
           .from('conversations')
           .select(
@@ -140,6 +155,13 @@ export default function ClubMessagesPage() {
 
         if (getIsMounted && !getIsMounted()) return;
         setConversations(mapped);
+
+        // SWR: cache successful fetch
+        try {
+          sessionStorage.setItem(swrKey, JSON.stringify(mapped.slice(0, 15)));
+        } catch {
+          /* storage full */
+        }
       } catch (error) {
         console.error('Failed to load club conversations:', error);
         setLoadError(true);

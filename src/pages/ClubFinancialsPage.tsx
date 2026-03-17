@@ -211,6 +211,21 @@ export default function ClubFinancialsPage() {
     setLoading(true);
     try {
       const resolvedId = await resolveClubUUID(clubId);
+      const swrKey = `fin_cache_${resolvedId}_${period}`;
+
+      // SWR: show cached data instantly
+      try {
+        const cached = sessionStorage.getItem(swrKey);
+        if (cached) {
+          const c = JSON.parse(cached);
+          if (c.summary) setSummary(c.summary);
+          if (c.chartData) setChartData(c.chartData);
+          if (c.transactions) setTransactions(c.transactions);
+          setLoading(false);
+        }
+      } catch {
+        /* corrupt cache */
+      }
 
       // Calculate date range based on period
       const now = new Date();
@@ -258,7 +273,7 @@ export default function ClubFinancialsPage() {
 
       if (!isMounted.current) return;
 
-      setSummary({
+      const summaryData = {
         period,
         rake_collected: totalRake,
         rakeback_paid: estimatedRakeback,
@@ -267,7 +282,8 @@ export default function ClubFinancialsPage() {
         net_revenue: netRevenue,
         total_hands: totalHands,
         total_pots: totalPots,
-      });
+      };
+      setSummary(summaryData);
 
       // Build daily chart data from rake_history
       const dailyMap = new Map<string, { rake: number; rakeback: number }>();
@@ -281,13 +297,12 @@ export default function ClubFinancialsPage() {
         existing.rakeback += (row.rake_amount || 0) * 0.1;
         dailyMap.set(dayKey, existing);
       }
-      setChartData(
-        Array.from(dailyMap.entries()).map(([name, vals]) => ({
-          name,
-          rake: vals.rake,
-          rakeback: vals.rakeback,
-        }))
-      );
+      const chartDataLocal = Array.from(dailyMap.entries()).map(([name, vals]) => ({
+        name,
+        rake: vals.rake,
+        rakeback: vals.rakeback,
+      }));
+      setChartData(chartDataLocal);
 
       // Load recent rake history as transactions (no club_transactions table needed)
       const { data: recentRake } = await retryFetch(
@@ -303,15 +318,28 @@ export default function ClubFinancialsPage() {
       );
 
       if (recentRake) {
-        setTransactions(
-          recentRake.map((r: any) => ({
-            id: r.id,
-            type: 'rake' as const,
-            amount: r.rake_amount || 0,
-            description: `Hand #${r.hand_number} — ${(r.rake_amount || 0).toLocaleString()} chips from ${(r.pot_amount || 0).toLocaleString()} pot`,
-            created_at: r.collected_at,
-          }))
-        );
+        const mappedTx = recentRake.map((r: any) => ({
+          id: r.id,
+          type: 'rake' as const,
+          amount: r.rake_amount || 0,
+          description: `Hand #${r.hand_number} — ${(r.rake_amount || 0).toLocaleString()} chips from ${(r.pot_amount || 0).toLocaleString()} pot`,
+          created_at: r.collected_at,
+        }));
+        setTransactions(mappedTx);
+
+        // SWR: cache successful fetch (local vars, not stale state)
+        try {
+          sessionStorage.setItem(
+            swrKey,
+            JSON.stringify({
+              summary: summaryData,
+              chartData: chartDataLocal,
+              transactions: mappedTx.slice(0, 20),
+            })
+          );
+        } catch {
+          /* storage full */
+        }
       }
     } catch (error) {
       if (!isMounted.current) return;

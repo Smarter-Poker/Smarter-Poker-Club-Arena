@@ -103,6 +103,21 @@ export default function ClubRulesPage() {
     try {
       // Load club info
       const { column: clubCol, value: clubVal } = resolveClubIdFilter(clubId!);
+
+      // SWR: show cached rules instantly
+      const swrKey = `rules_cache_${clubId}`;
+      try {
+        const cached = sessionStorage.getItem(swrKey);
+        if (cached) {
+          const c = JSON.parse(cached);
+          if (c.name) setClubName(c.name);
+          if (c.rules) setRules(c.rules);
+          setLoading(false);
+        }
+      } catch {
+        /* corrupt cache */
+      }
+
       const { data: club } = await supabase
         .from('clubs')
         .select('name, rules_text, owner_id')
@@ -119,6 +134,15 @@ export default function ClubRulesPage() {
         if (adminFromOwner) {
           setIsAdmin(true);
           setUserRole('owner');
+        }
+        // SWR: cache successful fetch
+        try {
+          sessionStorage.setItem(
+            swrKey,
+            JSON.stringify({ name: club.name, rules: club.rules_text || '' })
+          );
+        } catch {
+          /* storage full */
         }
       }
 

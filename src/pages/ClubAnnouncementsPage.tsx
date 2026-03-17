@@ -119,6 +119,21 @@ export default function ClubAnnouncementsPage() {
     if (!getIsMounted || getIsMounted()) setLoading(true);
     try {
       const resolvedId = await resolveClubUUID(clubId);
+      const swrKey = `ann_cache_${resolvedId}`;
+
+      // SWR: show cached announcements instantly
+      try {
+        const cached = sessionStorage.getItem(swrKey);
+        if (cached) {
+          const c = JSON.parse(cached);
+          if (Array.isArray(c)) {
+            setAnnouncements(c);
+            setLoading(false);
+          }
+        }
+      } catch {
+        /* corrupt cache */
+      }
 
       const { data, error } = await supabase
         .from('club_announcements')
@@ -144,16 +159,22 @@ export default function ClubAnnouncementsPage() {
             /* non-critical */
           }
         }
-        setAnnouncements(
-          data.map((a: any) => ({
-            id: a.id,
-            title: a.title,
-            content: a.content,
-            created_at: a.created_at,
-            author_name: authorMap[a.author_id] || 'Admin',
-            is_pinned: a.is_pinned,
-          }))
-        );
+        const mappedAnnouncements = data.map((a: any) => ({
+          id: a.id,
+          title: a.title,
+          content: a.content,
+          created_at: a.created_at,
+          author_name: authorMap[a.author_id] || 'Admin',
+          is_pinned: a.is_pinned,
+        }));
+        setAnnouncements(mappedAnnouncements);
+
+        // SWR: cache successful fetch
+        try {
+          sessionStorage.setItem(swrKey, JSON.stringify(mappedAnnouncements.slice(0, 20)));
+        } catch {
+          /* storage full */
+        }
       }
 
       if (user?.id) {

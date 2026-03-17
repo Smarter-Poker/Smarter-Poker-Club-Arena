@@ -3,7 +3,7 @@
  * PokerBros-style club interface with tournaments, tables, and navigation
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { clubService } from '../../services/ClubService';
 import { tableService } from '../../services/TableService';
@@ -44,6 +44,7 @@ export default function ClubLobby() {
   const currentUser = useUserStore((s) => s.user);
   const isMountedRef = useIsMounted();
   const [userRole, setUserRole] = useState<'owner' | 'admin' | 'agent' | 'member'>('member');
+  const loadingRef = useRef(false);
 
   // UNION-FIRST: Check if this club is in a union and redirect
   // Combined with initial data load to prevent race condition where
@@ -221,6 +222,8 @@ export default function ClubLobby() {
 
   const loadClubData = useCallback(async () => {
     if (!clubId) return;
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     setIsLoading(true);
     try {
       const [clubData, tableData, tournamentData] = await Promise.all([
@@ -267,8 +270,10 @@ export default function ClubLobby() {
       }
     } catch (err) {
       console.error('[ClubLobby] Failed to load club data:', err);
+    } finally {
+      loadingRef.current = false;
+      if (isMountedRef.current) setIsLoading(false);
     }
-    if (isMountedRef.current) setIsLoading(false);
   }, [clubId, currentUser?.id]);
 
   const filters: GameFilter[] = ['ALL', "Hold'em", 'Omaha', 'Mixed', 'MTT', 'Spin-It', 'SN'];

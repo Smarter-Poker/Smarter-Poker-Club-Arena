@@ -3810,7 +3810,17 @@ export default function TablePage({
   useTableKeyboard({
     isHeroTurn: tableState.currentPlayerSeat === tableState.heroSeat && tableState.isHandInProgress,
     isSpectator: !tableState.players.some((p) => p?.isHero),
-    isModalOpen: showSettings || showInsurance || showRIT,
+    isModalOpen:
+      showSettings ||
+      showInsurance ||
+      showRIT ||
+      showBuyInModal ||
+      showSessionSummary ||
+      showHandHistory ||
+      showPlayerNotes ||
+      showWaitList ||
+      showRaiseSlider ||
+      isSideMenuOpen,
     onFold: handleFold,
     onCallCheck: handleCall,
     onRaise: handleRaise,
@@ -3879,74 +3889,6 @@ export default function TablePage({
     }, 5000);
     return () => clearInterval(interval);
   }, []);
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // KEYBOARD SHORTCUTS — F=fold, X/K=check, C=call, R=raise, A=all-in
-  // ═══════════════════════════════════════════════════════════════════════════
-  // Use refs to avoid stale closures — handlers are recreated every render
-  const kbHandlersRef = useRef({ handleFold, handleCheck, handleCall, handleRaise, handleAllIn });
-  kbHandlersRef.current = { handleFold, handleCheck, handleCall, handleRaise, handleAllIn };
-
-  // Track modal/overlay state via ref — blocks keyboard shortcuts when any UI overlay is open
-  const kbModalBlockRef = useRef(false);
-  kbModalBlockRef.current =
-    showBuyInModal ||
-    showSessionSummary ||
-    showHandHistory ||
-    showInsurance ||
-    showRIT ||
-    showPlayerNotes ||
-    showWaitList ||
-    showRaiseSlider ||
-    isSideMenuOpen;
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Ignore when typing in inputs/textareas
-      const target = e.target as HTMLElement;
-      if (
-        target.tagName === 'INPUT' ||
-        target.tagName === 'TEXTAREA' ||
-        target.contentEditable === 'true'
-      )
-        return;
-
-      // Block shortcuts while any modal/overlay is open (ref avoids stale closure)
-      if (kbModalBlockRef.current) return;
-
-      // Read fresh state from ref to avoid stale closure
-      const current = tableStateRef.current;
-      if (current.currentPlayerSeat !== current.heroSeat || current.heroSeat <= 0) return;
-
-      const key = e.key.toLowerCase();
-      switch (key) {
-        case 'f':
-          e.preventDefault();
-          kbHandlersRef.current.handleFold();
-          break;
-        case 'x':
-        case 'k':
-          e.preventDefault();
-          kbHandlersRef.current.handleCheck();
-          break;
-        case 'c':
-          e.preventDefault();
-          kbHandlersRef.current.handleCall();
-          break;
-        case 'r':
-          e.preventDefault();
-          kbHandlersRef.current.handleRaise();
-          break;
-        case 'a':
-          e.preventDefault();
-          kbHandlersRef.current.handleAllIn();
-          break;
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []); // Empty deps — refs always fresh
 
   // Load waitlist data
   const loadWaitlist = useCallback(async () => {

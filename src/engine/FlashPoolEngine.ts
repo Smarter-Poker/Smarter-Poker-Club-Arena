@@ -372,7 +372,11 @@ class FlashPoolEngineClass {
       // Stop and cleanup the dealing engine for removed tables
       const engine = this.dealingEngines.get(tableId);
       if (engine) {
-        engine.stop().catch(() => {});
+        engine
+          .stop()
+          .catch((e) =>
+            console.warn(`[FlashPoolEngine] Failed to stop engine for table ${tableId}:`, e)
+          );
         this.dealingEngines.delete(tableId);
       }
     }
@@ -402,7 +406,14 @@ class FlashPoolEngineClass {
       for (const table of pool.tables.values()) {
         const engine = this.dealingEngines.get(table.tableId);
         if (engine) {
-          engine.stop().catch(() => {});
+          engine
+            .stop()
+            .catch((e) =>
+              console.warn(
+                `[FlashPoolEngine] Failed to stop pool engine for table ${table.tableId}:`,
+                e
+              )
+            );
           this.dealingEngines.delete(table.tableId);
         }
       }

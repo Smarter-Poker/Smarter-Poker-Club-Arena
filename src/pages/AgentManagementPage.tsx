@@ -1434,7 +1434,9 @@ export default function AgentManagementPage() {
           if (clubId) {
             AgentService.getAgents(clubId)
               .then(setAgents)
-              .catch(() => {});
+              .catch((e) =>
+                console.warn('[AgentManagementPage] Failed to refresh agents after transfer:', e)
+              );
           }
         }}
       />
@@ -1465,7 +1467,12 @@ export default function AgentManagementPage() {
           if (clubId) {
             AgentService.getAgents(clubId)
               .then(setAgents)
-              .catch(() => {});
+              .catch((e) =>
+                console.warn(
+                  '[AgentManagementPage] Failed to refresh agents after player added:',
+                  e
+                )
+              );
           }
         }}
       />

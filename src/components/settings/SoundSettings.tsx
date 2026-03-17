@@ -45,7 +45,7 @@ export const SoundSettings: React.FC<SoundSettingsProps> = ({ onChange }) => {
     // Play a test sound
     const audio = new Audio('/sounds/chip-stack.mp3');
     audio.volume = config.masterVolume / 100;
-    audio.play().catch(() => {});
+    audio.play().catch((e) => console.warn('[SoundSettings] Failed to play test sound:', e));
   };
 
   return (

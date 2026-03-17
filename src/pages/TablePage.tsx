@@ -1348,7 +1348,9 @@ export default function TablePage({
 
     return () => {
       // Component unmount cleanup
-      channel.unsubscribe().catch(() => {});
+      channel
+        .unsubscribe()
+        .catch((e) => console.warn('[TablePage] Failed to unsubscribe from table channel:', e));
     };
   }, [tableId, userId]);
 
@@ -1798,15 +1800,8 @@ export default function TablePage({
             }
             return { ...prev, players: updatedPlayers, heroSeat: resolvedHeroSeat };
           });
-
-          // If hero is already seated, update hero seat immediately
-          const heroSeat = existingSeats.find((s) => s.user_id === userId);
-          if (heroSeat) {
-            setTableState((prev) => ({
-              ...prev,
-              heroSeat: heroSeat.seat_number,
-            }));
-          }
+          // heroSeat already set inside the setTableState callback above (L1796)
+          // No second setTableState needed — avoids unnecessary re-render
         }
 
         // ─── Initialize Time Bank Engine for the human player ───
@@ -3646,8 +3641,8 @@ export default function TablePage({
         const potSize = currentState.pot;
         const maxCoverage = Math.trunc(potSize * 0.8 * 100) / 100; // 80% of pot coverage
 
-        // Convert board cards to proper format
-        const boardCards = tableState.communityCards.map((c) => ({
+        // Convert board cards to proper format — use ref for fresh data inside workerTimeout
+        const boardCards = tableStateRef.current.communityCards.map((c) => ({
           rank: c.rank,
           suit: c.suit as 'h' | 'd' | 'c' | 's',
         }));
@@ -4392,7 +4387,8 @@ export default function TablePage({
                   .then(() => {
                     toast.success('Table link copied to clipboard!');
                   })
-                  .catch(() => {
+                  .catch((e) => {
+                    console.warn('[TablePage] Failed to copy share URL to clipboard:', e);
                     toast.info('Share: ' + shareUrl);
                   });
                 setIsSideMenuOpen(false);

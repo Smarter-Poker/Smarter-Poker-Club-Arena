@@ -48,7 +48,7 @@ export function useAuthUser() {
           useUserStore
             .getState()
             .loadProfile(userId)
-            .catch(() => {});
+            .catch((e) => console.warn('[useAuthUser] Failed to load user profile:', e));
         }
       } catch (err) {
         // Silent — IdentityDNA listener will handle it eventually

@@ -88,7 +88,7 @@ export default function PlayerNotesPanel({
       vipService
         .checkVIPStatus(user.id)
         .then((status) => setIsVIP(status.isVIP))
-        .catch(() => {});
+        .catch((e) => console.warn('[PlayerNotesPanel] Failed to check VIP status:', e));
     }
   }, [user?.id, targetUserId]);
 

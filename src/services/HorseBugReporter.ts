@@ -181,7 +181,9 @@ class HorseBugReporterService {
       report.severity === 'high' ||
       report.severity === 'medium'
     ) {
-      this.persistToSupabase(report).catch(() => {});
+      this.persistToSupabase(report).catch((e) =>
+        console.warn('[HorseBugReporter] Failed to persist bug report to Supabase:', e)
+      );
     }
 
     // Log with severity color
@@ -391,8 +393,7 @@ class HorseBugReporterService {
         created_at: report.timestamp,
       });
     } catch (err) {
-
-      console.error("[HorseBugReporter] Error:", err);
+      console.error('[HorseBugReporter] Error:', err);
       // Silently fail — table might not exist yet
     }
   }

@@ -170,7 +170,9 @@ export class HeadlessTableEngine {
       }
 
       // Clean up any orphaned hands from previous sessions before dealing
-      this.persistence.cleanupOrphanedHands().catch(() => {});
+      this.persistence
+        .cleanupOrphanedHands()
+        .catch((e) => console.warn('[HeadlessTableEngine] Failed to cleanup orphaned hands:', e));
 
       // Start dealing loop
       this.startDealingLoop();
@@ -945,7 +947,9 @@ export class HeadlessTableEngine {
             // cleanup() MUST be called to prevent leaked event listeners
             setTimeout(() => {
               if (!handled) {
-                console.warn('[HeadlessTableEngine] RIT safety timeout — cleaning up stale listeners');
+                console.warn(
+                  '[HeadlessTableEngine] RIT safety timeout — cleaning up stale listeners'
+                );
                 cleanup();
                 handleDecline();
               }
@@ -1271,7 +1275,9 @@ export class HeadlessTableEngine {
 
       // GTO overlay only when using HorseLogic fallback (brain has its own GTO integration)
       if (!HorseBrainAdapter.isBrainAvailable()) {
-        this.enhanceWithGTO(enginePlayer, state, decision, horseStyle).catch(() => {});
+        this.enhanceWithGTO(enginePlayer, state, decision, horseStyle).catch((e) =>
+          console.warn('[HeadlessTableEngine] Failed to enhance decision with GTO:', e)
+        );
       }
 
       // Execute after think time (shortened for headless — 200-600ms)

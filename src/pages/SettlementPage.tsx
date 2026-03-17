@@ -408,7 +408,9 @@ export default function SettlementPage() {
               };
               if (isMounted.current) setSelectedPeriod(mapped);
             })
-            .catch(() => {});
+            .catch((e) =>
+              console.warn('[SettlementPage] Failed to get current settlement period:', e)
+            );
         }
       )
       .on(

@@ -206,7 +206,9 @@ export function cleanupBroadcastChannel(tableId: string): void {
   const ready = broadcastReady.get(channelName);
   if (ready) {
     ready.then((channel) => {
-      channel.unsubscribe().catch(() => {});
+      channel
+        .unsubscribe()
+        .catch((e) => console.warn('[Supabase] Failed to unsubscribe from broadcast channel:', e));
       supabase.removeChannel(channel);
     });
     broadcastReady.delete(channelName);
@@ -230,7 +232,9 @@ export function subscribeToHandState(
     .subscribe();
 
   return () => {
-    channel.unsubscribe().catch(() => {});
+    channel
+      .unsubscribe()
+      .catch((e) => console.warn('[Supabase] Failed to unsubscribe from hand state channel:', e));
     supabase.removeChannel(channel);
   };
 }
@@ -334,7 +338,9 @@ if (typeof window !== 'undefined') {
             String(err).includes('invalid_grant')
           ) {
             console.error('[Supabase] Refresh token is dead — forcing sign out');
-            supabase.auth.signOut().catch(() => {});
+            supabase.auth
+              .signOut()
+              .catch((e) => console.warn('[Supabase] Failed to force sign out:', e));
           }
         });
       }
@@ -364,8 +370,8 @@ if (typeof window !== 'undefined') {
         if (timeUntilExpiry < 10 * 60_000) {
           lastRefreshAttempt = Date.now();
           console.log('[Supabase] Tab visible — refreshing session proactively');
-          supabase.auth.refreshSession().catch(() => {
-            // Silent — autoRefreshToken will also try
+          supabase.auth.refreshSession().catch((e) => {
+            console.warn('[Supabase] Proactive refresh on tab focus failed:', e);
           });
         }
       } catch {

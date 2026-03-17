@@ -341,7 +341,7 @@ export default function SettingsPage() {
         .then(({ data: { session } }) => {
           if (isMounted && session?.user?.email) setUserEmail(session.user.email);
         })
-        .catch(() => {});
+        .catch((e) => console.warn('[SettingsPage] Failed to fetch user session:', e));
     }
     return () => {
       isMounted = false;

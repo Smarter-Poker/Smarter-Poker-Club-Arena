@@ -128,7 +128,9 @@ export function useTabKeepAlive(): void {
         workerRef.current = null;
       }
       if (audioCtxRef.current) {
-        audioCtxRef.current.close().catch(() => {});
+        audioCtxRef.current
+          .close()
+          .catch((e) => console.warn('[KeepAlive] Failed to close AudioContext:', e));
         audioCtxRef.current = null;
       }
       console.log('[KeepAlive] Tab keepalive stopped');

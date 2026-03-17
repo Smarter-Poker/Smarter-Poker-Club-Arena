@@ -33,7 +33,7 @@ import ConfirmModal from '../components/common/ConfirmModal';
 import { retryFetch } from '../utils/retryFetch';
 import './ClubHomePage.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
-import { resolveClubIdFilter } from '../utils/clubIdResolver';
+import { resolveClubIdFilter, resolveClubUUID } from '../utils/clubIdResolver';
 import { useIsMounted } from '../hooks/useIsMounted';
 import GlobalUXIndicators from '../components/common/GlobalUXIndicators';
 
@@ -213,84 +213,104 @@ export default function ClubHomePage() {
   // ── Realtime subscription: live table updates (player counts, status) ──
   useEffect(() => {
     if (!clubId) return;
+    let isMounted = true;
 
-    const channelKey = `club-tables-${clubId}`;
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'tables',
-          filter: `club_id=eq.${clubId}`,
-        },
-        (payload) => {
-          if (payload.eventType === 'UPDATE' && payload.new) {
-            setTables((prev) =>
-              prev.map((t) => (t.id === payload.new.id ? { ...t, ...payload.new } : t))
-            );
-          } else if (payload.eventType === 'INSERT' && payload.new) {
-            setTables((prev) => [payload.new as any, ...prev]);
-          } else if (payload.eventType === 'DELETE' && payload.old) {
-            setTables((prev) => prev.filter((t) => t.id !== (payload.old as any).id));
+    const setupRealtime = async () => {
+      const resolvedId = await resolveClubUUID(clubId);
+      if (!isMounted) return;
+
+      const channelKey = `club-tables-${clubId}`;
+      const channel = masterBus.getOrCreateChannel(channelKey);
+      channel
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'tables',
+            filter: `club_id=eq.${resolvedId}`,
+          },
+          (payload) => {
+            if (payload.eventType === 'UPDATE' && payload.new) {
+              setTables((prev) =>
+                prev.map((t) => (t.id === payload.new.id ? { ...t, ...payload.new } : t))
+              );
+            } else if (payload.eventType === 'INSERT' && payload.new) {
+              setTables((prev) => [payload.new as any, ...prev]);
+            } else if (payload.eventType === 'DELETE' && payload.old) {
+              setTables((prev) => prev.filter((t) => t.id !== (payload.old as any).id));
+            }
           }
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'tournaments',
-          filter: `club_id=eq.${clubId}`,
-        },
-        (payload) => {
-          if (payload.eventType === 'UPDATE' && payload.new) {
-            setTournaments((prev) =>
-              prev.map((t) => (t.id === payload.new.id ? { ...t, ...payload.new } : t))
-            );
-          } else if (payload.eventType === 'INSERT' && payload.new) {
-            setTournaments((prev) => [payload.new as any, ...prev]);
-          } else if (payload.eventType === 'DELETE' && payload.old) {
-            setTournaments((prev) => prev.filter((t) => t.id !== (payload.old as any).id));
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'tournaments',
+            filter: `club_id=eq.${resolvedId}`,
+          },
+          (payload) => {
+            if (payload.eventType === 'UPDATE' && payload.new) {
+              setTournaments((prev) =>
+                prev.map((t) => (t.id === payload.new.id ? { ...t, ...payload.new } : t))
+              );
+            } else if (payload.eventType === 'INSERT' && payload.new) {
+              setTournaments((prev) => [payload.new as any, ...prev]);
+            } else if (payload.eventType === 'DELETE' && payload.old) {
+              setTournaments((prev) => prev.filter((t) => t.id !== (payload.old as any).id));
+            }
           }
-        }
-      )
-      .subscribe((status) => {
-        setWsConnected(status === 'SUBSCRIBED');
-      });
+        )
+        .subscribe((status) => {
+          setWsConnected(status === 'SUBSCRIBED');
+        });
+    };
+
+    setupRealtime().catch((e) => console.warn('[ClubHomePage] Table realtime setup failed:', e));
 
     return () => {
-      masterBus.removeRegisteredChannel(channelKey);
+      isMounted = false;
+      masterBus.removeRegisteredChannel(`club-tables-${clubId}`);
     };
   }, [clubId]);
 
   // ── Realtime subscription: club member count updates ──
   useEffect(() => {
     if (!clubId) return;
+    let isMounted = true;
 
-    const memberChannelKey = `club-members-${clubId}`;
-    const memberChannel = masterBus.getOrCreateChannel(memberChannelKey);
-    memberChannel
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'club_members',
-          filter: `club_id=eq.${clubId}`,
-        },
-        (payload) => {
-          if (payload.eventType === 'INSERT' || payload.eventType === 'DELETE') {
-            loadClubData();
+    const setupMemberRealtime = async () => {
+      const resolvedId = await resolveClubUUID(clubId);
+      if (!isMounted) return;
+
+      const memberChannelKey = `club-members-${clubId}`;
+      const memberChannel = masterBus.getOrCreateChannel(memberChannelKey);
+      memberChannel
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'club_members',
+            filter: `club_id=eq.${resolvedId}`,
+          },
+          (payload) => {
+            if (payload.eventType === 'INSERT' || payload.eventType === 'DELETE') {
+              loadClubData();
+            }
           }
-        }
-      )
-      .subscribe();
+        )
+        .subscribe();
+    };
+
+    setupMemberRealtime().catch((e) =>
+      console.warn('[ClubHomePage] Member realtime setup failed:', e)
+    );
 
     return () => {
-      masterBus.removeRegisteredChannel(memberChannelKey);
+      isMounted = false;
+      masterBus.removeRegisteredChannel(`club-members-${clubId}`);
     };
   }, [clubId]);
 

@@ -78,14 +78,28 @@ export class CashGameOrchestrator {
                 this.activeEngines.has(tableId)
               ) {
                 const engine = this.activeEngines.get(tableId)!;
-                engine.stop().catch(() => {});
+                engine
+                  .stop()
+                  .catch((e) =>
+                    console.warn(
+                      `[CashGameOrchestrator] Failed to stop closed table engine ${tableId}:`,
+                      e
+                    )
+                  );
                 this.activeEngines.delete(tableId);
               }
             } else if (eventType === 'DELETE') {
               const tableId = oldRow?.id;
               if (tableId && this.activeEngines.has(tableId)) {
                 const engine = this.activeEngines.get(tableId)!;
-                engine.stop().catch(() => {});
+                engine
+                  .stop()
+                  .catch((e) =>
+                    console.warn(
+                      `[CashGameOrchestrator] Failed to stop deleted table engine ${tableId}:`,
+                      e
+                    )
+                  );
                 this.activeEngines.delete(tableId);
               }
             }

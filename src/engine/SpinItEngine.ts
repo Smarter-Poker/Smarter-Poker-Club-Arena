@@ -362,7 +362,11 @@ class SpinItEngineClass {
     // Stop dealing engine
     const engine = this.dealingEngines.get(lobbyId);
     if (engine) {
-      engine.stop().catch(() => {});
+      engine
+        .stop()
+        .catch((e) =>
+          console.warn(`[SpinItEngine] Failed to stop dealing engine for lobby ${lobbyId}:`, e)
+        );
       this.dealingEngines.delete(lobbyId);
     }
   }

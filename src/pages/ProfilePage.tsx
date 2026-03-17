@@ -521,7 +521,7 @@ export default function ProfilePage() {
                 });
             }
           })
-          .catch(() => {});
+          .catch((e) => console.warn('[Profile] Refreshing profile after update failed:', e));
       },
       500
     );
@@ -551,7 +551,7 @@ export default function ProfilePage() {
                 });
             }
           })
-          .catch(() => {});
+          .catch((e) => console.warn('[Profile] Refreshing hand stats failed:', e));
       },
       2000
     );
@@ -574,7 +574,7 @@ export default function ProfilePage() {
                 });
             }
           })
-          .catch(() => {});
+          .catch((e) => console.warn('[Profile] Refreshing diamond balance failed:', e));
       },
       500
     );
@@ -601,7 +601,7 @@ export default function ProfilePage() {
                 });
             }
           })
-          .catch(() => {});
+          .catch((e) => console.warn('[Profile] Refreshing daily reward data failed:', e));
       },
       500
     );
@@ -624,7 +624,7 @@ export default function ProfilePage() {
                 });
             }
           })
-          .catch(() => {});
+          .catch((e) => console.warn('[Profile] Refreshing mission claim diamonds failed:', e));
       },
       500
     );
@@ -647,7 +647,7 @@ export default function ProfilePage() {
                 });
             }
           })
-          .catch(() => {});
+          .catch((e) => console.warn('[Profile] Refreshing wheel spin diamonds failed:', e));
       },
       500
     );
@@ -685,10 +685,12 @@ export default function ProfilePage() {
                     }))
                   );
                 })
-                .catch(() => {});
+                .catch((e) => console.warn('[Profile] Refreshing mission progress failed:', e));
             }
           })
-          .catch(() => {});
+          .catch((e) =>
+            console.warn('[Profile] Fetching auth user for mission progress failed:', e)
+          );
       },
       1000
     );

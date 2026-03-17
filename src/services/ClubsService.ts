@@ -590,13 +590,16 @@ export async function updateClub(clubId: string, updates: Record<string, any>): 
   const { data: user } = await getAuthUser();
   if (!user.user) throw new Error('Authentication required');
 
+  // Resolve to UUID first — clubId from URL may be integer (e.g., "25450")
+  const resolvedId = await resolveClubUUID(clubId);
+
   // SECURITY: Verify caller is club owner before allowing any updates.
   // RLS provides a backend safety net, but defense-in-depth is essential
   // since updateClub accepts arbitrary field updates.
   const { data: club, error: clubErr } = await supabase
     .from('clubs')
     .select('owner_id')
-    .eq('id', clubId)
+    .eq('id', resolvedId)
     .maybeSingle();
 
   if (clubErr || !club) {
@@ -621,6 +624,14 @@ export async function updateClub(clubId: string, updates: Record<string, any>): 
     'avatar_url',
     'banner_url',
     'settings',
+    // Game settings — critical for ClubDetailPage settings tab
+    'default_rake_percent',
+    'rake_cap',
+    'min_buyin_bb',
+    'max_buyin_bb',
+    'time_bank_seconds',
+    'allow_straddle',
+    'allow_run_it_twice',
   ];
   const sanitizedUpdates: Record<string, any> = {};
   for (const key of Object.keys(updates)) {
@@ -636,7 +647,7 @@ export async function updateClub(clubId: string, updates: Record<string, any>): 
   const { data, error } = await supabase
     .from('clubs')
     .update(sanitizedUpdates)
-    .eq('id', clubId)
+    .eq('id', resolvedId)
     .select()
     .maybeSingle();
 
@@ -695,10 +706,11 @@ export async function uploadClubLogo(clubId: string, file: File): Promise<string
   const logoUrl = urlData.publicUrl;
 
   // Update club record with new logo URL
+  const resolvedId = await resolveClubUUID(clubId);
   const { error: updateErr } = await supabase
     .from('clubs')
     .update({ avatar_url: logoUrl })
-    .eq('id', clubId);
+    .eq('id', resolvedId);
   if (updateErr) {
     console.error('[ClubsService] Logo uploaded but failed to save URL to club record:', updateErr);
     throw new Error('Logo uploaded but failed to save — please try again');
@@ -747,10 +759,11 @@ export async function uploadClubBanner(clubId: string, file: File): Promise<stri
   const bannerUrl = urlData.publicUrl;
 
   // Update club record with new banner URL
+  const resolvedId = await resolveClubUUID(clubId);
   const { error: updateErr } = await supabase
     .from('clubs')
     .update({ banner_url: bannerUrl })
-    .eq('id', clubId);
+    .eq('id', resolvedId);
   if (updateErr) {
     console.error(
       '[ClubsService] Banner uploaded but failed to save URL to club record:',
@@ -814,12 +827,14 @@ export async function canJoinMoreClubs(): Promise<{
  *      but auto-synced by trg_sync_club_member_count trigger once deployed).
  */
 export async function getLiveMemberCount(clubId: string): Promise<number> {
+  const resolvedId = await resolveClubUUID(clubId);
+
   // ── Tier 1: Direct count from club_members (works if RLS permits) ──
   try {
     const { count, error } = await supabase
       .from('club_members')
       .select('*', { count: 'exact', head: true })
-      .eq('club_id', clubId);
+      .eq('club_id', resolvedId);
 
     if (!error && typeof count === 'number' && count > 0) {
       return count;
@@ -832,7 +847,7 @@ export async function getLiveMemberCount(clubId: string): Promise<number> {
   // ── Tier 2: SECURITY DEFINER RPC (bypasses RLS) ──
   try {
     const { data, error } = await supabase.rpc('fn_get_club_member_count', {
-      p_club_id: clubId,
+      p_club_id: resolvedId,
     });
 
     if (!error && typeof data === 'number') {
@@ -848,7 +863,7 @@ export async function getLiveMemberCount(clubId: string): Promise<number> {
     const { data: club } = await supabase
       .from('clubs')
       .select('member_count')
-      .eq('id', clubId)
+      .eq('id', resolvedId)
       .maybeSingle();
     return club?.member_count || 0;
   } catch {

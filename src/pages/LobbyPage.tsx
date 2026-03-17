@@ -59,7 +59,7 @@ export default function LobbyPage() {
     tableService
       .getActiveTables()
       .then(setTables)
-      .catch(() => {});
+      .catch((e) => console.warn('[Lobby] Table fetch failed:', e));
   });
   const [activeFilter, setActiveFilter] = useState<GameFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -156,13 +156,13 @@ export default function LobbyPage() {
       .then((eligible) => {
         if (isMounted.current) setCanSpin(eligible);
       })
-      .catch(() => {});
+      .catch((e) => console.warn('[Lobby] Spin eligibility check failed:', e));
     bonusService
       .getWheelStats(user.id)
       .then((stats) => {
         if (isMounted.current) setWheelStats(stats);
       })
-      .catch(() => {});
+      .catch((e) => console.warn('[Lobby] Wheel stats fetch failed:', e));
 
     // Trigger push notification event if daily reset is available
     dailyChallengeService.emitDailyResetReminder();
@@ -185,7 +185,7 @@ export default function LobbyPage() {
         .then((t) => {
           if (isMounted.current) setTables(t);
         })
-        .catch(() => {});
+        .catch((e) => console.warn('[Lobby] Refresh tables failed:', e));
     };
     const LOBBY_REFRESH_EVENTS = [
       'TABLE_CREATED',
@@ -489,7 +489,7 @@ export default function LobbyPage() {
     // Cleanup — untrack presence + remove channels + clear debounce
     return () => {
       clearTimeout(loadingTimeout);
-      presenceChannel.untrack().catch(() => {});
+      presenceChannel.untrack().catch((e) => console.warn('[Lobby] Untrack presence failed:', e));
       masterBus.removeRegisteredChannel(tableChannelKey);
       masterBus.removeRegisteredChannel(presenceKey);
       if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -571,7 +571,7 @@ export default function LobbyPage() {
                     });
                     setShowDailyReward(true);
                   })
-                  .catch(() => {});
+                  .catch((e) => console.warn('[Lobby] Daily bonus status fetch failed:', e));
               } else {
                 setShowDailyReward(true);
               }

@@ -126,7 +126,7 @@ export default function ClubLobby() {
               if (chipRes.data) setChipBalance(chipRes.data.balance || 0);
               if (diamondRes.data) setDiamondBalance(diamondRes.data.balance || 0);
             })
-            .catch(() => {});
+            .catch((e) => console.warn('[ClubLobby] Failed to refresh wallet balances:', e));
         },
         500
       ),

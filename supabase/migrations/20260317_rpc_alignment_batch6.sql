@@ -1,7 +1,9 @@
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- RPC Alignment Batch 6: Fix remaining call site ↔ function mismatches
 -- Deploy Date: 2026-03-17
--- Status: PENDING — Must be run in Supabase SQL Editor
+-- Status: OBSOLETE — App code was fixed to match existing DB signatures instead.
+--         See commits: "fix: align remaining RPC call sites with live DB signatures"
+--         DO NOT APPLY — these DROP FUNCTION statements would break live RPCs.
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 -- 1. wallet_internal_transfer: add optional p_note parameter

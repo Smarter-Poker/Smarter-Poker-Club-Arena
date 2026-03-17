@@ -664,10 +664,12 @@ export default function LobbyPage() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className={styles.searchInput}
+            aria-label="Search tables"
           />
           <select
             value={stakeFilter}
             onChange={(e) => setStakeFilter(e.target.value)}
+            aria-label="Filter by stakes"
             style={{
               padding: '6px 10px',
               borderRadius: 8,
@@ -741,6 +743,10 @@ export default function LobbyPage() {
                     transition: 'filter 0.2s ease',
                   }}
                   title={favorites.has(table.id) ? 'Remove from favorites' : 'Add to favorites'}
+                  aria-label={
+                    favorites.has(table.id) ? 'Remove from favorites' : 'Add to favorites'
+                  }
+                  aria-pressed={favorites.has(table.id)}
                 >
                   ⭐
                 </button>
@@ -858,6 +864,7 @@ export default function LobbyPage() {
                           handleTableAction(table.id, 'pause');
                         }}
                         disabled={tableActionProcessing === table.id}
+                        aria-label="Pause table"
                         style={{
                           fontSize: '9px',
                           padding: '2px 6px',
@@ -878,6 +885,7 @@ export default function LobbyPage() {
                           handleTableAction(table.id, 'resume');
                         }}
                         disabled={tableActionProcessing === table.id}
+                        aria-label="Resume table"
                         style={{
                           fontSize: '9px',
                           padding: '2px 6px',
@@ -898,6 +906,7 @@ export default function LobbyPage() {
                         handleTableAction(table.id, 'close');
                       }}
                       disabled={tableActionProcessing === table.id}
+                      aria-label="Close table"
                       style={{
                         fontSize: '9px',
                         padding: '2px 6px',
@@ -917,6 +926,7 @@ export default function LobbyPage() {
                         handleTableAction(table.id, 'delete');
                       }}
                       disabled={tableActionProcessing === table.id}
+                      aria-label="Delete table"
                       style={{
                         fontSize: '9px',
                         padding: '2px 6px',

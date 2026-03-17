@@ -299,7 +299,10 @@ export default function PlayerWalletPage() {
       return;
     }
     if (amount > balances[transferFrom].available) {
-      setMessage({ type: 'error', text: `Insufficient balance. Available: ${balances[transferFrom].available.toLocaleString()}` });
+      setMessage({
+        type: 'error',
+        text: `Insufficient balance. Available: ${balances[transferFrom].available.toLocaleString()}`,
+      });
       return;
     }
     setIsTransferring(true);
@@ -325,7 +328,7 @@ export default function PlayerWalletPage() {
       <div className="wallet-hero">
         <div className="hero-label">Total Balance</div>
         <div className="hero-balance">{animatedTotal.toLocaleString()}</div>
-        <div className="hero-diamonds">
+        <div className="hero-diamonds" role="button" tabIndex={0} aria-label="View diamond balance">
           <span className="diamond-glyph">◆</span>
           <span>{animatedDiamonds.toLocaleString()}</span>
         </div>
@@ -427,6 +430,7 @@ export default function PlayerWalletPage() {
                   className="transfer-select"
                   value={transferFrom}
                   onChange={(e) => setTransferFrom(e.target.value as WalletType)}
+                  aria-label="Transfer from wallet"
                 >
                   {(Object.keys(WALLET_CONFIG) as WalletType[]).map((type) => (
                     <option key={type} value={type}>
@@ -437,7 +441,9 @@ export default function PlayerWalletPage() {
                 </select>
               </div>
 
-              <div className="transfer-arrow">↓</div>
+              <div className="transfer-arrow" aria-hidden="true">
+                ↓
+              </div>
 
               <div>
                 <span className="transfer-label">To</span>
@@ -445,6 +451,7 @@ export default function PlayerWalletPage() {
                   className="transfer-select"
                   value={transferTo}
                   onChange={(e) => setTransferTo(e.target.value as WalletType)}
+                  aria-label="Transfer to wallet"
                 >
                   {(Object.keys(WALLET_CONFIG) as WalletType[]).map((type) => (
                     <option key={type} value={type}>
@@ -461,6 +468,7 @@ export default function PlayerWalletPage() {
                   placeholder="0.00"
                   value={transferAmount}
                   onChange={(e) => setTransferAmount(e.target.value)}
+                  aria-label="Transfer amount"
                 />
               </div>
 

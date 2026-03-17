@@ -1,8 +1,9 @@
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- Fix: atomic_table_cashout and atomic_pay_player_rakeback signature alignment
--- App code now calls these with fewer params — DB must match
 -- Deploy Date: 2026-03-17
--- Status: PENDING — Must be run in Supabase SQL Editor
+-- Status: OBSOLETE — App code was fixed to match existing DB signatures instead.
+--         atomic_table_cashout now sends (p_table_id, p_user_id) matching DB.
+--         DO NOT APPLY — these DROP FUNCTION statements would break live RPCs.
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 -- 1. atomic_table_cashout: Remove p_seat_number — look up seat internally

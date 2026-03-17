@@ -119,6 +119,7 @@ export default function PromotionCarousel({ clubId, onPromoClick }: PromotionCar
         className="pc-banner"
         style={{ background: gradient }}
         onClick={() => onPromoClick?.(promo)}
+        aria-label="View promotion details"
       >
         <div className="pc-icon">{icon}</div>
         <div className="pc-content">

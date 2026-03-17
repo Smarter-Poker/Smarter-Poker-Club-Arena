@@ -99,7 +99,7 @@ const AlertItem: React.FC<{ alert: Alert; onDismiss: () => void }> = ({ alert, o
           {alert.action.label}
         </button>
       )}
-      <button className="dismiss-btn" onClick={handleDismiss}>
+      <button className="dismiss-btn" onClick={handleDismiss} aria-label="Dismiss alert">
         ✕
       </button>
     </div>

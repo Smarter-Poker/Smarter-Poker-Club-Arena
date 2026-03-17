@@ -197,6 +197,9 @@ function ShellContent() {
               className="shell-notifications"
               onClick={() => navigate('/notifications')}
               title="Notifications"
+              aria-label={
+                unreadCount > 0 ? `Notifications (${unreadCount} unread)` : 'Notifications'
+              }
             >
               {unreadCount > 0 && (
                 <span className="notification-badge">{unreadCount > 99 ? '99+' : unreadCount}</span>
@@ -204,6 +207,12 @@ function ShellContent() {
             </button>
             <div
               className="shell-diamonds"
+              role="button"
+              tabIndex={0}
+              aria-label="View diamond balance"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') e.currentTarget.click();
+              }}
               onClick={() => {
                 // FIX: Use postToParent() — was using unsafe window.top! and wildcard '*' postMessage
                 const inIframe = typeof window !== 'undefined' && window.parent !== window;
@@ -234,7 +243,11 @@ function ShellContent() {
                   : '0.00'}
               </span>
             </div>
-            <button className="shell-avatar" onClick={() => navigate('/profile')}>
+            <button
+              className="shell-avatar"
+              onClick={() => navigate('/profile')}
+              aria-label="Open profile"
+            >
               {user?.avatar_url || ''}
             </button>
           </div>
@@ -243,6 +256,8 @@ function ShellContent() {
           <button
             className="shell-mobile-toggle"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
+            aria-expanded={mobileMenuOpen}
           >
             {mobileMenuOpen ? (
               '✕'

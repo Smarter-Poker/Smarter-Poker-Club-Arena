@@ -630,6 +630,8 @@ export default function ClubDetailPage() {
       masterBus.subscribeDebounced('ANNOUNCEMENT_CHANGED', handler, 300),
       masterBus.subscribeDebounced('CLUB_SETTINGS_UPDATED', handler, 300),
       masterBus.subscribeDebounced('AGENT_UPDATED', handler, 500),
+      masterBus.subscribeDebounced('TABLE_CREATED', handler, 300),
+      masterBus.subscribeDebounced('TABLE_DELETED', handler, 300),
     ];
     return () => {
       isMounted = false;

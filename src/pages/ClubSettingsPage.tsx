@@ -144,6 +144,7 @@ export default function ClubSettingsPage() {
     const unsubs = [
       masterBus.subscribeDebounced('CLUB_JOINED', handler, 500),
       masterBus.subscribeDebounced('CLUB_LEFT', handler, 500),
+      masterBus.subscribeDebounced('CLUB_UPDATED', handler, 500),
       masterBus.subscribeDebounced('CLUB_SETTINGS_UPDATED', handler, 500),
     ];
     return () => {

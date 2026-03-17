@@ -1121,8 +1121,46 @@ function HomePageInner() {
         {/* ═══════════════════════════════════════════════════════════════════════
                     HORIZONTAL ACTION BAR
                 ═══════════════════════════════════════════════════════════════════════ */}
-        <div className={styles.actionBarRow}>
-          <div className={styles.actionBarWrapper}>
+        <div className={styles.actionBarRow} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {/* Daily Challenges — clickable icon navigates to Profile (Daily Missions) */}
+          <button
+            onClick={() => {
+              haptic.light();
+              PremiumSFX.navigate();
+              navigate('/profile');
+            }}
+            aria-label="Daily Challenges"
+            style={{
+              background: 'none',
+              border: 'none',
+              padding: 0,
+              cursor: 'pointer',
+              outline: 'none',
+              flexShrink: 0,
+              transition: 'transform 0.2s ease, filter 0.2s ease',
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.transform = 'scale(1.08)';
+              (e.currentTarget as HTMLButtonElement).style.filter =
+                'brightness(1.2) drop-shadow(0 0 8px rgba(0, 212, 255, 0.5))';
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.transform = 'scale(1)';
+              (e.currentTarget as HTMLButtonElement).style.filter = 'none';
+            }}
+          >
+            <img
+              src={DAILY_CHALLENGES_ICON}
+              alt="Daily Challenges"
+              style={{
+                width: 48,
+                height: 'auto',
+                display: 'block',
+                pointerEvents: 'none',
+              }}
+            />
+          </button>
+          <div className={styles.actionBarWrapper} style={{ flex: 1, minWidth: 0 }}>
             <img
               src={ACTION_BAR_HORIZONTAL}
               alt="Action Bar"
@@ -1227,56 +1265,7 @@ function HomePageInner() {
         </div>
         {/* P4-4: Section separator */}
         <div className={styles.sectionSeparator}></div>
-        {/* Daily Challenges — Clickable Icon navigates to Profile (Daily Missions) */}
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'center',
-            width: '100%',
-            margin: '8px 0',
-          }}
-        >
-          <button
-            onClick={() => {
-              haptic.light();
-              PremiumSFX.navigate();
-              navigate('/profile');
-            }}
-            aria-label="Daily Challenges"
-            style={{
-              background: 'none',
-              border: 'none',
-              padding: 0,
-              cursor: 'pointer',
-              outline: 'none',
-              transition: 'transform 0.2s ease, filter 0.2s ease',
-              maxWidth: 160,
-              width: '100%',
-            }}
-            onMouseEnter={(e) => {
-              (e.currentTarget as HTMLButtonElement).style.transform = 'scale(1.05)';
-              (e.currentTarget as HTMLButtonElement).style.filter =
-                'brightness(1.15) drop-shadow(0 0 12px rgba(0, 212, 255, 0.4))';
-            }}
-            onMouseLeave={(e) => {
-              (e.currentTarget as HTMLButtonElement).style.transform = 'scale(1)';
-              (e.currentTarget as HTMLButtonElement).style.filter = 'none';
-            }}
-          >
-            <img
-              src={DAILY_CHALLENGES_ICON}
-              alt="Daily Challenges"
-              style={{
-                width: '100%',
-                height: 'auto',
-                display: 'block',
-                pointerEvents: 'none',
-              }}
-              loading="lazy"
-            />
-          </button>
-        </div>
-        <div className={styles.sectionSeparator}></div>
+
 
         {/* ═══════════════════════════════════════════════════════════════════════
                     BOTTOM ROW — from lobbyTiles.config.ts (#18)

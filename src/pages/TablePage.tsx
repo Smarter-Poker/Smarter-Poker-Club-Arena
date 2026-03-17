@@ -122,7 +122,6 @@ import SessionSummary from '../components/table/SessionSummary';
 import { SessionHUD } from '../components/table/SessionHUD';
 import { BombPotOverlay } from '../components/table/BombPotOverlay';
 import { ConnectionHUD } from '../components/table/ConnectionHUD';
-import { QuickChatPresets } from '../components/table/QuickChatPresets';
 import { TableErrorBoundary } from '../components/common/TableErrorBoundary';
 import { FinalTableOverlay } from '../components/tournament/FinalTableOverlay';
 import { HeadsUpOverlay } from '../components/tournament/HeadsUpOverlay';
@@ -610,6 +609,9 @@ export default function TablePage({
         break;
       case 'REBUY':
         setShowBuyInModal(true);
+        break;
+      case 'LEADERBOARD':
+        setShowLeaderboard(true);
         break;
       case 'SETTINGS':
         masterBus.emit('TABLE_SETTINGS_OPEN' as any, { tableId });

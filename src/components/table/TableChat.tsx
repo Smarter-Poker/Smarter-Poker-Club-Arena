@@ -11,8 +11,6 @@
  */
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { masterBus } from '../../core/MasterBus';
-import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import './TableChat.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -176,110 +174,10 @@ export function TableChat({
     };
   }, [messages.length]);
 
-  // ── Internal state for bus-received messages from other players ──
-  const [busMessages, setBusMessages] = useState<ChatMessage[]>([]);
-
-  // ── Bus listener: receive incoming chat messages from other players ──
-  useMasterBusSubscription('TABLE_CHAT_MESSAGE', (data: any) => {
-    // QuickChatPresets emits { tableId, userId, message, type }
-    // Guard: if myPlayerId is undefined, skip to prevent own-message duplication
-    // Enhancement #4: filter by tableId to prevent cross-table message leaks
-    if (
-      data &&
-      myPlayerId &&
-      data.userId !== myPlayerId &&
-      (!tableId || data.tableId === tableId)
-    ) {
-      setBusMessages((prev) => {
-        const newMsg: ChatMessage = {
-          id: `bus-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-          type: 'PLAYER',
-          playerId: data.userId,
-          playerName: data.playerName || 'Player',
-          content: data.message,
-          timestamp: new Date(),
-        };
-        return [...prev, newMsg].slice(-50); // Cap at 50 bus messages
-      });
-    }
-  });
-
-  useMasterBusSubscription('TABLE_REACTION', (data: any) => {
-    // QuickChatPresets emits { tableId, userId, emoji }
-    if (
-      data &&
-      myPlayerId &&
-      data.userId !== myPlayerId &&
-      (!tableId || data.tableId === tableId)
-    ) {
-      setBusMessages((prev) => {
-        const reactionMsg: ChatMessage = {
-          id: `react-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-          type: 'EMOJI',
-          playerId: data.userId,
-          playerName: data.playerName || 'Player',
-          content: data.emoji || '👏',
-          timestamp: new Date(),
-        };
-        return [...prev, reactionMsg].slice(-50);
-      });
-    }
-  });
-
-  useMasterBusSubscription('PRE_ACTION_EXECUTED', (data: any) => {
-    if (data && (!tableId || data.tableId === tableId)) {
-      const actionText =
-        data.action === 'fold'
-          ? 'auto-folded'
-          : data.action === 'check'
-            ? 'auto-checked'
-            : 'auto-called';
-
-      setBusMessages((prev) => {
-        const sysMsg: ChatMessage = {
-          id: `sys-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-          type: 'SYSTEM',
-          content: `Player ${data.playerId.substring(0, 4)} ${actionText}`,
-          timestamp: new Date(),
-        };
-        return [...prev, sysMsg].slice(-50);
-      });
-    }
-  });
-
-  useMasterBusSubscription('STRADDLE_TOGGLED', (data: any) => {
-    if (data && (!tableId || data.tableId === tableId)) {
-      setBusMessages((prev) => {
-        const sysMsg: ChatMessage = {
-          id: `sys-straddle-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-          type: 'SYSTEM',
-          content: `Player ${data.playerId.substring(0, 4)} turned ${data.enabled ? 'ON' : 'OFF'} Auto-Straddle`,
-          timestamp: new Date(),
-        };
-        return [...prev, sysMsg].slice(-50);
-      });
-    }
-  });
-
-  useMasterBusSubscription('TIME_BANK_ACTIVATED', (data: any) => {
-    if (data && (!tableId || data.tableId === tableId)) {
-      setBusMessages((prev) => {
-        const sysMsg: ChatMessage = {
-          id: `sys-timebank-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-          type: 'SYSTEM',
-          content: `Player ${data.playerId.substring(0, 4)} activated Time Bank (+${data.addedSeconds}s)`,
-          timestamp: new Date(),
-        };
-        return [...prev, sysMsg].slice(-50);
-      });
-    }
-  });
-
-  // Merge prop messages with bus-received messages, trim to max
-  const allMessages = [...messages, ...busMessages].sort(
-    (a, b) => a.timestamp.getTime() - b.timestamp.getTime()
-  );
-  const displayMessages = allMessages.slice(-maxMessages);
+  // Trim messages to max limit before rendering
+  const displayMessages = [...messages]
+    .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
+    .slice(-maxMessages);
 
   // Handle send
   const handleSend = useCallback(() => {

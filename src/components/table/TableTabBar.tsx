@@ -80,8 +80,6 @@ export function TableTabBar({
       createDefaultMenuSections({
         onSitOut: () =>
           masterBus.emit('TABLE_MENU_ACTION' as any, { tableId: activeTabId, action: 'SIT_OUT' }),
-        onStandUp: () =>
-          masterBus.emit('TABLE_MENU_ACTION' as any, { tableId: activeTabId, action: 'STAND_UP' }),
         onRebuy: () =>
           masterBus.emit('TABLE_MENU_ACTION' as any, { tableId: activeTabId, action: 'REBUY' }),
         onSettings: () =>

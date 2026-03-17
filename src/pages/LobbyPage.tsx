@@ -464,7 +464,10 @@ export default function LobbyPage() {
           schema: 'public',
           table: 'table_seats',
         },
-        () => {
+        (payload) => {
+          const tid = (payload.new as any)?.table_id || (payload.old as any)?.table_id;
+          if (tid) masterBus.emit('TABLE_UPDATED', { tableId: tid });
+
           // Debounce seat changes to avoid rapid refetching
           if (debounceRef.current) clearTimeout(debounceRef.current);
           debounceRef.current = setTimeout(() => {
@@ -475,6 +478,23 @@ export default function LobbyPage() {
                 console.error('[LobbyPage] Failed to refresh tables on seat change:', err);
               });
           }, 500);
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'table_waitlists',
+        },
+        (payload) => {
+          const tid = (payload.new as any)?.table_id || (payload.old as any)?.table_id;
+          if (tid)
+            masterBus.emit('WAITLIST_POSITION_CHANGED', {
+              tableId: tid,
+              position: 0,
+              tableName: '',
+            });
         }
       )
       .subscribe((status) => {

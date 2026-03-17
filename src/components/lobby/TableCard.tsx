@@ -220,50 +220,27 @@ function TableCardInner({ table }: TableCardProps) {
         );
     };
 
-    // ── Real-time PostgreSQL Subscriptions for this specific table ──
-    const channelKey = `table-card-${table.id}`;
-    const channel = masterBus.getOrCreateChannel(channelKey);
-
-    channel
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'table_waitlists',
-          filter: `table_id=eq.${table.id}`,
-        },
-        () => refreshRef.current?.()
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'table_seats',
-          filter: `table_id=eq.${table.id}`,
-        },
-        () => refreshRef.current?.()
-      )
-      .subscribe();
-
     return () => {
       isMounted = false;
-      masterBus.removeRegisteredChannel(channelKey);
     };
   }, [table.id]);
 
   // Bus listeners for live table updates
   useEffect(() => {
-    const refresh = () => refreshRef.current?.();
+    const refresh = (event?: any) => {
+      // If the event specifically targets another table, ignore it
+      if (event?.payload?.tableId && event.payload.tableId !== table.id) return;
+      refreshRef.current?.();
+    };
+
     const unsubs = [
       masterBus.subscribeDebounced('TABLE_SEATED', refresh, 500),
       masterBus.subscribeDebounced('TABLE_LEFT', refresh, 500),
       masterBus.subscribeDebounced('WAITLIST_POSITION_CHANGED', refresh, 500),
-      masterBus.subscribeDebounced('DATA_MUTATED', refresh, 1000),
+      masterBus.subscribeDebounced('TABLE_UPDATED', refresh, 500),
     ];
     return () => unsubs.forEach((u) => u());
-  }, []);
+  }, [table.id]);
 
   // Check admin role for this table's club
   useEffect(() => {

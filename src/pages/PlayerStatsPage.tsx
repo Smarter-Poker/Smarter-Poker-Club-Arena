@@ -270,96 +270,99 @@ export default function PlayerStatsPage() {
     statsLoadingRef.current = true;
     if (!hasStatsRef.current) setLoading(true);
     try {
-      const { data, error } = await retryFetch(
-        () =>
-          supabase
-            .from('player_stats')
-            .select(
-              'total_hands, hands_won, hands_lost, showdowns_won, showdowns_total, vpip, pfr, aggression_factor, three_bet_percent, fold_to_three_bet, cbet_flop, cbet_turn, bb_per_100, total_profit, biggest_pot_won, biggest_pot_lost, hours_played, avg_session_length'
-            )
-            .eq('user_id', targetUserId)
-            .maybeSingle()
-            .then((r) => r),
-        { maxRetries: 2, isMountedRef: isMounted }
-      );
+      try {
+        const { data, error } = await retryFetch(
+          () =>
+            supabase
+              .from('player_stats')
+              .select(
+                'total_hands, hands_won, hands_lost, showdowns_won, showdowns_total, vpip, pfr, aggression_factor, three_bet_percent, fold_to_three_bet, cbet_flop, cbet_turn, bb_per_100, total_profit, biggest_pot_won, biggest_pot_lost, hours_played, avg_session_length'
+              )
+              .eq('user_id', targetUserId)
+              .maybeSingle()
+              .then((r) => r),
+          { maxRetries: 2, isMountedRef: isMounted }
+        );
 
-      if (getIsMounted && !getIsMounted()) return;
-      if (!isMounted.current) return;
-
-      if (!error && data) {
-        setStats(data);
-        hasStatsRef.current = true;
-      } else {
-        // Default stats
-        setStats({
-          total_hands: 0,
-          hands_won: 0,
-          hands_lost: 0,
-          showdowns_won: 0,
-          showdowns_total: 0,
-          vpip: 0,
-          pfr: 0,
-          aggression_factor: 0,
-          three_bet_percent: 0,
-          fold_to_three_bet: 0,
-          cbet_flop: 0,
-          cbet_turn: 0,
-          bb_per_100: 0,
-          total_profit: 0,
-          biggest_pot_won: 0,
-          biggest_pot_lost: 0,
-          hours_played: 0,
-          avg_session_length: 0,
-        });
-      }
-
-      // Fetch literal DB data for the position pie chart instead of mock data #SWEEP-8
-      const { data: posData, error: posError } = await retryFetch(
-        () =>
-          supabase
-            .from('player_position_stats')
-            .select('position, hands_won')
-            .eq('user_id', targetUserId)
-            .then((r) => r),
-        { maxRetries: 2, isMountedRef: isMounted }
-      );
-
-      if (!posError && posData && posData.length > 0) {
-        const fullNames: Record<string, string> = {
-          UTG: 'Under The Gun',
-          'UTG+1': 'UTG+1',
-          MP: 'Middle Position',
-          CO: 'Cutoff',
-          BTN: 'Button',
-          SB: 'Small Blind',
-          BB: 'Big Blind',
-        };
-        const mapped = posData
-          .map((p) => ({
-            name: p.position,
-            value: p.hands_won || 0,
-            fullName: fullNames[p.position] || p.position,
-          }))
-          .filter((p) => p.value > 0); // Only chart positions with actual wins
         if (getIsMounted && !getIsMounted()) return;
         if (!isMounted.current) return;
-        setPositionData(mapped.length > 0 ? mapped : []);
-      } else {
-        if (getIsMounted && !getIsMounted()) return;
-        if (!isMounted.current) return;
-        setPositionData([]);
-      }
 
-      // Update SWR cache
-      if (isMounted.current) {
-        setCachedStats(targetUserId, { stats: data || stats, positionData: posData || [] });
+        if (!error && data) {
+          setStats(data);
+          hasStatsRef.current = true;
+        } else {
+          // Default stats
+          setStats({
+            total_hands: 0,
+            hands_won: 0,
+            hands_lost: 0,
+            showdowns_won: 0,
+            showdowns_total: 0,
+            vpip: 0,
+            pfr: 0,
+            aggression_factor: 0,
+            three_bet_percent: 0,
+            fold_to_three_bet: 0,
+            cbet_flop: 0,
+            cbet_turn: 0,
+            bb_per_100: 0,
+            total_profit: 0,
+            biggest_pot_won: 0,
+            biggest_pot_lost: 0,
+            hours_played: 0,
+            avg_session_length: 0,
+          });
+        }
+
+        // Fetch literal DB data for the position pie chart instead of mock data #SWEEP-8
+        const { data: posData, error: posError } = await retryFetch(
+          () =>
+            supabase
+              .from('player_position_stats')
+              .select('position, hands_won')
+              .eq('user_id', targetUserId)
+              .then((r) => r),
+          { maxRetries: 2, isMountedRef: isMounted }
+        );
+
+        if (!posError && posData && posData.length > 0) {
+          const fullNames: Record<string, string> = {
+            UTG: 'Under The Gun',
+            'UTG+1': 'UTG+1',
+            MP: 'Middle Position',
+            CO: 'Cutoff',
+            BTN: 'Button',
+            SB: 'Small Blind',
+            BB: 'Big Blind',
+          };
+          const mapped = posData
+            .map((p) => ({
+              name: p.position,
+              value: p.hands_won || 0,
+              fullName: fullNames[p.position] || p.position,
+            }))
+            .filter((p) => p.value > 0); // Only chart positions with actual wins
+          if (getIsMounted && !getIsMounted()) return;
+          if (!isMounted.current) return;
+          setPositionData(mapped.length > 0 ? mapped : []);
+        } else {
+          if (getIsMounted && !getIsMounted()) return;
+          if (!isMounted.current) return;
+          setPositionData([]);
+        }
+
+        // Update SWR cache
+        if (isMounted.current) {
+          setCachedStats(targetUserId, { stats: data || stats, positionData: posData || [] });
+        }
+      } catch (error) {
+        console.error('Failed to load stats:', error);
+        if (isMounted.current) toast.error('Failed to load player stats');
       }
-    } catch (error) {
-      console.error('Failed to load stats:', error);
-      if (isMounted.current) toast.error('Failed to load player stats');
+      if (isMounted.current) setLoading(false);
+    } finally {
+      statsLoadingRef.current = false;
     }
-    if (isMounted.current) setLoading(false);
-    statsLoadingRef.current = false;
   };
 
   const loadSessionHistory = async (getIsMounted?: () => boolean) => {

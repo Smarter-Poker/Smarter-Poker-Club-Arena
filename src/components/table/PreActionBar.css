@@ -189,8 +189,7 @@
 
 @media (max-width: 768px) {
   .pre-action-bar {
-    padding: 8px 12px;
-    padding-bottom: calc(8px + env(safe-area-inset-bottom, 0));
+    padding: 8px 16px;
   }
 
   .pre-action-buttons {
@@ -214,7 +213,6 @@
 @media (max-width: 480px) {
   .pre-action-bar {
     padding: 6px 10px;
-    padding-bottom: calc(6px + env(safe-area-inset-bottom, 0));
   }
 
   .pre-action-buttons {

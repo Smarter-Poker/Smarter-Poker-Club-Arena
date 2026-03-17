@@ -468,9 +468,10 @@ export default function CashierPage() {
       }
     } catch {
       /* silent */
+    } finally {
+      txLoadingRef.current = false;
+      if (isMounted.current) setLoadingTx(false);
     }
-    txLoadingRef.current = false;
-    if (isMounted.current) setLoadingTx(false);
   }, [user?.id]);
 
   useEffect(() => {

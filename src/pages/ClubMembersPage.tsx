@@ -567,9 +567,10 @@ export default function ClubMembersPage() {
       } catch (error) {
         console.error('Failed to load members:', error);
         toast.error('Failed to load members');
+      } finally {
+        loadingRef.current = false;
+        if (!getIsMounted || getIsMounted()) setLoading(false);
       }
-      if (!getIsMounted || getIsMounted()) setLoading(false);
-      loadingRef.current = false;
     },
     [clubId, user?.id, onlineUserIds]
   );

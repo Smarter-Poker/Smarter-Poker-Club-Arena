@@ -3887,9 +3887,22 @@ export default function TablePage({
   const kbHandlersRef = useRef({ handleFold, handleCheck, handleCall, handleRaise, handleAllIn });
   kbHandlersRef.current = { handleFold, handleCheck, handleCall, handleRaise, handleAllIn };
 
+  // Track modal/overlay state via ref — blocks keyboard shortcuts when any UI overlay is open
+  const kbModalBlockRef = useRef(false);
+  kbModalBlockRef.current =
+    showBuyInModal ||
+    showSessionSummary ||
+    showHandHistory ||
+    showInsurance ||
+    showRIT ||
+    showPlayerNotes ||
+    showWaitList ||
+    showRaiseSlider ||
+    isSideMenuOpen;
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ignore when typing in inputs/textareas or when modals are open
+      // Ignore when typing in inputs/textareas
       const target = e.target as HTMLElement;
       if (
         target.tagName === 'INPUT' ||
@@ -3897,6 +3910,9 @@ export default function TablePage({
         target.contentEditable === 'true'
       )
         return;
+
+      // Block shortcuts while any modal/overlay is open (ref avoids stale closure)
+      if (kbModalBlockRef.current) return;
 
       // Read fresh state from ref to avoid stale closure
       const current = tableStateRef.current;

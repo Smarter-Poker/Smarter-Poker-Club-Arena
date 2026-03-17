@@ -157,40 +157,43 @@ export default function HandHistoryPage() {
     }
 
     try {
-      const data = await retryFetch(
-        () => handHistoryService.getPlayerHands(user.id, PAGE_SIZE * currentPage),
-        { maxRetries: 2, isMountedRef: isMounted }
-      );
+      try {
+        const data = await retryFetch(
+          () => handHistoryService.getPlayerHands(user.id, PAGE_SIZE * currentPage),
+          { maxRetries: 2, isMountedRef: isMounted }
+        );
 
-      if (getIsMounted && !getIsMounted()) return;
-      let filtered = data;
-      if (filter === 'won') {
-        filtered = data.filter((h) => {
-          const player = h.players.find((p) => p.user_id === user.id);
-          return player && player.result > 0;
-        });
-      } else if (filter === 'lost') {
-        filtered = data.filter((h) => {
-          const player = h.players.find((p) => p.user_id === user.id);
-          return player && player.result < 0;
-        });
-      } else if (filter === 'big-pots') {
-        filtered = data.filter((h) => h.main_pot >= 1000);
+        if (getIsMounted && !getIsMounted()) return;
+        let filtered = data;
+        if (filter === 'won') {
+          filtered = data.filter((h) => {
+            const player = h.players.find((p) => p.user_id === user.id);
+            return player && player.result > 0;
+          });
+        } else if (filter === 'lost') {
+          filtered = data.filter((h) => {
+            const player = h.players.find((p) => p.user_id === user.id);
+            return player && player.result < 0;
+          });
+        } else if (filter === 'big-pots') {
+          filtered = data.filter((h) => h.main_pot >= 1000);
+        }
+
+        setHands(filtered);
+        setHasMore(data.length === PAGE_SIZE * currentPage);
+        // Update SWR cache with latest data
+        if (reset && user?.id) setCachedHands(user.id, filtered);
+      } catch (error) {
+        console.error('Failed to load hands:', error);
+        if (!getIsMounted || getIsMounted()) toast.error('Failed to load hand history');
       }
-
-      setHands(filtered);
-      setHasMore(data.length === PAGE_SIZE * currentPage);
-      // Update SWR cache with latest data
-      if (reset && user?.id) setCachedHands(user.id, filtered);
-    } catch (error) {
-      console.error('Failed to load hands:', error);
-      if (!getIsMounted || getIsMounted()) toast.error('Failed to load hand history');
+      if (!getIsMounted || getIsMounted()) {
+        setLoading(false);
+        setLoadingMore(false);
+      }
+    } finally {
+      if (reset) loadingRef.current = false;
     }
-    if (!getIsMounted || getIsMounted()) {
-      setLoading(false);
-      setLoadingMore(false);
-    }
-    if (reset) loadingRef.current = false;
   };
 
   const loadMore = () => {

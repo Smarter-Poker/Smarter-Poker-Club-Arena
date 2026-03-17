@@ -754,6 +754,7 @@ export default function ClubDetailPage() {
             club: mappedClub,
             members: mappedMembers.slice(0, 50),
             tables: mappedTables.map((t: ClubTable) => ({ ...t })),
+            cachedAt: Date.now(),
           };
           sessionStorage.setItem(`club_detail_cache_${clubId}`, JSON.stringify(cachePayload));
         } catch {

@@ -2933,7 +2933,7 @@ export default function TablePage({
           {
             const heroWin = event.winners.find((w: any) => w.userId === userId);
             if (heroWin && heroWin.amount > 0) {
-              toast?.success?.(`+$${heroWin.amount.toFixed(2)}`, { autoClose: 2000 });
+              toast?.success?.(`+$${heroWin.amount.toFixed(2)}`);
             }
           }
           // Trigger achievements for winners

@@ -463,11 +463,12 @@ export default function TournamentLobbyPage() {
             if (Array.isArray(t.blind_structure)) blinds = t.blind_structure;
             else if (typeof t.blind_structure === 'string') {
               try {
-                blinds = JSON.parse(t.blind_structure);
+                const parsed = JSON.parse(t.blind_structure);
+                if (Array.isArray(parsed)) blinds = parsed;
               } catch {
-                /* noop */
+                /* noop — fall through to named structure check */
               }
-              if (!Array.isArray(blinds)) {
+              if (blinds.length === 0) {
                 // Named structure — estimate duration
                 const key = (t.blind_structure || '').toLowerCase();
                 if (key.includes('turbo')) return 3;
@@ -475,7 +476,9 @@ export default function TournamentLobbyPage() {
                 return 8; // regular
               }
             }
-            return blinds.length > 0 ? blinds[0].durationMinutes || blinds[0].duration || 8 : 8;
+            return blinds.length > 0 && blinds[0]
+              ? blinds[0].durationMinutes || blinds[0].duration || 8
+              : 8;
           })(),
           isRegistered: registrations.includes(t.id),
           gameType: t.game_type || 'NLH',
@@ -537,7 +540,10 @@ export default function TournamentLobbyPage() {
       // Text search
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
-        if (!(t.name || '').toLowerCase().includes(query) && !(t.clubName || '').toLowerCase().includes(query)) {
+        if (
+          !(t.name || '').toLowerCase().includes(query) &&
+          !(t.clubName || '').toLowerCase().includes(query)
+        ) {
           return false;
         }
       }

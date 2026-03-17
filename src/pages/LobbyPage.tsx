@@ -259,7 +259,7 @@ export default function LobbyPage() {
   // Load waitlist positions when tables change
   useEffect(() => {
     if (!user?.id || !tables.length) return;
-    const fullTables = tables.filter((t) => t.current_players >= (t.max_players || 9));
+    const fullTables = tables.filter((t) => (t.current_players || 0) >= (t.max_players || 9));
     if (fullTables.length > 0) loadWaitlistPositions(fullTables.map((t) => t.id));
   }, [tables, user?.id, loadWaitlistPositions]);
 
@@ -1005,7 +1005,9 @@ export default function LobbyPage() {
       )}
 
       {/* BBJ Full Modal */}
-      {showBBJModal && <BBJModal data={bbjData} onClose={() => setShowBBJModal(false)} />}
+      {showBBJModal && bbjData && (
+        <BBJModal data={bbjData} onClose={() => setShowBBJModal(false)} />
+      )}
 
       {/* Create Game Modal (unified table + tournament creation) */}
       {showCreateGame && userClubId && (

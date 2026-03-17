@@ -5342,6 +5342,7 @@ export default function TablePage({
           },
         ]}
         tableName={tableState.tableName}
+        connectionStatus={isConnected ? 'connected' : 'disconnected'}
       />
 
       {/* Leave Table Confirmation */}

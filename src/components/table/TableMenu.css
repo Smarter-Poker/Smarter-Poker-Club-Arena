@@ -115,6 +115,38 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
+   NOTIFICATION BADGE
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.table-menu__badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  font-size: 0.6rem;
+  font-weight: 800;
+  line-height: 16px;
+  text-align: center;
+  color: #fff;
+  background: #f85149;
+  border-radius: 10px;
+  box-shadow: 0 0 6px rgba(248, 81, 73, 0.5);
+  animation: badgePulse 2s ease-in-out infinite;
+}
+
+@keyframes badgePulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
    HEADER
    ═══════════════════════════════════════════════════════════════════════════════ */
 
@@ -124,10 +156,88 @@
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
+.table-menu__header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .table-menu__table-name {
   font-size: 0.8125rem;
   font-weight: 700;
   color: #e4e6eb;
+}
+
+/* ─── Connection status ─────────────────────────────────────────────────── */
+
+.table-menu__conn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.table-menu__conn-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.table-menu__conn--connected {
+  color: #3fb950;
+}
+.table-menu__conn--connected .table-menu__conn-dot {
+  background: #3fb950;
+  box-shadow: 0 0 4px #3fb950;
+}
+
+.table-menu__conn--disconnected {
+  color: #f85149;
+}
+.table-menu__conn--disconnected .table-menu__conn-dot {
+  background: #f85149;
+  box-shadow: 0 0 4px #f85149;
+}
+
+.table-menu__conn--reconnecting {
+  color: #d29922;
+}
+.table-menu__conn--reconnecting .table-menu__conn-dot {
+  background: #d29922;
+  box-shadow: 0 0 4px #d29922;
+  animation: connPulse 1.2s ease-in-out infinite;
+}
+
+@keyframes connPulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.3;
+    transform: scale(0.7);
+  }
+}
+
+/* ─── Hand / Session meta ────────────────────────────────────────────────── */
+
+.table-menu__header-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 0.65rem;
+  color: #6e7681;
+}
+
+.table-menu__meta-sep {
+  font-size: 0.5rem;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════

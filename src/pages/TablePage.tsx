@@ -640,7 +640,7 @@ export default function TablePage({
   } = useTableTournament();
 
   // ─── Table Menu Actions ────────────────────────────────────────────────
-  useMasterBusSubscription('TABLE_MENU_ACTION', (event: any) => {
+  useMasterBusSubscription('TABLE_MENU_ACTION', (event) => {
     if (event.tableId !== tableId) return;
 
     switch (event.action) {
@@ -661,7 +661,7 @@ export default function TablePage({
         setShowSessionStats(true);
         break;
       case 'SETTINGS':
-        masterBus.emit('TABLE_SETTINGS_OPEN' as any, { tableId });
+        masterBus.emit('TABLE_SETTINGS_OPEN', { tableId: tableId || '' });
         break;
       case 'HAND_HISTORY':
         setShowHandReplay(true);

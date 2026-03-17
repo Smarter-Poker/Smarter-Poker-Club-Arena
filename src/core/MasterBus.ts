@@ -298,7 +298,9 @@ export type BusEventType =
   // Player notes event
   | 'PLAYER_NOTE_SAVED'
   // Table menu actions
-  | 'TABLE_MENU_ACTION';
+  | 'TABLE_MENU_ACTION'
+  // Table settings open
+  | 'TABLE_SETTINGS_OPEN';
 
 // #13: Type-safe payload map — compile-time enforcement of correct payloads
 export interface BusPayloadMap {
@@ -921,7 +923,6 @@ export interface BusPayloadMap {
   REFERRAL_CLAIMED: { referralCode?: string; userId?: string; clubId?: string };
   // Player notes
   PLAYER_NOTE_SAVED: { clubId: string; targetUserId: string };
-  // Table menu bus actions
   TABLE_MENU_ACTION: {
     tableId: string;
     action:
@@ -936,6 +937,8 @@ export interface BusPayloadMap {
       | 'LEAVE_TABLE'
       | 'FORCE_LEAVE_TABLE';
   };
+  // Table settings open
+  TABLE_SETTINGS_OPEN: { tableId: string };
 }
 
 export interface BusEvent<T = unknown> {

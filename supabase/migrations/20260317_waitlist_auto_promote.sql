@@ -79,9 +79,16 @@ BEGIN
     RETURN NULL;
   END IF;
 
-  -- 4. Insert the player into the seat (stack = 0, they'll buy in on arrival)
-  INSERT INTO table_seats (table_id, seat_number, user_id, stack, is_sitting_out, joined_at)
-  VALUES (p_table_id, v_open_seat, v_next_user_id, 0, true, NOW())
+  -- 4. Clear stale seat row first (UNIQUE constraint on table_id+seat_number
+  --    would block INSERT if an old row with left_at set still exists)
+  DELETE FROM table_seats
+   WHERE table_id = p_table_id
+     AND seat_number = v_open_seat
+     AND left_at IS NOT NULL;
+
+  -- Insert the player into the seat (stack = 0, they'll buy in on arrival)
+  INSERT INTO table_seats (table_id, seat_number, user_id, stack, status, is_sitting_out, joined_at)
+  VALUES (p_table_id, v_open_seat, v_next_user_id, 0, 'sitting_out', true, NOW())
   ON CONFLICT (table_id, seat_number) DO NOTHING;
 
   -- 5. Update waitlist entry to 'seated'

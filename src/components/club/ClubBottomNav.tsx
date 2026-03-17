@@ -114,7 +114,7 @@ export default function ClubBottomNav({
       <div className={styles.navItems}>
         {/* Messages */}
         <Link
-          to={`/messages?club=${clubId}`}
+          to={`/clubs/${clubId}/messages`}
           className={`${styles.navItem} ${activeTab === 'messages' ? styles.active : ''}`}
           style={{
             opacity: visibleItems.has(0) ? 1 : 0,
@@ -133,7 +133,7 @@ export default function ClubBottomNav({
 
         {/* Players - Always visible */}
         <Link
-          to={`/players?club=${clubId}`}
+          to={`/clubs/${clubId}/members`}
           className={`${styles.navItem} ${activeTab === 'players' ? styles.active : ''}`}
           style={{
             opacity: visibleItems.has(1) ? 1 : 0,
@@ -149,7 +149,7 @@ export default function ClubBottomNav({
 
         {/* Cashier */}
         <Link
-          to={`/cashier?club=${clubId}`}
+          to={`/clubs/${clubId}/cashier`}
           className={`${styles.navItem} ${activeTab === 'cashier' ? styles.active : ''}`}
           style={{
             opacity: visibleItems.has(2) ? 1 : 0,
@@ -165,7 +165,7 @@ export default function ClubBottomNav({
 
         {/* Data/Dashboard */}
         <Link
-          to={`/data?club=${clubId}`}
+          to={`/clubs/${clubId}/dashboard`}
           className={`${styles.navItem} ${activeTab === 'data' ? styles.active : ''}`}
           style={{
             opacity: visibleItems.has(3) ? 1 : 0,
@@ -181,7 +181,7 @@ export default function ClubBottomNav({
 
         {/* Admin - Always visible */}
         <Link
-          to={`/admin?club=${clubId}`}
+          to={`/clubs/${clubId}/settings`}
           className={`${styles.navItem} ${activeTab === 'admin' ? styles.active : ''}`}
           style={{
             opacity: visibleItems.has(4) ? 1 : 0,

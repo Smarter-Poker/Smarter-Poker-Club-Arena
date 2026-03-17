@@ -16,6 +16,7 @@ import {
   RebuyIcon,
   HandHistoryIcon,
   LeaderboardIcon,
+  SessionStatsIcon,
   SettingsIcon,
   HelpIcon,
   LeaveTableIcon,
@@ -111,7 +112,7 @@ export function createDefaultMenuSections(handlers: {
               {
                 id: 'session-stats',
                 label: 'Session Stats',
-                icon: <SettingsIcon />,
+                icon: <SessionStatsIcon />,
                 onClick: handlers.onSessionStats,
               },
             ]
@@ -185,6 +186,8 @@ export function TableMenu({
           osc.start();
           gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.06);
           osc.stop(ctx.currentTime + 0.06);
+          // Close AudioContext after playback to prevent resource leak
+          setTimeout(() => ctx.close().catch(() => {}), 100);
         } catch {
           /* audio unavailable */
         }
@@ -334,7 +337,7 @@ export function TableMenu({
                     >
                       <span className="table-menu__action-icon">{action.icon}</span>
                       <span className="table-menu__action-label">{action.label}</span>
-                      {action.badge && (
+                      {action.badge != null && (
                         <span className="table-menu__action-badge">{action.badge}</span>
                       )}
                     </button>

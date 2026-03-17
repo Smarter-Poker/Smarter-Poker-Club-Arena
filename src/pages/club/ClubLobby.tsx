@@ -1,6 +1,20 @@
 /**
  * ♠ CLUB ARENA — Club Lobby Page
  * PokerBros-style club interface with tournaments, tables, and navigation
+ *
+ * Fixes applied:
+ *  1. Show BOTH tables and tournaments (not either/or)
+ *  2. Filter logic works for tables AND tournaments
+ *  3. Header buttons replaced with SVG icons + wired functionality
+ *  4. "+" button navigates to cashier
+ *  5. Dynamic club avatar (avatar_url fallback to ♠)
+ *  6. Dynamic contact banner (from club owner, hide when empty)
+ *  7. Union badge only when club is in a union
+ *  8. Removed all `as any` casts where possible
+ *  9. Tournament card uses dynamic values (seats, timer, variant)
+ * 10. Create Table action for admins/owners
+ * 11. Removed dead NavItem component
+ * 12. WAITLIST_PROMOTED bus listener
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -17,6 +31,7 @@ import {
 } from '../../hooks/useMasterBusSubscription';
 import { useMasterBusChannel } from '../../hooks/useMasterBusChannel';
 import { useUserStore } from '../../stores/useUserStore';
+import { useToast } from '../../components/common/Toast';
 import type { Club } from '../../types/club.types';
 import type { PokerTable, Tournament } from '../../types/database.types';
 import ClubBottomNav from '../../components/club/ClubBottomNav';
@@ -35,9 +50,56 @@ const cardAnimationStyle = (index: number) => ({
 
 type GameFilter = 'ALL' | "Hold'em" | 'Omaha' | 'Mixed' | 'MTT' | 'Spin-It' | 'SN';
 
+// Map game_variant strings to filter categories
+function variantMatchesFilter(variant: string | undefined, filter: GameFilter): boolean {
+  if (filter === 'ALL') return true;
+  const v = (variant || 'nlh').toLowerCase();
+  switch (filter) {
+    case "Hold'em":
+      return v === 'nlh' || v === 'flh' || v === 'short_deck';
+    case 'Omaha':
+      return v.startsWith('plo') || v === 'plo_hilo' || v === 'plo8';
+    case 'Mixed':
+      return (
+        v === 'mixed' ||
+        v === 'ofc' ||
+        v === 'ofc_pineapple' ||
+        v === 'double_board' ||
+        v === 'pineapple' ||
+        v === 'crazy_pineapple'
+      );
+    default:
+      return true;
+  }
+}
+
+// Variant display name
+function getVariantLabel(variant: string | undefined): string {
+  const v = (variant || 'nlh').toLowerCase();
+  const map: Record<string, string> = {
+    nlh: 'NLH',
+    flh: 'FLH',
+    short_deck: '6+',
+    plo: 'PLO',
+    plo4: 'PLO4',
+    plo5: 'PLO5',
+    plo6: 'PLO6',
+    plo_hilo: 'PLO Hi-Lo',
+    plo8: 'PLO8',
+    ofc: 'OFC',
+    ofc_pineapple: 'OFC-P',
+    mixed: 'MIXED',
+    double_board: '2Board',
+    pineapple: 'Pine',
+    crazy_pineapple: 'CPine',
+  };
+  return map[v] || v.toUpperCase();
+}
+
 export default function ClubLobby() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const toast = useToast();
   const { clubId: routeClubId } = useParams<{ clubId?: string }>();
   const clubId = routeClubId || searchParams.get('club') || undefined;
   const [club, setClub] = useState<Club | null>(null);
@@ -47,15 +109,20 @@ export default function ClubLobby() {
   const [isLoading, setIsLoading] = useState(true);
   const [chipBalance, setChipBalance] = useState(0);
   const [diamondBalance, setDiamondBalance] = useState(0);
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isInUnion, setIsInUnion] = useState(false);
+  const [ownerDisplayName, setOwnerDisplayName] = useState<string | null>(null);
   const currentUser = useUserStore((s) => s.user);
   const isMountedRef = useIsMounted();
   const [userRole, setUserRole] = useState<'owner' | 'admin' | 'agent' | 'member'>('member');
   const loadingRef = useRef(false);
   const [resolvedClubId, setResolvedClubId] = useState<string | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  const hasAdminAccess = userRole === 'owner' || userRole === 'admin';
 
   // UNION-FIRST: Check if this club is in a union and redirect
-  // Combined with initial data load to prevent race condition where
-  // "Club not found" flashes before data arrives
   useEffect(() => {
     if (!clubId) {
       setIsLoading(false);
@@ -66,19 +133,16 @@ export default function ClubLobby() {
     let cancelled = false;
 
     const init = async () => {
-      // In iframe context, wait for auth to be set by the parent via postMessage.
       const authReady = await waitForAuth(() => !cancelled && isMountedRef.current);
       if (!authReady) {
         console.warn('[ClubLobby] Auth not ready — proceeding anyway');
       }
       if (cancelled || !isMountedRef.current) return;
 
-      // Check union membership first
       try {
         const resolvedId = await resolveClubUUID(clubId);
         if (cancelled || !isMountedRef.current) return;
 
-        // Set resolved ID for realtime subscriptions
         setResolvedClubId(resolvedId);
 
         const { data: ucRow } = await supabase
@@ -87,10 +151,14 @@ export default function ClubLobby() {
           .eq('club_id', resolvedId)
           .limit(1)
           .maybeSingle();
+
         if (ucRow && !cancelled && isMountedRef.current) {
           navigate(`/unions/${ucRow.union_id}`, { replace: true });
           return;
         }
+
+        // Track union membership (don't redirect, just flag it)
+        setIsInUnion(!!ucRow);
       } catch {
         // Fail-open for standalone clubs
       }
@@ -148,8 +216,9 @@ export default function ClubLobby() {
 
   useMasterBusSubscription(
     'CLUB_UPDATED',
-    (payload: any) => {
-      if (!clubId || !payload?.clubId || payload.clubId === clubId) reload();
+    (payload: Record<string, unknown>) => {
+      const payloadClubId = payload?.clubId as string | undefined;
+      if (!clubId || !payloadClubId || payloadClubId === clubId) reload();
     },
     { debounce: 300 }
   );
@@ -162,8 +231,24 @@ export default function ClubLobby() {
     { debounce: 300 }
   );
 
+  // Fix #12: WAITLIST_PROMOTED listener
+  useMasterBusSubscription(
+    'WAITLIST_PROMOTED',
+    (payload: Record<string, unknown>) => {
+      const promotedUserId = payload?.userId as string | undefined;
+      const tableName = payload?.tableName as string | undefined;
+      if (promotedUserId === currentUser?.id) {
+        toast.success(
+          `You've been promoted from the waitlist${tableName ? ` for ${tableName}` : ''}!`
+        );
+      }
+      // Refresh tables to update player counts
+      if (clubId) reload();
+    },
+    { debounce: 300 }
+  );
+
   // ── Realtime subscriptions: live table and tournament updates ──
-  // Using useMasterBusChannel hook for cleaner, safer subscription management
   useMasterBusChannel({
     channelName: resolvedClubId ? `club-lobby-${resolvedClubId}` : null,
     table: 'tables',
@@ -175,9 +260,9 @@ export default function ClubLobby() {
           prev.map((t) => (t.id === payload.new.id ? { ...t, ...payload.new } : t))
         );
       } else if (payload.eventType === 'INSERT' && payload.new) {
-        setTables((prev) => [payload.new as any, ...prev]);
+        setTables((prev) => [payload.new as PokerTable, ...prev]);
       } else if (payload.eventType === 'DELETE' && payload.old) {
-        setTables((prev) => prev.filter((t) => t.id !== (payload.old as any).id));
+        setTables((prev) => prev.filter((t) => t.id !== (payload.old as PokerTable).id));
       }
     },
     enabled: !!resolvedClubId,
@@ -194,9 +279,9 @@ export default function ClubLobby() {
           prev.map((t) => (t.id === payload.new.id ? { ...t, ...payload.new } : t))
         );
       } else if (payload.eventType === 'INSERT' && payload.new) {
-        setTournaments((prev) => [payload.new as any, ...prev]);
+        setTournaments((prev) => [payload.new as Tournament, ...prev]);
       } else if (payload.eventType === 'DELETE' && payload.old) {
-        setTournaments((prev) => prev.filter((t) => t.id !== (payload.old as any).id));
+        setTournaments((prev) => prev.filter((t) => t.id !== (payload.old as Tournament).id));
       }
     },
     enabled: !!resolvedClubId,
@@ -219,7 +304,7 @@ export default function ClubLobby() {
       setTournaments(tournamentData);
 
       if (currentUser?.id) {
-        // Batch all user-specific fetches in parallel instead of sequentially
+        // Batch all user-specific fetches in parallel
         const [walletBalance, diamondResult, membershipResult] = await Promise.all([
           WalletService.getPlayerBalance(currentUser.id),
           supabase
@@ -243,6 +328,18 @@ export default function ClubLobby() {
           setUserRole(membershipResult.data.role as 'owner' | 'admin' | 'agent' | 'member');
         }
       }
+
+      // Fetch owner display name for contact banner
+      if (clubData?.owner_id) {
+        const { data: ownerProfile } = await supabase
+          .from('profiles')
+          .select('display_name, username')
+          .eq('id', clubData.owner_id)
+          .maybeSingle();
+        if (isMountedRef.current && ownerProfile) {
+          setOwnerDisplayName(ownerProfile.display_name || ownerProfile.username || null);
+        }
+      }
     } catch (err) {
       console.error('[ClubLobby] Failed to load club data:', err);
     } finally {
@@ -253,12 +350,44 @@ export default function ClubLobby() {
 
   const filters: GameFilter[] = ['ALL', "Hold'em", 'Omaha', 'Mixed', 'MTT', 'Spin-It', 'SN'];
 
-  const filteredTournaments = tournaments.filter((t) => {
-    if (activeFilter === 'ALL') return true;
-    if (activeFilter === 'MTT') return t.type === 'mtt';
-    if (activeFilter === 'SN') return t.type === 'sng';
+  // Fix #2: Filter BOTH tables and tournaments
+  const searchLower = searchQuery.toLowerCase();
+
+  const filteredTables = tables.filter((t) => {
+    if (activeFilter === 'MTT' || activeFilter === 'SN' || activeFilter === 'Spin-It') return false;
+    if (!variantMatchesFilter(t.game_variant, activeFilter)) return false;
+    if (searchQuery && !t.name.toLowerCase().includes(searchLower)) return false;
     return true;
   });
+
+  const filteredTournaments = tournaments.filter((t) => {
+    if (
+      activeFilter !== 'ALL' &&
+      activeFilter !== 'MTT' &&
+      activeFilter !== 'SN' &&
+      activeFilter !== 'Spin-It'
+    ) {
+      // For Hold'em/Omaha/Mixed, filter tournaments by their game_type
+      const gameType = (t.game_type || '').toLowerCase();
+      if (activeFilter === "Hold'em" && !gameType.includes('nlh') && !gameType.includes('hold'))
+        return false;
+      if (activeFilter === 'Omaha' && !gameType.includes('plo') && !gameType.includes('omaha'))
+        return false;
+      if (activeFilter === 'Mixed' && !gameType.includes('mix')) return false;
+    }
+    if (activeFilter === 'MTT' && t.type !== 'mtt') return false;
+    if (activeFilter === 'SN' && t.type !== 'sng') return false;
+    if (activeFilter === 'Spin-It' && t.type !== 'spin') return false;
+    if (searchQuery && !t.name.toLowerCase().includes(searchLower)) return false;
+    return true;
+  });
+
+  // Focus search input when opened
+  useEffect(() => {
+    if (showSearch && searchInputRef.current) {
+      searchInputRef.current.focus();
+    }
+  }, [showSearch]);
 
   if (isLoading) {
     return (
@@ -272,65 +401,113 @@ export default function ClubLobby() {
     return (
       <div className="club-lobby error">
         <h2>Club not found</h2>
-        <Link to="/clubs" className="btn btn-primary">
-          Back to Clubs
+        <Link to="/" className="btn btn-primary">
+          Back to Home
         </Link>
       </div>
     );
   }
+
+  const totalGames = filteredTables.length + filteredTournaments.length;
 
   return (
     <div className="club-lobby">
       {/* Header */}
       <header className="lobby-header">
         <div className="header-left">
-          <Link to="/clubs" className="back-btn">
-            ‹‹
+          <Link to="/" className="back-btn" aria-label="Back to Home">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
+              <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" />
+            </svg>
           </Link>
           <div className="header-icons">
-            <button className="icon-btn">Menu</button>
-            <button className="icon-btn">Search</button>
+            {/* Fix #3: Wired search button */}
+            <button
+              className="icon-btn"
+              aria-label="Search tables"
+              onClick={() => {
+                setShowSearch((v) => !v);
+                if (showSearch) setSearchQuery('');
+              }}
+            >
+              <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
+                <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" />
+              </svg>
+            </button>
           </div>
         </div>
         <div className="header-center">
-          <span className="vip-badge"> VIP</span>
+          <h1 className="lobby-title">{club.name}</h1>
         </div>
         <div className="header-right">
-          <div className="jackpot-display">
-            <span className="jackpot-label">BAD BEAT</span>
-            <span className="jackpot-label">JACKPOT</span>
-            <span className="jackpot-amount">
-              {((club as any)?.bad_beat_jackpot || 0).toLocaleString()}
-            </span>
-          </div>
+          {club.settings &&
+            typeof club.settings === 'object' &&
+            'rake_percentage' in club.settings && (
+              <div className="jackpot-display">
+                <span className="jackpot-label">BAD BEAT</span>
+                <span className="jackpot-label">JACKPOT</span>
+                <span className="jackpot-amount">{(club.chip_treasury || 0).toLocaleString()}</span>
+              </div>
+            )}
         </div>
       </header>
 
+      {/* Search Bar (toggleable) */}
+      {showSearch && (
+        <div className="search-bar">
+          <input
+            ref={searchInputRef}
+            type="text"
+            className="search-input"
+            placeholder="Search tables & tournaments..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+          {searchQuery && (
+            <button className="search-clear" onClick={() => setSearchQuery('')}>
+              ✕
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Club Card */}
       <div className="club-card">
+        {/* Fix #5: Dynamic club avatar */}
         <div className="club-avatar">
-          <span className="club-logo">♠</span>
+          {club.avatar_url ? (
+            <img src={club.avatar_url} alt={club.name} className="club-avatar-img" />
+          ) : (
+            <span className="club-logo">♠</span>
+          )}
         </div>
         <div className="club-info">
           <h2 className="club-name">{club.name}</h2>
           <div className="club-meta">
             <span className="club-id">ID: {club.club_id}</span>
-            <span className="member-count"> {(club as any).member_count || 0}</span>
+            <span className="member-count">👥 {club.member_count || 0}</span>
           </div>
         </div>
         <div className="club-balances">
           <div className="balance-row">
-            <span className="chip-icon gold"></span>
+            <span className="chip-icon gold">🪙</span>
             <span className="balance-amount">
               {chipBalance.toLocaleString('en-US', {
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2,
               })}
             </span>
-            <button className="add-btn">+</button>
+            {/* Fix #4: Wire add button to cashier */}
+            <button
+              className="add-btn"
+              aria-label="Add chips"
+              onClick={() => navigate(`/clubs/${clubId}/cashier`)}
+            >
+              +
+            </button>
           </div>
           <div className="balance-row">
-            <span className="chip-icon diamond"></span>
+            <span className="chip-icon diamond">💎</span>
             <span className="balance-amount">
               {diamondBalance.toLocaleString('en-US', {
                 minimumFractionDigits: 2,
@@ -341,13 +518,18 @@ export default function ClubLobby() {
         </div>
       </div>
 
-      {/* Contact Banner */}
-      <div className="contact-banner">
-        <span>Questions or concerns? Contact @Johnnyd44 on telegram</span>
-        <div className="union-badge">
-          <span> UNION</span>
+      {/* Fix #6: Dynamic contact banner */}
+      {ownerDisplayName && (
+        <div className="contact-banner">
+          <span>Club Owner: {ownerDisplayName}</span>
+          {/* Fix #7: Union badge only when in union */}
+          {isInUnion && (
+            <div className="union-badge">
+              <span>🔗 UNION</span>
+            </div>
+          )}
         </div>
-      </div>
+      )}
 
       {/* Game Type Filters */}
       <div className="filter-tabs">
@@ -360,49 +542,102 @@ export default function ClubLobby() {
             {filter}
           </button>
         ))}
-        <button className="filter-more">▼</button>
       </div>
 
-      {/* Tournament Grid */}
-      <div className="tournament-grid">
-        {filteredTournaments.length > 0 ? (
-          filteredTournaments.map((tournament, idx) => (
-            <div key={tournament.id} style={cardAnimationStyle(idx)}>
-              <TournamentCard tournament={tournament} clubId={clubId!} />
+      {/* Fix #10: Create Table action for admins/owners */}
+      {hasAdminAccess && (
+        <div className="admin-actions">
+          <Link to={`/clubs/${clubId}/create-table`} className="create-table-btn">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
+              <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
+            </svg>
+            <span>Create Table</span>
+          </Link>
+        </div>
+      )}
+
+      {/* Fix #1: Show BOTH sections — tournaments AND tables */}
+      <div className="games-container">
+        {/* Tournaments Section */}
+        {filteredTournaments.length > 0 && (
+          <div className="section">
+            <h3 className="section-title">
+              <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
+                <path d="M19 5h-2V3H7v2H5c-1.1 0-2 .9-2 2v1c0 2.55 1.92 4.63 4.39 4.94.63 1.5 1.98 2.63 3.61 2.96V19H7v2h10v-2h-4v-3.1c1.63-.33 2.98-1.46 3.61-2.96C19.08 12.63 21 10.55 21 8V7c0-1.1-.9-2-2-2zM5 8V7h2v3.82C5.84 10.4 5 9.3 5 8zm14 0c0 1.3-.84 2.4-2 2.82V7h2v1z" />
+              </svg>
+              Tournaments ({filteredTournaments.length})
+            </h3>
+            <div className="tournament-grid">
+              {filteredTournaments.map((tournament, idx) => (
+                <div key={tournament.id} style={cardAnimationStyle(idx)}>
+                  <TournamentCard tournament={tournament} clubId={clubId!} />
+                </div>
+              ))}
             </div>
-          ))
-        ) : tables.length > 0 ? (
-          tables.map((table, idx) => (
-            <div key={table.id} style={cardAnimationStyle(idx)}>
-              <TableCard table={table} clubId={clubId!} />
+          </div>
+        )}
+
+        {/* Tables Section */}
+        {filteredTables.length > 0 && (
+          <div className="section">
+            <h3 className="section-title">
+              <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
+                <path d="M2 20h20v-4H2v4zm2-3h2v2H4v-2zM2 4v4h20V4H2zm4 3H4V5h2v2zm-4 7h20v-4H2v4zm2-3h2v2H4v-2z" />
+              </svg>
+              Cash Tables ({filteredTables.length})
+            </h3>
+            <div className="tournament-grid">
+              {filteredTables.map((table, idx) => (
+                <div key={table.id} style={cardAnimationStyle(idx)}>
+                  <TableCardItem table={table} />
+                </div>
+              ))}
             </div>
-          ))
-        ) : (
+          </div>
+        )}
+
+        {/* Empty state */}
+        {totalGames === 0 && (
           <div className="empty-state">
             <span className="empty-icon">♠</span>
-            <p>No games available</p>
-            <p className="empty-hint">Check back later for new tables!</p>
+            <p>No games available{searchQuery ? ` matching "${searchQuery}"` : ''}</p>
+            <p className="empty-hint">
+              {hasAdminAccess
+                ? 'Create a table to get started!'
+                : 'Check back later for new tables!'}
+            </p>
+            {hasAdminAccess && (
+              <Link to={`/clubs/${clubId}/create-table`} className="create-table-btn compact">
+                + Create Table
+              </Link>
+            )}
           </div>
         )}
       </div>
 
       {/* Bottom Navigation */}
-      {clubId && <ClubBottomNav clubId={clubId} userRole={userRole} />}
+      {clubId && <ClubBottomNav clubId={clubId} userRole={userRole} clubName={club.name} />}
     </div>
   );
 }
 
-// Tournament Card Component
+// ═══════════════════════════════════════════════════════════════════════════════
+// Tournament Card — Fix #9: Dynamic values
+// ═══════════════════════════════════════════════════════════════════════════════
 function TournamentCard({ tournament, clubId }: { tournament: Tournament; clubId: string }) {
-  const getTypeLabel = (type: string | undefined) => {
-    if (!type) return 'MTT';
+  const getTypeLabel = (t: Tournament): string => {
+    const type = (t.type || t.game_type || 'mtt').toLowerCase();
     switch (type) {
       case 'mtt':
         return 'XMTT';
       case 'sng':
         return 'SNG';
+      case 'spin':
+        return 'SPIN';
+      case 'satellite':
+        return 'SAT';
       default:
-        return (type || 'MTT').toUpperCase();
+        return type.toUpperCase();
     }
   };
 
@@ -416,30 +651,51 @@ function TournamentCard({ tournament, clubId }: { tournament: Tournament; clubId
     });
   };
 
+  // Fix #9: Dynamic level duration
+  const levelDuration =
+    tournament.blind_structure?.[0]?.durationMinutes ||
+    tournament.settings?.level_duration_minutes ||
+    10;
+
+  // Fix #9: Dynamic max players
+  const maxPlayers = tournament.max_players || 9;
+
+  // Fix #9: Dynamic variant
+  const variant = getVariantLabel(tournament.game_type || tournament.variant);
+
+  // Status color
+  const statusClass = (tournament.status || '').toLowerCase();
+
   return (
     <Link to={`/clubs/${clubId}/tournament/${tournament.id}`} className="tournament-card">
       <div className="card-header">
-        <div className="trophy-icon">T</div>
-        <div className="seats-badge">9 Max</div>
+        <div className="trophy-icon">🏆</div>
+        <div className="seats-badge">{maxPlayers} Max</div>
       </div>
       <div className="card-body">
         <div className="buyin-row">
           <span className="buyin-label">Buy-in</span>
-          <span className="buyin-amount">{tournament.buy_in_amount}</span>
+          <span className="buyin-amount">{(tournament.buy_in_amount || 0).toLocaleString()}</span>
         </div>
         <div className="timer-row">
           <span className="timer-icon">◷</span>
-          <span className="timer-value">10min</span>
+          <span className="timer-value">{levelDuration}min</span>
         </div>
+        {tournament.current_players > 0 && (
+          <div className="players-row">
+            <span className="players-label">Registered</span>
+            <span className="players-value">
+              {tournament.current_players}
+              {maxPlayers ? `/${maxPlayers}` : ''}
+            </span>
+          </div>
+        )}
       </div>
       <div className="card-footer">
-        <span className={`type-badge ${tournament.game_type || tournament.type || 'mtt'}`}>
-          {getTypeLabel(tournament.game_type || tournament.type || 'mtt')}
-        </span>
-        <span className="variant-badge">NLH</span>
+        <span className={`type-badge ${statusClass}`}>{getTypeLabel(tournament)}</span>
+        <span className="variant-badge">{variant}</span>
       </div>
       <div className="card-name">
-        <span className="prize-icon">●</span>
         <span className="tournament-name">{tournament.name}</span>
       </div>
       <div className="card-date">{formatDate(tournament.start_time ?? null)}</div>
@@ -447,8 +703,10 @@ function TournamentCard({ tournament, clubId }: { tournament: Tournament; clubId
   );
 }
 
-// Table Card Component
-function TableCard({ table, clubId }: { table: PokerTable; clubId: string }) {
+// ═══════════════════════════════════════════════════════════════════════════════
+// Table Card — Animated player count
+// ═══════════════════════════════════════════════════════════════════════════════
+function TableCardItem({ table }: { table: PokerTable }) {
   const [displayCount, setDisplayCount] = useState(0);
 
   useEffect(() => {
@@ -487,27 +745,9 @@ function TableCard({ table, clubId }: { table: PokerTable; clubId: string }) {
         </div>
       </div>
       <div className="card-footer">
-        <span className="variant-badge">{(table.game_variant || 'NLH').toUpperCase()}</span>
+        <span className="variant-badge">{getVariantLabel(table.game_variant)}</span>
         <span className={`status-badge ${table.status}`}>{table.status}</span>
       </div>
     </Link>
-  );
-}
-
-// Nav Item Component
-function NavItem({
-  icon,
-  label,
-  active = false,
-}: {
-  icon: string;
-  label: string;
-  active?: boolean;
-}) {
-  return (
-    <button className={`nav-item ${active ? 'active' : ''}`}>
-      <span className="nav-icon">{icon}</span>
-      <span className="nav-label">{label}</span>
-    </button>
   );
 }

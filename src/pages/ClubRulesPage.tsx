@@ -144,10 +144,10 @@ export default function ClubRulesPage() {
       console.error('Failed to load rules:', err);
       setLoadError(true);
       toast.error('Failed to load rules');
+    } finally {
+      loadingRef.current = false;
+      if (!getIsMounted || getIsMounted()) setLoading(false);
     }
-    loadingRef.current = false;
-    if (getIsMounted && !getIsMounted()) return;
-    setLoading(false);
   };
 
   const handleSave = async () => {

@@ -175,9 +175,10 @@ export default function ClubAnnouncementsPage() {
       console.error('Failed to load announcements:', error);
       setLoadError(true);
       if (!getIsMounted || getIsMounted()) toast.error('Failed to load announcements');
+    } finally {
+      loadingRef.current = false;
+      if (!getIsMounted || getIsMounted()) setLoading(false);
     }
-    loadingRef.current = false;
-    if (!getIsMounted || getIsMounted()) setLoading(false);
   };
 
   const handlePost = async () => {

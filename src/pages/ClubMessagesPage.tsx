@@ -105,7 +105,6 @@ export default function ClubMessagesPage() {
         if (getIsMounted && !getIsMounted()) return;
         if (convError || !clubConvs) {
           console.error('Failed to load club conversations:', convError);
-          if (!getIsMounted || getIsMounted()) setLoading(false);
           return;
         }
 
@@ -145,9 +144,10 @@ export default function ClubMessagesPage() {
         console.error('Failed to load club conversations:', error);
         setLoadError(true);
         if (!getIsMounted || getIsMounted()) toast.error('Failed to load club conversations');
+      } finally {
+        loadingRef.current = false;
+        if (!getIsMounted || getIsMounted()) setLoading(false);
       }
-      loadingRef.current = false;
-      if (!getIsMounted || getIsMounted()) setLoading(false);
     },
     [user?.id]
   );

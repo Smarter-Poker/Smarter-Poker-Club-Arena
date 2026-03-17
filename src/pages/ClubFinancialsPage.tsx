@@ -317,9 +317,10 @@ export default function ClubFinancialsPage() {
       if (!isMounted.current) return;
       console.error('Failed to load financials:', error);
       toast.error('Failed to load financial data');
+    } finally {
+      loadingRef.current = false;
+      if (isMounted.current) setLoading(false);
     }
-    loadingRef.current = false;
-    if (isMounted.current) setLoading(false);
   };
 
   const formatDate = (dateStr: string): string => {

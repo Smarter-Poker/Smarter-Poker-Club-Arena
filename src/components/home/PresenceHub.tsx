@@ -147,7 +147,15 @@ export default function PresenceHub() {
             }}
           >
             {friend.avatar ? (
-              <img loading="lazy" decoding="async" src={friend.avatar} alt={friend.username} />
+              <img
+                loading="lazy"
+                decoding="async"
+                src={friend.avatar}
+                alt={friend.username}
+                onError={(e) => {
+                  (e.target as HTMLImageElement).src = '/default-avatar.png';
+                }}
+              />
             ) : (
               <div className="presence-avatar-fallback">{friend.username[0]?.toUpperCase()}</div>
             )}

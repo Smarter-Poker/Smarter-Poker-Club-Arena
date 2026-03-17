@@ -425,6 +425,9 @@ export default function ClubDetailPage() {
     setMemberSearch('');
     setShowMemberMenu(null);
     initialLoadDone.current = false;
+    // CRITICAL: reset loadingRef so the new club's loadClubData isn't blocked
+    // by an in-flight request from the PREVIOUS club
+    loadingRef.current = false;
   }, [clubId]);
 
   // SWR: show cached club data instantly on mount while fresh data loads

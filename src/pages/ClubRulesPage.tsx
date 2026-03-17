@@ -35,6 +35,7 @@ export default function ClubRulesPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [clubName, setClubName] = useState('');
+  const [userRole, setUserRole] = useState<'owner' | 'admin' | 'agent' | 'member'>('member');
 
   useEffect(() => {
     let isMounted = true;
@@ -78,7 +79,10 @@ export default function ClubRulesPage() {
         setClubName(club.name);
         setRules(club.rules_text || '');
         adminFromOwner = club.owner_id === user?.id;
-        if (adminFromOwner) setIsAdmin(true);
+        if (adminFromOwner) {
+          setIsAdmin(true);
+          setUserRole('owner');
+        }
       }
 
       // Check if admin via club_members (only if not already owner)
@@ -95,6 +99,7 @@ export default function ClubRulesPage() {
 
         if (membership?.role === 'owner' || membership?.role === 'admin') {
           setIsAdmin(true);
+          setUserRole(membership.role as 'owner' | 'admin');
         }
       }
     } catch (err) {
@@ -206,7 +211,7 @@ export default function ClubRulesPage() {
         )}
       </div>
 
-      <ClubBottomNav clubId={clubId || ''} />
+      <ClubBottomNav clubId={clubId || ''} userRole={userRole} />
     </div>
   );
 }

@@ -160,7 +160,11 @@ export default function ClubAnnouncementsPage() {
           .maybeSingle();
 
         if (getIsMounted && !getIsMounted()) return;
-        setIsAdmin(['owner', 'admin'].includes(membership?.role || ''));
+        const memberRole = membership?.role || '';
+        setIsAdmin(['owner', 'admin'].includes(memberRole));
+        if (['owner', 'admin', 'agent'].includes(memberRole)) {
+          setUserRole(memberRole as 'owner' | 'admin' | 'agent');
+        }
       }
     } catch (error) {
       console.error('Failed to load announcements:', error);

@@ -20,44 +20,10 @@
  */
 
 import { supabase } from '../lib/supabase';
+import { readLocalSession } from '../lib/authUtils';
 
-const AUTH_STORAGE_KEY = 'smarter-poker-auth';
 const MAX_WAIT_MS = 5000; // Total max wait for postMessage auth delivery
 const POLL_INTERVAL_MS = 100; // Check localStorage every 100ms
-
-/**
- * Read session from localStorage directly — instant, no SDK calls.
- * Returns user info if a non-expired JWT exists, null otherwise.
- * Mirrors IdentityDNA.readLocalSession() logic.
- */
-function readLocalSession(): { userId: string; email?: string } | null {
-  try {
-    const raw = localStorage.getItem(AUTH_STORAGE_KEY);
-    if (!raw) return null;
-    const data = JSON.parse(raw);
-    const token = data?.access_token;
-    if (!token || typeof token !== 'string') return null;
-
-    // Validate JWT structure
-    const parts = token.split('.');
-    if (parts.length !== 3) return null;
-
-    // Parse payload
-    const payload = JSON.parse(atob(parts[1]));
-
-    // Check expiry (60s buffer for clock skew)
-    if (typeof payload.exp === 'number' && payload.exp * 1000 < Date.now() - 60_000) {
-      return null; // Expired
-    }
-
-    const userId = payload.sub;
-    if (!userId || typeof userId !== 'string') return null;
-
-    return { userId, email: payload.email };
-  } catch {
-    return null; // Corrupted localStorage or malformed JWT
-  }
-}
 
 /**
  * Wait for auth to be ready. Returns true if authenticated, false if timed out.

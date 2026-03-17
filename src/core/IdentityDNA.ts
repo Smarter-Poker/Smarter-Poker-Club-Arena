@@ -15,6 +15,7 @@
 import { Session, AuthChangeEvent } from '@supabase/supabase-js';
 import { useUserStore } from '../stores/useUserStore';
 import { supabase } from '../lib/supabase';
+import { readLocalSession as readLocalSessionShared } from '../lib/authUtils';
 import { masterBus } from './MasterBus';
 import { achievementTriggerService } from '../services/AchievementTriggerService';
 import { postgresSyncHooks } from '../services/PostgresSyncHooks';
@@ -171,47 +172,20 @@ class IdentityDNACore {
 
   /**
    * Read session from localStorage directly — instant, no API call needed.
-   * The shared storageKey 'smarter-poker-auth' is written by both Hub and Club Arena.
-   * Returns basic user info if a non-expired JWT exists, or null.
+   * Delegates to shared lib/authUtils.readLocalSession() to avoid duplication.
    */
   private readLocalSession(): {
     userId: string;
     username: string | null;
     expiresAt: string | null;
   } | null {
-    try {
-      const AUTH_KEY = 'smarter-poker-auth';
-      const raw = localStorage.getItem(AUTH_KEY);
-      if (!raw) return null;
-      const data = JSON.parse(raw);
-      const token = data?.access_token;
-      if (!token || typeof token !== 'string') return null;
-
-      // Validate JWT structure
-      const parts = token.split('.');
-      if (parts.length !== 3) return null;
-
-      // Parse payload
-      const payload = JSON.parse(atob(parts[1]));
-
-      // Check expiry (60s buffer for clock skew)
-      if (typeof payload.exp === 'number' && payload.exp * 1000 < Date.now() - 60_000) {
-        return null; // Expired
-      }
-
-      // Extract user info from JWT sub claim
-      const userId = payload.sub;
-      if (!userId || typeof userId !== 'string') return null;
-
-      const email = payload.email as string | undefined;
-      const username = email?.split('@')[0] || null;
-      const expiresAt =
-        typeof payload.exp === 'number' ? new Date(payload.exp * 1000).toISOString() : null;
-
-      return { userId, username, expiresAt };
-    } catch {
-      return null; // Corrupted localStorage or malformed JWT
-    }
+    const session = readLocalSessionShared();
+    if (!session) return null;
+    return {
+      userId: session.userId,
+      username: session.username,
+      expiresAt: session.expiresAt ? new Date(session.expiresAt).toISOString() : null,
+    };
   }
 
   /**

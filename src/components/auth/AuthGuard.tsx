@@ -21,35 +21,12 @@ import { ReactNode, useEffect, useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useUserStore } from '../../stores/useUserStore';
+import { readLocalSession, hasLocalSession } from '../../lib/authUtils';
 
-const AUTH_STORAGE_KEY = 'smarter-poker-auth';
 const SESSION_CHECK_TIMEOUT = 5000; // 5s max wait for getSession (increased from 3s)
 
 interface AuthGuardProps {
   children: ReactNode;
-}
-
-/**
- * Fast session check from localStorage (bypasses navigator.locks).
- * Returns true if a non-expired JWT exists in localStorage.
- */
-function hasLocalSession(): boolean {
-  try {
-    const raw = localStorage.getItem(AUTH_STORAGE_KEY);
-    if (!raw) return false;
-    const data = JSON.parse(raw);
-    const token = data?.access_token;
-    if (!token || typeof token !== 'string') return false;
-    // Validate JWT structure (must have exactly 3 parts)
-    const parts = token.split('.');
-    if (parts.length !== 3) return false;
-    // Check expiry from JWT payload (with 60s buffer for clock skew)
-    const payload = JSON.parse(atob(parts[1]));
-    return payload.exp * 1000 > Date.now() - 60_000;
-  } catch {
-    // Malformed JWT, corrupted localStorage, etc. — treat as no session
-    return false;
-  }
 }
 
 /**
@@ -72,34 +49,20 @@ function hydrateStoreFromSession(session: {
 
 /**
  * Hydrate the Zustand user store from localStorage session data.
- * Used when getSession() times out but we know a valid JWT exists.
+ * Uses shared readLocalSession() from lib/authUtils — no duplicate JWT parsing.
  */
 function hydrateStoreFromLocalStorage(): void {
   const storeUser = useUserStore.getState().user;
   if (storeUser) return; // Already hydrated
 
-  try {
-    const raw = localStorage.getItem(AUTH_STORAGE_KEY);
-    if (!raw) return;
-    const data = JSON.parse(raw);
-    const token = data?.access_token;
-    if (!token || typeof token !== 'string') return;
-    // Validate JWT structure before decoding
-    const parts = token.split('.');
-    if (parts.length !== 3) return;
-    // Decode JWT payload to get user ID and email
-    const payload = JSON.parse(atob(parts[1]));
-    if (payload.sub) {
-      useUserStore.getState().setUser({
-        id: payload.sub,
-        username: payload.email?.split('@')[0] || 'Player',
-        display_name: null,
-        avatar_url: null,
-      });
-    }
-  } catch (err) {
-    console.error('[AuthGuard] Error:', err);
-    // Silent — best effort
+  const session = readLocalSession();
+  if (session) {
+    useUserStore.getState().setUser({
+      id: session.userId,
+      username: session.username || 'Player',
+      display_name: null,
+      avatar_url: null,
+    });
   }
 }
 

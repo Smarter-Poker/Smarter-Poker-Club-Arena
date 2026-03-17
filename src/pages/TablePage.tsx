@@ -1071,9 +1071,20 @@ export default function TablePage({
     }>
   >([]);
 
-  // Sound & vibration settings state
-  const [isSoundEnabled, setIsSoundEnabled] = useState(true);
-  const [isVibrationEnabled, setIsVibrationEnabled] = useState(true);
+  const [isSoundEnabled, setIsSoundEnabled] = useState(() => {
+    try {
+      return localStorage.getItem('ca_sound_enabled') !== 'false';
+    } catch {
+      return true;
+    }
+  });
+  const [isVibrationEnabled, setIsVibrationEnabled] = useState(() => {
+    try {
+      return localStorage.getItem('ca_vibration_enabled') !== 'false';
+    } catch {
+      return true;
+    }
+  });
 
   // Play turn alert when it's hero's turn
   const playTurnAlert = () => {

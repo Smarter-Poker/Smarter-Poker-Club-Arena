@@ -5,7 +5,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import styles from './ClubDetailPage.module.css';
 import { getLocalStorage, setLocalStorage } from '../lib/storage';
@@ -361,6 +361,11 @@ export default function ClubDetailPage() {
   const [isInUnion, setIsInUnion] = useState(false);
   const [wsConnected, setWsConnected] = useState(true);
 
+  // Request deduplication — prevent concurrent loadClubData from realtime events
+  const loadingRef = useRef(false);
+  // Differentiate initial load (skeleton) from background refresh (silent)
+  const initialLoadDone = useRef(false);
+
   // Controlled settings form state (replaces document.getElementById)
   const [settingsForm, setSettingsForm] = useState({
     name: '',
@@ -564,17 +569,24 @@ export default function ClubDetailPage() {
 
   // ── Bus Listeners: cross-page event reactivity (debounced) ──
   useEffect(() => {
+    let isMounted = true;
+    const handler = () => {
+      if (isMounted) loadClubData(() => isMounted);
+    };
     const unsubs = [
-      masterBus.subscribeDebounced('CLUB_JOINED', () => loadClubData(), 300),
-      masterBus.subscribeDebounced('CLUB_LEFT', () => loadClubData(), 300),
-      masterBus.subscribeDebounced('TABLE_SEATED', () => loadClubData(), 300),
-      masterBus.subscribeDebounced('TABLE_LEFT', () => loadClubData(), 300),
-      masterBus.subscribeDebounced('CLUB_UPDATED', () => loadClubData(), 300),
-      masterBus.subscribeDebounced('ANNOUNCEMENT_CHANGED', () => loadClubData(), 300),
-      masterBus.subscribeDebounced('CLUB_SETTINGS_UPDATED', () => loadClubData(), 300),
-      masterBus.subscribeDebounced('AGENT_UPDATED', () => loadClubData(), 500),
+      masterBus.subscribeDebounced('CLUB_JOINED', handler, 300),
+      masterBus.subscribeDebounced('CLUB_LEFT', handler, 300),
+      masterBus.subscribeDebounced('TABLE_SEATED', handler, 300),
+      masterBus.subscribeDebounced('TABLE_LEFT', handler, 300),
+      masterBus.subscribeDebounced('CLUB_UPDATED', handler, 300),
+      masterBus.subscribeDebounced('ANNOUNCEMENT_CHANGED', handler, 300),
+      masterBus.subscribeDebounced('CLUB_SETTINGS_UPDATED', handler, 300),
+      masterBus.subscribeDebounced('AGENT_UPDATED', handler, 500),
     ];
-    return () => unsubs.forEach((u) => u());
+    return () => {
+      isMounted = false;
+      unsubs.forEach((u) => u());
+    };
   }, []);
 
   const loadClubData = async (getIsMounted?: () => boolean) => {
@@ -583,9 +595,20 @@ export default function ClubDetailPage() {
       return;
     }
 
-    if (!getIsMounted || getIsMounted()) setLoading(true);
+    // Request deduplication — skip if already loading
+    if (loadingRef.current) return;
+    loadingRef.current = true;
+
+    // Only show skeleton on initial load, not background refreshes
+    if (!initialLoadDone.current) {
+      if (!getIsMounted || getIsMounted()) setLoading(true);
+    }
 
     try {
+      // Hoisted for SWR cache write at the end
+      let mappedMembers: ClubMember[] = [];
+      let mappedTables: ClubTable[] = [];
+
       // Load club from Supabase
       const { column: clubCol, value: clubVal } = resolveClubIdFilter(clubId);
       const { data: clubData, error: clubError } = await supabase
@@ -653,7 +676,7 @@ export default function ClubDetailPage() {
             for (const p of mProfiles) memberProfileMap[p.id] = p;
           }
         }
-        const mappedMembers: ClubMember[] = memberData.map((m: any) => ({
+        const mappedMembersResult: ClubMember[] = memberData.map((m: any) => ({
           id: m.user_id,
           username:
             memberProfileMap[m.user_id]?.display_name ||
@@ -665,11 +688,12 @@ export default function ClubDetailPage() {
           joinedAt: m.created_at,
           lastActive: m.last_active,
         }));
+        mappedMembers = mappedMembersResult;
         if (getIsMounted && !getIsMounted()) return;
-        setMembers(mappedMembers);
+        setMembers(mappedMembersResult);
 
         // Update member count to reflect actual data (clubs.member_count may be stale)
-        setClub((prev) => (prev ? { ...prev, memberCount: mappedMembers.length } : null));
+        setClub((prev) => (prev ? { ...prev, memberCount: mappedMembersResult.length } : null));
 
         // Determine current user's role in this club
         const {
@@ -691,7 +715,7 @@ export default function ClubDetailPage() {
         .eq('is_deleted', false);
 
       if (tableData) {
-        const mappedTables: ClubTable[] = tableData.map((t: any) => ({
+        const mappedTablesResult: ClubTable[] = tableData.map((t: any) => ({
           id: t.id,
           name: t.name || 'Table',
           gameVariant: t.game_variant || 'NLH',
@@ -700,20 +724,23 @@ export default function ClubDetailPage() {
           maxPlayers: t.max_players || 6,
           status: t.status || 'waiting',
         }));
+        mappedTables = mappedTablesResult;
         if (getIsMounted && !getIsMounted()) return;
-        setTables(mappedTables);
+        setTables(mappedTablesResult);
 
         // Count active tables
-        const activeCount = mappedTables.filter((t) => t.status === 'running').length;
+        const activeCount = mappedTablesResult.filter((t) => t.status === 'running').length;
         setClub((prev) => (prev ? { ...prev, activeTableCount: activeCount } : null));
       }
       // SWR: cache the loaded data for instant display on revisit
+      // IMPORTANT: use local vars (mappedMembers, mappedTables), NOT React state
+      // (members, tables) which hold stale closure values from the previous render
       if (clubId) {
         try {
           const cachePayload = {
             club: mappedClub,
-            members: members.slice(0, 50),
-            tables: tables.map((t) => ({ ...t })),
+            members: mappedMembers.slice(0, 50),
+            tables: mappedTables.map((t: ClubTable) => ({ ...t })),
           };
           sessionStorage.setItem(`club_detail_cache_${clubId}`, JSON.stringify(cachePayload));
         } catch {
@@ -723,6 +750,8 @@ export default function ClubDetailPage() {
     } catch (error) {
       console.error('[ClubDetailPage] Error loading data:', error);
     } finally {
+      loadingRef.current = false;
+      initialLoadDone.current = true;
       if (!getIsMounted || getIsMounted()) {
         setLoading(false);
         setLastRefreshed(new Date());
@@ -755,6 +784,7 @@ export default function ClubDetailPage() {
       await ClubsService.updateClub(clubId, updates);
       toast.success('Settings saved successfully!');
       masterBus.emit('CLUB_UPDATED', { clubId });
+      masterBus.emit('CLUB_SETTINGS_UPDATED', { clubId });
       loadClubData(); // Reload to get fresh data
     } catch (error) {
       console.error('Failed to save settings:', error);
@@ -1152,9 +1182,9 @@ export default function ClubDetailPage() {
                   size={100}
                 />
                 <CircularGauge
-                  value={Math.min(100, members.length)}
+                  value={Math.min(100, club?.memberCount || members.length)}
                   label="Growth"
-                  sublabel={`${members.length} total members`}
+                  sublabel={`${club?.memberCount || members.length} total members`}
                   accent="#8b5cf6"
                   size={100}
                 />

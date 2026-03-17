@@ -352,11 +352,12 @@ export default function CashierPage() {
   };
 
   // Load recipients when "Send" or "Distribute" tab is active
+  // MUST include userRole + isUnionOwner — loadRecipients uses them for role-based filtering
   useEffect(() => {
     if ((action === 'send' || action === 'distribute') && user?.id && clubId) {
       loadRecipients();
     }
-  }, [action, user?.id, clubId]);
+  }, [action, user?.id, clubId, userRole, isUnionOwner]);
 
   const loadRecipients = async () => {
     if (!user?.id || !clubId) return;

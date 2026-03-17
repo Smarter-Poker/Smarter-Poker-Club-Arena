@@ -1766,7 +1766,12 @@ export default function ClubDetailPage() {
                   const resolvedClubId = clubId ? await resolveClubUUID(clubId) : '';
                   const { error } = await supabase
                     .from('tables')
-                    .update({ status: 'deleted', is_active: false })
+                    .update({
+                      status: 'deleted',
+                      is_deleted: true,
+                      is_active: false,
+                      updated_at: new Date().toISOString(),
+                    })
                     .eq('id', id)
                     .eq('club_id', resolvedClubId);
                   if (error) throw error;
@@ -1774,6 +1779,7 @@ export default function ClubDetailPage() {
                 // Rollback payload: restore the table on failure
                 deletedTable ? { tableId: id, status: deletedTable.status || 'active' } : undefined
               );
+              masterBus.emit('TABLE_DELETED', { tableId: id, clubId: clubId || undefined });
               toast.success('Table deleted');
             } catch (err) {
               // Rollback: re-add the table to the list

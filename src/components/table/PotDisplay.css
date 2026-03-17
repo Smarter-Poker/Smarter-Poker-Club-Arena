@@ -430,11 +430,13 @@
 @media (max-width: 380px) {
   .pot-display {
     transform: translate(-50%, -32%);
+    max-width: 90vw;
   }
 
   .pot-display__main {
     padding: 5px 12px;
     gap: 2px;
+    max-width: 100%;
   }
 
   .pot-display__label {
@@ -443,6 +445,10 @@
 
   .pot-display__amount {
     font-size: 0.9rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 120px;
   }
 
   .pot-display__chips {
@@ -456,10 +462,19 @@
 
   .pot-display__side-pots {
     gap: 4px;
+    flex-wrap: wrap;
+    justify-content: center;
   }
 
   .pot-display__side-pot {
     padding: 3px 8px;
+  }
+
+  .pot-display__side-pot-amount {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 60px;
   }
 }
 /* ═══════════════════════════════════════════════════════════════════════════════

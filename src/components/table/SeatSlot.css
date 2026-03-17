@@ -1317,10 +1317,24 @@
   }
   .seat--empty {
     width: 54px;
+    min-height: 44px;
   }
   .seat__hand-name {
     font-size: 0.6875rem;
     padding: 2px 10px;
+    max-width: 80px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Hide verbose style badge label on mobile — show icon only */
+  .seat__style-badge {
+    font-size: 0;
+    padding: 2px 4px;
+    line-height: 1;
+  }
+  .seat__style-badge::first-letter {
+    font-size: 0.6rem;
   }
 }
 
@@ -1430,7 +1444,7 @@
     height: 44px;
   }
   .seat__cards--hero {
-    right: -18px;
+    right: -14px;
     top: 2px;
   }
 
@@ -1440,7 +1454,8 @@
     font-size: 0.4rem;
   }
   .seat--empty {
-    width: 42px;
+    width: 48px;
+    min-height: 44px;
   }
   .seat__empty-label {
     font-size: 0.5rem;
@@ -1448,6 +1463,14 @@
   .seat__hand-name {
     font-size: 0.5625rem;
     padding: 1px 6px;
+    max-width: 70px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Hide style badge entirely on very small screens */
+  .seat__style-badge {
+    display: none;
   }
 }
 

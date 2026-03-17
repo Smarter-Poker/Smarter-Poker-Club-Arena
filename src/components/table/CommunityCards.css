@@ -472,6 +472,9 @@
     font-size: 0.9rem;
     padding: 2px 12px;
     margin-top: 4px;
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 }
 
@@ -549,6 +552,10 @@
 }
 
 @media (max-width: 380px) {
+  .community-cards__container {
+    gap: 3px;
+  }
+
   .community-cards__card,
   .community-cards__placeholder {
     width: 40px;
@@ -564,6 +571,14 @@
   }
   .community-cards__center-suit {
     font-size: 1.1rem;
+  }
+
+  .community-cards__hand-name {
+    font-size: 0.5rem;
+    padding: 2px 8px;
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 }
 /* ═══════════════════════════════════════════════════════════════════════════════

@@ -13,6 +13,8 @@ import React, { useState, useCallback, useEffect } from 'react';
 import { vipService, FEATURE_PRICING } from '../../services/VIPService';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
+import { CardImage } from '../table/CardImage';
+import type { Card as CardImageCard } from '../table/CardImage';
 import './RabbitHunt.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -35,19 +37,14 @@ export interface RabbitHuntProps {
 // UTILITIES
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const SUIT_SYMBOLS: Record<string, string> = {
-  h: '♥',
-  d: '♦',
-  c: '♣',
-  s: '♠',
-};
+function normalizeRank(rank: string): CardImageCard['rank'] {
+  if (rank === '10') return 'T';
+  return rank as CardImageCard['rank'];
+}
 
-const SUIT_COLORS: Record<string, string> = {
-  h: '#F85149',
-  d: '#1877F2',
-  c: '#3FB950',
-  s: '#E4E6EB',
-};
+function toCardImage(card: Card): CardImageCard {
+  return { rank: normalizeRank(card.rank), suit: card.suit };
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENT
@@ -79,8 +76,7 @@ export function RabbitHunt({ isAvailable, onReveal, currentBoard, maxCards = 5 }
         const access = await vipService.checkFeatureAccess(user.id, 'rabbit_hunt');
         setIsVIP(access.hasAccess && !access.needsPurchase);
       } catch (err) {
-
-        console.error("[RabbitHunt] Error:", err);
+        console.error('[RabbitHunt] Error:', err);
         setIsVIP(false);
       }
       setIsCheckingVIP(false);
@@ -163,12 +159,10 @@ export function RabbitHunt({ isAvailable, onReveal, currentBoard, maxCards = 5 }
                 key={idx}
                 className="rabbit-hunt__card"
                 style={{
-                  color: SUIT_COLORS[card.suit],
                   animationDelay: `${idx * 0.1}s`,
                 }}
               >
-                <span className="rabbit-hunt__rank">{card.rank}</span>
-                <span className="rabbit-hunt__suit">{SUIT_SYMBOLS[card.suit]}</span>
+                <CardImage card={toCardImage(card)} deckStyle="4color" size="sm" />
               </div>
             ))}
             {/* Placeholder for unrevealed */}

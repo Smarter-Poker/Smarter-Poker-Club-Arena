@@ -17,6 +17,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { haptic } from '../../services/SoundService';
 import { masterBus } from '../../core/MasterBus';
+import { CardImage } from './CardImage';
+import type { Card as CardImageCard } from './CardImage';
 import './HandReveal.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -60,19 +62,14 @@ export interface HandRevealProps {
 // COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const SUIT_SYMBOLS: Record<string, string> = {
-  h: '♥',
-  d: '♦',
-  c: '♣',
-  s: '♠',
-};
+function normalizeRank(rank: string): CardImageCard['rank'] {
+  if (rank === '10') return 'T';
+  return rank as CardImageCard['rank'];
+}
 
-const SUIT_COLORS: Record<string, string> = {
-  h: '#F85149',
-  d: '#1877F2',
-  c: '#3FB950',
-  s: '#E4E6EB',
-};
+function toCardImage(card: HandRevealCard): CardImageCard {
+  return { rank: normalizeRank(card.rank), suit: card.suit };
+}
 
 export function HandReveal({
   isOpen,
@@ -169,10 +166,7 @@ export function HandReveal({
           {revealed && revealedCards ? (
             revealedCards.map((card, i) => (
               <div key={i} className="hand-reveal__card hand-reveal__card--revealed">
-                <span style={{ color: SUIT_COLORS[card.suit] }}>
-                  {card.rank}
-                  {SUIT_SYMBOLS[card.suit]}
-                </span>
+                <CardImage card={toCardImage(card)} deckStyle="4color" size="sm" />
               </div>
             ))
           ) : mucked ? (

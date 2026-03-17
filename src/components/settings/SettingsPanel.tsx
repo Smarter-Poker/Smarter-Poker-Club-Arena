@@ -21,7 +21,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    setTimeout(() => setMounted(true), 50);
+    const timer = setTimeout(() => setMounted(true), 50);
+    return () => clearTimeout(timer);
   }, []);
 
   const tabs: { id: SettingsTab; label: string; icon: string }[] = [

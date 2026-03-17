@@ -2,7 +2,7 @@
  *  SEARCH PAGE
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useDebounce } from '../hooks/useDebounce';
 import { useNavigate } from 'react-router-dom';
 import { STORAGE_KEYS } from '../lib/storage';
@@ -39,6 +39,7 @@ export default function SearchPage() {
   const [searchFocused, setSearchFocused] = useState(false);
   const { user } = useAuthUser();
   const [friendAdded, setFriendAdded] = useState<Set<string>>(new Set());
+  const searchRequestIdRef = useRef(0);
 
   // Add friend action (inline on search results)
   const handleAddFriend = async (e: React.MouseEvent, playerId: string) => {
@@ -81,6 +82,9 @@ export default function SearchPage() {
         if (!getIsMounted || getIsMounted()) setResults([]);
         return;
       }
+
+      // Increment request ID to track stale responses
+      const requestId = ++searchRequestIdRef.current;
 
       if (!getIsMounted || getIsMounted()) setLoading(true);
       const allResults: SearchResult[] = [];
@@ -167,6 +171,8 @@ export default function SearchPage() {
         }
 
         if (getIsMounted && !getIsMounted()) return;
+        // Reject stale responses — only apply if this is still the latest request
+        if (requestId !== searchRequestIdRef.current) return;
         setResults(allResults);
 
         if (searchQuery.length >= 2) {
@@ -192,7 +198,7 @@ export default function SearchPage() {
       setTimeout(() => setVisibleResults((prev) => new Set([...prev, i])), i * 45)
     );
     return () => timers.forEach((t) => clearTimeout(t));
-  }, [results.length]);
+  }, [results]);
 
   const debouncedQuery = useDebounce(query, 300);
   useEffect(() => {

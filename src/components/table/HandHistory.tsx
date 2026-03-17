@@ -11,6 +11,7 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { CardImage } from './CardImage';
 import './HandHistory.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -70,12 +71,7 @@ export interface HandHistoryProps {
 // UTILITIES
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const SUIT_CONFIG: Record<string, { symbol: string; color: string }> = {
-  h: { symbol: '♥', color: '#DC143C' },
-  d: { symbol: '♦', color: '#DC143C' },
-  c: { symbol: '♣', color: '#1C1C1C' },
-  s: { symbol: '♠', color: '#1C1C1C' },
-};
+// Card rendering is handled by CardImage component
 
 const RANK_DISPLAY: Record<string, string> = {
   T: '10',
@@ -122,15 +118,7 @@ interface MiniCardProps {
 }
 
 function MiniCard({ card }: MiniCardProps) {
-  const suit = SUIT_CONFIG[card.suit];
-  const rank = RANK_DISPLAY[card.rank] || card.rank;
-
-  return (
-    <span className="hh-mini-card" style={{ color: suit.color }}>
-      {rank}
-      {suit.symbol}
-    </span>
-  );
+  return <CardImage card={card} deckStyle="4color" size="xs" />;
 }
 
 interface PlayerResultRowProps {

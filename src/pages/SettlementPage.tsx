@@ -236,8 +236,12 @@ export default function SettlementPage() {
     };
   }, []);
 
+  const loadingRef = useRef(false);
+
   // Load data from SettlementService
   const loadSettlementData = useCallback(async () => {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     setIsLoading(true);
     try {
       // Get current period
@@ -347,6 +351,7 @@ export default function SettlementPage() {
       console.error('[SettlementPage] Failed to load data:', error);
       if (isMounted.current) toast.error('Failed to load settlement data');
     } finally {
+      loadingRef.current = false;
       if (isMounted.current) setIsLoading(false);
     }
   }, [unionId, clubId]);

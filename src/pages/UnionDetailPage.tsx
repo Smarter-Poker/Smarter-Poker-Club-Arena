@@ -5,7 +5,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { getLocalStorage, setLocalStorage } from '../lib/storage';
 import { unionService, type Union, type UnionClub } from '../services/UnionService';
@@ -137,11 +137,15 @@ export default function UnionDetailPage() {
     };
   }, [unionId]);
 
+  const loadingRef = useRef(false);
+
   useEffect(() => {
     if (!unionId) return;
     let isMounted = true;
 
     const loadData = async () => {
+      if (loadingRef.current) return;
+      loadingRef.current = true;
       if (isMounted) setLoading(true);
       try {
         let unionData = await unionService.getUnion(unionId);
@@ -265,6 +269,7 @@ export default function UnionDetailPage() {
         console.error('[UnionDetailPage] Error loading data:', err);
         toast.error('Failed to load union data');
       } finally {
+        loadingRef.current = false;
         if (isMounted) setLoading(false);
       }
     };

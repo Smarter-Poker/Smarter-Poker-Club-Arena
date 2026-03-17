@@ -111,15 +111,33 @@ export default function TournamentPage() {
   }, [clubId]);
 
   // Load tournaments
+  const loadingRef = useRef(false);
   useEffect(() => {
     let isMounted = true;
     async function loadTournaments() {
       if (!clubId) return;
+      if (loadingRef.current) return;
+      loadingRef.current = true;
       if (isMounted) setIsLoading(true);
       try {
+        // SWR: show cached tournaments instantly
+        const swrKey = `tourn_cache_${clubId}`;
+        try {
+          const cached = sessionStorage.getItem(swrKey);
+          if (cached) {
+            const c = JSON.parse(cached);
+            if (Array.isArray(c)) { setTournaments(c); setIsLoading(false); }
+          }
+        } catch { /* corrupt cache */ }
+
         const data = await tournamentService.getTournaments(clubId);
         if (!isMounted) return;
         setTournaments(data);
+
+        // SWR: cache successful fetch
+        try {
+          sessionStorage.setItem(swrKey, JSON.stringify(data.slice(0, 20)));
+        } catch { /* storage full */ }
 
         if (tournamentId) {
           const tourn = data.find((t) => t.id === tournamentId);
@@ -127,8 +145,10 @@ export default function TournamentPage() {
         }
       } catch (error) {
         console.error('Failed to load tournaments:', error);
+      } finally {
+        loadingRef.current = false;
+        if (isMounted) setIsLoading(false);
       }
-      if (isMounted) setIsLoading(false);
     }
     loadTournaments();
     return () => {

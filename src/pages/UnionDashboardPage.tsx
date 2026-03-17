@@ -7,7 +7,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -197,9 +197,13 @@ export default function UnionDashboardPage() {
     setAppsLoaded(false);
   }, [appsFilter]);
 
+  const dashLoadingRef = useRef(false);
+
   // ── Load Dashboard ─────────────────────────────────────────
   const loadDashboard = useCallback(
     async (uid?: string | null) => {
+      if (dashLoadingRef.current) return;
+      dashLoadingRef.current = true;
       try {
         setLoading(true);
         setError(null);
@@ -247,6 +251,7 @@ export default function UnionDashboardPage() {
           /* ignore */
         }
       } finally {
+        dashLoadingRef.current = false;
         if (mountedRef.current) setLoading(false);
       }
     },

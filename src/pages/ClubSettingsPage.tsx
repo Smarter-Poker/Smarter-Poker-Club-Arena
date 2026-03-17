@@ -91,6 +91,21 @@ export default function ClubSettingsPage() {
   const [loadError, setLoadError] = useState(false);
   const loadingRef = useRef(false);
 
+  // ── CRITICAL: Reset per-club state when navigating between club settings ──
+  // React Router reuses the component when only the clubId param changes.
+  useEffect(() => {
+    setSaving(false);
+    setIsOwner(false);
+    setUserRole('member');
+    setShowDeleteModal(false);
+    setShowStatsExport(false);
+    setIsDeleting(false);
+    setConfirmText('');
+    setLoadError(false);
+    loadingRef.current = false;
+    originalSettings.current = null;
+  }, [clubId]);
+
   // Re-fetch settings when user tabs back (covers WS disconnect gap)
   useVisibilityRefresh(() => loadClubSettings());
 

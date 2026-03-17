@@ -7,7 +7,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -151,9 +151,13 @@ export default function AgentDashboardPage() {
     return () => clearTimeout(t);
   }, [success]);
 
+  const dashLoadingRef = useRef(false);
+
   // ── Load Dashboard Data ───────────────────────────────────
   const loadDashboard = useCallback(
     async (cId: string | null) => {
+      if (dashLoadingRef.current) return;
+      dashLoadingRef.current = true;
       try {
         setLoading(true);
         setError(null);
@@ -302,6 +306,7 @@ export default function AgentDashboardPage() {
       } catch (err: any) {
         if (mountedRef.current) setError(err.message);
       } finally {
+        dashLoadingRef.current = false;
         if (mountedRef.current) setLoading(false);
       }
     },

@@ -608,28 +608,32 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           <span style={{ fontSize: 15, fontWeight: 500, color: colors.text }}>Sounds</span>
           <button
             onClick={handleSoundsToggle}
+            aria-checked={soundsEnabled}
+            role="switch"
             style={{
-              width: 48,
+              width: 52,
               height: 28,
               borderRadius: 14,
-              border: 'none',
+              border: soundsEnabled ? '2px solid #4ade80' : '2px solid #6b7280',
               padding: 2,
               cursor: 'pointer',
-              backgroundColor: soundsEnabled ? colors.success : colors.bgHover,
-              transition: 'background-color 0.2s ease',
+              backgroundColor: soundsEnabled ? '#22c55e' : '#374151',
+              transition: 'all 0.25s ease',
               display: 'flex',
               alignItems: 'center',
+              position: 'relative' as const,
+              flexShrink: 0,
             }}
           >
             <span
               style={{
-                width: 24,
-                height: 24,
+                width: 20,
+                height: 20,
                 borderRadius: '50%',
                 backgroundColor: 'white',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
-                transform: soundsEnabled ? 'translateX(20px)' : 'translateX(0)',
-                transition: 'transform 0.2s ease',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
+                transform: soundsEnabled ? 'translateX(24px)' : 'translateX(0)',
+                transition: 'transform 0.25s ease',
               }}
             />
           </button>
@@ -640,28 +644,32 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           <span style={{ fontSize: 15, fontWeight: 500, color: colors.text }}>Vibrations</span>
           <button
             onClick={handleVibrationsToggle}
+            aria-checked={vibrationsEnabled}
+            role="switch"
             style={{
-              width: 48,
+              width: 52,
               height: 28,
               borderRadius: 14,
-              border: 'none',
+              border: vibrationsEnabled ? '2px solid #4ade80' : '2px solid #6b7280',
               padding: 2,
               cursor: 'pointer',
-              backgroundColor: vibrationsEnabled ? colors.success : colors.bgHover,
-              transition: 'background-color 0.2s ease',
+              backgroundColor: vibrationsEnabled ? '#22c55e' : '#374151',
+              transition: 'all 0.25s ease',
               display: 'flex',
               alignItems: 'center',
+              position: 'relative' as const,
+              flexShrink: 0,
             }}
           >
             <span
               style={{
-                width: 24,
-                height: 24,
+                width: 20,
+                height: 20,
                 borderRadius: '50%',
                 backgroundColor: 'white',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
-                transform: vibrationsEnabled ? 'translateX(20px)' : 'translateX(0)',
-                transition: 'transform 0.2s ease',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
+                transform: vibrationsEnabled ? 'translateX(24px)' : 'translateX(0)',
+                transition: 'transform 0.25s ease',
               }}
             />
           </button>
@@ -679,28 +687,32 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           </div>
           <button
             onClick={handleShowBBToggle}
+            aria-checked={showBBEnabled}
+            role="switch"
             style={{
-              width: 48,
+              width: 52,
               height: 28,
               borderRadius: 14,
-              border: 'none',
+              border: showBBEnabled ? '2px solid #4ade80' : '2px solid #6b7280',
               padding: 2,
               cursor: 'pointer',
-              backgroundColor: showBBEnabled ? colors.success : colors.bgHover,
-              transition: 'background-color 0.2s ease',
+              backgroundColor: showBBEnabled ? '#22c55e' : '#374151',
+              transition: 'all 0.25s ease',
               display: 'flex',
               alignItems: 'center',
+              position: 'relative' as const,
+              flexShrink: 0,
             }}
           >
             <span
               style={{
-                width: 24,
-                height: 24,
+                width: 20,
+                height: 20,
                 borderRadius: '50%',
                 backgroundColor: 'white',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
-                transform: showBBEnabled ? 'translateX(20px)' : 'translateX(0)',
-                transition: 'transform 0.2s ease',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
+                transform: showBBEnabled ? 'translateX(24px)' : 'translateX(0)',
+                transition: 'transform 0.25s ease',
               }}
             />
           </button>

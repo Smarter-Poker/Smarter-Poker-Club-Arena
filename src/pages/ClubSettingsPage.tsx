@@ -5,6 +5,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { retryFetch } from '../utils/retryFetch';
 import { masterBus } from '../core/MasterBus';
 import { ClubsService } from '../services/ClubsService';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -155,16 +156,24 @@ export default function ClubSettingsPage() {
     if (!getIsMounted || getIsMounted()) setLoading(true);
     try {
       const { column: clubCol, value: clubVal } = resolveClubIdFilter(clubId!);
-      const { data, error } = await supabase
-        .from('clubs')
-        .select(
-          'id, owner_id, name, description, is_public, requires_approval, default_rake_percent, rake_cap, time_bank_seconds, allow_straddle, allow_run_it_twice, allow_rabbit_hunt, min_buyin_bb, max_buyin_bb'
-        )
-        .eq(clubCol, clubVal)
-        .maybeSingle();
+      const data = await retryFetch(
+        () =>
+          supabase
+            .from('clubs')
+            .select(
+              'id, owner_id, name, description, is_public, requires_approval, default_rake_percent, rake_cap, time_bank_seconds, allow_straddle, allow_run_it_twice, allow_rabbit_hunt, min_buyin_bb, max_buyin_bb'
+            )
+            .eq(clubCol, clubVal)
+            .maybeSingle()
+            .then(({ data, error }) => {
+              if (error) throw error;
+              return data;
+            }),
+        { maxRetries: 2 }
+      );
 
       if (getIsMounted && !getIsMounted()) return;
-      if (!error && data) {
+      if (data) {
         setSettings({
           name: data.name || '',
           description: data.description || '',

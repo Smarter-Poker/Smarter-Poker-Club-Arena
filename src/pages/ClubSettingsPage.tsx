@@ -223,6 +223,7 @@ export default function ClubSettingsPage() {
         { settings: { clubId, ...settings } },
         async () => {
           if (clubId) masterBus.emit('CLUB_UPDATED', { clubId });
+          if (clubId) masterBus.emit('CLUB_SETTINGS_UPDATED', { clubId });
           const { error } = await supabase
             .from('clubs')
             .update({

@@ -17,8 +17,6 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { waitForAuth } from '../utils/waitForAuth';
 import { masterBus } from '../core/MasterBus';
-import { useAuthUser } from '../hooks/useAuthUser';
-import { useWalletStore } from '../stores/useWalletStore';
 import haptic from '../services/HapticService';
 import ClubBottomNav from '../components/club/ClubBottomNav';
 import {
@@ -99,42 +97,14 @@ interface WalletBalances {
   diamonds: number;
 }
 
-interface UserProfileData {
-  id: string;
-  username: string;
-  display_name: string | null;
-  avatar_url: string | null;
-  player_number: number;
-}
-
 type GameFilter = 'ALL' | "Hold'em" | 'Omaha' | 'Mixed' | 'MTT' | 'Spin-It' | 'SN';
 type CashSubFilter = 'all' | 'live' | 'empty' | 'full';
 type TournamentSubFilter = 'all' | 'running' | 'registering' | 'late_reg' | 'starting_soon';
-
-// Premium number animation hook
-function useCountAnimation(target: number, duration: number = 1000) {
-  const [display, setDisplay] = useState(0);
-  useEffect(() => {
-    let startTime: number;
-    let animationFrame: number;
-    const animate = (time: number) => {
-      if (!startTime) startTime = time;
-      const progress = Math.min((time - startTime) / duration, 1);
-      setDisplay(Math.floor(target * progress));
-      if (progress < 1) animationFrame = requestAnimationFrame(animate);
-    };
-    animationFrame = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(animationFrame);
-  }, [target, duration]);
-  return display;
-}
 
 export default function ClubHomePage() {
   const { clubId } = useParams<{ clubId: string }>();
   useVisibilityRefresh(() => loadClubData());
   const navigate = useNavigate();
-  const { user } = useAuthUser();
-  const { diamonds } = useWalletStore();
   const isMountedRef = useIsMounted();
 
   // Refs to avoid stale closures in realtime subscriptions
@@ -177,18 +147,7 @@ export default function ClubHomePage() {
     tableName: string | null;
   }>({ show: false, tableId: null, tableName: null });
 
-
-
   const filters: GameFilter[] = ['ALL', "Hold'em", 'Omaha', 'Mixed', 'MTT', 'Spin-It', 'SN'];
-
-  // Premium number animations for stats
-  const animatedMemberCount = useCountAnimation(club?.member_count || 0, 800);
-  const animatedTableCount = useCountAnimation(
-    club ? tables.filter((t) => t.status === 'running').length : 0,
-    800
-  );
-
-
 
   useEffect(() => {
     if (clubId) {
@@ -351,8 +310,6 @@ export default function ClubHomePage() {
       unsubs.forEach((u) => u());
     };
   }, []);
-
-
 
   const loadClubData = async (getIsMounted?: () => boolean) => {
     if (!clubId) return;
@@ -660,16 +617,6 @@ export default function ClubHomePage() {
 
   const formatNumber = (num: number) => {
     return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  };
-
-  const formatTournamentTime = (isoTime: string) => {
-    const d = new Date(isoTime);
-    const now = new Date();
-    const diff = d.getTime() - now.getTime();
-    if (diff < 0) return 'LIVE';
-    if (diff < 3600000) return `${Math.ceil(diff / 60000)}m`;
-    if (diff < 86400000) return `${Math.ceil(diff / 3600000)}h`;
-    return d.toLocaleDateString('en-US', { weekday: 'short', hour: '2-digit', minute: '2-digit' });
   };
 
   const formatJackpot = (num: number) => {

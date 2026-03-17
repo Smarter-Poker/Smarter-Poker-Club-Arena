@@ -17,6 +17,7 @@ export interface Club {
   slug?: string;
   description?: string | null;
   avatar_url?: string | null;
+  logo_url?: string | null;
   banner_url?: string | null;
   owner_id: string;
   color_theme?: string; // DB column name (not ClubTheme enum)

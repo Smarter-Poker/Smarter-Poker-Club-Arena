@@ -359,6 +359,7 @@ export default function ClubHomePage() {
         },
         300
       ),
+      masterBus.subscribeDebounced('WAITLIST_PROMOTED', reload, 300),
     ];
     return () => {
       isMounted = false;

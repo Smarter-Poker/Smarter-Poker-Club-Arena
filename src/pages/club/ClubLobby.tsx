@@ -208,7 +208,14 @@ export default function ClubLobby() {
   );
 
   useMasterBusSubscriptions(
-    ['TABLE_SEATED', 'TABLE_LEFT', 'ANNOUNCEMENT_CHANGED'],
+    [
+      'TABLE_SEATED',
+      'TABLE_LEFT',
+      'ANNOUNCEMENT_CHANGED',
+      'TABLE_CREATED',
+      'TABLE_DELETED',
+      'TABLE_CLOSED',
+    ],
     () => {
       if (clubId) reload();
     },
@@ -226,6 +233,41 @@ export default function ClubLobby() {
 
   useMasterBusSubscription(
     'TOURNAMENT_UPDATED',
+    () => {
+      if (clubId) reload();
+    },
+    { debounce: 300 }
+  );
+
+  // Tournament lifecycle events
+  useMasterBusSubscriptions(
+    ['TOURNAMENT_STARTED', 'TOURNAMENT_CANCELLED', 'TOURNAMENT_COMPLETE'],
+    () => {
+      if (clubId) reload();
+    },
+    { debounce: 300 }
+  );
+
+  // Diamond balance changes
+  useMasterBusSubscription(
+    'DIAMOND_BALANCE_CHANGED',
+    () => {
+      if (!currentUser?.id) return;
+      supabase
+        .from('diamond_wallets')
+        .select('balance')
+        .eq('user_id', currentUser.id)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (isMountedRef.current && data) setDiamondBalance(data.balance || 0);
+        });
+    },
+    { debounce: 500 }
+  );
+
+  // Club membership and settings changes
+  useMasterBusSubscriptions(
+    ['CLUB_JOINED', 'CLUB_LEFT', 'CLUB_SETTINGS_UPDATED'],
     () => {
       if (clubId) reload();
     },

@@ -42,7 +42,7 @@ export interface UseTableChatReturn {
 export function useTableChat(
   tableId: string | undefined,
   userId: string,
-  heroName: string
+  players: any[]
 ): UseTableChatReturn {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [isChatCollapsed, setIsChatCollapsed] = useState(true);
@@ -59,25 +59,28 @@ export function useTableChat(
     const loadMessages = async () => {
       const { data } = await supabase
         .from('table_chat')
-        .select('id, table_id, user_id, message, created_at, sender_id, message_type, username')
+        .select('id, table_id, user_id, message, created_at, message_type')
         .eq('table_id', tableId)
         .order('created_at', { ascending: false })
         .limit(50);
 
       if (!isMounted) return;
       if (data) {
-        const formatted = data.reverse().map((m: any) => ({
-          id: m.id,
-          type: (m.message_type === 'dealer'
-            ? 'DEALER'
-            : m.message_type === 'system'
-              ? 'SYSTEM'
-              : 'PLAYER') as 'DEALER' | 'SYSTEM' | 'PLAYER',
-          playerId: m.sender_id,
-          playerName: m.username || 'Player',
-          content: m.message,
-          timestamp: new Date(m.created_at),
-        }));
+        const formatted = data.reverse().map((m: any) => {
+          const pName = players.find((p) => p && p.id === m.user_id)?.name || 'Player';
+          return {
+            id: m.id,
+            type: (m.message_type === 'dealer'
+              ? 'DEALER'
+              : m.message_type === 'system'
+                ? 'SYSTEM'
+                : 'PLAYER') as 'DEALER' | 'SYSTEM' | 'PLAYER',
+            playerId: m.user_id,
+            playerName: pName,
+            content: m.message,
+            timestamp: new Date(m.created_at),
+          };
+        });
         setChatMessages(formatted);
       }
     };
@@ -104,11 +107,12 @@ export function useTableChat(
               (msg) =>
                 !(
                   msg.id.startsWith('msg_') &&
-                  msg.playerId === m.sender_id &&
+                  msg.playerId === m.user_id &&
                   msg.content === m.message
                 )
             );
 
+            const pName = players.find((p) => p && p.id === m.user_id)?.name || 'Player';
             const newMsg: ChatMessage = {
               id: m.id,
               type: (m.message_type === 'dealer'
@@ -116,8 +120,8 @@ export function useTableChat(
                 : m.message_type === 'system'
                   ? 'SYSTEM'
                   : 'PLAYER') as 'DEALER' | 'SYSTEM' | 'PLAYER',
-              playerId: m.sender_id,
-              playerName: m.username || 'Player',
+              playerId: m.user_id,
+              playerName: pName,
               content: m.message,
               timestamp: new Date(m.created_at),
             };

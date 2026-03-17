@@ -18,9 +18,13 @@
  *    H = Toggle hand strength display
  *    S = Toggle stats HUD
  *    Escape = Close any open panel or modal
+ *
+ * OPTIMIZATION: Uses refs for all callbacks and state to prevent
+ * re-subscribing the keydown listener on every render. Only one
+ * listener is registered for the lifetime of the component.
  */
 
-import { useEffect, useCallback } from 'react';
+import { useEffect, useRef } from 'react';
 
 export interface UseTableKeyboardOptions {
   isHeroTurn: boolean;
@@ -41,22 +45,15 @@ export interface UseTableKeyboardOptions {
   onClosePanel?: () => void;
 }
 
-export function useTableKeyboard({
-  isHeroTurn,
-  isSpectator,
-  isModalOpen,
-  onFold,
-  onCallCheck,
-  onRaise,
-  onAllIn,
-  onBetPreset,
-  onToggleSound,
-  onToggleHandStrength,
-  onToggleStats,
-  onClosePanel,
-}: UseTableKeyboardOptions): void {
-  const handleKeyDown = useCallback(
-    (e: KeyboardEvent) => {
+export function useTableKeyboard(options: UseTableKeyboardOptions): void {
+  // Store all options in a ref — updated every render, always fresh in the listener
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const opts = optionsRef.current;
+
       // Skip if user is typing in an input/textarea
       const target = e.target as HTMLElement;
       if (
@@ -73,86 +70,70 @@ export function useTableKeyboard({
       // ── Escape: always works ──
       if (key === 'escape') {
         e.preventDefault();
-        onClosePanel?.();
+        opts.onClosePanel?.();
         return;
       }
 
       // ── Toggle keys: always active (unless spectator) ──
-      if (!isSpectator) {
+      if (!opts.isSpectator) {
         switch (key) {
           case 'm':
             e.preventDefault();
-            onToggleSound?.();
+            opts.onToggleSound?.();
             return;
           case 'h':
             e.preventDefault();
-            onToggleHandStrength?.();
+            opts.onToggleHandStrength?.();
             return;
           case 's':
             if (!e.ctrlKey && !e.metaKey) {
               e.preventDefault();
-              onToggleStats?.();
+              opts.onToggleStats?.();
             }
             return;
         }
       }
 
       // ── Action keys: only when it's hero's turn ──
-      if (isHeroTurn && !isSpectator && !isModalOpen) {
+      if (opts.isHeroTurn && !opts.isSpectator && !opts.isModalOpen) {
         switch (key) {
           case 'f':
             e.preventDefault();
-            onFold?.();
+            opts.onFold?.();
             return;
           case 'c':
             e.preventDefault();
-            onCallCheck?.();
+            opts.onCallCheck?.();
             return;
           case 'r':
             e.preventDefault();
-            onRaise?.();
+            opts.onRaise?.();
             return;
           case 'a':
             e.preventDefault();
-            onAllIn?.();
+            opts.onAllIn?.();
             return;
           case '1':
             e.preventDefault();
-            onBetPreset?.(0); // 1/3 pot
+            opts.onBetPreset?.(0); // 1/3 pot
             return;
           case '2':
             e.preventDefault();
-            onBetPreset?.(1); // 1/2 pot
+            opts.onBetPreset?.(1); // 1/2 pot
             return;
           case '3':
             e.preventDefault();
-            onBetPreset?.(2); // 3/4 pot
+            opts.onBetPreset?.(2); // 3/4 pot
             return;
           case '4':
             e.preventDefault();
-            onBetPreset?.(3); // pot
+            opts.onBetPreset?.(3); // pot
             return;
         }
       }
-    },
-    [
-      isHeroTurn,
-      isSpectator,
-      isModalOpen,
-      onFold,
-      onCallCheck,
-      onRaise,
-      onAllIn,
-      onBetPreset,
-      onToggleSound,
-      onToggleHandStrength,
-      onToggleStats,
-      onClosePanel,
-    ]
-  );
+    };
 
-  useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleKeyDown]);
+  }, []); // Empty deps — optionsRef always fresh
 }

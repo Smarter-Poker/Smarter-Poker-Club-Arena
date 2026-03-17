@@ -2276,6 +2276,23 @@ export default function TablePage({
     tableId,
     userId,
   ]);
+  // ═══════════════════════════════════════════════════════════════════════════
+  // CONNECTION STATUS TOAST — visible feedback when WebSocket drops/reconnects
+  // ═══════════════════════════════════════════════════════════════════════════
+  const prevConnectedRef = useRef<boolean | null>(null);
+  useEffect(() => {
+    // Skip initial mount (isConnected starts false before first connect)
+    if (prevConnectedRef.current === null) {
+      prevConnectedRef.current = isConnected;
+      return;
+    }
+    if (!isConnected && prevConnectedRef.current) {
+      toast?.warning?.('Connection lost — reconnecting…');
+    } else if (isConnected && !prevConnectedRef.current) {
+      toast?.success?.('Reconnected');
+    }
+    prevConnectedRef.current = isConnected;
+  }, [isConnected]);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // HORSE LOADING — Load seated horses from DB into React table state

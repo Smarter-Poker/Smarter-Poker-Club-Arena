@@ -79,7 +79,10 @@ export default function SearchPage() {
   const search = useCallback(
     async (searchQuery: string, getIsMounted?: () => boolean) => {
       if (!searchQuery.trim()) {
-        if (!getIsMounted || getIsMounted()) setResults([]);
+        if (!getIsMounted || getIsMounted()) {
+          setResults([]);
+          setLoading(false);
+        }
         return;
       }
 

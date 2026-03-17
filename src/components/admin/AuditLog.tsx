@@ -118,7 +118,7 @@ export const AuditLog: React.FC<AuditLogProps> = ({ clubId }) => {
           if (isMounted.current) {
             setVisibleItems((prev) => new Set([...prev, i]));
           }
-        }, i * 40)
+        }, i * 15)
       );
     } catch (error) {
       console.error('Failed to load audit log:', error);

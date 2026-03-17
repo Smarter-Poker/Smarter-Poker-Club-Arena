@@ -5,7 +5,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Component, type ReactNode, type ErrorInfo } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import styles from './ClubDetailPage.module.css';
 import { getLocalStorage, setLocalStorage } from '../lib/storage';
@@ -290,6 +290,37 @@ const StatusBadge = ({ status }: { status: string }) => {
   );
 };
 
+// #12: Lightweight error boundary for individual cards (isolates failures)
+class CardErrorBoundary extends Component<
+  { children: ReactNode; label?: string },
+  { hasError: boolean }
+> {
+  constructor(props: { children: ReactNode; label?: string }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError(): { hasError: boolean } {
+    return { hasError: true };
+  }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error(`[CardErrorBoundary:${this.props.label || 'unknown'}]`, error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className={styles.cardErrorFallback}>
+          <span style={{ fontSize: '1.5rem' }}>⚠️</span>
+          <span style={{ fontSize: '0.8rem' }}>
+            Failed to load {this.props.label || 'component'}
+          </span>
+          <button onClick={() => this.setState({ hasError: false })}>Retry</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 // Premium counter hook
 function useCountAnimation(target: number, duration: number = 800) {
   const [display, setDisplay] = useState(0);
@@ -341,6 +372,8 @@ export default function ClubDetailPage() {
   const [savingSettings, setSavingSettings] = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date());
   const [showMemberMenu, setShowMemberMenu] = useState<string | null>(null);
+  // #3: Member pagination — start at 50, expand on demand
+  const [memberLimit, setMemberLimit] = useState(50);
   const [userRole, setUserRole] = useState<'owner' | 'admin' | 'agent' | 'member'>('member');
   const [isInUnion, setIsInUnion] = useState(false);
   const [wsConnected, setWsConnected] = useState(true);
@@ -1093,8 +1126,8 @@ export default function ClubDetailPage() {
         </div>
       </div>
 
-      {/* Tab Content — Swipeable */}
-      <section className={styles.tabContent} {...swipeHandlers}>
+      {/* Tab Content — Swipeable (with #15 slide-in transition) */}
+      <section className={styles.tabContent} key={activeTab} {...swipeHandlers}>
         {/* Overview Tab */}
         {activeTab === 'overview' && (
           <div className={styles.overviewGrid}>
@@ -1151,12 +1184,16 @@ export default function ClubDetailPage() {
 
             {/* Daily Challenges */}
             <div className={styles.card}>
-              <DailyChallengesWidget />
+              <CardErrorBoundary label="Daily Challenges">
+                <DailyChallengesWidget />
+              </CardErrorBoundary>
             </div>
 
             {/* Club Activity Heatmap */}
             <div className={styles.card} style={{ gridColumn: '1 / -1' }}>
-              <ActivityHeatmap data={[]} label="Club Activity" colorScheme="cyan" weeks={12} />
+              <CardErrorBoundary label="Activity Heatmap">
+                <ActivityHeatmap data={[]} label="Club Activity" colorScheme="cyan" weeks={12} />
+              </CardErrorBoundary>
             </div>
 
             {/* Performance Gauges */}
@@ -1219,7 +1256,9 @@ export default function ClubDetailPage() {
             {/* Club Activity Feed */}
             <div className={styles.card} style={{ gridColumn: '1 / -1' }}>
               <h3> Recent Activity</h3>
-              {clubId && <ClubActivityFeed clubId={clubId} limit={10} />}
+              <CardErrorBoundary label="Activity Feed">
+                {clubId && <ClubActivityFeed clubId={clubId} limit={10} />}
+              </CardErrorBoundary>
             </div>
           </div>
         )}
@@ -1311,7 +1350,7 @@ export default function ClubDetailPage() {
                 </tr>
               </thead>
               <tbody>
-                {filteredMembers.map((member, idx) => (
+                {filteredMembers.slice(0, memberLimit).map((member, idx) => (
                   <tr
                     key={member.id}
                     style={{ animation: `slideInUp 0.5s ease-out ${idx * 0.05}s both` }}
@@ -1372,6 +1411,15 @@ export default function ClubDetailPage() {
                 ))}
               </tbody>
             </table>
+            {/* #3: Load More button when members exceed limit */}
+            {filteredMembers.length > memberLimit && (
+              <button
+                className={styles.loadMoreBtn}
+                onClick={() => setMemberLimit((prev) => Math.min(prev + 50, 500))}
+              >
+                Show More ({filteredMembers.length - memberLimit} remaining)
+              </button>
+            )}
           </div>
         )}
 

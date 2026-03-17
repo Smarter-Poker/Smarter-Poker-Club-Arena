@@ -466,3 +466,36 @@
 .formSelect:focus {
   border-color: #4599ff;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   RESPONSIVE — Mobile
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 480px) {
+  .page {
+    padding: 12px;
+  }
+
+  .statGrid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+
+  .statValue {
+    font-size: 18px;
+  }
+
+  .logRow {
+    font-size: 10px;
+  }
+
+  .formSelect,
+  .formInput {
+    font-size: 16px;
+    min-height: 44px;
+  }
+
+  .actionBtn {
+    min-height: 36px;
+  }
+}

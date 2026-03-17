@@ -436,8 +436,8 @@ class TableService {
       await supabase.from('table_activity').insert({
         table_id: tableId,
         user_id: userId,
-        action: 'leave',
-        chips_cashed_out: chipsToReturn,
+        activity_type: 'leave',
+        data: { chips_cashed_out: chipsToReturn },
       });
 
       // Note: Transaction already logged via WalletService.logTransaction above

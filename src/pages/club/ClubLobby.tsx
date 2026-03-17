@@ -295,7 +295,7 @@ export default function ClubLobby() {
 
   // ── Realtime subscriptions: live table and tournament updates ──
   useMasterBusChannel({
-    channelName: resolvedClubId ? `club-lobby-${resolvedClubId}` : null,
+    channelName: resolvedClubId ? `club-lobby-tables-${resolvedClubId}` : null,
     table: 'tables',
     filter: resolvedClubId ? `club_id=eq.${resolvedClubId}` : null,
     event: '*',
@@ -314,7 +314,7 @@ export default function ClubLobby() {
   });
 
   useMasterBusChannel({
-    channelName: resolvedClubId ? `club-lobby-${resolvedClubId}` : null,
+    channelName: resolvedClubId ? `club-lobby-tournaments-${resolvedClubId}` : null,
     table: 'tournaments',
     filter: resolvedClubId ? `club_id=eq.${resolvedClubId}` : null,
     event: '*',

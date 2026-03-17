@@ -56,7 +56,7 @@ export async function searchClubs(query: string): Promise<Club[]> {
   const { data, error } = await supabase
     .from('clubs')
     .select(
-      'id, club_id, name, slug, description, avatar_url, banner_url, color_theme, member_count, table_count, chip_treasury, is_public, requires_approval, owner_id, union_id, settings, created_at, updated_at'
+      'id, club_id, name, slug, description, avatar_url, banner_url, color_theme, member_count, online_count, table_count, chip_treasury, is_public, requires_approval, gps_restricted, owner_id, union_id, settings, created_at, updated_at'
     )
     .ilike('name', `%${query}%`)
     .eq('is_public', true)
@@ -81,7 +81,7 @@ export async function getClub(identifier: string): Promise<Club | null> {
   const { data, error } = await supabase
     .from('clubs')
     .select(
-      'id, club_id, name, slug, description, avatar_url, banner_url, color_theme, member_count, table_count, chip_treasury, is_public, requires_approval, owner_id, union_id, settings, created_at, updated_at'
+      'id, club_id, name, slug, description, avatar_url, banner_url, color_theme, member_count, online_count, table_count, chip_treasury, is_public, requires_approval, gps_restricted, owner_id, union_id, settings, created_at, updated_at'
     )
     .eq(isUUID ? 'id' : 'slug', identifier)
     .maybeSingle();

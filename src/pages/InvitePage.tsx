@@ -6,7 +6,6 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
-import { clubService } from '../services/ClubService';
 import { MembershipService } from '../services/MembershipService';
 import { useToast } from '../components/common/Toast';
 import { masterBus } from '../core/MasterBus';

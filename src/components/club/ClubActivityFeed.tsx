@@ -10,6 +10,7 @@ import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { resolveClubIdFilter } from '../../utils/clubIdResolver';
+import { formatRelativeShort as formatTime } from '@/lib/date';
 import styles from './ClubActivityFeed.module.css';
 
 export type ActivityType =
@@ -191,21 +192,6 @@ export default function ClubActivityFeed({
       default:
         return '○';
     }
-  };
-
-  const formatTime = (dateStr: string): string => {
-    const date = new Date(dateStr);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
-
-    if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays === 1) return 'Yesterday';
-    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   };
 
   const filteredActivities =

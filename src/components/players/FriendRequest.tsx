@@ -1,4 +1,5 @@
 import React from 'react';
+import { formatRelativeShort } from '../../lib/date';
 import './FriendRequest.css';
 
 interface FriendRequestProps {
@@ -26,13 +27,6 @@ export const FriendRequest: React.FC<FriendRequestProps> = ({
   onDecline,
   onCancel,
 }) => {
-  const formatTime = (date: Date) => {
-    const diff = Date.now() - date.getTime();
-    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-    return date.toLocaleDateString();
-  };
-
   return (
     <div className="friend-request">
       <div className="request-avatar">
@@ -51,7 +45,7 @@ export const FriendRequest: React.FC<FriendRequestProps> = ({
             {mutualFriends} mutual friend{mutualFriends > 1 ? 's' : ''}
           </div>
         )}
-        <div className="request-time">{formatTime(sentAt)}</div>
+        <div className="request-time">{formatRelativeShort(sentAt)}</div>
       </div>
 
       <div className="request-actions">

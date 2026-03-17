@@ -5,6 +5,7 @@
  */
 
 import React from 'react';
+import { formatDuration as formatTime } from '@/lib/date';
 import './BlindStructure.css';
 
 interface BlindStructureProps {
@@ -29,12 +30,6 @@ export function BlindStructure({
   timeRemaining = 0,
   isPaused = false,
 }: BlindStructureProps) {
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
   return (
     <div className="blind-structure">
       <div className="blind-structure__header">

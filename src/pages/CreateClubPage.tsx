@@ -12,7 +12,6 @@ import styles from './CreateClubPage.module.css';
 import { supabase } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
 import ClubPromotionRulesModal from '../components/modals/ClubPromotionRulesModal';
-import { ClubService } from '../services/ClubService';
 import { masterBus } from '../core/MasterBus';
 import { sanitizeInput } from '../utils/sanitizeInput';
 

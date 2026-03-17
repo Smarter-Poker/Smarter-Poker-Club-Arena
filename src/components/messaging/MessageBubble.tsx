@@ -6,6 +6,7 @@
  */
 
 import { useState, useEffect, ReactNode } from 'react';
+import { formatTime } from '../../lib/date';
 import styles from './ChatBubble.module.css';
 import { ImageThumbnail, ImageLightbox } from './ImageMessage';
 import EmojiReactions from './EmojiReactions';
@@ -69,11 +70,6 @@ export default function MessageBubble({
     const timer = setTimeout(() => setMounted(true), 50);
     return () => clearTimeout(timer);
   }, []);
-
-  const formatTime = (dateStr: string): string => {
-    const date = new Date(dateStr);
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  };
 
   const linkifyText = (text: string): (string | ReactNode)[] => {
     const urlRegex = /(https?:\/\/[^\s]+)/g;

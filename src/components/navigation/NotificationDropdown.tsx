@@ -10,6 +10,7 @@ import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useAuthUser } from '../../hooks/useAuthUser';
+import { formatRelativeShort as formatTime } from '@/lib/date';
 import styles from './NotificationDropdown.module.css';
 
 interface Notification {
@@ -173,19 +174,6 @@ export default function NotificationDropdown({ onNavigate }: NotificationDropdow
       default:
         return '○';
     }
-  };
-
-  const formatTime = (dateStr: string): string => {
-    const date = new Date(dateStr);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-
-    if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins}m`;
-    if (diffHours < 24) return `${diffHours}h`;
-    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   };
 
   return (

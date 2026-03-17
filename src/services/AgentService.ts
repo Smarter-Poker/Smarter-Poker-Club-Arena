@@ -470,26 +470,7 @@ class AgentServiceClass {
     }
 
     // 3. Ensure BUSINESS and PROMO wallets exist (on top of their PLAYER wallet)
-    for (const walletType of ['BUSINESS', 'PROMO'] as const) {
-      const { data: existing } = await supabase
-        .from('wallets')
-        .select('user_id')
-        .eq('user_id', userId)
-        .eq('wallet_type', walletType)
-        .maybeSingle();
-
-      if (!existing) {
-        const { error: walletErr } = await supabase.from('wallets').insert({
-          user_id: userId,
-          wallet_type: walletType,
-          balance: 0,
-          locked_balance: 0,
-        });
-        if (walletErr)
-          console.error(`[AgentService] Failed to create ${walletType} wallet:`, walletErr);
-        else console.debug(`[AgentService] Created ${walletType} wallet for ${profile.username}`);
-      }
-    }
+    await WalletService.ensureWalletsExist(userId, ['BUSINESS', 'PROMO']);
 
     // 4. Check if already an agent in this club
     const { data: existingAgent } = await supabase

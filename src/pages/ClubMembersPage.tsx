@@ -18,6 +18,7 @@ import { exportToCSV } from '../lib/export';
 import './ClubMembersPage.css';
 import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
+import { WalletService } from '../services/WalletService';
 import { useIsMounted } from '../hooks/useIsMounted';
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -260,22 +261,7 @@ function PlayerActionModal({
             if (agentInsertErr) throw agentInsertErr;
 
             // Create BUSINESS and PROMO wallets (required for agents to receive commissions)
-            for (const walletType of ['BUSINESS', 'PROMO'] as const) {
-              const { error: walletErr } = await supabase.from('wallets').upsert(
-                {
-                  user_id: member.user_id,
-                  wallet_type: walletType,
-                  balance: 0,
-                  locked_balance: 0,
-                },
-                { onConflict: 'user_id,wallet_type' }
-              );
-              if (walletErr)
-                console.warn(
-                  `[ClubMembers] Failed to create ${walletType} wallet:`,
-                  walletErr.message
-                );
-            }
+            await WalletService.ensureWalletsExist(member.user_id, ['BUSINESS', 'PROMO']);
           }
         } else if (wasAgentRole && !isAgentRole) {
           const { error: suspendErr } = await supabase

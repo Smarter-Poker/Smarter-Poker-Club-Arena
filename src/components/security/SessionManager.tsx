@@ -1,4 +1,5 @@
 import React from 'react';
+import { formatRelativeShort } from '../../lib/date';
 import './SessionManager.css';
 
 interface Session {
@@ -28,16 +29,6 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
     return '■';
   };
 
-  const formatTime = (date: Date) => {
-    const now = new Date();
-    const diff = now.getTime() - date.getTime();
-
-    if (diff < 60000) return 'Just now';
-    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-    return date.toLocaleDateString();
-  };
-
   return (
     <div className="session-manager">
       <div className="manager-header">
@@ -64,7 +55,7 @@ export const SessionManager: React.FC<SessionManagerProps> = ({
                 {session.isCurrent && <span className="current-badge">This device</span>}
               </div>
               <div className="session-details">
-                {session.location} • {session.ip} • {formatTime(session.lastActive)}
+                {session.location} • {session.ip} • {formatRelativeShort(session.lastActive)}
               </div>
             </div>
             {!session.isCurrent && (

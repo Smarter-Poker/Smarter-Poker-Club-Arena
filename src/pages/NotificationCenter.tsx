@@ -17,6 +17,7 @@ import { supabase } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { masterBus } from '../core/MasterBus';
 import { useToast } from '../components/common/Toast';
+import { formatRelativeShort as formatTime } from '@/lib/date';
 import './NotificationCenter.css';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
@@ -181,16 +182,6 @@ export default function NotificationCenter() {
   const handleClick = (notif: Notification) => {
     if (!notif.read) markAsRead(notif.id);
     if (notif.link) navigate(notif.link);
-  };
-
-  const formatTime = (dateStr: string) => {
-    const d = new Date(dateStr);
-    const now = new Date();
-    const diff = (now.getTime() - d.getTime()) / 1000;
-    if (diff < 60) return 'Just now';
-    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-    return d.toLocaleDateString();
   };
 
   const unreadCount = notifications.filter((n) => !n.read).length;

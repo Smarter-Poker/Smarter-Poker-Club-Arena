@@ -13,6 +13,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { formatDuration as formatTime } from '@/lib/date';
 import { tournamentTimerService } from '../../services/TournamentTimerService';
 import { tournamentService } from '../../services/TournamentService';
 import { masterBus } from '../../core/MasterBus';
@@ -160,13 +161,6 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
       if (typeof unsubBlinds === 'function') unsubBlinds();
     };
   }, [tournamentId, refreshState]);
-
-  // ── Format time as MM:SS ──
-  const formatTime = (seconds: number): string => {
-    const m = Math.floor(seconds / 60);
-    const s = seconds % 60;
-    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-  };
 
   // ── Format chip count with K/M abbreviations ──
   const formatChips = (n: number): string => {

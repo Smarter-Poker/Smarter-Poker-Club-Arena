@@ -11,6 +11,7 @@ import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { messagingService } from '../../services/MessagingService';
+import { formatRelativeShort } from '../../lib/date';
 import styles from './ConversationList.module.css';
 
 interface Conversation {
@@ -300,8 +301,8 @@ export default function ConversationList({
       return 0;
     });
 
-  // Format relative time
-  const formatTime = (dateStr: string): string => {
+  // Format relative time for conversation list
+  const formatTimeForConversation = (dateStr: string): string => {
     if (!dateStr) return '';
     const date = new Date(dateStr);
     const now = new Date();
@@ -419,7 +420,9 @@ export default function ConversationList({
                     {conv.isGroup && ' '}
                     {conv.name}
                   </span>
-                  <span className={styles.time}>{formatTime(conv.lastMessageTime)}</span>
+                  <span className={styles.time}>
+                    {formatTimeForConversation(conv.lastMessageTime)}
+                  </span>
                 </div>
                 <div className={styles.preview}>
                   <span className={styles.message}>

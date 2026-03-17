@@ -9,6 +9,7 @@ import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useAuthUser } from '../../hooks/useAuthUser';
+import { isToday, isYesterday } from '../../lib/date';
 import styles from './MessagesPanel.module.css';
 
 interface Conversation {
@@ -226,7 +227,7 @@ export default function MessagesPanel({ initialConversationId, onClose }: Messag
     setSending(false);
   };
 
-  const formatTime = (dateStr?: string): string => {
+  const formatTimeForPanel = (dateStr?: string): string => {
     if (!dateStr) return '';
     const date = new Date(dateStr);
     const now = new Date();
@@ -279,7 +280,7 @@ export default function MessagesPanel({ initialConversationId, onClose }: Messag
                   <span className={styles.lastMsg}>{convo.lastMessage}</span>
                 </div>
                 <div className={styles.convoMeta}>
-                  <span className={styles.time}>{formatTime(convo.lastMessageAt)}</span>
+                  <span className={styles.time}>{formatTimeForPanel(convo.lastMessageAt)}</span>
                   {convo.unreadCount > 0 && (
                     <span className={styles.unread}>{convo.unreadCount}</span>
                   )}
@@ -322,7 +323,7 @@ export default function MessagesPanel({ initialConversationId, onClose }: Messag
                   }}
                 >
                   <div className={styles.bubble}>{msg.content}</div>
-                  <span className={styles.msgTime}>{formatTime(msg.createdAt)}</span>
+                  <span className={styles.msgTime}>{formatTimeForPanel(msg.createdAt)}</span>
                 </div>
               ))}
               <div ref={messagesEndRef} />

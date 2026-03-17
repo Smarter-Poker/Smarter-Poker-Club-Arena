@@ -6,6 +6,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { formatDurationMinutes as formatTime } from '@/lib/date';
 import './TournamentStatsDashboard.css';
 
 interface TournamentStats {
@@ -52,15 +53,6 @@ export const TournamentStatsDashboard: React.FC<TournamentStatsDashboardProps> =
   const getChipSpread = () => {
     if (stats.largestStack === 0) return 0;
     return Math.round((stats.smallestStack / stats.largestStack) * 100);
-  };
-
-  const formatTime = (minutes: number) => {
-    const hours = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-    if (hours > 0) {
-      return `${hours}h ${mins}m`;
-    }
-    return `${mins}m`;
   };
 
   const levelProgress = (stats.currentLevel / stats.totalLevels) * 100;

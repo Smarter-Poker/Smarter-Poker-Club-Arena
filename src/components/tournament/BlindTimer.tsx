@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
+import { formatDuration as formatTime } from '@/lib/date';
 import './BlindTimer.css';
 
 interface BlindLevel {
@@ -70,12 +71,6 @@ export const BlindTimer: React.FC<BlindTimerProps> = ({
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, [currentLevel, levelStartTime, isPaused, current, onLevelChange]);
-
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
 
   const formatChips = (amount: number) => {
     return amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });

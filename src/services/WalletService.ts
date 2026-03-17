@@ -712,6 +712,41 @@ export const WalletService = {
 
     return true;
   },
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // WALLET PROVISIONING
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Ensure wallets exist for a user. Creates zero-balance wallets idempotently.
+   * Use this instead of direct .from('wallets').insert() to ensure consistent
+   * schema and avoid race conditions.
+   *
+   * @param userId - User ID
+   * @param walletTypes - Array of wallet types to ensure exist (default: all three)
+   */
+  async ensureWalletsExist(
+    userId: string,
+    walletTypes: WalletType[] = ['PLAYER', 'BUSINESS', 'PROMO']
+  ): Promise<void> {
+    for (const walletType of walletTypes) {
+      const { error } = await supabase.from('wallets').upsert(
+        {
+          user_id: userId,
+          wallet_type: walletType,
+          balance: 0,
+          locked_balance: 0,
+        },
+        { onConflict: 'user_id,wallet_type' }
+      );
+      if (error) {
+        console.error(
+          `[WalletService] Failed to ensure ${walletType} wallet for ${userId}:`,
+          error
+        );
+      }
+    }
+  },
 };
 
 export default WalletService;

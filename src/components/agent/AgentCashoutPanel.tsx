@@ -11,6 +11,7 @@ import { cashoutService, CashoutRequest } from '../../services/CashoutService';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { masterBus } from '../../core/MasterBus';
 import { supabase } from '../../lib/supabase';
+import { formatRelativeShort as formatTime } from '@/lib/date';
 import './AgentCashoutPanel.css';
 
 interface AgentCashoutPanelProps {
@@ -113,21 +114,6 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
       if (isMounted.current) setError(err.message || 'Failed to reject cashout');
     }
     if (isMounted.current) setProcessing(null);
-  };
-
-  const formatTime = (dateStr: string) => {
-    const date = new Date(dateStr);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
-
-    if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays < 7) return `${diffDays}d ago`;
-    return date.toLocaleDateString();
   };
 
   if (loading) {

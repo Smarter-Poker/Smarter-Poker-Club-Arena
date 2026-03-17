@@ -3,6 +3,7 @@ import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useNavigate } from 'react-router-dom';
+import { formatRelativeShort as formatTime } from '@/lib/date';
 import NotificationGrouper, { type NotificationCategory } from './NotificationGrouper';
 import './NotificationCenter.css';
 
@@ -186,17 +187,6 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
       system: '',
     };
     return icons[type] || '';
-  };
-
-  const formatTime = (date: Date) => {
-    const diff = Date.now() - date.getTime();
-    const minutes = Math.floor(diff / 60000);
-    if (minutes < 1) return 'Just now';
-    if (minutes < 60) return `${minutes}m ago`;
-    const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `${hours}h ago`;
-    const days = Math.floor(hours / 24);
-    return `${days}d ago`;
   };
 
   if (!isOpen) return null;

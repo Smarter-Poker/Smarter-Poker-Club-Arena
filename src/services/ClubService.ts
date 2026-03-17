@@ -1,9 +1,19 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  CLUB ENGINE — Club Service
+ *  CLUB ENGINE — Club Service (ADMIN / LOW-LEVEL)
  * ═══════════════════════════════════════════════════════════════════════════════
- * Full club management with real Supabase integration
- * No demo mode — production ready
+ *
+ * @deprecated For frontend-facing club operations, use ClubsService instead.
+ * ClubsService provides auth-gated, security-hardened equivalents of:
+ *   - searchClubs   → ClubsService.search()
+ *   - getClub       → ClubsService.get()
+ *   - createClub    → ClubsService.create()  (with 4-club limit)
+ *   - updateClub    → ClubsService.update()  (with owner verification)
+ *   - deleteClub    → ClubsService.delete()  (with owner verification)
+ *   - getMyClubs    → ClubsService.getUserMemberships()
+ *
+ * This service is retained ONLY for admin-level operations that bypass
+ * auth checks: addMember, updateMemberRole, updateChipBalance, etc.
  */
 
 import { supabase } from '../lib/supabase';

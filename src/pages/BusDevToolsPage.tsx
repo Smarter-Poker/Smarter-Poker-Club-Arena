@@ -16,6 +16,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { masterBus, type BusEventType } from '../core/MasterBus';
 import { getOfflineQueue, clearOfflineQueue, getOfflineQueueSize } from '../utils/offlineQueue';
 import { busEventLogger } from '../services/BusEventLogger';
+import { formatRelativeShort as formatTime } from '@/lib/date';
 import './BusDevToolsPage.css';
 
 interface EventLogItem {
@@ -119,19 +120,6 @@ export default function BusDevToolsPage() {
   const filteredLog = filter === 'all' ? eventLog : eventLog.filter((e) => e.type === filter);
 
   const eventTypes = [...new Set(eventLog.map((e) => e.type))].sort();
-
-  const formatTime = (ts: string) => {
-    try {
-      return new Date(ts).toLocaleTimeString('en-US', {
-        hour12: false,
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-      });
-    } catch {
-      return ts;
-    }
-  };
 
   const handleEmitTest = (type: BusEventType) => {
     const payloads: Record<string, unknown> = {

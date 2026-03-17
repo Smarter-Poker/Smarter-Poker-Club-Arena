@@ -7,7 +7,7 @@ import { supabase, subscribeToTable, subscribeToHandState } from '../lib/supabas
 import type { PokerTable, TableSettings, GameVariant, HandState } from '../types/database.types';
 import { WalletService } from './WalletService';
 import { masterBus } from '../core/MasterBus';
-import { retryAsync } from '../utils/retryAsync';
+
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { QUERY_LIMITS } from '../lib/constants';
 
@@ -211,10 +211,9 @@ class TableService {
    * in the table_seats stack directly back to player_wallets before closing.
    */
   async closeTable(tableId: string): Promise<void> {
-    const { data: result, error } = await retryAsync(
-      () => supabase.rpc('force_close_table_and_refund', { p_table_id: tableId }),
-      3
-    );
+    const { data: result, error } = await supabase.rpc('force_close_table_and_refund', {
+      p_table_id: tableId,
+    });
 
     if (error) {
       console.error('[TableService] CRITICAL: force_close_table_and_refund RPC failed:', error);
@@ -346,19 +345,23 @@ class TableService {
 
       // ATOMIC CASH-OUT: Return chips to Player Wallet (ONLY for cash games) and clear seat
       if (!tableData?.tournament_id) {
-        const { data: rpcAmount, error: cashoutError } = await retryAsync(
-          () =>
-            supabase.rpc('atomic_table_cashout', {
-              p_table_id: tableId,
-              p_user_id: userId,
-            }),
-          3
+        const { data: rpcAmount, error: cashoutError } = await supabase.rpc(
+          'atomic_table_cashout',
+          {
+            p_user_id: userId,
+            p_table_id: tableId,
+            p_seat_number: seatNumber,
+          }
         );
 
         if (cashoutError) {
-          console.error('[TableService] Error in atomic_table_cashout:', cashoutError.message);
+          // RPC returned an error (e.g. seat not found) — check explicitly
+          // since supabase.rpc does NOT throw on SQL errors
+          console.error('[TableService] atomic_table_cashout RPC error:', cashoutError.message);
           return { success: false, chipsReturned: 0 };
         }
+
+        // Error already handled above
 
         returnedChips = rpcAmount || 0;
         console.debug(
@@ -663,19 +666,15 @@ class TableService {
 
     // Return chips to player wallet ATOMICALLY with log
     if (seat.stack > 0) {
-      const { error: walletErr } = await retryAsync(
-        () =>
-          supabase.rpc('atomic_credit_wallet_and_log', {
-            p_user_id: userId,
-            p_amount: seat.stack,
-            p_category: 'cashout',
-            p_description: `Kicked from table: ${seat.stack} chips returned${reason ? ` (${reason})` : ''}`,
-            p_table_id: tableId,
-            p_hand_id: null,
-            p_related_entity_id: null,
-          }),
-        3
-      );
+      const { error: walletErr } = await supabase.rpc('atomic_credit_wallet_and_log', {
+        p_user_id: userId,
+        p_amount: seat.stack,
+        p_category: 'cashout',
+        p_description: `Kicked from table: ${seat.stack} chips returned${reason ? ` (${reason})` : ''}`,
+        p_table_id: tableId,
+        p_hand_id: null,
+        p_related_entity_id: null,
+      });
       if (walletErr) {
         console.error('[TableService] Error crediting wallet on kick:', walletErr);
         return false;

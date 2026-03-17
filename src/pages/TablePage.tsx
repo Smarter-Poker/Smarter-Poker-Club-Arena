@@ -5090,6 +5090,9 @@ export default function TablePage({
                   selectedSeat,
                   amount
                 );
+
+                // Notify all consumers (MultiTablePage tabs, WaitlistPage, ClubLobby, DailyChallenges, etc.)
+                masterBus.emit('TABLE_SEATED', { tableId: tableId || 'demo', seat: selectedSeat });
               }
             } else if (userId && userId !== 'guest' && tableId && selectedSeat) {
               try {
@@ -5150,6 +5153,9 @@ export default function TablePage({
 
                 // Update RoomService presence state so the user is globally seen as seated
                 roomService.joinRoom(tableId, userId, username || 'Player', selectedSeat, amount);
+
+                // Notify all consumers (MultiTablePage tabs, WaitlistPage, ClubLobby, DailyChallenges, etc.)
+                masterBus.emit('TABLE_SEATED', { tableId, seat: selectedSeat });
 
                 // Player seated successfully
               } catch (error) {

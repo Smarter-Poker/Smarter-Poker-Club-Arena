@@ -31,6 +31,7 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { resolveClubIdFilter, resolveClubUUID } from '../utils/clubIdResolver';
 import GlobalUXIndicators from '../components/common/GlobalUXIndicators';
 import { retryFetch } from '../utils/retryFetch';
+import { sanitizeInput } from '../utils/sanitizeInput';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -57,6 +58,7 @@ interface ClubSettings {
   timeBankSeconds: number;
   allowStraddle: boolean;
   allowRunItTwice: boolean;
+  allowRabbitHunt: boolean;
   minBuyInBB: number;
   maxBuyInBB: number;
 }
@@ -399,7 +401,10 @@ export default function ClubDetailPage() {
     timeBankSeconds: 30,
     allowStraddle: false,
     allowRunItTwice: true,
+    allowRabbitHunt: true,
   });
+  // #4: Track which member action is in-flight to prevent double-clicks
+  const [memberActionLoading, setMemberActionLoading] = useState<string | null>(null);
 
   // Confirm modal state for table deletion
   const [deleteTableConfirm, setDeleteTableConfirm] = useState<{
@@ -504,6 +509,7 @@ export default function ClubDetailPage() {
         timeBankSeconds: club.settings.timeBankSeconds,
         allowStraddle: club.settings.allowStraddle,
         allowRunItTwice: club.settings.allowRunItTwice,
+        allowRabbitHunt: club.settings.allowRabbitHunt,
       });
     }
   }, [club?.name, club?.settings]);
@@ -685,7 +691,7 @@ export default function ClubDetailPage() {
       const { data: clubData, error: clubError } = await supabase
         .from('clubs')
         .select(
-          'id, club_id, name, description, avatar_url, is_public, requires_approval, member_count, table_count, created_at, default_rake_percent, rake_cap, time_bank_seconds, allow_straddle, allow_run_it_twice, min_buyin_bb, max_buyin_bb, owner_id'
+          'id, club_id, name, description, avatar_url, is_public, requires_approval, member_count, table_count, created_at, default_rake_percent, rake_cap, time_bank_seconds, allow_straddle, allow_run_it_twice, allow_rabbit_hunt, min_buyin_bb, max_buyin_bb, owner_id'
         )
         .eq(clubCol, clubVal)
         .maybeSingle();
@@ -721,6 +727,7 @@ export default function ClubDetailPage() {
           timeBankSeconds: clubData.time_bank_seconds || 30,
           allowStraddle: clubData.allow_straddle ?? true,
           allowRunItTwice: clubData.allow_run_it_twice ?? true,
+          allowRabbitHunt: clubData.allow_rabbit_hunt ?? true,
           minBuyInBB: clubData.min_buyin_bb || 40,
           maxBuyInBB: clubData.max_buyin_bb || 200,
         },
@@ -863,8 +870,8 @@ export default function ClubDetailPage() {
     try {
       const safeNum = (val: number, fallback: number) => (isNaN(val) ? fallback : val);
       const updates = {
-        name: settingsForm.name || club.name,
-        description: settingsForm.description || club.description,
+        name: sanitizeInput(settingsForm.name || club.name),
+        description: sanitizeInput(settingsForm.description || club.description),
         is_public: settingsForm.isPublic,
         requires_approval: settingsForm.requiresApproval,
         default_rake_percent: safeNum(
@@ -877,6 +884,7 @@ export default function ClubDetailPage() {
         time_bank_seconds: safeNum(settingsForm.timeBankSeconds, club.settings.timeBankSeconds),
         allow_straddle: settingsForm.allowStraddle,
         allow_run_it_twice: settingsForm.allowRunItTwice,
+        allow_rabbit_hunt: settingsForm.allowRabbitHunt,
       };
       await ClubsService.updateClub(clubId, updates);
       toast.success('Settings saved successfully!');
@@ -896,8 +904,9 @@ export default function ClubDetailPage() {
     memberUserId: string,
     action: 'promote' | 'demote' | 'suspend' | 'remove'
   ) => {
-    if (!clubId) return;
+    if (!clubId || memberActionLoading) return;
     setShowMemberMenu(null);
+    setMemberActionLoading(memberUserId);
     try {
       switch (action) {
         case 'promote': {
@@ -933,8 +942,22 @@ export default function ClubDetailPage() {
       loadClubData();
     } catch (error) {
       toast.error(`Failed to ${action} member`);
+    } finally {
+      setMemberActionLoading(null);
     }
   };
+
+  // #6: Keyboard shortcut: Ctrl+S to save settings
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        if (activeTab === 'settings' && !savingSettings) handleSaveSettings();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [activeTab, savingSettings]);
 
   if (loading) {
     return (
@@ -1272,12 +1295,12 @@ export default function ClubDetailPage() {
               >
                 <CircularGauge
                   value={
-                    members.length > 0
-                      ? Math.min(100, Math.round((onlineCount / members.length) * 100))
+                    (club?.memberCount || 0) > 0
+                      ? Math.min(100, Math.round((onlineCount / (club?.memberCount || 1)) * 100))
                       : 0
                   }
                   label="Activity Rate"
-                  sublabel={`${onlineCount} of ${members.length} online`}
+                  sublabel={`${onlineCount} of ${club?.memberCount || 0} online`}
                   accent="#22c55e"
                   size={100}
                 />

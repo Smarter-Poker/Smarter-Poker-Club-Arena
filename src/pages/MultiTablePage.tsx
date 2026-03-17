@@ -138,7 +138,22 @@ export default function MultiTablePage() {
   useMasterBusSubscription('TABLE_LEFT', (payload: LeftPayload) => {
     const e = payload;
     if (e.tableId) {
-      setTables((prev) => prev.filter((t) => t.id !== e.tableId));
+      setTables((prev) => {
+        const newTables = prev.filter((t) => t.id !== e.tableId);
+        // If all tables closed, navigate to lobby
+        if (newTables.length === 0) {
+          navigate('/lobby');
+        }
+        return newTables;
+      });
+      // Adjust activeIndex to prevent out-of-bounds or pointing at wrong tab
+      setActiveIndex((prevIdx) => {
+        const closedIdx = tables.findIndex((t) => t.id === e.tableId);
+        if (closedIdx === -1) return prevIdx;
+        if (closedIdx < prevIdx) return prevIdx - 1;
+        if (closedIdx === prevIdx && prevIdx > 0) return prevIdx - 1;
+        return prevIdx;
+      });
     }
   });
 

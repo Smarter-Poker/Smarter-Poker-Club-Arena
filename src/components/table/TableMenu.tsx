@@ -121,12 +121,17 @@ export function TableMenu({
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
 
   useEffect(() => {
+    if (!isOpen) {
+      // Reset animation state when menu closes so items animate in on next open
+      setVisibleItems(new Set());
+      return;
+    }
     const allActions = sections.flatMap((s) => s.actions);
     const timeouts = allActions.map((_, i) =>
       setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 40)
     );
     return () => timeouts.forEach((t) => clearTimeout(t));
-  }, [sections.length]);
+  }, [isOpen, sections.length]);
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Close on click outside

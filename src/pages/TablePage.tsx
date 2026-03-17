@@ -5170,12 +5170,12 @@ export default function TablePage({
       <TableMenu
         isOpen={showTableMenu}
         onClose={() => setShowTableMenu(false)}
-        onToggle={() => setShowTableMenu(!showTableMenu)}
+        onToggle={() => setShowTableMenu((prev) => !prev)}
         sections={[
           {
             title: 'Quick Actions',
             actions: [
-              { id: 'sitout', label: 'Sit Out', icon: '', onClick: () => {} },
+              { id: 'sitout', label: 'Sit Out', icon: '', onClick: () => setShowSitOut(true) },
               ...(tableState.isTournament
                 ? [
                     { id: 'rebuy', label: 'Rebuy', icon: '', onClick: handleTournamentRebuy },
@@ -5195,6 +5195,12 @@ export default function TablePage({
             title: 'Table Info',
             actions: [
               {
+                id: 'history',
+                label: 'Hand History',
+                icon: '',
+                onClick: () => setShowHandReplay(true),
+              },
+              {
                 id: 'leaderboard',
                 label: 'Leaderboard',
                 icon: '',
@@ -5211,6 +5217,17 @@ export default function TablePage({
                   ]
                 : []),
               { id: 'settings', label: 'Settings', icon: '', onClick: () => setShowSettings(true) },
+            ],
+          },
+          {
+            title: 'Support',
+            actions: [
+              {
+                id: 'help',
+                label: 'Help & Rules',
+                icon: '❓',
+                onClick: () => setShowGameRules(true),
+              },
             ],
           },
           {

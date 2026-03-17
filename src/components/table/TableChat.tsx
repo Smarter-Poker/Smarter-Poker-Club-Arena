@@ -55,12 +55,6 @@ function formatTime(date: Date): string {
   });
 }
 
-// Quick emoji buttons (REMOVED as per request)
-const QUICK_EMOJIS: string[] = [];
-
-// Quick Chat preset phrases for one-tap sending (REMOVED as per request)
-const QUICK_CHAT_PHRASES: string[] = [];
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // SUB-COMPONENTS
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -139,7 +133,6 @@ export function TableChat({
   isMuted = false,
 }: TableChatProps) {
   const [inputValue, setInputValue] = useState('');
-  const [showEmojis, setShowEmojis] = useState(false);
   const [newMessageIds, setNewMessageIds] = useState<Set<string>>(new Set());
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -184,7 +177,6 @@ export function TableChat({
     if (inputValue.trim() && !isDisabled) {
       onSendMessage(inputValue.trim());
       setInputValue('');
-      setShowEmojis(false);
     }
   }, [inputValue, isDisabled, onSendMessage]);
 
@@ -194,12 +186,6 @@ export function TableChat({
       e.preventDefault();
       handleSend();
     }
-  };
-
-  // Quick emoji click
-  const handleQuickEmoji = (emoji: string) => {
-    onSendMessage(emoji);
-    setShowEmojis(false);
   };
 
   // When muted, don't render the chat at all — just a silent icon
@@ -266,7 +252,7 @@ export function TableChat({
           className="table-chat__input"
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
-          onKeyPress={handleKeyPress}
+          onKeyDown={handleKeyPress}
           placeholder={placeholder}
           disabled={isDisabled}
           maxLength={200}

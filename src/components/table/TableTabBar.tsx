@@ -111,7 +111,7 @@ export function TableTabBar({
             action: 'LEAVE_TABLE',
           }),
       }),
-    [activeTabId, onTabClose]
+    [activeTabId]
   );
 
   return (

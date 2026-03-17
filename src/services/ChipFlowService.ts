@@ -22,6 +22,7 @@ import { WalletService } from './WalletService';
 import { masterBus } from '../core/MasterBus';
 import { FinancialAlertService } from './FinancialAlertService';
 import { retryAsync } from '../utils/retryAsync';
+import { QUERY_LIMITS } from '../lib/constants';
 
 // Exact cent precision — never round
 const exact = (v: number): number => Math.trunc(v * 100) / 100;
@@ -365,7 +366,7 @@ export const ChipFlowService = {
       )
       .eq('user_id', userId)
       .order('created_at', { ascending: true })
-      .limit(1000);
+      .limit(QUERY_LIMITS.LARGE);
 
     if (error) throw error;
     return data || [];

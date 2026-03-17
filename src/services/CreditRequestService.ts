@@ -11,6 +11,7 @@ import { supabase } from '../lib/supabase';
 import { pushNotificationService } from './PushNotificationService';
 import { retryAsync } from '../utils/retryAsync';
 import { masterBus } from '../core/MasterBus';
+import { QUERY_LIMITS } from '../lib/constants';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -98,7 +99,7 @@ class CreditRequestServiceClass {
       )
       .eq('approver_id', approverId)
       .order('created_at', { ascending: false })
-      .limit(200);
+      .limit(QUERY_LIMITS.LIST);
 
     if (error) throw error;
     return (data || []).map(this.mapRequest);
@@ -115,7 +116,7 @@ class CreditRequestServiceClass {
       )
       .eq('requester_id', requesterId)
       .order('created_at', { ascending: false })
-      .limit(200);
+      .limit(QUERY_LIMITS.LIST);
 
     if (error) throw error;
     return (data || []).map(this.mapRequest);

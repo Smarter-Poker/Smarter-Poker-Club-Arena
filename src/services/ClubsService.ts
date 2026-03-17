@@ -8,6 +8,7 @@
 import { supabase, getAuthUser } from '@/lib/supabase';
 import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
+import { QUERY_LIMITS } from '../lib/constants';
 import type {
   Club,
   ClubWithDistance,
@@ -421,7 +422,7 @@ export async function getClubMembers(clubId: string): Promise<ClubMember[]> {
     )
     .eq('club_id', resolvedId)
     .order('reputation_xp', { ascending: false })
-    .limit(500);
+    .limit(QUERY_LIMITS.MODERATE);
 
   if (error) {
     console.error('[ClubsService] Get club members failed:', error);

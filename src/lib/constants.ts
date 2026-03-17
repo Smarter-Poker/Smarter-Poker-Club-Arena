@@ -209,3 +209,21 @@ export const DEFAULT_RAKE_CONFIG = {
   noFlop: true, // No flop, no drop
   minPotForRake: 5,
 } as const;
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// QUERY LIMITS — Supabase .limit() values for different query categories
+// Centralised so pagination limits can be tuned globally.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export const QUERY_LIMITS = {
+  /** Feeds, lists, recent items (default) */
+  LIST: 200,
+  /** Moderate-size queries: members, agents, achievements */
+  MODERATE: 500,
+  /** Large page/dashboard data loads */
+  LARGE: 1_000,
+  /** Bulk operations: settlements, leaderboards, member rosters */
+  BULK: 5_000,
+  /** Full aggregations: rake history, player snapshots */
+  AGGREGATE: 10_000,
+} as const;

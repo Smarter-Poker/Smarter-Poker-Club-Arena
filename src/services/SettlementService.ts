@@ -20,6 +20,7 @@ import { pushNotificationService } from './PushNotificationService';
 import { masterBus } from '../core/MasterBus';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { retryAsync } from '../utils/retryAsync';
+import { QUERY_LIMITS } from '../lib/constants';
 // Use globalThis.crypto for browser-safe UUID generation
 const generateUUID = (): string =>
   typeof globalThis.crypto?.randomUUID === 'function'
@@ -314,7 +315,7 @@ export const SettlementService = {
       .select('*, agents:agent_id(user_id)')
       .eq('period_id', periodId)
       .eq('status', 'approved')
-      .limit(5000);
+      .limit(QUERY_LIMITS.BULK);
 
     let agentsPaid = 0;
     let totalDisbursed = 0;
@@ -433,7 +434,7 @@ export const SettlementService = {
       .select('id, player_id, rakeback_earned, period_id')
       .eq('period_id', periodId)
       .gt('rakeback_earned', 0)
-      .limit(10000);
+      .limit(QUERY_LIMITS.AGGREGATE);
 
     let playersWithRakeback = 0;
     for (const snapshot of playerSnapshots || []) {

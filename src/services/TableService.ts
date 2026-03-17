@@ -9,6 +9,7 @@ import { WalletService } from './WalletService';
 import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
+import { QUERY_LIMITS } from '../lib/constants';
 
 class TableService {
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -30,7 +31,7 @@ class TableService {
       .eq('is_deleted', false)
       .neq('status', 'closed')
       .order('created_at', { ascending: false })
-      .limit(200);
+      .limit(QUERY_LIMITS.LIST);
 
     if (error) {
       console.error('[TableService] Error fetching club tables:', error);
@@ -772,7 +773,11 @@ class TableService {
    */
   async getTableStats(tableId: string) {
     const [rakeData, handData] = await Promise.all([
-      supabase.from('rake_history').select('rake_amount').eq('table_id', tableId).limit(10000),
+      supabase
+        .from('rake_history')
+        .select('rake_amount')
+        .eq('table_id', tableId)
+        .limit(QUERY_LIMITS.AGGREGATE),
       supabase
         .from('hand_history')
         .select('id', { count: 'exact', head: true })

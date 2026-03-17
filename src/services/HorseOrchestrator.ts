@@ -28,6 +28,7 @@ import { supabase } from '../lib/supabase';
 import { HydraService } from './HydraService';
 import { tournamentService } from './TournamentService';
 import { RakeService } from './RakeService';
+import { QUERY_LIMITS } from '../lib/constants';
 import { masterBus } from '../core/MasterBus';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 
@@ -2112,7 +2113,7 @@ class HorseOrchestrator {
         .from('profiles')
         .select('id, username')
         .eq('is_horse', true)
-        .limit(200);
+        .limit(QUERY_LIMITS.LIST);
 
       if (horsesError || !horses?.length) {
         this.logError(`Failed to fetch horses: ${horsesError?.message || 'No horses found'}`);

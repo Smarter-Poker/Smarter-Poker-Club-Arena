@@ -9,6 +9,7 @@
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { resolveClubUUID } from '../utils/clubIdResolver';
+import { QUERY_LIMITS } from '../lib/constants';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -465,7 +466,7 @@ class UnionServiceClass {
       )
       .eq('union_id', unionId)
       .order('joined_at', { ascending: false })
-      .limit(200);
+      .limit(QUERY_LIMITS.LIST);
 
     if (error) throw error;
 
@@ -493,7 +494,7 @@ class UnionServiceClass {
             .select('amount')
             .eq('club_id', uc.club_id)
             .gte('created_at', oneWeekAgo)
-            .limit(5000);
+            .limit(QUERY_LIMITS.BULK);
           weeklyRake = (rakeData || []).reduce((sum, r) => sum + Number(r.amount || 0), 0);
         } catch (err) {
           console.error('[UnionService] Rake query failed:', err);

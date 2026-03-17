@@ -16,6 +16,7 @@ import { ChipFlowService } from './ChipFlowService';
 import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
+import { QUERY_LIMITS } from '../lib/constants';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -109,7 +110,7 @@ class AgentServiceClass {
       .select('*')
       .eq('club_id', resolvedId)
       .order('joined_at', { ascending: false })
-      .limit(500);
+      .limit(QUERY_LIMITS.MODERATE);
 
     if (error) throw error;
     if (!data || data.length === 0) return [];
@@ -758,7 +759,7 @@ class AgentServiceClass {
       .from('club_members')
       .select('club_id, user_id, chip_balance, joined_at')
       .eq('agent_id', agent.membership_id)
-      .limit(500);
+      .limit(QUERY_LIMITS.MODERATE);
 
     if (error) throw error;
     if (!data || data.length === 0) return [];

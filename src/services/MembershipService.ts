@@ -21,6 +21,7 @@
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { resolveClubUUID } from '../utils/clubIdResolver';
+import { QUERY_LIMITS } from '../lib/constants';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -105,7 +106,7 @@ export const MembershipService = {
       .select('club_id, user_id, role, status, joined_at, invited_by, agent_id, notes')
       .eq('club_id', resolvedId)
       .order('joined_at', { ascending: false })
-      .limit(5000);
+      .limit(QUERY_LIMITS.BULK);
 
     if (error) throw error;
     if (!data || data.length === 0) return [];
@@ -270,7 +271,7 @@ export const MembershipService = {
       .in('status', ['active', 'approved'])
       .in('role', ['member', 'guest'])
       .order('joined_at', { ascending: false })
-      .limit(500);
+      .limit(QUERY_LIMITS.MODERATE);
 
     if (error) throw error;
     if (!data || data.length === 0) return [];

@@ -6,6 +6,7 @@
 
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
+import { QUERY_LIMITS } from '../lib/constants';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -138,7 +139,7 @@ class ReferralService {
         .from('referral_redemptions')
         .select('chips_awarded_referrer')
         .eq('referrer_id', userId)
-        .limit(5000);
+        .limit(QUERY_LIMITS.BULK);
 
       const totalReferrals = redemptions?.length || 0;
       const totalChipsEarned = (redemptions || []).reduce(

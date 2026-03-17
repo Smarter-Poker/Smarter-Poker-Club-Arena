@@ -16,6 +16,7 @@ import { FinancialAlertService } from './FinancialAlertService';
 import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
+import { QUERY_LIMITS } from '../lib/constants';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -129,7 +130,7 @@ export const DisputeService = {
       )
       .eq('club_id', await resolveClubUUID(clubId))
       .order('created_at', { ascending: false })
-      .limit(200);
+      .limit(QUERY_LIMITS.LIST);
 
     if (status) query = query.eq('status', status);
 
@@ -149,7 +150,7 @@ export const DisputeService = {
       )
       .eq('submitted_by', userId)
       .order('created_at', { ascending: false })
-      .limit(200);
+      .limit(QUERY_LIMITS.LIST);
 
     if (error) throw error;
     return (data || []).map(this.mapDispute);
@@ -242,45 +243,42 @@ export const DisputeService = {
             ? 'atomic_credit_wallet_and_log'
             : 'atomic_deduct_wallet_and_log';
 
-        try {
-          const { error: adjustErr } = await retryAsync(
-            () =>
-              supabase.rpc(rpcName, {
-                p_user_id: dispute.submitted_by,
-                p_amount: resolution.adjustmentAmount,
-                p_category: 'dispute_resolution',
-                p_description: `Dispute ${disputeId} resolved: ${resolution.resolution}`,
-                p_table_id: null,
-                p_hand_id: null,
-                p_related_entity_id: disputeId,
-              }),
-            3
+        const { error: adjustErr } = await retryAsync(
+          () =>
+            supabase.rpc(rpcName, {
+              p_user_id: dispute.submitted_by,
+              p_amount: resolution.adjustmentAmount,
+              p_category: 'dispute_resolution',
+              p_description: `Dispute ${disputeId} resolved: ${resolution.resolution}`,
+              p_table_id: null,
+              p_hand_id: null,
+              p_related_entity_id: disputeId,
+            }),
+          3
+        );
+
+        if (adjustErr) {
+          // Dispute is already marked resolved. Log alert but don't fail (dispute is safe).
+          await FinancialAlertService.logWarning(
+            'DisputeService',
+            `Dispute ${disputeId}: status resolved but wallet adjustment failed — manual action needed`,
+            {
+              disputeId,
+              adjustmentType: resolution.adjustmentType,
+              adjustmentAmount: resolution.adjustmentAmount,
+              error: adjustErr.message,
+            }
           );
-
-          if (adjustErr) {
-            // Dispute is already marked resolved. Log alert but don't fail (dispute is safe).
-            await FinancialAlertService.logWarning(
-              'DisputeService',
-              `Dispute ${disputeId}: status resolved but wallet adjustment failed — manual action needed`,
-              {
-                disputeId,
-                adjustmentType: resolution.adjustmentType,
-                adjustmentAmount: resolution.adjustmentAmount,
-                error: adjustErr.message,
-              }
-            );
-            throw new Error(`Wallet adjustment failed (dispute marked resolved): ${adjustErr.message}`);
-          }
-
-          masterBus.emit('BALANCE_UPDATED', {
-            source: 'dispute_resolution',
-            userId: dispute.submitted_by,
-            disputeId,
-          });
-        } catch (err: any) {
-          // If wallet fails after status is updated, ops can safely retry just the wallet adjustment
-          throw err;
+          throw new Error(
+            `Wallet adjustment failed (dispute marked resolved): ${adjustErr.message}`
+          );
         }
+
+        masterBus.emit('BALANCE_UPDATED', {
+          source: 'dispute_resolution',
+          userId: dispute.submitted_by,
+          disputeId,
+        });
       }
     }
 

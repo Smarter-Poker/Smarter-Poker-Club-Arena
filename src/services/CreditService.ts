@@ -25,6 +25,7 @@ import { SettlementService } from './SettlementService';
 import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
+import { QUERY_LIMITS } from '../lib/constants';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -366,7 +367,7 @@ export const CreditService = {
       )
       .eq('agent_id', agentId)
       .order('created_at', { ascending: false })
-      .limit(200);
+      .limit(QUERY_LIMITS.LIST);
 
     if (error) throw error;
 

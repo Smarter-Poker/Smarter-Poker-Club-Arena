@@ -10,6 +10,7 @@
 
 import { supabase } from '../lib/supabase';
 import { blockService } from './BlockService';
+import { QUERY_LIMITS } from '../lib/constants';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -220,7 +221,7 @@ class FriendSuggestionServiceClass {
         .select('hand_id')
         .eq('user_id', userId)
         .gte('created_at', sevenDaysAgo)
-        .limit(200);
+        .limit(QUERY_LIMITS.LIST);
       if (hErr) console.warn('[FriendSuggestions] getRecentOpponents hands error:', hErr.message);
 
       if (!myHands || myHands.length === 0) return [];

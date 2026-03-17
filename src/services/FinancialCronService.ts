@@ -18,6 +18,7 @@ import { CreditService } from './CreditService';
 import { FinancialAlertService } from './FinancialAlertService';
 import { masterBus } from '../core/MasterBus';
 import { rakebackEngine } from '../engine/RakebackEngine';
+import { QUERY_LIMITS } from '../lib/constants';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -301,7 +302,7 @@ export const FinancialCronService = {
         .from('clubs')
         .select('id')
         .eq('status', 'active')
-        .limit(500);
+        .limit(QUERY_LIMITS.MODERATE);
 
       if (!clubs || clubs.length === 0) return { clubsSettled, totalDistributed };
 

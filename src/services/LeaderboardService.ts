@@ -13,6 +13,7 @@ import { supabase } from '../lib/supabase';
 import { VIP_GOLD_LIMITS } from './VIPService';
 import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
+import { QUERY_LIMITS } from '../lib/constants';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -361,7 +362,7 @@ export const LeaderboardService = {
         )
         .eq('club_id', await resolveClubUUID(clubId))
         .order(orderCol, { ascending: false })
-        .limit(5000);
+        .limit(QUERY_LIMITS.BULK);
 
       if (error || !allStats) {
         console.error('LeaderboardService.getUserRank error:', error);
@@ -405,7 +406,7 @@ export const LeaderboardService = {
         )
         .eq('tournaments.club_id', clubId)
         .in('status', ['eliminated', 'winner'])
-        .limit(10000);
+        .limit(QUERY_LIMITS.AGGREGATE);
 
       if (resultsError || !playerResults) {
         console.error('LeaderboardService.getClubTournamentStats error:', resultsError);

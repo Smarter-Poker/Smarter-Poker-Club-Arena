@@ -6,10 +6,8 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { supabase } from '../../lib/supabase';
 import { STORAGE_KEYS } from '../../lib/storage';
 import { triggerHaptic } from '../../services/HapticService';
-import { masterBus } from '../../core/MasterBus';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import type { ChatMessage } from './TableChat';
 

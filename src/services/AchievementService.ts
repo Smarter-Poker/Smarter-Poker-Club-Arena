@@ -7,6 +7,7 @@
 
 import { supabase } from '../lib/supabase';
 import { retryAsync } from '../utils/retryAsync';
+import { QUERY_LIMITS } from '../lib/constants';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -323,7 +324,7 @@ class AchievementServiceClass {
       .from('user_achievements')
       .select('id, achievement_id, user_id, progress, unlocked_at')
       .eq('user_id', userId)
-      .limit(500);
+      .limit(QUERY_LIMITS.MODERATE);
 
     if (error) {
       console.error('[AchievementService] Error fetching achievements:', error);

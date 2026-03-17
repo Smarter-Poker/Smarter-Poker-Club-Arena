@@ -1995,29 +1995,13 @@ export default function TablePage({
           const senderId = msg.sender || chatPayload?.user_id || '';
 
           // Get player name if seated, otherwise fallback
-          const seatedPlayer = Array.from(tableState.players).find((p) => p && p.id === senderId);
-          const senderName = seatedPlayer?.name || chatPayload?.display_name || 'Player';
-
           if (!content) break;
 
-          // Check if it's a special message (reaction/throw) — processes animation for all users (including sender)
-          if (parseIncomingMessage(content, senderId)) break;
-
-          // Skip normal chat if sent by us (we already added it optimistically to chat display)
-          if (senderId === userId) break;
-
-          // Normal chat message — add to display
-          setChatMessages((prev) => [
-            ...prev,
-            {
-              id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-              type: 'PLAYER' as const,
-              playerId: senderId,
-              playerName: senderName,
-              content,
-              timestamp: new Date(),
-            },
-          ]);
+          // Check if it's a special message (reaction/throw).
+          // Processes animation for all users (including sender).
+          // Normal chat messages return false and are safely ignored,
+          // as they are handled natively by the useTableChat Supabase Postgres listener.
+          parseIncomingMessage(content, senderId);
           break;
         }
       }

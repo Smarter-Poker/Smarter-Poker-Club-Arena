@@ -12,6 +12,7 @@ import { WalletService } from './WalletService';
 import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
 import { STORAGE_KEYS } from '../lib/storage';
+import { QUERY_LIMITS } from '../lib/constants';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -488,7 +489,7 @@ class DailyChallengeServiceClass {
       .select('challenge_id, completed, assigned_date')
       .eq('user_id', userId)
       .eq('completed', true)
-      .limit(500);
+      .limit(QUERY_LIMITS.MODERATE);
     if (statErr) console.warn('[DailyChallenge] getStats error:', statErr.message);
 
     if (!data) {

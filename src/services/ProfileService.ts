@@ -7,6 +7,7 @@
 
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
+import { QUERY_LIMITS } from '../lib/constants';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -257,7 +258,7 @@ class ProfileServiceClass {
       .from('hand_players')
       .select('chips_won, chips_lost, is_winner, hands(game_type)')
       .eq('user_id', userId)
-      .limit(5000);
+      .limit(QUERY_LIMITS.BULK);
 
     if (!data || data.length === 0) {
       return {

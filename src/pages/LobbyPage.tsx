@@ -249,7 +249,7 @@ export default function LobbyPage() {
       const results = await Promise.allSettled(
         tableIds.map(async (tid) => {
           const { data } = await supabase
-            .from('table_waitlist')
+            .from('table_waitlists')
             .select('position')
             .eq('table_id', tid)
             .eq('user_id', user.id)
@@ -281,7 +281,7 @@ export default function LobbyPage() {
     setWaitlistProcessing(tableId);
     try {
       const { data, error: wErr } = await supabase
-        .from('table_waitlist')
+        .from('table_waitlists')
         .insert({ table_id: tableId, user_id: user.id })
         .select('position')
         .maybeSingle();
@@ -304,7 +304,7 @@ export default function LobbyPage() {
     setWaitlistProcessing(tableId);
     try {
       const { error: wlErr } = await supabase
-        .from('table_waitlist')
+        .from('table_waitlists')
         .delete()
         .eq('table_id', tableId)
         .eq('user_id', user.id);

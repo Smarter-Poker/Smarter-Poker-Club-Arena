@@ -11,6 +11,8 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { haptic } from '../../services/SoundService';
 import { masterBus } from '../../core/MasterBus';
+import { CardImage } from './CardImage';
+import type { Card as CardImageCard } from './CardImage';
 import './InsuranceModal.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -48,22 +50,13 @@ type ModalTab = 'insurance' | 'ev-cashout';
 // UTILITIES
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const SUIT_SYMBOLS: Record<string, string> = {
-  h: '♥',
-  d: '♦',
-  c: '♣',
-  s: '♠',
-};
+function normalizeRank(rank: string): CardImageCard['rank'] {
+  if (rank === '10') return 'T';
+  return rank as CardImageCard['rank'];
+}
 
-const SUIT_COLORS: Record<string, string> = {
-  h: '#F85149',
-  d: '#1877F2',
-  c: '#3FB950',
-  s: '#E4E6EB',
-};
-
-function formatCard(card: { rank: string; suit: string }): string {
-  return `${card.rank}${SUIT_SYMBOLS[card.suit]}`;
+function toCardImage(card: { rank: string; suit: 'h' | 'd' | 'c' | 's' }): CardImageCard {
+  return { rank: normalizeRank(card.rank), suit: card.suit };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -200,12 +193,8 @@ export function InsuranceModal({
             <span className="insurance-modal__hand-label">Your Hand</span>
             <div className="insurance-modal__hand-cards">
               {offer.yourCards.map((card, i) => (
-                <span
-                  key={i}
-                  className="insurance-modal__card"
-                  style={{ color: SUIT_COLORS[card.suit] }}
-                >
-                  {formatCard(card)}
+                <span key={i} className="insurance-modal__card">
+                  <CardImage card={toCardImage(card)} deckStyle="4color" size="xs" />
                 </span>
               ))}
             </div>
@@ -216,12 +205,8 @@ export function InsuranceModal({
             <div className="insurance-modal__hand-cards">
               {offer.opponentCards ? (
                 offer.opponentCards.map((card, i) => (
-                  <span
-                    key={i}
-                    className="insurance-modal__card"
-                    style={{ color: SUIT_COLORS[card.suit] }}
-                  >
-                    {formatCard(card)}
+                  <span key={i} className="insurance-modal__card">
+                    <CardImage card={toCardImage(card)} deckStyle="4color" size="xs" />
                   </span>
                 ))
               ) : (
@@ -237,12 +222,8 @@ export function InsuranceModal({
         {/* Board */}
         <div className="insurance-modal__board">
           {offer.board.map((card, i) => (
-            <span
-              key={i}
-              className="insurance-modal__board-card"
-              style={{ color: SUIT_COLORS[card.suit] }}
-            >
-              {formatCard(card)}
+            <span key={i} className="insurance-modal__board-card">
+              <CardImage card={toCardImage(card)} deckStyle="4color" size="xs" />
             </span>
           ))}
         </div>

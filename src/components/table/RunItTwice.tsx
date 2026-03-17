@@ -10,6 +10,8 @@
  */
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { CardImage } from './CardImage';
+import type { Card as CardImageCard } from './CardImage';
 import './RunItTwice.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -45,22 +47,13 @@ export interface RunItTwiceBoardProps {
 // UTILITIES
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const SUIT_SYMBOLS: Record<string, string> = {
-  h: '♥',
-  d: '♦',
-  c: '♣',
-  s: '♠',
-};
+function normalizeRank(rank: string): CardImageCard['rank'] {
+  if (rank === '10') return 'T';
+  return rank as CardImageCard['rank'];
+}
 
-const SUIT_COLORS: Record<string, string> = {
-  h: '#F85149',
-  d: '#1877F2',
-  c: '#3FB950',
-  s: '#E4E6EB',
-};
-
-function formatCard(card: Card): string {
-  return `${card.rank}${SUIT_SYMBOLS[card.suit]}`;
+function toCardImage(card: Card): CardImageCard {
+  return { rank: normalizeRank(card.rank), suit: card.suit };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -184,22 +177,14 @@ export function RunItTwiceBoard({
         <div className="rit-board__cards">
           {/* Current board (faded) */}
           {currentBoard.map((card, i) => (
-            <span
-              key={`base-${i}`}
-              className="rit-board__card rit-board__card--base"
-              style={{ color: SUIT_COLORS[card.suit] }}
-            >
-              {formatCard(card)}
+            <span key={`base-${i}`} className="rit-board__card rit-board__card--base">
+              <CardImage card={toCardImage(card)} deckStyle="4color" size="xs" />
             </span>
           ))}
           {/* Run 1 cards */}
           {run1Cards.map((card, i) => (
-            <span
-              key={`run1-${i}`}
-              className="rit-board__card rit-board__card--new"
-              style={{ color: SUIT_COLORS[card.suit] }}
-            >
-              {formatCard(card)}
+            <span key={`run1-${i}`} className="rit-board__card rit-board__card--new">
+              <CardImage card={toCardImage(card)} deckStyle="4color" size="xs" />
             </span>
           ))}
         </div>
@@ -218,22 +203,14 @@ export function RunItTwiceBoard({
         <div className="rit-board__cards">
           {/* Current board (faded) */}
           {currentBoard.map((card, i) => (
-            <span
-              key={`base-${i}`}
-              className="rit-board__card rit-board__card--base"
-              style={{ color: SUIT_COLORS[card.suit] }}
-            >
-              {formatCard(card)}
+            <span key={`base-${i}`} className="rit-board__card rit-board__card--base">
+              <CardImage card={toCardImage(card)} deckStyle="4color" size="xs" />
             </span>
           ))}
           {/* Run 2 cards */}
           {run2Cards.map((card, i) => (
-            <span
-              key={`run2-${i}`}
-              className="rit-board__card rit-board__card--new"
-              style={{ color: SUIT_COLORS[card.suit] }}
-            >
-              {formatCard(card)}
+            <span key={`run2-${i}`} className="rit-board__card rit-board__card--new">
+              <CardImage card={toCardImage(card)} deckStyle="4color" size="xs" />
             </span>
           ))}
         </div>

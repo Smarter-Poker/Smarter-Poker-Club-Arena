@@ -903,30 +903,30 @@ export default function TablePage({
         }
         return { ...prev, players: updatedPlayers };
       });
-      // Sync stack to Supabase table_seats (with retry for resilience)
-      // Compute the NEW stack directly — tableState hasn't updated yet (setState is async)
-      const currentStack = tableState.players[tableState.heroSeat - 1]?.stack || 0;
-      const newStack = currentStack + amount;
+      // Sync stack increment to Supabase table_seats (fire-and-forget with retry)
+      // Wallet debit already handled by WalletService.lockForBuyIn above.
+      // Use DB-side stack + amount to avoid stale-closure on tableState.players.
       retryAsync(
         async () =>
           await supabase
             .from('table_seats')
-            .update({ stack: newStack })
+            .update({ stack: (tableState.players[tableState.heroSeat - 1]?.stack || 0) + amount })
             .eq('table_id', tableId)
-            .eq('seat_number', tableState.heroSeat)
+            .eq('user_id', userId)
             .is('left_at', null),
         2,
         500
       )
         .then((result: any) => {
           if (result?.error)
-            console.warn('[Cashier] Add chips stack sync failed:', result.error.message);
+            console.warn('[Cashier] Add chips DB sync failed:', result.error.message);
         })
         .catch((err: unknown) => {
           console.warn('[Cashier] Add chips sync exhausted all retries:', err);
         });
       // Emit bus event so other pages (Dashboard, Profile) know about the chip change
-      masterBus.emit('CHIPS_ADDED', { tableId, userId, amount, newStack: newStack });
+      const estimatedNewStack = (tableState.players[tableState.heroSeat - 1]?.stack || 0) + amount;
+      masterBus.emit('CHIPS_ADDED', { tableId, userId, amount, newStack: estimatedNewStack });
     } catch (error) {
       console.error('Failed to add chips:', error);
       // Surface error to user — alert as fallback since toast not always available
@@ -5117,7 +5117,11 @@ export default function TablePage({
                 roomService.joinRoom(tableId, userId, username || 'Player', selectedSeat, amount);
 
                 // Notify all consumers (MultiTablePage tabs, WaitlistPage, ClubLobby, DailyChallenges, etc.)
-                masterBus.emit('TABLE_SEATED', { tableId, seat: selectedSeat });
+                masterBus.emit('TABLE_SEATED', {
+                  tableId,
+                  seat: selectedSeat,
+                  tableName: tableState.tableName,
+                });
 
                 // Player seated successfully
               } catch (error) {
@@ -5140,6 +5144,7 @@ export default function TablePage({
             setShowBuyInModal(false);
           } finally {
             buyInProcessingRef.current = false;
+            setSelectedSeat(null); // Reset to prevent stale seat on future interactions
           }
         }}
         tableName={tableState.tableName}

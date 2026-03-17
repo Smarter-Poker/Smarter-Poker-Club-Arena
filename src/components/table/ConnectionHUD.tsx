@@ -142,12 +142,16 @@ export const ConnectionHUD: React.FC<ConnectionHUDProps> = ({ tableId, userId })
       if (cancelled) return; // Stop if effect was cleaned up
       if (attempt >= MAX_RECONNECT_ATTEMPTS) {
         // Enhancement #6: Give up after max attempts
-        setIsReconnecting(false);
-        setReconnectAttempts(attempt);
+        if (!cancelled) {
+          setIsReconnecting(false);
+          setReconnectAttempts(attempt);
+        }
         return;
       }
-      setIsReconnecting(true);
-      setReconnectAttempts(attempt);
+      if (!cancelled) {
+        setIsReconnecting(true);
+        setReconnectAttempts(attempt);
+      }
       try {
         // Attempt reconnection via the disconnect protection service
         const svc = disconnectProtectionService as any;

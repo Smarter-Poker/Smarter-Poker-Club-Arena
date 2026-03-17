@@ -11,7 +11,6 @@ import { tournamentService } from '../../services/TournamentService';
 import { WalletService } from '../../services/WalletService';
 import { supabase } from '../../lib/supabase';
 import { waitForAuth } from '../../utils/waitForAuth';
-import { masterBus } from '../../core/MasterBus';
 import {
   useMasterBusSubscription,
   useMasterBusSubscriptions,

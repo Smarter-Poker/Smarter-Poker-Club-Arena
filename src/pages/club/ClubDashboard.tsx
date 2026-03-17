@@ -163,6 +163,8 @@ export default function ClubDashboard() {
       masterBus.subscribeDebounced('TABLE_CREATED', reload, 500),
       masterBus.subscribeDebounced('CHIPS_ADDED', reload, 500),
       masterBus.subscribeDebounced('CHIPS_WITHDRAWN', reload, 500),
+      masterBus.subscribeDebounced('ANNOUNCEMENT_CHANGED', reload, 500),
+      masterBus.subscribeDebounced('HAND_COMPLETED', reload, 1000),
       masterBus.subscribeDebounced('SETTLEMENT_CYCLE_COMPLETED', reload, 1000),
       masterBus.subscribeDebounced('COLLUSION_DETECTED', reload, 2000),
     ];

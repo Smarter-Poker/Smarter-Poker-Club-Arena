@@ -10,7 +10,6 @@
  */
 
 import { useEffect, useState, useRef } from 'react';
-import { masterBus } from '../core/MasterBus';
 import { useMasterBusSubscription } from '../hooks/useMasterBusSubscription';
 
 type ConnStatus = 'connected' | 'idle';

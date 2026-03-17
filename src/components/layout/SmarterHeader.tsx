@@ -11,7 +11,6 @@ import { useAuthUser } from '../../hooks/useAuthUser';
 import { useWalletStore } from '../../stores/useWalletStore';
 import { notificationService } from '../../services/NotificationService';
 import { messagingService } from '../../services/MessagingService';
-import { masterBus } from '../../core/MasterBus';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { useState, useEffect } from 'react';
 import './SmarterHeader.css';

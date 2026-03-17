@@ -7,7 +7,6 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
-import { masterBus } from '../../core/MasterBus';
 import { useMasterBusChannel } from '../../hooks/useMasterBusChannel';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { isToday, isYesterday } from '../../lib/date';

@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
-import { masterBus } from '../../core/MasterBus';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { useToast } from '../../components/common/Toast';
 import './AnalyticsDashboard.css';
@@ -267,6 +266,8 @@ export default function AnalyticsDashboard() {
   }, [refreshAll]);
 
   useMasterBusSubscription('HAND_COMPLETED', debouncedRefresh);
+  useMasterBusSubscription('BALANCE_UPDATED', refreshAll, { debounce: 2000 });
+  useMasterBusSubscription('CHIPS_DISTRIBUTED', refreshAll, { debounce: 2000 });
   useMasterBusSubscription('SETTLEMENT_COMPLETED', refreshAll, { debounce: 1000 });
   useMasterBusSubscription('MILESTONE_UNLOCKED', refreshAll, { debounce: 1000 });
   useMasterBusSubscription('COMPONENT_CRASH', (payload) => {

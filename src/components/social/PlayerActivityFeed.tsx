@@ -7,7 +7,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
-import { masterBus } from '../../core/MasterBus';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import './PlayerActivityFeed.css';
 

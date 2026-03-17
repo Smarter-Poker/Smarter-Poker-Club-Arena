@@ -59,9 +59,15 @@ export default function InvitePage() {
       () => loadClubInfo(() => isMounted),
       500
     );
+    const unsubUpdated = masterBus.subscribeDebounced(
+      'CLUB_UPDATED',
+      () => loadClubInfo(() => isMounted),
+      1000
+    );
     return () => {
       isMounted = false;
       unsubJoined();
+      unsubUpdated();
     };
   }, [clubId, inviteCode]);
 

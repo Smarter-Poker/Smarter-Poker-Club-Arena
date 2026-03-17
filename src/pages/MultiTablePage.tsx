@@ -16,7 +16,6 @@
 import React, { useState, useCallback, useRef, useEffect, useMemo, lazy, Suspense } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { TableTabBar, type TabInfo } from '../components/table/TableTabBar';
-import { masterBus } from '../core/MasterBus';
 import { useMasterBusSubscription } from '../hooks/useMasterBusSubscription';
 import './MultiTablePage.css';
 

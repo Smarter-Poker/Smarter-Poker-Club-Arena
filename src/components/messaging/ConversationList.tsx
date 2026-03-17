@@ -8,7 +8,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
-import { masterBus } from '../../core/MasterBus';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { useMasterBusChannel } from '../../hooks/useMasterBusChannel';
 import { useAuthUser } from '../../hooks/useAuthUser';

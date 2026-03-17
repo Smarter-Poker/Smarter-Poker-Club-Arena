@@ -8,7 +8,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
-import { masterBus } from '../../core/MasterBus';
 import { useMasterBusChannel } from '../../hooks/useMasterBusChannel';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { formatRelativeShort as formatTime } from '@/lib/date';

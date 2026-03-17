@@ -9,7 +9,6 @@ import {
   disconnectProtectionService,
   type ConnectionState,
 } from '../../services/DisconnectProtectionService';
-import { masterBus } from '../../core/MasterBus';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { haptic } from '../../services/SoundService';
 import './ConnectionHUD.css';

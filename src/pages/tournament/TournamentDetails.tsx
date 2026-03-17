@@ -9,6 +9,7 @@ import { tournamentService } from '../../services/TournamentService';
 import { WalletService } from '../../services/WalletService';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
+import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import type { Tournament } from '../../types/database.types';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import TournamentBracket from '../../components/tournament/TournamentBracket';
@@ -321,6 +322,17 @@ export default function TournamentDetails() {
     );
     return () => unsub();
   }, [user?.id]);
+
+  // ── Refresh tournament data when tournament is updated ──
+  useMasterBusSubscription(
+    'TOURNAMENT_UPDATED',
+    () => {
+      if (tournamentId) {
+        loadTournament();
+      }
+    },
+    { debounce: 500 }
+  );
 
   useEffect(() => {
     if (tournament?.start_time) {

@@ -12,7 +12,6 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
-import { masterBus } from '../../core/MasterBus';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import './ConnectionIndicator.css';
 

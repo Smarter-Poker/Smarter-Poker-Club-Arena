@@ -171,11 +171,21 @@ export default function LeaderboardPage() {
       () => loadLeaderboardRef.current(true),
       500
     );
+    const unsub5 = masterBus.subscribeDebounced(
+      'TOURNAMENT_UPDATED',
+      () => {
+        if (activeTabRef.current === 'tournaments') {
+          loadTournamentStatsRef.current();
+        }
+      },
+      2000
+    );
     return () => {
       unsub();
       unsub2();
       unsub3();
       unsub4();
+      unsub5();
     };
   }, []);
 

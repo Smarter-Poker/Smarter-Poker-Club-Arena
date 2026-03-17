@@ -10,7 +10,6 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { supabase } from '../../lib/supabase';
-import { masterBus } from '../../core/MasterBus';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import './FriendActivityFeed.css';
 

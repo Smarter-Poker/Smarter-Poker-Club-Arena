@@ -10,7 +10,6 @@ import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { useStaggerAnimation } from '../../hooks/useStaggerAnimation';
-import { masterBus } from '../../core/MasterBus';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import './TransactionHistory.css';
 

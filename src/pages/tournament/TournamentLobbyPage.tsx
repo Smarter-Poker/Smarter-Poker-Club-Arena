@@ -179,10 +179,20 @@ export default function TournamentLobbyPage() {
       500
     );
 
+    // New tournament table created - refresh list to show it
+    const unsubTableCreated = masterBus.subscribeDebounced(
+      'TABLE_CREATED',
+      () => {
+        loadTournamentsRef.current();
+      },
+      500
+    );
+
     return () => {
       unsubElim();
       unsubMerge();
       unsubBalance();
+      unsubTableCreated();
     };
   }, [clubId]);
 

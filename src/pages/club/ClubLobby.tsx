@@ -249,21 +249,21 @@ export default function ClubLobby() {
           .maybeSingle();
         if (isMountedRef.current && diamondData) setDiamondBalance(diamondData.balance || 0);
 
-        // Fetch user role for BottomNav
-        try {
-          const resolvedId = await resolveClubUUID(clubId);
-          const { data: membership } = await supabase
-            .from('club_members')
-            .select('role')
-            .eq('club_id', resolvedId)
-            .eq('user_id', currentUser.id)
-            .maybeSingle();
-          if (isMountedRef.current && membership?.role) {
-            setUserRole(membership.role as 'owner' | 'admin' | 'agent' | 'member');
+        // Fetch user role for BottomNav — reuse clubData.id (UUID) instead of re-resolving
+        if (clubData)
+          try {
+            const { data: membership } = await supabase
+              .from('club_members')
+              .select('role')
+              .eq('club_id', clubData.id)
+              .eq('user_id', currentUser.id)
+              .maybeSingle();
+            if (isMountedRef.current && membership?.role) {
+              setUserRole(membership.role as 'owner' | 'admin' | 'agent' | 'member');
+            }
+          } catch {
+            /* non-critical */
           }
-        } catch {
-          /* non-critical */
-        }
       }
     } catch (err) {
       console.error('[ClubLobby] Failed to load club data:', err);

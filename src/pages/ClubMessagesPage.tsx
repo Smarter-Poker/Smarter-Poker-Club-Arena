@@ -6,7 +6,7 @@
  * Separated from personal DMs for clean organization
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -47,6 +47,8 @@ export default function ClubMessagesPage() {
   const [userRole, setUserRole] = useState<'owner' | 'admin' | 'agent' | 'member'>('member');
   const [clubId, setClubId] = useState<string | undefined>(urlClubId);
   const [visibleConversations, setVisibleConversations] = useState<Set<string>>(new Set());
+  const [loadError, setLoadError] = useState(false);
+  const loadingRef = useRef(false);
 
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
 
@@ -81,7 +83,9 @@ export default function ClubMessagesPage() {
   const loadClubConversations = useCallback(
     async (getIsMounted?: () => boolean) => {
       if (!user?.id) return;
-
+      if (loadingRef.current) return;
+      loadingRef.current = true;
+      setLoadError(false);
       if (!getIsMounted || getIsMounted()) setLoading(true);
       try {
         const { data: clubConvs, error: convError } = await supabase
@@ -139,8 +143,10 @@ export default function ClubMessagesPage() {
         setConversations(mapped);
       } catch (error) {
         console.error('Failed to load club conversations:', error);
+        setLoadError(true);
         if (!getIsMounted || getIsMounted()) toast.error('Failed to load club conversations');
       }
+      loadingRef.current = false;
       if (!getIsMounted || getIsMounted()) setLoading(false);
     },
     [user?.id]
@@ -159,6 +165,7 @@ export default function ClubMessagesPage() {
           event: '*',
           schema: 'public',
           table: 'messages',
+          filter: `receiver_id=eq.${user?.id}`,
         },
         () => {
           if (!isMounted) return;
@@ -253,7 +260,26 @@ export default function ClubMessagesPage() {
 
       {/* Club Conversation List */}
       <div className="club-messages-list">
-        {loading ? (
+        {loadError && !loading ? (
+          <div style={{ textAlign: 'center', padding: '40px 20px', color: '#aaa' }}>
+            <p style={{ fontSize: '2rem', marginBottom: '8px' }}>⚠️</p>
+            <p style={{ marginBottom: '16px' }}>Failed to load conversations</p>
+            <button
+              onClick={() => loadClubConversations()}
+              style={{
+                padding: '10px 24px',
+                background: 'rgba(24, 119, 242, 0.15)',
+                border: '1px solid rgba(24, 119, 242, 0.3)',
+                borderRadius: '8px',
+                color: '#1877f2',
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+            >
+              Retry
+            </button>
+          </div>
+        ) : loading ? (
           <div className="loading-state">
             <PageSkeleton variant="list" />
           </div>

@@ -2,7 +2,7 @@
  *  CLUB ANNOUNCEMENTS PAGE — Live Updates
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -47,6 +47,8 @@ export default function ClubAnnouncementsPage() {
   const [newContent, setNewContent] = useState('');
   const [posting, setPosting] = useState(false);
   const [userRole, setUserRole] = useState<'owner' | 'admin' | 'agent' | 'member'>('member');
+  const [loadError, setLoadError] = useState(false);
+  const loadingRef = useRef(false);
 
   useEffect(() => {
     if (clubId) {
@@ -111,6 +113,9 @@ export default function ClubAnnouncementsPage() {
 
   const loadAnnouncements = async (getIsMounted?: () => boolean) => {
     if (!clubId) return;
+    if (loadingRef.current) return;
+    loadingRef.current = true;
+    setLoadError(false);
     if (!getIsMounted || getIsMounted()) setLoading(true);
     try {
       const resolvedId = await resolveClubUUID(clubId);
@@ -168,8 +173,10 @@ export default function ClubAnnouncementsPage() {
       }
     } catch (error) {
       console.error('Failed to load announcements:', error);
+      setLoadError(true);
       if (!getIsMounted || getIsMounted()) toast.error('Failed to load announcements');
     }
+    loadingRef.current = false;
     if (!getIsMounted || getIsMounted()) setLoading(false);
   };
 
@@ -266,6 +273,26 @@ export default function ClubAnnouncementsPage() {
 
   return (
     <div className="announcements-page">
+      {loadError && !loading && (
+        <div style={{ textAlign: 'center', padding: '40px 20px', color: '#aaa' }}>
+          <p style={{ fontSize: '2rem', marginBottom: '8px' }}>⚠️</p>
+          <p style={{ marginBottom: '16px' }}>Failed to load announcements</p>
+          <button
+            onClick={() => loadAnnouncements()}
+            style={{
+              padding: '10px 24px',
+              background: 'rgba(24, 119, 242, 0.15)',
+              border: '1px solid rgba(24, 119, 242, 0.3)',
+              borderRadius: '8px',
+              color: '#1877f2',
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
       {isAdmin && !showComposer && (
         <div className="admin-bar">
           <button className="btn btn-primary" onClick={() => setShowComposer(true)}>

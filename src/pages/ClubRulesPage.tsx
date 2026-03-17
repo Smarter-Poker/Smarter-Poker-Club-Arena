@@ -5,7 +5,7 @@
  * Admin-editable club rules that members see. Stored in club_settings.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -42,6 +42,8 @@ export default function ClubRulesPage() {
   const [saving, setSaving] = useState(false);
   const [clubName, setClubName] = useState('');
   const [userRole, setUserRole] = useState<'owner' | 'admin' | 'agent' | 'member'>('member');
+  const [loadError, setLoadError] = useState(false);
+  const loadingRef = useRef(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -50,6 +52,32 @@ export default function ClubRulesPage() {
       isMounted = false;
     };
   }, [clubId, user?.id]);
+
+  // ── WebSocket: live rule updates from other admins ──
+  useEffect(() => {
+    if (!clubId) return;
+    let isMounted = true;
+    const channelKey = `club-rules-${clubId}`;
+    const setup = async () => {
+      const resolvedId = await resolveClubUUID(clubId);
+      if (!isMounted) return;
+      const channel = masterBus.getOrCreateChannel(channelKey);
+      channel
+        .on(
+          'postgres_changes',
+          { event: 'UPDATE', schema: 'public', table: 'clubs', filter: `id=eq.${resolvedId}` },
+          () => {
+            if (isMounted && !isEditing) loadRules(() => isMounted);
+          }
+        )
+        .subscribe();
+    };
+    setup().catch((e) => console.warn('[ClubRulesPage] Realtime setup failed:', e));
+    return () => {
+      isMounted = false;
+      masterBus.removeRegisteredChannel(channelKey);
+    };
+  }, [clubId, isEditing]);
 
   // ── Bus Listener: reload rules if another admin updates the club ──
   useEffect(() => {
@@ -68,6 +96,9 @@ export default function ClubRulesPage() {
   }, [clubId, user?.id, isEditing]);
 
   const loadRules = async (getIsMounted?: () => boolean) => {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
+    setLoadError(false);
     setLoading(true);
     try {
       // Load club info
@@ -111,8 +142,10 @@ export default function ClubRulesPage() {
     } catch (err) {
       if (getIsMounted && !getIsMounted()) return;
       console.error('Failed to load rules:', err);
+      setLoadError(true);
       toast.error('Failed to load rules');
     }
+    loadingRef.current = false;
     if (getIsMounted && !getIsMounted()) return;
     setLoading(false);
   };
@@ -146,6 +179,32 @@ export default function ClubRulesPage() {
         <div className="loading-state">
           <PageSkeleton variant="settings" />
         </div>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="club-rules-page">
+        <div style={{ textAlign: 'center', padding: '60px 20px', color: '#aaa' }}>
+          <p style={{ fontSize: '2rem', marginBottom: '8px' }}>⚠️</p>
+          <p style={{ marginBottom: '16px' }}>Failed to load club rules</p>
+          <button
+            onClick={() => loadRules()}
+            style={{
+              padding: '10px 24px',
+              background: 'rgba(24, 119, 242, 0.15)',
+              border: '1px solid rgba(24, 119, 242, 0.3)',
+              borderRadius: '8px',
+              color: '#1877f2',
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            Retry
+          </button>
+        </div>
+        <ClubBottomNav clubId={clubId || ''} userRole={userRole} />
       </div>
     );
   }

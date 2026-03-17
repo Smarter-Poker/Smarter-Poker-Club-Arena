@@ -2,7 +2,7 @@
  *  CLUB FINANCIALS PAGE — Club Financial Overview
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -59,6 +59,7 @@ export default function ClubFinancialsPage() {
   const [exporting, setExporting] = useState(false);
 
   const isMounted = useIsMounted();
+  const loadingRef = useRef(false);
 
   useEffect(() => {
     if (clubId) loadFinancials();
@@ -205,6 +206,8 @@ export default function ClubFinancialsPage() {
 
   const loadFinancials = async () => {
     if (!clubId) return;
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     setLoading(true);
     try {
       const resolvedId = await resolveClubUUID(clubId);
@@ -315,6 +318,7 @@ export default function ClubFinancialsPage() {
       console.error('Failed to load financials:', error);
       toast.error('Failed to load financial data');
     }
+    loadingRef.current = false;
     if (isMounted.current) setLoading(false);
   };
 

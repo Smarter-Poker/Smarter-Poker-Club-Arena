@@ -4623,7 +4623,7 @@ export default function TablePage({
               <span className="menu-item-label">Table Rules</span>
               <span className="menu-item-arrow">›</span>
             </button>
-            <button className="menu-item" onClick={() => setIsSoundEnabled(!isSoundEnabled)}>
+            <button className="menu-item" onClick={() => { const next = !isSoundEnabled; setIsSoundEnabled(next); try { localStorage.setItem('ca_sound_enabled', String(next)); } catch {} }}>
               <span className="menu-item-icon">♪</span>
               <span className="menu-item-label">Sounds</span>
               <span className={`menu-item-toggle ${isSoundEnabled ? 'on' : ''}`}>

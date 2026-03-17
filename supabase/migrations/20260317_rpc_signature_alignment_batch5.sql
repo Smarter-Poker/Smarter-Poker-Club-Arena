@@ -23,6 +23,45 @@ BEGIN
 END; $func$;
 
 -- 2. execute_commission_payout: rewritten to accept p_payout_id and look up data internally
+-- 3. credit_player_rakeback: fix to accept text description (was uuid period_id)
+DROP FUNCTION IF EXISTS credit_player_rakeback(uuid, numeric);
+DROP FUNCTION IF EXISTS credit_player_rakeback(uuid, numeric, uuid);
+CREATE OR REPLACE FUNCTION credit_player_rakeback(
+  p_user_id uuid, p_amount numeric, p_description text DEFAULT ''
+) RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER AS $func$
+DECLARE v_club_id uuid;
+BEGIN
+  IF p_amount <= 0 THEN RETURN false; END IF;
+  UPDATE wallets SET balance = COALESCE(balance, 0) + p_amount, updated_at = now()
+  WHERE user_id = p_user_id AND wallet_type = 'PLAYER';
+  IF NOT FOUND THEN
+    INSERT INTO wallets (user_id, wallet_type, balance, locked_balance)
+    VALUES (p_user_id, 'PLAYER', p_amount, 0)
+    ON CONFLICT (user_id, wallet_type) DO UPDATE SET balance = wallets.balance + p_amount, updated_at = now();
+  END IF;
+  INSERT INTO wallet_transactions (user_id, wallet_type, type, amount, category, description)
+  VALUES (p_user_id, 'PLAYER', 'credit', p_amount, 'rakeback', COALESCE(NULLIF(p_description, ''), 'Rakeback credit'));
+  SELECT club_id INTO v_club_id FROM club_members WHERE user_id = p_user_id LIMIT 1;
+  IF v_club_id IS NULL THEN v_club_id := 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4'::uuid; END IF;
+  INSERT INTO chip_transactions (club_id, to_user_id, amount, transaction_type, notes)
+  VALUES (v_club_id, p_user_id, p_amount, 'rakeback', COALESCE(NULLIF(p_description, ''), 'Rakeback credit'));
+  RETURN true;
+END; $func$;
+
+-- 4. fn_save_player_note: fix to accept p_target_user_id + p_tags
+DROP FUNCTION IF EXISTS fn_save_player_note(uuid, uuid, text, text);
+CREATE OR REPLACE FUNCTION fn_save_player_note(
+  p_user_id uuid, p_target_user_id uuid, p_note text,
+  p_color text DEFAULT 'blue', p_tags text[] DEFAULT '{}'
+) RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $func$
+BEGIN
+  INSERT INTO player_notes (user_id, target_user_id, notes, color_label, tags, updated_at)
+  VALUES (p_user_id, p_target_user_id, p_note, p_color, p_tags, now())
+  ON CONFLICT (user_id, target_user_id) DO UPDATE SET
+    notes = p_note, color_label = p_color, tags = p_tags, updated_at = now();
+END; $func$;
+
+-- 5. execute_commission_payout: accept p_payout_id
 DROP FUNCTION IF EXISTS execute_commission_payout(uuid, numeric, uuid, uuid);
 CREATE OR REPLACE FUNCTION execute_commission_payout(p_payout_id uuid)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER AS $func$

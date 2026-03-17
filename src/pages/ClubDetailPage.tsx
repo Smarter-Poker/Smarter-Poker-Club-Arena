@@ -1427,6 +1427,13 @@ export default function ClubDetailPage() {
                 <p>No members found for "{memberSearch}"</p>
                 <p className={styles.emptyHint}>Try a different search term.</p>
               </div>
+            ) : filteredMembers.length === 0 && !memberSearch ? (
+              <div className={styles.emptyState}>
+                <p>No members yet</p>
+                <p className={styles.emptyHint}>
+                  Members will appear here once they join the club.
+                </p>
+              </div>
             ) : (
               <>
                 <table className={styles.membersTable}>
@@ -1472,30 +1479,44 @@ export default function ClubDetailPage() {
                             onClick={() =>
                               setShowMemberMenu(showMemberMenu === member.id ? null : member.id)
                             }
+                            aria-label={`Actions for ${member.username}`}
+                            disabled={memberActionLoading === member.id}
                           >
-                            ⋮
+                            {memberActionLoading === member.id ? '⏳' : '⋮'}
                           </button>
                           {showMemberMenu === member.id && (
                             <div className={styles.memberMenu}>
                               {member.role !== 'admin' && member.role !== 'owner' && (
-                                <button onClick={() => handleMemberAction(member.id, 'promote')}>
+                                <button
+                                  onClick={() => handleMemberAction(member.id, 'promote')}
+                                  aria-label="Promote member to admin"
+                                >
                                   {' '}
                                   Promote
                                 </button>
                               )}
                               {member.role === 'admin' && (
-                                <button onClick={() => handleMemberAction(member.id, 'demote')}>
+                                <button
+                                  onClick={() => handleMemberAction(member.id, 'demote')}
+                                  aria-label="Demote admin to member"
+                                >
                                   {' '}
                                   Demote
                                 </button>
                               )}
                               {member.status === 'active' && member.role !== 'owner' && (
-                                <button onClick={() => handleMemberAction(member.id, 'suspend')}>
+                                <button
+                                  onClick={() => handleMemberAction(member.id, 'suspend')}
+                                  aria-label="Suspend member"
+                                >
                                   Suspend
                                 </button>
                               )}
                               {member.role !== 'owner' && (
-                                <button onClick={() => handleMemberAction(member.id, 'remove')}>
+                                <button
+                                  onClick={() => handleMemberAction(member.id, 'remove')}
+                                  aria-label="Remove member from club"
+                                >
                                   Remove
                                 </button>
                               )}
@@ -1807,6 +1828,10 @@ export default function ClubDetailPage() {
                 deletedTable ? { tableId: id, status: deletedTable.status || 'active' } : undefined
               );
               masterBus.emit('TABLE_DELETED', { tableId: id, clubId: clubId || undefined });
+              // #5: Optimistic table count decrement
+              setClub((prev) =>
+                prev ? { ...prev, tableCount: Math.max(0, prev.tableCount - 1) } : null
+              );
               toast.success('Table deleted');
             } catch (err) {
               // Rollback: re-add the table to the list

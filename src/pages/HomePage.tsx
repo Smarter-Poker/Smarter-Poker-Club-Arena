@@ -42,7 +42,7 @@ import CarouselSection from '../components/home/CarouselSection';
 import { getClubLevel } from '../utils/clubLevels';
 import type { UserClub, ClubStats } from '../components/home/CarouselSection';
 import { useFocusTrap } from '../hooks/useFocusTrap';
-import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
+
 import { STORAGE_KEYS } from '../lib/storage';
 import styles from './HomePage.module.css';
 
@@ -376,8 +376,8 @@ function HomePageInner() {
     [toast]
   );
 
-  // ── Visibility Refresh — refresh data when user returns to tab ──
-  const { isRefreshing } = useVisibilityRefresh(() => fetchUserData(true));
+  // Real-time updates handled by Supabase subscriptions + bus listeners below
+  // No visibility refresh needed — data stays live via real-time channels
 
   useEffect(() => {
     let isMounted = true;
@@ -1058,20 +1058,7 @@ function HomePageInner() {
       <div className={styles.gridFloor}></div>
       <div className={styles.volumetricLight}></div>
       <div className={styles.vignette}></div>
-      {isRefreshing && (
-        <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            zIndex: 9999,
-            height: '2px',
-            background: 'linear-gradient(90deg, transparent, #00d4ff, #8b5cf6, transparent)',
-            opacity: 0.8,
-          }}
-        />
-      )}
+
       {/* Enhancement #6: Circuit brain background overlay */}
       <div className={styles.circuitOverlay}></div>
       {/* Enhancement #1: Neuron lights — traveling cyan pulses */}

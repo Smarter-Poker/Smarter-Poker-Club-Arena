@@ -40,6 +40,11 @@ const SUIT_MAP: Record<string, string> = {
   d: 'diamonds',
   c: 'clubs',
   s: 'spades',
+  // Also accept full suit names (defensive — some code paths pass DB format directly)
+  hearts: 'hearts',
+  diamonds: 'diamonds',
+  clubs: 'clubs',
+  spades: 'spades',
 };
 
 const RANK_MAP: Record<string, string> = {
@@ -56,6 +61,13 @@ const RANK_MAP: Record<string, string> = {
   Q: 'q',
   K: 'k',
   A: 'a',
+  // Defensive: also accept formats that some code paths may send
+  '10': '10',
+  j: 'j',
+  q: 'q',
+  k: 'k',
+  a: 'a',
+  t: '10',
 };
 
 /**

@@ -1121,50 +1121,8 @@ function HomePageInner() {
         {/* ═══════════════════════════════════════════════════════════════════════
                     HORIZONTAL ACTION BAR
                 ═══════════════════════════════════════════════════════════════════════ */}
-        <div
-          className={styles.actionBarRow}
-          style={{ display: 'flex', alignItems: 'center', gap: 8 }}
-        >
-          {/* Daily Challenges — clickable icon navigates to Profile (Daily Missions) */}
-          <button
-            onClick={() => {
-              haptic.light();
-              PremiumSFX.navigate();
-              navigate('/profile');
-            }}
-            aria-label="Daily Challenges"
-            style={{
-              background: 'none',
-              border: 'none',
-              padding: 0,
-              cursor: 'pointer',
-              outline: 'none',
-              flexShrink: 0,
-              transition: 'transform 0.2s ease, filter 0.2s ease',
-            }}
-            onMouseEnter={(e) => {
-              (e.currentTarget as HTMLButtonElement).style.transform = 'scale(1.08)';
-              (e.currentTarget as HTMLButtonElement).style.filter =
-                'brightness(1.2) drop-shadow(0 0 8px rgba(0, 212, 255, 0.5))';
-            }}
-            onMouseLeave={(e) => {
-              (e.currentTarget as HTMLButtonElement).style.transform = 'scale(1)';
-              (e.currentTarget as HTMLButtonElement).style.filter = 'none';
-            }}
-          >
-            <img
-              src={DAILY_CHALLENGES_ICON}
-              alt="Daily Challenges"
-              style={{
-                width: 52,
-                height: 'auto',
-                display: 'block',
-                pointerEvents: 'none',
-                borderRadius: 8,
-              }}
-            />
-          </button>
-          <div className={styles.actionBarWrapper} style={{ flex: 1, minWidth: 0 }}>
+        <div className={styles.actionBarRow}>
+          <div className={styles.actionBarWrapper}>
             <img
               src={ACTION_BAR_HORIZONTAL}
               alt="Action Bar"
@@ -1274,6 +1232,24 @@ function HomePageInner() {
                     BOTTOM ROW — from lobbyTiles.config.ts (#18)
                 ═══════════════════════════════════════════════════════════════════════ */}
         <div className={styles.bottomRow} role="navigation" aria-label="Quick actions">
+          {/* Daily Challenges tile — first in bottom row */}
+          <button
+            className={styles.tileCard}
+            onClick={() => {
+              haptic.light();
+              PremiumSFX.navigate();
+              navigate('/profile');
+            }}
+            aria-label="Daily Challenges"
+            style={{ animationDelay: '320ms' }}
+          >
+            <div className={styles.tilePedestal}></div>
+            <div className={styles.tileImageWrapper}>
+              <img src={DAILY_CHALLENGES_ICON} alt="Daily Challenges" className={styles.tileImage} />
+              <span className={styles.tileLabel}>Daily Challenges</span>
+            </div>
+            <div className={styles.tileEdge}></div>
+          </button>
           {LOBBY_TILES.map((tile) => (
             <button
               key={tile.alt}

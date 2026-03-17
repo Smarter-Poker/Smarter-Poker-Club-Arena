@@ -1320,8 +1320,10 @@
 .tileImage {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
+  object-position: center;
   border-radius: 10px;
+  background: #0d1117;
 }
 
 /* Tile label overlay — visible when tile image loads or as fallback */
@@ -1344,21 +1346,17 @@
   pointer-events: none;
 }
 
-/* Glass bottom edge for 3D depth */
+/* Subtle bottom edge for 3D depth — no blue */
 .tileEdge {
   position: absolute;
   left: 3px;
-  bottom: -5px;
+  bottom: -4px;
   width: calc(100% - 6px);
-  height: 8px;
-  background: linear-gradient(
-    90deg,
-    rgba(50, 150, 200, 0.3),
-    rgba(0, 180, 255, 0.2),
-    rgba(100, 200, 255, 0.2)
-  );
+  height: 6px;
+  background: rgba(0, 0, 0, 0.4);
   border-radius: 0 0 6px 6px;
   z-index: 1;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════

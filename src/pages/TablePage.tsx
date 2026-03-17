@@ -597,6 +597,7 @@ export default function TablePage({
 
   // Session tracking for end-of-session summary
   const [showSessionSummary, setShowSessionSummary] = useState(false);
+  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
   const [showSessionHUD, setShowSessionHUD] = useState(false);
   const sessionStartRef = useRef(Date.now());
   const handsPlayedRef = useRef(0);
@@ -666,7 +667,7 @@ export default function TablePage({
         setShowGameRules(true);
         break;
       case 'LEAVE_TABLE':
-        handleLeaveTable();
+        setShowLeaveConfirm(true);
         break;
       case 'FORCE_LEAVE_TABLE':
         handleForceLeaveTable();
@@ -5283,13 +5284,25 @@ export default function TablePage({
                 id: 'leave',
                 label: 'Leave Table',
                 icon: <LeaveTableIcon />,
-                onClick: handleLeaveTable,
+                onClick: () => setShowLeaveConfirm(true),
                 danger: true,
               },
             ],
           },
         ]}
         tableName={tableState.tableName}
+      />
+
+      {/* Leave Table Confirmation */}
+      <LeaveTableConfirm
+        isOpen={showLeaveConfirm}
+        currentStack={tableState.players[tableState.heroSeat - 1]?.stack || 0}
+        tableName={tableState.tableName || 'this table'}
+        onConfirm={() => {
+          setShowLeaveConfirm(false);
+          handleLeaveTable();
+        }}
+        onCancel={() => setShowLeaveConfirm(false)}
       />
 
       {/* Session Stats Modal (Cash Games) */}

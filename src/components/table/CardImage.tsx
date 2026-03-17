@@ -141,9 +141,42 @@ export function CardImage({
         loading="lazy"
         decoding="async"
         src={imagePath}
-        alt={`${card.rank} of ${SUIT_MAP[card.suit]}`}
+        alt={`${card.rank} of ${SUIT_MAP[card.suit] || card.suit}`}
         className="card-image__img"
         draggable={false}
+        onError={(e) => {
+          // Fallback: hide broken image, show colored text indicator
+          const target = e.currentTarget;
+          target.style.display = 'none';
+          const parent = target.parentElement;
+          if (parent && !parent.querySelector('.card-image__fallback')) {
+            const fb = document.createElement('div');
+            fb.className = 'card-image__fallback';
+            const suitChar: Record<string, string> = {
+              h: '♥',
+              d: '♦',
+              c: '♣',
+              s: '♠',
+              hearts: '♥',
+              diamonds: '♦',
+              clubs: '♣',
+              spades: '♠',
+            };
+            const suitColor: Record<string, string> = {
+              h: '#ef4444',
+              d: '#3b82f6',
+              c: '#22c55e',
+              s: '#1e293b',
+              hearts: '#ef4444',
+              diamonds: '#3b82f6',
+              clubs: '#22c55e',
+              spades: '#1e293b',
+            };
+            fb.style.cssText = `width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#fff;border-radius:inherit;font-weight:800;color:${suitColor[card.suit] || '#000'}`;
+            fb.innerHTML = `<span style="font-size:0.7em;line-height:1">${card.rank}</span><span style="font-size:0.6em;line-height:1">${suitChar[card.suit] || '?'}</span>`;
+            parent.appendChild(fb);
+          }
+        }}
       />
     </div>
   );

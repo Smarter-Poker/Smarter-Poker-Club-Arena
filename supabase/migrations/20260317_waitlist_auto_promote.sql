@@ -22,6 +22,7 @@ DECLARE
   v_preferred_seat INTEGER;
   v_open_seat INTEGER;
   v_max_players INTEGER;
+  v_rows INTEGER;
 BEGIN
   -- 1. Find next waiting player (first in queue)
   SELECT id, user_id, preferred_seat
@@ -91,6 +92,15 @@ BEGIN
   VALUES (p_table_id, v_open_seat, v_next_user_id, 0, 'sitting_out', true, NOW())
   ON CONFLICT (table_id, seat_number) DO NOTHING;
 
+  -- CRITICAL: Verify the INSERT actually worked — if a concurrent RPC
+  -- grabbed the same seat, DO NOTHING silently drops the row and we must
+  -- NOT mark this player as 'seated' on the waitlist.
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  IF v_rows = 0 THEN
+    -- Seat was taken by concurrent operation — leave waitlist entry as is
+    RETURN NULL;
+  END IF;
+
   -- 5. Update waitlist entry to 'seated'
   UPDATE table_waitlists
      SET status = 'seated',
@@ -120,3 +130,4 @@ BEGIN
   RETURN v_next_user_id;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
+

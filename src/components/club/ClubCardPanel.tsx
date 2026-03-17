@@ -7,7 +7,7 @@
  * Works for ANY club (Club JAQK, Midway Union, custom user clubs, etc.)
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import './ClubCardPanel.css';
 
 interface ClubCardPanelProps {
@@ -25,6 +25,9 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
   activePlayers,
   logoUrl,
 }) => {
+  const [logoFailed, setLogoFailed] = useState(false);
+  const showLogo = logoUrl && !logoFailed;
+
   return (
     <div className="club-card-panel">
       {/* Background frame image (browser caches) */}
@@ -42,8 +45,14 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
 
       {/* Optional logo in the center */}
       <div className="club-card-logo-container">
-        {logoUrl ? (
-          <img src={logoUrl} alt="" className="club-card-logo-img" loading="lazy" />
+        {showLogo ? (
+          <img
+            src={logoUrl}
+            alt=""
+            className="club-card-logo-img"
+            loading="lazy"
+            onError={() => setLogoFailed(true)}
+          />
         ) : (
           <div className="club-card-logo-fallback">♠</div>
         )}

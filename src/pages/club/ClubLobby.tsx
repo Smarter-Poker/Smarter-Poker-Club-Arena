@@ -623,7 +623,7 @@ export default function ClubLobby() {
             <div className="tournament-grid">
               {filteredTournaments.map((tournament, idx) => (
                 <div key={tournament.id} style={cardAnimationStyle(idx)}>
-                  <TournamentCard tournament={tournament} clubId={clubId!} />
+                  <TournamentCard tournament={tournament} />
                 </div>
               ))}
             </div>
@@ -677,7 +677,7 @@ export default function ClubLobby() {
 // ═══════════════════════════════════════════════════════════════════════════════
 // Tournament Card — Fix #9: Dynamic values
 // ═══════════════════════════════════════════════════════════════════════════════
-function TournamentCard({ tournament, clubId }: { tournament: Tournament; clubId: string }) {
+function TournamentCard({ tournament }: { tournament: Tournament }) {
   const getTypeLabel = (t: Tournament): string => {
     const type = (t.type || t.game_type || 'mtt').toLowerCase();
     switch (type) {
@@ -720,7 +720,7 @@ function TournamentCard({ tournament, clubId }: { tournament: Tournament; clubId
   const statusClass = (tournament.status || '').toLowerCase();
 
   return (
-    <Link to={`/clubs/${clubId}/tournament/${tournament.id}`} className="tournament-card">
+    <Link to={`/tournaments/${tournament.id}`} className="tournament-card">
       <div className="card-header">
         <div className="trophy-icon">🏆</div>
         <div className="seats-badge">{maxPlayers} Max</div>

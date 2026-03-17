@@ -80,7 +80,9 @@ export default function ClubBottomNav({
         },
         (payload) => {
           // If marked as read, decrement
-          if ((payload.new as any).read === true && (payload.old as any).read === false) {
+          const newRow = payload.new as Record<string, unknown>;
+          const oldRow = payload.old as Record<string, unknown>;
+          if (newRow.read === true && oldRow.read === false) {
             setUnreadCount((prev) => Math.max(0, prev - 1));
           }
         }

@@ -400,8 +400,11 @@ export default function TablePage({
     return () => {
       // Restore original viewport when leaving the table
       const restoreMeta = document.querySelector('meta[name="viewport"]');
-      if (restoreMeta && originalContent) {
-        restoreMeta.setAttribute('content', originalContent);
+      if (restoreMeta) {
+        restoreMeta.setAttribute(
+          'content',
+          originalContent || 'width=device-width, initial-scale=1'
+        );
       }
       try {
         screen.orientation?.unlock?.();
@@ -2943,7 +2946,8 @@ export default function TablePage({
               toast?.success?.(formatted);
             } else if (heroWinTotal === 0 && event.winners.length > 0) {
               // Hero was in the hand but didn't win — show loss feedback
-              const heroInHand = tableStateRef.current.players[tableState.heroSeat - 1];
+              const currentHeroSeat = tableStateRef.current.heroSeat;
+              const heroInHand = tableStateRef.current.players[currentHeroSeat - 1];
               if (heroInHand && heroInHand.status !== 'sitting_out') {
                 toast?.info?.('Better luck next hand');
               }
@@ -3662,6 +3666,11 @@ export default function TablePage({
 
     // Validate before executing
     if (!validateAndExecuteAction('raise', clampedRaise)) return;
+    if (actionLockRef.current) return;
+    actionLockRef.current = true;
+    setTimeout(() => {
+      actionLockRef.current = false;
+    }, 300);
 
     // Close slider immediately
     setShowRaiseSlider(false);
@@ -3873,6 +3882,10 @@ export default function TablePage({
   // ═══════════════════════════════════════════════════════════════════════════
   // KEYBOARD SHORTCUTS — F=fold, X/K=check, C=call, R=raise, A=all-in
   // ═══════════════════════════════════════════════════════════════════════════
+  // Use refs to avoid stale closures — handlers are recreated every render
+  const kbHandlersRef = useRef({ handleFold, handleCheck, handleCall, handleRaise, handleAllIn });
+  kbHandlersRef.current = { handleFold, handleCheck, handleCall, handleRaise, handleAllIn };
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ignore when typing in inputs/textareas or when modals are open
@@ -3880,44 +3893,43 @@ export default function TablePage({
       if (
         target.tagName === 'INPUT' ||
         target.tagName === 'TEXTAREA' ||
-        target.contentEditable === 'true' ||
-        showBuyInModal ||
-        showSessionSummary
+        target.contentEditable === 'true'
       )
         return;
 
-      // Only fire when it's hero's turn
-      if (tableState.currentPlayerSeat !== tableState.heroSeat || tableState.heroSeat <= 0) return;
+      // Read fresh state from ref to avoid stale closure
+      const current = tableStateRef.current;
+      if (current.currentPlayerSeat !== current.heroSeat || current.heroSeat <= 0) return;
 
       const key = e.key.toLowerCase();
       switch (key) {
         case 'f':
           e.preventDefault();
-          handleFold();
+          kbHandlersRef.current.handleFold();
           break;
         case 'x':
         case 'k':
           e.preventDefault();
-          handleCheck();
+          kbHandlersRef.current.handleCheck();
           break;
         case 'c':
           e.preventDefault();
-          handleCall();
+          kbHandlersRef.current.handleCall();
           break;
         case 'r':
           e.preventDefault();
-          handleRaise();
+          kbHandlersRef.current.handleRaise();
           break;
         case 'a':
           e.preventDefault();
-          handleAllIn();
+          kbHandlersRef.current.handleAllIn();
           break;
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [tableState.currentPlayerSeat, tableState.heroSeat, showBuyInModal, showSessionSummary]);
+  }, []); // Empty deps — refs always fresh
 
   // Load waitlist data
   const loadWaitlist = useCallback(async () => {

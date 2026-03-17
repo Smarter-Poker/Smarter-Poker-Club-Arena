@@ -5,6 +5,8 @@
  */
 
 import { useState, useEffect } from 'react';
+import { getCardImagePath } from './CardImage';
+import type { Card as CardImageCard } from './CardImage';
 import './PremiumCard.css';
 
 // Local type definitions (compatible with club-engine Card type)
@@ -16,11 +18,19 @@ export interface PremiumCardType {
 // Deck theme definitions with custom card back images
 export type DeckTheme = 'classic' | 'burgundy' | 'navy' | 'gold';
 
+// Build base path for card-back images (same logic as CardImage)
+function getBackBase(): string {
+  const isProduction = typeof window !== 'undefined' && window.location.hostname !== 'localhost';
+  return isProduction
+    ? 'https://club-arena.vercel.app/hub/club-arena/'
+    : import.meta.env.BASE_URL || '/';
+}
+
 export const DECK_THEMES: Record<DeckTheme, { name: string; image: string }> = {
-  classic: { name: 'Classic', image: '/cards/backs/classic.webp' },
-  burgundy: { name: 'Burgundy', image: '/cards/backs/burgundy.webp' },
-  navy: { name: 'Navy', image: '/cards/backs/navy.webp' },
-  gold: { name: 'Premium Gold', image: '/cards/backs/gold.webp' },
+  classic: { name: 'Classic', image: `${getBackBase()}cards/backs/classic.webp` },
+  burgundy: { name: 'Burgundy', image: `${getBackBase()}cards/backs/burgundy.webp` },
+  navy: { name: 'Navy', image: `${getBackBase()}cards/backs/navy.webp` },
+  gold: { name: 'Premium Gold', image: `${getBackBase()}cards/backs/gold.webp` },
 };
 
 interface PremiumCardProps {
@@ -34,47 +44,45 @@ interface PremiumCardProps {
   onClick?: () => void;
 }
 
-// Get card front image path from card data
-function getCardImagePath(card: PremiumCardType): string {
-  // Map suit to full name
-  const suitMap: Record<string, string> = {
-    h: 'hearts',
-    hearts: 'hearts',
-    d: 'diamonds',
-    diamonds: 'diamonds',
-    c: 'clubs',
-    clubs: 'clubs',
-    s: 'spades',
-    spades: 'spades',
+// Normalize PremiumCardType to CardImage Card format
+const SUIT_ABBREV: Record<string, CardImageCard['suit']> = {
+  h: 'h',
+  d: 'd',
+  c: 'c',
+  s: 's',
+  hearts: 'h',
+  diamonds: 'd',
+  clubs: 'c',
+  spades: 's',
+};
+
+const RANK_NORMALIZE: Record<string, CardImageCard['rank']> = {
+  '2': '2',
+  '3': '3',
+  '4': '4',
+  '5': '5',
+  '6': '6',
+  '7': '7',
+  '8': '8',
+  '9': '9',
+  '10': 'T',
+  T: 'T',
+  t: 'T',
+  J: 'J',
+  j: 'J',
+  Q: 'Q',
+  q: 'Q',
+  K: 'K',
+  k: 'K',
+  A: 'A',
+  a: 'A',
+};
+
+function toCentralCard(card: PremiumCardType): CardImageCard {
+  return {
+    suit: SUIT_ABBREV[card.suit] || 's',
+    rank: RANK_NORMALIZE[card.rank] || 'A',
   };
-
-  // Map rank to file name format
-  const rankMap: Record<string, string> = {
-    A: 'a',
-    a: 'a',
-    '2': '2',
-    '3': '3',
-    '4': '4',
-    '5': '5',
-    '6': '6',
-    '7': '7',
-    '8': '8',
-    '9': '9',
-    '10': '10',
-    T: '10',
-    t: '10',
-    J: 'j',
-    j: 'j',
-    Q: 'q',
-    q: 'q',
-    K: 'k',
-    k: 'k',
-  };
-
-  const suit = suitMap[card.suit] || 'spades';
-  const rank = rankMap[card.rank] || (card.rank || 'a').toLowerCase();
-
-  return `/cards/${suit}_${rank}.png`;
 }
 
 // Card sizes (aspect ratio 5:7 matches our 750x1050 images)
@@ -119,7 +127,7 @@ export default function PremiumCard({
 
   const dimensions = SIZES[size];
   const theme = DECK_THEMES[deckTheme];
-  const cardImagePath = card ? getCardImagePath(card) : null;
+  const cardImagePath = card ? getCardImagePath(toCentralCard(card)) : null;
 
   return (
     <div

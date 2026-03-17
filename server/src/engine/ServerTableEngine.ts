@@ -180,7 +180,9 @@ export class ServerTableEngine {
 
   private startTurnTimer(userId: string, seat: number, durationSeconds: number): void {
     this.clearTurnTimer();
-    this.timeBankActivatedThisTurn = false;
+    // NOTE: Do NOT reset timeBankActivatedThisTurn here — this method is also called
+    // from activateTimeBank() to extend the timer. The flag is reset in handleTurnChange()
+    // when a genuinely new turn begins.
     this.playerTurnStartTime = Date.now();
     this.playerTurnDuration = Math.max(0, durationSeconds);
 
@@ -670,6 +672,7 @@ export class ServerTableEngine {
     // Only horses get auto-played — real players get an authoritative timer and wait for WebSocket/HTTP actions
     if (!player.is_horse) {
       const actionTime = this.tableInfo?.action_time_seconds || 15;
+      this.timeBankActivatedThisTurn = false; // Reset anti-spam lock for this NEW turn
       this.startTurnTimer(player.user_id, seat, actionTime);
       return;
     }

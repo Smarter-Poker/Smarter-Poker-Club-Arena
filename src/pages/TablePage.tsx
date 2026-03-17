@@ -2137,12 +2137,19 @@ export default function TablePage({
   useMasterBusSubscription('TIME_BANK_ACTIVATED', (payload: any) => {
     if (payload.tableId !== tableId) return;
 
-    // Always extend the visual timer for ANY player who activated it
     const seconds =
       payload.secondsGranted ?? payload.additionalSeconds ?? payload.secondsAdded ?? 15;
-    extendTimer(seconds);
 
-    // Only update the Hero's specific localized UI if they are the one activating it
+    // For OPPONENTS: extend the visual timer from the WebSocket broadcast
+    // For HERO: the local TimeBankEngine.activate() already extended the timer,
+    // so only extend from server echoes (payload._fromServer) to avoid double-counting.
+    // The local TimeBankEngine emit does NOT set _fromServer.
+    if (payload.playerId !== userId) {
+      // Opponent activated their time bank — extend our visual timer for their seat
+      extendTimer(seconds);
+    }
+
+    // Update the Hero's specific localized UI if they are the one activating it
     if (payload.playerId === userId) {
       setTimeBankActive(true);
       setTimeBankTimeRemaining(seconds);
@@ -3460,7 +3467,7 @@ export default function TablePage({
     resetTimer,
     extendTimer,
   } = useTableTimer({
-    isActiveTurn: tableState?.currentPlayerSeat != null && tableState?.isHandInProgress,
+    isActiveTurn: tableState.currentPlayerSeat > 0 && tableState.isHandInProgress,
     isHeroTurn: isHeroTurnContext && !timeBankActive,
     isSoundEnabled,
     onTimeout: () => {

@@ -299,6 +299,7 @@ function TableCardInner({ table }: TableCardProps) {
       masterBus.subscribeDebounced('TABLE_SEATED', refresh, 500),
       masterBus.subscribeDebounced('TABLE_LEFT', refresh, 500),
       masterBus.subscribeDebounced('WAITLIST_POSITION_CHANGED', refresh, 500),
+      masterBus.subscribeDebounced('WAITLIST_PROMOTED', refresh, 500),
       masterBus.subscribeDebounced('TABLE_UPDATED', refresh, 500),
     ];
     return () => unsubs.forEach((u) => u());

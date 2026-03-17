@@ -86,7 +86,8 @@ export default function MultiTablePage() {
   const [swipeOffset, setSwipeOffset] = useState(0);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [isTileView, setIsTileView] = useState(false);
-  const [tabEntranceComplete, setTabEntranceComplete] = useState(false);
+  // Single-table mode: skip entrance animation entirely (prevents blank screen)
+  const [tabEntranceComplete, setTabEntranceComplete] = useState(() => tables.length <= 1);
 
   // Keep a ref to tables for use in bus handlers that may fire between renders
   const tablesRef = useRef(tables);
@@ -96,13 +97,16 @@ export default function MultiTablePage() {
   const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Tab entrance animation
+  // Tab entrance animation — only used for multi-table mode with tab bar
   useEffect(() => {
-    if (tables.length > 0) {
+    if (tables.length > 1 && !tabEntranceComplete) {
       const timer = setTimeout(() => setTabEntranceComplete(true), 200);
       return () => clearTimeout(timer);
+    } else if (tables.length > 0 && !tabEntranceComplete) {
+      // Safety: always ensure content becomes visible
+      setTabEntranceComplete(true);
     }
-  }, [tables.length]);
+  }, [tables.length, tabEntranceComplete]);
 
   // Listen for table seating events from other pages
   // Type-safe bus handler types (extended beyond base BusPayloadMap)
@@ -487,8 +491,12 @@ export default function MultiTablePage() {
           className={`multi-table-page__container ${isTransitioning ? 'multi-table-page__container--transitioning' : ''}`}
           style={{
             transform: containerTransform,
-            opacity: tabEntranceComplete ? 1 : 0,
-            transition: tabEntranceComplete && !isTransitioning ? 'opacity 0.4s ease' : 'none',
+            // Single-table: always visible. Multi-table: fade in after tab bar renders.
+            opacity: tables.length <= 1 ? 1 : tabEntranceComplete ? 1 : 0,
+            transition:
+              tabEntranceComplete && !isTransitioning && tables.length > 1
+                ? 'opacity 0.4s ease'
+                : 'none',
           }}
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
@@ -503,6 +511,11 @@ export default function MultiTablePage() {
                 fallback={
                   <div className="multi-table-page__loading">
                     <div className="multi-table-page__spinner" />
+                    <span
+                      style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.85rem', marginTop: 12 }}
+                    >
+                      Loading table…
+                    </span>
                   </div>
                 }
               >

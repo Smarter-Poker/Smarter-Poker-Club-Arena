@@ -23,6 +23,7 @@ import {
 import { dailyChallengeService } from '../services/DailyChallengeService';
 import { useAuthUser } from '../hooks/useAuthUser';
 import type { PokerTable } from '../types/database.types';
+import FavoriteTablesWidget from '../components/quickactions/FavoriteTablesWidget';
 import DailyLoginReward from '../components/gamification/DailyLoginReward';
 import LuckyDrawWheel from '../components/gamification/LuckyDrawWheel';
 import { bonusService } from '../services/BonusService';
@@ -214,6 +215,7 @@ export default function LobbyPage() {
       'TABLE_DELETED',
       'TABLE_CLOSED',
       'CLUB_SETTINGS_UPDATED',
+      'WAITLIST_PROMOTED',
     ],
     refreshTables,
     { debounce: 500 }
@@ -562,6 +564,18 @@ export default function LobbyPage() {
     prevWsConnectedRef.current = wsConnected;
   }, [wsConnected]);
 
+  // ── Waitlist auto-seat: toast when THIS user gets promoted to a table ──
+  useMasterBusSubscription(
+    'WAITLIST_PROMOTED',
+    (payload) => {
+      if (payload?.userId === user?.id) {
+        toast.success('🎉 A seat opened up! You have been auto-seated at your waitlisted table.');
+        refreshTables();
+      }
+    },
+    { debounce: 300 }
+  );
+
   const filteredTables = tables.filter((table) => {
     if (activeFilter === 'favorites') return favorites.has(table.id);
     if (activeFilter !== 'all') {
@@ -749,6 +763,9 @@ export default function LobbyPage() {
           </select>
         </div>
       </section>
+
+      {/* Favorite Tables — quick access to starred tables */}
+      <FavoriteTablesWidget onJoinTable={(tableId) => navigate(`/table/${tableId}`)} />
 
       {/* Tables Grid */}
       <section className={styles.tablesSection}>

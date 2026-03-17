@@ -209,8 +209,9 @@ function DashboardTab({ clubId }: { clubId: string }) {
       setLoadError(null);
       const uuid = await resolveClubUUID(clubId);
 
-      // Parallel: club health metrics + audit stats
-      const [membersRes, tablesRes, rakeRes] = await Promise.all([
+      // Parallel: club health metrics + audit stats + acquisition + cashout velocity
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+      const [membersRes, tablesRes, rakeRes, newMembersRes, cashoutsRes] = await Promise.all([
         retryFetch(
           () =>
             supabase
@@ -238,6 +239,28 @@ function DashboardTab({ clubId }: { clubId: string }) {
               .then((r) => r),
           { maxRetries: 2, isMountedRef: isMounted }
         ),
+        // New members in last 30 days (for Player Acquisition metric)
+        retryFetch(
+          () =>
+            supabase
+              .from('club_members')
+              .select('id', { count: 'exact' })
+              .eq('club_id', uuid)
+              .gte('created_at', thirtyDaysAgo)
+              .then((r) => r),
+          { maxRetries: 2, isMountedRef: isMounted }
+        ),
+        // Cashout requests (for Cashout Velocity metric)
+        retryFetch(
+          () =>
+            supabase
+              .from('cashout_requests')
+              .select('id, status', { count: 'exact' })
+              .eq('club_id', uuid)
+              .gte('created_at', thirtyDaysAgo)
+              .then((r) => r),
+          { maxRetries: 2, isMountedRef: isMounted }
+        ),
       ]);
 
       if (!isMounted.current) return;
@@ -259,6 +282,27 @@ function DashboardTab({ clubId }: { clubId: string }) {
         0
       );
 
+      // Player Acquisition (new members in last 30 days)
+      const newThisMonth = newMembersRes.count ?? (newMembersRes.data || []).length;
+      const acquisitionScore = Math.min(100, newThisMonth * 10); // 10 new = 100%
+
+      // Cashout Velocity (ratio of cashouts to total members — healthy clubs have moderate cashouts)
+      const cashoutData = cashoutsRes.data || [];
+      const totalCashouts = cashoutData.length;
+      const approvedCashouts = cashoutData.filter(
+        (c: { status?: string }) => c.status === 'approved' || c.status === 'completed'
+      ).length;
+      // Healthy velocity: some cashouts relative to member count (too many = bleeding, zero = stagnant)
+      const cashoutRatio = totalMembers > 0 ? totalCashouts / totalMembers : 0;
+      const cashoutScore =
+        cashoutRatio > 0.5
+          ? Math.max(20, 100 - cashoutRatio * 100)
+          : cashoutRatio > 0
+            ? Math.min(100, cashoutRatio * 200)
+            : totalMembers > 0
+              ? 30
+              : 50; // No cashouts with members = growing phase
+
       // Calculate health score
       const playerScore =
         totalMembers > 0 ? Math.min(100, (activeMembers / totalMembers) * 100) : 0;
@@ -266,7 +310,12 @@ function DashboardTab({ clubId }: { clubId: string }) {
       const tableScore = activeTables > 0 ? Math.min(100, activeTables * 25) : 0;
       const rakeScore = totalRake > 0 ? Math.min(100, (totalRake / 1000) * 100) : 0;
       const healthScore = Math.round(
-        playerScore * 0.4 + rakeScore * 0.2 + agentScore * 0.15 + tableScore * 0.15 + 10
+        playerScore * 0.4 +
+          rakeScore * 0.2 +
+          agentScore * 0.15 +
+          tableScore * 0.15 +
+          acquisitionScore * 0.05 +
+          cashoutScore * 0.05
       );
 
       const color = healthScore >= 70 ? 'green' : healthScore >= 40 ? 'yellow' : 'red';
@@ -290,8 +339,12 @@ function DashboardTab({ clubId }: { clubId: string }) {
             active: agents.length,
             total: agents.length,
           },
-          playerAcquisition: { score: 50, newThisMonth: 0 },
-          cashoutVelocity: { score: 50, cashouts: 0, buyins: 0 },
+          playerAcquisition: { score: Math.round(acquisitionScore), newThisMonth },
+          cashoutVelocity: {
+            score: Math.round(cashoutScore),
+            cashouts: totalCashouts,
+            buyins: approvedCashouts,
+          },
         },
       });
 

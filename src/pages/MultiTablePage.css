@@ -84,8 +84,10 @@
 
 .multi-table-page__loading {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 12px;
   width: 100%;
   height: 100%;
   background: #0a0c12;
@@ -111,9 +113,9 @@
    ───────────────────────────────────────────────────────────────────────────── */
 
 @media (max-width: 480px) {
-  /* On small screens, ensure tab bar doesn't eat too much space */
-  .multi-table-page {
-    /* Tab bar height is handled by the component itself */
+  /* Tab bar height is handled by the component itself */
+  .multi-table-page__tab-bar-wrapper {
+    padding: 0;
   }
 }
 

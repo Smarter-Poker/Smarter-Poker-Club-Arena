@@ -4723,7 +4723,7 @@ export default function TablePage({
               className="menu-item exit"
               onClick={() => {
                 setIsSideMenuOpen(false);
-                handleLeaveTable();
+                setShowLeaveConfirm(true);
               }}
             >
               <span className="menu-item-icon">←</span>

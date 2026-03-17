@@ -3629,6 +3629,7 @@ export default function TablePage({
         }
       });
       soundService.playChips();
+      haptic?.light();
       // PRIMARY: Broadcast via Supabase Realtime
       broadcastLocalHandState();
       // SECONDARY: Fire-and-forget server call

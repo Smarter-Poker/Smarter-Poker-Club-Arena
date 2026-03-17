@@ -84,8 +84,12 @@ export default function SessionHistoryPage() {
     }
   }, [user?.id, timeFilter]);
 
+  const loadingRef = useRef(false);
+
   const loadSessions = useCallback(async () => {
     if (!user?.id) return;
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     if (!hasDataRef.current) setLoading(true);
     try {
       let query = supabase
@@ -119,8 +123,10 @@ export default function SessionHistoryPage() {
       if (!isMounted.current) return;
       console.error('[SessionHistory] Load failed:', err);
       toast.error('Failed to load session history');
+    } finally {
+      loadingRef.current = false;
+      if (isMounted.current) setLoading(false);
     }
-    if (isMounted.current) setLoading(false);
   }, [user?.id, timeFilter]);
 
   useEffect(() => {

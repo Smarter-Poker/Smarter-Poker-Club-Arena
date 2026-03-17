@@ -190,8 +190,12 @@ export default function FriendsPage() {
     };
   }, []);
 
+  const loadingRef = useRef(false);
+
   const loadFriends = async (getIsMounted?: () => boolean) => {
     if (!user?.id) return;
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     if (!hasDataRef.current) setLoading(true);
     try {
       // ── Batch: sent + received friendships + pending requests in parallel ──
@@ -327,9 +331,12 @@ export default function FriendsPage() {
     } catch (error) {
       console.error('Failed to load friends:', error);
       toast.error('Failed to load friends');
+    } finally {
+      loadingRef.current = false;
+      if (!getIsMounted || getIsMounted()) {
+        if (isMounted.current) setLoading(false);
+      }
     }
-    if (getIsMounted && !getIsMounted()) return;
-    if (isMounted.current) setLoading(false);
   };
 
   const acceptRequest = async (friendshipId: string) => {

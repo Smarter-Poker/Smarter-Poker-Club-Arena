@@ -291,11 +291,15 @@ export default function LeaderboardPage() {
     setClubsLoading(false);
   };
 
+  const loadingRef = useRef(false);
+
   const loadLeaderboard = async (silent = false, getIsMounted?: () => boolean) => {
     if (!selectedClubId) {
       setLoading(false);
       return;
     }
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     // SWR: show cached data instantly
     const cacheKey = `${selectedClubId}_${metric}_${period}`;
     if (!silent) {
@@ -326,9 +330,10 @@ export default function LeaderboardPage() {
     } catch (error) {
       console.error('Failed to load leaderboard:', error);
       if (!silent) toast.error('Failed to load leaderboard');
+    } finally {
+      loadingRef.current = false;
+      if (!getIsMounted || getIsMounted()) setLoading(false);
     }
-    if (getIsMounted && !getIsMounted()) return;
-    setLoading(false);
   };
 
   const loadTournamentStats = async (getIsMounted?: () => boolean) => {
@@ -348,9 +353,9 @@ export default function LeaderboardPage() {
     } catch (error) {
       console.error('Failed to load tournament stats:', error);
       toast.error('Failed to load tournament stats');
+    } finally {
+      if (!getIsMounted || getIsMounted()) setTournamentsLoading(false);
     }
-    if (getIsMounted && !getIsMounted()) return;
-    setTournamentsLoading(false);
   };
 
   const formatValue = (value: number, m: LeaderboardMetric): string => {

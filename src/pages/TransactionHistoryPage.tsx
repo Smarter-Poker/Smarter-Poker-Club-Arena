@@ -171,8 +171,12 @@ export default function TransactionHistoryPage() {
     };
   }, [user?.id]);
 
+  const loadingRef = useRef(false);
+
   const loadTransactions = async (pageNum: number, reset = false, getIsMounted?: () => boolean) => {
     if (!user?.id) return;
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     if (reset) {
       if (!getIsMounted || getIsMounted()) setLoading(true);
     } else {
@@ -247,10 +251,12 @@ export default function TransactionHistoryPage() {
     } catch (error) {
       console.error('Failed to load transactions:', error);
       if (!getIsMounted || getIsMounted()) toast.error('Failed to load transactions');
-    }
-    if (!getIsMounted || getIsMounted()) {
-      setLoading(false);
-      setLoadingMore(false);
+    } finally {
+      loadingRef.current = false;
+      if (!getIsMounted || getIsMounted()) {
+        setLoading(false);
+        setLoadingMore(false);
+      }
     }
   };
 

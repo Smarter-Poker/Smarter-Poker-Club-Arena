@@ -14,19 +14,19 @@ export interface Club {
   id: string;
   club_id: number; // 6-digit public Club ID for joining
   name: string;
-  slug?: string; // Optional — may be computed from name
-  description?: string;
-  avatar_url?: string;
-  banner_url?: string;
+  slug?: string;
+  description?: string | null;
+  avatar_url?: string | null;
+  banner_url?: string | null;
   owner_id: string;
   color_theme?: string; // DB column name (not ClubTheme enum)
   is_public: boolean;
   requires_approval: boolean;
+  gps_restricted?: boolean;
   member_count: number;
-  online_count?: number; // Active members online (from database.types)
+  online_count?: number;
   table_count?: number;
   chip_treasury?: number; // DB column name (was 'total_chips')
-  gps_restricted?: boolean; // GPS restriction flag (from database.types)
 
   // 50-Level System Capacity Metrics
   level?: number;
@@ -39,8 +39,8 @@ export interface Club {
   hierarchy_threshold_current?: number;
   hierarchy_threshold_next?: number;
 
-  union_id?: string;
-  settings: ClubSettings;
+  union_id?: string | null;
+  settings?: ClubSettings | Record<string, any>;
   created_at: string;
   updated_at: string;
 }

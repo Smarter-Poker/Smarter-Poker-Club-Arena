@@ -7,7 +7,7 @@
 
 .club-carousel {
   min-height: 100vh;
-  background: url('/images/backgrounds/club-arena-bg.jpg') center center / cover no-repeat fixed;
+  background: url('/images/backgrounds/club-arena-bg.webp') center center / cover no-repeat fixed;
   position: relative;
   overflow: hidden;
 }

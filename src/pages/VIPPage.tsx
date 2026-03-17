@@ -298,7 +298,7 @@ export default function VIPPage() {
             {/* VIP Card Image */}
             <div style={{ marginBottom: 16 }}>
               <img
-                src="/vip-card.png"
+                src="/vip-card.webp"
                 alt="VIP Card"
                 style={{
                   width: '100%',

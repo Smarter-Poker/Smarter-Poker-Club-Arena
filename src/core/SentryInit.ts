@@ -1,9 +1,13 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  SENTRY INITIALIZATION — Error Tracking & Performance Monitoring
+ *  SENTRY INITIALIZATION — Lazy-Loaded Error Tracking & Performance Monitoring
  * ═══════════════════════════════════════════════════════════════════════════════
  * Initializes Sentry.io for comprehensive error tracking, performance monitoring,
  * and session replay across the Club Arena application.
+ *
+ * LAZY-LOADING: The @sentry/react package (~452KB) is loaded dynamically after
+ * first render via requestIdleCallback, keeping it out of the critical path.
+ * All public wrapper functions safely queue or no-op until Sentry is ready.
  *
  * Features:
  * - Automatic error capture with stack traces
@@ -14,47 +18,85 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import * as Sentry from '@sentry/react';
-import {
-  createRoutesFromChildren,
-  matchRoutes,
-  useLocation,
-  useNavigationType,
-} from 'react-router-dom';
 import React from 'react';
 
-/**
- * Initialize Sentry error tracking and performance monitoring
- * Should be called as early as possible in the application lifecycle
- */
-export function initSentry() {
-  // Only initialize in production or staging environments
-  const environment = import.meta.env.VITE_APP_ENV || 'production';
+// ── Module-level state ──
+let SentryModule: typeof import('@sentry/react') | null = null;
+let initPromise: Promise<typeof import('@sentry/react') | null> | null = null;
 
-  if (environment === 'development') {
+// Queue of actions to replay once Sentry loads
+type QueuedAction = () => void;
+const pendingQueue: QueuedAction[] = [];
+const MAX_QUEUE = 50; // Cap to prevent memory leaks if Sentry never loads
+
+function enqueue(action: QueuedAction) {
+  if (SentryModule) {
+    // Sentry already loaded — execute immediately
+    try {
+      action();
+    } catch {
+      /* silent */
+    }
     return;
   }
+  if (pendingQueue.length < MAX_QUEUE) {
+    pendingQueue.push(action);
+  }
+}
 
-  // Ensure DSN is configured
+function flushQueue() {
+  while (pendingQueue.length > 0) {
+    const action = pendingQueue.shift();
+    try {
+      action?.();
+    } catch {
+      /* silent */
+    }
+  }
+}
+
+/**
+ * Get the Sentry module (returns null if not yet loaded).
+ * Consumers needing direct access should await getSentryAsync() instead.
+ */
+export function getSentry() {
+  return SentryModule;
+}
+
+/**
+ * Get the Sentry module, loading it if necessary.
+ * Returns null in development or if loading fails.
+ */
+export async function getSentryAsync(): Promise<typeof import('@sentry/react') | null> {
+  if (SentryModule) return SentryModule;
+  if (initPromise) return initPromise;
+  return loadAndInitSentry();
+}
+
+/**
+ * Internal: load and initialize Sentry
+ */
+async function loadAndInitSentry(): Promise<typeof import('@sentry/react') | null> {
+  const environment = import.meta.env.VITE_APP_ENV || 'production';
+  if (environment === 'development') return null;
+
   const dsn = import.meta.env.VITE_SENTRY_DSN;
   if (!dsn) {
     console.warn('⚠️ [Sentry] DSN not configured, skipping initialization');
-    return;
+    return null;
   }
 
   try {
+    // Dynamic imports — react-router-dom hooks are needed for route tracking
+    const [Sentry, { createRoutesFromChildren, matchRoutes, useLocation, useNavigationType }] =
+      await Promise.all([import('@sentry/react'), import('react-router-dom')]);
+
     Sentry.init({
       dsn,
-
-      // Environment configuration
       environment,
-
-      // Release tracking (will be set by build process)
       release: `club-arena@${import.meta.env.VITE_APP_VERSION || '1.0.0'}`,
 
-      // Integrations
       integrations: [
-        // React Router integration for automatic route tracking
         Sentry.reactRouterV6BrowserTracingIntegration({
           useEffect: React.useEffect,
           useLocation,
@@ -62,15 +104,10 @@ export function initSentry() {
           createRoutesFromChildren,
           matchRoutes,
         }),
-
-        // Session Replay for visual debugging
         Sentry.replayIntegration({
-          // Privacy controls
-          maskAllText: true, // Mask all text content
-          blockAllMedia: true, // Block images and videos
-          maskAllInputs: true, // Mask form inputs
-
-          // Network recording
+          maskAllText: true,
+          blockAllMedia: true,
+          maskAllInputs: true,
           networkDetailAllowUrls: [
             'https://kuklfnapbkmacvwxktbh.supabase.co',
             'https://smarter.poker/api',
@@ -81,118 +118,106 @@ export function initSentry() {
         }),
       ],
 
-      // Performance Monitoring
-      tracesSampleRate: environment === 'production' ? 0.1 : 1.0, // 10% in prod, 100% in staging
+      tracesSampleRate: environment === 'production' ? 0.1 : 1.0,
+      replaysSessionSampleRate: 0.1,
+      replaysOnErrorSampleRate: 1.0,
 
-      // Session Replay Sampling
-      replaysSessionSampleRate: 0.1, // 10% of normal sessions
-      replaysOnErrorSampleRate: 1.0, // 100% of error sessions
-
-      // Error filtering - ignore known non-critical errors
       beforeSend(event, hint) {
         const error = hint.originalException as Error | undefined;
 
         if (error && typeof error === 'object') {
-          // Filter by error name
           if ('name' in error) {
             const name = String(error.name);
-            // AbortError: benign signal cancellation (fetch teardown, navigation)
             if (name === 'AbortError') return null;
           }
 
-          // Filter by error message
           if ('message' in error) {
             const message = String(error.message);
-
-            if (message.includes('Failed to fetch') || message.includes('NetworkError')) {
+            if (message.includes('Failed to fetch') || message.includes('NetworkError'))
               return null;
-            }
-            if (message.includes('ResizeObserver')) {
-              return null;
-            }
-            // Suppress benign abort signals
-            if (message.includes('signal is aborted') || message.includes('aborted')) {
-              return null;
-            }
-            // Suppress opaque internal errors (e.g. browser IndexedDB / extension glitches)
-            if (message.includes('Internal error')) {
-              return null;
-            }
-            // Suppress null-access errors from third-party scripts / instrumentation
+            if (message.includes('ResizeObserver')) return null;
+            if (message.includes('signal is aborted') || message.includes('aborted')) return null;
+            if (message.includes('Internal error')) return null;
             if (message.includes('Cannot read properties of null')) {
-              // Only suppress if stack is missing or from non-app code
               const stack = 'stack' in error ? String(error.stack) : '';
-              const isAppCode = stack.includes('/src/');
-              if (!isAppCode) return null;
+              if (!stack.includes('/src/')) return null;
             }
           }
 
-          // Filter out errors from browser extensions
           if ('stack' in error) {
             const stack = String(error.stack);
-            if (stack.includes('chrome-extension://') || stack.includes('moz-extension://')) {
+            if (stack.includes('chrome-extension://') || stack.includes('moz-extension://'))
               return null;
-            }
           }
         }
 
         return event;
       },
 
-      // Performance filtering - don't track very fast transactions
       beforeSendTransaction(event) {
         if (event.start_timestamp && event.timestamp) {
           const duration = (event.timestamp - event.start_timestamp) * 1000;
-
-          // Ignore transactions faster than 100ms (not useful for analysis)
-          if (duration < 100) {
-            return null;
-          }
+          if (duration < 100) return null;
         }
-
         return event;
       },
 
-      // Ignore specific errors
       ignoreErrors: [
-        // Browser extensions
         'top.GLOBALS',
         'chrome-extension',
         'moz-extension',
-
-        // Random plugins/extensions
         "Can't find variable: ZiteReader",
         'jigsaw is not defined',
         'ComboSearch is not defined',
-
-        // Network errors
         'NetworkError',
         'Network request failed',
-
-        // ResizeObserver
         'ResizeObserver loop limit exceeded',
         'ResizeObserver loop completed with undelivered notifications',
-
-        // AbortError — benign fetch/signal cancellation
         'AbortError',
         'signal is aborted without reason',
         'signal is aborted',
         'The operation was aborted',
         'The user aborted a request',
-
-        // Opaque internal errors (browser internals / IndexedDB)
         'UnknownError: Internal error',
         'Internal error',
       ],
     });
+
+    SentryModule = Sentry;
+    flushQueue();
+    console.log('[Sentry] ✅ Lazy-loaded and initialized');
+    return Sentry;
   } catch (error) {
     console.error('❌ [Sentry] Initialization failed:', error);
+    return null;
   }
 }
 
 /**
+ * Initialize Sentry error tracking and performance monitoring.
+ * Now lazy-loads @sentry/react dynamically after first render.
+ * Safe to call synchronously — the actual load happens in the background.
+ */
+export function initSentry() {
+  const environment = import.meta.env.VITE_APP_ENV || 'production';
+  if (environment === 'development') return;
+
+  // Schedule load after first render / during idle time
+  const scheduleLoad = () => {
+    initPromise = loadAndInitSentry();
+  };
+
+  if (typeof requestIdleCallback === 'function') {
+    requestIdleCallback(scheduleLoad, { timeout: 3000 });
+  } else {
+    setTimeout(scheduleLoad, 100);
+  }
+}
+
+// ── Public wrapper functions (queue calls until Sentry loads) ──
+
+/**
  * Set user context in Sentry
- * Should be called after user authentication
  */
 export function setSentryUser(user: {
   id: string;
@@ -200,42 +225,51 @@ export function setSentryUser(user: {
   username?: string;
   [key: string]: any;
 }) {
-  Sentry.setUser({
-    id: user.id,
-    email: user.email,
-    username: user.username,
-    ip_address: '{{auto}}', // Auto-detect IP address
+  enqueue(() => {
+    SentryModule?.setUser({
+      id: user.id,
+      email: user.email,
+      username: user.username,
+      ip_address: '{{auto}}',
+    });
   });
 }
 
 /**
  * Clear user context in Sentry
- * Should be called on logout
  */
 export function clearSentryUser() {
-  Sentry.setUser(null);
+  enqueue(() => {
+    SentryModule?.setUser(null);
+  });
 }
 
 /**
  * Add custom context to Sentry events
  */
 export function setSentryContext(key: string, context: Record<string, any>) {
-  Sentry.setContext(key, context);
+  enqueue(() => {
+    SentryModule?.setContext(key, context);
+  });
 }
 
 /**
  * Add custom tags to Sentry events
  */
 export function setSentryTags(tags: Record<string, string>) {
-  Sentry.setTags(tags);
+  enqueue(() => {
+    SentryModule?.setTags(tags);
+  });
 }
 
 /**
  * Manually capture an exception
  */
 export function captureException(error: Error, context?: Record<string, any>) {
-  Sentry.captureException(error, {
-    contexts: context,
+  enqueue(() => {
+    SentryModule?.captureException(error, {
+      contexts: context,
+    });
   });
 }
 
@@ -243,7 +277,9 @@ export function captureException(error: Error, context?: Record<string, any>) {
  * Manually capture a message
  */
 export function captureMessage(message: string, level: 'info' | 'warning' | 'error' = 'info') {
-  Sentry.captureMessage(message, level);
+  enqueue(() => {
+    SentryModule?.captureMessage(message, level);
+  });
 }
 
 /**
@@ -255,11 +291,13 @@ export function addBreadcrumb(breadcrumb: {
   level?: 'info' | 'warning' | 'error';
   data?: Record<string, any>;
 }) {
-  Sentry.addBreadcrumb({
-    message: breadcrumb.message,
-    category: breadcrumb.category || 'custom',
-    level: breadcrumb.level || 'info',
-    data: breadcrumb.data,
+  enqueue(() => {
+    SentryModule?.addBreadcrumb({
+      message: breadcrumb.message,
+      category: breadcrumb.category || 'custom',
+      level: breadcrumb.level || 'info',
+      data: breadcrumb.data,
+    });
   });
 }
 
@@ -267,11 +305,9 @@ export function addBreadcrumb(breadcrumb: {
  * Start a performance span
  */
 export function startTransaction(name: string, op: string = 'custom') {
-  return Sentry.startSpan(
-    {
-      name,
-      op,
-    },
-    (span) => span
-  );
+  // Spans only make sense if Sentry is already loaded
+  if (SentryModule) {
+    return SentryModule.startSpan({ name, op }, (span) => span);
+  }
+  return undefined;
 }

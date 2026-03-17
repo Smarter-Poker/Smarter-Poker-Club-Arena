@@ -1,9 +1,27 @@
 /**
  * ♠ CLUB ARENA — Database Types
  * TypeScript types for Supabase tables
+ *
+ * NOTE: Club and ClubSettings are now re-exported from club.types.ts
+ * (the canonical source). This eliminates the type mismatch that caused
+ * errors when mixing ClubsService (club.types) with pages (database.types).
  */
 
+// Re-export Club from the canonical source
+export type { Club, ClubSettings as ClubTypeSettings } from './club.types';
 import type { Club } from './club.types';
+
+// Legacy ClubSettings alias — database.types consumers expect this shape.
+export interface ClubSettings {
+  default_rake_percent: number;
+  rake_cap: number;
+  time_bank_seconds: number;
+  allow_straddle: boolean;
+  allow_run_it_twice: boolean;
+  min_buy_in_bb: number;
+  max_buy_in_bb: number;
+}
+
 
 export interface Database {
   public: {
@@ -35,22 +53,6 @@ export interface Database {
       };
     };
   };
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Core Types
-// ═══════════════════════════════════════════════════════════════════════════════
-
-export type { Club } from './club.types'; // Re-export Club for backward compatibility
-
-export interface ClubSettings {
-  default_rake_percent: number;
-  rake_cap: number;
-  time_bank_seconds: number;
-  allow_straddle: boolean;
-  allow_run_it_twice: boolean;
-  min_buy_in_bb: number;
-  max_buy_in_bb: number;
 }
 
 export interface ClubMember {

@@ -4,10 +4,13 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  * Custom Sentry integration for monitoring Supabase database operations.
  * Tracks query performance, errors, and RLS policy violations.
+ *
+ * Uses lazy-loaded Sentry via SentryInit wrappers — no static @sentry/react
+ * import, keeping this module out of the critical bundle path.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import * as Sentry from '@sentry/react';
+import { getSentry, getSentryAsync, captureException as sentryCapture } from './SentryInit';
 
 /**
  * Track a Supabase operation with Sentry
@@ -17,6 +20,22 @@ export function trackSupabaseOperation<T>(
   operation: string,
   promise: Promise<T>
 ): Promise<T> {
+  const Sentry = getSentry();
+
+  // If Sentry isn't loaded yet, just pass through the promise without wrapping
+  if (!Sentry) {
+    return promise
+      .then(async (result) => {
+        // Still check for errors even without span tracking
+        await reportSupabaseErrors(result, table, operation);
+        return result;
+      })
+      .catch(async (error) => {
+        sentryCapture(error instanceof Error ? error : new Error(String(error)));
+        throw error;
+      });
+  }
+
   return Sentry.startSpan(
     {
       name: `Supabase ${operation}`,
@@ -29,52 +48,11 @@ export function trackSupabaseOperation<T>(
     async () => {
       try {
         const result = await promise;
-
-        // Check for Supabase errors in the result
-        if (result && typeof result === 'object' && 'error' in result) {
-          const error = (result as any).error;
-
-          if (error) {
-            // Capture Supabase errors
-            Sentry.captureException(error, {
-              tags: {
-                table,
-                operation,
-                error_code: error.code,
-              },
-              contexts: {
-                supabase: {
-                  table,
-                  operation,
-                  error_code: error.code,
-                  error_message: error.message,
-                  error_details: error.details,
-                  error_hint: error.hint,
-                },
-              },
-            });
-
-            // Check for RLS policy violations
-            if (error.code === 'PGRST301' || error.code === '42501') {
-              Sentry.captureMessage(`RLS Policy Violation: ${table}`, {
-                level: 'warning',
-                tags: {
-                  table,
-                  error_type: 'rls_policy_violation',
-                },
-              });
-            }
-          }
-        }
-
+        await reportSupabaseErrors(result, table, operation);
         return result;
       } catch (error) {
-        // Capture unexpected errors
         Sentry.captureException(error, {
-          tags: {
-            table,
-            operation,
-          },
+          tags: { table, operation },
         });
         throw error;
       }
@@ -83,14 +61,50 @@ export function trackSupabaseOperation<T>(
 }
 
 /**
+ * Check Supabase result for errors and report to Sentry
+ */
+async function reportSupabaseErrors<T>(result: T, table: string, operation: string) {
+  if (result && typeof result === 'object' && 'error' in result) {
+    const error = (result as any).error;
+    if (!error) return;
+
+    // Load Sentry async for error reporting (non-blocking)
+    const Sentry = await getSentryAsync();
+    if (!Sentry) return;
+
+    Sentry.captureException(error, {
+      tags: {
+        table,
+        operation,
+        error_code: error.code,
+      },
+      contexts: {
+        supabase: {
+          table,
+          operation,
+          error_code: error.code,
+          error_message: error.message,
+          error_details: error.details,
+          error_hint: error.hint,
+        },
+      },
+    });
+
+    // Check for RLS policy violations
+    if (error.code === 'PGRST301' || error.code === '42501') {
+      Sentry.captureMessage(`RLS Policy Violation: ${table}`, {
+        level: 'warning',
+        tags: {
+          table,
+          error_type: 'rls_policy_violation',
+        },
+      });
+    }
+  }
+}
+
+/**
  * Helper to wrap Supabase queries with Sentry tracking
- *
- * Usage:
- * const { data, error } = await trackSupabaseQuery(
- *   'clubs',
- *   'select',
- *   supabase.from('clubs').select('*')
- * );
  */
 export async function trackSupabaseQuery<T>(
   table: string,

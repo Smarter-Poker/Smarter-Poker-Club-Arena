@@ -4,11 +4,14 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  * Catches React rendering errors and reports them to Sentry with full context.
  * Provides user feedback dialog for error reporting.
+ *
+ * Uses lazy-loaded Sentry via dynamic import — no static @sentry/react import,
+ * keeping the error boundary out of the critical bundle path.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import React, { Component, ErrorInfo, ReactNode } from 'react';
-import * as Sentry from '@sentry/react';
+import { Component, ErrorInfo, ReactNode } from 'react';
+import { getSentryAsync } from '../../core/SentryInit';
 
 interface Props {
   children: ReactNode;
@@ -48,16 +51,41 @@ class ErrorBoundary extends Component<Props, State> {
       return;
     }
 
-    // Capture exception with Sentry and get event ID
-    Sentry.withScope((scope) => {
-      scope.setContext('react', {
-        componentStack: errorInfo.componentStack,
-      });
+    // Capture exception with Sentry (lazy-loaded) and get event ID
+    getSentryAsync()
+      .then((Sentry) => {
+        if (!Sentry) return;
+        Sentry.withScope((scope) => {
+          scope.setContext('react', {
+            componentStack: errorInfo.componentStack,
+          });
 
-      const eventId = Sentry.captureException(error);
-      this.setState({ eventId });
-    });
+          const eventId = Sentry.captureException(error);
+          this.setState({ eventId });
+        });
+      })
+      .catch(() => {
+        /* Sentry unavailable */
+      });
   }
+
+  handleReportClick = () => {
+    if (!this.state.eventId) return;
+    const eventId = this.state.eventId;
+    getSentryAsync()
+      .then((Sentry) => {
+        if (!Sentry) return;
+        Sentry.showReportDialog({
+          eventId,
+          title: 'Help us fix this issue',
+          subtitle: 'Tell us what happened',
+          subtitle2: 'Your feedback helps us improve Club Arena',
+        });
+      })
+      .catch(() => {
+        /* Sentry unavailable */
+      });
+  };
 
   render() {
     if (this.state.hasError) {
@@ -127,16 +155,7 @@ class ErrorBoundary extends Component<Props, State> {
               >
                 {this.state.eventId && (
                   <button
-                    onClick={() => {
-                      if (this.state.eventId) {
-                        Sentry.showReportDialog({
-                          eventId: this.state.eventId,
-                          title: 'Help us fix this issue',
-                          subtitle: 'Tell us what happened',
-                          subtitle2: 'Your feedback helps us improve Club Arena',
-                        });
-                      }
-                    }}
+                    onClick={this.handleReportClick}
                     style={{
                       padding: '0.75rem 1.5rem',
                       background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
@@ -206,39 +225,4 @@ class ErrorBoundary extends Component<Props, State> {
   }
 }
 
-// Export Sentry-wrapped version for additional error handling
-export default Sentry.withErrorBoundary(ErrorBoundary, {
-  fallback: ({ resetError }) => (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: '100vh',
-        padding: '2rem',
-        background: '#1a1a2e',
-        color: '#fff',
-      }}
-    >
-      <div style={{ maxWidth: '500px', textAlign: 'center' }}>
-        <h1>Application Error</h1>
-        <p>An unexpected error occurred. Please try reloading the page.</p>
-        <button
-          onClick={resetError}
-          style={{
-            marginTop: '1rem',
-            padding: '0.75rem 1.5rem',
-            background: '#667eea',
-            color: '#fff',
-            border: 'none',
-            borderRadius: '8px',
-            cursor: 'pointer',
-          }}
-        >
-          Try Again
-        </button>
-      </div>
-    </div>
-  ),
-  showDialog: false, // We handle the dialog manually in our component
-});
+export default ErrorBoundary;

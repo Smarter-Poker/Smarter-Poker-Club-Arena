@@ -17,7 +17,7 @@ import GlobalWaitlistListener from './components/common/GlobalWaitlistListener';
 import WaitlistBanner from './components/common/WaitlistBanner';
 import { earlyAuth } from './core/earlyAuthBridge';
 import { postToParent, setParentOrigin, isTrustedOrigin } from './utils/parentOrigin';
-import * as Sentry from '@sentry/react';
+import { addBreadcrumb } from './core/SentryInit';
 
 // Intro Video — lazy-loaded (only shown once per session, not needed for initial paint)
 const IntroVideo = lazy(() => import('./components/IntroVideo'));
@@ -283,30 +283,22 @@ export default function App() {
       const ms = Math.round(performance.now() - startTime);
       console.log(`[App] ✅ Auth session set via ${source} in ${ms}ms`);
       postToParent({ type: 'SMARTER_AUTH_ACK' });
-      try {
-        Sentry.addBreadcrumb({
-          category: 'auth-handshake',
-          message: `setSession completed in ${ms}ms`,
-          level: 'info',
-          data: { ms, method: source },
-        });
-      } catch {
-        /* Sentry not loaded */
-      }
+      addBreadcrumb({
+        category: 'auth-handshake',
+        message: `setSession completed in ${ms}ms`,
+        level: 'info',
+        data: { ms, method: source },
+      });
     } catch (e) {
       console.error(`[App] setSession failed (${source}):`, e);
       postToParent({ type: 'SMARTER_AUTH_FAILED', error: String(e) });
       // Reset lastAuthTokenRef so a retry can re-attempt
       lastAuthTokenRef.current = null;
-      try {
-        Sentry.addBreadcrumb({
-          category: 'auth-handshake',
-          message: `setSession FAILED (${source}): ${e}`,
-          level: 'error',
-        });
-      } catch {
-        /* Sentry not loaded */
-      }
+      addBreadcrumb({
+        category: 'auth-handshake',
+        message: `setSession FAILED (${source}): ${e}`,
+        level: 'error',
+      });
     } finally {
       authInFlightRef.current = false;
     }

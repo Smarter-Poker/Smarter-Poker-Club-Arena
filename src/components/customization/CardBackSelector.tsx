@@ -46,22 +46,22 @@ const CARD_BACKS: CardBack[] = [
   {
     id: 'black',
     name: 'Black',
-    preview: '/cards/backs/black.jpeg',
+    preview: '/cards/backs/black.webp',
     isDefault: true,
     tier: 'standard',
   },
-  { id: 'red', name: 'Red', preview: '/cards/backs/red.jpeg', isDefault: true, tier: 'standard' },
+  { id: 'red', name: 'Red', preview: '/cards/backs/red.webp', isDefault: true, tier: 'standard' },
   {
     id: 'blue',
     name: 'Blue',
-    preview: '/cards/backs/blue.jpeg',
+    preview: '/cards/backs/blue.webp',
     isDefault: true,
     tier: 'standard',
   },
   {
     id: 'white',
     name: 'White',
-    preview: '/cards/backs/white.jpeg',
+    preview: '/cards/backs/white.webp',
     isDefault: true,
     tier: 'standard',
   },
@@ -70,7 +70,7 @@ const CARD_BACKS: CardBack[] = [
   {
     id: 'classic',
     name: 'Classic',
-    preview: '/cards/backs/classic.jpg',
+    preview: '/cards/backs/classic.webp',
     isPremium: true,
     price: 50,
     tier: 'premium',
@@ -78,7 +78,7 @@ const CARD_BACKS: CardBack[] = [
   {
     id: 'burgundy',
     name: 'Burgundy',
-    preview: '/cards/backs/burgundy.jpg',
+    preview: '/cards/backs/burgundy.webp',
     isPremium: true,
     price: 75,
     tier: 'premium',
@@ -86,7 +86,7 @@ const CARD_BACKS: CardBack[] = [
   {
     id: 'navy',
     name: 'Navy',
-    preview: '/cards/backs/navy.jpg',
+    preview: '/cards/backs/navy.webp',
     isPremium: true,
     price: 75,
     tier: 'premium',
@@ -94,7 +94,7 @@ const CARD_BACKS: CardBack[] = [
   {
     id: 'gold',
     name: 'Premium Gold',
-    preview: '/cards/backs/gold.jpg',
+    preview: '/cards/backs/gold.webp',
     isPremium: true,
     price: 150,
     tier: 'premium',
@@ -104,7 +104,7 @@ const CARD_BACKS: CardBack[] = [
   {
     id: 'holographic',
     name: 'Holographic',
-    preview: '/cards/backs/holographic.jpg',
+    preview: '/cards/backs/holographic.webp',
     isPremium: true,
     price: 200,
     tier: 'exclusive',
@@ -112,7 +112,7 @@ const CARD_BACKS: CardBack[] = [
   {
     id: 'carbon',
     name: 'Carbon Fiber',
-    preview: '/cards/backs/carbon.jpg',
+    preview: '/cards/backs/carbon.webp',
     isPremium: true,
     price: 175,
     tier: 'exclusive',

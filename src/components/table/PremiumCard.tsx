@@ -17,10 +17,10 @@ export interface PremiumCardType {
 export type DeckTheme = 'classic' | 'burgundy' | 'navy' | 'gold';
 
 export const DECK_THEMES: Record<DeckTheme, { name: string; image: string }> = {
-  classic: { name: 'Classic', image: '/cards/backs/classic.jpg' },
-  burgundy: { name: 'Burgundy', image: '/cards/backs/burgundy.jpg' },
-  navy: { name: 'Navy', image: '/cards/backs/navy.jpg' },
-  gold: { name: 'Premium Gold', image: '/cards/backs/gold.jpg' },
+  classic: { name: 'Classic', image: '/cards/backs/classic.webp' },
+  burgundy: { name: 'Burgundy', image: '/cards/backs/burgundy.webp' },
+  navy: { name: 'Navy', image: '/cards/backs/navy.webp' },
+  gold: { name: 'Premium Gold', image: '/cards/backs/gold.webp' },
 };
 
 interface PremiumCardProps {

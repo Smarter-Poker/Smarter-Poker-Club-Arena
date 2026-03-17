@@ -3656,9 +3656,10 @@ export default function TablePage({
           suit: c.suit as 'h' | 'd' | 'c' | 's',
         }));
 
-        // Hero's hole cards
+        // Hero's hole cards — BUG-F FIX: read from fresh ref, not stale 'hero' closure
+        const freshHero = tableStateRef.current.players[heroSeat - 1];
         const heroCards =
-          hero?.holeCards?.map((c) => ({
+          (freshHero?.holeCards || hero?.holeCards)?.map((c) => ({
             rank: c.rank,
             suit: c.suit as 'h' | 'd' | 'c' | 's',
           })) || [];

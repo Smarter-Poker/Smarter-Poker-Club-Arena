@@ -505,3 +505,35 @@
     align-items: flex-start;
   }
 }
+
+/* ═══════════════════ Supplemental ≤480px mobile touch targets ═══════════════════ */
+
+@media (max-width: 480px) {
+  .admin-dashboard {
+    padding: 12px;
+  }
+
+  .admin-stats-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .admin-btn,
+  .admin-btn-primary,
+  .admin-btn-success,
+  .admin-btn-danger {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .admin-card-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .admin-section-title {
+    font-size: 0.9rem;
+  }
+}

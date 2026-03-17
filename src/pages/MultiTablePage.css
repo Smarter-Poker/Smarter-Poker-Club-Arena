@@ -259,3 +259,20 @@
   pointer-events: none;
   backdrop-filter: blur(4px);
 }
+
+/* ═══════════════════ Supplemental mobile touch targets ═══════════════════ */
+
+@media (max-width: 480px) {
+  .multi-table-page--empty button {
+    min-height: 44px;
+  }
+
+  .tile-toggle-btn {
+    min-height: 36px;
+    min-width: 36px;
+  }
+
+  .table-grid {
+    grid-template-columns: 1fr;
+  }
+}

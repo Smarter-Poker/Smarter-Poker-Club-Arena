@@ -3549,6 +3549,7 @@ export default function TablePage({
 
       if (!result.valid) {
         console.warn('[TablePage] Action rejected locally:', result.reason);
+        toast?.info?.(result.reason || 'Invalid action');
         return false;
       }
       return true;
@@ -3926,9 +3927,16 @@ export default function TablePage({
       setShowRaiseSlider(true);
     },
     onClosePanel: () => {
+      // Escape key → close ALL open modals/overlays
       setIsChatCollapsed(true);
       setShowSettings(false);
       setIsReactionPickerOpen(false);
+      setShowHandHistory(false);
+      setShowPlayerNotes(false);
+      setShowWaitList(false);
+      setShowRaiseSlider(false);
+      setShowBuyInModal(false);
+      setIsSideMenuOpen(false);
     },
   });
 

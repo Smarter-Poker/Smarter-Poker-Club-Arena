@@ -52,6 +52,20 @@ export default function DisputeManagementPage() {
 
   const loadingRef = useRef(false);
 
+  // ── CRITICAL: Reset per-club state when navigating between clubs ──
+  useEffect(() => {
+    setActiveTab('all');
+    setResolving(null);
+    setReviewing(null);
+    setEscalating(null);
+    setResolutionText('');
+    setAdjustmentAmount('');
+    setAdjustmentType('none');
+    setExpandedId(null);
+    setSearchQuery('');
+    loadingRef.current = false;
+  }, [clubId]);
+
   const loadDisputes = useCallback(async () => {
     if (loadingRef.current) return;
     loadingRef.current = true;

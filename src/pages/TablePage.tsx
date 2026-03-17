@@ -1327,7 +1327,6 @@ export default function TablePage({
             (!updatedPlayers[heroIdx]!.holeCards ||
               updatedPlayers[heroIdx]!.holeCards!.length === 0)
           ) {
-            const suitMapRef = ENGINE_SUIT_MAP;
             let rawCards = [];
             try {
               rawCards = typeof data.cards === 'string' ? JSON.parse(data.cards) : data.cards;
@@ -1338,7 +1337,7 @@ export default function TablePage({
               ...updatedPlayers[heroIdx]!,
               holeCards: (rawCards || []).map((c: any) => ({
                 rank: c.rank,
-                suit: suitMapRef[c.suit] || (c.suit as any),
+                suit: ENGINE_SUIT_MAP[c.suit] || (c.suit as any),
               })),
               showCards: true,
             };
@@ -2878,20 +2877,26 @@ export default function TablePage({
           }
 
           // Track wins for HUD stats + hero session wins
-          for (const winner of event.winners) {
-            if (winner.userId) {
-              recordHUDWin(winner.userId);
-              // Track hero wins for session summary
-              if (winner.userId === userId) {
-                handsWonRef.current += 1;
+          {
+            let heroWonThisHand = false;
+            for (const winner of event.winners) {
+              if (winner.userId) {
+                recordHUDWin(winner.userId);
+                // Track hero wins for session summary (once per hand, not per pot)
+                if (winner.userId === userId && !heroWonThisHand) {
+                  handsWonRef.current += 1;
+                  heroWonThisHand = true;
+                }
               }
             }
           }
-          // Show hero P/L toast after each hand
+          // Show hero P/L toast — sum ALL pots won (main + side pots)
           {
-            const heroWin = event.winners.find((w: any) => w.userId === userId);
-            if (heroWin && heroWin.amount > 0) {
-              toast?.success?.(`+$${heroWin.amount.toFixed(2)}`);
+            const heroWinTotal = event.winners
+              .filter((w: any) => w.userId === userId)
+              .reduce((sum: number, w: any) => sum + (w.amount || 0), 0);
+            if (heroWinTotal > 0) {
+              toast?.success?.(`+$${heroWinTotal.toFixed(2)}`);
             }
           }
           // Trigger achievements for winners

@@ -154,6 +154,7 @@ export default function PlayerStatsPage() {
   const toast = useToast();
   const isMounted = useIsMounted();
   const hasStatsRef = useRef(false);
+  const statsLoadingRef = useRef(false);
   useVisibilityRefresh(() => loadStats());
 
   // SWR: show cached stats instantly on mount
@@ -265,6 +266,8 @@ export default function PlayerStatsPage() {
 
   const loadStats = async (getIsMounted?: () => boolean) => {
     if (!targetUserId) return;
+    if (statsLoadingRef.current) return;
+    statsLoadingRef.current = true;
     if (!hasStatsRef.current) setLoading(true);
     try {
       const { data, error } = await retryFetch(
@@ -356,6 +359,7 @@ export default function PlayerStatsPage() {
       if (isMounted.current) toast.error('Failed to load player stats');
     }
     if (isMounted.current) setLoading(false);
+    statsLoadingRef.current = false;
   };
 
   const loadSessionHistory = async (getIsMounted?: () => boolean) => {

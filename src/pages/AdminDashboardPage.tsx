@@ -8,7 +8,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -179,8 +179,11 @@ function DashboardTab({ clubId }: { clubId: string }) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const isMounted = useIsMounted();
+  const loadingRef = useRef(false);
 
   const load = useCallback(async () => {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     try {
       setLoading(true);
       setLoadError(null);
@@ -282,6 +285,7 @@ function DashboardTab({ clubId }: { clubId: string }) {
     } catch (err: any) {
       if (isMounted.current) setLoadError(err.message || 'Failed to load dashboard');
     } finally {
+      loadingRef.current = false;
       if (isMounted.current) setLoading(false);
     }
   }, [clubId]);
@@ -521,8 +525,11 @@ function SettlementsTab({ clubId }: { clubId: string }) {
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isMounted = useIsMounted();
+  const loadingRef = useRef(false);
 
   const load = useCallback(async () => {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     try {
       setLoading(true);
       setError(null);
@@ -554,6 +561,7 @@ function SettlementsTab({ clubId }: { clubId: string }) {
     } catch (err: any) {
       if (isMounted.current) setError(err.message);
     } finally {
+      loadingRef.current = false;
       if (isMounted.current) setLoading(false);
     }
   }, [clubId]);

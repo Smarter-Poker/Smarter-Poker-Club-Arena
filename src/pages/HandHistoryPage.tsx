@@ -5,7 +5,7 @@
  * Full-page hand history browser with filters, pagination, and export
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { handHistoryService } from '../services/HandHistoryService';
 import type { HandRecord } from '../services/HandHistoryService';
@@ -63,6 +63,7 @@ export default function HandHistoryPage() {
   const [visibleHandCards, setVisibleHandCards] = useState(new Set<number>());
   const PAGE_SIZE = 25;
   const isMounted = useIsMounted();
+  const loadingRef = useRef(false);
 
   // SWR: show cached hands instantly on mount
   useEffect(() => {
@@ -142,6 +143,9 @@ export default function HandHistoryPage() {
 
   const loadHands = async (reset = false, overridePage?: number, getIsMounted?: () => boolean) => {
     if (!user?.id) return;
+    // Dedup: prevent concurrent reset-loads (pagination loads always proceed)
+    if (reset && loadingRef.current) return;
+    if (reset) loadingRef.current = true;
     const currentPage = reset ? 1 : (overridePage ?? page);
     if (reset) {
       if (!getIsMounted || getIsMounted()) {
@@ -186,6 +190,7 @@ export default function HandHistoryPage() {
       setLoading(false);
       setLoadingMore(false);
     }
+    if (reset) loadingRef.current = false;
   };
 
   const loadMore = () => {
@@ -287,7 +292,11 @@ export default function HandHistoryPage() {
         const url = `https://smarter.poker/hub/jarvis?hand=${encodedData}`;
         const isInIframe = typeof window !== 'undefined' && window.parent !== window;
         if (isInIframe) {
-          try { window.top!.open(url, '_blank'); } catch { window.open(url, '_blank'); }
+          try {
+            window.top!.open(url, '_blank');
+          } catch {
+            window.open(url, '_blank');
+          }
         } else {
           window.open(url, '_blank');
         }

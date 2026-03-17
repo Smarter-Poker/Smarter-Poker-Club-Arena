@@ -2,7 +2,7 @@
  *  CLUB MEMBERS PAGE — Member Management with Live Presence & Role Promotion
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useUserStore } from '../stores/useUserStore';
@@ -465,9 +465,13 @@ export default function ClubMembersPage() {
   const [visibleMembers, setVisibleMembers] = useState<Set<string>>(new Set());
   const [selectedMember, setSelectedMember] = useState<ClubMember | null>(null);
 
+  const loadingRef = useRef(false);
+
   const loadMembers = useCallback(
     async (getIsMounted?: () => boolean) => {
       if (!clubId) return;
+      if (loadingRef.current) return;
+      loadingRef.current = true;
       if (!getIsMounted || getIsMounted()) setLoading(true);
       try {
         const resolvedId = await resolveClubUUID(clubId);
@@ -565,6 +569,7 @@ export default function ClubMembersPage() {
         toast.error('Failed to load members');
       }
       if (!getIsMounted || getIsMounted()) setLoading(false);
+      loadingRef.current = false;
     },
     [clubId, user?.id, onlineUserIds]
   );

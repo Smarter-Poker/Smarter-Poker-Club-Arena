@@ -70,6 +70,7 @@ export default function LobbyPage() {
   const [onlinePlayers, setOnlinePlayers] = useState(0);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasDataRef = useRef(false);
+  const fetchLoadingRef = useRef(false);
   const [wsConnected, setWsConnected] = useState(true);
 
   // SWR: show cached table list instantly on mount
@@ -401,6 +402,8 @@ export default function LobbyPage() {
     }, 10_000);
 
     const fetchTables = async () => {
+      if (fetchLoadingRef.current) return;
+      fetchLoadingRef.current = true;
       try {
         setLoading(true);
         // For users in unions, they'll be redirected above.
@@ -419,6 +422,7 @@ export default function LobbyPage() {
         toast.error('Failed to load tables. Please try refreshing.');
       } finally {
         clearTimeout(loadingTimeout);
+        fetchLoadingRef.current = false;
         if (isMounted.current) setLoading(false);
       }
     };

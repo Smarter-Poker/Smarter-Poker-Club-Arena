@@ -9,7 +9,7 @@
  *  - Period history with expandable details
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -199,7 +199,11 @@ export default function SettlementDashboardPage() {
   const [visibleCards, setVisibleCards] = useState<Set<number>>(new Set());
   const [visibleRows, setVisibleRows] = useState<Set<number>>(new Set());
 
+  const loadingRef = useRef(false);
+
   const loadData = useCallback(async () => {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     setLoading(true);
     let loadedPeriodId: string | null = null;
     try {
@@ -274,6 +278,7 @@ export default function SettlementDashboardPage() {
       console.error('[Settlement] Load failed:', err);
       if (isMounted.current) toast.error('Failed to load settlement data');
     }
+    loadingRef.current = false;
     if (isMounted.current) setLoading(false);
   }, []);
 

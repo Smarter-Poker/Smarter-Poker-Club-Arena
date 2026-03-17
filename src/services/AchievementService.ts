@@ -259,6 +259,38 @@ export const ACHIEVEMENTS: Achievement[] = [
     chipReward: 0,
     hidden: true,
   },
+
+  // Streak
+  {
+    id: 'streak_7',
+    name: 'Weekly Warrior',
+    description: 'Log in 7 days in a row',
+    icon: '🔥',
+    category: 'special',
+    rarity: 'common',
+    requirement: 7,
+    chipReward: 0,
+  },
+  {
+    id: 'streak_30',
+    name: 'Monthly Grinder',
+    description: 'Log in 30 days in a row',
+    icon: '📅',
+    category: 'special',
+    rarity: 'rare',
+    requirement: 30,
+    chipReward: 100,
+  },
+  {
+    id: 'streak_100',
+    name: 'Centurion',
+    description: 'Log in 100 days in a row',
+    icon: '💯',
+    category: 'special',
+    rarity: 'legendary',
+    requirement: 100,
+    chipReward: 500,
+  },
 ];
 
 // ═══════════════════════════════════════════════════════════════════════════════

@@ -166,14 +166,19 @@ class AchievementTriggerServiceClass {
       chipsAwarded: 0,
     };
 
-    // Login streak: 'streak_7' is not yet defined in ACHIEVEMENTS.
-    // When login streak achievements are added, wire them here.
-    // For now, this is a no-op to avoid incrementing a non-existent achievement.
-    // TODO: Add streak achievements to ACHIEVEMENTS array and uncomment:
-    // const streakResult = await achievementService.incrementProgress(userId, 'streak_7');
-    // if (streakResult.unlocked && streakResult.achievement) {
-    //   result.triggeredAchievements.push(streakResult.achievement);
-    // }
+    // Login streak achievements
+    const streakIds = ['streak_7', 'streak_30', 'streak_100'];
+    for (const streakId of streakIds) {
+      try {
+        const streakResult = await achievementService.incrementProgress(userId, streakId);
+        if (streakResult.unlocked && streakResult.achievement) {
+          result.triggeredAchievements.push(streakResult.achievement);
+          result.chipsAwarded += streakResult.achievement.chipReward || 0;
+        }
+      } catch {
+        // Achievement not found or already unlocked — skip
+      }
+    }
 
     return result;
   }

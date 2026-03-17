@@ -33,7 +33,7 @@ import haptic from '../services/HapticService';
 import PremiumSFX from '../services/PremiumSFX';
 import { masterBus } from '../core/MasterBus';
 import { useMasterBusSubscription } from '../hooks/useMasterBusSubscription';
-import DailyChallenges from '../components/home/DailyChallenges';
+
 import PresenceHub from '../components/home/PresenceHub';
 import ClubContextMenu from '../components/home/ClubContextMenu';
 import LOBBY_TILES from '../config/lobbyTiles.config';
@@ -60,6 +60,7 @@ interface UserPreferences {
 
 // Action button images
 const ACTION_BAR_HORIZONTAL = `${import.meta.env.BASE_URL}images/icons/action-bar-horizontal.png`;
+const DAILY_CHALLENGES_ICON = `${import.meta.env.BASE_URL}images/icons/daily-challenges-icon.png`;
 
 // #12: Seasonal theme detection
 function getSeasonalTheme(): string {
@@ -1244,7 +1245,55 @@ function HomePageInner() {
         </div>
         {/* P4-4: Section separator */}
         <div className={styles.sectionSeparator}></div>
-        <DailyChallenges />
+        {/* Daily Challenges — Clickable Icon navigates to Profile (Daily Missions) */}
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'center',
+            width: '100%',
+            margin: '8px 0',
+          }}
+        >
+          <button
+            onClick={() => {
+              haptic.light();
+              PremiumSFX.navigate();
+              navigate('/profile');
+            }}
+            aria-label="Daily Challenges"
+            style={{
+              background: 'none',
+              border: 'none',
+              padding: 0,
+              cursor: 'pointer',
+              outline: 'none',
+              transition: 'transform 0.2s ease, filter 0.2s ease',
+              maxWidth: 160,
+              width: '100%',
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.transform = 'scale(1.05)';
+              (e.currentTarget as HTMLButtonElement).style.filter =
+                'brightness(1.15) drop-shadow(0 0 12px rgba(0, 212, 255, 0.4))';
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.transform = 'scale(1)';
+              (e.currentTarget as HTMLButtonElement).style.filter = 'none';
+            }}
+          >
+            <img
+              src={DAILY_CHALLENGES_ICON}
+              alt="Daily Challenges"
+              style={{
+                width: '100%',
+                height: 'auto',
+                display: 'block',
+                pointerEvents: 'none',
+              }}
+              loading="lazy"
+            />
+          </button>
+        </div>
         <div className={styles.sectionSeparator}></div>
 
         {/* ═══════════════════════════════════════════════════════════════════════

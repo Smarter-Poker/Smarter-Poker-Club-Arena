@@ -6,8 +6,8 @@
 .club-card-panel {
   position: relative;
   width: 100%;
-  /* Lock aspect ratio to match the card frame template (604:1024) */
-  aspect-ratio: 604 / 1024;
+  /* Lock aspect ratio to match the card frame template (585:1024) */
+  aspect-ratio: 585 / 1024;
   display: block;
   overflow: hidden;
   pointer-events: none;

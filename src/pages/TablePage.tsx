@@ -5071,18 +5071,21 @@ export default function TablePage({
             if (isDemoTable) {
               // Directly set chips for demo mode
               setAccountBalance(amount);
-              const newPlayers = [...tableState.players];
-              if (selectedSeat && selectedSeat > 0 && selectedSeat <= newPlayers.length) {
-                newPlayers[selectedSeat - 1] = {
-                  id: userId || 'demo-player',
-                  name: username || 'You',
-                  avatar: '',
-                  stack: amount,
-                  status: 'active',
-                  isHero: true,
-                  showCards: false,
-                };
-                setTableState((prev) => ({ ...prev, players: newPlayers, heroSeat: selectedSeat }));
+              if (selectedSeat && selectedSeat > 0) {
+                setTableState((prev) => {
+                  if (selectedSeat > prev.players.length) return prev;
+                  const updatedPlayers = [...prev.players];
+                  updatedPlayers[selectedSeat - 1] = {
+                    id: userId || 'demo-player',
+                    name: username || 'You',
+                    avatar: '',
+                    stack: amount,
+                    status: 'active',
+                    isHero: true,
+                    showCards: false,
+                  };
+                  return { ...prev, players: updatedPlayers, heroSeat: selectedSeat };
+                });
                 roomService.joinRoom(
                   tableId || 'demo',
                   userId || 'demo-player',
@@ -5104,17 +5107,13 @@ export default function TablePage({
                 });
 
                 // Execute FULLY ATOMIC buy-in and seat insertion
-                const { error: rpcErr } = await retryAsync(
-                  () =>
-                    supabase.rpc('atomic_table_buyin', {
-                      p_user_id: userId,
-                      p_table_id: tableId,
-                      p_seat_number: selectedSeat,
-                      p_amount: amount,
-                      p_auto_rebuy: autoRebuy || false,
-                    }),
-                  3
-                );
+                const { error: rpcErr } = await supabase.rpc('atomic_table_buyin', {
+                  p_user_id: userId,
+                  p_table_id: tableId,
+                  p_seat_number: selectedSeat,
+                  p_amount: amount,
+                  p_auto_rebuy: autoRebuy || false,
+                });
 
                 if (rpcErr) {
                   console.error('[BuyIn] atomic_table_buyin FAILED:', rpcErr);
@@ -5127,18 +5126,21 @@ export default function TablePage({
                 totalBuyInRef.current += amount; // Track initial buy-in for session P/L
                 if (amount > peakStackRef.current) peakStackRef.current = amount; // Init peak stack
 
-                // Add player to local table state
-                const newPlayers = [...tableState.players];
-                newPlayers[selectedSeat - 1] = {
-                  id: userId,
-                  name: username || 'Player',
-                  avatar: '',
-                  stack: amount,
-                  status: 'active',
-                  isHero: true,
-                  showCards: false,
-                };
-                setTableState((prev) => ({ ...prev, players: newPlayers, heroSeat: selectedSeat }));
+                // Add player to local table state (use functional updater to preserve
+                // concurrent WebSocket updates during the async RPC call)
+                setTableState((prev) => {
+                  const updatedPlayers = [...prev.players];
+                  updatedPlayers[selectedSeat - 1] = {
+                    id: userId,
+                    name: username || 'Player',
+                    avatar: '',
+                    stack: amount,
+                    status: 'active',
+                    isHero: true,
+                    showCards: false,
+                  };
+                  return { ...prev, players: updatedPlayers, heroSeat: selectedSeat };
+                });
 
                 // Notify Hydra service that a real player joined (triggers horse recede)
                 HydraService.onRealPlayerJoined(tableId, userId);

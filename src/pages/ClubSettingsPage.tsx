@@ -194,7 +194,27 @@ export default function ClubSettingsPage() {
           min_buyin_bb: data.min_buyin_bb || 40,
           max_buyin_bb: data.max_buyin_bb || 200,
         };
-        setIsOwner(data.owner_id === user?.id);
+        const ownerMatch = data.owner_id === user?.id;
+        setIsOwner(ownerMatch);
+        if (ownerMatch) {
+          setUserRole('owner');
+        } else if (user?.id) {
+          // Fetch actual role from club_members
+          try {
+            const { data: membership } = await supabase
+              .from('club_members')
+              .select('role')
+              .eq('club_id', data.id)
+              .eq('user_id', user.id)
+              .maybeSingle();
+            if (getIsMounted && !getIsMounted()) return;
+            if (membership?.role) {
+              setUserRole(membership.role as 'owner' | 'admin' | 'agent' | 'member');
+            }
+          } catch {
+            /* non-critical */
+          }
+        }
       }
     } catch (error) {
       console.error('Failed to load club settings:', error);

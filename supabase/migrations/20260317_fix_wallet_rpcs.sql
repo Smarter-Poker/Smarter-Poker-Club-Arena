@@ -93,9 +93,10 @@ BEGIN
 END; $func$;
 
 -- 5. atomic_credit_wallet_and_log — Generic credit operation
+-- NOTE: Keeps p_table_id param name for backward compat with app code; resolves club_id from tables
 CREATE OR REPLACE FUNCTION atomic_credit_wallet_and_log(
   p_user_id uuid, p_amount numeric, p_category text DEFAULT 'credit',
-  p_description text DEFAULT '', p_club_id uuid DEFAULT NULL,
+  p_description text DEFAULT '', p_table_id uuid DEFAULT NULL,
   p_hand_id uuid DEFAULT NULL, p_related_entity_id uuid DEFAULT NULL
 ) RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER AS $func$
 DECLARE v_club_id uuid;
@@ -107,7 +108,7 @@ BEGIN
     VALUES (p_user_id, 'PLAYER', p_amount, 0)
     ON CONFLICT (user_id, wallet_type) DO UPDATE SET balance = wallets.balance + p_amount, updated_at = now();
   END IF;
-  v_club_id := p_club_id;
+  IF p_table_id IS NOT NULL THEN SELECT club_id INTO v_club_id FROM tables WHERE id = p_table_id; END IF;
   IF v_club_id IS NULL THEN SELECT club_id INTO v_club_id FROM club_members WHERE user_id = p_user_id LIMIT 1; END IF;
   IF v_club_id IS NULL THEN v_club_id := 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4'::uuid; END IF;
   INSERT INTO chip_transactions (club_id, to_user_id, amount, transaction_type, notes)
@@ -116,9 +117,10 @@ BEGIN
 END; $func$;
 
 -- 6. atomic_deduct_wallet_and_log — Generic debit with balance check
+-- NOTE: Keeps p_table_id param name for backward compat with app code; resolves club_id from tables
 CREATE OR REPLACE FUNCTION atomic_deduct_wallet_and_log(
   p_user_id uuid, p_amount numeric, p_category text DEFAULT 'debit',
-  p_description text DEFAULT '', p_club_id uuid DEFAULT NULL,
+  p_description text DEFAULT '', p_table_id uuid DEFAULT NULL,
   p_hand_id uuid DEFAULT NULL, p_related_entity_id uuid DEFAULT NULL
 ) RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER AS $func$
 DECLARE v_balance numeric; v_club_id uuid;
@@ -127,7 +129,7 @@ BEGIN
   IF v_balance IS NULL OR v_balance < p_amount THEN RETURN false; END IF;
   UPDATE wallets SET balance = balance - p_amount, updated_at = now()
   WHERE user_id = p_user_id AND wallet_type = 'PLAYER';
-  v_club_id := p_club_id;
+  IF p_table_id IS NOT NULL THEN SELECT club_id INTO v_club_id FROM tables WHERE id = p_table_id; END IF;
   IF v_club_id IS NULL THEN SELECT club_id INTO v_club_id FROM club_members WHERE user_id = p_user_id LIMIT 1; END IF;
   IF v_club_id IS NULL THEN v_club_id := 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4'::uuid; END IF;
   INSERT INTO chip_transactions (club_id, from_user_id, amount, transaction_type, notes)

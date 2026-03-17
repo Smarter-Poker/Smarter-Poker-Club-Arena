@@ -1,13 +1,24 @@
 /**
- * ♠ CLUB ARENA — Avatar Service
- * Integrates with smarter.poker/hub/avatars-complete system
+ * ♠ CLUB ARENA — Avatar Service (Database-Driven)
  *
- * Avatars are stored in Supabase and can be:
- * - Pre-made avatars from the library (70 available)
- * - Custom AI-generated avatars (requires login)
+ * All avatar data comes from Supabase:
+ *   - profiles.avatar_url        → user's current active avatar
+ *   - user_avatars table         → user's generated/custom avatar history
+ *   - social-media/avatars/      → AI-generated preset avatar storage bucket
+ *   - custom-avatars/generated/  → user's custom AI-generated avatars
+ *
+ * The World Hub at smarter.poker/hub/avatars-complete handles the full
+ * avatar creation + selection experience. Club Arena reads the results.
+ *
+ * SVG fallback (avatarGenerator) is used ONLY when no real image exists.
  */
 
 import { supabase } from '../lib/supabase';
+import {
+  generateAvatarSvg,
+  generateDefaultAvatar,
+  getAvatarWithFallback,
+} from '../utils/avatarGenerator';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -28,347 +39,32 @@ export interface UserAvatar {
   displayName: string;
 }
 
+// Re-export for convenience
+export { getAvatarWithFallback } from '../utils/avatarGenerator';
+
 // ═══════════════════════════════════════════════════════════════════════════════
-// AVATAR LIBRARY (75 Pre-made Avatars)
-// These match the Hub's avatar library at smarter.poker/hub/avatars-complete
+// CONSTANTS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const AVATAR_LIBRARY: Omit<Avatar, 'isOwned'>[] = [
-  // ── FREE AVATARS (25) ─────────────────────────────────────────────────────────
-  // Animals
-  {
-    id: 'poker-shark',
-    name: 'Poker Shark',
-    imageUrl: '/avatars/poker-shark.png',
-    category: 'free',
-  },
-  {
-    id: 'lucky-rabbit',
-    name: 'Lucky Rabbit',
-    imageUrl: '/avatars/lucky-rabbit.png',
-    category: 'free',
-  },
-  { id: 'wise-owl', name: 'Wise Owl', imageUrl: '/avatars/wise-owl.png', category: 'free' },
-  { id: 'sly-fox', name: 'Sly Fox', imageUrl: '/avatars/sly-fox.png', category: 'free' },
-  {
-    id: 'cool-penguin',
-    name: 'Cool Penguin',
-    imageUrl: '/avatars/cool-penguin.png',
-    category: 'free',
-  },
-  {
-    id: 'fierce-lion',
-    name: 'Fierce Lion',
-    imageUrl: '/avatars/fierce-lion.png',
-    category: 'free',
-  },
-  {
-    id: 'clever-octopus',
-    name: 'Clever Octopus',
-    imageUrl: '/avatars/clever-octopus.png',
-    category: 'free',
-  },
-  {
-    id: 'swift-eagle',
-    name: 'Swift Eagle',
-    imageUrl: '/avatars/swift-eagle.png',
-    category: 'free',
-  },
-  { id: 'night-wolf', name: 'Night Wolf', imageUrl: '/avatars/night-wolf.png', category: 'free' },
-  {
-    id: 'royal-tiger',
-    name: 'Royal Tiger',
-    imageUrl: '/avatars/royal-tiger.png',
-    category: 'free',
-  },
+const SUPABASE_STORAGE_URL = 'https://kuklfnapbkmacvwxktbh.supabase.co/storage/v1/object/public';
+const SOCIAL_AVATARS_BUCKET = 'social-media';
+const SOCIAL_AVATARS_PREFIX = 'avatars';
+const CUSTOM_AVATARS_BUCKET = 'custom-avatars';
+const CUSTOM_AVATARS_PREFIX = 'generated';
 
-  // Characters
-  {
-    id: 'retro-rockstar',
-    name: 'Retro Rockstar',
-    imageUrl: '/avatars/retro-rockstar.png',
-    category: 'free',
-  },
-  {
-    id: 'master-chef',
-    name: 'Master Chef',
-    imageUrl: '/avatars/master-chef.png',
-    category: 'free',
-  },
-  {
-    id: 'lab-scientist',
-    name: 'Lab Scientist',
-    imageUrl: '/avatars/lab-scientist.png',
-    category: 'free',
-  },
-  { id: 'pop-star', name: 'Pop Star', imageUrl: '/avatars/pop-star.png', category: 'free' },
-  {
-    id: 'space-explorer',
-    name: 'Space Explorer',
-    imageUrl: '/avatars/space-explorer.png',
-    category: 'free',
-  },
-  { id: 'cowboy-ace', name: 'Cowboy Ace', imageUrl: '/avatars/cowboy-ace.png', category: 'free' },
-  {
-    id: 'ninja-master',
-    name: 'Ninja Master',
-    imageUrl: '/avatars/ninja-master.png',
-    category: 'free',
-  },
-  {
-    id: 'pirate-captain',
-    name: 'Pirate Captain',
-    imageUrl: '/avatars/pirate-captain.png',
-    category: 'free',
-  },
-  { id: 'cyber-punk', name: 'Cyber Punk', imageUrl: '/avatars/cyber-punk.png', category: 'free' },
-  {
-    id: 'street-artist',
-    name: 'Street Artist',
-    imageUrl: '/avatars/street-artist.png',
-    category: 'free',
-  },
-  {
-    id: 'jazz-musician',
-    name: 'Jazz Musician',
-    imageUrl: '/avatars/jazz-musician.png',
-    category: 'free',
-  },
-  { id: 'dj-spinner', name: 'DJ Spinner', imageUrl: '/avatars/dj-spinner.png', category: 'free' },
-  {
-    id: 'yoga-master',
-    name: 'Yoga Master',
-    imageUrl: '/avatars/yoga-master.png',
-    category: 'free',
-  },
-  {
-    id: 'surfer-dude',
-    name: 'Surfer Dude',
-    imageUrl: '/avatars/surfer-dude.png',
-    category: 'free',
-  },
-  { id: 'skater-kid', name: 'Skater Kid', imageUrl: '/avatars/skater-kid.png', category: 'free' },
-
-  // ── VIP AVATARS (50) ──────────────────────────────────────────────────────────
-  // Legends
-  { id: 'tech-mogul', name: 'Tech Mogul', imageUrl: '/avatars/tech-mogul.png', category: 'vip' },
-  {
-    id: 'aerospace-pioneer',
-    name: 'Aerospace Pioneer',
-    imageUrl: '/avatars/aerospace-pioneer.png',
-    category: 'vip',
-  },
-  {
-    id: 'liberty-statue',
-    name: 'Liberty Statue',
-    imageUrl: '/avatars/liberty-statue.png',
-    category: 'vip',
-  },
-  {
-    id: 'royal-monarch',
-    name: 'Royal Monarch',
-    imageUrl: '/avatars/royal-monarch.png',
-    category: 'vip',
-  },
-  {
-    id: 'golden-dragon',
-    name: 'Golden Dragon',
-    imageUrl: '/avatars/golden-dragon.png',
-    category: 'vip',
-  },
-  {
-    id: 'wall-street-wolf',
-    name: 'Wall Street Wolf',
-    imageUrl: '/avatars/wall-street-wolf.png',
-    category: 'vip',
-  },
-  {
-    id: 'diamond-dealer',
-    name: 'Diamond Dealer',
-    imageUrl: '/avatars/diamond-dealer.png',
-    category: 'vip',
-  },
-  { id: 'casino-king', name: 'Casino King', imageUrl: '/avatars/casino-king.png', category: 'vip' },
-  {
-    id: 'poker-princess',
-    name: 'Poker Princess',
-    imageUrl: '/avatars/poker-princess.png',
-    category: 'vip',
-  },
-  {
-    id: 'vegas-legend',
-    name: 'Vegas Legend',
-    imageUrl: '/avatars/vegas-legend.png',
-    category: 'vip',
-  },
-
-  // Myths & Fantasy
-  {
-    id: 'phoenix-rising',
-    name: 'Phoenix Rising',
-    imageUrl: '/avatars/phoenix-rising.png',
-    category: 'vip',
-  },
-  { id: 'thunder-god', name: 'Thunder God', imageUrl: '/avatars/thunder-god.png', category: 'vip' },
-  { id: 'frost-queen', name: 'Frost Queen', imageUrl: '/avatars/frost-queen.png', category: 'vip' },
-  {
-    id: 'shadow-knight',
-    name: 'Shadow Knight',
-    imageUrl: '/avatars/shadow-knight.png',
-    category: 'vip',
-  },
-  {
-    id: 'cosmic-wizard',
-    name: 'Cosmic Wizard',
-    imageUrl: '/avatars/cosmic-wizard.png',
-    category: 'vip',
-  },
-  { id: 'forest-elf', name: 'Forest Elf', imageUrl: '/avatars/forest-elf.png', category: 'vip' },
-  { id: 'stone-golem', name: 'Stone Golem', imageUrl: '/avatars/stone-golem.png', category: 'vip' },
-  { id: 'sea-titan', name: 'Sea Titan', imageUrl: '/avatars/sea-titan.png', category: 'vip' },
-  { id: 'fire-demon', name: 'Fire Demon', imageUrl: '/avatars/fire-demon.png', category: 'vip' },
-  { id: 'wind-spirit', name: 'Wind Spirit', imageUrl: '/avatars/wind-spirit.png', category: 'vip' },
-
-  // Professionals
-  { id: 'high-roller', name: 'High Roller', imageUrl: '/avatars/high-roller.png', category: 'vip' },
-  {
-    id: 'card-counter',
-    name: 'Card Counter',
-    imageUrl: '/avatars/card-counter.png',
-    category: 'vip',
-  },
-  {
-    id: 'bluff-master',
-    name: 'Bluff Master',
-    imageUrl: '/avatars/bluff-master.png',
-    category: 'vip',
-  },
-  {
-    id: 'chip-stacker',
-    name: 'Chip Stacker',
-    imageUrl: '/avatars/chip-stacker.png',
-    category: 'vip',
-  },
-  { id: 'pot-builder', name: 'Pot Builder', imageUrl: '/avatars/pot-builder.png', category: 'vip' },
-  { id: 'river-rat', name: 'River Rat', imageUrl: '/avatars/river-rat.png', category: 'vip' },
-  {
-    id: 'heads-up-hero',
-    name: 'Heads Up Hero',
-    imageUrl: '/avatars/heads-up-hero.png',
-    category: 'vip',
-  },
-  { id: 'mtt-grinder', name: 'MTT Grinder', imageUrl: '/avatars/mtt-grinder.png', category: 'vip' },
-  { id: 'cash-king', name: 'Cash King', imageUrl: '/avatars/cash-king.png', category: 'vip' },
-  {
-    id: 'plo-specialist',
-    name: 'PLO Specialist',
-    imageUrl: '/avatars/plo-specialist.png',
-    category: 'vip',
-  },
-
-  // Sports & Action
-  {
-    id: 'championship-boxer',
-    name: 'Championship Boxer',
-    imageUrl: '/avatars/championship-boxer.png',
-    category: 'vip',
-  },
-  {
-    id: 'formula-racer',
-    name: 'Formula Racer',
-    imageUrl: '/avatars/formula-racer.png',
-    category: 'vip',
-  },
-  {
-    id: 'home-run-hero',
-    name: 'Home Run Hero',
-    imageUrl: '/avatars/home-run-hero.png',
-    category: 'vip',
-  },
-  { id: 'mvp-baller', name: 'MVP Baller', imageUrl: '/avatars/mvp-baller.png', category: 'vip' },
-  { id: 'tennis-ace', name: 'Tennis Ace', imageUrl: '/avatars/tennis-ace.png', category: 'vip' },
-  {
-    id: 'golf-champion',
-    name: 'Golf Champion',
-    imageUrl: '/avatars/golf-champion.png',
-    category: 'vip',
-  },
-  { id: 'hockey-star', name: 'Hockey Star', imageUrl: '/avatars/hockey-star.png', category: 'vip' },
-  {
-    id: 'soccer-legend',
-    name: 'Soccer Legend',
-    imageUrl: '/avatars/soccer-legend.png',
-    category: 'vip',
-  },
-  { id: 'mma-warrior', name: 'MMA Warrior', imageUrl: '/avatars/mma-warrior.png', category: 'vip' },
-  {
-    id: 'olympic-gold',
-    name: 'Olympic Gold',
-    imageUrl: '/avatars/olympic-gold.png',
-    category: 'vip',
-  },
-
-  // Luxury & Lifestyle
-  {
-    id: 'yacht-captain',
-    name: 'Yacht Captain',
-    imageUrl: '/avatars/yacht-captain.png',
-    category: 'vip',
-  },
-  { id: 'jet-setter', name: 'Jet Setter', imageUrl: '/avatars/jet-setter.png', category: 'vip' },
-  {
-    id: 'penthouse-prince',
-    name: 'Penthouse Prince',
-    imageUrl: '/avatars/penthouse-prince.png',
-    category: 'vip',
-  },
-  {
-    id: 'art-collector',
-    name: 'Art Collector',
-    imageUrl: '/avatars/art-collector.png',
-    category: 'vip',
-  },
-  {
-    id: 'wine-connoisseur',
-    name: 'Wine Connoisseur',
-    imageUrl: '/avatars/wine-connoisseur.png',
-    category: 'vip',
-  },
-  {
-    id: 'fashion-mogul',
-    name: 'Fashion Mogul',
-    imageUrl: '/avatars/fashion-mogul.png',
-    category: 'vip',
-  },
-  {
-    id: 'crypto-whale',
-    name: 'Crypto Whale',
-    imageUrl: '/avatars/crypto-whale.png',
-    category: 'vip',
-  },
-  {
-    id: 'venture-guru',
-    name: 'Venture Guru',
-    imageUrl: '/avatars/venture-guru.png',
-    category: 'vip',
-  },
-  {
-    id: 'night-owl-vip',
-    name: 'Night Owl VIP',
-    imageUrl: '/avatars/night-owl-vip.png',
-    category: 'vip',
-  },
-  { id: 'golden-ace', name: 'Golden Ace', imageUrl: '/avatars/golden-ace.png', category: 'vip' },
-];
-
-// Default avatar for users without a selection
-const DEFAULT_AVATAR_URL = '/avatars/default-player.png';
+/** Default avatar — deterministic SVG when no real image exists */
+const DEFAULT_AVATAR_SVG = generateDefaultAvatar();
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SERVICE
 // ═══════════════════════════════════════════════════════════════════════════════
 
 class AvatarServiceClass {
+  /** In-memory cache to avoid re-fetching storage listings */
+  private _presetCache: Avatar[] | null = null;
+  private _presetCacheTs = 0;
+  private static readonly CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
   /**
    * Get the Hub avatar page URL for embedding or navigation
    */
@@ -377,41 +73,127 @@ class AvatarServiceClass {
   }
 
   /**
-   * Get all available avatars from the library
+   * Get all available avatars for the gallery.
+   *
+   * Sources (merged):
+   *  1. Preset avatars from social-media/avatars storage bucket (free tier)
+   *  2. User's custom generated avatars from user_avatars table + custom-avatars bucket
+   *
+   * Returns Avatar[] compatible with AvatarGallery component.
    */
   async getAvatarLibrary(userId?: string): Promise<Avatar[]> {
-    // In the future, this could fetch from Supabase to check ownership
-    return AVATAR_LIBRARY.map((avatar) => ({
-      ...avatar,
-      isOwned: avatar.category === 'free', // Free avatars are always owned
-    }));
+    const results: Avatar[] = [];
+
+    // ── 1. Fetch preset avatars from storage bucket ──
+    try {
+      const presets = await this._getPresetAvatars();
+      results.push(...presets);
+    } catch (err) {
+      console.warn('[AvatarService] Failed to load preset avatars:', err);
+    }
+
+    // ── 2. Fetch user's custom avatars from user_avatars table ──
+    if (userId) {
+      try {
+        const { data: userAvatars, error } = await supabase
+          .from('user_avatars')
+          .select('id, avatar_type, preset_avatar_id, custom_image_url, custom_prompt, created_at')
+          .eq('user_id', userId)
+          .order('created_at', { ascending: false });
+
+        if (!error && userAvatars) {
+          for (const ua of userAvatars) {
+            const imageUrl = ua.custom_image_url || '';
+            if (!imageUrl) continue;
+
+            results.push({
+              id: ua.id,
+              name: ua.custom_prompt
+                ? ua.custom_prompt.slice(0, 30) + (ua.custom_prompt.length > 30 ? '...' : '')
+                : 'Custom Avatar',
+              imageUrl,
+              category: 'custom',
+              isOwned: true,
+            });
+          }
+        }
+      } catch (err) {
+        console.warn('[AvatarService] Failed to load custom avatars:', err);
+      }
+    }
+
+    return results;
   }
 
   /**
-   * Get a user's current avatar URL
+   * Fetch preset avatar images from the social-media/avatars storage bucket.
+   * Results are cached for 5 minutes to avoid repeated storage API calls.
+   */
+  private async _getPresetAvatars(): Promise<Avatar[]> {
+    // Return cache if fresh
+    if (this._presetCache && Date.now() - this._presetCacheTs < AvatarServiceClass.CACHE_TTL) {
+      return this._presetCache;
+    }
+
+    const { data: files, error } = await supabase.storage
+      .from(SOCIAL_AVATARS_BUCKET)
+      .list(SOCIAL_AVATARS_PREFIX, { limit: 200, sortBy: { column: 'name', order: 'asc' } });
+
+    if (error || !files) {
+      // If cache exists but is stale, return stale data rather than nothing
+      if (this._presetCache) return this._presetCache;
+      return [];
+    }
+
+    const avatars: Avatar[] = files
+      .filter((f) => f.name && /\.(png|jpg|jpeg|webp|svg)$/i.test(f.name))
+      .map((f, index) => {
+        const publicUrl = `${SUPABASE_STORAGE_URL}/${SOCIAL_AVATARS_BUCKET}/${SOCIAL_AVATARS_PREFIX}/${f.name}`;
+        const cleanName = f.name
+          .replace(/\.[^.]+$/, '') // Strip extension
+          .replace(/[-_]/g, ' ') // Dashes/underscores → spaces
+          .replace(/^[a-f0-9-]{36}$/i, `Avatar ${index + 1}`); // UUID filenames → numbered
+
+        return {
+          id: f.name,
+          name: cleanName.length > 2 ? cleanName : `Avatar ${index + 1}`,
+          imageUrl: publicUrl,
+          category: 'free' as const,
+          isOwned: true, // Preset avatars are available to all users
+        };
+      });
+
+    this._presetCache = avatars;
+    this._presetCacheTs = Date.now();
+    return avatars;
+  }
+
+  /**
+   * Get a user's current avatar URL from their profile.
+   * Falls back to SVG placeholder if no avatar is set.
    */
   async getUserAvatarUrl(userId: string): Promise<string> {
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('avatar_url')
+        .select('avatar_url, display_name')
         .eq('id', userId)
         .maybeSingle();
 
       if (error || !data?.avatar_url) {
-        return DEFAULT_AVATAR_URL;
+        return getAvatarWithFallback(null, userId, data?.display_name || 'Player');
       }
 
       return data.avatar_url;
     } catch (err) {
-
-      console.error("[AvatarService] Error:", err);
-      return DEFAULT_AVATAR_URL;
+      console.error('[AvatarService] Error:', err);
+      return DEFAULT_AVATAR_SVG;
     }
   }
 
   /**
-   * Get avatars for multiple users (for table display)
+   * Get avatars for multiple users (for table display).
+   * Falls back to SVG placeholders for users without avatars.
    */
   async getUserAvatars(userIds: string[]): Promise<Map<string, string>> {
     const avatarMap = new Map<string, string>();
@@ -426,19 +208,21 @@ class AvatarServiceClass {
 
       if (!error && data) {
         for (const profile of data) {
-          avatarMap.set(profile.id, profile.avatar_url || DEFAULT_AVATAR_URL);
+          avatarMap.set(
+            profile.id,
+            profile.avatar_url ||
+              getAvatarWithFallback(null, profile.id, profile.display_name || 'Player')
+          );
         }
       }
     } catch (err) {
-
-      console.error("[AvatarService] Error:", err);
-      // Fall back to default avatars
+      console.error('[AvatarService] Error:', err);
     }
 
-    // Set default for any missing users
+    // Set SVG fallback for any missing users
     for (const userId of userIds) {
       if (!avatarMap.has(userId)) {
-        avatarMap.set(userId, DEFAULT_AVATAR_URL);
+        avatarMap.set(userId, getAvatarWithFallback(null, userId, 'Player'));
       }
     }
 
@@ -446,32 +230,58 @@ class AvatarServiceClass {
   }
 
   /**
-   * Update user's avatar
+   * Update user's avatar in both profiles and user_avatars tables.
    */
   async setUserAvatar(userId: string, avatarUrl: string): Promise<boolean> {
     try {
-      const { error } = await supabase
+      // Update the profile avatar_url (the canonical source)
+      const { error: profileError } = await supabase
         .from('profiles')
         .update({ avatar_url: avatarUrl })
         .eq('id', userId);
 
-      return !error;
-    } catch (err) {
+      if (profileError) {
+        console.error('[AvatarService] Profile update failed:', profileError);
+        return false;
+      }
 
-      console.error("[AvatarService] Error:", err);
+      // Also upsert into user_avatars for history tracking
+      const isCustom = avatarUrl.includes(CUSTOM_AVATARS_BUCKET);
+      const isPreset = avatarUrl.includes(SOCIAL_AVATARS_BUCKET);
+
+      if (isCustom || isPreset) {
+        await supabase.from('user_avatars').upsert(
+          {
+            user_id: userId,
+            avatar_type: isCustom ? 'custom' : 'preset',
+            custom_image_url: avatarUrl,
+            is_active: true,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'user_id' }
+        );
+      }
+
+      return true;
+    } catch (err) {
+      console.error('[AvatarService] Error:', err);
       return false;
     }
   }
 
   /**
-   * Open the Hub avatar selector in a new tab/modal
-   * The Hub will handle avatar selection and save to the user's profile
+   * Open the Hub avatar selector in a new tab/modal.
+   * The Hub handles avatar creation + selection and saves to the user's profile.
    */
   openAvatarSelector(): void {
     const url = this.getHubAvatarUrl();
     const isInIframe = typeof window !== 'undefined' && window.parent !== window;
     if (isInIframe) {
-      try { window.top!.open(url, '_blank'); } catch { window.open(url, '_blank'); }
+      try {
+        window.top!.open(url, '_blank');
+      } catch {
+        window.open(url, '_blank');
+      }
     } else {
       window.open(url, '_blank', 'width=800,height=600');
     }
@@ -490,10 +300,16 @@ class AvatarServiceClass {
 
       return data?.is_vip || false;
     } catch (err) {
-
-      console.error("[AvatarService] Error:", err);
+      console.error('[AvatarService] Error:', err);
       return false;
     }
+  }
+
+  /**
+   * Get the default avatar SVG (for components that need a sync fallback)
+   */
+  getDefaultAvatarUrl(): string {
+    return DEFAULT_AVATAR_SVG;
   }
 }
 

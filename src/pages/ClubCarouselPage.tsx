@@ -268,7 +268,7 @@ export default function ClubCarouselPage() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  });
+  }, [activeIndex, displayedClubs, userUnions]);
 
   // Clamp activeIndex when search narrows the list
   useEffect(() => {
@@ -337,7 +337,7 @@ export default function ClubCarouselPage() {
       try {
         const { data: profileData, error: profileError } = await supabase
           .from('profiles')
-          .select('id, display_name, avatar_url, diamonds, tier')
+          .select('id, display_name, avatar_url, diamonds, tier, player_number')
           .eq('id', userId)
           .maybeSingle();
         if (!isMounted.current) return;
@@ -346,7 +346,7 @@ export default function ClubCarouselPage() {
             id: profileData.id,
             display_name: profileData.display_name || 'Player',
             avatar_url: profileData.avatar_url,
-            player_number: 0,
+            player_number: profileData.player_number || 0,
             vip_level: profileData.tier || 'bronze',
           });
           setWallet((prev) => ({ ...prev, diamonds: profileData.diamonds || 0 }));
@@ -749,12 +749,28 @@ export default function ClubCarouselPage() {
             <div className="balance gold">
               <span className="balance-icon">♠</span>
               <span className="balance-amount">{formatNumber(wallet.gold)}</span>
-              <button className="balance-add">+</button>
+              <button
+                className="balance-add"
+                onClick={() => {
+                  haptic.light();
+                  navigate('/clubs');
+                }}
+              >
+                +
+              </button>
             </div>
             <div className="balance diamond">
               <span className="balance-icon">◆</span>
               <span className="balance-amount">{wallet.diamonds.toLocaleString()}</span>
-              <button className="balance-add">+</button>
+              <button
+                className="balance-add"
+                onClick={() => {
+                  haptic.light();
+                  navigate('/clubs');
+                }}
+              >
+                +
+              </button>
             </div>
           </div>
         </div>

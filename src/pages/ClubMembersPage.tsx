@@ -679,10 +679,14 @@ export default function ClubMembersPage() {
   }, [clubId, user?.id]);
 
   // Update member online status when presence changes
-  const membersWithStatus = members.map((m) => ({
-    ...m,
-    is_online: onlineUserIds.has(m.user_id),
-  }));
+  const membersWithStatus = useMemo(
+    () =>
+      members.map((m) => ({
+        ...m,
+        is_online: onlineUserIds.has(m.user_id),
+      })),
+    [members, onlineUserIds]
+  );
 
   const filteredMembers = useMemo(
     () =>

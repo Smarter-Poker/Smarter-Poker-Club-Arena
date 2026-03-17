@@ -878,16 +878,10 @@ export default function TablePage({
       remainingDeck.remaining() >= cardsNeeded
     ) {
       try {
-        const suitMap: Record<string, 'h' | 'd' | 'c' | 's'> = {
-          hearts: 'h',
-          diamonds: 'd',
-          clubs: 'c',
-          spades: 's',
-        };
         const dealt = remainingDeck.deal(cardsNeeded);
         return dealt.map((c) => ({
           rank: c.rank,
-          suit: suitMap[c.suit] || (c.suit as 'h' | 'd' | 'c' | 's'),
+          suit: ENGINE_SUIT_MAP[c.suit] || (c.suit as 'h' | 'd' | 'c' | 's'),
         }));
       } catch {
         // Fallback to random if deck deal fails
@@ -1285,13 +1279,6 @@ export default function TablePage({
               const heroIdx = updatedPlayers.findIndex((p) => p && p.id === userId);
 
               if (heroIdx >= 0 && updatedPlayers[heroIdx]) {
-                const suitMapDeal: Record<string, 'h' | 'd' | 'c' | 's'> = {
-                  hearts: 'h',
-                  diamonds: 'd',
-                  clubs: 'c',
-                  spades: 's',
-                };
-
                 let rawCards = [];
                 try {
                   rawCards = typeof row.cards === 'string' ? JSON.parse(row.cards) : row.cards;
@@ -1301,7 +1288,7 @@ export default function TablePage({
 
                 const formattedCards = (rawCards || []).map((c: any) => ({
                   rank: c.rank,
-                  suit: suitMapDeal[c.suit] || (c.suit as 'h' | 'd' | 'c' | 's'),
+                  suit: ENGINE_SUIT_MAP[c.suit] || (c.suit as 'h' | 'd' | 'c' | 's'),
                 }));
 
                 updatedPlayers[heroIdx] = {
@@ -1340,12 +1327,7 @@ export default function TablePage({
             (!updatedPlayers[heroIdx]!.holeCards ||
               updatedPlayers[heroIdx]!.holeCards!.length === 0)
           ) {
-            const suitMapDeal: Record<string, 'h' | 'd' | 'c' | 's'> = {
-              hearts: 'h',
-              diamonds: 'd',
-              clubs: 'c',
-              spades: 's',
-            };
+            const suitMapRef = ENGINE_SUIT_MAP;
             let rawCards = [];
             try {
               rawCards = typeof data.cards === 'string' ? JSON.parse(data.cards) : data.cards;
@@ -1356,7 +1338,7 @@ export default function TablePage({
               ...updatedPlayers[heroIdx]!,
               holeCards: (rawCards || []).map((c: any) => ({
                 rank: c.rank,
-                suit: suitMapDeal[c.suit] || (c.suit as any),
+                suit: suitMapRef[c.suit] || (c.suit as any),
               })),
               showCards: true,
             };
@@ -2470,15 +2452,9 @@ export default function TablePage({
 
           {
             // Convert HandController Card format to UI format
-            const suitMapDeal: Record<string, 'h' | 'd' | 'c' | 's'> = {
-              hearts: 'h',
-              diamonds: 'd',
-              clubs: 'c',
-              spades: 's',
-            };
             const holeCards: Card[] = event.cards.map((c) => ({
               rank: c.rank,
-              suit: suitMapDeal[c.suit] || (c.suit as 'h' | 'd' | 'c' | 's'),
+              suit: ENGINE_SUIT_MAP[c.suit] || (c.suit as 'h' | 'd' | 'c' | 's'),
             }));
 
             setTableState((prev) => {
@@ -2509,15 +2485,9 @@ export default function TablePage({
             });
           }
 
-          const suitMap: Record<string, 'h' | 'd' | 'c' | 's'> = {
-            hearts: 'h',
-            diamonds: 'd',
-            clubs: 'c',
-            spades: 's',
-          };
           const uiCards: Card[] = event.cards.map((c) => ({
             rank: c.rank,
-            suit: suitMap[c.suit] || (c.suit as 'h' | 'd' | 'c' | 's'),
+            suit: ENGINE_SUIT_MAP[c.suit] || (c.suit as 'h' | 'd' | 'c' | 's'),
           }));
           setTableState((prev) => ({
             ...prev,
@@ -2801,15 +2771,9 @@ export default function TablePage({
                   (isWinner && isUncontested && userSettingsRef.current.autoMuckWinners);
 
                 // Convert card format and show cards
-                const suitMapShowdown: Record<string, 'h' | 'd' | 'c' | 's'> = {
-                  hearts: 'h',
-                  diamonds: 'd',
-                  clubs: 'c',
-                  spades: 's',
-                };
                 const showdownCards = result.cards.map((c: any) => ({
                   rank: c.rank as Card['rank'],
-                  suit: (suitMapShowdown[c.suit] || c.suit) as 'h' | 'd' | 'c' | 's',
+                  suit: (ENGINE_SUIT_MAP[c.suit] || c.suit) as 'h' | 'd' | 'c' | 's',
                 }));
                 updatedPlayers[playerIdx] = {
                   ...updatedPlayers[playerIdx]!,
@@ -2824,12 +2788,6 @@ export default function TablePage({
           // Bridge: emit SHOWDOWN_START to activate HoleCardReveal component
           {
             const currentState = tableStateRef.current;
-            const suitMapBus: Record<string, string> = {
-              hearts: 'h',
-              diamonds: 'd',
-              clubs: 'c',
-              spades: 's',
-            };
 
             // Determine winner(s): highest hand ranking
             const bestRanking = Math.max(...event.results.map((r: any) => r.hand?.ranking || 0));
@@ -2844,7 +2802,7 @@ export default function TablePage({
                   username: playerInState?.name || `Seat ${r.seat}`,
                   cards: r.cards.map((c: any) => ({
                     rank: c.rank,
-                    suit: suitMapBus[c.suit] || c.suit,
+                    suit: ENGINE_SUIT_MAP[c.suit] || c.suit,
                   })),
                   handName: r.hand?.name || 'Unknown',
                   handRank: r.hand?.ranking || 0,

@@ -210,18 +210,17 @@ class UnionServiceClass {
             clubToUnionMap.set(row.club_id, row.union_id);
           }
 
-          // Live member counts: fetch all club_members for these club IDs
+          // Live member counts: use SECURITY DEFINER RPC (bypasses RLS for accurate cross-club totals)
           if (allClubIds.length > 0) {
-            const { data: memberRows } = await supabase
-              .from('club_members')
-              .select('club_id')
-              .in('club_id', allClubIds);
+            const { data: counts } = await supabase.rpc('fn_batch_club_member_counts', {
+              p_club_ids: allClubIds,
+            });
 
             const memberCountMap = new Map<string, number>();
-            for (const row of memberRows || []) {
+            for (const row of counts || []) {
               const uid = clubToUnionMap.get(row.club_id);
               if (uid) {
-                memberCountMap.set(uid, (memberCountMap.get(uid) || 0) + 1);
+                memberCountMap.set(uid, (memberCountMap.get(uid) || 0) + Number(row.member_count));
               }
             }
 

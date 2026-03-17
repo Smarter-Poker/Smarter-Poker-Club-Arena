@@ -321,6 +321,7 @@ import ConfirmModal from '../components/common/ConfirmModal';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { resolveClubIdFilter, resolveClubUUID } from '../utils/clubIdResolver';
+import GlobalUXIndicators from '../components/common/GlobalUXIndicators';
 
 export default function ClubDetailPage() {
   const { clubId } = useParams();
@@ -358,6 +359,7 @@ export default function ClubDetailPage() {
   const [showMemberMenu, setShowMemberMenu] = useState<string | null>(null);
   const [userRole, setUserRole] = useState<'owner' | 'admin' | 'agent' | 'member'>('member');
   const [isInUnion, setIsInUnion] = useState(false);
+  const [wsConnected, setWsConnected] = useState(true);
 
   // Controlled settings form state (replaces document.getElementById)
   const [settingsForm, setSettingsForm] = useState({
@@ -534,7 +536,9 @@ export default function ClubDetailPage() {
           loadClubData();
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        setWsConnected(status === 'SUBSCRIBED');
+      });
 
     return () => {
       masterBus.removeRegisteredChannel(channelKey);
@@ -779,6 +783,7 @@ export default function ClubDetailPage() {
 
   return (
     <div className={styles.page}>
+      <GlobalUXIndicators wsConnected={wsConnected} />
       <style>{`
                 @keyframes slideInUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
                 .club-detail-stats { animation: slideInUp 0.6s cubic-bezier(0.34, 1.56, 0.64, 1); }

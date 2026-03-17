@@ -35,6 +35,7 @@ import './ClubHomePage.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { resolveClubIdFilter } from '../utils/clubIdResolver';
 import { useIsMounted } from '../hooks/useIsMounted';
+import GlobalUXIndicators from '../components/common/GlobalUXIndicators';
 
 // SWR cache helpers for instant club data display
 function getClubHomeCache(clubId: string) {
@@ -155,6 +156,7 @@ export default function ClubHomePage() {
   const [clubLevel, setClubLevel] = useState<ClubLevelInfo | null>(null);
   const toast = useToast();
   const hasDataRef = useRef(false);
+  const [wsConnected, setWsConnected] = useState(true);
 
   // SWR: show cached club data instantly on mount
   useEffect(() => {
@@ -255,7 +257,9 @@ export default function ClubHomePage() {
           }
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        setWsConnected(status === 'SUBSCRIBED');
+      });
 
     return () => {
       masterBus.removeRegisteredChannel(channelKey);
@@ -774,6 +778,7 @@ export default function ClubHomePage() {
 
   return (
     <div className="club-home">
+      <GlobalUXIndicators wsConnected={wsConnected} />
       <style>{`
                 @keyframes slideInUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
                 @keyframes slideInLeft { from { opacity: 0; transform: translateX(-16px); } to { opacity: 1; transform: translateX(0); } }

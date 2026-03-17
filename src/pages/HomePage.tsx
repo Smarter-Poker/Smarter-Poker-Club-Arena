@@ -545,7 +545,11 @@ function HomePageInner() {
 
         if (!isMounted) return;
 
-        const memberCount = memberResult.status === 'fulfilled' ? memberResult.value : 0;
+        // Use live count if available, fall back to denormalized column when RLS blocks
+        let memberCount = memberResult.status === 'fulfilled' ? memberResult.value : 0;
+        if (memberCount === 0 && club.member_count && club.member_count > 0) {
+          memberCount = club.member_count;
+        }
 
         let activePlayers = 0;
         if (tablesResult.status === 'fulfilled' && tablesResult.value.data?.length) {

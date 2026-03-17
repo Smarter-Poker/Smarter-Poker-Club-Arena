@@ -451,7 +451,6 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           { label: 'Club Messages', path: '/messages/clubs' },
           { label: 'Players', path: '/players' },
           { label: 'Cashier', path: '/cashier' },
-          { label: 'Search', path: '/search' },
         ].map((item, i) => (
           <div
             key={`clubs-${i}`}

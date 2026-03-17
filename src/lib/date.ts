@@ -124,6 +124,32 @@ export function formatCountdown(seconds: number): {
   return { days, hours, minutes, seconds: secs, formatted };
 }
 
+/**
+ * Format relative time — SHORT abbreviated form (e.g., "5m ago", "2h ago")
+ * Used by notifications, activity feeds, chat timestamps, etc.
+ */
+export function formatRelativeShort(date: Date | string | number): string {
+  const d = date instanceof Date ? date : new Date(date);
+  const diff = (Date.now() - d.getTime()) / 1000;
+
+  if (diff < 60) return 'Just now';
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
+
+  return d.toLocaleDateString();
+}
+
+/**
+ * Format minutes to human-readable duration (e.g., "2h 15m", "45m")
+ * Used by session history, tournament stats, etc.
+ */
+export function formatDurationMinutes(minutes: number): string {
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  return hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPARISONS
 // ═══════════════════════════════════════════════════════════════════════════════

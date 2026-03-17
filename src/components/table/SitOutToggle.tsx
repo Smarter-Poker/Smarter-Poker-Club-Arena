@@ -5,6 +5,7 @@
  */
 
 import React from 'react';
+import { formatDuration as formatTime } from '@/lib/date';
 import './SitOutToggle.css';
 
 interface SitOutToggleProps {
@@ -20,12 +21,6 @@ export function SitOutToggle({
   awaySeconds = 0,
   autoFoldAt = 300, // 5 mins
 }: SitOutToggleProps) {
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
   return (
     <div className={`sit-out-toggle ${isSittingOut ? 'sitting-out' : ''}`}>
       <button onClick={() => onToggle(!isSittingOut)}>

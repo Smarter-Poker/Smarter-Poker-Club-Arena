@@ -9,6 +9,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
 import { useIsMounted } from '../../hooks/useIsMounted';
+import { useStaggerAnimation } from '../../hooks/useStaggerAnimation';
 import { masterBus } from '../../core/MasterBus';
 import './TransactionHistory.css';
 
@@ -104,20 +105,12 @@ function TransactionHistoryInner({ walletId, limit = 20 }: TransactionHistoryPro
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>('all');
-  const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
   const isMounted = useIsMounted();
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadRef = useRef<() => void>(() => {});
 
   // Stagger animation for transaction list
-  useEffect(() => {
-    if (transactions.length === 0) return;
-    setVisibleItems(new Set());
-    const timers = transactions.map((_, i) =>
-      setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60)
-    );
-    return () => timers.forEach(clearTimeout);
-  }, [transactions]);
+  const { style: txStyle } = useStaggerAnimation(transactions.length);
 
   useEffect(() => {
     if (user?.id || walletId) {
@@ -225,15 +218,7 @@ function TransactionHistoryInner({ walletId, limit = 20 }: TransactionHistoryPro
       ) : (
         <div className="transaction-list">
           {filteredTransactions.map((tx, i) => (
-            <div
-              key={tx.id}
-              className={`transaction-row ${tx.type}`}
-              style={{
-                opacity: visibleItems.has(i) ? 1 : 0,
-                transform: visibleItems.has(i) ? 'translateY(0)' : 'translateY(8px)',
-                transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-              }}
-            >
+            <div key={tx.id} className={`transaction-row ${tx.type}`} style={txStyle(i)}>
               <span className="icon">{CATEGORY_ICONS[tx.category] || '●'}</span>
               <div className="details">
                 <span className="type" style={{ color: CATEGORY_COLORS[tx.category] || '#94a3b8' }}>

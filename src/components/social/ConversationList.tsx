@@ -10,6 +10,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { masterBus } from '../../core/MasterBus';
 import { useToast } from '../common/Toast';
+import { formatRelativeShort } from '../../lib/date';
 import './ConversationList.css';
 
 interface ConversationListProps {
@@ -85,7 +86,7 @@ export function ConversationList({ onSelectConversation }: ConversationListProps
     if (isMounted.current) setLoading(false);
   };
 
-  const formatTime = (date: Date) => {
+  const formatTimeForSocialConversation = (date: Date) => {
     const now = new Date();
     const diff = now.getTime() - date.getTime();
     const hours = Math.floor(diff / (1000 * 60 * 60));
@@ -129,7 +130,7 @@ export function ConversationList({ onSelectConversation }: ConversationListProps
                 <span className="preview">{conv.lastMessage}</span>
               </div>
               <div className="meta">
-                <span className="time">{formatTime(conv.lastMessageAt)}</span>
+                <span className="time">{formatTimeForSocialConversation(conv.lastMessageAt)}</span>
                 {conv.unreadCount > 0 && <span className="badge">{conv.unreadCount}</span>}
               </div>
             </div>

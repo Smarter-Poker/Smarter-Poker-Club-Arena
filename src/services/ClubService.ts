@@ -1,16 +1,30 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  CLUB ENGINE — Club Service
+ *  CLUB ENGINE — Club Service (DEPRECATED — Use ClubsService)
  * ═══════════════════════════════════════════════════════════════════════════════
- * Full club management with real Supabase integration
- * No demo mode — production ready
+ *
+ * @deprecated For frontend-facing club operations, use ClubsService instead.
+ * ClubsService provides auth-gated, security-hardened equivalents of:
+ *   - searchClubs   → ClubsService.search()
+ *   - getClub       → ClubsService.get()
+ *   - createClub    → ClubsService.create()  (with 4-club limit)
+ *   - updateClub    → ClubsService.update()  (with owner verification + field whitelist)
+ *   - deleteClub    → ClubsService.delete()  (with owner verification)
+ *   - getMyClubs    → ClubsService.getUserMemberships()  (with live member counts)
+ *
+ * This service is retained ONLY for admin-level operations not yet ported:
+ *   - updateChipBalance (wallet credit/debit via atomic RPCs)
+ *   - handleMembershipRequest (approve/reject join requests)
+ *   - addMember, updateMemberRole, removeMember
+ *   - getOnlineCount, getMemberCount
  */
 
 import { supabase } from '../lib/supabase';
 import { WalletService } from './WalletService';
 import { masterBus } from '../core/MasterBus';
 import { BBJService } from './BBJService';
-import type { Club, ClubMember, ClubSettings, MemberRole } from '../types/database.types';
+import type { Club } from '../types/club.types';
+import type { ClubMember, ClubSettings, MemberRole } from '../types/database.types';
 import { retryAsync } from '../utils/retryAsync';
 import { resolveClubIdFilter, resolveClubUUID } from '../utils/clubIdResolver';
 

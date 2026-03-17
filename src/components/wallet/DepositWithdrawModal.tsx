@@ -18,8 +18,7 @@ const triggerHaptic = (pattern: number | number[] = 10) => {
       navigator.vibrate(pattern);
     }
   } catch (err) {
-
-    console.error("[DepositWithdrawModal] Error:", err);
+    console.error('[DepositWithdrawModal] Error:', err);
     /* silent — not all devices support vibration */
   }
 };
@@ -263,9 +262,7 @@ export default function DepositWithdrawModal({
   const numericAmount = parseFloat(amount) || 0;
   // Use integer math to avoid floating-point precision errors:
   // fee = round((amount_cents * fee_percent) / 100) / 100
-  const feeAmount = currentMethod
-    ? Math.round(numericAmount * currentMethod.fee) / 100
-    : 0;
+  const feeAmount = currentMethod ? Math.round(numericAmount * currentMethod.fee) / 100 : 0;
   const totalAmount = mode === 'deposit' ? numericAmount : numericAmount + feeAmount;
 
   const handleMethodSelect = (method: PaymentMethod) => {
@@ -334,7 +331,9 @@ export default function DepositWithdrawModal({
 
       if (txError) throw txError;
 
-      // For withdrawals, update wallet status directly (locking handled via status)
+      // For withdrawals, set locked_until flag directly on wallets table.
+      // NOTE: This is a UI-level lock (not a balance mutation), so direct write is safe.
+      // It prevents concurrent withdrawals during fiat processing.
       if (mode === 'withdraw') {
         try {
           await supabase
@@ -535,7 +534,13 @@ export default function DepositWithdrawModal({
               {feeAmount > 0 && (
                 <div className={styles.summaryRow}>
                   <span>Fee ({currentMethod.fee}%)</span>
-                  <span>-{feeAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  <span>
+                    -
+                    {feeAmount.toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </span>
                 </div>
               )}
               <div className={`${styles.summaryRow} ${styles.total}`}>
@@ -543,7 +548,10 @@ export default function DepositWithdrawModal({
                 <span>
                   {mode === 'deposit'
                     ? numericAmount.toLocaleString()
-                    : (Math.round((numericAmount - feeAmount) * 100) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    : (Math.round((numericAmount - feeAmount) * 100) / 100).toLocaleString(
+                        undefined,
+                        { minimumFractionDigits: 2, maximumFractionDigits: 2 }
+                      )}
                 </span>
               </div>
             </div>

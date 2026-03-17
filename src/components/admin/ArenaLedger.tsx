@@ -15,6 +15,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
+import { formatDateTime } from '../../lib/date';
 import './ArenaLedger.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -199,22 +200,6 @@ export default function ArenaLedger({ clubId, maxEntries = 200 }: ArenaLedgerPro
     return true;
   });
 
-  const formatTime = (iso: string) => {
-    const d = new Date(iso);
-    const now = new Date();
-    const diffMs = now.getTime() - d.getTime();
-    const diffMin = Math.floor(diffMs / 60000);
-    if (diffMin < 1) return 'Just now';
-    if (diffMin < 60) return `${diffMin}m ago`;
-    if (diffMin < 1440) return `${Math.floor(diffMin / 60)}h ago`;
-    return d.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
-
   return (
     <div className="arena-ledger">
       {/* Header */}
@@ -293,7 +278,14 @@ export default function ArenaLedger({ clubId, maxEntries = 200 }: ArenaLedgerPro
                     <span className="arena-ledger__entry-label" style={{ color: config.color }}>
                       {config.label}
                     </span>
-                    <span className="arena-ledger__entry-time">{formatTime(entry.createdAt)}</span>
+                    <span className="arena-ledger__entry-time">
+                      {formatDateTime(entry.createdAt, {
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </span>
                   </div>
                   <div className="arena-ledger__entry-detail">
                     {entry.userName && (

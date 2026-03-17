@@ -1,4 +1,5 @@
 import React from 'react';
+import { formatTime } from '../../lib/date';
 import './MaintenanceNotice.css';
 
 interface MaintenanceNoticeProps {
@@ -14,10 +15,6 @@ export const MaintenanceNotice: React.FC<MaintenanceNoticeProps> = ({
   message,
   isUrgent = false,
 }) => {
-  const formatTime = (date: Date) => {
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  };
-
   return (
     <div className={`maintenance-notice ${isUrgent ? 'urgent' : ''}`}>
       <span className="notice-icon">{isUrgent ? '' : '🔧'}</span>

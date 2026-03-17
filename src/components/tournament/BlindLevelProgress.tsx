@@ -6,6 +6,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
+import { formatDuration as formatTime } from '@/lib/date';
 import './BlindLevelProgress.css';
 
 export interface BlindLevel {
@@ -74,12 +75,6 @@ export const BlindLevelProgress: React.FC<BlindLevelProgressProps> = ({
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, [currentLevel, levelStartTime, isPaused, current, onLevelChange]);
-
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
 
   const formatChips = (amount: number) => {
     if (amount >= 1000000) {

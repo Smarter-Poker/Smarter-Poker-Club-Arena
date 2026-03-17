@@ -10,6 +10,7 @@ import { useIsMounted } from '../../hooks/useIsMounted';
 import { cashoutService, CashoutRequest } from '../../services/CashoutService';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
+import { formatRelativeShort as formatTime } from '@/lib/date';
 import './CashoutRequestModal.css';
 
 // Haptic feedback for mobile-first financial interactions
@@ -19,8 +20,7 @@ const triggerHaptic = (pattern: number | number[] = 10) => {
       navigator.vibrate(pattern);
     }
   } catch (err) {
-
-    console.error("[CashoutRequestModal] Error:", err);
+    console.error('[CashoutRequestModal] Error:', err);
     /* silent */
   }
 };
@@ -262,11 +262,6 @@ export default function CashoutRequestModal({
     } catch (err: any) {
       if (isMounted.current) setError(err.message || 'Failed to cancel cashout');
     }
-  };
-
-  const formatTime = (dateStr: string) => {
-    const date = new Date(dateStr);
-    return date.toLocaleString();
   };
 
   if (!isOpen) return null;

@@ -8,6 +8,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { PlayerAvatar } from '../avatars/PlayerAvatar';
 import { haptic } from '../../services/HapticService';
+import { formatTime } from '../../lib/date';
 import styles from './ChatBubble.module.css';
 
 interface Message {
@@ -51,11 +52,6 @@ export default function ChatBubble({
     const timer = setTimeout(() => setMounted(true), 50);
     return () => clearTimeout(timer);
   }, []);
-
-  const formatTime = (dateStr: string): string => {
-    const date = new Date(dateStr);
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  };
 
   const totalReactions = Object.values(message.reactions).reduce((sum, count) => sum + count, 0);
 

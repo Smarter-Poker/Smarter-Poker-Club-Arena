@@ -10,13 +10,14 @@ import { useParams, Link } from 'react-router-dom';
 import { getLocalStorage, setLocalStorage } from '../lib/storage';
 import { unionService, type Union, type UnionClub } from '../services/UnionService';
 import { tableService } from '../services/TableService';
-import { clubService } from '../services/ClubService';
+import { getUserMemberships } from '../services/ClubsService';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { presenceService } from '../services/PresenceService';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
-import type { PokerTable, Club, Tournament } from '../types/database.types';
+import type { PokerTable, Tournament } from '../types/database.types';
+import type { Club } from '../types/club.types';
 import { useUnionStore } from '../stores/useUnionStore';
 import PageSkeleton from '../components/common/PageSkeleton';
 import styles from './UnionDetailPage.module.css';
@@ -486,8 +487,9 @@ export default function UnionDetailPage() {
     if (!user) return;
 
     try {
-      const myClubs = await clubService.getMyClubs(user.id);
-      const owned = myClubs.filter((c) => c.owner_id === user.id);
+      const memberships = await getUserMemberships();
+      const myClubs = memberships.map((m: any) => m.club || m.clubs).filter(Boolean);
+      const owned = myClubs.filter((c: any) => c.owner_id === user.id);
 
       if (owned.length === 0) {
         toast.error('You must own a club to join a union.');

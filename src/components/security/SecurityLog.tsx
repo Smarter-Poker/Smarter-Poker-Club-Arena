@@ -1,4 +1,5 @@
 import React from 'react';
+import { formatRelativeShort } from '../../lib/date';
 import './SecurityLog.css';
 
 interface SecurityEvent {
@@ -34,15 +35,6 @@ const EVENT_ICONS: Record<string, string> = {
 };
 
 export const SecurityLog: React.FC<SecurityLogProps> = ({ events, maxItems = 20 }) => {
-  const formatTime = (date: Date) => {
-    const now = new Date();
-    const diff = now.getTime() - date.getTime();
-
-    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-    return date.toLocaleDateString();
-  };
-
   const displayEvents = events.slice(0, maxItems);
 
   return (
@@ -58,7 +50,7 @@ export const SecurityLog: React.FC<SecurityLogProps> = ({ events, maxItems = 20 
             <div className="event-content">
               <div className="event-description">{event.description}</div>
               <div className="event-meta">
-                {event.location} • {event.ip} • {formatTime(event.timestamp)}
+                {event.location} • {event.ip} • {formatRelativeShort(event.timestamp)}
               </div>
             </div>
           </div>

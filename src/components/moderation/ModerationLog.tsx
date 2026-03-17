@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
+import { formatRelativeShort as formatTime } from '@/lib/date';
 import './ModerationLog.css';
 
 interface LogEntry {
@@ -68,15 +69,6 @@ export const ModerationLog: React.FC<ModerationLogProps> = ({ clubId, tableId, l
       setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60);
     });
   }, [filteredLogs]);
-
-  const formatTime = (date: Date) => {
-    const now = new Date();
-    const diff = now.getTime() - date.getTime();
-
-    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-    return date.toLocaleDateString();
-  };
 
   return (
     <div className="moderation-log">

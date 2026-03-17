@@ -5,14 +5,15 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, Link, useSearchParams, useNavigate } from 'react-router-dom';
-import { clubService } from '../../services/ClubService';
+import { ClubsService } from '../../services/ClubsService';
 import { tableService } from '../../services/TableService';
 import { tournamentService } from '../../services/TournamentService';
 import { supabase } from '../../lib/supabase';
 import { waitForAuth } from '../../utils/waitForAuth';
 import { masterBus } from '../../core/MasterBus';
 import { useUserStore } from '../../stores/useUserStore';
-import type { Club, PokerTable, Tournament } from '../../types/database.types';
+import type { Club } from '../../types/club.types';
+import type { PokerTable, Tournament } from '../../types/database.types';
 import ClubBottomNav from '../../components/club/ClubBottomNav';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { useVisibilityRefresh } from '../../hooks/useVisibilityRefresh';
@@ -227,7 +228,7 @@ export default function ClubLobby() {
     setIsLoading(true);
     try {
       const [clubData, tableData, tournamentData] = await Promise.all([
-        clubService.getClub(clubId),
+        ClubsService.get(clubId),
         tableService.getClubTables(clubId),
         tournamentService.getTournaments(clubId),
       ]);

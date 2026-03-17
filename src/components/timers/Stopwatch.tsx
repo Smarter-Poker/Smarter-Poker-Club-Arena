@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { formatDuration as formatTime } from '@/lib/date';
 import './Stopwatch.css';
 
 interface StopwatchProps {
@@ -23,13 +24,6 @@ export const Stopwatch: React.FC<StopwatchProps> = ({ autoStart = false, onTick 
 
     return () => clearInterval(interval);
   }, [isRunning, onTick]);
-
-  const formatTime = (secs: number) => {
-    const h = Math.floor(secs / 3600);
-    const m = Math.floor((secs % 3600) / 60);
-    const s = secs % 60;
-    return `${h > 0 ? h + ':' : ''}${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-  };
 
   return (
     <div className="stopwatch">

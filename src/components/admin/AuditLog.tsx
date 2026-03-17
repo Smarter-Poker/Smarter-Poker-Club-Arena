@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { formatDateTime as formatTime } from '../../lib/date';
 import './AuditLog.css';
 
 interface AuditEntry {
@@ -54,11 +55,6 @@ export const AuditLog: React.FC<AuditLogProps> = ({ clubId }) => {
     if (action.includes('settings')) return '⚙️';
     if (action.includes('security') || action.includes('login')) return '🔐';
     return '📋';
-  };
-
-  const formatTime = (dateStr: string) => {
-    const date = new Date(dateStr);
-    return date.toLocaleString();
   };
 
   const filteredEntries = entries.filter((entry) => {

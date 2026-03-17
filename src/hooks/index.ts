@@ -419,3 +419,13 @@ export * from './useResponsive';
 
 // Re-export animation hooks
 export { useStaggerAnimation } from './useStaggerAnimation';
+
+// Re-export realtime master bus hook
+export {
+  useMasterBusChannel,
+  type UseMasterBusChannelOptions,
+  type PostgresChangeEvent,
+} from './useMasterBusChannel';
+
+// Re-export masterBus subscription hooks
+export { useMasterBusSubscription, useMasterBusSubscriptions } from './useMasterBusSubscription';

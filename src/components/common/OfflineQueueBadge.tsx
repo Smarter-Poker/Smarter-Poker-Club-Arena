@@ -7,7 +7,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { getOfflineQueueSize } from '../../utils/offlineQueue';
+import { OfflineQueueService } from '../../services/OfflineQueueService';
 
 export default function OfflineQueueBadge() {
   const [queueSize, setQueueSize] = useState(0);
@@ -15,8 +15,9 @@ export default function OfflineQueueBadge() {
 
   useEffect(() => {
     // Check queue size periodically when offline
-    const check = () => {
-      setQueueSize(getOfflineQueueSize());
+    const check = async () => {
+      const size = await OfflineQueueService.getCount();
+      setQueueSize(size);
       setIsOnline(navigator.onLine);
     };
 

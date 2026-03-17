@@ -6,6 +6,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { masterBus } from '../../core/MasterBus';
+import { formatRelativeShort as formatTime } from '@/lib/date';
 import './RecentPlayers.css';
 
 interface RecentPlayer {
@@ -84,17 +85,6 @@ export const RecentPlayers: React.FC<RecentPlayersProps> = ({
     } finally {
       setLoading(false);
     }
-  };
-
-  const formatTime = (dateStr: string) => {
-    const date = new Date(dateStr);
-    const now = new Date();
-    const diff = now.getTime() - date.getTime();
-
-    if (diff < 60000) return 'Just now';
-    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-    return `${Math.floor(diff / 86400000)}d ago`;
   };
 
   return (

@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
+import { formatDuration } from '@/lib/date';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import './SessionReplay.css';
@@ -147,12 +148,7 @@ export const SessionReplay: React.FC<SessionReplayProps> = ({ sessionId, onClose
     setCurrentTime(replay.actions[newIndex]?.timestamp || 0);
   };
 
-  const formatTime = (ms: number) => {
-    const seconds = Math.floor(ms / 1000);
-    const minutes = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${minutes}:${secs.toString().padStart(2, '0')}`;
-  };
+  const formatTime = (ms: number) => formatDuration(Math.floor(ms / 1000));
 
   const currentAction = replay?.actions.find((a) => a.timestamp >= currentTime);
   const maxTime = replay?.actions[replay.actions.length - 1]?.timestamp || 0;

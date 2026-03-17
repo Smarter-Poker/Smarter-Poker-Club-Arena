@@ -12,6 +12,7 @@
 
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { formatDateTime } from '../lib/date';
 import { FinancialCronService } from '../services/FinancialCronService';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -105,15 +106,6 @@ export default function FinancialHealthPage() {
   const formatInterval = (ms: number): string => {
     const hours = ms / (60 * 60 * 1000);
     return hours >= 24 ? `${hours / 24}d` : `${hours}h`;
-  };
-
-  const formatTime = (iso: string): string => {
-    return new Date(iso).toLocaleString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
   };
 
   if (initialLoad && !status) {
@@ -210,7 +202,13 @@ export default function FinancialHealthPage() {
                 Difference: {status.lastReconciliation.difference.toLocaleString()} chips
               </div>
               <div className="fh-result-time">
-                Last checked: {formatTime(status.lastReconciliation.checkedAt)}
+                Last checked:{' '}
+                {formatDateTime(status.lastReconciliation.checkedAt, {
+                  month: 'short',
+                  day: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
               </div>
             </div>
           </div>

@@ -14,7 +14,7 @@ export interface Club {
   id: string;
   club_id: number; // 6-digit public Club ID for joining
   name: string;
-  slug: string;
+  slug?: string; // Optional — may be computed from name
   description?: string;
   avatar_url?: string;
   banner_url?: string;
@@ -23,8 +23,10 @@ export interface Club {
   is_public: boolean;
   requires_approval: boolean;
   member_count: number;
+  online_count?: number; // Active members online (from database.types)
   table_count?: number;
   chip_treasury?: number; // DB column name (was 'total_chips')
+  gps_restricted?: boolean; // GPS restriction flag (from database.types)
 
   // 50-Level System Capacity Metrics
   level?: number;

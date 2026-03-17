@@ -10,7 +10,7 @@
  * - Agent assigns: credit limit → Sub-Agent
  */
 
-import { supabase } from '../lib/supabase';
+import { supabase, getAuthUser } from '../lib/supabase';
 import { WalletService } from './WalletService';
 import { ChipFlowService } from './ChipFlowService';
 import { masterBus } from '../core/MasterBus';
@@ -409,6 +409,9 @@ class AgentServiceClass {
     creditLimit: number; // REQUIRED: credit line amount (0 if pre-paid)
     isPrepaid: boolean; // REQUIRED: pre-paid or credit
   }): Promise<Agent> {
+    const user = await getAuthUser();
+    if (!user) throw new Error('[AgentService] Authentication required');
+
     const {
       userId,
       clubId,
@@ -470,26 +473,7 @@ class AgentServiceClass {
     }
 
     // 3. Ensure BUSINESS and PROMO wallets exist (on top of their PLAYER wallet)
-    for (const walletType of ['BUSINESS', 'PROMO'] as const) {
-      const { data: existing } = await supabase
-        .from('wallets')
-        .select('user_id')
-        .eq('user_id', userId)
-        .eq('wallet_type', walletType)
-        .maybeSingle();
-
-      if (!existing) {
-        const { error: walletErr } = await supabase.from('wallets').insert({
-          user_id: userId,
-          wallet_type: walletType,
-          balance: 0,
-          locked_balance: 0,
-        });
-        if (walletErr)
-          console.error(`[AgentService] Failed to create ${walletType} wallet:`, walletErr);
-        else console.debug(`[AgentService] Created ${walletType} wallet for ${profile.username}`);
-      }
-    }
+    await WalletService.ensureWalletsExist(userId, ['BUSINESS', 'PROMO']);
 
     // 4. Check if already an agent in this club
     const { data: existingAgent } = await supabase

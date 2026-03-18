@@ -52,6 +52,22 @@
       "destination": "/club-stats-panel.svg"
     },
     {
+      "source": "/hub/club-arena/sw-bus.js",
+      "destination": "/sw-bus.js"
+    },
+    {
+      "source": "/hub/club-arena/manifest.json",
+      "destination": "/manifest.json"
+    },
+    {
+      "source": "/hub/club-arena/offline.html",
+      "destination": "/offline.html"
+    },
+    {
+      "source": "/hub/club-arena/club-logos/:path*",
+      "destination": "/club-logos/:path*"
+    },
+    {
       "source": "/hub/club-arena/:path*",
       "destination": "/index.html"
     },

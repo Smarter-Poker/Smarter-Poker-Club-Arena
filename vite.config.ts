@@ -9,8 +9,8 @@ export default defineConfig({
   plugins: [
     react(),
 
-    // Sentry plugin for source maps and release tracking (production only)
-    process.env.NODE_ENV === 'production' &&
+    // Sentry plugin for source maps and release tracking (production only + auth token required)
+    !!(process.env.NODE_ENV === 'production' && process.env.SENTRY_AUTH_TOKEN) &&
       sentryVitePlugin({
         org: process.env.SENTRY_ORG || 'smarter-software-inc',
         project: process.env.SENTRY_PROJECT || 'javascript-react',
@@ -28,6 +28,11 @@ export default defineConfig({
           setCommits: {
             auto: true, // Automatically associate commits
           },
+        },
+
+        // Don't fail the build if Sentry upload fails
+        errorHandler(err) {
+          console.warn('[sentry-vite-plugin] Warning:', err.message);
         },
       }),
   ].filter(Boolean), // Filter out false values when not in production

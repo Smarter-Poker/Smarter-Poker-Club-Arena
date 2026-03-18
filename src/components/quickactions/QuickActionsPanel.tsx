@@ -27,9 +27,9 @@ export const QuickActionsPanel: React.FC = () => {
   const actions: QuickAction[] = useMemo(
     () => [
       {
-        id: 'lobby',
-        icon: '🎰',
-        label: 'Lobby',
+        id: 'home',
+        icon: '🏠',
+        label: 'Home',
         shortcut: 'L',
         action: () => navigateRef.current('/'),
       },

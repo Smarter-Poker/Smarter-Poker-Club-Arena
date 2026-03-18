@@ -297,7 +297,7 @@ export const useArenaStore = create<ArenaState>()(
           try {
             localStorage.setItem(name, JSON.stringify(value));
           } catch {
-            // localStorage unavailable (iframe sandbox, storage quota, etc.)
+            // localStorage unavailable (storage quota, private browsing, etc.)
           }
         },
         removeItem: (name) => {

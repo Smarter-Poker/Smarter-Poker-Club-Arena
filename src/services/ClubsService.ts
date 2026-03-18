@@ -347,7 +347,7 @@ export async function leaveClub(clubId: string): Promise<void> {
 /**
  * Get user's club memberships — enriched with LIVE member counts.
  * Accepts an optional pre-resolved user to avoid redundant getAuthUser() calls.
- * This is critical in iframe context where getAuthUser() can be slow.
+ * This avoids redundant auth lookups when the caller already has the user.
  */
 export async function getUserMemberships(
   preResolvedUser?: { id: string } | null

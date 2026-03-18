@@ -452,29 +452,3 @@
     padding: var(--space-2) var(--space-3);
   }
 }
-
-/* ═══════════════════════════════════════════════════════════════════════════════
-   EMBEDDED MODE (When running inside World Hub iframe)
-   ═══════════════════════════════════════════════════════════════════════════════ */
-
-.shell--embedded .shell-header {
-  display: none !important;
-}
-
-.shell--embedded .shell-footer {
-  display: none !important;
-}
-
-.shell--embedded .shell-main {
-  padding: var(--space-4);
-  max-width: 100%;
-}
-
-.shell--embedded .shell-mobile-nav {
-  display: none !important;
-}
-
-/* Remove extra top padding when embedded */
-.shell--embedded {
-  min-height: 100%;
-}

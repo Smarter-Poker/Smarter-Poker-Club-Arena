@@ -250,19 +250,3 @@
     font-size: var(--text-base);
   }
 }
-
-/* ═══════════════════════════════════════════════════════════════════════════════
-   EMBEDDED MODE (When running inside World Hub iframe)
-   ═══════════════════════════════════════════════════════════════════════════════ */
-
-.embedded {
-  min-height: 100%;
-  background: transparent;
-}
-
-.embedded .main {
-  padding: var(--space-4);
-  padding-top: var(--space-4);
-  /* No extra padding when embedded - header is hidden */
-  max-width: 100%;
-}

@@ -403,7 +403,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                 ═══════════════════════════════════════════════════════════════ */}
         <div style={sectionHeaderStyle}>Game Modes</div>
         {[
-          { label: 'Lobby', path: '/' },
+          { label: 'Home', path: '/' },
           { label: 'Tournaments', path: '/tournaments' },
           { label: 'Tournament Lobby', path: '/tournament-lobby' },
           { label: 'Tournament Results', path: '/tournament-results' },
@@ -886,7 +886,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           { key: '?', desc: 'Show Shortcuts' },
           { key: 'Esc', desc: 'Close Menu / Modal' },
           { key: 'H', desc: 'Go Home' },
-          { key: 'L', desc: 'Go to Lobby' },
+          { key: 'L', desc: 'Go to Home' },
           { key: 'T', desc: 'Go to Tournaments' },
           { key: 'P', desc: 'Go to Profile' },
           { key: 'S', desc: 'Go to Settings' },

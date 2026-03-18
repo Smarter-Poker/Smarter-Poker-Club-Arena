@@ -100,7 +100,7 @@ test.describe('Hamburger Menu — Navigation Links', () => {
   // All navigation links in the hamburger menu
   const allNavLinks = [
     // Game Modes
-    { label: 'Lobby', path: '/lobby' },
+    { label: 'Home', path: '/' },
     { label: 'Tournaments', path: '/tournaments' },
     { label: 'Tournament Lobby', path: '/tournament-lobby' },
     { label: 'Tournament Results', path: '/tournament-results' },
@@ -279,7 +279,7 @@ test.describe('Hamburger Menu — Keyboard Shortcuts Section', () => {
       'Show Shortcuts',
       'Close Menu / Modal',
       'Go Home',
-      'Go to Lobby',
+      'Go to Home',
       'Go to Tournaments',
       'Go to Profile',
       'Go to Settings',

@@ -12,7 +12,7 @@
  * 2. When a failure is detected, immediately retry at 5s, 10s, 20s intervals
  * 3. Force-reconnect all Supabase realtime channels on recovery
  * 4. Replay offline mutation queue on recovery
- * 5. In iframe context, delay first check to allow auth handshake
+ * 5. Configurable initial delay for auth session establishment
  */
 
 import { supabase } from '../lib/supabase';

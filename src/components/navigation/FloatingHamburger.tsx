@@ -4,8 +4,8 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Fixed-position circular button that opens the HamburgerMenu drawer.
- * Renders on ALL pages regardless of iframe mode, ensuring users always
- * have access to settings, navigation, and options.
+ * Renders on ALL pages, ensuring users always have access to
+ * settings, navigation, and options.
  *
  * Position: Bottom-right corner (bumps up when ClubBottomNav is present)
  */

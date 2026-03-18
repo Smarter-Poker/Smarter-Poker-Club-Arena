@@ -6,8 +6,8 @@
  * Root application with routing, auth guards, and global providers
  */
 
-import { Routes, Route, useLocation, Link, Navigate } from 'react-router-dom';
-import { Suspense, useState, useEffect, useRef } from 'react';
+import { Routes, Route, Link } from 'react-router-dom';
+import { Suspense, useState, useEffect } from 'react';
 import { lazyWithRetry as lazy } from './utils/lazyWithRetry';
 import { supabase } from './lib/supabase';
 import { realtimeChannelService } from './services/RealtimeChannelService';
@@ -45,7 +45,7 @@ import TOSGuard from './components/legal/TOSGuard';
 // Pages (lazy loaded for performance)
 const AuthPage = lazy(() => import('./pages/AuthPage'));
 const HomePage = lazy(() => import('./pages/HomePage'));
-// LobbyPage removed — /lobby redirects to / (HomePage). Real lobby is ClubLobby at /clubs/:clubId.
+
 const ClubsPage = lazy(() => import('./pages/ClubsPage'));
 const ClubCarouselPage = lazy(() => import('./pages/ClubCarouselPage'));
 const ClubHomePage = lazy(() => import('./pages/ClubHomePage'));
@@ -368,8 +368,6 @@ export default function App() {
               {/* Protected routes with AppLayout shell — RouteErrorBoundary on each */}
               <Route element={<AppLayout />}>
                 {/* RouteErrorBoundary wraps all AppLayout children */}
-                {/* Lobby — redirect to HomePage; real lobby is ClubLobby at /clubs/:clubId */}
-                <Route path="lobby" element={<Navigate to="/" replace />} />
 
                 {/* Clubs */}
                 <Route
@@ -1334,12 +1332,53 @@ export default function App() {
                 <Route
                   path="*"
                   element={
-                    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white">
-                      <h1 className="text-6xl font-bold mb-4">404</h1>
-                      <p className="text-xl text-gray-400 mb-8">Page not found</p>
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        minHeight: '80vh',
+                        color: 'var(--off-white, #E4E6EB)',
+                        textAlign: 'center',
+                        padding: '2rem',
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: '6rem',
+                          fontWeight: 800,
+                          lineHeight: 1,
+                          background: 'linear-gradient(135deg, #1877F2 0%, #00d4ff 100%)',
+                          WebkitBackgroundClip: 'text',
+                          WebkitTextFillColor: 'transparent',
+                          marginBottom: '0.5rem',
+                        }}
+                      >
+                        404
+                      </div>
+                      <p
+                        style={{
+                          fontSize: '1.25rem',
+                          color: 'var(--soft-white, #B0B3B8)',
+                          marginBottom: '2rem',
+                        }}
+                      >
+                        This page doesn't exist
+                      </p>
                       <Link
                         to="/"
-                        className="px-6 py-3 bg-green-600 rounded-lg hover:bg-green-700 transition-colors"
+                        style={{
+                          padding: '12px 32px',
+                          background: 'linear-gradient(135deg, #1877F2 0%, #0D5DC7 100%)',
+                          color: '#fff',
+                          borderRadius: 12,
+                          fontWeight: 600,
+                          fontSize: '1rem',
+                          textDecoration: 'none',
+                          transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+                          boxShadow: '0 4px 12px rgba(24, 119, 242, 0.3)',
+                        }}
                       >
                         Back to Home
                       </Link>

@@ -75,10 +75,9 @@ class IdentityDNACore {
     this.setupAuthListener();
 
     // ── FAST PATH: localStorage session warming ──
-    // In same-origin iframe context, the Hub's session already exists in
-    // localStorage under 'smarter-poker-auth'. Reading it directly is instant
-    // (no API call, no navigator.locks contention). We only skip this and
-    // fall back to getSession() if localStorage is empty or the JWT is expired.
+    // The shared session exists in localStorage under 'smarter-poker-auth'.
+    // Reading it directly is instant (no API call, no navigator.locks contention).
+    // We only fall back to getSession() if localStorage is empty or JWT is expired.
     const localSession = this.readLocalSession();
     if (localSession) {
       console.debug('[IdentityDNA] ⚡ Fast path: session found in localStorage');

@@ -216,7 +216,7 @@ function DashboardTab({ clubId }: { clubId: string }) {
           () =>
             supabase
               .from('club_members')
-              .select('id, role, is_active, user_id', { count: 'exact' })
+              .select('user_id, role, is_active', { count: 'exact' })
               .eq('club_id', uuid)
               .then((r) => r),
           { maxRetries: 2, isMountedRef: isMounted }
@@ -244,7 +244,7 @@ function DashboardTab({ clubId }: { clubId: string }) {
           () =>
             supabase
               .from('club_members')
-              .select('id', { count: 'exact' })
+              .select('user_id', { count: 'exact' })
               .eq('club_id', uuid)
               .gte('created_at', thirtyDaysAgo)
               .then((r) => r),

@@ -4,6 +4,18 @@
   "framework": null,
   "redirects": [
     {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "club.smarter.poker" }],
+      "destination": "https://smarter.poker/hub/club-arena/:path*",
+      "permanent": false
+    },
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "club-engine.vercel.app" }],
+      "destination": "https://smarter.poker/hub/club-arena/:path*",
+      "permanent": false
+    },
+    {
       "source": "/",
       "destination": "/hub/club-arena/",
       "permanent": false

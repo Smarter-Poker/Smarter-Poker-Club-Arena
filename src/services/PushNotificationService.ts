@@ -52,7 +52,6 @@ export interface NotificationPreferences {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const ONESIGNAL_APP_ID = import.meta.env.VITE_ONESIGNAL_APP_ID || '';
-const ONESIGNAL_REST_API_KEY = import.meta.env.VITE_ONESIGNAL_REST_API_KEY || '';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SERVICE

@@ -9,12 +9,10 @@
  * Deploy trigger: 1769680400
  */
 
-// xAI Grok API Configuration
-const XAI_API_KEY = import.meta.env.VITE_XAI_API_KEY || '';
-const XAI_API_URL = 'https://api.x.ai/v1/images/generations';
+// Logo generation via server-side API route (keeps xAI key server-side)
+const LOGO_API_URL = '/api/club-arena/generate-logo';
 
 // Logo generation settings
-const LOGO_SIZE = '1024x1024'; // Grok supports 1024x1024
 const TARGET_LOGO_SIZE = 340; // Final size for ClubCardGenerator
 
 export interface LogoGenerationOptions {
@@ -38,56 +36,26 @@ export async function generateClubLogo(
 ): Promise<LogoGenerationResult> {
   const { clubName, style = 'modern', theme, colorScheme } = options;
 
-  // Check for API key
-  if (!XAI_API_KEY) {
-    console.error('[LogoGenerator] XAI_API_KEY not configured');
-    return {
-      success: false,
-      error: 'AI image generation not configured. Please contact support.',
-    };
-  }
-
-  // Build a detailed prompt for poker club logo generation
-  const prompt = buildLogoPrompt(clubName, style, theme, colorScheme);
-
   try {
-    const response = await fetch(XAI_API_URL, {
+    // Call server-side API route (xAI key stays server-side, never in client bundle)
+    const response = await fetch(LOGO_API_URL, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${XAI_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: 'grok-2-image-1212', // Grok 2 image generation model
-        prompt: prompt,
-        n: 1,
-        // Note: Grok doesn't support 'size' parameter, uses default output size
-        response_format: 'b64_json', // Get base64 directly
-      }),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clubName, style, theme, colorScheme }),
     });
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      console.error('[LogoGenerator] Grok API error:', errorData);
-      return {
-        success: false,
-        error: errorData.error?.message || `API error: ${response.status}`,
-      };
-    }
-
     const data = await response.json();
-    const base64Image = data.data?.[0]?.b64_json;
 
-    if (!base64Image) {
+    if (!response.ok || !data.success) {
+      console.error('[LogoGenerator] API error:', data.error);
       return {
         success: false,
-        error: 'No image data received from API',
+        error: data.error || `API error: ${response.status}`,
       };
     }
 
-    // Convert to data URL and resize to target dimensions
-    const fullSizeDataUrl = `data:image/png;base64,${base64Image}`;
-    const resizedDataUrl = await resizeImage(fullSizeDataUrl, TARGET_LOGO_SIZE, TARGET_LOGO_SIZE);
+    // Resize the returned data URL to target dimensions
+    const resizedDataUrl = await resizeImage(data.logoUrl, TARGET_LOGO_SIZE, TARGET_LOGO_SIZE);
 
     return {
       success: true,
@@ -100,39 +68,6 @@ export async function generateClubLogo(
       error: error instanceof Error ? error.message : 'Unknown error occurred',
     };
   }
-}
-
-/**
- * Build a prompt for generating a poker club logo
- * Uses the user's EXACT description with minimal enhancement
- */
-function buildLogoPrompt(
-  clubName: string,
-  style: string,
-  theme?: string,
-  colorScheme?: string
-): string {
-  // Use the user's exact text as the primary prompt
-  const userPrompt = theme || 'poker club logo';
-
-  // Add minimal poker club context and quality requirements
-  let prompt = `${userPrompt}. `;
-
-  // Add quality and style requirements WITHOUT forcing a specific subject
-  prompt += `
-        High quality, professional design.
-        Suitable for a poker club brand.
-        Clean, modern aesthetic.
-        NO TEXT, NO LETTERS, NO WORDS in the image.
-        Premium, polished look.
-    `;
-
-  // Add color scheme if specified
-  if (colorScheme) {
-    prompt += `\nColor scheme: ${colorScheme}`;
-  }
-
-  return prompt.trim();
 }
 
 /**

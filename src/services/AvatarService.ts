@@ -275,16 +275,7 @@ class AvatarServiceClass {
    */
   openAvatarSelector(): void {
     const url = this.getHubAvatarUrl();
-    const isInIframe = typeof window !== 'undefined' && window.parent !== window;
-    if (isInIframe) {
-      try {
-        window.top!.open(url, '_blank');
-      } catch {
-        window.open(url, '_blank');
-      }
-    } else {
-      window.open(url, '_blank', 'width=800,height=600');
-    }
+    window.open(url, '_blank', 'width=800,height=600');
   }
 
   /**

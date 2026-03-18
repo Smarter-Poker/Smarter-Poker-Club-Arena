@@ -15,7 +15,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { supabase, getAuthUser } from '../lib/supabase';
-import { waitForAuth } from '../utils/waitForAuth';
 import { masterBus } from '../core/MasterBus';
 import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
 import haptic from '../services/HapticService';
@@ -376,11 +375,6 @@ export default function ClubHomePage() {
     if (!hasDataRef.current && (!getIsMounted || getIsMounted())) setLoading(true);
 
     try {
-      // In iframe context, wait for auth to be set by the parent via postMessage.
-      const authReady = await waitForAuth(getIsMounted || undefined);
-      if (!authReady) {
-        console.warn('[ClubHomePage] Auth not ready — proceeding anyway');
-      }
       if (getIsMounted && !getIsMounted()) return;
 
       // Load club info — smart resolve: clubId may be UUID or integer club_id

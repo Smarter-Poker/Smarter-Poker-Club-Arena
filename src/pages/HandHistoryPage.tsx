@@ -281,34 +281,12 @@ export default function HandHistoryPage() {
       heroCards: (player as any)?.hole_cards || (player as any)?.holeCards || 'Unknown',
     };
 
-    // Send to World Hub personal assistant via postMessage
+    // Open Jarvis analysis in new tab with hand data
     try {
-      if (window.parent !== window) {
-        // In iframe - send to parent
-        window.parent.postMessage(
-          {
-            type: 'ANALYZE_HAND',
-            payload: handSummary,
-          },
-          window.location.origin
-        );
-        toast.success('Hand sent to Jarvis for analysis!');
-      } else {
-        // Standalone - open Jarvis in new tab with hand data
-        const encodedData = encodeURIComponent(JSON.stringify(handSummary));
-        const url = `https://smarter.poker/hub/jarvis?hand=${encodedData}`;
-        const isInIframe = typeof window !== 'undefined' && window.parent !== window;
-        if (isInIframe) {
-          try {
-            window.top!.open(url, '_blank');
-          } catch {
-            window.open(url, '_blank');
-          }
-        } else {
-          window.open(url, '_blank');
-        }
-        toast.info('Opening Jarvis analysis...');
-      }
+      const encodedData = encodeURIComponent(JSON.stringify(handSummary));
+      const url = `https://smarter.poker/hub/jarvis?hand=${encodedData}`;
+      window.open(url, '_blank');
+      toast.info('Opening Jarvis analysis...');
     } catch (err) {
       console.error('Failed to send hand to Jarvis:', err);
       toast.error('Failed to analyze hand');

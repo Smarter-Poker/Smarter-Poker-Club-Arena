@@ -23,8 +23,6 @@ import {
 } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase, getAuthUser } from '../lib/supabase';
-import { waitForAuth } from '../utils/waitForAuth';
-
 import { ClubsService } from '../services/ClubsService';
 import { useToast } from '../components/common/Toast';
 import GlobalHeader from '../components/navigation/GlobalHeader';
@@ -37,7 +35,6 @@ import { useMasterBusSubscription } from '../hooks/useMasterBusSubscription';
 import PresenceHub from '../components/home/PresenceHub';
 import ClubContextMenu from '../components/home/ClubContextMenu';
 import LOBBY_TILES from '../config/lobbyTiles.config';
-import { postToParent } from '../utils/parentOrigin';
 import CarouselSection from '../components/home/CarouselSection';
 import { getClubLevel } from '../utils/clubLevels';
 import type { UserClub, ClubStats } from '../components/home/CarouselSection';
@@ -60,7 +57,6 @@ interface UserPreferences {
 
 // Action button images
 const ACTION_BAR_HORIZONTAL = `${import.meta.env.BASE_URL}images/icons/action-bar-horizontal.png`;
-
 
 // #12: Seasonal theme detection
 function getSeasonalTheme(): string {
@@ -141,28 +137,10 @@ function HomePageInner() {
     };
   }, []);
 
-  // Detect if running inside iframe (World Hub embedding)
-  const [isInIframe, setIsInIframe] = useState(false);
-
-  useEffect(() => {
-    const inIframe = window.parent !== window;
-    setIsInIframe(inIframe);
-    if (inIframe) {
-      document.body.classList.add('embedded-in-iframe');
-    }
-    return () => {
-      document.body.classList.remove('embedded-in-iframe');
-    };
-  }, []);
-
   // Real data states
   const [isLoading, setIsLoading] = useState(true);
   const [userClubs, setUserClubs] = useState<UserClub[]>(() => {
-    // SWR — instant render from cache, but ONLY if we're NOT in an iframe.
-    // In iframe mode, auth comes from postMessage and the cache might be stale
-    // (from a different user or an unauthenticated session).
-    const inIframe = window.parent !== window;
-    if (inIframe) return [];
+    // SWR — instant render from cache
     try {
       const cached = localStorage.getItem(STORAGE_KEYS.CLUBS_CACHE);
       const cacheTs = localStorage.getItem(STORAGE_KEYS.CLUBS_CACHE_TS);
@@ -288,11 +266,6 @@ function HomePageInner() {
       }, 12_000);
 
       try {
-        // In iframe context, wait for auth to be set by the parent via postMessage.
-        const authReady = await waitForAuth(getIsMounted || undefined);
-        if (!authReady) {
-          console.warn('[HomePage] Auth not ready — proceeding anyway');
-        }
         if (getIsMounted && !getIsMounted()) {
           clearTimeout(loadingTimeout);
           return;
@@ -515,8 +488,6 @@ function HomePageInner() {
     let isMounted = true;
     async function fetchSharkClubStats(retryOnFail = false) {
       try {
-        // Wait for auth to be ready before querying — prevents RLS null results in iframe
-        await waitForAuth(() => isMounted);
         if (!isMounted) return;
 
         // Find Shark Club by club_id = 25450 — include level threshold columns
@@ -760,14 +731,7 @@ function HomePageInner() {
         }
         case '4': {
           haptic.light();
-          // FIX: Use consistent navigation pattern — postToParent for iframe, navigate for standalone
-          // Previous code used unsafe window.top! which can throw in cross-origin iframes
-          const inIframe = typeof window !== 'undefined' && window.parent !== window;
-          if (inIframe) {
-            postToParent({ type: 'NAVIGATE', path: '/hub/marketplace' });
-          } else {
-            navigate('/marketplace');
-          }
+          navigate('/marketplace');
           break;
         }
         case '5':
@@ -1031,11 +995,7 @@ function HomePageInner() {
       Marketplace: () => {
         haptic.light();
         PremiumSFX.navigate();
-        if (window.parent !== window) {
-          postToParent({ type: 'NAVIGATE', path: '/hub/marketplace' });
-        } else {
-          navigate('/marketplace');
-        }
+        navigate('/marketplace');
       },
     }),
     [navigate, userClubs, toast]
@@ -1066,8 +1026,8 @@ function HomePageInner() {
       {/* P4-1: Floating dust particles */}
       <div className={styles.dustParticles}></div>
 
-      {/* GLOBAL HEADER - Hub-style, hide when embedded in iframe */}
-      {!isInIframe && <GlobalHeader />}
+      {/* GLOBAL HEADER */}
+      <GlobalHeader />
 
       {/* #15: Offline indicator banner */}
       {!isOnline && (

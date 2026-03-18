@@ -10,7 +10,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase, getAuthUser } from '../lib/supabase';
-import { waitForAuth } from '../utils/waitForAuth';
 import { masterBus } from '../core/MasterBus';
 import { ClubsService } from '../services/ClubsService';
 import { unionService } from '../services/UnionService';
@@ -144,11 +143,6 @@ export default function ClubsPage() {
     if (!initialLoadDone.current) setIsLoading(true);
 
     try {
-      // In iframe context, wait for auth to be set by the parent via postMessage.
-      const authReady = await waitForAuth(getIsMounted || undefined);
-      if (!authReady) {
-        console.warn('[ClubsPage] Auth not ready — proceeding anyway');
-      }
       if (getIsMounted && !getIsMounted()) return;
 
       // Fetch clubs AND unions in parallel

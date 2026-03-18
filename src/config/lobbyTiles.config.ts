@@ -35,7 +35,7 @@ const LOBBY_TILES: LobbyTile[] = [
     shortcutKey: '3',
   },
   { img: `${BASE}images/tiles/cashier.jpg`, alt: 'Cashier', route: null, shortcutKey: '4' }, // Custom — needs last-club logic
-  { img: `${BASE}images/tiles/marketplace.jpg`, alt: 'Marketplace', route: null, shortcutKey: '5' }, // Custom — iframe postMessage
+  { img: `${BASE}images/tiles/marketplace.jpg`, alt: 'Marketplace', route: null, shortcutKey: '5' }, // Custom — navigate to marketplace
 ];
 
 export default LOBBY_TILES;

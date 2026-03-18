@@ -24,7 +24,6 @@ import { tableService } from '../../services/TableService';
 import { tournamentService } from '../../services/TournamentService';
 import { WalletService } from '../../services/WalletService';
 import { supabase } from '../../lib/supabase';
-import { waitForAuth } from '../../utils/waitForAuth';
 import {
   useMasterBusSubscription,
   useMasterBusSubscriptions,
@@ -135,10 +134,6 @@ export default function ClubLobby() {
     let cancelled = false;
 
     const init = async () => {
-      const authReady = await waitForAuth(() => !cancelled && isMountedRef.current);
-      if (!authReady) {
-        console.warn('[ClubLobby] Auth not ready — proceeding anyway');
-      }
       if (cancelled || !isMountedRef.current) return;
 
       try {

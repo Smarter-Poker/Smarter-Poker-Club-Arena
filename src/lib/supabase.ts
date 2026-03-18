@@ -47,55 +47,10 @@ export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '', {
 });
 
 /**
- * Timeout-protected getUser() wrapper with localStorage fallback.
- *
- * CRITICAL FIX (v3): In iframe context, BOTH getUser() and getSession() hang:
- * - getUser() hangs because the API call is blocked by iframe sandbox
- * - getSession() hangs because Supabase's internal _initialize() promise never
- *   resolves (it calls _recoverAndRefresh() which makes an API call that hangs)
- *
- * Fix: In iframe mode, read the session directly from localStorage. The shared
- * storageKey 'smarter-poker-auth' is written by both Hub and Club Arena (SSO).
- * This bypasses all SDK internal state and returns instantly.
+ * Timeout-protected getUser() wrapper with getSession() fallback.
+ * Same-origin auth — shared Supabase session via localStorage.
  */
 export async function getAuthUser(timeoutMs = 6000) {
-  const inIframe = typeof window !== 'undefined' && window.parent !== window;
-
-  // ── IFRAME FAST PATH ──
-  // Both getUser() and getSession() hang in iframe context.
-  // Read from localStorage directly — instant, no SDK calls needed.
-  // The 'smarter-poker-auth' key is the SSO session shared with the Hub.
-  if (inIframe) {
-    const maxRetries = 10;
-    const retryInterval = 200; // ms
-    for (let attempt = 0; attempt < maxRetries; attempt++) {
-      try {
-        // Use shared readLocalSession() — single source of truth for JWT parsing
-        const localSession = readLocalSessionShared();
-        if (localSession) {
-          // Reconstruct user object from JWT claims for backward compatibility
-          const rawData = localSession.rawData as Record<string, any>;
-          const user = rawData?.user?.id
-            ? rawData.user
-            : { id: localSession.userId, email: localSession.email };
-          return { data: { user }, error: null };
-        }
-        // If no session yet and we have retries left, wait briefly
-        // (setSession from postMessage may be in-flight)
-        if (attempt < maxRetries - 1) {
-          await new Promise((r) => setTimeout(r, retryInterval));
-          continue;
-        }
-        return { data: { user: null }, error: null };
-      } catch (sessionErr) {
-        console.warn('[getAuthUser] iframe localStorage read failed:', sessionErr);
-        return { data: { user: null }, error: sessionErr };
-      }
-    }
-    return { data: { user: null }, error: null };
-  }
-
-  // ── STANDALONE PATH (non-iframe) ──
   try {
     const userPromise = supabase.auth.getUser();
     const timeoutPromise = new Promise<never>((_, reject) =>
@@ -104,7 +59,6 @@ export async function getAuthUser(timeoutMs = 6000) {
     return await Promise.race([userPromise, timeoutPromise]);
   } catch (err) {
     console.warn('[getAuthUser] getUser() failed, falling back to getSession():', err);
-    // Fallback: getSession() reads from localStorage — instant, no API call
     try {
       const {
         data: { session },

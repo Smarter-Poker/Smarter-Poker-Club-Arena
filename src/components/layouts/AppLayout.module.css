@@ -266,9 +266,3 @@
   /* No extra padding when embedded - header is hidden */
   max-width: 100%;
 }
-
-/* Global fallback: Hide header/footer via body class (works before React hydrates) */
-:global(body.embedded-in-iframe) .header,
-:global(body.embedded-in-iframe) .footer {
-  display: none !important;
-}

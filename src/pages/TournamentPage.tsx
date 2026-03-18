@@ -318,26 +318,18 @@ export default function TournamentPage() {
     };
   }, [selectedTournament?.id, currentUser.id]);
 
-  // Helper to notify the parent World Hub of a balance change
+  // Helper to notify of a balance change
   const notifyWalletChange = (amount: number, isDeduction: boolean) => {
     try {
-      if (window.parent && window.parent !== window) {
-        window.parent.postMessage(
-          {
-            type: 'USE_TRAINING_BUS_EMIT',
-            event: 'chips_distributed',
-            payload: {
-              userId: currentUser.id,
-              amount: amount,
-              isDeduction: isDeduction,
-              timestamp: Date.now(),
-            },
-          },
-          '*'
-        );
-      }
+      masterBus.emit('BALANCE_UPDATED', {
+        source: 'tournament',
+        userId: currentUser.id,
+        amount: amount,
+        isDeduction: isDeduction,
+        timestamp: Date.now(),
+      });
     } catch (e) {
-      console.error('Failed to notify parent of wallet change:', e);
+      console.error('Failed to notify of wallet change:', e);
     }
   };
 

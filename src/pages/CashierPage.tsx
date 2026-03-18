@@ -732,21 +732,12 @@ export default function CashierPage() {
         total: 0,
       });
 
-      // 2. Notify parent World Hub iframe
-      if (window.parent && window.parent !== window) {
-        window.parent.postMessage(
-          {
-            type: 'USE_TRAINING_BUS_EMIT',
-            event: 'chips_distributed',
-            payload: {
-              userId: targetUserId,
-              amount: chipAmount,
-              timestamp: Date.now(),
-            },
-          },
-          '*'
-        );
-      }
+      // 2. Emit balance updated event (handled by MasterBus)
+      masterBus.emit('BALANCE_UPDATED', {
+        source: 'cashier',
+        userId: targetUserId,
+        amount: chipAmount,
+      });
     } catch (e) {
       console.error('Failed to notify of wallet change:', e);
     }

@@ -15,7 +15,6 @@ import { VIPProvider, useVIPStatus } from '../hooks/useVIP';
 import { InAppAlerts, useAlerts } from './notifications/InAppAlerts';
 import { useClubTheme } from '../utils/clubThemeEngine';
 import { scheduleStaleCacheReaper } from '../utils/staleCacheReaper';
-import { postToParent } from '../utils/parentOrigin';
 import './Shell.css';
 
 // VIP Badge Component
@@ -29,13 +28,7 @@ function VIPBadge() {
     <button
       className={`shell-vip-badge ${isVIP ? 'vip-active' : ''}`}
       onClick={() => {
-        // FIX: Use postToParent() consistently — window.top!.location.href is unsafe in cross-origin iframes
-        const isInIframe = typeof window !== 'undefined' && window.parent !== window;
-        if (isInIframe) {
-          postToParent({ type: 'NAVIGATE', path: '/hub/diamond-store' });
-        } else {
-          window.location.href = 'https://smarter.poker/hub/diamond-store';
-        }
+        navigate('/diamond-store');
       }}
       title={isVIP ? 'VIP Gold Active' : 'Get VIP Benefits'}
     >
@@ -48,9 +41,6 @@ function ShellContent() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
-
-  // Detect if running inside iframe (World Hub embedding)
-  const isInIframe = typeof window !== 'undefined' && window.parent !== window;
 
   // Store
   const { theme } = useSettingsStore();
@@ -126,7 +116,7 @@ function ShellContent() {
   const isInClubArena = location.pathname.includes('/club-arena/clubs/');
 
   return (
-    <div className={`shell ${isInIframe ? 'shell--embedded' : ''}`}>
+    <div className="shell">
       {/* Header - Always visible with hamburger menu */}
       <header className="shell-header">
         <div className="shell-header-content">
@@ -214,13 +204,7 @@ function ShellContent() {
                 if (e.key === 'Enter' || e.key === ' ') e.currentTarget.click();
               }}
               onClick={() => {
-                // FIX: Use postToParent() — was using unsafe window.top! and wildcard '*' postMessage
-                const inIframe = typeof window !== 'undefined' && window.parent !== window;
-                if (inIframe) {
-                  postToParent({ type: 'NAVIGATE', path: '/hub/diamond-store' });
-                } else {
-                  window.location.href = 'https://smarter.poker/hub/diamond-store';
-                }
+                navigate('/diamond-store');
               }}
               style={{ cursor: 'pointer' }}
             >

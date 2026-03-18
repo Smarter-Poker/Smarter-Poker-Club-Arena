@@ -19,7 +19,6 @@ import { masterBus } from '../../core/MasterBus';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { useWalletStore } from '../../stores/useWalletStore';
 import { useAuthUser } from '../../hooks/useAuthUser';
-import { postToParent } from '../../utils/parentOrigin';
 import HamburgerMenu from './HamburgerMenu';
 import styles from './GlobalHeader.module.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
@@ -153,13 +152,9 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
     navigateToHub('/hub');
   };
 
-  // Iframe-safe navigation: navigates the top window, not the iframe
+  // Navigation helper
   const navigateToHub = (path: string) => {
-    const isInIframe = typeof window !== 'undefined' && window.parent !== window;
-    if (isInIframe) {
-      postToParent({ type: 'NAVIGATE', path });
-    }
-    // Non-iframe: Hub-only routes — no-op outside iframe
+    // Navigation handled by HamburgerMenu or other navigation components
   };
 
   return (

@@ -15,8 +15,6 @@ import { OfflineQueueService } from './services/OfflineQueueService';
 import { busEventLogger } from './services/BusEventLogger';
 import GlobalWaitlistListener from './components/common/GlobalWaitlistListener';
 import WaitlistBanner from './components/common/WaitlistBanner';
-import { earlyAuth } from './core/earlyAuthBridge';
-import { postToParent, setParentOrigin, isTrustedOrigin } from './utils/parentOrigin';
 import { addBreadcrumb } from './core/SentryInit';
 
 // Intro Video — lazy-loaded (only shown once per session, not needed for initial paint)
@@ -158,37 +156,12 @@ function LoadingSpinner() {
 // Imported from centralized storage keys
 import { STORAGE_KEYS } from './lib/storage';
 
-// ── Window extensions for iframe auth communication ──
-declare global {
-  interface Window {
-    __PARENT_ORIGIN__?: string; // Set by inline script when parent origin is validated
-  }
-}
-
-/**
- * Quick JWT expiry check — returns true if the token is expired or malformed.
- * Uses a 30-second buffer so we don't attempt setSession() with a token
- * that will expire before Supabase can process it.
- */
-function isTokenExpired(token: string): boolean {
-  try {
-    const parts = token.split('.');
-    if (parts.length !== 3) return true; // Malformed JWT
-    const payload = JSON.parse(atob(parts[1]));
-    if (typeof payload.exp !== 'number') return true; // No expiry claim
-    return payload.exp * 1000 < Date.now() + 30_000; // 30s buffer
-  } catch {
-    return true; // Parse error — treat as expired
-  }
-}
-
 export default function App() {
   // Check if intro video has been shown this session
   const [showIntro, setShowIntro] = useState(() => {
-    // Only show intro if not viewed this session and not in iframe
+    // Only show intro if not viewed this session
     const alreadyShown = sessionStorage.getItem(STORAGE_KEYS.INTRO_SHOWN);
-    const inIframe = window.parent !== window;
-    return !alreadyShown && !inIframe;
+    return !alreadyShown;
   });
 
   const handleIntroComplete = () => {
@@ -219,179 +192,11 @@ export default function App() {
   // ═══════════════════════════════════════════════════════════════════════════
   //  UNIFIED AUTH HANDLER (Redesigned — consolidated from 2 useEffects into 1)
   // ═══════════════════════════════════════════════════════════════════════════
-  //
-  // AUTH FLOW (clean, 3-layer architecture):
-  //   Layer 1: index.html inline script — sends ACKs, stores token in window.__EARLY_AUTH__
-  //   Layer 2: THIS useEffect — single entry point for ALL auth token processing
-  //   Layer 3: IdentityDNA — reacts to setSession() via onAuthStateChange listener
-  //
-  // This replaces the previous dual-useEffect design where:
-  //   - useEffect #1 consumed early auth (window.__EARLY_AUTH__)
-  //   - useEffect #2 listened for live postMessage tokens
-  //   Both called setSession() independently, creating race conditions.
-  //
-  // Now: ONE handler consumes early auth on mount AND listens for live tokens.
+  // AUTH: Native same-origin session via shared Supabase localStorage key.
+  // No postMessage handshake needed — World Hub and Club Arena share
+  // the 'smarter-poker-auth' localStorage key on the same domain.
+  // IdentityDNA handles session loading via onAuthStateChange listener.
   // ═══════════════════════════════════════════════════════════════════════════
-  const lastAuthTokenRef = useRef<string | null>(null);
-  const authInFlightRef = useRef(false); // Mutex to prevent concurrent setSession calls
-
-  /** Apply settings from World Hub to the local Zustand store */
-  const applySettingsRef = useRef((s: Record<string, unknown>) => {
-    const store = useSettingsStore.getState();
-    if (typeof s.soundEnabled === 'boolean' && s.soundEnabled !== store.soundEnabled)
-      store.toggleSound();
-    if (typeof s.fourColorDeck === 'boolean' && s.fourColorDeck !== store.fourColorDeck)
-      store.toggleFourColorDeck();
-    if (s.theme && s.theme !== store.theme) store.setTheme(s.theme as 'dark' | 'light');
-  });
-
-  /**
-   * Core auth processor — called for BOTH early auth and live postMessage tokens.
-   * Validates, deduplicates, and sets the Supabase session.
-   */
-  const processAuthToken = async (
-    token: string,
-    refreshToken: string,
-    settings: Record<string, unknown> | null,
-    source: 'earlyAuth' | 'postMessage'
-  ) => {
-    // Deduplicate: skip if we already processed this exact token
-    if (lastAuthTokenRef.current === token) return;
-
-    // JWT expiry pre-check: don't waste a setSession() call on an expired token
-    if (isTokenExpired(token)) {
-      console.warn(`[App] ${source} token is expired — skipping setSession`);
-      return;
-    }
-
-    // Mutex: prevent concurrent setSession() calls (the #1 cause of auth races)
-    if (authInFlightRef.current) {
-      console.warn(`[App] setSession already in flight — queuing ${source} token`);
-      // Don't drop it — update lastAuthTokenRef so next call picks it up
-      return;
-    }
-
-    lastAuthTokenRef.current = token;
-    authInFlightRef.current = true;
-
-    // Apply settings immediately (don't wait for setSession)
-    if (settings) {
-      applySettingsRef.current(settings);
-    }
-
-    const startTime = performance.now();
-    try {
-      await supabase.auth.setSession({
-        access_token: token,
-        refresh_token: refreshToken,
-      });
-      const ms = Math.round(performance.now() - startTime);
-      console.debug(`[App] ✅ Auth session set via ${source} in ${ms}ms`);
-      postToParent({ type: 'SMARTER_AUTH_ACK' });
-      addBreadcrumb({
-        category: 'auth-handshake',
-        message: `setSession completed in ${ms}ms`,
-        level: 'info',
-        data: { ms, method: source },
-      });
-    } catch (e) {
-      console.error(`[App] setSession failed (${source}):`, e);
-      postToParent({ type: 'SMARTER_AUTH_FAILED', error: String(e) });
-      // Reset lastAuthTokenRef so a retry can re-attempt
-      lastAuthTokenRef.current = null;
-      addBreadcrumb({
-        category: 'auth-handshake',
-        message: `setSession FAILED (${source}): ${e}`,
-        level: 'error',
-      });
-    } finally {
-      authInFlightRef.current = false;
-    }
-  };
-
-  useEffect(() => {
-    const isInIframe = window.parent !== window;
-    if (!isInIframe) return;
-
-    // ── Step 1: Consume early auth token received before React mounted ──
-    // The inline script in index.html stores tokens in window.__EARLY_AUTH__
-    const earlyToken = window.__EARLY_AUTH__?.token || earlyAuth.token;
-    const earlyRefresh = window.__EARLY_AUTH__?.refreshToken || earlyAuth.refreshToken || '';
-    const earlySettings = window.__EARLY_AUTH__?.settings || earlyAuth.settings;
-
-    if (earlyToken) {
-      // Clear sources BEFORE async processing to prevent double-consume
-      earlyAuth.token = null;
-      earlyAuth.refreshToken = null;
-      earlyAuth.settings = null;
-      if (window.__EARLY_AUTH__) {
-        window.__EARLY_AUTH__.token = null;
-        window.__EARLY_AUTH__.refreshToken = null;
-        window.__EARLY_AUTH__.settings = null;
-      }
-
-      processAuthToken(earlyToken, earlyRefresh, earlySettings, 'earlyAuth');
-    }
-
-    // ── Step 2: Listen for live auth tokens via postMessage ──
-    // Handles: initial token (if missed by early auth), token refreshes, re-auth
-    const handleMessage = async (event: MessageEvent) => {
-      if (!isTrustedOrigin(event.origin)) return;
-
-      if (event.data?.type === 'SMARTER_AUTH_TOKEN' && event.data.token) {
-        setParentOrigin(event.origin);
-        // ACK immediately — tell parent we received it
-        postToParent({ type: 'SMARTER_AUTH_ACK' });
-
-        if (!event.data.refreshToken) {
-          console.warn('[App] Parent sent auth token without refreshToken');
-        }
-
-        await processAuthToken(
-          event.data.token,
-          event.data.refreshToken || '',
-          event.data.settings || null,
-          'postMessage'
-        );
-      }
-
-      // Live settings push — World Hub user changed theme/sound/deck while iframe is open
-      if (event.data?.type === 'SMARTER_SETTINGS_UPDATE' && event.data.settings) {
-        applySettingsRef.current(event.data.settings);
-        console.debug('[App] Live settings update received from World Hub');
-      }
-    };
-
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
-  }, []);
-
-  // ── URL Sync: Notify parent of route changes for address bar sync ──
-  const location = useLocation();
-  useEffect(() => {
-    const isInIframe = window.parent !== window;
-    if (!isInIframe) return;
-
-    // Strip the basename prefix that React Router adds internally
-    const route = location.pathname.replace(/^\//, '');
-    postToParent({ type: 'CLUB_ARENA_ROUTE_CHANGE', route });
-  }, [location.pathname]);
-
-  // ── Heartbeat: Periodically tell the parent we're still alive ──
-  useEffect(() => {
-    const isInIframe = window.parent !== window;
-    if (!isInIframe) return;
-
-    const HEARTBEAT_INTERVAL = 30_000; // 30 seconds
-    const heartbeatId = setInterval(() => {
-      postToParent({ type: 'CLUB_ARENA_HEARTBEAT' });
-    }, HEARTBEAT_INTERVAL);
-
-    // Send one immediately on mount
-    postToParent({ type: 'CLUB_ARENA_HEARTBEAT' });
-
-    return () => clearInterval(heartbeatId);
-  }, []);
 
   // ── Clean up realtime subscriptions on page unload ──
   // Prevents memory leaks and orphaned connections when user navigates away

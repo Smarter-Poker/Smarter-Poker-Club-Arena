@@ -45,34 +45,6 @@ window.addEventListener('unhandledrejection', (event) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-//  FIX 2: EARLY AUTH — SIMPLIFIED (consolidated from 3 listeners → 1)
-// ═══════════════════════════════════════════════════════════════════════════════
-// BEFORE: Three separate auth listeners (index.html inline, main.tsx, App.tsx)
-//         all sending ACKs independently, masking each other's failures and
-//         causing duplicate token processing + cleanup race conditions.
-//
-// AFTER:  Only TWO listeners remain:
-//   1. index.html inline script — sends ACKs + stores token in window.__EARLY_AUTH__
-//      (runs before ANY modules, survives module parse errors)
-//   2. App.tsx useEffect — consumes window.__EARLY_AUTH__ + handles live refreshes
-//
-// This main.tsx listener has been REMOVED because:
-//   - It duplicated the inline script's behavior but ran later
-//   - Its cleanup interval raced with App.tsx's consumption
-//   - Its ACK pulse overlapped with the inline script's pulse
-//   - The earlyAuth module bridge is still used by App.tsx (populated by inline script)
-// ═══════════════════════════════════════════════════════════════════════════════
-
-import { postToParent } from './utils/parentOrigin';
-
-// Send ONE unconditional ACK + heartbeat from module eval (backup for inline script)
-if (window.parent !== window) {
-  postToParent({ type: 'SMARTER_AUTH_ACK' });
-  postToParent({ type: 'CLUB_ARENA_HEARTBEAT' });
-  console.debug('[MAIN] Backup ACK + heartbeat sent (inline script is primary)');
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
 //  INSTANT RENDER — Boot runs in background, React paints IMMEDIATELY
 // ═══════════════════════════════════════════════════════════════════════════════
 // PHASE 0: Sentry + WebVitals (synchronous, fast)

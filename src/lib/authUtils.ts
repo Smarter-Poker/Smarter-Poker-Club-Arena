@@ -5,8 +5,7 @@
  * Extracted from 5 files that each had their own JWT parsing / localStorage
  * session reading logic:
  *   - IdentityDNA.ts (readLocalSession)
- *   - waitForAuth.ts (readLocalSession, AUTH_STORAGE_KEY)
- *   - supabase.ts (getAuthUser iframe path, getTokenExpiry)
+ *   - supabase.ts (getAuthUser, getTokenExpiry)
  *   - AuthGuard.tsx (hasLocalSession, hydrateStoreFromLocalStorage)
  *   - useAuthUser.ts (getSession() hydration)
  *

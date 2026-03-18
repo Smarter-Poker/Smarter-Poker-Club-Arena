@@ -22,23 +22,8 @@ import { masterBus } from '../../core/MasterBus';
 export default function AppLayout() {
   const location = useLocation();
 
-  // Detect if running inside iframe (World Hub embedding)
   // Use state to ensure correct value after client-side hydration
-  const [isInIframe, setIsInIframe] = useState(false);
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
-
-  useEffect(() => {
-    const inIframe = window.parent !== window;
-    setIsInIframe(inIframe);
-
-    // Also add class to body so CSS can hide header immediately
-    if (inIframe) {
-      document.body.classList.add('embedded-in-iframe');
-    }
-    return () => {
-      document.body.classList.remove('embedded-in-iframe');
-    };
-  }, []);
 
   // ── Offline / Online detection ──
   useEffect(() => {
@@ -63,16 +48,14 @@ export default function AppLayout() {
   const isTablePage =
     location.pathname.startsWith('/table') ||
     (location.pathname.startsWith('/tournaments/') && location.pathname.endsWith('/play'));
-  const showGlobalHeader = !isInIframe && !isTablePage;
+  const showGlobalHeader = !isTablePage;
 
   return (
-    <div className={`${styles.layout} ${isInIframe ? styles.embedded : ''}`}>
-      {/* First-time Welcome Modal - Always show regardless of iframe */}
-      {isReady && !isInIframe && (
-        <ClubArenaWelcomeModal isOpen={showWelcome} onAccept={acceptWelcome} />
-      )}
+    <div className={styles.layout}>
+      {/* First-time Welcome Modal */}
+      {isReady && <ClubArenaWelcomeModal isOpen={showWelcome} onAccept={acceptWelcome} />}
 
-      {/* Global Header — Always visible outside iframes, except on active table pages */}
+      {/* Global Header — Always visible except on active table pages */}
       {showGlobalHeader && <GlobalHeader pageDepth={2} />}
 
       {/* Global Announcement Banner (shows club announcements when in a club context) */}
@@ -103,12 +86,10 @@ export default function AppLayout() {
         </RouteErrorBoundary>
       </main>
 
-      {/* Footer - Hide when in iframe */}
-      {!isInIframe && (
-        <footer className={styles.footer}>
-          <p>Club Engine 2026 - Club Arena</p>
-        </footer>
-      )}
+      {/* Footer */}
+      <footer className={styles.footer}>
+        <p>Club Engine 2026 - Club Arena</p>
+      </footer>
     </div>
   );
 }

@@ -10,7 +10,6 @@
 import { useState, useEffect, useMemo, useCallback, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase, getAuthUser } from '../lib/supabase';
-import { waitForAuth } from '../utils/waitForAuth';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { LoadingState } from '../components/common/EmptyState';
 import DailyBonusWheel from '../components/bonus/DailyBonusWheel';
@@ -289,13 +288,9 @@ export default function ProfilePage() {
 
       // SWR: Show cached profile instantly while loading fresh data
       try {
-        // CRITICAL: Wait for auth session to be established in iframe context.
-        // Without this, getAuthUser() returns null because setSession() from
-        // the early auth handshake hasn't completed yet.
-        await waitForAuth(() => isMounted);
         if (!isMounted) return;
 
-        // Timeout-protected getUser() — prevents hanging in iframe context
+        // Load user auth
         const {
           data: { user: authUser },
         } = await getAuthUser();
@@ -883,16 +878,7 @@ export default function ProfilePage() {
             className={styles.editButton}
             onClick={() => {
               const url = 'https://smarter.poker/hub/avatars-complete';
-              const isInIframe = typeof window !== 'undefined' && window.parent !== window;
-              if (isInIframe) {
-                try {
-                  window.top!.open(url, '_blank');
-                } catch {
-                  window.open(url, '_blank');
-                }
-              } else {
-                window.open(url, '_blank');
-              }
+              window.open(url, '_blank');
             }}
           >
             Change Avatar

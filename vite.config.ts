@@ -64,7 +64,7 @@ export default defineConfig({
       process.env.NODE_ENV === 'production' ? ['console.log', 'console.debug', 'console.info'] : [],
   },
   build: {
-    sourcemap: true, // Generate source maps for Sentry
+    sourcemap: 'hidden', // Generate source maps for Sentry but don't expose them to browsers
     rollupOptions: {
       output: {
         manualChunks(id: string) {

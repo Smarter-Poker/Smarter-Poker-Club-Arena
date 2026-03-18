@@ -122,6 +122,23 @@ async function loadAndInitSentry(): Promise<typeof import('@sentry/react') | nul
       replaysSessionSampleRate: 0.1,
       replaysOnErrorSampleRate: 1.0,
 
+      // Only inject sentry-trace headers to our own domains (avoids CORS issues with third parties)
+      tracePropagationTargets: [
+        'localhost',
+        /^https:\/\/kuklfnapbkmacvwxktbh\.supabase\.co/,
+        /^https:\/\/smarter\.poker/,
+      ],
+
+      // Filter out noise from browser extensions and third-party scripts
+      denyUrls: [
+        /extensions\//i,
+        /^chrome:\/\//i,
+        /^moz-extension:\/\//i,
+        /^safari-extension:\/\//i,
+        /googletagmanager\.com/i,
+        /graph\.facebook\.com/i,
+      ],
+
       beforeSend(event, hint) {
         const error = hint.originalException as Error | undefined;
 

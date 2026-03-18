@@ -48,11 +48,10 @@ export interface POYLeaderboardEntry {
 // CONFIGURATION
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const POY_WEBHOOK_URL =
-  import.meta.env.VITE_POY_WEBHOOK_URL || 'https://smarter.poker/api/club-arena/results';
-const POY_API_KEY = import.meta.env.VITE_POY_API_KEY || '';
-const POY_LEADERBOARD_URL =
-  import.meta.env.VITE_POY_LEADERBOARD_URL || 'https://smarter.poker/api/poy/leaderboard';
+// POY endpoints — same origin, no API key needed from client
+// (server-side routes authenticate via Supabase JWT from the request)
+const POY_WEBHOOK_URL = '/api/club-arena/results';
+const POY_LEADERBOARD_URL = '/api/poy/leaderboard';
 
 // Batch tracking for cash sessions
 interface SessionTracker {
@@ -80,18 +79,10 @@ export const POYService = {
   async submitTournamentResult(
     data: TournamentResultPayload
   ): Promise<{ success: boolean; points_awarded?: number }> {
-    if (!POY_API_KEY) {
-      console.error('POYService: No API key configured, skipping submission');
-      return { success: false };
-    }
-
     try {
       const response = await fetch(POY_WEBHOOK_URL, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Key': POY_API_KEY,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...data,
           timestamp: new Date().toISOString(),
@@ -119,18 +110,10 @@ export const POYService = {
   async submitCashSession(
     data: CashSessionPayload
   ): Promise<{ success: boolean; points_awarded?: number }> {
-    if (!POY_API_KEY) {
-      console.error('POYService: No API key configured, skipping submission');
-      return { success: false };
-    }
-
     try {
       const response = await fetch(POY_WEBHOOK_URL, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Key': POY_API_KEY,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...data,
           timestamp: new Date().toISOString(),

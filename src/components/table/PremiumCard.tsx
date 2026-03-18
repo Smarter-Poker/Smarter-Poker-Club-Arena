@@ -18,12 +18,9 @@ export interface PremiumCardType {
 // Deck theme definitions with custom card back images
 export type DeckTheme = 'classic' | 'burgundy' | 'navy' | 'gold';
 
-// Build base path for card-back images (same logic as CardImage)
+// Build base path for card-back images
 function getBackBase(): string {
-  const isProduction = typeof window !== 'undefined' && window.location.hostname !== 'localhost';
-  return isProduction
-    ? 'https://club-arena.vercel.app/hub/club-arena/'
-    : import.meta.env.BASE_URL || '/';
+  return import.meta.env.BASE_URL || '/hub/club-arena/';
 }
 
 export const DECK_THEMES: Record<DeckTheme, { name: string; image: string }> = {

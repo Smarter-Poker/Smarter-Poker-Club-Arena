@@ -82,19 +82,12 @@ export function getCardImagePath(card: Card, deckStyle: DeckStyle = '4color'): s
     console.warn(`[CardImage] Unknown card format: rank="${card.rank}" suit="${card.suit}"`);
     const safeSuit = suitName || 'spades';
     const safeRank = rankName || 'a';
-    const isProduction = typeof window !== 'undefined' && window.location.hostname !== 'localhost';
-    const base = isProduction
-      ? 'https://club-arena.vercel.app/hub/club-arena/'
-      : import.meta.env.BASE_URL || '/';
+    const base = import.meta.env.BASE_URL || '/hub/club-arena/';
     return `${base}cards/${deckStyle}/${safeSuit}_${safeRank}.png`;
   }
 
-  // In production, serve card images directly from club-arena.vercel.app
-  // to avoid World Hub's Next.js rewrite stripping binary content-type
-  const isProduction = typeof window !== 'undefined' && window.location.hostname !== 'localhost';
-  const base = isProduction
-    ? 'https://club-arena.vercel.app/hub/club-arena/'
-    : import.meta.env.BASE_URL || '/';
+  // Serve card images from the same origin via proxy rewrites
+  const base = import.meta.env.BASE_URL || '/hub/club-arena/';
   return `${base}cards/${deckStyle}/${suitName}_${rankName}.png`;
 }
 

@@ -537,7 +537,7 @@ function LogoGeneratorModal({ onSelect, onClose, clubName = '' }: LogoGeneratorM
         <img
           loading="lazy"
           decoding="async"
-          src="https://club-arena.vercel.app/images/logo-generator-frame.png"
+          src="/hub/club-arena/images/logo-generator-frame.png"
           alt="Frame"
           className={styles.frameImage}
           style={{ display: isGenerating || previewUrl ? 'none' : 'block' }}

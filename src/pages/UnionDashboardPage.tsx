@@ -1232,19 +1232,17 @@ export default function UnionDashboardPage() {
                             .eq('id', targetId);
 
                           // Credit union bank
-                          const newBalance = (wallets?.chip_balance || 0) + amt;
-                          await supabase
+                          const newBalance = (wallets?.chip_balance ?? 0) + amt;
+                          const { error: uwErr2 } = await supabase
                             .from('union_wallets')
                             .update({ chip_balance: newBalance })
-                            .eq('union_id', unionId)
-                            .then(async ({ error }) => {
-                              if (error) {
-                                await supabase
-                                  .from('unions')
-                                  .update({ chip_balance: newBalance })
-                                  .eq('id', unionId);
-                              }
-                            });
+                            .eq('union_id', unionId);
+                          if (uwErr2) {
+                            await supabase
+                              .from('unions')
+                              .update({ chip_balance: newBalance })
+                              .eq('id', unionId);
+                          }
 
                           setSuccess(`Clawed back ${amt.toLocaleString()} chips from ${club.name}`);
                         }

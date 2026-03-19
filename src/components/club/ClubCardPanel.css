@@ -4,10 +4,9 @@
    The frame template (club-card-frame-template.jpg) has:
      - Outer metal frame with beveled corners
      - Recessed inner viewport for the club image (~6% top, 7% sides, 75% bottom)
-     - Stats bar at bottom (~79.5%) with baked-in labels
+     - Stats bar at bottom with labels baked in (TOTAL MEMBERS, CLUB LEVEL, etc.)
    
-   This CSS positions the logo INSIDE the recessed viewport and overlays
-   stats at the exact same positions as ClubStatsPanel.
+   Since labels are baked into the template, only NUMERIC VALUES are overlaid.
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .club-card-panel {
@@ -26,33 +25,6 @@
   height: 100%;
   display: block;
   object-fit: cover;
-}
-
-/* ── Club Name Overlay (inside the recessed viewport, near top) ────────────── */
-.club-card-name-overlay {
-  position: absolute;
-  top: 4%;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 75%;
-  text-align: center;
-  pointer-events: none;
-  z-index: 2;
-}
-
-.club-card-name {
-  font-family: 'Orbitron', 'Inter', 'Roboto', sans-serif;
-  font-weight: 800;
-  font-size: 14px;
-  letter-spacing: 1.5px;
-  color: #fff;
-  text-transform: uppercase;
-  text-shadow:
-    0 0 8px rgba(0, 0, 0, 0.9),
-    0 2px 6px rgba(0, 0, 0, 0.8);
-  line-height: 1.3;
-  word-wrap: break-word;
-  overflow-wrap: break-word;
 }
 
 /* ── Logo container — sits INSIDE the recessed viewport area ───────────────── */
@@ -75,7 +47,7 @@
 .club-card-logo-img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .club-card-logo-fallback {
@@ -97,7 +69,7 @@
   filter: drop-shadow(0 0 12px rgba(0, 212, 255, 0.3));
 }
 
-/* ── Stats Overlay — PIXEL-MATCHED to ClubStatsPanel positions ─────────────── */
+/* ── Stats Overlay — VALUES ONLY, labels are baked into the frame template ── */
 .club-card-stats-overlay {
   position: absolute;
   top: 0;
@@ -116,22 +88,6 @@
   text-align: center;
 }
 
-/* Labels — visible, matching ClubStatsPanel exactly */
-.club-card-stat-label {
-  font-family: 'Inter', 'Roboto', sans-serif;
-  font-weight: 600;
-  font-size: 11px;
-  letter-spacing: 0.5px;
-  color: #a5eff0;
-  margin-bottom: 2px;
-  text-shadow:
-    0 0 5px rgba(0, 212, 255, 0.4),
-    0 0 10px rgba(0, 212, 255, 0.2);
-  text-transform: uppercase;
-  white-space: nowrap;
-  line-height: 1.3;
-}
-
 /* Values — matching ClubStatsPanel exactly */
 .club-card-stat-value {
   font-family: 'Inter', 'Roboto', sans-serif;
@@ -145,15 +101,16 @@
     0 0 20px rgba(0, 150, 255, 0.7);
 }
 
-/* Position groups — EXACT match to ClubStatsPanel: top: 79.5% */
+/* Position groups — values sit below the baked-in labels in the stats bar.
+   The baked labels are at ~79.5%, values go directly below at ~87% */
 .club-card-members-group {
-  top: 79.5%;
+  top: 87%;
   left: 20%;
   transform: translateX(-50%);
 }
 
 .club-card-level-group {
-  top: 79.5%;
+  top: 85%;
   left: 50%;
   transform: translateX(-50%);
 }
@@ -161,11 +118,10 @@
 .club-card-level-group .club-card-stat-value {
   font-size: 28px;
   line-height: 1;
-  margin-top: 8px;
 }
 
 .club-card-active-group {
-  top: 79.5%;
+  top: 87%;
   left: 80%;
   transform: translateX(-50%);
 }

@@ -7,7 +7,9 @@
  *     pre-composited card image (frame + logo + name baked in) exactly like
  *     ClubStatsPanel does for Shark Club. This is the standard for all clubs.
  *  2. FALLBACK — When only logoUrl is available, overlays the raw logo image
- *     on the frame template with the club name text overlay.
+ *     on the frame template. No text overlays — the frame template already
+ *     has stats bar labels ("TOTAL MEMBERS", "CLUB LEVEL", "ACTIVE PLAYERS")
+ *     baked in. Only numeric values are overlaid via CSS.
  */
 
 import React, { useState } from 'react';
@@ -58,12 +60,7 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
             loading="lazy"
           />
 
-          {/* Club name at the top */}
-          <div className="club-card-name-overlay">
-            <span className="club-card-name">{clubName}</span>
-          </div>
-
-          {/* Logo in the center viewport area */}
+          {/* Logo in the center viewport area — no text overlay (template has it) */}
           <div className="club-card-logo-container">
             {showLogo ? (
               <img
@@ -80,28 +77,17 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
         </>
       )}
 
-      {/* Stats overlay — same positions as ClubStatsPanel */}
+      {/* Stats overlay — VALUES ONLY (template has labels baked in) */}
       <div className="club-card-stats-overlay">
         <div className="club-card-stats-group club-card-members-group">
-          <span className="club-card-stat-label">
-            TOTAL
-            <br />
-            MEMBERS
-          </span>
           <span className="club-card-stat-value">{Math.max(1, totalMembers).toLocaleString()}</span>
         </div>
 
         <div className="club-card-stats-group club-card-level-group">
-          <span className="club-card-stat-label">CLUB LEVEL</span>
           <span className="club-card-stat-value">{Math.max(1, clubLevel)}</span>
         </div>
 
         <div className="club-card-stats-group club-card-active-group">
-          <span className="club-card-stat-label">
-            ACTIVE
-            <br />
-            PLAYERS
-          </span>
           <span className="club-card-stat-value">{activePlayers?.toLocaleString() || '0'}</span>
         </div>
       </div>

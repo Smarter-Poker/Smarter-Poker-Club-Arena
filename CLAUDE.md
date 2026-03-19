@@ -4,39 +4,39 @@
 
 **ALL live E2E testing MUST be done on `smarter.poker` — NEVER on `club-arena.vercel.app` directly.**
 
-Club Arena is served on smarter.poker via transparent same-origin proxy rewrites.
-The standalone URL (`club-arena.vercel.app`) is the build target only — users access
-the app through `smarter.poker/hub/club-arena/*`.
+Club Arena lives 100% inside smarter.poker. All files (JS, CSS, HTML, images, cards,
+videos, logos) are served from `smarter.poker/hub/club-arena/*` via the World Hub's
+`public/` directory. ZERO requests go to external domains.
 
 - Test URL: `https://smarter.poker/hub/club-arena/`
 - NEVER navigate to or test on `club-arena.vercel.app` directly
-- All updates publish automatically to smarter.poker via Vercel proxy (no separate deploy needed)
+- After code changes: rebuild with Vite, copy dist/ to World Hub's public/hub/club-arena/, push World Hub
 
 ## Architecture — How This App Is Served
 
-Club Arena is a **Vite + React SPA** served on `smarter.poker` via proxy rewrites:
+Club Arena is a **Vite + React SPA** that lives inside the smarter.poker Next.js app:
 
-1. **Production (user-facing)**: `smarter.poker/hub/club-arena/*` — proxied from club-arena.vercel.app
-2. **Build target**: `club-arena.vercel.app` — Vercel deployment URL (proxied, NOT accessed directly)
+1. **Production (user-facing)**: `smarter.poker/hub/club-arena/*` — served from World Hub's `public/` directory
+2. **Build tool**: Vite builds the SPA into `dist/` — this output is copied to World Hub's `public/hub/club-arena/`
+3. **SPA routing**: World Hub's `next.config.js` has `fallback` rewrites that serve `index.html` for unmatched routes
+4. **Auth**: Same-origin Supabase session via shared `smarter-poker-auth` localStorage key
 
-The World Hub's `next.config.js` has `afterFiles` rewrites that transparently proxy
-all `/hub/club-arena/*` requests to `club-arena.vercel.app`. The browser sees `smarter.poker`
-URLs, so localStorage and Supabase auth are shared (same origin). NO iframe, NO postMessage.
+NO iframe. NO postMessage. NO proxy. NO external domain requests. Everything from smarter.poker.
 
 ### Deployment Pipeline
 
 ```
-Push to GitHub (Smarter-Poker/Smarter-Poker-Club-Arena)
-  → Vercel auto-deploys to club-arena.vercel.app
-  → Changes appear on smarter.poker immediately (proxy serves at runtime)
-  → NO World Hub deploy needed for Club Arena code changes
+1. Make changes in Club Arena repo
+2. Build: npm run build (Vite produces dist/)
+3. Copy dist/ to World Hub: public/hub/club-arena/ (strip source maps)
+4. Push World Hub to GitHub
+5. Vercel auto-deploys smarter.poker with updated Club Arena files
 ```
 
 ### Vercel Project Details
 
-- Project: `club-arena` (prj_oaCq8RYhExLRUYizLG93li0uX468)
-- Team: team_SVD8r7AOPH065G3usBxVvrBc
-- Domains: club-arena.vercel.app, club-arena-smarter-poker.vercel.app
+- World Hub: `smarter-poker` (prj_FNUaJmcjRnwCSh1JzblIUYuOXDGK) — this is the ONLY deployment
+- Club Arena code lives in: `public/hub/club-arena/` within the World Hub repo
 
 ## Tech Stack
 

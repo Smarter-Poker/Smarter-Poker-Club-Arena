@@ -27,9 +27,8 @@ interface ClubFormData {
   description: string;
   /** Either icon ID ('gold','green',...) or 'custom' for uploaded file */
   iconId: string;
+  /** true = Public (open join), false = Private (requires approval) */
   isPublic: boolean;
-  requiresApproval: boolean;
-  gpsRestricted: boolean;
 }
 
 // Default club icon options — compact fallback row
@@ -47,8 +46,6 @@ const DEFAULT_FORM: ClubFormData = {
   description: '',
   iconId: 'gold',
   isPublic: true,
-  requiresApproval: true,
-  gpsRestricted: false,
 };
 
 const ALLOWED_FILE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
@@ -220,45 +217,38 @@ const Step1Basics = ({
         <span className={styles.charCount}>{form.description.length}/500</span>
       </div>
 
-      <div className={styles.checkboxGrid}>
-        <label className={styles.checkbox}>
-          <input
-            type="checkbox"
-            checked={form.isPublic}
-            onChange={(e) => updateForm({ isPublic: e.target.checked })}
-          />
-          <span className={styles.checkmark} />
-          <div>
-            <strong>Public Club</strong>
-            <p>Anyone can find and request to join</p>
-          </div>
-        </label>
+      {/* ── Club Visibility (Mutually Exclusive) ── */}
+      <div className={styles.formGroup}>
+        <label>Club Visibility</label>
+        <div className={styles.checkboxGrid}>
+          <label className={`${styles.checkbox} ${form.isPublic ? styles.checkboxActive : ''}`}>
+            <input
+              type="radio"
+              name="visibility"
+              checked={form.isPublic}
+              onChange={() => updateForm({ isPublic: true })}
+            />
+            <span className={styles.checkmark} />
+            <div>
+              <strong>🌐 Public</strong>
+              <p>Anyone can find and join your club. Open membership.</p>
+            </div>
+          </label>
 
-        <label className={styles.checkbox}>
-          <input
-            type="checkbox"
-            checked={form.requiresApproval}
-            onChange={(e) => updateForm({ requiresApproval: e.target.checked })}
-          />
-          <span className={styles.checkmark} />
-          <div>
-            <strong>Require Approval</strong>
-            <p>New members need admin approval</p>
-          </div>
-        </label>
-
-        <label className={styles.checkbox}>
-          <input
-            type="checkbox"
-            checked={form.gpsRestricted}
-            onChange={(e) => updateForm({ gpsRestricted: e.target.checked })}
-          />
-          <span className={styles.checkmark} />
-          <div>
-            <strong>GPS Restricted</strong>
-            <p>Only allow play from certain locations</p>
-          </div>
-        </label>
+          <label className={`${styles.checkbox} ${!form.isPublic ? styles.checkboxActive : ''}`}>
+            <input
+              type="radio"
+              name="visibility"
+              checked={!form.isPublic}
+              onChange={() => updateForm({ isPublic: false })}
+            />
+            <span className={styles.checkmark} />
+            <div>
+              <strong>🔒 Private</strong>
+              <p>Invite only. New members require admin approval.</p>
+            </div>
+          </label>
+        </div>
       </div>
     </div>
   );
@@ -307,19 +297,15 @@ const Step2Preview = ({
           </div>
           <div>
             <h3>{form.name || 'Unnamed Club'}</h3>
-            <p>
-              {form.isPublic ? 'Public' : 'Private'} •{' '}
-              {form.requiresApproval ? 'Approval Required' : 'Open Join'}
-            </p>
+            <p>{form.isPublic ? 'Public • Open Join' : 'Private • Approval Required'}</p>
           </div>
         </div>
 
         {form.description && <p className={styles.previewDesc}>{form.description}</p>}
 
         <div className={styles.previewTags}>
-          {form.isPublic && <span>Public</span>}
-          {form.requiresApproval && <span>Approval Required</span>}
-          {form.gpsRestricted && <span>GPS Restricted</span>}
+          <span>{form.isPublic ? '🌐 Public' : '🔒 Private'}</span>
+          <span>{form.isPublic ? 'Open Join' : 'Approval Required'}</span>
         </div>
       </div>
 
@@ -522,8 +508,7 @@ export default function CreateClubPage() {
           description: sanitizeInput(form.description.trim()) || null,
           owner_id: user?.id,
           is_public: form.isPublic,
-          requires_approval: form.requiresApproval,
-          gps_restricted: form.gpsRestricted,
+          requires_approval: !form.isPublic,
           logo: logoValue,
           settings: {
             icon_id: form.iconId,

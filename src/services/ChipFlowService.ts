@@ -27,6 +27,45 @@ import { QUERY_LIMITS } from '../lib/constants';
 // Exact cent precision — never round
 const exact = (v: number): number => Math.trunc(v * 100) / 100;
 
+/**
+ * Log every chip movement to the immutable chip_ledger table.
+ * This is append-only — no updates, no deletes. Every chip that moves gets recorded.
+ */
+async function logToLedger(entry: {
+  performed_by: string;
+  from_type: string;
+  from_entity_id?: string;
+  from_label?: string;
+  to_type: string;
+  to_entity_id?: string;
+  to_label?: string;
+  amount: number;
+  category: string;
+  description?: string;
+  notes?: string;
+  club_id?: string;
+  union_id?: string;
+  table_id?: string;
+  hand_id?: string;
+  tournament_id?: string;
+}): Promise<void> {
+  try {
+    const { error } = await supabase.from('chip_ledger').insert(entry);
+    if (error) {
+      console.error('[ChipFlow] Ledger log failed:', error.message);
+      // Don't throw — ledger failure shouldn't block the transaction
+      // But DO report it as a critical alert
+      FinancialAlertService.logCritical(
+        'ChipFlowService.ledger',
+        `Ledger write failed for ${entry.category}: ${error.message}`,
+        entry
+      );
+    }
+  } catch (e) {
+    console.error('[ChipFlow] Ledger exception:', e);
+  }
+}
+
 export interface ChipTransferResult {
   success: boolean;
   amount: number;

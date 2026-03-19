@@ -231,13 +231,19 @@
   gap: 1rem;
   padding: 1rem;
   background: rgba(255, 255, 255, 0.03);
+  border: 2px solid transparent;
   border-radius: 0.75rem;
   cursor: pointer;
-  transition: background 0.2s;
+  transition: all 0.25s ease;
 }
 
 .checkbox:hover {
   background: rgba(255, 255, 255, 0.06);
+}
+
+.checkboxActive {
+  background: rgba(var(--accent-rgb), 0.08);
+  border-color: var(--accent);
 }
 
 .checkbox input {

@@ -35,6 +35,9 @@ const WALLET_BUS_EVENTS = [
   'CHIPS_ADDED',
   'CHIPS_WITHDRAWN',
   'CHIPS_DISTRIBUTED',
+  'CLUB_UPDATED',
+  'SETTLEMENT_COMPLETED',
+  'COMMISSION_PAID',
 ] as const;
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -172,7 +175,7 @@ export default function DynamicWallet({
     if (!userId || !resolvedId) return;
 
     try {
-      const [profileRes, memberRes, bbjRes, agentRes, clubAgentsRes] = await Promise.all([
+      const [profileRes, memberRes, bbjRes, agentRes, clubRes] = await Promise.all([
         supabase.from('profiles').select('diamonds').eq('id', userId).maybeSingle(),
         supabase
           .from('club_members')
@@ -191,12 +194,21 @@ export default function DynamicWallet({
           .eq('club_id', resolvedId)
           .eq('user_id', userId)
           .maybeSingle(),
-        supabase
-          .from('agents')
-          .select('agent_wallet_balance')
-          .eq('club_id', resolvedId)
-          .eq('status', 'active'),
+        // Club treasury for owner variant
+        supabase.from('clubs').select('chip_treasury, union_id').eq('id', resolvedId).maybeSingle(),
       ]);
+
+      // Fetch union bank balance when the club is in a union
+      let unionBankBalance = 0;
+      const unionId = clubRes.data?.union_id;
+      if (unionId) {
+        const { data: uwData } = await supabase
+          .from('union_wallets')
+          .select('chip_balance')
+          .eq('union_id', unionId)
+          .maybeSingle();
+        unionBankBalance = Number(uwData?.chip_balance) || 0;
+      }
 
       if (isMounted.current) {
         setData({
@@ -206,14 +218,8 @@ export default function DynamicWallet({
           bbjPool: Number(bbjRes.data?.main_balance) || 0,
           backupBBJ: Number(bbjRes.data?.backup_balance) || 0,
           agentBalance: Number(agentRes.data?.agent_wallet_balance) || 0,
-          clubBank: Array.isArray(clubAgentsRes.data)
-            ? clubAgentsRes.data.reduce(
-                (sum: number, a: { agent_wallet_balance: number | null }) =>
-                  sum + (Number(a.agent_wallet_balance) || 0),
-                0
-              )
-            : 0,
-          unionBank: 0,
+          clubBank: Number(clubRes.data?.chip_treasury) || 0,
+          unionBank: unionBankBalance,
         });
         setLoading(false);
       }
@@ -318,8 +324,31 @@ export default function DynamicWallet({
         }
       });
 
+    // ── Additional RT channel: clubs table for chip_treasury changes ──
+    const clubChannel = supabase
+      .channel(`dynamic-wallet-club-${resolvedId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'clubs',
+          filter: `id=eq.${resolvedId}`,
+        },
+        (p) => {
+          if (isMounted.current && p.new?.chip_treasury !== undefined) {
+            setData((prev) => ({
+              ...prev,
+              clubBank: Number(p.new.chip_treasury) || 0,
+            }));
+          }
+        }
+      )
+      .subscribe();
+
     return () => {
       supabase.removeChannel(channel);
+      supabase.removeChannel(clubChannel);
     };
   }, [userId, resolvedId]);
 

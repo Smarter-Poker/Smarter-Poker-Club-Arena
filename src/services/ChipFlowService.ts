@@ -137,7 +137,22 @@ export const ChipFlowService = {
       throw new Error(`Transfer failed: ${transferErr.message}`);
     }
 
-    // 4. Emit bus events so CashierPage/PlayerWallet pages refresh for BOTH parties
+    // 4. LOG TO IMMUTABLE CHIP LEDGER
+    await logToLedger({
+      performed_by: fromUserId,
+      from_type: 'player_wallet',
+      from_entity_id: fromUserId,
+      from_label: `Player ${fromUserId.slice(0, 8)}`,
+      to_type: 'player_wallet',
+      to_entity_id: toUserId,
+      to_label: `Player ${toUserId.slice(0, 8)}`,
+      amount: amt,
+      category,
+      description,
+      club_id: relatedEntityId || undefined,
+    });
+
+    // 5. Emit bus events so CashierPage/PlayerWallet pages refresh for BOTH parties
     masterBus.emit('BALANCE_UPDATED', {
       source: 'chip_transfer',
       userId: fromUserId,
@@ -327,6 +342,20 @@ export const ChipFlowService = {
     );
 
     if (error) throw new Error(`Mint failed: ${error.message}`);
+
+    // LOG TO IMMUTABLE CHIP LEDGER
+    await logToLedger({
+      performed_by: unionOwnerId,
+      from_type: 'system_mint',
+      from_label: 'System Mint',
+      to_type: 'player_wallet',
+      to_entity_id: unionOwnerId,
+      to_label: `Union Owner ${unionOwnerId.slice(0, 8)}`,
+      amount: amt,
+      category: 'mint',
+      description: reason,
+      union_id: unionId,
+    });
 
     // Emit bus event so all UI components refresh balance instantly
     masterBus.emit('BALANCE_UPDATED', { source: 'union_mint', userId: unionOwnerId });

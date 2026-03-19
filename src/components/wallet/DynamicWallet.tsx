@@ -144,6 +144,8 @@ export default function DynamicWallet({
   // This ensures correct Supabase queries regardless of whether clubId is
   // a short numeric ID or a full UUID.
   const [resolvedId, setResolvedId] = useState<string | null>(null);
+  // Fetch version counter to discard stale responses on rapid club switching
+  const fetchVersionRef = useRef(0);
 
   useEffect(() => {
     if (!clubId) {
@@ -185,6 +187,9 @@ export default function DynamicWallet({
   const fetchData = useCallback(async () => {
     if (!userId || !resolvedId) return;
 
+    // Increment version — any in-flight fetch with a lower version is stale
+    const thisVersion = ++fetchVersionRef.current;
+
     try {
       const [profileRes, memberRes, bbjRes, agentRes, clubRes] = await Promise.all([
         supabase.from('profiles').select('diamonds').eq('id', userId).maybeSingle(),
@@ -209,6 +214,9 @@ export default function DynamicWallet({
         supabase.from('clubs').select('chip_treasury, union_id').eq('id', resolvedId).maybeSingle(),
       ]);
 
+      // Discard stale response if a newer fetch has started
+      if (thisVersion !== fetchVersionRef.current) return;
+
       // Fetch union bank balance when the club is in a union
       let unionBankBalance = 0;
       const unionId = clubRes.data?.union_id;
@@ -221,24 +229,25 @@ export default function DynamicWallet({
         unionBankBalance = Number(uwData?.chip_balance) || 0;
       }
 
-      if (isMounted.current) {
-        setData({
-          diamonds: Number(profileRes.data?.diamonds) || 0,
-          chipBalance: Number(memberRes.data?.chip_balance) || 0,
-          promoBalance: Number(agentRes.data?.promo_wallet_balance) || 0,
-          bbjPool: Number(bbjRes.data?.main_balance) || 0,
-          backupBBJ: Number(bbjRes.data?.backup_balance) || 0,
-          agentBalance: Number(agentRes.data?.agent_wallet_balance) || 0,
-          clubBank: Number(clubRes.data?.chip_treasury) || 0,
-          unionBank: unionBankBalance,
-        });
-        // Auto-detect union membership from clubs.union_id
-        setIsClubInUnion(!!unionId);
-        setLoading(false);
-      }
+      // Double-check version after second await + isMounted
+      if (thisVersion !== fetchVersionRef.current || !isMounted.current) return;
+
+      setData({
+        diamonds: Number(profileRes.data?.diamonds) || 0,
+        chipBalance: Number(memberRes.data?.chip_balance) || 0,
+        promoBalance: Number(agentRes.data?.promo_wallet_balance) || 0,
+        bbjPool: Number(bbjRes.data?.main_balance) || 0,
+        backupBBJ: Number(bbjRes.data?.backup_balance) || 0,
+        agentBalance: Number(agentRes.data?.agent_wallet_balance) || 0,
+        clubBank: Number(clubRes.data?.chip_treasury) || 0,
+        unionBank: unionBankBalance,
+      });
+      // Auto-detect union membership from clubs.union_id
+      setIsClubInUnion(!!unionId);
+      setLoading(false);
     } catch (err) {
       console.error('[DynamicWallet] Fetch error:', err);
-      if (isMounted.current) setLoading(false);
+      if (thisVersion === fetchVersionRef.current && isMounted.current) setLoading(false);
     }
   }, [userId, resolvedId]);
 

@@ -589,7 +589,7 @@ export default function CreateClubPage() {
       }
 
       if (user?.id) {
-        masterBus.emit('CLUB_JOINED', { clubId: data.id });
+        masterBus.emit('CLUB_JOINED', { clubId: data.id, action: 'club_created' });
       }
 
       navigate(`/clubs/${data.id}`);

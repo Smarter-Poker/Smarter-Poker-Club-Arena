@@ -627,8 +627,11 @@ export async function updateClub(clubId: string, updates: Record<string, any>): 
     'slug',
     'is_public',
     'requires_approval',
+    'gps_restricted',
     'color_theme',
     'avatar_url',
+    'logo',
+    'logo_url',
     'banner_url',
     'settings',
     // Game settings — critical for ClubDetailPage settings tab

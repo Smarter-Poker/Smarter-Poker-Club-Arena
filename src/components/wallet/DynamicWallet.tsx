@@ -323,15 +323,6 @@ export default function DynamicWallet({
     };
   }, [userId, resolvedId]);
 
-  if (loading) {
-    return (
-      <div className="dw">
-        <div className="dw__shimmer" />
-        <div className="dw__shimmer dw__shimmer--short" />
-      </div>
-    );
-  }
-
   // ── Role-specific row config ───────────────────────────────────────────────
   const ROW_CONFIG: Record<WalletVariant, { label: string; icon: string; value: number }[]> = {
     player: [

@@ -430,14 +430,30 @@ export default function CashierPage() {
         chip_balance: number | null;
       }>;
 
-      // Agent downline filtering is done in the Supabase query above
-      const filteredMembers = members;
+      // Batch-fetch display names from profiles for members without display_name
+      const needNames = members.filter((m) => !m.display_name && !m.nickname).map((m) => m.user_id);
+      const profileMap: Record<string, string> = {};
+      if (needNames.length > 0) {
+        const chunkSize = 200;
+        for (let i = 0; i < needNames.length; i += chunkSize) {
+          const chunk = needNames.slice(i, i + chunkSize);
+          const { data: profiles } = await supabase
+            .from('profiles')
+            .select('id, display_name, username')
+            .in('id', chunk);
+          if (profiles) {
+            for (const p of profiles) {
+              profileMap[p.id] = p.display_name || p.username || 'Player';
+            }
+          }
+        }
+      }
 
-      const list: Recipient[] = filteredMembers
+      const list: Recipient[] = members
         .filter((m) => m.user_id)
         .map((m) => ({
           id: m.user_id,
-          username: m.display_name || m.nickname || 'Unknown',
+          username: m.display_name || m.nickname || profileMap[m.user_id] || 'Player',
           role: m.role,
           balance: m.chip_balance || 0,
         }))

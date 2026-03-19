@@ -109,7 +109,17 @@ class NotificationServiceClass {
           }
         }
       )
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error(
+            `[NotificationService] ❌ Channel error on notifications:${userId}:`,
+            err?.message || err
+          );
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn(`[NotificationService] ⏱️ Channel notifications:${userId} timed out`);
+        }
+      });
   }
 
   /**

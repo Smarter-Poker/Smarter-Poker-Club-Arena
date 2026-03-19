@@ -64,7 +64,14 @@ export default function TournamentBracket({ tournamentId, totalPlayers }: Tourna
           loadPlayers();
         }
       )
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[TournamentBracket] ❌ Realtime channel error:', err?.message || err);
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn('[TournamentBracket] ⏱️ Realtime channel timed out');
+        }
+      });
 
     // Also poll every 15s as backup
     const pollInterval = setInterval(loadPlayers, 15000);

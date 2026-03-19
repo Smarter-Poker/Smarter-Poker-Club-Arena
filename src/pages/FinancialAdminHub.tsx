@@ -305,7 +305,14 @@ export default function FinancialAdminHub() {
     const channel = masterBus.getOrCreateChannel(channelKey);
     channel
       .on('postgres_changes', { event: '*', schema: 'public', table: 'disputes' }, loadStats)
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[FinancialAdminHub] ❌ Realtime channel error:', err?.message || err);
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn('[FinancialAdminHub] ⏱️ Realtime channel timed out');
+        }
+      });
     return () => {
       masterBus.removeRegisteredChannel(channelKey);
     };

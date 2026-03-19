@@ -156,7 +156,14 @@ export default function NotificationsPage() {
             }
           }
         )
-        .subscribe();
+        .subscribe((status: string, err?: Error) => {
+          if (status === 'CHANNEL_ERROR') {
+            console.error('[NotificationsPage] ❌ Realtime channel error:', err?.message || err);
+          }
+          if (status === 'TIMED_OUT') {
+            console.warn('[NotificationsPage] ⏱️ Realtime channel timed out');
+          }
+        });
 
       return () => {
         isMounted = false;

@@ -931,7 +931,11 @@ export class TournamentEngine {
     // Also broadcast on the addon-specific channel for direct table pickup
     try {
       const chan = this.supabase.channel(`t-addon-${this.tournamentId}`);
-      await chan.subscribe();
+      await chan.subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error(`[TournamentEngine] ❌ Addon channel error:`, err?.message || err);
+        }
+      });
       await chan.send({
         type: 'broadcast',
         event: 'addon_event',

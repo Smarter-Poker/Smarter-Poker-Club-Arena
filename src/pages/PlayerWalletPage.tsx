@@ -244,7 +244,14 @@ export default function PlayerWalletPage() {
           }
         }
       )
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[PlayerWalletPage] ❌ Realtime channel error:', err?.message || err);
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn('[PlayerWalletPage] ⏱️ Realtime channel timed out');
+        }
+      });
     return () => {
       masterBus.removeRegisteredChannel(channelKey);
     };

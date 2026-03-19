@@ -119,7 +119,14 @@ export default function HandHistoryPage() {
           loadHands(true);
         }
       )
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[HandHistoryPage] ❌ Realtime channel error:', err?.message || err);
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn('[HandHistoryPage] ⏱️ Realtime channel timed out');
+        }
+      });
 
     return () => {
       masterBus.removeRegisteredChannel(channelKey);

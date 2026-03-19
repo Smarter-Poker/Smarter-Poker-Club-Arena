@@ -240,7 +240,14 @@ export default function TournamentPage() {
             })();
           }
         )
-        .subscribe();
+        .subscribe((status: string, err?: Error) => {
+          if (status === 'CHANNEL_ERROR') {
+            console.error('[TournamentPage] ❌ Realtime channel error:', err?.message || err);
+          }
+          if (status === 'TIMED_OUT') {
+            console.warn('[TournamentPage] ⏱️ Realtime channel timed out');
+          }
+        });
     };
 
     setupRealtime().catch((e) => console.warn('[TournamentPage] Realtime setup failed:', e));
@@ -606,7 +613,14 @@ export default function TournamentPage() {
             break;
         }
       })
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[TournamentPage] ❌ Realtime channel error:', err?.message || err);
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn('[TournamentPage] ⏱️ Realtime channel timed out');
+        }
+      });
 
     return () => {
       masterBus.removeRegisteredChannel(channelKey);

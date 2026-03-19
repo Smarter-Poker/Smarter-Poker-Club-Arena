@@ -676,7 +676,14 @@ export default function CashierPage() {
           loadTransactions();
         }
       )
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[CashierPage] ❌ Realtime channel error:', err?.message || err);
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn('[CashierPage] ⏱️ Realtime channel timed out');
+        }
+      });
     return () => {
       masterBus.removeRegisteredChannel(`cashier-chip-txns-${user.id}`);
     };

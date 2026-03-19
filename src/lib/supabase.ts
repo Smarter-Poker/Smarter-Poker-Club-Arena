@@ -103,7 +103,17 @@ export function subscribeToTable<T>(
         callback(payload.new as T);
       }
     )
-    .subscribe();
+    .subscribe((status: string, err?: Error) => {
+      if (status === 'CHANNEL_ERROR') {
+        console.error(
+          `[subscribeToTable] ❌ Channel error on ${channelName}:`,
+          err?.message || err
+        );
+      }
+      if (status === 'TIMED_OUT') {
+        console.warn(`[subscribeToTable] ⏱️ Channel ${channelName} timed out — auto-reconnecting`);
+      }
+    });
 
   // Return unsubscribe function
   return () => {
@@ -134,11 +144,22 @@ export function broadcastHandState(tableId: string, handState: Record<string, un
 
   // Create a ready Promise on first call; reuse on subsequent calls
   if (!broadcastReady.has(channelName)) {
-    const readyPromise = new Promise<ReturnType<typeof supabase.channel>>((resolve) => {
+    const readyPromise = new Promise<ReturnType<typeof supabase.channel>>((resolve, reject) => {
       const channel = supabase.channel(channelName);
-      channel.subscribe((status) => {
+      channel.subscribe((status: string, err?: Error) => {
         if (status === 'SUBSCRIBED') {
           resolve(channel);
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error(
+            `[broadcastHandState] ❌ Channel error on ${channelName}:`,
+            err?.message || err
+          );
+          broadcastReady.delete(channelName); // Allow retry on next call
+          reject(new Error(`Channel ${channelName} error: ${err?.message || 'unknown'}`));
+        } else if (status === 'TIMED_OUT') {
+          console.warn(`[broadcastHandState] ⏱️ Channel ${channelName} timed out`);
+          broadcastReady.delete(channelName); // Allow retry on next call
+          reject(new Error(`Channel ${channelName} timed out`));
         }
       });
     });
@@ -146,17 +167,25 @@ export function broadcastHandState(tableId: string, handState: Record<string, un
   }
 
   // All calls (including during subscribe handshake) queue on the same Promise
-  broadcastReady.get(channelName)!.then((channel) => {
-    channel
-      .send({
-        type: 'broadcast',
-        event: 'hand_state',
-        payload: handState,
-      })
-      .catch((err: unknown) => {
-        console.warn(`[Broadcast] Failed to send hand state for ${tableId}:`, err);
-      });
-  });
+  broadcastReady
+    .get(channelName)!
+    .then((channel) => {
+      channel
+        .send({
+          type: 'broadcast',
+          event: 'hand_state',
+          payload: handState,
+        })
+        .catch((err: unknown) => {
+          console.warn(`[Broadcast] Failed to send hand state for ${tableId}:`, err);
+        });
+    })
+    .catch((err: unknown) => {
+      console.warn(
+        `[broadcastHandState] Channel not ready for ${tableId}, will retry on next call:`,
+        err
+      );
+    });
 }
 
 /**
@@ -191,7 +220,19 @@ export function subscribeToHandState(
     .on('broadcast', { event: 'hand_state' }, (payload) => {
       callback(payload.payload as Record<string, unknown>);
     })
-    .subscribe();
+    .subscribe((status: string, err?: Error) => {
+      if (status === 'CHANNEL_ERROR') {
+        console.error(
+          `[subscribeToHandState] ❌ Channel error on hand-state:${tableId}:`,
+          err?.message || err
+        );
+      }
+      if (status === 'TIMED_OUT') {
+        console.warn(
+          `[subscribeToHandState] ⏱️ Channel hand-state:${tableId} timed out — auto-reconnecting`
+        );
+      }
+    });
 
   return () => {
     channel

@@ -179,7 +179,14 @@ export default function CreditAdminPanel() {
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'agents' }, () =>
         loadAgents()
       )
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[CreditAdminPanel] ❌ Realtime channel error:', err?.message || err);
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn('[CreditAdminPanel] ⏱️ Realtime channel timed out');
+        }
+      });
     return () => {
       masterBus.removeRegisteredChannel(channelKey);
     };

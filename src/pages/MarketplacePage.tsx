@@ -186,7 +186,14 @@ export default function MarketplacePage() {
             loadMarketplace(clubId, true);
           }
         )
-        .subscribe();
+        .subscribe((status: string, err?: Error) => {
+          if (status === 'CHANNEL_ERROR') {
+            console.error('[MarketplacePage] ❌ Realtime channel error:', err?.message || err);
+          }
+          if (status === 'TIMED_OUT') {
+            console.warn('[MarketplacePage] ⏱️ Realtime channel timed out');
+          }
+        });
     };
 
     setupRealtime().catch((e) => console.warn('[MarketplacePage] Realtime setup failed:', e));

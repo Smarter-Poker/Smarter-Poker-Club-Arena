@@ -87,7 +87,14 @@ export default function ClubBottomNav({
           }
         }
       )
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[ClubBottomNav] ❌ Realtime channel error:', err?.message || err);
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn('[ClubBottomNav] ⏱️ Realtime channel timed out');
+        }
+      });
 
     return () => {
       masterBus.removeRegisteredChannel(channelKey);

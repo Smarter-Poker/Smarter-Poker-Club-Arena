@@ -99,7 +99,17 @@ export function AgentCommissionDashboard() {
         },
         () => loadDataRef.current()
       )
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error(
+            '[AgentCommissionDashboard] ❌ Realtime channel error:',
+            err?.message || err
+          );
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn('[AgentCommissionDashboard] ⏱️ Realtime channel timed out');
+        }
+      });
 
     // Bus event: BALANCE_UPDATED from engine
     const unsubBalance = masterBus.subscribeDebounced(

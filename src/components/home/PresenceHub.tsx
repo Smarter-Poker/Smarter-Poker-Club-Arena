@@ -116,7 +116,14 @@ export default function PresenceHub() {
           fetchOnlineFriends();
         }
       )
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[PresenceHub] ❌ Realtime channel error:', err?.message || err);
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn('[PresenceHub] ⏱️ Realtime channel timed out');
+        }
+      });
 
     return () => {
       supabase.removeChannel(channel);

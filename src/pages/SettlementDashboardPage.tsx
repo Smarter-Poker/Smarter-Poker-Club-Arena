@@ -352,7 +352,17 @@ export default function SettlementDashboardPage() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'agent_settlements' }, () =>
         loadData()
       )
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error(
+            '[SettlementDashboardPage] ❌ Realtime channel error:',
+            err?.message || err
+          );
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn('[SettlementDashboardPage] ⏱️ Realtime channel timed out');
+        }
+      });
     return () => {
       masterBus.removeRegisteredChannel(channelKey);
     };

@@ -1749,7 +1749,14 @@ export default function TablePage({
                   }
                 }
               )
-              .subscribe();
+              .subscribe((status: string, err?: Error) => {
+                if (status === 'CHANNEL_ERROR') {
+                  console.error('[TablePage] ❌ Realtime channel error:', err?.message || err);
+                }
+                if (status === 'TIMED_OUT') {
+                  console.warn('[TablePage] ⏱️ Realtime channel timed out');
+                }
+              });
             bountyChannelRef.current = bountyChannel;
           } else if (tournData?.spin_multiplier) {
             setTableState((prev) => ({
@@ -1934,7 +1941,14 @@ export default function TablePage({
                 setAnnouncement({ type: 'level_up', data: levelData });
               }
             })
-            .subscribe();
+            .subscribe((status: string, err?: Error) => {
+              if (status === 'CHANNEL_ERROR') {
+                console.error('[TablePage] ❌ Realtime channel error:', err?.message || err);
+              }
+              if (status === 'TIMED_OUT') {
+                console.warn('[TablePage] ⏱️ Realtime channel timed out');
+              }
+            });
           breakChannelRef.current = breakChan;
 
           // NOTE: Add-on events handled via break channel above (ADDON_PERIOD_START/END)

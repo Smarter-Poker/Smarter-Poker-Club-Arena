@@ -415,7 +415,14 @@ export default function AgentDashboardPage() {
           },
           () => loadDashboard(clubId)
         )
-        .subscribe();
+        .subscribe((status: string, err?: Error) => {
+          if (status === 'CHANNEL_ERROR') {
+            console.error('[AgentDashboardPage] ❌ Realtime channel error:', err?.message || err);
+          }
+          if (status === 'TIMED_OUT') {
+            console.warn('[AgentDashboardPage] ⏱️ Realtime channel timed out');
+          }
+        });
     };
 
     setupRealtime().catch((e) => console.warn('[AgentDashboardPage] Realtime setup failed:', e));

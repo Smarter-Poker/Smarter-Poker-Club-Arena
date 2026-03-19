@@ -83,6 +83,11 @@ class TournamentTimerServiceClass {
         clearTimeout(timer.breakTimeoutId);
       }
       this.activeTimers.delete(tournamentId);
+      // Clean up broadcast channel to prevent memory leaks
+      masterBus.removeRegisteredChannel(`tournament:${tournamentId}`);
+      // Clean up per-tournament tracking state
+      this.headsUpTriggered.delete(tournamentId);
+      this.breakIntervals.delete(tournamentId);
     }
   }
 
@@ -391,13 +396,16 @@ class TournamentTimerServiceClass {
     // Copy keys first to avoid Map-delete-during-iteration skip bug
     const ids = [...this.activeTimers.keys()];
     for (const id of ids) {
-      this.stopTimer(id);
+      this.stopTimer(id); // This now cleans up channels, headsUpTriggered, and breakIntervals
     }
     // Clean up global bus subscription to prevent memory leak
     if (this.playerEliminatedUnsub) {
       this.playerEliminatedUnsub();
       this.playerEliminatedUnsub = null;
     }
+    // Defensive: clear any remaining state
+    this.headsUpTriggered.clear();
+    this.breakIntervals.clear();
   }
 
   /**

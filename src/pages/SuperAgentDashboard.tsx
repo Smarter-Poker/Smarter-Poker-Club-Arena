@@ -105,7 +105,17 @@ export default function SuperAgentDashboard() {
             },
             () => loadDashboardData()
           )
-          .subscribe();
+          .subscribe((status: string, err?: Error) => {
+            if (status === 'CHANNEL_ERROR') {
+              console.error(
+                '[SuperAgentDashboard] ❌ Realtime channel error:',
+                err?.message || err
+              );
+            }
+            if (status === 'TIMED_OUT') {
+              console.warn('[SuperAgentDashboard] ⏱️ Realtime channel timed out');
+            }
+          });
       };
 
       setupRealtime().catch((e) => console.warn('[SuperAgentDashboard] Realtime setup failed:', e));

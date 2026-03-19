@@ -304,7 +304,14 @@ export default function AchievementsPage() {
             }
           }
         )
-        .subscribe();
+        .subscribe((status: string, err?: Error) => {
+          if (status === 'CHANNEL_ERROR') {
+            console.error('[AchievementsPage] ❌ Realtime channel error:', err?.message || err);
+          }
+          if (status === 'TIMED_OUT') {
+            console.warn('[AchievementsPage] ⏱️ Realtime channel timed out');
+          }
+        });
 
       return () => {
         masterBus.removeRegisteredChannel(channelKey);

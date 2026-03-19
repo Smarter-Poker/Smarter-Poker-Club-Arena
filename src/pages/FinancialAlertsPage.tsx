@@ -65,7 +65,14 @@ export default function FinancialAlertsPage() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'financial_alerts' }, () => {
         if (isMounted) loadAlerts(() => isMounted);
       })
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[FinancialAlertsPage] ❌ Realtime channel error:', err?.message || err);
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn('[FinancialAlertsPage] ⏱️ Realtime channel timed out');
+        }
+      });
     return () => {
       isMounted = false;
       masterBus.removeRegisteredChannel(channelKey);

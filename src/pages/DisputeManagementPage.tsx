@@ -112,7 +112,17 @@ export default function DisputeManagementPage() {
           { event: '*', schema: 'public', table: 'disputes', filter: `club_id=eq.${resolvedId}` },
           () => loadDisputes()
         )
-        .subscribe();
+        .subscribe((status: string, err?: Error) => {
+          if (status === 'CHANNEL_ERROR') {
+            console.error(
+              '[DisputeManagementPage] ❌ Realtime channel error:',
+              err?.message || err
+            );
+          }
+          if (status === 'TIMED_OUT') {
+            console.warn('[DisputeManagementPage] ⏱️ Realtime channel timed out');
+          }
+        });
     };
 
     setupRealtime().catch((e) => console.warn('[DisputeManagementPage] Realtime setup failed:', e));

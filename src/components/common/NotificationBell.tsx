@@ -57,7 +57,14 @@ export default function NotificationBell() {
           setUnreadCount((prev) => prev + 1);
         }
       )
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[NotificationBell] ❌ Realtime channel error:', err?.message || err);
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn('[NotificationBell] ⏱️ Realtime channel timed out');
+        }
+      });
 
     // #6: Refetch on window focus — catches reads on other tabs/devices
     const handleVisibilityChange = () => {

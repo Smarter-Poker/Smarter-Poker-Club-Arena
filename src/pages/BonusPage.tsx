@@ -69,7 +69,14 @@ export default function BonusPage() {
             loadBonuses(() => isMounted);
           }
         )
-        .subscribe();
+        .subscribe((status: string, err?: Error) => {
+          if (status === 'CHANNEL_ERROR') {
+            console.error('[BonusPage] ❌ Realtime channel error:', err?.message || err);
+          }
+          if (status === 'TIMED_OUT') {
+            console.warn('[BonusPage] ⏱️ Realtime channel timed out');
+          }
+        });
 
       return () => {
         isMounted = false;

@@ -103,7 +103,14 @@ export default function BadBeatJackpotPage() {
               loadJackpotData(() => isMounted);
             }
           )
-          .subscribe();
+          .subscribe((status: string, err?: Error) => {
+            if (status === 'CHANNEL_ERROR') {
+              console.error('[BadBeatJackpotPage] ❌ Realtime channel error:', err?.message || err);
+            }
+            if (status === 'TIMED_OUT') {
+              console.warn('[BadBeatJackpotPage] ⏱️ Realtime channel timed out');
+            }
+          });
       };
 
       setupRealtime().catch((e) => console.warn('[BadBeatJackpotPage] Realtime setup failed:', e));

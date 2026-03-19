@@ -125,7 +125,14 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
           if (mounted) setUnreadMessages(count || 0);
         }
       )
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[GlobalHeader] ❌ Realtime channel error:', err?.message || err);
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn('[GlobalHeader] ⏱️ Realtime channel timed out');
+        }
+      });
 
     return () => {
       mounted = false;

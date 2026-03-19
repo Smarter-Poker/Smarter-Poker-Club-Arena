@@ -84,7 +84,17 @@ export class TournamentOrchestrator {
             }
           }
         )
-        .subscribe();
+        .subscribe((status: string, err?: Error) => {
+          if (status === 'CHANNEL_ERROR') {
+            console.error(
+              '[TournamentOrchestrator] ❌ Realtime channel error:',
+              err?.message || err
+            );
+          }
+          if (status === 'TIMED_OUT') {
+            console.warn('[TournamentOrchestrator] ⏱️ Realtime channel timed out');
+          }
+        });
     } catch (err: unknown) {
       console.error(
         '[TournamentOrchestrator] Realtime subscription failed, relying on polling:',

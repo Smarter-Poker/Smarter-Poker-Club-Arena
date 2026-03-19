@@ -380,7 +380,14 @@ function HomePageInner() {
             if (isMounted) fetchUserData(true, () => isMounted);
           }
         )
-        .subscribe();
+        .subscribe((status: string, err?: Error) => {
+          if (status === 'CHANNEL_ERROR') {
+            console.error('[HomePage] ❌ Realtime channel error:', err?.message || err);
+          }
+          if (status === 'TIMED_OUT') {
+            console.warn('[HomePage] ⏱️ Realtime channel timed out');
+          }
+        });
     };
 
     setupRealtimeSubscription();
@@ -611,7 +618,14 @@ function HomePageInner() {
         },
         debouncedSharkRefresh
       )
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[HomePage] ❌ Realtime channel error:', err?.message || err);
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn('[HomePage] ⏱️ Realtime channel timed out');
+        }
+      });
 
     // Bus listeners: refresh Shark Club stats when members join/leave any club
     const unsubJoined = masterBus.subscribeDebounced(
@@ -661,7 +675,14 @@ function HomePageInner() {
         { event: '*', schema: 'public', table: 'table_seats' },
         debouncedFetch
       )
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[HomePage] ❌ Realtime channel error:', err?.message || err);
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn('[HomePage] ⏱️ Realtime channel timed out');
+        }
+      });
 
     return () => {
       isMounted = false;

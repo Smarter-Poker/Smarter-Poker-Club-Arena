@@ -729,7 +729,14 @@ export function useBBJ(clubId: string | null) {
           );
         }
       )
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[BBJDisplay] ❌ Realtime channel error:', err?.message || err);
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn('[BBJDisplay] ⏱️ Realtime channel timed out');
+        }
+      });
 
     return () => {
       masterBus.removeRegisteredChannel(channelKey);

@@ -629,8 +629,13 @@ export default function ClubDetailPage() {
             loadClubData();
           }
         )
-        .subscribe((status) => {
+        .subscribe((status: string, err?: Error) => {
           setWsConnected(status === 'SUBSCRIBED');
+          if (status === 'CHANNEL_ERROR') {
+            console.error('[ClubDetailPage] ❌ Club detail RT channel error:', err?.message || err);
+          } else if (status === 'TIMED_OUT') {
+            console.warn('[ClubDetailPage] ⏱️ Club detail RT channel timed out');
+          }
         });
     };
 

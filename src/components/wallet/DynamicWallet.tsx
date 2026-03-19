@@ -274,7 +274,14 @@ export default function DynamicWallet({
           }
         }
       )
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[DynamicWallet] ❌ Realtime channel error:', err?.message || err);
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn('[DynamicWallet] ⏱️ Realtime channel timed out');
+        }
+      });
 
     return () => {
       supabase.removeChannel(channel);

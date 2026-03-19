@@ -67,7 +67,14 @@ export const WaitlistManager: React.FC<WaitlistManagerProps> = ({
           loadWaitlist();
         }
       )
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[WaitlistManager] ❌ Realtime channel error:', err?.message || err);
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn('[WaitlistManager] ⏱️ Realtime channel timed out');
+        }
+      });
 
     return () => {
       masterBus.removeRegisteredChannel(channelKey);

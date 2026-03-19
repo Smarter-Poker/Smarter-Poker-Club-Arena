@@ -505,7 +505,14 @@ export default function MessageThread({ conversationId, onBack }: MessageThreadP
           );
         }
       )
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[MessageThread] ❌ Realtime channel error:', err?.message || err);
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn('[MessageThread] ⏱️ Realtime channel timed out');
+        }
+      });
 
     return () => {
       if (heartbeatRef.current) clearInterval(heartbeatRef.current);

@@ -64,7 +64,14 @@ export default function WaitlistPage() {
             loadWaitlistRef.current();
           }
         )
-        .subscribe();
+        .subscribe((status: string, err?: Error) => {
+          if (status === 'CHANNEL_ERROR') {
+            console.error('[WaitlistPage] ❌ Realtime channel error:', err?.message || err);
+          }
+          if (status === 'TIMED_OUT') {
+            console.warn('[WaitlistPage] ⏱️ Realtime channel timed out');
+          }
+        });
 
       return () => {
         isMounted = false;

@@ -148,7 +148,14 @@ export default function ClubFinancialsPage() {
             loadFinancials();
           }
         )
-        .subscribe();
+        .subscribe((status: string, err?: Error) => {
+          if (status === 'CHANNEL_ERROR') {
+            console.error('[ClubFinancialsPage] ❌ Realtime channel error:', err?.message || err);
+          }
+          if (status === 'TIMED_OUT') {
+            console.warn('[ClubFinancialsPage] ⏱️ Realtime channel timed out');
+          }
+        });
     };
 
     setupRealtime().catch((e) => console.warn('[ClubFinancialsPage] Realtime setup failed:', e));

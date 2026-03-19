@@ -278,12 +278,19 @@ class RealtimeChannelService {
     });
 
     // Subscribe and track presence
-    channel.subscribe(async (status) => {
+    channel.subscribe(async (status: string, err?: Error) => {
       if (status === 'SUBSCRIBED') {
         await channel.track({
           ...userInfo,
           joinedAt: new Date().toISOString(),
         });
+      } else if (status === 'CHANNEL_ERROR') {
+        console.error(
+          `[RealtimeChannel] ❌ Club channel error for ${clubId}:`,
+          err?.message || err
+        );
+      } else if (status === 'TIMED_OUT') {
+        console.warn(`[RealtimeChannel] ⏱️ Club channel ${clubId} timed out`);
       }
     });
 
@@ -401,9 +408,15 @@ class RealtimeChannelService {
       }
     });
 
-    channel.subscribe((status) => {
-      if (status === 'SUBSCRIBED') {
-        // no-op
+    channel.subscribe((status: string, err?: Error) => {
+      if (status === 'CHANNEL_ERROR') {
+        console.error(
+          `[RealtimeChannel] ❌ Tournament channel error for ${tournamentId}:`,
+          err?.message || err
+        );
+      }
+      if (status === 'TIMED_OUT') {
+        console.warn(`[RealtimeChannel] ⏱️ Tournament channel ${tournamentId} timed out`);
       }
     });
 
@@ -450,7 +463,14 @@ class RealtimeChannelService {
     if (!subscription) {
       const channel = supabase.channel(channelName);
       try {
-        await channel.subscribe();
+        await channel.subscribe((status: string, err?: Error) => {
+          if (status === 'CHANNEL_ERROR') {
+            console.error(
+              `[RealtimeChannel] ❌ Broadcast channel error for tournament:${tournamentId}:`,
+              err?.message || err
+            );
+          }
+        });
         await channel.send({
           type: 'broadcast',
           event: 'tournament_event',
@@ -511,9 +531,15 @@ class RealtimeChannelService {
       callbacks.onEvent?.(payload as HandEvent);
     });
 
-    channel.subscribe((status) => {
-      if (status === 'SUBSCRIBED') {
-        // no-op
+    channel.subscribe((status: string, err?: Error) => {
+      if (status === 'CHANNEL_ERROR') {
+        console.error(
+          `[RealtimeChannel] ❌ Hand replay channel error for ${handId}:`,
+          err?.message || err
+        );
+      }
+      if (status === 'TIMED_OUT') {
+        console.warn(`[RealtimeChannel] ⏱️ Hand replay channel ${handId} timed out`);
       }
     });
 
@@ -557,7 +583,14 @@ class RealtimeChannelService {
   ): Promise<void> {
     const channel = supabase.channel(`hand:${handId}`);
     try {
-      await channel.subscribe();
+      await channel.subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error(
+            `[RealtimeChannel] ❌ Hand replay stream channel error for ${handId}:`,
+            err?.message || err
+          );
+        }
+      });
       for (const event of events) {
         await new Promise((resolve) => setTimeout(resolve, speedMs));
         await channel.send({
@@ -618,7 +651,14 @@ class RealtimeChannelService {
       }
     });
 
-    channel.subscribe();
+    channel.subscribe((status: string, err?: Error) => {
+      if (status === 'CHANNEL_ERROR') {
+        console.error(`[RealtimeChannel] ❌ Lobby channel error:`, err?.message || err);
+      }
+      if (status === 'TIMED_OUT') {
+        console.warn(`[RealtimeChannel] ⏱️ Lobby channel timed out`);
+      }
+    });
 
     this.subscriptions.set(channelName, {
       channel,

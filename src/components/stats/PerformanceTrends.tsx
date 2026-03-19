@@ -42,8 +42,7 @@ function getCached(userId: string, range: TimeRange): SessionRecord[] | null {
     const raw = sessionStorage.getItem(`${CACHE_PREFIX}${userId}_${range}`);
     return raw ? JSON.parse(raw) : null;
   } catch (err) {
-
-    console.error("[PerformanceTrends] Error:", err);
+    console.error('[PerformanceTrends] Error:', err);
     return null;
   }
 }
@@ -51,8 +50,7 @@ function setCache(userId: string, range: TimeRange, data: SessionRecord[]) {
   try {
     sessionStorage.setItem(`${CACHE_PREFIX}${userId}_${range}`, JSON.stringify(data));
   } catch (err) {
-
-    console.error("[PerformanceTrends] Error:", err);
+    console.error('[PerformanceTrends] Error:', err);
     /* quota exceeded */
   }
 }
@@ -142,7 +140,14 @@ export default function PerformanceTrends({ userId }: PerformanceTrendsProps) {
         { event: '*', schema: 'public', table: 'session_history', filter: `user_id=eq.${userId}` },
         () => loadSessions()
       )
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[PerformanceTrends] ❌ Realtime channel error:', err?.message || err);
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn('[PerformanceTrends] ⏱️ Realtime channel timed out');
+        }
+      });
 
     return () => {
       masterBus.removeRegisteredChannel(channelKey);

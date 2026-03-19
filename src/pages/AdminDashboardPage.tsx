@@ -81,15 +81,16 @@ interface CommissionRow {
 }
 interface AuditLogRow {
   id: string;
-  action_type: string;
-  user_id: string | null;
-  target_user_id: string | null;
-  amount: number | null;
+  action: string;
+  actor_id: string | null;
+  target_type: string | null;
+  target_id: string | null;
+  details: Record<string, unknown> | null;
   ip_address: string | null;
-  metadata: Record<string, unknown> | null;
   created_at: string;
+  // Enriched client-side
   userName?: string;
-  targetUserName?: string | null;
+  targetUserName?: string;
 }
 interface HierarchyMember {
   user_id: string;
@@ -461,7 +462,14 @@ function DashboardTab({ clubId }: { clubId: string }) {
           },
           () => load()
         )
-        .subscribe();
+        .subscribe((status: string, err?: Error) => {
+          if (status === 'CHANNEL_ERROR') {
+            console.error('[AdminDashboardPage] ❌ Realtime channel error:', err?.message || err);
+          }
+          if (status === 'TIMED_OUT') {
+            console.warn('[AdminDashboardPage] ⏱️ Realtime channel timed out');
+          }
+        });
     };
 
     setupRealtime().catch((e) => console.warn('[AdminDashboardPage] Realtime setup failed:', e));
@@ -868,20 +876,33 @@ function AuditLogTab({ clubId }: { clubId: string }) {
 
         const { data, error, count } = await supabase
           .from('audit_logs')
-          .select('*', { count: 'exact' })
+          .select('id, action, actor_id, target_type, target_id, details, ip_address, created_at', {
+            count: 'exact',
+          })
           .eq('club_id', uuid)
           .order('created_at', { ascending: false })
           .range(from, to);
 
-        if (error) throw error;
+        if (error) {
+          // Gracefully handle missing table or column
+          if (error.code === 'PGRST205' || error.code === '42P01' || error.code === '42703') {
+            if (isMounted.current) {
+              setLogs([]);
+              setTotal(0);
+              setLoading(false);
+            }
+            return;
+          }
+          throw error;
+        }
         if (!isMounted.current) return;
 
         // Get user profiles for display names
         const userIds = [
-          ...new Set((data || []).map((l: AuditLogRow) => l.user_id).filter(Boolean)),
+          ...new Set((data || []).map((l: AuditLogRow) => l.actor_id).filter(Boolean)),
         ];
         const targetIds = [
-          ...new Set((data || []).map((l: AuditLogRow) => l.target_user_id).filter(Boolean)),
+          ...new Set((data || []).map((l: AuditLogRow) => l.target_id).filter(Boolean)),
         ];
         const allIds = [...new Set([...userIds, ...targetIds])];
 
@@ -903,10 +924,12 @@ function AuditLogTab({ clubId }: { clubId: string }) {
           (data || []).map((l: AuditLogRow) => ({
             ...l,
             userName:
-              (l.user_id ? profileMap[l.user_id] : null) || l.user_id?.substring(0, 8) || 'System',
-            targetUserName: l.target_user_id
-              ? profileMap[l.target_user_id] || l.target_user_id?.substring(0, 8)
-              : null,
+              (l.actor_id ? profileMap[l.actor_id] : null) ||
+              l.actor_id?.substring(0, 8) ||
+              'System',
+            targetUserName: l.target_id
+              ? profileMap[l.target_id] || l.target_id?.substring(0, 8)
+              : undefined,
           }))
         );
         setTotal(count || 0);
@@ -960,7 +983,7 @@ function AuditLogTab({ clubId }: { clubId: string }) {
                 const { data, error } = await supabase
                   .from('audit_logs')
                   .select(
-                    'id, action_type, user_id, target_user_id, amount, ip_address, metadata, created_at'
+                    'id, action, actor_id, target_type, target_id, details, ip_address, created_at'
                   )
                   .eq('club_id', uuid)
                   .order('created_at', { ascending: false })
@@ -1034,8 +1057,8 @@ function AuditLogTab({ clubId }: { clubId: string }) {
                 <td className="admin-text-secondary" style={{ fontSize: '12px' }}>
                   {formatDate(l.created_at)}
                 </td>
-                <td style={{ color: typeColor(l.action_type || ''), fontWeight: 600 }}>
-                  {toTitleCase(l.action_type || '')}
+                <td style={{ color: typeColor(l.action || ''), fontWeight: 600 }}>
+                  {toTitleCase(l.action || '')}
                 </td>
                 <td style={{ fontWeight: 500 }}>{l.userName}</td>
                 <td className="admin-text-secondary">{l.targetUserName || '-'}</td>
@@ -1043,15 +1066,10 @@ function AuditLogTab({ clubId }: { clubId: string }) {
                   style={{
                     textAlign: 'right',
                     fontWeight: 700,
-                    color:
-                      (l.amount ?? 0) > 0
-                        ? '#31A24C'
-                        : (l.amount ?? 0) < 0
-                          ? '#FA383E'
-                          : 'var(--text-primary)',
+                    color: 'var(--text-primary)',
                   }}
                 >
-                  {l.amount ? fmtChips(l.amount) : '-'}
+                  {(l.details as any)?.amount != null ? fmtChips((l.details as any).amount) : '-'}
                 </td>
                 <td
                   className="admin-mono"

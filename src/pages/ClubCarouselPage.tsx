@@ -171,9 +171,15 @@ export default function ClubCarouselPage() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'union_clubs' }, () => {
         if (isMounted.current) loadUserData();
       })
-      .subscribe((status) => {
+      .subscribe((status: string, err?: Error) => {
         // #9: Track WS connection health
         setWsConnected(status === 'SUBSCRIBED');
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[ClubCarouselPage] ❌ Realtime channel error:', err?.message || err);
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn('[ClubCarouselPage] ⏱️ Realtime channel timed out');
+        }
       });
     return () => {
       masterBus.removeRegisteredChannel(channelKey);

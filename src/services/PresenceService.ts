@@ -99,7 +99,7 @@ class PresenceServiceClass {
       });
 
     // Subscribe and track
-    await channel.subscribe(async (status) => {
+    await channel.subscribe(async (status: string, err?: Error) => {
       if (status === 'SUBSCRIBED') {
         try {
           await channel.track({
@@ -110,6 +110,10 @@ class PresenceServiceClass {
         } catch (e: unknown) {
           console.error('[PresenceService] Track failed:', e);
         }
+      } else if (status === 'CHANNEL_ERROR') {
+        console.error(`[PresenceService] ❌ Channel error on ${channelName}:`, err?.message || err);
+      } else if (status === 'TIMED_OUT') {
+        console.warn(`[PresenceService] ⏱️ Channel ${channelName} timed out`);
       }
     });
 

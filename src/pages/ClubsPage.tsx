@@ -236,7 +236,14 @@ export default function ClubsPage() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'union_clubs' }, () => {
         if (isMounted) loadMyClubs(() => isMounted);
       })
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[ClubsPage] ❌ Realtime channel error:', err?.message || err);
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn('[ClubsPage] ⏱️ Realtime channel timed out');
+        }
+      });
     return () => {
       isMounted = false;
       masterBus.removeRegisteredChannel(channelKey);

@@ -96,7 +96,17 @@ class MessagingServiceClass {
           }
         }
       )
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error(
+            `[MessagingService] ❌ Channel error on messages:${userId}:`,
+            err?.message || err
+          );
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn(`[MessagingService] ⏱️ Channel messages:${userId} timed out`);
+        }
+      });
   }
 
   /**
@@ -1290,7 +1300,14 @@ class MessagingServiceClass {
       callback(typingIds);
     });
 
-    channel.subscribe();
+    channel.subscribe((status: string, err?: Error) => {
+      if (status === 'CHANNEL_ERROR') {
+        console.error(`[MessagingService] ❌ Typing channel error:`, err?.message || err);
+      }
+      if (status === 'TIMED_OUT') {
+        console.warn(`[MessagingService] ⏱️ Typing channel timed out`);
+      }
+    });
 
     return () => {
       masterBus.removeRegisteredChannel(channelKey);

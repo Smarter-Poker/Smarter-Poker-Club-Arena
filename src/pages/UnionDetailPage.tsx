@@ -443,7 +443,14 @@ export default function UnionDetailPage() {
           }
         }
       )
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[UnionDetailPage] ❌ Realtime channel error:', err?.message || err);
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn('[UnionDetailPage] ⏱️ Realtime channel timed out');
+        }
+      });
 
     // Subscribe to bus-level UNION_UPDATED events from service layer
     const unsubUnion = masterBus.subscribeDebounced(

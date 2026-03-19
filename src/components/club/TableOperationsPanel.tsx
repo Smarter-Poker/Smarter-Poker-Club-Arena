@@ -400,7 +400,14 @@ export default function TableOperationsPanel({ clubId }: Props) {
         // Refresh seated players for expanded table
         if (expandedTable) loadSeatedPlayers(expandedTable);
       })
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[TableOperationsPanel] ❌ Realtime channel error:', err?.message || err);
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn('[TableOperationsPanel] ⏱️ Realtime channel timed out');
+        }
+      });
 
     return () => {
       masterBus.removeRegisteredChannel(channelKey);

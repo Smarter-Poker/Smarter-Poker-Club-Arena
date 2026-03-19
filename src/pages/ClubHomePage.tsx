@@ -252,8 +252,13 @@ export default function ClubHomePage() {
             }
           }
         )
-        .subscribe((status) => {
+        .subscribe((status: string, err?: Error) => {
           setWsConnected(status === 'SUBSCRIBED');
+          if (status === 'CHANNEL_ERROR') {
+            console.error('[ClubHomePage] ❌ Tables RT channel error:', err?.message || err);
+          } else if (status === 'TIMED_OUT') {
+            console.warn('[ClubHomePage] ⏱️ Tables RT channel timed out');
+          }
         });
     };
 

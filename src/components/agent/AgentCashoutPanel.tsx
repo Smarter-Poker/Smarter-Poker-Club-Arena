@@ -73,7 +73,14 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
       .on('postgres_changes', { event: '*', schema: 'public', table: 'cashout_requests' }, () => {
         loadCashouts();
       })
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[AgentCashoutPanel] ❌ Realtime channel error:', err?.message || err);
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn('[AgentCashoutPanel] ⏱️ Realtime channel timed out');
+        }
+      });
 
     return () => {
       clearInterval(interval);

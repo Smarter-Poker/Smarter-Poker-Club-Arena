@@ -80,7 +80,14 @@ export default function ClubRulesPage() {
             if (isMounted && !isEditing) loadRules(() => isMounted);
           }
         )
-        .subscribe();
+        .subscribe((status: string, err?: Error) => {
+          if (status === 'CHANNEL_ERROR') {
+            console.error('[ClubRulesPage] ❌ Realtime channel error:', err?.message || err);
+          }
+          if (status === 'TIMED_OUT') {
+            console.warn('[ClubRulesPage] ⏱️ Realtime channel timed out');
+          }
+        });
     };
     setup().catch((e) => console.warn('[ClubRulesPage] Realtime setup failed:', e));
     return () => {

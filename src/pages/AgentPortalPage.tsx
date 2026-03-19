@@ -103,7 +103,14 @@ export default function AgentPortalPage() {
           if (isMounted.current) loadCommissionHistory();
         }
       )
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[AgentPortalPage] ❌ Realtime channel error:', err?.message || err);
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn('[AgentPortalPage] ⏱️ Realtime channel timed out');
+        }
+      });
     return () => {
       masterBus.removeRegisteredChannel(`agent-portal-${user.id}-${agentPkId}`);
     };

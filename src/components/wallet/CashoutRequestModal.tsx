@@ -187,7 +187,14 @@ export default function CashoutRequestModal({
           loadPendingCashouts();
         }
       )
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[CashoutRequestModal] ❌ Realtime channel error:', err?.message || err);
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn('[CashoutRequestModal] ⏱️ Realtime channel timed out');
+        }
+      });
 
     // Bus listener: reload when balance changes
     const unsubBalance = masterBus.subscribeDebounced(

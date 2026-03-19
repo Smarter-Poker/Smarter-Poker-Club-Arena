@@ -398,6 +398,11 @@ export const ChipFlowService = {
       };
     }
 
+    // RPC missing (not yet deployed) — fall through to paginated client-side aggregation
+    if (rpcError) {
+      console.debug('[ChipFlowService] verify_ledger_totals RPC not available — using fallback.');
+    }
+
     // 2. Fallback to paginated client-side aggregation if RPC is missing
     //    Safety: cap at 10,000 pages (10M rows) to prevent infinite loops on massive tables
     const MAX_PAGES = 10_000;

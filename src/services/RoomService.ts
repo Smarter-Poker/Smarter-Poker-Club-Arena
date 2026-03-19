@@ -116,7 +116,7 @@ class RoomService {
       });
 
       // Subscribe
-      await channel.subscribe(async (status) => {
+      await channel.subscribe(async (status: string, err?: Error) => {
         if (status === 'SUBSCRIBED') {
           // Track presence
           await channel!.track({
@@ -126,6 +126,10 @@ class RoomService {
             stack,
             status: 'active',
           } as PlayerPresence);
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('[RoomService] ❌ Channel error for table:', tableId, err?.message || err);
+        } else if (status === 'TIMED_OUT') {
+          console.warn('[RoomService] ⏱️ Channel timed out for table:', tableId);
         }
       });
 

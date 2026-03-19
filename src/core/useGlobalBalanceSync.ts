@@ -55,7 +55,14 @@ export function useGlobalBalanceSync() {
           fetchTrueBalance();
         }
       )
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error(`[GlobalBalanceSync] ❌ Wallet sync channel error:`, err?.message || err);
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn(`[GlobalBalanceSync] ⏱️ Wallet sync channel timed out`);
+        }
+      });
 
     // Initial fetch on mount to guarantee parity
     fetchTrueBalance();

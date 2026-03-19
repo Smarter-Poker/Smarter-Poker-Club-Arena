@@ -53,21 +53,30 @@ export const AuditLog: React.FC<AuditLogProps> = ({ clubId }) => {
     try {
       const query = supabase
         .from('audit_logs')
-        .select(
-          'id, action_type, user_id, target_user_id, amount, ip_address, metadata, created_at'
-        )
+        .select('id, action, actor_id, target_type, target_id, details, ip_address, created_at')
         .eq('club_id', clubId)
         .order('created_at', { ascending: false })
         .limit(200);
 
       const { data, error } = await query;
-      if (error) throw error;
+      if (error) {
+        // Gracefully handle missing table or column errors
+        if (error.code === 'PGRST205' || error.code === '42P01' || error.code === '42703') {
+          console.debug('[AuditLog] audit_logs table/column not available yet.');
+          if (isMounted.current) {
+            setEntries([]);
+            setLoading(false);
+          }
+          return;
+        }
+        throw error;
+      }
       if (!isMounted.current) return;
 
       // Resolve usernames for actors and targets
       const userIds = [
         ...new Set(
-          (data || []).flatMap((row: any) => [row.user_id, row.target_user_id]).filter(Boolean)
+          (data || []).flatMap((row: any) => [row.actor_id, row.target_id]).filter(Boolean)
         ),
       ];
       const profileMap: Record<string, string> = {};
@@ -83,26 +92,26 @@ export const AuditLog: React.FC<AuditLogProps> = ({ clubId }) => {
       }
 
       const mapped: AuditEntry[] = (data || []).map((row: any) => {
-        const meta = row.metadata || {};
-        const details =
+        const meta = row.details || {};
+        const detailStr =
           meta.description ||
           meta.reason ||
-          (row.amount != null ? `Amount: ${row.amount}` : row.action_type.replace(/_/g, ' '));
+          (meta.amount != null ? `Amount: ${meta.amount}` : (row.action || '').replace(/_/g, ' '));
         return {
           id: row.id,
-          action: row.action_type,
+          action: row.action || '',
           actor: {
-            id: row.user_id || 'system',
-            username: profileMap[row.user_id] || 'System',
+            id: row.actor_id || 'system',
+            username: profileMap[row.actor_id] || 'System',
           },
-          target: row.target_user_id
+          target: row.target_id
             ? {
-                type: 'user',
-                id: row.target_user_id,
-                name: profileMap[row.target_user_id] || row.target_user_id.slice(0, 8),
+                type: row.target_type || 'user',
+                id: row.target_id,
+                name: profileMap[row.target_id] || row.target_id.slice(0, 8),
               }
             : undefined,
-          details,
+          details: detailStr,
           ipAddress: row.ip_address || '',
           timestamp: row.created_at,
         };

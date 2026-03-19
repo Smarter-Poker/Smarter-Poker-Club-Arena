@@ -72,7 +72,14 @@ export default function SettlementHistoryPage() {
         },
         () => loadHistory()
       )
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[SettlementHistoryPage] ❌ Realtime channel error:', err?.message || err);
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn('[SettlementHistoryPage] ⏱️ Realtime channel timed out');
+        }
+      });
 
     return () => {
       unsub();

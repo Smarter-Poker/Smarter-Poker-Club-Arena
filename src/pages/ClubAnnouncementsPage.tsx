@@ -97,7 +97,17 @@ export default function ClubAnnouncementsPage() {
               loadAnnouncements(() => isMounted);
             }
           )
-          .subscribe();
+          .subscribe((status: string, err?: Error) => {
+            if (status === 'CHANNEL_ERROR') {
+              console.error(
+                '[ClubAnnouncementsPage] ❌ Realtime channel error:',
+                err?.message || err
+              );
+            }
+            if (status === 'TIMED_OUT') {
+              console.warn('[ClubAnnouncementsPage] ⏱️ Realtime channel timed out');
+            }
+          });
       };
 
       setupRealtime().catch((e) =>

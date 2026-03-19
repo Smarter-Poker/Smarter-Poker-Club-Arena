@@ -270,7 +270,14 @@ export default function TournamentDetails() {
           }
         }
       )
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[TournamentDetails] ❌ Realtime channel error:', err?.message || err);
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn('[TournamentDetails] ⏱️ Realtime channel timed out');
+        }
+      });
 
     // ── Bus event subscriptions for faster local updates ──
     const unsubElim = masterBus.subscribeDebounced(

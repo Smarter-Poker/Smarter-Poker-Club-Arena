@@ -79,7 +79,7 @@ export function useMasterBusChannel({
     const channel = masterBus.getOrCreateChannel(channelName);
 
     // Subscribe to postgres_changes for the specified table
-     
+
     (channel as any)
       .on(
         'postgres_changes',
@@ -94,7 +94,19 @@ export function useMasterBusChannel({
           callbackRef.current(payload);
         }
       )
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error(
+            `[useMasterBusChannel] ❌ Channel error on ${channelName}:`,
+            err?.message || err
+          );
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn(
+            `[useMasterBusChannel] ⏱️ Channel ${channelName} timed out — auto-reconnecting`
+          );
+        }
+      });
 
     // Cleanup: remove the registered channel on unmount or when deps change
     return () => {

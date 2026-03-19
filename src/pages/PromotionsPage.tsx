@@ -2,10 +2,11 @@
  *  PROMOTIONS PAGE — Club Promotions & Bonuses with Live Updates
  */
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
+import { useMasterBusSubscriptions } from '../hooks/useMasterBusSubscription';
 import DailyBonusWheel from '../components/bonus/DailyBonusWheel';
 import LeaderboardCard from '../components/leaderboard/LeaderboardCard';
 import ReferralModal from '../components/social/ReferralModal';
@@ -50,30 +51,42 @@ export default function PromotionsPage() {
     loadPromotionsRef.current = loadPromotions;
   });
 
+  const loadPromotionsCb = useCallback(() => {
+    loadPromotionsRef.current();
+  }, []);
+
   useEffect(() => {
     let isMounted = true;
     loadPromotions(() => isMounted);
 
-    // Real-time promotions updates
-    const channelKey = 'promotions-live';
+    // Real-time promotions updates (INSERT + UPDATE + DELETE)
+    const channelKey = clubId ? `promotions-live-${clubId}` : 'promotions-live';
 
     const channel = masterBus.getOrCreateChannel(channelKey);
     channel
       .on(
         'postgres_changes',
         {
-          event: 'INSERT',
+          event: '*',
           schema: 'public',
           table: 'promotions',
         },
-        () => {
-          toast.info(' New promotion available!');
-          if (isMounted) {
-            loadPromotionsRef.current();
+        (payload) => {
+          if (!isMounted) return;
+          if (payload.eventType === 'INSERT') {
+            toast.info(' New promotion available!');
           }
+          loadPromotionsRef.current();
         }
       )
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[PromotionsPage] ❌ Realtime channel error:', err?.message || err);
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn('[PromotionsPage] ⏱️ Realtime channel timed out');
+        }
+      });
 
     return () => {
       isMounted = false;
@@ -81,6 +94,13 @@ export default function PromotionsPage() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clubId]);
+
+  // ── Bus Listeners: cross-page reactivity ──
+  useMasterBusSubscriptions(
+    ['ANNOUNCEMENT_CHANGED', 'CLUB_UPDATED', 'CLUB_SETTINGS_UPDATED'],
+    loadPromotionsCb,
+    { debounce: 1000 }
+  );
 
   const loadPromotions = async (getIsMounted?: () => boolean) => {
     setLoading(true);

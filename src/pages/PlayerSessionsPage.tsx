@@ -523,7 +523,14 @@ export default function PlayerSessionsPage() {
           },
           () => loadSessions(clubId, true)
         )
-        .subscribe();
+        .subscribe((status: string, err?: Error) => {
+          if (status === 'CHANNEL_ERROR') {
+            console.error('[PlayerSessionsPage] ❌ Realtime channel error:', err?.message || err);
+          }
+          if (status === 'TIMED_OUT') {
+            console.warn('[PlayerSessionsPage] ⏱️ Realtime channel timed out');
+          }
+        });
     };
 
     setupRealtime().catch((e) => console.warn('[PlayerSessionsPage] Realtime setup failed:', e));

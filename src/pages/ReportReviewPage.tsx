@@ -79,7 +79,14 @@ export default function ReportReviewPage() {
           }
         }
       )
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[ReportReviewPage] ❌ Realtime channel error:', err?.message || err);
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn('[ReportReviewPage] ⏱️ Realtime channel timed out');
+        }
+      });
 
     return () => {
       isMounted = false;

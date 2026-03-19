@@ -257,7 +257,14 @@ export default function UnionGamesPage() {
         },
         () => refresh()
       )
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[UnionGamesPage] ❌ Realtime channel error:', err?.message || err);
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn('[UnionGamesPage] ⏱️ Realtime channel timed out');
+        }
+      });
 
     return () => {
       unsubs.forEach((u) => u());

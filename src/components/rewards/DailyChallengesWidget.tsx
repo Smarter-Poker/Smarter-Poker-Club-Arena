@@ -70,7 +70,17 @@ export const DailyChallengesWidget: React.FC = () => {
             if (isMounted.current) debouncedRefresh();
           }
         )
-        .subscribe();
+        .subscribe((status: string, err?: Error) => {
+          if (status === 'CHANNEL_ERROR') {
+            console.error(
+              '[DailyChallengesWidget] ❌ Realtime channel error:',
+              err?.message || err
+            );
+          }
+          if (status === 'TIMED_OUT') {
+            console.warn('[DailyChallengesWidget] ⏱️ Realtime channel timed out');
+          }
+        });
     }
 
     return () => {

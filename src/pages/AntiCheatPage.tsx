@@ -494,7 +494,14 @@ export default function AntiCheatPage() {
           },
           () => setEventsLoaded(false)
         )
-        .subscribe();
+        .subscribe((status: string, err?: Error) => {
+          if (status === 'CHANNEL_ERROR') {
+            console.error('[AntiCheatPage] ❌ Realtime channel error:', err?.message || err);
+          }
+          if (status === 'TIMED_OUT') {
+            console.warn('[AntiCheatPage] ⏱️ Realtime channel timed out');
+          }
+        });
     };
 
     setupRealtime().catch((e) => console.warn('[AntiCheatPage] Realtime setup failed:', e));

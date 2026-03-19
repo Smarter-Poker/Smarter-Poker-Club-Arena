@@ -164,7 +164,14 @@ export const DailyChallenges: React.FC = () => {
             if (isMounted.current) debouncedRefresh();
           }
         )
-        .subscribe();
+        .subscribe((status: string, err?: Error) => {
+          if (status === 'CHANNEL_ERROR') {
+            console.error('[DailyChallenges] ❌ Realtime channel error:', err?.message || err);
+          }
+          if (status === 'TIMED_OUT') {
+            console.warn('[DailyChallenges] ⏱️ Realtime channel timed out');
+          }
+        });
     }
 
     return () => {

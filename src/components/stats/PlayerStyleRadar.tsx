@@ -228,7 +228,14 @@ export default function PlayerStyleRadar({ userId }: PlayerStyleRadarProps) {
         { event: '*', schema: 'public', table: 'session_history', filter: `user_id=eq.${userId}` },
         () => loadData()
       )
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[PlayerStyleRadar] ❌ Realtime channel error:', err?.message || err);
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn('[PlayerStyleRadar] ⏱️ Realtime channel timed out');
+        }
+      });
 
     return () => {
       masterBus.removeRegisteredChannel(channelKey);

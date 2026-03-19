@@ -5,7 +5,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
@@ -52,10 +52,31 @@ export default function ClubActivityFeed({
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
   const isMounted = useIsMounted();
 
+  // Track whether club_activity table exists (set by loadActivities)
+  const tableExistsRef = useRef(true);
+  // Track stagger timeouts for cleanup on unmount
+  const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
   useEffect(() => {
-    loadActivities();
-    const cleanup = subscribeToActivities();
-    return cleanup;
+    let cancelled = false;
+
+    (async () => {
+      await loadActivities();
+      // Only subscribe to realtime if component still mounted AND table exists
+      if (!cancelled && tableExistsRef.current) {
+        subscribeToActivities();
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      // Clean up stagger animation timeouts
+      staggerTimersRef.current.forEach((t) => clearTimeout(t));
+      staggerTimersRef.current = [];
+      // Clean up realtime channel (safe even if never created)
+      const channelKey = `club_activity:${clubId}`;
+      masterBus.removeRegisteredChannel(channelKey);
+    };
   }, [clubId]);
 
   const loadActivities = async () => {
@@ -91,7 +112,18 @@ export default function ClubActivityFeed({
         .order('created_at', { ascending: false })
         .limit(limit);
 
-      if (error) throw error;
+      if (error) {
+        if (error.code === 'PGRST205' || error.code === '42P01') {
+          console.debug('[ClubActivityFeed] club_activity table not yet created — showing empty.');
+          tableExistsRef.current = false;
+          if (isMounted.current) {
+            setActivities([]);
+            setLoading(false);
+          }
+          return;
+        }
+        throw error;
+      }
 
       const items: ActivityItem[] = (data || []).map((a: any) => ({
         id: a.id,
@@ -107,9 +139,15 @@ export default function ClubActivityFeed({
       if (!isMounted.current) return;
       setActivities(items);
       setVisibleItems(new Set());
-      items.forEach((_, i) => {
-        setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60);
-      });
+      // Clear previous stagger timers before starting new ones
+      staggerTimersRef.current.forEach((t) => clearTimeout(t));
+      staggerTimersRef.current = items.map((_, i) =>
+        setTimeout(() => {
+          if (isMounted.current) {
+            setVisibleItems((prev) => new Set(prev).add(i));
+          }
+        }, i * 60)
+      );
     } catch (error) {
       console.error('Failed to load activities:', error);
     }
@@ -162,7 +200,14 @@ export default function ClubActivityFeed({
           );
         }
       )
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[ClubActivityFeed] ❌ Realtime channel error:', err?.message || err);
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn('[ClubActivityFeed] ⏱️ Realtime channel timed out');
+        }
+      });
 
     return () => {
       masterBus.removeRegisteredChannel(channelKey);

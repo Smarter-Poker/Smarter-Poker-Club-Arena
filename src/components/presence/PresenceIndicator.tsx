@@ -42,7 +42,14 @@ export const PresenceIndicator: React.FC<PresenceIndicatorProps> = ({
           setPresence(userState);
         }
       })
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[PresenceIndicator] ❌ Realtime channel error:', err?.message || err);
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn('[PresenceIndicator] ⏱️ Realtime channel timed out');
+        }
+      });
 
     return () => {
       masterBus.removeRegisteredChannel(channelKey);

@@ -784,7 +784,14 @@ export default function ProfilePage() {
               }
             }
           )
-          .subscribe();
+          .subscribe((status: string, err?: Error) => {
+            if (status === 'CHANNEL_ERROR') {
+              console.error('[ProfilePage] ❌ Realtime channel error:', err?.message || err);
+            }
+            if (status === 'TIMED_OUT') {
+              console.warn('[ProfilePage] ⏱️ Realtime channel timed out');
+            }
+          });
       } catch (err) {
         console.error('[PROFILE] Realtime subscription failed:', err);
       }

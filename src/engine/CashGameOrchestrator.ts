@@ -105,7 +105,14 @@ export class CashGameOrchestrator {
             }
           }
         )
-        .subscribe();
+        .subscribe((status: string, err?: Error) => {
+          if (status === 'CHANNEL_ERROR') {
+            console.error('[CashGameOrchestrator] ❌ Realtime channel error:', err?.message || err);
+          }
+          if (status === 'TIMED_OUT') {
+            console.warn('[CashGameOrchestrator] ⏱️ Realtime channel timed out');
+          }
+        });
     } catch (err: unknown) {
       console.error(
         '[CashGameOrchestrator] Realtime subscription failed, relying on polling:',

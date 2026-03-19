@@ -128,9 +128,13 @@ export default function FriendsPage() {
         });
         setOnlineUserIds(onlineIds);
       })
-      .subscribe(async (status) => {
+      .subscribe(async (status: string, err?: Error) => {
         if (status === 'SUBSCRIBED') {
           await channel.track({ user_id: user.id, online_at: new Date().toISOString() });
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('[FriendsPage] ❌ Presence channel error:', err?.message || err);
+        } else if (status === 'TIMED_OUT') {
+          console.warn('[FriendsPage] ⏱️ Presence channel timed out');
         }
       });
 

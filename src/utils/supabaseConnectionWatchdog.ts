@@ -189,7 +189,14 @@ class SupabaseConnectionWatchdog {
           const state = (channel as any).state;
           if (state === 'closed' || state === 'errored') {
             try {
-              channel.subscribe();
+              channel.subscribe((status: string, err?: Error) => {
+                if (status === 'CHANNEL_ERROR') {
+                  console.error('[Watchdog] ❌ Channel re-subscribe error:', err?.message || err);
+                }
+                if (status === 'TIMED_OUT') {
+                  console.warn('[Watchdog] ⏱️ Channel re-subscribe timed out');
+                }
+              });
             } catch (err: unknown) {
               console.warn('[Watchdog] Channel re-subscribe failed:', err);
             }

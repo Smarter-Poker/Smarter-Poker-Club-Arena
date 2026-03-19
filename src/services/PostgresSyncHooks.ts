@@ -26,6 +26,12 @@ class PostgresSyncHooksService {
   private debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private static readonly DEBOUNCE_MS = 300;
 
+  // Phase 16: Auto-reconnect on CHANNEL_ERROR / TIMED_OUT
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private retryCount = 0;
+  private static readonly MAX_RETRIES = 5;
+  private static readonly BACKOFF_DELAYS = [2000, 4000, 8000, 16000, 30000];
+
   /**
    * Debounced emit — batches rapid-fire events into a single emission per key.
    * Prevents UI thrashing when external agents modify many rows at once.
@@ -165,26 +171,30 @@ class PostgresSyncHooksService {
       )
       // Phase 11: Health monitoring with reconnect logging
       // Phase 15: Emit bus events so ConnectionHUD and other UI elements can react
+      // Phase 16: Auto-reconnect on CHANNEL_ERROR / TIMED_OUT
       .subscribe((status, err) => {
         const channelName = `global_db_sync:${userId}`;
         switch (status) {
           case 'SUBSCRIBED':
             console.info(`[PostgresSync] ✅ Realtime Hook Active for user ${userId}.`);
             masterBus.emit('REALTIME_CONNECTED', { channelName });
+            this.retryCount = 0; // Reset on success
             break;
           case 'CHANNEL_ERROR':
-            console.error(`[PostgresSync] ❌ Channel error:`, err?.message || err);
+            console.error(`[PostgresSync] ❌ Channel error:`, err?.message || err || 'unknown');
             masterBus.emit('REALTIME_DISCONNECTED', {
               channelName,
               reason: `Channel error: ${err?.message || 'unknown'}`,
             });
+            this.scheduleReconnect(userId);
             break;
           case 'TIMED_OUT':
-            console.error(`[PostgresSync] ⏱️ Channel timed out — will auto-reconnect.`);
+            console.error(`[PostgresSync] ⏱️ Channel timed out — scheduling reconnect.`);
             masterBus.emit('REALTIME_DISCONNECTED', {
               channelName,
               reason: 'Connection timed out',
             });
+            this.scheduleReconnect(userId);
             break;
           case 'CLOSED':
             console.info(`[PostgresSync] Channel closed for user ${userId}.`);
@@ -194,7 +204,52 @@ class PostgresSyncHooksService {
       });
   }
 
+  /**
+   * Phase 16: Exponential backoff reconnect.
+   * Tears down the dead channel and re-inits after a delay.
+   */
+  private scheduleReconnect(userId: string): void {
+    if (this.retryCount >= PostgresSyncHooksService.MAX_RETRIES) {
+      console.warn(
+        `[PostgresSync] Max retries (${PostgresSyncHooksService.MAX_RETRIES}) reached — ` +
+          `will rely on MasterBus health monitor or IdentityDNA token refresh for recovery.`
+      );
+      return;
+    }
+
+    const delay =
+      PostgresSyncHooksService.BACKOFF_DELAYS[
+        Math.min(this.retryCount, PostgresSyncHooksService.BACKOFF_DELAYS.length - 1)
+      ];
+    this.retryCount++;
+
+    console.info(
+      `[PostgresSync] Reconnect attempt ${this.retryCount}/${PostgresSyncHooksService.MAX_RETRIES} in ${delay}ms`
+    );
+
+    // Clear any pending reconnect timer
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      // Tear down the dead channel, reset initialized flag, and re-init
+      if (this.channel) {
+        this.channel.unsubscribe();
+        supabase.removeChannel(this.channel);
+        this.channel = null;
+      }
+      this.initialized = false;
+      // Preserve _userId and retryCount across reconnect
+      this.init(userId);
+    }, delay);
+  }
+
   destroy() {
+    // Clear any pending reconnect timer
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     if (this.channel) {
       this.channel.unsubscribe();
       supabase.removeChannel(this.channel);
@@ -205,6 +260,7 @@ class PostgresSyncHooksService {
     this.debounceTimers.clear();
     this.initialized = false;
     this._userId = null;
+    this.retryCount = 0;
   }
 }
 

@@ -73,7 +73,14 @@ export default function RateAuditPage() {
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'rake_rate_audit' }, () =>
         loadAuditData()
       )
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[RateAuditPage] ❌ Realtime channel error:', err?.message || err);
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn('[RateAuditPage] ⏱️ Realtime channel timed out');
+        }
+      });
     return () => {
       masterBus.removeRegisteredChannel(channelKey);
     };

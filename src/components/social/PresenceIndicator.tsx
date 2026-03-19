@@ -96,7 +96,14 @@ export default function PresenceIndicator({
           }
         }
       )
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[PresenceIndicator] ❌ Realtime channel error:', err?.message || err);
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn('[PresenceIndicator] ⏱️ Realtime channel timed out');
+        }
+      });
 
     return () => {
       isMounted = false;

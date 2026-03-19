@@ -74,7 +74,14 @@ export function SpinAndGoLobby({ clubId, onRegister }: SpinAndGoLobbyProps) {
         },
         () => loadTournaments()
       )
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[SpinAndGoLobby] ❌ Realtime channel error:', err?.message || err);
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn('[SpinAndGoLobby] ⏱️ Realtime channel timed out');
+        }
+      });
 
     return () => {
       masterBus.removeRegisteredChannel(channelKey);

@@ -75,8 +75,7 @@ export default function AdminTableHeatmap({
         if (heatmapErr) console.error('[AdminTableHeatmap] Load failed:', heatmapErr.message);
         if (isMounted.current && data) setFetchedTables(data);
       } catch (err) {
-
-        console.error("[AdminTableHeatmap] Error:", err);
+        console.error('[AdminTableHeatmap] Error:', err);
         /* silent */
       }
     };
@@ -99,7 +98,14 @@ export default function AdminTableHeatmap({
           fetchTables(); // Re-fetch on any change
         }
       )
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[AdminTableHeatmap] ❌ Realtime channel error:', err?.message || err);
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn('[AdminTableHeatmap] ⏱️ Realtime channel timed out');
+        }
+      });
 
     // Bus listeners for cross-page events
     const unsubs = [

@@ -153,7 +153,14 @@ export default function ClubSettingsPage() {
             if (isMounted) loadClubSettings(() => isMounted);
           }
         )
-        .subscribe();
+        .subscribe((status: string, err?: Error) => {
+          if (status === 'CHANNEL_ERROR') {
+            console.error('[ClubSettingsPage] ❌ Realtime channel error:', err?.message || err);
+          }
+          if (status === 'TIMED_OUT') {
+            console.warn('[ClubSettingsPage] ⏱️ Realtime channel timed out');
+          }
+        });
     };
 
     setupRealtime().catch((e) => console.warn('[ClubSettingsPage] Realtime setup failed:', e));

@@ -175,7 +175,14 @@ export default function ArenaLedger({ clubId, maxEntries = 200 }: ArenaLedgerPro
           setEntries((prev) => [entry, ...prev].slice(0, maxEntries));
         }
       )
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[ArenaLedger] ❌ Realtime channel error:', err?.message || err);
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn('[ArenaLedger] ⏱️ Realtime channel timed out');
+        }
+      });
 
     return () => {
       masterBus.removeRegisteredChannel(channelKey);

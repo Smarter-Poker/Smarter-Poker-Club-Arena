@@ -57,8 +57,7 @@ function getCached(userId: string): SessionRecord[] | null {
     const raw = sessionStorage.getItem(CACHE_PREFIX + userId);
     return raw ? JSON.parse(raw) : null;
   } catch (err) {
-
-    console.error("[StakeLevelComparison] Error:", err);
+    console.error('[StakeLevelComparison] Error:', err);
     return null;
   }
 }
@@ -66,8 +65,7 @@ function setCache(userId: string, data: SessionRecord[]) {
   try {
     sessionStorage.setItem(CACHE_PREFIX + userId, JSON.stringify(data));
   } catch (err) {
-
-    console.error("[StakeLevelComparison] Error:", err);
+    console.error('[StakeLevelComparison] Error:', err);
     /* quota exceeded */
   }
 }
@@ -154,7 +152,14 @@ export default function StakeLevelComparison({ userId }: StakeLevelComparisonPro
         { event: '*', schema: 'public', table: 'session_history', filter: `user_id=eq.${userId}` },
         () => loadRecords()
       )
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[StakeLevelComparison] ❌ Realtime channel error:', err?.message || err);
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn('[StakeLevelComparison] ⏱️ Realtime channel timed out');
+        }
+      });
 
     return () => {
       masterBus.removeRegisteredChannel(channelKey);

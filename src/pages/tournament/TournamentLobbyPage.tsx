@@ -270,7 +270,14 @@ export default function TournamentLobbyPage() {
             })
           );
         })
-        .subscribe();
+        .subscribe((status: string, err?: Error) => {
+          if (status === 'CHANNEL_ERROR') {
+            console.error('[TournamentLobbyPage] ❌ Realtime channel error:', err?.message || err);
+          }
+          if (status === 'TIMED_OUT') {
+            console.warn('[TournamentLobbyPage] ⏱️ Realtime channel timed out');
+          }
+        });
 
       channelMap.set(tournamentId, channel);
     });

@@ -5,7 +5,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
@@ -37,16 +37,15 @@ export default function ClubStatsCards({ clubId }: ClubStatsCardsProps) {
   const [loading, setLoading] = useState(true);
   const isMounted = useIsMounted();
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
+  const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   // statCards moved after format function declarations (see below)
 
   useEffect(() => {
     loadStats();
 
-    // 🔴 AntiGravity: Ensure Club Stats stay fresh when users join/leave or tables start/stop
-    const channelKey = `club-stats-cards-${clubId}`;
-    masterBus.getOrCreateChannel(channelKey);
-
+    // Ensure Club Stats stay fresh when users join/leave or tables start/stop
+    // NOTE: Bus-only subscriptions — no Supabase realtime channel needed here.
     const reload = () => {
       loadStats();
     };
@@ -62,7 +61,6 @@ export default function ClubStatsCards({ clubId }: ClubStatsCardsProps) {
 
     return () => {
       unsubscribes.forEach((unsub) => unsub());
-      masterBus.removeRegisteredChannel(channelKey);
     };
   }, [clubId]);
 
@@ -93,15 +91,17 @@ export default function ClubStatsCards({ clubId }: ClubStatsCardsProps) {
       let handsToday = 0;
       let rakeToday = 0;
 
-      // Try club_daily_stats first
-      const { data: todayStats } = await supabase
+      // Try club_daily_stats first (may not exist yet — graceful fallback to 0)
+      const todayStr = today.toISOString().split('T')[0]; // YYYY-MM-DD for DATE column
+      const { data: todayStats, error: statsErr } = await supabase
         .from('club_daily_stats')
         .select('hands_played, rake_collected')
         .eq('club_id', resolvedId)
-        .gte('date', today.toISOString())
+        .eq('stat_date', todayStr)
         .maybeSingle();
 
-      if (todayStats) {
+      // Silently skip if table doesn't exist (PGRST205 / 42P01)
+      if (todayStats && !statsErr) {
         handsToday = todayStats.hands_played || 0;
         rakeToday = todayStats.rake_collected || 0;
       }
@@ -281,10 +281,20 @@ export default function ClubStatsCards({ clubId }: ClubStatsCardsProps) {
 
   useEffect(() => {
     if (!loading) {
-      statCards.forEach((_, i) => {
-        setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60);
-      });
+      // Clear previous stagger timers before starting new ones
+      staggerTimersRef.current.forEach((t) => clearTimeout(t));
+      staggerTimersRef.current = statCards.map((_, i) =>
+        setTimeout(() => {
+          if (isMounted.current) {
+            setVisibleItems((prev) => new Set(prev).add(i));
+          }
+        }, i * 60)
+      );
     }
+    return () => {
+      staggerTimersRef.current.forEach((t) => clearTimeout(t));
+      staggerTimersRef.current = [];
+    };
   }, [loading]);
 
   if (loading) {

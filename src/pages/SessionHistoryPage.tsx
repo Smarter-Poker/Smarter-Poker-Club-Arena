@@ -160,7 +160,14 @@ export default function SessionHistoryPage() {
         },
         () => loadSessions()
       )
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[SessionHistoryPage] ❌ Realtime channel error:', err?.message || err);
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn('[SessionHistoryPage] ⏱️ Realtime channel timed out');
+        }
+      });
 
     return () => {
       unsubs.forEach((u) => u());

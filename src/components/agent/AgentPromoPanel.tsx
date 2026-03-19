@@ -152,7 +152,14 @@ export default function AgentPromoPanel({
           if (isMounted.current) loadData();
         }
       )
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[AgentPromoPanel] ❌ Realtime channel error:', err?.message || err);
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn('[AgentPromoPanel] ⏱️ Realtime channel timed out');
+        }
+      });
 
     return () => {
       supabase.removeChannel(channel);

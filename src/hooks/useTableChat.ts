@@ -29,13 +29,21 @@ const RATE_LIMIT_MS = 1000; // 1 message per second
 
 // ── Basic profanity filter (client-side, additive safety net) ──
 const PROFANITY_LIST = [
-  'fuck', 'shit', 'bitch', 'asshole', 'bastard', 'dick', 'pussy',
-  'cunt', 'nigger', 'faggot', 'retard', 'whore', 'slut',
+  'fuck',
+  'shit',
+  'bitch',
+  'asshole',
+  'bastard',
+  'dick',
+  'pussy',
+  'cunt',
+  'nigger',
+  'faggot',
+  'retard',
+  'whore',
+  'slut',
 ];
-const PROFANITY_REGEX = new RegExp(
-  `\\b(${PROFANITY_LIST.join('|')})\\b`,
-  'gi'
-);
+const PROFANITY_REGEX = new RegExp(`\\b(${PROFANITY_LIST.join('|')})\\b`, 'gi');
 function censorMessage(text: string): string {
   return text.replace(PROFANITY_REGEX, (match) => match[0] + '*'.repeat(match.length - 1));
 }
@@ -172,7 +180,14 @@ export function useTableChat(
           });
         }
       )
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[useTableChat] ❌ Realtime channel error:', err?.message || err);
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn('[useTableChat] ⏱️ Realtime channel timed out');
+        }
+      });
 
     return () => {
       isMounted = false;
@@ -253,9 +268,10 @@ export function useTableChat(
         return p?.name || wId.substring(0, 6);
       });
       const potStr = typeof data.pot === 'number' ? ` — pot ${data.pot.toLocaleString()}` : '';
-      const msg = winnerNames.length > 1
-        ? `${winnerNames.join(' & ')} split the pot${potStr}`
-        : `${winnerNames[0] || 'Unknown'} wins${potStr}`;
+      const msg =
+        winnerNames.length > 1
+          ? `${winnerNames.join(' & ')} split the pot${potStr}`
+          : `${winnerNames[0] || 'Unknown'} wins${potStr}`;
       setChatMessages((prev) => [
         ...prev.slice(-49),
         {

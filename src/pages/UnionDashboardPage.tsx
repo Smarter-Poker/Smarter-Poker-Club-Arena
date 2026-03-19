@@ -460,7 +460,14 @@ export default function UnionDashboardPage() {
         { event: '*', schema: 'public', table: 'unions', filter: `id=eq.${unionId}` },
         () => loadDashboard(unionId)
       )
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[UnionDashboardPage] ❌ Realtime channel error:', err?.message || err);
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn('[UnionDashboardPage] ⏱️ Realtime channel timed out');
+        }
+      });
     return () => {
       masterBus.removeRegisteredChannel(channelKey);
     };

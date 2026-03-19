@@ -94,7 +94,14 @@ export default function VIPPage() {
             }
           }
         )
-        .subscribe();
+        .subscribe((status: string, err?: Error) => {
+          if (status === 'CHANNEL_ERROR') {
+            console.error('[VIPPage] ❌ Realtime channel error:', err?.message || err);
+          }
+          if (status === 'TIMED_OUT') {
+            console.warn('[VIPPage] ⏱️ Realtime channel timed out');
+          }
+        });
 
       return () => {
         isMounted = false;

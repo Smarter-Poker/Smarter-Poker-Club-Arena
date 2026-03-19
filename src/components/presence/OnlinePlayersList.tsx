@@ -49,7 +49,14 @@ export const OnlinePlayersList: React.FC<OnlinePlayersListProps> = ({
           loadOnlinePlayers();
         }
       )
-      .subscribe();
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[OnlinePlayersList] ❌ Realtime channel error:', err?.message || err);
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn('[OnlinePlayersList] ⏱️ Realtime channel timed out');
+        }
+      });
 
     // Refresh every 30 seconds
     const interval = setInterval(loadOnlinePlayers, 30000);

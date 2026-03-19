@@ -520,6 +520,28 @@ export const WalletService = {
           }),
         3
       );
+      // Also write to chip_ledger (immutable append-only audit trail)
+      supabase
+        .from('chip_ledger')
+        .insert({
+          performed_by: userId,
+          from_type:
+            type === 'debit' ? 'player_wallet' : relatedEntityId ? 'player_wallet' : 'system_mint',
+          from_entity_id: type === 'debit' ? userId : relatedEntityId,
+          to_type:
+            type === 'credit' ? 'player_wallet' : relatedEntityId ? 'player_wallet' : 'system_burn',
+          to_entity_id: type === 'credit' ? userId : relatedEntityId,
+          amount: Math.abs(amount),
+          category,
+          description,
+          table_id: tableId || undefined,
+          hand_id: handId || undefined,
+        })
+        .then(({ error: ledgerErr }) => {
+          if (ledgerErr)
+            console.warn('[WalletService] chip_ledger write failed:', ledgerErr.message);
+        });
+
       if (error) {
         console.error('[WalletService] Transaction log RPC failed:', error.message);
         // PARTIAL FAILURE RECOVERY: financial op succeeded but audit trail failed

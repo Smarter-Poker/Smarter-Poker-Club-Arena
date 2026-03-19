@@ -208,11 +208,6 @@ function HomePageInner() {
     typeof navigator !== 'undefined' ? navigator.onLine : true
   );
 
-  // #6: Card color preset
-  const [cardColorPreset, setCardColorPreset] = useState<string>(() => {
-    return localStorage.getItem(STORAGE_KEYS.CARD_COLOR) || 'default';
-  });
-
   // JOIN A CLUB modal state
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [showCreateClubModal, setShowCreateClubModal] = useState(false);
@@ -250,12 +245,18 @@ function HomePageInner() {
     };
   }, []);
 
-  // #6: Listen for card color changes from hamburger menu (debounced)
+  // #6: Listen for card color changes from hamburger menu — sync to localStorage only
   useMasterBusSubscription(
     'CARD_COLOR_CHANGED',
     (payload: any) => {
       const preset = payload?.preset as string;
-      if (preset) setCardColorPreset(preset);
+      if (preset) {
+        try {
+          localStorage.setItem(STORAGE_KEYS.CARD_COLOR, preset);
+        } catch {
+          /* quota */
+        }
+      }
     },
     { debounce: 300 }
   );
@@ -311,7 +312,7 @@ function HomePageInner() {
 
           if (getIsMounted && !getIsMounted()) return;
 
-          // Process card color sync
+          // Process card color sync — persist to localStorage for other components
           if (
             colorResult.status === 'fulfilled' &&
             (colorResult.value.data?.preferences as UserPreferences | null)?.card_color_preset
@@ -319,8 +320,11 @@ function HomePageInner() {
             const preset = (colorResult.value.data?.preferences as UserPreferences)
               .card_color_preset!;
             if (preset !== localStorage.getItem(STORAGE_KEYS.CARD_COLOR)) {
-              localStorage.setItem(STORAGE_KEYS.CARD_COLOR, preset);
-              setCardColorPreset(preset);
+              try {
+                localStorage.setItem(STORAGE_KEYS.CARD_COLOR, preset);
+              } catch {
+                /* quota */
+              }
             }
           }
         } else {
@@ -743,27 +747,28 @@ function HomePageInner() {
       switch (key) {
         case '1':
           haptic.light();
-          navigate('/profile');
+          navigate('/profile'); // Daily Challenges
           break;
         case '2':
           haptic.light();
-          navigate('/leaderboard');
+          navigate('/profile'); // Player Stats
           break;
-        case '3': {
+        case '3':
           haptic.light();
+          navigate('/leaderboard'); // Leaderboards
+          break;
+        case '4': {
+          haptic.light();
+          PremiumSFX.navigate();
           const lastClub = localStorage.getItem(STORAGE_KEYS.LAST_CLUB);
           if (lastClub) navigate(`/clubs/${lastClub}/cashier`);
           else if (userClubs.length > 0) navigate(`/clubs/${userClubs[0].id}/cashier`);
           break;
         }
-        case '4': {
-          haptic.light();
-          navigate('/marketplace');
-          break;
-        }
         case '5':
           haptic.light();
-          navigate('/hands');
+          PremiumSFX.navigate();
+          navigate('/marketplace'); // Marketplace
           break;
         case 'j':
           setShowJoinModal(true);
@@ -817,7 +822,7 @@ function HomePageInner() {
         await ClubsService.leave(club.id);
         if (!isMountedRef.current) return;
         toast.success('Left the club');
-        masterBus.emit('CLUB_LEFT', { clubId: club.id });
+        // NOTE: ClubsService.leaveClub() already emits CLUB_LEFT + CLUB_UPDATED via bus
         // Background refresh to reconcile server state
         fetchUserData(true, () => isMountedRef.current);
         setLeaveConfirm(null);
@@ -900,7 +905,7 @@ function HomePageInner() {
       setShowReferralPrompt(false);
       setClubCode('');
       setReferralCode('');
-      masterBus.emit('CLUB_JOINED', { clubId: validClubId });
+      // NOTE: ClubsService.join() already emits CLUB_JOINED via bus
       setValidClubId(null);
       // Background refresh to get real club data
       fetchUserData(true, () => isMountedRef.current);

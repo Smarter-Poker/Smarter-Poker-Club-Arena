@@ -467,10 +467,37 @@ export default function CreateClubPage() {
   const handleCreate = async () => {
     if (!validateStep()) return;
 
+    // ── Auth guard ──
+    if (!user?.id) {
+      setError('You must be logged in to create a club.');
+      return;
+    }
+
+    // ── Double-click protection ──
+    if (creating) return;
     setCreating(true);
     setError(null);
 
-    // Check for duplicate club name
+    // ── 4-club membership limit (matches ClubsService enforcement) ──
+    try {
+      const { count, error: countError } = await supabase
+        .from('club_members')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .in('status', ['active', 'approved']);
+
+      if (!countError && count !== null && count >= 4) {
+        if (isMounted.current) {
+          setError('You can only be a member of up to 4 clubs. Leave a club to create a new one.');
+          setCreating(false);
+        }
+        return;
+      }
+    } catch {
+      // Non-blocking — proceed even if check fails
+    }
+
+    // ── Check for duplicate club name ──
     try {
       const { data: existing } = await supabase
         .from('clubs')
@@ -493,6 +520,13 @@ export default function CreateClubPage() {
       // Generate 6-digit club ID
       const clubIdNumber = Math.floor(100000 + Math.random() * 900000);
 
+      // Generate URL-friendly slug
+      const slug = form.name
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '');
+
       // Determine the logo value for insert
       const selectedIcon = CLUB_ICONS.find((i) => i.id === form.iconId);
       const logoValue =
@@ -505,8 +539,9 @@ export default function CreateClubPage() {
         .insert({
           club_id: clubIdNumber,
           name: sanitizeInput(form.name.trim()),
+          slug,
           description: sanitizeInput(form.description.trim()) || null,
-          owner_id: user?.id,
+          owner_id: user.id,
           is_public: form.isPublic,
           requires_approval: !form.isPublic,
           logo: logoValue,

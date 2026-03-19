@@ -15,15 +15,15 @@
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .container {
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh; /* Dynamic viewport height — respects mobile browser chrome */
   width: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
   position: relative;
-  overflow-x: hidden;
-  overflow-y: auto;
+  overflow: hidden;
   background: linear-gradient(180deg, #0a0a12 0%, #050510 50%, #0a1218 100%);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   /* Enhancement #6: Parallax perspective context */
@@ -191,9 +191,20 @@
   box-sizing: border-box;
   z-index: 10;
   position: relative;
+  /* Fill remaining space and scroll internally */
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
   /* Enhancement #6: Content stays flat in parallax context */
   transform: translateZ(0);
   gap: 0;
+}
+
+.mainContent::-webkit-scrollbar {
+  display: none;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════

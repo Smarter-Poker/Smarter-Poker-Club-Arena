@@ -1232,18 +1232,18 @@ export default function UnionDashboardPage() {
                             .eq('id', targetId);
 
                           // Credit union bank
-                          const newBalance = (wallets.chip_balance || 0) + amt;
+                          const newBalance = (wallets?.chip_balance || 0) + amt;
                           await supabase
                             .from('union_wallets')
                             .update({ chip_balance: newBalance })
                             .eq('union_id', unionId)
-                            .then(({ error }) => {
-                              if (error)
-                                return supabase
+                            .then(async ({ error }) => {
+                              if (error) {
+                                await supabase
                                   .from('unions')
                                   .update({ chip_balance: newBalance })
                                   .eq('id', unionId);
-                              return { error: null };
+                              }
                             });
 
                           setSuccess(`Clawed back ${amt.toLocaleString()} chips from ${club.name}`);

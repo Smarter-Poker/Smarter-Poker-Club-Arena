@@ -73,19 +73,19 @@
   width: 100%;
   height: 100%;
   pointer-events: none;
-  z-index: 2;
+  z-index: 3;
 }
 
-/* Dark bar covering the stats region to hide template's white baked-in labels */
-.club-card-stats-overlay::before {
-  content: '';
+/* Dark bar DIV covering the stats region (covers template's white labels) */
+.club-card-stats-bar-bg {
   position: absolute;
   bottom: 0;
   left: 0;
   right: 0;
   height: 25%;
   background: #0a1423;
-  z-index: 1;
+  z-index: 2;
+  pointer-events: none;
 }
 
 .club-card-stats-group {
@@ -95,7 +95,6 @@
   align-items: center;
   justify-content: center;
   text-align: center;
-  z-index: 3;
 }
 
 /* Cyan labels — identical to ClubStatsPanel .stat-label */

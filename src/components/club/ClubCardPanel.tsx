@@ -5,8 +5,8 @@
  * Mirrors ClubStatsPanel (Shark Club) exactly:
  *  - Frame template as background
  *  - Logo sits inside the recessed viewport
- *  - Stats overlay with CYAN labels + glowing values at 79.5%
- *  - Dark stats bar background covers template's baked white labels
+ *  - Dark stats bar div covers the template's white labels
+ *  - Cyan labels + glowing values overlay at 79.5% (matching Shark Club)
  */
 
 import React, { useState } from 'react';
@@ -70,6 +70,9 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
           </div>
         </>
       )}
+
+      {/* Dark stats bar — covers the template's white baked-in labels */}
+      <div className="club-card-stats-bar-bg" />
 
       {/* Stats overlay — EXACT COPY of ClubStatsPanel layout */}
       <div className="club-card-stats-overlay">

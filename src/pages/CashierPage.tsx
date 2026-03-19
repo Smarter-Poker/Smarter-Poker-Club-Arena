@@ -1076,7 +1076,13 @@ export default function CashierPage() {
           <DynamicWallet
             userId={user.id}
             clubId={clubId}
-            variant={isUnionOwner ? 'union' : userRole === 'owner' ? 'owner' : 'player'}
+            variant={
+              isInUnion && (userRole === 'owner' || isUnionOwner)
+                ? 'union'
+                : userRole === 'owner'
+                  ? 'owner'
+                  : 'player'
+            }
             onBuyDiamonds={() => navigate(`/vip`)}
             onMintChips={() => setAction('mint')}
             onOpenBBJ={() => clubId && navigate(`/clubs/${clubId}/jackpot`)}

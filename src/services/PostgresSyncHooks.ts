@@ -169,6 +169,37 @@ class PostgresSyncHooksService {
           }
         }
       )
+      // 9. Chip Ledger — REALTIME transaction notifications
+      // When a chip_ledger entry is created involving this user (as sender or receiver),
+      // emit a TRANSACTION_LOGGED event so wallet/cashier pages can show live updates
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'chip_ledger',
+          filter: `performed_by=eq.${userId}`,
+        },
+        (payload) => {
+          console.debug('[PostgresSync] New ledger entry (outgoing):', payload);
+          masterBus.emit('BALANCE_UPDATED', { source: 'chip_ledger_realtime' });
+          (masterBus as any).emit('TRANSACTION_LOGGED', { entry: payload.new, direction: 'out' });
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'chip_ledger',
+          filter: `to_entity_id=eq.${userId}`,
+        },
+        (payload) => {
+          console.debug('[PostgresSync] New ledger entry (incoming):', payload);
+          masterBus.emit('BALANCE_UPDATED', { source: 'chip_ledger_realtime' });
+          (masterBus as any).emit('TRANSACTION_LOGGED', { entry: payload.new, direction: 'in' });
+        }
+      )
       // Phase 11: Health monitoring with reconnect logging
       // Phase 15: Emit bus events so ConnectionHUD and other UI elements can react
       // Phase 16: Auto-reconnect on CHANNEL_ERROR / TIMED_OUT

@@ -2,14 +2,11 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  * ClubCardPanel — Reusable club card with metal frame + stats overlay
  * ═══════════════════════════════════════════════════════════════════════════════
- * Two rendering modes:
- *  1. BAKED CARD (preferred) — When cardImageUrl is provided, renders the
- *     pre-composited card image (frame + logo + name baked in) exactly like
- *     ClubStatsPanel does for Shark Club. This is the standard for all clubs.
- *  2. FALLBACK — When only logoUrl is available, overlays the raw logo image
- *     on the frame template. No text overlays — the frame template already
- *     has stats bar labels ("TOTAL MEMBERS", "CLUB LEVEL", "ACTIVE PLAYERS")
- *     baked in. Only numeric values are overlaid via CSS.
+ * Mirrors ClubStatsPanel (Shark Club) exactly:
+ *  - Frame template as background
+ *  - Logo sits inside the recessed viewport
+ *  - Stats overlay with CYAN labels + glowing values at 79.5%
+ *  - Dark stats bar background covers template's baked white labels
  */
 
 import React, { useState } from 'react';
@@ -35,14 +32,13 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
   const [cardFailed, setCardFailed] = useState(false);
   const [logoFailed, setLogoFailed] = useState(false);
 
-  // Prefer baked card image (frame + logo + name composited) — like Shark Club
   const useBakedCard = cardImageUrl && !cardFailed;
   const showLogo = !useBakedCard && logoUrl && !logoFailed;
 
   return (
     <div className="club-card-panel">
       {useBakedCard ? (
-        /* ── MODE 1: Baked composite card (matches Shark Club exactly) ──── */
+        /* ── MODE 1: Baked composite card ──────────────────────────────── */
         <img
           src={cardImageUrl}
           alt={`${clubName} Card`}
@@ -51,7 +47,7 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
           onError={() => setCardFailed(true)}
         />
       ) : (
-        /* ── MODE 2: Fallback — frame template + logo overlay ──────────── */
+        /* ── MODE 2: Fallback — frame template + logo overlay ──────── */
         <>
           <img
             src={`${import.meta.env.BASE_URL || '/'}images/club-card-frame-template.jpg`}
@@ -59,8 +55,6 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
             className="club-card-panel-bg"
             loading="lazy"
           />
-
-          {/* Logo in the center viewport area — no text overlay (template has it) */}
           <div className="club-card-logo-container">
             {showLogo ? (
               <img
@@ -77,17 +71,28 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
         </>
       )}
 
-      {/* Stats overlay — VALUES ONLY (template has labels baked in) */}
+      {/* Stats overlay — EXACT COPY of ClubStatsPanel layout */}
       <div className="club-card-stats-overlay">
         <div className="club-card-stats-group club-card-members-group">
+          <span className="club-card-stat-label">
+            TOTAL
+            <br />
+            MEMBERS
+          </span>
           <span className="club-card-stat-value">{Math.max(1, totalMembers).toLocaleString()}</span>
         </div>
 
         <div className="club-card-stats-group club-card-level-group">
+          <span className="club-card-stat-label">CLUB LEVEL</span>
           <span className="club-card-stat-value">{Math.max(1, clubLevel)}</span>
         </div>
 
         <div className="club-card-stats-group club-card-active-group">
+          <span className="club-card-stat-label">
+            ACTIVE
+            <br />
+            PLAYERS
+          </span>
           <span className="club-card-stat-value">{activePlayers?.toLocaleString() || '0'}</span>
         </div>
       </div>

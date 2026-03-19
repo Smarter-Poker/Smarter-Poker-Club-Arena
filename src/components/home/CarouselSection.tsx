@@ -25,6 +25,7 @@ export interface UserClub {
   name?: string;
   club_id?: number | string;
   logo_url?: string;
+  card_image_url?: string;
   member_count?: number;
   active_tables?: number;
   is_owner?: boolean;
@@ -249,6 +250,7 @@ export default function CarouselSection({
             totalMembers={stats?.totalMembers ?? club.member_count ?? 0}
             clubLevel={stats?.clubLevel ?? 1}
             activePlayers={stats?.activePlayers ?? 0}
+            cardImageUrl={club.card_image_url}
             logoUrl={club.logo_url}
           />
         </Suspense>

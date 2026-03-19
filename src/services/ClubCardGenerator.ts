@@ -101,17 +101,24 @@ export class ClubCardGenerator {
       img.crossOrigin = 'anonymous';
 
       img.onload = () => {
-        // Calculate scaling to fit within logo area while maintaining aspect ratio
-        const scale = Math.min(LOGO_WIDTH / img.width, LOGO_HEIGHT / img.height);
+        // Cover-fill: scale to fill the entire logo area (matches Shark Club standard)
+        const scale = Math.max(LOGO_WIDTH / img.width, LOGO_HEIGHT / img.height);
         const scaledWidth = img.width * scale;
         const scaledHeight = img.height * scale;
 
-        // Center the logo in the logo area
+        // Center the image over the logo area (excess is clipped by the frame)
         const x = LOGO_X + (LOGO_WIDTH - scaledWidth) / 2;
         const y = LOGO_Y + (LOGO_HEIGHT - scaledHeight) / 2;
 
+        // Clip to the logo area bounds so the image doesn't bleed over the frame
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(LOGO_X, LOGO_Y, LOGO_WIDTH, LOGO_HEIGHT);
+        ctx.clip();
+
         // Draw the image
         ctx.drawImage(img, x, y, scaledWidth, scaledHeight);
+        ctx.restore();
 
         resolve();
       };

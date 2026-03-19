@@ -1,11 +1,16 @@
 /* ═══════════════════════════════════════════════════════════════════════════════
- *  DYNAMIC WALLET — Styles
- * ═══════════════════════════════════════════════════════════════════════════════ */
+ *  DYNAMIC WALLET — Metal Panel UI
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  Uses exact user-provided metal panel images as backgrounds.
+ *  Dynamic balance values are overlaid on the black LCD display areas.
+ *  Three variants: player, owner, union — each with its own panel image.
+ */
 
 .dynamic-wallet {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 10px;
+  position: relative;
+  width: 100%;
+  max-width: 420px;
+  margin: 0 auto;
   font-family:
     'Inter',
     -apple-system,
@@ -20,65 +25,268 @@
   background: #242526;
   border-radius: 12px;
   border: 1px solid #3e4042;
-}
-
-/* ── Card ──────────────────────────────────────────────────────── */
-.dynamic-wallet__card {
-  background: #242526;
-  border-radius: 10px;
-  padding: 12px;
-  border: 1px solid #3e4042;
-  display: flex;
-  flex-direction: column;
-  transition:
-    transform 0.15s,
-    box-shadow 0.15s;
-}
-
-.dynamic-wallet__card:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
-}
-
-.dynamic-wallet__card-header {
+  min-height: 300px;
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-bottom: 6px;
+  justify-content: center;
 }
 
-.dynamic-wallet__card-icon {
-  font-size: 14px;
+/* ── Panel Container ──────────────────────────────────────────── */
+.dynamic-wallet__panel {
+  position: relative;
+  width: 100%;
+  cursor: pointer;
+  transition:
+    transform 0.2s ease,
+    filter 0.2s ease;
 }
 
-.dynamic-wallet__card-label {
-  font-size: 10px;
-  font-weight: 600;
-  color: #b0b3b8;
-  text-transform: uppercase;
+.dynamic-wallet__panel:hover {
+  transform: scale(1.01);
+  filter: brightness(1.05);
+}
+
+.dynamic-wallet__panel:active {
+  transform: scale(0.99);
+}
+
+/* Background image fills the container */
+.dynamic-wallet__panel-bg {
+  width: 100%;
+  height: auto;
+  display: block;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* ── Overlay Layer — positioned over the background image ───── */
+.dynamic-wallet__overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* ── Diamond Balance (top black LCD area) ─────────────────────── */
+.dynamic-wallet__diamond-display {
+  position: absolute;
+  /* Positioned over the top black LCD screen area */
+  top: 6.5%;
+  left: 30%;
+  width: 55%;
+  height: 8%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+}
+
+.dynamic-wallet__diamond-value {
+  font-size: clamp(14px, 3.5vw, 22px);
+  font-weight: 800;
+  color: #00e5ff;
+  text-shadow:
+    0 0 8px rgba(0, 229, 255, 0.6),
+    0 0 16px rgba(0, 229, 255, 0.3);
+  font-family: 'Inter', monospace;
+  letter-spacing: 1px;
+}
+
+/* ── BBJ Amount (second black LCD area) ───────────────────────── */
+.dynamic-wallet__bbj-display {
+  position: absolute;
+  /* Positioned over the BBJ black LCD screen */
+  top: 32%;
+  left: 18%;
+  width: 64%;
+  height: 9%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+}
+
+.dynamic-wallet__bbj-value {
+  font-size: clamp(16px, 4vw, 26px);
+  font-weight: 900;
+  color: #ffd700;
+  text-shadow:
+    0 0 8px rgba(255, 215, 0, 0.6),
+    0 0 16px rgba(255, 215, 0, 0.3);
+  font-family: 'Inter', monospace;
+  letter-spacing: 1px;
+  animation: bbjPulse 3s ease-in-out infinite;
+}
+
+@keyframes bbjPulse {
+  0%,
+  100% {
+    text-shadow:
+      0 0 8px rgba(255, 215, 0, 0.6),
+      0 0 16px rgba(255, 215, 0, 0.3);
+  }
+  50% {
+    text-shadow:
+      0 0 12px rgba(255, 215, 0, 0.8),
+      0 0 24px rgba(255, 215, 0, 0.5);
+  }
+}
+
+/* ── Wallet Rows (bottom metallic rows) ────────────────────────── */
+/* Row 1: Chip Wallet / Club Bank / Union Bank */
+.dynamic-wallet__row-1 {
+  position: absolute;
+  top: 54%;
+  left: 28%;
+  width: 55%;
+  height: 7.5%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 8%;
+  pointer-events: auto;
+}
+
+/* Row 2: Agent Wallet / Clubs Wallet */
+.dynamic-wallet__row-2 {
+  position: absolute;
+  top: 65%;
+  left: 28%;
+  width: 55%;
+  height: 7.5%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 8%;
+  pointer-events: auto;
+}
+
+/* Row 3: Promo Wallet */
+.dynamic-wallet__row-3 {
+  position: absolute;
+  top: 76%;
+  left: 28%;
+  width: 55%;
+  height: 7.5%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 8%;
+  pointer-events: auto;
+}
+
+/* Row value styling */
+.dynamic-wallet__row-value {
+  font-size: clamp(12px, 3vw, 18px);
+  font-weight: 700;
+  color: #e4e6eb;
+  text-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.8),
+    0 0 6px rgba(255, 255, 255, 0.15);
+  font-family: 'Inter', monospace;
   letter-spacing: 0.5px;
 }
 
-.dynamic-wallet__card-value {
-  font-size: 20px;
-  font-weight: 800;
-  margin-bottom: 6px;
-  font-family: 'Inter', monospace;
+/* ── Union Panel: has different layout ─────────────────────────── */
+.dynamic-wallet__panel--union .dynamic-wallet__diamond-display {
+  top: 2.5%;
+  left: 32%;
+  width: 40%;
+  height: 8%;
 }
 
-.dynamic-wallet__card-action {
-  padding: 4px 10px;
-  border-radius: 6px;
-  border: 1px solid;
+.dynamic-wallet__panel--union .dynamic-wallet__bbj-display {
+  top: 25%;
+  left: 5%;
+  width: 90%;
+  height: 9%;
+}
+
+.dynamic-wallet__panel--union .dynamic-wallet__row-1 {
+  top: 44%;
+  left: 28%;
+  width: 40%;
+  height: 7%;
+}
+
+.dynamic-wallet__panel--union .dynamic-wallet__row-2 {
+  top: 54.5%;
+  left: 28%;
+  width: 40%;
+  height: 7%;
+}
+
+.dynamic-wallet__panel--union .dynamic-wallet__row-3 {
+  top: 65%;
+  left: 28%;
+  width: 40%;
+  height: 7%;
+}
+
+/* Row 4: Backup BBJ (Union only) */
+.dynamic-wallet__row-4 {
+  position: absolute;
+  top: 80%;
+  left: 5%;
+  width: 90%;
+  height: 9%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+}
+
+.dynamic-wallet__row-4 .dynamic-wallet__row-value {
+  color: #ffd700;
+  font-size: clamp(14px, 3.5vw, 20px);
+  text-shadow:
+    0 0 8px rgba(255, 215, 0, 0.5),
+    0 1px 3px rgba(0, 0, 0, 0.8);
+}
+
+/* ── Plus buttons on + screw areas (Union panel) ──────────────── */
+.dynamic-wallet__plus-btn {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: none;
   background: transparent;
-  font-size: 10px;
-  font-weight: 700;
+  color: transparent;
   cursor: pointer;
-  align-self: flex-start;
-  transition: all 0.15s;
+  pointer-events: auto;
+  z-index: 5;
 }
 
-.dynamic-wallet__card-action:hover {
-  background: rgba(255, 255, 255, 0.06);
-  transform: scale(1.02);
+.dynamic-wallet__plus-btn--diamond {
+  top: 3%;
+  right: 10%;
+}
+
+.dynamic-wallet__plus-btn--row1 {
+  top: 44%;
+  right: 10%;
+}
+
+/* ── Responsive ───────────────────────────────────────────────── */
+@media (max-width: 400px) {
+  .dynamic-wallet {
+    max-width: 100%;
+  }
+
+  .dynamic-wallet__diamond-value {
+    font-size: 14px;
+  }
+
+  .dynamic-wallet__bbj-value {
+    font-size: 16px;
+  }
+
+  .dynamic-wallet__row-value {
+    font-size: 12px;
+  }
 }

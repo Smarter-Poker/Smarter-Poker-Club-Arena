@@ -23,6 +23,7 @@ export const QuickActionsPanel: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [recentlyUsed, setRecentlyUsed] = useState<string[]>([]);
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
+  const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   const actions: QuickAction[] = useMemo(
     () => [

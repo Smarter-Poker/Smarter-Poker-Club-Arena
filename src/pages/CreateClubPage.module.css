@@ -899,11 +899,6 @@
   color: #93c5fd;
 }
 
-@media (max-width: 600px) {
-  .iconGrid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
 /* ═══════ PREMIUM ANIMATIONS ═══════ */
 @keyframes fadeInUp {
   from {

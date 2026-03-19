@@ -612,10 +612,10 @@ class AgentServiceClass {
       return false;
     }
 
-    // Update player's club_members record
+    // Update player's club_members record — use agent PK (agentRecord.id), NOT user_id
     const { error } = await supabase
       .from('club_members')
-      .update({ agent_id: agentUserId })
+      .update({ agent_id: agentRecord.id })
       .eq('user_id', playerId)
       .eq('club_id', resolvedClubId);
 
@@ -628,11 +628,31 @@ class AgentServiceClass {
     const { error: countErr } = await supabase
       .from('agents')
       .update({
-        total_players: agentRecord.total_players + 1,
-        active_player_count: agentRecord.active_player_count + 1,
+        total_players: (agentRecord.total_players || 0) + 1,
+        active_player_count: (agentRecord.active_player_count || 0) + 1,
       })
       .eq('id', agentRecord.id);
     if (countErr) console.error('[AgentService] Failed to update agent player count:', countErr);
+
+    // Audit log — record who assigned the player
+    const { data: currentUser } = await supabase.auth.getUser();
+    const assignedBy = currentUser?.user?.id || 'system';
+    await supabase
+      .from('audit_logs')
+      .insert({
+        action: 'ASSIGN_PLAYER_TO_AGENT',
+        performed_by: assignedBy,
+        target_user_id: playerId,
+        details: {
+          agent_user_id: agentUserId,
+          agent_record_id: agentRecord.id,
+          club_id: resolvedClubId,
+        },
+      })
+      .then(({ error: logErr }) => {
+        if (logErr)
+          console.warn('[AgentService] Audit log failed (table may not exist):', logErr.message);
+      });
 
     masterBus.emit('CLUB_UPDATED', { clubId });
 

@@ -58,7 +58,7 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
   useEffect(() => {
     if (searchResult?.tables) {
       staggerTimersRef.current.forEach((t) => clearTimeout(t));
-      staggerTimersRef.current = tables.map((_, i) =>
+      staggerTimersRef.current = searchResult.tables.map((_, i) =>
         setTimeout(() => setVisibleTables((prev) => new Set(prev).add(i)), i * 60)
       );
     }

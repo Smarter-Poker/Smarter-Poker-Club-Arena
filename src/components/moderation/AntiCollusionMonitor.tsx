@@ -134,7 +134,7 @@ export const AntiCollusionMonitor: React.FC<AntiCollusionMonitorProps> = ({
               setSelectedReport(report);
               setVisiblePatterns(new Set());
               staggerTimersRef.current.forEach((t) => clearTimeout(t));
-              staggerTimersRef.current = suspiciousPatterns.map((_, pi) =>
+              staggerTimersRef.current = filteredPatterns(report.suspiciousPatterns).map((_, pi) =>
                 setTimeout(() => setVisiblePatterns((prev) => new Set(prev).add(pi)), pi * 60)
               );
             }}

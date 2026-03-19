@@ -185,8 +185,8 @@
   width: 100%;
   margin: 0 auto;
   padding: var(--space-8) var(--space-6);
-  padding-top: calc(56px + var(--space-8));
-  /* Account for fixed header height */
+  padding-top: calc(63px + var(--space-8));
+  /* Account for fixed header height: 60px header + 3px border */
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -232,14 +232,14 @@
 
   .main {
     padding: var(--space-4);
-    padding-top: calc(56px + var(--space-4));
+    padding-top: calc(63px + var(--space-4));
   }
 }
 
 @media (max-width: 480px) {
   .main {
     padding: var(--space-3);
-    padding-top: calc(56px + var(--space-3));
+    padding-top: calc(63px + var(--space-3));
   }
 
   .headerContent {

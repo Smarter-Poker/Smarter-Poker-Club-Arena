@@ -56,6 +56,11 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
 
   const handleMenuToggle = useCallback(() => setMenuOpen((prev) => !prev), []);
 
+  // Listen for HAMBURGER_TOGGLE from FloatingHamburger (bottom-left button)
+  useMasterBusSubscription('HAMBURGER_TOGGLE', () => {
+    setMenuOpen((prev) => !prev);
+  });
+
   // ─── Track in-app navigations for safe back-button behaviour ───
   useEffect(() => {
     if (prevPathRef.current !== location.pathname) {
@@ -260,8 +265,12 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
             <img src={`${BASE}images/vip-card.png`} alt="VIP Member" className={styles.orbImg} />
           </button>
 
-          {/* Profile / Avatar */}
-          <button className={styles.orbBtn} onClick={() => (window.location.href = '/hub/profile')}>
+          {/* Profile / Avatar — uses orbBtnProfile for overflow:visible so glow renders */}
+          <button
+            className={styles.orbBtn}
+            onClick={() => (window.location.href = '/hub/profile')}
+            style={{ overflow: 'visible' }}
+          >
             <div className={styles.profileOrb}>
               {avatarUrl ? (
                 <img

@@ -14,7 +14,7 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { TransactionHistory } from '../components/wallet/TransactionHistory';
 import DepositWithdrawModal from '../components/wallet/DepositWithdrawModal';
 import DisputeSubmitModal from '../components/wallet/DisputeSubmitModal';
-import { FinancialExportService } from '../services/FinancialExportService';
+
 import './PlayerWalletPage.css';
 
 type WalletTab = 'overview' | 'transfer' | 'history';
@@ -189,7 +189,7 @@ export default function PlayerWalletPage() {
   const [showDepositModal, setShowDepositModal] = useState(false);
   const [showWithdrawModal, setShowWithdrawModal] = useState(false);
   const [showDisputeModal, setShowDisputeModal] = useState(false);
-  const [exporting, setExporting] = useState(false);
+
   const [visibleCards, setVisibleCards] = useState(new Set<number>());
 
   // Stagger wallet cards animation

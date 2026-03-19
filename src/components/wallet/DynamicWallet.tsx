@@ -1,13 +1,13 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  DYNAMIC WALLET — Metal Panel UI with Background Images
+ *  DYNAMIC WALLET — Compact PokerBros-Style Inline Display
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * Uses the exact user-provided metal panel images as backgrounds.
- * Dynamic balance values are overlaid on the black LCD display areas.
+ * Compact wallet display positioned below the club card.
+ * Shows BBJ banner + role-specific wallet balance rows with action buttons.
  *
  * Three variants auto-detected from role:
- *   'player' — Chip Wallet, Agent Wallet, Promo Wallet
+ *   'player' — Chip Balance, Agent Wallet, Promo Wallet
  *   'owner'  — Club Bank, Agent Wallet, Promo Wallet
  *   'union'  — Union Bank, Clubs Wallet, Promo Wallet, Backup BBJ
  *
@@ -26,14 +26,6 @@ import { useMasterBusSubscriptions } from '../../hooks/useMasterBusSubscription'
 import { supabase } from '../../lib/supabase';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import './DynamicWallet.css';
-
-// Panel background images — use BASE_URL prefix for production serving
-const BASE = import.meta.env.BASE_URL || '/hub/club-arena/';
-const PANEL_IMAGES: Record<string, string> = {
-  player: `${BASE}images/wallet-panel-player.png`,
-  owner: `${BASE}images/wallet-panel-owner.png`,
-  union: `${BASE}images/wallet-panel-union.png`,
-};
 
 // All bus events that should trigger a wallet refresh
 const WALLET_BUS_EVENTS = [
@@ -332,82 +324,97 @@ export default function DynamicWallet({
   }, [userId, resolvedId]);
 
   if (loading) {
-    return <div className="dynamic-wallet dynamic-wallet--loading">Loading balances...</div>;
+    return (
+      <div className="dw">
+        <div className="dw__shimmer" />
+        <div className="dw__shimmer dw__shimmer--short" />
+      </div>
+    );
   }
 
-  const panelClass = `dynamic-wallet__panel dynamic-wallet__panel--${variant}`;
+  // ── Role-specific row config ───────────────────────────────────────────────
+  const ROW_CONFIG: Record<WalletVariant, { label: string; icon: string; value: number }[]> = {
+    player: [
+      { label: 'Chip Balance', icon: '🪙', value: animRow1 },
+      { label: 'Agent Wallet', icon: '🅰️', value: animRow2 },
+      { label: 'Promo Wallet', icon: '🎟️', value: animRow3 },
+    ],
+    owner: [
+      { label: 'Club Bank', icon: '🏦', value: animRow1 },
+      { label: 'Agent Wallet', icon: '🅰️', value: animRow2 },
+      { label: 'Promo Wallet', icon: '🎟️', value: animRow3 },
+    ],
+    union: [
+      { label: 'Union Bank', icon: '🏦', value: animRow1 },
+      { label: 'Clubs Wallet', icon: '🅰️', value: animRow2 },
+      { label: 'Promo Wallet', icon: '🎟️', value: animRow3 },
+    ],
+  };
+
+  const rows = ROW_CONFIG[variant];
 
   return (
-    <div className="dynamic-wallet">
-      <div className={panelClass} onClick={onOpenBBJ}>
-        {/* Metal panel background image */}
-        <img
-          src={PANEL_IMAGES[variant]}
-          alt={`${variant} wallet panel`}
-          className="dynamic-wallet__panel-bg"
-          draggable={false}
-        />
+    <div className={`dw dw--${variant}`}>
+      {/* ── BBJ Banner ────────────────────────────────────────────────────── */}
+      <div className="dw__bbj" onClick={onOpenBBJ} role="button" tabIndex={0}>
+        <span className="dw__bbj-label">BAD BEAT JACKPOT</span>
+        <span className="dw__bbj-amount">{animBBJ === 0 ? '—' : formatBalance(animBBJ)}</span>
+      </div>
 
-        {/* Overlay: Dynamic values positioned over the black LCD areas */}
-        <div className="dynamic-wallet__overlay">
-          {/* Diamond Balance — top LCD */}
-          <div className="dynamic-wallet__diamond-display">
-            <span className="dynamic-wallet__diamond-value">💎 {formatBalance(animDiamonds)}</span>
-          </div>
-
-          {/* BBJ Amount — second LCD */}
-          <div className="dynamic-wallet__bbj-display">
-            <span className="dynamic-wallet__bbj-value">
-              {animBBJ === 0 ? '—' : formatBalance(animBBJ)}
-            </span>
-          </div>
-
-          {/* Row 1: Chip Wallet / Club Bank / Union Bank */}
-          <div className="dynamic-wallet__row-1">
-            <span className="dynamic-wallet__row-value">{formatBalance(animRow1)}</span>
-          </div>
-
-          {/* Row 2: Agent Wallet / Clubs Wallet */}
-          <div className="dynamic-wallet__row-2">
-            <span className="dynamic-wallet__row-value">{formatBalance(animRow2)}</span>
-          </div>
-
-          {/* Row 3: Promo Wallet */}
-          <div className="dynamic-wallet__row-3">
-            <span className="dynamic-wallet__row-value">{formatBalance(animRow3)}</span>
-          </div>
-
-          {/* Row 4: Backup BBJ (Union only) */}
-          {variant === 'union' && (
-            <div className="dynamic-wallet__row-4">
-              <span className="dynamic-wallet__row-value">
-                {animBackupBBJ === 0 ? '—' : formatBalance(animBackupBBJ)}
-              </span>
-            </div>
-          )}
-
-          {/* Interactive + buttons */}
-          {onBuyDiamonds && variant === 'union' && (
+      {/* ── Wallet Rows ───────────────────────────────────────────────────── */}
+      <div className="dw__rows">
+        {/* Diamond Balance */}
+        <div className="dw__row dw__row--diamond">
+          <span className="dw__row-icon">💎</span>
+          <span className="dw__row-value">{formatBalance(animDiamonds)}</span>
+          {onBuyDiamonds && (
             <button
-              className="dynamic-wallet__plus-btn dynamic-wallet__plus-btn--diamond"
+              className="dw__plus"
               onClick={(e) => {
                 e.stopPropagation();
                 onBuyDiamonds();
               }}
               aria-label="Buy Diamonds"
-            />
-          )}
-          {onMintChips && variant === 'union' && (
-            <button
-              className="dynamic-wallet__plus-btn dynamic-wallet__plus-btn--row1"
-              onClick={(e) => {
-                e.stopPropagation();
-                onMintChips();
-              }}
-              aria-label="Mint Chips"
-            />
+            >
+              +
+            </button>
           )}
         </div>
+
+        {/* Role-specific wallet rows */}
+        {rows.map((row, idx) => (
+          <div
+            key={idx}
+            className={`dw__row dw__row--wallet${idx === 0 ? ' dw__row--primary' : ''}`}
+          >
+            <span className="dw__row-icon">{row.icon}</span>
+            <span className="dw__row-label">{row.label}</span>
+            <span className="dw__row-value">{formatBalance(row.value)}</span>
+            {idx === 0 && onMintChips && (
+              <button
+                className="dw__plus"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onMintChips();
+                }}
+                aria-label="Mint Chips"
+              >
+                +
+              </button>
+            )}
+          </div>
+        ))}
+
+        {/* Backup BBJ (Union only) */}
+        {variant === 'union' && (
+          <div className="dw__row dw__row--backup-bbj">
+            <span className="dw__row-icon">🛡️</span>
+            <span className="dw__row-label">Backup BBJ</span>
+            <span className="dw__row-value">
+              {animBackupBBJ === 0 ? '—' : formatBalance(animBackupBBJ)}
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );

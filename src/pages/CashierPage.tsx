@@ -390,52 +390,56 @@ export default function CashierPage() {
         return;
       }
 
-      const { data } = await retryFetch(
-        () =>
-          supabase
-            .from('club_members')
-            .select(
-              `
-            user_id,
-            role,
-            users:user_id (id, username)
-          `
-            )
-            .eq('club_id', resolvedId)
-            .neq('user_id', user.id)
-            .in('role', roleFilter)
-            .limit(500)
-            .then((r) => r),
-        { maxRetries: 2, isMountedRef: isMounted }
-      );
+      // Fetch members — role-based visibility:
+      // Union/Club owners + admins: see everyone
+      // Agents/sub-agents: see only their downline (filtered by agent_id)
+      let query = supabase
+        .from('club_members')
+        .select('user_id, role, display_name, nickname, chip_balance, agent_id')
+        .eq('club_id', resolvedId)
+        .neq('user_id', user.id)
+        .in('role', roleFilter)
+        .limit(500);
 
-      // Get wallet balances for all recipients
-      const recipientIds = ((data as unknown as ClubMemberWithUser[]) || [])
-        .map((m) => m.users?.id)
-        .filter(Boolean);
-      const { data: wallets } = await retryFetch(
-        () =>
-          supabase
-            .from('wallets')
-            .select('user_id, balance')
-            .in('user_id', recipientIds.length > 0 ? recipientIds : ['none'])
-            .eq('wallet_type', 'PLAYER')
-            .then((r) => r),
-        { maxRetries: 2, isMountedRef: isMounted }
-      );
+      // For agents: only show their assigned downline players
+      if (userRole === 'agent' || userRole === 'sub_agent') {
+        // Get this user's agent record ID
+        const { data: agentRecord } = await supabase
+          .from('agents')
+          .select('id')
+          .eq('user_id', user.id)
+          .eq('club_id', resolvedId)
+          .maybeSingle();
 
-      const walletMap: Record<string, number> = {};
-      (wallets || []).forEach((w: { user_id: string; balance: number }) => {
-        walletMap[w.user_id] = w.balance;
+        if (agentRecord?.id) {
+          query = query.eq('agent_id', agentRecord.id);
+        }
+      }
+
+      const { data } = await retryFetch(() => query.then((r) => r), {
+        maxRetries: 2,
+        isMountedRef: isMounted,
       });
 
-      const list: Recipient[] = ((data as unknown as ClubMemberWithUser[]) || [])
-        .filter((m) => m.users?.id)
+      // Map recipients — use display_name/nickname from club_members directly
+      const members = (data || []) as Array<{
+        user_id: string;
+        role: string;
+        display_name: string | null;
+        nickname: string | null;
+        chip_balance: number | null;
+      }>;
+
+      // Agent downline filtering is done in the Supabase query above
+      const filteredMembers = members;
+
+      const list: Recipient[] = filteredMembers
+        .filter((m) => m.user_id)
         .map((m) => ({
-          id: m.users.id,
-          username: m.users.username || 'Unknown',
+          id: m.user_id,
+          username: m.display_name || m.nickname || 'Unknown',
           role: m.role,
-          balance: walletMap[m.users.id] || 0,
+          balance: m.chip_balance || 0,
         }))
         .sort((a: Recipient, b: Recipient) => {
           const order: Record<string, number> = {

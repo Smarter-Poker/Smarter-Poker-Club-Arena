@@ -1,292 +1,264 @@
-/* ═══════════════════════════════════════════════════════════════════════════════
- *  DYNAMIC WALLET — Metal Panel UI
+/**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  Uses exact user-provided metal panel images as backgrounds.
- *  Dynamic balance values are overlaid on the black LCD display areas.
- *  Three variants: player, owner, union — each with its own panel image.
+ *  DYNAMIC WALLET — Compact PokerBros-Style CSS
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * Compact wallet display that fits inline below the club card.
+ * Uses metallic gradients & bevels to match the premium skeuomorphic aesthetic.
  */
 
-.dynamic-wallet {
-  position: relative;
+/* ═══════════════════════════════════════════════════════════════════════════════
+   BASE CONTAINER
+═══════════════════════════════════════════════════════════════════════════════ */
+.dw {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   width: 100%;
-  max-width: 420px;
-  margin: 0 auto;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   SHIMMER LOADING SKELETON
+═══════════════════════════════════════════════════════════════════════════════ */
+.dw__shimmer {
+  height: 32px;
+  border-radius: 6px;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.04) 25%,
+    rgba(255, 255, 255, 0.08) 50%,
+    rgba(255, 255, 255, 0.04) 75%
+  );
+  background-size: 200% 100%;
+  animation: dwShimmer 1.5s ease-in-out infinite;
+}
+
+.dw__shimmer--short {
+  height: 28px;
+  width: 75%;
+}
+
+@keyframes dwShimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   BBJ BANNER — Compact metallic strip
+═══════════════════════════════════════════════════════════════════════════════ */
+.dw__bbj {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #4a4a5e 0%, #3a3a4e 40%, #2a2a3e 100%);
+  border: 1px solid rgba(255, 200, 0, 0.35);
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.dw__bbj:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+/* Shimmer sweep across the BBJ banner */
+.dw__bbj::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 215, 0, 0.08), transparent);
+  animation: dwBbjShimmer 4s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes dwBbjShimmer {
+  0%,
+  60% {
+    left: -100%;
+  }
+  100% {
+    left: 200%;
+  }
+}
+
+.dw__bbj-label {
+  font-family: 'Oswald', 'Impact', sans-serif;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  background: linear-gradient(180deg, #ff6b6b 0%, #f59e0b 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-shadow: none;
+}
+
+.dw__bbj-amount {
+  font-family: 'Oswald', 'Impact', monospace;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #10b981;
+  letter-spacing: 0.5px;
+  padding: 2px 10px;
+  background: rgba(0, 0, 0, 0.45);
+  border-radius: 4px;
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  min-width: 80px;
+  text-align: center;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   WALLET ROWS CONTAINER
+═══════════════════════════════════════════════════════════════════════════════ */
+.dw__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   INDIVIDUAL WALLET ROW
+═══════════════════════════════════════════════════════════════════════════════ */
+.dw__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  background: linear-gradient(180deg, rgba(60, 60, 80, 0.6) 0%, rgba(40, 40, 60, 0.6) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: background 0.2s ease;
+}
+
+.dw__row:hover {
+  background: linear-gradient(180deg, rgba(70, 70, 95, 0.7) 0%, rgba(50, 50, 70, 0.7) 100%);
+}
+
+/* Icon */
+.dw__row-icon {
+  font-size: 0.85rem;
+  width: 20px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+/* Label — only shown on wallet rows (not diamond row) */
+.dw__row-label {
+  font-size: 0.72rem;
+  color: #8892a4;
+  font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Value — right-aligned */
+.dw__row-value {
+  flex: 1;
+  text-align: right;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #e8ecf0;
   font-family:
     'Inter',
     -apple-system,
     sans-serif;
+  letter-spacing: 0.02em;
 }
 
-.dynamic-wallet--loading {
-  padding: 24px;
-  text-align: center;
-  color: #b0b3b8;
-  font-size: 13px;
-  background: #242526;
-  border-radius: 12px;
-  border: 1px solid #3e4042;
-  min-height: 300px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+/* ── Diamond row ──────────────────────────────────────────────────────────── */
+.dw__row--diamond {
+  border-color: rgba(168, 85, 247, 0.2);
 }
 
-/* ── Panel Container ──────────────────────────────────────────── */
-.dynamic-wallet__panel {
-  position: relative;
-  width: 100%;
-  cursor: pointer;
-  transition:
-    transform 0.2s ease,
-    filter 0.2s ease;
+.dw__row--diamond .dw__row-value {
+  color: #c084fc;
 }
 
-.dynamic-wallet__panel:hover {
-  transform: scale(1.01);
-  filter: brightness(1.05);
+/* ── Primary wallet row (Chip Balance / Club Bank / Union Bank) ──────────── */
+.dw__row--primary {
+  border-color: rgba(255, 184, 0, 0.2);
 }
 
-.dynamic-wallet__panel:active {
-  transform: scale(0.99);
+.dw__row--primary .dw__row-value {
+  color: #fbbf24;
 }
 
-/* Background image fills the container */
-.dynamic-wallet__panel-bg {
-  width: 100%;
-  height: auto;
-  display: block;
-  pointer-events: none;
-  user-select: none;
-  -webkit-user-select: none;
+/* ── Backup BBJ row ───────────────────────────────────────────────────────── */
+.dw__row--backup-bbj {
+  border-color: rgba(16, 185, 129, 0.15);
 }
 
-/* ── Overlay Layer — positioned over the background image ───── */
-.dynamic-wallet__overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  z-index: 2;
+.dw__row--backup-bbj .dw__row-value {
+  color: #6ee7b7;
 }
 
-/* ── Diamond Balance (top black LCD area) ─────────────────────── */
-.dynamic-wallet__diamond-display {
-  position: absolute;
-  /* Positioned over the top black LCD screen area */
-  top: 6.5%;
-  left: 30%;
-  width: 55%;
-  height: 8%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  pointer-events: auto;
-}
-
-.dynamic-wallet__diamond-value {
-  font-size: clamp(14px, 3.5vw, 22px);
-  font-weight: 800;
-  color: #00e5ff;
-  text-shadow:
-    0 0 8px rgba(0, 229, 255, 0.6),
-    0 0 16px rgba(0, 229, 255, 0.3);
-  font-family: 'Inter', monospace;
-  letter-spacing: 1px;
-}
-
-/* ── BBJ Amount (second black LCD area) ───────────────────────── */
-.dynamic-wallet__bbj-display {
-  position: absolute;
-  /* Positioned over the BBJ black LCD screen */
-  top: 32%;
-  left: 18%;
-  width: 64%;
-  height: 9%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  pointer-events: auto;
-}
-
-.dynamic-wallet__bbj-value {
-  font-size: clamp(16px, 4vw, 26px);
-  font-weight: 900;
-  color: #ffd700;
-  text-shadow:
-    0 0 8px rgba(255, 215, 0, 0.6),
-    0 0 16px rgba(255, 215, 0, 0.3);
-  font-family: 'Inter', monospace;
-  letter-spacing: 1px;
-  animation: bbjPulse 3s ease-in-out infinite;
-}
-
-@keyframes bbjPulse {
-  0%,
-  100% {
-    text-shadow:
-      0 0 8px rgba(255, 215, 0, 0.6),
-      0 0 16px rgba(255, 215, 0, 0.3);
-  }
-  50% {
-    text-shadow:
-      0 0 12px rgba(255, 215, 0, 0.8),
-      0 0 24px rgba(255, 215, 0, 0.5);
-  }
-}
-
-/* ── Wallet Rows (bottom metallic rows) ────────────────────────── */
-/* Row 1: Chip Wallet / Club Bank / Union Bank */
-.dynamic-wallet__row-1 {
-  position: absolute;
-  top: 54%;
-  left: 28%;
-  width: 55%;
-  height: 7.5%;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding-right: 8%;
-  pointer-events: auto;
-}
-
-/* Row 2: Agent Wallet / Clubs Wallet */
-.dynamic-wallet__row-2 {
-  position: absolute;
-  top: 65%;
-  left: 28%;
-  width: 55%;
-  height: 7.5%;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding-right: 8%;
-  pointer-events: auto;
-}
-
-/* Row 3: Promo Wallet */
-.dynamic-wallet__row-3 {
-  position: absolute;
-  top: 76%;
-  left: 28%;
-  width: 55%;
-  height: 7.5%;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding-right: 8%;
-  pointer-events: auto;
-}
-
-/* Row value styling */
-.dynamic-wallet__row-value {
-  font-size: clamp(12px, 3vw, 18px);
-  font-weight: 700;
-  color: #e4e6eb;
-  text-shadow:
-    0 1px 3px rgba(0, 0, 0, 0.8),
-    0 0 6px rgba(255, 255, 255, 0.15);
-  font-family: 'Inter', monospace;
-  letter-spacing: 0.5px;
-}
-
-/* ── Union Panel: has different layout ─────────────────────────── */
-.dynamic-wallet__panel--union .dynamic-wallet__diamond-display {
-  top: 2.5%;
-  left: 32%;
-  width: 40%;
-  height: 8%;
-}
-
-.dynamic-wallet__panel--union .dynamic-wallet__bbj-display {
-  top: 25%;
-  left: 5%;
-  width: 90%;
-  height: 9%;
-}
-
-.dynamic-wallet__panel--union .dynamic-wallet__row-1 {
-  top: 44%;
-  left: 28%;
-  width: 40%;
-  height: 7%;
-}
-
-.dynamic-wallet__panel--union .dynamic-wallet__row-2 {
-  top: 54.5%;
-  left: 28%;
-  width: 40%;
-  height: 7%;
-}
-
-.dynamic-wallet__panel--union .dynamic-wallet__row-3 {
-  top: 65%;
-  left: 28%;
-  width: 40%;
-  height: 7%;
-}
-
-/* Row 4: Backup BBJ (Union only) */
-.dynamic-wallet__row-4 {
-  position: absolute;
-  top: 80%;
-  left: 5%;
-  width: 90%;
-  height: 9%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  pointer-events: auto;
-}
-
-.dynamic-wallet__row-4 .dynamic-wallet__row-value {
-  color: #ffd700;
-  font-size: clamp(14px, 3.5vw, 20px);
-  text-shadow:
-    0 0 8px rgba(255, 215, 0, 0.5),
-    0 1px 3px rgba(0, 0, 0, 0.8);
-}
-
-/* ── Plus buttons on + screw areas (Union panel) ──────────────── */
-.dynamic-wallet__plus-btn {
-  position: absolute;
-  width: 28px;
-  height: 28px;
+/* ═══════════════════════════════════════════════════════════════════════════════
+   PLUS ACTION BUTTON — Compact green circle
+═══════════════════════════════════════════════════════════════════════════════ */
+.dw__plus {
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
+  background: linear-gradient(135deg, #10b981, #059669);
   border: none;
-  background: transparent;
-  color: transparent;
+  color: white;
+  font-weight: 800;
+  font-size: 0.85rem;
+  line-height: 1;
   cursor: pointer;
-  pointer-events: auto;
-  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 1px 4px rgba(16, 185, 129, 0.4);
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
-.dynamic-wallet__plus-btn--diamond {
-  top: 3%;
-  right: 10%;
+.dw__plus:hover {
+  transform: scale(1.1);
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.6);
 }
 
-.dynamic-wallet__plus-btn--row1 {
-  top: 44%;
-  right: 10%;
+.dw__plus:active {
+  transform: scale(0.95);
 }
 
-/* ── Responsive ───────────────────────────────────────────────── */
-@media (max-width: 400px) {
-  .dynamic-wallet {
-    max-width: 100%;
-  }
+/* ═══════════════════════════════════════════════════════════════════════════════
+   VARIANT ACCENTS — subtle border color differences per role
+═══════════════════════════════════════════════════════════════════════════════ */
+.dw--owner .dw__bbj {
+  border-color: rgba(255, 184, 0, 0.4);
+}
 
-  .dynamic-wallet__diamond-value {
-    font-size: 14px;
-  }
+.dw--union .dw__bbj {
+  border-color: rgba(0, 200, 255, 0.3);
+}
 
-  .dynamic-wallet__bbj-value {
-    font-size: 16px;
-  }
-
-  .dynamic-wallet__row-value {
-    font-size: 12px;
-  }
+.dw--union .dw__bbj-label {
+  background: linear-gradient(180deg, #00c8ff 0%, #0090ff 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }

@@ -10,7 +10,7 @@
  * - Copy/Share functionality
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import './HandHistoryModal.css';
 
 export interface HistoricalHand {
@@ -45,12 +45,21 @@ export function HandHistoryModal({
 }: HandHistoryModalProps) {
   const [selectedHandId, setSelectedHandId] = useState<string | null>(null);
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
+  const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  // Cleanup stagger timers on unmount
+  useEffect(() => {
+    return () => {
+      staggerTimersRef.current.forEach((t) => clearTimeout(t));
+    };
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
-      hands.forEach((_, i) => {
-        setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60);
-      });
+      staggerTimersRef.current.forEach((t) => clearTimeout(t));
+      staggerTimersRef.current = hands.map((_, i) =>
+        setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60)
+      );
     } else {
       setVisibleItems(new Set());
     }

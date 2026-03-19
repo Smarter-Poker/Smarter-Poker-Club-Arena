@@ -9,7 +9,7 @@
  * - Admin Actions (Kick, Ban, Promote)
  */
 
-import React, { useState, useMemo, memo } from 'react';
+import React, { useState, useMemo, memo, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import './MemberList.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
@@ -60,6 +60,14 @@ function MemberListInner({
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState<MemberRole | 'all'>('all');
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
+  const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  // Cleanup stagger timers on unmount
+  useEffect(() => {
+    return () => {
+      staggerTimersRef.current.forEach((t) => clearTimeout(t));
+    };
+  }, []);
 
   // Filter members
   const filteredMembers = useMemo(() => {
@@ -69,9 +77,10 @@ function MemberListInner({
       return matchesSearch && matchesRole;
     });
     setVisibleItems(new Set());
-    filtered.forEach((_, i) => {
-      setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60);
-    });
+    staggerTimersRef.current.forEach((t) => clearTimeout(t));
+    staggerTimersRef.current = filtered.map((_, i) =>
+      setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60)
+    );
     return filtered;
   }, [members, searchQuery, roleFilter]);
 

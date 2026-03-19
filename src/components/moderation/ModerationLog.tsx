@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { formatRelativeShort as formatTime } from '@/lib/date';
 import './ModerationLog.css';
@@ -44,6 +44,14 @@ export const ModerationLog: React.FC<ModerationLogProps> = ({ clubId, tableId, l
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>('all');
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
+  const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  // Cleanup stagger timers on unmount
+  useEffect(() => {
+    return () => {
+      staggerTimersRef.current.forEach((t) => clearTimeout(t));
+    };
+  }, []);
 
   useEffect(() => {
     loadLogs();
@@ -65,9 +73,10 @@ export const ModerationLog: React.FC<ModerationLogProps> = ({ clubId, tableId, l
   const filteredLogs = filter === 'all' ? logs : logs.filter((log) => log.action === filter);
 
   useEffect(() => {
-    filteredLogs.forEach((_, i) => {
-      setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60);
-    });
+    staggerTimersRef.current.forEach((t) => clearTimeout(t));
+    staggerTimersRef.current = filteredLogs.map((_, i) =>
+      setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60)
+    );
   }, [filteredLogs]);
 
   return (

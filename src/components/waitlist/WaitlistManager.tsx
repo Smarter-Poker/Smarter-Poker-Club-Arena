@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
@@ -43,6 +43,14 @@ export const WaitlistManager: React.FC<WaitlistManagerProps> = ({
   const [loading, setLoading] = useState(true);
   const [joining, setJoining] = useState(false);
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
+  const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  // Cleanup stagger timers on unmount
+  useEffect(() => {
+    return () => {
+      staggerTimersRef.current.forEach((t) => clearTimeout(t));
+    };
+  }, []);
 
   const isInWaitlist = waitlist.some((e) => e.userId === currentUserId);
   const myPosition = waitlist.find((e) => e.userId === currentUserId)?.position;
@@ -114,9 +122,10 @@ export const WaitlistManager: React.FC<WaitlistManagerProps> = ({
         });
         setWaitlist(mapped);
         setVisibleItems(new Set());
-        mapped.forEach((_, i) => {
-          setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60);
-        });
+        staggerTimersRef.current.forEach((t) => clearTimeout(t));
+        staggerTimersRef.current = mapped.map((_, i) =>
+          setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60)
+        );
       }
     } catch (error) {
       console.error('Failed to load waitlist:', error);

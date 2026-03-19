@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import './MultiTableView.css';
 
 interface TableInfo {
@@ -28,11 +28,20 @@ export const MultiTableView: React.FC<MultiTableViewProps> = ({
 }) => {
   const [layout, setLayout] = useState<'2x2' | '3x2' | '1x1'>('2x2');
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
+  const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  // Cleanup stagger timers on unmount
+  useEffect(() => {
+    return () => {
+      staggerTimersRef.current.forEach((t) => clearTimeout(t));
+    };
+  }, []);
 
   useEffect(() => {
-    tables.forEach((_, i) => {
-      setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60);
-    });
+    staggerTimersRef.current.forEach((t) => clearTimeout(t));
+    staggerTimersRef.current = tables.map((_, i) =>
+      setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60)
+    );
   }, [tables]);
 
   const getGridClass = () => {

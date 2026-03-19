@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { WalletService } from '../../services/WalletService';
 import { CommissionService } from '../../services/CommissionService';
@@ -63,6 +63,14 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
   // Commission State
   const [agentId, setAgentId] = useState('');
   const [commissionRate, setCommissionRate] = useState(0.5);
+  const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  // Cleanup stagger timers on unmount
+  useEffect(() => {
+    return () => {
+      staggerTimersRef.current.forEach((t) => clearTimeout(t));
+    };
+  }, []);
 
   const kpiCards = [
     { label: 'Diamond Vault', value: diamondBalance.toLocaleString(), color: 'blue' },
@@ -80,9 +88,10 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
   ];
 
   useEffect(() => {
-    kpiCards.forEach((_, i) => {
-      setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60);
-    });
+    staggerTimersRef.current.forEach((t) => clearTimeout(t));
+    staggerTimersRef.current = kpiCards.map((_, i) =>
+      setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60)
+    );
   }, []);
 
   useEffect(() => {

@@ -10,7 +10,7 @@
  * - Clear all / Dismiss specific
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import './NotificationCenter.css';
 
 export type NotificationType = 'invite' | 'request' | 'system' | 'bonus';
@@ -43,12 +43,21 @@ export function NotificationCenter({
   onAction,
 }: NotificationCenterProps) {
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
+  const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  // Cleanup stagger timers on unmount
+  useEffect(() => {
+    return () => {
+      staggerTimersRef.current.forEach((t) => clearTimeout(t));
+    };
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
-      notifications.forEach((_, i) => {
-        setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60);
-      });
+      staggerTimersRef.current.forEach((t) => clearTimeout(t));
+      staggerTimersRef.current = notifications.map((_, i) =>
+        setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60)
+      );
     } else {
       setVisibleItems(new Set());
     }

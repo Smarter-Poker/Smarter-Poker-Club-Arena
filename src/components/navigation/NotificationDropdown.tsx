@@ -35,6 +35,14 @@ export default function NotificationDropdown({ onNavigate }: NotificationDropdow
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
+  const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  // Cleanup stagger timers on unmount
+  useEffect(() => {
+    return () => {
+      staggerTimersRef.current.forEach((t) => clearTimeout(t));
+    };
+  }, []);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -75,9 +83,10 @@ export default function NotificationDropdown({ onNavigate }: NotificationDropdow
       setNotifications(mapped);
       setUnreadCount(mapped.filter((n) => !n.isRead).length);
       setVisibleItems(new Set());
-      mapped.forEach((_, i) => {
-        setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60);
-      });
+      staggerTimersRef.current.forEach((t) => clearTimeout(t));
+      staggerTimersRef.current = mapped.map((_, i) =>
+        setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60)
+      );
     }
     if (isMounted.current) setLoading(false);
   };

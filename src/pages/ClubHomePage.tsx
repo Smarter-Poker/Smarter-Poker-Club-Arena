@@ -34,6 +34,7 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { resolveClubIdFilter, resolveClubUUID } from '../utils/clubIdResolver';
 import { useIsMounted } from '../hooks/useIsMounted';
 import GlobalUXIndicators from '../components/common/GlobalUXIndicators';
+import DynamicWallet from '../components/wallet/DynamicWallet';
 
 // SWR cache helpers for instant club data display
 function getClubHomeCache(clubId: string) {
@@ -132,6 +133,7 @@ export default function ClubHomePage() {
   const [deletingTableId, setDeletingTableId] = useState<string | null>(null);
   const [isInUnion, setIsInUnion] = useState(false);
   const [clubLevel, setClubLevel] = useState<ClubLevelInfo | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const toast = useToast();
   const hasDataRef = useRef(false);
   const loadingRef = useRef(false);
@@ -416,6 +418,7 @@ export default function ClubHomePage() {
       } = await getAuthUser();
       if (authUser) {
         if (getIsMounted && !getIsMounted()) return;
+        setCurrentUserId(authUser.id);
         setIsOwner(clubData.owner_id === authUser.id);
 
         // ── Batch: member data + diamond wallet in parallel ──
@@ -914,17 +917,6 @@ export default function ClubHomePage() {
             <span className="icon-leaderboard"></span>
           </button>
         </div>
-        <div
-          className="club-home__bbj"
-          style={{ animation: `slideInUp 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) 0.1s both` }}
-        >
-          <div className="bbj-label">
-            BAD BEAT
-            <br />
-            JACKPOT
-          </div>
-          <div className="bbj-amount">{formatJackpot(jackpotAmount)}</div>
-        </div>
       </div>
 
       {/* ═══════════════════════════════════════════════════════════════════
@@ -999,35 +991,35 @@ export default function ClubHomePage() {
             )}
           </div>
         </div>
-        <div className="club-home__wallet">
-          <div className="wallet-row gold">
-            <span className="wallet-icon gold-icon"></span>
-            <span className="wallet-amount">{formatNumber(wallet.gold)}</span>
-            <button
-              className="wallet-add-btn"
-              onClick={() => {
-                haptic.medium();
-                navigate(`/clubs/${clubId}/detail`);
-              }}
-            >
-              +
-            </button>
-          </div>
-          <div className="wallet-row diamond">
-            <span className="wallet-icon diamond-icon"></span>
-            <span className="wallet-amount">{formatNumber(wallet.diamonds)}</span>
-            <button
-              className="wallet-add-btn"
-              onClick={() => {
-                haptic.medium();
-                navigate(`/clubs/${clubId}/detail`);
-              }}
-            >
-              +
-            </button>
-          </div>
-        </div>
       </div>
+
+      {/* ═══════════════════════════════════════════════════════════════════
+                DYNAMIC WALLET — Metal Panel (Role-Based)
+            ═══════════════════════════════════════════════════════════════════ */}
+      {currentUserId && resolvedClubId && (
+        <div
+          className="club-home__dynamic-wallet"
+          style={{ animation: 'slideInUp 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) 0.15s both' }}
+        >
+          <DynamicWallet
+            userId={currentUserId}
+            clubId={resolvedClubId}
+            variant={isInUnion && isOwner ? 'union' : userRole === 'owner' ? 'owner' : 'player'}
+            onBuyDiamonds={() => {
+              haptic.medium();
+              navigate(`/clubs/${clubId}/detail`);
+            }}
+            onMintChips={() => {
+              haptic.medium();
+              navigate(`/clubs/${clubId}/cashier`);
+            }}
+            onOpenBBJ={() => {
+              haptic.medium();
+              navigate(`/clubs/${clubId}/bbj`);
+            }}
+          />
+        </div>
+      )}
 
       {/* ═══════════════════════════════════════════════════════════════════
                 CLUB INTRODUCTION

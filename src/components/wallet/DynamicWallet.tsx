@@ -1,14 +1,15 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  DYNAMIC WALLET — Real-Time Balance Display Widget
+ *  DYNAMIC WALLET — Metal Panel UI with Background Images
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * Consolidated from World Hub `components/club-arena/DynamicWallet.jsx`.
+ * Uses the exact user-provided metal panel images as backgrounds.
+ * Dynamic balance values are overlaid on the black LCD display areas.
  *
  * Three variants auto-detected from role:
- *   'player' — Chip Wallet, Agent Wallet (if agent), Promo Wallet
- *   'owner'  — Club Bank (treasury), Agent Wallet, Promo Wallet
- *   'union'  — Union Bank (+mint), Clubs Wallet, Promo Wallet, Backup BBJ
+ *   'player' — Chip Wallet, Agent Wallet, Promo Wallet
+ *   'owner'  — Club Bank, Agent Wallet, Promo Wallet
+ *   'union'  — Union Bank, Clubs Wallet, Promo Wallet, Backup BBJ
  *
  * All variants: Diamond Balance (+buy), BBJ main pool
  */
@@ -18,6 +19,13 @@ import { useIsMounted } from '../../hooks/useIsMounted';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { supabase } from '../../lib/supabase';
 import './DynamicWallet.css';
+
+// Panel background images
+const PANEL_IMAGES: Record<string, string> = {
+  player: '/images/wallet-panel-player.png',
+  owner: '/images/wallet-panel-owner.png',
+  union: '/images/wallet-panel-union.png',
+};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -52,7 +60,6 @@ interface WalletData {
 function useAnimatedCounter(target: number, duration = 400) {
   const [value, setValue] = useState(target);
   const rafId = useRef<number | null>(null);
-  // Use ref to avoid stale closure capturing previous `value` on rapid target changes
   const currentValueRef = useRef(value);
   currentValueRef.current = value;
 
@@ -68,7 +75,6 @@ function useAnimatedCounter(target: number, duration = 400) {
     const animate = (now: number) => {
       const elapsed = now - startTime;
       const progress = Math.min(elapsed / duration, 1);
-      // Ease-out
       const eased = 1 - Math.pow(1 - progress, 3);
       setValue(Math.round(start + diff * eased));
       if (progress < 1) rafId.current = requestAnimationFrame(animate);
@@ -83,46 +89,15 @@ function useAnimatedCounter(target: number, duration = 400) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// WALLET CARD
+// FORMAT NUMBER
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function WalletCard({
-  label,
-  value: rawValue,
-  color,
-  icon,
-  onClick,
-  actionLabel,
-}: {
-  label: string;
-  value: number;
-  color: string;
-  icon: string;
-  onClick?: () => void;
-  actionLabel?: string;
-}) {
-  const display = useAnimatedCounter(rawValue);
-
-  return (
-    <div className="dynamic-wallet__card" style={{ borderColor: `${color}30` }}>
-      <div className="dynamic-wallet__card-header">
-        <span className="dynamic-wallet__card-icon">{icon}</span>
-        <span className="dynamic-wallet__card-label">{label}</span>
-      </div>
-      <div className="dynamic-wallet__card-value" style={{ color }}>
-        {display.toLocaleString()}
-      </div>
-      {onClick && (
-        <button
-          className="dynamic-wallet__card-action"
-          style={{ borderColor: `${color}50`, color }}
-          onClick={onClick}
-        >
-          + {actionLabel || 'Buy'}
-        </button>
-      )}
-    </div>
-  );
+function formatBalance(num: number): string {
+  if (num === 0) return '0.00';
+  return num.toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -150,12 +125,21 @@ export default function DynamicWallet({
   const [loading, setLoading] = useState(true);
   const isMounted = useIsMounted();
 
+  // Animated values
+  const animDiamonds = useAnimatedCounter(data.diamonds);
+  const animBBJ = useAnimatedCounter(data.bbjPool);
+  const animRow1 = useAnimatedCounter(
+    variant === 'union' ? data.unionBank : variant === 'owner' ? data.clubBank : data.chipBalance
+  );
+  const animRow2 = useAnimatedCounter(variant === 'union' ? data.clubBank : data.agentBalance);
+  const animRow3 = useAnimatedCounter(data.promoBalance);
+  const animBackupBBJ = useAnimatedCounter(data.backupBBJ);
+
   const fetchData = useCallback(async () => {
     if (!userId || !clubId) return;
     setLoading(true);
 
     try {
-      // Parallel fetches for all balance sources
       const [profileRes, memberRes, bbjRes, agentRes, clubRes] = await Promise.all([
         supabase.from('profiles').select('diamonds').eq('id', userId).maybeSingle(),
         supabase
@@ -175,7 +159,6 @@ export default function DynamicWallet({
           .eq('club_id', clubId)
           .eq('user_id', userId)
           .maybeSingle(),
-        // Club bank: sum of all agent wallet balances for this club
         supabase
           .from('agents')
           .select('agent_wallet_balance')
@@ -292,66 +275,80 @@ export default function DynamicWallet({
     return <div className="dynamic-wallet dynamic-wallet--loading">Loading balances...</div>;
   }
 
+  const panelClass = `dynamic-wallet__panel dynamic-wallet__panel--${variant}`;
+
   return (
     <div className="dynamic-wallet">
-      {/* Diamond Balance — Available for all variants */}
-      <WalletCard
-        label="Diamonds"
-        value={data.diamonds}
-        color="#00d4ff"
-        icon="💎"
-        onClick={onBuyDiamonds}
-        actionLabel="Buy"
-      />
+      <div className={panelClass} onClick={onOpenBBJ}>
+        {/* Metal panel background image */}
+        <img
+          src={PANEL_IMAGES[variant]}
+          alt={`${variant} wallet panel`}
+          className="dynamic-wallet__panel-bg"
+          draggable={false}
+        />
 
-      {/* BBJ Pool — Available for all variants */}
-      <WalletCard
-        label="BBJ Pool"
-        value={data.bbjPool}
-        color="#ffd700"
-        icon="🏆"
-        onClick={onOpenBBJ}
-        actionLabel="Info"
-      />
+        {/* Overlay: Dynamic values positioned over the black LCD areas */}
+        <div className="dynamic-wallet__overlay">
+          {/* Diamond Balance — top LCD */}
+          <div className="dynamic-wallet__diamond-display">
+            <span className="dynamic-wallet__diamond-value">💎 {formatBalance(animDiamonds)}</span>
+          </div>
 
-      {/* Player variant */}
-      {variant === 'player' && (
-        <>
-          <WalletCard label="Chip Balance" value={data.chipBalance} color="#22c55e" icon="🪙" />
-          {data.agentBalance > 0 && (
-            <WalletCard label="Agent Balance" value={data.agentBalance} color="#3b82f6" icon="👤" />
+          {/* BBJ Amount — second LCD */}
+          <div className="dynamic-wallet__bbj-display">
+            <span className="dynamic-wallet__bbj-value">
+              {animBBJ === 0 ? '—' : formatBalance(animBBJ)}
+            </span>
+          </div>
+
+          {/* Row 1: Chip Wallet / Club Bank / Union Bank */}
+          <div className="dynamic-wallet__row-1">
+            <span className="dynamic-wallet__row-value">{formatBalance(animRow1)}</span>
+          </div>
+
+          {/* Row 2: Agent Wallet / Clubs Wallet */}
+          <div className="dynamic-wallet__row-2">
+            <span className="dynamic-wallet__row-value">{formatBalance(animRow2)}</span>
+          </div>
+
+          {/* Row 3: Promo Wallet */}
+          <div className="dynamic-wallet__row-3">
+            <span className="dynamic-wallet__row-value">{formatBalance(animRow3)}</span>
+          </div>
+
+          {/* Row 4: Backup BBJ (Union only) */}
+          {variant === 'union' && (
+            <div className="dynamic-wallet__row-4">
+              <span className="dynamic-wallet__row-value">
+                {animBackupBBJ === 0 ? '—' : formatBalance(animBackupBBJ)}
+              </span>
+            </div>
           )}
-          {data.promoBalance > 0 && (
-            <WalletCard label="Promo Balance" value={data.promoBalance} color="#9333ea" icon="🎁" />
+
+          {/* Interactive + buttons */}
+          {onBuyDiamonds && variant === 'union' && (
+            <button
+              className="dynamic-wallet__plus-btn dynamic-wallet__plus-btn--diamond"
+              onClick={(e) => {
+                e.stopPropagation();
+                onBuyDiamonds();
+              }}
+              aria-label="Buy Diamonds"
+            />
           )}
-        </>
-      )}
-
-      {/* Owner variant */}
-      {variant === 'owner' && (
-        <>
-          <WalletCard label="Club Bank" value={data.clubBank} color="#22c55e" icon="🏦" />
-          <WalletCard label="Agent Balance" value={data.agentBalance} color="#3b82f6" icon="👤" />
-          <WalletCard label="Promo Balance" value={data.promoBalance} color="#9333ea" icon="🎁" />
-        </>
-      )}
-
-      {/* Union variant */}
-      {variant === 'union' && (
-        <>
-          <WalletCard
-            label="Union Bank"
-            value={data.unionBank}
-            color="#22c55e"
-            icon="🏛️"
-            onClick={onMintChips}
-            actionLabel="Mint"
-          />
-          <WalletCard label="Club Bank" value={data.clubBank} color="#3b82f6" icon="🏦" />
-          <WalletCard label="Promo Balance" value={data.promoBalance} color="#9333ea" icon="🎁" />
-          <WalletCard label="Backup BBJ" value={data.backupBBJ} color="#f59e0b" icon="🛡️" />
-        </>
-      )}
+          {onMintChips && variant === 'union' && (
+            <button
+              className="dynamic-wallet__plus-btn dynamic-wallet__plus-btn--row1"
+              onClick={(e) => {
+                e.stopPropagation();
+                onMintChips();
+              }}
+              aria-label="Mint Chips"
+            />
+          )}
+        </div>
+      </div>
     </div>
   );
 }

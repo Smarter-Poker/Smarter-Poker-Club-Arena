@@ -4,7 +4,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
@@ -47,6 +47,14 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
   const [roleFilter, setRoleFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'name' | 'balance' | 'rake' | 'joined'>('name');
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
+  const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  // Cleanup stagger timers on unmount
+  useEffect(() => {
+    return () => {
+      staggerTimersRef.current.forEach((t) => clearTimeout(t));
+    };
+  }, []);
 
   useEffect(() => {
     loadMembers();
@@ -95,9 +103,10 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
           })
         );
         setVisibleItems(new Set());
-        data.forEach((_, i) => {
-          setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60);
-        });
+        staggerTimersRef.current.forEach((t) => clearTimeout(t));
+        staggerTimersRef.current = data.map((_, i) =>
+          setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60)
+        );
       }
     } catch (error) {
       if (isMounted.current) toast.error('Failed to load members');

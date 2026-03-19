@@ -4,7 +4,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
@@ -55,6 +55,14 @@ export function SpinAndGoLobby({ clubId, onRegister }: SpinAndGoLobbyProps) {
   const [registering, setRegistering] = useState<string | null>(null);
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
+  const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  // Cleanup stagger timers on unmount
+  useEffect(() => {
+    return () => {
+      staggerTimersRef.current.forEach((t) => clearTimeout(t));
+    };
+  }, []);
 
   useEffect(() => {
     loadTournaments();
@@ -115,9 +123,10 @@ export function SpinAndGoLobby({ clubId, onRegister }: SpinAndGoLobbyProps) {
           }))
         );
         setVisibleItems(new Set());
-        data.forEach((_, i) => {
-          setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60);
-        });
+        staggerTimersRef.current.forEach((t) => clearTimeout(t));
+        staggerTimersRef.current = data.map((_, i) =>
+          setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60)
+        );
       }
     } catch (error) {
       toast.error('Failed to load spin tournaments');

@@ -80,6 +80,14 @@ export default function MessageThread({ conversationId, onBack }: MessageThreadP
   const [showSchedule, setShowSchedule] = useState(false);
   const [forwardingMessage, setForwardingMessage] = useState<Message | null>(null);
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
+  const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  // Cleanup stagger timers on unmount
+  useEffect(() => {
+    return () => {
+      staggerTimersRef.current.forEach((t) => clearTimeout(t));
+    };
+  }, []);
   const scrollRef = useRef<HTMLDivElement>(null);
   const heartbeatRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -571,9 +579,10 @@ export default function MessageThread({ conversationId, onBack }: MessageThreadP
       scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
       // Stagger message entrance
       setVisibleMessages(new Set());
-      messages.forEach((_, i) => {
-        setTimeout(() => setVisibleMessages((prev) => new Set(prev).add(i)), i * 30);
-      });
+      staggerTimersRef.current.forEach((t) => clearTimeout(t));
+      staggerTimersRef.current = messages.map((_, i) =>
+        setTimeout(() => setVisibleMessages((prev) => new Set(prev).add(i)), i * 30)
+      );
     }
   }, [messages.length]);
 

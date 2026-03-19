@@ -56,7 +56,8 @@ export default function AppLayout() {
       {isReady && <ClubArenaWelcomeModal isOpen={showWelcome} onAccept={acceptWelcome} />}
 
       {/* Global Header — Always visible except on active table pages */}
-      {showGlobalHeader && <GlobalHeader pageDepth={2} />}
+      {/* Lobby (/) = pageDepth 1 (HUB button), Sub-pages = pageDepth 2 (Back button) */}
+      {showGlobalHeader && <GlobalHeader pageDepth={location.pathname === '/' ? 1 : 2} />}
 
       {/* Global Announcement Banner (shows club announcements when in a club context) */}
       <ClubAnnouncementBanner />

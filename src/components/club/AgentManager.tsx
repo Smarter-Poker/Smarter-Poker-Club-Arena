@@ -10,7 +10,7 @@
  * - Agent performance metrics
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import './AgentManager.css';
 
 export interface AgentNode {
@@ -42,12 +42,21 @@ export function AgentManager({
 }: AgentManagerProps) {
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
+  const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  // Cleanup stagger timers on unmount
+  useEffect(() => {
+    return () => {
+      staggerTimersRef.current.forEach((t) => clearTimeout(t));
+    };
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
-      agents.forEach((_, i) => {
-        setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60);
-      });
+      staggerTimersRef.current.forEach((t) => clearTimeout(t));
+      staggerTimersRef.current = agents.map((_, i) =>
+        setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60)
+      );
     }
   }, [agents, isOpen]);
 

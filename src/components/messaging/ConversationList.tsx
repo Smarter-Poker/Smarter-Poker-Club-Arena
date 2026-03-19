@@ -56,6 +56,14 @@ export default function ConversationList({
   const [clubUnreadTotal, setClubUnreadTotal] = useState(0);
   const [clubConversationCount, setClubConversationCount] = useState(0);
   const [isClubMember, setIsClubMember] = useState(false);
+  const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  // Cleanup stagger timers on unmount
+  useEffect(() => {
+    return () => {
+      staggerTimersRef.current.forEach((t) => clearTimeout(t));
+    };
+  }, []);
 
   // Load club membership and messages count for widget
   const loadClubMessagesCount = useCallback(async () => {
@@ -174,9 +182,10 @@ export default function ConversationList({
             setOffset(0); // Reset offset on fresh load
             // Stagger entrance
             setVisibleConversations(new Set());
-            mapped.forEach((_, i) => {
-              setTimeout(() => setVisibleConversations((prev) => new Set(prev).add(i)), i * 40);
-            });
+            staggerTimersRef.current.forEach((t) => clearTimeout(t));
+            staggerTimersRef.current = mapped.map((_, i) =>
+              setTimeout(() => setVisibleConversations((prev) => new Set(prev).add(i)), i * 40)
+            );
           } else {
             // Append older conversations, deduplicating
             setConversations((prev) => {

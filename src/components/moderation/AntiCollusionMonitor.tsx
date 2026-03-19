@@ -3,7 +3,7 @@
  * Monitor for suspicious play patterns and flag potential collusion
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import './AntiCollusionMonitor.css';
 
 interface SuspiciousPattern {
@@ -45,6 +45,14 @@ export const AntiCollusionMonitor: React.FC<AntiCollusionMonitorProps> = ({
   const [filter, setFilter] = useState<'all' | 'high' | 'medium' | 'low'>('all');
   const [visibleCards, setVisibleCards] = useState<Set<number>>(new Set());
   const [visiblePatterns, setVisiblePatterns] = useState<Set<number>>(new Set());
+  const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  // Cleanup stagger timers on unmount
+  useEffect(() => {
+    return () => {
+      staggerTimersRef.current.forEach((t) => clearTimeout(t));
+    };
+  }, []);
 
   useEffect(() => {
     loadReports();
@@ -125,9 +133,10 @@ export const AntiCollusionMonitor: React.FC<AntiCollusionMonitorProps> = ({
             onClick={() => {
               setSelectedReport(report);
               setVisiblePatterns(new Set());
-              report.suspiciousPatterns.forEach((_, pi) => {
-                setTimeout(() => setVisiblePatterns((prev) => new Set(prev).add(pi)), pi * 60);
-              });
+              staggerTimersRef.current.forEach((t) => clearTimeout(t));
+              staggerTimersRef.current = suspiciousPatterns.map((_, pi) =>
+                setTimeout(() => setVisiblePatterns((prev) => new Set(prev).add(pi)), pi * 60)
+              );
             }}
             style={{
               opacity: visibleCards.has(i) ? 1 : 0,

@@ -10,7 +10,7 @@
  * - Auto-seat toggle
  */
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { haptic } from '../../services/SoundService';
 import './WaitListModal.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
@@ -78,11 +78,20 @@ export function WaitListModal({
 }: WaitListModalProps) {
   const [showConfirmLeave, setShowConfirmLeave] = useState(false);
   const [visiblePlayers, setVisiblePlayers] = useState<Set<number>>(new Set());
+  const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  // Cleanup stagger timers on unmount
+  useEffect(() => {
+    return () => {
+      staggerTimersRef.current.forEach((t) => clearTimeout(t));
+    };
+  }, []);
 
   useEffect(() => {
-    players.forEach((_, i) => {
-      setTimeout(() => setVisiblePlayers((prev) => new Set(prev).add(i)), i * 50);
-    });
+    staggerTimersRef.current.forEach((t) => clearTimeout(t));
+    staggerTimersRef.current = players.map((_, i) =>
+      setTimeout(() => setVisiblePlayers((prev) => new Set(prev).add(i)), i * 50)
+    );
   }, [players.length]);
 
   // Find my position

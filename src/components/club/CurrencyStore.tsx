@@ -9,7 +9,7 @@
  * - Payment integration via onPurchase callback
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import './CurrencyStore.css';
 
 export interface ProductItem {
@@ -116,6 +116,14 @@ export function CurrencyStore({
 }: CurrencyStoreProps) {
   const [activeTab, setActiveTab] = useState<'diamonds' | 'gold'>('diamonds');
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
+  const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  // Cleanup stagger timers on unmount
+  useEffect(() => {
+    return () => {
+      staggerTimersRef.current.forEach((t) => clearTimeout(t));
+    };
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
@@ -123,9 +131,10 @@ export function CurrencyStore({
         activeTab === 'diamonds'
           ? diamondProducts || DEFAULT_DIAMOND_PRODUCTS
           : goldProducts || DEFAULT_GOLD_PRODUCTS;
-      products.forEach((_, i) => {
-        setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60);
-      });
+      staggerTimersRef.current.forEach((t) => clearTimeout(t));
+      staggerTimersRef.current = products.map((_, i) =>
+        setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60)
+      );
     }
   }, [isOpen, activeTab, diamondProducts, goldProducts]);
 

@@ -45,6 +45,14 @@ export default function MessagesPanel({ initialConversationId, onClose }: Messag
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [visibleMessages, setVisibleMessages] = useState<Set<number>>(new Set());
+  const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  // Cleanup stagger timers on unmount
+  useEffect(() => {
+    return () => {
+      staggerTimersRef.current.forEach((t) => clearTimeout(t));
+    };
+  }, []);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -62,9 +70,10 @@ export default function MessagesPanel({ initialConversationId, onClose }: Messag
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    messages.forEach((_, i) => {
-      setTimeout(() => setVisibleMessages((prev) => new Set(prev).add(i)), i * 50);
-    });
+    staggerTimersRef.current.forEach((t) => clearTimeout(t));
+    staggerTimersRef.current = messages.map((_, i) =>
+      setTimeout(() => setVisibleMessages((prev) => new Set(prev).add(i)), i * 50)
+    );
   }, [messages]);
 
   // Real-time subscription for new messages in conversation

@@ -6,7 +6,7 @@
  * Shows "Not currently playing" or 1-4 active tables/tournaments.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import haptic from '../../services/HapticService';
@@ -46,12 +46,21 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [visibleTables, setVisibleTables] = useState<Set<number>>(new Set());
+  const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  // Cleanup stagger timers on unmount
+  useEffect(() => {
+    return () => {
+      staggerTimersRef.current.forEach((t) => clearTimeout(t));
+    };
+  }, []);
 
   useEffect(() => {
     if (searchResult?.tables) {
-      searchResult.tables.forEach((_, i) => {
-        setTimeout(() => setVisibleTables((prev) => new Set(prev).add(i)), i * 60);
-      });
+      staggerTimersRef.current.forEach((t) => clearTimeout(t));
+      staggerTimersRef.current = tables.map((_, i) =>
+        setTimeout(() => setVisibleTables((prev) => new Set(prev).add(i)), i * 60)
+      );
     }
   }, [searchResult?.tables]);
 

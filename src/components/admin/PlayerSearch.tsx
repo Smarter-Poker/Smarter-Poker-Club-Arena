@@ -3,7 +3,7 @@
  * Search and manage players across clubs - Real Supabase integration
  */
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import './PlayerSearch.css';
@@ -41,6 +41,14 @@ export const PlayerSearch: React.FC<PlayerSearchProps> = ({
   const [searchType, setSearchType] = useState<'username' | 'email' | 'id'>('username');
   const [searched, setSearched] = useState(false);
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
+  const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  // Cleanup stagger timers on unmount
+  useEffect(() => {
+    return () => {
+      staggerTimersRef.current.forEach((t) => clearTimeout(t));
+    };
+  }, []);
 
   const handleSearch = useCallback(async () => {
     if (!query.trim()) return;
@@ -128,9 +136,10 @@ export const PlayerSearch: React.FC<PlayerSearchProps> = ({
 
       setResults(players);
       setVisibleItems(new Set());
-      players.forEach((_, i) => {
-        setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60);
-      });
+      staggerTimersRef.current.forEach((t) => clearTimeout(t));
+      staggerTimersRef.current = players.map((_, i) =>
+        setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60)
+      );
     } catch (error) {
       console.error('Failed to search players:', error);
       setResults([]);

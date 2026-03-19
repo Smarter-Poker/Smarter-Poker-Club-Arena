@@ -590,6 +590,15 @@ export default function TablePage({
   const [lastHandId, setLastHandId] = useState<string | null>(null);
   const [showGameRules, setShowGameRules] = useState(false);
 
+  // Hand Reveal (show/muck after winning without showdown)
+  const [showHandRevealModal, setShowHandRevealModal] = useState(false);
+  const [handRevealWinnerId, setHandRevealWinnerId] = useState('');
+  const [handRevealWinnerName, setHandRevealWinnerName] = useState('');
+  const [handRevealCards, setHandRevealCards] = useState<
+    Array<{ rank: string; suit: 'h' | 'd' | 'c' | 's' }>
+  >([]);
+  const [handRevealHandId, setHandRevealHandId] = useState('');
+
   const [showSitOut, setShowSitOut] = useState(false);
   const [sitOutNextHand, setSitOutNextHand] = useState(false);
   const [sitOutTimeRemaining, setSitOutTimeRemaining] = useState(300); // 5 min default
@@ -4975,6 +4984,47 @@ export default function TablePage({
         onDecline={handleRITDecline}
         timeRemaining={ritTimer}
         opponentName={ritOpponent}
+      />
+
+      {/* Hand Reveal — Show/Muck after winning without showdown */}
+      <HandReveal
+        isOpen={showHandRevealModal}
+        isWinner={handRevealWinnerId === userId}
+        winnerId={handRevealWinnerId}
+        winnerName={handRevealWinnerName}
+        revealedCards={handRevealCards.length > 0 ? handRevealCards : undefined}
+        revealCost={10}
+        userDiamonds={50}
+        autoMuckTimer={8}
+        tableId={tableId || ''}
+        handId={handRevealHandId}
+        onShow={() => {
+          // Winner chooses to show — cards are revealed via HandReveal internally
+          setHandRevealCards(
+            tableState.players
+              .find((p) => p?.id === handRevealWinnerId)
+              ?.holeCards?.map((c: { rank: string; suit: string }) => ({
+                rank: c.rank,
+                suit: c.suit as 'h' | 'd' | 'c' | 's',
+              })) || []
+          );
+        }}
+        onMuck={() => {
+          // Winner mucks — close after animation
+          setTimeout(() => setShowHandRevealModal(false), 1500);
+        }}
+        onPayReveal={() => {
+          // Non-winner pays to reveal — show the winner's cards
+          setHandRevealCards(
+            tableState.players
+              .find((p) => p?.id === handRevealWinnerId)
+              ?.holeCards?.map((c: { rank: string; suit: string }) => ({
+                rank: c.rank,
+                suit: c.suit as 'h' | 'd' | 'c' | 's',
+              })) || []
+          );
+        }}
+        onClose={() => setShowHandRevealModal(false)}
       />
 
       {/* Bad Beat Jackpot Display */}

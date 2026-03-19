@@ -340,7 +340,9 @@ export default function CashierPage() {
           .select('owner_id')
           .eq('id', detectedUnionId)
           .maybeSingle();
-        setIsUnionOwner(unionData?.owner_id === user.id);
+        if (isMounted.current) {
+          setIsUnionOwner(unionData?.owner_id === user.id);
+        }
       } else {
         setIsInUnion(false);
         setIsUnionOwner(false);
@@ -911,6 +913,26 @@ export default function CashierPage() {
           if (isMounted.current) setIsProcessing(false);
           return;
         }
+        // Log mint to chip_ledger
+        const resolvedMintClub = await resolveClubUUID(clubId!);
+        supabase
+          .from('chip_ledger')
+          .insert({
+            performed_by: user.id,
+            from_type: 'system_mint',
+            from_label: 'Chip Mint',
+            to_type: 'player_wallet',
+            to_entity_id: user.id,
+            to_label: 'Club Owner',
+            amount: value,
+            category: 'mint',
+            description: `Minted ${value.toLocaleString()} chips via Cashier`,
+            club_id: resolvedMintClub,
+          })
+          .then(({ error: le }) => {
+            if (le) console.warn('[Cashier] Ledger write failed:', le.message);
+          });
+
         if (isMounted.current)
           setMessage({ type: 'success', text: `Minted ${value.toLocaleString()} chips` });
         loadBalances(user.id);

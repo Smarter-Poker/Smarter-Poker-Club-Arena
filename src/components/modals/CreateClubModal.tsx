@@ -15,6 +15,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
 import { ClubCardGenerator } from '../../services/ClubCardGenerator';
+import { sanitizeInput } from '../../utils/sanitizeInput';
 import haptic from '../../services/HapticService';
 import styles from './CreateClubModal.module.css';
 
@@ -159,6 +160,15 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
       return;
     }
 
+    // Auth guard
+    if (!user?.id) {
+      toast.error('You must be logged in to create a club.');
+      return;
+    }
+
+    // Double-click protection
+    if (isCreating) return;
+
     // Check for duplicate club name
     try {
       const { data: existing } = await supabase
@@ -178,19 +188,39 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
 
     setIsCreating(true);
 
+    // 4-club membership limit
     try {
-      const clubIdNumber = Math.floor(10000 + Math.random() * 90000);
+      const { count, error: countError } = await supabase
+        .from('club_members')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .in('status', ['active', 'approved']);
 
+      if (!countError && count !== null && count >= 4) {
+        if (isMounted.current) {
+          toast.error(
+            'You can only be a member of up to 4 clubs. Leave a club to create a new one.'
+          );
+          setIsCreating(false);
+        }
+        return;
+      }
+    } catch {
+      // Non-blocking
+    }
+
+    try {
       // Generate club card image
+      const tempClubId = Math.floor(100000 + Math.random() * 900000);
       const cardDataUrl = await ClubCardGenerator.generateCard({
         logoUrl: logoPreview,
-        clubId: clubIdNumber,
-        clubName: clubName.trim().toUpperCase(),
+        clubId: tempClubId,
+        clubName: sanitizeInput(clubName.trim()).toUpperCase(),
       });
 
       // Upload card to storage
       const cardBlob = await fetch(cardDataUrl).then((r) => r.blob());
-      const cardFileName = `club-cards/${clubIdNumber}-card.png`;
+      const cardFileName = `club-cards/${tempClubId}-card.png`;
 
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('club-assets')
@@ -209,40 +239,61 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
         cardUrl = urlData.publicUrl;
       }
 
-      // Create club - new clubs start with 1 member = Level 1
-      const { data: clubData, error: insertError } = await supabase
-        .from('clubs')
-        .insert({
-          club_id: clubIdNumber,
-          name: clubName.trim(),
-          owner_id: user?.id,
-          is_public: true,
-          requires_approval: true,
-          card_image_url: cardUrl,
-          logo_url: cardUrl,
-          member_count: 1,
-          level: calculateClubLevel(1), // Level 1 for new clubs
-          active_players: 1,
-          settings: {
-            default_rake_percent: 5,
-            rake_cap: 3,
-            min_buy_in_bb: 40,
-            max_buy_in_bb: 200,
-            time_bank_seconds: 30,
-            allow_straddle: true,
-            allow_run_it_twice: true,
-          },
-        })
-        .select()
-        .maybeSingle();
+      // Insert club with collision retry for random club_id
+      let clubData: any = null;
+      let lastInsertError: any = null;
+      const MAX_RETRIES = 3;
 
-      if (insertError) throw insertError;
-      if (!clubData) throw new Error('Club creation returned no data');
+      for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+        const clubIdNumber = Math.floor(100000 + Math.random() * 900000);
+
+        const { data: insertData, error: insertError } = await supabase
+          .from('clubs')
+          .insert({
+            club_id: clubIdNumber,
+            name: sanitizeInput(clubName.trim()),
+            owner_id: user.id,
+            is_public: true,
+            requires_approval: false,
+            card_image_url: cardUrl,
+            logo_url: cardUrl,
+            member_count: 1,
+            level: calculateClubLevel(1),
+            active_players: 1,
+            settings: {
+              default_rake_percent: 5,
+              rake_cap: 3,
+              min_buy_in_bb: 40,
+              max_buy_in_bb: 200,
+              time_bank_seconds: 30,
+              allow_straddle: true,
+              allow_run_it_twice: true,
+            },
+          })
+          .select()
+          .maybeSingle();
+
+        if (!insertError && insertData) {
+          clubData = insertData;
+          break;
+        }
+
+        lastInsertError = insertError;
+        if (
+          insertError &&
+          !insertError.message?.includes('duplicate') &&
+          !insertError.message?.includes('unique')
+        ) {
+          throw insertError;
+        }
+      }
+
+      if (!clubData) throw lastInsertError || new Error('Club creation failed after retries');
 
       // Add owner as first member — cleanup orphan if this fails
       const { error: memberError } = await supabase.from('club_members').insert({
         club_id: clubData.id,
-        user_id: user?.id,
+        user_id: user.id,
         role: 'owner',
         status: 'active',
       });

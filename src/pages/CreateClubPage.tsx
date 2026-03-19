@@ -517,9 +517,6 @@ export default function CreateClubPage() {
     }
 
     try {
-      // Generate 6-digit club ID
-      const clubIdNumber = Math.floor(100000 + Math.random() * 900000);
-
       // Generate URL-friendly slug
       const slug = form.name
         .trim()
@@ -534,33 +531,56 @@ export default function CreateClubPage() {
           ? `images/club-icons/icon-${form.iconId}.png`
           : null;
 
-      const { data, error: insertError } = await supabase
-        .from('clubs')
-        .insert({
-          club_id: clubIdNumber,
-          name: sanitizeInput(form.name.trim()),
-          slug,
-          description: sanitizeInput(form.description.trim()) || null,
-          owner_id: user.id,
-          is_public: form.isPublic,
-          requires_approval: !form.isPublic,
-          logo: logoValue,
-          settings: {
-            icon_id: form.iconId,
-            default_rake_percent: 5,
-            rake_cap: 3,
-          },
-        })
-        .select()
-        .maybeSingle();
+      // Insert club with collision retry for random club_id
+      let data: any = null;
+      let lastInsertError: any = null;
+      const MAX_RETRIES = 3;
 
-      if (insertError) throw insertError;
-      if (!data) throw new Error('Club creation returned no data');
+      for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+        const clubIdNumber = Math.floor(100000 + Math.random() * 900000);
+
+        const { data: insertData, error: insertError } = await supabase
+          .from('clubs')
+          .insert({
+            club_id: clubIdNumber,
+            name: sanitizeInput(form.name.trim()),
+            slug,
+            description: sanitizeInput(form.description.trim()) || null,
+            owner_id: user.id,
+            is_public: form.isPublic,
+            requires_approval: !form.isPublic,
+            logo: logoValue,
+            settings: {
+              icon_id: form.iconId,
+              default_rake_percent: 5,
+              rake_cap: 3,
+            },
+          })
+          .select()
+          .maybeSingle();
+
+        if (!insertError && insertData) {
+          data = insertData;
+          break;
+        }
+
+        lastInsertError = insertError;
+        // If not a unique constraint error, don't retry
+        if (
+          insertError &&
+          !insertError.message?.includes('duplicate') &&
+          !insertError.message?.includes('unique')
+        ) {
+          throw insertError;
+        }
+      }
+
+      if (!data) throw lastInsertError || new Error('Club creation failed after retries');
 
       // Add owner as first member — if this fails, delete the orphaned club
       const { error: memberError } = await supabase.from('club_members').insert({
         club_id: data.id,
-        user_id: user?.id,
+        user_id: user.id,
         role: 'owner',
         status: 'active',
       });

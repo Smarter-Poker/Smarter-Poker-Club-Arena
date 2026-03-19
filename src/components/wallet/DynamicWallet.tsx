@@ -337,7 +337,7 @@ export default function DynamicWallet({
         }
       });
 
-    // ── Additional RT channel: clubs table for chip_treasury changes ──
+    // ── Additional RT channel: clubs table for chip_treasury + union_id changes ──
     const clubChannel = supabase
       .channel(`dynamic-wallet-club-${resolvedId}`)
       .on(
@@ -349,11 +349,18 @@ export default function DynamicWallet({
           filter: `id=eq.${resolvedId}`,
         },
         (p) => {
-          if (isMounted.current && p.new?.chip_treasury !== undefined) {
+          if (!isMounted.current) return;
+          // Update club bank immediately from RT payload
+          if (p.new?.chip_treasury !== undefined) {
             setData((prev) => ({
               ...prev,
               clubBank: Number(p.new.chip_treasury) || 0,
             }));
+          }
+          // If union_id changed (club joined or left a union), do a full refetch
+          // to update unionBank and isClubInUnion
+          if (p.old?.union_id !== p.new?.union_id) {
+            fetchData();
           }
         }
       )

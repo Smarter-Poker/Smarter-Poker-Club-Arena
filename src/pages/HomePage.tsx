@@ -545,8 +545,42 @@ function HomePageInner() {
         }
 
         // Compute live club level from DB thresholds
+        // Auto-recompute level if stuck at default (1 or null)
+        let effectiveLevel = club.level || 1;
+        if (effectiveLevel <= 1) {
+          try {
+            const { error: rpcErr } = await supabase.rpc('recompute_club_levels', {
+              p_club_id: club.id,
+            });
+            if (!rpcErr) {
+              const { data: refreshed } = await supabase
+                .from('clubs')
+                .select(
+                  'level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
+                )
+                .eq('id', club.id)
+                .maybeSingle();
+              if (refreshed && refreshed.level > 1) {
+                effectiveLevel = refreshed.level;
+                club.hierarchy_units_rounded_up =
+                  refreshed.hierarchy_units_rounded_up ?? club.hierarchy_units_rounded_up;
+                club.player_threshold_current =
+                  refreshed.player_threshold_current ?? club.player_threshold_current;
+                club.player_threshold_next =
+                  refreshed.player_threshold_next ?? club.player_threshold_next;
+                club.hierarchy_threshold_current =
+                  refreshed.hierarchy_threshold_current ?? club.hierarchy_threshold_current;
+                club.hierarchy_threshold_next =
+                  refreshed.hierarchy_threshold_next ?? club.hierarchy_threshold_next;
+              }
+            }
+          } catch {
+            // RPC not available — use default level
+          }
+        }
+
         const levelInfo = getClubLevel({
-          level: club.level || 1,
+          level: effectiveLevel,
           playerCount: memberCount,
           hierarchyUnits: club.hierarchy_units_rounded_up || 0,
           playerThresholdCurrent: club.player_threshold_current || 0,
@@ -969,9 +1003,43 @@ function HomePageInner() {
               // RPC not deployed — skip
             }
 
+            // Auto-recompute club level if stuck at default
+            let effectiveLevel = club.level || 1;
+            if (effectiveLevel <= 1) {
+              try {
+                const { error: rpcErr } = await supabase.rpc('recompute_club_levels', {
+                  p_club_id: club.id,
+                });
+                if (!rpcErr) {
+                  const { data: refreshed } = await supabase
+                    .from('clubs')
+                    .select(
+                      'level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
+                    )
+                    .eq('id', club.id)
+                    .maybeSingle();
+                  if (refreshed && refreshed.level > 1) {
+                    effectiveLevel = refreshed.level;
+                    club.hierarchy_units_rounded_up =
+                      refreshed.hierarchy_units_rounded_up ?? club.hierarchy_units_rounded_up;
+                    club.player_threshold_current =
+                      refreshed.player_threshold_current ?? club.player_threshold_current;
+                    club.player_threshold_next =
+                      refreshed.player_threshold_next ?? club.player_threshold_next;
+                    club.hierarchy_threshold_current =
+                      refreshed.hierarchy_threshold_current ?? club.hierarchy_threshold_current;
+                    club.hierarchy_threshold_next =
+                      refreshed.hierarchy_threshold_next ?? club.hierarchy_threshold_next;
+                  }
+                }
+              } catch {
+                // RPC not available
+              }
+            }
+
             // Compute club level
             const levelInfo = getClubLevel({
-              level: club.level || 1,
+              level: effectiveLevel,
               playerCount: memberCount,
               hierarchyUnits: club.hierarchy_units_rounded_up || 0,
               playerThresholdCurrent: club.player_threshold_current || 0,

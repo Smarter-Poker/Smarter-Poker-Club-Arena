@@ -478,28 +478,71 @@ export default function CashierPage() {
     txLoadingRef.current = true;
     setLoadingTx(true);
     try {
-      const { data, error } = await retryFetch(
-        () =>
-          supabase
-            .from('wallet_transactions')
-            .select(
-              'id, user_id, wallet_type, amount, type, category, description, related_entity_id, created_at'
-            )
-            .eq('user_id', user.id)
-            .order('created_at', { ascending: false })
-            .limit(50)
-            .then((r) => r),
-        { maxRetries: 2, isMountedRef: isMounted }
-      );
+      // Query BOTH wallet_transactions AND chip_ledger for complete history
+      const [wtResult, clResult] = await Promise.all([
+        retryFetch(
+          () =>
+            supabase
+              .from('wallet_transactions')
+              .select(
+                'id, user_id, wallet_type, amount, type, category, description, related_entity_id, created_at'
+              )
+              .eq('user_id', user.id)
+              .order('created_at', { ascending: false })
+              .limit(50)
+              .then((r) => r),
+          { maxRetries: 2, isMountedRef: isMounted }
+        ),
+        retryFetch(
+          () =>
+            supabase
+              .from('chip_ledger')
+              .select(
+                'id, performed_by, from_type, from_label, to_type, to_label, to_entity_id, amount, category, description, created_at'
+              )
+              .or(`performed_by.eq.${user.id},to_entity_id.eq.${user.id}`)
+              .order('created_at', { ascending: false })
+              .limit(50)
+              .then((r) => r),
+          { maxRetries: 2, isMountedRef: isMounted }
+        ),
+      ]);
 
-      if (!error && data && isMounted.current) {
-        setTransactions(data);
-        // SWR: cache for instant display on revisit (with TTL timestamp)
+      // Merge and deduplicate — chip_ledger entries get converted to transaction format
+      const wtData = (wtResult?.data || []) as any[];
+      const clData = (clResult?.data || []).map((entry: any) => ({
+        id: entry.id,
+        user_id: user.id,
+        wallet_type: 'PLAYER',
+        amount: entry.amount,
+        type: entry.performed_by === user.id ? 'debit' : 'credit',
+        category: entry.category,
+        description: entry.description || `${entry.from_label} → ${entry.to_label}`,
+        related_entity_id: entry.to_entity_id,
+        created_at: entry.created_at,
+        _source: 'chip_ledger',
+        _from: entry.from_label,
+        _to: entry.to_label,
+      }));
+
+      // Merge, deduplicate by id, sort by created_at desc
+      const seen = new Set<string>();
+      const merged = [...wtData, ...clData]
+        .filter((tx) => {
+          if (seen.has(tx.id)) return false;
+          seen.add(tx.id);
+          return true;
+        })
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        .slice(0, 100);
+
+      if (isMounted.current) {
+        setTransactions(merged);
         try {
           sessionStorage.setItem(
             `cashier_tx_cache_${user.id}`,
             JSON.stringify({
-              data: data.slice(0, 30),
+              data: merged.slice(0, 30),
               cachedAt: Date.now(),
             })
           );
@@ -620,6 +663,15 @@ export default function CashierPage() {
       if (user?.id) loadBalances(user.id);
     },
     { debounce: 500 }
+  );
+
+  // Live transaction updates — refresh history when new ledger entries arrive
+  useMasterBusSubscriptions(
+    ['TRANSACTION_LOGGED' as any],
+    () => {
+      loadTransactions();
+    },
+    { debounce: 1000 }
   );
 
   // Load balances and pending cashouts

@@ -258,9 +258,10 @@ function PlayerActionModal({
               user_id: member.user_id,
               role: newRole,
               status: 'active',
-              commission_rate: newRole === 'super_agent' ? 0.5 : 0.3,
-              player_rakeback_rate: newRole === 'super_agent' ? 0.3 : 0.2,
-              credit_limit: 0,
+              commission_rate: newRole === 'super_agent' ? 0.6 : 0.5,
+              player_rakeback_rate: newRole === 'super_agent' ? 0.15 : 0.1,
+              credit_limit: 100000,
+              is_prepaid: false,
               parent_agent_id: null,
             });
             if (agentInsertErr) throw agentInsertErr;

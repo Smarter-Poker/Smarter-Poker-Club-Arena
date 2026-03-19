@@ -183,13 +183,17 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     onClose();
   };
 
-  // Settings update
-  const updateSetting = async (localKey: string, dbKey: string, value: boolean) => {
+  // Settings update with optimistic rollback
+  const updateSetting = async (
+    localKey: string,
+    dbKey: string,
+    value: boolean,
+    rollback: () => void
+  ) => {
     try {
       localStorage.setItem(localKey, String(value));
     } catch (err) {
       console.error('[HamburgerMenu] Error:', err);
-      /* */
     }
     if (user?.id) {
       try {
@@ -200,10 +204,22 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
         if (updateErr) {
           console.error('[HamburgerMenu] Setting save failed:', updateErr);
           toast.error('Setting could not be saved. Please try again.');
+          rollback();
+          try {
+            localStorage.setItem(localKey, String(!value));
+          } catch {
+            /* */
+          }
         }
       } catch (error) {
         console.error('Error updating setting:', error);
         toast.error('Setting could not be saved. Please try again.');
+        rollback();
+        try {
+          localStorage.setItem(localKey, String(!value));
+        } catch {
+          /* */
+        }
       }
     }
   };
@@ -211,21 +227,27 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   const handleSoundsToggle = () => {
     const newValue = !soundsEnabled;
     setSoundsEnabled(newValue);
-    updateSetting(STORAGE_KEYS.SOUNDS, 'sounds_enabled', newValue);
+    updateSetting(STORAGE_KEYS.SOUNDS, 'sounds_enabled', newValue, () =>
+      setSoundsEnabled(!newValue)
+    );
     masterBus.emit('SETTINGS_CHANGED', { setting: 'isSoundEnabled', value: newValue });
   };
 
   const handleVibrationsToggle = () => {
     const newValue = !vibrationsEnabled;
     setVibrationsEnabled(newValue);
-    updateSetting(STORAGE_KEYS.VIBRATIONS, 'vibrations_enabled', newValue);
+    updateSetting(STORAGE_KEYS.VIBRATIONS, 'vibrations_enabled', newValue, () =>
+      setVibrationsEnabled(!newValue)
+    );
     masterBus.emit('SETTINGS_CHANGED', { setting: 'vibrationsEnabled', value: newValue });
   };
 
   const handleShowBBToggle = () => {
     const newValue = !showBBEnabled;
     setShowBBEnabled(newValue);
-    updateSetting(STORAGE_KEYS.SHOW_STACK_BB, 'show_stack_bb', newValue);
+    updateSetting(STORAGE_KEYS.SHOW_STACK_BB, 'show_stack_bb', newValue, () =>
+      setShowBBEnabled(!newValue)
+    );
     masterBus.emit('SETTINGS_CHANGED', { setting: 'showStackInBB', value: newValue });
   };
 

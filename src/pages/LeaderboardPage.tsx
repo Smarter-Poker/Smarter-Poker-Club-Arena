@@ -537,10 +537,76 @@ export default function LeaderboardPage() {
             ))}
           </div>
         ) : activeTab === 'rankings' && entries.length === 0 ? (
-          <div className="empty-state">
-            <span className="empty-icon">🏆</span>
-            <p>No rankings yet for this period.</p>
-            <p className="empty-sub">Start playing to climb the leaderboard!</p>
+          <div className="empty-state" style={{ textAlign: 'center', padding: '3rem 1.5rem' }}>
+            <span
+              className="empty-icon"
+              style={{ fontSize: '3rem', display: 'block', marginBottom: '0.75rem' }}
+            >
+              🏆
+            </span>
+            <p style={{ fontSize: '1.1rem', fontWeight: 600, margin: '0 0 0.5rem' }}>
+              No rankings yet for this period.
+            </p>
+            <p
+              className="empty-sub"
+              style={{
+                color: 'var(--soft-white, #B0B3B8)',
+                fontSize: '0.85rem',
+                margin: '0 0 1.5rem',
+              }}
+            >
+              Start playing to climb the leaderboard!
+            </p>
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.75rem',
+                alignItems: 'center',
+              }}
+            >
+              <div
+                style={{
+                  background: 'rgba(65,105,225,0.1)',
+                  border: '1px solid rgba(65,105,225,0.2)',
+                  borderRadius: '12px',
+                  padding: '1rem 1.5rem',
+                  maxWidth: '320px',
+                  width: '100%',
+                  textAlign: 'left',
+                }}
+              >
+                <div
+                  style={{
+                    fontWeight: 600,
+                    marginBottom: '0.5rem',
+                    color: 'var(--off-white, #E4E6EB)',
+                  }}
+                >
+                  💡 How to rank up
+                </div>
+                <ul
+                  style={{
+                    margin: 0,
+                    paddingLeft: '1.25rem',
+                    color: 'var(--soft-white, #B0B3B8)',
+                    fontSize: '0.85rem',
+                    lineHeight: 1.8,
+                  }}
+                >
+                  <li>Play hands at any club table</li>
+                  <li>Win tournaments for bonus points</li>
+                  <li>Climb daily, weekly & monthly boards</li>
+                </ul>
+              </div>
+              <button
+                className="join-club-btn"
+                onClick={() => navigate('/')}
+                style={{ marginTop: '0.5rem' }}
+              >
+                Find a Table
+              </button>
+            </div>
           </div>
         ) : activeTab === 'tournaments' && tournamentsLoading ? (
           <div className="lb-skeleton-wrapper">

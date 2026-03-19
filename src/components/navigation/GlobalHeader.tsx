@@ -64,9 +64,14 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
   }, [menuOpen]);
 
   // Listen for HAMBURGER_TOGGLE from FloatingHamburger (bottom-left button)
-  useMasterBusSubscription('HAMBURGER_TOGGLE', () => {
-    setMenuOpen((prev) => !prev);
-  });
+  // Debounced to prevent rapid double-tap from toggling faster than animation
+  useMasterBusSubscription(
+    'HAMBURGER_TOGGLE',
+    () => {
+      setMenuOpen((prev) => !prev);
+    },
+    { debounce: 200 }
+  );
 
   // ─── Track in-app navigations for safe back-button behaviour ───
   useEffect(() => {

@@ -25,8 +25,8 @@ export default function FloatingHamburger() {
   const [menuIsOpen, setMenuIsOpen] = useState(false);
 
   // Hide when the HamburgerMenu is open (emitted by GlobalHeader)
-  useMasterBusSubscription('MENU_STATE_CHANGED', (payload: any) => {
-    setMenuIsOpen(!!payload?.isOpen);
+  useMasterBusSubscription('MENU_STATE_CHANGED', (payload) => {
+    setMenuIsOpen(payload.isOpen);
   });
 
   // Don't render on auth or share pages

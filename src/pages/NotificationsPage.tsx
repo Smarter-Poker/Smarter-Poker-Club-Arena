@@ -445,9 +445,19 @@ export default function NotificationsPage() {
             ))}
           </div>
         ) : notifications.length === 0 ? (
-          <div className="empty-state">
-            <span className="empty-icon">○</span>
-            <p>No notifications yet</p>
+          <div className="empty-state" style={{ textAlign: 'center', padding: '3rem 1.5rem' }}>
+            <span
+              className="empty-icon"
+              style={{ fontSize: '3rem', display: 'block', marginBottom: '0.75rem' }}
+            >
+              ✅
+            </span>
+            <p style={{ fontSize: '1.1rem', fontWeight: 600, margin: '0 0 0.5rem' }}>
+              You're all caught up!
+            </p>
+            <p style={{ color: 'var(--soft-white, #B0B3B8)', fontSize: '0.85rem', margin: 0 }}>
+              No new notifications. We'll let you know when something happens.
+            </p>
           </div>
         ) : filteredNotifications.length === 0 ? (
           <div className="empty-state">

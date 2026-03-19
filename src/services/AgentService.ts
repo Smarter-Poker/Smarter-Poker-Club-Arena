@@ -612,10 +612,10 @@ class AgentServiceClass {
       return false;
     }
 
-    // Update player's club_members record — use agent PK (agentRecord.id), NOT user_id
+    // Update player's club_members record — use agent's user_id (FK references auth.users)
     const { error } = await supabase
       .from('club_members')
-      .update({ agent_id: agentRecord.id })
+      .update({ agent_id: agentUserId })
       .eq('user_id', playerId)
       .eq('club_id', resolvedClubId);
 

@@ -80,10 +80,10 @@
   content: '';
   position: absolute;
   bottom: 0;
-  left: 6%;
-  right: 6%;
-  height: 21.5%;
-  background: linear-gradient(180deg, rgba(10, 20, 35, 0.95) 0%, rgba(8, 18, 32, 0.98) 100%);
+  left: 5%;
+  right: 5%;
+  height: 22%;
+  background: #0a1423;
   border-radius: 4px;
   z-index: 1;
 }

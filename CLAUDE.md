@@ -1,5 +1,33 @@
 # Claude Instructions for Club Arena
 
+## MANDATORY FOR ALL AGENTS (AntiGravity, Claude, any AI agent)
+
+**Club Arena has been PERMANENTLY migrated to smarter.poker.**
+
+### Where to PUBLISH / SAVE / DEPLOY:
+
+1. Build Club Arena: `npm run build` (Vite produces dist/)
+2. Sync to World Hub: `bash scripts/sync-to-world-hub.sh ~/Documents/Smarter-Poker-World-Hub`
+3. Push WORLD HUB (not Club Arena) to deploy: `cd ~/Documents/Smarter-Poker-World-Hub && bash scripts/git-safe-push.sh "your message"`
+4. Verify on: `https://smarter.poker/hub/club-arena/`
+
+### NEVER DO:
+
+- NEVER run `vercel deploy` or `vercel --prod` in the Club Arena directory
+- NEVER push to or deploy via `club-arena.vercel.app`
+- NEVER push to or deploy via `club-engine.vercel.app`
+- NEVER push to or deploy via `club.smarter.poker`
+- NEVER add iframe code (`window.parent`, `postMessage`, `ClubArenaEmbed`)
+- NEVER add `VITE_` prefixed secret keys (use server-side API routes instead)
+
+### WHERE THINGS LIVE:
+
+- Production URL: `https://smarter.poker/hub/club-arena/`
+- Built files: `Smarter-Poker-World-Hub/public/hub/club-arena/` (618 files)
+- Source code: `Smarter-Poker-Club-Arena/src/` (this repo)
+- API routes: `Smarter-Poker-World-Hub/pages/api/club-arena/` (66 routes)
+- Vercel project: `smarter-poker` (the ONLY deployment target)
+
 ## CRITICAL: Testing & Deployment Rules
 
 **ALL live E2E testing MUST be done on `smarter.poker` — NEVER on `club-arena.vercel.app` directly.**

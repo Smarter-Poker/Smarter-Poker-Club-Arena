@@ -1950,39 +1950,6 @@
   }
 }
 
-/* Enhancement #8: Notification Badge on Tiles */
-.tileBadge {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  min-width: 18px;
-  height: 18px;
-  border-radius: 9px;
-  background: linear-gradient(135deg, #ff4444, #ff2222);
-  color: #fff;
-  font-size: 10px;
-  font-weight: 800;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 20;
-  box-shadow: 0 2px 8px rgba(255, 0, 0, 0.4);
-  animation: badgePop 0.3s ease-out;
-  padding: 0 4px;
-}
-
-@keyframes badgePop {
-  0% {
-    transform: scale(0);
-  }
-  70% {
-    transform: scale(1.2);
-  }
-  100% {
-    transform: scale(1);
-  }
-}
-
 /* Enhancement #10: Error Boundary */
 .errorBoundary {
   min-height: 100vh;
@@ -2328,62 +2295,8 @@
   }
 }
 
-/* P4-2: Who's Online / Presence Hub — Glass Container Upgrade */
-.presenceSection {
-  width: 100%;
-  padding: 14px 16px;
-  margin-bottom: 12px;
-  background: linear-gradient(145deg, rgba(8, 20, 40, 0.55), rgba(5, 15, 35, 0.65));
-  border: 1px solid rgba(0, 212, 255, 0.1);
-  border-radius: 14px;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  box-shadow:
-    0 4px 20px rgba(0, 0, 0, 0.25),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
-  position: relative;
-  overflow: hidden;
-  z-index: 10;
-  animation: sectionFadeIn 0.5s ease-out 0.2s both;
-}
-
-/* Ambient inner glow sweep across the presence container */
-.presenceSection::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 60%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(0, 212, 255, 0.03), transparent);
-  animation: presenceGlowSweep 8s ease-in-out infinite;
-  pointer-events: none;
-}
-
-@keyframes presenceGlowSweep {
-  0%,
-  60% {
-    left: -100%;
-  }
-  100% {
-    left: 200%;
-  }
-}
-
-/* P4-4: Section Breathing Separator — Animated divider between sections */
-.sectionSeparator {
-  display: none;
-}
-
-@keyframes separatorBreath {
-  0%,
-  100% {
-    opacity: 0.4;
-  }
-  50% {
-    opacity: 0.8;
-  }
-}
+/* P4-2: Presence section REMOVED from JSX — CSS cleaned up */
+/* P4-4: Section separator REMOVED from JSX — CSS cleaned up */
 
 /* P4-6: Daily Challenge progress bar micro-animation */
 .challengeProgress {

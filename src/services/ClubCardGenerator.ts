@@ -19,20 +19,21 @@ interface CardGeneratorOptions {
 // Template image path (high-fidelity metallic frame)
 const FRAME_TEMPLATE_URL = `${import.meta.env.BASE_URL}images/club-card-frame-template.jpg`;
 
-// Card dimensions (matching template proportions ~1:1.5)
-const CARD_WIDTH = 600;
-const CARD_HEIGHT = 900;
+// Card dimensions (matching template proportions 604:1024)
+const CARD_WIDTH = 604;
+const CARD_HEIGHT = 1024;
 
-// Logo/image area dimensions and position (calculated from template)
-// The center area is where the AI-generated image goes
-const LOGO_X = 35;
-const LOGO_Y = 70;
-const LOGO_WIDTH = 530;
-const LOGO_HEIGHT = 580;
+// Logo/image area: recessed viewport inside the metal frame
+// Measured from club-card-frame-template.jpg:
+//   top: ~6%, left: ~7%, right: ~7%, bottom: ~75%
+const LOGO_X = Math.round(CARD_WIDTH * 0.07); // 42
+const LOGO_Y = Math.round(CARD_HEIGHT * 0.06); // 61
+const LOGO_WIDTH = CARD_WIDTH - LOGO_X * 2; // 520
+const LOGO_HEIGHT = Math.round(CARD_HEIGHT * 0.69); // 707 (75% - 6%)
 
 // Text positions
-const CLUB_ID_Y = 40; // Near top of frame
-const CLUB_NAME_Y = 695; // Below the image, above stats panel
+const CLUB_ID_Y = Math.round(CARD_HEIGHT * 0.04); // Near top of frame
+const CLUB_NAME_Y = Math.round(CARD_HEIGHT * 0.7); // Below the image, before stats bar
 
 export class ClubCardGenerator {
   /**

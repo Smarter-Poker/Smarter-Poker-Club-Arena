@@ -274,7 +274,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             position: 'fixed',
             inset: 0,
             background: 'rgba(0, 0, 0, 0.7)',
-            zIndex: 999,
+            zIndex: 1100,
           }}
         />
       )}
@@ -292,7 +292,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           maxWidth: 320,
           backgroundColor: '#18191a' /* Solid background to prevent see-through */,
           boxShadow: '4px 0 20px rgba(0, 0, 0, 0.5)',
-          zIndex: 1000,
+          zIndex: 1200,
           transform: isOpen ? 'translateX(0)' : 'translateX(-100%)',
           transition: 'transform 0.3s ease',
           display: 'flex',

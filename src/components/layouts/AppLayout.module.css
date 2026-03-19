@@ -209,7 +209,7 @@
    RESPONSIVE
    ═══════════════════════════════════════════════════════════════════════════════ */
 
-@media (max-width: 768px) {
+@media (max-width: 1024px) {
   .nav {
     display: none;
   }
@@ -232,14 +232,16 @@
 
   .main {
     padding: var(--space-4);
-    padding-top: calc(63px + var(--space-4));
+    padding-top: calc(55px + var(--space-4));
+    /* tablet header: 52px + 3px border */
   }
 }
 
-@media (max-width: 480px) {
+@media (max-width: 600px) {
   .main {
     padding: var(--space-3);
-    padding-top: calc(63px + var(--space-3));
+    padding-top: calc(51px + var(--space-3));
+    /* mobile header: 48px + 3px border */
   }
 
   .headerContent {

@@ -6,7 +6,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { useNavigate } from 'react-router-dom';
 import styles from './CreateClubPage.module.css';
@@ -17,7 +17,7 @@ import { masterBus } from '../core/MasterBus';
 import { sanitizeInput } from '../utils/sanitizeInput';
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// TYPES
+// TYPES & CONSTANTS
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const BASE = import.meta.env.BASE_URL;
@@ -25,13 +25,14 @@ const BASE = import.meta.env.BASE_URL;
 interface ClubFormData {
   name: string;
   description: string;
+  /** Either icon ID ('gold','green',...) or 'custom' for uploaded file */
   iconId: string;
   isPublic: boolean;
   requiresApproval: boolean;
   gpsRestricted: boolean;
 }
 
-// Club icon options — premium generated images
+// Default club icon options — compact fallback row
 const CLUB_ICONS = [
   { id: 'gold', name: 'Royal Gold', src: `${BASE}images/club-icons/icon-gold.png` },
   { id: 'green', name: 'Neon Spade', src: `${BASE}images/club-icons/icon-green.png` },
@@ -50,6 +51,9 @@ const DEFAULT_FORM: ClubFormData = {
   gpsRestricted: false,
 };
 
+const ALLOWED_FILE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2MB
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // STEP COMPONENTS
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -57,115 +61,227 @@ const DEFAULT_FORM: ClubFormData = {
 interface StepProps {
   form: ClubFormData;
   updateForm: (updates: Partial<ClubFormData>) => void;
+  customLogoFile: File | null;
+  customLogoPreview: string | null;
+  onLogoFileChange: (file: File | null) => void;
+  logoError: string | null;
 }
 
-const Step1Basics = ({ form, updateForm }: StepProps) => (
-  <div className={styles.stepContent}>
-    <h2>Club Basics</h2>
-    <p className={styles.stepDesc}>Give your club a name, pick an icon, and set permissions.</p>
+const Step1Basics = ({
+  form,
+  updateForm,
+  customLogoFile,
+  customLogoPreview,
+  onLogoFileChange,
+  logoError,
+}: StepProps) => {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [defaultsExpanded, setDefaultsExpanded] = useState(
+    !customLogoFile && form.iconId !== 'custom'
+  );
+  const [dragOver, setDragOver] = useState(false);
 
-    <div className={styles.formGroup}>
-      <label>Club Name *</label>
-      <input
-        type="text"
-        className={styles.textInput}
-        placeholder="Enter club name..."
-        value={form.name}
-        onChange={(e) => updateForm({ name: e.target.value })}
-        maxLength={50}
-      />
-      <span className={styles.charCount}>{form.name.length}/50</span>
-    </div>
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) onLogoFileChange(file);
+  };
 
-    <div className={styles.formGroup}>
-      <label>Select Club Icon</label>
-      <div className={styles.iconGrid}>
-        {CLUB_ICONS.map((icon) => (
-          <button
-            key={icon.id}
-            type="button"
-            className={`${styles.iconOption} ${form.iconId === icon.id ? styles.selected : ''}`}
-            onClick={() => updateForm({ iconId: icon.id })}
-            title={icon.name}
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) onLogoFileChange(file);
+  };
+
+  const handleRemoveLogo = () => {
+    onLogoFileChange(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  return (
+    <div className={styles.stepContent}>
+      <h2>Club Basics</h2>
+      <p className={styles.stepDesc}>Give your club a name, pick a logo, and set permissions.</p>
+
+      <div className={styles.formGroup}>
+        <label>Club Name *</label>
+        <input
+          type="text"
+          className={styles.textInput}
+          placeholder="Enter club name..."
+          value={form.name}
+          onChange={(e) => updateForm({ name: e.target.value })}
+          maxLength={50}
+        />
+        <span className={styles.charCount}>{form.name.length}/50</span>
+      </div>
+
+      {/* ── UPLOAD LOGO (Primary) ── */}
+      <div className={styles.formGroup}>
+        <label>Club Logo</label>
+
+        {customLogoPreview ? (
+          /* ─── Uploaded Preview ─── */
+          <div className={styles.uploadedPreview}>
+            <img src={customLogoPreview} alt="Club logo preview" className={styles.uploadedImg} />
+            <div className={styles.uploadedInfo}>
+              <span className={styles.uploadedName}>{customLogoFile?.name || 'Custom Logo'}</span>
+              <span className={styles.uploadedSize}>
+                {customLogoFile ? `${(customLogoFile.size / 1024).toFixed(0)} KB` : ''}
+              </span>
+              <div className={styles.uploadedActions}>
+                <button
+                  type="button"
+                  className={styles.changeBtn}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  Change
+                </button>
+                <button type="button" className={styles.removeBtn} onClick={handleRemoveLogo}>
+                  Remove
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          /* ─── Drop Zone ─── */
+          <div
+            className={`${styles.dropZone} ${dragOver ? styles.dropZoneActive : ''}`}
+            onClick={() => fileInputRef.current?.click()}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragOver(true);
+            }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={handleDrop}
           >
-            <img
-              src={icon.src}
-              alt={icon.name}
-              className={styles.iconImg}
-              loading="lazy"
-              decoding="async"
-            />
-            <span className={styles.iconLabel}>{icon.name}</span>
+            <div className={styles.dropIcon}>📷</div>
+            <span className={styles.dropText}>
+              <strong>Upload your club logo</strong>
+            </span>
+            <span className={styles.dropHint}>
+              Drag & drop or click to browse • JPG, PNG, GIF, WebP • Max 2MB
+            </span>
+          </div>
+        )}
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/gif,image/webp"
+          onChange={handleFileSelect}
+          style={{ display: 'none' }}
+        />
+
+        {logoError && <span className={styles.logoError}>{logoError}</span>}
+
+        {/* ── DEFAULT ICONS (Fallback Row) ── */}
+        <div className={styles.defaultIconsSection}>
+          <button
+            type="button"
+            className={styles.defaultsToggle}
+            onClick={() => setDefaultsExpanded(!defaultsExpanded)}
+          >
+            <span>Or choose a default icon</span>
+            <span className={styles.toggleArrow}>{defaultsExpanded ? '▲' : '▼'}</span>
           </button>
-        ))}
+
+          {defaultsExpanded && (
+            <div className={styles.defaultIconsRow}>
+              {CLUB_ICONS.map((icon) => (
+                <button
+                  key={icon.id}
+                  type="button"
+                  className={`${styles.defaultIcon} ${form.iconId === icon.id && !customLogoFile ? styles.defaultIconSelected : ''}`}
+                  onClick={() => {
+                    updateForm({ iconId: icon.id });
+                    handleRemoveLogo();
+                  }}
+                  title={icon.name}
+                >
+                  <img src={icon.src} alt={icon.name} loading="lazy" decoding="async" />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className={styles.formGroup}>
+        <label>Description</label>
+        <textarea
+          className={styles.textArea}
+          placeholder="Describe your club..."
+          value={form.description}
+          onChange={(e) => updateForm({ description: e.target.value })}
+          rows={4}
+          maxLength={500}
+        />
+        <span className={styles.charCount}>{form.description.length}/500</span>
+      </div>
+
+      <div className={styles.checkboxGrid}>
+        <label className={styles.checkbox}>
+          <input
+            type="checkbox"
+            checked={form.isPublic}
+            onChange={(e) => updateForm({ isPublic: e.target.checked })}
+          />
+          <span className={styles.checkmark} />
+          <div>
+            <strong>Public Club</strong>
+            <p>Anyone can find and request to join</p>
+          </div>
+        </label>
+
+        <label className={styles.checkbox}>
+          <input
+            type="checkbox"
+            checked={form.requiresApproval}
+            onChange={(e) => updateForm({ requiresApproval: e.target.checked })}
+          />
+          <span className={styles.checkmark} />
+          <div>
+            <strong>Require Approval</strong>
+            <p>New members need admin approval</p>
+          </div>
+        </label>
+
+        <label className={styles.checkbox}>
+          <input
+            type="checkbox"
+            checked={form.gpsRestricted}
+            onChange={(e) => updateForm({ gpsRestricted: e.target.checked })}
+          />
+          <span className={styles.checkmark} />
+          <div>
+            <strong>GPS Restricted</strong>
+            <p>Only allow play from certain locations</p>
+          </div>
+        </label>
       </div>
     </div>
-
-    <div className={styles.formGroup}>
-      <label>Description</label>
-      <textarea
-        className={styles.textArea}
-        placeholder="Describe your club..."
-        value={form.description}
-        onChange={(e) => updateForm({ description: e.target.value })}
-        rows={4}
-        maxLength={500}
-      />
-      <span className={styles.charCount}>{form.description.length}/500</span>
-    </div>
-
-    <div className={styles.checkboxGrid}>
-      <label className={styles.checkbox}>
-        <input
-          type="checkbox"
-          checked={form.isPublic}
-          onChange={(e) => updateForm({ isPublic: e.target.checked })}
-        />
-        <span className={styles.checkmark} />
-        <div>
-          <strong>Public Club</strong>
-          <p>Anyone can find and request to join</p>
-        </div>
-      </label>
-
-      <label className={styles.checkbox}>
-        <input
-          type="checkbox"
-          checked={form.requiresApproval}
-          onChange={(e) => updateForm({ requiresApproval: e.target.checked })}
-        />
-        <span className={styles.checkmark} />
-        <div>
-          <strong>Require Approval</strong>
-          <p>New members need admin approval</p>
-        </div>
-      </label>
-
-      <label className={styles.checkbox}>
-        <input
-          type="checkbox"
-          checked={form.gpsRestricted}
-          onChange={(e) => updateForm({ gpsRestricted: e.target.checked })}
-        />
-        <span className={styles.checkmark} />
-        <div>
-          <strong>GPS Restricted</strong>
-          <p>Only allow play from certain locations</p>
-        </div>
-      </label>
-    </div>
-  </div>
-);
+  );
+};
 
 interface Step2Props {
   form: ClubFormData;
+  customLogoPreview: string | null;
   hasAgreed: boolean;
   setHasAgreed: (v: boolean) => void;
   onShowRules: () => void;
 }
 
-const Step2Preview = ({ form, hasAgreed, setHasAgreed, onShowRules }: Step2Props) => {
+const Step2Preview = ({
+  form,
+  customLogoPreview,
+  hasAgreed,
+  setHasAgreed,
+  onShowRules,
+}: Step2Props) => {
   const icon = CLUB_ICONS.find((i) => i.id === form.iconId);
+  const previewSrc = customLogoPreview || icon?.src || null;
+
   return (
     <div className={styles.stepContent}>
       <h2>Preview & Create</h2>
@@ -174,10 +290,10 @@ const Step2Preview = ({ form, hasAgreed, setHasAgreed, onShowRules }: Step2Props
       <div className={styles.previewCard}>
         <div className={styles.previewHeader}>
           <div className={styles.previewAvatar}>
-            {icon ? (
+            {previewSrc ? (
               <img
-                src={icon.src}
-                alt={icon.name}
+                src={previewSrc}
+                alt="Club logo"
                 style={{
                   width: '100%',
                   height: '100%',
@@ -267,6 +383,11 @@ export default function CreateClubPage() {
   const [showRulesModal, setShowRulesModal] = useState(false);
   const [stepVisible, setStepVisible] = useState(false);
 
+  // Logo upload state
+  const [customLogoFile, setCustomLogoFile] = useState<File | null>(null);
+  const [customLogoPreview, setCustomLogoPreview] = useState<string | null>(null);
+  const [logoError, setLogoError] = useState<string | null>(null);
+
   const totalSteps = 2;
 
   // Section entrance animation
@@ -276,10 +397,53 @@ export default function CreateClubPage() {
     return () => clearTimeout(timer);
   }, [step]);
 
+  // Cleanup object URL on unmount
+  useEffect(() => {
+    return () => {
+      if (customLogoPreview && customLogoPreview.startsWith('blob:')) {
+        URL.revokeObjectURL(customLogoPreview);
+      }
+    };
+  }, [customLogoPreview]);
+
   const updateForm = (updates: Partial<ClubFormData>) => {
     setForm((prev) => ({ ...prev, ...updates }));
     setError(null);
   };
+
+  const handleLogoFileChange = useCallback(
+    (file: File | null) => {
+      setLogoError(null);
+
+      // Revoke old preview URL
+      if (customLogoPreview && customLogoPreview.startsWith('blob:')) {
+        URL.revokeObjectURL(customLogoPreview);
+      }
+
+      if (!file) {
+        setCustomLogoFile(null);
+        setCustomLogoPreview(null);
+        return;
+      }
+
+      // Validate file type
+      if (!ALLOWED_FILE_TYPES.includes(file.type)) {
+        setLogoError('Invalid file type. Please upload JPG, PNG, GIF, or WebP.');
+        return;
+      }
+
+      // Validate file size
+      if (file.size > MAX_FILE_SIZE) {
+        setLogoError('File too large. Maximum size is 2MB.');
+        return;
+      }
+
+      setCustomLogoFile(file);
+      setCustomLogoPreview(URL.createObjectURL(file));
+      setForm((prev) => ({ ...prev, iconId: 'custom' }));
+    },
+    [customLogoPreview]
+  );
 
   const validateStep = (): boolean => {
     switch (step) {
@@ -331,7 +495,7 @@ export default function CreateClubPage() {
       if (existing && existing.length > 0) {
         if (isMounted.current) {
           setError('A club with this name already exists. Please choose a different name.');
-          if (isMounted.current) setCreating(false);
+          setCreating(false);
         }
         return;
       }
@@ -343,8 +507,12 @@ export default function CreateClubPage() {
       // Generate 6-digit club ID
       const clubIdNumber = Math.floor(100000 + Math.random() * 900000);
 
-      // Find the selected icon to store its src path
+      // Determine the logo value for insert
       const selectedIcon = CLUB_ICONS.find((i) => i.id === form.iconId);
+      const logoValue =
+        form.iconId !== 'custom' && selectedIcon
+          ? `images/club-icons/icon-${form.iconId}.png`
+          : null;
 
       const { data, error: insertError } = await supabase
         .from('clubs')
@@ -356,7 +524,7 @@ export default function CreateClubPage() {
           is_public: form.isPublic,
           requires_approval: form.requiresApproval,
           gps_restricted: form.gpsRestricted,
-          logo: selectedIcon ? `images/club-icons/icon-${form.iconId}.png` : null,
+          logo: logoValue,
           settings: {
             icon_id: form.iconId,
             default_rake_percent: 5,
@@ -386,6 +554,40 @@ export default function CreateClubPage() {
         throw new Error('Failed to set up club ownership. Please try again.');
       }
 
+      // ── Upload custom logo if provided (post-creation, after we have club UUID) ──
+      if (customLogoFile && form.iconId === 'custom') {
+        try {
+          const fileExt = customLogoFile.name.split('.').pop() || 'png';
+          const fileName = `${data.id}/logo-${Date.now()}.${fileExt}`;
+
+          const { data: uploadData, error: uploadError } = await supabase.storage
+            .from('club-assets')
+            .upload(fileName, customLogoFile, {
+              cacheControl: '3600',
+              upsert: true,
+            });
+
+          if (uploadError) {
+            console.error('[CreateClub] Logo upload failed (non-fatal):', uploadError);
+          } else if (uploadData) {
+            const { data: urlData } = supabase.storage
+              .from('club-assets')
+              .getPublicUrl(uploadData.path);
+
+            if (urlData?.publicUrl) {
+              // Save logo URL to club record
+              await supabase
+                .from('clubs')
+                .update({ avatar_url: urlData.publicUrl, logo: urlData.publicUrl })
+                .eq('id', data.id);
+            }
+          }
+        } catch (uploadErr) {
+          // Non-fatal — club is created, logo can be re-uploaded later
+          console.error('[CreateClub] Logo upload error (non-fatal):', uploadErr);
+        }
+      }
+
       if (user?.id) {
         masterBus.emit('CLUB_JOINED', { clubId: data.id });
       }
@@ -400,14 +602,23 @@ export default function CreateClubPage() {
   };
 
   const renderStep = () => {
-    const props = { form, updateForm };
     switch (step) {
       case 1:
-        return <Step1Basics {...props} />;
+        return (
+          <Step1Basics
+            form={form}
+            updateForm={updateForm}
+            customLogoFile={customLogoFile}
+            customLogoPreview={customLogoPreview}
+            onLogoFileChange={handleLogoFileChange}
+            logoError={logoError}
+          />
+        );
       case 2:
         return (
           <Step2Preview
             form={form}
+            customLogoPreview={customLogoPreview}
             hasAgreed={hasAgreed}
             setHasAgreed={setHasAgreed}
             onShowRules={() => setShowRulesModal(true)}

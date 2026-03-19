@@ -1,18 +1,26 @@
 /* ═══════════════════════════════════════════════════════════════════════════════
-   ClubCardPanel — Reusable club card with metal frame background + stats overlay
-   Generalized from ClubStatsPanel (Shark Club) for any club
+   ClubCardPanel — Pixel-matched to ClubStatsPanel (Shark Club reference)
+   ═══════════════════════════════════════════════════════════════════════════════
+   The frame template (club-card-frame-template.jpg) has:
+     - Outer metal frame with beveled corners
+     - Recessed inner viewport for the club image (~6% top, 7% sides, 75% bottom)
+     - Stats bar at bottom (~79.5%) with baked-in labels
+   
+   This CSS positions the logo INSIDE the recessed viewport and overlays
+   stats at the exact same positions as ClubStatsPanel.
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .club-card-panel {
   position: relative;
   width: 100%;
-  /* Lock aspect ratio to match Shark Club card (604:1024) — parity */
+  /* Lock aspect ratio to match card image (604:1024) — parity with ClubStatsPanel */
   aspect-ratio: 604 / 1024;
   display: block;
   overflow: hidden;
   pointer-events: none;
 }
 
+/* ── Background: frame template or baked card — fills entire panel ──────────── */
 .club-card-panel-bg {
   width: 100%;
   height: 100%;
@@ -20,11 +28,10 @@
   object-fit: cover;
 }
 
-/* ── Club Name Overlay (top area of the card) ─────────────────────────────── */
-
+/* ── Club Name Overlay (inside the recessed viewport, near top) ────────────── */
 .club-card-name-overlay {
   position: absolute;
-  top: 8%;
+  top: 4%;
   left: 50%;
   transform: translateX(-50%);
   width: 75%;
@@ -34,43 +41,41 @@
 }
 
 .club-card-name {
-  font-family: 'Inter', 'Roboto', sans-serif;
+  font-family: 'Orbitron', 'Inter', 'Roboto', sans-serif;
   font-weight: 800;
-  font-size: 16px;
+  font-size: 14px;
   letter-spacing: 1.5px;
   color: #fff;
   text-transform: uppercase;
   text-shadow:
-    0 0 8px rgba(0, 212, 255, 0.6),
-    0 0 18px rgba(0, 212, 255, 0.3),
+    0 0 8px rgba(0, 0, 0, 0.9),
     0 2px 6px rgba(0, 0, 0, 0.8);
   line-height: 1.3;
   word-wrap: break-word;
   overflow-wrap: break-word;
 }
 
-/* ── Optional Club Logo (center of the card) ──────────────────────────────── */
-
+/* ── Logo container — sits INSIDE the recessed viewport area ───────────────── */
+/* These coordinates match the inner viewport of club-card-frame-template.jpg   */
 .club-card-logo-container {
   position: absolute;
-  top: 7%;
-  left: 8%;
-  right: 8%;
+  top: 6%;
+  left: 7%;
+  right: 7%;
   bottom: 25%;
   display: flex;
   align-items: center;
   justify-content: center;
   pointer-events: none;
-  z-index: 2;
+  z-index: 1;
   overflow: hidden;
-  background: #0d1b2a;
+  /* No background — let the frame template's dark recessed area show through */
 }
 
 .club-card-logo-img {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  filter: drop-shadow(0 0 12px rgba(0, 212, 255, 0.4));
 }
 
 .club-card-logo-fallback {
@@ -92,8 +97,7 @@
   filter: drop-shadow(0 0 12px rgba(0, 212, 255, 0.3));
 }
 
-/* ── Stats Overlay (bottom area — mirrors ClubStatsPanel) ─────────────────── */
-
+/* ── Stats Overlay — PIXEL-MATCHED to ClubStatsPanel positions ─────────────── */
 .club-card-stats-overlay {
   position: absolute;
   top: 0;
@@ -112,21 +116,23 @@
   text-align: center;
 }
 
+/* Labels — visible, matching ClubStatsPanel exactly */
 .club-card-stat-label {
-  /* Labels are baked into the metal frame template image —
-     we hide ours so only the dynamic numeric values overlay the image.
-     This prevents the visible text-overlap/doubling artifact. */
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
+  font-family: 'Inter', 'Roboto', sans-serif;
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  color: #a5eff0;
+  margin-bottom: 2px;
+  text-shadow:
+    0 0 5px rgba(0, 212, 255, 0.4),
+    0 0 10px rgba(0, 212, 255, 0.2);
+  text-transform: uppercase;
   white-space: nowrap;
-  border: 0;
+  line-height: 1.3;
 }
 
+/* Values — matching ClubStatsPanel exactly */
 .club-card-stat-value {
   font-family: 'Inter', 'Roboto', sans-serif;
   font-weight: 700;
@@ -139,15 +145,15 @@
     0 0 20px rgba(0, 150, 255, 0.7);
 }
 
-/* Position groups — offset BELOW the image's baked-in labels (which sit at ~79%) */
+/* Position groups — EXACT match to ClubStatsPanel: top: 79.5% */
 .club-card-members-group {
-  top: 85%;
+  top: 79.5%;
   left: 20%;
   transform: translateX(-50%);
 }
 
 .club-card-level-group {
-  top: 85%;
+  top: 79.5%;
   left: 50%;
   transform: translateX(-50%);
 }
@@ -159,7 +165,7 @@
 }
 
 .club-card-active-group {
-  top: 85%;
+  top: 79.5%;
   left: 80%;
   transform: translateX(-50%);
 }

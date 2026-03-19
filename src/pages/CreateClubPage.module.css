@@ -648,58 +648,189 @@
   }
 }
 
-/* Icon Grid — Image-based Club Icons */
-.iconGrid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 0.75rem;
-}
-
-.iconOption {
+/* ═══════ UPLOAD DROP ZONE ═══════ */
+.dropZone {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 0.5rem;
-  padding: 0.5rem;
-  background: rgba(255, 255, 255, 0.05);
-  border: 2px solid rgba(255, 255, 255, 0.1);
+  padding: 2rem;
+  border: 2px dashed rgba(255, 255, 255, 0.2);
   border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.03);
   cursor: pointer;
-  transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
-
-.iconOption:hover {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.25);
-  transform: translateY(-2px);
-}
-
-.iconOption.selected {
-  background: rgba(var(--accent-rgb), 0.15);
-  border-color: var(--accent);
-  box-shadow:
-    0 0 16px rgba(var(--accent-rgb), 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
-  transform: translateY(-2px);
-}
-
-.iconImg {
-  width: 100%;
-  aspect-ratio: 1;
-  object-fit: cover;
-  border-radius: 0.75rem;
-}
-
-.iconLabel {
-  font-size: 0.7rem;
-  color: var(--text-muted);
-  font-weight: 500;
+  transition: all 0.25s ease;
   text-align: center;
 }
 
-.iconOption.selected .iconLabel {
+.dropZone:hover {
+  border-color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.05);
+}
+
+.dropZoneActive {
+  border-color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.1);
+  box-shadow: 0 0 20px rgba(var(--accent-rgb), 0.2);
+}
+
+.dropIcon {
+  font-size: 2rem;
+  opacity: 0.6;
+}
+
+.dropText {
+  font-size: 0.95rem;
+  color: #fff;
+}
+
+.dropHint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+/* ═══════ UPLOADED PREVIEW ═══════ */
+.uploadedPreview {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 1rem;
+}
+
+.uploadedImg {
+  width: 64px;
+  height: 64px;
+  border-radius: 0.75rem;
+  object-fit: cover;
+  border: 2px solid rgba(var(--accent-rgb), 0.4);
+  flex-shrink: 0;
+}
+
+.uploadedInfo {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.uploadedName {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+.uploadedSize {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.uploadedActions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.changeBtn,
+.removeBtn {
+  background: none;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 0.5rem;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: var(--text-muted);
+}
+
+.changeBtn:hover {
+  border-color: var(--accent);
   color: var(--accent);
-  font-weight: 600;
+}
+
+.removeBtn:hover {
+  border-color: #ef4444;
+  color: #ef4444;
+}
+
+.logoError {
+  display: block;
+  font-size: 0.8rem;
+  color: #ef4444;
+  margin-top: 0.5rem;
+}
+
+/* ═══════ DEFAULT ICONS — Compact Row ═══════ */
+.defaultIconsSection {
+  margin-top: 0.75rem;
+}
+
+.defaultsToggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0.5rem 0;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  transition: color 0.2s ease;
+}
+
+.defaultsToggle:hover {
+  color: #fff;
+}
+
+.toggleArrow {
+  font-size: 0.65rem;
+  transition: transform 0.2s ease;
+}
+
+.defaultIconsRow {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+  animation: fadeInUp 0.3s ease forwards;
+}
+
+.defaultIcon {
+  width: calc((100% - 2.5rem) / 6);
+  aspect-ratio: 1;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.5rem;
+  overflow: hidden;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 0;
+  transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  flex-shrink: 0;
+}
+
+.defaultIcon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.defaultIcon:hover {
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: scale(1.08);
+}
+
+.defaultIconSelected {
+  border-color: var(--accent);
+  box-shadow: 0 0 10px rgba(var(--accent-rgb), 0.4);
+  transform: scale(1.05);
 }
 
 /* Bonus Notice */

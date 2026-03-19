@@ -137,8 +137,7 @@ function HomePageInner() {
     };
   }, []);
 
-  // Real data states
-  const [isLoading, setIsLoading] = useState(true);
+  // Real data states — start as NOT loading if SWR cache provides clubs
   const [userClubs, setUserClubs] = useState<UserClub[]>(() => {
     // SWR — instant render from cache
     try {
@@ -153,6 +152,21 @@ function HomePageInner() {
       /* ignore corrupt cache */
     }
     return [];
+  });
+  const [isLoading, setIsLoading] = useState(() => {
+    // If SWR cache already gave us clubs, skip loading state entirely
+    try {
+      const cached = localStorage.getItem(STORAGE_KEYS.CLUBS_CACHE);
+      const cacheTs = localStorage.getItem(STORAGE_KEYS.CLUBS_CACHE_TS);
+      const isFresh = cacheTs && Date.now() - Number(cacheTs) < SWR_CACHE_TTL;
+      if (cached && isFresh) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) return false;
+      }
+    } catch {
+      /* */
+    }
+    return true;
   });
 
   // Per-club stats for featured card rendering
@@ -1187,50 +1201,12 @@ function HomePageInner() {
           onOpenCreateModal={() => setShowCreateClubModal(true)}
         />
 
-        {/* Enhancement #5: Skeleton loading while clubs data is loading */}
-        {isLoading && (
-          <div className={styles.clubCardsSkeleton}>
-            <div className={styles.clubCardSkeletonItem}></div>
-            <div className={styles.clubCardSkeletonItem}></div>
-            <div className={styles.clubCardSkeletonItem}></div>
-          </div>
-        )}
-
         {/* No Clubs Message */}
         {!isLoading && userClubs.length === 0 && (
           <div className={styles.noClubsMessage}>
             <p>Welcome to Club Arena</p>
             <p>Create or join a club to get started!</p>
           </div>
-        )}
-
-        {/* #9: Search bar (show when user has 3+ clubs) — uses unfiltered count to avoid catch-22 */}
-        {(unfilteredClubCount >= 3 || searchQuery) && (
-          <div className={styles.searchBarContainer}>
-            <input
-              id="club-search-input"
-              type="text"
-              className={styles.searchInput}
-              placeholder="Search clubs... (press /)"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              aria-label="Search clubs"
-            />
-            {searchQuery && (
-              <button
-                className={styles.searchClear}
-                onClick={() => setSearchQuery('')}
-                aria-label="Clear search"
-              >
-                ✕
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* Phase 8 #7: Search empty state */}
-        {searchQuery.trim() && displayClubs.length === 0 && (
-          <div className={styles.searchEmptyState}>No clubs match "{searchQuery}"</div>
         )}
 
         {/* ═══════════════════════════════════════════════════════════════════════

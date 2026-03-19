@@ -34,8 +34,8 @@ const BASE = import.meta.env.BASE_URL;
 /**
  * Session-level counter of in-app navigations.
  * If 0 on a sub-page, the user arrived via direct URL — navigate(-1) would exit the app.
+ * Uses useRef to avoid issues with React strict mode double-mounting.
  */
-let inAppNavCount = 0;
 
 interface GlobalHeaderProps {
   pageDepth?: number;
@@ -47,6 +47,7 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const prevPathRef = useRef(location.pathname);
+  const inAppNavCountRef = useRef(0);
   const { loadBalances, loadDiamonds } = useWalletStore();
   const { user: authUser } = useAuthUser();
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
@@ -55,6 +56,7 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
 
   const handleMenuToggle = useCallback(() => setMenuOpen((prev) => !prev), []);
+  const handleMenuClose = useCallback(() => setMenuOpen(false), []);
 
   // Listen for HAMBURGER_TOGGLE from FloatingHamburger (bottom-left button)
   useMasterBusSubscription('HAMBURGER_TOGGLE', () => {
@@ -64,7 +66,7 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
   // ─── Track in-app navigations for safe back-button behaviour ───
   useEffect(() => {
     if (prevPathRef.current !== location.pathname) {
-      inAppNavCount++;
+      inAppNavCountRef.current++;
       prevPathRef.current = location.pathname;
     }
   }, [location.pathname]);
@@ -100,7 +102,11 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
           .select('*', { count: 'exact', head: true })
           .eq('user_id', userId)
           .eq('read', false);
-        if (mounted) setNotificationCount(notifCount || 0);
+        if (mounted) {
+          const newCount = notifCount || 0;
+          setNotificationCount(newCount);
+          masterBus.emit('NOTIFICATION_COUNT_CHANGED', { count: newCount });
+        }
 
         // Unread messages count
         const { count: msgCount } = await supabase
@@ -108,7 +114,11 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
           .select('*', { count: 'exact', head: true })
           .eq('receiver_id', userId)
           .eq('is_read', false);
-        if (mounted) setUnreadMessages(msgCount || 0);
+        if (mounted) {
+          const newMsgCount = msgCount || 0;
+          setUnreadMessages(newMsgCount);
+          masterBus.emit('UNREAD_DM_COUNT_CHANGED', { userId: userId, count: newMsgCount });
+        }
       } catch (e) {
         console.error('[GlobalHeader] Error loading user data:', e);
       }
@@ -136,7 +146,11 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
             .select('*', { count: 'exact', head: true })
             .eq('user_id', userId)
             .eq('read', false);
-          if (mounted) setNotificationCount(count || 0);
+          if (mounted) {
+            const c = count || 0;
+            setNotificationCount(c);
+            masterBus.emit('NOTIFICATION_COUNT_CHANGED', { count: c });
+          }
         }
       )
       .on(
@@ -154,7 +168,11 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
             .select('*', { count: 'exact', head: true })
             .eq('receiver_id', userId)
             .eq('is_read', false);
-          if (mounted) setUnreadMessages(count || 0);
+          if (mounted) {
+            const mc = count || 0;
+            setUnreadMessages(mc);
+            masterBus.emit('UNREAD_DM_COUNT_CHANGED', { userId: userId, count: mc });
+          }
         }
       )
       .subscribe((status: string, err?: Error) => {
@@ -189,7 +207,7 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
 
   /** Safe back-nav: uses history if available, otherwise falls back to home */
   const handleBackClick = () => {
-    if (inAppNavCount > 0) {
+    if (inAppNavCountRef.current > 0) {
       navigate(-1);
     } else {
       navigate('/', { replace: true });
@@ -203,7 +221,7 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
   return (
     <>
       {/* Hamburger Menu drawer — rendered outside header for z-index stacking */}
-      <HamburgerMenu isOpen={menuOpen} onClose={() => setMenuOpen(false)} />
+      <HamburgerMenu isOpen={menuOpen} onClose={handleMenuClose} />
 
       <header className={styles.header}>
         {/* LEFT: Hamburger + Back/Hub button (World Hub pattern) */}
@@ -258,10 +276,7 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
           </button>
 
           {/* VIP Member — #2: Gold glow ring */}
-          <button
-            className={styles.orbBtnVip}
-            onClick={() => (window.location.href = '/hub/diamond-store')}
-          >
+          <button className={styles.orbBtnVip} onClick={() => (window.location.href = '/hub/vip')}>
             <img src={`${BASE}images/vip-card.png`} alt="VIP Member" className={styles.orbImg} />
           </button>
 

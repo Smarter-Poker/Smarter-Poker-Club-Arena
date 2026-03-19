@@ -91,7 +91,9 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     if (user?.id) {
       supabase
         .from('profiles')
-        .select('*')
+        .select(
+          'avatar_url, username, display_name, sounds_enabled, vibrations_enabled, show_stack_bb, is_vip, tier, diamonds'
+        )
         .eq('id', user.id)
         .maybeSingle()
         .then(({ data, error }) => {
@@ -158,9 +160,13 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           .from('profiles')
           .update({ [dbKey]: value })
           .eq('id', user.id);
-        if (updateErr) console.error('[HamburgerMenu] Setting save failed:', updateErr);
+        if (updateErr) {
+          console.error('[HamburgerMenu] Setting save failed:', updateErr);
+          toast.error('Setting could not be saved. Please try again.');
+        }
       } catch (error) {
         console.error('Error updating setting:', error);
+        toast.error('Setting could not be saved. Please try again.');
       }
     }
   };

@@ -1,6 +1,6 @@
 /**
  * FLOATING HAMBURGER BUTTON — Bottom-left navigation toggle
- * Silver metallic icon - positioned at BOTTOM LEFT
+ * Silver metallic icon - NO BACKGROUND (transparent)
  * Companion trigger for the GlobalHeader HamburgerMenu
  * z-index: 1001 (above GlobalHeader's 1000, below HamburgerMenu's 1100+)
  */
@@ -12,10 +12,8 @@
   width: 48px;
   height: 48px;
   border-radius: 50%;
-  background: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: transparent;
+  border: none;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -23,15 +21,10 @@
   transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
   z-index: 1001;
   padding: 0;
-  box-shadow:
-    0 4px 12px rgba(0, 0, 0, 0.4),
-    0 0 0 1px rgba(255, 255, 255, 0.05);
 }
 
 .floatingButton:hover {
   transform: translateY(-2px) scale(1.08);
-  background: rgba(0, 0, 0, 0.75);
-  border-color: rgba(255, 255, 255, 0.2);
 }
 
 .floatingButton:active {

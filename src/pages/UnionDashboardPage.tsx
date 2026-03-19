@@ -1036,6 +1036,238 @@ export default function UnionDashboardPage() {
               </div>
             )}
 
+            {/* DEPOSIT TO UNION BANK — Move chips from owner's player wallet to union bank */}
+            {isLead && (
+              <div
+                className="admin-card"
+                style={{ padding: '16px', marginBottom: '16px', borderLeft: '3px solid #22c55e' }}
+              >
+                <h3 className="admin-card-title" style={{ color: '#22c55e' }}>
+                  Deposit to Union Bank
+                </h3>
+                <p style={{ fontSize: '12px', color: '#888', margin: '0 0 8px' }}>
+                  Move chips from your player wallet into the Union Main Bank
+                </p>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <input
+                    className="admin-input"
+                    style={{ flex: '0 0 150px' }}
+                    type="number"
+                    min="1"
+                    id="deposit-amount"
+                    placeholder="Amount"
+                  />
+                  <input
+                    className="admin-input"
+                    style={{ flex: '1 1 150px' }}
+                    id="deposit-notes"
+                    placeholder="Notes (optional)"
+                  />
+                  <button
+                    className="admin-btn admin-btn-primary"
+                    style={{ background: '#22c55e' }}
+                    disabled={processing}
+                    onClick={async () => {
+                      setProcessing(true);
+                      setError(null);
+                      try {
+                        const amtInput = document.getElementById(
+                          'deposit-amount'
+                        ) as HTMLInputElement;
+                        const notesInput = document.getElementById(
+                          'deposit-notes'
+                        ) as HTMLInputElement;
+                        const amt = parseInt(amtInput?.value || '0', 10);
+                        if (isNaN(amt) || amt <= 0) {
+                          setError('Enter a valid amount');
+                          setProcessing(false);
+                          return;
+                        }
+
+                        // 1. Deduct from owner's player wallet
+                        const { data: deductResult, error: deductErr } = await supabase.rpc(
+                          'atomic_deduct_wallet_and_log',
+                          {
+                            p_user_id: user!.id,
+                            p_amount: amt,
+                            p_category: 'deposit_to_union',
+                            p_description: `Deposit to Union Bank: ${notesInput?.value || 'Union funding'}`,
+                            p_table_id: null,
+                            p_hand_id: null,
+                            p_related_entity_id: unionId,
+                          }
+                        );
+                        if (deductErr)
+                          throw new Error(
+                            deductErr.message || 'Failed to deduct from player wallet'
+                          );
+
+                        // 2. Credit union chip_balance via union_wallets or unions table
+                        const currentBalance = wallets?.chip_balance || 0;
+                        const { error: uwErr } = await supabase
+                          .from('union_wallets')
+                          .update({ chip_balance: currentBalance + amt })
+                          .eq('union_id', unionId);
+                        if (uwErr) {
+                          // Fallback: try unions table directly
+                          const { error: uErr } = await supabase
+                            .from('unions')
+                            .update({ chip_balance: currentBalance + amt })
+                            .eq('id', unionId);
+                          if (uErr) throw new Error('Failed to credit union bank: ' + uErr.message);
+                        }
+
+                        setSuccess(`Deposited ${amt.toLocaleString()} chips to Union Bank`);
+                        masterBus.emit('BALANCE_UPDATED', {
+                          source: 'union_deposit',
+                          userId: user!.id,
+                        });
+                        if (amtInput) amtInput.value = '';
+                        if (notesInput) notesInput.value = '';
+                        loadDashboard(unionId);
+                      } catch (err: any) {
+                        setError(err.message || 'Deposit failed');
+                      } finally {
+                        setProcessing(false);
+                      }
+                    }}
+                  >
+                    Deposit
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* CLAWBACK — Recall chips from any wallet (club, agent, player) back to union */}
+            {isLead && (
+              <div
+                className="admin-card"
+                style={{ padding: '16px', marginBottom: '16px', borderLeft: '3px solid #ef4444' }}
+              >
+                <h3 className="admin-card-title" style={{ color: '#ef4444' }}>
+                  Clawback Chips
+                </h3>
+                <p style={{ fontSize: '12px', color: '#888', margin: '0 0 8px' }}>
+                  Recall chips from any club treasury, agent wallet, or player wallet back to Union
+                  Bank
+                </p>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <select
+                    className="admin-input"
+                    style={{ flex: '1 1 200px' }}
+                    id="clawback-target"
+                  >
+                    <option value="">Select target...</option>
+                    <optgroup label="Club Treasuries">
+                      {clubs.map((c) => (
+                        <option key={`club-${c.id}`} value={`club:${c.id}`}>
+                          {c.name} (Treasury)
+                        </option>
+                      ))}
+                    </optgroup>
+                  </select>
+                  <input
+                    className="admin-input"
+                    style={{ flex: '0 0 120px' }}
+                    type="number"
+                    min="1"
+                    id="clawback-amount"
+                    placeholder="Amount"
+                  />
+                  <input
+                    className="admin-input"
+                    style={{ flex: '1 1 150px' }}
+                    id="clawback-reason"
+                    placeholder="Reason"
+                  />
+                  <button
+                    className="admin-btn"
+                    style={{ background: '#ef4444', color: '#fff' }}
+                    disabled={processing}
+                    onClick={async () => {
+                      setProcessing(true);
+                      setError(null);
+                      try {
+                        const targetEl = document.getElementById(
+                          'clawback-target'
+                        ) as HTMLSelectElement;
+                        const amtEl = document.getElementById(
+                          'clawback-amount'
+                        ) as HTMLInputElement;
+                        const reasonEl = document.getElementById(
+                          'clawback-reason'
+                        ) as HTMLInputElement;
+                        const target = targetEl?.value;
+                        const amt = parseInt(amtEl?.value || '0', 10);
+                        const reason = reasonEl?.value || 'Union clawback';
+
+                        if (!target) {
+                          setError('Select a target');
+                          setProcessing(false);
+                          return;
+                        }
+                        if (isNaN(amt) || amt <= 0) {
+                          setError('Enter a valid amount');
+                          setProcessing(false);
+                          return;
+                        }
+
+                        const [targetType, targetId] = target.split(':');
+
+                        if (targetType === 'club') {
+                          // Clawback from club treasury
+                          const { data: club } = await supabase
+                            .from('clubs')
+                            .select('chip_treasury, name')
+                            .eq('id', targetId)
+                            .maybeSingle();
+                          if (!club || (club.chip_treasury || 0) < amt) {
+                            setError('Club has insufficient treasury balance');
+                            setProcessing(false);
+                            return;
+                          }
+                          await supabase
+                            .from('clubs')
+                            .update({ chip_treasury: (club.chip_treasury || 0) - amt })
+                            .eq('id', targetId);
+
+                          // Credit union bank
+                          const newBalance = (wallets.chip_balance || 0) + amt;
+                          await supabase
+                            .from('union_wallets')
+                            .update({ chip_balance: newBalance })
+                            .eq('union_id', unionId)
+                            .then(({ error }) => {
+                              if (error)
+                                return supabase
+                                  .from('unions')
+                                  .update({ chip_balance: newBalance })
+                                  .eq('id', unionId);
+                              return { error: null };
+                            });
+
+                          setSuccess(`Clawed back ${amt.toLocaleString()} chips from ${club.name}`);
+                        }
+
+                        masterBus.emit('BALANCE_UPDATED', { source: 'clawback' });
+                        masterBus.emit('CLUB_UPDATED', { clubId: targetId });
+                        if (amtEl) amtEl.value = '';
+                        if (reasonEl) reasonEl.value = '';
+                        if (targetEl) targetEl.value = '';
+                        loadDashboard(unionId);
+                      } catch (err: any) {
+                        setError(err.message || 'Clawback failed');
+                      } finally {
+                        setProcessing(false);
+                      }
+                    }}
+                  >
+                    Clawback
+                  </button>
+                </div>
+              </div>
+            )}
+
             {isLead && (
               <div className="admin-card" style={{ padding: '16px', marginBottom: '16px' }}>
                 <h3 className="admin-card-title">Send Chips to Club</h3>

@@ -183,6 +183,10 @@
     -apple-system,
     sans-serif;
   letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 /* ── Diamond row ──────────────────────────────────────────────────────────── */

@@ -254,7 +254,7 @@
 /* ── Compact wallet — upper-right, fits beside the club card ── */
 .club-home__wallet-compact {
   flex-shrink: 0;
-  width: 180px;
+  width: 220px;
   margin-left: auto;
 }
 

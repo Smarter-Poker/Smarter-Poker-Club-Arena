@@ -87,7 +87,7 @@ export function ClubSettingsPanel({ clubId, isOpen, onClose, onSave }: ClubSetti
       const { data, error } = await supabase
         .from('clubs')
         .select(
-          'id, name, description, logo, is_private, require_approval, min_buy_in, max_buy_in, rake_percent, rake_cap, default_game_type, allow_insurance, allow_run_it_twice, allow_straddle, auto_approve_agents'
+          'id, name, description, logo, is_public, requires_approval, min_buy_in, max_buy_in, rake_percent, rake_cap, default_game_type, allow_insurance, allow_run_it_twice, allow_straddle, auto_approve_agents'
         )
         .eq(clubCol, clubVal)
         .maybeSingle();
@@ -97,8 +97,8 @@ export function ClubSettingsPanel({ clubId, isOpen, onClose, onSave }: ClubSetti
           name: data.name || '',
           description: data.description || '',
           logo: data.logo || '',
-          isPrivate: data.is_private || false,
-          requireApproval: data.require_approval || false,
+          isPrivate: !data.is_public || false,
+          requireApproval: data.requires_approval || false,
           minBuyIn: data.min_buy_in || 20,
           maxBuyIn: data.max_buy_in || 200,
           rakePercent: data.rake_percent || 5,
@@ -129,8 +129,8 @@ export function ClubSettingsPanel({ clubId, isOpen, onClose, onSave }: ClubSetti
           name: settings.name,
           description: settings.description,
           logo: settings.logo,
-          is_private: settings.isPrivate,
-          require_approval: settings.requireApproval,
+          is_public: !settings.isPrivate,
+          requires_approval: settings.requireApproval,
           min_buy_in: settings.minBuyIn,
           max_buy_in: settings.maxBuyIn,
           rake_percent: settings.rakePercent,

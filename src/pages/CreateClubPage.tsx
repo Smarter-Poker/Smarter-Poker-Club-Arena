@@ -108,9 +108,9 @@ const Step1Basics = ({
           placeholder="Enter club name..."
           value={form.name}
           onChange={(e) => updateForm({ name: e.target.value })}
-          maxLength={50}
+          maxLength={30}
         />
-        <span className={styles.charCount}>{form.name.length}/50</span>
+        <span className={styles.charCount}>{form.name.length}/30</span>
       </div>
 
       {/* ── UPLOAD LOGO (Primary) ── */}
@@ -438,11 +438,11 @@ export default function CreateClubPage() {
           setError('Club name is required');
           return false;
         }
-        if (form.name.length < 3) {
+        if (form.name.trim().length < 3) {
           setError('Club name must be at least 3 characters');
           return false;
         }
-        if (form.name.length > 30) {
+        if (form.name.trim().length > 30) {
           setError('Club name must be 30 characters or less');
           return false;
         }

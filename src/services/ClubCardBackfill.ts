@@ -17,6 +17,9 @@ import { ClubCardGenerator } from './ClubCardGenerator';
 // Track which clubs we've already attempted to backfill this session
 const processedClubs = new Set<string>();
 
+// Session-level kill switch — if the storage bucket doesn't exist, stop trying
+let storageDisabled = false;
+
 interface BackfillTarget {
   id: string;
   club_id: number;
@@ -34,7 +37,7 @@ export async function backfillClubCards(clubs: BackfillTarget[]): Promise<void> 
     (c) => c.logo_url && c.club_id && c.name && !processedClubs.has(c.id)
   );
 
-  if (targets.length === 0) return;
+  if (targets.length === 0 || storageDisabled) return;
 
   // Process sequentially to avoid canvas contention
   for (const club of targets) {
@@ -63,6 +66,19 @@ export async function backfillClubCards(clubs: BackfillTarget[]): Promise<void> 
         });
 
       if (uploadError) {
+        const msg = uploadError.message || '';
+        // If the bucket doesn't exist, disable all future backfill attempts
+        if (
+          msg.includes('Bucket not found') ||
+          msg.includes('not found') ||
+          (uploadError as any).statusCode === 400
+        ) {
+          console.warn(
+            `[ClubCardBackfill] Storage bucket unavailable — disabling backfill for this session`
+          );
+          storageDisabled = true;
+          return;
+        }
         console.error(`[ClubCardBackfill] Upload failed for ${club.name}:`, uploadError);
         continue;
       }

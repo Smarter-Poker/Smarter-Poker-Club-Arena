@@ -954,6 +954,27 @@ export default function CashierPage() {
         const { lockForBuyIn } = useWalletStore.getState();
         const success = await lockForBuyIn(user.id, value, tableId);
         if (success) {
+          // Log buyin to chip_ledger
+          supabase
+            .from('chip_ledger')
+            .insert({
+              performed_by: user.id,
+              from_type: 'player_wallet',
+              from_entity_id: user.id,
+              from_label: user.username || 'Player',
+              to_type: 'player_wallet',
+              to_entity_id: user.id,
+              to_label: 'Table Buy-In (locked)',
+              amount: value,
+              category: 'buyin',
+              description: `Table buy-in: ${value.toLocaleString()} chips`,
+              table_id: tableId,
+              club_id: clubId ? await resolveClubUUID(clubId) : undefined,
+            })
+            .then(({ error: le }) => {
+              if (le) console.warn('[Cashier] Ledger write failed:', le.message);
+            });
+
           if (isMounted.current)
             setMessage({ type: 'success', text: `Bought in for ${value.toLocaleString()} chips` });
           notifyWalletChange(user.id, value);
@@ -973,6 +994,27 @@ export default function CashierPage() {
           const { unlockFromTable } = useWalletStore.getState();
           const success = await unlockFromTable(user.id, value, tableId);
           if (success) {
+            // Log cashout to chip_ledger
+            supabase
+              .from('chip_ledger')
+              .insert({
+                performed_by: user.id,
+                from_type: 'player_wallet',
+                from_entity_id: user.id,
+                from_label: 'Table Session (locked)',
+                to_type: 'player_wallet',
+                to_entity_id: user.id,
+                to_label: user.username || 'Player',
+                amount: value,
+                category: 'cashout',
+                description: `Table cash-out: ${value.toLocaleString()} chips unlocked`,
+                table_id: tableId,
+                club_id: clubId ? await resolveClubUUID(clubId) : undefined,
+              })
+              .then(({ error: le }) => {
+                if (le) console.warn('[Cashier] Ledger write failed:', le.message);
+              });
+
             if (isMounted.current)
               setMessage({
                 type: 'success',
@@ -1471,6 +1513,26 @@ export default function CashierPage() {
                     amount: value,
                     userId: selectedRecipient,
                   });
+
+                  // Log to chip_ledger
+                  supabase
+                    .from('chip_ledger')
+                    .insert({
+                      performed_by: user.id,
+                      from_type: 'agent_wallet',
+                      from_entity_id: user.id,
+                      from_label: user.username || 'Agent',
+                      to_type: 'player_wallet',
+                      to_entity_id: selectedRecipient,
+                      to_label: recipient?.username || 'Player',
+                      amount: value,
+                      category: 'distribute',
+                      description: `Distributed ${value.toLocaleString()} chips to ${recipient?.username || 'player'}`,
+                      club_id: resolvedClub,
+                    })
+                    .then(({ error: le }) => {
+                      if (le) console.warn('[Cashier] Ledger write failed:', le.message);
+                    });
                   setAmount('');
                   setSelectedRecipient('');
                   loadBalances(user.id);

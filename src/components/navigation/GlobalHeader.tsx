@@ -58,6 +58,11 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
   const handleMenuToggle = useCallback(() => setMenuOpen((prev) => !prev), []);
   const handleMenuClose = useCallback(() => setMenuOpen(false), []);
 
+  // Broadcast menu state changes so FloatingHamburger hides when menu is open
+  useEffect(() => {
+    masterBus.emit('MENU_STATE_CHANGED', { isOpen: menuOpen });
+  }, [menuOpen]);
+
   // Listen for HAMBURGER_TOGGLE from FloatingHamburger (bottom-left button)
   useMasterBusSubscription('HAMBURGER_TOGGLE', () => {
     setMenuOpen((prev) => !prev);

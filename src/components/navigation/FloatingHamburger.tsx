@@ -7,11 +7,14 @@
  * single HamburgerMenu instance owned by GlobalHeader.
  * It does NOT render its own HamburgerMenu (prevents dual-instance bug).
  *
+ * Auto-hides when the HamburgerMenu is open (via MENU_STATE_CHANGED bus event).
  * Position: Bottom-left corner (always visible except on table/auth pages)
  */
 
+import { useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { masterBus } from '../../core/MasterBus';
+import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import styles from './FloatingHamburger.module.css';
 
 // Routes where the floating button should not appear
@@ -19,6 +22,12 @@ const HIDDEN_ROUTES = ['/auth', '/share/'];
 
 export default function FloatingHamburger() {
   const location = useLocation();
+  const [menuIsOpen, setMenuIsOpen] = useState(false);
+
+  // Hide when the HamburgerMenu is open (emitted by GlobalHeader)
+  useMasterBusSubscription('MENU_STATE_CHANGED', (payload: any) => {
+    setMenuIsOpen(!!payload?.isOpen);
+  });
 
   // Don't render on auth or share pages
   const shouldHide = HIDDEN_ROUTES.some((r) => location.pathname.startsWith(r));
@@ -26,6 +35,9 @@ export default function FloatingHamburger() {
 
   // Don't render on table pages (full-screen immersive experience)
   if (location.pathname.startsWith('/table/')) return null;
+
+  // Don't render when menu is already open (prevents overlap)
+  if (menuIsOpen) return null;
 
   const handleClick = () => {
     masterBus.emit('HAMBURGER_TOGGLE', {});

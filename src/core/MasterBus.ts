@@ -302,7 +302,8 @@ export type BusEventType =
   // Table settings open
   | 'TABLE_SETTINGS_OPEN'
   // UI navigation toggle events
-  | 'HAMBURGER_TOGGLE';
+  | 'HAMBURGER_TOGGLE'
+  | 'MENU_STATE_CHANGED';
 
 // #13: Type-safe payload map — compile-time enforcement of correct payloads
 export interface BusPayloadMap {
@@ -944,6 +945,7 @@ export interface BusPayloadMap {
   TABLE_SETTINGS_OPEN: { tableId: string };
   // UI navigation toggle
   HAMBURGER_TOGGLE: Record<string, unknown>;
+  MENU_STATE_CHANGED: { isOpen: boolean };
 }
 
 export interface BusEvent<T = unknown> {

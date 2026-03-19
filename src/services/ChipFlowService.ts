@@ -138,14 +138,17 @@ export const ChipFlowService = {
     }
 
     // 4. LOG TO IMMUTABLE CHIP LEDGER
+    // Determine wallet types from description (Agent → Player, Club → Agent, etc.)
+    const isToAgent = description.toLowerCase().includes('agent');
+    const isFromAgent = description.toLowerCase().includes('agent') && description.indexOf('→') > 0;
     await logToLedger({
       performed_by: fromUserId,
-      from_type: 'player_wallet',
+      from_type: isFromAgent ? 'agent_wallet' : 'player_wallet',
       from_entity_id: fromUserId,
-      from_label: `Player ${fromUserId.slice(0, 8)}`,
-      to_type: 'player_wallet',
+      from_label: description.split('→')[0]?.trim() || `User ${fromUserId.slice(0, 8)}`,
+      to_type: isToAgent && !isFromAgent ? 'agent_wallet' : 'player_wallet',
       to_entity_id: toUserId,
-      to_label: `Player ${toUserId.slice(0, 8)}`,
+      to_label: description.split('→')[1]?.split(':')[0]?.trim() || `User ${toUserId.slice(0, 8)}`,
       amount: amt,
       category,
       description,

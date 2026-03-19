@@ -45,7 +45,7 @@ BEGIN
     IF p_club_id IS NOT NULL THEN
         EXECUTE v_sql || ' WHERE id = $1' USING p_club_id;
     ELSE
-        EXECUTE v_sql;
+        EXECUTE v_sql || ' WHERE TRUE';
     END IF;
 END;
 $$;
@@ -55,7 +55,8 @@ $$;
 -- ═══════════════════════════════════════════════════════════════════════════════
 UPDATE club_members
 SET status = 'active'
-WHERE status IS NULL;
+WHERE status IS NULL
+  AND club_id IS NOT NULL;
 
 -- Set default for future inserts (so even if code forgets, it's 'active')
 ALTER TABLE club_members ALTER COLUMN status SET DEFAULT 'active';

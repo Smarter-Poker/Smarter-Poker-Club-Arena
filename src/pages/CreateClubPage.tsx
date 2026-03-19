@@ -1,7 +1,8 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CLUB ENGINE — Create Club Page
- * Complete club creation flow with settings and preview
+ * Streamlined 2-step club creation flow (Basics → Preview)
+ * Rake, table, and game settings are managed post-creation in Club Settings.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -19,6 +20,8 @@ import { sanitizeInput } from '../utils/sanitizeInput';
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
 
+const BASE = import.meta.env.BASE_URL;
+
 interface ClubFormData {
   name: string;
   description: string;
@@ -26,71 +29,26 @@ interface ClubFormData {
   isPublic: boolean;
   requiresApproval: boolean;
   gpsRestricted: boolean;
-
-  // Rake settings
-  defaultRakePercent: number;
-  rakeCap: number;
-
-  // Table defaults
-  minBuyInBB: number;
-  maxBuyInBB: number;
-  timeBankSeconds: number;
-  allowStraddle: boolean;
-  allowRunItTwice: boolean;
-
-  // Games offered
-  offerCash: boolean;
-  offerTournaments: boolean;
-  offerSNG: boolean;
-
-  // Game variants
-  variants: string[];
 }
 
-// Club icon options
+// Club icon options — premium generated images
 const CLUB_ICONS = [
-  { id: 'eagle', emoji: '', name: 'Eagle' },
-  { id: 'dragon', emoji: '', name: 'Dragon' },
-  { id: 'shark', emoji: '', name: 'Shark' },
-  { id: 'lion', emoji: '', name: 'Lion' },
-  { id: 'phoenix', emoji: '', name: 'Phoenix' },
-  { id: 'diamond', emoji: '', name: 'Diamond' },
-  { id: 'crown', emoji: '', name: 'Crown' },
-  { id: 'ace', emoji: '🂡', name: 'Ace' },
+  { id: 'gold', name: 'Royal Gold', src: `${BASE}images/club-icons/icon-gold.png` },
+  { id: 'green', name: 'Neon Spade', src: `${BASE}images/club-icons/icon-green.png` },
+  { id: 'ice', name: 'Ice Crystal', src: `${BASE}images/club-icons/icon-ice.png` },
+  { id: 'cyber', name: 'Cyber Blue', src: `${BASE}images/club-icons/icon-cyber.png` },
+  { id: 'heart', name: 'Heart Ruby', src: `${BASE}images/club-icons/icon-heart.png` },
+  { id: 'vintage', name: 'Classic', src: `${BASE}images/club-icons/icon-vintage.png` },
 ];
 
 const DEFAULT_FORM: ClubFormData = {
   name: '',
   description: '',
-  iconId: 'eagle',
+  iconId: 'gold',
   isPublic: true,
   requiresApproval: true,
   gpsRestricted: false,
-
-  defaultRakePercent: 5,
-  rakeCap: 3,
-
-  minBuyInBB: 40,
-  maxBuyInBB: 200,
-  timeBankSeconds: 30,
-  allowStraddle: true,
-  allowRunItTwice: true,
-
-  offerCash: true,
-  offerTournaments: true,
-  offerSNG: true,
-
-  variants: ['nlh'],
 };
-
-const GAME_VARIANTS = [
-  { id: 'nlh', name: "No Limit Hold'em", icon: '' },
-  { id: 'plo4', name: 'Pot Limit Omaha', icon: '' },
-  { id: 'plo5', name: 'PLO 5 Card', icon: '' },
-  { id: 'plo6', name: 'PLO 6 Card', icon: '' },
-  { id: 'short_deck', name: 'Short Deck', icon: '' },
-  { id: 'ofc', name: 'Open Face Chinese', icon: '' },
-];
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // STEP COMPONENTS
@@ -103,8 +61,8 @@ interface StepProps {
 
 const Step1Basics = ({ form, updateForm }: StepProps) => (
   <div className={styles.stepContent}>
-    <h2> Club Basics</h2>
-    <p className={styles.stepDesc}>Give your club a name and description.</p>
+    <h2>Club Basics</h2>
+    <p className={styles.stepDesc}>Give your club a name, pick an icon, and set permissions.</p>
 
     <div className={styles.formGroup}>
       <label>Club Name *</label>
@@ -120,7 +78,7 @@ const Step1Basics = ({ form, updateForm }: StepProps) => (
     </div>
 
     <div className={styles.formGroup}>
-      <label>Select Icon</label>
+      <label>Select Club Icon</label>
       <div className={styles.iconGrid}>
         {CLUB_ICONS.map((icon) => (
           <button
@@ -128,8 +86,16 @@ const Step1Basics = ({ form, updateForm }: StepProps) => (
             type="button"
             className={`${styles.iconOption} ${form.iconId === icon.id ? styles.selected : ''}`}
             onClick={() => updateForm({ iconId: icon.id })}
+            title={icon.name}
           >
-            <span className={styles.iconEmoji}>{icon.emoji}</span>
+            <img
+              src={icon.src}
+              alt={icon.name}
+              className={styles.iconImg}
+              loading="lazy"
+              decoding="async"
+            />
+            <span className={styles.iconLabel}>{icon.name}</span>
           </button>
         ))}
       </div>
@@ -191,225 +157,42 @@ const Step1Basics = ({ form, updateForm }: StepProps) => (
   </div>
 );
 
-const Step2Rake = ({ form, updateForm }: StepProps) => (
-  <div className={styles.stepContent}>
-    <h2> Rake Settings</h2>
-    <p className={styles.stepDesc}>Configure your club's rake structure.</p>
-
-    <div className={styles.settingsGrid}>
-      <div className={styles.formGroup}>
-        <label>Default Rake %</label>
-        <div className={styles.inputWithUnit}>
-          <input
-            type="number"
-            className={styles.numberInput}
-            value={form.defaultRakePercent}
-            onChange={(e) => updateForm({ defaultRakePercent: Number(e.target.value) })}
-            min={0}
-            max={10}
-            step={0.5}
-          />
-          <span>%</span>
-        </div>
-        <span className={styles.hint}>Standard: 2-5%</span>
-      </div>
-
-      <div className={styles.formGroup}>
-        <label>Rake Cap (BB)</label>
-        <div className={styles.inputWithUnit}>
-          <input
-            type="number"
-            className={styles.numberInput}
-            value={form.rakeCap}
-            onChange={(e) => updateForm({ rakeCap: Number(e.target.value) })}
-            min={0}
-            max={10}
-            step={0.5}
-          />
-          <span>BB</span>
-        </div>
-        <span className={styles.hint}>Maximum rake per pot</span>
-      </div>
-    </div>
-
-    <div className={styles.infoCard}>
-      <span className={styles.infoIcon}></span>
-      <div>
-        <strong>No Flop, No Drop</strong>
-        <p>
-          Rake is only taken when a flop is seen. This is industry standard and automatically
-          applied.
-        </p>
-      </div>
-    </div>
-  </div>
-);
-
-const Step3Tables = ({ form, updateForm }: StepProps) => (
-  <div className={styles.stepContent}>
-    <h2> Table Defaults</h2>
-    <p className={styles.stepDesc}>Set default rules for tables in your club.</p>
-
-    <div className={styles.settingsGrid}>
-      <div className={styles.formGroup}>
-        <label>Min Buy-in</label>
-        <div className={styles.inputWithUnit}>
-          <input
-            type="number"
-            className={styles.numberInput}
-            value={form.minBuyInBB}
-            onChange={(e) => updateForm({ minBuyInBB: Number(e.target.value) })}
-            min={20}
-            max={100}
-          />
-          <span>BB</span>
-        </div>
-      </div>
-
-      <div className={styles.formGroup}>
-        <label>Max Buy-in</label>
-        <div className={styles.inputWithUnit}>
-          <input
-            type="number"
-            className={styles.numberInput}
-            value={form.maxBuyInBB}
-            onChange={(e) => updateForm({ maxBuyInBB: Number(e.target.value) })}
-            min={50}
-            max={500}
-          />
-          <span>BB</span>
-        </div>
-      </div>
-
-      <div className={styles.formGroup}>
-        <label>Time Bank</label>
-        <div className={styles.inputWithUnit}>
-          <input
-            type="number"
-            className={styles.numberInput}
-            value={form.timeBankSeconds}
-            onChange={(e) => updateForm({ timeBankSeconds: Number(e.target.value) })}
-            min={10}
-            max={60}
-          />
-          <span>sec</span>
-        </div>
-      </div>
-    </div>
-
-    <div className={styles.toggleGrid}>
-      <label className={styles.toggle}>
-        <input
-          type="checkbox"
-          checked={form.allowStraddle}
-          onChange={(e) => updateForm({ allowStraddle: e.target.checked })}
-        />
-        <span className={styles.toggleSlider} />
-        <span>Allow Straddle</span>
-      </label>
-
-      <label className={styles.toggle}>
-        <input
-          type="checkbox"
-          checked={form.allowRunItTwice}
-          onChange={(e) => updateForm({ allowRunItTwice: e.target.checked })}
-        />
-        <span className={styles.toggleSlider} />
-        <span>Allow Run It Twice</span>
-      </label>
-    </div>
-  </div>
-);
-
-const Step4Games = ({ form, updateForm }: StepProps) => (
-  <div className={styles.stepContent}>
-    <h2> Games Offered</h2>
-    <p className={styles.stepDesc}>Choose what games your club will offer.</p>
-
-    <div className={styles.gameTypes}>
-      <label className={`${styles.gameTypeCard} ${form.offerCash ? styles.selected : ''}`}>
-        <input
-          type="checkbox"
-          checked={form.offerCash}
-          onChange={(e) => updateForm({ offerCash: e.target.checked })}
-        />
-        <span className={styles.gameTypeIcon}></span>
-        <strong>Cash Games</strong>
-        <p>Ring games with real chip value</p>
-      </label>
-
-      <label className={`${styles.gameTypeCard} ${form.offerTournaments ? styles.selected : ''}`}>
-        <input
-          type="checkbox"
-          checked={form.offerTournaments}
-          onChange={(e) => updateForm({ offerTournaments: e.target.checked })}
-        />
-        <span className={styles.gameTypeIcon}></span>
-        <strong>Tournaments</strong>
-        <p>MTTs, bounties, and special events</p>
-      </label>
-
-      <label className={`${styles.gameTypeCard} ${form.offerSNG ? styles.selected : ''}`}>
-        <input
-          type="checkbox"
-          checked={form.offerSNG}
-          onChange={(e) => updateForm({ offerSNG: e.target.checked })}
-        />
-        <span className={styles.gameTypeIcon}></span>
-        <strong>Sit & Go / Spins</strong>
-        <p>Quick tournaments and jackpot SNGs</p>
-      </label>
-    </div>
-
-    <h3 className={styles.subheading}>Game Variants</h3>
-    <div className={styles.variantsGrid}>
-      {GAME_VARIANTS.map((variant) => (
-        <label
-          key={variant.id}
-          className={`${styles.variantCard} ${form.variants.includes(variant.id) ? styles.selected : ''}`}
-        >
-          <input
-            type="checkbox"
-            checked={form.variants.includes(variant.id)}
-            onChange={(e) => {
-              if (e.target.checked) {
-                updateForm({ variants: [...form.variants, variant.id] });
-              } else {
-                updateForm({ variants: form.variants.filter((v) => v !== variant.id) });
-              }
-            }}
-          />
-          <span className={styles.variantIcon}>{variant.icon}</span>
-          <span>{variant.name}</span>
-        </label>
-      ))}
-    </div>
-  </div>
-);
-
-interface Step5Props {
+interface Step2Props {
   form: ClubFormData;
   hasAgreed: boolean;
   setHasAgreed: (v: boolean) => void;
   onShowRules: () => void;
 }
 
-const Step5Preview = ({ form, hasAgreed, setHasAgreed, onShowRules }: Step5Props) => {
+const Step2Preview = ({ form, hasAgreed, setHasAgreed, onShowRules }: Step2Props) => {
   const icon = CLUB_ICONS.find((i) => i.id === form.iconId);
   return (
     <div className={styles.stepContent}>
-      <h2> Preview & Create</h2>
+      <h2>Preview & Create</h2>
       <p className={styles.stepDesc}>Review your club settings before creating.</p>
 
       <div className={styles.previewCard}>
         <div className={styles.previewHeader}>
           <div className={styles.previewAvatar}>
-            {icon?.emoji || form.name.charAt(0).toUpperCase() || '?'}
+            {icon ? (
+              <img
+                src={icon.src}
+                alt={icon.name}
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'cover',
+                  borderRadius: '0.75rem',
+                }}
+              />
+            ) : (
+              form.name.charAt(0).toUpperCase() || '?'
+            )}
           </div>
           <div>
             <h3>{form.name || 'Unnamed Club'}</h3>
             <p>
-              {form.isPublic ? ' Public' : ' Private'} •{' '}
+              {form.isPublic ? 'Public' : 'Private'} •{' '}
               {form.requiresApproval ? 'Approval Required' : 'Open Join'}
             </p>
           </div>
@@ -417,51 +200,28 @@ const Step5Preview = ({ form, hasAgreed, setHasAgreed, onShowRules }: Step5Props
 
         {form.description && <p className={styles.previewDesc}>{form.description}</p>}
 
-        <div className={styles.previewStats}>
-          <div>
-            <strong>{form.defaultRakePercent}%</strong>
-            <span>Rake</span>
-          </div>
-          <div>
-            <strong>{form.rakeCap} BB</strong>
-            <span>Cap</span>
-          </div>
-          <div>
-            <strong>
-              {form.minBuyInBB}-{form.maxBuyInBB}
-            </strong>
-            <span>Buy-in (BB)</span>
-          </div>
-          <div>
-            <strong>{form.timeBankSeconds}s</strong>
-            <span>Time Bank</span>
-          </div>
-        </div>
-
         <div className={styles.previewTags}>
-          {form.offerCash && <span> Cash</span>}
-          {form.offerTournaments && <span> MTTs</span>}
-          {form.offerSNG && <span> SNGs</span>}
-          {form.allowStraddle && <span>Straddle </span>}
-          {form.allowRunItTwice && <span>RIT </span>}
+          {form.isPublic && <span>Public</span>}
+          {form.requiresApproval && <span>Approval Required</span>}
+          {form.gpsRestricted && <span>GPS Restricted</span>}
         </div>
+      </div>
 
-        <div className={styles.previewVariants}>
-          <strong>Variants:</strong>
-          {form.variants.map((v) => {
-            const variant = GAME_VARIANTS.find((gv) => gv.id === v);
-            return (
-              <span key={v}>
-                {variant?.icon} {variant?.name}
-              </span>
-            );
-          })}
+      {/* Settings note */}
+      <div className={styles.infoCard}>
+        <span className={styles.infoIcon}>⚙️</span>
+        <div>
+          <strong>Rake & Game Settings</strong>
+          <p>
+            Default rake and game settings are applied automatically. You can customize rake %, rake
+            cap, table rules, and game visibility anytime from your Club Settings after creation.
+          </p>
         </div>
       </div>
 
       {/* First-time bonus notice */}
       <div className={styles.bonusNotice}>
-        <span className={styles.bonusIcon}></span>
+        <span className={styles.bonusIcon}>🎁</span>
         <p>
           If this is the first club that you are creating you will receive a bonus of{' '}
           <strong>10,000 club chips</strong>. Congratulations!
@@ -507,7 +267,7 @@ export default function CreateClubPage() {
   const [showRulesModal, setShowRulesModal] = useState(false);
   const [stepVisible, setStepVisible] = useState(false);
 
-  const totalSteps = 5;
+  const totalSteps = 2;
 
   // Section entrance animation
   useEffect(() => {
@@ -520,8 +280,6 @@ export default function CreateClubPage() {
     setForm((prev) => ({ ...prev, ...updates }));
     setError(null);
   };
-
-  const [nameChecking, setNameChecking] = useState(false);
 
   const validateStep = (): boolean => {
     switch (step) {
@@ -536,16 +294,6 @@ export default function CreateClubPage() {
         }
         if (form.name.length > 30) {
           setError('Club name must be 30 characters or less');
-          return false;
-        }
-        break;
-      case 4:
-        if (!form.offerCash && !form.offerTournaments && !form.offerSNG) {
-          setError('Select at least one game type');
-          return false;
-        }
-        if (form.variants.length === 0) {
-          setError('Select at least one game variant');
           return false;
         }
         break;
@@ -595,6 +343,9 @@ export default function CreateClubPage() {
       // Generate 6-digit club ID
       const clubIdNumber = Math.floor(100000 + Math.random() * 900000);
 
+      // Find the selected icon to store its src path
+      const selectedIcon = CLUB_ICONS.find((i) => i.id === form.iconId);
+
       const { data, error: insertError } = await supabase
         .from('clubs')
         .insert({
@@ -605,14 +356,11 @@ export default function CreateClubPage() {
           is_public: form.isPublic,
           requires_approval: form.requiresApproval,
           gps_restricted: form.gpsRestricted,
+          logo: selectedIcon ? `images/club-icons/icon-${form.iconId}.png` : null,
           settings: {
-            default_rake_percent: form.defaultRakePercent,
-            rake_cap: form.rakeCap,
-            min_buy_in_bb: form.minBuyInBB,
-            max_buy_in_bb: form.maxBuyInBB,
-            time_bank_seconds: form.timeBankSeconds,
-            allow_straddle: form.allowStraddle,
-            allow_run_it_twice: form.allowRunItTwice,
+            icon_id: form.iconId,
+            default_rake_percent: 5,
+            rake_cap: 3,
           },
         })
         .select()
@@ -657,14 +405,8 @@ export default function CreateClubPage() {
       case 1:
         return <Step1Basics {...props} />;
       case 2:
-        return <Step2Rake {...props} />;
-      case 3:
-        return <Step3Tables {...props} />;
-      case 4:
-        return <Step4Games {...props} />;
-      case 5:
         return (
-          <Step5Preview
+          <Step2Preview
             form={form}
             hasAgreed={hasAgreed}
             setHasAgreed={setHasAgreed}
@@ -681,26 +423,20 @@ export default function CreateClubPage() {
       <div className={styles.container}>
         {/* Header */}
         <header className={styles.header}>
-          <button className={styles.backButton} onClick={() => navigate('/clubs')}>
-            ← Back
-          </button>
           <h1>Create Your Club</h1>
         </header>
 
         {/* Progress */}
         <div className={styles.progress}>
-          {[1, 2, 3, 4, 5].map((s) => (
+          {[1, 2].map((s) => (
             <div
               key={s}
               className={`${styles.progressStep} ${s === step ? styles.active : ''} ${s < step ? styles.completed : ''}`}
             >
-              <span className={styles.progressDot}>{s < step ? '' : s}</span>
+              <span className={styles.progressDot}>{s < step ? '✓' : s}</span>
               <span className={styles.progressLabel}>
                 {s === 1 && 'Basics'}
-                {s === 2 && 'Rake'}
-                {s === 3 && 'Tables'}
-                {s === 4 && 'Games'}
-                {s === 5 && 'Review'}
+                {s === 2 && 'Review'}
               </span>
             </div>
           ))}
@@ -745,7 +481,7 @@ export default function CreateClubPage() {
               onClick={handleCreate}
               disabled={creating || !hasAgreed}
             >
-              {creating ? 'Creating...' : ' Create Club'}
+              {creating ? 'Creating...' : 'Create Club'}
             </button>
           )}
         </div>

@@ -34,14 +34,15 @@ import { cashoutService } from '../services/CashoutService';
 import { supabase } from '../lib/supabase';
 import ClubBottomNav from '../components/club/ClubBottomNav';
 
-import { MetalFrame, MetalButton, MetalInput, MetalCard } from '../components/metal-ui';
-import { useVIPStatus } from '../hooks/useVIP';
+import { MetalFrame, MetalButton, MetalInput } from '../components/metal-ui';
+
 import { useToast } from '../components/common/Toast';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { resolveClubIdFilter, resolveClubUUID } from '../utils/clubIdResolver';
 import { checkSettlementLock } from '../utils/settlementLock';
 import AgentPromoPanel from '../components/agent/AgentPromoPanel';
 import CashoutRequestModal from '../components/wallet/CashoutRequestModal';
+import DynamicWallet from '../components/wallet/DynamicWallet';
 import './CashierPage.css';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { retryFetch } from '../utils/retryFetch';
@@ -123,24 +124,6 @@ const CATEGORY_ICONS: Record<string, string> = {
   bonus: '★',
 };
 
-// Premium balance counter
-function useCountAnimation(target: number, duration: number = 800) {
-  const [display, setDisplay] = useState(0);
-  useEffect(() => {
-    let startTime: number;
-    let animationFrame: number;
-    const animate = (time: number) => {
-      if (!startTime) startTime = time;
-      const progress = Math.min((time - startTime) / duration, 1);
-      setDisplay(Math.floor(target * progress));
-      if (progress < 1) animationFrame = requestAnimationFrame(animate);
-    };
-    animationFrame = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(animationFrame);
-  }, [target, duration]);
-  return display;
-}
-
 export default function CashierPage() {
   useEffect(() => {
     document.title = 'Cashier | Smarter Poker';
@@ -153,8 +136,8 @@ export default function CashierPage() {
   const clubId = routeClubId || searchParams.get('club');
 
   const { user } = useAuthUser();
-  const vipInfo = useVIPStatus();
-  const { balances, diamonds, mintChips, loadBalances } = useWalletStore();
+
+  const { balances, mintChips, loadBalances } = useWalletStore();
   const toast = useToast();
   useVisibilityRefresh(() => loadPendingCashouts());
 
@@ -224,9 +207,6 @@ export default function CashierPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loadingTx, setLoadingTx] = useState(false);
   const [txFilter, setTxFilter] = useState('all');
-
-  // Animated balance
-  const animatedPlayerBalance = useCountAnimation(balances.PLAYER.available, 900);
 
   // Pending cashout state (U-02 FIX: show escrow status)
   const [pendingCashouts, setPendingCashouts] = useState<
@@ -1090,42 +1070,19 @@ export default function CashierPage() {
                 @keyframes shimmer { 0% { background-position: -1000px 0; } 100% { background-position: 1000px 0; } }
                 .cashier-skeleton { background: linear-gradient(90deg, rgba(255,255,255,0.1) 25%, rgba(255,255,255,0.2) 50%, rgba(255,255,255,0.1)); background-size: 1000px 100%; animation: shimmer 2s infinite; }
             `}</style>
-      {/* Balance Cards */}
-      <div className="balance-cards-grid">
-        <MetalCard size="sm" glow className="cashier-balance-card">
-          <div className="balance-card-content">
-            <span className="balance-icon">♠</span>
-            <div className="balance-label">Player Wallet</div>
-            <div className="balance-value">{animatedPlayerBalance.toLocaleString()} chips</div>
-          </div>
-        </MetalCard>
-        <MetalCard size="sm" glow className="cashier-balance-card">
-          <div className="balance-card-content">
-            <span className="balance-icon">◆</span>
-            <div className="balance-label">
-              Diamonds
-              {vipInfo.isVIP && (
-                <span
-                  style={{
-                    marginLeft: '6px',
-                    padding: '2px 8px',
-                    borderRadius: '4px',
-                    fontSize: '0.6rem',
-                    fontWeight: 700,
-                    background: 'linear-gradient(135deg, #FFD700, #FFA500)',
-                    color: '#000',
-                    verticalAlign: 'middle',
-                    letterSpacing: '0.5px',
-                  }}
-                >
-                  VIP
-                </span>
-              )}
-            </div>
-            <div className="balance-value">{diamonds.toLocaleString()}</div>
-          </div>
-        </MetalCard>
-      </div>
+      {/* ── Wallet Display — always visible, real-time updates ── */}
+      {user?.id && clubId && (
+        <div className="cashier-wallet-header">
+          <DynamicWallet
+            userId={user.id}
+            clubId={clubId}
+            variant={isUnionOwner ? 'union' : userRole === 'owner' ? 'owner' : 'player'}
+            onBuyDiamonds={() => navigate(`/vip`)}
+            onMintChips={() => setAction('mint')}
+            onOpenBBJ={() => clubId && navigate(`/clubs/${clubId}/jackpot`)}
+          />
+        </div>
+      )}
 
       {/* Action Tabs */}
       <div className="action-tabs-metal">

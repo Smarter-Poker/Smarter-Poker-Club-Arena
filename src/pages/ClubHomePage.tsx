@@ -920,7 +920,7 @@ export default function ClubHomePage() {
       </div>
 
       {/* ═══════════════════════════════════════════════════════════════════
-                CLUB CARD + WALLET DISPLAY
+                CLUB CARD + WALLET DISPLAY (side-by-side layout)
             ═══════════════════════════════════════════════════════════════════ */}
       <div className="club-home__club-section">
         <div className="club-home__club-card">
@@ -991,35 +991,30 @@ export default function ClubHomePage() {
             )}
           </div>
         </div>
-      </div>
 
-      {/* ═══════════════════════════════════════════════════════════════════
-                DYNAMIC WALLET — Metal Panel (Role-Based)
-            ═══════════════════════════════════════════════════════════════════ */}
-      {currentUserId && resolvedClubId && (
-        <div
-          className="club-home__dynamic-wallet"
-          style={{ animation: 'slideInUp 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) 0.15s both' }}
-        >
-          <DynamicWallet
-            userId={currentUserId}
-            clubId={resolvedClubId}
-            variant={isInUnion && isOwner ? 'union' : userRole === 'owner' ? 'owner' : 'player'}
-            onBuyDiamonds={() => {
-              haptic.medium();
-              navigate(`/clubs/${clubId}/detail`);
-            }}
-            onMintChips={() => {
-              haptic.medium();
-              navigate(`/clubs/${clubId}/cashier`);
-            }}
-            onOpenBBJ={() => {
-              haptic.medium();
-              navigate(`/clubs/${clubId}/bbj`);
-            }}
-          />
-        </div>
-      )}
+        {/* ── Wallet — upper-right, always rendered ── */}
+        {currentUserId && resolvedClubId && (
+          <div className="club-home__wallet-compact">
+            <DynamicWallet
+              userId={currentUserId}
+              clubId={resolvedClubId}
+              variant={isInUnion && isOwner ? 'union' : userRole === 'owner' ? 'owner' : 'player'}
+              onBuyDiamonds={() => {
+                haptic.medium();
+                navigate(`/clubs/${clubId}/detail`);
+              }}
+              onMintChips={() => {
+                haptic.medium();
+                navigate(`/clubs/${clubId}/cashier`);
+              }}
+              onOpenBBJ={() => {
+                haptic.medium();
+                navigate(`/clubs/${clubId}/bbj`);
+              }}
+            />
+          </div>
+        )}
+      </div>
 
       {/* ═══════════════════════════════════════════════════════════════════
                 CLUB INTRODUCTION

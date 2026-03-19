@@ -137,6 +137,7 @@ export default function DynamicWallet({
     backupBBJ: 0,
   });
   const [loading, setLoading] = useState(true);
+  const [isClubInUnion, setIsClubInUnion] = useState(false);
   const isMounted = useIsMounted();
 
   // Resolved UUID — DynamicWallet now handles resolution internally
@@ -160,13 +161,23 @@ export default function DynamicWallet({
       });
   }, [clubId]);
 
+  // Auto-detect effective variant: if the club is in a union AND parent passed 'owner',
+  // auto-upgrade to 'union' so the wallet always shows correct labels.
+  const effectiveVariant: WalletVariant = isClubInUnion && variant === 'owner' ? 'union' : variant;
+
   // Animated values
   const animDiamonds = useAnimatedCounter(data.diamonds);
   const animBBJ = useAnimatedCounter(data.bbjPool);
   const animRow1 = useAnimatedCounter(
-    variant === 'union' ? data.unionBank : variant === 'owner' ? data.clubBank : data.chipBalance
+    effectiveVariant === 'union'
+      ? data.unionBank
+      : effectiveVariant === 'owner'
+        ? data.clubBank
+        : data.chipBalance
   );
-  const animRow2 = useAnimatedCounter(variant === 'union' ? data.clubBank : data.agentBalance);
+  const animRow2 = useAnimatedCounter(
+    effectiveVariant === 'union' ? data.clubBank : data.agentBalance
+  );
   const animRow3 = useAnimatedCounter(data.promoBalance);
   const animBackupBBJ = useAnimatedCounter(data.backupBBJ);
 
@@ -221,6 +232,8 @@ export default function DynamicWallet({
           clubBank: Number(clubRes.data?.chip_treasury) || 0,
           unionBank: unionBankBalance,
         });
+        // Auto-detect union membership from clubs.union_id
+        setIsClubInUnion(!!unionId);
         setLoading(false);
       }
     } catch (err) {
@@ -371,10 +384,10 @@ export default function DynamicWallet({
     ],
   };
 
-  const rows = ROW_CONFIG[variant];
+  const rows = ROW_CONFIG[effectiveVariant];
 
   return (
-    <div className={`dw dw--${variant}`}>
+    <div className={`dw dw--${effectiveVariant}`}>
       {/* ── BBJ Banner ────────────────────────────────────────────────────── */}
       <div className="dw__bbj" onClick={onOpenBBJ} role="button" tabIndex={0}>
         <span className="dw__bbj-label">BAD BEAT JACKPOT</span>
@@ -426,7 +439,7 @@ export default function DynamicWallet({
         ))}
 
         {/* Backup BBJ (Union only) */}
-        {variant === 'union' && (
+        {effectiveVariant === 'union' && (
           <div className="dw__row dw__row--backup-bbj">
             <span className="dw__row-icon">🛡️</span>
             <span className="dw__row-label">Backup BBJ</span>

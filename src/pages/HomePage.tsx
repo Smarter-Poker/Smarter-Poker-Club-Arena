@@ -24,6 +24,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { ClubsService } from '../services/ClubsService';
+import { backfillClubCards } from '../services/ClubCardBackfill';
 import { useToast } from '../components/common/Toast';
 import GlobalHeader from '../components/navigation/GlobalHeader';
 import haptic from '../services/HapticService';
@@ -1021,7 +1022,22 @@ function HomePageInner() {
           })
         );
 
-        if (isMounted) setClubStats(statsMap);
+        if (isMounted) {
+          setClubStats(statsMap);
+
+          // Lazy-backfill baked card images for clubs missing card_image_url
+          const backfillTargets = displayClubs
+            .filter((c) => c.logo_url && !c.card_image_url && c.club_id)
+            .map((c) => ({
+              id: c.id,
+              club_id: Number(c.club_id),
+              name: c.name || 'Club',
+              logo_url: c.logo_url!,
+            }));
+          if (backfillTargets.length > 0) {
+            backfillClubCards(backfillTargets).catch(() => {});
+          }
+        }
       } catch (err) {
         console.error('[HomePage] Failed to fetch club stats:', err);
       }

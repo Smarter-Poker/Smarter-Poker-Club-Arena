@@ -36,15 +36,6 @@ export type { PlayerCardProps, HoleCardsProps, Card } from './PlayerCard';
 export { RealTimeResults } from './RealTimeResults';
 export type { RealTimeResultsProps, TableInfo, SessionStats, Observer } from './RealTimeResults';
 
-// Hand History / Replayer
-export { HandHistory } from './HandHistory';
-export type {
-  HandHistoryProps,
-  HandHistoryData,
-  PlayerHandResult,
-  PositionName,
-} from './HandHistory';
-
 // Chip Stack (Betting Chips)
 export { ChipStack } from './ChipStack';
 export type { ChipStackProps } from './ChipStack';

@@ -130,9 +130,14 @@ export const QuickActionsPanel: React.FC = () => {
       ...recentlyUsed.map((id) => actions.find((a) => a.id === id)!).filter(Boolean),
       ...actions.filter((a) => !recentlyUsed.includes(a.id)),
     ];
-    sortedActions.forEach((_, i) => {
-      setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60);
-    });
+    staggerTimersRef.current.forEach((t) => clearTimeout(t));
+    setVisibleItems(new Set());
+    staggerTimersRef.current = sortedActions.map((_, i) =>
+      setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60)
+    );
+    return () => {
+      staggerTimersRef.current.forEach((t) => clearTimeout(t));
+    };
   }, [isOpen, actions, recentlyUsed]);
 
   const sortedActions = [

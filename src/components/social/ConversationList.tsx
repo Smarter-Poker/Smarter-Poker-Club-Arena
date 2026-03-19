@@ -35,9 +35,14 @@ export function ConversationList({ onSelectConversation }: ConversationListProps
   const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   useEffect(() => {
-    conversations.forEach((_, i) => {
-      setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60);
-    });
+    staggerTimersRef.current.forEach((t) => clearTimeout(t));
+    setVisibleItems(new Set());
+    staggerTimersRef.current = conversations.map((_, i) =>
+      setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60)
+    );
+    return () => {
+      staggerTimersRef.current.forEach((t) => clearTimeout(t));
+    };
   }, [conversations.length]);
 
   useEffect(() => {

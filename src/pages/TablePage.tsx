@@ -3054,6 +3054,22 @@ export default function TablePage({
               cardIndices: winCardIndices,
               amounts: amountsMap,
             });
+
+            // HandReveal trigger — show/muck prompt for uncontested pots
+            // When there's exactly 1 winner and no showdown happened, prompt to show/muck
+            const isUncontestedWin = winnerIds.length === 1 && !handName;
+            if (isUncontestedWin && tableId) {
+              const winnerId = winnerIds[0];
+              const winnerPlayer = tableState.players.find((p) => p?.id === winnerId);
+              // Trigger after winner animation plays (1.5s delay)
+              setTimeout(() => {
+                setHandRevealWinnerId(winnerId);
+                setHandRevealWinnerName(winnerPlayer?.name || 'Winner');
+                setHandRevealHandId(`${tableId}-${Date.now()}`);
+                setHandRevealCards([]);
+                setShowHandRevealModal(true);
+              }, 1500);
+            }
           }
 
           // Track wins for HUD stats + hero session wins

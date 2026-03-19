@@ -6,14 +6,15 @@
  * CRITICAL: This must be pixel-identical to smarter.poker/hub header.
  *
  * Layout:
- *   LEFT:   HUB button (btn-hub.png)
+ *   LEFT:   BACK button (btn-back.png) on sub-pages, HUB button (btn-hub.png) on lobby
+ *           ── Mutually exclusive: a page NEVER shows both.
  *   CENTER: Brand text (brand-text.png) — hidden on mobile
  *   RIGHT:  Diamond icon, VIP badge, Profile orb, Messages, Notifications, Settings, Help
  *           All icons 26x26px from smarter.poker/images/
  */
 
-import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { useState, useEffect, useRef } from 'react';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
@@ -21,10 +22,15 @@ import { useWalletStore } from '../../stores/useWalletStore';
 import { useAuthUser } from '../../hooks/useAuthUser';
 
 import styles from './GlobalHeader.module.css';
-import BackButton from './BackButton';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 
 const BASE = import.meta.env.BASE_URL;
+
+/**
+ * Session-level counter of in-app navigations.
+ * If 0 on a sub-page, the user arrived via direct URL — navigate(-1) would exit the app.
+ */
+let inAppNavCount = 0;
 
 interface GlobalHeaderProps {
   pageDepth?: number;
@@ -33,11 +39,24 @@ interface GlobalHeaderProps {
 }
 
 export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const prevPathRef = useRef(location.pathname);
   const { loadBalances, loadDiamonds } = useWalletStore();
   const { user: authUser } = useAuthUser();
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [notificationCount, setNotificationCount] = useState(0);
   const [unreadMessages, setUnreadMessages] = useState(0);
+
+  // ─── Track in-app navigations for safe back-button behaviour ───
+  useEffect(() => {
+    if (prevPathRef.current !== location.pathname) {
+      inAppNavCount++;
+      prevPathRef.current = location.pathname;
+    }
+  }, [location.pathname]);
+
+  const isSubPage = pageDepth >= 2;
 
   // Load user data when auth user becomes available (no more getUser() calls)
   useEffect(() => {
@@ -155,23 +174,37 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
     }
   });
 
-  const handleHubClick = () => {
-    navigateToHub('/hub');
+  /** Safe back-nav: uses history if available, otherwise falls back to home */
+  const handleBackClick = () => {
+    if (inAppNavCount > 0) {
+      navigate(-1);
+    } else {
+      navigate('/', { replace: true });
+    }
   };
 
-  // Navigation helper
-  const navigateToHub = (path: string) => {
-    // Navigation handled by FloatingHamburger or other navigation components
+  const handleHubClick = () => {
+    window.location.href = '/hub';
   };
 
   return (
     <header className={styles.header}>
-      {/* LEFT: HUB button */}
+      {/* LEFT: Back button on sub-pages, HUB button on lobby — mutually exclusive */}
       <div className={styles.headerLeft}>
-        <BackButton />
-        <button className={styles.hubBtn} onClick={handleHubClick}>
-          <img src={`${BASE}images/btn-hub.png`} alt="Hub" className={styles.hubImg} />
-        </button>
+        {isSubPage ? (
+          <button
+            className={styles.hubBtn}
+            onClick={handleBackClick}
+            aria-label="Go Back"
+            title="Go Back"
+          >
+            <img src={`${BASE}images/btn-back.png`} alt="Back" className={styles.hubImg} />
+          </button>
+        ) : (
+          <button className={styles.hubBtn} onClick={handleHubClick} aria-label="Hub" title="Hub">
+            <img src={`${BASE}images/btn-hub.png`} alt="Hub" className={styles.hubImg} />
+          </button>
+        )}
       </div>
 
       {/* CENTER: Brand text (hidden on mobile) */}
@@ -188,7 +221,7 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
         {/* Diamond Wallet */}
         <button
           className={styles.orbBtn}
-          onClick={() => navigateToHub('/hub/diamond-store')}
+          onClick={() => (window.location.href = '/hub/diamond-store')}
           aria-label="Diamond Wallet"
         >
           <img
@@ -199,12 +232,15 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
         </button>
 
         {/* VIP Member */}
-        <button className={styles.orbBtn} onClick={() => navigateToHub('/hub/diamond-store')}>
+        <button
+          className={styles.orbBtn}
+          onClick={() => (window.location.href = '/hub/diamond-store')}
+        >
           <img src={`${BASE}images/vip-card.png`} alt="VIP Member" className={styles.orbImg} />
         </button>
 
         {/* Profile / Avatar */}
-        <button className={styles.orbBtn} onClick={() => navigateToHub('/hub/profile')}>
+        <button className={styles.orbBtn} onClick={() => (window.location.href = '/hub/profile')}>
           <div className={styles.profileOrb}>
             {avatarUrl ? (
               <img
@@ -222,7 +258,7 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
         </button>
 
         {/* Messages */}
-        <button className={styles.orbBtn} onClick={() => navigateToHub('/hub/messenger')}>
+        <button className={styles.orbBtn} onClick={() => (window.location.href = '/hub/messenger')}>
           <img
             src={`${BASE}images/header-messenger.png`}
             alt="Messages"
@@ -250,14 +286,14 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
         </Link>
 
         {/* Settings */}
-        <button className={styles.orbBtn} onClick={() => navigateToHub('/hub/settings')}>
+        <button className={styles.orbBtn} onClick={() => (window.location.href = '/hub/settings')}>
           <img src={`${BASE}images/header-settings.png`} alt="Settings" className={styles.orbImg} />
         </button>
 
         {/* Live Help */}
         <button
           className={styles.orbBtn}
-          onClick={() => navigateToHub('/hub/help')}
+          onClick={() => (window.location.href = '/hub/help')}
           aria-label="Live Help"
         >
           <img src={`${BASE}images/header-help.png`} alt="Live Help" className={styles.orbImg} />

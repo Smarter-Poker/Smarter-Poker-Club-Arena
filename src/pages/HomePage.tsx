@@ -32,7 +32,6 @@ import PremiumSFX from '../services/PremiumSFX';
 import { masterBus } from '../core/MasterBus';
 import { useMasterBusSubscription } from '../hooks/useMasterBusSubscription';
 
-import PresenceHub from '../components/home/PresenceHub';
 import ClubContextMenu from '../components/home/ClubContextMenu';
 import LOBBY_TILES from '../config/lobbyTiles.config';
 import CarouselSection from '../components/home/CarouselSection';
@@ -169,9 +168,6 @@ function HomePageInner() {
   } | null>(null);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Enhancement #8: Notification badges (unread counts)
-  const [tileBadges, setTileBadges] = useState<Record<string, number>>({});
-
   // #1: Keyboard shortcuts active flag
   const [showShortcutHint, setShowShortcutHint] = useState(false);
 
@@ -296,26 +292,12 @@ function HomePageInner() {
             /* quota */
           }
 
-          // ── Batch: notification badges + card color sync in parallel ──
-          const [notifResult, colorResult] = await Promise.allSettled([
-            supabase
-              .from('notifications')
-              .select('*', { count: 'exact', head: true })
-              .eq('user_id', authUser.id)
-              .eq('is_read', false),
+          // ── Batch: card color sync ──
+          const [colorResult] = await Promise.allSettled([
             supabase.from('profiles').select('preferences').eq('id', authUser.id).maybeSingle(),
           ]);
 
           if (getIsMounted && !getIsMounted()) return;
-
-          // Process notification badges
-          if (
-            notifResult.status === 'fulfilled' &&
-            notifResult.value.count &&
-            notifResult.value.count > 0
-          ) {
-            setTileBadges({ 'Player Stats': notifResult.value.count });
-          }
 
           // Process card color sync
           if (
@@ -444,31 +426,6 @@ function HomePageInner() {
       }
     },
     { debounce: 300 }
-  );
-
-  // Enhancement #8: Listen for notification badge updates (debounced)
-  useMasterBusSubscription(
-    'NOTIFICATION_READ',
-    () => {
-      // Clear all badges when notifications are read
-      setTileBadges({});
-    },
-    { debounce: 500 }
-  );
-
-  // Phase 8 #5: Listen for diamond balance changes from challenge claims (debounced)
-  useMasterBusSubscription(
-    'DIAMOND_BALANCE_CHANGED',
-    (payload: any) => {
-      const delta = payload?.delta as number;
-      if (delta && delta > 0) {
-        setTileBadges((prev) => ({
-          ...prev,
-          'Player Stats': (prev['Player Stats'] || 0) + 1,
-        }));
-      }
-    },
-    { debounce: 500 }
   );
 
   // Fetch Shark Club stats — ALL data from live Supabase queries
@@ -1263,12 +1220,8 @@ function HomePageInner() {
         {/* ═══════════════════════════════════════════════════════════════════════
                     DAILY CHALLENGES — Extracted Component (#16)
                 ═══════════════════════════════════════════════════════════════════════ */}
-        {/* P4-2: Presence section with glass container */}
-        <div className={styles.presenceSection}>
-          <PresenceHub />
-        </div>
-        {/* P4-4: Section separator */}
-        <div className={styles.sectionSeparator}></div>
+        {/* P4-2: Presence section removed — was the blue bar */}
+        {/* P4-4: Section separator removed */}
 
         {/* ═══════════════════════════════════════════════════════════════════════
                     BOTTOM ROW — from lobbyTiles.config.ts (#18)
@@ -1292,9 +1245,6 @@ function HomePageInner() {
               <div className={styles.tileImageWrapper}>
                 <img src={tile.img} alt={tile.alt} className={styles.tileImage} loading="lazy" />
                 <span className={styles.tileLabel}>{tile.alt}</span>
-                {tileBadges[tile.alt] && tileBadges[tile.alt] > 0 && (
-                  <span className={styles.tileBadge}>{tileBadges[tile.alt]}</span>
-                )}
               </div>
               <div className={styles.tileEdge}></div>
             </button>

@@ -3,13 +3,14 @@
  * GLOBAL HEADER — Pixel-match to World Hub UniversalHeader
  * ═══════════════════════════════════════════════════════════════════════════════
  * bg: black | height: 55px | border-bottom: 3px solid rgba(200,200,200,0.8)
- * All right-side icons: 26x26px
- * Profile orb: 26x26 with cyan glow border
+ * Desktop right-side icons: 40x40px with 200% image overflow (World Hub standard)
+ * Mobile (≤600px): 26x26px | Tiny (≤380px): 22x22px
+ * Profile orb: same sizing with cyan glow border
  */
 
 .header {
   background: #000000;
-  padding: 6px;
+  padding: 8px 12px;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -21,7 +22,7 @@
   width: 100%;
   height: 55px;
   z-index: 1000;
-  gap: 2px;
+  gap: 8px;
   flex-wrap: nowrap;
   box-sizing: border-box;
   backdrop-filter: blur(8px) saturate(1.1);
@@ -75,14 +76,14 @@
 .headerRight {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 6px;
   flex-shrink: 0;
   justify-content: flex-end;
 }
 
 .orbBtn {
-  width: 26px;
-  height: 26px;
+  width: 40px;
+  height: 40px;
   padding: 0;
   border: none;
   background: transparent;
@@ -92,39 +93,60 @@
   justify-content: center;
   flex-shrink: 0;
   position: relative;
-  transition: opacity 0.15s ease;
+  overflow: hidden;
+  transition:
+    transform 0.1s ease,
+    opacity 0.15s ease;
 }
 
 .orbBtn:hover {
   opacity: 0.8;
+  transform: scale(1.1);
+}
+
+.orbBtn:active {
+  transform: scale(0.95);
 }
 
 .orbLink {
-  width: 26px;
-  height: 26px;
+  width: 40px;
+  height: 40px;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
   position: relative;
+  overflow: hidden;
   text-decoration: none;
-  transition: opacity 0.15s ease;
+  transition:
+    transform 0.1s ease,
+    opacity 0.15s ease;
 }
 
 .orbLink:hover {
   opacity: 0.8;
+  transform: scale(1.1);
+}
+
+.orbLink:active {
+  transform: scale(0.95);
 }
 
 .orbImg {
-  width: 100%;
-  height: 100%;
+  width: 200%;
+  height: 200%;
+  max-width: none;
   object-fit: contain;
+  position: absolute;
+  top: 55%;
+  left: 50%;
+  transform: translate(-50%, -50%);
 }
 
 /* Profile orb — cyan glow circle */
 .profileOrb {
-  width: 26px;
-  height: 26px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   border: 2px solid rgb(0, 224, 255);
   box-shadow:
@@ -145,32 +167,66 @@
 }
 
 .profilePlaceholder {
-  font-size: 14px;
+  font-size: 18px;
   line-height: 1;
 }
 
 /* Badge for notifications / messages */
 .badge {
   position: absolute;
-  top: -4px;
-  right: -4px;
+  top: -2px;
+  right: -2px;
   background: #e41e3f;
   color: white;
   border-radius: 10px;
-  padding: 1px 4px;
-  font-size: 9px;
+  padding: 2px 6px;
+  font-size: 11px;
   font-weight: 700;
-  min-width: 14px;
+  min-width: 18px;
   text-align: center;
   box-shadow:
     0 2px 4px rgba(0, 0, 0, 0.3),
     0 0 8px rgba(228, 30, 63, 0.4);
-  border: 1.5px solid #000;
+  border: 2px solid #000;
   line-height: 1.2;
-  text-shadow: 0 0 4px rgba(228, 30, 63, 0.3);
+  z-index: 1;
 }
 
-/* ─── Mobile Responsive ─── */
+/* ─── Mobile / Tablet Responsive (matches World Hub ≤1024px) ─── */
+@media (max-width: 1024px) {
+  .header {
+    padding: 6px 6px;
+    gap: 2px;
+  }
+
+  .headerRight {
+    gap: 2px;
+  }
+
+  .orbBtn,
+  .orbLink {
+    width: 26px;
+    height: 26px;
+  }
+
+  .profileOrb {
+    width: 26px;
+    height: 26px;
+  }
+
+  .badge {
+    top: -3px;
+    right: -3px;
+    padding: 0 3px;
+    font-size: 7px;
+    min-width: 10px;
+  }
+
+  .profilePlaceholder {
+    font-size: 11px;
+  }
+}
+
 @media (max-width: 600px) {
   .header {
     padding: 4px 6px;
@@ -185,25 +241,6 @@
   /* Hide brand text on mobile like World Hub */
   .brandText {
     display: none;
-  }
-
-  .orbBtn,
-  .orbLink {
-    width: 24px;
-    height: 24px;
-  }
-
-  .profileOrb {
-    width: 24px;
-    height: 24px;
-  }
-
-  .badge {
-    top: -3px;
-    right: -3px;
-    padding: 0 3px;
-    font-size: 8px;
-    min-width: 12px;
   }
 }
 
@@ -227,5 +264,9 @@
   .profileOrb {
     width: 22px;
     height: 22px;
+  }
+
+  .profilePlaceholder {
+    font-size: 10px;
   }
 }

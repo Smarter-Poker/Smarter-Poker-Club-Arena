@@ -352,7 +352,8 @@
   align-items: flex-end;
   gap: 20px;
   width: 100%;
-  padding: 8px 40px 40px 40px;
+  padding: 0 40px 40px 40px;
+  margin-top: -20px;
   box-sizing: border-box;
   overflow-x: auto;
   scroll-snap-type: x mandatory;

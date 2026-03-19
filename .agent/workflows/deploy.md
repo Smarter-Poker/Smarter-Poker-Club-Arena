@@ -5,80 +5,98 @@ description: How to deploy Club Arena to production
 # Club Arena Deployment Workflow
 
 ## Production URL
+
 The production Club Arena is served at: `https://smarter.poker/hub/club-arena`
 
-This URL is powered by Vercel rewrites in the World Hub project.
+Club Arena lives 100% inside smarter.poker. All files (JS, CSS, HTML, images, cards,
+videos, logos) are in the World Hub's `public/hub/club-arena/` directory and served
+directly from smarter.poker. ZERO requests go to external domains.
 
 ## Architecture
 
 ```
-smarter.poker/hub/club-arena → Vercel rewrite → club-arena.vercel.app/hub/club-arena/
+smarter.poker/hub/club-arena/*
+  → Static files from public/hub/club-arena/ (JS/CSS/images/cards/videos)
+  → SPA fallback rewrite serves index.html for client-side routes
+  → React Router handles navigation
+  → Auth via shared Supabase session (same-origin localStorage)
 ```
 
-**Important:** Club Arena is embedded via Vercel rewrites in the World Hub, NOT as an iframe.
+NO iframe. NO proxy. NO club-arena.vercel.app. Everything from smarter.poker.
 
 ## Deployment Steps
 
-**🚨 CRITICAL RULE: ALWAYS deploy to production after ANY code change! 🚨**
+**After ANY code change to Club Arena, you MUST sync to the World Hub and push.**
 
-### 1. Deploy Club Arena Changes
+### 1. Build and Sync
+
 ```bash
 cd /Users/smarter.poker/Documents/club-arena
 
-# Commit your changes
-git add -A
-git commit -m "your commit message"
-git push origin main
-
-# Deploy to production (MANDATORY after any code change)
-// turbo
-vercel --prod --yes
+# Make your code changes, then:
+bash scripts/sync-to-world-hub.sh /Users/smarter.poker/Documents/Smarter-Poker-World-Hub
 ```
 
-**When to deploy:**
-- ✅ After ANY code changes (components, pages, services, styles)
-- ✅ After configuration changes (vercel.json, package.json, etc.)
-- ✅ After asset updates (images, videos, SVGs)
-- ✅ After bug fixes, features, or UI improvements
+This script will:
 
-**DO NOT skip deployment!** The user expects changes live on smarter.poker immediately.
+- Run safety checks (no iframe code, no hardcoded domains)
+- TypeScript compilation check
+- Build with Vite
+- Strip source maps
+- Copy all 618 files to World Hub's public/hub/club-arena/
+- Verify the copy
 
-### 2. Verify Deployment
-After deploying, verify at: `https://club-arena.vercel.app/hub/club-arena/`
+### 2. Push World Hub to Deploy
+
+```bash
+cd /Users/smarter.poker/Documents/Smarter-Poker-World-Hub
+
+# Use the safe push script
+bash scripts/git-safe-push.sh "chore: update Club Arena dist"
+```
+
+Vercel auto-deploys smarter.poker with the updated Club Arena files.
+
+### 3. Verify Deployment
+
+After deploying, verify at: `https://smarter.poker/hub/club-arena/`
+
+**DO NOT verify on club-arena.vercel.app** — that is NOT the production URL.
 
 ## Key Configuration Files
 
 ### Club Arena (Smarter-Poker-Club-Arena repo)
-- `vercel.json` - Vercel deployment config with SPA rewrites
-- `vite.config.ts` - Build config with base path `/hub/club-arena/`
+
+- `vite.config.ts` — Build config with base path `/hub/club-arena/`
+- `scripts/sync-to-world-hub.sh` — One-command build + sync script
+- `scripts/build-and-verify.sh` — Safety checks before every build
 
 ### World Hub (Smarter-Poker-World-Hub repo)
-- `vercel.json` - Contains rewrites that proxy `/hub/club-arena` to `club-arena.vercel.app`
 
-**Current rewrite configuration:**
-```json
-{
-  "source": "/hub/club-arena",
-  "destination": "https://club-arena.vercel.app/hub/club-arena/"
-},
-{
-  "source": "/hub/club-arena/:path*",
-  "destination": "https://club-arena.vercel.app/hub/club-arena/:path*"
-}
-```
+- `public/hub/club-arena/` — ALL Club Arena files (618 files, 89MB)
+- `next.config.js` — `fallback` rewrite for SPA routing (serves index.html for unmatched routes)
+- `pages/hub/club-arena/*.js` — 14 native pages (take priority over SPA)
+- `pages/api/club-arena/` — 66 API routes
 
 ## If Site Shows Old Content
 
-1. **Club Arena not updating?** 
-   - Run `vercel deploy --prod --force` from club-arena directory
-   
-2. **smarter.poker/hub/club-arena not updating?**
-   - Check World Hub's `vercel.json` rewrite destinations
-   - Redeploy World Hub: `cd /Users/smarter.poker/Documents/Smarter-Poker-World-Hub && git push`
+1. **Club Arena not updating?**
+   - Did you run `sync-to-world-hub.sh`? Changes must be copied to the World Hub.
+   - Did you push the World Hub? Only the World Hub deploys to smarter.poker.
 
-3. **Cache issues?**
-   - Add cache-busting query param: `?v=timestamp`
-   - Vercel caches are typically cleared on new deployments
+2. **Cache issues?**
+   - Vercel caches are cleared on new deployments
+   - Hard refresh: Ctrl+Shift+R / Cmd+Shift+R
 
-## Deprecated Domains
-- `club.smarter.poker` - NO LONGER USED - Do not configure rewrites to this domain
+3. **Build failed?**
+   - Run `bash scripts/build-and-verify.sh` locally to check for errors
+   - Check TypeScript: `npx tsc --noEmit`
+
+## Deprecated — DO NOT USE
+
+- `club-arena.vercel.app` — Legacy standalone deployment, NOT production
+- `club-engine.vercel.app` — Legacy duplicate, NOT production
+- `club.smarter.poker` — Legacy subdomain, redirects to smarter.poker
+- `ClubArenaEmbed` — Deleted iframe component
+- `postMessage` / `window.parent` — Deleted iframe communication
+- `VITE_XAI_API_KEY` — Moved server-side to World Hub API route

@@ -75,6 +75,19 @@
   pointer-events: none;
 }
 
+/* Dark bar covering the stats region to hide template's white baked-in labels */
+.club-card-stats-overlay::before {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 6%;
+  right: 6%;
+  height: 21.5%;
+  background: linear-gradient(180deg, rgba(10, 20, 35, 0.95) 0%, rgba(8, 18, 32, 0.98) 100%);
+  border-radius: 4px;
+  z-index: 1;
+}
+
 .club-card-stats-group {
   position: absolute;
   display: flex;
@@ -82,6 +95,7 @@
   align-items: center;
   justify-content: center;
   text-align: center;
+  z-index: 2;
 }
 
 /* Cyan labels — identical to ClubStatsPanel .stat-label */

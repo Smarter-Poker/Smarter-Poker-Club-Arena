@@ -17,25 +17,30 @@ export interface LobbyTile {
 
 const LOBBY_TILES: LobbyTile[] = [
   {
-    img: `${BASE}images/tiles/daily-challenges.jpg`,
+    img: `${BASE}images/tiles/daily-challenges.webp`,
     alt: 'Daily Challenges',
     route: '/profile',
     shortcutKey: '1',
   },
   {
-    img: `${BASE}images/tiles/player-stats.jpg`,
+    img: `${BASE}images/tiles/player-stats.webp`,
     alt: 'Player Stats',
     route: '/profile',
     shortcutKey: '2',
   },
   {
-    img: `${BASE}images/tiles/leaderboards.jpg`,
+    img: `${BASE}images/tiles/leaderboards.webp`,
     alt: 'Leaderboards',
     route: '/leaderboard',
     shortcutKey: '3',
   },
-  { img: `${BASE}images/tiles/cashier.jpg`, alt: 'Cashier', route: null, shortcutKey: '4' }, // Custom — needs last-club logic
-  { img: `${BASE}images/tiles/marketplace.jpg`, alt: 'Marketplace', route: null, shortcutKey: '5' }, // Custom — navigate to marketplace
+  { img: `${BASE}images/tiles/cashier.webp`, alt: 'Cashier', route: null, shortcutKey: '4' }, // Custom — needs last-club logic
+  {
+    img: `${BASE}images/tiles/marketplace.webp`,
+    alt: 'Marketplace',
+    route: null,
+    shortcutKey: '5',
+  }, // Custom — navigate to marketplace
 ];
 
 export default LOBBY_TILES;

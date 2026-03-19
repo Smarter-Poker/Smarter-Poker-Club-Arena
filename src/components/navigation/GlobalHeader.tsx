@@ -17,8 +17,8 @@
  * Profile: 3px cyan border with enhanced glow
  */
 
-import { useState, useEffect, useRef, useCallback } from 'react';
-import HamburgerMenu from './HamburgerMenu';
+import { useState, useEffect, useRef, useCallback, Suspense, lazy } from 'react';
+const HamburgerMenu = lazy(() => import('./HamburgerMenu'));
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
@@ -70,6 +70,39 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
       prevPathRef.current = location.pathname;
     }
   }, [location.pathname]);
+
+  // #4: Keyboard shortcut — Ctrl/⌘+M toggles menu
+  useEffect(() => {
+    const handleKeyboard = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'm') {
+        e.preventDefault();
+        setMenuOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyboard);
+    return () => window.removeEventListener('keydown', handleKeyboard);
+  }, []);
+
+  // #6: Swipe from left edge to open menu
+  const edgeSwipeRef = useRef<number | null>(null);
+  useEffect(() => {
+    const handleTouchStart = (e: TouchEvent) => {
+      const x = e.touches[0].clientX;
+      if (x < 25) edgeSwipeRef.current = x; // Only track if starting from left edge
+    };
+    const handleTouchEnd = (e: TouchEvent) => {
+      if (edgeSwipeRef.current === null) return;
+      const endX = e.changedTouches[0].clientX;
+      if (endX - edgeSwipeRef.current > 60) setMenuOpen(true); // Swipe right > 60px
+      edgeSwipeRef.current = null;
+    };
+    window.addEventListener('touchstart', handleTouchStart, { passive: true });
+    window.addEventListener('touchend', handleTouchEnd, { passive: true });
+    return () => {
+      window.removeEventListener('touchstart', handleTouchStart);
+      window.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, []);
 
   const isSubPage = pageDepth >= 2;
 
@@ -220,8 +253,10 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
 
   return (
     <>
-      {/* Hamburger Menu drawer — rendered outside header for z-index stacking */}
-      <HamburgerMenu isOpen={menuOpen} onClose={handleMenuClose} />
+      {/* Hamburger Menu drawer — lazy-loaded, rendered outside header for z-index stacking */}
+      <Suspense fallback={null}>
+        <HamburgerMenu isOpen={menuOpen} onClose={handleMenuClose} />
+      </Suspense>
 
       <header className={styles.header}>
         {/* LEFT: Hamburger + Back/Hub button (World Hub pattern) */}

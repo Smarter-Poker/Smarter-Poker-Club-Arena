@@ -60,6 +60,8 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     }
   });
 
+  const drawerRef = useRef<HTMLDivElement>(null);
+
   // Close on ESC key
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
@@ -69,10 +71,38 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     return () => window.removeEventListener('keydown', handleEsc);
   }, [isOpen, onClose]);
 
-  // Prevent body scroll when menu is open
+  // Prevent body scroll when menu is open + focus trap
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = 'hidden';
+      // Focus trap: keep Tab cycling within the drawer
+      const drawer = drawerRef.current;
+      if (!drawer) return;
+      const focusable = drawer.querySelectorAll<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      );
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const trapFocus = (e: KeyboardEvent) => {
+        if (e.key !== 'Tab') return;
+        if (e.shiftKey) {
+          if (document.activeElement === first) {
+            e.preventDefault();
+            last?.focus();
+          }
+        } else {
+          if (document.activeElement === last) {
+            e.preventDefault();
+            first?.focus();
+          }
+        }
+      };
+      drawer.addEventListener('keydown', trapFocus);
+      first?.focus();
+      return () => {
+        document.body.style.overflow = '';
+        drawer.removeEventListener('keydown', trapFocus);
+      };
     } else {
       document.body.style.overflow = '';
     }
@@ -294,6 +324,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
 
       {/* Drawer */}
       <div
+        ref={drawerRef}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
         style={{
@@ -816,11 +847,13 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                         .from('profiles')
                         .update({ preferences: { ...prefs, card_color_preset: preset.id } })
                         .eq('id', user.id);
-                      if (saveErr)
+                      if (saveErr) {
                         console.error('[HamburgerMenu] Card color save failed:', saveErr);
+                        toast.error('Card color could not be saved. Please try again.');
+                      }
                     } catch (err) {
                       console.error('[HamburgerMenu] Error:', err);
-                      /* silent */
+                      toast.error('Card color could not be saved. Please try again.');
                     }
                   }
                   toast.success(`Card color: ${preset.name}`);

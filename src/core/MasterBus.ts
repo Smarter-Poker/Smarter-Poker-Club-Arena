@@ -313,6 +313,7 @@ export interface BusPayloadMap {
   TABLE_SEATED: TableEventPayload;
   TABLE_LEFT: TableEventPayload;
   BALANCE_UPDATED: { source: string; [key: string]: unknown };
+  TRANSACTION_LOGGED: { entry: Record<string, unknown>; direction: 'in' | 'out' };
   VIP_POINTS_UPDATED: { userId: string; added: number; source: string; [key: string]: unknown };
   WALLET_REFRESHED: BalancePayload;
   REALTIME_CONNECTED: { channelName: string };

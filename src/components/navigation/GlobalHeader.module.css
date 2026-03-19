@@ -238,7 +238,7 @@
   line-height: 1;
 }
 
-/* Badge for notifications / messages */
+/* Badge for notifications / messages — with pulse animation */
 .badge {
   position: absolute;
   top: -2px;
@@ -257,6 +257,17 @@
   border: 2px solid #000;
   line-height: 1.2;
   z-index: 1;
+  animation: badgePulse 2s ease-in-out infinite;
+}
+
+@keyframes badgePulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.15);
+  }
 }
 
 /* ─── Mobile / Tablet Responsive (matches World Hub ≤1024px) ─── */

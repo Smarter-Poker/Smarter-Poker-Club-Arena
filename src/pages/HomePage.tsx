@@ -779,9 +779,7 @@ function HomePageInner() {
         case 'f':
           setShowFindPlayerModal(true);
           break;
-        case '/':
-          // Reserved — no-op (search removed)
-          break;
+
         case '?':
           setShowShortcutHint((prev) => !prev);
           break;

@@ -14,6 +14,8 @@ import { identityDNA } from '../../core/IdentityDNA';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
 import { masterBus } from '../../core/MasterBus';
+import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
+import { useWalletStore } from '../../stores/useWalletStore';
 import { STORAGE_KEYS } from '../../lib/storage';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 
@@ -48,7 +50,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [userName, setUserName] = useState<string>('');
   const [isVIP, setIsVIP] = useState(false);
-  const [diamondBalance, setDiamondBalance] = useState(0);
+  const { diamonds: diamondBalance } = useWalletStore();
   const [selectedCardColor, setSelectedCardColor] = useState(() => {
     try {
       return localStorage.getItem(STORAGE_KEYS.CARD_COLOR) || 'default';
@@ -121,11 +123,16 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
               localStorage.setItem(STORAGE_KEYS.SHOW_STACK_BB, String(data.show_stack_bb));
             }
             setIsVIP(data.is_vip || data.tier === 'vip' || false);
-            setDiamondBalance(data.diamonds || 0);
           }
         });
     }
   }, [user?.id]);
+
+  // ── BUS LISTENER: Sync avatar/name when profile is updated elsewhere ──
+  useMasterBusSubscription('USER_PROFILE_LOADED', (payload) => {
+    if (payload?.avatarUrl) setAvatarUrl(payload.avatarUrl);
+    if (payload?.displayName) setUserName(payload.displayName);
+  });
 
   // Swipe-to-close gesture
   const handleTouchStart = (e: React.TouchEvent) => {

@@ -200,9 +200,6 @@ function HomePageInner() {
     null
   );
 
-  // #9: Search/filter
-  const [searchQuery, setSearchQuery] = useState('');
-
   // #12: Seasonal theme
   const seasonalTheme = useMemo(() => getSeasonalTheme(), []);
 
@@ -778,9 +775,7 @@ function HomePageInner() {
           setShowFindPlayerModal(true);
           break;
         case '/':
-          e.preventDefault();
-          setSearchQuery('');
-          document.getElementById('club-search-input')?.focus();
+          // Reserved — no-op (search removed)
           break;
         case '?':
           setShowShortcutHint((prev) => !prev);
@@ -918,18 +913,9 @@ function HomePageInner() {
   // ═══════════════════════════════════════════════════════════════════════════════
   // USER'S CLUBS — sorted (pinned first), filtered, excluding Shark Club
   // ═══════════════════════════════════════════════════════════════════════════════
-  // BUG FIX #4: Track unfiltered count separately so search bar doesn't vanish mid-query
-  const unfilteredClubCount = useMemo(() => {
-    return userClubs.filter((club) => club.id !== sharkClubId).length;
-  }, [userClubs, sharkClubId]);
 
   const displayClubs = useMemo(() => {
-    let clubs = userClubs.filter((club) => club.id !== sharkClubId);
-    // #9: Search filter
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      clubs = clubs.filter((c) => c.name?.toLowerCase().includes(q));
-    }
+    const clubs = userClubs.filter((club) => club.id !== sharkClubId);
     // Phase 7 #3: Sort -- pinned first, then by member count descending
     clubs.sort((a, b) => {
       const aPinned = pinnedClubIds.includes(a.id) ? 1 : 0;
@@ -938,7 +924,7 @@ function HomePageInner() {
       return (b.member_count || 0) - (a.member_count || 0);
     });
     return clubs;
-  }, [userClubs, sharkClubId, searchQuery, pinnedClubIds]);
+  }, [userClubs, sharkClubId, pinnedClubIds]);
 
   // ═══════════════════════════════════════════════════════════════════════════════
   // Per-club stats fetching — member count, club level, active players
@@ -1129,7 +1115,7 @@ function HomePageInner() {
                 ['J', 'Join a Club'],
                 ['C', 'Create a Club'],
                 ['F', 'Find a Player'],
-                ['/', 'Search Clubs'],
+
                 ['?', 'Toggle This Help'],
                 ['Esc', 'Close Modals'],
               ].map(([key, desc]) => (

@@ -171,11 +171,11 @@
   flex-shrink: 0;
 }
 
-/* Value — right-aligned */
+/* Value — right-aligned, NEVER truncated */
 .dw__row-value {
   flex: 1;
   text-align: right;
-  font-size: 0.85rem;
+  font-size: 0.75rem;
   font-weight: 700;
   color: #e8ecf0;
   font-family:
@@ -184,9 +184,6 @@
     sans-serif;
   letter-spacing: 0.02em;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
 }
 
 /* ── Diamond row ──────────────────────────────────────────────────────────── */

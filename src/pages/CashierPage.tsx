@@ -317,22 +317,30 @@ export default function CashierPage() {
       if (!isMounted.current) return;
       setClubName(clubData?.name || '');
 
-      // Check if club is in a union
-      const { data: unionClub } = await retryFetch(
+      // Check if club is in a union — use clubs.union_id as primary check (more reliable),
+      // fall back to union_clubs table. Avoid !inner join which can fail silently with RLS.
+      const { data: clubForUnion } = await retryFetch(
         () =>
           supabase
-            .from('union_clubs')
-            .select('union_id, unions!inner(owner_id)')
-            .eq('club_id', resolvedId)
+            .from('clubs')
+            .select('union_id')
+            .eq('id', resolvedId)
             .maybeSingle()
             .then((r) => r),
         { maxRetries: 2, isMountedRef: isMounted }
       );
 
       if (!isMounted.current) return;
-      if (unionClub) {
+      const detectedUnionId = clubForUnion?.union_id;
+      if (detectedUnionId) {
         setIsInUnion(true);
-        setIsUnionOwner((unionClub as any).unions?.owner_id === user.id);
+        // Check if this user is the union owner
+        const { data: unionData } = await supabase
+          .from('unions')
+          .select('owner_id')
+          .eq('id', detectedUnionId)
+          .maybeSingle();
+        setIsUnionOwner(unionData?.owner_id === user.id);
       } else {
         setIsInUnion(false);
         setIsUnionOwner(false);

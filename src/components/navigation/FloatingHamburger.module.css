@@ -1,19 +1,21 @@
 /**
- * FLOATING HAMBURGER BUTTON — Top-left navigation toggle
- * Silver metallic icon with no background circle
- * Position below the GlobalHeader (55px + 3px border = 58px)
+ * FLOATING HAMBURGER BUTTON — Bottom-left navigation toggle
+ * Silver metallic icon - positioned at BOTTOM LEFT
+ * Duplicate of the header hamburger but always accessible
  * z-index: 1001 (above GlobalHeader's 1000)
  */
 
 .floatingButton {
   position: fixed;
-  top: 62px;
+  bottom: 80px;
   left: 16px;
   width: 48px;
   height: 48px;
-  border-radius: 8px;
-  background: transparent;
-  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -21,10 +23,15 @@
   transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
   z-index: 1001;
   padding: 0;
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.4),
+    0 0 0 1px rgba(255, 255, 255, 0.05);
 }
 
 .floatingButton:hover {
-  transform: translateY(-1px) scale(1.08);
+  transform: translateY(-2px) scale(1.08);
+  background: rgba(0, 0, 0, 0.75);
+  border-color: rgba(255, 255, 255, 0.2);
 }
 
 .floatingButton:active {
@@ -32,8 +39,8 @@
 }
 
 .icon {
-  width: 30px;
-  height: 30px;
+  width: 26px;
+  height: 26px;
   filter: drop-shadow(0 0 4px rgba(200, 210, 220, 0.4));
 }
 
@@ -48,17 +55,17 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.5);
 }
 
-/* Mobile adjustments — header shrinks to 48px at ≤600px */
+/* Mobile adjustments */
 @media (max-width: 600px) {
   .floatingButton {
-    top: 54px;
+    bottom: 72px;
     left: 12px;
     width: 44px;
     height: 44px;
   }
 
   .icon {
-    width: 26px;
-    height: 26px;
+    width: 22px;
+    height: 22px;
   }
 }

@@ -2,10 +2,11 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  * GLOBAL HEADER — Pixel-match to World Hub UniversalHeader
  * ═══════════════════════════════════════════════════════════════════════════════
- * bg: black | height: 55px | border-bottom: 3px solid rgba(200,200,200,0.8)
+ * bg: black | border-bottom: 3px solid rgba(200,200,200,0.8)
  * Desktop right-side icons: 40x40px with 200% image overflow (World Hub standard)
- * Mobile (≤600px): 26x26px | Tiny (≤380px): 22x22px
- * Profile orb: same sizing with cyan glow border
+ * Hamburger: 56x56px inline in header-left (World Hub standard)
+ * Profile orb: 40px with cyan glow border matching World Hub
+ * Mobile (≤1024px): 26x26px | Tiny (≤380px): 22x22px
  */
 
 .header {
@@ -20,7 +21,7 @@
   left: 0;
   right: 0;
   width: 100%;
-  height: 55px;
+  height: 60px; /* #4: Taller header to match World Hub visual weight */
   z-index: 1000;
   gap: 8px;
   flex-wrap: nowrap;
@@ -33,8 +34,42 @@
 .headerLeft {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   flex-shrink: 0;
+}
+
+/* #5: Hamburger button — inline in header, 56×56px World Hub standard */
+.hamburgerBtn {
+  width: 56px;
+  height: 56px;
+  background: transparent;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  position: relative;
+  flex-shrink: 0;
+  overflow: visible;
+  padding: 0;
+  transition:
+    transform 0.1s ease,
+    opacity 0.15s ease;
+}
+
+.hamburgerBtn:hover {
+  opacity: 0.8;
+  transform: scale(1.1);
+}
+
+.hamburgerBtn:active {
+  transform: scale(0.95);
+}
+
+.hamburgerImg {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .hubBtn {
@@ -108,6 +143,38 @@
   transform: scale(0.95);
 }
 
+/* #2: VIP icon gold glow ring — makes VIP icon pop like World Hub */
+.orbBtnVip {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  position: relative;
+  overflow: hidden;
+  transition:
+    transform 0.1s ease,
+    opacity 0.15s ease;
+  border-radius: 50%;
+  box-shadow:
+    0 0 8px rgba(255, 215, 0, 0.4),
+    0 0 16px rgba(255, 215, 0, 0.2);
+}
+
+.orbBtnVip:hover {
+  opacity: 0.8;
+  transform: scale(1.1);
+}
+
+.orbBtnVip:active {
+  transform: scale(0.95);
+}
+
 .orbLink {
   width: 40px;
   height: 40px;
@@ -143,16 +210,16 @@
   transform: translate(-50%, -50%);
 }
 
-/* Profile orb — cyan glow circle */
+/* #3: Profile orb — thicker cyan glow circle matching World Hub */
 .profileOrb {
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  border: 2px solid rgb(0, 224, 255);
+  border: 3px solid rgba(0, 245, 255, 0.6);
   box-shadow:
-    0 0 8px rgba(0, 224, 255, 0.6),
-    0 0 16px rgba(0, 224, 255, 0.3),
-    0 0 24px rgba(0, 224, 255, 0.15);
+    0 0 10px rgba(0, 245, 255, 0.5),
+    0 0 20px rgba(0, 245, 255, 0.25),
+    0 0 30px rgba(0, 245, 255, 0.1);
   overflow: hidden;
   display: flex;
   align-items: center;
@@ -197,6 +264,7 @@
   .header {
     padding: 6px 6px;
     gap: 2px;
+    height: 52px;
   }
 
   .headerRight {
@@ -204,6 +272,7 @@
   }
 
   .orbBtn,
+  .orbBtnVip,
   .orbLink {
     width: 26px;
     height: 26px;
@@ -212,6 +281,12 @@
   .profileOrb {
     width: 26px;
     height: 26px;
+    border-width: 2px;
+  }
+
+  .hamburgerBtn {
+    width: 36px;
+    height: 36px;
   }
 
   .badge {
@@ -238,6 +313,11 @@
     height: 18px;
   }
 
+  .hamburgerBtn {
+    width: 32px;
+    height: 32px;
+  }
+
   /* Hide brand text on mobile like World Hub */
   .brandText {
     display: none;
@@ -256,6 +336,7 @@
   }
 
   .orbBtn,
+  .orbBtnVip,
   .orbLink {
     width: 22px;
     height: 22px;
@@ -264,6 +345,12 @@
   .profileOrb {
     width: 22px;
     height: 22px;
+    border-width: 1.5px;
+  }
+
+  .hamburgerBtn {
+    width: 28px;
+    height: 28px;
   }
 
   .profilePlaceholder {

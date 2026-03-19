@@ -11,9 +11,14 @@
  *   CENTER: Brand text (brand-text.png) — hidden on mobile
  *   RIGHT:  Diamond icon, VIP badge, Profile orb, Messages, Notifications, Settings, Help
  *           All icons 26x26px from smarter.poker/images/
+ *
+ * Hamburger: 56×56px inline btn-hamburger.png in header-left (World Hub standard)
+ * VIP: Gold glow ring on VIP icon
+ * Profile: 3px cyan border with enhanced glow
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import HamburgerMenu from './HamburgerMenu';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
@@ -47,6 +52,9 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [notificationCount, setNotificationCount] = useState(0);
   const [unreadMessages, setUnreadMessages] = useState(0);
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  const handleMenuToggle = useCallback(() => setMenuOpen((prev) => !prev), []);
 
   // ─── Track in-app navigations for safe back-button behaviour ───
   useEffect(() => {
@@ -188,117 +196,141 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
   };
 
   return (
-    <header className={styles.header}>
-      {/* LEFT: Back button on sub-pages, HUB button on lobby — mutually exclusive */}
-      <div className={styles.headerLeft}>
-        {isSubPage ? (
+    <>
+      {/* Hamburger Menu drawer — rendered outside header for z-index stacking */}
+      <HamburgerMenu isOpen={menuOpen} onClose={() => setMenuOpen(false)} />
+
+      <header className={styles.header}>
+        {/* LEFT: Hamburger + Back/Hub button (World Hub pattern) */}
+        <div className={styles.headerLeft}>
+          {/* #5: Hamburger — always visible, opens HamburgerMenu drawer */}
+          <button className={styles.hamburgerBtn} onClick={handleMenuToggle} aria-label="Open Menu">
+            <img
+              src={`${BASE}images/btn-hamburger.png`}
+              alt="Menu"
+              className={styles.hamburgerImg}
+            />
+          </button>
+
+          {isSubPage ? (
+            <button
+              className={styles.hubBtn}
+              onClick={handleBackClick}
+              aria-label="Go Back"
+              title="Go Back"
+            >
+              <img src={`${BASE}images/btn-back.png`} alt="Back" className={styles.hubImg} />
+            </button>
+          ) : (
+            <button className={styles.hubBtn} onClick={handleHubClick} aria-label="Hub" title="Hub">
+              <img src={`${BASE}images/btn-hub.png`} alt="Hub" className={styles.hubImg} />
+            </button>
+          )}
+        </div>
+
+        {/* CENTER: Brand text (hidden on mobile) */}
+        <div className={styles.headerCenter}>
+          <img
+            src={`${BASE}images/brand-text.png`}
+            alt="Smarter.Poker"
+            className={styles.brandText}
+          />
+        </div>
+
+        {/* RIGHT: Icon row — exact World Hub order */}
+        <div className={styles.headerRight}>
+          {/* Diamond Wallet */}
           <button
-            className={styles.hubBtn}
-            onClick={handleBackClick}
-            aria-label="Go Back"
-            title="Go Back"
+            className={styles.orbBtn}
+            onClick={() => (window.location.href = '/hub/diamond-store')}
+            aria-label="Diamond Wallet"
           >
-            <img src={`${BASE}images/btn-back.png`} alt="Back" className={styles.hubImg} />
+            <img
+              src={`${BASE}images/diamond-icon.png`}
+              alt="Diamond Wallet"
+              className={styles.orbImg}
+            />
           </button>
-        ) : (
-          <button className={styles.hubBtn} onClick={handleHubClick} aria-label="Hub" title="Hub">
-            <img src={`${BASE}images/btn-hub.png`} alt="Hub" className={styles.hubImg} />
+
+          {/* VIP Member — #2: Gold glow ring */}
+          <button
+            className={styles.orbBtnVip}
+            onClick={() => (window.location.href = '/hub/diamond-store')}
+          >
+            <img src={`${BASE}images/vip-card.png`} alt="VIP Member" className={styles.orbImg} />
           </button>
-        )}
-      </div>
 
-      {/* CENTER: Brand text (hidden on mobile) */}
-      <div className={styles.headerCenter}>
-        <img
-          src={`${BASE}images/brand-text.png`}
-          alt="Smarter.Poker"
-          className={styles.brandText}
-        />
-      </div>
+          {/* Profile / Avatar */}
+          <button className={styles.orbBtn} onClick={() => (window.location.href = '/hub/profile')}>
+            <div className={styles.profileOrb}>
+              {avatarUrl ? (
+                <img
+                  src={avatarUrl}
+                  alt=""
+                  className={styles.profileImg}
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).src = generateDefaultAvatar();
+                  }}
+                />
+              ) : (
+                <span className={styles.profilePlaceholder}>👤</span>
+              )}
+            </div>
+          </button>
 
-      {/* RIGHT: Icon row — exact World Hub order */}
-      <div className={styles.headerRight}>
-        {/* Diamond Wallet */}
-        <button
-          className={styles.orbBtn}
-          onClick={() => (window.location.href = '/hub/diamond-store')}
-          aria-label="Diamond Wallet"
-        >
-          <img
-            src={`${BASE}images/diamond-icon.png`}
-            alt="Diamond Wallet"
-            className={styles.orbImg}
-          />
-        </button>
-
-        {/* VIP Member */}
-        <button
-          className={styles.orbBtn}
-          onClick={() => (window.location.href = '/hub/diamond-store')}
-        >
-          <img src={`${BASE}images/vip-card.png`} alt="VIP Member" className={styles.orbImg} />
-        </button>
-
-        {/* Profile / Avatar */}
-        <button className={styles.orbBtn} onClick={() => (window.location.href = '/hub/profile')}>
-          <div className={styles.profileOrb}>
-            {avatarUrl ? (
-              <img
-                src={avatarUrl}
-                alt=""
-                className={styles.profileImg}
-                onError={(e) => {
-                  (e.target as HTMLImageElement).src = generateDefaultAvatar();
-                }}
-              />
-            ) : (
-              <span className={styles.profilePlaceholder}>👤</span>
+          {/* Messages */}
+          <button
+            className={styles.orbBtn}
+            onClick={() => (window.location.href = '/hub/messenger')}
+          >
+            <img
+              src={`${BASE}images/header-messenger.png`}
+              alt="Messages"
+              className={styles.orbImg}
+            />
+            {unreadMessages > 0 && (
+              <span className={styles.badge} aria-live="polite">
+                {unreadMessages > 99 ? '99+' : unreadMessages}
+              </span>
             )}
-          </div>
-        </button>
+          </button>
 
-        {/* Messages */}
-        <button className={styles.orbBtn} onClick={() => (window.location.href = '/hub/messenger')}>
-          <img
-            src={`${BASE}images/header-messenger.png`}
-            alt="Messages"
-            className={styles.orbImg}
-          />
-          {unreadMessages > 0 && (
-            <span className={styles.badge} aria-live="polite">
-              {unreadMessages > 99 ? '99+' : unreadMessages}
-            </span>
-          )}
-        </button>
+          {/* Notifications — route to in-app Notification Center */}
+          <Link to="/notifications" className={styles.orbLink}>
+            <img
+              src={`${BASE}images/header-notifications.png`}
+              alt="Notifications"
+              className={styles.orbImg}
+            />
+            {notificationCount > 0 && (
+              <span className={styles.badge} aria-live="polite">
+                {notificationCount > 99 ? '99+' : notificationCount}
+              </span>
+            )}
+          </Link>
 
-        {/* Notifications — route to in-app Notification Center */}
-        <Link to="/notifications" className={styles.orbLink}>
-          <img
-            src={`${BASE}images/header-notifications.png`}
-            alt="Notifications"
-            className={styles.orbImg}
-          />
-          {notificationCount > 0 && (
-            <span className={styles.badge} aria-live="polite">
-              {notificationCount > 99 ? '99+' : notificationCount}
-            </span>
-          )}
-        </Link>
+          {/* Settings */}
+          <button
+            className={styles.orbBtn}
+            onClick={() => (window.location.href = '/hub/settings')}
+          >
+            <img
+              src={`${BASE}images/header-settings.png`}
+              alt="Settings"
+              className={styles.orbImg}
+            />
+          </button>
 
-        {/* Settings */}
-        <button className={styles.orbBtn} onClick={() => (window.location.href = '/hub/settings')}>
-          <img src={`${BASE}images/header-settings.png`} alt="Settings" className={styles.orbImg} />
-        </button>
-
-        {/* Live Help */}
-        <button
-          className={styles.orbBtn}
-          onClick={() => (window.location.href = '/hub/help')}
-          aria-label="Live Help"
-        >
-          <img src={`${BASE}images/header-help.png`} alt="Live Help" className={styles.orbImg} />
-        </button>
-      </div>
-    </header>
+          {/* Live Help */}
+          <button
+            className={styles.orbBtn}
+            onClick={() => (window.location.href = '/hub/help')}
+            aria-label="Live Help"
+          >
+            <img src={`${BASE}images/header-help.png`} alt="Live Help" className={styles.orbImg} />
+          </button>
+        </div>
+      </header>
+    </>
   );
 }

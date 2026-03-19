@@ -104,6 +104,14 @@ export default function NotificationsPage() {
     }
   }, [user?.id]);
 
+  // Safety timeout: if auth or data takes too long, stop showing skeletons
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      setLoading(false);
+    }, 5000);
+    return () => clearTimeout(timeout);
+  }, []);
+
   const handleDndToggle = useCallback(
     (minutes: number) => {
       notificationService.setDnd(minutes);

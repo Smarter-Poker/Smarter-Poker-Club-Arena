@@ -233,29 +233,30 @@ export default function ClubDashboard() {
         // Use resolved UUID for all FK queries — clubId from URL may be integer
         const resolvedId = clubData.id;
 
-        // Get member count — include horses
-        const { count: memberCount } = await supabase
-          .from('club_members')
-          .select('user_id', { count: 'exact', head: true })
-          .eq('club_id', resolvedId);
-
-        // Get table count
-        const { count: tableCount } = await supabase
-          .from('tables')
-          .select('*', { count: 'exact', head: true })
-          .eq('club_id', resolvedId);
-
-        // Get user role
-        if (user) {
-          const { data: memberData } = await supabase
+        // Parallelize count queries + user role lookup
+        const [memberResult, tableResult, roleResult] = await Promise.all([
+          supabase
             .from('club_members')
-            .select('role')
-            .eq('club_id', resolvedId)
-            .eq('user_id', user.id)
-            .maybeSingle();
-          if (memberData) {
-            setUserRole(memberData.role || 'member');
-          }
+            .select('user_id', { count: 'exact', head: true })
+            .eq('club_id', resolvedId),
+          supabase
+            .from('tables')
+            .select('id', { count: 'exact', head: true })
+            .eq('club_id', resolvedId),
+          user
+            ? supabase
+                .from('club_members')
+                .select('role')
+                .eq('club_id', resolvedId)
+                .eq('user_id', user.id)
+                .maybeSingle()
+            : Promise.resolve({ data: null }),
+        ]);
+
+        const memberCount = memberResult.count;
+        const tableCount = tableResult.count;
+        if (roleResult.data) {
+          setUserRole(roleResult.data.role || 'member');
         }
 
         setClub({

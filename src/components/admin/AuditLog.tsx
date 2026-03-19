@@ -7,6 +7,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { formatDateTime as formatTime } from '../../lib/date';
 import { supabase } from '../../lib/supabase';
 import { useIsMounted } from '../../hooks/useIsMounted';
+import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import './AuditLog.css';
 
 interface AuditEntry {
@@ -142,6 +143,11 @@ export const AuditLog: React.FC<AuditLogProps> = ({ clubId }) => {
       staggerTimersRef.current.forEach((t) => clearTimeout(t));
     };
   }, [loadAuditLog]);
+
+  // Auto-refresh when admin actions fire from other components
+  useMasterBusSubscription('ADMIN_ACTION', () => {
+    if (isMounted.current) loadAuditLog();
+  });
 
   const getActionIcon = (action: string) => {
     if (action.includes('banned')) return '🚫';

@@ -12,20 +12,38 @@
  *   'union'  — Union Bank, Clubs Wallet, Promo Wallet, Backup BBJ
  *
  * All variants: Diamond Balance (+buy), BBJ main pool
+ *
+ * Real-time data flow:
+ *   1. Initial fetch via Supabase REST
+ *   2. Supabase Realtime subscriptions on profiles, club_members, bbj_pools, agents
+ *   3. MasterBus subscriptions: BALANCE_UPDATED, DIAMOND_BALANCE_CHANGED,
+ *      WALLET_REFRESHED, CHIPS_ADDED, CHIPS_DISTRIBUTED, CHIPS_WITHDRAWN
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
-import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
+import { useMasterBusSubscriptions } from '../../hooks/useMasterBusSubscription';
 import { supabase } from '../../lib/supabase';
+import { resolveClubUUID } from '../../utils/clubIdResolver';
 import './DynamicWallet.css';
 
-// Panel background images
+// Panel background images — use BASE_URL prefix for production serving
+const BASE = import.meta.env.BASE_URL || '/hub/club-arena/';
 const PANEL_IMAGES: Record<string, string> = {
-  player: '/images/wallet-panel-player.png',
-  owner: '/images/wallet-panel-owner.png',
-  union: '/images/wallet-panel-union.png',
+  player: `${BASE}images/wallet-panel-player.png`,
+  owner: `${BASE}images/wallet-panel-owner.png`,
+  union: `${BASE}images/wallet-panel-union.png`,
 };
+
+// All bus events that should trigger a wallet refresh
+const WALLET_BUS_EVENTS = [
+  'BALANCE_UPDATED',
+  'DIAMOND_BALANCE_CHANGED',
+  'WALLET_REFRESHED',
+  'CHIPS_ADDED',
+  'CHIPS_WITHDRAWN',
+  'CHIPS_DISTRIBUTED',
+] as const;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -54,10 +72,10 @@ interface WalletData {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// ANIMATED COUNTER
+// ANIMATED COUNTER — preserves fractional precision (2 decimal places)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function useAnimatedCounter(target: number, duration = 400) {
+function useAnimatedCounter(target: number, duration = 400): number {
   const [value, setValue] = useState(target);
   const rafId = useRef<number | null>(null);
   const currentValueRef = useRef(value);
@@ -66,7 +84,7 @@ function useAnimatedCounter(target: number, duration = 400) {
   useEffect(() => {
     const start = currentValueRef.current;
     const diff = target - start;
-    if (Math.abs(diff) < 1) {
+    if (Math.abs(diff) < 0.01) {
       setValue(target);
       return;
     }
@@ -76,7 +94,9 @@ function useAnimatedCounter(target: number, duration = 400) {
       const elapsed = now - startTime;
       const progress = Math.min(elapsed / duration, 1);
       const eased = 1 - Math.pow(1 - progress, 3);
-      setValue(Math.round(start + diff * eased));
+      // Preserve 2-decimal precision instead of Math.round (which loses cents)
+      const interpolated = start + diff * eased;
+      setValue(Math.round(interpolated * 100) / 100);
       if (progress < 1) rafId.current = requestAnimationFrame(animate);
     };
     rafId.current = requestAnimationFrame(animate);
@@ -93,8 +113,7 @@ function useAnimatedCounter(target: number, duration = 400) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function formatBalance(num: number): string {
-  if (num === 0) return '0.00';
-  return num.toLocaleString('en-US', {
+  return Math.abs(num).toLocaleString('en-US', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
@@ -125,6 +144,27 @@ export default function DynamicWallet({
   const [loading, setLoading] = useState(true);
   const isMounted = useIsMounted();
 
+  // Resolved UUID — DynamicWallet now handles resolution internally
+  // This ensures correct Supabase queries regardless of whether clubId is
+  // a short numeric ID or a full UUID.
+  const [resolvedId, setResolvedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!clubId) {
+      setResolvedId(null);
+      return;
+    }
+    resolveClubUUID(clubId)
+      .then((uuid) => {
+        if (isMounted.current) setResolvedId(uuid);
+      })
+      .catch((err) => {
+        console.warn('[DynamicWallet] Failed to resolve clubId:', err);
+        // Fallback: use raw clubId (it might already be a UUID)
+        if (isMounted.current) setResolvedId(clubId);
+      });
+  }, [clubId]);
+
   // Animated values
   const animDiamonds = useAnimatedCounter(data.diamonds);
   const animBBJ = useAnimatedCounter(data.bbjPool);
@@ -135,34 +175,34 @@ export default function DynamicWallet({
   const animRow3 = useAnimatedCounter(data.promoBalance);
   const animBackupBBJ = useAnimatedCounter(data.backupBBJ);
 
+  // ── Fetch data — uses resolvedId (UUID) for all Supabase queries ───────────
   const fetchData = useCallback(async () => {
-    if (!userId || !clubId) return;
-    setLoading(true);
+    if (!userId || !resolvedId) return;
 
     try {
-      const [profileRes, memberRes, bbjRes, agentRes, clubRes] = await Promise.all([
+      const [profileRes, memberRes, bbjRes, agentRes, clubAgentsRes] = await Promise.all([
         supabase.from('profiles').select('diamonds').eq('id', userId).maybeSingle(),
         supabase
           .from('club_members')
           .select('chip_balance')
-          .eq('club_id', clubId)
+          .eq('club_id', resolvedId)
           .eq('user_id', userId)
           .maybeSingle(),
         supabase
           .from('bbj_pools')
           .select('main_balance, backup_balance')
-          .eq('club_id', clubId)
+          .eq('club_id', resolvedId)
           .maybeSingle(),
         supabase
           .from('agents')
           .select('agent_wallet_balance, promo_wallet_balance')
-          .eq('club_id', clubId)
+          .eq('club_id', resolvedId)
           .eq('user_id', userId)
           .maybeSingle(),
         supabase
           .from('agents')
           .select('agent_wallet_balance')
-          .eq('club_id', clubId)
+          .eq('club_id', resolvedId)
           .eq('status', 'active'),
       ]);
 
@@ -174,40 +214,42 @@ export default function DynamicWallet({
           bbjPool: Number(bbjRes.data?.main_balance) || 0,
           backupBBJ: Number(bbjRes.data?.backup_balance) || 0,
           agentBalance: Number(agentRes.data?.agent_wallet_balance) || 0,
-          clubBank: Array.isArray(clubRes.data)
-            ? clubRes.data.reduce(
-                (sum: number, a: any) => sum + (Number(a.agent_wallet_balance) || 0),
+          clubBank: Array.isArray(clubAgentsRes.data)
+            ? clubAgentsRes.data.reduce(
+                (sum: number, a: { agent_wallet_balance: number | null }) =>
+                  sum + (Number(a.agent_wallet_balance) || 0),
                 0
               )
             : 0,
           unionBank: 0,
         });
+        setLoading(false);
       }
     } catch (err) {
       console.error('[DynamicWallet] Fetch error:', err);
-    } finally {
       if (isMounted.current) setLoading(false);
     }
-  }, [userId, clubId]);
+  }, [userId, resolvedId]);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    if (resolvedId) fetchData();
+  }, [fetchData, resolvedId]);
 
-  // ── MasterBus: Refresh on balance changes ──────────────────────────────────
-  useMasterBusSubscription('BALANCE_UPDATED', () => {
-    fetchData();
-  });
-  useMasterBusSubscription('DIAMOND_BALANCE_CHANGED', () => {
-    fetchData();
-  });
+  // ── MasterBus: Refresh on ALL balance-related events (debounced 500ms) ─────
+  useMasterBusSubscriptions(
+    [...WALLET_BUS_EVENTS],
+    () => {
+      fetchData();
+    },
+    { debounce: 500 }
+  );
 
-  // ── Realtime subscriptions ─────────────────────────────────────────────────
+  // ── Realtime subscriptions — profiles, club_members, bbj_pools, agents ─────
   useEffect(() => {
-    if (!userId || !clubId) return;
+    if (!userId || !resolvedId) return;
 
     const channel = supabase
-      .channel(`dynamic-wallet-${clubId}-${userId}`)
+      .channel(`dynamic-wallet-${resolvedId}-${userId}`)
       .on(
         'postgres_changes',
         {
@@ -231,7 +273,7 @@ export default function DynamicWallet({
           filter: `user_id=eq.${userId}`,
         },
         (p) => {
-          if (isMounted.current && p.new?.club_id === clubId) {
+          if (isMounted.current && p.new?.club_id === resolvedId) {
             setData((prev) => ({
               ...prev,
               chipBalance: Number(p.new.chip_balance) || 0,
@@ -245,7 +287,7 @@ export default function DynamicWallet({
           event: 'UPDATE',
           schema: 'public',
           table: 'bbj_pools',
-          filter: `club_id=eq.${clubId}`,
+          filter: `club_id=eq.${resolvedId}`,
         },
         (p) => {
           if (isMounted.current) {
@@ -253,6 +295,24 @@ export default function DynamicWallet({
               ...prev,
               bbjPool: Number(p.new?.main_balance) || 0,
               backupBBJ: Number(p.new?.backup_balance) || 0,
+            }));
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'agents',
+          filter: `user_id=eq.${userId}`,
+        },
+        (p) => {
+          if (isMounted.current && p.new?.club_id === resolvedId) {
+            setData((prev) => ({
+              ...prev,
+              agentBalance: Number(p.new.agent_wallet_balance) || 0,
+              promoBalance: Number(p.new.promo_wallet_balance) || 0,
             }));
           }
         }
@@ -269,7 +329,7 @@ export default function DynamicWallet({
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [userId, clubId]);
+  }, [userId, resolvedId]);
 
   if (loading) {
     return <div className="dynamic-wallet dynamic-wallet--loading">Loading balances...</div>;

@@ -15,6 +15,7 @@
   display: block;
   overflow: hidden;
   pointer-events: none;
+  background: #0a1423;
 }
 
 /* ── Background: frame template or baked card ──────────────────────────────── */
@@ -23,6 +24,12 @@
   height: 100%;
   display: block;
   object-fit: cover;
+}
+
+/* Frame template is 585×1024 (narrower than 604×1024 baked cards) —
+   contain it to avoid clipping the top/bottom bolts */
+.club-card-frame-bg {
+  object-fit: contain;
 }
 
 /* ── Logo container — sits INSIDE the recessed viewport area ───────────────── */

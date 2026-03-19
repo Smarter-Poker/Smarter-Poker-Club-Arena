@@ -52,7 +52,7 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
           <img
             src={`${import.meta.env.BASE_URL || '/'}images/club-card-frame-template.jpg`}
             alt={`${clubName} Card`}
-            className="club-card-panel-bg"
+            className="club-card-panel-bg club-card-frame-bg"
             loading="lazy"
           />
           <div className="club-card-logo-container">

@@ -197,6 +197,7 @@ export async function joinClub(clubId: string, role: MemberRole = 'member'): Pro
       club_id: resolvedId,
       user_id: user.user.id,
       role,
+      status: 'active',
       tier: 'bronze',
 
       diamonds: 0,

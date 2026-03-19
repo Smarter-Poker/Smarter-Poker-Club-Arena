@@ -615,14 +615,17 @@ export default function ClubHomePage() {
       // Auto-recompute club level if stuck at default (1 or null)
       // The RPC updates clubs.level in-place and returns VOID,
       // so we re-read the level column after calling it.
+      // Session dedup: only fire the RPC once per session per club to avoid waste
       let effectiveLevel = clubData.level || 1;
-      if (effectiveLevel <= 1) {
+      const levelRecomputeKey = `level_recomputed_${resolvedId}`;
+      if (effectiveLevel <= 1 && !sessionStorage.getItem(levelRecomputeKey)) {
         try {
           // Trigger server-side recompute (updates clubs.level in DB)
           const { error: rpcErr } = await supabase.rpc('recompute_club_levels', {
             p_club_id: resolvedId,
           });
           if (!rpcErr) {
+            sessionStorage.setItem(levelRecomputeKey, '1');
             // Re-read the updated level from DB
             const { data: refreshedClub } = await supabase
               .from('clubs')

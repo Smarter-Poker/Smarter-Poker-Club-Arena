@@ -546,13 +546,16 @@ function HomePageInner() {
 
         // Compute live club level from DB thresholds
         // Auto-recompute level if stuck at default (1 or null)
+        // Session dedup: only fire the RPC once per session per club
         let effectiveLevel = club.level || 1;
-        if (effectiveLevel <= 1) {
+        const levelRecomputeKey = `level_recomputed_${club.id}`;
+        if (effectiveLevel <= 1 && !sessionStorage.getItem(levelRecomputeKey)) {
           try {
             const { error: rpcErr } = await supabase.rpc('recompute_club_levels', {
               p_club_id: club.id,
             });
             if (!rpcErr) {
+              sessionStorage.setItem(levelRecomputeKey, '1');
               const { data: refreshed } = await supabase
                 .from('clubs')
                 .select(
@@ -1004,13 +1007,16 @@ function HomePageInner() {
             }
 
             // Auto-recompute club level if stuck at default
+            // Session dedup: only fire the RPC once per session per club
             let effectiveLevel = club.level || 1;
-            if (effectiveLevel <= 1) {
+            const levelRecomputeKey = `level_recomputed_${club.id}`;
+            if (effectiveLevel <= 1 && !sessionStorage.getItem(levelRecomputeKey)) {
               try {
                 const { error: rpcErr } = await supabase.rpc('recompute_club_levels', {
                   p_club_id: club.id,
                 });
                 if (!rpcErr) {
+                  sessionStorage.setItem(levelRecomputeKey, '1');
                   const { data: refreshed } = await supabase
                     .from('clubs')
                     .select(

@@ -57,6 +57,8 @@ export default function ClubStatsCards({ clubId }: ClubStatsCardsProps) {
       masterBus.subscribeDebounced('TABLE_LEFT', reload, 1000),
       masterBus.subscribeDebounced('TABLE_SEATED', reload, 1000),
       masterBus.subscribeDebounced('CLUB_UPDATED', reload, 1000),
+      masterBus.subscribeDebounced('TABLE_UPDATED', reload, 1000),
+      masterBus.subscribeDebounced('TABLE_DELETED', reload, 1000),
     ];
 
     return () => {

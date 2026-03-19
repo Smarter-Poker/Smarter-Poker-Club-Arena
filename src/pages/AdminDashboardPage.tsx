@@ -946,6 +946,41 @@ function AuditLogTab({ clubId }: { clubId: string }) {
     load(page);
   }, [page, load]);
 
+  // ── Realtime: auto-refresh when new audit entries are inserted ──
+  useEffect(() => {
+    let cancelled = false;
+    const setupChannel = async () => {
+      const uuid = await resolveClubUUID(clubId);
+      if (cancelled) return;
+      const channelKey = `audit-log-tab-${clubId}`;
+      const channel = masterBus.getOrCreateChannel(channelKey);
+      channel
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'audit_logs',
+            filter: `club_id=eq.${uuid}`,
+          },
+          () => {
+            // Reload current page to pick up the new entry
+            load(page);
+          }
+        )
+        .subscribe((status: string, err?: Error) => {
+          if (status === 'CHANNEL_ERROR') {
+            console.error('[AuditLogTab] ❌ Realtime channel error:', err?.message || err);
+          }
+        });
+    };
+    setupChannel().catch((e) => console.warn('[AuditLogTab] Realtime setup failed:', e));
+    return () => {
+      cancelled = true;
+      masterBus.removeRegisteredChannel(`audit-log-tab-${clubId}`);
+    };
+  }, [clubId, page, load]);
+
   const typeColor = (t: string) => {
     if (t.includes('buyin') || t.includes('distribution')) return '#31A24C';
     if (t.includes('cashout') || t.includes('withdraw')) return '#FA383E';

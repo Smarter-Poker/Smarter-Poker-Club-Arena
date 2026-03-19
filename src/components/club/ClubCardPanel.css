@@ -6,8 +6,8 @@
 .club-card-panel {
   position: relative;
   width: 100%;
-  /* Lock aspect ratio to match the card frame template (585:1024) */
-  aspect-ratio: 585 / 1024;
+  /* Lock aspect ratio to match Shark Club card (604:1024) — parity */
+  aspect-ratio: 604 / 1024;
   display: block;
   overflow: hidden;
   pointer-events: none;
@@ -53,11 +53,11 @@
 
 .club-card-logo-container {
   position: absolute;
-  top: 35%;
+  top: 20%;
   left: 50%;
-  transform: translate(-50%, -50%);
-  width: 80px;
-  height: 80px;
+  transform: translateX(-50%);
+  width: 70%;
+  height: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -66,16 +66,16 @@
 }
 
 .club-card-logo-img {
-  width: 64px;
-  height: 64px;
+  width: 100%;
+  height: 100%;
   object-fit: contain;
   border-radius: 10px;
   filter: drop-shadow(0 0 12px rgba(0, 212, 255, 0.4));
 }
 
 .club-card-logo-fallback {
-  width: 60px;
-  height: 60px;
+  width: 80px;
+  height: 80px;
   border-radius: 50%;
   background: radial-gradient(
     circle,
@@ -87,7 +87,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 28px;
+  font-size: 36px;
   color: rgba(0, 212, 255, 0.7);
   filter: drop-shadow(0 0 12px rgba(0, 212, 255, 0.3));
 }
@@ -155,6 +155,7 @@
 .club-card-level-group .club-card-stat-value {
   font-size: 28px;
   line-height: 1;
+  margin-top: 8px;
 }
 
 .club-card-active-group {

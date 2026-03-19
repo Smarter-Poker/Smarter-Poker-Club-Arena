@@ -3,7 +3,7 @@
  * Main shell layout with navigation
  * ═══════════════════════════════════════════════════════════════════════════════
  * GLOBAL COMPONENTS WIRED:
- * - GlobalHeader: Contains hamburger menu for quick navigation
+ * - GlobalHeader: Contains HUB button and navigation icons
  * - NotificationDropdown: Real-time notification center in header
  * - ClubAnnouncementBanner: Important announcements at top of content
  * ═══════════════════════════════════════════════════════════════════════════════

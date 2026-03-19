@@ -1,0 +1,47 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * BACK BUTTON — Styles
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * Matches GlobalHeader icon sizing:
+ *   Desktop: 26×26   Mobile (≤600px): 24×24   Small (≤380px): 22×22
+ */
+
+.backBtn {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: rgba(255, 255, 255, 0.85);
+  transition: all 0.15s ease;
+}
+
+.backBtn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+}
+
+.backBtn:active {
+  transform: scale(0.92);
+  background: rgba(255, 255, 255, 0.2);
+}
+
+@media (max-width: 600px) {
+  .backBtn {
+    width: 28px;
+    height: 28px;
+  }
+}
+
+@media (max-width: 380px) {
+  .backBtn {
+    width: 26px;
+    height: 26px;
+  }
+}

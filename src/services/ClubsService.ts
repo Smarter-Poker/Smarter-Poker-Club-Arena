@@ -122,7 +122,8 @@ export async function createClub(clubData: {
   const { count, error: countError } = await supabase
     .from('club_members')
     .select('*', { count: 'exact', head: true })
-    .eq('user_id', user.user.id);
+    .eq('user_id', user.user.id)
+    .in('status', ['active', 'approved']);
 
   if (countError) {
     console.error('⚠ Failed to check club membership count:', countError);
@@ -179,7 +180,8 @@ export async function joinClub(clubId: string, role: MemberRole = 'member'): Pro
     const { count, error: countError } = await supabase
       .from('club_members')
       .select('*', { count: 'exact', head: true })
-      .eq('user_id', user.user.id);
+      .eq('user_id', user.user.id)
+      .in('status', ['active', 'approved']);
 
     if (countError) {
       console.error('⚠ Failed to check club membership count:', countError);
@@ -801,7 +803,8 @@ export async function canJoinMoreClubs(): Promise<{
   const { count, error } = await supabase
     .from('club_members')
     .select('*', { count: 'exact', head: true })
-    .eq('user_id', user.user.id);
+    .eq('user_id', user.user.id)
+    .in('status', ['active', 'approved']);
 
   if (error) {
     console.error('⚠ Failed to check club membership count:', error);
@@ -839,7 +842,8 @@ export async function getLiveMemberCount(clubId: string): Promise<number> {
     const { count, error } = await supabase
       .from('club_members')
       .select('*', { count: 'exact', head: true })
-      .eq('club_id', resolvedId);
+      .eq('club_id', resolvedId)
+      .in('status', ['active', 'approved']);
 
     if (!error && typeof count === 'number' && count > 0) {
       return count;

@@ -8,248 +8,224 @@
  */
 
 .header {
-    background: #000000;
-    padding: 6px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    border-bottom: 3px solid rgba(200, 200, 200, 0.8);
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    width: 100%;
-    height: 55px;
-    z-index: 1000;
-    gap: 2px;
-    flex-wrap: nowrap;
-    box-sizing: border-box;
-    backdrop-filter: blur(8px) saturate(1.1);
-    -webkit-backdrop-filter: blur(8px) saturate(1.1);
+  background: #000000;
+  padding: 6px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 3px solid rgba(200, 200, 200, 0.8);
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  width: 100%;
+  height: 55px;
+  z-index: 1000;
+  gap: 2px;
+  flex-wrap: nowrap;
+  box-sizing: border-box;
+  backdrop-filter: blur(8px) saturate(1.1);
+  -webkit-backdrop-filter: blur(8px) saturate(1.1);
 }
 
 /* ─── LEFT Section ─── */
 .headerLeft {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    flex-shrink: 0;
-}
-
-.hamburgerBtn {
-    width: 40px;
-    height: 40px;
-    padding: 0;
-    border: none;
-    background: transparent;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-}
-
-.hamburgerBtn .iconImg {
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
 }
 
 .hubBtn {
-    height: 22px;
-    width: 80px;
-    padding: 0;
-    border: none;
-    background: transparent;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
+  height: 22px;
+  width: 80px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
 .hubImg {
-    height: 100%;
-    width: 100%;
-    object-fit: contain;
+  height: 100%;
+  width: 100%;
+  object-fit: contain;
 }
 
 /* ─── CENTER Section ─── */
 .headerCenter {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex: 1;
-    min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  min-width: 0;
 }
 
 .brandText {
-    height: 20px;
-    width: auto;
-    object-fit: contain;
-    opacity: 0.9;
+  height: 20px;
+  width: auto;
+  object-fit: contain;
+  opacity: 0.9;
 }
 
 /* ─── RIGHT Section ─── */
 .headerRight {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    flex-shrink: 0;
-    justify-content: flex-end;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  justify-content: flex-end;
 }
 
 .orbBtn {
-    width: 26px;
-    height: 26px;
-    padding: 0;
-    border: none;
-    background: transparent;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    position: relative;
-    transition: opacity 0.15s ease;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  position: relative;
+  transition: opacity 0.15s ease;
 }
 
 .orbBtn:hover {
-    opacity: 0.8;
+  opacity: 0.8;
 }
 
 .orbLink {
-    width: 26px;
-    height: 26px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    position: relative;
-    text-decoration: none;
-    transition: opacity 0.15s ease;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  position: relative;
+  text-decoration: none;
+  transition: opacity 0.15s ease;
 }
 
 .orbLink:hover {
-    opacity: 0.8;
+  opacity: 0.8;
 }
 
 .orbImg {
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 /* Profile orb — cyan glow circle */
 .profileOrb {
-    width: 26px;
-    height: 26px;
-    border-radius: 50%;
-    border: 2px solid rgb(0, 224, 255);
-    box-shadow: 0 0 8px rgba(0, 224, 255, 0.6), 0 0 16px rgba(0, 224, 255, 0.3), 0 0 24px rgba(0, 224, 255, 0.15);
-    overflow: hidden;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: linear-gradient(135deg, rgba(0, 136, 255, 0.3) 0%, rgba(0, 245, 255, 0.15) 100%);
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid rgb(0, 224, 255);
+  box-shadow:
+    0 0 8px rgba(0, 224, 255, 0.6),
+    0 0 16px rgba(0, 224, 255, 0.3),
+    0 0 24px rgba(0, 224, 255, 0.15);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, rgba(0, 136, 255, 0.3) 0%, rgba(0, 245, 255, 0.15) 100%);
 }
 
 .profileImg {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .profilePlaceholder {
-    font-size: 14px;
-    line-height: 1;
+  font-size: 14px;
+  line-height: 1;
 }
 
 /* Badge for notifications / messages */
 .badge {
-    position: absolute;
-    top: -4px;
-    right: -4px;
-    background: #e41e3f;
-    color: white;
-    border-radius: 10px;
-    padding: 1px 4px;
-    font-size: 9px;
-    font-weight: 700;
-    min-width: 14px;
-    text-align: center;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3), 0 0 8px rgba(228, 30, 63, 0.4);
-    border: 1.5px solid #000;
-    line-height: 1.2;
-    text-shadow: 0 0 4px rgba(228, 30, 63, 0.3);
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: #e41e3f;
+  color: white;
+  border-radius: 10px;
+  padding: 1px 4px;
+  font-size: 9px;
+  font-weight: 700;
+  min-width: 14px;
+  text-align: center;
+  box-shadow:
+    0 2px 4px rgba(0, 0, 0, 0.3),
+    0 0 8px rgba(228, 30, 63, 0.4);
+  border: 1.5px solid #000;
+  line-height: 1.2;
+  text-shadow: 0 0 4px rgba(228, 30, 63, 0.3);
 }
 
 /* ─── Mobile Responsive ─── */
 @media (max-width: 600px) {
-    .header {
-        padding: 4px 6px;
-        height: 48px;
-    }
+  .header {
+    padding: 4px 6px;
+    height: 48px;
+  }
 
-    .hamburgerBtn {
-        width: 36px;
-        height: 36px;
-    }
+  .hubBtn {
+    width: 60px;
+    height: 18px;
+  }
 
-    .hubBtn {
-        width: 60px;
-        height: 18px;
-    }
+  /* Hide brand text on mobile like World Hub */
+  .brandText {
+    display: none;
+  }
 
-    /* Hide brand text on mobile like World Hub */
-    .brandText {
-        display: none;
-    }
+  .orbBtn,
+  .orbLink {
+    width: 24px;
+    height: 24px;
+  }
 
-    .orbBtn,
-    .orbLink {
-        width: 24px;
-        height: 24px;
-    }
+  .profileOrb {
+    width: 24px;
+    height: 24px;
+  }
 
-    .profileOrb {
-        width: 24px;
-        height: 24px;
-    }
-
-    .badge {
-        top: -3px;
-        right: -3px;
-        padding: 0 3px;
-        font-size: 8px;
-        min-width: 12px;
-    }
+  .badge {
+    top: -3px;
+    right: -3px;
+    padding: 0 3px;
+    font-size: 8px;
+    min-width: 12px;
+  }
 }
 
 @media (max-width: 380px) {
-    .header {
-        padding: 4px;
-        gap: 1px;
-    }
+  .header {
+    padding: 4px;
+    gap: 1px;
+  }
 
-    .hamburgerBtn {
-        width: 32px;
-        height: 32px;
-    }
+  .hubBtn {
+    width: 50px;
+    height: 16px;
+  }
 
-    .hubBtn {
-        width: 50px;
-        height: 16px;
-    }
+  .orbBtn,
+  .orbLink {
+    width: 22px;
+    height: 22px;
+  }
 
-    .orbBtn,
-    .orbLink {
-        width: 22px;
-        height: 22px;
-    }
-
-    .profileOrb {
-        width: 22px;
-        height: 22px;
-    }
+  .profileOrb {
+    width: 22px;
+    height: 22px;
+  }
 }

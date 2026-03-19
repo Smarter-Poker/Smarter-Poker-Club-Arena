@@ -6,7 +6,7 @@
  * CRITICAL: This must be pixel-identical to smarter.poker/hub header.
  *
  * Layout:
- *   LEFT:   Hamburger (40x40) + HUB button (btn-hub.png)
+ *   LEFT:   HUB button (btn-hub.png)
  *   CENTER: Brand text (brand-text.png) — hidden on mobile
  *   RIGHT:  Diamond icon, VIP badge, Profile orb, Messages, Notifications, Settings, Help
  *           All icons 26x26px from smarter.poker/images/
@@ -19,8 +19,9 @@ import { masterBus } from '../../core/MasterBus';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { useWalletStore } from '../../stores/useWalletStore';
 import { useAuthUser } from '../../hooks/useAuthUser';
-import HamburgerMenu from './HamburgerMenu';
+
 import styles from './GlobalHeader.module.css';
+import BackButton from './BackButton';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 
 const BASE = import.meta.env.BASE_URL;
@@ -37,7 +38,6 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [notificationCount, setNotificationCount] = useState(0);
   const [unreadMessages, setUnreadMessages] = useState(0);
-  const [menuOpen, setMenuOpen] = useState(false);
 
   // Load user data when auth user becomes available (no more getUser() calls)
   useEffect(() => {
@@ -161,122 +161,108 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
 
   // Navigation helper
   const navigateToHub = (path: string) => {
-    // Navigation handled by HamburgerMenu or other navigation components
+    // Navigation handled by FloatingHamburger or other navigation components
   };
 
   return (
-    <>
-      <HamburgerMenu isOpen={menuOpen} onClose={() => setMenuOpen(false)} />
+    <header className={styles.header}>
+      {/* LEFT: HUB button */}
+      <div className={styles.headerLeft}>
+        <BackButton />
+        <button className={styles.hubBtn} onClick={handleHubClick}>
+          <img src={`${BASE}images/btn-hub.png`} alt="Hub" className={styles.hubImg} />
+        </button>
+      </div>
 
-      <header className={styles.header}>
-        {/* LEFT: Hamburger + HUB button */}
-        <div className={styles.headerLeft}>
-          <button
-            className={styles.hamburgerBtn}
-            aria-label="Open Menu"
-            onClick={() => setMenuOpen(true)}
-          >
-            <img src={`${BASE}images/btn-hamburger.png`} alt="Menu" className={styles.iconImg} />
-          </button>
-          <button className={styles.hubBtn} onClick={handleHubClick}>
-            <img src={`${BASE}images/btn-hub.png`} alt="Hub" className={styles.hubImg} />
-          </button>
-        </div>
+      {/* CENTER: Brand text (hidden on mobile) */}
+      <div className={styles.headerCenter}>
+        <img
+          src={`${BASE}images/brand-text.png`}
+          alt="Smarter.Poker"
+          className={styles.brandText}
+        />
+      </div>
 
-        {/* CENTER: Brand text (hidden on mobile) */}
-        <div className={styles.headerCenter}>
+      {/* RIGHT: Icon row — exact World Hub order */}
+      <div className={styles.headerRight}>
+        {/* Diamond Wallet */}
+        <button
+          className={styles.orbBtn}
+          onClick={() => navigateToHub('/hub/diamond-store')}
+          aria-label="Diamond Wallet"
+        >
           <img
-            src={`${BASE}images/brand-text.png`}
-            alt="Smarter.Poker"
-            className={styles.brandText}
+            src={`${BASE}images/diamond-icon.png`}
+            alt="Diamond Wallet"
+            className={styles.orbImg}
           />
-        </div>
+        </button>
 
-        {/* RIGHT: Icon row — exact World Hub order */}
-        <div className={styles.headerRight}>
-          {/* Diamond Wallet */}
-          <button
-            className={styles.orbBtn}
-            onClick={() => navigateToHub('/hub/diamond-store')}
-            aria-label="Diamond Wallet"
-          >
-            <img
-              src={`${BASE}images/diamond-icon.png`}
-              alt="Diamond Wallet"
-              className={styles.orbImg}
-            />
-          </button>
+        {/* VIP Member */}
+        <button className={styles.orbBtn} onClick={() => navigateToHub('/hub/diamond-store')}>
+          <img src={`${BASE}images/vip-card.png`} alt="VIP Member" className={styles.orbImg} />
+        </button>
 
-          {/* VIP Member */}
-          <button className={styles.orbBtn} onClick={() => navigateToHub('/hub/diamond-store')}>
-            <img src={`${BASE}images/vip-card.png`} alt="VIP Member" className={styles.orbImg} />
-          </button>
-
-          {/* Profile / Avatar */}
-          <button className={styles.orbBtn} onClick={() => navigateToHub('/hub/profile')}>
-            <div className={styles.profileOrb}>
-              {avatarUrl ? (
-                <img
-                  src={avatarUrl}
-                  alt=""
-                  className={styles.profileImg}
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).src = generateDefaultAvatar();
-                  }}
-                />
-              ) : (
-                <span className={styles.profilePlaceholder}>👤</span>
-              )}
-            </div>
-          </button>
-
-          {/* Messages */}
-          <button className={styles.orbBtn} onClick={() => navigateToHub('/hub/messenger')}>
-            <img
-              src={`${BASE}images/header-messenger.png`}
-              alt="Messages"
-              className={styles.orbImg}
-            />
-            {unreadMessages > 0 && (
-              <span className={styles.badge} aria-live="polite">
-                {unreadMessages > 99 ? '99+' : unreadMessages}
-              </span>
+        {/* Profile / Avatar */}
+        <button className={styles.orbBtn} onClick={() => navigateToHub('/hub/profile')}>
+          <div className={styles.profileOrb}>
+            {avatarUrl ? (
+              <img
+                src={avatarUrl}
+                alt=""
+                className={styles.profileImg}
+                onError={(e) => {
+                  (e.target as HTMLImageElement).src = generateDefaultAvatar();
+                }}
+              />
+            ) : (
+              <span className={styles.profilePlaceholder}>👤</span>
             )}
-          </button>
+          </div>
+        </button>
 
-          {/* Notifications — route to in-app Notification Center */}
-          <Link to="/notifications" className={styles.orbLink}>
-            <img
-              src={`${BASE}images/header-notifications.png`}
-              alt="Notifications"
-              className={styles.orbImg}
-            />
-            {notificationCount > 0 && (
-              <span className={styles.badge} aria-live="polite">
-                {notificationCount > 99 ? '99+' : notificationCount}
-              </span>
-            )}
-          </Link>
+        {/* Messages */}
+        <button className={styles.orbBtn} onClick={() => navigateToHub('/hub/messenger')}>
+          <img
+            src={`${BASE}images/header-messenger.png`}
+            alt="Messages"
+            className={styles.orbImg}
+          />
+          {unreadMessages > 0 && (
+            <span className={styles.badge} aria-live="polite">
+              {unreadMessages > 99 ? '99+' : unreadMessages}
+            </span>
+          )}
+        </button>
 
-          {/* Settings */}
-          <button className={styles.orbBtn} onClick={() => navigateToHub('/hub/settings')}>
-            <img
-              src={`${BASE}images/header-settings.png`}
-              alt="Settings"
-              className={styles.orbImg}
-            />
-          </button>
+        {/* Notifications — route to in-app Notification Center */}
+        <Link to="/notifications" className={styles.orbLink}>
+          <img
+            src={`${BASE}images/header-notifications.png`}
+            alt="Notifications"
+            className={styles.orbImg}
+          />
+          {notificationCount > 0 && (
+            <span className={styles.badge} aria-live="polite">
+              {notificationCount > 99 ? '99+' : notificationCount}
+            </span>
+          )}
+        </Link>
 
-          {/* Live Help */}
-          <button
-            className={styles.orbBtn}
-            onClick={() => navigateToHub('/hub/help')}
-            aria-label="Live Help"
-          >
-            <img src={`${BASE}images/header-help.png`} alt="Live Help" className={styles.orbImg} />
-          </button>
-        </div>
-      </header>
-    </>
+        {/* Settings */}
+        <button className={styles.orbBtn} onClick={() => navigateToHub('/hub/settings')}>
+          <img src={`${BASE}images/header-settings.png`} alt="Settings" className={styles.orbImg} />
+        </button>
+
+        {/* Live Help */}
+        <button
+          className={styles.orbBtn}
+          onClick={() => navigateToHub('/hub/help')}
+          aria-label="Live Help"
+        >
+          <img src={`${BASE}images/header-help.png`} alt="Live Help" className={styles.orbImg} />
+        </button>
+      </div>
+    </header>
   );
 }

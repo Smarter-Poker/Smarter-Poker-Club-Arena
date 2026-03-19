@@ -504,6 +504,27 @@ export default function ClubHomePage() {
         // Query error — fail-open for standalone clubs
       }
 
+      // ── Fix: Live member count for standalone clubs (not in a union) ──
+      // Without this, standalone clubs display the stale clubs.member_count value
+      if (!unionId) {
+        try {
+          const { count: liveCount } = await supabase
+            .from('club_members')
+            .select('user_id', { count: 'exact', head: true })
+            .eq('club_id', resolvedId)
+            .in('status', ['active', 'approved']);
+
+          if (liveCount != null && liveCount > 0) {
+            if (getIsMounted && !getIsMounted()) return;
+            setClub((prev) => (prev ? { ...prev, member_count: liveCount } : prev));
+            // Also update clubData so the level calculation below uses the live count
+            clubData.member_count = liveCount;
+          }
+        } catch {
+          // Fall back to denormalized clubs.member_count
+        }
+      }
+
       // ── Batch: tables + tournaments + BBJ in parallel ──
       // Build table query: use union_id for union clubs, club_id for standalone
       const tableQuery = supabase
@@ -591,8 +612,47 @@ export default function ClubHomePage() {
         ? tableData.filter((t: any) => t.status === 'running' || t.current_players > 0).length
         : 0;
 
+      // Auto-recompute club level if stuck at default (1 or null)
+      // The RPC updates clubs.level in-place and returns VOID,
+      // so we re-read the level column after calling it.
+      let effectiveLevel = clubData.level || 1;
+      if (effectiveLevel <= 1) {
+        try {
+          // Trigger server-side recompute (updates clubs.level in DB)
+          const { error: rpcErr } = await supabase.rpc('recompute_club_levels', {
+            p_club_id: resolvedId,
+          });
+          if (!rpcErr) {
+            // Re-read the updated level from DB
+            const { data: refreshedClub } = await supabase
+              .from('clubs')
+              .select(
+                'level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
+              )
+              .eq('id', resolvedId)
+              .maybeSingle();
+            if (refreshedClub && refreshedClub.level > 1) {
+              effectiveLevel = refreshedClub.level;
+              // Also update threshold values for accurate progress bar
+              clubData.hierarchy_units_rounded_up =
+                refreshedClub.hierarchy_units_rounded_up ?? clubData.hierarchy_units_rounded_up;
+              clubData.player_threshold_current =
+                refreshedClub.player_threshold_current ?? clubData.player_threshold_current;
+              clubData.player_threshold_next =
+                refreshedClub.player_threshold_next ?? clubData.player_threshold_next;
+              clubData.hierarchy_threshold_current =
+                refreshedClub.hierarchy_threshold_current ?? clubData.hierarchy_threshold_current;
+              clubData.hierarchy_threshold_next =
+                refreshedClub.hierarchy_threshold_next ?? clubData.hierarchy_threshold_next;
+            }
+          }
+        } catch {
+          // RPC not available — use default level
+        }
+      }
+
       const levelInfo = getClubLevel({
-        level: clubData.level || 1,
+        level: effectiveLevel,
         playerCount: clubData.member_count || 0,
         hierarchyUnits: clubData.hierarchy_units_rounded_up || 0,
         playerThresholdCurrent: clubData.player_threshold_current || 0,

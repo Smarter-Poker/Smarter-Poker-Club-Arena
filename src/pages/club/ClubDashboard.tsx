@@ -70,6 +70,7 @@ export default function ClubDashboard() {
   const [isRecalculating, setIsRecalculating] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const loadingRef = useRef(false);
+  const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   useEffect(() => {
     setLocalStorage('ca_dashboard_tab', activeTab);
   }, [activeTab]);
@@ -96,12 +97,18 @@ export default function ClubDashboard() {
     }
   }, [clubId, dateRange]);
 
-  // Leaderboard player stagger animation
+  // Leaderboard player stagger animation (with cleanup to prevent zombie timeouts)
   useEffect(() => {
     setVisiblePlayers(new Set());
-    topPlayers.forEach((_, i) => {
-      setTimeout(() => setVisiblePlayers((prev) => new Set(prev).add(i)), i * 60);
-    });
+    // Clear previous stagger timers before starting new ones
+    staggerTimersRef.current.forEach((t) => clearTimeout(t));
+    staggerTimersRef.current = topPlayers.map((_, i) =>
+      setTimeout(() => setVisiblePlayers((prev) => new Set(prev).add(i)), i * 60)
+    );
+    return () => {
+      staggerTimersRef.current.forEach((t) => clearTimeout(t));
+      staggerTimersRef.current = [];
+    };
   }, [topPlayers]);
 
   // Real-time subscription for table, member, and hand changes

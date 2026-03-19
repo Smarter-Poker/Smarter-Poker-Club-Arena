@@ -187,7 +187,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 0 16px 20px 16px;
+  padding: 0 16px 0 16px;
   box-sizing: border-box;
   z-index: 10;
   position: relative;
@@ -1242,7 +1242,7 @@
   display: flex;
   gap: 16px;
   z-index: 10;
-  padding: 12px 4px 40px 4px;
+  padding: 12px 4px 8px 4px;
   margin-top: 4px;
   overflow-x: auto;
   overflow-y: visible;
@@ -1619,7 +1619,7 @@
 
 @media (max-width: 700px) {
   .mainContent {
-    padding: 0 8px 80px 8px;
+    padding: 0 8px 0 8px;
     max-width: 100%;
   }
 
@@ -1680,7 +1680,7 @@
 
 @media (max-width: 480px) {
   .mainContent {
-    padding: 0 6px 60px 6px;
+    padding: 0 6px 0 6px;
   }
 
   .featuredCard {
@@ -1755,7 +1755,7 @@
 
   .bottomRow {
     gap: 10px;
-    padding: 12px 4px 30px;
+    padding: 12px 4px 8px;
   }
 
   .tileCard {

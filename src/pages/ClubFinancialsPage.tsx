@@ -74,6 +74,22 @@ export default function ClubFinancialsPage() {
     if (clubId) loadFinancials();
   }, [clubId, period]);
 
+  // ── Bus Listeners: auto-refresh financial data on wallet/balance events ──
+  useEffect(() => {
+    if (!clubId) return;
+    const refreshFn = () => loadFinancials();
+    const unsubs = [
+      masterBus.subscribeDebounced('BALANCE_UPDATED', refreshFn, 1000),
+      masterBus.subscribeDebounced('CHIPS_ADDED', refreshFn, 1000),
+      masterBus.subscribeDebounced('CHIPS_DISTRIBUTED', refreshFn, 1000),
+      masterBus.subscribeDebounced('CHIPS_WITHDRAWN', refreshFn, 1000),
+      masterBus.subscribeDebounced('SETTLEMENT_COMPLETED', refreshFn, 1000),
+      masterBus.subscribeDebounced('COMMISSION_PAID', refreshFn, 1000),
+      masterBus.subscribeDebounced('CLUB_UPDATED', refreshFn, 1000),
+    ];
+    return () => unsubs.forEach((u) => u());
+  }, [clubId]);
+
   // Hydrate userRole from club_members so DynamicWallet/BottomNav show correct variant
   useEffect(() => {
     if (!clubId || !user?.id) return;

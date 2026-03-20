@@ -70,7 +70,7 @@ export async function backfillClubCards(clubs: BackfillTarget[]): Promise<void> 
         // If the bucket doesn't exist, disable all future backfill attempts
         if (
           msg.includes('Bucket not found') ||
-          msg.includes('not found') ||
+          msg.includes('The resource was not found') ||
           (uploadError as any).statusCode === 400
         ) {
           console.warn(

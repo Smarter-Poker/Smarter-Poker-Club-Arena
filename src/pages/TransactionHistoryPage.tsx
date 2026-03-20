@@ -75,6 +75,12 @@ export default function TransactionHistoryPage() {
   const [dateTo, setDateTo] = useState('');
   const [visibleTransactions, setVisibleTransactions] = useState(new Set<number>());
 
+  // Safety timeout: prevent infinite skeleton if auth/Supabase hangs
+  useEffect(() => {
+    const timeout = setTimeout(() => setLoading(false), 5000);
+    return () => clearTimeout(timeout);
+  }, []);
+
   // SWR: show cached transactions instantly on mount (only for 'all' filter, no date range)
   useEffect(() => {
     if (!user?.id || filter !== 'all' || dateFrom || dateTo) return;
@@ -463,9 +469,31 @@ export default function TransactionHistoryPage() {
             <PageSkeleton variant="financial" />
           </div>
         ) : displayTransactions.length === 0 ? (
-          <div className="empty-state">
-            <span className="empty-icon">○</span>
-            <p>No transactions found</p>
+          <div className="empty-state" style={{ textAlign: 'center', padding: '2.5rem 1.5rem' }}>
+            <span
+              style={{
+                fontSize: '2.5rem',
+                display: 'block',
+                marginBottom: '0.75rem',
+                opacity: 0.5,
+              }}
+            >
+              📊
+            </span>
+            <p style={{ fontSize: '1.05rem', fontWeight: 600, margin: '0 0 0.5rem' }}>
+              {filter !== 'all'
+                ? `No ${filter.charAt(0).toUpperCase() + filter.slice(1)}`
+                : 'No Transactions'}
+            </p>
+            <p style={{ color: 'var(--soft-white, #B0B3B8)', fontSize: '0.85rem', margin: 0 }}>
+              {searchQuery
+                ? `No results matching "${searchQuery}".`
+                : dateFrom || dateTo
+                  ? 'No transactions found in the selected date range.'
+                  : filter !== 'all'
+                    ? `No ${filter} have been recorded yet.`
+                    : 'No transaction history yet. Your activity will appear here.'}
+            </p>
           </div>
         ) : (
           <>

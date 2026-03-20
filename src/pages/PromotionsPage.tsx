@@ -18,6 +18,8 @@ import './PromotionsPage.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { formatDateShort as formatDate } from '../utils/format';
+import { retryFetch } from '../utils/retryFetch';
+import { useIsMounted } from '../hooks/useIsMounted';
 import PageSkeleton from '../components/common/PageSkeleton';
 
 interface Promotion {
@@ -46,6 +48,13 @@ export default function PromotionsPage() {
   const [showReferral, setShowReferral] = useState(false);
   const [visiblePromoCards, setVisiblePromoCards] = useState(new Set<number>());
   const loadPromotionsRef = useRef(async () => {});
+  const isMounted = useIsMounted();
+
+  // Safety timeout: prevent infinite skeleton if auth/Supabase hangs
+  useEffect(() => {
+    const timeout = setTimeout(() => setLoading(false), 5000);
+    return () => clearTimeout(timeout);
+  }, []);
 
   useEffect(() => {
     loadPromotionsRef.current = loadPromotions;
@@ -117,7 +126,10 @@ export default function PromotionsPage() {
         query = query.eq('club_id', resolvedId);
       }
 
-      const { data, error } = await query.limit(20);
+      const { data, error } = await retryFetch(() => query.limit(20).then((r) => r), {
+        maxRetries: 2,
+        isMountedRef: isMounted,
+      });
 
       if (getIsMounted && !getIsMounted()) return;
 
@@ -236,9 +248,31 @@ export default function PromotionsPage() {
             ))}
           </div>
         ) : filteredPromos.length === 0 ? (
-          <div className="empty-state">
-            <span className="empty-icon">○</span>
-            <p>No {filter} promotions</p>
+          <div className="empty-state" style={{ textAlign: 'center', padding: '2.5rem 1.5rem' }}>
+            <span
+              style={{
+                fontSize: '2.5rem',
+                display: 'block',
+                marginBottom: '0.75rem',
+                opacity: 0.5,
+              }}
+            >
+              🎁
+            </span>
+            <p style={{ fontSize: '1.05rem', fontWeight: 600, margin: '0 0 0.5rem' }}>
+              {filter === 'active'
+                ? 'No Active Promotions'
+                : filter === 'upcoming'
+                  ? 'No Upcoming Promotions'
+                  : 'No Promotions'}
+            </p>
+            <p style={{ color: 'var(--soft-white, #B0B3B8)', fontSize: '0.85rem', margin: 0 }}>
+              {filter === 'active'
+                ? 'There are no promotions running right now. Check back soon!'
+                : filter === 'upcoming'
+                  ? 'No promotions are scheduled yet. Stay tuned!'
+                  : 'No promotions have been created for this club yet.'}
+            </p>
           </div>
         ) : (
           filteredPromos.map((promo, index) => (

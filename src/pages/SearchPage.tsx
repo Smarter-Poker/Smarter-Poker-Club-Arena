@@ -404,9 +404,25 @@ export default function SearchPage() {
             )}
           </div>
         ) : results.length === 0 ? (
-          <div className="empty-state">
-            <span className="empty-icon">○</span>
-            <p>No results for "{query}"</p>
+          <div className="empty-state" style={{ textAlign: 'center', padding: '2.5rem 1.5rem' }}>
+            <span
+              style={{
+                fontSize: '2.5rem',
+                display: 'block',
+                marginBottom: '0.75rem',
+                opacity: 0.5,
+              }}
+            >
+              🔍
+            </span>
+            <p style={{ fontSize: '1.05rem', fontWeight: 600, margin: '0 0 0.5rem' }}>
+              No Results for "{query}"
+            </p>
+            <p style={{ color: 'var(--soft-white, #B0B3B8)', fontSize: '0.85rem', margin: 0 }}>
+              {category !== 'all'
+                ? `Try searching in "All" or use different keywords.`
+                : 'Try different keywords or check for typos.'}
+            </p>
           </div>
         ) : (
           <div className="results-list">

@@ -12,6 +12,8 @@ import { useToast } from '../components/common/Toast';
 import { haptic } from '../services/HapticService';
 import './BonusPage.css';
 import { retryAsync } from '../utils/retryAsync';
+import { retryFetch } from '../utils/retryFetch';
+import { useIsMounted } from '../hooks/useIsMounted';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 
 interface DailyBonus {
@@ -44,7 +46,14 @@ export default function BonusPage() {
   const [visibleDayCards, setVisibleDayCards] = useState(new Set<number>());
   const [visibleBonusCards, setVisibleBonusCards] = useState(new Set<number>());
   const toast = useToast();
+  const isMounted = useIsMounted();
   const [showConfetti, setShowConfetti] = useState(false);
+
+  // Safety timeout: prevent infinite skeleton if auth/Supabase hangs
+  useEffect(() => {
+    const timeout = setTimeout(() => setLoading(false), 5000);
+    return () => clearTimeout(timeout);
+  }, []);
 
   useEffect(() => {
     if (user?.id) {
@@ -117,11 +126,16 @@ export default function BonusPage() {
     loadingRef.current = true;
     if (!getIsMounted || getIsMounted()) setLoading(true);
     try {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('streak_days, last_login')
-        .eq('id', user?.id)
-        .maybeSingle();
+      const { data: profile } = await retryFetch(
+        () =>
+          supabase
+            .from('profiles')
+            .select('streak_days, last_login')
+            .eq('id', user?.id)
+            .maybeSingle()
+            .then((r) => r),
+        { maxRetries: 2, isMountedRef: isMounted }
+      );
 
       if (getIsMounted && !getIsMounted()) return;
       if (profile) {
@@ -138,13 +152,18 @@ export default function BonusPage() {
         setDailyBonuses(dailies);
       }
 
-      const { data: specials } = await supabase
-        .from('special_bonuses')
-        .select('id, title, description, reward, expires_at, claimed')
-        .eq('user_id', user?.id)
-        .gte('expires_at', new Date().toISOString())
-        .order('expires_at', { ascending: true })
-        .limit(100);
+      const { data: specials } = await retryFetch(
+        () =>
+          supabase
+            .from('special_bonuses')
+            .select('id, title, description, reward, expires_at, claimed')
+            .eq('user_id', user?.id)
+            .gte('expires_at', new Date().toISOString())
+            .order('expires_at', { ascending: true })
+            .limit(100)
+            .then((r) => r),
+        { maxRetries: 2, isMountedRef: isMounted }
+      );
 
       if (getIsMounted && !getIsMounted()) return;
       if (specials) {

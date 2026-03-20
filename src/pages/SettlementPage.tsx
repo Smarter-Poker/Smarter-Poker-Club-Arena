@@ -239,6 +239,12 @@ export default function SettlementPage() {
 
   const loadingRef = useRef(false);
 
+  // Safety timeout: prevent infinite skeleton if auth/Supabase hangs
+  useEffect(() => {
+    const timeout = setTimeout(() => setIsLoading(false), 5000);
+    return () => clearTimeout(timeout);
+  }, []);
+
   // ── CRITICAL: Reset per-entity state when navigating between clubs/unions ──
   useEffect(() => {
     setActiveTab('overview');

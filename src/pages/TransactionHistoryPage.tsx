@@ -92,6 +92,11 @@ export default function TransactionHistoryPage() {
     }
   }, [user?.id]);
 
+  // Ref for realtime/bus callbacks to avoid stale closures on filter/date state
+  const loadTransactionsRef = useRef<
+    (pageNum: number, reset?: boolean, getIsMounted?: () => boolean) => void
+  >(() => {});
+
   // Stagger transaction rows
   useEffect(() => {
     setVisibleTransactions(new Set());
@@ -130,7 +135,7 @@ export default function TransactionHistoryPage() {
           filter: `to_user_id=eq.${user.id}`,
         },
         () => {
-          loadTransactions(0, true);
+          loadTransactionsRef.current(0, true);
         }
       )
       .subscribe((status: string, err?: Error) => {
@@ -149,34 +154,11 @@ export default function TransactionHistoryPage() {
   // Bus listeners: reload when wallet/balance changes (e.g. cashout, rakeback claim, chip send)
   useEffect(() => {
     if (!user?.id) return;
-    const unsubWallet = masterBus.subscribeDebounced(
-      'WALLET_REFRESHED',
-      () => {
-        loadTransactions(0, true);
-      },
-      500
-    );
-    const unsubBalance = masterBus.subscribeDebounced(
-      'BALANCE_UPDATED',
-      () => {
-        loadTransactions(0, true);
-      },
-      500
-    );
-    const unsubChipsAdded = masterBus.subscribeDebounced(
-      'CHIPS_ADDED',
-      () => {
-        loadTransactions(0, true);
-      },
-      500
-    );
-    const unsubChipsWithdrawn = masterBus.subscribeDebounced(
-      'CHIPS_WITHDRAWN',
-      () => {
-        loadTransactions(0, true);
-      },
-      500
-    );
+    const refresh = () => loadTransactionsRef.current(0, true);
+    const unsubWallet = masterBus.subscribeDebounced('WALLET_REFRESHED', refresh, 500);
+    const unsubBalance = masterBus.subscribeDebounced('BALANCE_UPDATED', refresh, 500);
+    const unsubChipsAdded = masterBus.subscribeDebounced('CHIPS_ADDED', refresh, 500);
+    const unsubChipsWithdrawn = masterBus.subscribeDebounced('CHIPS_WITHDRAWN', refresh, 500);
     return () => {
       unsubWallet();
       unsubBalance();
@@ -273,6 +255,11 @@ export default function TransactionHistoryPage() {
       }
     }
   };
+
+  // Keep ref in sync with latest loadTransactions (captures current filter, dateFrom, dateTo)
+  useEffect(() => {
+    loadTransactionsRef.current = loadTransactions;
+  });
 
   const loadMore = () => {
     if (!loadingMore && hasMore) {

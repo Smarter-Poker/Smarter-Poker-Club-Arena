@@ -123,7 +123,7 @@ export default function MarketplacePage() {
               .order('created_at', { ascending: false }),
             supabase
               .from('club_members')
-              .select('chip_balance')
+              .select('chip_balance, role')
               .eq('club_id', targetClub)
               .eq('user_id', user.id)
               .maybeSingle(),
@@ -133,6 +133,7 @@ export default function MarketplacePage() {
           setItems(itemsData || []);
           setPurchases(purchasesData || []);
           setBalance(memberData?.chip_balance || 0);
+          if (memberData?.role) setRole(memberData.role);
         }
       } catch (err: any) {
         if (!silent) toast.error(err.message);

@@ -291,6 +291,15 @@ export default function PlayerWalletPage() {
         },
         500
       ),
+      // Refresh when new chip_ledger transactions arrive
+      masterBus.subscribeDebounced(
+        'TRANSACTION_LOGGED' as any,
+        () => {
+          loadBalances(user.id);
+          loadDiamonds(user.id);
+        },
+        1000
+      ),
     ];
     return () => unsubs.forEach((fn) => fn());
   }, [user?.id, loadBalances, loadDiamonds]);

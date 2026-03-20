@@ -139,7 +139,6 @@ export default function UnionDashboardPage() {
   const [apps, setApps] = useState<UnionApp[]>([]);
   const [appsFilter, setAppsFilter] = useState('pending');
   const [appsLoaded, setAppsLoaded] = useState(false);
-  const [_leaveRequests, setLeaveRequests] = useState<unknown[]>([]);
 
   // Activity
 
@@ -1342,7 +1341,7 @@ export default function UnionDashboardPage() {
             )}
 
             {/* TRANSACTION HISTORY from chip_ledger */}
-            <TransactionLedgerView unionId={unionId} userId={user?.id || ''} />
+            <TransactionLedgerView unionId={unionId || undefined} userId={user?.id || ''} />
           </div>
         )}
 

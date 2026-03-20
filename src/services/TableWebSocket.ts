@@ -419,6 +419,7 @@ export class TableWebSocket {
 
       if (data) {
         // Broadcast the synced state to all handlers
+        // IMPORTANT: Bypass handleGameEvent's sequence check — resync is authoritative
         const syncEvent: GameEvent = {
           type: 'GAME_START', // Use as full state sync
           tableId: this.tableId,
@@ -426,8 +427,12 @@ export class TableWebSocket {
           timestamp: Date.now(),
           sequence: data.sequence || this.lastSequence + 1,
         };
+        // Dispatch directly (skip sequence ordering — resync IS the truth)
+        this.dispatchEvent(syncEvent);
+        // Update sequence tracking AFTER dispatch
         this.lastSequence = syncEvent.sequence;
-        this.handleGameEvent(syncEvent);
+        // Clear any pending events — resync supersedes them
+        this.pendingEvents = [];
       }
     } catch (err: unknown) {
       console.error('[TableWS] Resync failed:', err);

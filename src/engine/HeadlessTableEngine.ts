@@ -108,6 +108,8 @@ export class HeadlessTableEngine {
   private handForHandMode = false;
   private handForHandResolve: (() => void) | null = null;
   private timeBankUnsubs: (() => void)[] = [];
+  // Cached unionId for this table's club (resolved once, stored per engine instance)
+  private _cachedUnionId: string | undefined;
 
   constructor(tableId: string, supabaseClient: typeof supabase) {
     this.tableId = tableId;
@@ -554,6 +556,11 @@ export class HeadlessTableEngine {
     this.currentHandDealerSeat = dealerSeat; // Freeze for broadcast during this hand
     this.dealerSeatIndex++; // Advance for next hand
 
+    // Orbit detection: when dealer wraps around, refill time bank uses
+    if (this.dealerSeatIndex % players.length === 0) {
+      timeBankEngine.onOrbitComplete(this.tableId);
+    }
+
     // --- STRADDLE INJECTION ---
     const sortedPlayers = [...players]
       .sort((a, b) => a.seat_number - b.seat_number)
@@ -877,14 +884,17 @@ export class HeadlessTableEngine {
         this.broadcastCurrentState();
         break;
 
-      case 'PLAYER_ACTION':
+      case 'PLAYER_ACTION': {
         // Notify time bank engine that player acted (cancels active time bank)
-        if ((event as any).playerId) {
-          timeBankEngine.playerActed(this.tableId, (event as any).playerId);
+        // PLAYER_ACTION event has `seat`, not `playerId` — resolve via players array
+        const actingPlayer = players.find((p) => p.seat_number === event.seat);
+        if (actingPlayer) {
+          timeBankEngine.playerActed(this.tableId, actingPlayer.user_id);
         }
         // Broadcast after each player action so UI updates bets/stacks
         this.broadcastCurrentState();
         break;
+      }
 
       case 'ALL_IN_RUNOUT_PENDING': {
         // Broadcast the pending state so UI can show the offer
@@ -1236,9 +1246,38 @@ export class HeadlessTableEngine {
       const actionTimeMs = (this.tableInfo?.action_time_seconds || 15) * 1000;
 
       const timerId = workerTimeout(() => {
-        if (!this.handController || !this.running) return;
+        if (!this.handController || !this.running || this.handInvalidated) return;
 
-        // Recalculate toCall from FRESH state (original may be stale after timeout)
+        // Try to activate time bank before auto-acting
+        const timeBankActivated = timeBankEngine.onPrimaryTimerExpired(
+          this.tableId,
+          player.user_id,
+          () => {
+            // This callback fires when the time bank ALSO expires — now auto-act
+            if (!this.handController || !this.running || this.handInvalidated) return;
+            const freshState = this.handController.getState();
+            const freshPlayer = freshState.players.find((p) => p.seat === seat);
+            const freshToCall = freshPlayer
+              ? Math.max(0, freshState.currentBet - freshPlayer.bet)
+              : toCall;
+            const action = freshToCall === 0 ? 'check' : 'fold';
+            try {
+              this.handController!.performAction(player.seat_number, action as any);
+            } catch (err: unknown) {
+              console.error(
+                `[HeadlessTableEngine:${this.tableId}] Auto-action (post-timebank) failed for ${player.username}:`,
+                err
+              );
+            }
+          }
+        );
+
+        if (timeBankActivated) {
+          // Time bank is now running — the onExpire callback above handles auto-action
+          return;
+        }
+
+        // No time bank available — auto-fold/check immediately
         const freshState = this.handController.getState();
         const freshPlayer = freshState.players.find((p) => p.seat === seat);
         const freshToCall = freshPlayer
@@ -1379,9 +1418,10 @@ export class HeadlessTableEngine {
       this.pendingTimerIds.push(timerId);
     })().catch((err) => {
       console.error(`[HeadlessTableEngine:${this.tableId}] Horse decision error:`, err);
-      // Emergency fallback: fold
+      // Emergency fallback: fold (only if hand is still valid)
+      if (this.handInvalidated || !handControllerRef) return;
       try {
-        handControllerRef?.performAction(seat, 'fold');
+        handControllerRef.performAction(seat, 'fold');
       } catch {
         /* Hand may have completed */
       }
@@ -1777,6 +1817,23 @@ export class HeadlessTableEngine {
     // Get hand ID directly from per-table persistence (no extra DB query needed)
     const handId = this.persistence.getCurrentHandId() || crypto.randomUUID();
 
+    // Resolve unionId from club's union membership (cached per engine instance)
+    let unionId: string | undefined;
+    try {
+      if (!this._cachedUnionId && this.tableInfo.club_id) {
+        const { data: ucRow } = await this.supabaseClient
+          .from('union_clubs')
+          .select('union_id')
+          .eq('club_id', this.tableInfo.club_id)
+          .limit(1)
+          .maybeSingle();
+        this._cachedUnionId = ucRow?.union_id || '__none__';
+      }
+      unionId = this._cachedUnionId === '__none__' ? undefined : this._cachedUnionId;
+    } catch {
+      /* standalone club — no union */
+    }
+
     // Build dealt-in player list for rake attribution
     const dealtInPlayers: DealtInPlayer[] = players.map((p) => ({
       userId: p.user_id,
@@ -1792,6 +1849,7 @@ export class HeadlessTableEngine {
         handId,
         tableId: this.tableId,
         clubId: this.tableInfo.club_id,
+        unionId,
         smallBlind: this.tableInfo.small_blind,
         bigBlind: this.tableInfo.big_blind,
         potSize,

@@ -36,16 +36,13 @@ export default function FloatingHamburger() {
   // Don't render on table pages (full-screen immersive experience)
   if (location.pathname.startsWith('/table/')) return null;
 
-  // Don't render when menu is already open (prevents overlap)
-  if (menuIsOpen) return null;
-
   const handleClick = () => {
     masterBus.emit('HAMBURGER_TOGGLE', {});
   };
 
   return (
     <button
-      className={styles.floatingButton}
+      className={`${styles.floatingButton} ${menuIsOpen ? styles.hidden : ''}`}
       onClick={handleClick}
       aria-label="Open Menu"
       id="floating-hamburger-btn"

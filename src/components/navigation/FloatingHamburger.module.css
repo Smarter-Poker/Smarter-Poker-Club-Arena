@@ -31,6 +31,15 @@
   transform: scale(0.95);
 }
 
+/* Hide when menu is open — belt-and-suspenders via CSS */
+.hidden {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  transform: scale(0) !important;
+  transition: none !important;
+}
+
 .icon {
   width: 26px;
   height: 26px;

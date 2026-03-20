@@ -18,6 +18,7 @@ import { cashoutService } from '../services/CashoutService';
 import { WalletService } from '../services/WalletService';
 import { CreditService } from '../services/CreditService';
 import { exportToCSV } from '../lib/export';
+import TransactionLedgerView from '../components/common/TransactionLedgerView';
 import './AdminDashboardPage.css';
 import AgentScoreCard from '../components/agent/AgentScoreCard';
 
@@ -1443,6 +1444,23 @@ export default function AgentDashboardPage() {
             </div>
           </div>
         )}
+      </div>
+
+      {/* TRANSACTION HISTORY — chip_ledger entries for this agent */}
+      <div style={{ padding: '0 16px 16px', maxWidth: '800px', margin: '0 auto' }}>
+        <div
+          style={{
+            background: 'rgba(255,255,255,0.03)',
+            borderRadius: '12px',
+            padding: '16px',
+            border: '1px solid rgba(255,255,255,0.08)',
+          }}
+        >
+          <h3 style={{ margin: '0 0 12px', fontSize: '14px', fontWeight: 700, color: '#e0e0e0' }}>
+            Transaction History
+          </h3>
+          <TransactionLedgerView userId={user?.id} clubId={clubId || undefined} limit={20} />
+        </div>
       </div>
     </div>
   );

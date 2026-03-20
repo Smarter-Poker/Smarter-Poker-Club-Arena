@@ -16,6 +16,7 @@ import './AdminDashboardPage.css';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { fmt, timeAgo } from '../utils/format';
+import TransactionLedgerView from '../components/common/TransactionLedgerView';
 
 // ── Helpers ─────────────────────────────────────────────────
 const pct = (n: number | null | undefined) => `${((Number(n) || 0) * 100).toFixed(1)}%`;
@@ -1339,6 +1340,9 @@ export default function UnionDashboardPage() {
                 </div>
               </div>
             )}
+
+            {/* TRANSACTION HISTORY from chip_ledger */}
+            <TransactionLedgerView unionId={unionId} userId={user?.id || ''} />
           </div>
         )}
 

@@ -18,6 +18,7 @@ import { WalletService } from '../services/WalletService';
 import PageSkeleton from '../components/common/PageSkeleton';
 
 import { useIsMounted } from '../hooks/useIsMounted';
+import TransactionLedgerView from '../components/common/TransactionLedgerView';
 
 interface AgentWallet {
   agentBal: number;
@@ -623,6 +624,23 @@ export default function AgentPortalPage() {
           </div>
         </div>
       )}
+
+      {/* TRANSACTION HISTORY */}
+      <div style={{ padding: '16px', maxWidth: '600px', margin: '0 auto' }}>
+        <div
+          style={{
+            background: 'rgba(255,255,255,0.03)',
+            borderRadius: '12px',
+            padding: '16px',
+            border: '1px solid rgba(255,255,255,0.08)',
+          }}
+        >
+          <h3 style={{ margin: '0 0 12px', fontSize: '14px', fontWeight: 700, color: '#e0e0e0' }}>
+            My Transactions
+          </h3>
+          <TransactionLedgerView userId={user?.id} limit={15} />
+        </div>
+      </div>
     </div>
   );
 }

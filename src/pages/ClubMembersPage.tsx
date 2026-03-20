@@ -292,6 +292,13 @@ function PlayerActionModal({
       if (agentRoles.includes(newRole) || agentRoles.includes(member.role)) {
         masterBus.emit('AGENT_UPDATED', { clubId: clubId || '', agentId: member.user_id });
       }
+      // Always emit MEMBER_ROLE_CHANGED so level-aware pages refresh
+      masterBus.emit('MEMBER_ROLE_CHANGED', {
+        clubId: clubId || '',
+        userId: member.user_id,
+        newRole,
+        previousRole: member.role,
+      });
 
       // Brief delay to show success, then refresh
       setTimeout(() => {

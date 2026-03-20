@@ -22,7 +22,7 @@
 const GAME_SERVER_URL =
   import.meta.env.VITE_GAME_SERVER_URL ||
   (import.meta.env.PROD
-    ? 'https://smarter-poker-game-server.up.railway.app'
+    ? 'https://smarter-poker-game-server-production.up.railway.app'
     : 'http://localhost:8080');
 
 // ═══════════════════════════════════════════════════════════════════════════════

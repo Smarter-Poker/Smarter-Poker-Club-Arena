@@ -73,7 +73,7 @@
 .club-card-id-text {
   font-family: 'Orbitron', 'Inter', 'Segoe UI', sans-serif;
   font-weight: 700;
-  font-size: clamp(9px, 1.6vw, 15px);
+  font-size: 13px;
   letter-spacing: 1.5px;
   color: #d0d8e8;
   text-shadow:
@@ -147,7 +147,7 @@
 }
 
 .club-card-fallback-icon {
-  font-size: clamp(32px, 6vw, 56px);
+  font-size: 48px;
   color: rgba(0, 212, 255, 0.6);
   filter: drop-shadow(0 0 12px rgba(0, 212, 255, 0.3));
 }
@@ -187,7 +187,7 @@
 .club-card-name-text {
   font-family: 'Orbitron', 'Inter', 'Segoe UI', sans-serif;
   font-weight: 700;
-  font-size: clamp(11px, 2.2vw, 20px);
+  font-size: 16px;
   letter-spacing: 2px;
   color: #ffffff;
   text-shadow:
@@ -226,7 +226,7 @@
   border-radius: 10px;
   font-family: 'Inter', 'Roboto', sans-serif;
   font-weight: 700;
-  font-size: clamp(7px, 1.1vw, 10px);
+  font-size: 9px;
   letter-spacing: 1.5px;
   text-transform: uppercase;
   white-space: nowrap;
@@ -268,7 +268,7 @@
 .club-card-stat-label {
   font-family: 'Inter', 'Roboto', sans-serif;
   font-weight: 600;
-  font-size: clamp(5.5px, 0.9vw, 8px);
+  font-size: 8px;
   letter-spacing: 0.3px;
   color: #a5eff0;
   margin-bottom: 1px;
@@ -287,7 +287,7 @@
 .club-card-stat-value {
   font-family: 'Inter', 'Roboto', sans-serif;
   font-weight: 700;
-  font-size: clamp(12px, 2vw, 20px);
+  font-size: 18px;
   letter-spacing: 1px;
   color: #adf9f9;
   text-shadow:
@@ -298,7 +298,7 @@
 
 /* Club level — slightly bigger */
 .club-card-stat-value--level {
-  font-size: clamp(14px, 2.4vw, 24px);
+  font-size: 20px;
   line-height: 1;
   margin-top: 4px;
 }

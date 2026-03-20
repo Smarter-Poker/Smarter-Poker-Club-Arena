@@ -211,38 +211,31 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
     }
 
     try {
-      // Generate club card image
-      const tempClubId = Math.floor(100000 + Math.random() * 900000);
-      const { dataUrl, format } = await ClubCardGenerator.generateCard({
-        logoUrl: logoPreview,
-        clubId: tempClubId,
-        clubName: sanitizeInput(clubName.trim()).toUpperCase(),
-      });
+      // ── Step 1: Upload raw logo to storage ──────────────────────────────
+      let logoUrl: string | null = null;
+      try {
+        const logoBlob = await fetch(logoPreview).then((r) => r.blob());
+        const logoExt = logoBlob.type.includes('png') ? 'png' : 'jpg';
+        const logoFileName = `club-logos/${Date.now()}-logo.${logoExt}`;
 
-      // Upload card to storage
-      const cardBlob = await fetch(dataUrl).then((r) => r.blob());
-      const ext = format === 'webp' ? 'webp' : 'png';
-      const contentType = format === 'webp' ? 'image/webp' : 'image/png';
-      const cardFileName = `club-cards/${tempClubId}-card.${ext}`;
+        const { data: logoUploadData, error: logoUploadError } = await supabase.storage
+          .from('club-assets')
+          .upload(logoFileName, logoBlob, {
+            contentType: logoBlob.type || 'image/png',
+            upsert: true,
+          });
 
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('club-assets')
-        .upload(cardFileName, cardBlob, {
-          contentType,
-          upsert: true,
-        });
-
-      if (uploadError) {
-        console.error('Upload error:', uploadError);
+        if (!logoUploadError && logoUploadData) {
+          const { data: urlData } = supabase.storage.from('club-assets').getPublicUrl(logoFileName);
+          logoUrl = urlData?.publicUrl || null;
+        } else {
+          console.warn('[CreateClubModal] Logo upload failed, using data URL fallback');
+        }
+      } catch {
+        console.warn('[CreateClubModal] Logo upload failed, continuing without stored logo');
       }
 
-      let cardUrl = null;
-      if (uploadData) {
-        const { data: urlData } = supabase.storage.from('club-assets').getPublicUrl(cardFileName);
-        cardUrl = urlData.publicUrl;
-      }
-
-      // Insert club with collision retry for random club_id
+      // ── Step 2: Insert club with collision retry ─────────────────────────
       let clubData: any = null;
       let lastInsertError: any = null;
       const MAX_RETRIES = 3;
@@ -265,8 +258,8 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
             owner_id: user.id,
             is_public: true,
             requires_approval: false,
-            card_image_url: cardUrl,
-            logo_url: cardUrl,
+            card_image_url: null, // Will be set after baked card generation
+            logo_url: logoUrl || logoPreview, // Raw logo URL (NOT the baked card)
             member_count: 1,
             level: calculateClubLevel(1),
             active_players: 1,
@@ -299,6 +292,37 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
       }
 
       if (!clubData) throw lastInsertError || new Error('Club creation failed after retries');
+
+      // ── Step 3: Generate baked card with REAL club_id ────────────────────
+      try {
+        const { dataUrl, format } = await ClubCardGenerator.generateCard({
+          logoUrl: logoUrl || logoPreview,
+          clubId: clubData.club_id, // The ACTUAL club_id from the insert
+          clubName: sanitizeInput(clubName.trim()).toUpperCase(),
+        });
+
+        const cardBlob = await fetch(dataUrl).then((r) => r.blob());
+        const ext = format === 'webp' ? 'webp' : 'png';
+        const contentType = format === 'webp' ? 'image/webp' : 'image/png';
+        const cardFileName = `club-cards/${clubData.club_id}-card.${ext}`;
+
+        const { data: cardUploadData, error: cardUploadError } = await supabase.storage
+          .from('club-assets')
+          .upload(cardFileName, cardBlob, { contentType, upsert: true });
+
+        if (!cardUploadError && cardUploadData) {
+          const { data: urlData } = supabase.storage.from('club-assets').getPublicUrl(cardFileName);
+          if (urlData?.publicUrl) {
+            await supabase
+              .from('clubs')
+              .update({ card_image_url: urlData.publicUrl })
+              .eq('id', clubData.id);
+          }
+        }
+      } catch (cardErr) {
+        // Non-blocking: club is created, card will be backfilled later
+        console.warn('[CreateClubModal] Baked card generation failed (non-blocking):', cardErr);
+      }
 
       // Add owner as first member — cleanup orphan if this fails
       const { error: memberError } = await supabase.from('club_members').insert({

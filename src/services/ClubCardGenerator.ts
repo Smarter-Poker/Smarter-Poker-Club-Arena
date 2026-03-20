@@ -7,7 +7,7 @@
  * 2. Drawing the ID plate zone at top
  * 3. Fitting the user's logo/AI image into the center viewport
  * 4. Drawing the name plate zone
- * 5. Drawing the stats bar with type badge
+ * 5. Drawing the stats bar with stat labels (MEMBERS, LEVEL, ACTIVE)
  * Returns as data URL
  *
  * Uses 3:4 aspect ratio to match the new ClubCardPanel layout.

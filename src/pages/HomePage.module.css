@@ -187,7 +187,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 0 16px 10px 16px;
+  padding: 0 16px 40px 16px;
   box-sizing: border-box;
   z-index: 10;
   position: relative;
@@ -604,26 +604,43 @@
   cursor: pointer;
   position: relative;
   scroll-snap-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   animation:
     scaleIn 0.7s ease-out 100ms both,
     idleFloat 6s ease-in-out infinite;
   border-radius: 12px;
   z-index: 10;
-  box-shadow:
-    0 20px 50px rgba(0, 0, 0, 0.5),
-    0 0 30px rgba(0, 212, 255, 0.15);
-  /* Enhancement: hover/tap feedback */
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
   transition:
     transform 0.25s ease,
     box-shadow 0.25s ease;
 }
 
-/* Hover lift + brighter glow */
+/* FEATURED CLUB label — sits ABOVE the card, not overlaid */
+.featuredClubLabel {
+  width: 100%;
+  text-align: center;
+  padding: 6px 0;
+  margin-bottom: 6px;
+  background: transparent;
+  font-family: 'Orbitron', 'Inter', 'Segoe UI', sans-serif;
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 2.5px;
+  color: #f0d070;
+  text-shadow:
+    0 0 8px rgba(218, 165, 32, 0.4),
+    0 1px 3px rgba(0, 0, 0, 0.8);
+  text-transform: uppercase;
+  pointer-events: none;
+}
+
+/* Hover lift */
 .carouselCardFeatured:hover {
   transform: scale(1.04) translateY(-4px);
-  box-shadow:
-    0 24px 60px rgba(0, 0, 0, 0.6),
-    0 0 40px rgba(0, 212, 255, 0.3);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
 }
 
 /* Tap/active feedback */
@@ -632,24 +649,9 @@
   transition-duration: 0.1s;
 }
 
-/* Pedestal glow under the featured Shark Club card */
+/* Pedestal — hidden, no glow */
 .carouselFeaturedPedestal {
-  position: absolute;
-  bottom: -10px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 260px;
-  height: 40px;
-  border-radius: 50%;
-  background: radial-gradient(
-    ellipse,
-    rgba(0, 212, 255, 0.4),
-    rgba(0, 136, 255, 0.2),
-    transparent 70%
-  );
-  filter: blur(10px);
-  animation: pedestalPulse 4s ease-in-out infinite;
-  z-index: 0;
+  display: none;
 }
 
 /* ── ENHANCEMENT #2: Empty State CTA Cards ─────────────────────────────── */
@@ -1239,7 +1241,7 @@
   display: flex;
   gap: 16px;
   z-index: 10;
-  padding: 8px 4px 12px 4px;
+  padding: 8px 4px 40px 4px;
   margin-top: 0;
   overflow-x: auto;
   overflow-y: visible;

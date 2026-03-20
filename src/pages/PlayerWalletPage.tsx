@@ -15,6 +15,7 @@ import { TransactionHistory } from '../components/wallet/TransactionHistory';
 import DepositWithdrawModal from '../components/wallet/DepositWithdrawModal';
 import DisputeSubmitModal from '../components/wallet/DisputeSubmitModal';
 
+import TransactionLedgerView from '../components/common/TransactionLedgerView';
 import './PlayerWalletPage.css';
 
 type WalletTab = 'overview' | 'transfer' | 'history';
@@ -518,6 +519,24 @@ export default function PlayerWalletPage() {
             }}
           >
             <TransactionHistory walletId={user.id} limit={50} />
+          </div>
+        )}
+
+        {/* Chip Ledger Audit Trail */}
+        {user?.id && (
+          <div
+            style={{
+              background: 'rgba(255,255,255,0.02)',
+              borderRadius: '16px',
+              padding: '1rem',
+              border: '1px solid rgba(255,255,255,0.04)',
+              marginTop: '12px',
+            }}
+          >
+            <h3 style={{ margin: '0 0 12px', fontSize: '14px', fontWeight: 700, color: '#e0e0e0' }}>
+              Chip Movement Audit Trail
+            </h3>
+            <TransactionLedgerView userId={user.id} limit={20} />
           </div>
         )}
       </div>

@@ -13,6 +13,7 @@ import { ClubFinancialDashboard } from '../components/dashboard/ClubFinancialDas
 import FinancialChart from '../components/charts/FinancialChart';
 import RakeReports from '../components/admin/RakeReports';
 import PageSkeleton from '../components/common/PageSkeleton';
+import TransactionLedgerView from '../components/common/TransactionLedgerView';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { FinancialExportService } from '../services/FinancialExportService';
 import DynamicWallet from '../components/wallet/DynamicWallet';
@@ -538,6 +539,25 @@ export default function ClubFinancialsPage() {
           </div>
         )}
       </section>
+
+      {/* Chip Ledger — Club Transaction Audit Trail */}
+      {clubId && (
+        <section style={{ padding: '0 16px 16px' }}>
+          <div
+            style={{
+              background: 'rgba(255,255,255,0.02)',
+              borderRadius: '12px',
+              padding: '16px',
+              border: '1px solid rgba(255,255,255,0.06)',
+            }}
+          >
+            <h3 style={{ margin: '0 0 12px', fontSize: '14px', fontWeight: 700, color: '#e0e0e0' }}>
+              Club Chip Audit Trail
+            </h3>
+            <TransactionLedgerView clubId={clubId} limit={25} />
+          </div>
+        </section>
+      )}
 
       {clubId && <ClubBottomNav clubId={clubId} userRole={userRole} />}
     </div>

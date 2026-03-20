@@ -19,6 +19,7 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { SettlementService } from '../services/SettlementService';
 import { SettlementCronService, type CanaryResult } from '../services/SettlementCronService';
 import PageSkeleton from '../components/common/PageSkeleton';
+import TransactionLedgerView from '../components/common/TransactionLedgerView';
 
 import { useIsMounted } from '../hooks/useIsMounted';
 
@@ -1138,6 +1139,23 @@ export default function SettlementDashboardPage() {
         }}
       >
         Settlement Engine v3.0 • Sunday 11:59 PM snapshot • Monday 4:00 AM execution
+      </div>
+
+      {/* Settlement Chip Audit Trail */}
+      <div style={{ padding: '0 16px 16px', marginTop: '16px' }}>
+        <div
+          style={{
+            background: 'rgba(255,255,255,0.02)',
+            borderRadius: '12px',
+            padding: '16px',
+            border: '1px solid rgba(255,255,255,0.06)',
+          }}
+        >
+          <h3 style={{ margin: '0 0 12px', fontSize: '14px', fontWeight: 700, color: '#e0e0e0' }}>
+            Settlement Audit Trail
+          </h3>
+          <TransactionLedgerView limit={25} />
+        </div>
       </div>
     </div>
   );

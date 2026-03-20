@@ -134,6 +134,11 @@ export default function AgentDashboardPage() {
     return () => clearTimeout(t);
   }, [error]);
 
+  // Reset UUID cache when club changes
+  useEffect(() => {
+    resolvedClubIdRef.current = null;
+  }, [clubId]);
+
   const dashLoadingRef = useRef(false);
 
   // ── Load Dashboard Data ───────────────────────────────────

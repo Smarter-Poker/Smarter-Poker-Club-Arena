@@ -102,6 +102,12 @@ export default function FriendsPage() {
     }
   }, [user?.id]);
 
+  // Safety timeout: prevent infinite skeleton if auth/Supabase hangs
+  useEffect(() => {
+    const timeout = setTimeout(() => setLoading(false), 5000);
+    return () => clearTimeout(timeout);
+  }, []);
+
   useEffect(() => {
     if (user?.id) loadFriends();
   }, [user?.id]);
@@ -606,8 +612,16 @@ export default function FriendsPage() {
       {activeTab === 'pending' && (
         <div className="pending-list">
           {pendingRequests.length === 0 ? (
-            <div className="empty-state">
-              <p>No pending requests</p>
+            <div className="empty-state" style={{ textAlign: 'center', padding: '2rem 1.5rem' }}>
+              <span style={{ fontSize: '2.5rem', display: 'block', marginBottom: '0.75rem' }}>
+                📬
+              </span>
+              <p style={{ fontSize: '1.05rem', fontWeight: 600, margin: '0 0 0.5rem' }}>
+                No pending requests
+              </p>
+              <p style={{ color: 'var(--soft-white, #B0B3B8)', fontSize: '0.85rem', margin: 0 }}>
+                When someone sends you a friend request, it will appear here.
+              </p>
             </div>
           ) : (
             pendingRequests.map((request, index) => (

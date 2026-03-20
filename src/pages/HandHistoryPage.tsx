@@ -79,6 +79,12 @@ export default function HandHistoryPage() {
     }
   }, [user?.id]);
 
+  // Safety timeout: prevent infinite skeleton if auth/Supabase hangs
+  useEffect(() => {
+    const timeout = setTimeout(() => setLoading(false), 5000);
+    return () => clearTimeout(timeout);
+  }, []);
+
   // Stagger hand cards on render
   useEffect(() => {
     setVisibleHandCards(new Set());

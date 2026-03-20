@@ -60,7 +60,7 @@
 /* ── Club ID text at top — matches Shark Club's baked "CLUB ID: 25450" ───── */
 .club-card-id-overlay {
   position: absolute;
-  top: 2.8%;
+  top: 5%;
   left: 50%;
   transform: translateX(-50%);
   z-index: 4;
@@ -70,9 +70,9 @@
   letter-spacing: 1.5px;
   color: #ffffff;
   text-shadow:
-    0 0 6px rgba(0, 0, 0, 0.9),
-    0 2px 4px rgba(0, 0, 0, 0.8),
-    0 0 12px rgba(0, 0, 0, 0.5);
+    0 0 8px rgba(0, 0, 0, 1),
+    0 2px 6px rgba(0, 0, 0, 0.9),
+    0 0 16px rgba(0, 0, 0, 0.7);
   white-space: nowrap;
   text-transform: uppercase;
   pointer-events: none;
@@ -123,9 +123,22 @@
   height: 100%;
   object-fit: contain;
   /* Eliminate white logo backgrounds:
-     multiply makes white→transparent against dark backgrounds */
+     multiply blends white→transparent against the dark frame.
+     Extra brightness+contrast boost restores logo vibrancy. */
   mix-blend-mode: multiply;
-  filter: brightness(1.15) contrast(1.1);
+  filter: brightness(1.3) contrast(1.2);
+}
+
+/* Dark inset vignette on logo container —
+   softens any remaining white edges from non-pure-white logos */
+.club-card-logo-container::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 4px;
+  box-shadow: inset 0 0 30px 15px rgba(10, 20, 35, 0.6);
+  pointer-events: none;
+  z-index: 2;
 }
 
 .club-card-logo-fallback {

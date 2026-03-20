@@ -1946,7 +1946,24 @@ export default function CashierPage() {
             {loadingTx ? (
               <div className="tx-loading">Loading transactions...</div>
             ) : filteredTransactions.length === 0 ? (
-              <div className="tx-empty">No transactions recorded yet</div>
+              <div className="tx-empty" style={{ textAlign: 'center', padding: '2rem 1rem' }}>
+                <span style={{ fontSize: '2.5rem', display: 'block', marginBottom: '0.75rem' }}>
+                  📊
+                </span>
+                <span
+                  style={{
+                    display: 'block',
+                    fontSize: '1.05rem',
+                    fontWeight: 600,
+                    marginBottom: '0.5rem',
+                  }}
+                >
+                  No transactions recorded yet
+                </span>
+                <span style={{ color: 'var(--soft-white, #B0B3B8)', fontSize: '0.85rem' }}>
+                  Your buy-ins, cashouts, and chip transfers will appear here.
+                </span>
+              </div>
             ) : (
               <div className="tx-list">
                 {filteredTransactions.map((tx, idx) => (

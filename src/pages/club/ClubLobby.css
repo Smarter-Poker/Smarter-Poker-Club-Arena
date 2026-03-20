@@ -6,7 +6,7 @@
 .club-lobby {
   min-height: 100vh;
   background: linear-gradient(180deg, #0a0e1a 0%, #141828 50%, #0a0e1a 100%);
-  padding-bottom: calc(var(--bottom-nav-height) + var(--space-8));
+  padding-bottom: calc(var(--bottom-nav-height) + var(--space-8) + 40px);
   overflow-y: auto;
 }
 

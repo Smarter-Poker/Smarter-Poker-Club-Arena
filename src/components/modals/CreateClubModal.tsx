@@ -16,6 +16,7 @@ import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
 import { ClubCardGenerator } from '../../services/ClubCardGenerator';
 import { sanitizeInput } from '../../utils/sanitizeInput';
+import { masterBus } from '../../core/MasterBus';
 import haptic from '../../services/HapticService';
 import styles from './CreateClubModal.module.css';
 
@@ -325,6 +326,7 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
 
       onClose();
       onSuccess?.(clubData.id);
+      masterBus.emit('CLUB_JOINED', { clubId: clubData.id, action: 'club_created' });
       window.location.reload();
     } catch (err: any) {
       console.error('Failed to create club:', err);

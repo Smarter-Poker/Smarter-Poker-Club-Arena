@@ -1,39 +1,42 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  ClubCardGenerator — Template-Based Club Card Compositing
+ *  ClubCardGenerator — Template-Based Club/Union Card Compositing
  * ═══════════════════════════════════════════════════════════════════════════════
- * Generates club cards by:
- * 1. Loading the high-fidelity metallic frame template
- * 2. Fitting the user's logo/AI image into the center area
- * 3. Overlaying Club ID at top with white text
- * 4. Overlaying Club Name at bottom with white text
- * 5. Returns as data URL
+ * Generates club/union cards by:
+ * 1. Drawing a dark metallic background with CSS-like gradients
+ * 2. Drawing the ID plate zone at top
+ * 3. Fitting the user's logo/AI image into the center viewport
+ * 4. Drawing the name plate zone
+ * 5. Drawing the stats bar with type badge
+ * Returns as data URL
+ *
+ * Uses 3:4 aspect ratio to match the new ClubCardPanel layout.
  */
 
 interface CardGeneratorOptions {
   logoUrl: string;
   clubId: number;
   clubName: string;
+  entityType?: 'club' | 'union';
 }
 
-// Template image path (high-fidelity metallic frame)
-const FRAME_TEMPLATE_URL = `${import.meta.env.BASE_URL}images/club-card-frame-template.jpg`;
+// Card dimensions — 3:4 aspect ratio
+const CARD_WIDTH = 600;
+const CARD_HEIGHT = 800;
 
-// Card dimensions (matching actual frame template proportions 585:1024)
-const CARD_WIDTH = 585;
-const CARD_HEIGHT = 1024;
+// Zone heights (proportional to design)
+const ID_PLATE_HEIGHT = 64; // ~8%
+const STATS_BAR_HEIGHT = 224; // ~28%
+const NAME_PLATE_HEIGHT = 96; // ~12%
+const VIEWPORT_TOP = ID_PLATE_HEIGHT;
+const VIEWPORT_HEIGHT = CARD_HEIGHT - ID_PLATE_HEIGHT - NAME_PLATE_HEIGHT - STATS_BAR_HEIGHT; // ~52%
 
-// Logo/image area: recessed viewport inside the metal frame
-// Measured from club-card-frame-template.jpg:
-//   top: ~6%, left: ~7%, right: ~7%, bottom: ~75%
-const LOGO_X = Math.round(CARD_WIDTH * 0.07); // 42
-const LOGO_Y = Math.round(CARD_HEIGHT * 0.06); // 61
-const LOGO_WIDTH = CARD_WIDTH - LOGO_X * 2; // 520
-const LOGO_HEIGHT = Math.round(CARD_HEIGHT * 0.69); // 707 (75% - 6%)
-
-// Text positions
-const CLUB_ID_Y = Math.round(CARD_HEIGHT * 0.04); // Near top of frame
-const CLUB_NAME_Y = Math.round(CARD_HEIGHT * 0.7); // Below the image, before stats bar
+// Viewport insets
+const VIEWPORT_INSET = 8;
+const VIEWPORT_X = VIEWPORT_INSET;
+const VIEWPORT_Y = VIEWPORT_TOP;
+const VIEWPORT_W = CARD_WIDTH - VIEWPORT_INSET * 2;
+const VIEWPORT_H = VIEWPORT_HEIGHT;
 
 export interface CardGeneratorResult {
   dataUrl: string;
@@ -42,31 +45,36 @@ export interface CardGeneratorResult {
 
 export class ClubCardGenerator {
   /**
-   * Generate a complete club card with logo, ID, and name
-   * Returns the data URL and detected image format
+   * Generate a complete club/union card with logo, ID, and name
    */
   static async generateCard(options: CardGeneratorOptions): Promise<CardGeneratorResult> {
-    const { logoUrl, clubId, clubName } = options;
+    const { logoUrl, clubId, clubName, entityType = 'club' } = options;
+    const isUnion = entityType === 'union';
 
-    // Create canvas
     const canvas = document.createElement('canvas');
     canvas.width = CARD_WIDTH;
     canvas.height = CARD_HEIGHT;
     const ctx = canvas.getContext('2d')!;
 
-    // Load and draw the frame template as background
-    await this.drawFrameTemplate(ctx);
+    // Draw card background
+    this.drawBackground(ctx, isUnion);
 
-    // Draw logo/AI image in center area
+    // Draw Zone 1: ID Plate
+    this.drawIdPlate(ctx, clubId, isUnion);
+
+    // Draw Zone 2: Viewport background
+    this.drawViewportBg(ctx);
+
+    // Draw logo/image in viewport
     await this.drawLogo(ctx, logoUrl);
 
-    // Draw Club ID at top with white text
-    this.drawClubId(ctx, clubId);
+    // Draw Zone 3: Name Plate
+    this.drawNamePlate(ctx, clubName);
 
-    // Draw Club Name at bottom with white text
-    this.drawClubName(ctx, clubName);
+    // Draw Zone 4: Stats Bar placeholder (actual stats are CSS overlays)
+    this.drawStatsBar(ctx, isUnion);
 
-    // Prefer WebP (60-70% smaller) with PNG fallback for older browsers
+    // Prefer WebP
     const webpTest = canvas.toDataURL('image/webp');
     if (webpTest.startsWith('data:image/webp')) {
       return { dataUrl: webpTest, format: 'webp' };
@@ -75,37 +83,73 @@ export class ClubCardGenerator {
   }
 
   /**
-   * Load and draw the high-fidelity frame template
+   * Draw the card background with metallic gradient
    */
-  private static async drawFrameTemplate(ctx: CanvasRenderingContext2D): Promise<void> {
-    return new Promise((resolve) => {
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
+  private static drawBackground(ctx: CanvasRenderingContext2D, isUnion: boolean) {
+    const gradient = ctx.createLinearGradient(0, 0, 0, CARD_HEIGHT);
+    gradient.addColorStop(0, '#12192e');
+    gradient.addColorStop(0.4, '#0a1120');
+    gradient.addColorStop(1, '#0d1528');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, CARD_WIDTH, CARD_HEIGHT);
 
-      img.onload = () => {
-        // Draw template scaled to canvas size
-        ctx.drawImage(img, 0, 0, CARD_WIDTH, CARD_HEIGHT);
-        resolve();
-      };
-
-      img.onerror = () => {
-        // Fallback: draw dark background if template fails to load
-        console.error('[ClubCardGenerator] Failed to load frame template, using fallback');
-        const gradient = ctx.createLinearGradient(0, 0, 0, CARD_HEIGHT);
-        gradient.addColorStop(0, '#1a2744');
-        gradient.addColorStop(0.5, '#0d1b2a');
-        gradient.addColorStop(1, '#1a2744');
-        ctx.fillStyle = gradient;
-        ctx.fillRect(0, 0, CARD_WIDTH, CARD_HEIGHT);
-        resolve();
-      };
-
-      img.src = FRAME_TEMPLATE_URL;
-    });
+    // Subtle border
+    ctx.strokeStyle = isUnion ? 'rgba(218, 165, 32, 0.35)' : 'rgba(100, 130, 180, 0.25)';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(1.5, 1.5, CARD_WIDTH - 3, CARD_HEIGHT - 3);
   }
 
   /**
-   * Draw the user's logo/AI image, scaled to fit the center area
+   * Zone 1: ID Plate
+   */
+  private static drawIdPlate(ctx: CanvasRenderingContext2D, clubId: number, isUnion: boolean) {
+    // Background
+    const gradient = ctx.createLinearGradient(0, 0, 0, ID_PLATE_HEIGHT);
+    gradient.addColorStop(0, 'rgba(50, 65, 95, 0.7)');
+    gradient.addColorStop(1, 'rgba(30, 42, 68, 0.85)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, CARD_WIDTH, ID_PLATE_HEIGHT);
+
+    // Bottom border
+    ctx.strokeStyle = 'rgba(100, 140, 200, 0.15)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, ID_PLATE_HEIGHT);
+    ctx.lineTo(CARD_WIDTH, ID_PLATE_HEIGHT);
+    ctx.stroke();
+
+    // Text
+    const label = isUnion ? 'UNION ID' : 'CLUB ID';
+    ctx.font = 'bold 22px "Orbitron", "Segoe UI", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
+    ctx.shadowBlur = 4;
+    ctx.shadowOffsetY = 1;
+    ctx.fillStyle = isUnion ? '#f0d070' : '#d0d8e8';
+    ctx.fillText(`${label}: ${clubId}`, CARD_WIDTH / 2, ID_PLATE_HEIGHT / 2);
+    ctx.shadowBlur = 0;
+    ctx.shadowOffsetY = 0;
+  }
+
+  /**
+   * Zone 2: Viewport background (recessed dark area)
+   */
+  private static drawViewportBg(ctx: CanvasRenderingContext2D) {
+    const gradient = ctx.createLinearGradient(0, VIEWPORT_Y, 0, VIEWPORT_Y + VIEWPORT_H);
+    gradient.addColorStop(0, 'rgba(5, 10, 22, 0.95)');
+    gradient.addColorStop(1, 'rgba(8, 16, 32, 0.98)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(VIEWPORT_X, VIEWPORT_Y, VIEWPORT_W, VIEWPORT_H);
+
+    // Inner border
+    ctx.strokeStyle = 'rgba(60, 80, 120, 0.2)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(VIEWPORT_X, VIEWPORT_Y, VIEWPORT_W, VIEWPORT_H);
+  }
+
+  /**
+   * Draw logo/image in the viewport
    */
   private static async drawLogo(ctx: CanvasRenderingContext2D, logoUrl: string): Promise<void> {
     return new Promise<void>((resolve) => {
@@ -113,22 +157,18 @@ export class ClubCardGenerator {
       img.crossOrigin = 'anonymous';
 
       img.onload = () => {
-        // Cover-fill: scale to fill the entire logo area (matches Shark Club standard)
-        const scale = Math.max(LOGO_WIDTH / img.width, LOGO_HEIGHT / img.height);
+        // Cover-fill the viewport area
+        const scale = Math.max(VIEWPORT_W / img.width, VIEWPORT_H / img.height);
         const scaledWidth = img.width * scale;
         const scaledHeight = img.height * scale;
+        const x = VIEWPORT_X + (VIEWPORT_W - scaledWidth) / 2;
+        const y = VIEWPORT_Y + (VIEWPORT_H - scaledHeight) / 2;
 
-        // Center the image over the logo area (excess is clipped by the frame)
-        const x = LOGO_X + (LOGO_WIDTH - scaledWidth) / 2;
-        const y = LOGO_Y + (LOGO_HEIGHT - scaledHeight) / 2;
-
-        // Clip to the logo area bounds so the image doesn't bleed over the frame
+        // Clip to viewport
         ctx.save();
         ctx.beginPath();
-        ctx.rect(LOGO_X, LOGO_Y, LOGO_WIDTH, LOGO_HEIGHT);
+        ctx.rect(VIEWPORT_X, VIEWPORT_Y, VIEWPORT_W, VIEWPORT_H);
         ctx.clip();
-
-        // Draw the image
         ctx.drawImage(img, x, y, scaledWidth, scaledHeight);
         ctx.restore();
 
@@ -145,34 +185,27 @@ export class ClubCardGenerator {
   }
 
   /**
-   * Draw Club ID text at top with white letters
+   * Zone 3: Name Plate
    */
-  private static drawClubId(ctx: CanvasRenderingContext2D, clubId: number) {
-    ctx.font = 'bold 26px "Orbitron", "Segoe UI", sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
+  private static drawNamePlate(ctx: CanvasRenderingContext2D, clubName: string) {
+    const nameY = VIEWPORT_Y + VIEWPORT_H;
 
-    // Text shadow for readability on dark/busy background
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
-    ctx.shadowBlur = 4;
-    ctx.shadowOffsetX = 2;
-    ctx.shadowOffsetY = 2;
+    // Background
+    const gradient = ctx.createLinearGradient(0, nameY, 0, nameY + NAME_PLATE_HEIGHT);
+    gradient.addColorStop(0, 'rgba(18, 28, 50, 0.9)');
+    gradient.addColorStop(1, 'rgba(12, 20, 38, 0.95)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, nameY, CARD_WIDTH, NAME_PLATE_HEIGHT);
 
-    // White text
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText(`CLUB ID: ${clubId}`, CARD_WIDTH / 2, CLUB_ID_Y);
+    // Top border
+    ctx.strokeStyle = 'rgba(100, 140, 200, 0.1)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, nameY);
+    ctx.lineTo(CARD_WIDTH, nameY);
+    ctx.stroke();
 
-    // Reset shadow
-    ctx.shadowBlur = 0;
-    ctx.shadowOffsetX = 0;
-    ctx.shadowOffsetY = 0;
-  }
-
-  /**
-   * Draw Club Name text at bottom with white letters
-   */
-  private static drawClubName(ctx: CanvasRenderingContext2D, clubName: string) {
-    // Calculate font size based on name length
+    // Text — auto-size based on name length
     let fontSize = 32;
     if (clubName.length > 12) fontSize = 28;
     if (clubName.length > 18) fontSize = 24;
@@ -181,20 +214,69 @@ export class ClubCardGenerator {
     ctx.font = `bold ${fontSize}px "Orbitron", "Segoe UI", sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-
-    // Text shadow for readability
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
-    ctx.shadowBlur = 4;
-    ctx.shadowOffsetX = 2;
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
+    ctx.shadowBlur = 6;
     ctx.shadowOffsetY = 2;
-
-    // White text
     ctx.fillStyle = '#ffffff';
-    ctx.fillText(clubName, CARD_WIDTH / 2, CLUB_NAME_Y);
-
-    // Reset shadow
+    ctx.fillText(clubName, CARD_WIDTH / 2, nameY + NAME_PLATE_HEIGHT / 2);
     ctx.shadowBlur = 0;
-    ctx.shadowOffsetX = 0;
     ctx.shadowOffsetY = 0;
+  }
+
+  /**
+   * Zone 4: Stats Bar (dark background — actual values are CSS overlays)
+   */
+  private static drawStatsBar(ctx: CanvasRenderingContext2D, isUnion: boolean) {
+    const statsY = CARD_HEIGHT - STATS_BAR_HEIGHT;
+
+    // Background
+    const gradient = ctx.createLinearGradient(0, statsY, 0, CARD_HEIGHT);
+    gradient.addColorStop(0, 'rgba(10, 18, 32, 0.95)');
+    gradient.addColorStop(1, 'rgba(8, 14, 28, 1)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, statsY, CARD_WIDTH, STATS_BAR_HEIGHT);
+
+    // Top border line
+    ctx.strokeStyle = 'rgba(100, 140, 200, 0.12)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, statsY);
+    ctx.lineTo(CARD_WIDTH, statsY);
+    ctx.stroke();
+
+    // Type badge
+    const badgeText = isUnion ? '🤝 UNION' : '♠ CLUB';
+    const badgeY = statsY + 20;
+    ctx.font = 'bold 14px "Inter", "Roboto", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    // Badge pill background
+    const badgeWidth = ctx.measureText(badgeText).width + 24;
+    const badgeX = (CARD_WIDTH - badgeWidth) / 2;
+    ctx.fillStyle = isUnion ? 'rgba(218, 165, 32, 0.12)' : 'rgba(0, 212, 255, 0.1)';
+    ctx.beginPath();
+    ctx.roundRect(badgeX, badgeY - 12, badgeWidth, 24, 12);
+    ctx.fill();
+    ctx.strokeStyle = isUnion ? 'rgba(218, 165, 32, 0.3)' : 'rgba(0, 212, 255, 0.25)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // Badge text
+    ctx.fillStyle = isUnion ? '#f0d070' : '#a5eff0';
+    ctx.fillText(badgeText, CARD_WIDTH / 2, badgeY);
+
+    // Stat labels
+    const labelColor = isUnion ? '#e8d090' : '#a5eff0';
+    const labelY = statsY + 60;
+    ctx.font = 'bold 12px "Inter", "Roboto", sans-serif';
+    ctx.fillStyle = labelColor;
+
+    ctx.textAlign = 'center';
+    ctx.fillText('TOTAL', CARD_WIDTH * 0.2, labelY);
+    ctx.fillText('MEMBERS', CARD_WIDTH * 0.2, labelY + 14);
+    ctx.fillText('CLUB LEVEL', CARD_WIDTH * 0.5, labelY + 7);
+    ctx.fillText('ACTIVE', CARD_WIDTH * 0.8, labelY);
+    ctx.fillText('PLAYERS', CARD_WIDTH * 0.8, labelY + 14);
   }
 }

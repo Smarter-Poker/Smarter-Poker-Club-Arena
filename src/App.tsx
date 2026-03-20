@@ -34,6 +34,7 @@ import ConnectionStatusBar from './components/ConnectionStatusBar';
 import BusToastBridge from './components/common/BusToastBridge';
 import MilestoneToast from './components/common/MilestoneToast';
 import { bootServices, shutdownServices } from './services/ServiceBootstrap';
+import { preloadCriticalChunks } from './utils/ChunkPreloader';
 import { GlobalBalanceSync } from './core/useGlobalBalanceSync';
 import { supabaseConnectionWatchdog } from './utils/supabaseConnectionWatchdog';
 import FloatingHamburger from './components/navigation/FloatingHamburger';

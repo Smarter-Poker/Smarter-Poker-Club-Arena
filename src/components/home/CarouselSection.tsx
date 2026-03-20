@@ -31,6 +31,7 @@ export interface UserClub {
   active_tables?: number;
   is_owner?: boolean;
   last_active_at?: string;
+  entity_type?: 'club' | 'union';
   [key: string]: unknown;
 }
 
@@ -257,6 +258,7 @@ export default function CarouselSection({
               clubId={club.club_id}
               cardImageUrl={club.card_image_url}
               logoUrl={club.logo_url}
+              entityType={club.entity_type || 'club'}
             />
           </PageErrorBoundary>
         </Suspense>

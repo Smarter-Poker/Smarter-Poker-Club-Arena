@@ -1,13 +1,12 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- * ClubCardPanel — Reusable club card with metal frame + stats overlay
+ * ClubCardPanel — Premium four-zone club/union card
  * ═══════════════════════════════════════════════════════════════════════════════
- * Mirrors ClubStatsPanel (Shark Club) exactly:
- *  - Frame template as background (WebP with JPG fallback)
- *  - Logo sits inside the recessed viewport
- *  - Club ID + Club Name overlays at top/bottom (matching Shark Club baked text)
- *  - Dark stats bar div covers the template's white labels
- *  - Cyan labels + glowing values overlay at 79.5% (matching Shark Club)
+ * Structured flexbox layout with dedicated zones:
+ *   1. ID Plate   — "CLUB ID: XXXXX" or "UNION ID: XXXXX"
+ *   2. Viewport   — Club logo / baked card image
+ *   3. Name Plate — Club or union name
+ *   4. Stats Bar  — Type badge + Total Members / Club Level / Active Players
  */
 
 import React, { useState } from 'react';
@@ -21,6 +20,7 @@ interface ClubCardPanelProps {
   clubId?: number | string;
   cardImageUrl?: string | null;
   logoUrl?: string | null;
+  entityType?: 'club' | 'union';
 }
 
 export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
@@ -31,6 +31,7 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
   clubId,
   cardImageUrl,
   logoUrl,
+  entityType = 'club',
 }) => {
   const [cardFailed, setCardFailed] = useState(false);
   const [logoFailed, setLogoFailed] = useState(false);
@@ -38,95 +39,99 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
 
   const useBakedCard = cardImageUrl && !cardFailed;
   const showLogo = !useBakedCard && logoUrl && !logoFailed;
-  const basePath = import.meta.env.BASE_URL || '/';
+
+  const isUnion = entityType === 'union';
+  const idLabel = isUnion ? 'UNION ID' : 'CLUB ID';
+  const typeBadgeLabel = isUnion ? '🤝 UNION' : '♠ CLUB';
 
   return (
-    <div className="club-card-panel">
+    <div className={`club-card-panel ${isUnion ? 'club-card-panel--union' : ''}`}>
       {/* Skeleton shimmer — shown until primary image loads */}
       {!imgLoaded && <div className="club-card-skeleton" />}
 
-      {useBakedCard ? (
-        /* ── MODE 1: Baked composite card ──────────────────────────────── */
-        <img
-          src={cardImageUrl}
-          alt={`${clubName} Card`}
-          className="club-card-panel-bg"
-          loading="lazy"
-          onLoad={() => setImgLoaded(true)}
-          onError={() => {
-            setCardFailed(true);
-            /* Don't set imgLoaded here — let the fallback template's
-               onLoad handle it so the skeleton stays visible during
-               the transition instead of a dark flash */
-          }}
-        />
-      ) : (
-        /* ── MODE 2: Fallback — frame template + logo overlay ──────── */
-        <>
-          <picture>
-            <source srcSet={`${basePath}images/club-card-frame-template.webp`} type="image/webp" />
-            <img
-              src={`${basePath}images/club-card-frame-template.jpg`}
-              alt={`${clubName} Card`}
-              className="club-card-panel-bg club-card-frame-bg"
-              loading="lazy"
-              onLoad={() => setImgLoaded(true)}
-              onError={() => setImgLoaded(true) /* prevent infinite shimmer */}
-            />
-          </picture>
+      {/* ── ZONE 1: ID Plate ──────────────────────────────────────────────── */}
+      <div className="club-card-id-plate">
+        {clubId != null && clubId !== '' ? (
+          <span className="club-card-id-text">
+            {idLabel}: {clubId}
+          </span>
+        ) : (
+          <span className="club-card-id-text">{idLabel}</span>
+        )}
+      </div>
 
-          {/* Club ID text at top — matches Shark Club's baked "CLUB ID: 25450" */}
-          {clubId != null && clubId !== '' && (
-            <div className="club-card-id-overlay">CLUB ID: {clubId}</div>
-          )}
-
-          <div className="club-card-logo-container">
-            {showLogo ? (
-              <img
-                src={logoUrl}
-                alt=""
-                className="club-card-logo-img"
-                loading="lazy"
-                onError={() => setLogoFailed(true)}
-              />
-            ) : (
-              <div className="club-card-logo-fallback">♠</div>
-            )}
+      {/* ── ZONE 2: Image Viewport ────────────────────────────────────────── */}
+      <div className="club-card-viewport">
+        {useBakedCard ? (
+          <img
+            src={cardImageUrl}
+            alt={`${clubName} Card`}
+            className="club-card-viewport-img"
+            loading="lazy"
+            onLoad={() => setImgLoaded(true)}
+            onError={() => {
+              setCardFailed(true);
+            }}
+          />
+        ) : showLogo ? (
+          <img
+            src={logoUrl}
+            alt={`${clubName} Logo`}
+            className="club-card-viewport-logo"
+            loading="lazy"
+            onLoad={() => setImgLoaded(true)}
+            onError={() => {
+              setLogoFailed(true);
+              setImgLoaded(true);
+            }}
+          />
+        ) : (
+          <div
+            className="club-card-viewport-fallback"
+            ref={() => {
+              if (!imgLoaded) setImgLoaded(true);
+            }}
+          >
+            <span className="club-card-fallback-icon">{isUnion ? '🤝' : '♠'}</span>
           </div>
+        )}
+      </div>
 
-          {/* Club name at bottom — matches Shark Club's baked "SHARK CLUB" */}
-          <div className="club-card-name-overlay">{clubName}</div>
-        </>
-      )}
+      {/* ── ZONE 3: Name Plate ────────────────────────────────────────────── */}
+      <div className="club-card-name-plate">
+        <span className="club-card-name-text">{clubName}</span>
+      </div>
 
-      {/* Dark stats bar — covers the template's white baked-in labels */}
-      <div className="club-card-stats-bar-bg" />
-
-      {/* Stats overlay — EXACT COPY of ClubStatsPanel layout */}
-      <div className="club-card-stats-overlay">
-        <div className="club-card-stats-group club-card-members-group">
-          <span className="club-card-stat-label">
-            TOTAL
-            <br />
-            MEMBERS
-          </span>
-          <span className="club-card-stat-value">{Math.max(1, totalMembers).toLocaleString()}</span>
+      {/* ── ZONE 4: Stats Bar ─────────────────────────────────────────────── */}
+      <div className="club-card-stats-bar">
+        <div className={`club-card-type-badge ${isUnion ? 'club-card-type-badge--union' : ''}`}>
+          {typeBadgeLabel}
         </div>
-
-        <div className="club-card-stats-group club-card-level-group">
-          <span className="club-card-stat-label">CLUB LEVEL</span>
-          <span className="club-card-stat-value">{Math.max(1, clubLevel)}</span>
-        </div>
-
-        <div
-          className={`club-card-stats-group club-card-active-group${activePlayers > 0 ? ' club-card-active-pulse' : ''}`}
-        >
-          <span className="club-card-stat-label">
-            ACTIVE
-            <br />
-            PLAYERS
-          </span>
-          <span className="club-card-stat-value">{activePlayers?.toLocaleString() || '0'}</span>
+        <div className="club-card-stats-row">
+          <div className="club-card-stat">
+            <span className="club-card-stat-label">
+              TOTAL
+              <br />
+              MEMBERS
+            </span>
+            <span className="club-card-stat-value">
+              {Math.max(1, totalMembers).toLocaleString()}
+            </span>
+          </div>
+          <div className="club-card-stat">
+            <span className="club-card-stat-label">CLUB LEVEL</span>
+            <span className="club-card-stat-value club-card-stat-value--level">
+              {Math.max(1, clubLevel)}
+            </span>
+          </div>
+          <div className={`club-card-stat ${activePlayers > 0 ? 'club-card-stat--active' : ''}`}>
+            <span className="club-card-stat-label">
+              ACTIVE
+              <br />
+              PLAYERS
+            </span>
+            <span className="club-card-stat-value">{activePlayers?.toLocaleString() || '0'}</span>
+          </div>
         </div>
       </div>
     </div>

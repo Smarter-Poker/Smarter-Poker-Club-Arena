@@ -303,7 +303,7 @@
 
 .featuredCard {
   position: relative;
-  width: 280px;
+  width: 300px;
   cursor: pointer;
   border-radius: 12px;
   overflow: hidden;
@@ -315,8 +315,8 @@
 }
 
 .cardSkeleton {
-  width: 280px;
-  height: 475px;
+  width: 300px;
+  height: 400px;
   background: linear-gradient(
     90deg,
     rgba(10, 20, 40, 0.8) 0%,
@@ -600,7 +600,7 @@
 
 .carouselCardFeatured {
   flex: 0 0 auto;
-  width: 280px;
+  width: 300px;
   cursor: pointer;
   position: relative;
   scroll-snap-align: center;

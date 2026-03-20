@@ -26,6 +26,7 @@ interface BackfillTarget {
   club_id: number;
   name: string;
   logo_url: string;
+  entityType?: 'club' | 'union';
 }
 
 /**
@@ -52,6 +53,7 @@ export async function backfillClubCards(clubs: BackfillTarget[]): Promise<void> 
         logoUrl: club.logo_url,
         clubId: club.club_id,
         clubName: club.name.toUpperCase(),
+        entityType: club.entityType || 'club',
       });
 
       // 2. Convert data URL to blob

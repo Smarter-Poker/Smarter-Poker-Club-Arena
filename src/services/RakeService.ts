@@ -731,6 +731,27 @@ export const RakeService = {
             3
           );
 
+          // Log rake commission to chip_ledger for audit trail
+          supabase
+            .from('chip_ledger')
+            .insert({
+              performed_by: agentId,
+              from_type: 'player_wallet',
+              from_label: 'Table Rake Pool',
+              to_type: 'agent_wallet',
+              to_entity_id: agentId,
+              to_label: `Agent ${agentId.slice(0, 8)} commission`,
+              amount: rakeCredit,
+              category: 'commission',
+              description: `Rake commission: ${rakeCredit.toFixed(2)} chips from hand ${params.handId?.slice(0, 8) || 'unknown'}`,
+              table_id: params.tableId || undefined,
+              hand_id: params.handId || undefined,
+              club_id: params.clubId || undefined,
+            })
+            .then(({ error: le }) => {
+              if (le) console.warn('[RakeService] chip_ledger write failed:', le.message);
+            });
+
           // Fallback: read-modify-write for agent lifetime_rake_generated
           // NOTE: agents table has lifetime_rake_generated, NOT rake_generated
           if (rpcError) {

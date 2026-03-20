@@ -1103,16 +1103,28 @@ export default function UnionDashboardPage() {
                           );
 
                         // 2. Credit union chip_balance via union_wallets or unions table
-                        const currentBalance = wallets?.chip_balance || 0;
+                        // Read fresh balance from DB to prevent TOCTOU race condition
+                        const { data: freshWallet } = await supabase
+                          .from('union_wallets')
+                          .select('chip_balance')
+                          .eq('union_id', unionId)
+                          .maybeSingle();
+                        const freshBalance = Number(freshWallet?.chip_balance) || 0;
                         const { error: uwErr } = await supabase
                           .from('union_wallets')
-                          .update({ chip_balance: currentBalance + amt })
+                          .update({ chip_balance: freshBalance + amt })
                           .eq('union_id', unionId);
                         if (uwErr) {
                           // Fallback: try unions table directly
+                          const { data: freshUnion } = await supabase
+                            .from('unions')
+                            .select('chip_balance')
+                            .eq('id', unionId)
+                            .maybeSingle();
+                          const freshUnionBal = Number(freshUnion?.chip_balance) || 0;
                           const { error: uErr } = await supabase
                             .from('unions')
-                            .update({ chip_balance: currentBalance + amt })
+                            .update({ chip_balance: freshUnionBal + amt })
                             .eq('id', unionId);
                           if (uErr) throw new Error('Failed to credit union bank: ' + uErr.message);
                         }
@@ -1231,16 +1243,26 @@ export default function UnionDashboardPage() {
                             .update({ chip_treasury: (club.chip_treasury || 0) - amt })
                             .eq('id', targetId);
 
-                          // Credit union bank
-                          const newBalance = (wallets?.chip_balance ?? 0) + amt;
+                          // Credit union bank — read fresh balance from DB to prevent TOCTOU race
+                          const { data: freshUW } = await supabase
+                            .from('union_wallets')
+                            .select('chip_balance')
+                            .eq('union_id', unionId)
+                            .maybeSingle();
+                          const freshBal = Number(freshUW?.chip_balance) || 0;
                           const { error: uwErr2 } = await supabase
                             .from('union_wallets')
-                            .update({ chip_balance: newBalance })
+                            .update({ chip_balance: freshBal + amt })
                             .eq('union_id', unionId);
                           if (uwErr2) {
+                            const { data: freshU } = await supabase
+                              .from('unions')
+                              .select('chip_balance')
+                              .eq('id', unionId)
+                              .maybeSingle();
                             await supabase
                               .from('unions')
-                              .update({ chip_balance: newBalance })
+                              .update({ chip_balance: (Number(freshU?.chip_balance) || 0) + amt })
                               .eq('id', unionId);
                           }
 

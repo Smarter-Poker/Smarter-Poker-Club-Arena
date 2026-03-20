@@ -276,7 +276,7 @@ export default function PlayerStatsPage() {
       unsubCredit();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [targetUserId]);
 
   const loadStats = async (getIsMounted?: () => boolean) => {
     if (!targetUserId) return;

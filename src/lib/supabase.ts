@@ -50,7 +50,7 @@ export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '', {
  * Timeout-protected getUser() wrapper with getSession() fallback.
  * Same-origin auth — shared Supabase session via localStorage.
  */
-export async function getAuthUser(timeoutMs = 6000) {
+export async function getAuthUser(timeoutMs = 10000) {
   try {
     const userPromise = supabase.auth.getUser();
     const timeoutPromise = new Promise<never>((_, reject) =>

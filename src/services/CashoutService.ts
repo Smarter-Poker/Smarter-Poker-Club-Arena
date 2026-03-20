@@ -217,6 +217,28 @@ class CashoutServiceClass {
     const cashout = await this.getCashout(cashoutId);
     masterBus.emit('CASHOUT_APPROVED', { cashoutId, clubId: cashout?.clubId || '' });
 
+    // Log cashout approval to chip_ledger
+    if (cashout) {
+      supabase
+        .from('chip_ledger')
+        .insert({
+          performed_by: agentId,
+          from_type: 'player_wallet',
+          from_entity_id: cashout.playerId,
+          from_label: 'Player cashout (escrow)',
+          to_type: 'agent_wallet',
+          to_entity_id: agentId,
+          to_label: 'Agent approved cashout',
+          amount: cashout.amount || 0,
+          category: 'cashout',
+          description: `Cashout #${cashoutId.slice(0, 8)} approved by agent`,
+          club_id: cashout.clubId || undefined,
+        })
+        .then(({ error: le }) => {
+          if (le) console.warn('[Cashout] chip_ledger write failed:', le.message);
+        });
+    }
+
     return data === true;
   }
 

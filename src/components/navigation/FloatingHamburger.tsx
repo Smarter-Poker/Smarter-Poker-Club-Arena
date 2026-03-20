@@ -43,6 +43,7 @@ export default function FloatingHamburger() {
   return (
     <button
       className={`${styles.floatingButton} ${menuIsOpen ? styles.hidden : ''}`}
+      style={menuIsOpen ? { display: 'none' } : undefined}
       onClick={handleClick}
       aria-label="Open Menu"
       id="floating-hamburger-btn"

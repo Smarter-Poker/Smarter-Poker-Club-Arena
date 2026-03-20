@@ -371,6 +371,25 @@ export const SettlementService = {
         // settlement.agent_id is agents.id PK — frontend matches on auth.users.id
         const agentUserId = (settlement as any).agents?.user_id || settlement.agent_id;
 
+        // Log settlement payout to chip_ledger
+        supabase
+          .from('chip_ledger')
+          .insert({
+            performed_by: agentUserId,
+            from_type: 'club_treasury',
+            from_label: 'Settlement Payout',
+            to_type: 'agent_wallet',
+            to_entity_id: agentUserId,
+            to_label: `Agent ${agentUserId.slice(0, 8)} settlement`,
+            amount: settlement.net_settlement,
+            category: 'settlement',
+            description: `Weekly settlement payout: ${settlement.net_settlement.toLocaleString()} chips`,
+            club_id: settlement.club_id || undefined,
+          })
+          .then(({ error: le }) => {
+            if (le) console.warn('[Settlement] chip_ledger write failed:', le.message);
+          });
+
         // Emit bus event so agent sees their settlement in real-time
         masterBus.emit('BALANCE_UPDATED', {
           source: 'agent_settlement_payout',

@@ -65,7 +65,7 @@ class PushNotificationServiceClass {
    */
   async init(): Promise<void> {
     if (this.initialized || !ONESIGNAL_APP_ID) {
-      console.error('[PushService] OneSignal not configured or already initialized');
+      console.warn('[PushService] OneSignal not configured or already initialized');
       return;
     }
 

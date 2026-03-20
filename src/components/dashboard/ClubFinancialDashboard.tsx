@@ -58,6 +58,7 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
   const [mintAmount, setMintAmount] = useState(1000);
   const [loading, setLoading] = useState(false);
   const [revenueData, setRevenueData] = useState(getEmptyRevenueData());
+  const [activeTableCount, setActiveTableCount] = useState(0);
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
 
   // Commission State
@@ -84,7 +85,7 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
       value: revenueData.reduce((sum, d) => sum + d.rake, 0).toLocaleString(),
       color: 'orange',
     },
-    { label: 'Active Tables', value: '12', color: 'purple' },
+    { label: 'Active Tables', value: activeTableCount.toLocaleString(), color: 'purple' },
   ];
 
   useEffect(() => {
@@ -97,11 +98,13 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
   useEffect(() => {
     fetchDiamondBalance();
     fetchRevenueData();
+    fetchActiveTableCount();
 
     // Refresh periodically
     const interval = setInterval(() => {
       fetchDiamondBalance();
       fetchRevenueData();
+      fetchActiveTableCount();
     }, 30000);
 
     const channelKey = `club_wallet:${clubId}`;
@@ -217,6 +220,20 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
     }
   };
 
+  const fetchActiveTableCount = async () => {
+    try {
+      const resolvedId = await resolveClubUUID(clubId);
+      const { count, error } = await supabase
+        .from('tables')
+        .select('id', { count: 'exact', head: true })
+        .eq('club_id', resolvedId)
+        .eq('status', 'active');
+      if (!error && count !== null) setActiveTableCount(count);
+    } catch {
+      // Non-critical — keep existing count
+    }
+  };
+
   const diamondCost = Math.ceil((mintAmount / 100) * 38);
   const totalWeeklyRevenue = revenueData.reduce((sum, d) => sum + d.revenue, 0);
   const totalWeeklyRake = revenueData.reduce((sum, d) => sum + d.rake, 0);
@@ -273,7 +290,9 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
           }}
         >
           <div className="text-gray-400 text-xs uppercase">Active Tables</div>
-          <div className="text-2xl font-mono text-purple-400">12</div>
+          <div className="text-2xl font-mono text-purple-400">
+            {activeTableCount.toLocaleString()}
+          </div>
         </div>
       </div>
 

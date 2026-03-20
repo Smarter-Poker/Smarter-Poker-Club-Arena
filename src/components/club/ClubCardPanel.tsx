@@ -47,20 +47,19 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
 
       {useBakedCard ? (
         /* ── MODE 1: Baked composite card ──────────────────────────────── */
-        <picture>
-          <source srcSet={cardImageUrl.replace(/\.jpg$/, '.webp')} type="image/webp" />
-          <img
-            src={cardImageUrl}
-            alt={`${clubName} Card`}
-            className="club-card-panel-bg"
-            loading="lazy"
-            onLoad={() => setImgLoaded(true)}
-            onError={() => {
-              setCardFailed(true);
-              setImgLoaded(true);
-            }}
-          />
-        </picture>
+        <img
+          src={cardImageUrl}
+          alt={`${clubName} Card`}
+          className="club-card-panel-bg"
+          loading="lazy"
+          onLoad={() => setImgLoaded(true)}
+          onError={() => {
+            setCardFailed(true);
+            /* Don't set imgLoaded here — let the fallback template's
+               onLoad handle it so the skeleton stays visible during
+               the transition instead of a dark flash */
+          }}
+        />
       ) : (
         /* ── MODE 2: Fallback — frame template + logo overlay ──────── */
         <>
@@ -72,6 +71,7 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
               className="club-card-panel-bg club-card-frame-bg"
               loading="lazy"
               onLoad={() => setImgLoaded(true)}
+              onError={() => setImgLoaded(true) /* prevent infinite shimmer */}
             />
           </picture>
 

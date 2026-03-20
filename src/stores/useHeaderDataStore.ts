@@ -37,6 +37,7 @@ interface HeaderDataState {
   _loaded: boolean;
   _userId: string | null;
   _channelKey: string | null;
+  _busUnsubscribers: Array<() => void>;
 
   // Actions
   loadOnce: (userId: string) => void;
@@ -71,6 +72,7 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
   _loaded: false,
   _userId: null,
   _channelKey: null,
+  _busUnsubscribers: [],
 
   setAvatarUrl: (url) => set({ avatarUrl: url }),
 
@@ -194,8 +196,8 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
       });
 
     // ── Bus listeners for in-app actions (instant, no realtime delay) ──
-    // When user marks notifications as read in NotificationsPage/NotificationCenter
-    masterBus.subscribe('NOTIFICATION_READ', (event) => {
+    // CRITICAL: Store unsubscribe functions to prevent zombie listeners on logout/login
+    const unsubNotifRead = masterBus.subscribe('NOTIFICATION_READ', (event) => {
       if (event.payload?.allRead) {
         get().setNotificationCount(0);
       } else {
@@ -204,20 +206,30 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
       }
     });
 
-    // When MessagingService marks a conversation as read
-    masterBus.subscribe('UNREAD_DM_COUNT_CHANGED', (event) => {
+    const unsubDmCount = masterBus.subscribe('UNREAD_DM_COUNT_CHANGED', (event) => {
       if (event.payload?.count !== undefined && typeof event.payload.count === 'number') {
         set({ unreadMessages: event.payload.count });
         persistCount('ca-msg-count', event.payload.count);
       }
     });
+
+    set({ _busUnsubscribers: [unsubNotifRead, unsubDmCount] });
   },
 
   teardown: () => {
     const state = get();
+    // Remove realtime channel
     if (state._channelKey) {
       masterBus.removeRegisteredChannel(state._channelKey);
     }
+    // Unsubscribe bus listeners to prevent zombie handlers
+    state._busUnsubscribers.forEach((unsub) => {
+      try {
+        unsub();
+      } catch {
+        /* silent */
+      }
+    });
     set({
       avatarUrl: null,
       notificationCount: 0,
@@ -225,6 +237,7 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
       _loaded: false,
       _userId: null,
       _channelKey: null,
+      _busUnsubscribers: [],
     });
   },
 }));

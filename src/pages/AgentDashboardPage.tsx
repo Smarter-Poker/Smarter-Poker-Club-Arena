@@ -1471,7 +1471,11 @@ export default function AgentDashboardPage() {
           <h3 style={{ margin: '0 0 12px', fontSize: '14px', fontWeight: 700, color: '#e0e0e0' }}>
             Transaction History
           </h3>
-          <TransactionLedgerView userId={user?.id} clubId={clubId || undefined} limit={20} />
+          <TransactionLedgerView
+            userId={user?.id || undefined}
+            clubId={clubId || undefined}
+            limit={20}
+          />
         </div>
       </div>
     </div>

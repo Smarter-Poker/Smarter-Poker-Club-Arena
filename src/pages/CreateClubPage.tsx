@@ -467,6 +467,12 @@ export default function CreateClubPage() {
   const handleCreate = async () => {
     if (!validateStep()) return;
 
+    // ── Legal agreement guard (hardened — UI disables button, this is the failsafe) ──
+    if (!hasAgreed) {
+      setError('You must accept the Club Promotion Rules to create a club.');
+      return;
+    }
+
     // ── Auth guard ──
     if (!user?.id) {
       setError('You must be logged in to create a club.');

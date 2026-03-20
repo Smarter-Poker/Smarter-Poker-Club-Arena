@@ -766,11 +766,13 @@ function HomePageInner() {
           else toast.info('Join a club first to access the cashier');
           break;
         }
-        case '5':
+        case '5': {
           haptic.light();
           PremiumSFX.navigate();
-          navigate('/marketplace'); // Marketplace
+          const mktClub = localStorage.getItem(STORAGE_KEYS.LAST_CLUB);
+          navigate(mktClub ? `/marketplace?club=${mktClub}` : '/marketplace');
           break;
+        }
         case 'j':
           setShowJoinModal(true);
           break;
@@ -1067,7 +1069,8 @@ function HomePageInner() {
       Marketplace: () => {
         haptic.light();
         PremiumSFX.navigate();
-        navigate('/marketplace');
+        const mktClub = localStorage.getItem(STORAGE_KEYS.LAST_CLUB);
+        navigate(mktClub ? `/marketplace?club=${mktClub}` : '/marketplace');
       },
     }),
     [navigate, userClubs, toast]

@@ -8,17 +8,17 @@
  * this component with ssr: false, rendering the Club Arena SPA client-side
  * within the Next.js application.
  *
- * Boot sequence (same as main.tsx, minus iframe code):
+ * Boot sequence (same as main.tsx — INSTANT RENDER, no spinner):
  *  1. Sentry + WebVitals (synchronous)
  *  2. AntiGravity env-var check (synchronous)
  *  3. MasterBus init (synchronous)
  *  4. IdentityDNA auth init (async, non-blocking)
- *  5. React render with BrowserRouter
+ *  5. React render IMMEDIATELY — don't wait for async boot
  *
  * Auth: Same-origin Supabase session via shared localStorage key.
  */
 
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import './styles/club-engine.css';
@@ -34,82 +34,54 @@ import { ErrorBoundary } from './components/common';
 // Prevent double-init when React strict mode re-runs effects
 let booted = false;
 
+/**
+ * Run synchronous boot phases OUTSIDE of React render cycle.
+ * This runs once at module load time — before the component even mounts.
+ * IdentityDNA's async getSession() continues in background.
+ */
+function runBootOnce(): { ok: boolean; status: any } {
+  if (booted) return { ok: true, status: null };
+
+  // Global safety net (same as main.tsx)
+  window.addEventListener('unhandledrejection', (event) => {
+    console.error('[GLOBAL] Unhandled promise rejection caught:', event.reason);
+    event.preventDefault();
+  });
+
+  // Phase 0: Sentry + WebVitals
+  initSentry();
+  initWebVitals();
+
+  // Phase 1: AntiGravity env check
+  const bootStatus = initAntiGravity();
+
+  if (!bootStatus.antigravityOk) {
+    return { ok: false, status: bootStatus };
+  }
+
+  // Phase 2: MasterBus (synchronous)
+  initMasterBus();
+
+  // Phase 3: IdentityDNA (async, non-blocking — fire and forget)
+  initIdentityDNA().catch((err) => {
+    console.error('[ClubArenaRoot] IdentityDNA init error:', err);
+  });
+
+  booted = true;
+  return { ok: true, status: bootStatus };
+}
+
+// Run boot IMMEDIATELY at module load — not inside useEffect
+// This eliminates the extra render cycle (booting → ready) that caused
+// the visible spinner flash on re-entry
+const bootResult = runBootOnce();
+
 export default function ClubArenaRoot() {
-  const [status, setStatus] = useState<'booting' | 'ready' | 'offline'>('booting');
-  const [bootStatus, setBootStatus] = useState<any>(null);
-
-  useEffect(() => {
-    if (booted) {
-      setStatus('ready');
-      return;
-    }
-
-    // Global safety net (same as main.tsx)
-    window.addEventListener('unhandledrejection', (event) => {
-      console.error('[GLOBAL] Unhandled promise rejection caught:', event.reason);
-      event.preventDefault();
-    });
-
-    // Phase 0: Sentry + WebVitals
-    initSentry();
-    initWebVitals();
-
-    // Phase 1: AntiGravity env check
-    const boot = initAntiGravity();
-    setBootStatus(boot);
-
-    if (!boot.antigravityOk) {
-      setStatus('offline');
-      return;
-    }
-
-    // Phase 2: MasterBus (synchronous)
-    initMasterBus();
-
-    // Phase 3: IdentityDNA (async, non-blocking)
-    initIdentityDNA().catch((err) => {
-      console.error('[ClubArenaRoot] IdentityDNA init error:', err);
-    });
-
-    booted = true;
-    setStatus('ready');
-  }, []);
-
-  if (status === 'booting') {
-    return (
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          minHeight: '100vh',
-          background: '#0a0a1a',
-          color: '#fff',
-          fontFamily: 'Inter, sans-serif',
-        }}
-      >
-        <div style={{ textAlign: 'center' }}>
-          <div
-            style={{
-              width: 40,
-              height: 40,
-              border: '3px solid #333',
-              borderTopColor: '#2374E1',
-              borderRadius: '50%',
-              animation: 'spin 1s linear infinite',
-              margin: '0 auto 16px',
-            }}
-          />
-          <p>Loading Club Arena...</p>
-        </div>
-      </div>
-    );
+  if (!bootResult.ok) {
+    return <SystemOffline status={bootResult.status} />;
   }
 
-  if (status === 'offline') {
-    return <SystemOffline status={bootStatus} />;
-  }
-
+  // Render immediately — no spinner, no intermediate state
   return (
     <ErrorBoundary>
       <BrowserRouter basename="/hub/club-arena">

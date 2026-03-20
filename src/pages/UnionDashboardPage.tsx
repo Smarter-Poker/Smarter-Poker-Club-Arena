@@ -17,6 +17,7 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { fmt, timeAgo } from '../utils/format';
 import TransactionLedgerView from '../components/common/TransactionLedgerView';
+import { getUnionLevel } from '../utils/clubLevels';
 
 // ── Helpers ─────────────────────────────────────────────────
 const pct = (n: number | null | undefined) => `${((Number(n) || 0) * 100).toFixed(1)}%`;
@@ -265,8 +266,9 @@ export default function UnionDashboardPage() {
     // Load union info
     const { data: unionRow } = await supabase
       .from('unions')
-      // unions live DB columns: id, name, description, owner_id, created_at, auto_settlement, member_count (no logo_url or status)
-      .select('id, name, description, owner_id, created_at, member_count')
+      .select(
+        'id, name, description, owner_id, created_at, member_count, level, player_level, hierarchy_level, total_players, hierarchy_units, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
+      )
       .eq('id', uid)
       .maybeSingle();
     if (mountedRef.current) setUnion(unionRow);
@@ -654,6 +656,37 @@ export default function UnionDashboardPage() {
                 {union.code}
               </span>
             )}
+            {(() => {
+              const uLevel = getUnionLevel({
+                level: (union as any)?.level || 1,
+                playerLevel: (union as any)?.player_level,
+                hierarchyLevel: (union as any)?.hierarchy_level,
+                totalPlayers: (union as any)?.total_players || 0,
+                hierarchyUnitsRoundedUp: (union as any)?.hierarchy_units_rounded_up || 0,
+                playerThresholdCurrent: (union as any)?.player_threshold_current || 0,
+                playerThresholdNext: (union as any)?.player_threshold_next || 0,
+                hierarchyThresholdCurrent: (union as any)?.hierarchy_threshold_current || 0,
+                hierarchyThresholdNext: (union as any)?.hierarchy_threshold_next || 0,
+              });
+              return (
+                <span
+                  style={{
+                    marginLeft: '12px',
+                    fontSize: '0.65rem',
+                    padding: '3px 10px',
+                    borderRadius: '12px',
+                    background: uLevel.gradient,
+                    color: '#fff',
+                    fontWeight: 700,
+                    letterSpacing: '0.5px',
+                    textShadow: '0 1px 2px rgba(0,0,0,0.5)',
+                    verticalAlign: 'middle',
+                  }}
+                >
+                  Lv.{uLevel.level} — {uLevel.tierLabel}
+                </span>
+              );
+            })()}
           </div>
           <div className="admin-header-actions">
             <button

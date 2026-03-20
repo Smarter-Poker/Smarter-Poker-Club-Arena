@@ -1,8 +1,8 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CLUB ENGINE — Marketplace Page
- *  2 Tabs: Store | My Items  (+Manage tab for admins)
- *  Ported from World Hub native page → Club Arena TSX
+ *  3 Tabs: Store | My Items  (+Manage tab for admins)
+ *  Premium dark-mode UI with category filters, search, sort, and admin tools
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -20,6 +20,7 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { fmt, fmtChips, timeAgo } from '../utils/format';
 
+/* ═══ Types ═══ */
 interface MarketplaceItem {
   id: string;
   club_id: string;
@@ -40,6 +41,19 @@ interface Purchase {
   marketplace_items?: { name: string; category: string }[];
 }
 
+/* ═══ Constants ═══ */
+const CATEGORIES = [
+  'All',
+  'General',
+  'Avatars',
+  'Table Skins',
+  'Emotes',
+  'Throwables',
+  'Exclusive',
+];
+type SortMode = 'newest' | 'price-low' | 'price-high' | 'popular';
+
+/* ═══ Component ═══ */
 export default function MarketplacePage() {
   const { user } = useAuthUser();
   const toast = useToast();
@@ -53,14 +67,21 @@ export default function MarketplacePage() {
     const timeout = setTimeout(() => setLoading(false), 5000);
     return () => clearTimeout(timeout);
   }, []);
+
   const [clubId, setClubId] = useState<string | null>(null);
   const [role, setRole] = useState('player');
   const [processing, setProcessing] = useState(false);
+  const [showSuccess, setShowSuccess] = useState<string | null>(null);
 
   const [items, setItems] = useState<MarketplaceItem[]>([]);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [balance, setBalance] = useState(0);
   const [buyTarget, setBuyTarget] = useState<MarketplaceItem | null>(null);
+
+  // Filters & sort
+  const [searchFilter, setSearchFilter] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('All');
+  const [sortMode, setSortMode] = useState<SortMode>('newest');
 
   // Admin manage
   const [adminItems, setAdminItems] = useState<MarketplaceItem[]>([]);
@@ -68,13 +89,14 @@ export default function MarketplacePage() {
   const [newItemName, setNewItemName] = useState('');
   const [newItemPrice, setNewItemPrice] = useState('');
   const [newItemDesc, setNewItemDesc] = useState('');
-  const [searchFilter, setSearchFilter] = useState('');
+  const [newItemCategory, setNewItemCategory] = useState('General');
+  const [newItemImage, setNewItemImage] = useState('');
   const [lastCreateTime, setLastCreateTime] = useState(0);
 
   const mountedRef = useIsMounted();
-
   const loadingRef = useRef(false);
 
+  /* ═══ Data Loading ═══ */
   const loadMarketplace = useCallback(
     async (cId?: string, silent = false) => {
       const targetClub = cId || clubId;
@@ -82,9 +104,7 @@ export default function MarketplacePage() {
       if (loadingRef.current) return;
       loadingRef.current = true;
       try {
-        if (!silent) {
-          setLoading(true);
-        }
+        if (!silent) setLoading(true);
 
         const [{ data: itemsData }, { data: purchasesData }, { data: memberData }] =
           await Promise.all([
@@ -124,7 +144,7 @@ export default function MarketplacePage() {
     [clubId, user]
   );
 
-  // Init
+  /* ═══ Init ═══ */
   useEffect(() => {
     if (!user) return;
     let isMounted = true;
@@ -139,6 +159,15 @@ export default function MarketplacePage() {
           .limit(1)
           .maybeSingle();
         targetClub = mem?.club_id || null;
+        if (mem?.role && isMounted) setRole(mem.role);
+      } else {
+        // Also fetch role for the provided club
+        const { data: mem } = await supabase
+          .from('club_members')
+          .select('role')
+          .eq('club_id', qClub)
+          .eq('user_id', user.id)
+          .maybeSingle();
         if (mem?.role && isMounted) setRole(mem.role);
       }
       if (targetClub && isMounted) {
@@ -155,20 +184,19 @@ export default function MarketplacePage() {
     };
   }, [user, searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Realtime bus listeners (debounced)
+  /* ═══ Realtime bus listeners ═══ */
   useEffect(() => {
     if (!clubId) return;
     const refresh = () => loadMarketplace(clubId, true);
     const unsubs = [
       masterBus.subscribeDebounced('CHIPS_DISTRIBUTED', refresh, 500),
       masterBus.subscribeDebounced('BALANCE_UPDATED', refresh, 500),
-      // Phase 4: Cross-page sync (ported from World Hub marketplace.js)
       masterBus.subscribeDebounced('CASHIER_BALANCE_CHANGED', refresh, 500),
     ];
     return () => unsubs.forEach((u) => u());
   }, [clubId, loadMarketplace]);
 
-  // Supabase real-time for marketplace item changes (stock updates, new items)
+  /* ═══ Supabase real-time for item changes ═══ */
   useEffect(() => {
     if (!clubId) return;
     let isMounted = true;
@@ -214,12 +242,11 @@ export default function MarketplacePage() {
     if (clubId) loadMarketplace(clubId, true);
   });
 
-  // Purchase
+  /* ═══ Purchase handler ═══ */
   const handlePurchase = async () => {
     if (!buyTarget || !clubId || !user) return;
     setProcessing(true);
     try {
-      // Deduct chips
       const { error: deductErr } = await retryAsync(
         () =>
           supabase.rpc('deduct_marketplace_chips', {
@@ -232,7 +259,8 @@ export default function MarketplacePage() {
       );
       if (deductErr) throw deductErr;
 
-      toast.success(`Successfully purchased ${buyTarget.name}!`);
+      setShowSuccess(`Successfully purchased ${buyTarget.name}!`);
+      setTimeout(() => setShowSuccess(null), 2500);
       setBalance((prev) => prev - buyTarget.price);
       masterBus.emit('BALANCE_UPDATED', {
         source: 'marketplace_purchase',
@@ -247,7 +275,7 @@ export default function MarketplacePage() {
     }
   };
 
-  // Admin: Load shop items
+  /* ═══ Admin: Load all items ═══ */
   const loadAdminItems = useCallback(async () => {
     if (!clubId) return;
     try {
@@ -267,6 +295,7 @@ export default function MarketplacePage() {
     }
   }, [clubId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  /* ═══ Computed data ═══ */
   const purchasedItemIds = useMemo(() => new Set(purchases.map((p) => p.item_id)), [purchases]);
   const itemMap = useMemo(() => {
     const map: Record<string, MarketplaceItem> = {};
@@ -276,10 +305,68 @@ export default function MarketplacePage() {
     return map;
   }, [items]);
 
+  const isAdmin = ['owner', 'admin'].includes(role);
+
+  /* ═══ Filtered + sorted store items ═══ */
+  const filteredItems = useMemo(() => {
+    let result = [...items];
+
+    // Category filter
+    if (categoryFilter !== 'All') {
+      result = result.filter(
+        (item) => (item.category || 'General').toLowerCase() === categoryFilter.toLowerCase()
+      );
+    }
+
+    // Search filter
+    if (searchFilter.trim()) {
+      const q = searchFilter.toLowerCase();
+      result = result.filter(
+        (item) =>
+          item.name.toLowerCase().includes(q) ||
+          (item.category || '').toLowerCase().includes(q) ||
+          (item.description || '').toLowerCase().includes(q)
+      );
+    }
+
+    // Sort
+    switch (sortMode) {
+      case 'price-low':
+        result.sort((a, b) => a.price - b.price);
+        break;
+      case 'price-high':
+        result.sort((a, b) => b.price - a.price);
+        break;
+      case 'popular':
+        result.sort((a, b) => (b.purchase_count || 0) - (a.purchase_count || 0));
+        break;
+      case 'newest':
+      default:
+        // Already sorted by created_at desc from API
+        break;
+    }
+
+    return result;
+  }, [items, categoryFilter, searchFilter, sortMode]);
+
+  /* ═══ Admin stats ═══ */
+  const adminStats = useMemo(() => {
+    const total = adminItems.length;
+    const active = adminItems.filter((i) => i.is_active).length;
+    const totalSold = adminItems.reduce((sum, i) => sum + (i.purchase_count || 0), 0);
+    const totalRevenue = adminItems.reduce((sum, i) => sum + (i.purchase_count || 0) * i.price, 0);
+    return { total, active, totalSold, totalRevenue };
+  }, [adminItems]);
+
+  /* ═══ Render ═══ */
   if (loading && items.length === 0) return <PageSkeleton variant="dashboard" />;
 
   return (
     <div className={styles.page}>
+      {/* Success flash */}
+      {showSuccess && <div className={styles.successFlash}>✅ {showSuccess}</div>}
+
+      {/* Header */}
       <header className={styles.header}>
         <div className={styles.headerLeft}>
           <h1 className={styles.title}>
@@ -321,13 +408,13 @@ export default function MarketplacePage() {
                 <span className={styles.priceValueRed}>{fmtChips(buyTarget.price)}</span>
               </div>
               <div className={styles.priceItem}>
-                <span className={styles.priceLabel}>Available Chips</span>
+                <span className={styles.priceLabel}>Your Balance</span>
                 <span className={styles.priceValueGreen}>{fmtChips(balance)}</span>
               </div>
             </div>
             {balance < buyTarget.price && (
               <div className={styles.insufficientFunds}>
-                Insufficient chips. You need {fmtChips(buyTarget.price - balance)} more.
+                ⚠️ Insufficient chips. You need {fmtChips(buyTarget.price - balance)} more.
               </div>
             )}
             <div className={styles.modalActions}>
@@ -356,16 +443,16 @@ export default function MarketplacePage() {
           className={`${styles.tab} ${tab === 'store' ? styles.tabActive : ''}`}
           onClick={() => setTab('store')}
         >
-          Store <span className={styles.tabBadge}>{items.length}</span>
+          🛍️ Store <span className={styles.tabBadge}>{items.length}</span>
         </button>
         <button
           className={`${styles.tab} ${tab === 'my_items' ? styles.tabActive : ''}`}
           onClick={() => setTab('my_items')}
         >
-          My Items{' '}
+          📦 My Items{' '}
           {purchases.length > 0 && <span className={styles.tabBadge}>{purchases.length}</span>}
         </button>
-        {['owner', 'admin'].includes(role) && (
+        {isAdmin && (
           <button
             className={`${styles.tab} ${tab === 'manage' ? styles.tabActive : ''}`}
             onClick={() => {
@@ -378,59 +465,82 @@ export default function MarketplacePage() {
         )}
       </nav>
 
-      {/* Store Tab */}
+      {/* ═══ Store Tab ═══ */}
       {tab === 'store' && (
         <div className={styles.section}>
           {items.length === 0 ? (
-            <div
-              className={styles.emptyState}
-              style={{ textAlign: 'center', padding: '2rem 1.5rem' }}
-            >
-              <span
-                className={styles.emptyIcon}
-                style={{ fontSize: '2.5rem', display: 'block', marginBottom: '0.75rem' }}
-              >
-                🛍️
-              </span>
-              <span
-                className={styles.emptyText}
-                style={{
-                  fontSize: '1.05rem',
-                  fontWeight: 600,
-                  display: 'block',
-                  marginBottom: '0.5rem',
-                }}
-              >
-                The store is currently empty.
-              </span>
-              <span style={{ color: 'var(--soft-white, #B0B3B8)', fontSize: '0.85rem' }}>
+            <div className={styles.emptyState}>
+              <span className={styles.emptyIcon}>🛍️</span>
+              <span className={styles.emptyText}>The store is currently empty.</span>
+              <span className={styles.emptySubText}>
                 Check back soon — your club owner can add items for members to purchase with chips.
               </span>
+              {isAdmin && (
+                <button
+                  className={styles.emptyButton}
+                  onClick={() => {
+                    setTab('manage');
+                    if (!adminLoaded) loadAdminItems();
+                  }}
+                >
+                  ➕ Add First Item
+                </button>
+              )}
             </div>
           ) : (
             <>
-              <div style={{ marginBottom: '12px' }}>
+              {/* Category filters */}
+              <div className={styles.categoryFilters}>
+                {CATEGORIES.map((cat) => (
+                  <button
+                    key={cat}
+                    className={`${styles.categoryBtn} ${categoryFilter === cat ? styles.categoryBtnActive : ''}`}
+                    onClick={() => setCategoryFilter(cat)}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+
+              {/* Search + Sort toolbar */}
+              <div className={styles.toolbar}>
                 <input
                   type="text"
                   placeholder="🔍 Search items..."
                   value={searchFilter}
                   onChange={(e) => setSearchFilter(e.target.value)}
-                  className={styles.formInput}
-                  style={{ width: '100%', maxWidth: '300px' }}
+                  className={styles.searchInput}
                 />
+                <select
+                  value={sortMode}
+                  onChange={(e) => setSortMode(e.target.value as SortMode)}
+                  className={styles.sortSelect}
+                >
+                  <option value="newest">Newest First</option>
+                  <option value="price-low">Price: Low → High</option>
+                  <option value="price-high">Price: High → Low</option>
+                  <option value="popular">Most Popular</option>
+                </select>
               </div>
-              <div className={styles.itemGrid}>
-                {items
-                  .filter((item) => {
-                    if (!searchFilter.trim()) return true;
-                    const q = searchFilter.toLowerCase();
-                    return (
-                      item.name.toLowerCase().includes(q) ||
-                      (item.category || '').toLowerCase().includes(q) ||
-                      (item.description || '').toLowerCase().includes(q)
-                    );
-                  })
-                  .map((item) => {
+
+              {/* Item grid */}
+              {filteredItems.length === 0 ? (
+                <div className={styles.emptyState}>
+                  <span className={styles.emptyIcon}>🔍</span>
+                  <span className={styles.emptyText}>No items match your filters.</span>
+                  <button
+                    className={styles.emptyButton}
+                    onClick={() => {
+                      setCategoryFilter('All');
+                      setSearchFilter('');
+                    }}
+                  >
+                    Clear Filters
+                  </button>
+                </div>
+              ) : (
+                <div className={styles.itemGrid}>
+                  {filteredItems.map((item) => {
                     const alreadyOwned = purchasedItemIds.has(item.id);
                     return (
                       <div key={item.id} className={styles.itemCard}>
@@ -452,64 +562,39 @@ export default function MarketplacePage() {
                             {item.description || 'No description available.'}
                           </div>
                           <div className={styles.itemFooter}>
-                            <span className={styles.itemPrice}>{fmtChips(item.price)}</span>
+                            <div>
+                              <span className={styles.itemPrice}>💰 {fmtChips(item.price)}</span>
+                              {(item.purchase_count || 0) > 0 && (
+                                <div className={styles.soldCount}>{item.purchase_count} sold</div>
+                              )}
+                            </div>
                             <button
                               onClick={() => setBuyTarget(item)}
                               className={alreadyOwned ? styles.btnOwned : styles.btnPrimary}
                               disabled={alreadyOwned || processing}
                             >
-                              {alreadyOwned ? 'Owned' : 'Buy'}
+                              {alreadyOwned ? '✓ Owned' : 'Buy'}
                             </button>
                           </div>
                         </div>
                       </div>
                     );
                   })}
-              </div>
+                </div>
+              )}
             </>
           )}
         </div>
       )}
 
-      {/* My Items Tab */}
+      {/* ═══ My Items Tab ═══ */}
       {tab === 'my_items' && (
         <div className={styles.section}>
           {purchases.length === 0 ? (
-            <div
-              className={styles.emptyState}
-              style={{ textAlign: 'center', padding: '2rem 1.5rem' }}
-            >
-              <span
-                className={styles.emptyIcon}
-                style={{ fontSize: '2.5rem', display: 'block', marginBottom: '0.75rem' }}
-              >
-                📦
-              </span>
-              <span
-                className={styles.emptyText}
-                style={{
-                  fontSize: '1.05rem',
-                  fontWeight: 600,
-                  display: 'block',
-                  marginBottom: '0.5rem',
-                }}
-              >
-                You haven&apos;t purchased any items yet.
-              </span>
-              <button
-                onClick={() => setTab('store')}
-                style={{
-                  marginTop: '0.75rem',
-                  padding: '8px 20px',
-                  background: 'rgba(65,105,225,0.15)',
-                  border: '1px solid rgba(65,105,225,0.3)',
-                  borderRadius: '8px',
-                  color: '#a5b4fc',
-                  fontSize: '0.85rem',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                }}
-              >
+            <div className={styles.emptyState}>
+              <span className={styles.emptyIcon}>📦</span>
+              <span className={styles.emptyText}>You haven&apos;t purchased any items yet.</span>
+              <button className={styles.emptyButton} onClick={() => setTab('store')}>
                 Browse Store
               </button>
             </div>
@@ -532,14 +617,14 @@ export default function MarketplacePage() {
                     const displayCategory = joinedItem?.category || itemData?.category || 'General';
                     return (
                       <tr key={p.id}>
-                        <td style={{ fontWeight: 600 }}>{displayName}</td>
+                        <td style={{ fontWeight: 700 }}>{displayName}</td>
                         <td>
                           <span className={styles.categorySmall}>{displayCategory}</span>
                         </td>
-                        <td style={{ fontWeight: 700, color: '#F7C52A' }}>
+                        <td style={{ fontWeight: 800, color: '#f7c52a' }}>
                           {fmtChips(p.price_paid)}
                         </td>
-                        <td style={{ fontSize: '13px', color: '#B0B3B8' }}>
+                        <td style={{ fontSize: '12px', color: '#8b8d91' }}>
                           {timeAgo(p.created_at)}
                         </td>
                       </tr>
@@ -552,31 +637,75 @@ export default function MarketplacePage() {
         </div>
       )}
 
-      {/* Manage Tab */}
+      {/* ═══ Manage Tab ═══ */}
       {tab === 'manage' && (
         <div className={styles.section}>
+          {/* Admin Stats */}
+          <div className={styles.statsRow}>
+            <div className={styles.statCard}>
+              <span className={styles.statValue}>{adminStats.total}</span>
+              <span className={styles.statLabel}>Total Items</span>
+            </div>
+            <div className={styles.statCard}>
+              <span className={styles.statValue}>{adminStats.active}</span>
+              <span className={styles.statLabel}>Active</span>
+            </div>
+            <div className={styles.statCard}>
+              <span className={styles.statValue}>{adminStats.totalSold}</span>
+              <span className={styles.statLabel}>Total Sold</span>
+            </div>
+            <div className={styles.statCard}>
+              <span className={styles.statValue}>{fmtChips(adminStats.totalRevenue)}</span>
+              <span className={styles.statLabel}>Revenue</span>
+            </div>
+          </div>
+
+          {/* Create Form */}
           <div className={styles.createForm}>
             <h3 className={styles.createTitle}>➕ Create Shop Item</h3>
-            <input
-              value={newItemName}
-              onChange={(e) => setNewItemName(e.target.value)}
-              placeholder="Item name"
-              className={styles.formInput}
-            />
-            <input
-              type="number"
-              value={newItemPrice}
-              onChange={(e) => setNewItemPrice(e.target.value)}
-              placeholder="Price (chips)"
-              min="1"
-              className={styles.formInput}
-            />
+            <div className={styles.formRow}>
+              <input
+                value={newItemName}
+                onChange={(e) => setNewItemName(e.target.value)}
+                placeholder="Item name"
+                className={styles.formInput}
+                maxLength={100}
+              />
+              <input
+                type="number"
+                value={newItemPrice}
+                onChange={(e) => setNewItemPrice(e.target.value)}
+                placeholder="Price (chips)"
+                min="1"
+                className={styles.formInput}
+              />
+            </div>
             <input
               value={newItemDesc}
               onChange={(e) => setNewItemDesc(e.target.value)}
               placeholder="Description (optional)"
               className={styles.formInput}
+              maxLength={500}
             />
+            <div className={styles.formRow}>
+              <select
+                value={newItemCategory}
+                onChange={(e) => setNewItemCategory(e.target.value)}
+                className={styles.formSelect}
+              >
+                {CATEGORIES.filter((c) => c !== 'All').map((cat) => (
+                  <option key={cat} value={cat}>
+                    {cat}
+                  </option>
+                ))}
+              </select>
+              <input
+                value={newItemImage}
+                onChange={(e) => setNewItemImage(e.target.value)}
+                placeholder="Image URL (optional)"
+                className={styles.formInput}
+              />
+            </div>
             <button
               className={styles.btnPrimary}
               disabled={processing || !newItemName.trim() || !newItemPrice}
@@ -587,7 +716,6 @@ export default function MarketplacePage() {
                   toast.error('Please wait a moment before creating another item');
                   return;
                 }
-                // Validate item name length to prevent abuse
                 if (newItemName.trim().length > 100) {
                   toast.error('Item name must be 100 characters or less');
                   return;
@@ -612,6 +740,8 @@ export default function MarketplacePage() {
                     name: newItemName.trim(),
                     price,
                     description: newItemDesc.trim() || null,
+                    category: newItemCategory,
+                    image_url: newItemImage.trim() || null,
                     is_active: true,
                   });
                   if (error) throw error;
@@ -620,6 +750,8 @@ export default function MarketplacePage() {
                   setNewItemName('');
                   setNewItemPrice('');
                   setNewItemDesc('');
+                  setNewItemImage('');
+                  setNewItemCategory('General');
                   loadAdminItems();
                   loadMarketplace(clubId || undefined, true);
                 } catch (err: any) {
@@ -633,6 +765,7 @@ export default function MarketplacePage() {
             </button>
           </div>
 
+          {/* Admin item list */}
           {adminItems.length === 0 ? (
             <div className={styles.emptyState}>
               <span className={styles.emptyIcon}>🛠️</span>
@@ -643,11 +776,19 @@ export default function MarketplacePage() {
               {adminItems.map((item) => (
                 <div key={item.id} className={styles.adminRow}>
                   <div>
-                    <div style={{ fontWeight: 600, color: item.is_active ? '#E4E6EB' : '#6B7280' }}>
+                    <div
+                      style={{
+                        fontWeight: 700,
+                        color: item.is_active ? '#e4e6eb' : '#6B7280',
+                        fontSize: '14px',
+                      }}
+                    >
                       {item.name}
                     </div>
-                    <div style={{ fontSize: 12, color: '#B0B3B8' }}>
-                      {fmtChips(item.price)} chips • {item.purchase_count || 0} sold
+                    <div style={{ fontSize: 12, color: '#8b8d91', marginTop: 2 }}>
+                      {fmtChips(item.price)} chips •{' '}
+                      <span className={styles.categorySmall}>{item.category || 'General'}</span> •{' '}
+                      {item.purchase_count || 0} sold
                     </div>
                   </div>
                   <div className={styles.adminActions}>
@@ -668,13 +809,12 @@ export default function MarketplacePage() {
                       }}
                       className={item.is_active ? styles.btnActiveToggle : styles.btnInactiveToggle}
                     >
-                      {item.is_active ? 'Active' : 'Hidden'}
+                      {item.is_active ? '✓ Active' : 'Hidden'}
                     </button>
                     <button
                       onClick={async () => {
                         if (!confirm(`Delete "${item.name}"?`)) return;
                         try {
-                          // SECURITY: Filter by both id AND club_id to prevent cross-club deletion
                           const { error: delErr } = await supabase
                             .from('marketplace_items')
                             .delete()
@@ -690,7 +830,7 @@ export default function MarketplacePage() {
                       }}
                       className={styles.btnDeleteSmall}
                     >
-                      🗑️
+                      🗑️ Delete
                     </button>
                   </div>
                 </div>

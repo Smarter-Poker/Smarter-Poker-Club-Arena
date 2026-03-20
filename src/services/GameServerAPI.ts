@@ -16,13 +16,14 @@
 // CONFIGURATION
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// Server URL — Fly.io for production, localhost for development.
-// CRITICAL FIX: The old fallback was 'http://localhost:8080' which silently broke ALL
-// poker actions in production (fold/call/raise/check/all-in hit localhost and failed,
-// but the .catch(() => {}) in TablePage swallowed every error).
+// Server URL — Railway for production, localhost for development.
+// The game server runs on Railway.app as a dedicated Node.js process with persistent
+// WebSocket connections. Never use Vercel serverless for this (cold starts, no WS).
 const GAME_SERVER_URL =
   import.meta.env.VITE_GAME_SERVER_URL ||
-  (import.meta.env.PROD ? 'https://smarter-poker-game-server.fly.dev' : 'http://localhost:8080');
+  (import.meta.env.PROD
+    ? 'https://smarter-poker-game-server.up.railway.app'
+    : 'http://localhost:8080');
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES

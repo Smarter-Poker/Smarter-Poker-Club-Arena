@@ -51,9 +51,23 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
   const { loadBalances, loadDiamonds } = useWalletStore();
   const { user: authUser } = useAuthUser();
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-  const [notificationCount, setNotificationCount] = useState(0);
-  const [unreadMessages, setUnreadMessages] = useState(0);
+  // Hydrate notification/message counts from localStorage for instant display on re-entry
+  const [notificationCount, setNotificationCount] = useState(() => {
+    try {
+      return parseInt(localStorage.getItem('ca-notif-count') || '0', 10);
+    } catch {
+      return 0;
+    }
+  });
+  const [unreadMessages, setUnreadMessages] = useState(() => {
+    try {
+      return parseInt(localStorage.getItem('ca-msg-count') || '0', 10);
+    } catch {
+      return 0;
+    }
+  });
   const [menuOpen, setMenuOpen] = useState(false);
+  const [isNavigatingAway, setIsNavigatingAway] = useState(false);
 
   const handleMenuToggle = useCallback(() => setMenuOpen((prev) => !prev), []);
   const handleMenuClose = useCallback(() => setMenuOpen(false), []);
@@ -148,6 +162,11 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
         if (mounted) {
           const newCount = notifCount || 0;
           setNotificationCount(newCount);
+          try {
+            localStorage.setItem('ca-notif-count', String(newCount));
+          } catch {
+            /* */
+          }
           masterBus.emit('NOTIFICATION_COUNT_CHANGED', { count: newCount });
         }
 
@@ -160,6 +179,11 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
         if (mounted) {
           const newMsgCount = msgCount || 0;
           setUnreadMessages(newMsgCount);
+          try {
+            localStorage.setItem('ca-msg-count', String(newMsgCount));
+          } catch {
+            /* */
+          }
           masterBus.emit('UNREAD_DM_COUNT_CHANGED', { userId: userId, count: newMsgCount });
         }
       } catch (e) {
@@ -192,6 +216,11 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
           if (mounted) {
             const c = count || 0;
             setNotificationCount(c);
+            try {
+              localStorage.setItem('ca-notif-count', String(c));
+            } catch {
+              /* */
+            }
             masterBus.emit('NOTIFICATION_COUNT_CHANGED', { count: c });
           }
         }
@@ -214,6 +243,11 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
           if (mounted) {
             const mc = count || 0;
             setUnreadMessages(mc);
+            try {
+              localStorage.setItem('ca-msg-count', String(mc));
+            } catch {
+              /* */
+            }
             masterBus.emit('UNREAD_DM_COUNT_CHANGED', { userId: userId, count: mc });
           }
         }
@@ -257,9 +291,23 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
     }
   };
 
+  /** Navigate to a World Hub page with visual feedback */
+  const navigateToHub = useCallback((path: string) => {
+    setIsNavigatingAway(true);
+    // Brief delay for visual feedback, then navigate
+    requestAnimationFrame(() => {
+      window.location.href = path;
+    });
+  }, []);
+
   const handleHubClick = () => {
-    window.location.href = '/hub';
+    navigateToHub('/hub');
   };
+
+  // Visual fade on cross-app navigation for instant feedback
+  const headerStyle = isNavigatingAway
+    ? { opacity: 0.5, transition: 'opacity 0.15s ease', pointerEvents: 'none' as const }
+    : undefined;
 
   return (
     <>
@@ -268,7 +316,7 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
         <HamburgerMenu isOpen={menuOpen} onClose={handleMenuClose} />
       </Suspense>
 
-      <header className={styles.header}>
+      <header className={styles.header} style={headerStyle}>
         {/* LEFT: Hamburger + Back/Hub button (World Hub pattern) */}
         <div className={styles.headerLeft}>
           {/* #5: Hamburger — always visible, opens HamburgerMenu drawer */}
@@ -310,7 +358,7 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
           {/* Diamond Wallet */}
           <button
             className={styles.orbBtn}
-            onClick={() => (window.location.href = '/hub/diamond-store')}
+            onClick={() => navigateToHub('/hub/diamond-store')}
             aria-label="Diamond Wallet"
           >
             <img
@@ -321,14 +369,14 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
           </button>
 
           {/* VIP Member — #2: Gold glow ring */}
-          <button className={styles.orbBtnVip} onClick={() => (window.location.href = '/hub/vip')}>
+          <button className={styles.orbBtnVip} onClick={() => navigateToHub('/hub/vip')}>
             <img src={`${BASE}images/vip-card.png`} alt="VIP Member" className={styles.orbImg} />
           </button>
 
           {/* Profile / Avatar — uses orbBtnProfile for overflow:visible so glow renders */}
           <button
             className={styles.orbBtn}
-            onClick={() => (window.location.href = '/hub/profile')}
+            onClick={() => navigateToHub('/hub/profile')}
             style={{ overflow: 'visible' }}
           >
             <div className={styles.profileOrb}>
@@ -348,10 +396,7 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
           </button>
 
           {/* Messages */}
-          <button
-            className={styles.orbBtn}
-            onClick={() => (window.location.href = '/hub/messenger')}
-          >
+          <button className={styles.orbBtn} onClick={() => navigateToHub('/hub/messenger')}>
             <img
               src={`${BASE}images/header-messenger.png`}
               alt="Messages"
@@ -379,10 +424,7 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
           </Link>
 
           {/* Settings */}
-          <button
-            className={styles.orbBtn}
-            onClick={() => (window.location.href = '/hub/settings')}
-          >
+          <button className={styles.orbBtn} onClick={() => navigateToHub('/hub/settings')}>
             <img
               src={`${BASE}images/header-settings.png`}
               alt="Settings"
@@ -393,7 +435,7 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
           {/* Live Help */}
           <button
             className={styles.orbBtn}
-            onClick={() => (window.location.href = '/hub/help')}
+            onClick={() => navigateToHub('/hub/help')}
             aria-label="Live Help"
           >
             <img src={`${BASE}images/header-help.png`} alt="Live Help" className={styles.orbImg} />

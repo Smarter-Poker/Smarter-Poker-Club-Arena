@@ -29,65 +29,8 @@ interface CreateClubModalProps {
 // High-fidelity modal frame
 const MODAL_FRAME_URL = `${import.meta.env.BASE_URL}images/modals/create-club-modal-frame.png`;
 
-// Club level calculation based on member count
-function calculateClubLevel(memberCount: number): number {
-  const levelThresholds = [
-    25,
-    50,
-    75,
-    100,
-    150,
-    200,
-    275,
-    350,
-    425,
-    500, // Levels 1-10
-    600,
-    750,
-    900,
-    1100,
-    1300,
-    1550,
-    1850,
-    2200,
-    2600,
-    3000, // Levels 11-20
-    3500,
-    4000,
-    4600,
-    5300,
-    6000,
-    7000,
-    8250,
-    9750,
-    11500,
-    13500, // Levels 21-30
-    16000,
-    19000,
-    22500,
-    26500,
-    31000,
-    36500,
-    43000,
-    50500,
-    59000,
-    68500, // Levels 31-40
-    79000,
-    91000,
-    105000,
-    121000,
-    140000,
-    165000,
-    195000,
-    235000,
-    285000, // Levels 41-49
-  ];
-
-  for (let i = 0; i < levelThresholds.length; i++) {
-    if (memberCount <= levelThresholds[i]) return i + 1;
-  }
-  return 50; // Max level
-}
+// All new clubs start at Level 1 — server-side trigger will recompute
+// after the owner membership row is inserted into club_members.
 
 export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateClubModalProps) {
   const isMounted = useIsMounted();
@@ -261,7 +204,7 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
             card_image_url: null, // Will be set after baked card generation
             logo_url: logoUrl || logoPreview, // Raw logo URL (NOT the baked card)
             member_count: 1,
-            level: calculateClubLevel(1),
+            level: 1,
             active_players: 1,
             settings: {
               default_rake_percent: 5,

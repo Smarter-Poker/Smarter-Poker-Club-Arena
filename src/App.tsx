@@ -253,6 +253,10 @@ export default function App() {
       console.error('[App] Service bootstrap failed:', err);
     });
 
+    // Preload critical page chunks during idle time so they're cached
+    // for instant re-entry when navigating back from the World Hub
+    preloadCriticalChunks();
+
     return () => {
       busEventLogger.stop();
       supabaseConnectionWatchdog.stop();

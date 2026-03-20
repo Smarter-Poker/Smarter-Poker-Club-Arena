@@ -1,13 +1,18 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- * CLUB LEVELS SYSTEM (1-50 PokerBros Style)
+ * CLUB & UNION LEVELS SYSTEM (1-50 PokerBros Style)
  * ═══════════════════════════════════════════════════════════════════════════════
- * Calculates a club's level based strictly on Database metrics derived from the Postgres RPC.
- * The system considers:
- *   - Player Count Thresholds
- *   - Hierarchy Units Thresholds (Admin/Manager = 1.0, Agent/SubAgent = 0.25)
- * The Club Level is strictly calculated server-side to prevent real-time downgrades.
- * The UI translates the current state integers into Progress Percentages.
+ * Two independent axes drive club level:
+ *   - Player Count  → player_level      (30 * 1.125^(L-1))
+ *   - Hierarchy     → hierarchy_level   (2 * 1.086^(L-1))
+ *
+ * hierarchy_units = admins*1.0 + super_agents*1.0 + agents*0.25
+ *
+ * Final level = MAX(player_level, hierarchy_level, 1), capped at 50.
+ * Levels NEVER auto-downgrade (server-side guard).
+ *
+ * The UI reads threshold pairs from the DB and shows a progress bar for the
+ * dominant axis (whichever contributes the higher sub-level).
  */
 
 export type ClubTier =
@@ -29,17 +34,22 @@ export interface ClubLevelInfo {
   progressPercent: number;
   color: string;
   gradient: string;
+  playerLevel?: number;
+  hierarchyLevel?: number;
 }
 
 export interface ClubLevelInput {
   level?: number;
+  playerLevel?: number;
+  hierarchyLevel?: number;
   playerCount?: number;
   hierarchyUnits?: number;
+  hierarchyUnitsRoundedUp?: number;
   playerThresholdCurrent?: number;
   playerThresholdNext?: number;
   hierarchyThresholdCurrent?: number;
   hierarchyThresholdNext?: number;
-  // Old fields for backward compatibility, optionally ignore
+  // Legacy compat — ignored by the formula but some old callsites still pass them
   memberCount?: number;
   activeTables?: number;
   tournamentsHosted?: number;
@@ -49,16 +59,15 @@ export interface ClubLevelInput {
   clubAgeDays?: number;
 }
 
-// 1-5   = Starter
-// 6-10  = Small Club
-// 11-15 = Growing Club
-// 16-20 = Established
-// 21-25 = Large Club
-// 26-30 = Regional Operator
-// 31-35 = Major Operator
-// 36-40 = Network-Grade Club
-// 41-45 = Enterprise Club
-// 46-50 = Elite Network Operator
+// ═══════════════════════════════════════════════════════════════════════════════
+// TIER MAPPING (Section J of spec)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// 1-5   = Starter          | 6-10  = Small Club
+// 11-15 = Growing Club     | 16-20 = Established
+// 21-25 = Large Club       | 26-30 = Regional Operator
+// 31-35 = Major Operator   | 36-40 = Network-Grade Club
+// 41-45 = Enterprise Club  | 46-50 = Elite Network Operator
 
 export function getTierForLevel(level: number): ClubTier {
   if (level >= 46) return 'elite';
@@ -112,41 +121,97 @@ const TIER_GRADIENTS: Record<ClubTier, string> = {
   elite: 'linear-gradient(135deg, #B9F2FF 0%, #00CED1 100%)',
 };
 
-export function getClubLevel(input: ClubLevelInput): ClubLevelInfo {
-  // If we receive the new database columns, map them
-  const currentLvl = input.level || 1;
-  const pCount = Math.max(input.playerCount || 0, input.memberCount || 0);
+// ═══════════════════════════════════════════════════════════════════════════════
+// CLIENT-SIDE THRESHOLD FORMULAS (mirrors SQL exactly)
+// ═══════════════════════════════════════════════════════════════════════════════
 
-  // Calculate Progress Percent mathematically
+/** player_threshold(L) = ROUND(30 * 1.125^(L-1)) */
+export function computePlayerThreshold(level: number): number {
+  return Math.round(30 * Math.pow(1.125, level - 1));
+}
+
+/** hierarchy_threshold(L) = ROUND(2 * 1.086^(L-1)) */
+export function computeHierarchyThreshold(level: number): number {
+  return Math.round(2 * Math.pow(1.086, level - 1));
+}
+
+/** Compute player_level from total_players (highest L where total_players >= threshold(L)) */
+export function computePlayerLevel(totalPlayers: number): number {
+  let lvl = 1;
+  for (let L = 1; L <= 50; L++) {
+    if (totalPlayers >= computePlayerThreshold(L)) {
+      lvl = L;
+    } else {
+      break;
+    }
+  }
+  return lvl;
+}
+
+/** Compute hierarchy_level from hierarchy_units_rounded_up */
+export function computeHierarchyLevel(hierarchyUnitsRoundedUp: number): number {
+  let lvl = 1;
+  for (let L = 1; L <= 50; L++) {
+    if (hierarchyUnitsRoundedUp >= computeHierarchyThreshold(L)) {
+      lvl = L;
+    } else {
+      break;
+    }
+  }
+  return lvl;
+}
+
+/**
+ * Compute hierarchy_units from role counts.
+ * admins count 1.0, super_agents count 1.0, agents/sub_agents count 0.25 each.
+ */
+export function computeHierarchyUnits(
+  adminCount: number,
+  superAgentCount: number,
+  agentCount: number
+): number {
+  return adminCount * 1.0 + superAgentCount * 1.0 + agentCount * 0.25;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MAIN: getClubLevel
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export function getClubLevel(input: ClubLevelInput): ClubLevelInfo {
+  const currentLvl = Math.min(Math.max(input.level || 1, 1), 50);
+  const pCount = Math.max(input.playerCount || 0, input.memberCount || 0);
+  const hUnitsRaw = input.hierarchyUnitsRoundedUp ?? Math.ceil(input.hierarchyUnits || 0);
+
+  // Determine sub-levels for display (prefer DB values, fallback to client compute)
+  const playerLvl = input.playerLevel || computePlayerLevel(pCount);
+  const hierarchyLvl = input.hierarchyLevel || computeHierarchyLevel(hUnitsRaw);
+
+  // ── Progress calculation ──
   let progressPercent = 0;
 
-  // Try to use DB thresholds
-  if (input.playerThresholdNext && input.hierarchyThresholdNext) {
-    const pT_curr = input.playerThresholdCurrent ?? 0;
-    const pT_next = input.playerThresholdNext ?? 1;
-    const hT_curr = input.hierarchyThresholdCurrent ?? 0;
-    const hT_next = input.hierarchyThresholdNext ?? 1;
+  // Get thresholds — prefer DB-stored values, fallback to client-side compute
+  const pT_curr = input.playerThresholdCurrent || computePlayerThreshold(playerLvl);
+  const pT_next = input.playerThresholdNext || computePlayerThreshold(Math.min(playerLvl + 1, 50));
+  const hT_curr = input.hierarchyThresholdCurrent || computeHierarchyThreshold(hierarchyLvl);
+  const hT_next =
+    input.hierarchyThresholdNext || computeHierarchyThreshold(Math.min(hierarchyLvl + 1, 50));
 
-    const h_units = input.hierarchyUnits ?? 0;
-
-    let p_prog = 0;
-    if (pT_next > pT_curr) {
-      p_prog = ((pCount - pT_curr) / (pT_next - pT_curr)) * 100;
-    }
-
-    let h_prog = 0;
-    if (hT_next > hT_curr) {
-      h_prog = ((h_units - hT_curr) / (hT_next - hT_curr)) * 100;
-    }
-
-    progressPercent = Math.max(0, Math.min(100, Math.floor(Math.max(p_prog, h_prog))));
-  } else {
-    // Fallback if thresholds aren't available yet
-    // Provide a small artificial progress if we don't know the exact math boundaries yet
-    progressPercent = Math.min(100, pCount % 30);
+  // Player axis progress
+  let p_prog = 0;
+  if (pT_next > pT_curr) {
+    p_prog = ((pCount - pT_curr) / (pT_next - pT_curr)) * 100;
   }
 
-  // Max Level Cap
+  // Hierarchy axis progress
+  let h_prog = 0;
+  if (hT_next > hT_curr) {
+    h_prog = ((hUnitsRaw - hT_curr) / (hT_next - hT_curr)) * 100;
+  }
+
+  // Use the dominant axis (whichever is further along)
+  progressPercent = Math.max(0, Math.min(100, Math.floor(Math.max(p_prog, h_prog))));
+
+  // Max level = 100% progress
   if (currentLvl >= 50) progressPercent = 100;
 
   const tier = getTierForLevel(currentLvl);
@@ -158,5 +223,40 @@ export function getClubLevel(input: ClubLevelInput): ClubLevelInfo {
     progressPercent,
     color: TIER_COLORS[tier],
     gradient: TIER_GRADIENTS[tier],
+    playerLevel: playerLvl,
+    hierarchyLevel: hierarchyLvl,
   };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// UNION LEVEL (same formula, same tiers)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export interface UnionLevelInput {
+  level?: number;
+  playerLevel?: number;
+  hierarchyLevel?: number;
+  totalPlayers?: number;
+  hierarchyUnits?: number;
+  hierarchyUnitsRoundedUp?: number;
+  playerThresholdCurrent?: number;
+  playerThresholdNext?: number;
+  hierarchyThresholdCurrent?: number;
+  hierarchyThresholdNext?: number;
+}
+
+export function getUnionLevel(input: UnionLevelInput): ClubLevelInfo {
+  // Delegate to getClubLevel — identical formula, just wraps for type clarity
+  return getClubLevel({
+    level: input.level,
+    playerLevel: input.playerLevel,
+    hierarchyLevel: input.hierarchyLevel,
+    playerCount: input.totalPlayers,
+    hierarchyUnits: input.hierarchyUnits,
+    hierarchyUnitsRoundedUp: input.hierarchyUnitsRoundedUp,
+    playerThresholdCurrent: input.playerThresholdCurrent,
+    playerThresholdNext: input.playerThresholdNext,
+    hierarchyThresholdCurrent: input.hierarchyThresholdCurrent,
+    hierarchyThresholdNext: input.hierarchyThresholdNext,
+  });
 }

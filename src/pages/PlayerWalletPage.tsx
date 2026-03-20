@@ -208,23 +208,6 @@ export default function PlayerWalletPage() {
     }
   }, [user?.id, loadBalances, loadDiamonds]);
 
-  // ── Bus Listeners: auto-refresh wallet on balance/wallet events ──
-  useEffect(() => {
-    if (!user?.id) return;
-    const refreshFn = () => {
-      loadBalances(user.id);
-      loadDiamonds(user.id);
-    };
-    const unsubs = [
-      masterBus.subscribeDebounced('BALANCE_UPDATED', refreshFn, 500),
-      masterBus.subscribeDebounced('WALLET_REFRESHED', refreshFn, 500),
-      masterBus.subscribeDebounced('CHIPS_ADDED', refreshFn, 500),
-      masterBus.subscribeDebounced('CHIPS_WITHDRAWN', refreshFn, 500),
-      masterBus.subscribeDebounced('DIAMOND_BALANCE_CHANGED', refreshFn, 500),
-    ];
-    return () => unsubs.forEach((u) => u());
-  }, [user?.id, loadBalances, loadDiamonds]);
-
   // ── Realtime subscription: live wallet balance updates ──
   useEffect(() => {
     if (!user?.id) return;

@@ -19,6 +19,23 @@
 const sw = self;
 
 const CACHE_NAME = 'club-arena-v1';
+const MAX_CACHE_ENTRIES = 200; // Evict oldest entries when cache grows beyond this
+
+/**
+ * Trim cache to MAX_CACHE_ENTRIES — prevents unbounded growth across deploys.
+ * Each deploy creates new hashed filenames; old ones stay cached forever without this.
+ */
+async function trimCache(cacheName, maxEntries) {
+  const cache = await caches.open(cacheName);
+  const keys = await cache.keys();
+  if (keys.length > maxEntries) {
+    // Delete oldest entries (first in = oldest)
+    const deleteCount = keys.length - maxEntries + 50; // Batch-delete 50 extra for headroom
+    for (let i = 0; i < deleteCount; i++) {
+      await cache.delete(keys[i]);
+    }
+  }
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  ASSET CACHING — Cache-first for immutable hashed chunks
@@ -51,6 +68,8 @@ sw.addEventListener('fetch', (event) => {
           return fetch(event.request).then((response) => {
             if (response.ok) {
               cache.put(event.request, response.clone());
+              // Async eviction — don't block response
+              trimCache(CACHE_NAME, MAX_CACHE_ENTRIES);
             }
             return response;
           });

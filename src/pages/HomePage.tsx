@@ -292,7 +292,7 @@ function HomePageInner() {
                   ...m.club,
                   is_owner: m.role === 'owner',
                   member_count: m.club?.member_count || 0,
-                  // Detect unions: clubs with a union_id are union entities
+                  // Detect unions by name (e.g. "Midway Union")
                   entity_type: /union/i.test(m.club?.name || '') ? 'union' : 'club',
                 }) as UserClub
             ) || [];

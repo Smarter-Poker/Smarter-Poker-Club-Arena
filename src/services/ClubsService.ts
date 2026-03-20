@@ -58,7 +58,7 @@ export async function searchClubs(query: string): Promise<Club[]> {
   const { data, error } = await supabase
     .from('clubs')
     .select(
-      'id, club_id, name, slug, description, avatar_url, logo_url, banner_url, color_theme, member_count, online_count, table_count, chip_treasury, is_public, requires_approval, gps_restricted, owner_id, union_id, settings, created_at, updated_at'
+      'id, club_id, name, slug, description, avatar_url, logo_url, banner_url, color_theme, member_count, online_count, table_count, chip_treasury, is_public, requires_approval, gps_restricted, owner_id, union_id, settings, created_at, updated_at, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
     )
     .ilike('name', `%${query}%`)
     .eq('is_public', true)
@@ -83,7 +83,7 @@ export async function getClub(identifier: string): Promise<Club | null> {
   const { data, error } = await supabase
     .from('clubs')
     .select(
-      'id, club_id, name, slug, description, avatar_url, logo_url, banner_url, color_theme, member_count, online_count, table_count, chip_treasury, is_public, requires_approval, gps_restricted, owner_id, union_id, settings, created_at, updated_at'
+      'id, club_id, name, slug, description, avatar_url, logo_url, banner_url, color_theme, member_count, online_count, table_count, chip_treasury, is_public, requires_approval, gps_restricted, owner_id, union_id, settings, created_at, updated_at, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
     )
     .eq(isUUID ? 'id' : 'slug', identifier)
     .maybeSingle();
@@ -424,7 +424,7 @@ export async function getUserMemberships(
     .select(
       `
       club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, reputation_xp, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, parent_agent_id, hands_played, chips_won, chips_lost, total_rake_paid,
-      club:clubs(id, club_id, name, slug, description, avatar_url, logo_url, card_image_url, banner_url, color_theme, member_count, table_count, chip_treasury, is_public, requires_approval, owner_id, union_id, settings, created_at, updated_at)
+      club:clubs(id, club_id, name, slug, description, avatar_url, logo_url, card_image_url, banner_url, color_theme, member_count, table_count, chip_treasury, is_public, requires_approval, owner_id, union_id, settings, created_at, updated_at, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next)
     `
     )
     .eq('user_id', userId);

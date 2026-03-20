@@ -26,16 +26,16 @@ const CARD_HEIGHT = 800;
 
 // Zone heights (proportional to design)
 const ID_PLATE_HEIGHT = 64; // ~8%
-const STATS_BAR_HEIGHT = 224; // ~28%
+const STATS_BAR_HEIGHT = 160; // ~20% — stats only, no badge pill
 const NAME_PLATE_HEIGHT = 96; // ~12%
 const VIEWPORT_TOP = ID_PLATE_HEIGHT;
 const VIEWPORT_HEIGHT = CARD_HEIGHT - ID_PLATE_HEIGHT - NAME_PLATE_HEIGHT - STATS_BAR_HEIGHT; // ~52%
 
-// Viewport insets
-const VIEWPORT_INSET = 8;
+// Viewport — no insets, images fill edge-to-edge
+const VIEWPORT_INSET = 0;
 const VIEWPORT_X = VIEWPORT_INSET;
 const VIEWPORT_Y = VIEWPORT_TOP;
-const VIEWPORT_W = CARD_WIDTH - VIEWPORT_INSET * 2;
+const VIEWPORT_W = CARD_WIDTH;
 const VIEWPORT_H = VIEWPORT_HEIGHT;
 
 export interface CardGeneratorResult {
@@ -244,39 +244,16 @@ export class ClubCardGenerator {
     ctx.lineTo(CARD_WIDTH, statsY);
     ctx.stroke();
 
-    // Type badge
-    const badgeText = isUnion ? '🤝 UNION' : '♠ CLUB';
-    const badgeY = statsY + 20;
+    // Stat labels — no badge pill, just labels + value placeholders
+    const labelColor = isUnion ? '#e8d090' : '#a5eff0';
+    const labelY = statsY + 24;
     ctx.font = 'bold 14px "Inter", "Roboto", sans-serif';
+    ctx.fillStyle = labelColor;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
-    // Badge pill background
-    const badgeWidth = ctx.measureText(badgeText).width + 24;
-    const badgeX = (CARD_WIDTH - badgeWidth) / 2;
-    ctx.fillStyle = isUnion ? 'rgba(218, 165, 32, 0.12)' : 'rgba(0, 212, 255, 0.1)';
-    ctx.beginPath();
-    ctx.roundRect(badgeX, badgeY - 12, badgeWidth, 24, 12);
-    ctx.fill();
-    ctx.strokeStyle = isUnion ? 'rgba(218, 165, 32, 0.3)' : 'rgba(0, 212, 255, 0.25)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-
-    // Badge text
-    ctx.fillStyle = isUnion ? '#f0d070' : '#a5eff0';
-    ctx.fillText(badgeText, CARD_WIDTH / 2, badgeY);
-
-    // Stat labels
-    const labelColor = isUnion ? '#e8d090' : '#a5eff0';
-    const labelY = statsY + 60;
-    ctx.font = 'bold 12px "Inter", "Roboto", sans-serif';
-    ctx.fillStyle = labelColor;
-
-    ctx.textAlign = 'center';
-    ctx.fillText('TOTAL', CARD_WIDTH * 0.2, labelY);
-    ctx.fillText('MEMBERS', CARD_WIDTH * 0.2, labelY + 14);
-    ctx.fillText('CLUB LEVEL', CARD_WIDTH * 0.5, labelY + 7);
+    ctx.fillText('MEMBERS', CARD_WIDTH * 0.2, labelY);
+    ctx.fillText('LEVEL', CARD_WIDTH * 0.5, labelY);
     ctx.fillText('ACTIVE', CARD_WIDTH * 0.8, labelY);
-    ctx.fillText('PLAYERS', CARD_WIDTH * 0.8, labelY + 14);
   }
 }

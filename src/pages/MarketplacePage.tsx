@@ -3,6 +3,7 @@
  *  CLUB ENGINE — Item Shop (Marketplace)
  *  Club Arena in-game purchases: Time Banks, Table Skins, Throwables, Emotes
  *  3 Tabs: Store | My Items  (+Manage tab for admins)
+ *  ── Wired to World Hub APIs: /api/club-arena/marketplace-items & purchase ──
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -96,7 +97,7 @@ export default function MarketplacePage() {
   const mountedRef = useIsMounted();
   const loadingRef = useRef(false);
 
-  /* ═══ Data Loading ═══ */
+  /* ═══ Data Loading — via World Hub API ═══ */
   const loadMarketplace = useCallback(
     async (cId?: string, silent = false) => {
       const targetClub = cId || clubId;
@@ -106,34 +107,38 @@ export default function MarketplacePage() {
       try {
         if (!silent) setLoading(true);
 
-        const [{ data: itemsData }, { data: purchasesData }, { data: memberData }] =
-          await Promise.all([
-            supabase
-              .from('marketplace_items')
-              .select(
-                'id, club_id, name, description, price, image_url, category, is_active, purchase_count'
-              )
-              .eq('club_id', targetClub)
-              .eq('is_active', true)
-              .order('created_at', { ascending: false }),
-            supabase
-              .from('marketplace_purchases')
-              .select('id, item_id, price_paid, created_at, marketplace_items(name, category)')
-              .eq('user_id', user.id)
-              .order('created_at', { ascending: false }),
-            supabase
-              .from('club_members')
-              .select('chip_balance, role')
-              .eq('club_id', targetClub)
-              .eq('user_id', user.id)
-              .maybeSingle(),
-          ]);
+        // Get auth token for API call
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        const token = session?.access_token;
+        if (!token) throw new Error('Not authenticated');
+
+        const res = await retryAsync(
+          () =>
+            fetch(`/api/club-arena/marketplace-items?clubId=${targetClub}`, {
+              headers: { Authorization: `Bearer ${token}` },
+            }),
+          2
+        );
+        if (!res.ok) {
+          const errBody = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+          throw new Error(errBody.error || `Failed to load shop (${res.status})`);
+        }
+        const data = await res.json();
 
         if (mountedRef.current) {
-          setItems(itemsData || []);
-          setPurchases(purchasesData || []);
-          setBalance(memberData?.chip_balance || 0);
-          if (memberData?.role) setRole(memberData.role);
+          setItems(
+            (data.items || []).map((i: any) => ({
+              ...i,
+              club_id: targetClub,
+              is_active: true,
+              purchase_count: 0,
+            }))
+          );
+          setPurchases(data.purchases || []);
+          setBalance(data.balance || 0);
+          if (data.role) setRole(data.role);
         }
       } catch (err: any) {
         if (!silent) toast.error(err.message);
@@ -214,7 +219,7 @@ export default function MarketplacePage() {
           {
             event: '*',
             schema: 'public',
-            table: 'marketplace_items',
+            table: 'club_shop_items',
             filter: `club_id=eq.${resolvedId}`,
           },
           () => {
@@ -243,26 +248,39 @@ export default function MarketplacePage() {
     if (clubId) loadMarketplace(clubId, true);
   });
 
-  /* ═══ Purchase handler ═══ */
+  /* ═══ Purchase handler — via World Hub API ═══ */
   const handlePurchase = async () => {
     if (!buyTarget || !clubId || !user) return;
     setProcessing(true);
     try {
-      const { error: deductErr } = await retryAsync(
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) throw new Error('Not authenticated');
+
+      const res = await retryAsync(
         () =>
-          supabase.rpc('deduct_marketplace_chips', {
-            p_club_id: clubId,
-            p_user_id: user.id,
-            p_amount: buyTarget.price,
-            p_item_id: buyTarget.id,
+          fetch('/api/club-arena/marketplace-purchase', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ clubId, itemId: buyTarget.id }),
           }),
-        3
+        2
       );
-      if (deductErr) throw deductErr;
+
+      const data = await res.json().catch(() => ({ success: false, error: `HTTP ${res.status}` }));
+
+      if (!data.success) {
+        throw new Error(data.error || 'Purchase failed');
+      }
 
       setShowSuccess(`Successfully purchased ${buyTarget.name}!`);
       setTimeout(() => setShowSuccess(null), 2500);
-      setBalance((prev) => prev - buyTarget.price);
+      setBalance(data.newBalance ?? balance - buyTarget.price);
       masterBus.emit('BALANCE_UPDATED', {
         source: 'marketplace_purchase',
         clubId,
@@ -281,14 +299,12 @@ export default function MarketplacePage() {
     if (!clubId) return;
     try {
       const { data } = await supabase
-        .from('marketplace_items')
-        .select(
-          'id, club_id, name, description, price, image_url, category, is_active, purchase_count'
-        )
+        .from('club_shop_items')
+        .select('id, club_id, name, description, price, image_url, category, is_active')
         .eq('club_id', clubId)
         .order('created_at', { ascending: false });
       if (mountedRef.current) {
-        setAdminItems(data || []);
+        setAdminItems((data || []).map((i: any) => ({ ...i, purchase_count: 0 })));
         setAdminLoaded(true);
       }
     } catch (err: any) {
@@ -740,7 +756,7 @@ export default function MarketplacePage() {
                 }
                 setProcessing(true);
                 try {
-                  const { error } = await supabase.from('marketplace_items').insert({
+                  const { error } = await supabase.from('club_shop_items').insert({
                     club_id: clubId,
                     name: newItemName.trim(),
                     price,
@@ -801,7 +817,7 @@ export default function MarketplacePage() {
                       onClick={async () => {
                         try {
                           const { error: togErr } = await supabase
-                            .from('marketplace_items')
+                            .from('club_shop_items')
                             .update({ is_active: !item.is_active })
                             .eq('id', item.id);
                           if (togErr) throw togErr;
@@ -821,7 +837,7 @@ export default function MarketplacePage() {
                         if (!confirm(`Delete "${item.name}"?`)) return;
                         try {
                           const { error: delErr } = await supabase
-                            .from('marketplace_items')
+                            .from('club_shop_items')
                             .delete()
                             .eq('id', item.id)
                             .eq('club_id', item.club_id);

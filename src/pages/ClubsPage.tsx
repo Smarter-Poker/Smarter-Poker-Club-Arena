@@ -852,6 +852,7 @@ export default function ClubsPage() {
                     <textarea
                       placeholder="Describe your club..."
                       rows={3}
+                      maxLength={500}
                       value={clubDescription}
                       onChange={(e) => setClubDescription(e.target.value)}
                       style={{

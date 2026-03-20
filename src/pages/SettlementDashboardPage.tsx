@@ -151,33 +151,6 @@ function CountdownRing({ start, end }: { start: string; end: string }) {
   );
 }
 
-interface PeriodInfo {
-  id: string;
-  start: string;
-  end: string;
-  status: string;
-}
-
-interface AgentPayout {
-  id: string;
-  agentId: string;
-  agentName: string;
-  netSettlement: number;
-  commissionEarned: number;
-  status: string;
-  updatedAt: string;
-}
-
-interface PeriodHistoryItem {
-  id: string;
-  start: string;
-  end: string;
-  status: string;
-  totalDisbursed: number;
-  agentsPaid: number;
-  createdAt: string;
-}
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════

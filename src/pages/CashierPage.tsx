@@ -441,6 +441,27 @@ export default function CashierPage() {
         }
       }
 
+      // Fetch commission rates for agent-type recipients
+      const agentUserIds = members
+        .filter((m) => ['agent', 'super_agent', 'sub_agent'].includes(m.role))
+        .map((m) => m.user_id);
+      const agentMap: Record<string, { commission_rate: number; is_prepaid: boolean }> = {};
+      if (agentUserIds.length > 0) {
+        const { data: agentRecords } = await supabase
+          .from('agents')
+          .select('user_id, commission_rate, is_prepaid')
+          .in('user_id', agentUserIds)
+          .eq('club_id', resolvedId);
+        if (agentRecords) {
+          for (const a of agentRecords) {
+            agentMap[a.user_id] = {
+              commission_rate: a.commission_rate || 0,
+              is_prepaid: a.is_prepaid || false,
+            };
+          }
+        }
+      }
+
       const list: Recipient[] = members
         .filter((m) => m.user_id)
         .map((m) => ({
@@ -448,6 +469,8 @@ export default function CashierPage() {
           username: m.display_name || m.nickname || profileMap[m.user_id] || 'Player',
           role: m.role,
           balance: m.chip_balance || 0,
+          commissionRate: agentMap[m.user_id]?.commission_rate,
+          isPrepaid: agentMap[m.user_id]?.is_prepaid,
         }))
         .sort((a: Recipient, b: Recipient) => {
           const order: Record<string, number> = {

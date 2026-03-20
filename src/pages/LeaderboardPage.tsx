@@ -126,6 +126,15 @@ export default function LeaderboardPage() {
   const loadLeaderboardRef = useRef(async (silent?: boolean, getIsMounted?: () => boolean) => {});
   const loadTournamentStatsRef = useRef(async (getIsMounted?: () => boolean) => {});
 
+  // Safety timeout: prevent infinite skeleton if auth/Supabase hangs
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      setLoading(false);
+      setClubsLoading(false);
+    }, 5000);
+    return () => clearTimeout(timeout);
+  }, []);
+
   // Load user's clubs on mount
   useEffect(() => {
     let isMounted = true;

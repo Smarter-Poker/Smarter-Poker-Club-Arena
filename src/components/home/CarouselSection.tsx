@@ -14,6 +14,7 @@ import haptic from '../../services/HapticService';
 import PremiumSFX from '../../services/PremiumSFX';
 import { STORAGE_KEYS } from '../../lib/storage';
 import styles from '../../pages/HomePage.module.css';
+import { PageErrorBoundary } from '../common/PageErrorBoundary';
 
 // Lazy-load heavy component
 const ClubStatsPanel = lazy(() => import('../club/ClubStatsPanel'));
@@ -240,20 +241,24 @@ export default function CarouselSection({
       >
         {pinnedClubIds.includes(club.id) && (
           <span className={styles.pinnedBadge} title="Pinned">
-            *
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z" />
+            </svg>
           </span>
         )}
         <div className={styles.carouselFeaturedPedestal}></div>
         <Suspense fallback={<div className={styles.cardSkeleton} />}>
-          <ClubCardPanel
-            clubName={club.name?.toUpperCase() || 'MY CLUB'}
-            totalMembers={stats?.totalMembers ?? club.member_count ?? 0}
-            clubLevel={stats?.clubLevel ?? 1}
-            activePlayers={stats?.activePlayers ?? 0}
-            clubId={club.club_id}
-            cardImageUrl={club.card_image_url}
-            logoUrl={club.logo_url}
-          />
+          <PageErrorBoundary pageName={club.name || 'Club Card'}>
+            <ClubCardPanel
+              clubName={club.name?.toUpperCase() || 'MY CLUB'}
+              totalMembers={stats?.totalMembers ?? club.member_count ?? 0}
+              clubLevel={stats?.clubLevel ?? 1}
+              activePlayers={stats?.activePlayers ?? 0}
+              clubId={club.club_id}
+              cardImageUrl={club.card_image_url}
+              logoUrl={club.logo_url}
+            />
+          </PageErrorBoundary>
         </Suspense>
       </div>
     );

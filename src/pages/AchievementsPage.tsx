@@ -253,6 +253,12 @@ export default function AchievementsPage() {
   const loadAchievementsRef = useRef<(() => Promise<void>) | null>(null);
   const isMounted = useIsMounted();
 
+  // Safety timeout: prevent infinite skeleton if auth/Supabase hangs
+  useEffect(() => {
+    const timeout = setTimeout(() => setLoading(false), 5000);
+    return () => clearTimeout(timeout);
+  }, []);
+
   useEffect(() => {
     if (user?.id) {
       loadAchievements();
@@ -614,6 +620,29 @@ export default function AchievementsPage() {
             {Array.from({ length: 8 }).map((_, i) => (
               <div key={i} className="ach-skeleton-card" />
             ))}
+          </div>
+        ) : filteredAchievements.length === 0 ? (
+          <div className="empty-state" style={{ textAlign: 'center', padding: '2.5rem 1.5rem' }}>
+            <span
+              style={{
+                fontSize: '2.5rem',
+                display: 'block',
+                marginBottom: '0.75rem',
+                opacity: 0.5,
+              }}
+            >
+              🏅
+            </span>
+            <p style={{ fontSize: '1.05rem', fontWeight: 600, margin: '0 0 0.5rem' }}>
+              {category === 'all'
+                ? 'No Achievements Yet'
+                : `No ${category.charAt(0).toUpperCase() + category.slice(1)} Achievements`}
+            </p>
+            <p style={{ color: 'var(--soft-white, #B0B3B8)', fontSize: '0.85rem', margin: 0 }}>
+              {category === 'all'
+                ? 'Start playing to unlock your first badge!'
+                : `Play more to unlock ${category} achievements.`}
+            </p>
           </div>
         ) : (
           filteredAchievements.map((achievement, index) => (

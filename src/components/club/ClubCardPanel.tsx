@@ -118,7 +118,9 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
           <span className="club-card-stat-value">{Math.max(1, clubLevel)}</span>
         </div>
 
-        <div className="club-card-stats-group club-card-active-group">
+        <div
+          className={`club-card-stats-group club-card-active-group${activePlayers > 0 ? ' club-card-active-pulse' : ''}`}
+        >
           <span className="club-card-stat-label">
             ACTIVE
             <br />

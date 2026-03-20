@@ -60,6 +60,11 @@ export class ClubCardGenerator {
     // Draw Club Name at bottom with white text
     this.drawClubName(ctx, clubName);
 
+    // Prefer WebP (60-70% smaller) with PNG fallback for older browsers
+    const webpTest = canvas.toDataURL('image/webp');
+    if (webpTest.startsWith('data:image/webp')) {
+      return webpTest;
+    }
     return canvas.toDataURL('image/png');
   }
 

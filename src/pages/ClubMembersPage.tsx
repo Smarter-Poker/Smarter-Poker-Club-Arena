@@ -460,6 +460,12 @@ export default function ClubMembersPage() {
 
   const loadingRef = useRef(false);
 
+  // Safety timeout: prevent infinite skeleton if auth/Supabase hangs
+  useEffect(() => {
+    const timeout = setTimeout(() => setLoading(false), 5000);
+    return () => clearTimeout(timeout);
+  }, []);
+
   // ── CRITICAL: Reset per-club state when navigating between clubs ──
   useEffect(() => {
     setUserRole('member');
@@ -789,17 +795,48 @@ export default function ClubMembersPage() {
         {loading ? (
           <PageSkeleton variant="list" />
         ) : filteredMembers.length === 0 ? (
-          <div className="empty-state">
-            <p>
+          <div className="empty-state" style={{ textAlign: 'center', padding: '2.5rem 1.5rem' }}>
+            <span
+              style={{
+                fontSize: '2.5rem',
+                display: 'block',
+                marginBottom: '0.75rem',
+                opacity: 0.5,
+              }}
+            >
               {filter === 'agents'
-                ? 'No agents yet — promote a member to Agent'
+                ? '🤝'
                 : filter === 'admins'
-                  ? 'No admins found'
+                  ? '🛡️'
                   : filter === 'online'
-                    ? 'No members online'
+                    ? '🟢'
                     : filter === 'horses'
-                      ? 'No horse (bot) players in this club'
-                      : 'No members found'}
+                      ? '🐴'
+                      : '👥'}
+            </span>
+            <p style={{ fontSize: '1.05rem', fontWeight: 600, margin: '0 0 0.5rem' }}>
+              {filter === 'agents'
+                ? 'No Agents Yet'
+                : filter === 'admins'
+                  ? 'No Admins Found'
+                  : filter === 'online'
+                    ? 'No Members Online'
+                    : filter === 'horses'
+                      ? 'No Horse Players'
+                      : 'No Members Found'}
+            </p>
+            <p style={{ color: 'var(--soft-white, #B0B3B8)', fontSize: '0.85rem', margin: 0 }}>
+              {filter === 'agents'
+                ? 'Promote a member to Agent to get started.'
+                : filter === 'admins'
+                  ? 'No one has admin privileges in this club yet.'
+                  : filter === 'online'
+                    ? 'No club members are currently online.'
+                    : filter === 'horses'
+                      ? 'No bot players have been added to this club.'
+                      : searchQuery
+                        ? `No results for "${searchQuery}".`
+                        : 'Invite players to grow your club.'}
             </p>
           </div>
         ) : (

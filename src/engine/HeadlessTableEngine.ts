@@ -1238,8 +1238,13 @@ export class HeadlessTableEngine {
       const timerId = workerTimeout(() => {
         if (!this.handController || !this.running) return;
 
-        // Auto-action logic: Check if possible, otherwise Fold
-        const action = toCall === 0 ? 'check' : 'fold';
+        // Recalculate toCall from FRESH state (original may be stale after timeout)
+        const freshState = this.handController.getState();
+        const freshPlayer = freshState.players.find((p) => p.seat === seat);
+        const freshToCall = freshPlayer
+          ? Math.max(0, freshState.currentBet - freshPlayer.bet)
+          : toCall;
+        const action = freshToCall === 0 ? 'check' : 'fold';
         try {
           this.handController.performAction(player.seat_number, action as any);
         } catch (err: unknown) {
@@ -1315,31 +1320,40 @@ export class HeadlessTableEngine {
       const timerId = workerTimeout(() => {
         if (!handControllerRef || !this.running) return;
 
+        // Recalculate from FRESH state (stale captures may cause wrong action)
+        const freshState = handControllerRef.getState();
+        const freshEnginePlayer = freshState.players.find((p) => p.seat === seat);
+        const freshToCall = freshEnginePlayer
+          ? Math.max(0, freshState.currentBet - freshEnginePlayer.bet)
+          : toCall;
+
         let action = decision.action as string;
         let amount = decision.amount;
 
-        // Validate and normalize action
+        // Validate and normalize action using FRESH state
         if (action === 'allin') action = 'all_in';
-        if (action === 'check' && toCall > 0) action = 'call';
-        if (action === 'call' && toCall === 0) action = 'check';
-        if (action === 'call') amount = toCall;
-        if (action === 'fold' && toCall === 0) action = 'check';
+        if (action === 'check' && freshToCall > 0) action = 'call';
+        if (action === 'call' && freshToCall === 0) action = 'check';
+        if (action === 'call') amount = freshToCall;
+        if (action === 'fold' && freshToCall === 0) action = 'check';
 
         // Validate bet/raise — convert to correct action type
-        if (action === 'raise' && state.currentBet === 0) action = 'bet';
-        if (action === 'bet' && state.currentBet > 0) action = 'raise';
+        if (action === 'raise' && freshState.currentBet === 0) action = 'bet';
+        if (action === 'bet' && freshState.currentBet > 0) action = 'raise';
 
         // Clamp bet/raise amounts to valid range
+        const playerStack = freshEnginePlayer?.stack ?? enginePlayer.stack;
+        const playerBet = freshEnginePlayer?.bet ?? enginePlayer.bet;
         if (action === 'bet' && amount !== undefined) {
-          amount = Math.max(state.minRaise, amount);
-          if (amount >= enginePlayer.stack) {
+          amount = Math.max(freshState.minRaise, amount);
+          if (amount >= playerStack) {
             action = 'all_in';
             amount = undefined;
           }
         } else if (action === 'raise' && amount !== undefined) {
-          const minRaiseTo = state.currentBet + state.minRaise;
+          const minRaiseTo = freshState.currentBet + freshState.minRaise;
           amount = Math.max(minRaiseTo, amount);
-          const maxRaiseTo = enginePlayer.stack + enginePlayer.bet;
+          const maxRaiseTo = playerStack + playerBet;
           if (amount >= maxRaiseTo) {
             action = 'all_in';
             amount = undefined;

@@ -83,7 +83,7 @@ export type HandEvent =
     }
   | { type: 'SHOWDOWN'; results: ShowdownResult[] }
   | { type: 'WINNERS'; winners: Winner[] }
-  | { type: 'HAND_COMPLETE'; handNumber: number; rake: number; pot: number };
+  | { type: 'HAND_COMPLETE'; handNumber: number; rake: number; pot: number; sawFlop: boolean };
 
 export interface ShowdownResult {
   seat: number;
@@ -186,6 +186,26 @@ export class HandController {
 
     // Deal hole cards
     this.dealHoleCards();
+
+    // Bomb pot: skip preflop entirely — deal flop and start betting there
+    if (this.config.bombPot) {
+      this.state.stage = 'flop';
+      this.state.sawFlop = true;
+      const flop = this.state.deck.deal(3);
+      this.state.communityCards.push(...flop);
+      this.emit({ type: 'COMMUNITY_CARDS', stage: 'flop', cards: flop });
+
+      // Check if we can continue betting (all but one may be all-in from antes)
+      const activePlayers = this.getActivePlayers().filter((p) => !p.is_all_in);
+      if (activePlayers.length < 2) {
+        this.runOutCommunityCards();
+        return;
+      }
+
+      this.state.currentPlayerSeat = this.getFirstPostflopPlayer();
+      this.emitTurnChange();
+      return;
+    }
 
     // Set first player to act
     this.setNextPlayer();
@@ -683,6 +703,7 @@ export class HandController {
       handNumber: this.config.handNumber,
       rake,
       pot: this.state.pot,
+      sawFlop: this.state.sawFlop,
     });
     // Telemetry: record hand timing
     engineTelemetry.recordHandTiming(
@@ -752,6 +773,7 @@ export class HandController {
         handNumber: this.config.handNumber,
         rake: 0,
         pot: this.state.pot,
+        sawFlop: this.state.sawFlop,
       });
       // Telemetry: record hand timing (no showdown)
       engineTelemetry.recordHandTiming(this.config.tableId, 0, 0, Date.now() - this.handStartedAt);
@@ -796,6 +818,7 @@ export class HandController {
       handNumber: this.config.handNumber,
       rake,
       pot: this.state.pot,
+      sawFlop: this.state.sawFlop,
     });
     // Telemetry: record hand timing
     engineTelemetry.recordHandTiming(this.config.tableId, 0, 0, Date.now() - this.handStartedAt);

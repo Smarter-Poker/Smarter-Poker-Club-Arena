@@ -3314,10 +3314,12 @@ export default function TablePage({
             // The HandController already calculated correct rake — pass the
             // original pot stored in event data, not the already-zeroed tableState.pot
             const handPot = event.pot || tableStateRef.current.pot || 0;
+            // Use authoritative sawFlop from HAND_COMPLETE event (not rake > 0 heuristic)
+            const wentToFlop = (event as any).sawFlop ?? event.rake > 0;
             await handleHandComplete(
               handPersistenceService.getCurrentHandId() || crypto.randomUUID(),
-              event.rake > 0 ? handPot : 0,
-              event.rake > 0, // wentToFlop: if HC calculated rake, flop was seen
+              handPot,
+              wentToFlop,
               rakePlayers
             );
           }

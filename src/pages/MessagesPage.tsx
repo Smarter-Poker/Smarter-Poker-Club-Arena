@@ -7,16 +7,12 @@
 
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { supabase } from '../lib/supabase';
+import { useAuthUser } from '../hooks/useAuthUser';
 import ConversationList from '../components/messaging/ConversationList';
 import MessageThread from '../components/messaging/MessageThread';
 import ClubBottomNav from '../components/club/ClubBottomNav';
 import './MessagesPage.css';
-
-const conversationAnimationStyle = (index: number) => ({
-  opacity: 0,
-  transform: 'translateY(6px)',
-  animation: `fadeInUp 0.4s ease-out ${index * 50}ms forwards`,
-});
 
 export default function MessagesPage() {
   useEffect(() => {
@@ -25,6 +21,7 @@ export default function MessagesPage() {
 
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const { user } = useAuthUser();
   const { clubId: routeClubId, conversationId } = useParams<{
     clubId?: string;
     conversationId?: string;
@@ -35,6 +32,30 @@ export default function MessagesPage() {
   );
   const [userRole, setUserRole] = useState<'owner' | 'admin' | 'agent' | 'member'>('member');
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+
+  // Fetch actual user role for this club so ClubBottomNav shows correct tabs
+  useEffect(() => {
+    if (!clubId || !user?.id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from('club_members')
+          .select('role')
+          .eq('club_id', clubId)
+          .eq('user_id', user.id)
+          .maybeSingle();
+        if (!cancelled && data?.role) {
+          setUserRole(data.role as typeof userRole);
+        }
+      } catch {
+        /* silent */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [clubId, user?.id]);
 
   // Note: clubId is optional now - ConversationList shows both personal and club widget
 

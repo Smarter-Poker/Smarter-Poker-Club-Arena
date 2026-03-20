@@ -687,3 +687,174 @@ describe('HandController - setNextPlayer Fallback (Sweep 3 Fix)', () => {
     expect(hasComplete).toBe(true);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// BOMB POT FLOW FIX — BUG-HC-02
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('HandController - Bomb Pot Flow (BUG-HC-02 Fix)', () => {
+  it('should skip preflop and start betting on flop', () => {
+    const config = makeConfig({ bombPot: { anteMultiplier: 5 } });
+    const hc = new HandController(config, makePlayers(4), 1);
+    const events = collectEvents(hc);
+    hc.start();
+
+    const state = hc.getState();
+    // Should be on flop, NOT preflop
+    expect(state.stage).toBe('flop');
+    expect(state.communityCards).toHaveLength(3);
+  });
+
+  it('should deal 3 community cards on start for bomb pot', () => {
+    const config = makeConfig({ bombPot: { anteMultiplier: 5 } });
+    const hc = new HandController(config, makePlayers(3), 1);
+    const events = collectEvents(hc);
+    hc.start();
+
+    const communityEvents = events.filter((e) => e.type === 'COMMUNITY_CARDS');
+    expect(communityEvents).toHaveLength(1);
+    expect(communityEvents[0].stage).toBe('flop');
+    expect(communityEvents[0].cards).toHaveLength(3);
+  });
+
+  it('should have sawFlop=true in HAND_COMPLETE for bomb pot', () => {
+    const config = makeConfig({ bombPot: { anteMultiplier: 5 } });
+    const hc = new HandController(config, makePlayers(2), 1);
+    const events = collectEvents(hc);
+    hc.start();
+
+    // Check all through to completion
+    let state = hc.getState();
+    hc.performAction(state.currentPlayerSeat, 'check');
+    state = hc.getState();
+    hc.performAction(state.currentPlayerSeat, 'check');
+
+    // Should advance to turn
+    state = hc.getState();
+    expect(state.stage).toBe('turn');
+    hc.performAction(state.currentPlayerSeat, 'check');
+    state = hc.getState();
+    hc.performAction(state.currentPlayerSeat, 'check');
+
+    // Should advance to river
+    state = hc.getState();
+    expect(state.stage).toBe('river');
+    hc.performAction(state.currentPlayerSeat, 'check');
+    state = hc.getState();
+    hc.performAction(state.currentPlayerSeat, 'check');
+
+    const completeEvent = events.find((e) => e.type === 'HAND_COMPLETE');
+    expect(completeEvent).toBeDefined();
+    expect(completeEvent!.sawFlop).toBe(true);
+  });
+
+  it('should complete bomb pot through all stages', () => {
+    const config = makeConfig({ bombPot: { anteMultiplier: 5 } });
+    const hc = new HandController(config, makePlayers(2), 1);
+    const events = collectEvents(hc);
+    hc.start();
+
+    // Flop: both check
+    let state = hc.getState();
+    hc.performAction(state.currentPlayerSeat, 'check');
+    state = hc.getState();
+    hc.performAction(state.currentPlayerSeat, 'check');
+
+    // Turn: both check
+    state = hc.getState();
+    hc.performAction(state.currentPlayerSeat, 'check');
+    state = hc.getState();
+    hc.performAction(state.currentPlayerSeat, 'check');
+
+    // River: both check
+    state = hc.getState();
+    hc.performAction(state.currentPlayerSeat, 'check');
+    state = hc.getState();
+    hc.performAction(state.currentPlayerSeat, 'check');
+
+    const hasComplete = events.some((e) => e.type === 'HAND_COMPLETE');
+    expect(hasComplete).toBe(true);
+
+    // 5 community cards should be dealt
+    expect(hc.getCommunityCards()).toHaveLength(5);
+  });
+
+  it('should handle bomb pot where someone folds on flop', () => {
+    const config = makeConfig({ bombPot: { anteMultiplier: 5 } });
+    const hc = new HandController(config, makePlayers(3), 1);
+    const events = collectEvents(hc);
+    hc.start();
+
+    // Player folds on the flop
+    let state = hc.getState();
+    hc.performAction(state.currentPlayerSeat, 'fold');
+    state = hc.getState();
+    hc.performAction(state.currentPlayerSeat, 'fold');
+
+    const hasComplete = events.some((e) => e.type === 'HAND_COMPLETE');
+    expect(hasComplete).toBe(true);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// HAND_COMPLETE sawFlop TRACKING — BUG-HC-03/04
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('HandController - HAND_COMPLETE sawFlop Field', () => {
+  it('sawFlop should be false when hand ends preflop (everyone folds)', () => {
+    const hc = new HandController(makeConfig(), makePlayers(3), 1);
+    const events = collectEvents(hc);
+    hc.start();
+
+    // Everyone folds preflop
+    let state = hc.getState();
+    hc.performAction(state.currentPlayerSeat, 'fold');
+    state = hc.getState();
+    hc.performAction(state.currentPlayerSeat, 'fold');
+
+    const completeEvent = events.find((e) => e.type === 'HAND_COMPLETE');
+    expect(completeEvent).toBeDefined();
+    expect(completeEvent!.sawFlop).toBe(false);
+  });
+
+  it('sawFlop should be true when hand reaches flop', () => {
+    const hc = new HandController(makeConfig(), makePlayers(2), 1);
+    const events = collectEvents(hc);
+    hc.start();
+
+    // Play to the flop
+    let state = hc.getState();
+    hc.performAction(state.currentPlayerSeat, 'call');
+    state = hc.getState();
+    hc.performAction(state.currentPlayerSeat, 'check');
+
+    // Now on flop — one player folds
+    state = hc.getState();
+    expect(state.stage).toBe('flop');
+    hc.performAction(state.currentPlayerSeat, 'fold');
+
+    const completeEvent = events.find((e) => e.type === 'HAND_COMPLETE');
+    expect(completeEvent).toBeDefined();
+    expect(completeEvent!.sawFlop).toBe(true);
+  });
+
+  it('HAND_COMPLETE should include pot value and sawFlop for all-in hands', () => {
+    const players = makePlayers(2, 10);
+    const hc = new HandController(makeConfig(), players, 1);
+    const events = collectEvents(hc);
+    hc.start();
+
+    // Both go all-in preflop
+    let state = hc.getState();
+    hc.performAction(state.currentPlayerSeat, 'all_in');
+    state = hc.getState();
+    hc.performAction(state.currentPlayerSeat, 'all_in');
+
+    const completeEvent = events.find((e) => e.type === 'HAND_COMPLETE');
+    expect(completeEvent).toBeDefined();
+    expect(completeEvent!.pot).toBeGreaterThan(0);
+    // sawFlop should be true (community cards were run out)
+    expect(completeEvent!.sawFlop).toBe(true);
+    expect(typeof completeEvent!.sawFlop).toBe('boolean');
+  });
+});

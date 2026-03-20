@@ -319,9 +319,19 @@ class HandHistoryServiceClass {
     if (filters.endDate) {
       query = query.lte('created_at', filters.endDate);
     }
-
     if (filters.minPot) {
       query = query.gte('pot_size', filters.minPot);
+    }
+
+    if (filters.clubId) {
+      // Pre-filter: get table IDs for this club, then filter hands by those tables
+      const { data: clubTables } = await supabase
+        .from('tables')
+        .select('id')
+        .eq('club_id', filters.clubId);
+      const tableIds = (clubTables || []).map((t: { id: string }) => t.id);
+      if (tableIds.length === 0) return []; // No tables for this club
+      query = query.in('table_id', tableIds);
     }
 
     query = query.limit(filters.limit || 50);
@@ -336,17 +346,9 @@ class HandHistoryServiceClass {
     });
     const profileMap = await this.fetchProfileMap(allUserIds);
 
-    let results = data
+    const results = data
       .map((d: unknown) => this.mapHandRecord(d as HandDB, profileMap))
       .filter((h: HandRecord | null): h is HandRecord => h !== null);
-
-    // Filter by clubId if provided (post-query filter)
-    if (filters.clubId) {
-      results = results.filter(
-        (h: HandRecord) =>
-          (h as unknown as { _table?: { club_id: string } })._table?.club_id === filters.clubId
-      );
-    }
 
     return results;
   }

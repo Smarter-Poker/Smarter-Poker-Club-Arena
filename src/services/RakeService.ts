@@ -454,6 +454,7 @@ export const RakeService = {
       commissionsQueued = await this.queueCommissionCredits({
         handId,
         clubId,
+        tableId,
         rakeAmount: calculation.cappedRake,
         players: players.filter((p) => !p.isSittingOut && p.hasCards),
       });
@@ -679,6 +680,7 @@ export const RakeService = {
     clubId: string;
     rakeAmount: number;
     players: DealtInPlayer[];
+    tableId?: string;
   }): Promise<boolean> {
     // Guard against division by zero
     if (params.players.length === 0 || params.rakeAmount <= 0) return true;

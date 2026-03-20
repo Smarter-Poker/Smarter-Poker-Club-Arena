@@ -213,20 +213,22 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
     try {
       // Generate club card image
       const tempClubId = Math.floor(100000 + Math.random() * 900000);
-      const cardDataUrl = await ClubCardGenerator.generateCard({
+      const { dataUrl, format } = await ClubCardGenerator.generateCard({
         logoUrl: logoPreview,
         clubId: tempClubId,
         clubName: sanitizeInput(clubName.trim()).toUpperCase(),
       });
 
       // Upload card to storage
-      const cardBlob = await fetch(cardDataUrl).then((r) => r.blob());
-      const cardFileName = `club-cards/${tempClubId}-card.png`;
+      const cardBlob = await fetch(dataUrl).then((r) => r.blob());
+      const ext = format === 'webp' ? 'webp' : 'png';
+      const contentType = format === 'webp' ? 'image/webp' : 'image/png';
+      const cardFileName = `club-cards/${tempClubId}-card.${ext}`;
 
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('club-assets')
         .upload(cardFileName, cardBlob, {
-          contentType: 'image/png',
+          contentType,
           upsert: true,
         });
 

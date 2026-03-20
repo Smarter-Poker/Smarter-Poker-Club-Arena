@@ -13,6 +13,7 @@
 
 import { supabase } from '../lib/supabase';
 import { ClubCardGenerator } from './ClubCardGenerator';
+import { masterBus } from '../core/MasterBus';
 
 // Track which clubs we've already attempted to backfill this session
 const processedClubs = new Set<string>();
@@ -46,22 +47,24 @@ export async function backfillClubCards(clubs: BackfillTarget[]): Promise<void> 
     try {
       console.log(`[ClubCardBackfill] Generating baked card for "${club.name}" (${club.club_id})`);
 
-      // 1. Generate composite card using canvas
-      const cardDataUrl = await ClubCardGenerator.generateCard({
+      // 1. Generate composite card using canvas (returns format metadata)
+      const { dataUrl, format } = await ClubCardGenerator.generateCard({
         logoUrl: club.logo_url,
         clubId: club.club_id,
         clubName: club.name.toUpperCase(),
       });
 
       // 2. Convert data URL to blob
-      const blob = await fetch(cardDataUrl).then((r) => r.blob());
-      const fileName = `club-cards/${club.club_id}-card.png`;
+      const blob = await fetch(dataUrl).then((r) => r.blob());
+      const ext = format === 'webp' ? 'webp' : 'png';
+      const contentType = format === 'webp' ? 'image/webp' : 'image/png';
+      const fileName = `club-cards/${club.club_id}-card.${ext}`;
 
       // 3. Upload to Supabase Storage
       const { error: uploadError } = await supabase.storage
         .from('club-assets')
         .upload(fileName, blob, {
-          contentType: 'image/png',
+          contentType,
           upsert: true,
         });
 
@@ -103,7 +106,12 @@ export async function backfillClubCards(clubs: BackfillTarget[]): Promise<void> 
         continue;
       }
 
-      console.log(`[ClubCardBackfill] ✅ Baked card saved for "${club.name}" → ${publicUrl}`);
+      // 6. Emit CLUB_UPDATED so carousel auto-refreshes with the new baked card
+      masterBus.emit('CLUB_UPDATED', { clubId: club.id, action: 'card_backfill' });
+
+      console.log(
+        `[ClubCardBackfill] ✅ Baked card saved for "${club.name}" (${ext}) → ${publicUrl}`
+      );
     } catch (err) {
       console.error(`[ClubCardBackfill] Error processing ${club.name}:`, err);
     }

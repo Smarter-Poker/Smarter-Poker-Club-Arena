@@ -35,11 +35,17 @@ const LOGO_HEIGHT = Math.round(CARD_HEIGHT * 0.69); // 707 (75% - 6%)
 const CLUB_ID_Y = Math.round(CARD_HEIGHT * 0.04); // Near top of frame
 const CLUB_NAME_Y = Math.round(CARD_HEIGHT * 0.7); // Below the image, before stats bar
 
+export interface CardGeneratorResult {
+  dataUrl: string;
+  format: 'webp' | 'png';
+}
+
 export class ClubCardGenerator {
   /**
    * Generate a complete club card with logo, ID, and name
+   * Returns the data URL and detected image format
    */
-  static async generateCard(options: CardGeneratorOptions): Promise<string> {
+  static async generateCard(options: CardGeneratorOptions): Promise<CardGeneratorResult> {
     const { logoUrl, clubId, clubName } = options;
 
     // Create canvas
@@ -63,9 +69,9 @@ export class ClubCardGenerator {
     // Prefer WebP (60-70% smaller) with PNG fallback for older browsers
     const webpTest = canvas.toDataURL('image/webp');
     if (webpTest.startsWith('data:image/webp')) {
-      return webpTest;
+      return { dataUrl: webpTest, format: 'webp' };
     }
-    return canvas.toDataURL('image/png');
+    return { dataUrl: canvas.toDataURL('image/png'), format: 'png' };
   }
 
   /**

@@ -171,6 +171,13 @@ export default function CashierPage() {
     };
   }, []);
 
+  // Auto-dismiss success/error messages after 8s
+  useEffect(() => {
+    if (!message) return;
+    const t = setTimeout(() => setMessage(null), 8000);
+    return () => clearTimeout(t);
+  }, [message]);
+
   // Rate limiting: 3s cooldown after each action
   const startCooldown = useCallback(() => {
     setCooldown(3);

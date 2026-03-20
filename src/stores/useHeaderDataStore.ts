@@ -99,9 +99,19 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
     // Already loaded for this user — skip
     if (state._loaded && state._userId === userId) return;
 
-    // If switching users, teardown old channel first
+    // If switching users, teardown old channel + bus subscriptions first
     if (state._channelKey) {
       masterBus.removeRegisteredChannel(state._channelKey);
+    }
+    // Clean up old bus subscriptions to prevent zombie handlers
+    if (state._busUnsubscribers.length > 0) {
+      state._busUnsubscribers.forEach((unsub) => {
+        try {
+          unsub();
+        } catch {
+          /* silent */
+        }
+      });
     }
 
     set({ _loaded: true, _userId: userId });
@@ -230,6 +240,13 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
         /* silent */
       }
     });
+    // Clear localStorage counts to prevent cross-user data bleed
+    try {
+      localStorage.removeItem('ca-notif-count');
+      localStorage.removeItem('ca-msg-count');
+    } catch {
+      /* quota */
+    }
     set({
       avatarUrl: null,
       notificationCount: 0,

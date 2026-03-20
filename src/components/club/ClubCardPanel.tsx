@@ -76,7 +76,9 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
           </picture>
 
           {/* Club ID text at top — matches Shark Club's baked "CLUB ID: 25450" */}
-          {clubId && <div className="club-card-id-overlay">CLUB ID: {clubId}</div>}
+          {clubId != null && clubId !== '' && (
+            <div className="club-card-id-overlay">CLUB ID: {clubId}</div>
+          )}
 
           <div className="club-card-logo-container">
             {showLogo ? (

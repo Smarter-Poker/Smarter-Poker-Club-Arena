@@ -2964,32 +2964,7 @@ export default function TablePage({
             return { ...prev, players: updatedPlayers };
           });
 
-          // Bridge: emit SHOWDOWN_START to activate HoleCardReveal component
-          {
-            const currentState = tableStateRef.current;
-
-            // Determine winner(s): highest hand ranking
-            const bestRanking = Math.max(...event.results.map((r: any) => r.hand?.ranking || 0));
-
-            masterBus.emit('SHOWDOWN_START', {
-              tableId: tableId || '',
-              players: event.results.map((r: any) => {
-                const playerInState = currentState.players.find((p) => p?.id === r.userId);
-                return {
-                  userId: r.userId,
-                  seatNumber: r.seat,
-                  username: playerInState?.name || `Seat ${r.seat}`,
-                  cards: r.cards.map((c: any) => ({
-                    rank: c.rank,
-                    suit: ENGINE_SUIT_MAP[c.suit] || c.suit,
-                  })),
-                  handName: r.hand?.name || 'Unknown',
-                  handRank: r.hand?.ranking || 0,
-                  isWinner: (r.hand?.ranking || 0) === bestRanking,
-                };
-              }),
-            });
-          }
+          // SHOWDOWN_START event DISABLED — no overlay, cards shown on seats directly
           break;
         }
 
@@ -3055,21 +3030,8 @@ export default function TablePage({
               amounts: amountsMap,
             });
 
-            // HandReveal trigger — show/muck prompt for uncontested pots
-            // When there's exactly 1 winner and no showdown happened, prompt to show/muck
-            const isUncontestedWin = winnerIds.length === 1 && !handName;
-            if (isUncontestedWin && tableId) {
-              const winnerId = winnerIds[0];
-              const winnerPlayer = tableState.players.find((p) => p?.id === winnerId);
-              // Trigger after winner animation plays (1.5s delay)
-              setTimeout(() => {
-                setHandRevealWinnerId(winnerId);
-                setHandRevealWinnerName(winnerPlayer?.name || 'Winner');
-                setHandRevealHandId(`${tableId}-${Date.now()}`);
-                setHandRevealCards([]);
-                setShowHandRevealModal(true);
-              }, 1500);
-            }
+            // HandReveal DISABLED — no popup overlays after hands
+            // Winner cards auto-muck silently, no show/muck prompt
           }
 
           // Track wins for HUD stats + hero session wins
@@ -5004,46 +4966,8 @@ export default function TablePage({
         opponentName={ritOpponent}
       />
 
-      {/* Hand Reveal — Show/Muck after winning without showdown */}
-      <HandReveal
-        isOpen={showHandRevealModal}
-        isWinner={handRevealWinnerId === userId}
-        winnerId={handRevealWinnerId}
-        winnerName={handRevealWinnerName}
-        revealedCards={handRevealCards.length > 0 ? handRevealCards : undefined}
-        revealCost={10}
-        userDiamonds={50}
-        autoMuckTimer={8}
-        tableId={tableId || ''}
-        handId={handRevealHandId}
-        onShow={() => {
-          // Winner chooses to show — cards are revealed via HandReveal internally
-          setHandRevealCards(
-            tableState.players
-              .find((p) => p?.id === handRevealWinnerId)
-              ?.holeCards?.map((c: { rank: string; suit: string }) => ({
-                rank: c.rank,
-                suit: c.suit as 'h' | 'd' | 'c' | 's',
-              })) || []
-          );
-        }}
-        onMuck={() => {
-          // Winner mucks — close after animation
-          setTimeout(() => setShowHandRevealModal(false), 1500);
-        }}
-        onPayReveal={() => {
-          // Non-winner pays to reveal — show the winner's cards
-          setHandRevealCards(
-            tableState.players
-              .find((p) => p?.id === handRevealWinnerId)
-              ?.holeCards?.map((c: { rank: string; suit: string }) => ({
-                rank: c.rank,
-                suit: c.suit as 'h' | 'd' | 'c' | 's',
-              })) || []
-          );
-        }}
-        onClose={() => setShowHandRevealModal(false)}
-      />
+      {/* Hand Reveal DISABLED — no popup overlays after hands, auto-muck silently */}
+      {/* Winner cards are shown directly on the seat during showdown */}
 
       {/* Bad Beat Jackpot Display */}
       <BadBeatJackpot amount={bbjAmount} qualifyingHand="Quad 8s or better" isHit={showBBJ} />
@@ -5081,8 +5005,8 @@ export default function TablePage({
         />
       )}
 
-      {/* Hole Card Reveal (staggered showdown flip) */}
-      {tableId && <HoleCardReveal tableId={tableId} revealDelayMs={600} />}
+      {/* Hole Card Reveal DISABLED — showdown cards show directly on seats, no overlay */}
+      {/* {tableId && <HoleCardReveal tableId={tableId} revealDelayMs={600} />} */}
 
       {/* Quick Chat Presets removed per user request */}
 

@@ -33,25 +33,17 @@ export const ClubStatsPanel: React.FC<ClubStatsPanelProps> = ({
 
       <div className="stats-overlay">
         <div className="stats-group members-group">
-          <span className="stat-label">
-            TOTAL
-            <br />
-            MEMBERS
-          </span>
+          <span className="stat-label">MEMBERS</span>
           <span className="stat-value">{Math.max(1, totalMembers).toLocaleString()}</span>
         </div>
 
         <div className="stats-group level-group">
-          <span className="stat-label">CLUB LEVEL</span>
+          <span className="stat-label">LEVEL</span>
           <span className="stat-value">{Math.max(1, clubLevel)}</span>
         </div>
 
         <div className="stats-group active-group">
-          <span className="stat-label">
-            ACTIVE
-            <br />
-            PLAYERS
-          </span>
+          <span className="stat-label">ACTIVE</span>
           <span className="stat-value">{activePlayers?.toLocaleString() || '0'}</span>
         </div>
       </div>

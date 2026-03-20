@@ -324,6 +324,7 @@ export default function CarouselSection({
         }}
       >
         <div className={styles.carouselFeaturedPedestal}></div>
+        <div className={styles.featuredClubLabel}>★ FEATURED CLUB ★</div>
         <Suspense fallback={<div className={styles.cardSkeleton} />}>
           <ClubStatsPanel
             totalMembers={sharkClubStats.totalMembers}

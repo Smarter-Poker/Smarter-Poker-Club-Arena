@@ -50,19 +50,19 @@
 }
 
 .members-group {
-  top: 79.5%;
+  top: 83%;
   left: 20%;
   transform: translateX(-50%);
 }
 
 .level-group {
-  top: 79.5%;
+  top: 83%;
   left: 50%;
   transform: translateX(-50%);
 }
 
 .active-group {
-  top: 79.5%;
+  top: 83%;
   left: 80%;
   transform: translateX(-50%);
 }

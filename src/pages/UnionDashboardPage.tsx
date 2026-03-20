@@ -1586,14 +1586,7 @@ export default function UnionDashboardPage() {
                             setProcessing(true);
                             setError(null);
                             try {
-                              // 1. Mark application as approved
-                              const { error: appErr } = await supabase
-                                .from('union_applications')
-                                .update({ status: 'approved' })
-                                .eq('id', app.id);
-                              if (appErr) throw appErr;
-
-                              // 2. Insert club into union_clubs (the actual join)
+                              // 1. Join club to union FIRST (if join fails, app stays pending → recoverable)
                               if (app.club_id) {
                                 const defaultCommRate =
                                   Number(union?.settings?.default_club_commission_rate) || 0.9;
@@ -1608,24 +1601,27 @@ export default function UnionDashboardPage() {
                                     { onConflict: 'union_id,club_id' }
                                   );
                                 if (joinErr)
-                                  console.warn(
-                                    '[UnionDash] union_clubs upsert warning:',
-                                    joinErr.message
+                                  throw new Error(
+                                    'Failed to join club to union: ' + joinErr.message
                                   );
 
-                                // 3. Update clubs.union_id so the club is associated
+                                // 2. Update clubs.union_id so the club is associated
                                 const { error: clubErr } = await supabase
                                   .from('clubs')
                                   .update({ union_id: unionId })
                                   .eq('id', app.club_id);
                                 if (clubErr)
-                                  console.warn(
-                                    '[UnionDash] clubs.union_id update warning:',
-                                    clubErr.message
-                                  );
+                                  throw new Error('Failed to associate club: ' + clubErr.message);
 
                                 masterBus.emit('CLUB_UPDATED', { clubId: app.club_id });
                               }
+
+                              // 3. Mark application as approved LAST (only after join succeeded)
+                              const { error: appErr } = await supabase
+                                .from('union_applications')
+                                .update({ status: 'approved' })
+                                .eq('id', app.id);
+                              if (appErr) throw appErr;
 
                               setSuccess(`${app.club_name} approved and joined the union`);
                               setAppsLoaded(false);

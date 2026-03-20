@@ -74,15 +74,19 @@ class PushNotificationServiceClass {
       // @ts-expect-error - OneSignal CDN types - OneSignal is loaded via CDN
       if (typeof window !== 'undefined' && window.OneSignalDeferred) {
         // @ts-expect-error - OneSignal CDN types
-        window.OneSignalDeferred.push(async function (OneSignal: any) {
-          await OneSignal.init({
-            appId: ONESIGNAL_APP_ID,
-            allowLocalhostAsSecureOrigin: true,
-            notifyButton: { enable: false },
-          });
+        window.OneSignalDeferred.push(async (OneSignal: any) => {
+          try {
+            await OneSignal.init({
+              appId: ONESIGNAL_APP_ID,
+              allowLocalhostAsSecureOrigin: true,
+              notifyButton: { enable: false },
+            });
+            this.initialized = true;
+          } catch (innerErr: unknown) {
+            console.warn('[PushService] OneSignal.init() failed inside deferred:', innerErr);
+          }
         });
       }
-      this.initialized = true;
     } catch (error: unknown) {
       console.error('[PushService] Init failed:', error);
     }

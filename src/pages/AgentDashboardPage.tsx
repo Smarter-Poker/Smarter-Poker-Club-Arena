@@ -118,6 +118,7 @@ export default function AgentDashboardPage() {
 
   const mountedRef = useIsMounted();
   const SWR_TTL_MS = 5 * 60 * 1000; // 5-minute cache TTL
+  const resolvedClubIdRef = useRef<string | null>(null);
 
   // Auto-clear success
   useEffect(() => {
@@ -125,6 +126,13 @@ export default function AgentDashboardPage() {
     const t = setTimeout(() => setSuccess(null), 4000);
     return () => clearTimeout(t);
   }, [success]);
+
+  // Auto-clear errors after 6s
+  useEffect(() => {
+    if (!error) return;
+    const t = setTimeout(() => setError(null), 6000);
+    return () => clearTimeout(t);
+  }, [error]);
 
   const dashLoadingRef = useRef(false);
 
@@ -143,7 +151,9 @@ export default function AgentDashboardPage() {
           return;
         }
 
-        const uuid = await resolveClubUUID(targetClubId);
+        // Use cached UUID when available to avoid redundant async lookups
+        const uuid = resolvedClubIdRef.current || (await resolveClubUUID(targetClubId));
+        if (!resolvedClubIdRef.current) resolvedClubIdRef.current = uuid;
 
         // Get current user's role
         const { data: membership } = await retryFetch(
@@ -445,6 +455,7 @@ export default function AgentDashboardPage() {
     try {
       await cashoutService.approveCashout(cashoutId, user?.id || '');
       setSuccess('Cashout approved successfully.');
+      masterBus.emit('CASHOUT_APPROVED', { cashoutId, clubId: clubId || '' });
       loadDashboard(clubId);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
@@ -460,6 +471,7 @@ export default function AgentDashboardPage() {
     try {
       await cashoutService.rejectCashout(cashoutId, user?.id || '', 'Denied by agent');
       setSuccess('Cashout denied and chips refunded to player.');
+      masterBus.emit('CASHOUT_CANCELLED', { cashoutId, clubId: clubId || '' });
       loadDashboard(clubId);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));

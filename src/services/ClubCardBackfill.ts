@@ -74,7 +74,10 @@ export async function backfillClubCards(clubs: BackfillTarget[]): Promise<void> 
         if (
           msg.includes('Bucket not found') ||
           msg.includes('The resource was not found') ||
-          (uploadError as any).statusCode === 400
+          (uploadError as any).statusCode === 400 ||
+          (uploadError as any).status === 400 ||
+          (uploadError as any).statusCode === 404 ||
+          (uploadError as any).status === 404
         ) {
           console.warn(
             `[ClubCardBackfill] Storage bucket unavailable — disabling backfill for this session`

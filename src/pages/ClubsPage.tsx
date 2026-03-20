@@ -108,7 +108,6 @@ export default function ClubsPage() {
   const [clubName, setClubName] = useState('');
   const [clubDescription, setClubDescription] = useState('');
   const [isPublic, setIsPublic] = useState(true);
-  const [requiresApproval, setRequiresApproval] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [visibleClubCards, setVisibleClubCards] = useState(new Set<number>());
@@ -319,7 +318,6 @@ export default function ClubsPage() {
         name: clubName.trim(),
         description: clubDescription.trim() || undefined,
         is_public: isPublic,
-        requires_approval: requiresApproval,
       });
 
       // Emit bus event so ClubCarouselPage, ClubHomePage, etc. react to the new club
@@ -865,7 +863,7 @@ export default function ClubsPage() {
                   </div>
 
                   <MetalCard size="sm">
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                       <label
                         style={{
                           display: 'flex',
@@ -875,16 +873,17 @@ export default function ClubsPage() {
                         }}
                       >
                         <input
-                          type="checkbox"
+                          type="radio"
+                          name="club-visibility"
                           checked={isPublic}
-                          onChange={(e) => {
+                          onChange={() => {
                             haptic.selection();
-                            setIsPublic(e.target.checked);
+                            setIsPublic(true);
                           }}
                           style={{ width: '18px', height: '18px', accentColor: '#00d4ff' }}
                         />
                         <span style={{ color: '#8899aa', fontSize: '0.875rem' }}>
-                          Public (anyone can find)
+                          🌐 Public (anyone can find and join)
                         </span>
                       </label>
                       <label
@@ -896,16 +895,17 @@ export default function ClubsPage() {
                         }}
                       >
                         <input
-                          type="checkbox"
-                          checked={requiresApproval}
-                          onChange={(e) => {
+                          type="radio"
+                          name="club-visibility"
+                          checked={!isPublic}
+                          onChange={() => {
                             haptic.selection();
-                            setRequiresApproval(e.target.checked);
+                            setIsPublic(false);
                           }}
                           style={{ width: '18px', height: '18px', accentColor: '#00d4ff' }}
                         />
                         <span style={{ color: '#8899aa', fontSize: '0.875rem' }}>
-                          Require approval for new members
+                          🔒 Private (invite only, requires approval)
                         </span>
                       </label>
                     </div>

@@ -130,7 +130,7 @@ export function ClubSettingsPanel({ clubId, isOpen, onClose, onSave }: ClubSetti
           description: settings.description,
           logo: settings.logo,
           is_public: !settings.isPrivate,
-          requires_approval: settings.requireApproval,
+          requires_approval: settings.isPrivate, // Private = requires approval, Public = open join
           min_buy_in: settings.minBuyIn,
           max_buy_in: settings.maxBuyIn,
           rake_percent: settings.rakePercent,
@@ -210,17 +210,20 @@ export function ClubSettingsPanel({ clubId, isOpen, onClose, onSave }: ClubSetti
                 <input
                   type="checkbox"
                   checked={settings.isPrivate}
-                  onChange={(e) => updateSetting('isPrivate', e.target.checked)}
+                  onChange={(e) => {
+                    updateSetting('isPrivate', e.target.checked);
+                    // Auto-sync: Private clubs always require approval
+                    updateSetting('requireApproval', e.target.checked);
+                  }}
                 />
                 <span>Private Club</span>
               </label>
               <label className="toggle">
-                <input
-                  type="checkbox"
-                  checked={settings.requireApproval}
-                  onChange={(e) => updateSetting('requireApproval', e.target.checked)}
-                />
-                <span>Require Approval</span>
+                <input type="checkbox" checked={settings.isPrivate} disabled />
+                <span>
+                  Require Approval{' '}
+                  {settings.isPrivate ? '(auto — private clubs)' : '(public — open join)'}
+                </span>
               </label>
             </section>
 

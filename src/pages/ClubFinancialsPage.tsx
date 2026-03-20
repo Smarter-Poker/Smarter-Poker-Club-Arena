@@ -234,7 +234,7 @@ export default function ClubFinancialsPage() {
       unsubChipsDistributed();
       unsubClubUpdated();
     };
-  }, []);
+  }, [clubId]);
 
   const loadFinancials = async () => {
     if (!clubId) return;

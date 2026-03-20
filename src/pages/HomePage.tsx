@@ -446,6 +446,15 @@ function HomePageInner() {
     { debounce: 300 }
   );
 
+  // Welcome toast for new users — auto-dismiss, once per session
+  useEffect(() => {
+    if (isLoading || userClubs.length > 0) return;
+    const key = 'club_arena_welcome_shown';
+    if (sessionStorage.getItem(key)) return;
+    sessionStorage.setItem(key, '1');
+    toast.info('Welcome to Club Arena — Create or join a club to get started!');
+  }, [isLoading, userClubs.length, toast]);
+
   // Fetch Shark Club stats — ALL data from live Supabase queries
   // Hardcoded club_id for Shark Club — permanent fixture of the platform
   const SHARK_CLUB_NUMERIC_ID = 25450;
@@ -1196,13 +1205,7 @@ function HomePageInner() {
           onOpenCreateModal={() => setShowCreateClubModal(true)}
         />
 
-        {/* No Clubs Message */}
-        {!isLoading && userClubs.length === 0 && (
-          <div className={styles.noClubsMessage}>
-            <p>Welcome to Club Arena</p>
-            <p>Create or join a club to get started!</p>
-          </div>
-        )}
+        {/* Welcome message for new users is handled as a toast popup (auto-dismiss) */}
 
         {/* ═══════════════════════════════════════════════════════════════════════
                     DAILY CHALLENGES — Extracted Component (#16)

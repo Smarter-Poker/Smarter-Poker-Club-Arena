@@ -278,6 +278,7 @@ export type BusEventType =
   | 'TOURNAMENT_CANCELLED'
   | 'TOURNAMENT_LEVEL_CHANGE'
   | 'MEMBER_UPDATED'
+  | 'MEMBER_ROLE_CHANGED'
   | 'HAND_REPLAYED'
   | 'HAND_COMPLETE'
   | 'PLAYER_LEFT'
@@ -371,6 +372,7 @@ export interface BusPayloadMap {
   // Club data mutations (cross-page sync)
   CLUB_UPDATED: { clubId: string; action?: string };
   UNION_UPDATED: { unionId: string };
+  MEMBER_ROLE_CHANGED: { clubId: string; userId?: string; newRole?: string; previousRole?: string };
   ANNOUNCEMENT_CHANGED: { clubId: string; action: 'created' | 'deleted' };
   // Financial events
   COMMISSION_PAID: { agentId: string; amount: number };

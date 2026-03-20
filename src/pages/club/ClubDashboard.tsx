@@ -174,6 +174,9 @@ export default function ClubDashboard() {
       masterBus.subscribeDebounced('HAND_COMPLETED', reload, 1000),
       masterBus.subscribeDebounced('SETTLEMENT_CYCLE_COMPLETED', reload, 1000),
       masterBus.subscribeDebounced('COLLUSION_DETECTED', reload, 2000),
+      // Level recompute: role promotions trigger SQL level recalc
+      masterBus.subscribeDebounced('AGENT_UPDATED', reload, 500),
+      masterBus.subscribeDebounced('MEMBER_ROLE_CHANGED', reload, 500),
     ];
     return () => {
       unsubs.forEach((unsub) => unsub());

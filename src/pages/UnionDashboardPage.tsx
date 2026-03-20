@@ -435,6 +435,8 @@ export default function UnionDashboardPage() {
       masterBus.subscribeDebounced('BALANCE_UPDATED', refresh, 300),
       masterBus.subscribeDebounced('CREDIT_UPDATED', refresh, 300),
       masterBus.subscribeDebounced('SETTLEMENT_COMPLETED', refresh, 300),
+      // Level recompute: union level updates when member roles change
+      masterBus.subscribeDebounced('MEMBER_ROLE_CHANGED', refresh, 300),
     ];
     return () => unsubs.forEach((u) => u());
   }, [unionId, loadDashboard]);

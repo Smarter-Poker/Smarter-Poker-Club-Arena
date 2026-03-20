@@ -261,6 +261,9 @@ export default function ClubsPage() {
       masterBus.subscribeDebounced('CLUB_UPDATED', handler, 500),
       masterBus.subscribeDebounced('CLUB_SETTINGS_UPDATED', handler, 500),
       masterBus.subscribeDebounced('UNION_UPDATED', handler, 500),
+      // Level recompute: role promotions trigger SQL level recalc
+      masterBus.subscribeDebounced('AGENT_UPDATED', handler, 500),
+      masterBus.subscribeDebounced('MEMBER_ROLE_CHANGED', handler, 500),
     ];
     return () => {
       isMounted = false;

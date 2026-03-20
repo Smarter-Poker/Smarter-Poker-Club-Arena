@@ -263,3 +263,66 @@
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   LOADING STATE — shimmer skeleton variants
+═══════════════════════════════════════════════════════════════════════════════ */
+.dw--loading {
+  gap: 4px;
+  opacity: 0.6;
+}
+
+.dw__shimmer--bbj {
+  height: 36px;
+  border-radius: 8px;
+}
+
+.dw__shimmer--row {
+  height: 32px;
+  border-radius: 6px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   ERROR BADGE — subtle retry button
+═══════════════════════════════════════════════════════════════════════════════ */
+.dw__error-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #fca5a5;
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.dw__error-badge:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.5);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   ACCESSIBILITY — Focus indicators
+═══════════════════════════════════════════════════════════════════════════════ */
+.dw__bbj:focus-visible {
+  outline: 2px solid rgba(255, 200, 0, 0.6);
+  outline-offset: 2px;
+}
+
+.dw__plus:focus-visible {
+  outline: 2px solid rgba(16, 185, 129, 0.8);
+  outline-offset: 2px;
+}
+
+.dw__error-badge:focus-visible {
+  outline: 2px solid rgba(239, 68, 68, 0.8);
+  outline-offset: 2px;
+}

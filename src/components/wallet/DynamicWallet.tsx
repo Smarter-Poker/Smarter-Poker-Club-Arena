@@ -15,9 +15,19 @@
  *
  * Real-time data flow:
  *   1. Initial fetch via Supabase REST
- *   2. Supabase Realtime subscriptions on profiles, club_members, bbj_pools, agents
+ *   2. Supabase Realtime subscriptions on profiles, club_members, bbj_pools,
+ *      agents, clubs, union_wallets
  *   3. MasterBus subscriptions: BALANCE_UPDATED, DIAMOND_BALANCE_CHANGED,
- *      WALLET_REFRESHED, CHIPS_ADDED, CHIPS_DISTRIBUTED, CHIPS_WITHDRAWN
+ *      WALLET_REFRESHED, CHIPS_ADDED, CHIPS_DISTRIBUTED, CHIPS_WITHDRAWN,
+ *      CLUB_UPDATED, SETTLEMENT_COMPLETED, COMMISSION_PAID
+ *
+ * Improvements (v2):
+ *   - Loading skeleton (shimmer) instead of flash-of-zeros
+ *   - Error state with retry button
+ *   - RT channel reconnect with exponential backoff
+ *   - union_wallets RT channel for instant union bank updates
+ *   - Accessibility: keyboard handlers, focus indicators, aria-live
+ *   - Mint button gated to owner/union only
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -39,6 +49,9 @@ const WALLET_BUS_EVENTS = [
   'SETTLEMENT_COMPLETED',
   'COMMISSION_PAID',
 ] as const;
+
+// Reconnect backoff delays (ms)
+const BACKOFF_DELAYS = [2000, 4000, 8000, 16000, 30000];
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -137,15 +150,19 @@ export default function DynamicWallet({
     backupBBJ: 0,
   });
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(false);
   const [isClubInUnion, setIsClubInUnion] = useState(false);
   const isMounted = useIsMounted();
 
   // Resolved UUID — DynamicWallet now handles resolution internally
-  // This ensures correct Supabase queries regardless of whether clubId is
-  // a short numeric ID or a full UUID.
   const [resolvedId, setResolvedId] = useState<string | null>(null);
   // Fetch version counter to discard stale responses on rapid club switching
   const fetchVersionRef = useRef(0);
+  // Tracked union_id for union_wallets RT channel
+  const currentUnionIdRef = useRef<string | null>(null);
+  // Reconnect tracking
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryCountRef = useRef(0);
 
   useEffect(() => {
     if (!clubId) {
@@ -232,6 +249,9 @@ export default function DynamicWallet({
       // Double-check version after second await + isMounted
       if (thisVersion !== fetchVersionRef.current || !isMounted.current) return;
 
+      // Track union_id for union_wallets RT channel
+      currentUnionIdRef.current = unionId || null;
+
       setData({
         diamonds: Number(profileRes.data?.diamonds) || 0,
         chipBalance: Number(memberRes.data?.chip_balance) || 0,
@@ -244,10 +264,14 @@ export default function DynamicWallet({
       });
       // Auto-detect union membership from clubs.union_id
       setIsClubInUnion(!!unionId);
+      setFetchError(false);
       setLoading(false);
     } catch (err) {
       console.error('[DynamicWallet] Fetch error:', err);
-      if (thisVersion === fetchVersionRef.current && isMounted.current) setLoading(false);
+      if (thisVersion === fetchVersionRef.current && isMounted.current) {
+        setFetchError(true);
+        setLoading(false);
+      }
     }
   }, [userId, resolvedId]);
 
@@ -264,9 +288,37 @@ export default function DynamicWallet({
     { debounce: 500 }
   );
 
-  // ── Realtime subscriptions — profiles, club_members, bbj_pools, agents ─────
+  // ── Channel reconnect helper ──────────────────────────────────────────────
+  const scheduleReconnect = useCallback(() => {
+    if (!isMounted.current) return;
+    const delay = BACKOFF_DELAYS[Math.min(retryCountRef.current, BACKOFF_DELAYS.length - 1)];
+    console.warn(
+      `[DynamicWallet] Scheduling reconnect in ${delay}ms (attempt ${retryCountRef.current + 1})`
+    );
+    reconnectTimerRef.current = setTimeout(() => {
+      if (!isMounted.current) return;
+      retryCountRef.current++;
+      fetchData(); // Full refetch as reconnection fallback
+    }, delay);
+  }, [fetchData]);
+
+  // Clean up reconnect timer on unmount
+  useEffect(() => {
+    return () => {
+      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+    };
+  }, []);
+
+  // ── Realtime subscriptions — profiles, club_members, bbj_pools, agents, clubs ─
   useEffect(() => {
     if (!userId || !resolvedId) return;
+
+    // Reset reconnect state on new subscription
+    retryCountRef.current = 0;
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
 
     const channel = supabase
       .channel(`dynamic-wallet-${resolvedId}-${userId}`)
@@ -338,15 +390,21 @@ export default function DynamicWallet({
         }
       )
       .subscribe((status: string, err?: Error) => {
+        if (status === 'SUBSCRIBED') {
+          // Reset retry count on successful subscription
+          retryCountRef.current = 0;
+        }
         if (status === 'CHANNEL_ERROR') {
           console.error('[DynamicWallet] ❌ Realtime channel error:', err?.message || err);
+          scheduleReconnect();
         }
         if (status === 'TIMED_OUT') {
           console.warn('[DynamicWallet] ⏱️ Realtime channel timed out');
+          scheduleReconnect();
         }
       });
 
-    // ── Additional RT channel: clubs table for chip_treasury + union_id changes ──
+    // ── Clubs RT channel: chip_treasury + union_id changes ──
     const clubChannel = supabase
       .channel(`dynamic-wallet-club-${resolvedId}`)
       .on(
@@ -375,11 +433,40 @@ export default function DynamicWallet({
       )
       .subscribe();
 
+    // ── Union wallets RT channel: instant union bank balance updates ──
+    // Dynamic — only created if the club is in a union.
+    // Uses the unionId from the most recent fetchData to listen for changes.
+    let unionWalletChannel: ReturnType<typeof supabase.channel> | null = null;
+    const unionId = currentUnionIdRef.current;
+    if (unionId) {
+      unionWalletChannel = supabase
+        .channel(`dynamic-wallet-union-${unionId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'union_wallets',
+            filter: `union_id=eq.${unionId}`,
+          },
+          (p) => {
+            if (isMounted.current && p.new?.chip_balance !== undefined) {
+              setData((prev) => ({
+                ...prev,
+                unionBank: Number(p.new.chip_balance) || 0,
+              }));
+            }
+          }
+        )
+        .subscribe();
+    }
+
     return () => {
       supabase.removeChannel(channel);
       supabase.removeChannel(clubChannel);
+      if (unionWalletChannel) supabase.removeChannel(unionWalletChannel);
     };
-  }, [userId, resolvedId]);
+  }, [userId, resolvedId, isClubInUnion]);
 
   // ── Role-specific row config ───────────────────────────────────────────────
   const ROW_CONFIG: Record<WalletVariant, { label: string; icon: string; value: number }[]> = {
@@ -402,19 +489,70 @@ export default function DynamicWallet({
 
   const rows = ROW_CONFIG[effectiveVariant];
 
+  // Only show mint button for owner/union variants (players should never see it)
+  const showMintButton =
+    onMintChips && (effectiveVariant === 'owner' || effectiveVariant === 'union');
+
+  // ── Keyboard handler for BBJ banner (accessibility) ─────────────────────────
+  const handleBbjKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      onOpenBBJ?.();
+    }
+  };
+
+  // ── Loading skeleton ───────────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <div className="dw dw--loading" aria-busy="true" aria-label="Loading wallet">
+        <div className="dw__shimmer dw__shimmer--bbj" />
+        <div className="dw__rows">
+          <div className="dw__shimmer dw__shimmer--row" />
+          <div className="dw__shimmer dw__shimmer--row" />
+          <div className="dw__shimmer dw__shimmer--row" />
+          <div className="dw__shimmer dw__shimmer--row" />
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className={`dw dw--${effectiveVariant}`}>
+    <div className={`dw dw--${effectiveVariant}`} aria-label="Wallet balances">
+      {/* ── Error indicator — subtle, non-blocking ──────────────────────── */}
+      {fetchError && (
+        <button
+          className="dw__error-badge"
+          onClick={() => {
+            setFetchError(false);
+            fetchData();
+          }}
+          aria-label="Retry loading wallet data"
+          title="Failed to load — tap to retry"
+        >
+          ⚠️ Tap to retry
+        </button>
+      )}
+
       {/* ── BBJ Banner ────────────────────────────────────────────────────── */}
-      <div className="dw__bbj" onClick={onOpenBBJ} role="button" tabIndex={0}>
+      <div
+        className="dw__bbj"
+        onClick={onOpenBBJ}
+        onKeyDown={handleBbjKeyDown}
+        role="button"
+        tabIndex={0}
+        aria-label={`Bad Beat Jackpot: ${animBBJ === 0 ? 'no pool' : formatBalance(animBBJ)}`}
+      >
         <span className="dw__bbj-label">BAD BEAT JACKPOT</span>
         <span className="dw__bbj-amount">{animBBJ === 0 ? '—' : formatBalance(animBBJ)}</span>
       </div>
 
       {/* ── Wallet Rows ───────────────────────────────────────────────────── */}
-      <div className="dw__rows">
+      <div className="dw__rows" aria-live="polite">
         {/* Diamond Balance */}
         <div className="dw__row dw__row--diamond">
-          <span className="dw__row-icon">💎</span>
+          <span className="dw__row-icon" aria-hidden="true">
+            💎
+          </span>
           <span className="dw__row-value">{formatBalance(animDiamonds)}</span>
           {onBuyDiamonds && (
             <button
@@ -433,18 +571,20 @@ export default function DynamicWallet({
         {/* Role-specific wallet rows */}
         {rows.map((row, idx) => (
           <div
-            key={idx}
+            key={row.label}
             className={`dw__row dw__row--wallet${idx === 0 ? ' dw__row--primary' : ''}`}
           >
-            <span className="dw__row-icon">{row.icon}</span>
+            <span className="dw__row-icon" aria-hidden="true">
+              {row.icon}
+            </span>
             <span className="dw__row-label">{row.label}</span>
             <span className="dw__row-value">{formatBalance(row.value)}</span>
-            {idx === 0 && onMintChips && (
+            {idx === 0 && showMintButton && (
               <button
                 className="dw__plus"
                 onClick={(e) => {
                   e.stopPropagation();
-                  onMintChips();
+                  onMintChips!();
                 }}
                 aria-label="Mint Chips"
               >
@@ -457,7 +597,9 @@ export default function DynamicWallet({
         {/* Backup BBJ (Union only) */}
         {effectiveVariant === 'union' && (
           <div className="dw__row dw__row--backup-bbj">
-            <span className="dw__row-icon">🛡️</span>
+            <span className="dw__row-icon" aria-hidden="true">
+              🛡️
+            </span>
             <span className="dw__row-label">Backup BBJ</span>
             <span className="dw__row-value">
               {animBackupBBJ === 0 ? '—' : formatBalance(animBackupBBJ)}

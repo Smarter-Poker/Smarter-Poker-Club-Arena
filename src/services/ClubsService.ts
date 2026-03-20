@@ -7,6 +7,7 @@
 
 import { supabase, getAuthUser } from '@/lib/supabase';
 import { retryAsync } from '../utils/retryAsync';
+import { sanitizeInput } from '../utils/sanitizeInput';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { QUERY_LIMITS } from '../lib/constants';
 import type {
@@ -131,28 +132,61 @@ export async function createClub(clubData: {
     throw new Error('You can only be a member of up to 4 clubs. Leave a club to create a new one.');
   }
 
+  // Sanitize inputs
+  const safeName = sanitizeInput(clubData.name.trim());
+  const safeDescription = clubData.description
+    ? sanitizeInput(clubData.description.trim())
+    : undefined;
+
   // Generate URL-friendly slug
-  const slug = clubData.name
+  const slug = safeName
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '');
 
-  const { data, error } = await supabase
-    .from('clubs')
-    .insert({
-      name: clubData.name,
-      slug,
-      description: clubData.description,
-      color_theme: clubData.color_theme || 'royal-blue',
-      is_public: clubData.is_public ?? true,
-      requires_approval: clubData.requires_approval ?? false,
-      owner_id: user.user.id,
-    })
-    .select()
-    .maybeSingle();
+  // Enforce mutual exclusivity: public clubs can't require approval
+  const isPublic = clubData.is_public ?? true;
 
-  if (error) {
-    console.error('[ClubsService] Club creation failed:', error);
+  // Insert with collision retry for random club_id
+  let data: any = null;
+  let lastError: any = null;
+  const MAX_RETRIES = 3;
+
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    const clubIdNumber = Math.floor(100000 + Math.random() * 900000);
+
+    const { data: insertData, error: insertError } = await supabase
+      .from('clubs')
+      .insert({
+        club_id: clubIdNumber,
+        name: safeName,
+        slug,
+        description: safeDescription,
+        color_theme: clubData.color_theme || 'royal-blue',
+        is_public: isPublic,
+        requires_approval: !isPublic,
+        owner_id: user.user.id,
+      })
+      .select()
+      .maybeSingle();
+
+    if (!insertError && insertData) {
+      data = insertData;
+      break;
+    }
+
+    lastError = insertError;
+    if (
+      insertError &&
+      !insertError.message?.includes('duplicate') &&
+      !insertError.message?.includes('unique')
+    ) {
+      break;
+    }
+  }
+
+  if (!data) {
+    console.error('[ClubsService] Club creation failed:', lastError);
     throw new Error('Failed to create club');
   }
 

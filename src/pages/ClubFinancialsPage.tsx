@@ -62,6 +62,7 @@ export default function ClubFinancialsPage() {
   const isMounted = useIsMounted();
   const loadingRef = useRef(false);
   const loadFinancialsRef = useRef<() => void>(() => {});
+  const resolvedClubIdRef = useRef<string | null>(null);
 
   // ── CRITICAL: Reset per-club state when navigating between clubs ──
   useEffect(() => {
@@ -69,6 +70,7 @@ export default function ClubFinancialsPage() {
     setExporting(false);
     setVisibleTransactions(new Set());
     loadingRef.current = false;
+    resolvedClubIdRef.current = null; // Reset cache for new club
   }, [clubId]);
 
   useEffect(() => {
@@ -201,7 +203,9 @@ export default function ClubFinancialsPage() {
     loadingRef.current = true;
     setLoading(true);
     try {
-      const resolvedId = await resolveClubUUID(clubId);
+      // Use cached resolved ID when available to avoid redundant async lookups
+      const resolvedId = resolvedClubIdRef.current || (await resolveClubUUID(clubId));
+      if (!resolvedClubIdRef.current) resolvedClubIdRef.current = resolvedId;
       const swrKey = `fin_cache_${resolvedId}_${period}`;
 
       // SWR: show cached data instantly

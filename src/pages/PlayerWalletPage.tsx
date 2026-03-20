@@ -327,6 +327,7 @@ export default function PlayerWalletPage() {
       });
       setTransferAmount('');
       loadBalances(user.id);
+      masterBus.emit('BALANCE_UPDATED', { source: 'internal_transfer', userId: user.id });
     } catch {
       setMessage({ type: 'error', text: 'Transfer failed. Please try again.' });
     }

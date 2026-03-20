@@ -142,8 +142,14 @@ export default function UnionDashboardPage() {
 
   // Activity
 
-  // Wallet transfer form
+  // Wallet transfer form (Send Chips to Club)
   const [transferForm, setTransferForm] = useState({ clubId: '', amount: '', notes: '' });
+
+  // Wallet deposit form (controlled — no getElementById)
+  const [depositForm, setDepositForm] = useState({ amount: '', notes: '' });
+
+  // Clawback form (controlled — no getElementById)
+  const [clawbackForm, setClawbackForm] = useState({ target: '', amount: '', reason: '' });
 
   // Search / Filter
   const [clubSearch, setClubSearch] = useState('');
@@ -175,6 +181,13 @@ export default function UnionDashboardPage() {
     const t = setTimeout(() => setSuccess(null), 4000);
     return () => clearTimeout(t);
   }, [success]);
+
+  // Auto-clear errors after 6s
+  useEffect(() => {
+    if (!error) return;
+    const t = setTimeout(() => setError(null), 6000);
+    return () => clearTimeout(t);
+  }, [error]);
 
   // ── Cache Invalidation on Union Change ─────────────────────
   useEffect(() => {
@@ -568,7 +581,13 @@ export default function UnionDashboardPage() {
 
         {/* Edit Commission Modal */}
         {editCommClub && (
-          <div className="admin-modal-overlay" onClick={() => setEditCommClub(null)}>
+          <div
+            className="admin-modal-overlay"
+            onClick={() => setEditCommClub(null)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setEditCommClub(null);
+            }}
+          >
             <div
               className="admin-card"
               style={{ maxWidth: '380px', margin: '60px auto', padding: '20px' }}
@@ -1054,14 +1073,16 @@ export default function UnionDashboardPage() {
                     style={{ flex: '0 0 150px' }}
                     type="number"
                     min="1"
-                    id="deposit-amount"
                     placeholder="Amount"
+                    value={depositForm.amount}
+                    onChange={(e) => setDepositForm((f) => ({ ...f, amount: e.target.value }))}
                   />
                   <input
                     className="admin-input"
                     style={{ flex: '1 1 150px' }}
-                    id="deposit-notes"
                     placeholder="Notes (optional)"
+                    value={depositForm.notes}
+                    onChange={(e) => setDepositForm((f) => ({ ...f, notes: e.target.value }))}
                   />
                   <button
                     className="admin-btn admin-btn-primary"
@@ -1071,13 +1092,7 @@ export default function UnionDashboardPage() {
                       setProcessing(true);
                       setError(null);
                       try {
-                        const amtInput = document.getElementById(
-                          'deposit-amount'
-                        ) as HTMLInputElement;
-                        const notesInput = document.getElementById(
-                          'deposit-notes'
-                        ) as HTMLInputElement;
-                        const amt = parseInt(amtInput?.value || '0', 10);
+                        const amt = parseInt(depositForm.amount || '0', 10);
                         if (isNaN(amt) || amt <= 0) {
                           setError('Enter a valid amount');
                           setProcessing(false);
@@ -1091,7 +1106,7 @@ export default function UnionDashboardPage() {
                             p_user_id: user!.id,
                             p_amount: amt,
                             p_category: 'deposit_to_union',
-                            p_description: `Deposit to Union Bank: ${notesInput?.value || 'Union funding'}`,
+                            p_description: `Deposit to Union Bank: ${depositForm.notes || 'Union funding'}`,
                             p_table_id: null,
                             p_hand_id: null,
                             p_related_entity_id: unionId,
@@ -1102,40 +1117,22 @@ export default function UnionDashboardPage() {
                             deductErr.message || 'Failed to deduct from player wallet'
                           );
 
-                        // 2. Credit union chip_balance via union_wallets or unions table
-                        // Read fresh balance from DB to prevent TOCTOU race condition
-                        const { data: freshWallet } = await supabase
-                          .from('union_wallets')
-                          .select('chip_balance')
-                          .eq('union_id', unionId)
-                          .maybeSingle();
-                        const freshBalance = Number(freshWallet?.chip_balance) || 0;
-                        const { error: uwErr } = await supabase
-                          .from('union_wallets')
-                          .update({ chip_balance: freshBalance + amt })
-                          .eq('union_id', unionId);
-                        if (uwErr) {
-                          // Fallback: try unions table directly
-                          const { data: freshUnion } = await supabase
-                            .from('unions')
-                            .select('chip_balance')
-                            .eq('id', unionId)
-                            .maybeSingle();
-                          const freshUnionBal = Number(freshUnion?.chip_balance) || 0;
-                          const { error: uErr } = await supabase
-                            .from('unions')
-                            .update({ chip_balance: freshUnionBal + amt })
-                            .eq('id', unionId);
-                          if (uErr) throw new Error('Failed to credit union bank: ' + uErr.message);
-                        }
+                        // 2. Atomic credit to union chip_balance — single SQL UPDATE prevents TOCTOU race
+                        const { error: uwErr } = await supabase.rpc(
+                          'increment_union_chip_balance',
+                          {
+                            p_union_id: unionId,
+                            p_amount: amt,
+                          }
+                        );
+                        if (uwErr) throw new Error('Failed to credit union bank: ' + uwErr.message);
 
                         setSuccess(`Deposited ${amt.toLocaleString()} chips to Union Bank`);
                         masterBus.emit('BALANCE_UPDATED', {
                           source: 'union_deposit',
                           userId: user!.id,
                         });
-                        if (amtInput) amtInput.value = '';
-                        if (notesInput) notesInput.value = '';
+                        setDepositForm({ amount: '', notes: '' });
                         loadDashboard(unionId);
                       } catch (err: any) {
                         setError(err.message || 'Deposit failed');
@@ -1167,7 +1164,8 @@ export default function UnionDashboardPage() {
                   <select
                     className="admin-input"
                     style={{ flex: '1 1 200px' }}
-                    id="clawback-target"
+                    value={clawbackForm.target}
+                    onChange={(e) => setClawbackForm((f) => ({ ...f, target: e.target.value }))}
                   >
                     <option value="">Select target...</option>
                     <optgroup label="Club Treasuries">
@@ -1183,14 +1181,16 @@ export default function UnionDashboardPage() {
                     style={{ flex: '0 0 120px' }}
                     type="number"
                     min="1"
-                    id="clawback-amount"
                     placeholder="Amount"
+                    value={clawbackForm.amount}
+                    onChange={(e) => setClawbackForm((f) => ({ ...f, amount: e.target.value }))}
                   />
                   <input
                     className="admin-input"
                     style={{ flex: '1 1 150px' }}
-                    id="clawback-reason"
                     placeholder="Reason"
+                    value={clawbackForm.reason}
+                    onChange={(e) => setClawbackForm((f) => ({ ...f, reason: e.target.value }))}
                   />
                   <button
                     className="admin-btn"
@@ -1200,18 +1200,9 @@ export default function UnionDashboardPage() {
                       setProcessing(true);
                       setError(null);
                       try {
-                        const targetEl = document.getElementById(
-                          'clawback-target'
-                        ) as HTMLSelectElement;
-                        const amtEl = document.getElementById(
-                          'clawback-amount'
-                        ) as HTMLInputElement;
-                        const reasonEl = document.getElementById(
-                          'clawback-reason'
-                        ) as HTMLInputElement;
-                        const target = targetEl?.value;
-                        const amt = parseInt(amtEl?.value || '0', 10);
-                        const reason = reasonEl?.value || 'Union clawback';
+                        const target = clawbackForm.target;
+                        const amt = parseInt(clawbackForm.amount || '0', 10);
+                        const reason = clawbackForm.reason || 'Union clawback';
 
                         if (!target) {
                           setError('Select a target');
@@ -1227,53 +1218,45 @@ export default function UnionDashboardPage() {
                         const [targetType, targetId] = target.split(':');
 
                         if (targetType === 'club') {
-                          // Clawback from club treasury
-                          const { data: club } = await supabase
+                          // Atomic clawback from club treasury — prevents negative balance + TOCTOU race
+                          const { data: clubName } = await supabase
                             .from('clubs')
-                            .select('chip_treasury, name')
+                            .select('name')
                             .eq('id', targetId)
                             .maybeSingle();
-                          if (!club || (club.chip_treasury || 0) < amt) {
-                            setError('Club has insufficient treasury balance');
+                          const { error: decrErr } = await supabase.rpc('decrement_club_treasury', {
+                            p_club_id: targetId,
+                            p_amount: amt,
+                          });
+                          if (decrErr) {
+                            setError(
+                              decrErr.message?.includes('insufficient')
+                                ? 'Club has insufficient treasury balance'
+                                : 'Failed to deduct from club: ' + decrErr.message
+                            );
                             setProcessing(false);
                             return;
                           }
-                          await supabase
-                            .from('clubs')
-                            .update({ chip_treasury: (club.chip_treasury || 0) - amt })
-                            .eq('id', targetId);
 
-                          // Credit union bank — read fresh balance from DB to prevent TOCTOU race
-                          const { data: freshUW } = await supabase
-                            .from('union_wallets')
-                            .select('chip_balance')
-                            .eq('union_id', unionId)
-                            .maybeSingle();
-                          const freshBal = Number(freshUW?.chip_balance) || 0;
-                          const { error: uwErr2 } = await supabase
-                            .from('union_wallets')
-                            .update({ chip_balance: freshBal + amt })
-                            .eq('union_id', unionId);
-                          if (uwErr2) {
-                            const { data: freshU } = await supabase
-                              .from('unions')
-                              .select('chip_balance')
-                              .eq('id', unionId)
-                              .maybeSingle();
-                            await supabase
-                              .from('unions')
-                              .update({ chip_balance: (Number(freshU?.chip_balance) || 0) + amt })
-                              .eq('id', unionId);
-                          }
+                          // Atomic credit to union bank
+                          const { error: uwErr2 } = await supabase.rpc(
+                            'increment_union_chip_balance',
+                            {
+                              p_union_id: unionId,
+                              p_amount: amt,
+                            }
+                          );
+                          if (uwErr2)
+                            throw new Error('Failed to credit union bank: ' + uwErr2.message);
 
-                          setSuccess(`Clawed back ${amt.toLocaleString()} chips from ${club.name}`);
+                          setSuccess(
+                            `Clawed back ${amt.toLocaleString()} chips from ${clubName?.name || 'club'}`
+                          );
                         }
 
                         masterBus.emit('BALANCE_UPDATED', { source: 'clawback' });
                         masterBus.emit('CLUB_UPDATED', { clubId: targetId });
-                        if (amtEl) amtEl.value = '';
-                        if (reasonEl) reasonEl.value = '';
-                        if (targetEl) targetEl.value = '';
+                        setClawbackForm({ target: '', amount: '', reason: '' });
                         loadDashboard(unionId);
                       } catch (err: any) {
                         setError(err.message || 'Clawback failed');
@@ -1526,6 +1509,11 @@ export default function UnionDashboardPage() {
         {/* ══════ TAB: APPLICATIONS ══════ */}
         {tab === 'applications' && (
           <div className="admin-tab-content">
+            {!appsLoaded && (
+              <div style={{ textAlign: 'center', padding: '24px', color: 'var(--text-secondary)' }}>
+                Loading applications...
+              </div>
+            )}
             <div
               style={{ display: 'flex', gap: '8px', marginBottom: '16px', alignItems: 'center' }}
             >

@@ -11,7 +11,7 @@ const STATIC_ASSETS = [
   '/index.html',
   '/offline.html',
   '/manifest.json',
-  '/poker-chip-logo.png',
+  '/hub/club-arena/poker-chip-logo.png',
 ];
 
 // Install: Cache static assets
@@ -104,8 +104,8 @@ self.addEventListener('push', (event: PushEvent) => {
 
   const options: NotificationOptions = {
     body: data.body || 'New notification from Club Arena',
-    icon: '/poker-chip-logo.png',
-    badge: '/poker-chip-logo.png',
+    icon: '/hub/club-arena/poker-chip-logo.png',
+    badge: '/hub/club-arena/poker-chip-logo.png',
     vibrate: [200, 100, 200],
     data: data.url || '/',
     actions: [

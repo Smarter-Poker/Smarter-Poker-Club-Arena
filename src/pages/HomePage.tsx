@@ -292,6 +292,8 @@ function HomePageInner() {
                   ...m.club,
                   is_owner: m.role === 'owner',
                   member_count: m.club?.member_count || 0,
+                  // Detect unions: clubs with a union_id are union entities
+                  entity_type: (m.club as any)?.union_id ? 'union' : 'club',
                 }) as UserClub
             ) || [];
           if (getIsMounted && !getIsMounted()) return;

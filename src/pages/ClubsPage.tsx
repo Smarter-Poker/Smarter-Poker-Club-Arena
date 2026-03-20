@@ -320,8 +320,7 @@ export default function ClubsPage() {
         is_public: isPublic,
       });
 
-      // Emit bus event so ClubCarouselPage, ClubHomePage, etc. react to the new club
-      masterBus.emit('CLUB_JOINED', { clubId: club.id, action: 'club_created' });
+      // ClubsService.create() emits CLUB_JOINED via joinClub() internally — no need to emit again
 
       // Navigate to the new club
       navigate(`/clubs/${club.id}`);

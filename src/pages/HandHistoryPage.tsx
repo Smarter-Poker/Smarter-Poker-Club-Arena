@@ -68,6 +68,9 @@ export default function HandHistoryPage() {
   const PAGE_SIZE = 25;
   const isMounted = useIsMounted();
   const loadingRef = useRef(false);
+  const loadHandsRef = useRef(
+    async (reset?: boolean, overridePage?: number, getIsMounted?: () => boolean) => {}
+  );
 
   // SWR: show cached hands instantly on mount
   useEffect(() => {
@@ -122,7 +125,7 @@ export default function HandHistoryPage() {
         },
         () => {
           // New hand added for this user, refresh the hand list
-          loadHands(true);
+          loadHandsRef.current(true);
         }
       )
       .subscribe((status: string, err?: Error) => {
@@ -139,6 +142,11 @@ export default function HandHistoryPage() {
     };
   }, [user?.id]);
 
+  // Keep loadHandsRef in sync so bus listeners always call the latest version
+  useEffect(() => {
+    loadHandsRef.current = loadHands;
+  });
+
   // ── Bus Listener: debounced refresh when engine completes a hand ──
   // Debounced at 1s to coalesce with postgres_changes subscription above
   // (both fire for the same hand — bus fires immediately, postgres 100-2000ms later)
@@ -146,12 +154,16 @@ export default function HandHistoryPage() {
     const unsub = masterBus.subscribeDebounced(
       'HAND_COMPLETED',
       () => {
-        loadHands(true);
+        loadHandsRef.current(true);
       },
       1000
     );
     // Phase 4: Cross-page sync (ported from World Hub hand-histories.js)
-    const unsub2 = masterBus.subscribeDebounced('TABLE_CREATED', () => loadHands(true), 500);
+    const unsub2 = masterBus.subscribeDebounced(
+      'TABLE_CREATED',
+      () => loadHandsRef.current(true),
+      500
+    );
     return () => {
       unsub();
       unsub2();

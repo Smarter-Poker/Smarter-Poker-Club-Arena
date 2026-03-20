@@ -5,6 +5,7 @@
    - The frame template has white labels baked in, but we COVER them with a
      dark stats bar background + cyan CSS labels (identical to Shark Club).
    - Logo sits inside the recessed viewport (6% top, 7% sides, 75% bottom).
+   - Club ID + Name overlays match Shark Club's baked white text.
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .club-card-panel {
@@ -16,6 +17,30 @@
   overflow: hidden;
   pointer-events: none;
   background: #0a1423;
+}
+
+/* ── Skeleton shimmer — visible until image loads ──────────────────────────── */
+.club-card-skeleton {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: linear-gradient(
+    90deg,
+    rgba(10, 20, 40, 0.9) 0%,
+    rgba(15, 30, 55, 0.9) 50%,
+    rgba(10, 20, 40, 0.9) 100%
+  );
+  background-size: 200% 100%;
+  animation: clubCardShimmer 2s infinite;
+}
+
+@keyframes clubCardShimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }
 
 /* ── Background: frame template or baked card ──────────────────────────────── */
@@ -32,13 +57,59 @@
   object-fit: contain;
 }
 
+/* ── Club ID text at top — matches Shark Club's baked "CLUB ID: 25450" ───── */
+.club-card-id-overlay {
+  position: absolute;
+  top: 2.8%;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 4;
+  font-family: 'Orbitron', 'Inter', 'Segoe UI', sans-serif;
+  font-weight: 700;
+  font-size: clamp(10px, 1.8vw, 18px);
+  letter-spacing: 1.5px;
+  color: #ffffff;
+  text-shadow:
+    0 0 6px rgba(0, 0, 0, 0.9),
+    0 2px 4px rgba(0, 0, 0, 0.8),
+    0 0 12px rgba(0, 0, 0, 0.5);
+  white-space: nowrap;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+
+/* ── Club Name text at bottom — matches Shark Club's baked name ────────────── */
+.club-card-name-overlay {
+  position: absolute;
+  top: 68%;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 4;
+  font-family: 'Orbitron', 'Inter', 'Segoe UI', sans-serif;
+  font-weight: 700;
+  font-size: clamp(12px, 2.5vw, 24px);
+  letter-spacing: 2px;
+  color: #ffffff;
+  text-shadow:
+    0 0 6px rgba(0, 0, 0, 0.9),
+    0 2px 4px rgba(0, 0, 0, 0.8),
+    0 0 12px rgba(0, 0, 0, 0.5);
+  white-space: nowrap;
+  text-transform: uppercase;
+  pointer-events: none;
+  text-align: center;
+  max-width: 85%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* ── Logo container — sits INSIDE the recessed viewport area ───────────────── */
 .club-card-logo-container {
   position: absolute;
-  top: 6%;
+  top: 8%;
   left: 7%;
   right: 7%;
-  bottom: 25%;
+  bottom: 30%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -51,6 +122,10 @@
   width: 100%;
   height: 100%;
   object-fit: contain;
+  /* Eliminate white logo backgrounds:
+     multiply makes white→transparent against dark backgrounds */
+  mix-blend-mode: multiply;
+  filter: brightness(1.15) contrast(1.1);
 }
 
 .club-card-logo-fallback {
@@ -104,11 +179,11 @@
   text-align: center;
 }
 
-/* Cyan labels — identical to ClubStatsPanel .stat-label */
+/* Cyan labels — identical to ClubStatsPanel .stat-label, now with responsive sizing */
 .club-card-stat-label {
   font-family: 'Inter', 'Roboto', sans-serif;
   font-weight: 600;
-  font-size: 11px;
+  font-size: clamp(7px, 1.2vw, 11px);
   letter-spacing: 0.5px;
   color: #a5eff0;
   margin-bottom: 2px;
@@ -120,11 +195,11 @@
   line-height: 1.3;
 }
 
-/* Glowing values — identical to ClubStatsPanel .stat-value */
+/* Glowing values — identical to ClubStatsPanel .stat-value, with responsive sizing */
 .club-card-stat-value {
   font-family: 'Inter', 'Roboto', sans-serif;
   font-weight: 700;
-  font-size: 24px;
+  font-size: clamp(14px, 2.2vw, 24px);
   letter-spacing: 1px;
   color: #adf9f9;
   text-shadow:
@@ -147,7 +222,7 @@
 }
 
 .club-card-level-group .club-card-stat-value {
-  font-size: 28px;
+  font-size: clamp(16px, 2.6vw, 28px);
   line-height: 1;
   margin-top: 8px;
 }

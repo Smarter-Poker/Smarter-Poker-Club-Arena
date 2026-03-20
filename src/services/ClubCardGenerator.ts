@@ -19,8 +19,8 @@ interface CardGeneratorOptions {
 // Template image path (high-fidelity metallic frame)
 const FRAME_TEMPLATE_URL = `${import.meta.env.BASE_URL}images/club-card-frame-template.jpg`;
 
-// Card dimensions (matching template proportions 604:1024)
-const CARD_WIDTH = 604;
+// Card dimensions (matching actual frame template proportions 585:1024)
+const CARD_WIDTH = 585;
 const CARD_HEIGHT = 1024;
 
 // Logo/image area: recessed viewport inside the metal frame

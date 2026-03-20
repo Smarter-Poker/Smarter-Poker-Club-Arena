@@ -250,6 +250,7 @@ export default function CarouselSection({
             totalMembers={stats?.totalMembers ?? club.member_count ?? 0}
             clubLevel={stats?.clubLevel ?? 1}
             activePlayers={stats?.activePlayers ?? 0}
+            clubId={club.club_id}
             cardImageUrl={club.card_image_url}
             logoUrl={club.logo_url}
           />

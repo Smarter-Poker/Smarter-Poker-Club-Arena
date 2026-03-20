@@ -551,7 +551,7 @@
   border-radius: 10px;
   filter: drop-shadow(0 0 10px rgba(0, 212, 255, 0.3));
   /* Neutralize white backgrounds on logos against dark card face */
-  mix-blend-mode: luminosity;
+  mix-blend-mode: multiply;
 }
 
 .carouselCardIcon {

@@ -174,6 +174,12 @@ export default function PlayerStatsPage() {
     }
   }, [targetUserId]);
 
+  // Safety timeout: prevent infinite skeleton if auth/Supabase hangs
+  useEffect(() => {
+    const timeout = setTimeout(() => setLoading(false), 5000);
+    return () => clearTimeout(timeout);
+  }, []);
+
   // Stagger summary cards on mount
   useEffect(() => {
     const timers = [0, 1, 2].map((i) =>

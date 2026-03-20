@@ -763,6 +763,7 @@ function HomePageInner() {
           const lastClub = localStorage.getItem(STORAGE_KEYS.LAST_CLUB);
           if (lastClub) navigate(`/clubs/${lastClub}/cashier`);
           else if (userClubs.length > 0) navigate(`/clubs/${userClubs[0].id}/cashier`);
+          else toast.info('Join a club first to access the cashier');
           break;
         }
         case '5':

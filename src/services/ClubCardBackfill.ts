@@ -58,7 +58,7 @@ export async function backfillClubCards(clubs: BackfillTarget[]): Promise<void> 
       const fileName = `club-cards/${club.club_id}-card.png`;
 
       // 3. Upload to Supabase Storage
-      const { data: uploadData, error: uploadError } = await supabase.storage
+      const { error: uploadError } = await supabase.storage
         .from('club-assets')
         .upload(fileName, blob, {
           contentType: 'image/png',

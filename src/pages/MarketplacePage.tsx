@@ -47,6 +47,12 @@ export default function MarketplacePage() {
 
   const [tab, setTab] = useState<'store' | 'my_items' | 'manage'>('store');
   const [loading, setLoading] = useState(true);
+
+  // Safety timeout: prevent infinite skeleton if auth/Supabase hangs
+  useEffect(() => {
+    const timeout = setTimeout(() => setLoading(false), 5000);
+    return () => clearTimeout(timeout);
+  }, []);
   const [clubId, setClubId] = useState<string | null>(null);
   const [role, setRole] = useState('player');
   const [processing, setProcessing] = useState(false);
@@ -376,9 +382,30 @@ export default function MarketplacePage() {
       {tab === 'store' && (
         <div className={styles.section}>
           {items.length === 0 ? (
-            <div className={styles.emptyState}>
-              <span className={styles.emptyIcon}>🛍️</span>
-              <span className={styles.emptyText}>The store is currently empty.</span>
+            <div
+              className={styles.emptyState}
+              style={{ textAlign: 'center', padding: '2rem 1.5rem' }}
+            >
+              <span
+                className={styles.emptyIcon}
+                style={{ fontSize: '2.5rem', display: 'block', marginBottom: '0.75rem' }}
+              >
+                🛍️
+              </span>
+              <span
+                className={styles.emptyText}
+                style={{
+                  fontSize: '1.05rem',
+                  fontWeight: 600,
+                  display: 'block',
+                  marginBottom: '0.5rem',
+                }}
+              >
+                The store is currently empty.
+              </span>
+              <span style={{ color: 'var(--soft-white, #B0B3B8)', fontSize: '0.85rem' }}>
+                Check back soon — your club owner can add items for members to purchase with chips.
+              </span>
             </div>
           ) : (
             <>
@@ -448,9 +475,43 @@ export default function MarketplacePage() {
       {tab === 'my_items' && (
         <div className={styles.section}>
           {purchases.length === 0 ? (
-            <div className={styles.emptyState}>
-              <span className={styles.emptyIcon}>📦</span>
-              <span className={styles.emptyText}>You haven&apos;t purchased any items yet.</span>
+            <div
+              className={styles.emptyState}
+              style={{ textAlign: 'center', padding: '2rem 1.5rem' }}
+            >
+              <span
+                className={styles.emptyIcon}
+                style={{ fontSize: '2.5rem', display: 'block', marginBottom: '0.75rem' }}
+              >
+                📦
+              </span>
+              <span
+                className={styles.emptyText}
+                style={{
+                  fontSize: '1.05rem',
+                  fontWeight: 600,
+                  display: 'block',
+                  marginBottom: '0.5rem',
+                }}
+              >
+                You haven&apos;t purchased any items yet.
+              </span>
+              <button
+                onClick={() => setTab('store')}
+                style={{
+                  marginTop: '0.75rem',
+                  padding: '8px 20px',
+                  background: 'rgba(65,105,225,0.15)',
+                  border: '1px solid rgba(65,105,225,0.3)',
+                  borderRadius: '8px',
+                  color: '#a5b4fc',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Browse Store
+              </button>
             </div>
           ) : (
             <div className={styles.tableScroll}>

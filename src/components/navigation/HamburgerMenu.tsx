@@ -18,6 +18,7 @@ import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { useWalletStore } from '../../stores/useWalletStore';
 import { STORAGE_KEYS } from '../../lib/storage';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
+import { preloadRoute } from '../../utils/ChunkPreloader';
 
 interface HamburgerMenuProps {
   isOpen: boolean;
@@ -181,6 +182,11 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   const handleNavigate = (path: string) => {
     navigate(path);
     onClose();
+  };
+
+  // Prefetch page chunk on hover — so page loads instantly when clicked
+  const handleItemHover = (path: string) => {
+    preloadRoute(path);
   };
 
   // Settings update with optimistic rollback
@@ -490,6 +496,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                 : 'none',
             }}
             onMouseEnter={(e) => {
+              handleItemHover(item.path);
               e.currentTarget.style.background = colors.bgHover;
               e.currentTarget.style.transform = 'translateX(4px)';
             }}
@@ -530,6 +537,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                 : 'none',
             }}
             onMouseEnter={(e) => {
+              handleItemHover(item.path);
               e.currentTarget.style.background = colors.bgHover;
               e.currentTarget.style.transform = 'translateX(4px)';
             }}
@@ -565,6 +573,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                 : 'none',
             }}
             onMouseEnter={(e) => {
+              handleItemHover(item.path);
               e.currentTarget.style.background = colors.bgHover;
               e.currentTarget.style.transform = 'translateX(4px)';
             }}
@@ -610,6 +619,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                 : 'none',
             }}
             onMouseEnter={(e) => {
+              handleItemHover(item.path);
               e.currentTarget.style.background = colors.bgHover;
               e.currentTarget.style.transform = 'translateX(4px)';
             }}
@@ -648,6 +658,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                 : 'none',
             }}
             onMouseEnter={(e) => {
+              handleItemHover(item.path);
               e.currentTarget.style.background = colors.bgHover;
               e.currentTarget.style.transform = 'translateX(4px)';
             }}
@@ -929,6 +940,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                 : 'none',
             }}
             onMouseEnter={(e) => {
+              handleItemHover(item.path);
               e.currentTarget.style.background = colors.bgHover;
               e.currentTarget.style.transform = 'translateX(4px)';
             }}
@@ -1014,6 +1026,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                 : 'none',
             }}
             onMouseEnter={(e) => {
+              handleItemHover(item.path);
               e.currentTarget.style.background = colors.bgHover;
               e.currentTarget.style.transform = 'translateX(4px)';
             }}

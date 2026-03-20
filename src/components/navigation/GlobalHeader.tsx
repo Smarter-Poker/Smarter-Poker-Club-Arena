@@ -20,10 +20,10 @@
 import { useState, useEffect, useRef, useCallback, Suspense, lazy } from 'react';
 const HamburgerMenu = lazy(() => import('./HamburgerMenu'));
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { useWalletStore } from '../../stores/useWalletStore';
+import { useHeaderDataStore } from '../../stores/useHeaderDataStore';
 import { useAuthUser } from '../../hooks/useAuthUser';
 
 import styles from './GlobalHeader.module.css';
@@ -50,22 +50,9 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
   const inAppNavCountRef = useRef(0);
   const { loadBalances, loadDiamonds } = useWalletStore();
   const { user: authUser } = useAuthUser();
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-  // Hydrate notification/message counts from localStorage for instant display on re-entry
-  const [notificationCount, setNotificationCount] = useState(() => {
-    try {
-      return parseInt(localStorage.getItem('ca-notif-count') || '0', 10);
-    } catch {
-      return 0;
-    }
-  });
-  const [unreadMessages, setUnreadMessages] = useState(() => {
-    try {
-      return parseInt(localStorage.getItem('ca-msg-count') || '0', 10);
-    } catch {
-      return 0;
-    }
-  });
+  // ─── PERSISTENT HEADER DATA (survives route changes — no re-fetch on navigation) ───
+  const { avatarUrl, notificationCount, unreadMessages, loadOnce, setAvatarUrl } =
+    useHeaderDataStore();
   const [menuOpen, setMenuOpen] = useState(false);
   const [isNavigatingAway, setIsNavigatingAway] = useState(false);
 
@@ -130,142 +117,19 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
 
   const isSubPage = pageDepth >= 2;
 
-  // Load user data when auth user becomes available (no more getUser() calls)
+  // ─── PERSISTENT HEADER DATA INIT ───
+  // loadOnce() fetches avatar + counts from Supabase exactly ONE TIME.
+  // Subsequent route changes DO NOT re-fetch — data persists in Zustand store.
+  // Realtime channel for notifications/messages is managed by the store,
+  // not by this component, so it survives route changes without reconnecting.
   useEffect(() => {
-    let mounted = true;
     if (!authUser?.id) return;
-
-    const userId = authUser.id;
-
-    const loadUserData = async () => {
-      try {
-        loadBalances(userId);
-        loadDiamonds(userId);
-
-        // Fetch profile avatar
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('avatar_url')
-          .eq('id', userId)
-          .maybeSingle();
-
-        if (profile && mounted) {
-          setAvatarUrl(profile.avatar_url);
-        }
-
-        // Notification count
-        const { count: notifCount } = await supabase
-          .from('notifications')
-          .select('*', { count: 'exact', head: true })
-          .eq('user_id', userId)
-          .eq('read', false);
-        if (mounted) {
-          const newCount = notifCount || 0;
-          setNotificationCount(newCount);
-          try {
-            localStorage.setItem('ca-notif-count', String(newCount));
-          } catch {
-            /* */
-          }
-          masterBus.emit('NOTIFICATION_COUNT_CHANGED', { count: newCount });
-        }
-
-        // Unread messages count
-        const { count: msgCount } = await supabase
-          .from('messages')
-          .select('*', { count: 'exact', head: true })
-          .eq('receiver_id', userId)
-          .eq('is_read', false);
-        if (mounted) {
-          const newMsgCount = msgCount || 0;
-          setUnreadMessages(newMsgCount);
-          try {
-            localStorage.setItem('ca-msg-count', String(newMsgCount));
-          } catch {
-            /* */
-          }
-          masterBus.emit('UNREAD_DM_COUNT_CHANGED', { userId: userId, count: newMsgCount });
-        }
-      } catch (e) {
-        console.error('[GlobalHeader] Error loading user data:', e);
-      }
-    };
-
-    loadUserData();
-
-    // ─── MASTER BUS LISTENERS ───
-    const activeChannelKey = `header-sync-${userId}`;
-    const channel = masterBus.getOrCreateChannel(activeChannelKey);
-
-    channel
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'notifications',
-          filter: `user_id=eq.${userId}`,
-        },
-        async () => {
-          if (!mounted) return;
-          const { count } = await supabase
-            .from('notifications')
-            .select('*', { count: 'exact', head: true })
-            .eq('user_id', userId)
-            .eq('read', false);
-          if (mounted) {
-            const c = count || 0;
-            setNotificationCount(c);
-            try {
-              localStorage.setItem('ca-notif-count', String(c));
-            } catch {
-              /* */
-            }
-            masterBus.emit('NOTIFICATION_COUNT_CHANGED', { count: c });
-          }
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'messages',
-          filter: `receiver_id=eq.${userId}`,
-        },
-        async () => {
-          if (!mounted) return;
-          const { count } = await supabase
-            .from('messages')
-            .select('*', { count: 'exact', head: true })
-            .eq('receiver_id', userId)
-            .eq('is_read', false);
-          if (mounted) {
-            const mc = count || 0;
-            setUnreadMessages(mc);
-            try {
-              localStorage.setItem('ca-msg-count', String(mc));
-            } catch {
-              /* */
-            }
-            masterBus.emit('UNREAD_DM_COUNT_CHANGED', { userId: userId, count: mc });
-          }
-        }
-      )
-      .subscribe((status: string, err?: Error) => {
-        if (status === 'CHANNEL_ERROR') {
-          console.error('[GlobalHeader] ❌ Realtime channel error:', err?.message || err);
-        }
-        if (status === 'TIMED_OUT') {
-          console.warn('[GlobalHeader] ⏱️ Realtime channel timed out');
-        }
-      });
-
-    return () => {
-      mounted = false;
-      masterBus.removeRegisteredChannel(activeChannelKey);
-    };
-  }, [authUser?.id, loadBalances, loadDiamonds]);
+    // Load header data once + set up realtime (no-op if already loaded for this user)
+    loadOnce(authUser.id);
+    // Load wallet data (these are idempotent — Zustand deduplicates)
+    loadBalances(authUser.id);
+    loadDiamonds(authUser.id);
+  }, [authUser?.id, loadOnce, loadBalances, loadDiamonds]);
 
   // #4: Debounced — collapses rapid-fire wallet refreshes into one call
   useMasterBusSubscription(
@@ -278,7 +142,7 @@ export default function GlobalHeader({ pageDepth = 1 }: GlobalHeaderProps) {
 
   useMasterBusSubscription('USER_PROFILE_LOADED', (payload) => {
     if (payload?.avatarUrl) {
-      setAvatarUrl(payload.avatarUrl);
+      setAvatarUrl(payload.avatarUrl as string);
     }
   });
 

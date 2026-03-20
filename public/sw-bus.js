@@ -67,7 +67,15 @@ sw.addEventListener('fetch', (event) => {
               cache.put(event.request, response.clone());
             }
             return response;
-          }).catch(() => cached); // Offline fallback to cache
+          }).catch(() => {
+            // Offline: return cached version, or a transparent 1x1 PNG if nothing cached
+            if (cached) return cached;
+            // No cache + no network = return empty transparent image to prevent crash
+            return new Response(new Uint8Array(0), {
+              status: 200,
+              headers: { 'Content-Type': 'image/png' },
+            });
+          });
 
           return cached || fetchPromise;
         })

@@ -1,8 +1,8 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  CLUB ENGINE — Marketplace Page
+ *  CLUB ENGINE — Item Shop (Marketplace)
+ *  Club Arena in-game purchases: Time Banks, Table Skins, Throwables, Emotes
  *  3 Tabs: Store | My Items  (+Manage tab for admins)
- *  Premium dark-mode UI with category filters, search, sort, and admin tools
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -44,11 +44,11 @@ interface Purchase {
 /* ═══ Constants ═══ */
 const CATEGORIES = [
   'All',
-  'General',
-  'Avatars',
+  'Time Banks',
   'Table Skins',
-  'Emotes',
   'Throwables',
+  'Emotes',
+  'Avatars',
   'Exclusive',
 ];
 type SortMode = 'newest' | 'price-low' | 'price-high' | 'popular';
@@ -89,7 +89,7 @@ export default function MarketplacePage() {
   const [newItemName, setNewItemName] = useState('');
   const [newItemPrice, setNewItemPrice] = useState('');
   const [newItemDesc, setNewItemDesc] = useState('');
-  const [newItemCategory, setNewItemCategory] = useState('General');
+  const [newItemCategory, setNewItemCategory] = useState('Time Banks');
   const [newItemImage, setNewItemImage] = useState('');
   const [lastCreateTime, setLastCreateTime] = useState(0);
 
@@ -315,7 +315,7 @@ export default function MarketplacePage() {
     // Category filter
     if (categoryFilter !== 'All') {
       result = result.filter(
-        (item) => (item.category || 'General').toLowerCase() === categoryFilter.toLowerCase()
+        (item) => (item.category || 'Time Banks').toLowerCase() === categoryFilter.toLowerCase()
       );
     }
 
@@ -371,7 +371,7 @@ export default function MarketplacePage() {
       <header className={styles.header}>
         <div className={styles.headerLeft}>
           <h1 className={styles.title}>
-            🛒 Marketplace
+            🛒 Item Shop
             <span className={styles.balanceBadge}>💰 {fmt(balance)} chips</span>
           </h1>
         </div>
@@ -472,9 +472,10 @@ export default function MarketplacePage() {
           {items.length === 0 ? (
             <div className={styles.emptyState}>
               <span className={styles.emptyIcon}>🛍️</span>
-              <span className={styles.emptyText}>The store is currently empty.</span>
+              <span className={styles.emptyText}>The shop is currently empty.</span>
               <span className={styles.emptySubText}>
-                Check back soon — your club owner can add items for members to purchase with chips.
+                Club owners can add in-game items like time banks, table skins, throwables, and
+                emotes for members to purchase with chips.
               </span>
               {isAdmin && (
                 <button
@@ -555,7 +556,9 @@ export default function MarketplacePage() {
                           ) : (
                             <div className={styles.itemPlaceholderLg}>🎁</div>
                           )}
-                          <span className={styles.categoryTag}>{item.category || 'General'}</span>
+                          <span className={styles.categoryTag}>
+                            {item.category || 'Time Banks'}
+                          </span>
                         </div>
                         <div className={styles.itemBody}>
                           <div className={styles.itemName}>{item.name}</div>
@@ -615,7 +618,8 @@ export default function MarketplacePage() {
                     const joinedItem = p.marketplace_items?.[0];
                     const itemData = itemMap[p.item_id];
                     const displayName = joinedItem?.name || itemData?.name || 'Deleted Item';
-                    const displayCategory = joinedItem?.category || itemData?.category || 'General';
+                    const displayCategory =
+                      joinedItem?.category || itemData?.category || 'Time Banks';
                     return (
                       <tr key={p.id}>
                         <td style={{ fontWeight: 700 }}>{displayName}</td>
@@ -752,7 +756,7 @@ export default function MarketplacePage() {
                   setNewItemPrice('');
                   setNewItemDesc('');
                   setNewItemImage('');
-                  setNewItemCategory('General');
+                  setNewItemCategory('Time Banks');
                   loadAdminItems();
                   loadMarketplace(clubId || undefined, true);
                 } catch (err: any) {
@@ -788,8 +792,8 @@ export default function MarketplacePage() {
                     </div>
                     <div style={{ fontSize: 12, color: '#8b8d91', marginTop: 2 }}>
                       {fmtChips(item.price)} chips •{' '}
-                      <span className={styles.categorySmall}>{item.category || 'General'}</span> •{' '}
-                      {item.purchase_count || 0} sold
+                      <span className={styles.categorySmall}>{item.category || 'Time Banks'}</span>{' '}
+                      • {item.purchase_count || 0} sold
                     </div>
                   </div>
                   <div className={styles.adminActions}>

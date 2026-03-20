@@ -21,6 +21,8 @@ import { achievementTriggerService } from '../services/AchievementTriggerService
 import { postgresSyncHooks } from '../services/PostgresSyncHooks';
 import { setSentryUser, clearSentryUser } from './SentryInit';
 import { pushNotificationService } from '../services/PushNotificationService';
+import { clearSessionCache } from '../hooks/useSessionCache';
+import { useHeaderDataStore } from '../stores/useHeaderDataStore';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -393,6 +395,8 @@ class IdentityDNACore {
    */
   private clearUser(): void {
     useUserStore.getState().logout();
+    useHeaderDataStore.getState().teardown();
+    clearSessionCache();
   }
 
   /**

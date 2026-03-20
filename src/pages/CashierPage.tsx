@@ -1351,16 +1351,26 @@ export default function CashierPage() {
                   onChange={(e) => setSelectedRecipient(e.target.value)}
                 >
                   <option value="">Select recipient</option>
-                  {recipients.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.role === 'agent' || r.role === 'super_agent'
-                        ? '[Agent] '
-                        : r.role === 'sub_agent'
-                          ? '[Sub-Agent] '
-                          : ''}
-                      {r.username} (Bal: {r.balance.toLocaleString()})
-                    </option>
-                  ))}
+                  {recipients.map((r) => {
+                    const isAgent = ['agent', 'super_agent', 'sub_agent'].includes(r.role);
+                    const roleTag =
+                      r.role === 'super_agent'
+                        ? 'SA'
+                        : r.role === 'agent'
+                          ? 'AGT'
+                          : r.role === 'sub_agent'
+                            ? 'SUB'
+                            : '';
+                    const commInfo =
+                      isAgent && r.commissionRate ? ` ${(r.commissionRate * 100).toFixed(0)}%` : '';
+                    const typeInfo = isAgent ? (r.isPrepaid ? ' PP' : ' CR') : '';
+                    return (
+                      <option key={r.id} value={r.id}>
+                        {roleTag ? `[${roleTag}${commInfo}${typeInfo}] ` : ''}
+                        {r.username} (Bal: {r.balance.toLocaleString()})
+                      </option>
+                    );
+                  })}
                 </select>
               )}
             </div>

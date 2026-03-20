@@ -61,6 +61,7 @@ export default function ClubFinancialsPage() {
 
   const isMounted = useIsMounted();
   const loadingRef = useRef(false);
+  const loadFinancialsRef = useRef<() => void>(() => {});
 
   // ── CRITICAL: Reset per-club state when navigating between clubs ──
   useEffect(() => {
@@ -133,7 +134,7 @@ export default function ClubFinancialsPage() {
             filter: `club_id=eq.${resolvedId}`,
           },
           () => {
-            loadFinancials();
+            loadFinancialsRef.current();
           }
         )
         .on(
@@ -145,7 +146,7 @@ export default function ClubFinancialsPage() {
             filter: `club_id=eq.${resolvedId}`,
           },
           () => {
-            loadFinancials();
+            loadFinancialsRef.current();
           }
         )
         .subscribe((status: string, err?: Error) => {
@@ -167,63 +168,21 @@ export default function ClubFinancialsPage() {
   }, [clubId]);
 
   // ── Bus Listeners: cross-page financial event reactivity ──
+  // Keep ref in sync with latest loadFinancials (captures current clubId + period)
   useEffect(() => {
-    const unsubBalance = masterBus.subscribeDebounced(
-      'BALANCE_UPDATED',
-      () => {
-        loadFinancials();
-      },
-      500
-    );
-    const unsubWallet = masterBus.subscribeDebounced(
-      'WALLET_REFRESHED',
-      () => {
-        loadFinancials();
-      },
-      500
-    );
-    const unsubCommission = masterBus.subscribeDebounced(
-      'COMMISSION_PAID',
-      () => {
-        loadFinancials();
-      },
-      500
-    );
-    const unsubSettlement = masterBus.subscribeDebounced(
-      'SETTLEMENT_COMPLETED',
-      () => {
-        loadFinancials();
-      },
-      500
-    );
-    const unsubChipsAdded = masterBus.subscribeDebounced(
-      'CHIPS_ADDED',
-      () => {
-        loadFinancials();
-      },
-      500
-    );
-    const unsubChipsWithdrawn = masterBus.subscribeDebounced(
-      'CHIPS_WITHDRAWN',
-      () => {
-        loadFinancials();
-      },
-      500
-    );
-    const unsubChipsDistributed = masterBus.subscribeDebounced(
-      'CHIPS_DISTRIBUTED',
-      () => {
-        loadFinancials();
-      },
-      1000
-    );
-    const unsubClubUpdated = masterBus.subscribeDebounced(
-      'CLUB_UPDATED',
-      () => {
-        loadFinancials();
-      },
-      1000
-    );
+    loadFinancialsRef.current = loadFinancials;
+  });
+
+  useEffect(() => {
+    const refresh = () => loadFinancialsRef.current();
+    const unsubBalance = masterBus.subscribeDebounced('BALANCE_UPDATED', refresh, 500);
+    const unsubWallet = masterBus.subscribeDebounced('WALLET_REFRESHED', refresh, 500);
+    const unsubCommission = masterBus.subscribeDebounced('COMMISSION_PAID', refresh, 500);
+    const unsubSettlement = masterBus.subscribeDebounced('SETTLEMENT_COMPLETED', refresh, 500);
+    const unsubChipsAdded = masterBus.subscribeDebounced('CHIPS_ADDED', refresh, 500);
+    const unsubChipsWithdrawn = masterBus.subscribeDebounced('CHIPS_WITHDRAWN', refresh, 500);
+    const unsubChipsDistributed = masterBus.subscribeDebounced('CHIPS_DISTRIBUTED', refresh, 1000);
+    const unsubClubUpdated = masterBus.subscribeDebounced('CLUB_UPDATED', refresh, 1000);
     return () => {
       unsubBalance();
       unsubWallet();

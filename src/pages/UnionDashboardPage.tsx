@@ -1598,14 +1598,51 @@ export default function UnionDashboardPage() {
                             setProcessing(true);
                             setError(null);
                             try {
+                              // 1. Mark application as approved
                               const { error: appErr } = await supabase
                                 .from('union_applications')
                                 .update({ status: 'approved' })
                                 .eq('id', app.id);
                               if (appErr) throw appErr;
-                              setSuccess(`${app.club_name} approved`);
+
+                              // 2. Insert club into union_clubs (the actual join)
+                              if (app.club_id) {
+                                const defaultCommRate =
+                                  Number(union?.settings?.default_club_commission_rate) || 0.9;
+                                const { error: joinErr } = await supabase
+                                  .from('union_clubs')
+                                  .upsert(
+                                    {
+                                      union_id: unionId,
+                                      club_id: app.club_id,
+                                      commission_rate: defaultCommRate,
+                                    },
+                                    { onConflict: 'union_id,club_id' }
+                                  );
+                                if (joinErr)
+                                  console.warn(
+                                    '[UnionDash] union_clubs upsert warning:',
+                                    joinErr.message
+                                  );
+
+                                // 3. Update clubs.union_id so the club is associated
+                                const { error: clubErr } = await supabase
+                                  .from('clubs')
+                                  .update({ union_id: unionId })
+                                  .eq('id', app.club_id);
+                                if (clubErr)
+                                  console.warn(
+                                    '[UnionDash] clubs.union_id update warning:',
+                                    clubErr.message
+                                  );
+
+                                masterBus.emit('CLUB_UPDATED', { clubId: app.club_id });
+                              }
+
+                              setSuccess(`${app.club_name} approved and joined the union`);
                               setAppsLoaded(false);
                               loadApps();
+                              loadDashboard(unionId);
                             } catch (err: any) {
                               setError(err.message);
                             } finally {

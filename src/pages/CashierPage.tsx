@@ -64,6 +64,8 @@ interface Recipient {
   username: string;
   role: string;
   balance: number;
+  commissionRate?: number;
+  isPrepaid?: boolean;
 }
 
 // Supabase club_members query with user join

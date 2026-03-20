@@ -138,6 +138,25 @@ export async function createClub(clubData: {
     ? sanitizeInput(clubData.description.trim())
     : undefined;
 
+  // Name validation (matches CreateClubPage rules)
+  if (!safeName || safeName.length < 3) {
+    throw new Error('Club name must be at least 3 characters.');
+  }
+  if (safeName.length > 30) {
+    throw new Error('Club name must be 30 characters or less.');
+  }
+
+  // Duplicate name check
+  const { data: existing } = await supabase
+    .from('clubs')
+    .select('id')
+    .ilike('name', safeName)
+    .limit(1);
+
+  if (existing && existing.length > 0) {
+    throw new Error('A club with this name already exists. Please choose a different name.');
+  }
+
   // Generate URL-friendly slug
   const slug = safeName
     .toLowerCase()

@@ -10,6 +10,7 @@ import { supabase } from '../../lib/supabase';
 import { useToast } from '../common/Toast';
 import { resolveClubIdFilter } from '../../utils/clubIdResolver';
 import { masterBus } from '../../core/MasterBus';
+import { sanitizeInput } from '../../utils/sanitizeInput';
 import './ClubSettingsPanel.css';
 
 interface ClubSettingsPanelProps {
@@ -121,13 +122,37 @@ export function ClubSettingsPanel({ clubId, isOpen, onClose, onSave }: ClubSetti
   };
 
   const saveSettings = async () => {
+    // ── Name validation ──
+    const trimmedName = settings.name.trim();
+    if (!trimmedName) {
+      toast.error('Club name is required.');
+      return;
+    }
+    if (trimmedName.length < 3) {
+      toast.error('Club name must be at least 3 characters.');
+      return;
+    }
+    if (trimmedName.length > 30) {
+      toast.error('Club name must be 30 characters or less.');
+      return;
+    }
+
     setSaving(true);
     try {
+      // Sanitize inputs and regenerate slug on name change
+      const safeName = sanitizeInput(trimmedName);
+      const safeDescription = sanitizeInput(settings.description.trim());
+      const slug = safeName
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '');
+
       const { error } = await supabase
         .from('clubs')
         .update({
-          name: settings.name,
-          description: settings.description,
+          name: safeName,
+          slug,
+          description: safeDescription,
           logo: settings.logo,
           is_public: !settings.isPrivate,
           requires_approval: settings.isPrivate, // Private = requires approval, Public = open join

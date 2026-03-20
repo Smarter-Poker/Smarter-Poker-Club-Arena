@@ -309,6 +309,14 @@ export default function ClubsPage() {
       setCreateError('Club name is required');
       return;
     }
+    if (clubName.trim().length < 3) {
+      setCreateError('Club name must be at least 3 characters');
+      return;
+    }
+    if (clubName.trim().length > 30) {
+      setCreateError('Club name must be 30 characters or less');
+      return;
+    }
 
     setIsCreating(true);
     setCreateError(null);

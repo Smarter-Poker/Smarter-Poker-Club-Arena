@@ -247,11 +247,18 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
       for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
         const clubIdNumber = Math.floor(100000 + Math.random() * 900000);
 
+        // Generate URL-friendly slug
+        const slug = sanitizeInput(clubName.trim())
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-|-$/g, '');
+
         const { data: insertData, error: insertError } = await supabase
           .from('clubs')
           .insert({
             club_id: clubIdNumber,
             name: sanitizeInput(clubName.trim()),
+            slug,
             owner_id: user.id,
             is_public: true,
             requires_approval: false,

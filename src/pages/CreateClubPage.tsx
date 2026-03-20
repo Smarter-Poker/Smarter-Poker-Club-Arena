@@ -556,6 +556,8 @@ export default function CreateClubPage() {
             is_public: form.isPublic,
             requires_approval: !form.isPublic,
             logo: logoValue,
+            member_count: 1,
+            level: 1,
             settings: {
               icon_id: form.iconId,
               default_rake_percent: 5,

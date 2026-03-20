@@ -166,6 +166,8 @@ export async function createClub(clubData: {
         is_public: isPublic,
         requires_approval: !isPublic,
         owner_id: user.user.id,
+        member_count: 1,
+        level: 1,
       })
       .select()
       .maybeSingle();

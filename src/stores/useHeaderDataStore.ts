@@ -192,6 +192,25 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
           console.warn('[HeaderDataStore] ⏱️ Realtime channel timed out');
         }
       });
+
+    // ── Bus listeners for in-app actions (instant, no realtime delay) ──
+    // When user marks notifications as read in NotificationsPage/NotificationCenter
+    masterBus.subscribe('NOTIFICATION_READ', (event) => {
+      if (event.payload?.allRead) {
+        get().setNotificationCount(0);
+      } else {
+        const current = get().notificationCount;
+        get().setNotificationCount(Math.max(0, current - 1));
+      }
+    });
+
+    // When MessagingService marks a conversation as read
+    masterBus.subscribe('UNREAD_DM_COUNT_CHANGED', (event) => {
+      if (event.payload?.count !== undefined && typeof event.payload.count === 'number') {
+        set({ unreadMessages: event.payload.count });
+        persistCount('ca-msg-count', event.payload.count);
+      }
+    });
   },
 
   teardown: () => {

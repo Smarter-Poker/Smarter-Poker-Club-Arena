@@ -1,93 +1,21 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  NOTIFICATION BELL — Header Badge with Unread Count (v3.0 — Phase 28)
+ *  NOTIFICATION BELL — Header Badge with Unread Count (v4.0 — Persistent Store)
  * ═══════════════════════════════════════════════════════════════════════════════
  * Displays a bell icon with unread count badge. Tapping navigates to /notifications.
  *
- * v3.0: Added window focus refetch — when user returns from another tab or device,
- *       the badge count refreshes to catch notifications marked read elsewhere.
+ * v4.0: Now a PURE RENDERER of useHeaderDataStore — no local state, no realtime
+ *       channel, no Supabase fetches. All data comes from the persistent store.
+ *       This eliminates the duplicate realtime channel that previously existed
+ *       alongside the GlobalHeader's channel.
  */
 
-import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../../lib/supabase';
-import { useAuthUser } from '../../hooks/useAuthUser';
-import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
-import { masterBus } from '../../core/MasterBus';
+import { useHeaderDataStore } from '../../stores/useHeaderDataStore';
 
 export default function NotificationBell() {
   const navigate = useNavigate();
-  const { user } = useAuthUser();
-  const [unreadCount, setUnreadCount] = useState(0);
-
-  // Memoized fetch function for reuse on mount AND window focus
-  const fetchCount = useCallback(async () => {
-    if (!user?.id) return;
-    try {
-      const { count } = await supabase
-        .from('notifications')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', user.id)
-        .eq('read', false);
-      setUnreadCount(count || 0);
-    } catch (err) {
-      console.error('[NotificationBell] count fetch error:', err);
-    }
-  }, [user?.id]);
-
-  useEffect(() => {
-    if (!user?.id) return;
-
-    // Initial fetch
-    fetchCount();
-
-    // Real-time: ONLY listen for new INSERTs (new notifications arriving)
-    const channelKey = `notif-bell-${user.id}`;
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'notifications',
-          filter: `user_id=eq.${user.id}`,
-        },
-        () => {
-          setUnreadCount((prev) => prev + 1);
-        }
-      )
-      .subscribe((status: string, err?: Error) => {
-        if (status === 'CHANNEL_ERROR') {
-          console.error('[NotificationBell] ❌ Realtime channel error:', err?.message || err);
-        }
-        if (status === 'TIMED_OUT') {
-          console.warn('[NotificationBell] ⏱️ Realtime channel timed out');
-        }
-      });
-
-    // #6: Refetch on window focus — catches reads on other tabs/devices
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        fetchCount();
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      masterBus.removeRegisteredChannel(channelKey);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [user?.id, fetchCount]);
-
-  // masterBus subscriber for NOTIFICATION_READ (sole source of mark-read sync)
-  useMasterBusSubscription('NOTIFICATION_READ', (payload) => {
-    if (payload?.allRead) {
-      setUnreadCount(0);
-    } else {
-      setUnreadCount((prev) => Math.max(0, prev - 1));
-    }
-  });
+  const notificationCount = useHeaderDataStore((s) => s.notificationCount);
 
   return (
     <button
@@ -103,7 +31,7 @@ export default function NotificationBell() {
       title="Notifications"
     >
       🔔
-      {unreadCount > 0 && (
+      {notificationCount > 0 && (
         <span
           style={{
             position: 'absolute',
@@ -122,7 +50,7 @@ export default function NotificationBell() {
             lineHeight: 1,
           }}
         >
-          {unreadCount > 9 ? '9+' : unreadCount}
+          {notificationCount > 9 ? '9+' : notificationCount}
         </span>
       )}
     </button>

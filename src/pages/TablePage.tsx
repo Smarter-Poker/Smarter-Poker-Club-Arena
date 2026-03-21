@@ -3155,6 +3155,7 @@ export default function TablePage({
                 );
             }
             heroWonCurrentHandRef.current = false; // Reset for next hand
+            hadShowdownRef.current = false; // Reset for next hand
             const heroPlayer = currentState.players[currentState.heroSeat - 1];
             const heroStartStack = handStartStacksRef.current[currentState.heroSeat] || 0;
             const heroEndStack = heroPlayer?.stack || 0;

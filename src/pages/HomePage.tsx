@@ -41,6 +41,7 @@ import type { UserClub, ClubStats } from '../components/home/CarouselSection';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 
 import { STORAGE_KEYS } from '../lib/storage';
+import { SHARK_CLUB_ID } from '../lib/constants';
 import styles from './HomePage.module.css';
 
 // Lazy-load heavy components to reduce initial bundle
@@ -457,7 +458,7 @@ function HomePageInner() {
 
   // Fetch Shark Club stats — ALL data from live Supabase queries
   // Hardcoded club_id for Shark Club — permanent fixture of the platform
-  const SHARK_CLUB_NUMERIC_ID = 25450;
+  const SHARK_CLUB_NUMERIC_ID = SHARK_CLUB_ID;
   const SHARK_SWR_KEY = STORAGE_KEYS.SHARK_STATS_SWR;
   const SWR_TTL_MS = 5 * 60 * 1000; // 5-minute cache TTL
 
@@ -622,7 +623,7 @@ function HomePageInner() {
           event: '*',
           schema: 'public',
           table: 'clubs',
-          filter: 'club_id=eq.25450',
+          filter: `club_id=eq.${SHARK_CLUB_ID}`,
         },
         () => {
           if (isMounted) fetchSharkClubStats();

@@ -437,6 +437,8 @@ export default function UnionDashboardPage() {
       masterBus.subscribeDebounced('SETTLEMENT_COMPLETED', refresh, 300),
       // Level recompute: union level updates when member roles change
       masterBus.subscribeDebounced('MEMBER_ROLE_CHANGED', refresh, 300),
+      // Union level changes (from PostgresSyncHooks when unions table is updated)
+      masterBus.subscribeDebounced('UNION_UPDATED', refresh, 300),
     ];
     return () => unsubs.forEach((u) => u());
   }, [unionId, loadDashboard]);

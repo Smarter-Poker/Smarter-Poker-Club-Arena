@@ -7,7 +7,7 @@
  * - Reduces bundle size by not inlining SVG
  */
 
-import React from 'react';
+import { type FC } from 'react';
 import './ClubStatsPanel.css';
 
 interface ClubStatsPanelProps {
@@ -16,7 +16,7 @@ interface ClubStatsPanelProps {
   activePlayers: number;
 }
 
-export const ClubStatsPanel: React.FC<ClubStatsPanelProps> = ({
+export const ClubStatsPanel: FC<ClubStatsPanelProps> = ({
   totalMembers,
   clubLevel,
   activePlayers,
@@ -45,7 +45,7 @@ export const ClubStatsPanel: React.FC<ClubStatsPanelProps> = ({
 
         <div className="stats-group active-group">
           <span className="stat-label">ACTIVE</span>
-          <span className="stat-value">{activePlayers?.toLocaleString() || '0'}</span>
+          <span className="stat-value">{activePlayers.toLocaleString()}</span>
         </div>
       </div>
     </div>

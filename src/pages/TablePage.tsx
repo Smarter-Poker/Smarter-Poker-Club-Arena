@@ -616,6 +616,7 @@ export default function TablePage({
   const totalBuyInRef = useRef(0); // Track total chips invested for accurate session P/L
   const handsWonRef = useRef(0); // Session hands won by hero
   const heroWonCurrentHandRef = useRef(false); // Tracks if hero won current hand (cross-event ref)
+  const hadShowdownRef = useRef(false); // Tracks if current hand reached showdown (cross-event ref)
   const totalRebuysRef = useRef(0); // Add-chips/rebuy count for session summary
   const actionLockRef = useRef(false); // Debounce rapid action button taps (300ms)
   const [waitListPlayers, setWaitListPlayers] = useState<
@@ -2934,6 +2935,7 @@ export default function TablePage({
           // Play showdown dramatic sound
           // BUG-01 FIX: use soundService.isEnabled() not stale closure
           if (soundService.isEnabled()) soundService.playShowdown();
+          hadShowdownRef.current = true; // Flag for WINNERS/HAND_COMPLETE showdown tracking
 
           // Determine winner(s): highest hand ranking
           const maxRanking = Math.max(0, ...event.results.map((r: any) => r.hand?.ranking || 0));
@@ -3079,7 +3081,7 @@ export default function TablePage({
                 won: true,
                 potSize: winner.amount,
                 handRank: winner.hand?.name, // e.g. 'Royal Flush', 'Full House'
-                showdown: true,
+                showdown: hadShowdownRef.current, // Only credit showdown challenges if SHOWDOWN event fired
               })
               .catch((err) => console.error('[Achievements] Trigger failed:', err));
           }
@@ -3146,7 +3148,7 @@ export default function TablePage({
                 .onHandComplete(userId, {
                   won: false,
                   potSize: 0,
-                  showdown: false,
+                  showdown: hadShowdownRef.current, // Credit showdown challenges if hero reached showdown but lost
                 })
                 .catch((err) =>
                   console.error('[Achievements] Hero non-winner trigger failed:', err)

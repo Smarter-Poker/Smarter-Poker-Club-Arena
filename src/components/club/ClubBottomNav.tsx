@@ -105,8 +105,25 @@ export default function ClubBottomNav({
         }
       });
 
+    // BUG-08 FIX: Listen to bus events for instant badge sync
+    // (Realtime UPDATE may not fire correctly without REPLICA IDENTITY FULL)
+    const unsubNotifRead = masterBus.subscribe('NOTIFICATION_READ', (event) => {
+      if (event.payload?.allRead) {
+        setUnreadCount(0);
+      } else {
+        setUnreadCount((prev) => Math.max(0, prev - 1));
+      }
+    });
+    const unsubCountChanged = masterBus.subscribe('NOTIFICATION_COUNT_CHANGED', (event) => {
+      if (event.payload?.count !== undefined && typeof event.payload.count === 'number') {
+        setUnreadCount(event.payload.count);
+      }
+    });
+
     return () => {
       masterBus.removeRegisteredChannel(channelKey);
+      unsubNotifRead();
+      unsubCountChanged();
     };
   }, [user?.id]);
 

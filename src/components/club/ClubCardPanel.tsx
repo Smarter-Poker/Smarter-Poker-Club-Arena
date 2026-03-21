@@ -29,7 +29,8 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
 }) => {
   const [cardFailed, setCardFailed] = useState(false);
   const [logoFailed, setLogoFailed] = useState(false);
-  const [imgLoaded, setImgLoaded] = useState(false);
+  // Initialize as loaded if no images to wait for (eliminates 1-frame skeleton flash)
+  const [imgLoaded, setImgLoaded] = useState(!cardImageUrl && !logoUrl);
 
   // Reset error/load states when image URLs change (e.g. after backfill or re-upload)
   // Without this, a stale cardFailed=true would permanently block a valid new URL
@@ -73,7 +74,7 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
         {useBakedCard ? (
           <img
             src={cardImageUrl}
-            alt={`${clubName} Card`}
+            alt={`${clubName} card`}
             className="club-card-viewport-img"
             loading="lazy"
             decoding="async"
@@ -83,7 +84,7 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
         ) : showLogo ? (
           <img
             src={logoUrl}
-            alt={`${clubName} Logo`}
+            alt={`${clubName} logo`}
             className="club-card-viewport-logo"
             loading="lazy"
             decoding="async"
@@ -122,7 +123,7 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
           </div>
           <div className={`club-card-stat ${activePlayers > 0 ? 'club-card-stat--active' : ''}`}>
             <span className="club-card-stat-label">ACTIVE</span>
-            <span className="club-card-stat-value">{activePlayers?.toLocaleString() || '0'}</span>
+            <span className="club-card-stat-value">{activePlayers.toLocaleString()}</span>
           </div>
         </div>
       </div>

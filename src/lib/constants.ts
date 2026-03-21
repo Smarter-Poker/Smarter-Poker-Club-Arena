@@ -227,3 +227,10 @@ export const QUERY_LIMITS = {
   /** Full aggregations: rake history, player snapshots */
   AGGREGATE: 10_000,
 } as const;
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// FEATURED CLUBS — Well-known club numeric IDs
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/** Shark Club — the platform's featured/demo club displayed on the home carousel */
+export const SHARK_CLUB_ID = 25450;

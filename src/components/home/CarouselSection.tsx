@@ -13,6 +13,7 @@ import type { useToast } from '../common/Toast';
 import haptic from '../../services/HapticService';
 import PremiumSFX from '../../services/PremiumSFX';
 import { STORAGE_KEYS } from '../../lib/storage';
+import { SHARK_CLUB_ID } from '../../lib/constants';
 import styles from '../../pages/HomePage.module.css';
 import { PageErrorBoundary } from '../common/PageErrorBoundary';
 
@@ -219,7 +220,7 @@ export default function CarouselSection({
       // Fallback: query DB with a 5s timeout to prevent indefinite hangs
       try {
         const fetchWithTimeout = Promise.race([
-          supabase.from('clubs').select('id').eq('club_id', 25450).maybeSingle(),
+          supabase.from('clubs').select('id').eq('club_id', SHARK_CLUB_ID).maybeSingle(),
           new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
         ]);
         const { data: sharkClub } = await fetchWithTimeout;
@@ -233,7 +234,7 @@ export default function CarouselSection({
         // Timed out or failed — fall through to last resort
       }
       // Last resort: navigate using the integer club_id (ClubHomePage resolves it)
-      navigate('/clubs/25450');
+      navigate(`/clubs/${SHARK_CLUB_ID}`);
     }
   }, [sharkClubId, navigate]);
 
@@ -267,7 +268,10 @@ export default function CarouselSection({
         aria-label={`${club.name || 'Club'} — Click to enter lobby`}
         tabIndex={0}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') handleClubCardClick(club);
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            handleClubCardClick(club);
+          }
         }}
       >
         {pinnedClubIds.includes(club.id) && (
@@ -344,11 +348,13 @@ export default function CarouselSection({
         <div className={styles.carouselFeaturedPedestal}></div>
         <div className={styles.featuredClubLabel}>★ FEATURED CLUB ★</div>
         <Suspense fallback={<div className={styles.cardSkeleton} />}>
-          <ClubStatsPanel
-            totalMembers={sharkClubStats.totalMembers}
-            clubLevel={sharkClubStats.clubLevel}
-            activePlayers={sharkClubStats.activePlayers}
-          />
+          <PageErrorBoundary pageName="Shark Club">
+            <ClubStatsPanel
+              totalMembers={sharkClubStats.totalMembers}
+              clubLevel={sharkClubStats.clubLevel}
+              activePlayers={sharkClubStats.activePlayers}
+            />
+          </PageErrorBoundary>
         </Suspense>
       </div>
 

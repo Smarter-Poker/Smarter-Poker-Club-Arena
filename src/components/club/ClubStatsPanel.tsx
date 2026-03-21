@@ -29,6 +29,7 @@ export const ClubStatsPanel: React.FC<ClubStatsPanelProps> = ({
         alt="Shark Club Card"
         className="club-stats-bg"
         loading="lazy"
+        decoding="async"
       />
 
       <div className="stats-overlay">

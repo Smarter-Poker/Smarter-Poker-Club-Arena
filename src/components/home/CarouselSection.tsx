@@ -207,6 +207,36 @@ export default function CarouselSection({
     [navigate]
   );
 
+  // Shark Club click handler — extracted so both onClick and onKeyDown share the same logic
+  const handleSharkClick = useCallback(async () => {
+    haptic.success();
+    PremiumSFX.navigate();
+    if (sharkClubId) {
+      localStorage.setItem(STORAGE_KEYS.LAST_VISITED, sharkClubId);
+      localStorage.setItem(STORAGE_KEYS.LAST_CLUB, sharkClubId);
+      navigate(`/clubs/${sharkClubId}`);
+    } else {
+      // Fallback: query DB with a 5s timeout to prevent indefinite hangs
+      try {
+        const fetchWithTimeout = Promise.race([
+          supabase.from('clubs').select('id').eq('club_id', 25450).maybeSingle(),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
+        ]);
+        const { data: sharkClub } = await fetchWithTimeout;
+        if (sharkClub?.id) {
+          localStorage.setItem(STORAGE_KEYS.LAST_VISITED, sharkClub.id);
+          localStorage.setItem(STORAGE_KEYS.LAST_CLUB, sharkClub.id);
+          navigate(`/clubs/${sharkClub.id}`);
+          return;
+        }
+      } catch {
+        // Timed out or failed — fall through to last resort
+      }
+      // Last resort: navigate using the integer club_id (ClubHomePage resolves it)
+      navigate('/clubs/25450');
+    }
+  }, [sharkClubId, navigate]);
+
   // Render a single user club card as a featured-style card
   const renderClubCard = (club: UserClub) => {
     const isDragging = draggedId === club.id;
@@ -306,41 +336,10 @@ export default function CarouselSection({
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
-            // Trigger the same logic as onClick
-            const clickEvent = new MouseEvent('click', { bubbles: true });
-            e.currentTarget.dispatchEvent(clickEvent);
+            handleSharkClick();
           }
         }}
-        onClick={async () => {
-          haptic.success();
-          PremiumSFX.navigate();
-          if (sharkClubId) {
-            localStorage.setItem(STORAGE_KEYS.LAST_VISITED, sharkClubId);
-            localStorage.setItem(STORAGE_KEYS.LAST_CLUB, sharkClubId);
-            navigate(`/clubs/${sharkClubId}`);
-          } else {
-            // Fallback: query DB with a 5s timeout to prevent indefinite hangs
-            try {
-              const fetchWithTimeout = Promise.race([
-                supabase.from('clubs').select('id').eq('club_id', 25450).maybeSingle(),
-                new Promise<never>((_, reject) =>
-                  setTimeout(() => reject(new Error('timeout')), 5000)
-                ),
-              ]);
-              const { data: sharkClub } = await fetchWithTimeout;
-              if (sharkClub?.id) {
-                localStorage.setItem(STORAGE_KEYS.LAST_VISITED, sharkClub.id);
-                localStorage.setItem(STORAGE_KEYS.LAST_CLUB, sharkClub.id);
-                navigate(`/clubs/${sharkClub.id}`);
-                return;
-              }
-            } catch {
-              // Timed out or failed — fall through to last resort
-            }
-            // Last resort: navigate using the integer club_id (ClubHomePage resolves it)
-            navigate('/clubs/25450');
-          }
-        }}
+        onClick={handleSharkClick}
       >
         <div className={styles.carouselFeaturedPedestal}></div>
         <div className={styles.featuredClubLabel}>★ FEATURED CLUB ★</div>

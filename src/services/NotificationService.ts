@@ -142,12 +142,12 @@ class NotificationServiceClass {
   ): Promise<Notification[]> {
     let query = supabase
       .from('notifications')
-      .select('id, user_id, type, title, message, metadata, is_read, action_url, created_at')
+      .select('id, user_id, type, title, message, metadata, read, action_url, created_at')
       .eq('user_id', userId)
       .order('created_at', { ascending: false });
 
     if (options?.unreadOnly) {
-      query = query.eq('is_read', false);
+      query = query.eq('read', false);
     }
 
     query = query.limit(options?.limit || 100);
@@ -170,7 +170,7 @@ class NotificationServiceClass {
       .from('notifications')
       .select('*', { count: 'exact', head: true })
       .eq('user_id', userId)
-      .eq('is_read', false);
+      .eq('read', false);
 
     if (error) {
       console.error('[Notifications] Failed to get count:', error);
@@ -193,7 +193,7 @@ class NotificationServiceClass {
 
     const { error } = await supabase
       .from('notifications')
-      .update({ is_read: true })
+      .update({ read: true })
       .eq('id', notificationId);
 
     if (error) {
@@ -223,9 +223,9 @@ class NotificationServiceClass {
   async markAllAsRead(userId: string): Promise<boolean> {
     const { error } = await supabase
       .from('notifications')
-      .update({ is_read: true })
+      .update({ read: true })
       .eq('user_id', userId)
-      .eq('is_read', false);
+      .eq('read', false);
 
     if (error) {
       console.error('[Notifications] Failed to mark all as read:', error);

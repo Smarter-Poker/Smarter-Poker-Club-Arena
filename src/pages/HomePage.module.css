@@ -696,6 +696,14 @@
   transition-duration: 0.1s;
 }
 
+/* Keyboard focus indicator */
+.carouselCardFeatured:focus-visible {
+  outline: 2px solid rgba(0, 212, 255, 0.6);
+  outline-offset: 3px;
+  transform: scale(1.04) translateY(-4px);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+}
+
 /* Pedestal — hidden, no glow */
 .carouselFeaturedPedestal {
   display: none;

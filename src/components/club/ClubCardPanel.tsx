@@ -3,7 +3,7 @@
  * ZONES: ID Plate → Image Viewport → Name Plate → Stats Bar
  */
 
-import React, { useState } from 'react';
+import { useState, useEffect } from 'react';
 import './ClubCardPanel.css';
 
 interface ClubCardPanelProps {
@@ -33,6 +33,14 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
 
   const useBakedCard = cardImageUrl && !cardFailed;
   const showLogo = !useBakedCard && logoUrl && !logoFailed;
+
+  // When neither baked card nor logo is available, mark as loaded immediately
+  // (no image to wait for — fallback emoji renders instantly)
+  useEffect(() => {
+    if (!useBakedCard && !showLogo && !imgLoaded) {
+      setImgLoaded(true);
+    }
+  }, [useBakedCard, showLogo, imgLoaded]);
 
   const isUnion = entityType === 'union';
   const idLabel = isUnion ? 'UNION ID' : 'CLUB ID';
@@ -76,12 +84,7 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
             }}
           />
         ) : (
-          <div
-            className="club-card-viewport-fallback"
-            ref={() => {
-              if (!imgLoaded) setImgLoaded(true);
-            }}
-          >
+          <div className="club-card-viewport-fallback">
             <span className="club-card-fallback-icon">{isUnion ? '🤝' : '♠'}</span>
           </div>
         )}

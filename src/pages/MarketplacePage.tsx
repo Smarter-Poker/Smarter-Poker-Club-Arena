@@ -827,6 +827,7 @@ export default function MarketplacePage() {
                           if (togErr) throw togErr;
                           toast.success(item.is_active ? 'Item hidden' : 'Item activated');
                           loadAdminItems();
+                          loadingRef.current = false;
                           loadMarketplace(clubId || undefined, true);
                         } catch (err: any) {
                           toast.error(err.message);
@@ -848,6 +849,7 @@ export default function MarketplacePage() {
                           if (delErr) throw delErr;
                           toast.success('Item deleted');
                           loadAdminItems();
+                          loadingRef.current = false;
                           loadMarketplace(clubId || undefined, true);
                         } catch (err: any) {
                           toast.error(err.message);

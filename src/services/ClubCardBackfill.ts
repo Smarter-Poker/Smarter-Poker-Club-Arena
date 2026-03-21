@@ -12,7 +12,6 @@
  */
 
 import { supabase } from '../lib/supabase';
-import { ClubCardGenerator } from './ClubCardGenerator';
 import { masterBus } from '../core/MasterBus';
 
 // Track which clubs we've already attempted to backfill this session
@@ -40,6 +39,9 @@ export async function backfillClubCards(clubs: BackfillTarget[]): Promise<void> 
   );
 
   if (targets.length === 0 || storageDisabled) return;
+
+  // Lazy-load the generator — saves ~260 lines from initial bundle
+  const { ClubCardGenerator } = await import('./ClubCardGenerator');
 
   // Process sequentially to avoid canvas contention
   for (const club of targets) {

@@ -267,12 +267,15 @@ class DailyChallengeServiceClass {
       completed: false,
     }));
 
-    const { error: insertErr } = await supabase.from('user_daily_challenges').insert(inserts);
+    const { data: inserted, error: insertErr } = await supabase
+      .from('user_daily_challenges')
+      .insert(inserts)
+      .select('id, challenge_id');
     if (insertErr) console.error('[DailyChallenge] Failed to assign daily challenges:', insertErr);
 
-    // Return with challenge data
+    // Return with real DB row IDs (fall back to composite if insert didn't return rows)
     return todaysChallenges.map((c, i) => ({
-      id: `${userId}-${c.id}-${today}`,
+      id: inserted?.[i]?.id ?? `${userId}-${c.id}-${today}`,
       challengeId: c.id,
       userId,
       progress: 0,
@@ -310,11 +313,14 @@ class DailyChallengeServiceClass {
       completed: false,
     }));
 
-    const { error: insertErr } = await supabase.from('user_daily_challenges').insert(inserts);
+    const { data: inserted, error: insertErr } = await supabase
+      .from('user_daily_challenges')
+      .insert(inserts)
+      .select('id, challenge_id');
     if (insertErr) console.error('[DailyChallenge] Failed to assign weekly challenges:', insertErr);
 
     return weeklyChallenges.map((c, i) => ({
-      id: `${userId}-${c.id}-${weekKey}`,
+      id: inserted?.[i]?.id ?? `${userId}-${c.id}-${weekKey}`,
       challengeId: c.id,
       userId,
       progress: 0,
@@ -354,12 +360,15 @@ class DailyChallengeServiceClass {
       completed: false,
     }));
 
-    const { error: insertErr } = await supabase.from('user_daily_challenges').insert(inserts);
+    const { data: inserted, error: insertErr } = await supabase
+      .from('user_daily_challenges')
+      .insert(inserts)
+      .select('id, challenge_id');
     if (insertErr)
       console.error('[DailyChallenge] Failed to assign monthly challenges:', insertErr);
 
     return monthlyChallenges.map((c, i) => ({
-      id: `${userId}-${c.id}-${monthKey}`,
+      id: inserted?.[i]?.id ?? `${userId}-${c.id}-${monthKey}`,
       challengeId: c.id,
       userId,
       progress: 0,

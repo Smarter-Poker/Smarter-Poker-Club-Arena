@@ -11,6 +11,8 @@
 import { supabase } from '../lib/supabase';
 import { achievementService, ACHIEVEMENTS, type Achievement } from './AchievementService';
 import { pushNotificationService } from './PushNotificationService';
+import { dailyChallengeService } from './DailyChallengeService';
+import { masterBus } from '../core/MasterBus';
 import type { HandEvent } from '../engine/HandController';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -93,6 +95,27 @@ class AchievementTriggerServiceClass {
         .catch((err) => console.error('[Achievements] Push notification failed:', err));
     }
 
+    // 6. Update Daily Challenge progress (fire-and-forget, non-blocking)
+    try {
+      const progressResults = await Promise.allSettled(
+        [
+          dailyChallengeService.updateProgress(userId, 'hands_played', 1),
+          handData.won ? dailyChallengeService.updateProgress(userId, 'hands_won', 1) : null,
+          handData.showdown ? dailyChallengeService.updateProgress(userId, 'showdowns', 1) : null,
+        ].filter(Boolean) as Promise<any>[]
+      );
+
+      // Check if any challenges were completed
+      const anyCompleted = progressResults.some(
+        (r) => r.status === 'fulfilled' && r.value?.completed?.length > 0
+      );
+      if (anyCompleted) {
+        masterBus.emit('CHALLENGE_PROGRESS_UPDATED', { userId, source: 'hand_complete' });
+      }
+    } catch (dcErr) {
+      console.warn('[AchievementTrigger] Daily challenge progress update failed:', dcErr);
+    }
+
     return result;
   }
 
@@ -131,6 +154,16 @@ class AchievementTriggerServiceClass {
       }
     }
 
+    // Update Daily Challenge progress for tournaments
+    try {
+      const dcResult = await dailyChallengeService.updateProgress(userId, 'tournaments_played', 1);
+      if (dcResult.completed.length > 0) {
+        masterBus.emit('CHALLENGE_PROGRESS_UPDATED', { userId, source: 'tournament_complete' });
+      }
+    } catch (dcErr) {
+      console.warn('[AchievementTrigger] Daily challenge tournament progress failed:', dcErr);
+    }
+
     return result;
   }
 
@@ -152,6 +185,16 @@ class AchievementTriggerServiceClass {
     const higherResult = await achievementService.incrementProgress(userId, 'friends_25');
     if (higherResult.unlocked && higherResult.achievement) {
       result.triggeredAchievements.push(higherResult.achievement);
+    }
+
+    // Update Daily Challenge progress for friends
+    try {
+      const dcResult = await dailyChallengeService.updateProgress(userId, 'friends_added', 1);
+      if (dcResult.completed.length > 0) {
+        masterBus.emit('CHALLENGE_PROGRESS_UPDATED', { userId, source: 'friend_added' });
+      }
+    } catch (dcErr) {
+      console.warn('[AchievementTrigger] Daily challenge friend progress failed:', dcErr);
     }
 
     return result;

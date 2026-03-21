@@ -221,6 +221,11 @@ export default function MessageThread({ conversationId, onBack }: MessageThreadP
                 setMessages((current) =>
                   current.map((m) => (unseenIds.includes(m.id) ? { ...m, isSeen: true } : m))
                 );
+                // BUG-05 FIX: Also mark as read (is_read=true) via service
+                // This updates the badge count and emits UNREAD_DM_COUNT_CHANGED
+                if (user?.id) {
+                  messagingService.markAsRead(conversationId, user.id);
+                }
               } catch (err) {
                 console.warn('[MessageThread] mark-as-seen failed:', err);
               }

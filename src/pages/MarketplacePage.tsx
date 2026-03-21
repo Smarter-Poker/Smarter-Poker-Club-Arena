@@ -224,6 +224,19 @@ export default function MarketplacePage() {
             loadMarketplace(clubId, true);
           }
         )
+        // BUG-15 FIX: Also subscribe to purchase changes so purchase_count and My Items update in real-time
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'club_shop_purchases',
+            filter: `club_id=eq.${resolvedId}`,
+          },
+          () => {
+            loadMarketplace(clubId, true);
+          }
+        )
         .subscribe((status: string, err?: Error) => {
           if (status === 'CHANNEL_ERROR') {
             console.error('[MarketplacePage] ❌ Realtime channel error:', err?.message || err);
@@ -299,7 +312,7 @@ export default function MarketplacePage() {
     }
   };
 
-  /* ═══ Admin: Load all items ═══ */
+  /* ═══ Admin: Load all items (with purchase counts) ═══ */
   const loadAdminItems = useCallback(async () => {
     if (!clubId) return;
     try {
@@ -308,8 +321,28 @@ export default function MarketplacePage() {
         .select('id, club_id, name, description, price, image_url, category, is_active')
         .eq('club_id', clubId)
         .order('created_at', { ascending: false });
+
+      // BUG-13 FIX: Compute actual purchase_count from club_shop_purchases
+      let itemsWithCounts = (data || []).map((i: any) => ({ ...i, purchase_count: 0 }));
+      if (itemsWithCounts.length > 0) {
+        const itemIds = itemsWithCounts.map((i: any) => i.id);
+        const { data: countRows } = await supabase
+          .from('club_shop_purchases')
+          .select('item_id')
+          .eq('club_id', clubId)
+          .in('item_id', itemIds);
+        const counts: Record<string, number> = {};
+        (countRows || []).forEach((r: any) => {
+          counts[r.item_id] = (counts[r.item_id] || 0) + 1;
+        });
+        itemsWithCounts = itemsWithCounts.map((i: any) => ({
+          ...i,
+          purchase_count: counts[i.id] || 0,
+        }));
+      }
+
       if (mountedRef.current) {
-        setAdminItems((data || []).map((i: any) => ({ ...i, purchase_count: 0 })));
+        setAdminItems(itemsWithCounts);
         setAdminLoaded(true);
       }
     } catch (err: any) {
@@ -400,7 +433,14 @@ export default function MarketplacePage() {
           <Link to="/" className={styles.btnGhost}>
             🏠 Lobby
           </Link>
-          <button onClick={() => loadMarketplace(clubId || undefined)} className={styles.btnGhost}>
+          {/* BUG-14 FIX: Reset loadingRef before calling loadMarketplace so Refresh never silently fails */}
+          <button
+            onClick={() => {
+              loadingRef.current = false;
+              loadMarketplace(clubId || undefined);
+            }}
+            className={styles.btnGhost}
+          >
             ↻ Refresh
           </button>
         </div>

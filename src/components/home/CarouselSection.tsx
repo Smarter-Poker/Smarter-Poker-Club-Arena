@@ -300,6 +300,17 @@ export default function CarouselSection({
       <div
         className={styles.carouselCardFeatured}
         ref={sharkCardRef}
+        role="button"
+        aria-label="Shark Club — Click to enter lobby"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            // Trigger the same logic as onClick
+            const clickEvent = new MouseEvent('click', { bubbles: true });
+            e.currentTarget.dispatchEvent(clickEvent);
+          }
+        }}
         onClick={async () => {
           haptic.success();
           PremiumSFX.navigate();

@@ -91,9 +91,8 @@ export const DailyChallengesWidget: React.FC = () => {
   }, [user?.id, debouncedRefresh]);
 
   // Bus listeners for challenge progress
-  useMasterBusSubscription('HAND_COMPLETED', () => {
-    if (isMounted.current && user?.id) loadChallengesRef.current?.();
-  });
+  // Debounced — updateProgress() in AchievementTriggerService needs time to write to DB
+  useMasterBusSubscription('HAND_COMPLETED', debouncedRefresh);
 
   // Debounced — BALANCE_UPDATED fires twice per claim (RPC + WalletService)
   useMasterBusSubscription('BALANCE_UPDATED', debouncedRefresh);

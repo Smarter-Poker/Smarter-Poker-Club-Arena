@@ -454,20 +454,20 @@ class DailyChallengeServiceClass {
     challengeRowId: string,
     rewardAmount: number
   ): Promise<boolean> {
-    const { error } = await retryAsync(
-      () =>
-        supabase.rpc('claim_daily_challenge', {
-          p_user_id: userId,
-          p_challenge_row_id: challengeRowId,
-          p_reward_amount: rewardAmount,
-        }),
-      3
-    );
-
-    if (error) {
-      console.error('[DailyChallenge] Failed to claim:', error);
-      throw new Error(error.message);
-    }
+    // retryAsync retries transient network errors (fetch/timeout/503)
+    // Inner throw converts Supabase { error } responses into thrown errors
+    await retryAsync(async () => {
+      const result = await supabase.rpc('claim_daily_challenge', {
+        p_user_id: userId,
+        p_challenge_row_id: challengeRowId,
+        p_reward_amount: rewardAmount,
+      });
+      if (result.error) {
+        console.error('[DailyChallenge] RPC claim error:', result.error);
+        throw new Error(result.error.message);
+      }
+      return result;
+    }, 3);
 
     try {
       await WalletService.logTransaction(

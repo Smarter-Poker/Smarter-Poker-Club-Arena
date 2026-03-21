@@ -895,6 +895,15 @@ export default function ClubCarouselPage() {
                   const offset = index - activeIndex;
                   const isActive = index === activeIndex;
                   const badge = clubBadges[club.id] || 0;
+                  const levelInfo = getClubLevel({
+                    level: club.level || 1,
+                    playerCount: club.member_count || 0,
+                    hierarchyUnits: club.hierarchy_units_rounded_up || 0,
+                    playerThresholdCurrent: club.player_threshold_current || 0,
+                    playerThresholdNext: club.player_threshold_next || 0,
+                    hierarchyThresholdCurrent: club.hierarchy_threshold_current || 0,
+                    hierarchyThresholdNext: club.hierarchy_threshold_next || 0,
+                  });
 
                   return (
                     <div
@@ -950,7 +959,21 @@ export default function ClubCarouselPage() {
                           <div className="club-info">
                             <span className="club-name">{club.name}</span>
                             <span className="club-meta">
-                              LVL: {club.level}
+                              <span
+                                style={{
+                                  fontSize: '0.65rem',
+                                  padding: '1px 6px',
+                                  borderRadius: '8px',
+                                  background: levelInfo.gradient,
+                                  color: '#fff',
+                                  fontWeight: 700,
+                                  letterSpacing: '0.5px',
+                                  textShadow: '0 1px 2px rgba(0,0,0,0.5)',
+                                  marginRight: '6px',
+                                }}
+                              >
+                                Lv.{levelInfo.level}
+                              </span>
                               <span className="member-count">
                                 {(club.member_count || 0).toLocaleString()}
                               </span>

@@ -667,7 +667,18 @@ export default function ClubHomePage() {
         hierarchyThresholdNext: clubData.hierarchy_threshold_next || 0,
       });
       if (getIsMounted && !getIsMounted()) return;
-      setClubLevel(levelInfo);
+
+      // Level-up celebration: detect when level increased vs previous render
+      setClubLevel((prev) => {
+        if (prev && prev.level > 0 && levelInfo.level > prev.level) {
+          // Level went up — celebrate!
+          toast.success(
+            `🎉 Level Up! Your club reached Lv.${levelInfo.level} — ${levelInfo.tierLabel}!`
+          );
+          haptic.success();
+        }
+        return levelInfo;
+      });
     } catch (error: any) {
       console.error('Error loading club data:', error);
       toast.error(error.message || 'Failed to load club data');

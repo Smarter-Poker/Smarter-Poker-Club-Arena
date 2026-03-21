@@ -276,6 +276,14 @@ export default function CarouselSection({
             PremiumSFX.ctaClick();
             onOpenJoinModal();
           }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              haptic.light();
+              PremiumSFX.ctaClick();
+              onOpenJoinModal();
+            }
+          }}
           role="button"
           aria-label="Join a Club"
           tabIndex={0}
@@ -343,6 +351,14 @@ export default function CarouselSection({
             haptic.light();
             PremiumSFX.ctaClick();
             onOpenCreateModal();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              haptic.light();
+              PremiumSFX.ctaClick();
+              onOpenCreateModal();
+            }
           }}
           role="button"
           aria-label="Create a Club"

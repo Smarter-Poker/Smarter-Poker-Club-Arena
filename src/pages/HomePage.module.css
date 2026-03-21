@@ -698,6 +698,10 @@
   -webkit-backdrop-filter: blur(8px);
   padding: 24px;
   box-sizing: border-box;
+  transition:
+    transform 0.25s ease,
+    border-color 0.25s ease,
+    box-shadow 0.25s ease;
 }
 
 .ctaCard:nth-child(1) {
@@ -1117,39 +1121,68 @@
   }
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════════
-   NO CLUBS MESSAGE
-   ═══════════════════════════════════════════════════════════════════════════════ */
+/* (noClubsMessage removed — replaced with auto-dismiss toast) */
 
-.noClubsMessage {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  padding: 40px 30px;
-  background: rgba(8, 20, 40, 0.6);
-  border: 1px solid rgba(0, 212, 255, 0.15);
-  border-radius: 16px;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  margin: 20px 0;
-  width: 100%;
-  max-width: 400px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+/* ── CTA Card Hover/Focus States ──────────────────────────────────────── */
+
+.ctaCard:hover {
+  transform: translateY(-4px);
+  border-color: rgba(0, 212, 255, 0.5);
+  box-shadow:
+    0 12px 36px rgba(0, 0, 0, 0.4),
+    0 0 20px rgba(0, 212, 255, 0.12);
+  transition:
+    transform 0.25s ease,
+    border-color 0.25s ease,
+    box-shadow 0.25s ease;
 }
 
-.noClubsMessage p {
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 15px;
-  margin: 6px 0;
-  line-height: 1.5;
+.ctaCard:focus-visible {
+  outline: 2px solid rgba(0, 212, 255, 0.6);
+  outline-offset: 3px;
+  transform: translateY(-4px);
+  border-color: rgba(0, 212, 255, 0.5);
 }
 
-.noClubsMessage p:first-child {
-  font-size: 17px;
-  color: rgba(255, 255, 255, 0.9);
-  font-weight: 600;
+.ctaCard:active {
+  transform: scale(0.97);
+  transition-duration: 0.1s;
+}
+
+.ctaCard:hover .ctaCardIcon {
+  border-color: rgba(0, 212, 255, 0.6);
+  background: radial-gradient(circle, rgba(0, 212, 255, 0.25) 0%, transparent 70%);
+  color: rgba(0, 212, 255, 1);
+  transition: all 0.25s ease;
+}
+
+/* ── Carousel Scroll Fade Indicators (mobile) ─────────────────────────── */
+
+.carouselScrollFade {
+  position: relative;
+}
+
+.carouselScrollFade::before,
+.carouselScrollFade::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 40px;
+  pointer-events: none;
+  z-index: 20;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.carouselScrollFade::before {
+  left: 0;
+  background: linear-gradient(90deg, rgba(5, 5, 16, 0.9) 0%, transparent 100%);
+}
+
+.carouselScrollFade::after {
+  right: 0;
+  background: linear-gradient(-90deg, rgba(5, 5, 16, 0.9) 0%, transparent 100%);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════

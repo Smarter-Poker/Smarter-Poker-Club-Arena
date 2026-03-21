@@ -8,6 +8,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
+import { masterBus } from '../../core/MasterBus';
 import { useMasterBusChannel } from '../../hooks/useMasterBusChannel';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { formatRelativeShort as formatTime } from '@/lib/date';
@@ -125,6 +126,8 @@ export default function NotificationDropdown({ onNavigate }: NotificationDropdow
 
     setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, isRead: true } : n)));
     setUnreadCount((prev) => Math.max(0, prev - 1));
+    // BUG-07 FIX: Emit NOTIFICATION_READ so header badge decrements instantly
+    masterBus.emit('NOTIFICATION_READ', { notifId: id, allRead: false });
   };
 
   const markAllAsRead = async () => {
@@ -138,6 +141,8 @@ export default function NotificationDropdown({ onNavigate }: NotificationDropdow
 
     setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
     setUnreadCount(0);
+    // BUG-07 FIX: Emit NOTIFICATION_READ so header badge zeros instantly
+    masterBus.emit('NOTIFICATION_READ', { notifId: null, allRead: true });
   };
 
   const handleNotificationClick = (notification: Notification) => {

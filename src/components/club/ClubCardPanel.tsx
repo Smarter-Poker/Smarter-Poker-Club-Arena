@@ -31,6 +31,14 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
   const [logoFailed, setLogoFailed] = useState(false);
   const [imgLoaded, setImgLoaded] = useState(false);
 
+  // Reset error/load states when image URLs change (e.g. after backfill or re-upload)
+  // Without this, a stale cardFailed=true would permanently block a valid new URL
+  useEffect(() => {
+    setCardFailed(false);
+    setLogoFailed(false);
+    setImgLoaded(false);
+  }, [cardImageUrl, logoUrl]);
+
   const useBakedCard = cardImageUrl && !cardFailed;
   const showLogo = !useBakedCard && logoUrl && !logoFailed;
 

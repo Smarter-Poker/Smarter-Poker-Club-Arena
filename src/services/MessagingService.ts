@@ -372,7 +372,13 @@ class MessagingServiceClass {
         console.error('[Messaging] Failed to mark as read:', error);
         return false;
       }
-      masterBus.emit('UNREAD_DM_COUNT_CHANGED', { userId });
+      // Re-count unread messages so header badge updates instantly
+      const { count: remaining } = await supabase
+        .from('messages')
+        .select('*', { count: 'exact', head: true })
+        .eq('receiver_id', userId)
+        .eq('is_read', false);
+      masterBus.emit('UNREAD_DM_COUNT_CHANGED', { userId, count: remaining || 0 });
       return true;
     } catch (err: unknown) {
       console.error('[Messaging] markAsRead error:', err);

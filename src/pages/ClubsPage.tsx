@@ -610,9 +610,13 @@ export default function ClubsPage() {
                               </div>
                               <div style={{ textAlign: 'center' }}>
                                 <div
-                                  style={{ fontSize: '1.25rem', fontWeight: 700, color: '#00d4ff' }}
+                                  style={{
+                                    fontSize: '1.25rem',
+                                    fontWeight: 700,
+                                    color: levelInfo.color,
+                                  }}
                                 >
-                                  Lv.{membership.club.level || 1}
+                                  Lv.{levelInfo.level}
                                 </div>
                                 <div
                                   style={{
@@ -621,7 +625,7 @@ export default function ClubsPage() {
                                     textTransform: 'uppercase',
                                   }}
                                 >
-                                  Level
+                                  {levelInfo.tierLabel}
                                 </div>
                               </div>
                             </div>

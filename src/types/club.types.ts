@@ -77,6 +77,22 @@ export interface Union {
   member_count: number;
   rules: UnionRules;
   created_at: string;
+
+  // 50-Level System (mirrors clubs — same formula)
+  level?: number;
+  player_level?: number;
+  hierarchy_level?: number;
+  total_players?: number;
+  total_admins?: number;
+  total_super_agents?: number;
+  total_agents?: number;
+  hierarchy_units?: number;
+  hierarchy_units_rounded_up?: number;
+  club_count?: number;
+  player_threshold_current?: number;
+  player_threshold_next?: number;
+  hierarchy_threshold_current?: number;
+  hierarchy_threshold_next?: number;
 }
 
 export interface UnionRules {

@@ -24,6 +24,7 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { useIsMounted } from '../hooks/useIsMounted';
 import haptic from '../services/HapticService';
 import { STORAGE_KEYS } from '../lib/storage';
+import { getClubLevel } from '../utils/clubLevels';
 
 const SWIPE_THRESHOLD = 50; // px minimum for a horizontal swipe
 
@@ -35,6 +36,11 @@ interface UserClub {
   level: number;
   member_count: number;
   role: string;
+  hierarchy_units_rounded_up?: number;
+  player_threshold_current?: number;
+  player_threshold_next?: number;
+  hierarchy_threshold_current?: number;
+  hierarchy_threshold_next?: number;
 }
 
 interface UserWallet {
@@ -488,7 +494,7 @@ export default function ClubCarouselPage() {
         supabase
           .from('club_members')
           .select(
-            `club_id, role, chip_balance, clubs (id, club_id, name, avatar_url, member_count)`
+            `club_id, role, chip_balance, clubs (id, club_id, name, avatar_url, member_count, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next)`
           )
           .eq('user_id', authUser.id),
         unionService.getMyUnions(authUser.id),
@@ -510,9 +516,14 @@ export default function ClubCarouselPage() {
               club_id: m.clubs.club_id,
               name: m.clubs.name,
               avatar_url: m.clubs.avatar_url,
-              level: 0,
+              level: m.clubs.level || 1,
               member_count: m.clubs.member_count || 0,
               role: m.role,
+              hierarchy_units_rounded_up: m.clubs.hierarchy_units_rounded_up || 0,
+              player_threshold_current: m.clubs.player_threshold_current || 0,
+              player_threshold_next: m.clubs.player_threshold_next || 0,
+              hierarchy_threshold_current: m.clubs.hierarchy_threshold_current || 0,
+              hierarchy_threshold_next: m.clubs.hierarchy_threshold_next || 0,
             }));
 
           // #3: Run enrichment + union filtering in parallel

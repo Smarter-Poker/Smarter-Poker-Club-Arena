@@ -184,6 +184,13 @@ class NotificationServiceClass {
    * Mark notification as read
    */
   async markAsRead(notificationId: string): Promise<boolean> {
+    // Get the notification's user_id before updating (needed for re-count)
+    const { data: notif } = await supabase
+      .from('notifications')
+      .select('user_id')
+      .eq('id', notificationId)
+      .maybeSingle();
+
     const { error } = await supabase
       .from('notifications')
       .update({ is_read: true })
@@ -194,7 +201,19 @@ class NotificationServiceClass {
       return false;
     }
 
-    masterBus.emit('NOTIFICATION_COUNT_CHANGED', {} as Record<string, unknown>);
+    // Emit NOTIFICATION_READ for instant header badge decrement
+    masterBus.emit('NOTIFICATION_READ', { notifId: notificationId, allRead: false });
+
+    // Re-count and emit for other consumers
+    if (notif?.user_id) {
+      const { count: remaining } = await supabase
+        .from('notifications')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', notif.user_id)
+        .eq('read', false);
+      masterBus.emit('NOTIFICATION_COUNT_CHANGED', { count: remaining || 0 });
+    }
+
     return true;
   }
 
@@ -213,7 +232,9 @@ class NotificationServiceClass {
       return false;
     }
 
-    masterBus.emit('NOTIFICATION_COUNT_CHANGED', {} as Record<string, unknown>);
+    // Emit NOTIFICATION_READ with allRead: true for instant badge zero
+    masterBus.emit('NOTIFICATION_READ', { notifId: null, allRead: true });
+    masterBus.emit('NOTIFICATION_COUNT_CHANGED', { count: 0 });
     return true;
   }
 

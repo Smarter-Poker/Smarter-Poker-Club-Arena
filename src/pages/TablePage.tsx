@@ -3215,6 +3215,25 @@ export default function TablePage({
             if (heroEndStack > peakStackRef.current) {
               peakStackRef.current = heroEndStack;
             }
+
+            // ── Daily Challenge Progress: track hero hands_played (even if they lost) ──
+            // WINNERS handler only calls onHandComplete for winners → non-winner hero
+            // never gets hands_played challenge incremented. Fix: fire for hero at
+            // HAND_COMPLETE if they weren't already counted as a winner.
+            if (userId) {
+              const heroAlreadyCountedAsWinner = winnerInfo.playerIds.includes(userId);
+              if (!heroAlreadyCountedAsWinner) {
+                achievementTriggerService
+                  .onHandComplete(userId, {
+                    won: false,
+                    potSize: 0,
+                    showdown: false,
+                  })
+                  .catch((err) =>
+                    console.error('[Achievements] Hero non-winner trigger failed:', err)
+                  );
+              }
+            }
           }
 
           // Delayed cleanup: clear board and cards after 3 seconds, then start next hand

@@ -39,7 +39,6 @@ interface Purchase {
   item_id: string;
   price_paid: number;
   created_at: string;
-  marketplace_items?: { name: string; category: string }[];
 }
 
 /* ═══ Constants ═══ */
@@ -114,18 +113,21 @@ export default function MarketplacePage() {
         const token = session?.access_token;
         if (!token) throw new Error('Not authenticated');
 
-        const res = await retryAsync(
-          () =>
-            fetch(`/api/club-arena/marketplace-items?clubId=${targetClub}`, {
-              headers: { Authorization: `Bearer ${token}` },
-            }),
-          2
-        );
-        if (!res.ok) {
-          const errBody = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-          throw new Error(errBody.error || `Failed to load shop (${res.status})`);
-        }
-        const data = await res.json();
+        // BUG-1 FIX: fetch() never throws on HTTP errors — wrap with explicit throw
+        const fetchWithThrow = async () => {
+          const response = await fetch(`/api/club-arena/marketplace-items?clubId=${targetClub}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (!response.ok) {
+            const errBody = await response
+              .json()
+              .catch(() => ({ error: `HTTP ${response.status}` }));
+            throw new Error(errBody.error || `Failed to load shop (${response.status})`);
+          }
+          return response.json();
+        };
+
+        const data = await retryAsync(fetchWithThrow, 2);
 
         if (mountedRef.current) {
           setItems(
@@ -157,24 +159,16 @@ export default function MarketplacePage() {
     const init = async () => {
       const qClub = searchParams.get('club') || searchParams.get('clubId');
       let targetClub = qClub;
+      // BUG-3 FIX: Only query club_members for club discovery when no clubId param.
+      // Role is returned by the API in loadMarketplace — no need for redundant query.
       if (!targetClub) {
         const { data: mem } = await supabase
           .from('club_members')
-          .select('club_id, role')
+          .select('club_id')
           .eq('user_id', user.id)
           .limit(1)
           .maybeSingle();
         targetClub = mem?.club_id || null;
-        if (mem?.role && isMounted) setRole(mem.role);
-      } else {
-        // Also fetch role for the provided club
-        const { data: mem } = await supabase
-          .from('club_members')
-          .select('role')
-          .eq('club_id', qClub)
-          .eq('user_id', user.id)
-          .maybeSingle();
-        if (mem?.role && isMounted) setRole(mem.role);
       }
       if (targetClub && isMounted) {
         setClubId(targetClub);
@@ -259,24 +253,26 @@ export default function MarketplacePage() {
       const token = session?.access_token;
       if (!token) throw new Error('Not authenticated');
 
-      const res = await retryAsync(
-        () =>
-          fetch('/api/club-arena/marketplace-purchase', {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${token}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ clubId, itemId: buyTarget.id }),
-          }),
-        2
-      );
+      // BUG-1 FIX: fetch() never throws on HTTP errors — wrap with explicit throw
+      const purchaseWithThrow = async () => {
+        const response = await fetch('/api/club-arena/marketplace-purchase', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ clubId, itemId: buyTarget.id }),
+        });
+        const responseData = await response
+          .json()
+          .catch(() => ({ success: false, error: `HTTP ${response.status}` }));
+        if (!responseData.success) {
+          throw new Error(responseData.error || 'Purchase failed');
+        }
+        return responseData;
+      };
 
-      const data = await res.json().catch(() => ({ success: false, error: `HTTP ${res.status}` }));
-
-      if (!data.success) {
-        throw new Error(data.error || 'Purchase failed');
-      }
+      const data = await retryAsync(purchaseWithThrow, 1);
 
       setShowSuccess(`Successfully purchased ${buyTarget.name}!`);
       setTimeout(() => setShowSuccess(null), 2500);
@@ -286,6 +282,8 @@ export default function MarketplacePage() {
         clubId,
       });
       setBuyTarget(null);
+      // BUG-6 FIX: reset loadingRef before calling loadMarketplace so it's not blocked
+      loadingRef.current = false;
       loadMarketplace(clubId, true);
     } catch (err: any) {
       toast.error(err.message);
@@ -631,11 +629,10 @@ export default function MarketplacePage() {
                 </thead>
                 <tbody>
                   {purchases.map((p) => {
-                    const joinedItem = p.marketplace_items?.[0];
+                    // BUG-2 FIX: API returns flat purchases without joins. Use itemMap for names.
                     const itemData = itemMap[p.item_id];
-                    const displayName = joinedItem?.name || itemData?.name || 'Deleted Item';
-                    const displayCategory =
-                      joinedItem?.category || itemData?.category || 'Time Banks';
+                    const displayName = itemData?.name || 'Item';
+                    const displayCategory = itemData?.category || 'Time Banks';
                     return (
                       <tr key={p.id}>
                         <td style={{ fontWeight: 700 }}>{displayName}</td>
@@ -774,6 +771,8 @@ export default function MarketplacePage() {
                   setNewItemImage('');
                   setNewItemCategory('Time Banks');
                   loadAdminItems();
+                  // BUG-6 FIX: reset loadingRef so marketplace reload isn't blocked
+                  loadingRef.current = false;
                   loadMarketplace(clubId || undefined, true);
                 } catch (err: any) {
                   toast.error(err.message);
@@ -816,10 +815,12 @@ export default function MarketplacePage() {
                     <button
                       onClick={async () => {
                         try {
+                          // BUG-5 FIX: scope update to club_id for safety
                           const { error: togErr } = await supabase
                             .from('club_shop_items')
                             .update({ is_active: !item.is_active })
-                            .eq('id', item.id);
+                            .eq('id', item.id)
+                            .eq('club_id', item.club_id);
                           if (togErr) throw togErr;
                           toast.success(item.is_active ? 'Item hidden' : 'Item activated');
                           loadAdminItems();

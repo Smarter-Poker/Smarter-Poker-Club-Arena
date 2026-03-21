@@ -102,6 +102,9 @@ export const DailyChallengesWidget: React.FC = () => {
     if (isMounted.current && user?.id) loadChallengesRef.current?.();
   });
 
+  // Refresh when challenge progress is updated (from AchievementTriggerService)
+  useMasterBusSubscription('CHALLENGE_PROGRESS_UPDATED', debouncedRefresh);
+
   const loadChallengesRef = useRef<(() => Promise<void>) | null>(null);
 
   const loadChallenges = useCallback(async () => {

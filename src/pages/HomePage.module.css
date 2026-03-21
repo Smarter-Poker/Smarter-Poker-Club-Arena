@@ -551,45 +551,7 @@
   box-shadow: 0 0 30px rgba(0, 212, 255, 0.15);
 }
 
-/* ── ENHANCEMENT #9: Holographic Shimmer Effect ────────────────────────── */
-
-.carouselCardFace::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: 12px;
-  background: linear-gradient(
-    105deg,
-    transparent 30%,
-    rgba(255, 255, 255, 0.06) 45%,
-    rgba(0, 212, 255, 0.08) 50%,
-    rgba(255, 255, 255, 0.06) 55%,
-    transparent 70%
-  );
-  background-size: 250% 100%;
-  animation: shimmerSweep 6s ease-in-out infinite;
-  pointer-events: none;
-  z-index: 5;
-}
-
-.carouselCard:nth-child(6n + 1) .carouselCardFace::after {
-  animation-delay: 0s;
-}
-.carouselCard:nth-child(6n + 2) .carouselCardFace::after {
-  animation-delay: 1s;
-}
-.carouselCard:nth-child(6n + 3) .carouselCardFace::after {
-  animation-delay: 2s;
-}
-.carouselCard:nth-child(6n + 4) .carouselCardFace::after {
-  animation-delay: 3s;
-}
-.carouselCard:nth-child(6n + 5) .carouselCardFace::after {
-  animation-delay: 4s;
-}
-.carouselCard:nth-child(6n + 6) .carouselCardFace::after {
-  animation-delay: 5s;
-}
+/* (Legacy shimmer + nth-child delays removed — .carouselCardFace is dead CSS) */
 
 @keyframes shimmerSweep {
   0% {
@@ -603,28 +565,7 @@
   }
 }
 
-/* ── ENHANCEMENT #10: Active Table Pulsing Green Ring ──────────────────── */
-
-.carouselCardLive {
-  border: 2px solid rgba(0, 255, 100, 0.4);
-  border-radius: 14px;
-  animation:
-    cardRise 0.6s ease-out both,
-    pulseRing 2.5s ease-in-out infinite;
-}
-
-.carouselCardLive .carouselCardPedestal {
-  background: radial-gradient(
-    ellipse,
-    rgba(0, 255, 100, 0.35),
-    rgba(0, 200, 80, 0.15),
-    transparent 70%
-  ) !important;
-}
-
-.carouselCardLive .carouselCardFace {
-  border-color: rgba(0, 255, 100, 0.25);
-}
+/* (Legacy .carouselCardLive removed — dead CSS) */
 
 @keyframes pulseRing {
   0%,
@@ -1486,10 +1427,6 @@
     padding: 20px 20px 24px 20px;
   }
 
-  .carouselCard {
-    width: 180px;
-  }
-
   .ctaCard {
     width: 180px;
   }
@@ -1498,15 +1435,7 @@
     width: 240px;
   }
 
-  .carouselCardTitle {
-    font-size: 11px;
-  }
-
-  .carouselCardIcon,
-  .carouselCardLogo {
-    width: 52px;
-    height: 52px;
-  }
+  /* (Legacy breakpoint overrides for .carouselCardTitle/.carouselCardIcon/.carouselCardLogo removed) */
 
   .clubCardsRow {
     gap: 12px;
@@ -1546,10 +1475,6 @@
     padding: 16px 12px 20px 12px;
   }
 
-  .carouselCard {
-    width: 150px;
-  }
-
   .ctaCard {
     width: 150px;
     gap: 10px;
@@ -1569,19 +1494,7 @@
     width: 200px;
   }
 
-  .carouselCardTitle {
-    font-size: 10px;
-  }
-
-  .carouselCardIcon,
-  .carouselCardLogo {
-    width: 44px;
-    height: 44px;
-  }
-
-  .carouselCardIcon {
-    font-size: 20px;
-  }
+  /* (Legacy breakpoint overrides removed — dead CSS) */
 
   .clubCard {
     width: clamp(100px, 26vw, 120px);
@@ -1641,10 +1554,6 @@
     padding: 0 8px 10px 8px;
   }
 
-  .carouselCard {
-    width: 130px;
-  }
-
   .ctaCard {
     width: 130px;
     gap: 8px;
@@ -1670,23 +1579,7 @@
     width: 170px;
   }
 
-  .carouselCardTitle {
-    font-size: 9px;
-  }
-
-  .carouselCardFace {
-    padding: 14px 10px;
-  }
-
-  .carouselCardIcon,
-  .carouselCardLogo {
-    width: 36px;
-    height: 36px;
-  }
-
-  .carouselCardIcon {
-    font-size: 16px;
-  }
+  /* (Legacy breakpoint overrides removed — dead CSS) */
 
   .clubCard {
     width: 90px;

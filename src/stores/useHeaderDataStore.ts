@@ -148,6 +148,40 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
         masterBus.emit('UNREAD_DM_COUNT_CHANGED', { userId, count: msgCount });
       } catch (e) {
         console.error('[HeaderDataStore] Initial load failed:', e);
+        // Retry once after 2s — transient network failures are common on mobile
+        setTimeout(async () => {
+          if (get()._userId !== userId) return; // User switched — abort retry
+          try {
+            const [pR, nR, mR] = await Promise.all([
+              supabase.from('profiles').select('avatar_url').eq('id', userId).maybeSingle(),
+              supabase
+                .from('notifications')
+                .select('*', { count: 'exact', head: true })
+                .eq('user_id', userId)
+                .eq('read', false),
+              supabase
+                .from('messages')
+                .select('*', { count: 'exact', head: true })
+                .eq('receiver_id', userId)
+                .eq('is_read', false),
+            ]);
+            if (get()._userId !== userId) return;
+            set({
+              avatarUrl: pR.data?.avatar_url || null,
+              notificationCount: nR.count || 0,
+              unreadMessages: mR.count || 0,
+            });
+            persistCount('ca-notif-count', nR.count || 0);
+            persistCount('ca-msg-count', mR.count || 0);
+          } catch (retryErr) {
+            console.error('[HeaderDataStore] Retry also failed:', retryErr);
+            masterBus.emit('SHOW_TOAST', {
+              severity: 'warning',
+              message: 'Could not load notifications — pull to refresh',
+              source: 'HeaderDataStore',
+            });
+          }
+        }, 2000);
       }
     })();
 
@@ -202,9 +236,32 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
           console.error('[HeaderDataStore] ❌ Realtime channel error:', err?.message || err);
+          // Auto-retry: remove stale channel and re-create after 3s
+          setTimeout(() => {
+            if (get()._userId !== userId || get()._channelKey !== channelKey) return;
+            try {
+              masterBus.removeRegisteredChannel(channelKey);
+              // Re-trigger loadOnce by resetting _loaded flag
+              set({ _loaded: false, _channelKey: null });
+              get().loadOnce(userId);
+            } catch {
+              /* silent */
+            }
+          }, 3000);
         }
         if (status === 'TIMED_OUT') {
-          console.warn('[HeaderDataStore] ⏱️ Realtime channel timed out');
+          console.warn('[HeaderDataStore] ⏱️ Realtime channel timed out — retrying...');
+          // Same retry as CHANNEL_ERROR
+          setTimeout(() => {
+            if (get()._userId !== userId || get()._channelKey !== channelKey) return;
+            try {
+              masterBus.removeRegisteredChannel(channelKey);
+              set({ _loaded: false, _channelKey: null });
+              get().loadOnce(userId);
+            } catch {
+              /* silent */
+            }
+          }, 3000);
         }
       });
 
@@ -221,6 +278,8 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
 
     const unsubDmCount = masterBus.subscribe('UNREAD_DM_COUNT_CHANGED', (event) => {
       if (event.payload?.count !== undefined && typeof event.payload.count === 'number') {
+        // Self-echo guard: skip if count is already the same (avoids redundant localStorage write)
+        if (event.payload.count === get().unreadMessages) return;
         set({ unreadMessages: event.payload.count });
         persistCount('ca-msg-count', event.payload.count);
       }

@@ -16,6 +16,7 @@ import { useToast } from '../common/Toast';
 import { masterBus } from '../../core/MasterBus';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { useWalletStore } from '../../stores/useWalletStore';
+import { useHeaderDataStore } from '../../stores/useHeaderDataStore';
 import { STORAGE_KEYS } from '../../lib/storage';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 import { preloadRoute } from '../../utils/ChunkPreloader';
@@ -48,7 +49,8 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   const [soundsEnabled, setSoundsEnabled] = useState(true);
   const [vibrationsEnabled, setVibrationsEnabled] = useState(true);
   const [showBBEnabled, setShowBBEnabled] = useState(false);
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  // Avatar from persistent header store (avoids duplicate Supabase query)
+  const avatarUrl = useHeaderDataStore((s) => s.avatarUrl);
   const [userName, setUserName] = useState<string>('');
   const [isVIP, setIsVIP] = useState(false);
   const { diamonds: diamondBalance } = useWalletStore();
@@ -138,7 +140,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             return;
           }
           if (data) {
-            setAvatarUrl(data.avatar_url);
+            // Avatar is consumed from useHeaderDataStore — no need to set locally
             setUserName(data.username || data.display_name || 'Player');
             // These columns may not exist on profiles — use optional chaining with defaults
             if (data.sounds_enabled !== undefined && data.sounds_enabled !== null) {
@@ -159,9 +161,9 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     }
   }, [user?.id]);
 
-  // ── BUS LISTENER: Sync avatar/name when profile is updated elsewhere ──
+  // ── BUS LISTENER: Sync name when profile is updated elsewhere ──
   useMasterBusSubscription('USER_PROFILE_LOADED', (payload) => {
-    if (payload?.avatarUrl) setAvatarUrl(payload.avatarUrl);
+    // Avatar syncs automatically via useHeaderDataStore
     if (payload?.displayName) setUserName(payload.displayName);
   });
 

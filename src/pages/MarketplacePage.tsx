@@ -39,6 +39,9 @@ interface Purchase {
   item_id: string;
   price_paid: number;
   created_at: string;
+  // BUG-12 FIX: API now joins item name+category so My Items works even for hidden/deleted items
+  item_name?: string | null;
+  item_category?: string | null;
 }
 
 /* ═══ Constants ═══ */
@@ -135,7 +138,8 @@ export default function MarketplacePage() {
               ...i,
               club_id: targetClub,
               is_active: true,
-              purchase_count: 0,
+              // BUG-11 FIX: Use API-provided purchase_count instead of hardcoding 0
+              purchase_count: i.purchase_count || 0,
             }))
           );
           setPurchases(data.purchases || []);
@@ -632,10 +636,10 @@ export default function MarketplacePage() {
                 </thead>
                 <tbody>
                   {purchases.map((p) => {
-                    // BUG-2 FIX: API returns flat purchases without joins. Use itemMap for names.
+                    // BUG-12 FIX: Use API-joined item_name first, then itemMap fallback
                     const itemData = itemMap[p.item_id];
-                    const displayName = itemData?.name || 'Item';
-                    const displayCategory = itemData?.category || 'Time Banks';
+                    const displayName = p.item_name || itemData?.name || 'Unknown Item';
+                    const displayCategory = p.item_category || itemData?.category || 'Time Banks';
                     return (
                       <tr key={p.id}>
                         <td style={{ fontWeight: 700 }}>{displayName}</td>

@@ -615,6 +615,7 @@ export default function TablePage({
   const sessionPLRef = useRef(0);
   const totalBuyInRef = useRef(0); // Track total chips invested for accurate session P/L
   const handsWonRef = useRef(0); // Session hands won by hero
+  const heroWonCurrentHandRef = useRef(false); // Tracks if hero won current hand (cross-event ref)
   const totalRebuysRef = useRef(0); // Add-chips/rebuy count for session summary
   const actionLockRef = useRef(false); // Debounce rapid action button taps (300ms)
   const [waitListPlayers, setWaitListPlayers] = useState<
@@ -3044,6 +3045,7 @@ export default function TablePage({
                 if (winner.userId === userId && !heroWonThisHand) {
                   handsWonRef.current += 1;
                   heroWonThisHand = true;
+                  heroWonCurrentHandRef.current = true; // Flag for HAND_COMPLETE to prevent double-count
                 }
               }
             }
@@ -3133,6 +3135,24 @@ export default function TablePage({
                 });
               }
             }
+            // ── Daily Challenge Progress: track hero hands_played (even if they lost) ──
+            // WINNERS handler only calls onHandComplete for winners → non-winner hero
+            // never gets hands_played challenge incremented. Fix: fire for hero at
+            // HAND_COMPLETE if they weren't already counted as a winner.
+            // NOTE: Must use ref, NOT winnerInfo state — React batches state updates,
+            // so winnerInfo would still be stale/empty from the previous render.
+            if (userId && !heroWonCurrentHandRef.current) {
+              achievementTriggerService
+                .onHandComplete(userId, {
+                  won: false,
+                  potSize: 0,
+                  showdown: false,
+                })
+                .catch((err) =>
+                  console.error('[Achievements] Hero non-winner trigger failed:', err)
+                );
+            }
+            heroWonCurrentHandRef.current = false; // Reset for next hand
             const heroPlayer = currentState.players[currentState.heroSeat - 1];
             const heroStartStack = handStartStacksRef.current[currentState.heroSeat] || 0;
             const heroEndStack = heroPlayer?.stack || 0;

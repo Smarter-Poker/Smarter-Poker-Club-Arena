@@ -65,7 +65,7 @@ export default function NotificationDropdown({ onNavigate }: NotificationDropdow
     setLoading(true);
     const { data, error } = await supabase
       .from('notifications')
-      .select('id, type, title, message, data, is_read, created_at')
+      .select('id, type, title, message, data, read, created_at')
       .eq('user_id', user?.id)
       .order('created_at', { ascending: false })
       .limit(20);
@@ -77,7 +77,7 @@ export default function NotificationDropdown({ onNavigate }: NotificationDropdow
         title: n.title,
         message: n.message,
         data: n.data,
-        isRead: n.is_read,
+        isRead: n.read,
         createdAt: n.created_at,
       }));
       setNotifications(mapped);
@@ -119,7 +119,7 @@ export default function NotificationDropdown({ onNavigate }: NotificationDropdow
   });
 
   const markAsRead = async (id: string) => {
-    const { error } = await supabase.from('notifications').update({ is_read: true }).eq('id', id);
+    const { error } = await supabase.from('notifications').update({ read: true }).eq('id', id);
 
     if (error) return;
 
@@ -130,9 +130,9 @@ export default function NotificationDropdown({ onNavigate }: NotificationDropdow
   const markAllAsRead = async () => {
     const { error } = await supabase
       .from('notifications')
-      .update({ is_read: true })
+      .update({ read: true })
       .eq('user_id', user?.id)
-      .eq('is_read', false);
+      .eq('read', false);
 
     if (error) return;
 

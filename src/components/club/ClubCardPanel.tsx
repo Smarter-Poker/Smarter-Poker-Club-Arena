@@ -68,6 +68,7 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
             alt={`${clubName} Card`}
             className="club-card-viewport-img"
             loading="lazy"
+            decoding="async"
             onLoad={() => setImgLoaded(true)}
             onError={() => setCardFailed(true)}
           />
@@ -77,6 +78,7 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
             alt={`${clubName} Logo`}
             className="club-card-viewport-logo"
             loading="lazy"
+            decoding="async"
             onLoad={() => setImgLoaded(true)}
             onError={() => {
               setLogoFailed(true);

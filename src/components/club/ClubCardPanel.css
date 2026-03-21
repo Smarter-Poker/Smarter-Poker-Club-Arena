@@ -248,6 +248,27 @@
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 100%;
+  animation: statLabelReveal 0.4s ease-out both;
+}
+
+/* Staggered label reveal */
+.club-card-stat:nth-child(1) .club-card-stat-label {
+  animation-delay: 0.1s;
+}
+.club-card-stat:nth-child(2) .club-card-stat-label {
+  animation-delay: 0.2s;
+}
+.club-card-stat:nth-child(3) .club-card-stat-label {
+  animation-delay: 0.3s;
+}
+
+@keyframes statLabelReveal {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 /* Glowing values */

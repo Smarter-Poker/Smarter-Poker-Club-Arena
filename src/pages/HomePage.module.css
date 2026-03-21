@@ -389,6 +389,28 @@
   scroll-snap-align: center;
   animation: cardRise 0.6s ease-out both;
   perspective: 800px;
+  transition:
+    transform 0.25s ease,
+    box-shadow 0.25s ease;
+}
+
+/* Hover lift for user club cards */
+.carouselCard:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+}
+
+/* Focus-visible for keyboard navigation */
+.carouselCard:focus-visible {
+  outline: 2px solid rgba(0, 212, 255, 0.6);
+  outline-offset: 3px;
+  transform: translateY(-6px);
+}
+
+/* Active press feedback */
+.carouselCard:active {
+  transform: scale(0.97);
+  transition-duration: 0.1s;
 }
 
 .carouselCard:nth-child(1) {

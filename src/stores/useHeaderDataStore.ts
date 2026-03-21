@@ -134,6 +134,9 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
             .eq('is_read', false),
         ]);
 
+        // Guard: if user switched while fetch was in-flight, discard stale result
+        if (get()._userId !== userId) return;
+
         const avatarUrl = profileResult.data?.avatar_url || null;
         const notifCount = notifResult.count || 0;
         const msgCount = msgResult.count || 0;

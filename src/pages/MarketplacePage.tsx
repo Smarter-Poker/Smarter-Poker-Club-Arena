@@ -254,12 +254,15 @@ export default function MarketplacePage() {
       if (!token) throw new Error('Not authenticated');
 
       // BUG-1 FIX: fetch() never throws on HTTP errors — wrap with explicit throw
+      // BUG-9 FIX: API requires X-Idempotency-Key header (UUID) to prevent double-charges
+      const idempotencyKey = crypto.randomUUID();
       const purchaseWithThrow = async () => {
         const response = await fetch('/api/club-arena/marketplace-purchase', {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${token}`,
             'Content-Type': 'application/json',
+            'X-Idempotency-Key': idempotencyKey,
           },
           body: JSON.stringify({ clubId, itemId: buyTarget.id }),
         });

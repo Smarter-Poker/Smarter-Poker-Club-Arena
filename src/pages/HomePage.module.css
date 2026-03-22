@@ -1389,6 +1389,7 @@
   .clubCarousel {
     gap: 14px;
     padding: 8px max(12px, 3vw) 24px max(12px, 3vw);
+    scroll-padding-inline: max(12px, 3vw);
   }
 
   .ctaCard {
@@ -1423,6 +1424,7 @@
   .clubCarousel {
     gap: 10px;
     padding: 8px max(8px, 2vw) 20px max(8px, 2vw);
+    scroll-padding-inline: max(8px, 2vw);
   }
 
   .ctaCard {
@@ -1497,6 +1499,7 @@
   .clubCarousel {
     gap: 8px;
     padding: 4px 8px 10px 8px;
+    scroll-padding-inline: 8px;
   }
 
   .ctaCard {

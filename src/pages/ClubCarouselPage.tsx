@@ -375,7 +375,7 @@ export default function ClubCarouselPage() {
           .from('notifications')
           .select('club_id')
           .eq('user_id', authUser.id)
-          .eq('is_read', false);
+          .eq('read', false);
         if (!isMounted.current || !notifs) return;
         const badges: Record<string, number> = {};
         for (const n of notifs) {

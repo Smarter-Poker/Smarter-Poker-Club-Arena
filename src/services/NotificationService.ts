@@ -259,7 +259,7 @@ class NotificationServiceClass {
         message: notification.message,
         metadata: notification.metadata,
         action_url: actionUrl,
-        is_read: false,
+        read: false,
       })
       .select()
       .maybeSingle();

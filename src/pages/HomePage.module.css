@@ -551,51 +551,6 @@
   box-shadow: 0 0 30px rgba(0, 212, 255, 0.15);
 }
 
-/* (Legacy shimmer + nth-child delays removed — .carouselCardFace is dead CSS) */
-
-@keyframes shimmerSweep {
-  0% {
-    background-position: 200% 0;
-  }
-  50% {
-    background-position: -50% 0;
-  }
-  100% {
-    background-position: 200% 0;
-  }
-}
-
-/* (Legacy .carouselCardLive removed — dead CSS) */
-
-@keyframes pulseRing {
-  0%,
-  100% {
-    border-color: rgba(0, 255, 100, 0.3);
-    box-shadow: 0 0 15px rgba(0, 255, 100, 0.1);
-  }
-  50% {
-    border-color: rgba(0, 255, 100, 0.6);
-    box-shadow:
-      0 0 30px rgba(0, 255, 100, 0.2),
-      0 0 60px rgba(0, 255, 100, 0.08);
-  }
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════════
-   USER CLUBS — Old Row (kept for backward compat but hidden by default)
-   Now absorbed into .clubCarousel. Legacy class left for CSS module reference.
-   ═══════════════════════════════════════════════════════════════════════════════ */
-
-.clubCardsRow {
-  display: flex;
-  gap: 16px;
-  width: 100%;
-  justify-content: center;
-  flex-wrap: wrap;
-  padding: 0;
-  z-index: 10;
-}
-
 .clubCard {
   display: flex;
   flex-direction: column;

@@ -105,15 +105,10 @@ export default function ClubBottomNav({
         }
       });
 
-    // BUG-08 FIX: Listen to bus events for instant badge sync
-    // (Realtime UPDATE may not fire correctly without REPLICA IDENTITY FULL)
-    const unsubNotifRead = masterBus.subscribe('NOTIFICATION_READ', (event) => {
-      if (event.payload?.allRead) {
-        setUnreadCount(0);
-      } else {
-        setUnreadCount((prev) => Math.max(0, prev - 1));
-      }
-    });
+    // BUG-08/09 FIX: Listen to NOTIFICATION_COUNT_CHANGED for instant badge sync.
+    // DO NOT also subscribe to NOTIFICATION_READ — the store already transforms
+    // NOTIFICATION_READ into NOTIFICATION_COUNT_CHANGED with the absolute count.
+    // Subscribing to both causes a double-decrement bug.
     const unsubCountChanged = masterBus.subscribe('NOTIFICATION_COUNT_CHANGED', (event) => {
       if (event.payload?.count !== undefined && typeof event.payload.count === 'number') {
         setUnreadCount(event.payload.count);
@@ -122,7 +117,6 @@ export default function ClubBottomNav({
 
     return () => {
       masterBus.removeRegisteredChannel(channelKey);
-      unsubNotifRead();
       unsubCountChanged();
     };
   }, [user?.id]);

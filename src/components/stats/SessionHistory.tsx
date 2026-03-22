@@ -1,10 +1,11 @@
 /**
  * SessionHistory — Timeline of poker sessions with P/L tracking
- * Shows each session's duration, hands played, and profit/loss
+ * Wired to real Supabase `player_sessions` table with bus listeners
  */
 
-import React, { useState, useEffect } from 'react';
-import { formatDurationMinutes as formatTime } from '@/lib/date';
+import React, { useState, useEffect, useCallback } from 'react';
+import { supabase, getAuthUser } from '../../lib/supabase';
+import { masterBus } from '../../core/MasterBus';
 import './SessionHistory.css';
 
 interface SessionRecord {
@@ -15,109 +16,84 @@ interface SessionRecord {
   buyIn: number;
   cashOut: number;
   profitLoss: number;
-  gameType: string;
-  stakes: string;
-  hourlyRate?: number;
+  hourlyRate: number;
 }
 
-const SAMPLE_SESSIONS: SessionRecord[] = [
-  {
-    id: 's1',
-    date: new Date(2026, 2, 11),
-    duration: 285,
-    handsPlayed: 187,
-    buyIn: 500,
-    cashOut: 642,
-    profitLoss: 142,
-    gameType: '6-max NLH',
-    stakes: '1/2',
-    hourlyRate: 30,
-  },
-  {
-    id: 's2',
-    date: new Date(2026, 2, 10),
-    duration: 165,
-    handsPlayed: 98,
-    buyIn: 300,
-    cashOut: 245,
-    profitLoss: -55,
-    gameType: '9-max NLH',
-    stakes: '0.5/1',
-    hourlyRate: -20,
-  },
-  {
-    id: 's3',
-    date: new Date(2026, 2, 9),
-    duration: 240,
-    handsPlayed: 156,
-    buyIn: 400,
-    cashOut: 580,
-    profitLoss: 180,
-    gameType: '6-max NLH',
-    stakes: '1/2',
-    hourlyRate: 45,
-  },
-  {
-    id: 's4',
-    date: new Date(2026, 2, 8),
-    duration: 320,
-    handsPlayed: 215,
-    buyIn: 600,
-    cashOut: 672,
-    profitLoss: 72,
-    gameType: '9-max NLH',
-    stakes: '1/2',
-    hourlyRate: 13.5,
-  },
-  {
-    id: 's5',
-    date: new Date(2026, 2, 7),
-    duration: 195,
-    handsPlayed: 124,
-    buyIn: 350,
-    cashOut: 520,
-    profitLoss: 170,
-    gameType: '6-max NLH',
-    stakes: '0.5/1',
-    hourlyRate: 52.3,
-  },
-  {
-    id: 's6',
-    date: new Date(2026, 2, 6),
-    duration: 140,
-    handsPlayed: 82,
-    buyIn: 250,
-    cashOut: 195,
-    profitLoss: -55,
-    gameType: '9-max NLH',
-    stakes: '0.5/1',
-    hourlyRate: -23.6,
-  },
-];
-
-type FilterGameType = 'all' | '6-max' | '9-max';
-
 const SessionHistory: React.FC = () => {
-  const [sessions, setSessions] = useState<SessionRecord[]>(SAMPLE_SESSIONS);
+  const [sessions, setSessions] = useState<SessionRecord[]>([]);
   const [expandedSession, setExpandedSession] = useState<string | null>(null);
-  const [filterGame, setFilterGame] = useState<FilterGameType>('all');
   const [visibleSessions, setVisibleSessions] = useState<Set<number>>(new Set());
+  const [loaded, setLoaded] = useState(false);
+
+  const loadSessions = useCallback(async () => {
+    try {
+      const { data: userResp } = await getAuthUser();
+      if (!userResp.user) return;
+
+      const { data, error } = await supabase
+        .from('player_sessions')
+        .select('id, date, duration_minutes, hands_played, buy_in, cash_out, profit_loss')
+        .eq('user_id', userResp.user.id)
+        .order('date', { ascending: false })
+        .limit(20);
+
+      if (error) {
+        console.error('[SessionHistory] Query error:', error.message);
+        setLoaded(true);
+        return;
+      }
+
+      if (data && data.length > 0) {
+        const mapped: SessionRecord[] = data.map((s) => {
+          const dur = s.duration_minutes || 0;
+          const pl = s.profit_loss || 0;
+          return {
+            id: s.id,
+            date: new Date(s.date),
+            duration: dur,
+            handsPlayed: s.hands_played || 0,
+            buyIn: s.buy_in || 0,
+            cashOut: s.cash_out || 0,
+            profitLoss: pl,
+            hourlyRate: dur > 0 ? (pl / dur) * 60 : 0,
+          };
+        });
+        setSessions(mapped);
+
+        // Stagger animation
+        mapped.forEach((_, i) => {
+          setTimeout(() => {
+            setVisibleSessions((prev) => new Set([...prev, i]));
+          }, i * 60);
+        });
+      } else {
+        setSessions([]);
+      }
+
+      setLoaded(true);
+    } catch (err) {
+      console.error('[SessionHistory] Failed to load:', err);
+      setLoaded(true);
+    }
+  }, []);
 
   useEffect(() => {
-    const sorted = [...SAMPLE_SESSIONS].sort((a, b) => b.date.getTime() - a.date.getTime());
-    const filtered =
-      filterGame === 'all'
-        ? sorted
-        : sorted.filter((s) => s.gameType.includes(filterGame === '6-max' ? '6-max' : '9-max'));
-    setSessions(filtered);
+    loadSessions();
+  }, [loadSessions]);
 
-    // Stagger animation
-    filtered.forEach((_, i) => {
-      setTimeout(() => {
-        setVisibleSessions((prev) => new Set([...prev, i]));
-      }, i * 60);
-    });
-  }, [filterGame]);
+  // Bus listeners: refresh when sessions might change
+  useEffect(() => {
+    const unsubHand = masterBus.subscribeDebounced('HAND_COMPLETED', () => loadSessions(), 3000);
+    const unsubCashout = masterBus.subscribeDebounced(
+      'CASHOUT_APPROVED',
+      () => loadSessions(),
+      2000
+    );
+    return () => {
+      unsubHand();
+      unsubCashout();
+    };
+  }, [loadSessions]);
 
   const getTotalProfit = () => sessions.reduce((sum, s) => sum + s.profitLoss, 0);
   const getWinningSessions = () => sessions.filter((s) => s.profitLoss > 0).length;
@@ -125,64 +101,65 @@ const SessionHistory: React.FC = () => {
     sessions.length > 0 ? ((getWinningSessions() / sessions.length) * 100).toFixed(1) : '0';
   const getAverageHourlyRate = () =>
     sessions.length > 0
-      ? (sessions.reduce((sum, s) => sum + (s.hourlyRate || 0), 0) / sessions.length).toFixed(2)
+      ? (sessions.reduce((sum, s) => sum + s.hourlyRate, 0) / sessions.length).toFixed(2)
       : '0';
+
+  const formatDuration = (minutes: number): string => {
+    if (minutes < 60) return `${minutes}m`;
+    const hrs = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    return mins > 0 ? `${hrs}h ${mins}m` : `${hrs}h`;
+  };
+
+  if (!loaded) {
+    return (
+      <div className="session-history">
+        <div className="session-header">
+          <h3>Session History</h3>
+          <p className="session-subtitle">Loading sessions...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="session-history">
       <div className="session-header">
         <h3>Session History</h3>
-        <p className="session-subtitle">Last {sessions.length} sessions tracked</p>
+        <p className="session-subtitle">
+          {sessions.length > 0 ? `Last ${sessions.length} sessions tracked` : 'No sessions yet'}
+        </p>
       </div>
 
       {/* Summary Stats */}
-      <div className="session-summary-stats">
-        <div className="summary-stat">
-          <span className="stat-label">Total P/L</span>
-          <span
-            className="stat-value"
-            style={{ color: getTotalProfit() >= 0 ? '#10b981' : '#ef4444' }}
-          >
-            {getTotalProfit() > 0 ? '+' : ''}
-            {getTotalProfit()}
-          </span>
+      {sessions.length > 0 && (
+        <div className="session-summary-stats">
+          <div className="summary-stat">
+            <span className="stat-label">Total P/L</span>
+            <span
+              className="stat-value"
+              style={{ color: getTotalProfit() >= 0 ? '#10b981' : '#ef4444' }}
+            >
+              {getTotalProfit() > 0 ? '+' : ''}
+              {getTotalProfit().toLocaleString()}
+            </span>
+          </div>
+          <div className="summary-stat">
+            <span className="stat-label">Win Rate</span>
+            <span className="stat-value">{getWinRate()}%</span>
+          </div>
+          <div className="summary-stat">
+            <span className="stat-label">Avg Hourly</span>
+            <span
+              className="stat-value"
+              style={{ color: parseFloat(getAverageHourlyRate()) >= 0 ? '#10b981' : '#ef4444' }}
+            >
+              {parseFloat(getAverageHourlyRate()) > 0 ? '+' : ''}
+              {getAverageHourlyRate()}/hr
+            </span>
+          </div>
         </div>
-        <div className="summary-stat">
-          <span className="stat-label">Win Rate</span>
-          <span className="stat-value">{getWinRate()}%</span>
-        </div>
-        <div className="summary-stat">
-          <span className="stat-label">Avg Hourly</span>
-          <span
-            className="stat-value"
-            style={{ color: parseFloat(getAverageHourlyRate()) >= 0 ? '#10b981' : '#ef4444' }}
-          >
-            {parseFloat(getAverageHourlyRate()) > 0 ? '+' : ''}${getAverageHourlyRate()}/hr
-          </span>
-        </div>
-      </div>
-
-      {/* Filter */}
-      <div className="session-filter">
-        <button
-          className={filterGame === 'all' ? 'active' : ''}
-          onClick={() => setFilterGame('all')}
-        >
-          All Games
-        </button>
-        <button
-          className={filterGame === '6-max' ? 'active' : ''}
-          onClick={() => setFilterGame('6-max')}
-        >
-          6-Max
-        </button>
-        <button
-          className={filterGame === '9-max' ? 'active' : ''}
-          onClick={() => setFilterGame('9-max')}
-        >
-          9-Max
-        </button>
-      </div>
+      )}
 
       {/* Sessions Timeline */}
       <div className="sessions-timeline">
@@ -214,15 +191,11 @@ const SessionHistory: React.FC = () => {
                 <div className="session-core">
                   <div className="core-stat">
                     <span className="core-label">Duration</span>
-                    <span className="core-value">{formatTime(session.duration)}</span>
+                    <span className="core-value">{formatDuration(session.duration)}</span>
                   </div>
                   <div className="core-stat">
                     <span className="core-label">Hands</span>
                     <span className="core-value">{session.handsPlayed}</span>
-                  </div>
-                  <div className="core-stat">
-                    <span className="core-label">Stakes</span>
-                    <span className="core-value">{session.stakes}</span>
                   </div>
                 </div>
 
@@ -230,16 +203,16 @@ const SessionHistory: React.FC = () => {
                 <div className="session-result">
                   <div className="result-pl">
                     <span className="pl-sign">{session.profitLoss > 0 ? '+' : ''}</span>
-                    <span className="pl-value">{session.profitLoss}</span>
+                    <span className="pl-value">{session.profitLoss.toLocaleString()}</span>
                   </div>
                   <div className="result-hourly">
                     <span className="hourly-label">$/hr</span>
                     <span
                       className="hourly-value"
-                      style={{ color: (session.hourlyRate || 0) >= 0 ? '#10b981' : '#ef4444' }}
+                      style={{ color: session.hourlyRate >= 0 ? '#10b981' : '#ef4444' }}
                     >
-                      {(session.hourlyRate || 0) > 0 ? '+' : ''}
-                      {(session.hourlyRate || 0).toFixed(1)}
+                      {session.hourlyRate > 0 ? '+' : ''}
+                      {session.hourlyRate.toFixed(1)}
                     </span>
                   </div>
                 </div>
@@ -267,33 +240,21 @@ const SessionHistory: React.FC = () => {
                 >
                   <div className="details-grid">
                     <div className="detail-item">
-                      <span className="detail-label">Game Type</span>
-                      <span className="detail-value">{session.gameType}</span>
-                    </div>
-                    <div className="detail-item">
                       <span className="detail-label">Buy-In</span>
-                      <span className="detail-value">${session.buyIn}</span>
+                      <span className="detail-value">{session.buyIn.toLocaleString()}</span>
                     </div>
                     <div className="detail-item">
                       <span className="detail-label">Cash-Out</span>
-                      <span className="detail-value">${session.cashOut}</span>
+                      <span className="detail-value">{session.cashOut.toLocaleString()}</span>
                     </div>
                     <div className="detail-item">
-                      <span className="detail-label">Win Rate</span>
+                      <span className="detail-label">P/L per Hand</span>
                       <span className="detail-value">
-                        {(session.handsPlayed > 0
-                          ? ((session.profitLoss / session.handsPlayed) * 100).toFixed(2)
-                          : 0
-                        ).toString()}
-                        %
+                        {session.handsPlayed > 0
+                          ? (session.profitLoss / session.handsPlayed).toFixed(2)
+                          : '0'}
                       </span>
                     </div>
-                  </div>
-
-                  {/* Key hands placeholder */}
-                  <div className="detail-section">
-                    <span className="section-title">Notable Moments</span>
-                    <p className="placeholder">Hand history details coming soon...</p>
                   </div>
                 </div>
               )}
@@ -305,7 +266,7 @@ const SessionHistory: React.FC = () => {
       {sessions.length === 0 && (
         <div className="session-empty">
           <span className="empty-icon">📊</span>
-          <p>No sessions found for selected filters</p>
+          <p>No sessions recorded yet. Play some hands to start tracking!</p>
         </div>
       )}
     </div>

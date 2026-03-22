@@ -7,7 +7,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useMemo, useCallback, lazy, Suspense } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -215,6 +215,8 @@ export default function ProfilePage() {
   const isMountedRef = useIsMounted();
 
   const toast = useToast();
+  // Double-claim guard: prevents duplicate RPC calls on rapid button clicks
+  const claimingMissionsRef = useRef<Set<string>>(new Set());
   const { user: storeUser } = useAuthUser();
   useVisibilityRefresh(async () => {
     const {
@@ -975,8 +977,14 @@ export default function ProfilePage() {
           missions={missions}
           onClaim={async (missionId) => {
             if (!user?.id) return;
+            // Double-claim guard — rapid clicks can fire onClaim twice
+            if (claimingMissionsRef.current.has(missionId)) return;
+            claimingMissionsRef.current.add(missionId);
             const targetMission = missions.find((m) => m.id === missionId);
-            if (!targetMission) return;
+            if (!targetMission) {
+              claimingMissionsRef.current.delete(missionId);
+              return;
+            }
             try {
               await dailyChallengeService.claimChallenge(
                 user.id,
@@ -992,6 +1000,8 @@ export default function ProfilePage() {
             } catch (err: any) {
               console.error('Failed to claim mission:', err);
               toast.error(err.message || 'Failed to claim mission reward');
+            } finally {
+              claimingMissionsRef.current.delete(missionId);
             }
           }}
         />

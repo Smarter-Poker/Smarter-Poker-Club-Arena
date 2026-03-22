@@ -2,13 +2,51 @@
  * AdvancedStatsSummary — Dashboard of advanced poker statistics
  * Wired to real Supabase `player_stats` table with bus listeners
  *
- * Accepts optional `userId` prop — uses it if provided, otherwise falls back to getAuthUser()
+ * Enhancements:
+ *  - Optional `initialData` prop to skip redundant fetch (dedup from parent)
+ *  - localStorage SWR cache for instant render
+ *  - Average player benchmarks for comparison
  */
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase, getAuthUser } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import './AdvancedStatsSummary.css';
+
+// ── Average player benchmarks (based on typical 1/2 NL Hold'em) ──
+const BENCHMARKS: Record<string, { avg: number; good: number; label: string }> = {
+  hourly: { avg: 15, good: 25, label: '$' },
+  totalHands: { avg: 5000, good: 20000, label: '' },
+  showdownWin: { avg: 50, good: 55, label: '%' },
+  aggression: { avg: 2.0, good: 3.0, label: '' },
+  threeBet: { avg: 7, good: 10, label: '%' },
+  foldTo3Bet: { avg: 55, good: 45, label: '%' },
+  cbetFreq: { avg: 65, good: 70, label: '%' },
+  bbPer100: { avg: 2, good: 5, label: 'bb' },
+};
+
+// ── SWR cache ──
+const CACHE_KEY = 'adv_stats_v1_';
+const CACHE_TTL = 10 * 60 * 1000;
+
+function getCached(uid: string) {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY + uid);
+    if (!raw) return null;
+    const p = JSON.parse(raw);
+    if (p.ts && Date.now() - p.ts > CACHE_TTL) return null;
+    return p.data;
+  } catch {
+    return null;
+  }
+}
+function setCache(uid: string, data: any) {
+  try {
+    localStorage.setItem(CACHE_KEY + uid, JSON.stringify({ data, ts: Date.now() }));
+  } catch {
+    /* quota */
+  }
+}
 
 interface AdvancedStat {
   id: string;
@@ -17,10 +55,12 @@ interface AdvancedStat {
   format: (val: number) => string;
   unit?: string;
   description: string;
+  benchmark?: { avg: number; good: number; label: string };
 }
 
 interface AdvancedStatsSummaryProps {
   userId?: string;
+  initialData?: any; // Pre-fetched player_stats from parent (dedup)
 }
 
 // Animated number component
@@ -51,19 +91,20 @@ const AnimatedNumber: React.FC<{
   return <>{format(display)}</>;
 };
 
-const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ userId }) => {
+const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ userId, initialData }) => {
   const [stats, setStats] = useState<AdvancedStat[]>([]);
   const [visibleStats, setVisibleStats] = useState<Set<number>>(new Set());
   const [selectedStat, setSelectedStat] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [showBenchmarks, setShowBenchmarks] = useState(false);
   const mountedRef = useRef(true);
   const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const resolvedUidRef = useRef<string | null>(null);
 
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
-      // Clean up stagger timers
       staggerTimersRef.current.forEach(clearTimeout);
       staggerTimersRef.current = [];
     };
@@ -79,10 +120,27 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ userId }) =
     }
   }, [userId]);
 
+  // If parent passes initialData, use it directly (dedup)
+  useEffect(() => {
+    if (initialData) {
+      buildStats(initialData);
+    }
+  }, [initialData]);
+
   const loadStats = useCallback(async () => {
+    // Skip fetch if parent already provided data
+    if (initialData) return;
+
     try {
       const uid = await resolveUserId();
       if (!uid || !mountedRef.current) return;
+      resolvedUidRef.current = uid;
+
+      // SWR: show cached instantly
+      const cached = getCached(uid);
+      if (cached && !loaded) {
+        buildStats(cached);
+      }
 
       const { data, error } = await supabase
         .from('player_stats')
@@ -99,12 +157,13 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ userId }) =
         return;
       }
 
+      setCache(uid, data);
       buildStats(data);
     } catch (err) {
       console.error('[AdvancedStatsSummary] Failed to load:', err);
       if (mountedRef.current) buildStats(null);
     }
-  }, [resolveUserId]);
+  }, [resolveUserId, initialData, loaded]);
 
   const buildStats = (data: any) => {
     if (!mountedRef.current) return;
@@ -127,6 +186,7 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ userId }) =
         format: (val) => `${val >= 0 ? '+' : ''}${val.toFixed(2)}`,
         unit: '/hr',
         description: 'Profit per hour played',
+        benchmark: BENCHMARKS.hourly,
       },
       {
         id: 'totalHands',
@@ -134,6 +194,7 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ userId }) =
         value: totalHands,
         format: (val) => Math.floor(val).toLocaleString(),
         description: 'Total hands played across all sessions',
+        benchmark: BENCHMARKS.totalHands,
       },
       {
         id: 'showdownWin',
@@ -141,6 +202,7 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ userId }) =
         value: showdownWinPct,
         format: (val) => `${val.toFixed(1)}%`,
         description: 'Win percentage when reaching showdown',
+        benchmark: BENCHMARKS.showdownWin,
       },
       {
         id: 'aggression',
@@ -148,6 +210,7 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ userId }) =
         value: d.aggression_factor || 0,
         format: (val) => val.toFixed(2),
         description: 'Ratio of aggressive actions to passive actions',
+        benchmark: BENCHMARKS.aggression,
       },
       {
         id: 'threeBet',
@@ -155,6 +218,7 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ userId }) =
         value: (d.three_bet_percent || 0) * 100,
         format: (val) => `${val.toFixed(1)}%`,
         description: 'Percentage of re-raises preflop',
+        benchmark: BENCHMARKS.threeBet,
       },
       {
         id: 'foldTo3Bet',
@@ -162,6 +226,7 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ userId }) =
         value: (d.fold_to_three_bet || 0) * 100,
         format: (val) => `${val.toFixed(1)}%`,
         description: 'How often you fold to 3-bet raises',
+        benchmark: BENCHMARKS.foldTo3Bet,
       },
       {
         id: 'cbetFreq',
@@ -169,6 +234,7 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ userId }) =
         value: (d.cbet_flop || 0) * 100,
         format: (val) => `${val.toFixed(1)}%`,
         description: 'How often you continuation bet on the flop',
+        benchmark: BENCHMARKS.cbetFreq,
       },
       {
         id: 'bbPer100',
@@ -176,6 +242,7 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ userId }) =
         value: d.bb_per_100 || 0,
         format: (val) => `${val >= 0 ? '+' : ''}${val.toFixed(2)}`,
         description: 'Big blinds won per 100 hands — key profitability metric',
+        benchmark: BENCHMARKS.bbPer100,
       },
     ];
 
@@ -198,8 +265,8 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ userId }) =
   };
 
   useEffect(() => {
-    loadStats();
-  }, [loadStats]);
+    if (!initialData) loadStats();
+  }, [loadStats, initialData]);
 
   // Bus listeners: refresh when stats change
   useEffect(() => {
@@ -217,6 +284,24 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ userId }) =
     return '#8a9aaa';
   };
 
+  const getBenchmarkBadge = (stat: AdvancedStat): { label: string; color: string } | null => {
+    if (!stat.benchmark || !showBenchmarks) return null;
+    const { avg, good } = stat.benchmark;
+    const val = stat.value;
+
+    // For fold_to_3bet, lower is better
+    if (stat.id === 'foldTo3Bet') {
+      if (val <= good) return { label: 'Elite', color: '#10b981' };
+      if (val <= avg) return { label: 'Above Avg', color: '#22c55e' };
+      return { label: 'Below Avg', color: '#f59e0b' };
+    }
+
+    if (val >= good) return { label: 'Elite', color: '#10b981' };
+    if (val >= avg) return { label: 'Above Avg', color: '#22c55e' };
+    if (val > 0) return { label: 'Below Avg', color: '#f59e0b' };
+    return null;
+  };
+
   if (!loaded) {
     return (
       <div className="advanced-stats-summary">
@@ -231,8 +316,29 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ userId }) =
   return (
     <div className="advanced-stats-summary">
       <div className="stats-header">
-        <h3>Advanced Statistics</h3>
-        <p className="stats-subtitle">Detailed metrics from your play history</p>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h3>Advanced Statistics</h3>
+            <p className="stats-subtitle">Detailed metrics from your play history</p>
+          </div>
+          <button
+            className="benchmark-toggle"
+            onClick={() => setShowBenchmarks(!showBenchmarks)}
+            style={{
+              background: showBenchmarks ? 'rgba(0, 212, 255, 0.15)' : 'rgba(255,255,255,0.05)',
+              border: `1px solid ${showBenchmarks ? 'rgba(0, 212, 255, 0.4)' : 'rgba(255,255,255,0.1)'}`,
+              color: showBenchmarks ? '#00d4ff' : 'rgba(255,255,255,0.5)',
+              padding: '6px 12px',
+              borderRadius: '8px',
+              fontSize: '11px',
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {showBenchmarks ? '📊 Hide Avg' : '📊 vs Average'}
+          </button>
+        </div>
       </div>
 
       {/* Stats grid */}
@@ -240,6 +346,7 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ userId }) =
         {stats.map((stat, i) => {
           const isVisible = visibleStats.has(i);
           const isSelected = selectedStat === stat.id;
+          const badge = getBenchmarkBadge(stat);
 
           return (
             <div
@@ -255,6 +362,22 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ userId }) =
               {/* Card header */}
               <div className="card-top">
                 <span className="stat-title">{stat.label}</span>
+                {badge && (
+                  <span
+                    style={{
+                      fontSize: '9px',
+                      fontWeight: 700,
+                      padding: '2px 6px',
+                      borderRadius: '4px',
+                      background: `${badge.color}20`,
+                      color: badge.color,
+                      letterSpacing: '0.5px',
+                      textTransform: 'uppercase',
+                    }}
+                  >
+                    {badge.label}
+                  </span>
+                )}
               </div>
 
               {/* Main value */}
@@ -265,6 +388,30 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ userId }) =
                 {stat.unit && <span className="value-unit">{stat.unit}</span>}
               </div>
 
+              {/* Benchmark bar (visible when toggled) */}
+              {showBenchmarks && stat.benchmark && stat.value > 0 && (
+                <div
+                  style={{
+                    marginTop: '6px',
+                    height: '3px',
+                    background: 'rgba(255,255,255,0.06)',
+                    borderRadius: '2px',
+                    position: 'relative',
+                    overflow: 'hidden',
+                  }}
+                >
+                  <div
+                    style={{
+                      height: '100%',
+                      width: `${Math.min(100, (stat.value / (stat.benchmark.good * 1.2)) * 100)}%`,
+                      background: `linear-gradient(90deg, #f59e0b, #10b981)`,
+                      borderRadius: '2px',
+                      transition: 'width 0.6s ease',
+                    }}
+                  />
+                </div>
+              )}
+
               {/* Description (shown on select) */}
               {isSelected && (
                 <div
@@ -274,6 +421,15 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ userId }) =
                   }}
                 >
                   <p>{stat.description}</p>
+                  {showBenchmarks && stat.benchmark && (
+                    <p
+                      style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)', marginTop: '4px' }}
+                    >
+                      Avg: {stat.benchmark.avg}
+                      {stat.benchmark.label} · Good: {stat.benchmark.good}
+                      {stat.benchmark.label}
+                    </p>
+                  )}
                 </div>
               )}
             </div>

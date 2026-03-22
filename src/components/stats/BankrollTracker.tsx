@@ -2,7 +2,10 @@
  * BankrollTracker — Visual bankroll progression over time
  * Wired to real Supabase `player_sessions` data with bus listeners
  *
- * Accepts optional `userId` prop — uses it if provided, otherwise falls back to getAuthUser()
+ * Enhancements:
+ *  - Optional `initialSessions` prop to skip redundant fetch (dedup from parent)
+ *  - localStorage SWR cache for instant render
+ *  - Max drawdown metric (biggest drop from peak)
  */
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
@@ -20,6 +23,29 @@ import { supabase, getAuthUser } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import './BankrollTracker.css';
 
+// ── SWR cache ──
+const CACHE_KEY = 'bankroll_v1_';
+const CACHE_TTL = 10 * 60 * 1000;
+
+function getCached(uid: string) {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY + uid);
+    if (!raw) return null;
+    const p = JSON.parse(raw);
+    if (p.ts && Date.now() - p.ts > CACHE_TTL) return null;
+    return p.data;
+  } catch {
+    return null;
+  }
+}
+function setCache(uid: string, data: any) {
+  try {
+    localStorage.setItem(CACHE_KEY + uid, JSON.stringify({ data, ts: Date.now() }));
+  } catch {
+    /* quota */
+  }
+}
+
 interface BankrollDataPoint {
   date: string;
   bankroll: number;
@@ -30,9 +56,10 @@ type PeriodFilter = '7d' | '30d' | '90d' | 'all';
 
 interface BankrollTrackerProps {
   userId?: string;
+  initialSessions?: any[]; // Pre-fetched session data from parent (dedup)
 }
 
-const BankrollTracker: React.FC<BankrollTrackerProps> = ({ userId }) => {
+const BankrollTracker: React.FC<BankrollTrackerProps> = ({ userId, initialSessions }) => {
   const [allData, setAllData] = useState<BankrollDataPoint[]>([]);
   const [period, setPeriod] = useState<PeriodFilter>('30d');
   const [loaded, setLoaded] = useState(false);
@@ -55,10 +82,51 @@ const BankrollTracker: React.FC<BankrollTrackerProps> = ({ userId }) => {
     }
   }, [userId]);
 
+  // Build bankroll points from raw session data
+  const buildPoints = (data: any[]): BankrollDataPoint[] => {
+    // Sort ascending by date for cumulative calculation
+    const sorted = [...data].sort(
+      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+    );
+    let cumulative = 0;
+    return sorted.map((s) => {
+      const pl = s.profit_loss || 0;
+      cumulative += pl;
+      return {
+        date: new Date(s.date).toLocaleDateString('en-US', {
+          month: 'numeric',
+          day: 'numeric',
+        }),
+        bankroll: cumulative,
+        dayProfit: pl,
+      };
+    });
+  };
+
+  // If parent passes initialSessions, use them (dedup)
+  useEffect(() => {
+    if (initialSessions && initialSessions.length > 0) {
+      setAllData(buildPoints(initialSessions));
+      setLoaded(true);
+    } else if (initialSessions && initialSessions.length === 0) {
+      setAllData([]);
+      setLoaded(true);
+    }
+  }, [initialSessions]);
+
   const loadBankrollData = useCallback(async () => {
+    if (initialSessions) return; // Parent provided data
+
     try {
       const uid = await resolveUserId();
       if (!uid || !mountedRef.current) return;
+
+      // SWR: show cached instantly
+      const cached = getCached(uid);
+      if (cached && !loaded) {
+        setAllData(buildPoints(cached));
+        setLoaded(true);
+      }
 
       const { data, error } = await supabase
         .from('player_sessions')
@@ -76,21 +144,8 @@ const BankrollTracker: React.FC<BankrollTrackerProps> = ({ userId }) => {
       }
 
       if (data && data.length > 0) {
-        // Build cumulative bankroll from session P/L
-        let cumulative = 0;
-        const points: BankrollDataPoint[] = data.map((s) => {
-          const pl = s.profit_loss || 0;
-          cumulative += pl;
-          return {
-            date: new Date(s.date).toLocaleDateString('en-US', {
-              month: 'numeric',
-              day: 'numeric',
-            }),
-            bankroll: cumulative,
-            dayProfit: pl,
-          };
-        });
-        setAllData(points);
+        setCache(uid, data);
+        setAllData(buildPoints(data));
       } else {
         setAllData([]);
       }
@@ -100,11 +155,11 @@ const BankrollTracker: React.FC<BankrollTrackerProps> = ({ userId }) => {
       console.error('[BankrollTracker] Failed to load:', err);
       if (mountedRef.current) setLoaded(true);
     }
-  }, [resolveUserId]);
+  }, [resolveUserId, initialSessions, loaded]);
 
   useEffect(() => {
-    loadBankrollData();
-  }, [loadBankrollData]);
+    if (!initialSessions) loadBankrollData();
+  }, [loadBankrollData, initialSessions]);
 
   // Bus listeners
   useEffect(() => {
@@ -128,7 +183,6 @@ const BankrollTracker: React.FC<BankrollTrackerProps> = ({ userId }) => {
   const chartData = useMemo(() => {
     if (allData.length === 0) return [];
     if (period === 'all') return allData;
-
     const days = period === '7d' ? 7 : period === '30d' ? 30 : 90;
     return allData.slice(-days);
   }, [allData, period]);
@@ -151,6 +205,23 @@ const BankrollTracker: React.FC<BankrollTrackerProps> = ({ userId }) => {
   const trough = chartData.length > 0 ? Math.min(...chartData.map((d) => d.bankroll)) : 0;
   const totalProfit = current - previous;
 
+  // ── Max drawdown calculation ──
+  const maxDrawdown = useMemo(() => {
+    if (chartData.length < 2) return 0;
+    let peakVal = chartData[0].bankroll;
+    let maxDd = 0;
+    for (const point of chartData) {
+      if (point.bankroll > peakVal) peakVal = point.bankroll;
+      const dd = peakVal - point.bankroll;
+      if (dd > maxDd) maxDd = dd;
+    }
+    return maxDd;
+  }, [chartData]);
+
+  // Winning/losing day count
+  const winningDays = useMemo(() => chartData.filter((d) => d.dayProfit > 0).length, [chartData]);
+  const losingDays = useMemo(() => chartData.filter((d) => d.dayProfit < 0).length, [chartData]);
+
   const getPeriodLabel = () => {
     switch (period) {
       case '7d':
@@ -172,7 +243,6 @@ const BankrollTracker: React.FC<BankrollTrackerProps> = ({ userId }) => {
     return '#00d4ff';
   };
 
-  // Safe percentage calculation — guards against division by zero (BUG-4 fix)
   const getChangePercent = (): string => {
     if (previous === 0) return totalProfit === 0 ? '0.0' : totalProfit > 0 ? '+∞' : '-∞';
     return (((current - previous) / Math.abs(previous)) * 100).toFixed(1);
@@ -316,11 +386,19 @@ const BankrollTracker: React.FC<BankrollTrackerProps> = ({ userId }) => {
               <span className="stat-value">{trough.toLocaleString()}</span>
             </div>
           </div>
+          {/* Max Drawdown — Enhancement #5 */}
           <div className="stat-card">
-            <div className="stat-icon swing">◆</div>
+            <div className="stat-icon" style={{ color: '#ef4444' }}>
+              📉
+            </div>
             <div className="stat-content">
-              <span className="stat-label">Swing Range</span>
-              <span className="stat-value">{(peak - trough).toLocaleString()}</span>
+              <span className="stat-label">Max Drawdown</span>
+              <span
+                className="stat-value"
+                style={{ color: maxDrawdown > 0 ? '#ef4444' : '#8a9aaa' }}
+              >
+                {maxDrawdown > 0 ? `-${maxDrawdown.toLocaleString()}` : '0'}
+              </span>
             </div>
           </div>
           <div className="stat-card">
@@ -333,6 +411,29 @@ const BankrollTracker: React.FC<BankrollTrackerProps> = ({ userId }) => {
               >
                 {totalProfit > 0 ? '+' : ''}
                 {totalProfit.toLocaleString()}
+              </span>
+            </div>
+          </div>
+          {/* Win/Loss day count */}
+          <div className="stat-card">
+            <div className="stat-icon" style={{ color: '#10b981' }}>
+              ✓
+            </div>
+            <div className="stat-content">
+              <span className="stat-label">Winning Days</span>
+              <span className="stat-value" style={{ color: '#10b981' }}>
+                {winningDays}
+              </span>
+            </div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-icon" style={{ color: '#ef4444' }}>
+              ✗
+            </div>
+            <div className="stat-content">
+              <span className="stat-label">Losing Days</span>
+              <span className="stat-value" style={{ color: '#ef4444' }}>
+                {losingDays}
               </span>
             </div>
           </div>

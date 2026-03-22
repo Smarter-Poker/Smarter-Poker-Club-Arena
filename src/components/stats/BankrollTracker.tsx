@@ -1,9 +1,11 @@
 /**
  * BankrollTracker — Visual bankroll progression over time
  * Wired to real Supabase `player_sessions` data with bus listeners
+ *
+ * Accepts optional `userId` prop — uses it if provided, otherwise falls back to getAuthUser()
  */
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   LineChart,
   Line,
@@ -26,22 +28,46 @@ interface BankrollDataPoint {
 
 type PeriodFilter = '7d' | '30d' | '90d' | 'all';
 
-const BankrollTracker: React.FC = () => {
+interface BankrollTrackerProps {
+  userId?: string;
+}
+
+const BankrollTracker: React.FC<BankrollTrackerProps> = ({ userId }) => {
   const [allData, setAllData] = useState<BankrollDataPoint[]>([]);
   const [period, setPeriod] = useState<PeriodFilter>('30d');
   const [loaded, setLoaded] = useState(false);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const resolveUserId = useCallback(async (): Promise<string | null> => {
+    if (userId) return userId;
+    try {
+      const { data: userResp } = await getAuthUser();
+      return userResp.user?.id || null;
+    } catch {
+      return null;
+    }
+  }, [userId]);
 
   const loadBankrollData = useCallback(async () => {
     try {
-      const { data: userResp } = await getAuthUser();
-      if (!userResp.user) return;
+      const uid = await resolveUserId();
+      if (!uid || !mountedRef.current) return;
 
       const { data, error } = await supabase
         .from('player_sessions')
         .select('date, profit_loss')
-        .eq('user_id', userResp.user.id)
+        .eq('user_id', uid)
         .order('date', { ascending: true })
         .limit(90);
+
+      if (!mountedRef.current) return;
 
       if (error) {
         console.error('[BankrollTracker] Query error:', error.message);
@@ -72,9 +98,9 @@ const BankrollTracker: React.FC = () => {
       setLoaded(true);
     } catch (err) {
       console.error('[BankrollTracker] Failed to load:', err);
-      setLoaded(true);
+      if (mountedRef.current) setLoaded(true);
     }
-  }, []);
+  }, [resolveUserId]);
 
   useEffect(() => {
     loadBankrollData();
@@ -146,6 +172,12 @@ const BankrollTracker: React.FC = () => {
     return '#00d4ff';
   };
 
+  // Safe percentage calculation — guards against division by zero (BUG-4 fix)
+  const getChangePercent = (): string => {
+    if (previous === 0) return totalProfit === 0 ? '0.0' : totalProfit > 0 ? '+∞' : '-∞';
+    return (((current - previous) / Math.abs(previous)) * 100).toFixed(1);
+  };
+
   if (!loaded) {
     return (
       <div className="bankroll-tracker">
@@ -209,11 +241,7 @@ const BankrollTracker: React.FC = () => {
             <span className="change-sign">{totalProfit > 0 ? '+' : ''}</span>
             <span className="change-amount">{totalProfit.toLocaleString()}</span>
           </div>
-          {previous !== 0 && (
-            <span className="change-pct">
-              {(((current - previous) / Math.abs(previous)) * 100).toFixed(1)}%
-            </span>
-          )}
+          <span className="change-pct">{getChangePercent()}%</span>
         </div>
       </div>
 

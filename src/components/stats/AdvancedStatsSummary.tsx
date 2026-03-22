@@ -1,9 +1,11 @@
 /**
  * AdvancedStatsSummary — Dashboard of advanced poker statistics
  * Wired to real Supabase `player_stats` table with bus listeners
+ *
+ * Accepts optional `userId` prop — uses it if provided, otherwise falls back to getAuthUser()
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase, getAuthUser } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import './AdvancedStatsSummary.css';
@@ -15,6 +17,10 @@ interface AdvancedStat {
   format: (val: number) => string;
   unit?: string;
   description: string;
+}
+
+interface AdvancedStatsSummaryProps {
+  userId?: string;
 }
 
 // Animated number component
@@ -45,27 +51,50 @@ const AnimatedNumber: React.FC<{
   return <>{format(display)}</>;
 };
 
-const AdvancedStatsSummary: React.FC = () => {
+const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ userId }) => {
   const [stats, setStats] = useState<AdvancedStat[]>([]);
   const [visibleStats, setVisibleStats] = useState<Set<number>>(new Set());
   const [selectedStat, setSelectedStat] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const mountedRef = useRef(true);
+  const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      // Clean up stagger timers
+      staggerTimersRef.current.forEach(clearTimeout);
+      staggerTimersRef.current = [];
+    };
+  }, []);
+
+  const resolveUserId = useCallback(async (): Promise<string | null> => {
+    if (userId) return userId;
+    try {
+      const { data: userResp } = await getAuthUser();
+      return userResp.user?.id || null;
+    } catch {
+      return null;
+    }
+  }, [userId]);
 
   const loadStats = useCallback(async () => {
     try {
-      const { data: userResp } = await getAuthUser();
-      if (!userResp.user) return;
+      const uid = await resolveUserId();
+      if (!uid || !mountedRef.current) return;
 
       const { data, error } = await supabase
         .from('player_stats')
         .select(
           'total_hands, hands_won, showdowns_won, showdowns_total, vpip, pfr, aggression_factor, three_bet_percent, fold_to_three_bet, cbet_flop, hours_played, total_profit, bb_per_100'
         )
-        .eq('user_id', userResp.user.id)
+        .eq('user_id', uid)
         .maybeSingle();
 
+      if (!mountedRef.current) return;
+
       if (error || !data) {
-        // Show zeros if no data yet
         buildStats(null);
         return;
       }
@@ -73,11 +102,13 @@ const AdvancedStatsSummary: React.FC = () => {
       buildStats(data);
     } catch (err) {
       console.error('[AdvancedStatsSummary] Failed to load:', err);
-      buildStats(null);
+      if (mountedRef.current) buildStats(null);
     }
-  }, []);
+  }, [resolveUserId]);
 
   const buildStats = (data: any) => {
+    if (!mountedRef.current) return;
+
     const d = data || {};
     const totalHands = d.total_hands || 0;
     const hoursPlayed = d.hours_played || 0;
@@ -151,11 +182,18 @@ const AdvancedStatsSummary: React.FC = () => {
     setStats(built);
     setLoaded(true);
 
-    // Stagger animation
+    // Clear previous stagger timers
+    staggerTimersRef.current.forEach(clearTimeout);
+    staggerTimersRef.current = [];
+
+    // Stagger animation with cleanup
     built.forEach((_, i) => {
-      setTimeout(() => {
-        setVisibleStats((prev) => new Set([...prev, i]));
+      const timer = setTimeout(() => {
+        if (mountedRef.current) {
+          setVisibleStats((prev) => new Set([...prev, i]));
+        }
       }, i * 60);
+      staggerTimersRef.current.push(timer);
     });
   };
 

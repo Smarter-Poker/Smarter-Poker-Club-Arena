@@ -1,9 +1,11 @@
 /**
  * SessionHistory — Timeline of poker sessions with P/L tracking
  * Wired to real Supabase `player_sessions` table with bus listeners
+ *
+ * Accepts optional `userId` prop — uses it if provided, otherwise falls back to getAuthUser()
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase, getAuthUser } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import './SessionHistory.css';
@@ -19,23 +21,50 @@ interface SessionRecord {
   hourlyRate: number;
 }
 
-const SessionHistory: React.FC = () => {
+interface SessionHistoryProps {
+  userId?: string;
+}
+
+const SessionHistory: React.FC<SessionHistoryProps> = ({ userId }) => {
   const [sessions, setSessions] = useState<SessionRecord[]>([]);
   const [expandedSession, setExpandedSession] = useState<string | null>(null);
   const [visibleSessions, setVisibleSessions] = useState<Set<number>>(new Set());
   const [loaded, setLoaded] = useState(false);
+  const mountedRef = useRef(true);
+  const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      staggerTimersRef.current.forEach(clearTimeout);
+      staggerTimersRef.current = [];
+    };
+  }, []);
+
+  const resolveUserId = useCallback(async (): Promise<string | null> => {
+    if (userId) return userId;
+    try {
+      const { data: userResp } = await getAuthUser();
+      return userResp.user?.id || null;
+    } catch {
+      return null;
+    }
+  }, [userId]);
 
   const loadSessions = useCallback(async () => {
     try {
-      const { data: userResp } = await getAuthUser();
-      if (!userResp.user) return;
+      const uid = await resolveUserId();
+      if (!uid || !mountedRef.current) return;
 
       const { data, error } = await supabase
         .from('player_sessions')
         .select('id, date, duration_minutes, hands_played, buy_in, cash_out, profit_loss')
-        .eq('user_id', userResp.user.id)
+        .eq('user_id', uid)
         .order('date', { ascending: false })
         .limit(20);
+
+      if (!mountedRef.current) return;
 
       if (error) {
         console.error('[SessionHistory] Query error:', error.message);
@@ -60,11 +89,18 @@ const SessionHistory: React.FC = () => {
         });
         setSessions(mapped);
 
-        // Stagger animation
+        // Clear previous stagger timers
+        staggerTimersRef.current.forEach(clearTimeout);
+        staggerTimersRef.current = [];
+
+        // Stagger animation with cleanup
         mapped.forEach((_, i) => {
-          setTimeout(() => {
-            setVisibleSessions((prev) => new Set([...prev, i]));
+          const timer = setTimeout(() => {
+            if (mountedRef.current) {
+              setVisibleSessions((prev) => new Set([...prev, i]));
+            }
           }, i * 60);
+          staggerTimersRef.current.push(timer);
         });
       } else {
         setSessions([]);
@@ -73,9 +109,9 @@ const SessionHistory: React.FC = () => {
       setLoaded(true);
     } catch (err) {
       console.error('[SessionHistory] Failed to load:', err);
-      setLoaded(true);
+      if (mountedRef.current) setLoaded(true);
     }
-  }, []);
+  }, [resolveUserId]);
 
   useEffect(() => {
     loadSessions();

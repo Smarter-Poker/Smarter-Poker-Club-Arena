@@ -3,7 +3,7 @@
  * Shows VPIP, PFR, and win rate for each position
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase, getAuthUser } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import './PositionWinRates.css';
@@ -92,51 +92,88 @@ const DEFAULT_STATS: PositionStats[] = [
   },
 ];
 
-const PositionWinRates: React.FC = () => {
+interface PositionWinRatesProps {
+  userId?: string;
+}
+
+const PositionWinRates: React.FC<PositionWinRatesProps> = ({ userId }) => {
   const [statsData, setStatsData] = useState<PositionStats[]>(DEFAULT_STATS);
   const [visiblePositions, setVisiblePositions] = useState<Set<number>>(new Set());
   const [hoveredPosition, setHoveredPosition] = useState<number | null>(null);
+  const mountedRef = useRef(true);
+  const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      staggerTimersRef.current.forEach(clearTimeout);
+      staggerTimersRef.current = [];
+    };
+  }, []);
+
+  const resolveUserId = useCallback(async (): Promise<string | null> => {
+    if (userId) return userId;
+    try {
+      const { data: userResp } = await getAuthUser();
+      return userResp.user?.id || null;
+    } catch {
+      return null;
+    }
+  }, [userId]);
 
   const loadPositionStats = useCallback(async () => {
-    const { data: userResp } = await getAuthUser();
-    if (!userResp.user) return;
+    try {
+      const uid = await resolveUserId();
+      if (!uid || !mountedRef.current) return;
 
-    const { data: posData, error } = await supabase
-      .from('player_position_stats')
-      .select(
-        'position, hands_played, vpip_count, pfr_count, three_bet_count, hands_won, total_profit'
-      )
-      .eq('user_id', userResp.user.id);
+      const { data: posData, error } = await supabase
+        .from('player_position_stats')
+        .select(
+          'position, hands_played, vpip_count, pfr_count, three_bet_count, hands_won, total_profit'
+        )
+        .eq('user_id', uid);
 
-    if (!error && posData && posData.length > 0) {
-      // Map DB data correctly to positional cards
-      const updatedStats = DEFAULT_STATS.map((defPos) => {
-        const live = posData.find((p) => p.position === defPos.position);
-        if (live) {
-          const hp = live.hands_played || 0;
-          return {
-            ...defPos,
-            handsPlayed: hp,
-            vpip: hp > 0 ? (live.vpip_count / hp) * 100 : 0,
-            pfr: hp > 0 ? (live.pfr_count / hp) * 100 : 0,
-            threeBet: hp > 0 ? ((live.three_bet_count || 0) / hp) * 100 : 0,
-            winRate: hp > 0 ? ((live.hands_won || 0) / hp) * 100 : 0,
-            totalProfit: live.total_profit || 0,
-          };
-        }
-        return defPos;
-      });
-      setStatsData(updatedStats);
+      if (!mountedRef.current) return;
+
+      if (!error && posData && posData.length > 0) {
+        const updatedStats = DEFAULT_STATS.map((defPos) => {
+          const live = posData.find((p) => p.position === defPos.position);
+          if (live) {
+            const hp = live.hands_played || 0;
+            return {
+              ...defPos,
+              handsPlayed: hp,
+              vpip: hp > 0 ? (live.vpip_count / hp) * 100 : 0,
+              pfr: hp > 0 ? (live.pfr_count / hp) * 100 : 0,
+              threeBet: hp > 0 ? ((live.three_bet_count || 0) / hp) * 100 : 0,
+              winRate: hp > 0 ? ((live.hands_won || 0) / hp) * 100 : 0,
+              totalProfit: live.total_profit || 0,
+            };
+          }
+          return defPos;
+        });
+        setStatsData(updatedStats);
+      }
+    } catch (err) {
+      console.error('[PositionWinRates] Failed to load:', err);
     }
-  }, []);
+  }, [resolveUserId]);
 
   useEffect(() => {
     loadPositionStats();
 
+    // Clear previous stagger timers
+    staggerTimersRef.current.forEach(clearTimeout);
+    staggerTimersRef.current = [];
+
     DEFAULT_STATS.forEach((_, i) => {
-      setTimeout(() => {
-        setVisiblePositions((prev) => new Set([...prev, i]));
+      const timer = setTimeout(() => {
+        if (mountedRef.current) {
+          setVisiblePositions((prev) => new Set([...prev, i]));
+        }
       }, i * 80);
+      staggerTimersRef.current.push(timer);
     });
   }, [loadPositionStats]);
 

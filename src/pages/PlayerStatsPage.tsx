@@ -702,7 +702,7 @@ export default function PlayerStatsPage() {
               transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
             }}
           >
-            <PositionWinRates />
+            <PositionWinRates userId={targetUserId} />
           </div>
         )}
 
@@ -715,7 +715,7 @@ export default function PlayerStatsPage() {
                 <span className="section-icon">⚡</span>
                 <h3 style={{ color: '#f59e0b' }}>Advanced Stats</h3>
               </div>
-              <AdvancedStatsSummary />
+              <AdvancedStatsSummary userId={targetUserId} />
             </div>
 
             {/* Charts */}
@@ -868,7 +868,7 @@ export default function PlayerStatsPage() {
                 <span className="section-icon">📅</span>
                 <h3 style={{ color: '#3b82f6' }}>Session History</h3>
               </div>
-              <SessionHistory />
+              <SessionHistory userId={targetUserId} />
             </div>
 
             {/* Bankroll */}
@@ -877,7 +877,7 @@ export default function PlayerStatsPage() {
                 <span className="section-icon">💎</span>
                 <h3 style={{ color: '#10b981' }}>Bankroll Tracker</h3>
               </div>
-              <BankrollTracker />
+              <BankrollTracker userId={targetUserId} />
             </div>
           </div>
         )}

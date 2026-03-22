@@ -413,20 +413,43 @@ class DailyChallengeServiceClass {
 
       if (!challenge || challenge.type !== type) continue;
 
-      const newProgress = Math.min(uc.progress + amount, challenge.requirement);
-      const isComplete = newProgress >= challenge.requirement;
+      // Try atomic RPC first (eliminates read-then-write race condition)
+      let newProgress: number;
+      let isComplete: boolean;
+      const { data: rpcResult, error: rpcErr } = await supabase.rpc(
+        'increment_challenge_progress',
+        {
+          p_user_id: userId,
+          p_challenge_row_id: uc.id,
+          p_amount: amount,
+          p_requirement: challenge.requirement,
+        }
+      );
 
-      const { error: progErr } = await supabase
-        .from('user_daily_challenges')
-        .update({
-          progress: newProgress,
-          completed: isComplete,
-          completed_at: isComplete ? new Date().toISOString() : null,
-        })
-        .eq('id', uc.id);
-      if (progErr) {
-        console.error('[DailyChallenge] Progress update failed:', progErr);
-        continue;
+      if (!rpcErr && rpcResult?.updated) {
+        // Atomic RPC succeeded
+        newProgress = rpcResult.progress;
+        isComplete = rpcResult.completed;
+      } else {
+        // Fallback: direct UPDATE (for environments where RPC not yet deployed)
+        if (rpcErr && !rpcErr.message.includes('Could not find')) {
+          console.warn('[DailyChallenge] RPC error (using fallback):', rpcErr.message);
+        }
+        newProgress = Math.min(uc.progress + amount, challenge.requirement);
+        isComplete = newProgress >= challenge.requirement;
+
+        const { error: progErr } = await supabase
+          .from('user_daily_challenges')
+          .update({
+            progress: newProgress,
+            completed: isComplete,
+            completed_at: isComplete ? new Date().toISOString() : null,
+          })
+          .eq('id', uc.id);
+        if (progErr) {
+          console.error('[DailyChallenge] Progress update failed:', progErr);
+          continue;
+        }
       }
 
       if (isComplete) {
@@ -535,22 +558,7 @@ class DailyChallengeServiceClass {
     return { totalCompleted, currentStreak, totalChipsEarned };
   }
 
-  /**
-   * Emit push notification trigger for daily reset
-   */
-  public emitDailyResetReminder(): void {
-    try {
-      const today = this.getTodayKey();
-      const lastReminder = localStorage.getItem(STORAGE_KEYS.LAST_DAILY_RESET_REMINDER);
-
-      if (lastReminder !== today) {
-        masterBus.emit('DAILY_RESET_AVAILABLE', { date: today });
-        localStorage.setItem(STORAGE_KEYS.LAST_DAILY_RESET_REMINDER, today);
-      }
-    } catch (e: unknown) {
-      // Ignore localStorage errors (e.g. strict privacy settings)
-    }
-  }
+  // emitDailyResetReminder removed — was dead code (never called from any file)
 
   /**
    * Select random challenges for today

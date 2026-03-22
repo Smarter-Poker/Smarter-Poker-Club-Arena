@@ -94,15 +94,15 @@ export const DailyChallengesWidget: React.FC = () => {
   // Debounced — updateProgress() in AchievementTriggerService needs time to write to DB
   useMasterBusSubscription('HAND_COMPLETED', debouncedRefresh);
 
-  // Debounced — BALANCE_UPDATED fires twice per claim (RPC + WalletService)
+  // Debounced — BALANCE_UPDATED fires on claim via DailyChallengeService
   useMasterBusSubscription('BALANCE_UPDATED', debouncedRefresh);
 
-  useMasterBusSubscription('DAILY_RESET_AVAILABLE', () => {
-    if (isMounted.current && user?.id) loadChallengesRef.current?.();
+  // Refresh + celebrate when challenge progress is updated (from AchievementTriggerService)
+  useMasterBusSubscription('CHALLENGE_PROGRESS_UPDATED', () => {
+    debouncedRefresh();
+    // Celebration toast when a challenge completes
+    if (isMounted.current) toast.success('🎯 Challenge completed! Claim your reward!');
   });
-
-  // Refresh when challenge progress is updated (from AchievementTriggerService)
-  useMasterBusSubscription('CHALLENGE_PROGRESS_UPDATED', debouncedRefresh);
 
   const loadChallengesRef = useRef<(() => Promise<void>) | null>(null);
 
@@ -110,9 +110,10 @@ export const DailyChallengesWidget: React.FC = () => {
     if (!user?.id) return;
     setLoading(true);
     try {
-      const [dailyData, weeklyData] = await Promise.all([
+      const [dailyData, weeklyData, monthlyData] = await Promise.all([
         dailyChallengeService.getTodaysChallenges(user.id),
         dailyChallengeService.getWeeklyChallenges(user.id),
+        dailyChallengeService.getMonthlyChallenges(user.id),
       ]);
 
       if (!isMounted.current) return;
@@ -146,7 +147,21 @@ export const DailyChallengesWidget: React.FC = () => {
         claimed: !!c.claimed,
       }));
 
-      if (isMounted.current) setChallenges([...mappedDaily, ...mappedWeekly]);
+      const mappedMonthly: Challenge[] = monthlyData.map((c: any) => ({
+        id: c.id,
+        title: `📅 ${c.challenge.name}`,
+        description: c.challenge.description,
+        progress: c.progress,
+        target: c.challenge.requirement,
+        reward: {
+          type: 'chips',
+          amount: c.challenge.chipReward,
+        },
+        completed: c.completed,
+        claimed: !!c.claimed,
+      }));
+
+      if (isMounted.current) setChallenges([...mappedDaily, ...mappedWeekly, ...mappedMonthly]);
     } catch (error) {
       console.error('Failed to load challenges:', error);
     }
@@ -179,8 +194,7 @@ export const DailyChallengesWidget: React.FC = () => {
         prev.map((c) => (c.id === challengeId ? { ...c, claimed: true } : c))
       );
       if (isMounted.current) toast.success(`+${challenge.reward.amount} Chips claimed!`);
-      // Notify other pages that balance changed (chips were credited)
-      masterBus.emit('BALANCE_UPDATED', { source: 'daily_challenge_claim', userId: user.id });
+      // NOTE: BALANCE_UPDATED is already emitted by DailyChallengeService.claimChallenge — no duplicate emission needed
     } catch (err: any) {
       if (isMounted.current) toast.error(err?.message || 'Failed to claim reward');
     } finally {

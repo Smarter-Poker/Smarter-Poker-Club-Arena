@@ -37,6 +37,7 @@ import ClubContextMenu from '../components/home/ClubContextMenu';
 import LOBBY_TILES from '../config/lobbyTiles.config';
 import CarouselSection from '../components/home/CarouselSection';
 import { getClubLevel } from '../utils/clubLevels';
+import { sanitizeInput } from '../utils/sanitizeInput';
 import type { UserClub, ClubStats } from '../components/home/CarouselSection';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 
@@ -335,6 +336,7 @@ function HomePageInner() {
           setUserClubs([]);
           try {
             localStorage.removeItem(STORAGE_KEYS.CLUBS_CACHE);
+            localStorage.removeItem(STORAGE_KEYS.CLUBS_CACHE_TS);
           } catch {
             /* */
           }
@@ -442,17 +444,28 @@ function HomePageInner() {
         fetchUserData(false);
       } else {
         setUserClubs([]);
+        // Clear SWR cache to prevent stale club data leaking across logins
+        try {
+          localStorage.removeItem(STORAGE_KEYS.CLUBS_CACHE);
+          localStorage.removeItem(STORAGE_KEYS.CLUBS_CACHE_TS);
+        } catch {
+          /* */
+        }
       }
     },
     { debounce: 300 }
   );
 
-  // Welcome toast for new users — auto-dismiss, once per session
+  // Welcome toast for new users — auto-dismiss, once per device
   useEffect(() => {
     if (isLoading || userClubs.length > 0) return;
     const key = 'club_arena_welcome_shown';
-    if (sessionStorage.getItem(key)) return;
-    sessionStorage.setItem(key, '1');
+    if (localStorage.getItem(key)) return;
+    try {
+      localStorage.setItem(key, '1');
+    } catch {
+      /* quota */
+    }
     toast.info('Welcome to Club Arena — Create or join a club to get started!');
   }, [isLoading, userClubs.length, toast]);
 
@@ -753,8 +766,20 @@ function HomePageInner() {
   // #1: Keyboard shortcut navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't trigger when typing in inputs
+      // Don't trigger when typing in inputs or when modals are open
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (showJoinModal || showCreateClubModal || showFindPlayerModal || leaveConfirm?.visible) {
+        // Only allow Escape when a modal is open
+        if (e.key === 'Escape') {
+          setContextMenu(null);
+          setShowJoinModal(false);
+          setShowCreateClubModal(false);
+          setShowFindPlayerModal(false);
+          setLeaveConfirm(null);
+          setShowShortcutHint(false);
+        }
+        return;
+      }
       const key = e.key.toLowerCase();
       switch (key) {
         case '1':
@@ -810,7 +835,14 @@ function HomePageInner() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [navigate, userClubs]);
+  }, [
+    navigate,
+    userClubs,
+    showJoinModal,
+    showCreateClubModal,
+    showFindPlayerModal,
+    leaveConfirm?.visible,
+  ]);
 
   // #2: Pin/unpin club
   const togglePinClub = useCallback((clubId: string) => {
@@ -858,8 +890,9 @@ function HomePageInner() {
       return;
     }
 
-    // Validate that it's a 5-digit number
-    const numericCode = parseInt(clubCode.trim(), 10);
+    // Sanitize input for defense-in-depth, then validate 5-digit number
+    const sanitized = sanitizeInput(clubCode.trim());
+    const numericCode = parseInt(sanitized, 10);
     if (isNaN(numericCode) || numericCode < 10000 || numericCode > 99999) {
       toast.error('Club code must be a 5-digit number');
       return;
@@ -880,6 +913,24 @@ function HomePageInner() {
         toast.error('Invalid club code. Please check and try again.');
         setIsValidatingCode(false);
         return;
+      }
+
+      // Check if user is already a member of this club
+      const {
+        data: { user: currentUser },
+      } = await getAuthUser();
+      if (currentUser) {
+        const { data: existingMembership } = await supabase
+          .from('club_members')
+          .select('id')
+          .eq('club_id', club.id)
+          .eq('user_id', currentUser.id)
+          .maybeSingle();
+        if (existingMembership) {
+          toast.info('You are already a member of this club!');
+          setIsValidatingCode(false);
+          return;
+        }
       }
 
       // Valid club found - show referral prompt
@@ -934,12 +985,14 @@ function HomePageInner() {
 
   const displayClubs = useMemo(() => {
     const clubs = userClubs.filter((club) => club.id !== sharkClubId);
-    // Phase 7 #3: Sort -- pinned first, then by member count descending
+    // Phase 7 #3: Sort -- pinned first, then by member count descending, then alphabetical tiebreaker
     clubs.sort((a, b) => {
       const aPinned = pinnedClubIds.includes(a.id) ? 1 : 0;
       const bPinned = pinnedClubIds.includes(b.id) ? 1 : 0;
       if (bPinned !== aPinned) return bPinned - aPinned;
-      return (b.member_count || 0) - (a.member_count || 0);
+      const memberDiff = (b.member_count || 0) - (a.member_count || 0);
+      if (memberDiff !== 0) return memberDiff;
+      return (a.name || '').localeCompare(b.name || '');
     });
     return clubs;
   }, [userClubs, sharkClubId, pinnedClubIds]);

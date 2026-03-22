@@ -13,7 +13,6 @@ import { achievementService, ACHIEVEMENTS, type Achievement } from './Achievemen
 import { pushNotificationService } from './PushNotificationService';
 import { dailyChallengeService } from './DailyChallengeService';
 import { masterBus } from '../core/MasterBus';
-import type { HandEvent } from '../engine/HandController';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -309,49 +308,6 @@ class AchievementTriggerServiceClass {
     } catch (err) {
       console.error('[AchievementTrigger] Stats update unexpected error:', err);
     }
-  }
-
-  /**
-   * Wire to HandController events
-   * Returns unsubscribe function
-   */
-  wireToHandController(
-    controller: { onEvent: (handler: (event: HandEvent) => void) => () => void },
-    userIdResolver: (seat: number) => string | null
-  ): () => void {
-    let lastWinners: { userId: string; amount: number }[] = [];
-
-    return controller.onEvent(async (event) => {
-      if (event.type === 'WINNERS') {
-        lastWinners = event.winners.map((w) => ({ userId: w.userId, amount: w.amount }));
-      }
-
-      if (event.type === 'HAND_COMPLETE') {
-        // Process each winner
-        for (const winner of lastWinners) {
-          await this.onHandComplete(winner.userId, {
-            won: true,
-            potSize: winner.amount,
-            showdown: true,
-          });
-        }
-        lastWinners = [];
-      }
-
-      if (event.type === 'SHOWDOWN') {
-        // Check for special hands
-        for (const result of event.results) {
-          if (result.hand) {
-            await this.onHandComplete(result.userId, {
-              won: false, // Will be updated on HAND_COMPLETE
-              potSize: 0,
-              handRank: result.hand.name,
-              showdown: true,
-            });
-          }
-        }
-      }
-    });
   }
 }
 

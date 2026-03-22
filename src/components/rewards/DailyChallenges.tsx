@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import './DailyChallenges.css';
 
 interface Challenge {
@@ -18,7 +18,28 @@ interface DailyChallengesProps {
   onClaimReward?: (challengeId: string) => void;
 }
 
+/** Calculate time remaining until UTC midnight */
+function getTimeUntilUtcMidnight(): string {
+  const now = new Date();
+  const utcMidnight = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0)
+  );
+  const diff = utcMidnight.getTime() - now.getTime();
+  if (diff <= 0) return '0h 0m';
+  const hours = Math.floor(diff / 3600000);
+  const mins = Math.floor((diff % 3600000) / 60000);
+  return `${hours}h ${mins}m`;
+}
+
 export const DailyChallenges: React.FC<DailyChallengesProps> = ({ challenges, onClaimReward }) => {
+  const [timeLeft, setTimeLeft] = useState(getTimeUntilUtcMidnight);
+
+  // Live-updating timer (every 60s)
+  useEffect(() => {
+    const timer = setInterval(() => setTimeLeft(getTimeUntilUtcMidnight()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+
   const getRewardIcon = (type: string) => {
     switch (type) {
       case 'chips':
@@ -31,29 +52,11 @@ export const DailyChallenges: React.FC<DailyChallengesProps> = ({ challenges, on
     }
   };
 
-  const formatTimeRemaining = (expiresAt: Date) => {
-    const now = new Date();
-    const diff = expiresAt.getTime() - now.getTime();
-    const hours = Math.floor(diff / 3600000);
-    const mins = Math.floor((diff % 3600000) / 60000);
-    return `${hours}h ${mins}m`;
-  };
-
   return (
     <div className="daily-challenges">
       <div className="challenges-header">
         <h3> Daily Challenges</h3>
-        <span className="reset-timer">
-          Resets in{' '}
-          {formatTimeRemaining(
-            (() => {
-              const now = new Date();
-              const midnight = new Date(now);
-              midnight.setHours(24, 0, 0, 0);
-              return midnight;
-            })()
-          )}
-        </span>
+        <span className="reset-timer">Resets in {timeLeft}</span>
       </div>
 
       <div className="challenges-list">

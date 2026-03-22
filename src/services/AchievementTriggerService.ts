@@ -357,3 +357,22 @@ class AchievementTriggerServiceClass {
 
 export const achievementTriggerService = new AchievementTriggerServiceClass();
 export default achievementTriggerService;
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// AUTO-WIRE: friends_added challenge trigger via bus event
+// FriendsPage + PublicProfilePage emit FRIEND_REQUEST_ACCEPTED when a friend
+// request is accepted, but neither calls onFriendAdded(). This centralized
+// listener ensures the 'friends_added' challenge type always increments.
+// ═══════════════════════════════════════════════════════════════════════════════
+masterBus.subscribe('FRIEND_REQUEST_ACCEPTED', async () => {
+  try {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (user?.id) {
+      await achievementTriggerService.onFriendAdded(user.id);
+    }
+  } catch (err) {
+    console.warn('[AchievementTrigger] Friend-added challenge update failed:', err);
+  }
+});

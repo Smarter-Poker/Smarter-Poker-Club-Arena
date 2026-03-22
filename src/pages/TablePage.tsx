@@ -2473,6 +2473,7 @@ export default function TablePage({
   // ═══════════════════════════════════════════════════════════════════════════
   const [handController, setHandController] = useState<HandController | null>(null);
   const handNumberRef = useRef(1);
+  const [displayHandNumber, setDisplayHandNumber] = useState<number | null>(null);
   const handControllerRef = useRef<HandController | null>(null);
   const handInProgressRef = useRef(false); // Stable ref to prevent re-creation
 
@@ -2593,6 +2594,8 @@ export default function TablePage({
         case 'HAND_START':
           handInProgressRef.current = true;
           _win.__pokerLocks.handActive = true;
+          // Display hand number on the table felt
+          setDisplayHandNumber(handNumberRef.current);
           // Reset raise slider on new hand — prevents stale raise panel
           setShowRaiseSlider(false);
           setTableState((prev) => ({
@@ -4311,6 +4314,9 @@ export default function TablePage({
           </button>
         </div>
         <div className="header-center">
+          {tableState.tableName && (
+            <span className="header-table-name">{tableState.tableName}</span>
+          )}
           <span className="header-game-type">{tableState.gameType}</span>
           <span className="header-blinds">{tableState.blinds}</span>
         </div>
@@ -4376,6 +4382,12 @@ export default function TablePage({
           <div className="table-felt">
             <div className="table-rail">
               <div className="table-surface">
+                {/* Hand Number Display — shown on table felt during active hands */}
+                {displayHandNumber != null && (
+                  <div className="hand-number-display">
+                    Hand #{displayHandNumber}
+                  </div>
+                )}
                 {/* Pot Display — click to toggle chips/BB */}
                 <div className="pot-area">
                   <PotDisplay

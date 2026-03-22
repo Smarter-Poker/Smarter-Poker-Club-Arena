@@ -26,6 +26,16 @@ export interface Union {
   onlineCount: number;
   clubCount: number;
   totalRake: number;
+  level: number;
+  playerLevel: number;
+  hierarchyLevel: number;
+  totalPlayers: number;
+  hierarchyUnits: number;
+  hierarchyUnitsRoundedUp: number;
+  playerThresholdCurrent: number;
+  playerThresholdNext: number;
+  hierarchyThresholdCurrent: number;
+  hierarchyThresholdNext: number;
   settings: UnionSettings;
   createdAt: string;
   updatedAt: string;
@@ -100,7 +110,7 @@ class UnionServiceClass {
     const { data, error } = await supabase
       .from('unions')
       .select(
-        'id, name, description, owner_id, avatar_url, is_public, member_count, club_count, total_rake, settings, created_at, updated_at'
+        'id, name, description, owner_id, avatar_url, is_public, member_count, club_count, total_rake, settings, created_at, updated_at, level, player_level, hierarchy_level, total_players, hierarchy_units, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
       )
       .order('created_at', { ascending: false })
       .limit(100);
@@ -120,7 +130,7 @@ class UnionServiceClass {
       supabase
         .from('unions')
         .select(
-          'id, name, description, owner_id, avatar_url, is_public, member_count, club_count, total_rake, settings, created_at, updated_at'
+          'id, name, description, owner_id, avatar_url, is_public, member_count, club_count, total_rake, settings, created_at, updated_at, level, player_level, hierarchy_level, total_players, hierarchy_units, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
         )
         .eq('owner_id', userId),
       // Path 2: unions where user is admin
@@ -180,7 +190,7 @@ class UnionServiceClass {
       const { data: batchUnions } = await supabase
         .from('unions')
         .select(
-          'id, name, description, owner_id, avatar_url, is_public, member_count, club_count, total_rake, settings, created_at, updated_at'
+          'id, name, description, owner_id, avatar_url, is_public, member_count, club_count, total_rake, settings, created_at, updated_at, level, player_level, hierarchy_level, total_players, hierarchy_units, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
         )
         .in('id', idsToFetch);
       if (batchUnions) {
@@ -251,7 +261,7 @@ class UnionServiceClass {
     const { data, error } = await supabase
       .from('unions')
       .select(
-        'id, name, description, owner_id, avatar_url, is_public, member_count, club_count, total_rake, settings, created_at, updated_at'
+        'id, name, description, owner_id, avatar_url, is_public, member_count, club_count, total_rake, settings, created_at, updated_at, level, player_level, hierarchy_level, total_players, hierarchy_units, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
       )
       .eq('id', unionId)
       .maybeSingle();
@@ -779,6 +789,16 @@ class UnionServiceClass {
       onlineCount: u.online_count || 0,
       clubCount: u.club_count || 0,
       totalRake: Number(u.total_rake) || 0,
+      level: u.level || 1,
+      playerLevel: u.player_level || 1,
+      hierarchyLevel: u.hierarchy_level || 1,
+      totalPlayers: u.total_players || 0,
+      hierarchyUnits: Number(u.hierarchy_units) || 0,
+      hierarchyUnitsRoundedUp: u.hierarchy_units_rounded_up || 0,
+      playerThresholdCurrent: u.player_threshold_current || 0,
+      playerThresholdNext: u.player_threshold_next || 0,
+      hierarchyThresholdCurrent: u.hierarchy_threshold_current || 0,
+      hierarchyThresholdNext: u.hierarchy_threshold_next || 0,
       settings: {
         revenueSharePercent: u.settings?.revenue_share_percent || 10,
         sharedPlayerPool: u.settings?.shared_player_pool ?? true,

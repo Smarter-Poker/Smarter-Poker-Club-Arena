@@ -1093,6 +1093,44 @@ function HomePageInner() {
           })
         );
 
+        // ── Union stats overlay: fetch from `unions` table for union-type clubs ──
+        // The `clubs` table row for unions has stale/minimal data (level=1, member_count=1).
+        // The real aggregated stats (level=26, total_players=622) live in the `unions` table.
+        const unionTypeClubs = displayClubs.filter((c) => c.entity_type === 'union');
+        if (unionTypeClubs.length > 0 && isMounted) {
+          try {
+            const unionIds = unionTypeClubs.map((c) => c.id);
+            const { data: unionRows } = await supabase
+              .from('unions')
+              .select(
+                'id, level, total_players, member_count, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
+              )
+              .in('id', unionIds);
+
+            if (unionRows && isMounted) {
+              for (const u of unionRows) {
+                const totalMembers = u.total_players || u.member_count || 0;
+                const levelInfo = getClubLevel({
+                  level: u.level || 1,
+                  playerCount: totalMembers,
+                  hierarchyUnits: u.hierarchy_units_rounded_up || 0,
+                  playerThresholdCurrent: u.player_threshold_current || 0,
+                  playerThresholdNext: u.player_threshold_next || 0,
+                  hierarchyThresholdCurrent: u.hierarchy_threshold_current || 0,
+                  hierarchyThresholdNext: u.hierarchy_threshold_next || 0,
+                });
+                statsMap[u.id] = {
+                  totalMembers,
+                  clubLevel: levelInfo.level,
+                  activePlayers: statsMap[u.id]?.activePlayers || 0,
+                };
+              }
+            }
+          } catch (e) {
+            console.warn('[HomePage] Union stats overlay failed:', e);
+          }
+        }
+
         if (isMounted) {
           setClubStats(statsMap);
 

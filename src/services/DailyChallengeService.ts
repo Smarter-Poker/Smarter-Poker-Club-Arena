@@ -269,12 +269,10 @@ class DailyChallengeServiceClass {
       completed: false,
     }));
 
-    const { error: insertErr } = await supabase
-      .from('user_daily_challenges')
-      .upsert(inserts, {
-        onConflict: 'user_id,challenge_id,assigned_date',
-        ignoreDuplicates: true,
-      });
+    const { error: insertErr } = await supabase.from('user_daily_challenges').upsert(inserts, {
+      onConflict: 'user_id,challenge_id,assigned_date',
+      ignoreDuplicates: true,
+    });
     if (insertErr) console.error('[DailyChallenge] Failed to assign daily challenges:', insertErr);
 
     // Always re-fetch from DB to get canonical rows (handles race condition correctly)
@@ -319,7 +317,7 @@ class DailyChallengeServiceClass {
     }
 
     // Assign new weekly challenges — ignoreDuplicates handles TOCTOU race
-    const weeklyChallenges = this.selectChallenges(WEEKLY_CHALLENGE_POOL, 3);
+    const weeklyChallenges = this.selectChallenges(WEEKLY_CHALLENGE_POOL, 3, weekKey);
     const inserts = weeklyChallenges.map((c) => ({
       user_id: userId,
       challenge_id: c.id,
@@ -328,12 +326,10 @@ class DailyChallengeServiceClass {
       completed: false,
     }));
 
-    const { error: insertErr } = await supabase
-      .from('user_daily_challenges')
-      .upsert(inserts, {
-        onConflict: 'user_id,challenge_id,assigned_date',
-        ignoreDuplicates: true,
-      });
+    const { error: insertErr } = await supabase.from('user_daily_challenges').upsert(inserts, {
+      onConflict: 'user_id,challenge_id,assigned_date',
+      ignoreDuplicates: true,
+    });
     if (insertErr) console.error('[DailyChallenge] Failed to assign weekly challenges:', insertErr);
 
     // Re-fetch canonical rows from DB
@@ -379,7 +375,7 @@ class DailyChallengeServiceClass {
     }
 
     // Assign new monthly challenges — ignoreDuplicates handles TOCTOU race
-    const monthlyChallenges = this.selectChallenges(MONTHLY_CHALLENGE_POOL, 2);
+    const monthlyChallenges = this.selectChallenges(MONTHLY_CHALLENGE_POOL, 2, monthKey);
     const inserts = monthlyChallenges.map((c) => ({
       user_id: userId,
       challenge_id: c.id,
@@ -388,12 +384,10 @@ class DailyChallengeServiceClass {
       completed: false,
     }));
 
-    const { error: insertErr } = await supabase
-      .from('user_daily_challenges')
-      .upsert(inserts, {
-        onConflict: 'user_id,challenge_id,assigned_date',
-        ignoreDuplicates: true,
-      });
+    const { error: insertErr } = await supabase.from('user_daily_challenges').upsert(inserts, {
+      onConflict: 'user_id,challenge_id,assigned_date',
+      ignoreDuplicates: true,
+    });
     if (insertErr)
       console.error('[DailyChallenge] Failed to assign monthly challenges:', insertErr);
 
@@ -618,12 +612,15 @@ class DailyChallengeServiceClass {
     return shuffled.slice(0, count);
   }
 
-  private selectChallenges(pool: DailyChallenge[], count: number): DailyChallenge[] {
-    // Use date-based seed for DETERMINISTIC selection — prevents race conditions
+  private selectChallenges(
+    pool: DailyChallenge[],
+    count: number,
+    periodKey: string
+  ): DailyChallenge[] {
+    // Use period-specific seed for DETERMINISTIC selection — prevents race conditions
     // when multiple tabs/instances call this simultaneously before DB insert.
-    // Weekly uses week key, monthly uses month key, so challenges are consistent
-    // for all users within the same period.
-    const seed = (this.getWeekKey() + this.getMonthKey()).replace(/[^a-zA-Z0-9]/g, '');
+    // Each pool (weekly/monthly) gets a unique seed prefix to avoid collisions.
+    const seed = periodKey.replace(/[^a-zA-Z0-9]/g, '');
     const shuffled = [...pool].sort((a, b) => {
       const hashA = this.simpleHash(seed + a.id);
       const hashB = this.simpleHash(seed + b.id);

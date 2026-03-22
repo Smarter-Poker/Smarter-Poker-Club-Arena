@@ -104,11 +104,12 @@ class AchievementTriggerServiceClass {
         ].filter(Boolean) as Promise<any>[]
       );
 
-      // Check if any challenges were completed
-      const anyCompleted = progressResults.some(
-        (r) => r.status === 'fulfilled' && r.value?.completed?.length > 0
-      );
-      if (anyCompleted) {
+      // Emit on ANY successful progress update (not just completions).
+      // FIX: Previously only emitted when challenges completed, causing
+      // progress bars in the widget/ProfilePage to stay stale (showing 0/10
+      // the entire time, then jumping to 10/10 on completion).
+      const anyUpdated = progressResults.some((r) => r.status === 'fulfilled');
+      if (anyUpdated) {
         masterBus.emit('CHALLENGE_PROGRESS_UPDATED', { userId, source: 'hand_complete' });
       }
     } catch (dcErr) {

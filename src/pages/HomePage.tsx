@@ -1214,12 +1214,17 @@ function HomePageInner() {
               src={ACTION_BAR_HORIZONTAL}
               alt="Action Bar"
               className={styles.actionBarImage}
-              loading="lazy"
+              loading="eager"
+              width={1024}
+              height={682}
             />
             {/* Clickable zones positioned over the image */}
             <button
               className={styles.actionZoneLeft}
-              onClick={() => setShowCreateClubModal(true)}
+              onClick={() => {
+                haptic.light();
+                setShowCreateClubModal(true);
+              }}
               aria-label="Create a Club"
             />
             <button
@@ -1233,6 +1238,7 @@ function HomePageInner() {
             <button
               className={styles.actionZoneRight}
               onClick={() => {
+                haptic.light();
                 setShowJoinModal(true);
                 setTimeout(() => joinInputRef.current?.focus(), 100);
               }}

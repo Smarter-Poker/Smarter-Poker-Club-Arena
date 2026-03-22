@@ -234,6 +234,27 @@
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
   /* Re-enable clicks on the actual action bar content */
   pointer-events: auto;
+  /* Entrance animation — gentle fade-in + slide-down */
+  animation: actionBarEntrance 0.5s ease-out both;
+  /* Shimmer skeleton background while image loads */
+  background: linear-gradient(
+    110deg,
+    rgba(15, 30, 60, 0.8) 30%,
+    rgba(30, 60, 100, 0.4) 50%,
+    rgba(15, 30, 60, 0.8) 70%
+  );
+  background-size: 200% 100%;
+}
+
+@keyframes actionBarEntrance {
+  from {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .actionBarImage {
@@ -241,6 +262,8 @@
   height: auto;
   object-fit: contain;
   display: block;
+  /* Prevent layout shift — reserve space matching the image aspect ratio (1024×682) */
+  aspect-ratio: 1024 / 682;
 }
 
 /* Clickable zones overlaid on action bar */
@@ -254,13 +277,19 @@
   border: none;
   cursor: pointer;
   border-radius: 8px;
+  /* Smooth transition for press feedback */
+  transition:
+    transform 0.12s ease,
+    background 0.12s ease,
+    box-shadow 0.12s ease;
 }
 
 .actionZoneLeft:active,
 .actionZoneCenter:active,
 .actionZoneRight:active {
-  background: rgba(0, 212, 255, 0.15);
-  box-shadow: inset 0 0 30px rgba(0, 212, 255, 0.15);
+  background: rgba(0, 212, 255, 0.2);
+  box-shadow: inset 0 0 40px rgba(0, 212, 255, 0.25);
+  transform: scale(0.97);
 }
 
 .actionZoneLeft {

@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  CASHIER PAGE — Universal Chip Transfer Hub (Metal UI)
+ *  CASHIER PAGE — Universal Chip Transfer Hub (Facebook Dark)
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  *  ALL chip movements happen through the Cashier via respective wallets.

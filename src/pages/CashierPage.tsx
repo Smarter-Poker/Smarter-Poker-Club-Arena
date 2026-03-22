@@ -44,9 +44,6 @@ import DynamicWallet from '../components/wallet/DynamicWallet';
 import styles from './CashierPage.module.css';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { retryFetch } from '../utils/retryFetch';
-import MetalButton from '../components/metal-ui/MetalButton';
-import MetalFrame from '../components/metal-ui/MetalFrame';
-import MetalInput from '../components/metal-ui/MetalInput';
 
 type CashierAction = 'send' | 'distribute' | 'buyin' | 'cashout' | 'mint' | 'history';
 
@@ -1289,9 +1286,10 @@ export default function CashierPage() {
 
       {/* ═══ SEND CHIPS ═══ */}
       {action === 'send' && (
-        <MetalFrame title="SEND CHIPS" variant="form" size="md">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <div className="cashier-message info">
+        <section className={styles.card}>
+          <h2 className={styles.cardTitle}>Send Chips</h2>
+          <div className={styles.cardBody}>
+            <div className={`${styles.message} ${styles.messageInfo}`}>
               Send chips from your wallet to{' '}
               {userRole === 'owner'
                 ? 'agents, sub-agents, and players'
@@ -1301,13 +1299,13 @@ export default function CashierPage() {
             </div>
 
             {/* Recipient Select */}
-            <div className="cashier-form-group">
-              <label className="cashier-form-label">SEND TO:</label>
+            <div className={styles.formGroup}>
+              <label className={styles.formLabel}>SEND TO:</label>
               {loadingRecipients ? (
-                <div style={{ color: '#6a7a8a', fontSize: '0.8rem' }}>Loading...</div>
+                <div className={styles.loadingText}>Loading...</div>
               ) : (
                 <select
-                  className="cashier-select"
+                  className={styles.select}
                   value={selectedRecipient}
                   onChange={(e) => setSelectedRecipient(e.target.value)}
                 >
@@ -1336,102 +1334,103 @@ export default function CashierPage() {
               )}
             </div>
 
-            <MetalInput
-              label="AMOUNT:"
-              type="number"
-              placeholder="0"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              inputMode="decimal"
-            />
+            <div className={styles.formGroup}>
+              <label className={styles.formLabel}>AMOUNT:</label>
+              <input
+                className={styles.input}
+                type="number"
+                placeholder="0"
+                value={amount}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAmount(e.target.value)}
+                inputMode="decimal"
+              />
+            </div>
 
             {/* Quick amounts */}
-            <div className="preset-buttons-grid">
+            <div className={styles.presetGrid}>
               {preset.map((val) => (
-                <MetalButton
+                <button
                   key={val}
-                  variant="ghost"
-                  size="sm"
+                  className={styles.presetBtn}
                   onClick={() => setAmount(val.toString())}
                 >
                   {val.toLocaleString()}
-                </MetalButton>
+                </button>
               ))}
-              <MetalButton
-                variant="ghost"
-                size="sm"
+              <button
+                className={styles.presetBtn}
                 onClick={() => setAmount(String(balances.PLAYER.available))}
               >
                 Max
-              </MetalButton>
+              </button>
             </div>
 
             {/* Preview */}
             {selectedRecipientData && amount && parseFloat(amount) > 0 && (
-              <div className="cashier-message info">
-                You: {balances.PLAYER.available.toLocaleString()} →{' '}
-                {Math.max(0, balances.PLAYER.available - parseFloat(amount)).toLocaleString()} chips
-                <br />
-                {selectedRecipientData.username}: {selectedRecipientData.balance.toLocaleString()} →{' '}
-                {(selectedRecipientData.balance + parseFloat(amount)).toLocaleString()} chips
+              <div className={styles.transferPreview}>
+                <div className={styles.previewRow}>
+                  <span>You</span>
+                  <span>
+                    {balances.PLAYER.available.toLocaleString()} →{' '}
+                    {Math.max(0, balances.PLAYER.available - parseFloat(amount)).toLocaleString()}
+                  </span>
+                </div>
+                <div className={styles.previewRow}>
+                  <span>{selectedRecipientData.username}</span>
+                  <span>
+                    {selectedRecipientData.balance.toLocaleString()} →{' '}
+                    {(selectedRecipientData.balance + parseFloat(amount)).toLocaleString()}
+                  </span>
+                </div>
               </div>
             )}
 
-            {message && <div className={`cashier-message ${message.type}`}>{message.text}</div>}
-
-            <div className="cashier-confirm-button">
-              <MetalButton
-                variant="primary"
-                fullWidth
-                onClick={handleAction}
-                disabled={isProcessing || cooldown > 0 || !amount || !selectedRecipient}
-                loading={isProcessing}
+            {message && (
+              <div
+                className={`${styles.message} ${message.type === 'success' ? styles.messageSuccess : message.type === 'error' ? styles.messageError : styles.messageInfo}`}
               >
-                CONFIRM SEND
-              </MetalButton>
-            </div>
+                {message.text}
+              </div>
+            )}
+
+            <button
+              className={styles.btnPrimary}
+              onClick={handleAction}
+              disabled={isProcessing || cooldown > 0 || !amount || !selectedRecipient}
+            >
+              {isProcessing ? (
+                <>
+                  <span className={styles.spinner} />
+                  Processing...
+                </>
+              ) : (
+                'CONFIRM SEND'
+              )}
+            </button>
           </div>
-        </MetalFrame>
+        </section>
       )}
 
       {/* ═══ DISTRIBUTE CHIPS ═══ */}
       {action === 'distribute' && (
-        <MetalFrame title="DISTRIBUTE CHIPS" variant="form" size="md">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <div className="cashier-message info">
+        <section className={styles.card}>
+          <h2 className={styles.cardTitle}>Distribute Chips</h2>
+          <div className={styles.cardBody}>
+            <div className={`${styles.message} ${styles.messageInfo}`}>
               Distribute chips directly to players or agents from the club bank. Each distribution
               is logged with a full audit trail.
             </div>
 
             {/* Player Selector */}
-            <div>
-              <label
-                style={{
-                  fontSize: '0.75rem',
-                  color: 'rgba(255,255,255,0.5)',
-                  marginBottom: 4,
-                  display: 'block',
-                }}
-              >
-                Recipient
-              </label>
+            <div className={styles.formGroup}>
+              <label className={styles.formLabel}>Recipient</label>
               {loadingRecipients ? (
-                <div style={{ padding: '8px', color: 'rgba(255,255,255,0.3)', fontSize: '0.8rem' }}>
-                  Loading players...
-                </div>
+                <div className={styles.loadingText}>Loading players...</div>
               ) : (
                 <select
+                  className={styles.select}
                   value={selectedRecipient}
                   onChange={(e) => setSelectedRecipient(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    background: 'rgba(0,0,0,0.3)',
-                    border: '1px solid rgba(255,255,255,0.1)',
-                    borderRadius: '8px',
-                    color: '#fff',
-                    fontSize: '0.85rem',
-                  }}
                 >
                   <option value="">Select player...</option>
                   {recipients.map((r) => (
@@ -1444,18 +1443,10 @@ export default function CashierPage() {
             </div>
 
             {/* Amount */}
-            <div>
-              <label
-                style={{
-                  fontSize: '0.75rem',
-                  color: 'rgba(255,255,255,0.5)',
-                  marginBottom: 4,
-                  display: 'block',
-                }}
-              >
-                Amount
-              </label>
-              <MetalInput
+            <div className={styles.formGroup}>
+              <label className={styles.formLabel}>Amount</label>
+              <input
+                className={styles.input}
                 type="number"
                 placeholder="Enter chip amount"
                 value={amount}
@@ -1464,9 +1455,17 @@ export default function CashierPage() {
               />
             </div>
 
+            {message && (
+              <div
+                className={`${styles.message} ${message.type === 'success' ? styles.messageSuccess : message.type === 'error' ? styles.messageError : styles.messageInfo}`}
+              >
+                {message.text}
+              </div>
+            )}
+
             {/* Execute Button */}
-            <MetalButton
-              variant="primary"
+            <button
+              className={styles.btnPrimary}
               disabled={isProcessing || cooldown > 0 || !selectedRecipient || !amount}
               onClick={async () => {
                 const value = parseFloat(amount);
@@ -1537,7 +1536,6 @@ export default function CashierPage() {
                 } catch (err: unknown) {
                   const msg =
                     (err instanceof Error ? err.message : String(err)) || 'Distribution failed';
-                  // Parse specific RPC errors into user-friendly messages
                   if (msg.includes('Rate limit')) {
                     if (isMounted.current)
                       setMessage({
@@ -1572,213 +1570,89 @@ export default function CashierPage() {
                 : cooldown > 0
                   ? `Wait ${cooldown}s`
                   : `Distribute ${amount ? parseFloat(amount).toLocaleString() : '0'} Chips`}
-            </MetalButton>
+            </button>
           </div>
-        </MetalFrame>
+        </section>
       )}
 
       {/* ═══ BUY-IN / CASH-OUT / MINT ═══ */}
       {(action === 'buyin' || action === 'cashout' || action === 'mint') && (
-        <MetalFrame
-          title={
-            action === 'cashout' && cashoutConfirm.show
-              ? 'HIGH-VALUE ESCROW VERIFICATION'
+        <section className={styles.card}>
+          <h2 className={styles.cardTitle}>
+            {action === 'cashout' && cashoutConfirm.show
+              ? 'Escrow Verification'
               : action === 'buyin'
-                ? 'TABLE BUY-IN'
+                ? 'Table Buy-In'
                 : action === 'cashout'
-                  ? 'CASH OUT'
-                  : 'MINT CHIPS'
-          }
-          variant="form"
-          size="md"
-        >
+                  ? 'Cash Out'
+                  : 'Mint Chips'}
+          </h2>
           {action === 'cashout' && cashoutConfirm.show ? (
-            <div className="high-value-escrow-flow" style={{ padding: '10px 0' }}>
-              <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-                <div
-                  style={{
-                    fontSize: '3.5rem',
-                    marginBottom: '16px',
-                    filter: 'drop-shadow(0 0 20px rgba(16, 185, 129, 0.4))',
-                  }}
-                >
-                  🛡️
-                </div>
-                <h3
-                  style={{
-                    color: '#fff',
-                    fontSize: '1.25rem',
-                    marginBottom: '12px',
-                    fontWeight: 800,
-                    textTransform: 'uppercase',
-                    letterSpacing: '1px',
-                  }}
-                >
-                  Security Verification Required
-                </h3>
-                <p
-                  style={{
-                    color: 'rgba(255,255,255,0.6)',
-                    fontSize: '0.9rem',
-                    lineHeight: 1.5,
-                    maxWidth: '85%',
-                    margin: '0 auto',
-                  }}
-                >
-                  You are requesting a high-value cashout of{' '}
-                  <strong style={{ color: '#10b981', fontSize: '1rem' }}>
-                    {cashoutConfirm.value.toLocaleString()} chips
-                  </strong>
-                  .<br />
-                  This amount triggers our mandatory escrow protocols to ensure player security.
-                </p>
-              </div>
+            <div className={styles.escrowFlow}>
+              <div className={styles.escrowIcon}>🛡️</div>
+              <h3 className={styles.escrowTitle}>Security Verification Required</h3>
+              <p className={styles.escrowDesc}>
+                You are requesting a high-value cashout of{' '}
+                <strong className={styles.escrowAmount}>
+                  {cashoutConfirm.value.toLocaleString()} chips
+                </strong>
+                .<br />
+                This amount triggers our mandatory escrow protocols to ensure player security.
+              </p>
 
-              <div
-                style={{
-                  background: 'rgba(0,0,0,0.3)',
-                  padding: '20px',
-                  borderRadius: '16px',
-                  marginBottom: '32px',
-                  border: '1px solid rgba(255,255,255,0.08)',
-                }}
-              >
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '16px',
-                    marginBottom: '20px',
-                  }}
-                >
-                  <div
-                    style={{
-                      width: '28px',
-                      height: '28px',
-                      borderRadius: '50%',
-                      background: '#10b98120',
-                      color: '#10b981',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '14px',
-                      flexShrink: 0,
-                    }}
-                  >
-                    ✓
-                  </div>
-                  <span style={{ fontSize: '0.9rem', color: '#fff', fontWeight: 500 }}>
+              <div className={styles.escrowChecklist}>
+                <div className={styles.escrowCheckItem}>
+                  <div className={`${styles.escrowCheckIcon} ${styles.escrowCheckGreen}`}>✓</div>
+                  <span className={styles.escrowCheckLabel}>
                     Anti-Money Laundering (AML) Check Passed
                   </span>
                 </div>
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '16px',
-                    marginBottom: '20px',
-                  }}
-                >
-                  <div
-                    style={{
-                      width: '28px',
-                      height: '28px',
-                      borderRadius: '50%',
-                      background: '#10b98120',
-                      color: '#10b981',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '14px',
-                      flexShrink: 0,
-                    }}
-                  >
-                    ✓
-                  </div>
-                  <span style={{ fontSize: '0.9rem', color: '#fff', fontWeight: 500 }}>
-                    Identity Verification Confirmed
-                  </span>
+                <div className={styles.escrowCheckItem}>
+                  <div className={`${styles.escrowCheckIcon} ${styles.escrowCheckGreen}`}>✓</div>
+                  <span className={styles.escrowCheckLabel}>Identity Verification Confirmed</span>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                  <div
-                    style={{
-                      width: '28px',
-                      height: '28px',
-                      borderRadius: '50%',
-                      background: 'rgba(255,149,0,0.2)',
-                      color: '#ff9500',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '14px',
-                      animation: 'pulse 2s infinite',
-                      flexShrink: 0,
-                    }}
-                  >
-                    ⏳
-                  </div>
-                  <span style={{ fontSize: '0.9rem', color: '#fff', fontWeight: 500 }}>
+                <div className={styles.escrowCheckItem}>
+                  <div className={`${styles.escrowCheckIcon} ${styles.escrowCheckAmber}`}>⏳</div>
+                  <span className={styles.escrowCheckLabel}>
                     Escrow Holding (Pending Agent Review)
                   </span>
                 </div>
               </div>
 
-              <div style={{ display: 'flex', gap: '16px' }}>
-                <MetalButton
-                  variant="ghost"
-                  fullWidth
+              <div className={styles.btnRow}>
+                <button
+                  className={styles.btnGhost}
                   onClick={() => setCashoutConfirm({ show: false, value: 0 })}
                   disabled={isProcessing}
                 >
                   CANCEL
-                </MetalButton>
-                <MetalButton
-                  variant="primary"
-                  fullWidth
+                </button>
+                <button
+                  className={styles.btnPrimary}
                   onClick={() => processHighValueCashout(cashoutConfirm.value)}
                   disabled={isProcessing}
-                  loading={isProcessing}
                 >
-                  CONFIRM SECURE CASHOUT
-                </MetalButton>
+                  {isProcessing ? (
+                    <>
+                      <span className={styles.spinner} />
+                      Processing...
+                    </>
+                  ) : (
+                    'CONFIRM SECURE CASHOUT'
+                  )}
+                </button>
               </div>
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            <div className={styles.cardBody}>
               {/* U-02 FIX: Show pending cashouts when on cashout tab */}
               {action === 'cashout' && pendingCashouts.length > 0 && (
-                <div
-                  style={{
-                    padding: '12px',
-                    background: 'rgba(255, 149, 0, 0.1)',
-                    border: '1px solid rgba(255, 149, 0, 0.3)',
-                    borderRadius: '8px',
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: '0.75rem',
-                      fontWeight: 700,
-                      color: '#ff9500',
-                      textTransform: 'uppercase',
-                      marginBottom: '8px',
-                    }}
-                  >
-                    ⏳ Pending Cashouts
-                  </div>
+                <div className={styles.pendingBox}>
+                  <div className={styles.pendingTitle}>⏳ Pending Cashouts</div>
                   {pendingCashouts.map((pc) => (
-                    <div
-                      key={pc.id}
-                      style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        padding: '4px 0',
-                        fontSize: '0.85rem',
-                        color: '#ccc',
-                      }}
-                    >
+                    <div key={pc.id} className={styles.pendingRow}>
                       <span>{pc.amount.toLocaleString()} chips</span>
-                      <span style={{ color: '#ff9500', fontSize: '0.75rem' }}>
+                      <span className={styles.pendingStatus}>
                         {pc.status === 'pending' ? 'Awaiting Agent' : 'Processing'}
                       </span>
                     </div>
@@ -1788,42 +1662,34 @@ export default function CashierPage() {
 
               {/* Open full CashoutRequestModal for premium step-tracker experience */}
               {action === 'cashout' && !tableId && clubId && user?.id && (
-                <button
-                  style={{
-                    width: '100%',
-                    padding: '10px',
-                    background: 'rgba(16, 185, 129, 0.1)',
-                    border: '1px solid rgba(16, 185, 129, 0.3)',
-                    borderRadius: '8px',
-                    color: '#10b981',
-                    fontSize: '0.8rem',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                  }}
-                  onClick={() => setShowCashoutModal(true)}
-                >
+                <button className={styles.btnSuccess} onClick={() => setShowCashoutModal(true)}>
                   📋 Manage Cashout Requests
                 </button>
               )}
 
               {/* Cashout context info */}
               {action === 'cashout' && !tableId && (
-                <div className="cashier-message info">
+                <div className={`${styles.message} ${styles.messageInfo}`}>
                   Your chips will be held in escrow until your assigned agent approves the cashout.
                 </div>
               )}
 
-              <MetalInput
-                label={action === 'mint' ? 'CHIPS TO MINT:' : 'AMOUNT:'}
-                type="number"
-                placeholder="0"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                inputMode="decimal"
-              />
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>
+                  {action === 'mint' ? 'CHIPS TO MINT:' : 'AMOUNT:'}
+                </label>
+                <input
+                  className={styles.input}
+                  type="number"
+                  placeholder="0"
+                  value={amount}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAmount(e.target.value)}
+                  inputMode="decimal"
+                />
+              </div>
 
               {action === 'mint' && amount && (
-                <div className="cashier-message info">
+                <div className={`${styles.message} ${styles.messageInfo}`}>
                   {Math.ceil(
                     (parseFloat(amount || '0') * DIAMOND_RATE_NUM) / DIAMOND_RATE_DEN
                   ).toLocaleString()}{' '}
@@ -1832,82 +1698,78 @@ export default function CashierPage() {
               )}
 
               {/* Presets */}
-              <div className="preset-buttons-grid">
+              <div className={styles.presetGrid}>
                 {preset.map((val) => (
-                  <MetalButton
+                  <button
                     key={val}
-                    variant="ghost"
-                    size="sm"
+                    className={styles.presetBtn}
                     onClick={() => setAmount(val.toString())}
                   >
                     {val.toLocaleString()}
-                  </MetalButton>
+                  </button>
                 ))}
                 {action === 'cashout' && (
-                  <MetalButton
-                    variant="ghost"
-                    size="sm"
+                  <button
+                    className={styles.presetBtn}
                     onClick={() => setAmount(String(balances.PLAYER.available))}
                   >
                     Max
-                  </MetalButton>
+                  </button>
                 )}
               </div>
 
-              {message && <div className={`cashier-message ${message.type}`}>{message.text}</div>}
-
-              <div className="cashier-confirm-button">
-                <MetalButton
-                  variant="primary"
-                  fullWidth
-                  onClick={handleAction}
-                  disabled={isProcessing || cooldown > 0 || !amount}
-                  loading={isProcessing}
+              {message && (
+                <div
+                  className={`${styles.message} ${message.type === 'success' ? styles.messageSuccess : message.type === 'error' ? styles.messageError : styles.messageInfo}`}
                 >
-                  {action === 'buyin'
-                    ? 'CONFIRM BUY-IN'
-                    : action === 'cashout'
-                      ? tableId
-                        ? 'CONFIRM CASH-OUT'
-                        : 'REQUEST CASHOUT'
-                      : 'CONFIRM MINT'}
-                </MetalButton>
-              </div>
+                  {message.text}
+                </div>
+              )}
+
+              <button
+                className={styles.btnPrimary}
+                onClick={handleAction}
+                disabled={isProcessing || cooldown > 0 || !amount}
+              >
+                {isProcessing ? (
+                  <>
+                    <span className={styles.spinner} />
+                    Processing...
+                  </>
+                ) : action === 'buyin' ? (
+                  'CONFIRM BUY-IN'
+                ) : action === 'cashout' ? (
+                  tableId ? (
+                    'CONFIRM CASH-OUT'
+                  ) : (
+                    'REQUEST CASHOUT'
+                  )
+                ) : (
+                  'CONFIRM MINT'
+                )}
+              </button>
 
               {tableId && (
-                <p className="table-context-info">Returning to table after transaction</p>
+                <p className={styles.tableContext}>Returning to table after transaction</p>
               )}
             </div>
           )}
-        </MetalFrame>
+        </section>
       )}
 
       {/* ═══ TRANSACTION HISTORY ═══ */}
       {action === 'history' && (
-        <MetalFrame title="TRANSACTION HISTORY" variant="form" size="md">
-          <div className="transaction-history-cashier">
-            {/* Filter */}
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
+        <section className={styles.card}>
+          <h2 className={styles.cardTitle}>Transaction History</h2>
+          <div className={styles.txContainer}>
+            {/* Filters */}
+            <div className={styles.txFilters}>
               {['all', 'credit', 'debit', 'transfer', 'buyin', 'cashout', 'rake', 'prize'].map(
                 (f) => (
                   <button
                     key={f}
-                    className={`tx-filter-btn ${txFilter === f ? 'active' : ''}`}
+                    className={`${styles.txFilterBtn} ${txFilter === f ? styles.txFilterActive : ''}`}
                     onClick={() => setTxFilter(f)}
-                    style={{
-                      padding: '4px 10px',
-                      borderRadius: '12px',
-                      border:
-                        txFilter === f ? '1px solid #00d4ff' : '1px solid rgba(255,255,255,0.1)',
-                      background:
-                        txFilter === f ? 'rgba(0,212,255,0.15)' : 'rgba(255,255,255,0.03)',
-                      color: txFilter === f ? '#00d4ff' : '#8a9aaa',
-                      fontSize: '0.65rem',
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                      textTransform: 'uppercase',
-                      letterSpacing: '1px',
-                    }}
                   >
                     {f === 'all'
                       ? 'All'
@@ -1919,73 +1781,47 @@ export default function CashierPage() {
                   </button>
                 )
               )}
-              <button
-                onClick={exportCSV}
-                style={{
-                  marginLeft: 'auto',
-                  padding: '4px 12px',
-                  borderRadius: '12px',
-                  border: '1px solid #31A24C',
-                  background: 'rgba(49, 162, 76, 0.15)',
-                  color: '#31A24C',
-                  fontSize: '0.65rem',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  textTransform: 'uppercase',
-                  letterSpacing: '1px',
-                }}
-              >
+              <button className={styles.txExportBtn} onClick={exportCSV}>
                 📥 Export CSV
               </button>
             </div>
 
             {loadingTx ? (
-              <div className="tx-loading">Loading transactions...</div>
+              <div className={styles.txLoading}>Loading transactions...</div>
             ) : filteredTransactions.length === 0 ? (
-              <div className="tx-empty" style={{ textAlign: 'center', padding: '2rem 1rem' }}>
-                <span style={{ fontSize: '2.5rem', display: 'block', marginBottom: '0.75rem' }}>
-                  📊
-                </span>
-                <span
-                  style={{
-                    display: 'block',
-                    fontSize: '1.05rem',
-                    fontWeight: 600,
-                    marginBottom: '0.5rem',
-                  }}
-                >
-                  No transactions recorded yet
-                </span>
-                <span style={{ color: 'var(--soft-white, #B0B3B8)', fontSize: '0.85rem' }}>
+              <div className={styles.txEmpty}>
+                <span className={styles.txEmptyIcon}>📊</span>
+                <span className={styles.txEmptyTitle}>No transactions recorded yet</span>
+                <span className={styles.txEmptyDesc}>
                   Your buy-ins, cashouts, and chip transfers will appear here.
                 </span>
               </div>
             ) : (
-              <div className="tx-list">
-                {filteredTransactions.map((tx, idx) => (
+              <div className={styles.txList}>
+                {filteredTransactions.map((tx: any, idx: number) => (
                   <div
                     key={tx.id}
-                    className={`tx-row ${tx.type}`}
-                    style={{ animation: `fadeInStagger 0.5s ease-out ${idx * 0.05}s both` }}
+                    className={styles.txRow}
+                    style={{ animationDelay: `${idx * 0.05}s` }}
                   >
-                    <span className="tx-icon">{CATEGORY_ICONS[tx.category] || '●'}</span>
-                    <div className="tx-details">
-                      <span className="tx-category">
+                    <span className={styles.txIcon}>{CATEGORY_ICONS[tx.category] || '●'}</span>
+                    <div className={styles.txDetails}>
+                      <span className={styles.txCategory}>
                         {CATEGORY_LABELS[tx.category] ||
                           (tx.category || tx.type || '').replace(/_/g, ' ').toUpperCase()}
                       </span>
-                      <span className="tx-desc">{tx.description}</span>
+                      <span className={styles.txDesc}>{tx.description}</span>
                     </div>
-                    <div className="tx-amounts">
+                    <div className={styles.txAmounts}>
                       <span
-                        className={`tx-amount ${tx.type === 'credit' ? 'positive' : 'negative'}`}
+                        className={`${styles.txAmount} ${tx.type === 'credit' ? styles.txPositive : styles.txNegative}`}
                       >
                         {tx.type === 'credit' ? '+' : '-'}
                         {Math.abs(tx.amount).toLocaleString()}
                       </span>
-                      <span className="tx-wallet">{tx.wallet_type}</span>
+                      <span className={styles.txWallet}>{tx.wallet_type}</span>
                     </div>
-                    <span className="tx-time">
+                    <span className={styles.txTime}>
                       {new Date(tx.created_at).toLocaleDateString([], {
                         month: 'short',
                         day: 'numeric',
@@ -2000,7 +1836,7 @@ export default function CashierPage() {
               </div>
             )}
           </div>
-        </MetalFrame>
+        </section>
       )}
 
       {clubId && (

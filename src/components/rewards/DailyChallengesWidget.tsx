@@ -17,7 +17,6 @@ import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../../components/common/Toast';
 import { masterBus } from '../../core/MasterBus';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
-import { supabase } from '../../lib/supabase';
 
 interface Challenge {
   id: string;
@@ -97,12 +96,12 @@ export const DailyChallengesWidget: React.FC = () => {
   // Debounced — BALANCE_UPDATED fires on claim via DailyChallengeService
   useMasterBusSubscription('BALANCE_UPDATED', debouncedRefresh);
 
-  // Refresh + celebrate when challenge progress is updated (from AchievementTriggerService)
-  useMasterBusSubscription('CHALLENGE_PROGRESS_UPDATED', () => {
-    debouncedRefresh();
-    // Celebration toast when a challenge completes
-    if (isMounted.current) toast.success('🎯 Challenge completed! Claim your reward!');
-  });
+  // Refresh when challenge progress is updated (from AchievementTriggerService)
+  // NOTE: Do NOT show a completion toast here — CHALLENGE_PROGRESS_UPDATED fires
+  // on EVERY progress increment, not just completions. Showing "completed!" on
+  // every hand played is misleading. The completion celebration is handled by
+  // the AchievementTriggerService when it detects a challenge is actually complete.
+  useMasterBusSubscription('CHALLENGE_PROGRESS_UPDATED', debouncedRefresh);
 
   const loadChallengesRef = useRef<(() => Promise<void>) | null>(null);
 

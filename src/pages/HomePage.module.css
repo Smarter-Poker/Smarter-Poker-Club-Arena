@@ -220,7 +220,9 @@
   margin: 0;
   padding: 0;
   /* Pull content below up over the decorative bottom portion of the action-bar image */
-  margin-bottom: -60px;
+  margin-bottom: -75px;
+  /* Allow clicks to pass through the empty decorative area to the carousel beneath */
+  pointer-events: none;
 }
 
 .actionBarWrapper {
@@ -230,6 +232,8 @@
   border-radius: 12px;
   overflow: hidden;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  /* Re-enable clicks on the actual action bar content */
+  pointer-events: auto;
 }
 
 .actionBarImage {
@@ -305,7 +309,7 @@
 
 .featuredCard {
   position: relative;
-  width: 300px;
+  width: clamp(200px, 55vw, 300px);
   cursor: pointer;
   border-radius: 12px;
   overflow: hidden;
@@ -317,8 +321,8 @@
 }
 
 .cardSkeleton {
-  width: 300px;
-  height: 400px;
+  width: clamp(200px, 55vw, 300px);
+  aspect-ratio: 3 / 4;
   background: linear-gradient(
     90deg,
     rgba(10, 20, 40, 0.8) 0%,
@@ -365,7 +369,7 @@
   align-items: flex-end;
   gap: 20px;
   width: 100%;
-  padding: 8px 40px 10px 40px;
+  padding: 8px max(20px, 4vw) 10px max(20px, 4vw);
   margin-top: -4px;
   box-sizing: border-box;
   overflow-x: auto;
@@ -386,7 +390,7 @@
 
 .carouselCardFeatured {
   flex: 0 0 auto;
-  width: 300px;
+  width: clamp(200px, 55vw, 300px);
   cursor: pointer;
   position: relative;
   scroll-snap-align: center;
@@ -994,7 +998,7 @@
   overflow: visible;
   width: 100%;
   justify-content: center;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
 }
 
 .tileCard {
@@ -1004,7 +1008,7 @@
   cursor: pointer;
   flex: 1 1 0;
   min-width: 0;
-  max-width: 160px;
+  max-width: clamp(100px, 18vw, 160px);
   transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
   position: relative;
   animation: cardRise 0.5s ease-out both;
@@ -1364,17 +1368,16 @@
   }
 
   .featuredCard {
-    width: 240px;
+    width: clamp(180px, 50vw, 260px);
   }
 
   .cardSkeleton {
-    width: 240px;
-    height: 407px;
+    width: clamp(180px, 50vw, 260px);
   }
 
   .clubCarousel {
     gap: 14px;
-    padding: 20px 20px 24px 20px;
+    padding: 8px max(12px, 3vw) 24px max(12px, 3vw);
   }
 
   .ctaCard {
@@ -1382,7 +1385,7 @@
   }
 
   .carouselCardFeatured {
-    width: 240px;
+    width: clamp(180px, 50vw, 260px);
   }
 
   /* (Legacy breakpoint overrides for .carouselCardTitle/.carouselCardIcon/.carouselCardLogo removed) */
@@ -1399,17 +1402,16 @@
   }
 
   .featuredCard {
-    width: 200px;
+    width: clamp(160px, 52vw, 220px);
   }
 
   .cardSkeleton {
-    width: 200px;
-    height: 340px;
+    width: clamp(160px, 52vw, 220px);
   }
 
   .clubCarousel {
     gap: 10px;
-    padding: 16px 12px 20px 12px;
+    padding: 8px max(8px, 2vw) 20px max(8px, 2vw);
   }
 
   .ctaCard {
@@ -1428,7 +1430,7 @@
   }
 
   .carouselCardFeatured {
-    width: 200px;
+    width: clamp(160px, 52vw, 220px);
   }
 
   /* (Legacy breakpoint overrides removed — dead CSS) */
@@ -1474,17 +1476,16 @@
 
 @media (max-width: 380px) {
   .featuredCard {
-    width: 170px;
+    width: clamp(140px, 50vw, 180px);
   }
 
   .cardSkeleton {
-    width: 170px;
-    height: 289px;
+    width: clamp(140px, 50vw, 180px);
   }
 
   .clubCarousel {
     gap: 8px;
-    padding: 0 8px 10px 8px;
+    padding: 4px 8px 10px 8px;
   }
 
   .ctaCard {
@@ -1509,7 +1510,7 @@
   }
 
   .carouselCardFeatured {
-    width: 170px;
+    width: clamp(140px, 50vw, 180px);
   }
 
   /* (Legacy breakpoint overrides removed — dead CSS) */

@@ -575,7 +575,16 @@ class DailyChallengeServiceClass {
   }
 
   private selectChallenges(pool: DailyChallenge[], count: number): DailyChallenge[] {
-    const shuffled = [...pool].sort(() => 0.5 - Math.random());
+    // Use date-based seed for DETERMINISTIC selection — prevents race conditions
+    // when multiple tabs/instances call this simultaneously before DB insert.
+    // Weekly uses week key, monthly uses month key, so challenges are consistent
+    // for all users within the same period.
+    const seed = (this.getWeekKey() + this.getMonthKey()).replace(/[^a-zA-Z0-9]/g, '');
+    const shuffled = [...pool].sort((a, b) => {
+      const hashA = this.simpleHash(seed + a.id);
+      const hashB = this.simpleHash(seed + b.id);
+      return hashA - hashB;
+    });
     return shuffled.slice(0, count);
   }
 
@@ -601,8 +610,10 @@ class DailyChallengeServiceClass {
    * Subtract days from a date
    */
   private subtractDays(dateStr: string, days: number): string {
-    const date = new Date(dateStr);
-    date.setDate(date.getDate() - days);
+    // MUST use UTC operations — getTodayKey() returns UTC date (via toISOString()),
+    // so streak calculation must also use UTC to avoid timezone boundary mismatches.
+    const date = new Date(dateStr + 'T00:00:00Z'); // Force UTC parse
+    date.setUTCDate(date.getUTCDate() - days);
     return date.toISOString().split('T')[0];
   }
 

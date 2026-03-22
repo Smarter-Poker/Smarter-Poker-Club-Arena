@@ -159,11 +159,8 @@ import { STORAGE_KEYS } from './lib/storage';
 
 export default function App() {
   // Check if intro video has been shown this session
-  const [showIntro, setShowIntro] = useState(() => {
-    // Only show intro if not viewed this session
-    const alreadyShown = sessionStorage.getItem(STORAGE_KEYS.INTRO_SHOWN);
-    return !alreadyShown;
-  });
+  // DISABLED — intro video turned off. To re-enable, restore the original useState initializer.
+  const [showIntro, setShowIntro] = useState(false);
 
   const handleIntroComplete = () => {
     sessionStorage.setItem(STORAGE_KEYS.INTRO_SHOWN, 'true');

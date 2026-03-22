@@ -25,7 +25,7 @@ const LOBBY_TILES: LobbyTile[] = [
   {
     img: `${BASE}images/tiles/player-stats.webp`,
     alt: 'Player Stats',
-    route: '/profile',
+    route: '/stats',
     shortcutKey: '2',
   },
   {

@@ -38,6 +38,7 @@ const CRITICAL_CHUNKS: Array<() => Promise<any>> = [
   () => import('../pages/CashierPage'),
   () => import('../pages/NotificationsPage'),
   () => import('../pages/MessagesPage'),
+  () => import('../pages/PlayerStatsPage'),
 ];
 
 /**
@@ -85,6 +86,7 @@ export function preloadRoute(path: string): void {
     '/messages': () => import('../pages/MessagesPage'),
     '/leaderboard': () => import('../pages/LeaderboardPage'),
     '/tournaments': () => import('../pages/tournament/TournamentLobbyPage'),
+    '/stats': () => import('../pages/PlayerStatsPage'),
   };
 
   const importFn = routeMap[path];

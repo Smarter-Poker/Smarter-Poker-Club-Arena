@@ -788,7 +788,7 @@ function HomePageInner() {
           break;
         case '2':
           haptic.light();
-          navigate('/profile'); // Player Stats
+          navigate('/stats'); // Player Stats
           break;
         case '3':
           haptic.light();

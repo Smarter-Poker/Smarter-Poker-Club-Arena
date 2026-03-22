@@ -70,10 +70,8 @@ export default function ClubsPage() {
   const [joinError, setJoinError] = useState<string | null>(null);
 
   // Intro video state - only show once per session
-  const [showIntro, setShowIntro] = useState(() => {
-    const shown = sessionStorage.getItem(STORAGE_KEYS.INTRO_SHOWN);
-    return !shown; // Show intro if not shown yet
-  });
+  // DISABLED — intro video turned off. To re-enable, restore the original useState initializer.
+  const [showIntro, setShowIntro] = useState(false);
 
   // Real data states
   // SWR — instant render from cache on revisit

@@ -9,7 +9,7 @@
  * hierarchy_units = admins*1.0 + super_agents*1.0 + agents*0.25
  *
  * Final level = MAX(player_level, hierarchy_level, 1), capped at 50.
- * Levels NEVER auto-downgrade (server-side guard).
+ * Levels are fully dynamic — they go up AND down based on current state.
  *
  * The UI reads threshold pairs from the DB and shows a progress bar for the
  * dominant axis (whichever contributes the higher sub-level).

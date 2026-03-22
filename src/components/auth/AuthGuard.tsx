@@ -17,13 +17,40 @@
  *    to prevent race conditions from transient store resets
  */
 
-import { ReactNode, useEffect, useState } from 'react';
+import { ReactNode, useEffect, useState, useRef } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useUserStore } from '../../stores/useUserStore';
 import { readLocalSession, hasLocalSession } from '../../lib/authUtils';
 
 const SESSION_CHECK_TIMEOUT = 5000; // 5s max wait for getSession (increased from 3s)
+
+/**
+ * SPA Navigation Breadcrumb — tracks that the user was previously authenticated
+ * in this browser session. Used to prevent spurious redirects during in-SPA
+ * navigation when a token refresh or transient store reset occurs.
+ */
+const SPA_AUTH_BREADCRUMB = 'club-arena-auth-breadcrumb';
+
+function markAuthenticated(): void {
+  try {
+    sessionStorage.setItem(SPA_AUTH_BREADCRUMB, Date.now().toString());
+  } catch {
+    /* storage full */
+  }
+}
+
+/** Was the user authenticated in this session within the last 30 minutes? */
+function wasRecentlyAuthenticated(): boolean {
+  try {
+    const ts = sessionStorage.getItem(SPA_AUTH_BREADCRUMB);
+    if (!ts) return false;
+    const elapsed = Date.now() - parseInt(ts, 10);
+    return elapsed < 30 * 60 * 1000; // 30 minutes
+  } catch {
+    return false;
+  }
+}
 
 interface AuthGuardProps {
   children: ReactNode;
@@ -93,6 +120,27 @@ export function AuthGuard({ children }: AuthGuardProps) {
   const [isAuthenticated, setIsAuthenticated] = useState(initiallyAuthenticated);
   const location = useLocation();
 
+  // Retry-before-redirect counter — prevents spurious redirects during in-SPA navigation
+  const retryCountRef = useRef(0);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const MAX_RETRIES = 2;
+  const RETRY_DELAY_MS = 800; // Short delay between retries
+
+  // Mark breadcrumb when authenticated (so future AuthGuard instances know
+  // the user was recently authenticated in this SPA session)
+  useEffect(() => {
+    if (isAuthenticated) {
+      markAuthenticated();
+    }
+  }, [isAuthenticated]);
+
+  // Cleanup retry timer on unmount
+  useEffect(() => {
+    return () => {
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+    };
+  }, []);
+
   // Hydrate store from localStorage if store is empty but localStorage has session
   useEffect(() => {
     if (initiallyAuthenticated && !useUserStore.getState().user) {
@@ -139,6 +187,18 @@ export function AuthGuard({ children }: AuthGuardProps) {
               hydrateStoreFromLocalStorage();
               setIsAuthenticated(true);
             } else {
+              // RETRY GUARD: If the user was recently authenticated in this SPA session,
+              // don't give up immediately — a token refresh may be in-flight.
+              if (wasRecentlyAuthenticated() && retryCountRef.current < MAX_RETRIES) {
+                retryCountRef.current++;
+                console.warn(
+                  `[AUTH GUARD] Session missing but user was recently authenticated — retry ${retryCountRef.current}/${MAX_RETRIES}`
+                );
+                retryTimerRef.current = setTimeout(() => {
+                  if (!cancelled) checkAuth();
+                }, RETRY_DELAY_MS);
+                return; // Don't set unauthenticated yet
+              }
               setIsAuthenticated(false);
             }
           }
@@ -152,6 +212,17 @@ export function AuthGuard({ children }: AuthGuardProps) {
             hydrateStoreFromLocalStorage();
             setIsAuthenticated(true);
           } else {
+            // RETRY GUARD: Same logic — retry before giving up
+            if (wasRecentlyAuthenticated() && retryCountRef.current < MAX_RETRIES) {
+              retryCountRef.current++;
+              console.warn(
+                `[AUTH GUARD] getSession() failed but user was recently authenticated — retry ${retryCountRef.current}/${MAX_RETRIES}`
+              );
+              retryTimerRef.current = setTimeout(() => {
+                if (!cancelled) checkAuth();
+              }, RETRY_DELAY_MS);
+              return;
+            }
             setIsAuthenticated(false);
           }
           setIsLoading(false);
@@ -196,7 +267,30 @@ export function AuthGuard({ children }: AuthGuardProps) {
         return;
       }
 
-      // localStorage is also empty — this is a real sign-out
+      // BREADCRUMB CHECK: If user was recently authenticated in this SPA session,
+      // delay the redirect to allow token refresh to complete.
+      if (wasRecentlyAuthenticated()) {
+        console.warn(
+          '[AUTH GUARD] Store cleared and localStorage empty, but user was recently authenticated — delaying redirect'
+        );
+        // Wait and re-check before redirecting
+        if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = setTimeout(() => {
+          // Final check after delay
+          if (hasLocalSession()) {
+            hydrateStoreFromLocalStorage();
+            setIsAuthenticated(true);
+          } else if (isDefinitelyAuthenticated()) {
+            setIsAuthenticated(true);
+          } else {
+            console.debug('[AUTH GUARD] Confirmed real sign-out after delay');
+            setIsAuthenticated(false);
+          }
+        }, RETRY_DELAY_MS);
+        return;
+      }
+
+      // localStorage is also empty and no breadcrumb — this is a real sign-out
       console.debug('[AUTH GUARD] Real sign-out detected (store + localStorage both empty)');
       setIsAuthenticated(false);
     }

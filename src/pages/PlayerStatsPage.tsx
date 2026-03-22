@@ -1,13 +1,14 @@
 /**
- *  PLAYER STATS PAGE — Detailed Statistics with Charts
+ *  PLAYER STATS PAGE — Premium Glassmorphism Design
  *
- * Improvements:
- *  - retryFetch: exponential backoff on transient failures
- *  - SWR cache: show cached stats instantly, refresh in background
+ * Performance improvements:
+ *  - Parallel queries: all 3 Supabase calls fire simultaneously
+ *  - localStorage SWR cache: instant render on revisit
  *  - isMounted guards on all setState calls
+ *  - retryFetch with exponential backoff
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
@@ -39,49 +40,60 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { useSwipeTabs } from '../hooks/useSwipeTabs';
 import './PlayerStatsPage.css';
 
-// ── SWR Cache helpers ──
-const STATS_CACHE_KEY = 'ps_stats_';
-const SESSION_CACHE_KEY = 'ps_sessions_';
+// ── SWR Cache helpers (localStorage for cross-session persistence) ──
+const STATS_CACHE_KEY = 'ps_stats_v2_';
+const SESSION_CACHE_KEY = 'ps_sessions_v2_';
+const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
 function getCachedStats(userId: string) {
   try {
-    const raw = sessionStorage.getItem(STATS_CACHE_KEY + userId);
-    return raw ? JSON.parse(raw) : null;
+    const raw = localStorage.getItem(STATS_CACHE_KEY + userId);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed.cachedAt && Date.now() - parsed.cachedAt > CACHE_TTL_MS) return null;
+    return parsed;
   } catch {
     return null;
   }
 }
 function setCachedStats(userId: string, data: any) {
   try {
-    sessionStorage.setItem(STATS_CACHE_KEY + userId, JSON.stringify(data));
+    localStorage.setItem(
+      STATS_CACHE_KEY + userId,
+      JSON.stringify({ ...data, cachedAt: Date.now() })
+    );
   } catch {
     /* quota */
   }
 }
 function getCachedSessions(userId: string) {
   try {
-    const raw = sessionStorage.getItem(SESSION_CACHE_KEY + userId);
-    return raw ? JSON.parse(raw) : null;
+    const raw = localStorage.getItem(SESSION_CACHE_KEY + userId);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed.cachedAt && Date.now() - parsed.cachedAt > CACHE_TTL_MS) return null;
+    return parsed.sessions || null;
   } catch {
     return null;
   }
 }
-function setCachedSessions(userId: string, data: any) {
+function setCachedSessions(userId: string, sessions: any) {
   try {
-    sessionStorage.setItem(SESSION_CACHE_KEY + userId, JSON.stringify(data));
+    localStorage.setItem(
+      SESSION_CACHE_KEY + userId,
+      JSON.stringify({ sessions, cachedAt: Date.now() })
+    );
   } catch {
     /* quota */
   }
 }
 
 interface DetailedStats {
-  // Volume
   total_hands: number;
   hands_won: number;
   hands_lost: number;
   showdowns_won: number;
   showdowns_total: number;
-
-  // Style
   vpip: number;
   pfr: number;
   aggression_factor: number;
@@ -89,14 +101,10 @@ interface DetailedStats {
   fold_to_three_bet: number;
   cbet_flop: number;
   cbet_turn: number;
-
-  // Results
   bb_per_100: number;
   total_profit: number;
   biggest_pot_won: number;
   biggest_pot_lost: number;
-
-  // Time
   hours_played: number;
   avg_session_length: number;
 }
@@ -112,7 +120,28 @@ type StatCategory = 'overview' | 'performance' | 'positions' | 'analysis';
 
 const CHART_COLORS = ['#4169E1', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
 
-// Standalone animated counter hook (must be defined outside component)
+const DEFAULT_STATS: DetailedStats = {
+  total_hands: 0,
+  hands_won: 0,
+  hands_lost: 0,
+  showdowns_won: 0,
+  showdowns_total: 0,
+  vpip: 0,
+  pfr: 0,
+  aggression_factor: 0,
+  three_bet_percent: 0,
+  fold_to_three_bet: 0,
+  cbet_flop: 0,
+  cbet_turn: 0,
+  bb_per_100: 0,
+  total_profit: 0,
+  biggest_pot_won: 0,
+  biggest_pot_lost: 0,
+  hours_played: 0,
+  avg_session_length: 0,
+};
+
+// ── Animated counter hook ──
 function useCountUpNumber(target: number, duration: number = 400) {
   const [display, setDisplay] = useState(0);
   useEffect(() => {
@@ -134,6 +163,48 @@ function useCountUpNumber(target: number, duration: number = 400) {
   return display;
 }
 
+// ── Win Rate Gauge SVG ──
+function WinRateGauge({ winRate }: { winRate: number }) {
+  const radius = 42;
+  const circumference = 2 * Math.PI * radius;
+  const fillPercent = Math.min(100, Math.max(0, winRate));
+  const dashOffset = circumference - (fillPercent / 100) * circumference;
+
+  // Color based on win rate
+  const getColor = () => {
+    if (fillPercent >= 55) return '#10b981';
+    if (fillPercent >= 45) return '#00d4ff';
+    if (fillPercent >= 35) return '#f59e0b';
+    return '#ef4444';
+  };
+
+  const countedRate = useCountUpNumber(Math.floor(fillPercent), 800);
+
+  return (
+    <div className="hero-gauge">
+      <svg width="100" height="100" viewBox="0 0 100 100">
+        <circle className="gauge-bg" cx="50" cy="50" r={radius} />
+        <circle
+          className="gauge-fill"
+          cx="50"
+          cy="50"
+          r={radius}
+          stroke={getColor()}
+          strokeDasharray={circumference}
+          strokeDashoffset={dashOffset}
+          style={{ filter: `drop-shadow(0 0 6px ${getColor()}40)` }}
+        />
+      </svg>
+      <div className="gauge-center">
+        <span className="gauge-value" style={{ color: getColor() }}>
+          {countedRate}%
+        </span>
+        <span className="gauge-label">Win Rate</span>
+      </div>
+    </div>
+  );
+}
+
 export default function PlayerStatsPage() {
   const { userId } = useParams();
   const { user } = useAuthUser();
@@ -150,8 +221,6 @@ export default function PlayerStatsPage() {
     activeTab: category,
     onTabChange: setCategory,
   });
-  const [visibleSummaryCards, setVisibleSummaryCards] = useState(new Set<number>());
-  const [visibleSessionRows, setVisibleSessionRows] = useState(new Set<number>());
   const toast = useToast();
   const isMounted = useIsMounted();
   const hasStatsRef = useRef(false);
@@ -163,7 +232,7 @@ export default function PlayerStatsPage() {
     if (!targetUserId) return;
     const cachedStats = getCachedStats(targetUserId);
     if (cachedStats) {
-      setStats(cachedStats.stats);
+      setStats(cachedStats.stats || null);
       setPositionData(cachedStats.positionData || []);
       hasStatsRef.current = true;
       setLoading(false);
@@ -180,30 +249,10 @@ export default function PlayerStatsPage() {
     return () => clearTimeout(timeout);
   }, []);
 
-  // Stagger summary cards on mount
-  useEffect(() => {
-    const timers = [0, 1, 2].map((i) =>
-      setTimeout(() => setVisibleSummaryCards((prev) => new Set([...prev, i])), i * 60)
-    );
-    return () => timers.forEach((t) => clearTimeout(t));
-  }, []);
-
-  // Stagger session rows
-  useEffect(() => {
-    if (sessionHistory.length > 0) {
-      const timers = sessionHistory.map((_, i) =>
-        setTimeout(() => setVisibleSessionRows((prev) => new Set([...prev, i])), i * 50)
-      );
-      return () => timers.forEach((t) => clearTimeout(t));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionHistory.length]);
-
   useEffect(() => {
     let isMounted = true;
     if (targetUserId) {
-      loadStats(() => isMounted);
-      loadSessionHistory(() => isMounted);
+      loadAllData(() => isMounted);
     }
     return () => {
       isMounted = false;
@@ -227,8 +276,7 @@ export default function PlayerStatsPage() {
           filter: `player_ids=cs.{${targetUserId}}`,
         },
         () => {
-          loadStats();
-          loadSessionHistory();
+          loadAllData();
         }
       )
       .subscribe((status: string, err?: Error) => {
@@ -246,25 +294,9 @@ export default function PlayerStatsPage() {
   }, [targetUserId]);
 
   // ── Bus Listeners: debounced refresh from engine events ──
-  // Debounced at 1s to coalesce with postgres_changes subscription above
-  // (both fire for the same hand — bus fires immediately, postgres 100-2000ms later)
   useEffect(() => {
-    const unsubHand = masterBus.subscribeDebounced(
-      'HAND_COMPLETED',
-      () => {
-        loadStats();
-        loadSessionHistory();
-      },
-      1000
-    );
-    const unsubBalance = masterBus.subscribeDebounced(
-      'BALANCE_UPDATED',
-      () => {
-        loadStats();
-      },
-      1000
-    );
-    // Phase 5: Cross-page sync (ported from World Hub player-stats.js)
+    const unsubHand = masterBus.subscribeDebounced('HAND_COMPLETED', () => loadAllData(), 1000);
+    const unsubBalance = masterBus.subscribeDebounced('BALANCE_UPDATED', () => loadStats(), 1000);
     const unsubChips = masterBus.subscribeDebounced('CHIPS_DISTRIBUTED', () => loadStats(), 1000);
     const unsubCashout = masterBus.subscribeDebounced('CASHOUT_APPROVED', () => loadStats(), 1000);
     const unsubCredit = masterBus.subscribeDebounced('CREDIT_UPDATED', () => loadStats(), 1000);
@@ -278,14 +310,17 @@ export default function PlayerStatsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetUserId]);
 
-  const loadStats = async (getIsMounted?: () => boolean) => {
+  // ── PARALLEL data loading — all queries at once ──
+  const loadAllData = async (getIsMounted?: () => boolean) => {
     if (!targetUserId) return;
     if (statsLoadingRef.current) return;
     statsLoadingRef.current = true;
     if (!hasStatsRef.current) setLoading(true);
+
     try {
-      try {
-        const { data, error } = await retryFetch(
+      // Fire ALL queries in parallel
+      const [statsResult, posResult, sessionsResult] = await Promise.allSettled([
+        retryFetch(
           () =>
             supabase
               .from('player_stats')
@@ -296,40 +331,8 @@ export default function PlayerStatsPage() {
               .maybeSingle()
               .then((r) => r),
           { maxRetries: 2, isMountedRef: isMounted }
-        );
-
-        if (getIsMounted && !getIsMounted()) return;
-        if (!isMounted.current) return;
-
-        if (!error && data) {
-          setStats(data);
-          hasStatsRef.current = true;
-        } else {
-          // Default stats
-          setStats({
-            total_hands: 0,
-            hands_won: 0,
-            hands_lost: 0,
-            showdowns_won: 0,
-            showdowns_total: 0,
-            vpip: 0,
-            pfr: 0,
-            aggression_factor: 0,
-            three_bet_percent: 0,
-            fold_to_three_bet: 0,
-            cbet_flop: 0,
-            cbet_turn: 0,
-            bb_per_100: 0,
-            total_profit: 0,
-            biggest_pot_won: 0,
-            biggest_pot_lost: 0,
-            hours_played: 0,
-            avg_session_length: 0,
-          });
-        }
-
-        // Fetch literal DB data for the position pie chart instead of mock data #SWEEP-8
-        const { data: posData, error: posError } = await retryFetch(
+        ),
+        retryFetch(
           () =>
             supabase
               .from('player_position_stats')
@@ -337,8 +340,38 @@ export default function PlayerStatsPage() {
               .eq('user_id', targetUserId)
               .then((r) => r),
           { maxRetries: 2, isMountedRef: isMounted }
-        );
+        ),
+        retryFetch(
+          () =>
+            supabase
+              .from('player_sessions')
+              .select('date, profit_loss, hands_played')
+              .eq('user_id', targetUserId)
+              .order('date', { ascending: true })
+              .limit(30)
+              .then((r) => r),
+          { maxRetries: 2, isMountedRef: isMounted }
+        ),
+      ]);
 
+      if (getIsMounted && !getIsMounted()) return;
+      if (!isMounted.current) return;
+
+      // Process stats
+      let resolvedStats: DetailedStats = DEFAULT_STATS;
+      if (statsResult.status === 'fulfilled') {
+        const { data, error } = statsResult.value;
+        if (!error && data) {
+          resolvedStats = data;
+          hasStatsRef.current = true;
+        }
+      }
+      setStats(resolvedStats);
+
+      // Process position data
+      let resolvedPositionData: any[] = [];
+      if (posResult.status === 'fulfilled') {
+        const { data: posData, error: posError } = posResult.value;
         if (!posError && posData && posData.length > 0) {
           const fullNames: Record<string, string> = {
             UTG: 'Under The Gun',
@@ -349,93 +382,100 @@ export default function PlayerStatsPage() {
             SB: 'Small Blind',
             BB: 'Big Blind',
           };
-          const mapped = posData
+          resolvedPositionData = posData
             .map((p) => ({
               name: p.position,
               value: p.hands_won || 0,
               fullName: fullNames[p.position] || p.position,
             }))
-            .filter((p) => p.value > 0); // Only chart positions with actual wins
-          if (getIsMounted && !getIsMounted()) return;
-          if (!isMounted.current) return;
-          setPositionData(mapped.length > 0 ? mapped : []);
-        } else {
-          if (getIsMounted && !getIsMounted()) return;
-          if (!isMounted.current) return;
-          setPositionData([]);
+            .filter((p) => p.value > 0);
         }
-
-        // Update SWR cache
-        if (isMounted.current) {
-          setCachedStats(targetUserId, { stats: data || stats, positionData: posData || [] });
-        }
-      } catch (error) {
-        console.error('Failed to load stats:', error);
-        if (isMounted.current) toast.error('Failed to load player stats');
       }
-      if (isMounted.current) setLoading(false);
+      setPositionData(resolvedPositionData);
+
+      // Process sessions
+      if (sessionsResult.status === 'fulfilled') {
+        const { data: sessData } = sessionsResult.value;
+        if (sessData && sessData.length > 0) {
+          let cumulative = 0;
+          const history = sessData.map((session) => {
+            cumulative += session.profit_loss || 0;
+            return {
+              date: new Date(session.date).toLocaleDateString('en-US', {
+                month: 'short',
+                day: 'numeric',
+              }),
+              profit: session.profit_loss || 0,
+              hands: session.hands_played || 0,
+              cumulative,
+            };
+          });
+          if (getIsMounted && !getIsMounted()) return;
+          if (!isMounted.current) return;
+          setSessionHistory(history);
+          setCachedSessions(targetUserId, history);
+        } else {
+          setSessionHistory([]);
+        }
+      }
+
+      // Update SWR cache
+      if (isMounted.current) {
+        setCachedStats(targetUserId, {
+          stats: resolvedStats,
+          positionData: resolvedPositionData,
+        });
+      }
+    } catch (error) {
+      console.error('Failed to load stats:', error);
+      if (isMounted.current) toast.error('Failed to load player stats');
     } finally {
+      if (isMounted.current) setLoading(false);
       statsLoadingRef.current = false;
     }
   };
 
-  const loadSessionHistory = async (getIsMounted?: () => boolean) => {
+  // Standalone stats reload (for bus events that only need stats)
+  const loadStats = async () => {
+    if (!targetUserId) return;
     try {
-      const { data } = await retryFetch(
+      const { data, error } = await retryFetch(
         () =>
           supabase
-            .from('player_sessions')
-            .select('date, profit_loss, hands_played')
+            .from('player_stats')
+            .select(
+              'total_hands, hands_won, hands_lost, showdowns_won, showdowns_total, vpip, pfr, aggression_factor, three_bet_percent, fold_to_three_bet, cbet_flop, cbet_turn, bb_per_100, total_profit, biggest_pot_won, biggest_pot_lost, hours_played, avg_session_length'
+            )
             .eq('user_id', targetUserId)
-            .order('date', { ascending: true })
-            .limit(30)
+            .maybeSingle()
             .then((r) => r),
         { maxRetries: 2, isMountedRef: isMounted }
       );
-
-      if (data && data.length > 0) {
-        let cumulative = 0;
-        const history = data.map((session) => {
-          cumulative += session.profit_loss || 0;
-          return {
-            date: new Date(session.date).toLocaleDateString('en-US', {
-              month: 'short',
-              day: 'numeric',
-            }),
-            profit: session.profit_loss || 0,
-            hands: session.hands_played || 0,
-            cumulative,
-          };
-        });
-        if (getIsMounted && !getIsMounted()) return;
-        if (!isMounted.current) return;
-        setSessionHistory(history);
-        setCachedSessions(targetUserId || '', history);
-      } else {
-        // No real session data yet — show empty state (no fake data)
-        if (getIsMounted && !getIsMounted()) return;
-        if (!isMounted.current) return;
-        setSessionHistory([]);
+      if (!isMounted.current) return;
+      if (!error && data) {
+        setStats(data);
+        hasStatsRef.current = true;
       }
-    } catch (error) {
-      console.error('Failed to load session history:', error);
-      if (isMounted.current) toast.error('Failed to load session history');
+    } catch {
+      /* silent — bus-triggered refresh */
     }
   };
 
-  const winRate =
-    stats && stats.total_hands > 0 ? ((stats.hands_won / stats.total_hands) * 100).toFixed(1) : '0';
+  const winRate = useMemo(
+    () =>
+      stats && stats.total_hands > 0
+        ? ((stats.hands_won / stats.total_hands) * 100).toFixed(1)
+        : '0.0',
+    [stats]
+  );
 
-  const showdownWinRate =
-    stats && stats.showdowns_total > 0
-      ? ((stats.showdowns_won / stats.showdowns_total) * 100).toFixed(1)
-      : '0';
-
-  // Animated win rate counter — hook called at component body level (not inside useMemo)
-  const winRateInt = parseInt(winRate.split('.')[0]) || 0;
-  const winRateDec = winRate.split('.')[1] || '';
-  const countedWinRate = useCountUpNumber(winRateInt, 400);
-  const displayedWinRate = winRateDec ? `${countedWinRate}.${winRateDec}` : `${countedWinRate}`;
+  const showdownWinRate = useMemo(
+    () =>
+      stats && stats.showdowns_total > 0
+        ? ((stats.showdowns_won / stats.showdowns_total) * 100).toFixed(1)
+        : '0',
+    [stats]
+  );
 
   if (loading) {
     return (
@@ -445,51 +485,42 @@ export default function PlayerStatsPage() {
     );
   }
 
+  const hasData = stats && stats.total_hands > 0;
+
   return (
     <div className="stats-page">
-      {/* Summary Cards */}
-      <div className="stats-summary">
-        <div
-          className="stat-card"
-          style={{
-            opacity: visibleSummaryCards.has(0) ? 1 : 0,
-            transform: visibleSummaryCards.has(0) ? 'translateY(0)' : 'translateY(8px)',
-            transition: 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-          }}
-        >
-          <span className="stat-value">{(stats?.total_hands ?? 0).toLocaleString()}</span>
-          <span className="stat-label">Hands Played</span>
-        </div>
-        <div
-          className="stat-card"
-          style={{
-            opacity: visibleSummaryCards.has(1) ? 1 : 0,
-            transform: visibleSummaryCards.has(1) ? 'translateY(0)' : 'translateY(8px)',
-            transition: 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-          }}
-        >
-          <span className="stat-value">{displayedWinRate}%</span>
-          <span className="stat-label">Win Rate</span>
-        </div>
-        <div
-          className="stat-card profit"
-          style={{
-            opacity: visibleSummaryCards.has(2) ? 1 : 0,
-            transform: visibleSummaryCards.has(2) ? 'translateY(0)' : 'translateY(8px)',
-            transition: 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-          }}
-        >
-          <span
-            className={`stat-value ${(stats?.total_profit || 0) >= 0 ? 'positive' : 'negative'}`}
-          >
-            {(stats?.total_profit ?? 0).toLocaleString()}
-          </span>
-          <span className="stat-label">Total Profit</span>
+      {/* ── HERO SECTION ── */}
+      <div className="stats-hero">
+        <WinRateGauge winRate={parseFloat(winRate)} />
+        <div className="hero-stats">
+          <div className="hero-stat">
+            <span className="hero-stat-label">Total Hands</span>
+            <span className="hero-stat-value cyan">
+              {(stats?.total_hands ?? 0).toLocaleString()}
+            </span>
+          </div>
+          <div className="hero-stat">
+            <span className="hero-stat-label">Total Profit</span>
+            <span
+              className={`hero-stat-value ${(stats?.total_profit ?? 0) >= 0 ? 'positive' : 'negative'}`}
+            >
+              {(stats?.total_profit ?? 0) >= 0 ? '+' : ''}
+              {(stats?.total_profit ?? 0).toLocaleString()}
+            </span>
+          </div>
+          <div className="hero-stat">
+            <span className="hero-stat-label">BB/100</span>
+            <span
+              className={`hero-stat-value ${(stats?.bb_per_100 ?? 0) >= 0 ? 'positive' : 'negative'}`}
+            >
+              {(stats?.bb_per_100 ?? 0).toFixed(2)}
+            </span>
+          </div>
         </div>
       </div>
 
-      {/* Category Tabs — Consolidated 4-tab layout */}
-      <div className="stats-tabs">
+      {/* ── PILL TABS ── */}
+      <div className="stats-pill-tabs">
         {(['overview', 'performance', 'positions', 'analysis'] as StatCategory[]).map((cat) => (
           <button
             key={cat}
@@ -507,160 +538,162 @@ export default function PlayerStatsPage() {
         ))}
       </div>
 
-      {/* Stats Content — Swipeable */}
+      {/* ── STATS CONTENT ── */}
       <div className="stats-content" {...statsSwipeHandlers}>
-        {category === 'overview' && stats && (
+        {/* EMPTY STATE */}
+        {!hasData && category === 'overview' && (
+          <div className="stats-empty-state">
+            <span className="empty-icon">🃏</span>
+            <span className="empty-title">No Stats Yet</span>
+            <span className="empty-description">
+              Play some hands at the tables and your statistics will appear here automatically.
+            </span>
+            <button className="empty-cta" onClick={() => navigate('/')}>
+              🎰 Go to Lobby
+            </button>
+          </div>
+        )}
+
+        {/* ── OVERVIEW TAB ── */}
+        {category === 'overview' && stats && hasData && (
           <>
             <div className="stats-grid">
-              <StatRow label="VPIP" value={`${((stats.vpip || 0) * 100).toFixed(1)}%`} />
-              <StatRow label="PFR" value={`${((stats.pfr || 0) * 100).toFixed(1)}%`} />
+              <StatRow
+                label="VPIP"
+                value={`${((stats.vpip || 0) * 100).toFixed(1)}%`}
+                color="#00d4ff"
+              />
+              <StatRow
+                label="PFR"
+                value={`${((stats.pfr || 0) * 100).toFixed(1)}%`}
+                color="#8b5cf6"
+              />
               <StatRow
                 label="Aggression Factor"
                 value={(stats.aggression_factor || 0).toFixed(2)}
+                color="#f59e0b"
               />
-              <StatRow label="Hours Played" value={`${(stats.hours_played || 0).toFixed(1)}h`} />
-              <StatRow label="Showdown Win %" value={`${showdownWinRate}%`} />
-              <StatRow label="BB/100" value={(stats.bb_per_100 || 0).toFixed(2)} highlight />
+              <StatRow
+                label="Hours Played"
+                value={`${(stats.hours_played || 0).toFixed(1)}h`}
+                color="#06b6d4"
+              />
+              <StatRow label="Showdown Win %" value={`${showdownWinRate}%`} color="#22c55e" />
+              <StatRow
+                label="BB/100"
+                value={(stats.bb_per_100 || 0).toFixed(2)}
+                color="#4169E1"
+                highlight
+              />
             </div>
 
-            {/* Quick-link to Hand Histories */}
-            <button
-              onClick={() => navigate('/hands')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 8,
-                width: '100%',
-                padding: '12px 16px',
-                marginTop: 16,
-                background:
-                  'linear-gradient(135deg, rgba(65, 105, 225, 0.15) 0%, rgba(139, 92, 246, 0.15) 100%)',
-                border: '1px solid rgba(65, 105, 225, 0.3)',
-                borderRadius: 10,
-                color: '#a5b4fc',
-                fontSize: '0.85rem',
-                fontWeight: 600,
-                cursor: 'pointer',
-                fontFamily: "'Orbitron', monospace",
-                letterSpacing: '0.5px',
-                transition: 'all 0.2s ease',
-              }}
-              onMouseEnter={(e) => {
-                (e.currentTarget as HTMLButtonElement).style.background =
-                  'linear-gradient(135deg, rgba(65, 105, 225, 0.25) 0%, rgba(139, 92, 246, 0.25) 100%)';
-                (e.currentTarget as HTMLButtonElement).style.borderColor =
-                  'rgba(65, 105, 225, 0.5)';
-              }}
-              onMouseLeave={(e) => {
-                (e.currentTarget as HTMLButtonElement).style.background =
-                  'linear-gradient(135deg, rgba(65, 105, 225, 0.15) 0%, rgba(139, 92, 246, 0.15) 100%)';
-                (e.currentTarget as HTMLButtonElement).style.borderColor =
-                  'rgba(65, 105, 225, 0.3)';
-              }}
-            >
+            <button className="view-hands-btn" onClick={() => navigate('/hands')}>
               📋 View Hand Histories
             </button>
           </>
         )}
 
-        {/* ── Performance Tab (merged: preflop + postflop + results) ── */}
+        {/* ── PERFORMANCE TAB ── */}
         {category === 'performance' && stats && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-            {/* Preflop Section */}
+            {/* Preflop */}
             <div>
-              <h3
-                style={{
-                  color: '#00d4ff',
-                  fontSize: '0.8rem',
-                  textTransform: 'uppercase',
-                  letterSpacing: '1px',
-                  marginBottom: '0.75rem',
-                  fontFamily: "'Orbitron', monospace",
-                }}
-              >
-                Preflop
-              </h3>
+              <div className="stats-section-header">
+                <span className="section-icon">🎯</span>
+                <h3 style={{ color: '#00d4ff' }}>Preflop</h3>
+              </div>
               <div className="stats-grid">
-                <StatRow label="VPIP" value={`${((stats.vpip || 0) * 100).toFixed(1)}%`} />
-                <StatRow label="PFR" value={`${((stats.pfr || 0) * 100).toFixed(1)}%`} />
+                <StatRow
+                  label="VPIP"
+                  value={`${((stats.vpip || 0) * 100).toFixed(1)}%`}
+                  color="#00d4ff"
+                />
+                <StatRow
+                  label="PFR"
+                  value={`${((stats.pfr || 0) * 100).toFixed(1)}%`}
+                  color="#8b5cf6"
+                />
                 <StatRow
                   label="3-Bet %"
                   value={`${((stats.three_bet_percent || 0) * 100).toFixed(1)}%`}
+                  color="#f59e0b"
                 />
                 <StatRow
                   label="Fold to 3-Bet"
                   value={`${((stats.fold_to_three_bet || 0) * 100).toFixed(1)}%`}
+                  color="#ef4444"
                 />
               </div>
             </div>
-            {/* Postflop Section */}
+            {/* Postflop */}
             <div>
-              <h3
-                style={{
-                  color: '#8b5cf6',
-                  fontSize: '0.8rem',
-                  textTransform: 'uppercase',
-                  letterSpacing: '1px',
-                  marginBottom: '0.75rem',
-                  fontFamily: "'Orbitron', monospace",
-                }}
-              >
-                Postflop
-              </h3>
+              <div className="stats-section-header">
+                <span className="section-icon">♠️</span>
+                <h3 style={{ color: '#8b5cf6' }}>Postflop</h3>
+              </div>
               <div className="stats-grid">
                 <StatRow
                   label="C-Bet Flop"
                   value={`${((stats.cbet_flop || 0) * 100).toFixed(1)}%`}
+                  color="#8b5cf6"
                 />
                 <StatRow
                   label="C-Bet Turn"
                   value={`${((stats.cbet_turn || 0) * 100).toFixed(1)}%`}
+                  color="#6366f1"
                 />
                 <StatRow
                   label="Aggression Factor"
                   value={(stats.aggression_factor || 0).toFixed(2)}
+                  color="#f59e0b"
                 />
-                <StatRow label="Showdown Win %" value={`${showdownWinRate}%`} />
+                <StatRow label="Showdown Win %" value={`${showdownWinRate}%`} color="#22c55e" />
               </div>
             </div>
-            {/* Results Section */}
+            {/* Results */}
             <div>
-              <h3
-                style={{
-                  color: '#22c55e',
-                  fontSize: '0.8rem',
-                  textTransform: 'uppercase',
-                  letterSpacing: '1px',
-                  marginBottom: '0.75rem',
-                  fontFamily: "'Orbitron', monospace",
-                }}
-              >
-                Results
-              </h3>
+              <div className="stats-section-header">
+                <span className="section-icon">💰</span>
+                <h3 style={{ color: '#22c55e' }}>Results</h3>
+              </div>
               <div className="stats-grid">
                 <StatRow
                   label="Total Profit"
-                  value={`${stats.total_profit.toLocaleString()}`}
+                  value={stats.total_profit.toLocaleString()}
+                  color="#22c55e"
                   highlight
                 />
-                <StatRow label="BB/100" value={(stats.bb_per_100 || 0).toFixed(2)} />
+                <StatRow
+                  label="BB/100"
+                  value={(stats.bb_per_100 || 0).toFixed(2)}
+                  color="#4169E1"
+                />
                 <StatRow
                   label="Biggest Pot Won"
-                  value={`${stats.biggest_pot_won.toLocaleString()}`}
+                  value={stats.biggest_pot_won.toLocaleString()}
+                  color="#10b981"
                 />
                 <StatRow
                   label="Biggest Pot Lost"
-                  value={`${stats.biggest_pot_lost.toLocaleString()}`}
+                  value={stats.biggest_pot_lost.toLocaleString()}
+                  color="#ef4444"
                 />
-                <StatRow label="Hands Won" value={stats.hands_won.toLocaleString()} />
-                <StatRow label="Hands Lost" value={stats.hands_lost.toLocaleString()} />
+                <StatRow
+                  label="Hands Won"
+                  value={stats.hands_won.toLocaleString()}
+                  color="#22c55e"
+                />
+                <StatRow
+                  label="Hands Lost"
+                  value={stats.hands_lost.toLocaleString()}
+                  color="#ef4444"
+                />
               </div>
             </div>
           </div>
         )}
 
-        {/* ── Positions Tab (unchanged) ── */}
+        {/* ── POSITIONS TAB ── */}
         {category === 'positions' && (
           <div
             style={{
@@ -673,53 +706,28 @@ export default function PlayerStatsPage() {
           </div>
         )}
 
-        {/* ── Analysis Tab (merged: advanced + charts + sessions + bankroll) ── */}
+        {/* ── ANALYSIS TAB ── */}
         {category === 'analysis' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
             {/* Advanced Stats */}
             <div>
-              <h3
-                style={{
-                  color: '#f59e0b',
-                  fontSize: '0.8rem',
-                  textTransform: 'uppercase',
-                  letterSpacing: '1px',
-                  marginBottom: '0.75rem',
-                  fontFamily: "'Orbitron', monospace",
-                }}
-              >
-                Advanced Stats
-              </h3>
+              <div className="stats-section-header">
+                <span className="section-icon">⚡</span>
+                <h3 style={{ color: '#f59e0b' }}>Advanced Stats</h3>
+              </div>
               <AdvancedStatsSummary />
             </div>
 
             {/* Charts */}
             <div className="charts-section">
-              <h3
-                style={{
-                  color: '#00d4ff',
-                  fontSize: '0.8rem',
-                  textTransform: 'uppercase',
-                  letterSpacing: '1px',
-                  marginBottom: '0.75rem',
-                  fontFamily: "'Orbitron', monospace",
-                }}
-              >
-                Charts
-              </h3>
+              <div className="stats-section-header">
+                <span className="section-icon">📊</span>
+                <h3 style={{ color: '#00d4ff' }}>Charts</h3>
+              </div>
+
               {sessionHistory.length > 0 && (
                 <button
-                  style={{
-                    background: 'rgba(65,105,225,0.15)',
-                    color: '#4169E1',
-                    border: '1px solid rgba(65,105,225,0.3)',
-                    padding: '6px 14px',
-                    borderRadius: '8px',
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    marginBottom: '12px',
-                  }}
+                  className="export-btn"
                   onClick={() => {
                     try {
                       exportToCSV(sessionHistory, 'player_session_history.csv', [
@@ -736,9 +744,12 @@ export default function PlayerStatsPage() {
                   📥 Export Sessions
                 </button>
               )}
+
               {/* Profit Over Time Chart */}
               <div className="chart-card">
-                <h3> Profit Over Time</h3>
+                <div className="chart-card-header">
+                  <h3>Profit Over Time</h3>
+                </div>
                 <div className="chart-container">
                   <ResponsiveContainer width="100%" height={250}>
                     <AreaChart data={sessionHistory}>
@@ -748,14 +759,15 @@ export default function PlayerStatsPage() {
                           <stop offset="95%" stopColor="#4169E1" stopOpacity={0} />
                         </linearGradient>
                       </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
-                      <XAxis dataKey="date" stroke="rgba(255,255,255,0.5)" fontSize={12} />
-                      <YAxis stroke="rgba(255,255,255,0.5)" fontSize={12} />
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                      <XAxis dataKey="date" stroke="rgba(255,255,255,0.4)" fontSize={11} />
+                      <YAxis stroke="rgba(255,255,255,0.4)" fontSize={11} />
                       <Tooltip
                         contentStyle={{
-                          background: '#1e1e32',
-                          border: '1px solid rgba(255,255,255,0.1)',
-                          borderRadius: '8px',
+                          background: 'rgba(14, 14, 28, 0.95)',
+                          border: '1px solid rgba(0, 212, 255, 0.2)',
+                          borderRadius: '10px',
+                          backdropFilter: 'blur(16px)',
                         }}
                         labelStyle={{ color: '#fff' }}
                       />
@@ -774,18 +786,21 @@ export default function PlayerStatsPage() {
 
               {/* Session Results Bar Chart */}
               <div className="chart-card">
-                <h3> Daily Results</h3>
+                <div className="chart-card-header">
+                  <h3>Daily Results</h3>
+                </div>
                 <div className="chart-container">
                   <ResponsiveContainer width="100%" height={200}>
                     <BarChart data={sessionHistory}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
-                      <XAxis dataKey="date" stroke="rgba(255,255,255,0.5)" fontSize={12} />
-                      <YAxis stroke="rgba(255,255,255,0.5)" fontSize={12} />
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                      <XAxis dataKey="date" stroke="rgba(255,255,255,0.4)" fontSize={11} />
+                      <YAxis stroke="rgba(255,255,255,0.4)" fontSize={11} />
                       <Tooltip
                         contentStyle={{
-                          background: '#1e1e32',
-                          border: '1px solid rgba(255,255,255,0.1)',
-                          borderRadius: '8px',
+                          background: 'rgba(14, 14, 28, 0.95)',
+                          border: '1px solid rgba(0, 212, 255, 0.2)',
+                          borderRadius: '10px',
+                          backdropFilter: 'blur(16px)',
                         }}
                         labelStyle={{ color: '#fff' }}
                       />
@@ -804,7 +819,9 @@ export default function PlayerStatsPage() {
 
               {/* Position Breakdown Pie Chart */}
               <div className="chart-card">
-                <h3> Win % by Position</h3>
+                <div className="chart-card-header">
+                  <h3>Win % by Position</h3>
+                </div>
                 <div className="chart-container pie-chart">
                   <ResponsiveContainer width="100%" height={250}>
                     <PieChart>
@@ -820,7 +837,7 @@ export default function PlayerStatsPage() {
                         label={({ name, value }) => `${name}: ${value}%`}
                         labelLine={{ stroke: 'rgba(255,255,255,0.3)' }}
                       >
-                        {positionData.map((entry, index) => (
+                        {positionData.map((_entry, index) => (
                           <Cell
                             key={`cell-${index}`}
                             fill={CHART_COLORS[index % CHART_COLORS.length]}
@@ -829,9 +846,10 @@ export default function PlayerStatsPage() {
                       </Pie>
                       <Tooltip
                         contentStyle={{
-                          background: '#1e1e32',
-                          border: '1px solid rgba(255,255,255,0.1)',
-                          borderRadius: '8px',
+                          background: 'rgba(14, 14, 28, 0.95)',
+                          border: '1px solid rgba(0, 212, 255, 0.2)',
+                          borderRadius: '10px',
+                          backdropFilter: 'blur(16px)',
                         }}
                         formatter={(value, name) => [
                           `${value}%`,
@@ -846,35 +864,19 @@ export default function PlayerStatsPage() {
 
             {/* Sessions */}
             <div>
-              <h3
-                style={{
-                  color: '#3b82f6',
-                  fontSize: '0.8rem',
-                  textTransform: 'uppercase',
-                  letterSpacing: '1px',
-                  marginBottom: '0.75rem',
-                  fontFamily: "'Orbitron', monospace",
-                }}
-              >
-                Session History
-              </h3>
+              <div className="stats-section-header">
+                <span className="section-icon">📅</span>
+                <h3 style={{ color: '#3b82f6' }}>Session History</h3>
+              </div>
               <SessionHistory />
             </div>
 
             {/* Bankroll */}
             <div>
-              <h3
-                style={{
-                  color: '#10b981',
-                  fontSize: '0.8rem',
-                  textTransform: 'uppercase',
-                  letterSpacing: '1px',
-                  marginBottom: '0.75rem',
-                  fontFamily: "'Orbitron', monospace",
-                }}
-              >
-                Bankroll Tracker
-              </h3>
+              <div className="stats-section-header">
+                <span className="section-icon">💎</span>
+                <h3 style={{ color: '#10b981' }}>Bankroll Tracker</h3>
+              </div>
               <BankrollTracker />
             </div>
           </div>
@@ -888,15 +890,22 @@ function StatRow({
   label,
   value,
   highlight,
+  color = '#00d4ff',
 }: {
   label: string;
   value: string;
   highlight?: boolean;
+  color?: string;
 }) {
   return (
     <div className={`stat-row ${highlight ? 'highlight' : ''}`}>
-      <span className="row-label">{label}</span>
-      <span className="row-value">{value}</span>
+      <span className="row-label">
+        <span className="row-dot" style={{ backgroundColor: color }} />
+        {label}
+      </span>
+      <span className="row-value" style={{ color }}>
+        {value}
+      </span>
     </div>
   );
 }

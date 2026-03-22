@@ -35,6 +35,7 @@ export const DailyChallengesWidget: React.FC = () => {
   const toast = useToast();
   const [challenges, setChallenges] = useState<Challenge[]>([]);
   const [loading, setLoading] = useState(true);
+  const initialLoadDoneRef = useRef(false);
 
   const isMounted = useIsMounted();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -55,7 +56,7 @@ export const DailyChallengesWidget: React.FC = () => {
     // Supabase Realtime — cross-tab sync
     const channelKey = `widget-challenges-${user.id}`;
     if (user?.id) {
-      const realtimeChannel = masterBus
+      masterBus
         .getOrCreateChannel(channelKey)
         .on(
           'postgres_changes',
@@ -107,7 +108,9 @@ export const DailyChallengesWidget: React.FC = () => {
 
   const loadChallenges = useCallback(async () => {
     if (!user?.id) return;
-    setLoading(true);
+    // Only show loading spinner on initial load — bus-triggered refreshes
+    // happen silently to avoid distracting UI flashes on every hand played
+    if (!initialLoadDoneRef.current) setLoading(true);
     try {
       const [dailyData, weeklyData, monthlyData] = await Promise.all([
         dailyChallengeService.getTodaysChallenges(user.id),
@@ -164,7 +167,10 @@ export const DailyChallengesWidget: React.FC = () => {
     } catch (error) {
       console.error('Failed to load challenges:', error);
     }
-    if (isMounted.current) setLoading(false);
+    if (isMounted.current) {
+      setLoading(false);
+      initialLoadDoneRef.current = true;
+    }
   }, [user?.id]);
 
   // Keep ref in sync for debouncedRefresh

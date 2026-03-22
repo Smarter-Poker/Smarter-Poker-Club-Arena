@@ -257,7 +257,9 @@ class DailyChallengeServiceClass {
       return existing.map(this.mapToUserChallenge);
     }
 
-    // Assign new challenges
+    // Assign new challenges — use ignoreDuplicates to handle TOCTOU race:
+    // If two tabs call this simultaneously, both SELECT returns empty, both INSERT.
+    // With ignoreDuplicates, the second insert silently skips existing rows.
     const todaysChallenges = this.selectDailyChallenges(3);
     const inserts = todaysChallenges.map((c) => ({
       user_id: userId,
@@ -267,15 +269,28 @@ class DailyChallengeServiceClass {
       completed: false,
     }));
 
-    const { data: inserted, error: insertErr } = await supabase
+    const { error: insertErr } = await supabase
       .from('user_daily_challenges')
-      .insert(inserts)
-      .select('id, challenge_id');
+      .upsert(inserts, {
+        onConflict: 'user_id,challenge_id,assigned_date',
+        ignoreDuplicates: true,
+      });
     if (insertErr) console.error('[DailyChallenge] Failed to assign daily challenges:', insertErr);
 
-    // Return with real DB row IDs (fall back to composite if insert didn't return rows)
-    return todaysChallenges.map((c, i) => ({
-      id: inserted?.[i]?.id ?? `${userId}-${c.id}-${today}`,
+    // Always re-fetch from DB to get canonical rows (handles race condition correctly)
+    const { data: canonical } = await supabase
+      .from('user_daily_challenges')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('assigned_date', today);
+
+    if (canonical && canonical.length > 0) {
+      return canonical.map(this.mapToUserChallenge);
+    }
+
+    // Final fallback: return in-memory data if DB is unreachable
+    return todaysChallenges.map((c) => ({
+      id: `${userId}-${c.id}-${today}`,
       challengeId: c.id,
       userId,
       progress: 0,
@@ -303,7 +318,7 @@ class DailyChallengeServiceClass {
       return existing.map((row) => ({ ...this.mapToUserChallenge(row), tier: 'weekly' as const }));
     }
 
-    // Assign new weekly challenges
+    // Assign new weekly challenges — ignoreDuplicates handles TOCTOU race
     const weeklyChallenges = this.selectChallenges(WEEKLY_CHALLENGE_POOL, 3);
     const inserts = weeklyChallenges.map((c) => ({
       user_id: userId,
@@ -313,14 +328,27 @@ class DailyChallengeServiceClass {
       completed: false,
     }));
 
-    const { data: inserted, error: insertErr } = await supabase
+    const { error: insertErr } = await supabase
       .from('user_daily_challenges')
-      .insert(inserts)
-      .select('id, challenge_id');
+      .upsert(inserts, {
+        onConflict: 'user_id,challenge_id,assigned_date',
+        ignoreDuplicates: true,
+      });
     if (insertErr) console.error('[DailyChallenge] Failed to assign weekly challenges:', insertErr);
 
-    return weeklyChallenges.map((c, i) => ({
-      id: inserted?.[i]?.id ?? `${userId}-${c.id}-${weekKey}`,
+    // Re-fetch canonical rows from DB
+    const { data: canonical } = await supabase
+      .from('user_daily_challenges')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('assigned_date', weekKey);
+
+    if (canonical && canonical.length > 0) {
+      return canonical.map((row) => ({ ...this.mapToUserChallenge(row), tier: 'weekly' as const }));
+    }
+
+    return weeklyChallenges.map((c) => ({
+      id: `${userId}-${c.id}-${weekKey}`,
       challengeId: c.id,
       userId,
       progress: 0,
@@ -350,7 +378,7 @@ class DailyChallengeServiceClass {
       return existing.map((row) => ({ ...this.mapToUserChallenge(row), tier: 'monthly' as const }));
     }
 
-    // Assign new monthly challenges
+    // Assign new monthly challenges — ignoreDuplicates handles TOCTOU race
     const monthlyChallenges = this.selectChallenges(MONTHLY_CHALLENGE_POOL, 2);
     const inserts = monthlyChallenges.map((c) => ({
       user_id: userId,
@@ -360,15 +388,31 @@ class DailyChallengeServiceClass {
       completed: false,
     }));
 
-    const { data: inserted, error: insertErr } = await supabase
+    const { error: insertErr } = await supabase
       .from('user_daily_challenges')
-      .insert(inserts)
-      .select('id, challenge_id');
+      .upsert(inserts, {
+        onConflict: 'user_id,challenge_id,assigned_date',
+        ignoreDuplicates: true,
+      });
     if (insertErr)
       console.error('[DailyChallenge] Failed to assign monthly challenges:', insertErr);
 
-    return monthlyChallenges.map((c, i) => ({
-      id: inserted?.[i]?.id ?? `${userId}-${c.id}-${monthKey}`,
+    // Re-fetch canonical rows from DB
+    const { data: canonical } = await supabase
+      .from('user_daily_challenges')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('assigned_date', monthKey);
+
+    if (canonical && canonical.length > 0) {
+      return canonical.map((row) => ({
+        ...this.mapToUserChallenge(row),
+        tier: 'monthly' as const,
+      }));
+    }
+
+    return monthlyChallenges.map((c) => ({
+      id: `${userId}-${c.id}-${monthKey}`,
       challengeId: c.id,
       userId,
       progress: 0,

@@ -213,6 +213,7 @@ export default function PlayerStatsPage() {
   const targetUserId = userId || user?.id;
   const [stats, setStats] = useState<DetailedStats | null>(null);
   const [sessionHistory, setSessionHistory] = useState<SessionData[]>([]);
+  const [rawSessionData, setRawSessionData] = useState<any[] | null>(null);
   const [positionData, setPositionData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [category, setCategory] = useState<StatCategory>('overview');
@@ -397,6 +398,8 @@ export default function PlayerStatsPage() {
       if (sessionsResult.status === 'fulfilled') {
         const { data: sessData } = sessionsResult.value;
         if (sessData && sessData.length > 0) {
+          // Store raw data for BankrollTracker dedup
+          setRawSessionData(sessData);
           let cumulative = 0;
           const history = sessData.map((session) => {
             cumulative += session.profit_loss || 0;
@@ -416,6 +419,7 @@ export default function PlayerStatsPage() {
           setCachedSessions(targetUserId, history);
         } else {
           setSessionHistory([]);
+          setRawSessionData([]);
         }
       }
 
@@ -715,7 +719,7 @@ export default function PlayerStatsPage() {
                 <span className="section-icon">⚡</span>
                 <h3 style={{ color: '#f59e0b' }}>Advanced Stats</h3>
               </div>
-              <AdvancedStatsSummary userId={targetUserId} />
+              <AdvancedStatsSummary userId={targetUserId} initialData={stats} />
             </div>
 
             {/* Charts */}
@@ -877,7 +881,10 @@ export default function PlayerStatsPage() {
                 <span className="section-icon">💎</span>
                 <h3 style={{ color: '#10b981' }}>Bankroll Tracker</h3>
               </div>
-              <BankrollTracker userId={targetUserId} />
+              <BankrollTracker
+                userId={targetUserId}
+                initialSessions={rawSessionData || undefined}
+              />
             </div>
           </div>
         )}

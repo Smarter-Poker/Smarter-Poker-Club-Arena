@@ -58,6 +58,41 @@
   <div id="root"></div>
 
   <script type="module" src="/src/main.tsx"></script>
+
+  <!-- SELF-HEALING: Detect Next.js soft-navigation black screen and auto-recover.
+       When the World Hub navigates here via client-side routing, type="module" scripts
+       don't re-execute, leaving #root empty. This inline script detects that condition
+       and forces a full page reload to properly boot the SPA. -->
+  <script>
+    (function() {
+      var CHECK_DELAY = 2000;
+      var MAX_RETRIES = 1;
+      var RETRY_KEY = '__club_arena_recovery';
+      var retryCount = 0;
+      try { retryCount = parseInt(sessionStorage.getItem(RETRY_KEY) || '0', 10); } catch(e) {}
+
+      setTimeout(function() {
+        var root = document.getElementById('root');
+        if (root && root.childNodes.length === 0 && retryCount < MAX_RETRIES) {
+          try { sessionStorage.setItem(RETRY_KEY, String(retryCount + 1)); } catch(e) {}
+          window.location.reload();
+        } else if (retryCount >= MAX_RETRIES) {
+          try { sessionStorage.removeItem(RETRY_KEY); } catch(e) {}
+        }
+      }, CHECK_DELAY);
+
+      // Clear retry counter on successful mount
+      var observer = new MutationObserver(function(mutations, obs) {
+        var root = document.getElementById('root');
+        if (root && root.childNodes.length > 0) {
+          try { sessionStorage.removeItem(RETRY_KEY); } catch(e) {}
+          obs.disconnect();
+        }
+      });
+      var rootEl = document.getElementById('root');
+      if (rootEl) { observer.observe(rootEl, { childList: true }); }
+    })();
+  </script>
 </body>
 
 </html>

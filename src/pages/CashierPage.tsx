@@ -44,6 +44,9 @@ import DynamicWallet from '../components/wallet/DynamicWallet';
 import styles from './CashierPage.module.css';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { retryFetch } from '../utils/retryFetch';
+import MetalButton from '../components/metal-ui/MetalButton';
+import MetalFrame from '../components/metal-ui/MetalFrame';
+import MetalInput from '../components/metal-ui/MetalInput';
 
 type CashierAction = 'send' | 'distribute' | 'buyin' | 'cashout' | 'mint' | 'history';
 
@@ -1214,19 +1217,10 @@ export default function CashierPage() {
   // ─────────────────────────────────────────────────────────────────────────────
 
   return (
-    <div className="cashier-page" style={{ padding: '16px', paddingBottom: '100px' }}>
-      <style>{`
-                @keyframes slideInDown { from { opacity: 0; transform: translateY(-12px); } to { opacity: 1; transform: translateY(0); } }
-                @keyframes fadeInStagger { from { opacity: 0; } to { opacity: 1; } }
-                .cashier-balance-card { animation: slideInDown 0.6s cubic-bezier(0.34, 1.56, 0.64, 1); }
-                .cashier-balance-card:nth-child(2) { animation: slideInDown 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) 0.1s both; }
-                .cashier-tx-item { animation: fadeInStagger 0.5s ease-out forwards; opacity: 0; }
-                @keyframes shimmer { 0% { background-position: -1000px 0; } 100% { background-position: 1000px 0; } }
-                .cashier-skeleton { background: linear-gradient(90deg, rgba(255,255,255,0.1) 25%, rgba(255,255,255,0.2) 50%, rgba(255,255,255,0.1)); background-size: 1000px 100%; animation: shimmer 2s infinite; }
-            `}</style>
+    <div className={styles.page}>
       {/* ── Wallet Display — always visible, real-time updates ── */}
       {user?.id && clubId && (
-        <div className="cashier-wallet-header">
+        <div className={styles.walletHeader}>
           <DynamicWallet
             userId={user.id}
             clubId={clubId}
@@ -1245,74 +1239,36 @@ export default function CashierPage() {
       )}
 
       {/* Action Tabs */}
-      <div className="action-tabs-metal">
+      <nav className={styles.tabNav}>
         {tabs.map((act) => (
-          <MetalButton
+          <button
             key={act}
-            variant={action === act ? 'primary' : 'secondary'}
-            size="sm"
+            className={`${styles.tab} ${action === act ? styles.tabActive : ''}`}
             onClick={() => {
               setAction(act);
               setMessage(null);
             }}
           >
             {tabLabels[act]}
-          </MetalButton>
+          </button>
         ))}
-      </div>
+      </nav>
 
       {/* Financial Quick Links — visible to owners/admins/agents */}
       {canSend && clubId && (
-        <div
-          style={{
-            display: 'flex',
-            gap: '8px',
-            flexWrap: 'wrap',
-            margin: '8px 0 12px',
-          }}
-        >
+        <div className={styles.quickLinks}>
           <a
             href={`/clubs/${clubId}/disputes`}
-            style={{
-              padding: '5px 10px',
-              background: 'rgba(245,158,11,0.1)',
-              border: '1px solid rgba(245,158,11,0.25)',
-              borderRadius: '6px',
-              color: '#f59e0b',
-              fontSize: '0.7rem',
-              fontWeight: 600,
-              textDecoration: 'none',
-            }}
+            className={`${styles.quickLink} ${styles.quickLinkWarning}`}
           >
             ⚠️ Disputes
           </a>
-          <a
-            href="/financial-alerts"
-            style={{
-              padding: '5px 10px',
-              background: 'rgba(239,68,68,0.1)',
-              border: '1px solid rgba(239,68,68,0.25)',
-              borderRadius: '6px',
-              color: '#ef4444',
-              fontSize: '0.7rem',
-              fontWeight: 600,
-              textDecoration: 'none',
-            }}
-          >
+          <a href="/financial-alerts" className={`${styles.quickLink} ${styles.quickLinkDanger}`}>
             🚨 Alerts
           </a>
           <a
             href={`/clubs/${clubId}/financials`}
-            style={{
-              padding: '5px 10px',
-              background: 'rgba(24,119,242,0.1)',
-              border: '1px solid rgba(24,119,242,0.25)',
-              borderRadius: '6px',
-              color: '#1877f2',
-              fontSize: '0.7rem',
-              fontWeight: 600,
-              textDecoration: 'none',
-            }}
+            className={`${styles.quickLink} ${styles.quickLinkPrimary}`}
           >
             💰 Financials
           </a>

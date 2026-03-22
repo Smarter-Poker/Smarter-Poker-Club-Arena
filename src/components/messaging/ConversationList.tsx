@@ -161,6 +161,13 @@ export default function ConversationList({
                 (p: any) => p.user_id !== user.id
               )?.profiles;
 
+              const lastReadAt = item.last_read_at ? new Date(item.last_read_at).getTime() : 0;
+              const lastMsgAt = conv?.last_message_at
+                ? new Date(conv.last_message_at).getTime()
+                : 0;
+              // Unread if last message is newer than last read timestamp
+              const hasUnread = lastMsgAt > lastReadAt;
+
               return {
                 id: conv?.id,
                 name: conv?.is_group ? conv?.group_name : otherParticipant?.username || 'Unknown',
@@ -169,7 +176,7 @@ export default function ConversationList({
                 lastMessage: conv?.last_message_preview || '',
                 lastMessageTime: conv?.last_message_at,
                 lastMessageUserId: '', // Not available in social_conversations
-                unreadCount: 0, // unread_count column doesn't exist; compute from last_read_at
+                unreadCount: hasUnread ? 1 : 0, // Computed from last_read_at vs last_message_at
                 isGroup: conv?.is_group || false,
                 isPinned: item.is_pinned || false,
                 participantCount: conv?.social_conversation_participants?.length,

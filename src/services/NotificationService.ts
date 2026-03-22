@@ -526,7 +526,7 @@ class NotificationServiceClass {
       title: data.title as string,
       message: data.message as string,
       metadata: data.metadata as Record<string, unknown> | undefined,
-      isRead: (data.read ?? data.is_read ?? false) as boolean,
+      isRead: (data.read ?? false) as boolean,
       createdAt: data.created_at as string,
     };
   }

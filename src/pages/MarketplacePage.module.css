@@ -816,3 +816,89 @@
     grid-template-columns: 1fr 1fr;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   FOCUS RINGS — Keyboard Accessibility
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.tab:focus-visible,
+.categoryBtn:focus-visible {
+  outline: 2px solid rgba(69, 153, 255, 0.7);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+.itemCard:focus-visible {
+  outline: 2px solid rgba(69, 153, 255, 0.6);
+  outline-offset: 3px;
+  border-radius: 14px;
+}
+
+.btnPrimary:focus-visible,
+.btnGhost:focus-visible,
+.emptyButton:focus-visible {
+  outline: 2px solid rgba(69, 153, 255, 0.7);
+  outline-offset: 2px;
+}
+
+.searchInput:focus-visible,
+.sortSelect:focus-visible,
+.formInput:focus-visible,
+.formSelect:focus-visible {
+  outline: 2px solid rgba(69, 153, 255, 0.5);
+  outline-offset: 1px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   ACTIVE PRESS FEEDBACK — Tactile Response
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.tab:active,
+.categoryBtn:active {
+  transform: scale(0.95);
+}
+
+.itemCard:active {
+  transform: scale(0.97);
+}
+
+.btnPrimary:active,
+.btnGhost:active,
+.emptyButton:active {
+  transform: scale(0.96);
+}
+
+.btnActiveToggle:active,
+.btnInactiveToggle:active,
+.btnDeleteSmall:active {
+  transform: scale(0.95);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   PREFERS REDUCED MOTION — Vestibular Accessibility
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+@media (prefers-reduced-motion: reduce) {
+  .balanceBadge,
+  .successFlash,
+  .modalOverlay,
+  .modal {
+    animation: none !important;
+  }
+
+  .itemCard,
+  .tab,
+  .categoryBtn,
+  .btnPrimary,
+  .btnGhost,
+  .emptyButton,
+  .adminRow {
+    transition: none !important;
+  }
+
+  .itemCard:hover,
+  .btnPrimary:hover,
+  .emptyButton:hover {
+    transform: none;
+  }
+}

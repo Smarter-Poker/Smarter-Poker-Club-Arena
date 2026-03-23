@@ -887,7 +887,7 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
           )}
 
           {/* ── Multi-Day Toggle ── */}
-          {format === 'mtt' && (
+          {(format === 'mtt_freezeout' || format === 'mtt_rebuy' || format === 'mtt_reentry') && (
             <div className={styles.row}>
               <div className={styles.col}>
                 <div className={styles.formGroup}>

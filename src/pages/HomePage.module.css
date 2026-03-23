@@ -241,6 +241,8 @@
   height: auto;
   object-fit: contain;
   display: block;
+  /* Prevent layout shift — reserve space matching the image aspect ratio */
+  aspect-ratio: 1024 / 682;
 }
 
 /* Clickable zones overlaid on action bar */
@@ -254,13 +256,19 @@
   border: none;
   cursor: pointer;
   border-radius: 8px;
+  /* Smooth transition for press feedback */
+  transition:
+    transform 0.12s ease,
+    background 0.12s ease,
+    box-shadow 0.12s ease;
 }
 
 .actionZoneLeft:active,
 .actionZoneCenter:active,
 .actionZoneRight:active {
-  background: rgba(0, 212, 255, 0.15);
-  box-shadow: inset 0 0 30px rgba(0, 212, 255, 0.15);
+  background: rgba(0, 212, 255, 0.2);
+  box-shadow: inset 0 0 40px rgba(0, 212, 255, 0.25);
+  transform: scale(0.97);
 }
 
 .actionZoneLeft {

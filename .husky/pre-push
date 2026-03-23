@@ -1,0 +1,27 @@
+#!/bin/sh
+# ═══════════════════════════════════════════════════════════════════════════════
+# PRE-PUSH SAFETY GATE — TypeScript Compilation Check
+# ═══════════════════════════════════════════════════════════════════════════════
+# Prevents pushing code that will fail Vercel deployments.
+# Runs tsc --noEmit to catch type errors before they reach CI/CD.
+# To bypass in emergencies: git push --no-verify
+# ═══════════════════════════════════════════════════════════════════════════════
+
+echo "🔒 Pre-push safety gate: Running TypeScript check..."
+
+# Run tsc from the repo root
+npx tsc --noEmit 2>&1
+
+TSC_EXIT=$?
+
+if [ $TSC_EXIT -ne 0 ]; then
+  echo ""
+  echo "❌ TypeScript compilation failed — push BLOCKED"
+  echo "   Fix the errors above before pushing."
+  echo "   To bypass: git push --no-verify (NOT recommended)"
+  echo ""
+  exit 1
+fi
+
+echo "✅ TypeScript check passed — push allowed"
+exit 0

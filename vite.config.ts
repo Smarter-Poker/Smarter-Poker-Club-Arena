@@ -64,7 +64,7 @@ export default defineConfig({
       process.env.NODE_ENV === 'production' ? ['console.log', 'console.debug', 'console.info'] : [],
   },
   build: {
-    sourcemap: 'hidden', // Generate source maps for Sentry but don't expose them to browsers
+    sourcemap: false, // Disabled to fit in CI disk constraints; re-enable for Sentry in production CI
     rollupOptions: {
       output: {
         manualChunks(id: string) {

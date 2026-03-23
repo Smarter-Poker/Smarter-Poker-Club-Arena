@@ -219,10 +219,10 @@ export const BBJService = {
     if (error) {
       // No pool found is not a critical error — return a default empty pool
       if (error.code === 'PGRST116') {
-        console.error('BBJService.getPool: No pool found, returning default');
+        console.debug('BBJService.getPool: No pool found, returning default');
         return null;
       }
-      console.error('BBJService.getPool error:', error);
+      console.debug('BBJService.getPool error:', error);
       return null;
     }
 

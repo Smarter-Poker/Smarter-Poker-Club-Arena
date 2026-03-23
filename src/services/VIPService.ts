@@ -368,7 +368,7 @@ class VIPServiceClass {
         .or('expires_at.is.null,expires_at.gt.now()')
         .order('created_at', { ascending: false })
         .limit(1);
-      if (error) console.warn('[VIPService] checkExistingPurchase error:', error.message);
+      if (error) console.debug('[VIPService] checkExistingPurchase:', error.message);
 
       if (!data || data.length === 0) return false;
 

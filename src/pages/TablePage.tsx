@@ -2395,14 +2395,20 @@ export default function TablePage({
 
         if (horses.length === 0) {
           // No horses found, seed the table
-          // Seed with new horses if none exist
           const bbMatch = tableState.blinds.match(/\/(\d+)/);
           const bigBlind = bbMatch ? parseInt(bbMatch[1]) : 2;
-          await HydraService.seedTable(tableId, bigBlind);
-          // Re-query after seeding
-          const seededHorses = await HydraService.getActiveHorses(tableId);
+          // Use seedTable return value directly — avoids RLS read issues on table_seats
+          const seededHorses = await HydraService.seedTable(tableId, bigBlind);
           if (seededHorses.length > 0) {
+            console.debug('[Horses] seedTable returned', seededHorses.length, 'horses, populating UI');
             populateHorsePlayers(seededHorses);
+          } else {
+            // Fallback: try DB query in case horses were already seated by another client
+            const dbHorses = await HydraService.getActiveHorses(tableId);
+            if (dbHorses.length > 0) {
+              console.debug('[Horses] Fallback DB query found', dbHorses.length, 'horses');
+              populateHorsePlayers(dbHorses);
+            }
           }
         } else {
           // Load horses into table state
@@ -2467,6 +2473,128 @@ export default function TablePage({
 
     loadHorses();
   }, [tableId, tableState.blinds]);
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // REALTIME TABLE_SEATS — Auto-update UI when new players/horses are seated
+  // ═══════════════════════════════════════════════════════════════════════════
+  useEffect(() => {
+    if (!tableId) return;
+
+    const channel = supabase
+      .channel(`table-seats-live:${tableId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'table_seats',
+          filter: `table_id=eq.${tableId}`,
+        },
+        async (payload) => {
+          const newSeat = payload.new as {
+            user_id: string;
+            seat_number: number;
+            stack: number;
+            left_at: string | null;
+          };
+          if (newSeat.left_at) return;
+          if (newSeat.user_id === userId) return;
+
+          console.debug('[RealtimeSeats] New seat INSERT:', newSeat.seat_number, newSeat.user_id);
+
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('id, username, display_name, avatar_url, is_horse, horse_profile')
+            .eq('id', newSeat.user_id)
+            .maybeSingle();
+
+          setTableState((prev) => {
+            const seatIdx = newSeat.seat_number - 1;
+            if (seatIdx < 0 || seatIdx >= prev.players.length) return prev;
+            if (prev.players[seatIdx]) return prev;
+
+            const updatedPlayers = [...prev.players];
+            updatedPlayers[seatIdx] = {
+              id: newSeat.user_id,
+              name: profile?.display_name || profile?.username || `Player ${newSeat.seat_number}`,
+              avatar: profile?.avatar_url || '',
+              stack: newSeat.stack || 0,
+              status: 'active' as const,
+              isHero: false,
+              showCards: false,
+              isHorse: profile?.is_horse || false,
+              horseProfile: profile?.horse_profile || undefined,
+            } as any;
+
+            return { ...prev, players: updatedPlayers };
+          });
+
+          if (profile?.is_horse) {
+            horseMapRef.current.set(newSeat.seat_number, {
+              id: newSeat.user_id,
+              profile: profile.horse_profile || 'reg',
+              name: profile.display_name || profile.username || `Player ${newSeat.seat_number}`,
+              stack: newSeat.stack || 0,
+            });
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'table_seats',
+          filter: `table_id=eq.${tableId}`,
+        },
+        (payload) => {
+          const updated = payload.new as {
+            user_id: string;
+            seat_number: number;
+            stack: number;
+            left_at: string | null;
+          };
+
+          if (updated.left_at) {
+            console.debug('[RealtimeSeats] Player LEFT seat:', updated.seat_number);
+            setTableState((prev) => {
+              const seatIdx = updated.seat_number - 1;
+              if (seatIdx < 0 || seatIdx >= prev.players.length) return prev;
+              if (!prev.players[seatIdx]) return prev;
+              const updatedPlayers = [...prev.players];
+              updatedPlayers[seatIdx] = null as any;
+              return { ...prev, players: updatedPlayers };
+            });
+            horseMapRef.current.delete(updated.seat_number);
+          } else {
+            setTableState((prev) => {
+              const seatIdx = updated.seat_number - 1;
+              if (seatIdx < 0 || seatIdx >= prev.players.length) return prev;
+              if (!prev.players[seatIdx]) return prev;
+              const updatedPlayers = [...prev.players];
+              const existing = updatedPlayers[seatIdx];
+              if (existing) {
+                updatedPlayers[seatIdx] = { ...existing, stack: updated.stack } as typeof existing;
+              }
+              return { ...prev, players: updatedPlayers };
+            });
+          }
+        }
+      )
+      .subscribe((status: string, err?: Error) => {
+        if (status === 'SUBSCRIBED') {
+          console.debug(`[RealtimeSeats] Subscribed to table_seats for ${tableId}`);
+        }
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[RealtimeSeats] Channel error:', err?.message);
+        }
+      });
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [tableId, userId]);
+
 
   // ═══════════════════════════════════════════════════════════════════════════
   // HAND CONTROLLER — Manages poker game loop for ALL tables
@@ -5210,7 +5338,7 @@ export default function TablePage({
                 });
 
                 // Execute FULLY ATOMIC buy-in and seat insertion
-                const { error: rpcErr } = await supabase.rpc('atomic_table_buyin', {
+                const { data: rpcData, error: rpcErr } = await supabase.rpc('atomic_table_buyin', {
                   p_user_id: userId,
                   p_table_id: tableId,
                   p_seat_number: selectedSeat,
@@ -5223,7 +5351,14 @@ export default function TablePage({
                   throw new Error('Failed to buy-in: ' + rpcErr.message);
                 }
 
-                console.debug('[BuyIn] atomic_table_buyin SUCCESS');
+                // Validate RPC return data
+                const rpcResult = typeof rpcData === 'string' ? JSON.parse(rpcData) : rpcData;
+                if (rpcResult && rpcResult.success === false) {
+                  console.error('[BuyIn] atomic_table_buyin returned failure:', rpcResult);
+                  throw new Error('Buy-in rejected: ' + (rpcResult.error || 'Unknown server error'));
+                }
+
+                console.debug('[BuyIn] atomic_table_buyin SUCCESS:', rpcResult);
 
                 setAccountBalance((prev) => Math.max(0, prev - amount));
                 totalBuyInRef.current += amount; // Track initial buy-in for session P/L

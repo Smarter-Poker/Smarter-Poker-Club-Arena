@@ -1,7 +1,7 @@
 /**
- * ═══════════════════════════════════════════════════════════════════════════════
- * 🐴 HYDRA SERVICE — Horse Liquidity Fleet Management
- * ═══════════════════════════════════════════════════════════════════════════════
+ * âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+ * ð´ HYDRA SERVICE â Horse Liquidity Fleet Management
+ * âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
  *
  * Manages the Hydra horse fleet (300 Horses #101-#400) to ensure 24/7 table liquidity.
  *
@@ -12,7 +12,7 @@
  * - "Entry Variance": Random 10-90s delays for natural appearance
  * - "Invisible Fleet": Horses are indistinguishable from human players
  *
- * HORSE STYLES (ALL winning players — losses come from variance, not mistakes):
+ * HORSE STYLES (ALL winning players â losses come from variance, not mistakes):
  * - TAG: Tight-Aggressive, solid ABC poker (30% of fleet)
  * - BALANCED: GTO-oriented, mixed strategies (25% of fleet)
  * - LAG: Loose-Aggressive, wide ranges, creative (20% of fleet)
@@ -27,9 +27,9 @@ import { supabase } from '../lib/supabase';
 import { WalletService } from './WalletService';
 import { masterBus } from '../core/MasterBus';
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 // TYPES
-// ═══════════════════════════════════════════════════════════════════════════════
+// âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 export type HorseProfile = 'fish' | 'reg' | 'nit' | 'lag' | 'maniac';
 export type HorseStatus = 'available' | 'seated' | 'leaving' | 'disabled';
@@ -69,7 +69,7 @@ export interface TableLiquidityStatus {
   needsFewerHorses: boolean;
 }
 
-// HorseDecision is defined in HorseLogic.ts — use that canonical version
+// HorseDecision is defined in HorseLogic.ts â use that canonical version
 import type { HorseDecision } from '../engine/HorseLogic';
 import { retryAsync } from '../utils/retryAsync';
 export type { HorseDecision } from '../engine/HorseLogic';
@@ -86,15 +86,15 @@ export interface HandContext {
   isHeadsUp: boolean;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 // CONSTANTS
-// ═══════════════════════════════════════════════════════════════════════════════
+// âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 const DEFAULT_CONFIG: HydraConfig = {
   maxHorsesPerTable: 3,
   minHorsesPerTable: 0,
   fleetSize: 308,
-  entryDelayRange: [10, 90],
+  entryDelayRange: [1, 3],
   organicRecedeEnabled: true,
   seatWarmupDelay: 2000,
   thinkTimeRange: [800, 4000],
@@ -145,9 +145,9 @@ const PREFLOP_RANGES: Record<
   maniac: { vpip: 55, pfr: 40, threeBet: 18 },
 };
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 // UTILITY FUNCTIONS
-// ═══════════════════════════════════════════════════════════════════════════════
+// âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 function randomInRange(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -172,9 +172,9 @@ function weightedRandom<T extends string>(weights: Record<T, number>): T {
   return entries[0][0];
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 // SERVICE
-// ═══════════════════════════════════════════════════════════════════════════════
+// âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
 export const HydraService = {
   config: { ...DEFAULT_CONFIG },
@@ -186,9 +186,9 @@ export const HydraService = {
     this.config = { ...DEFAULT_CONFIG, ...customConfig };
   },
 
-  // ─────────────────────────────────────────────────────────────────────────────
+  // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
   // HORSE FLEET MANAGEMENT
-  // ─────────────────────────────────────────────────────────────────────────────
+  // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
   /**
    * Get available horses from the fleet (not currently seated)
@@ -306,7 +306,7 @@ export const HydraService = {
       console.warn('[Hydra] getTableLiquidityStatus tableInfo error:', tableInfoErr.message);
     const maxPlayers = tableInfo?.max_players || 9;
 
-    // Simple seat count query — only active seats
+    // Simple seat count query â only active seats
     const { data: seats, error } = await supabase
       .from('table_seats')
       .select('user_id')
@@ -340,9 +340,9 @@ export const HydraService = {
     };
   },
 
-  // ─────────────────────────────────────────────────────────────────────────────
+  // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
   // TABLE SEEDING & RECEDING
-  // ─────────────────────────────────────────────────────────────────────────────
+  // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
   /**
    * Seed a table with horse players (3 Horses to Start law)
@@ -440,7 +440,7 @@ export const HydraService = {
     }
 
     // Execute FULLY ATOMIC buy-in and seat insertion for Horse
-    const { error: rpcErr } = await retryAsync(
+    const { data: rpcData, error: rpcErr } = await retryAsync(
       () =>
         supabase.rpc('atomic_table_buyin', {
           p_user_id: horseId,
@@ -460,8 +460,19 @@ export const HydraService = {
       return null;
     }
 
+    // Validate RPC return data — the function returns {success, amount}
+    const rpcResult = typeof rpcData === 'string' ? JSON.parse(rpcData) : rpcData;
+    if (rpcResult && rpcResult.success === false) {
+      console.error(
+        `[HydraService] atomic_table_buyin returned FAILURE for horse ${horseId}:`,
+        rpcResult
+      );
+      return null;
+    }
+
     console.debug(
-      `[HydraService] atomic_table_buyin SUCCESS for horse ${horseId} at seat ${availableSeat}`
+      `[HydraService] atomic_table_buyin SUCCESS for horse ${horseId} at seat ${availableSeat}:`,
+      rpcResult
     );
 
     // Log buy-in transaction via centralized WalletService RPC
@@ -551,7 +562,7 @@ export const HydraService = {
   },
 
   /**
-   * Remove a horse from table — cash out remaining stack back to wallet
+   * Remove a horse from table â cash out remaining stack back to wallet
    */
   async removeHorse(tableId: string, horseId: string): Promise<boolean> {
     // 1. Get the horse's current stack BEFORE removing the seat
@@ -684,9 +695,9 @@ export const HydraService = {
     }
   },
 
-  // ─────────────────────────────────────────────────────────────────────────────
+  // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
   // HORSE DECISION MAKING (Poker AI)
-  // ─────────────────────────────────────────────────────────────────────────────
+  // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
   /**
    * Get action decision for a horse
@@ -794,7 +805,7 @@ export const HydraService = {
     const [minFactor, maxFactor] = sizingFactors[profile] || sizingFactors['reg'];
     const targetSize = pot * (minFactor + Math.random() * (maxFactor - minFactor));
 
-    // Exact penny precision — no rounding on monetary values
+    // Exact penny precision â no rounding on monetary values
     const precise = Math.trunc(targetSize * 100) / 100;
     return Math.max(minRaise, Math.min(maxRaise, precise));
   },
@@ -822,9 +833,9 @@ export const HydraService = {
     return PROFILE_WEIGHTS[profile] || PROFILE_WEIGHTS['reg'];
   },
 
-  // ─────────────────────────────────────────────────────────────────────────────
+  // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
   // STATISTICS & MONITORING
-  // ─────────────────────────────────────────────────────────────────────────────
+  // âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
   /**
    * Get fleet statistics

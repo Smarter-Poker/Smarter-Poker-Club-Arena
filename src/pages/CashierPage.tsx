@@ -1359,7 +1359,9 @@ export default function CashierPage() {
       {/* ═══ SEND CHIPS ═══ */}
       {action === 'send' && (
         <section className={styles.card}>
-          <h2 className={styles.cardTitle}>Send Chips</h2>
+          <h2 className={styles.cardTitle}>
+            <span className={styles.cardTitleIcon}>↗</span>Send Chips
+          </h2>
           <div className={styles.cardBody}>
             <div className={`${styles.message} ${styles.messageInfo}`}>
               Send chips from your wallet to{' '}
@@ -1374,7 +1376,9 @@ export default function CashierPage() {
             <div className={styles.formGroup}>
               <label className={styles.formLabel}>SEND TO:</label>
               {loadingRecipients ? (
-                <div className={styles.loadingText}>Loading...</div>
+                <div className={styles.recipientSkeleton} aria-busy="true">
+                  <div className={styles.recipientSkeletonBar} />
+                </div>
               ) : (
                 <select
                   className={styles.select}
@@ -1499,7 +1503,9 @@ export default function CashierPage() {
       {/* ═══ DISTRIBUTE CHIPS ═══ */}
       {action === 'distribute' && (
         <section className={styles.card}>
-          <h2 className={styles.cardTitle}>Distribute Chips</h2>
+          <h2 className={styles.cardTitle}>
+            <span className={styles.cardTitleIcon}>↓</span>Distribute Chips
+          </h2>
           <div className={styles.cardBody}>
             <div className={`${styles.message} ${styles.messageInfo}`}>
               Distribute chips directly to players or agents from the club bank. Each distribution
@@ -1510,7 +1516,9 @@ export default function CashierPage() {
             <div className={styles.formGroup}>
               <label className={styles.formLabel}>Recipient</label>
               {loadingRecipients ? (
-                <div className={styles.loadingText}>Loading players...</div>
+                <div className={styles.recipientSkeleton} aria-busy="true">
+                  <div className={styles.recipientSkeletonBar} />
+                </div>
               ) : (
                 <select
                   className={styles.select}
@@ -1565,7 +1573,10 @@ export default function CashierPage() {
                 const elapsed = now - lastDistributeRef.current;
                 if (elapsed < DISTRIBUTE_RATE_LIMIT_MS) {
                   const waitSec = Math.ceil((DISTRIBUTE_RATE_LIMIT_MS - elapsed) / 1000);
-                  setMessage({ type: 'error', text: `⏱ Please wait ${waitSec}s before distributing again` });
+                  setMessage({
+                    type: 'error',
+                    text: `⏱ Please wait ${waitSec}s before distributing again`,
+                  });
                   return;
                 }
 
@@ -1696,6 +1707,15 @@ export default function CashierPage() {
       {(action === 'buyin' || action === 'cashout' || action === 'mint') && (
         <section className={styles.card}>
           <h2 className={styles.cardTitle}>
+            <span className={styles.cardTitleIcon}>
+              {action === 'cashout' && cashoutConfirm.show
+                ? '🛡'
+                : action === 'buyin'
+                  ? '▶'
+                  : action === 'cashout'
+                    ? '◀'
+                    : '◆'}
+            </span>
             {action === 'cashout' && cashoutConfirm.show
               ? 'Escrow Verification'
               : action === 'buyin'
@@ -1877,7 +1897,9 @@ export default function CashierPage() {
       {/* ═══ TRANSACTION HISTORY ═══ */}
       {action === 'history' && (
         <section className={styles.card}>
-          <h2 className={styles.cardTitle}>Transaction History</h2>
+          <h2 className={styles.cardTitle}>
+            <span className={styles.cardTitleIcon}>≡</span>Transaction History
+          </h2>
           <div className={styles.txContainer}>
             {/* Filters */}
             <div className={styles.txFilters}>
@@ -1915,53 +1937,55 @@ export default function CashierPage() {
               </div>
             ) : (
               <>
-              <div className={styles.txList}>
-                {filteredTransactions.slice(0, txPage * TX_PAGE_SIZE).map((tx: any, idx: number) => (
-                  <div
-                    key={tx.id}
-                    className={styles.txRow}
-                    style={{ animationDelay: `${idx * 0.05}s` }}
-                  >
-                    <span className={styles.txIcon}>{CATEGORY_ICONS[tx.category] || '●'}</span>
-                    <div className={styles.txDetails}>
-                      <span className={styles.txCategory}>
-                        {CATEGORY_LABELS[tx.category] ||
-                          (tx.category || tx.type || '').replace(/_/g, ' ').toUpperCase()}
-                      </span>
-                      <span className={styles.txDesc}>{tx.description}</span>
-                    </div>
-                    <div className={styles.txAmounts}>
-                      <span
-                        className={`${styles.txAmount} ${tx.type === 'credit' ? styles.txPositive : styles.txNegative}`}
+                <div className={styles.txList}>
+                  {filteredTransactions
+                    .slice(0, txPage * TX_PAGE_SIZE)
+                    .map((tx: any, idx: number) => (
+                      <div
+                        key={tx.id}
+                        className={styles.txRow}
+                        style={{ animationDelay: `${idx * 0.05}s` }}
                       >
-                        {tx.type === 'credit' ? '+' : '-'}
-                        {Math.abs(tx.amount).toLocaleString()}
-                      </span>
-                      <span className={styles.txWallet}>{tx.wallet_type}</span>
-                    </div>
-                    <span className={styles.txTime}>
-                      {new Date(tx.created_at).toLocaleDateString([], {
-                        month: 'short',
-                        day: 'numeric',
-                      })}{' '}
-                      {new Date(tx.created_at).toLocaleTimeString([], {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                    </span>
-                  </div>
-                ))}
-              </div>
-              {/* Pagination — Load More */}
-              {filteredTransactions.length > txPage * TX_PAGE_SIZE && (
-                <button
-                  className={styles.loadMoreBtn}
-                  onClick={() => setTxPage((p) => p + 1)}
-                  aria-label="Load more transactions"
-                >
-                  Load More ({filteredTransactions.length - txPage * TX_PAGE_SIZE} remaining)
-                </button>
-              )}
+                        <span className={styles.txIcon}>{CATEGORY_ICONS[tx.category] || '●'}</span>
+                        <div className={styles.txDetails}>
+                          <span className={styles.txCategory}>
+                            {CATEGORY_LABELS[tx.category] ||
+                              (tx.category || tx.type || '').replace(/_/g, ' ').toUpperCase()}
+                          </span>
+                          <span className={styles.txDesc}>{tx.description}</span>
+                        </div>
+                        <div className={styles.txAmounts}>
+                          <span
+                            className={`${styles.txAmount} ${tx.type === 'credit' ? styles.txPositive : styles.txNegative}`}
+                          >
+                            {tx.type === 'credit' ? '+' : '-'}
+                            {Math.abs(tx.amount).toLocaleString()}
+                          </span>
+                          <span className={styles.txWallet}>{tx.wallet_type}</span>
+                        </div>
+                        <span className={styles.txTime}>
+                          {new Date(tx.created_at).toLocaleDateString([], {
+                            month: 'short',
+                            day: 'numeric',
+                          })}{' '}
+                          {new Date(tx.created_at).toLocaleTimeString([], {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </span>
+                      </div>
+                    ))}
+                </div>
+                {/* Pagination — Load More */}
+                {filteredTransactions.length > txPage * TX_PAGE_SIZE && (
+                  <button
+                    className={styles.loadMoreBtn}
+                    onClick={() => setTxPage((p) => p + 1)}
+                    aria-label="Load more transactions"
+                  >
+                    Load More ({filteredTransactions.length - txPage * TX_PAGE_SIZE} remaining)
+                  </button>
+                )}
               </>
             )}
           </div>
@@ -1994,7 +2018,9 @@ export default function CashierPage() {
       {sendConfirm.show && (
         <div
           className={styles.modalOverlay}
-          onClick={() => setSendConfirm({ show: false, value: 0, recipientId: '', recipientName: '' })}
+          onClick={() =>
+            setSendConfirm({ show: false, value: 0, recipientId: '', recipientName: '' })
+          }
           role="dialog"
           aria-modal="true"
           aria-labelledby="send-confirm-title"
@@ -2004,8 +2030,8 @@ export default function CashierPage() {
               ⚠️ Confirm High-Value Transfer
             </h3>
             <p className={styles.confirmText}>
-              You are about to send <strong>{sendConfirm.value.toLocaleString()}</strong> chips
-              to <strong>{sendConfirm.recipientName}</strong>.
+              You are about to send <strong>{sendConfirm.value.toLocaleString()}</strong> chips to{' '}
+              <strong>{sendConfirm.recipientName}</strong>.
             </p>
             <p className={styles.confirmWarning}>
               This action cannot be undone. Please verify the amount and recipient.
@@ -2013,7 +2039,9 @@ export default function CashierPage() {
             <div className={styles.confirmButtons}>
               <button
                 className={styles.btnSecondary}
-                onClick={() => setSendConfirm({ show: false, value: 0, recipientId: '', recipientName: '' })}
+                onClick={() =>
+                  setSendConfirm({ show: false, value: 0, recipientId: '', recipientName: '' })
+                }
               >
                 Cancel
               </button>

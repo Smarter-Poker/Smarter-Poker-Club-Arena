@@ -35,6 +35,11 @@
   padding: 4px;
   border: 1px solid rgba(58, 59, 60, 0.5);
   -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.tabNav::-webkit-scrollbar {
+  display: none;
 }
 
 .tab {
@@ -61,7 +66,10 @@
 .tabActive {
   color: #fff;
   background: linear-gradient(135deg, rgba(69, 153, 255, 0.2) 0%, rgba(69, 153, 255, 0.08) 100%);
-  box-shadow: 0 0 12px rgba(69, 153, 255, 0.15);
+  box-shadow:
+    0 0 12px rgba(69, 153, 255, 0.15),
+    inset 0 -2px 0 #4599ff;
+  position: relative;
 }
 
 /* ═══ Quick Links ═══ */
@@ -111,6 +119,9 @@
   padding: 24px;
   margin-bottom: 20px;
   animation: cardIn 0.35s ease-out;
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.3),
+    0 1px 4px rgba(0, 0, 0, 0.15);
 }
 
 @keyframes cardIn {
@@ -133,6 +144,22 @@
   letter-spacing: 0.5px;
   padding-bottom: 12px;
   border-bottom: 1px solid rgba(58, 59, 60, 0.5);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cardTitleIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: rgba(69, 153, 255, 0.1);
+  color: #4599ff;
+  font-size: 16px;
+  flex-shrink: 0;
 }
 
 .cardBody {
@@ -510,8 +537,15 @@
   display: flex;
   gap: 6px;
   margin-bottom: 12px;
-  flex-wrap: wrap;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
   align-items: center;
+  padding-bottom: 4px;
+}
+
+.txFilters::-webkit-scrollbar {
+  display: none;
 }
 
 .txFilterBtn {
@@ -526,6 +560,8 @@
   border: 1px solid rgba(58, 59, 60, 0.5);
   background: rgba(24, 25, 26, 0.4);
   color: #8b8d91;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .txFilterBtn:hover {
@@ -565,6 +601,27 @@
   padding: 40px 16px;
   color: #6b7280;
   font-size: 14px;
+}
+
+/* ═══ Recipient Loading Skeleton ═══ */
+.recipientSkeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.recipientSkeletonBar {
+  height: 44px;
+  border-radius: 10px;
+  background: linear-gradient(
+    90deg,
+    rgba(58, 59, 60, 0.4) 0%,
+    rgba(80, 82, 85, 0.4) 40%,
+    rgba(58, 59, 60, 0.4) 80%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
 }
 
 .txEmptyIcon {
@@ -776,7 +833,7 @@
   }
 
   .presetGrid {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     gap: 6px;
   }
 
@@ -826,7 +883,7 @@
   }
 
   .presetGrid {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     gap: 4px;
   }
 }
@@ -852,8 +909,12 @@
 }
 
 @keyframes shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }
 
 /* ═══ Send Confirmation Modal ═══ */
@@ -870,8 +931,12 @@
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .confirmModal {
@@ -886,8 +951,14 @@
 }
 
 @keyframes slideUp {
-  from { opacity: 0; transform: translateY(16px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .confirmTitle {

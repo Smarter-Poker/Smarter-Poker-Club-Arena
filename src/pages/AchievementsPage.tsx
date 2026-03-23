@@ -263,6 +263,18 @@ export default function AchievementsPage() {
     if (user?.id) {
       loadAchievements();
 
+      // Fetch real daily login streak from profiles
+      supabase
+        .from('profiles')
+        .select('login_streak')
+        .eq('id', user.id)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (isMounted.current && data) {
+            setDailyStreak(data.login_streak || 0);
+          }
+        });
+
       // Subscribe to real-time achievement unlocks
       const channelKey = `user-achievements-${user.id}`;
 
@@ -386,12 +398,24 @@ export default function AchievementsPage() {
     loadAchievementsRef.current = loadAchievements;
   });
 
+  // ── Bus Listener: refresh achievements when engine completes a hand ──
+  useEffect(() => {
+    const unsub = masterBus.subscribeDebounced(
+      'HAND_COMPLETED',
+      () => {
+        if (loadAchievementsRef.current) loadAchievementsRef.current();
+      },
+      3000
+    );
+    return unsub;
+  }, []);
+
   const filteredAchievements =
     category === 'all' ? achievements : achievements.filter((a) => a.category === category);
 
   const unlockedCount = achievements.filter((a) => a.unlocked).length;
 
-  const [dailyStreak] = useState(12);
+  const [dailyStreak, setDailyStreak] = useState(0);
 
   const heatmapData = useMemo(() => {
     const days: Record<string, number> = {};
@@ -401,13 +425,6 @@ export default function AchievementsPage() {
         days[d] = (days[d] || 0) + 1;
       }
     });
-    // Add some simulated activity to make it look alive
-    for (let i = 0; i < 40; i++) {
-      const d = new Date();
-      d.setDate(d.getDate() - Math.floor(Math.random() * 120));
-      const key = d.toISOString().slice(0, 10);
-      days[key] = (days[key] || 0) + Math.floor(Math.random() * 3);
-    }
     return Object.entries(days).map(([date, count]) => ({ date, count }));
   }, [achievements]);
 

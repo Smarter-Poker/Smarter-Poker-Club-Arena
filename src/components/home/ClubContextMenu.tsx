@@ -14,9 +14,10 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../../components/common/Toast';
 import styles from '../../pages/HomePage.module.css';
+import type { UserClub } from './CarouselSection';
 
 interface ClubContextMenuProps {
-  club: any;
+  club: UserClub;
   x: number;
   y: number;
   onClose: () => void;

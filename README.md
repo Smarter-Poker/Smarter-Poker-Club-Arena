@@ -1,3 +1,5 @@
+![CI](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/workflows/ci.yml/badge.svg)
+
 # ♠ Club Arena
 
 > **PokerBros Clone + Better** — Private poker clubs with agents, unions, and full game logic.
@@ -41,6 +43,7 @@ npm run build
 **Play Now:** http://localhost:5174/play
 
 Play poker against AI opponents with:
+
 - Real card dealing
 - Proper pot calculations
 - Side pot handling
@@ -51,22 +54,26 @@ Play poker against AI opponents with:
 ## ✨ Features
 
 ### 🏛️ Private Clubs
+
 - Create and manage private poker communities
 - 6-digit club IDs for easy joining
 - Member roles: Owner, Admin, Agent, Member
 
 ### 🤝 Unions
+
 - Join club networks for more players
 - Cross-club tournaments
 - Shared player pools
 
 ### 🎰 Poker Engine
+
 - All game variants: NLH, PLO4/5/6, Short Deck, OFC
 - Complete hand evaluation
 - Side pots & split pots
 - Configurable rake
 
 ### 👔 Agent System (PokerBros-style)
+
 - Multi-tier agent hierarchy
 - Chip distribution & tracking
 - Commission management
@@ -75,14 +82,14 @@ Play poker against AI opponents with:
 
 ## 🛠️ Tech Stack
 
-| Technology | Purpose |
-|-----------|---------|
-| React 19 | UI Framework |
-| TypeScript | Type Safety |
-| Vite 7 | Build Tool |
-| Zustand | State Management |
-| Supabase | Database & Auth |
-| Framer Motion | Animations |
+| Technology    | Purpose          |
+| ------------- | ---------------- |
+| React 19      | UI Framework     |
+| TypeScript    | Type Safety      |
+| Vite 7        | Build Tool       |
+| Zustand       | State Management |
+| Supabase      | Database & Auth  |
+| Framer Motion | Animations       |
 
 ---
 
@@ -111,20 +118,20 @@ src/
 
 ## 🎨 Design System
 
-| Color | Hex | Usage |
-|-------|-----|-------|
+| Color      | Hex     | Usage           |
+| ---------- | ------- | --------------- |
 | Royal Blue | #4169E1 | Primary actions |
-| Near Black | #050507 | Background |
-| Pure White | #FFFFFF | Text |
-| Gold | #FFD700 | Chip amounts |
+| Near Black | #050507 | Background      |
+| Pure White | #FFFFFF | Text            |
+| Gold       | #FFD700 | Chip amounts    |
 
 ---
 
 ## 🔗 Related Projects
 
-| Project | Port | Description |
-|---------|------|-------------|
-| **Club Arena** | 5174 | This project (Orb #2) |
+| Project           | Port | Description                   |
+| ----------------- | ---- | ----------------------------- |
+| **Club Arena**    | 5174 | This project (Orb #2)         |
 | **Diamond Arena** | 5173 | High-stakes training (Orb #3) |
 
 ---

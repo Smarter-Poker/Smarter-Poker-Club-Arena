@@ -6,7 +6,6 @@
  */
 
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -153,15 +152,6 @@ const ACHIEVEMENTS: Omit<Achievement, 'progress' | 'unlocked' | 'unlockedAt'>[] 
     rarity: 'rare',
     requirement: 'Get Quads',
   },
-  {
-    id: 'bad_beat',
-    name: 'Bad Beat Survivor',
-    description: 'Lose with quads or better',
-    icon: '💔',
-    category: 'poker',
-    rarity: 'epic',
-    requirement: 'Lose with quads+',
-  },
 
   // ── Social ──
   {
@@ -284,8 +274,6 @@ export default function AchievementsPage() {
   useEffect(() => {
     document.title = 'Achievements | Smarter Poker';
   }, []);
-
-  const navigate = useNavigate();
   useVisibilityRefresh(() => loadAchievements());
   const { user } = useAuthUser();
   const toast = useToast();
@@ -421,10 +409,15 @@ export default function AchievementsPage() {
       const merged: Achievement[] = ACHIEVEMENTS.map((a) => {
         const userProgress = progressMap.get(a.id);
         const serviceAchievement = allAchievements.find((sa) => sa.id === a.id);
+        const rawProgress = userProgress?.progress || 0;
+        const requirement = serviceAchievement?.requirement || 100;
+        // Convert absolute progress to 0-100 percentage for display
+        const pct =
+          requirement > 0 ? Math.min(100, Math.round((rawProgress / requirement) * 100)) : 0;
         return {
           ...a,
-          progress: userProgress?.progress || 0,
-          unlocked: (userProgress?.progress || 0) >= (serviceAchievement?.requirement || 100),
+          progress: pct,
+          unlocked: rawProgress >= requirement,
           unlockedAt: userProgress?.unlockedAt,
         };
       });

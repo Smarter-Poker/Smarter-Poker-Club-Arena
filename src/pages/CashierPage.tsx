@@ -66,16 +66,6 @@ interface Recipient {
   isPrepaid?: boolean;
 }
 
-// Supabase club_members query with user join
-interface ClubMemberWithUser {
-  user_id: string;
-  role: string;
-  users: {
-    id: string;
-    username?: string | null;
-  };
-}
-
 const CATEGORY_LABELS: Record<string, string> = {
   buyin: 'Buy-In',
   cashout: 'Cash-Out',
@@ -339,11 +329,17 @@ export default function CashierPage() {
       if (detectedUnionId) {
         setIsInUnion(true);
         // Check if this user is the union owner
-        const { data: unionData } = await supabase
-          .from('unions')
-          .select('owner_id')
-          .eq('id', detectedUnionId)
-          .maybeSingle();
+        const { data: unionData } = await retryFetch(
+          () =>
+            supabase
+              .from('unions')
+              .select('owner_id')
+              .eq('id', detectedUnionId)
+              .maybeSingle()
+              .then((r) => r),
+          { maxRetries: 2, isMountedRef: isMounted }
+        );
+        if (!isMounted.current) return;
         if (isMounted.current) {
           setIsUnionOwner(unionData?.owner_id === user.id);
         }
@@ -461,11 +457,17 @@ export default function CashierPage() {
         .map((m) => m.user_id);
       const agentMap: Record<string, { commission_rate: number; is_prepaid: boolean }> = {};
       if (agentUserIds.length > 0) {
-        const { data: agentRecords } = await supabase
-          .from('agents')
-          .select('user_id, commission_rate, is_prepaid')
-          .in('user_id', agentUserIds)
-          .eq('club_id', resolvedId);
+        if (!isMounted.current) return;
+        const { data: agentRecords } = await retryFetch(
+          () =>
+            supabase
+              .from('agents')
+              .select('user_id, commission_rate, is_prepaid')
+              .in('user_id', agentUserIds)
+              .eq('club_id', resolvedId)
+              .then((r) => r),
+          { maxRetries: 2, isMountedRef: isMounted }
+        );
         if (agentRecords) {
           for (const a of agentRecords) {
             agentMap[a.user_id] = {

@@ -1003,6 +1003,9 @@ function HomePageInner() {
     return clubs;
   }, [userClubs, sharkClubId, pinnedClubIds]);
 
+  // Stable string identity of club IDs — avoids .map().join() allocation on every render
+  const displayClubIdsKey = useMemo(() => displayClubs.map((c) => c.id).join(','), [displayClubs]);
+
   // ═══════════════════════════════════════════════════════════════════════════════
   // Per-club stats fetching — member count, club level, active players
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -1162,7 +1165,7 @@ function HomePageInner() {
     return () => {
       isMounted = false;
     };
-  }, [displayClubs.length, displayClubs.map((c) => c.id).join(','), statsRefreshKey]);
+  }, [displayClubs.length, displayClubIdsKey, statsRefreshKey]);
 
   // Tile action handlers (for bottom row tiles using LOBBY_TILES config)
   const tileActions: Record<string, () => void> = useMemo(

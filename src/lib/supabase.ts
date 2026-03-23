@@ -47,10 +47,33 @@ export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '', {
 });
 
 /**
- * Timeout-protected getUser() wrapper with getSession() fallback.
+ * Fast auth resolver — tries local session FIRST (instant), then getUser() as background refresh.
  * Same-origin auth — shared Supabase session via localStorage.
+ *
+ * Previous approach called getUser() first (network call to Supabase Auth),
+ * which timed out after 10s every time, making page loads 10+ seconds.
+ * Now: getSession() is instant (reads localStorage), so we use that immediately.
  */
-export async function getAuthUser(timeoutMs = 10000) {
+export async function getAuthUser(timeoutMs = 5000) {
+  // FAST PATH: getSession() reads from localStorage — instant, no network call
+  try {
+    const {
+      data: { session },
+      error: sessionError,
+    } = await supabase.auth.getSession();
+    if (session?.user) {
+      // Fire getUser() in background to refresh the token if needed — don't await
+      supabase.auth.getUser().catch(() => {});
+      return { data: { user: session.user }, error: null };
+    }
+    if (sessionError) {
+      console.warn('[getAuthUser] getSession() error:', sessionError.message);
+    }
+  } catch (err) {
+    console.warn('[getAuthUser] getSession() threw:', err);
+  }
+
+  // SLOW PATH: No local session — try getUser() with timeout as last resort
   try {
     const userPromise = supabase.auth.getUser();
     const timeoutPromise = new Promise<never>((_, reject) =>
@@ -58,20 +81,8 @@ export async function getAuthUser(timeoutMs = 10000) {
     );
     return await Promise.race([userPromise, timeoutPromise]);
   } catch (err) {
-    console.warn('[getAuthUser] getUser() failed, falling back to getSession():', err);
-    try {
-      const {
-        data: { session },
-        error: sessionError,
-      } = await supabase.auth.getSession();
-      if (session?.user) {
-        return { data: { user: session.user }, error: null };
-      }
-      return { data: { user: null }, error: sessionError || err };
-    } catch (sessionErr) {
-      console.warn('[getAuthUser] getSession() fallback also failed:', sessionErr);
-      return { data: { user: null }, error: sessionErr };
-    }
+    console.warn('[getAuthUser] getUser() also failed:', err);
+    return { data: { user: null }, error: err };
   }
 }
 

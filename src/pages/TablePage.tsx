@@ -15,7 +15,7 @@
 
 import { useState, useEffect, useCallback, useRef, startTransition, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { SeatSlot, PotDisplay, CommunityCards } from '../components/table';
+import { SeatSlot, PotDisplay, CommunityCards, DealerButton } from '../components/table';
 import type { SeatPlayer, Card, LastAction, PositionBadge } from '../components/table/SeatSlot';
 import type { SidePot } from '../components/table/PotDisplay';
 import type { BoardStage } from '../components/table/CommunityCards';
@@ -268,6 +268,7 @@ interface TableState {
   isHandInProgress: boolean;
   positions: PositionBadge[];
   lastActions: LastAction[];
+  lastBetAmounts: number[]; // Per-seat bet amounts for action labels + chip display
   isTournament: boolean;
   tournamentId?: string;
   bountyMap: Record<string, number>; // userId → current bounty value (for KO/PKO display)
@@ -284,6 +285,10 @@ interface TableState {
   // Phase 8: Session stats
   sessionPL?: number;
   sessionHands?: number;
+  // Table settings (from create/Supabase)
+  rakePercent?: number;
+  rakeCap?: number;
+  runItTwice?: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -547,6 +552,7 @@ export default function TablePage({
     isHandInProgress: false,
     positions: [null, null, null, null, null, null],
     lastActions: [null, null, null, null, null, null],
+    lastBetAmounts: [0, 0, 0, 0, 0, 0],
     isTournament: false,
     bountyMap: {},
     isBountyTournament: false,
@@ -747,10 +753,10 @@ export default function TablePage({
       tableState.currentPlayerSeat === tableState.heroSeat && tableState.isHandInProgress;
     onTableInfoUpdate({
       name:
-        tableState.tableName !== 'Loading...'
+        tableState.tableName !== 'Loading...' && tableState.gameType && tableState.blinds
           ? `${tableState.gameType} ${tableState.blinds}`
           : undefined,
-      stakes: tableState.blinds !== '?/?' ? tableState.blinds : undefined,
+      stakes: tableState.blinds && tableState.blinds !== '?/?' ? tableState.blinds : undefined,
       isMyTurn: isHeroTurn,
       timeRemaining: isHeroTurn ? 15 : undefined,
       pot: tableState.pot,
@@ -1696,6 +1702,7 @@ export default function TablePage({
           players: createEmptySeats(table.max_players || 6),
           positions: Array(table.max_players || 6).fill(null),
           lastActions: Array(table.max_players || 6).fill(null),
+          lastBetAmounts: Array(table.max_players || 6).fill(0),
         }));
 
         // Store actual club_id for persistence and rake
@@ -1706,9 +1713,41 @@ export default function TablePage({
         if (table.tournament_id) {
           const { data: tournData } = await supabase
             .from('tournaments')
-            .select('is_bounty, is_pko, is_mystery_bounty, bounty_amount, spin_multiplier')
+            .select('is_bounty, is_pko, is_mystery_bounty, bounty_amount, spin_multiplier, blind_structure, current_level')
             .eq('id', table.tournament_id)
             .maybeSingle();
+
+          // ─── Resolve initial tournament blind level ───
+          // Tournament tables don't have static small_blind/big_blind columns —
+          // blinds come from the blind_structure array at current_level.
+          if (tournData) {
+            const blindStructure = tournData.blind_structure as Array<{
+              level?: number;
+              smallBlind?: number;
+              small_blind?: number;
+              bigBlind?: number;
+              big_blind?: number;
+              ante?: number;
+            }> | null;
+            const currentLevel = (tournData.current_level as number) ?? 1;
+            if (blindStructure && blindStructure.length > 0) {
+              // Find the matching level (1-indexed) or fall back to first entry
+              const levelEntry =
+                blindStructure.find((bl) => bl.level === currentLevel) ||
+                blindStructure[Math.min(currentLevel - 1, blindStructure.length - 1)];
+              if (levelEntry) {
+                const sb = levelEntry.smallBlind ?? levelEntry.small_blind ?? 0;
+                const bbl = levelEntry.bigBlind ?? levelEntry.big_blind ?? 0;
+                if (sb > 0 && bbl > 0) {
+                  setTableState((prev) => ({
+                    ...prev,
+                    blinds: `${sb}/${bbl}`,
+                    currentLevel,
+                  }));
+                }
+              }
+            }
+          }
 
           if (
             tournData &&
@@ -1994,14 +2033,43 @@ export default function TablePage({
 
           // BUG-09 FIX: Merged heroSeat update into same setTableState callback
           // (was previously calling setTableState inside setTableState which causes React warnings)
+          // CRITICAL: Detect and clean up duplicate seats for the same user
+          const heroSeats = existingSeats.filter((s) => s.user_id === userId);
+          if (heroSeats.length > 1) {
+            console.error('[Seat] DUPLICATE SEATS DETECTED for user', userId, '— cleaning up extras');
+            // Keep the first seat, remove the rest from DB
+            const [keepSeat, ...extraSeats] = heroSeats;
+            for (const extra of extraSeats) {
+              supabase
+                .from('table_seats')
+                .update({ left_at: new Date().toISOString() })
+                .eq('table_id', table.id)
+                .eq('seat_number', extra.seat_number)
+                .eq('user_id', userId)
+                .then(({ error }) => {
+                  if (error) console.error('[Seat] Failed to remove duplicate seat:', error);
+                  else console.debug('[Seat] Removed duplicate seat', extra.seat_number);
+                });
+            }
+            // Filter existingSeats to exclude duplicates for local state
+            const cleanedSeats = existingSeats.filter(
+              (s) => s.user_id !== userId || s.seat_number === keepSeat.seat_number
+            );
+            existingSeats.length = 0;
+            existingSeats.push(...cleanedSeats);
+          }
+
           setTableState((prev) => {
             const updatedPlayers = [...prev.players];
             let resolvedHeroSeat = prev.heroSeat;
+            let heroAlreadyAssigned = false;
             for (const seat of existingSeats) {
               const seatIdx = seat.seat_number - 1;
               if (seatIdx < 0 || seatIdx >= updatedPlayers.length) continue;
               const profile = profileMap.get(seat.user_id);
-              const isHero = seat.user_id === userId;
+              // Only the FIRST matching seat gets isHero — prevents duplicates
+              const isHero = seat.user_id === userId && !heroAlreadyAssigned;
+              if (isHero) heroAlreadyAssigned = true;
 
               updatedPlayers[seatIdx] = {
                 id: seat.user_id,
@@ -2028,12 +2096,15 @@ export default function TablePage({
 
         // ─── Initialize Time Bank Engine for the human player ───
         const isTournamentTable = table.game_type === 'tournament' || !!table.tournament_id;
+        // Use table settings from Supabase; fall back to sensible defaults
+        const tbSeconds = (table as any).time_bank_seconds || (isTournamentTable ? 15 : 30);
+        const perUseSeconds = (table as any).action_time_seconds || 15;
         timeBankEngine.configure(table.id, {
-          totalBankSeconds: isTournamentTable ? 15 : 30,
-          maxUses: isTournamentTable ? 2 : 4,
-          secondsPerUse: 15,
+          totalBankSeconds: tbSeconds,
+          maxUses: isTournamentTable ? 2 : Math.max(1, Math.ceil(tbSeconds / perUseSeconds)),
+          secondsPerUse: perUseSeconds,
           refillPerOrbit: !isTournamentTable,
-          refillSeconds: 15,
+          refillSeconds: perUseSeconds,
           autoActivate: true,
         });
         if (userId && userId !== 'guest') {
@@ -2497,11 +2568,14 @@ export default function TablePage({
             stack: number;
             left_at: string | null;
           };
-          if (newSeat.left_at) return;
+          if (newSeat.left_at) return; // Already left
+
+          // Don't duplicate the hero player — they're already in state from buy-in flow
           if (newSeat.user_id === userId) return;
 
           console.debug('[RealtimeSeats] New seat INSERT:', newSeat.seat_number, newSeat.user_id);
 
+          // Fetch the player's profile
           const { data: profile } = await supabase
             .from('profiles')
             .select('id, username, display_name, avatar_url, is_horse, horse_profile')
@@ -2511,7 +2585,7 @@ export default function TablePage({
           setTableState((prev) => {
             const seatIdx = newSeat.seat_number - 1;
             if (seatIdx < 0 || seatIdx >= prev.players.length) return prev;
-            if (prev.players[seatIdx]) return prev;
+            if (prev.players[seatIdx]) return prev; // Seat already occupied in state
 
             const updatedPlayers = [...prev.players];
             updatedPlayers[seatIdx] = {
@@ -2529,6 +2603,7 @@ export default function TablePage({
             return { ...prev, players: updatedPlayers };
           });
 
+          // Also update horse map if this is a horse
           if (profile?.is_horse) {
             horseMapRef.current.set(newSeat.seat_number, {
               id: newSeat.user_id,
@@ -2555,26 +2630,33 @@ export default function TablePage({
             left_at: string | null;
           };
 
+          // Player left — remove from state
           if (updated.left_at) {
             console.debug('[RealtimeSeats] Player LEFT seat:', updated.seat_number);
             setTableState((prev) => {
               const seatIdx = updated.seat_number - 1;
               if (seatIdx < 0 || seatIdx >= prev.players.length) return prev;
               if (!prev.players[seatIdx]) return prev;
+
               const updatedPlayers = [...prev.players];
               updatedPlayers[seatIdx] = null as any;
               return { ...prev, players: updatedPlayers };
             });
             horseMapRef.current.delete(updated.seat_number);
           } else {
+            // Stack update (e.g., rebuy)
             setTableState((prev) => {
               const seatIdx = updated.seat_number - 1;
               if (seatIdx < 0 || seatIdx >= prev.players.length) return prev;
               if (!prev.players[seatIdx]) return prev;
+
               const updatedPlayers = [...prev.players];
               const existing = updatedPlayers[seatIdx];
               if (existing) {
-                updatedPlayers[seatIdx] = { ...existing, stack: updated.stack } as typeof existing;
+                updatedPlayers[seatIdx] = {
+                  ...existing,
+                  stack: updated.stack,
+                } as typeof existing;
               }
               return { ...prev, players: updatedPlayers };
             });
@@ -2595,6 +2677,30 @@ export default function TablePage({
     };
   }, [tableId, userId]);
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // WAITLIST → HORSE YIELD — When a real player is waiting & table full, remove a horse
+  // ═══════════════════════════════════════════════════════════════════════════
+  useEffect(() => {
+    if (!tableId || !tableState.blinds || tableState.blinds === '?/?') return;
+    if (tableState.isTournament) return; // No horse cap in tournaments
+
+    // Poll waitlist every 10s — if real players are waiting, yield a horse
+    const interval = setInterval(async () => {
+      try {
+        const entries = await waitlistService.getTableWaitlist(tableId);
+        if (entries.length > 0) {
+          const yielded = await HydraService.checkWaitlistAndYield(tableId, entries.length);
+          if (yielded) {
+            console.debug('[Horses] Yielded horse seat for waiting real player');
+          }
+        }
+      } catch (err) {
+        // Non-critical — silently ignore
+      }
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [tableId, tableState.blinds, tableState.isTournament]);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // HAND CONTROLLER — Manages poker game loop for ALL tables
@@ -2731,6 +2837,7 @@ export default function TablePage({
             isHandInProgress: true,
             pot: 0,
             lastActions: Array(prev.maxPlayers).fill(null), // Clear action labels
+            lastBetAmounts: Array(prev.maxPlayers).fill(0), // Clear bet amounts
           }));
           // Track hand for HUD stats — record all seated players
           {
@@ -2805,6 +2912,7 @@ export default function TablePage({
             communityCards: [...prev.communityCards, ...uiCards],
             boardStage: event.stage as any,
             lastActions: Array(prev.maxPlayers).fill(null), // Clear for new betting round
+            lastBetAmounts: Array(prev.maxPlayers).fill(0), // Reset bets for new street
           }));
           // Record pot at this stage for per-street hand history
           {
@@ -2820,7 +2928,26 @@ export default function TablePage({
         }
 
         case 'POT_UPDATE':
-          setTableState((prev) => ({ ...prev, pot: event.pot }));
+          setTableState((prev) => {
+            // event.pots is Pot[] from HandController: { amount, eligiblePlayers }
+            // Convert to SidePot[] for PotDisplay: { id, amount, eligiblePlayers }
+            const enginePots: Array<{ amount: number; eligiblePlayers: string[] }> =
+              event.pots ?? [];
+            // First pot is the main pot; remaining are side pots
+            const mainPotAmount = enginePots.length > 0
+              ? enginePots[0].amount
+              : (event.pot ?? prev.pot);
+            const sidePots: SidePot[] = enginePots.slice(1).map((p, i) => ({
+              id: `side-${i}`,
+              amount: p.amount,
+              eligiblePlayers: p.eligiblePlayers,
+            }));
+            return {
+              ...prev,
+              pot: event.pot ?? prev.pot,
+              sidePots,
+            };
+          });
           break;
 
         case 'PLAYER_ACTION':
@@ -2850,14 +2977,18 @@ export default function TablePage({
               street: currentState.boardStage || 'preflop',
             });
           }
-          // Update last actions display and player status
+          // Update last actions display, bet amounts, and player status
           setTableState((prev) => {
             const newLastActions = [...prev.lastActions];
+            const newBetAmounts = [...prev.lastBetAmounts];
             const seatIndex = event.seat - 1;
 
             // Map action to display label
             const actionLabel = (event.action || '').toUpperCase() as any;
             newLastActions[seatIndex] = actionLabel;
+
+            // Track bet amount for chip display + action label
+            newBetAmounts[seatIndex] = event.amount || 0;
 
             // Update player fold status if folded
             const updatedPlayers = [...prev.players];
@@ -2871,6 +3002,7 @@ export default function TablePage({
             return {
               ...prev,
               lastActions: newLastActions,
+              lastBetAmounts: newBetAmounts,
               players: updatedPlayers,
             };
           });
@@ -2885,12 +3017,13 @@ export default function TablePage({
               setShowRaiseSlider(false);
             }
           }
-          // Play turn alert and reset timer if it's hero's turn
+          // Reset timer on EVERY turn change (visual countdown for all players)
+          // and play alert if it's hero's turn
+          resetTimer(); // Reset action timer for whoever is now acting
           {
             const currentState = tableStateRef.current;
             if (event.seat === currentState.heroSeat) {
               playTurnAlert();
-              resetTimer(); // Reset action timer (uses dynamic initialTime from table config)
             }
 
             // Auto-action for horses (check extended player properties OR horseMapRef)
@@ -3118,7 +3251,7 @@ export default function TablePage({
                 }
               }
             }
-            return { ...prev, players: updatedPlayers, pot: 0 };
+            return { ...prev, players: updatedPlayers, pot: 0, sidePots: [] };
           });
           {
             const totalWon = event.winners.reduce(
@@ -3268,23 +3401,8 @@ export default function TablePage({
                 });
               }
             }
-            // ── Daily Challenge Progress: track hero hands_played (even if they lost) ──
-            // WINNERS handler only calls onHandComplete for winners → non-winner hero
-            // never gets hands_played challenge incremented. Fix: fire for hero at
-            // HAND_COMPLETE if they weren't already counted as a winner.
-            // NOTE: Must use ref, NOT winnerInfo state — React batches state updates,
-            // so winnerInfo would still be stale/empty from the previous render.
-            if (userId && !heroWonCurrentHandRef.current) {
-              achievementTriggerService
-                .onHandComplete(userId, {
-                  won: false,
-                  potSize: 0,
-                  showdown: hadShowdownRef.current, // Credit showdown challenges if hero reached showdown but lost
-                })
-                .catch((err) =>
-                  console.error('[Achievements] Hero non-winner trigger failed:', err)
-                );
-            }
+            // Achievement trigger for non-winner hero moved to single location below (line ~3249)
+            // to avoid duplicate onHandComplete calls. Only one trigger point needed.
             heroWonCurrentHandRef.current = false; // Reset for next hand
             hadShowdownRef.current = false; // Reset for next hand
             const heroPlayer = currentState.players[currentState.heroSeat - 1];
@@ -3426,7 +3544,9 @@ export default function TablePage({
                 communityCards: [],
                 boardStage: 'preflop',
                 pot: 0,
+                sidePots: [],
                 lastActions: Array(prev.maxPlayers).fill(null),
+                lastBetAmounts: Array(prev.maxPlayers).fill(0),
                 players: clearedPlayers,
               };
             });
@@ -3487,6 +3607,38 @@ export default function TablePage({
                     console.warn('[Seats] Stack sync exhausted all retries:', err);
                   });
               }
+            }
+          }
+
+          // ── Auto-Rebuy: if enabled and hero stack fell below min buy-in, rebuy ──
+          {
+            const heroSeatIdx = tableStateRef.current.heroSeat - 1;
+            const heroPlayer = tableStateRef.current.players[heroSeatIdx];
+            const bb = safeBB(tableStateRef.current.blinds);
+            const minBuyInChips = bb * 40; // minimum 40 BB
+            const maxBuyInChips = bb * 100; // rebuy to 100 BB
+
+            if (
+              heroPlayer &&
+              heroPlayer.id === userId &&
+              heroPlayer.stack < minBuyInChips &&
+              localStorage.getItem('ca_auto_rebuy') === 'true'
+            ) {
+              const rebuyAmount = maxBuyInChips - heroPlayer.stack;
+              if (rebuyAmount > 0) {
+                console.log(`[Auto-Rebuy] Hero stack ${heroPlayer.stack} < min ${minBuyInChips}, rebuying ${rebuyAmount}`);
+                handleAddChips(rebuyAmount).catch((err) =>
+                  console.error('[Auto-Rebuy] Failed:', err)
+                );
+              }
+            }
+
+            // ── Rabbit Hunt: enable reveal after hand ends early (folded before river) ──
+            const communityCount = tableStateRef.current.communityCards?.length ?? 0;
+            if (communityCount > 0 && communityCount < 5) {
+              setIsRabbitAvailable(true);
+            } else {
+              setIsRabbitAvailable(false);
             }
           }
           break;
@@ -3555,6 +3707,7 @@ export default function TablePage({
           communityCards: [],
           boardStage: 'preflop',
           pot: 0,
+          sidePots: [],
         }));
         break;
     }
@@ -3597,7 +3750,43 @@ export default function TablePage({
   }, [presence, userId]);
 
   // Get seat positions based on table size
-  const seatPositions = tableState.maxPlayers === 9 ? SEAT_POSITIONS_9MAX : SEAT_POSITIONS_6MAX;
+  const baseSeatPositions = tableState.maxPlayers === 9 ? SEAT_POSITIONS_9MAX : SEAT_POSITIONS_6MAX;
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // SEAT AUTO-ROTATION — Hero always appears at bottom-center (position 0)
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // Maps physical seat numbers (1-indexed) to visual screen positions.
+  // When the hero sits at seat N, all visual positions rotate so seat N
+  // renders at the bottom-center slot. Other players shift accordingly,
+  // preserving their relative seating order around the table.
+  //
+  // seatRotationMap[physicalSeatIndex] = { pos, visualIndex }
+  // where pos is the screen {x,y} and visualIndex is the rotated slot.
+  const seatRotationMap = useMemo(() => {
+    const maxP = baseSeatPositions.length;
+    const heroIdx = tableState.heroSeat > 0 ? tableState.heroSeat - 1 : 0; // 0-indexed
+    return baseSeatPositions.map((_, physIdx) => {
+      // Visual slot: rotate so hero's physical index maps to slot 0 (bottom-center)
+      const visualIdx = (physIdx - heroIdx + maxP) % maxP;
+      return { pos: baseSeatPositions[visualIdx], visualIndex: visualIdx };
+    });
+  }, [baseSeatPositions, tableState.heroSeat]);
+
+  // Expose the flat positions array for legacy references (same length, rotated)
+  const seatPositions = useMemo(
+    () => seatRotationMap.map((s) => s.pos),
+    [seatRotationMap]
+  );
+
+  // ── Dealer Button visual index (after hero rotation) ──
+  // dealerSeat is 1-indexed physical seat. Convert to 0-indexed rotated visual index.
+  const dealerVisualIndex = useMemo(() => {
+    if (tableState.dealerSeat <= 0) return -1;
+    const physIdx = tableState.dealerSeat - 1;
+    const maxP = baseSeatPositions.length;
+    const heroIdx = tableState.heroSeat > 0 ? tableState.heroSeat - 1 : 0;
+    return (physIdx - heroIdx + maxP) % maxP;
+  }, [tableState.dealerSeat, tableState.heroSeat, baseSeatPositions.length]);
 
   // Find player at specific seat (1-indexed)
   const getPlayerAtSeat = useCallback(
@@ -3617,8 +3806,24 @@ export default function TablePage({
       return;
     }
     // Don't allow sitting if already seated at this table
+    // Check BOTH heroSeat AND scan players array for any seat with our userId
     if (tableState.heroSeat > 0) {
       console.debug('[Seat] Hero already seated at seat', tableState.heroSeat, '— ignoring click');
+      return;
+    }
+    const existingHeroIdx = tableState.players.findIndex((p) => p && p.id === userId);
+    if (existingHeroIdx >= 0) {
+      console.debug('[Seat] Hero found at seat', existingHeroIdx + 1, 'via player scan — ignoring click');
+      return;
+    }
+    // Block if buy-in is already in progress (race condition guard)
+    if (buyInProcessingRef.current) {
+      console.debug('[Seat] Buy-in already processing — ignoring click');
+      return;
+    }
+    // Block if buy-in modal already open
+    if (showBuyInModal) {
+      console.debug('[Seat] Buy-in modal already open — ignoring click');
       return;
     }
     console.debug('[Seat] Opening buy-in modal for seat', seatNumber);
@@ -3885,8 +4090,15 @@ export default function TablePage({
         handleFold();
       } else if (key === 'c') {
         e.preventDefault();
-        handleCheck();
-        handleCall();
+        // Determine if check is legal (no outstanding bet to match); otherwise call
+        const hcState = handControllerRef.current?.getState?.();
+        const heroP = hcState?.players?.find((p: any) => p && p.seat === tableState.heroSeat);
+        const canCheck = hcState && heroP ? (hcState.currentBet - heroP.bet) <= 0 : false;
+        if (canCheck) {
+          handleCheck();
+        } else {
+          handleCall();
+        }
       } else if (key === 'r') {
         e.preventDefault();
         handleRaise();
@@ -4222,8 +4434,9 @@ export default function TablePage({
       amount: number,
       chipColor: 'red' | 'green' | 'blue' | 'black' | 'gold' = 'gold'
     ) => {
-      const seatPositions = tableState.maxPlayers === 9 ? SEAT_POSITIONS_9MAX : SEAT_POSITIONS_6MAX;
-      const fromPos = seatPositions[fromSeat] || { x: 50, y: 50 };
+      // Use rotated seat positions so chip animations align with visual seat layout
+      const rotatedPositions = seatPositions; // Already rotated via seatRotationMap
+      const fromPos = rotatedPositions[fromSeat] || { x: 50, y: 50 };
       const toPos = toPot ? { x: 50, y: 45 } : fromPos; // Pot is center of table
 
       const animId = `chip_${Date.now()}_${Math.random().toString(36).slice(2)}`;
@@ -4241,7 +4454,7 @@ export default function TablePage({
         },
       ]);
     },
-    [tableState.maxPlayers]
+    [seatPositions]
   );
 
   const handleAnimationComplete = useCallback((id: string) => {
@@ -4330,11 +4543,20 @@ export default function TablePage({
               });
             }
           } else if (preAction === 'callAny') {
-            await handleCall();
+            // "Call Any" = stay in hand: if nothing to call, check instead
+            const handState2 = handControllerRef.current?.getState();
+            const currentBet2 = handState2?.currentBet || 0;
+            const myEngineBet2 = handState2?.players.find((p) => p.user_id === userId)?.bet || 0;
+            const callAmount2 = Math.max(0, currentBet2 - myEngineBet2);
+            if (callAmount2 > 0) {
+              await handleCall();
+            } else {
+              await handleCheck();
+            }
             masterBus.emit('PRE_ACTION_EXECUTED', {
               tableId: tableId!,
               playerId: userId!,
-              action: 'call',
+              action: callAmount2 > 0 ? 'call' : 'check',
               amount: 0,
             });
           }
@@ -4408,7 +4630,11 @@ export default function TablePage({
             className="header-btn back-btn"
             onClick={() => {
               soundService.playButtonClick();
-              navigate(-1);
+              if (tableState.heroSeat > 0) {
+                setShowLeaveConfirm(true);
+              } else {
+                navigate(-1);
+              }
             }}
             title="Back"
           >
@@ -4550,23 +4776,10 @@ export default function TablePage({
                   />
                 </div>
 
-                {/* Spectator Badge — moved out of center clutter */}
-                {presence?.observers && presence.observers.length > 0 && (
-                  <div className="spectator-area">
-                    <SpectatorBadge observers={presence.observers} />
-                    {/* Enhanced Spectator Overlay */}
-                    <SpectatorOverlay
-                      spectators={(presence.observers || []).map((obs: any) => ({
-                        userId: obs.user_id || obs.id || String(Math.random()),
-                        displayName: obs.display_name || obs.name || 'Spectator',
-                        avatarUrl: obs.avatar_url || '',
-                        joinedAt: obs.joined_at ? new Date(obs.joined_at) : new Date(),
-                      }))}
-                      isSpectator={!tableState.players.some((p) => p?.isHero)}
-                      tableId={tableId}
-                    />
-                  </div>
-                )}
+                {/* Spectator Badge + Overlay REMOVED from table surface.
+                    Observer count belongs inside the chat panel, not on the felt.
+                    SpectatorBadge and SpectatorOverlay components still exist for
+                    future integration into the chat panel. */}
 
                 {/* Spin Multiplier Badge */}
                 {tableState.isTournament &&
@@ -4580,8 +4793,9 @@ export default function TablePage({
                     </div>
                   )}
 
-                {/* Hand Strength Indicator - Shows during hero's turn */}
-                {tableState.isHandInProgress &&
+                {/* Hand Strength Indicator - Shows during hero's turn (respects showHUD toggle) */}
+                {userSettings.showHUD &&
+                  tableState.isHandInProgress &&
                   tableState.players[tableState.heroSeat - 1]?.holeCards &&
                   tableState.players[tableState.heroSeat - 1]!.holeCards!.length >= 2 && (
                     <div className="hand-strength-hud">
@@ -4607,6 +4821,13 @@ export default function TablePage({
             </div>
           </div>
 
+          {/* Dealer Button — Animated "D" chip */}
+          <DealerButton
+            dealerVisualIndex={dealerVisualIndex}
+            seatPositions={seatPositions}
+            isVisible={tableState.isHandInProgress && dealerVisualIndex >= 0}
+          />
+
           {/* Player Seats */}
           {seatPositions.map((pos, idx) => {
             const seatNumber = idx + 1;
@@ -4627,8 +4848,12 @@ export default function TablePage({
                   position={tableState.positions[idx] || null}
                   isActive={seatNumber === tableState.currentPlayerSeat}
                   lastAction={tableState.lastActions[idx] || null}
+                  lastBetAmount={tableState.lastBetAmounts[idx] || 0}
                   timerProgress={
                     seatNumber === tableState.currentPlayerSeat ? actionTimerProgress : undefined
+                  }
+                  secondsLeft={
+                    seatNumber === tableState.currentPlayerSeat ? actionTimeRemaining : undefined
                   }
                   bigBlind={safeBB(tableState.blinds)}
                   isTournament={tableState.isTournament}
@@ -4646,6 +4871,7 @@ export default function TablePage({
                   hudStats={player && !player.isHero ? getPlayerHUDStats(player.id) : null}
                   showHUD={userSettings.showHUD && !!player && !player.isHero}
                   deckStyle={userSettings.fourColorDeck ? '4color' : '2color'}
+                  cardBack={userSettings.cardBack}
                   showStackInBB={userSettings.showStackInBB}
                   playerStyle={
                     userSettings.showHUD && player && !player.isHero
@@ -4694,16 +4920,7 @@ export default function TablePage({
             {/* ─── CONTROL STRIP — Clean icon row above action buttons ─── */}
             {tableState.isHandInProgress && (
               <div className="control-strip">
-                {/* Straddle Toggle */}
-                <button
-                  className="control-strip__btn"
-                  title="Straddle"
-                  onClick={() => {
-                    /* toggle straddle */
-                  }}
-                >
-                  <span className="control-strip__icon">STR</span>
-                </button>
+                {/* Straddle Toggle rendered in footer area (line ~5162), not duplicated here */}
 
                 {/* Time Bank */}
                 <button
@@ -4782,7 +4999,9 @@ export default function TablePage({
                   const callAmount = Math.max(0, currentBet - myEngineBet);
                   const heroStack = getPlayerAtSeat(tableState.heroSeat)?.stack || 0;
                   const bb = safeBB(tableState.blinds);
-                  const minRaise = Math.max(bb, currentBet > 0 ? currentBet * 2 : bb * 2);
+                  // Use engine's minRaise (tracks last raise increment correctly per poker rules)
+                  // Fallback: currentBet + bb (open = 2bb, re-raise = currentBet + lastRaise)
+                  const minRaise = handState?.minRaise || Math.max(bb * 2, currentBet + bb);
 
                   return (
                     <>
@@ -4790,7 +5009,7 @@ export default function TablePage({
                         canFold={true}
                         canCheck={callAmount === 0}
                         canCall={callAmount > 0}
-                        canRaise={heroStack > minRaise}
+                        canRaise={heroStack >= minRaise}
                         canAllIn={heroStack > 0}
                         callAmount={callAmount}
                         minRaise={minRaise}
@@ -5083,8 +5302,8 @@ export default function TablePage({
       <GameRulesModal
         isOpen={showGameRules}
         onClose={() => setShowGameRules(false)}
-        variant="No Limit Hold'em"
-        stakes="1/2"
+        variant={tableState.gameType || 'No Limit Hold\'em'}
+        stakes={tableState.blinds || '1/2'}
         minBuyIn={(() => {
           const bb = safeBB(tableState.blinds);
           return bb * 40;
@@ -5093,10 +5312,10 @@ export default function TablePage({
           const bb = safeBB(tableState.blinds);
           return bb * 100;
         })()}
-        rakePercentage={5}
-        rakeCap={3}
-        isStraddleEnabled={true}
-        isRunItTwiceEnabled={true}
+        rakePercentage={tableState.rakePercent ?? 5}
+        rakeCap={tableState.rakeCap ?? 3}
+        isStraddleEnabled={!tableState.isTournament && isStraddleEnabled}
+        isRunItTwiceEnabled={tableState.runItTwice ?? true}
       />
 
       {/* Chip Animations */}
@@ -5136,6 +5355,8 @@ export default function TablePage({
           onDecline={handleInsuranceDecline}
           offer={insuranceOffer}
           timeRemaining={15}
+          tableId={tableId || ''}
+          playerId={userId || ''}
         />
       )}
 
@@ -5221,29 +5442,14 @@ export default function TablePage({
         balance={tableState.players[tableState.heroSeat - 1]?.stack || 0}
       />
 
-      {/* Straddle Toggle (UTG only, cash games only) */}
-      {!tableState.isTournament && (
-        <StraddleToggle
-          tableId={tableId || ''}
-          playerId={userId || ''}
-          isEnabled={isStraddleEnabled}
-          onToggle={(v) => startTransition(() => setIsStraddleEnabled(v))}
-          amount={straddleAmount}
-          isAvailable={isStraddleAvailable}
-        />
-      )}
+      {/* Straddle Toggle — REMOVED from table overlay.
+          Straddle enable/disable is handled via the hamburger TableMenu.
+          The StraddleEngine still manages the state internally. */}
 
-      {/* Time Bank */}
-      <TimeBank
-        isVisible={showTimeBank}
-        isActive={timeBankActive}
-        banksRemaining={timeBanksRemaining}
-        totalTime={30}
-        timeRemaining={timeBankTimeRemaining}
-        onActivate={handleActivateTimeBank}
-        onBuyMore={handleBuyTimeBank}
-        diamondCost={5}
-      />
+      {/* Time Bank — REMOVED from table overlay.
+          Time bank activation is now handled inline via the timer UI
+          (handleActivateTimeBank / handleBuyTimeBank are still wired).
+          The floating TimeBank widget was overlapping the action area. */}
 
       {/* Leave Table Notice (non-blocking replacement for alert()) */}
       {leaveNotice && (
@@ -5330,6 +5536,22 @@ export default function TablePage({
 
             if (userId && userId !== 'guest' && tableId && selectedSeat) {
               try {
+                // CRITICAL: Server-side duplicate seat check — prevent same user in 2+ seats
+                const { data: existingSeat } = await supabase
+                  .from('table_seats')
+                  .select('seat_number')
+                  .eq('table_id', tableId)
+                  .eq('user_id', userId)
+                  .is('left_at', null)
+                  .maybeSingle();
+
+                if (existingSeat) {
+                  console.warn('[BuyIn] BLOCKED — user already seated at seat', existingSeat.seat_number);
+                  toast.error(`You're already seated at seat ${existingSeat.seat_number}.`);
+                  setShowBuyInModal(false);
+                  return;
+                }
+
                 console.debug('[BuyIn] Calling atomic_table_buyin:', {
                   userId,
                   tableId,
@@ -5351,7 +5573,7 @@ export default function TablePage({
                   throw new Error('Failed to buy-in: ' + rpcErr.message);
                 }
 
-                // Validate RPC return data
+                // Validate RPC return data — the function returns {success, amount}
                 const rpcResult = typeof rpcData === 'string' ? JSON.parse(rpcData) : rpcData;
                 if (rpcResult && rpcResult.success === false) {
                   console.error('[BuyIn] atomic_table_buyin returned failure:', rpcResult);

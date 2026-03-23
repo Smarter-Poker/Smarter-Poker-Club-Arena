@@ -12,8 +12,36 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  quality:
-    name: TypeScript + Build Check
+  # ─────────────────────────────────────────────────────────────────────────────
+  # STEP 1: TypeScript compilation check (fast — ~40s)
+  # ─────────────────────────────────────────────────────────────────────────────
+  typecheck:
+    name: TypeScript Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install Dependencies
+        run: npm ci --ignore-scripts
+
+      - name: TypeScript Check
+        run: npx tsc --noEmit
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # STEP 2: Full production build (depends on typecheck passing)
+  # ─────────────────────────────────────────────────────────────────────────────
+  build:
+    name: Production Build
+    needs: typecheck
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -30,11 +58,37 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
-      - name: TypeScript Check
-        run: npx tsc --noEmit
-
       - name: Build
         run: npm run build
         env:
           NODE_ENV: production
-          # Sentry plugin skipped in CI (no auth token) — guarded in vite.config.ts
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # STEP 3: Deploy to Vercel ONLY after typecheck + build pass (push only)
+  # ─────────────────────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy to Vercel
+    needs: [typecheck, build]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy to Vercel Production
+        run: |
+          npm install -g vercel
+          vercel --prod --token=${{ secrets.VERCEL_TOKEN }} --yes
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      - name: Report Success
+        if: success()
+        run: echo "✅ Deployed to Vercel production successfully"
+
+      - name: Report Failure
+        if: failure()
+        run: echo "❌ Vercel deployment FAILED"

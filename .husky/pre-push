@@ -3,20 +3,43 @@
 # PRE-PUSH SAFETY GATE — TypeScript Compilation Check
 # ═══════════════════════════════════════════════════════════════════════════════
 # Prevents pushing code that will fail Vercel deployments.
-# Runs tsc --noEmit to catch type errors before they reach CI/CD.
+# Runs tsc --noEmit on the COMMITTED state (not working directory).
+# This catches TS errors from parallel sessions that may have staged files.
 # To bypass in emergencies: git push --no-verify
 # ═══════════════════════════════════════════════════════════════════════════════
 
 echo "🔒 Pre-push safety gate: Running TypeScript check..."
 
-# Run tsc from the repo root
+# ─── CRITICAL: Test the COMMITTED state, not the working directory ──────────
+# Parallel sessions may stage files with TS errors. The working directory
+# might be clean, but the committed code could be broken.
+# We stash uncommitted changes, run tsc on the committed state, then restore.
+
+STASH_NAME="pre-push-gate-$(date +%s)"
+HAS_CHANGES=false
+
+# Check if there are any uncommitted changes (staged or unstaged)
+if ! git diff --quiet HEAD 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
+  HAS_CHANGES=true
+  echo "   Stashing uncommitted changes to test committed state..."
+  git stash push -u -m "$STASH_NAME" --quiet 2>/dev/null
+fi
+
+# Run tsc on the committed (clean) state
 npx tsc --noEmit 2>&1
 
 TSC_EXIT=$?
 
+# Restore stashed changes
+if [ "$HAS_CHANGES" = true ]; then
+  echo "   Restoring uncommitted changes..."
+  git stash pop --quiet 2>/dev/null
+fi
+
 if [ $TSC_EXIT -ne 0 ]; then
   echo ""
   echo "❌ TypeScript compilation failed — push BLOCKED"
+  echo "   The COMMITTED code has type errors."
   echo "   Fix the errors above before pushing."
   echo "   To bypass: git push --no-verify (NOT recommended)"
   echo ""

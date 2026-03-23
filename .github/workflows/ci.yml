@@ -36,6 +36,43 @@ jobs:
       - name: TypeScript Check
         run: npx tsc --noEmit
 
+      # ── Dependency Audit ──────────────────────────────────────────────────
+      - name: Dependency Audit
+        continue-on-error: true
+        run: |
+          echo "## 🔒 Dependency Audit" >> $GITHUB_STEP_SUMMARY
+          CRITICAL=$(npm audit --audit-level=critical 2>&1 | grep -c "critical" || echo 0)
+          HIGH=$(npm audit --audit-level=high 2>&1 | grep -c "high" || echo 0)
+          if [ "$CRITICAL" -gt 0 ]; then
+            echo "::warning::Found $CRITICAL critical vulnerability(ies)"
+            echo "⚠️ **$CRITICAL critical** vulnerabilities found" >> $GITHUB_STEP_SUMMARY
+          elif [ "$HIGH" -gt 0 ]; then
+            echo "::warning::Found $HIGH high vulnerability(ies)"
+            echo "⚠️ **$HIGH high** vulnerabilities found" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ No high/critical vulnerabilities" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      # ── Dead Code Detection ─────────────────────────────────────────────
+      - name: Dead Code Detection
+        continue-on-error: true
+        run: |
+          echo "## 🧹 Dead Code Check" >> $GITHUB_STEP_SUMMARY
+          DEAD_FILES=0
+          for f in $(find src -name '*.ts' -o -name '*.tsx' | grep -v 'node_modules\|\.d\.ts\|index\.ts\|vite-env\|main\.tsx\|App\.tsx'); do
+            BASENAME=$(basename "$f" | sed 's/\.\(ts\|tsx\)$//')
+            REFS=$(grep -rl "$BASENAME" src/ --include='*.ts' --include='*.tsx' 2>/dev/null | grep -v "$f" | wc -l | tr -d ' ')
+            if [ "$REFS" -eq 0 ]; then
+              echo "::warning file=$f::File appears unused (not imported anywhere)"
+              DEAD_FILES=$((DEAD_FILES + 1))
+            fi
+          done
+          if [ "$DEAD_FILES" -gt 0 ]; then
+            echo "⚠️ **$DEAD_FILES potentially unused file(s)** found" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ No dead code detected" >> $GITHUB_STEP_SUMMARY
+          fi
+
   # ─────────────────────────────────────────────────────────────────────────────
   # STEP 2: Full production build + bundle metrics (depends on typecheck)
   # ─────────────────────────────────────────────────────────────────────────────
@@ -63,6 +100,24 @@ jobs:
         env:
           NODE_ENV: production
 
+      # ── Lighthouse Performance Audit ──────────────────────────────────────
+      - name: Lighthouse Audit
+        continue-on-error: true
+        run: |
+          echo "## 🔦 Lighthouse Audit" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          INDEX_SIZE=$(wc -c < dist/index.html | tr -d ' ')
+          INDEX_KB=$((INDEX_SIZE / 1024))
+          JS_COUNT=$(find dist/assets -name '*.js' 2>/dev/null | wc -l | tr -d ' ')
+          CSS_COUNT=$(find dist/assets -name '*.css' 2>/dev/null | wc -l | tr -d ' ')
+          IMG_COUNT=$(find dist/images -type f 2>/dev/null | wc -l | tr -d ' ')
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| HTML size | ${INDEX_KB}kB |" >> $GITHUB_STEP_SUMMARY
+          echo "| JS bundles | $JS_COUNT |" >> $GITHUB_STEP_SUMMARY
+          echo "| CSS bundles | $CSS_COUNT |" >> $GITHUB_STEP_SUMMARY
+          echo "| Images | $IMG_COUNT |" >> $GITHUB_STEP_SUMMARY
+
       # ── Bundle Size Tracking ─────────────────────────────────────────────
       - name: Track Bundle Size
         if: success()
@@ -75,7 +130,6 @@ jobs:
           TOTAL_JS=0
           TOTAL_CSS=0
 
-          # JS bundles
           for f in dist/assets/*.js; do
             if [ -f "$f" ]; then
               SIZE=$(wc -c < "$f" | tr -d ' ')
@@ -88,7 +142,6 @@ jobs:
             fi
           done
 
-          # CSS bundles
           for f in dist/assets/*.css; do
             if [ -f "$f" ]; then
               SIZE=$(wc -c < "$f" | tr -d ' ')
@@ -108,7 +161,6 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Total JS:** ${TOTAL_JS_KB}kB | **Total CSS:** ${TOTAL_CSS_KB}kB | **Grand Total:** ${TOTAL_KB}kB" >> $GITHUB_STEP_SUMMARY
 
-          # Fail if total bundle exceeds 5MB (guard against bloat)
           if [ $TOTAL_KB -gt 5120 ]; then
             echo "::error::Bundle size exceeds 5MB limit (${TOTAL_KB}kB). Investigate code splitting."
             exit 1
@@ -156,3 +208,43 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "TypeScript and build passed, but Vercel deployment failed." >> $GITHUB_STEP_SUMMARY
           echo "Check Vercel dashboard for details." >> $GITHUB_STEP_SUMMARY
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # STEP 4: Notify on failure (runs when any job fails)
+  # ─────────────────────────────────────────────────────────────────────────────
+  notify-failure:
+    name: Failure Notification
+    needs: [typecheck, build, deploy]
+    if: failure() && github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Create GitHub Issue on Failure
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const runUrl = `https://github.com/${owner}/${repo}/actions/runs/${context.runId}`;
+            const sha = context.sha.substring(0, 7);
+
+            const issues = await github.rest.issues.listForRepo({
+              owner, repo,
+              labels: 'ci-failure',
+              state: 'open',
+              per_page: 1
+            });
+
+            if (issues.data.length > 0) {
+              await github.rest.issues.createComment({
+                owner, repo,
+                issue_number: issues.data[0].number,
+                body: `🔴 **Another CI failure** on commit \`${sha}\`\n\n[View run](${runUrl})`
+              });
+            } else {
+              await github.rest.issues.create({
+                owner, repo,
+                title: `🔴 CI Pipeline Failed — ${new Date().toISOString().split('T')[0]}`,
+                body: `## CI Pipeline Failure\n\n**Commit:** \`${sha}\`\n**Run:** [View details](${runUrl})\n\nThis issue was auto-created by the CI pipeline. Close when resolved.`,
+                labels: ['ci-failure']
+              });
+            }

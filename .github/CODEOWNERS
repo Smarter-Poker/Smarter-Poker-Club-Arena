@@ -2,9 +2,9 @@
 # These owners are automatically requested for review on PRs
 
 # CI/CD and deployment
-/.github/                    @Smarter-Poker/admin
-vercel.json                  @Smarter-Poker/admin
+/.github/                    @SmarterPoker
+vercel.json                  @SmarterPoker
 
 # Core architecture
-/src/core/                   @Smarter-Poker/admin
-/src/components/common/      @Smarter-Poker/admin
+/src/core/                   @SmarterPoker
+/src/components/common/      @SmarterPoker

@@ -1043,8 +1043,24 @@ export default function ClubCarouselPage() {
                           <div className="club-info">
                             <span className="club-name">{union.name}</span>
                             <span className="club-meta">
-                              {union.clubCount || 0} clubs
-                              <span className="member-count">{union.memberCount || 0}</span>
+                              <span
+                                style={{
+                                  fontSize: '0.65rem',
+                                  padding: '1px 6px',
+                                  borderRadius: '8px',
+                                  background: 'linear-gradient(135deg, #9b59b6, #8e44ad)',
+                                  color: '#fff',
+                                  fontWeight: 700,
+                                  letterSpacing: '0.5px',
+                                  textShadow: '0 1px 2px rgba(0,0,0,0.5)',
+                                  marginRight: '6px',
+                                }}
+                              >
+                                Lv.{union.level || 1}
+                              </span>
+                              <span className="member-count">
+                                {(union.totalPlayers || union.memberCount || 0).toLocaleString()}
+                              </span>
                             </span>
                           </div>
                         </div>

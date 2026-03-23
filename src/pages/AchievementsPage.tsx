@@ -16,10 +16,7 @@ import { AchievementShareCard } from '../components/achievements/AchievementShar
 import BottomSheet from '../components/common/BottomSheet';
 import { StreakFire } from '../components/gamification/StreakFire';
 import ActivityHeatmap from '../components/common/ActivityHeatmap';
-import {
-  achievementService,
-  ACHIEVEMENTS as SERVICE_ACHIEVEMENTS,
-} from '../services/AchievementService';
+import { achievementService } from '../services/AchievementService';
 import './AchievementsPage.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { useIsMounted } from '../hooks/useIsMounted';
@@ -59,45 +56,76 @@ interface Achievement {
   requirement: string;
 }
 
-// Achievement definitions
+// Achievement display definitions — IDs MUST match AchievementService.ts exactly
 const ACHIEVEMENTS: Omit<Achievement, 'progress' | 'unlocked' | 'unlockedAt'>[] = [
-  // Poker achievements
+  // ── Hands Played ──
   {
-    id: 'first_hand',
-    name: 'First Hand',
-    description: 'Play your first hand of poker',
+    id: 'hands_100',
+    name: 'Getting Started',
+    description: 'Play 100 hands of poker',
     icon: '🃏',
-    category: 'poker',
-    rarity: 'common',
-    requirement: 'Play 1 hand',
-  },
-  {
-    id: 'hundred_hands',
-    name: 'Centurion',
-    description: 'Play 100 hands',
-    icon: '💯',
     category: 'poker',
     rarity: 'common',
     requirement: 'Play 100 hands',
   },
   {
-    id: 'thousand_hands',
-    name: 'Grinder',
+    id: 'hands_1000',
+    name: 'Regular',
     description: 'Play 1,000 hands',
-    icon: '⚡',
+    icon: '💯',
     category: 'poker',
     rarity: 'rare',
     requirement: 'Play 1,000 hands',
   },
   {
-    id: 'ten_thousand',
-    name: 'Marathon Runner',
+    id: 'hands_10000',
+    name: 'Grinder',
     description: 'Play 10,000 hands',
-    icon: '🏃',
+    icon: '⚡',
     category: 'poker',
     rarity: 'epic',
     requirement: 'Play 10,000 hands',
   },
+  {
+    id: 'hands_100000',
+    name: 'Professional',
+    description: 'Play 100,000 hands',
+    icon: '🏃',
+    category: 'poker',
+    rarity: 'legendary',
+    requirement: 'Play 100,000 hands',
+  },
+
+  // ── Wins ──
+  {
+    id: 'wins_10',
+    name: 'First Blood',
+    description: 'Win 10 hands',
+    icon: '✊',
+    category: 'poker',
+    rarity: 'common',
+    requirement: 'Win 10 hands',
+  },
+  {
+    id: 'wins_100',
+    name: 'Winner',
+    description: 'Win 100 hands',
+    icon: '🎉',
+    category: 'poker',
+    rarity: 'rare',
+    requirement: 'Win 100 hands',
+  },
+  {
+    id: 'wins_1000',
+    name: 'Dominator',
+    description: 'Win 1,000 hands',
+    icon: '💪',
+    category: 'poker',
+    rarity: 'epic',
+    requirement: 'Win 1,000 hands',
+  },
+
+  // ── Special Hands ──
   {
     id: 'royal_flush',
     name: 'Royal Blood',
@@ -119,116 +147,136 @@ const ACHIEVEMENTS: Omit<Achievement, 'progress' | 'unlocked' | 'unlockedAt'>[] 
   {
     id: 'quads',
     name: 'Four of a Kind',
-    description: 'Hit Quad Aces',
+    description: 'Hit Quads',
     icon: '🎯',
     category: 'poker',
     rarity: 'rare',
-    requirement: 'Get Quad Aces',
+    requirement: 'Get Quads',
+  },
+  {
+    id: 'bad_beat',
+    name: 'Bad Beat Survivor',
+    description: 'Lose with quads or better',
+    icon: '💔',
+    category: 'poker',
+    rarity: 'epic',
+    requirement: 'Lose with quads+',
   },
 
-  // Social achievements
+  // ── Social ──
   {
-    id: 'first_club',
-    name: 'Club Member',
-    description: 'Join your first club',
+    id: 'friends_5',
+    name: 'Social Butterfly',
+    description: 'Add 5 friends',
+    icon: '🦋',
+    category: 'social',
+    rarity: 'common',
+    requirement: 'Add 5 friends',
+  },
+  {
+    id: 'friends_25',
+    name: 'Popular',
+    description: 'Add 25 friends',
+    icon: '🌟',
+    category: 'social',
+    rarity: 'rare',
+    requirement: 'Add 25 friends',
+  },
+  {
+    id: 'clubs_3',
+    name: 'Club Hopper',
+    description: 'Join 3 clubs',
     icon: '🏠',
     category: 'social',
     rarity: 'common',
-    requirement: 'Join 1 club',
-  },
-  {
-    id: 'five_clubs',
-    name: 'Social Butterfly',
-    description: 'Join 5 different clubs',
-    icon: '🦋',
-    category: 'social',
-    rarity: 'rare',
-    requirement: 'Join 5 clubs',
-  },
-  {
-    id: 'first_friend',
-    name: 'Friendly',
-    description: 'Add your first friend',
-    icon: '👋',
-    category: 'social',
-    rarity: 'common',
-    requirement: 'Add 1 friend',
-  },
-  {
-    id: 'popular',
-    name: 'Popular',
-    description: 'Have 50 friends',
-    icon: '🌟',
-    category: 'social',
-    rarity: 'epic',
-    requirement: 'Add 50 friends',
+    requirement: 'Join 3 clubs',
   },
 
-  // Financial achievements
+  // ── Financial ──
   {
-    id: 'first_win',
-    name: 'Winner',
-    description: 'Win your first pot',
-    icon: '🎉',
-    category: 'financial',
-    rarity: 'common',
-    requirement: 'Win 1 pot',
-  },
-  {
-    id: 'big_winner',
-    name: 'Big Winner',
-    description: 'Win a pot over 1,000 chips',
-    icon: '💎',
-    category: 'financial',
-    rarity: 'rare',
-    requirement: 'Win 1K+ pot',
-  },
-  {
-    id: 'profitable',
-    name: 'Profitable',
-    description: 'Reach 10,000 lifetime profit',
+    id: 'profit_1000',
+    name: 'In the Green',
+    description: 'Profit 1,000 chips',
     icon: '📈',
     category: 'financial',
+    rarity: 'rare',
+    requirement: 'Profit 1K chips',
+  },
+  {
+    id: 'profit_10000',
+    name: 'High Roller',
+    description: 'Profit 10,000 chips',
+    icon: '💎',
+    category: 'financial',
     rarity: 'epic',
-    requirement: '10K profit',
+    requirement: 'Profit 10K chips',
+  },
+  {
+    id: 'biggest_pot_500',
+    name: 'Big Pot',
+    description: 'Win a 500+ chip pot',
+    icon: '🏆',
+    category: 'financial',
+    rarity: 'rare',
+    requirement: 'Win 500+ pot',
   },
 
-  // Tournament achievements
+  // ── Tournament ──
   {
-    id: 'first_tourney',
-    name: 'Tournament Player',
-    description: 'Play in a tournament',
-    icon: '🎪',
-    category: 'tournament',
-    rarity: 'common',
-    requirement: 'Enter 1 tournament',
-  },
-  {
-    id: 'final_table',
-    name: 'Final Tablist',
-    description: 'Make a final table',
-    icon: '🏅',
-    category: 'tournament',
-    rarity: 'rare',
-    requirement: 'Make final table',
-  },
-  {
-    id: 'champion',
+    id: 'tourney_win_1',
     name: 'Champion',
     description: 'Win a tournament',
-    icon: '🏆',
+    icon: '🏅',
     category: 'tournament',
     rarity: 'epic',
     requirement: 'Win tournament',
   },
   {
-    id: 'ten_wins',
-    name: 'Serial Winner',
-    description: 'Win 10 tournaments',
-    icon: '🔥',
+    id: 'tourney_top3_10',
+    name: 'Consistent',
+    description: 'Finish top 3 in 10 tournaments',
+    icon: '🎖️',
     category: 'tournament',
+    rarity: 'rare',
+    requirement: 'Top 3 x10',
+  },
+  {
+    id: 'tourney_played_50',
+    name: 'Tournament Regular',
+    description: 'Play 50 tournaments',
+    icon: '🎪',
+    category: 'tournament',
+    rarity: 'rare',
+    requirement: 'Play 50 tournaments',
+  },
+
+  // ── Streaks ──
+  {
+    id: 'streak_7',
+    name: 'Weekly Warrior',
+    description: 'Log in 7 days in a row',
+    icon: '🔥',
+    category: 'social',
+    rarity: 'common',
+    requirement: '7-day streak',
+  },
+  {
+    id: 'streak_30',
+    name: 'Monthly Grinder',
+    description: 'Log in 30 days in a row',
+    icon: '📅',
+    category: 'social',
+    rarity: 'rare',
+    requirement: '30-day streak',
+  },
+  {
+    id: 'streak_100',
+    name: 'Centurion',
+    description: 'Log in 100 days in a row',
+    icon: '💯',
+    category: 'social',
     rarity: 'legendary',
-    requirement: 'Win 10 tournaments',
+    requirement: '100-day streak',
   },
 ];
 
@@ -264,15 +312,16 @@ export default function AchievementsPage() {
       loadAchievements();
 
       // Fetch real daily login streak from profiles
-      supabase
-        .from('profiles')
-        .select('login_streak')
-        .eq('id', user.id)
-        .maybeSingle()
+      Promise.resolve(
+        supabase.from('profiles').select('login_streak').eq('id', user.id).maybeSingle()
+      )
         .then(({ data }) => {
           if (isMounted.current && data) {
             setDailyStreak(data.login_streak || 0);
           }
+        })
+        .catch((err: unknown) => {
+          console.warn('[AchievementsPage] login_streak fetch failed:', err);
         });
 
       // Subscribe to real-time achievement unlocks

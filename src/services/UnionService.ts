@@ -237,7 +237,11 @@ class UnionServiceClass {
 
             for (const union of unions) {
               if (clubCountMap.has(union.id)) union.clubCount = clubCountMap.get(union.id)!;
-              if (memberCountMap.has(union.id)) union.memberCount = memberCountMap.get(union.id)!;
+              if (memberCountMap.has(union.id)) {
+                // Use the higher of live count vs authoritative totalPlayers (prevents regression)
+                const liveCount = memberCountMap.get(union.id)!;
+                union.memberCount = Math.max(liveCount, union.totalPlayers || 0);
+              }
             }
           } else {
             // No clubs in any union — zero out counts
@@ -785,7 +789,7 @@ class UnionServiceClass {
       ownerId: u.owner_id,
       avatarUrl: u.avatar_url,
       isPublic: u.is_public ?? true,
-      memberCount: u.member_count || 0,
+      memberCount: Math.max(u.member_count || 0, u.total_players || 0),
       onlineCount: u.online_count || 0,
       clubCount: u.club_count || 0,
       totalRake: Number(u.total_rake) || 0,

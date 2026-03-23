@@ -391,6 +391,18 @@ export default function UnionDetailPage() {
     const reloadUnion = async () => {
       try {
         const unionData = await unionService.getUnion(unionId);
+        // Apply same totalPlayers→memberCount sync as initial load
+        if (unionData) {
+          if (!unionData.totalPlayers && !unionData.memberCount) {
+            const computedMemberCount = (clubs || []).reduce(
+              (sum, c) => sum + (c.memberCount || 0),
+              0
+            );
+            unionData.memberCount = computedMemberCount;
+          } else if (unionData.totalPlayers > unionData.memberCount) {
+            unionData.memberCount = unionData.totalPlayers;
+          }
+        }
         setUnion(unionData);
       } catch (err) {
         // Non-critical: union reload failed

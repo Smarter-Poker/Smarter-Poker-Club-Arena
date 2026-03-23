@@ -284,6 +284,8 @@ export default function CashierPage() {
     }
   }, [clubId, user?.id]);
 
+  useVisibilityRefresh(() => loadPendingCashouts());
+
   const loadUserContext = async () => {
     if (!clubId || !user?.id) return;
     try {

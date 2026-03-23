@@ -56,7 +56,7 @@ sw.addEventListener('fetch', (event) => {
       url.pathname.includes('supabase') ||
       url.pathname.includes('realtime')) return;
 
-  const isHashedAsset = /\.[a-f0-9]{8,}\.(js|css|woff2?)$/.test(url.pathname);
+  const isHashedAsset = /[-\.][a-zA-Z0-9_]{4,}\.(js|css|woff2?)$/.test(url.pathname);
   const isImage = /\.(png|jpg|jpeg|webp|svg|gif|ico)$/.test(url.pathname);
 
   if (isHashedAsset) {

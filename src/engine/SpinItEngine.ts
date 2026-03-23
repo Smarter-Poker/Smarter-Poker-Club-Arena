@@ -20,6 +20,7 @@ import { masterBus } from '../core/MasterBus';
 import { HeadlessTableEngine } from './HeadlessTableEngine';
 import { supabase } from '../lib/supabase';
 import { secureRandom } from './CryptoRandom';
+import { SPIN_BLIND_STRUCTURE } from '../services/TournamentService';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -81,19 +82,12 @@ const PRIZE_TIERS: SpinPrizeConfig[] = [
   { multiplier: 100, weight: 10, label: '100x', color: '#FFD700' },
 ];
 
-const DEFAULT_BLIND_LEVELS: BlindLevel[] = [
-  { small: 10, big: 20, durationSeconds: 180 },
-  { small: 15, big: 30, durationSeconds: 180 },
-  { small: 20, big: 40, durationSeconds: 180 },
-  { small: 30, big: 60, durationSeconds: 120 },
-  { small: 50, big: 100, durationSeconds: 120 },
-  { small: 75, big: 150, durationSeconds: 120 },
-  { small: 100, big: 200, durationSeconds: 90 },
-  { small: 150, big: 300, durationSeconds: 90 },
-  { small: 200, big: 400, durationSeconds: 60 },
-  { small: 300, big: 600, durationSeconds: 60 },
-  { small: 500, big: 1000, durationSeconds: 60 },
-];
+// Convert SPIN_BLIND_STRUCTURE from TournamentService to this engine's format
+const DEFAULT_BLIND_LEVELS: BlindLevel[] = SPIN_BLIND_STRUCTURE.map((level) => ({
+  small: level.smallBlind,
+  big: level.bigBlind,
+  durationSeconds: level.durationMinutes * 60,
+}));
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SPIN-IT ENGINE CLASS

@@ -65,6 +65,43 @@ class ChipRaceEngineClass {
     oldDenomination: number,
     newDenomination: number
   ): ChipRaceResult {
+    // VALIDATION 1: Ensure blinds are increasing
+    if (newDenomination <= oldDenomination) {
+      throw new Error(
+        `Invalid chip race: new denomination (${newDenomination}) must be greater than old (${oldDenomination})`
+      );
+    }
+
+    // VALIDATION 2: Handle edge cases
+    if (playerStacks.size === 0) {
+      throw new Error('Cannot execute chip race with no players');
+    }
+
+    if (playerStacks.size === 1) {
+      // Single player: no race needed, just remove fractional chips
+      const [playerId, stack] = playerStacks.entries().next().value;
+      const fractionalChips = stack % newDenomination;
+      const newStack = stack - fractionalChips;
+      playerStacks.set(playerId, newStack);
+
+      return {
+        tournamentId,
+        removedDenomination: oldDenomination,
+        newSmallestDenomination: newDenomination,
+        players: [
+          {
+            playerId,
+            stack: newStack,
+            fractionalChips,
+            lotteryValue: 0,
+            chipsAwarded: 0,
+          },
+        ],
+        totalFractionalCollected: fractionalChips,
+        totalNewChipsDistributed: 0,
+      };
+    }
+
     const players: ChipRacePlayer[] = [];
     let totalFractionalCollected = 0;
 

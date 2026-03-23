@@ -226,12 +226,20 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 0
 
       - name: Deploy to Vercel Production
         id: deploy
         run: |
           npm install -g vercel
-          DEPLOY_URL=$(vercel --prod --token=${{ secrets.VERCEL_TOKEN }} --yes 2>&1 | grep -oE 'https://[^ ]+\.vercel\.app' | head -1)
+          DEPLOY_OUTPUT=$(vercel --prod --token=${{ secrets.VERCEL_TOKEN }} --yes 2>&1)
+          DEPLOY_URL=$(echo "$DEPLOY_OUTPUT" | grep -oE 'https://[^ ]+\.vercel\.app' | head -1)
+          if [ -z "$DEPLOY_URL" ]; then
+            echo "::error::Failed to capture deploy URL from Vercel output"
+            echo "Vercel output: $DEPLOY_OUTPUT"
+            exit 1
+          fi
           echo "url=${DEPLOY_URL}" >> $GITHUB_OUTPUT
           echo "✅ Deployed: ${DEPLOY_URL}"
         env:

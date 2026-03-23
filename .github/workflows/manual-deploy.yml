@@ -60,9 +60,15 @@ jobs:
         run: |
           npm install -g vercel
           if [ "${{ github.event.inputs.environment }}" = "production" ]; then
-            DEPLOY_URL=$(vercel --prod --token=${{ secrets.VERCEL_TOKEN }} --yes 2>&1 | grep -oE 'https://[^ ]+\.vercel\.app' | head -1)
+            DEPLOY_OUTPUT=$(vercel --prod --token=${{ secrets.VERCEL_TOKEN }} --yes 2>&1)
           else
-            DEPLOY_URL=$(vercel --token=${{ secrets.VERCEL_TOKEN }} --yes 2>&1 | grep -oE 'https://[^ ]+\.vercel\.app' | head -1)
+            DEPLOY_OUTPUT=$(vercel --token=${{ secrets.VERCEL_TOKEN }} --yes 2>&1)
+          fi
+          DEPLOY_URL=$(echo "$DEPLOY_OUTPUT" | grep -oE 'https://[^ ]+\.vercel\.app' | head -1)
+          if [ -z "$DEPLOY_URL" ]; then
+            echo "::error::Failed to capture deploy URL from Vercel output"
+            echo "Vercel output: $DEPLOY_OUTPUT"
+            exit 1
           fi
           echo "url=${DEPLOY_URL}" >> $GITHUB_OUTPUT
           echo "✅ Deployed: ${DEPLOY_URL}"

@@ -1598,10 +1598,24 @@ class TournamentService {
     timeRemainingSeconds: number;
     levelIndex: number;
   } {
-    const blinds: BlindLevel[] =
-      Array.isArray(tournament.blind_structure) && tournament.blind_structure.length > 0
-        ? (tournament.blind_structure as BlindLevel[])
-        : [{ level: 1, smallBlind: 25, bigBlind: 50, ante: 0, durationMinutes: 15 }];
+    // Handle blind_structure being a JSON string (Supabase REST returns JSONB as string)
+    let blinds: BlindLevel[];
+    const raw: unknown = tournament.blind_structure;
+    if (Array.isArray(raw) && raw.length > 0) {
+      blinds = raw as BlindLevel[];
+    } else if (typeof raw === 'string' && raw.length > 0) {
+      try {
+        const parsed = JSON.parse(raw);
+        blinds =
+          Array.isArray(parsed) && parsed.length > 0
+            ? parsed
+            : [{ level: 1, smallBlind: 25, bigBlind: 50, ante: 0, durationMinutes: 15 }];
+      } catch {
+        blinds = [{ level: 1, smallBlind: 25, bigBlind: 50, ante: 0, durationMinutes: 15 }];
+      }
+    } else {
+      blinds = [{ level: 1, smallBlind: 25, bigBlind: 50, ante: 0, durationMinutes: 15 }];
+    }
 
     if (tournament.status !== 'RUNNING' || !tournament.started_at) {
       return {

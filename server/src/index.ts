@@ -15,7 +15,7 @@
  * - Auto-recovers from crashes
  * - Health check endpoint for monitoring
  *
- * Deploy to: Fly.io ($3-5/month), Railway, or any Node.js host
+ * Deploy to: Railway, Supabase, or any Node.js host
  */
 
 import { createServer } from 'http';
@@ -2357,7 +2357,7 @@ class TournamentManager {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// HTTP HEALTH CHECK SERVER — Required for Fly.io / monitoring
+// HTTP HEALTH CHECK SERVER — Required for Railway / monitoring
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const gameServer = new GameServer();
@@ -2401,7 +2401,7 @@ const httpServer = createServer(async (req, res) => {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // GET /health — Health check for monitoring / Fly.io
+  // GET /health — Health check for monitoring / Railway
   // ─────────────────────────────────────────────────────────────────────────
   if (url === '/health' || url === '/') {
     return sendJSON(res, 200, gameServer.getStatus());

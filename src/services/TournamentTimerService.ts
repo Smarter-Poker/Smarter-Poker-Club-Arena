@@ -448,7 +448,21 @@ class TournamentTimerServiceClass {
     if (!tournament) return null;
 
     const levelState = tournamentService.getCurrentLevelState(tournament);
-    const blindStructure = tournament.blind_structure || [];
+    // Handle blind_structure being a JSON string (Supabase REST returns JSONB as string)
+    let blindStructure: any[];
+    const rawBlinds: unknown = tournament.blind_structure;
+    if (Array.isArray(rawBlinds)) {
+      blindStructure = rawBlinds;
+    } else if (typeof rawBlinds === 'string' && rawBlinds.length > 0) {
+      try {
+        blindStructure = JSON.parse(rawBlinds);
+      } catch {
+        blindStructure = [];
+      }
+      if (!Array.isArray(blindStructure)) blindStructure = [];
+    } else {
+      blindStructure = [];
+    }
 
     // Check if current level is a break level
     const currentLevelDef = blindStructure[levelState.levelIndex];

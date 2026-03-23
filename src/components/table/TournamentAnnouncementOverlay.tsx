@@ -51,8 +51,8 @@ const TournamentAnnouncementOverlay: React.FC<TournamentAnnouncementProps> = ({
     },
     level_up: {
       icon: '⬆',
-      title: `LEVEL ${data?.level || ''}`,
-      subtitle: `Blinds: ${data?.smallBlind || ''}/${data?.bigBlind || ''}${data?.ante ? ` Ante: ${data.ante}` : ''}`,
+      title: `LEVEL ${data?.level || 1}`,
+      subtitle: `Blinds: ${data?.smallBlind ?? '—'}/${data?.bigBlind ?? '—'}${data?.ante ? ` Ante: ${data.ante}` : ''}`,
       color: '#3b82f6',
     },
   };

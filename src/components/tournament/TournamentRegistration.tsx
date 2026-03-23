@@ -83,8 +83,9 @@ export function TournamentRegistration({
         .eq('tournament_id', tournamentId)
         .order('created_at', { ascending: true });
 
+      if (!isMounted.current) return;
+
       if (!error && data) {
-        if (!isMounted.current) return;
         setPlayers(
           data.map((p: any) => ({
             id: p.user_id,

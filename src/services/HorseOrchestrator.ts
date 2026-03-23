@@ -1567,23 +1567,25 @@ class HorseOrchestrator {
         return { tournamentId: null, registered: 0 };
       }
 
-      // Register horses via tournament_players
+      // Register horses via tournament_players with proper buy-in deduction
+      const { tournamentService } = await import('./TournamentService');
       const horses = await HydraService.getAvailableHorses(config.horsesToRegister);
       let registered = 0;
 
       for (const horse of horses) {
-        const { error: regError } = await supabase.from('tournament_players').insert({
-          tournament_id: tournament.id,
-          user_id: horse.id,
-          username: horse.name,
-          status: 'registered',
-          chips: 0,
-        });
-
-        if (!regError) registered++;
+        try {
+          // Use atomic tournament registration which deducts buy-in and validates wallet
+          await tournamentService.registerPlayer(tournament.id, horse.id, horse.name);
+          registered++;
+        } catch (err: any) {
+          console.error(
+            `[Orchestrator] Failed to register horse ${horse.name} for tournament: ${err.message}`
+          );
+          // Continue with next horse instead of failing entire tournament launch
+        }
       }
 
-      // Update tournament player count
+      // Update tournament player count and prize pool (based on actual registrations)
       const prizePool = Math.max(config.guarantee || 0, registered * config.buyIn);
       await supabase
         .from('tournaments')
@@ -1676,18 +1678,21 @@ class HorseOrchestrator {
         return { tournamentId: null, registered: 0 };
       }
 
+      const { tournamentService } = await import('./TournamentService');
       const horses = await HydraService.getAvailableHorses(config.horsesToRegister);
       let registered = 0;
 
       for (const horse of horses) {
-        const { error: regError } = await supabase.from('tournament_players').insert({
-          tournament_id: sng.id,
-          user_id: horse.id,
-          username: horse.name,
-          status: 'registered',
-          chips: 0,
-        });
-        if (!regError) registered++;
+        try {
+          // Use atomic tournament registration which deducts buy-in and validates wallet
+          await tournamentService.registerPlayer(sng.id, horse.id, horse.name);
+          registered++;
+        } catch (err: any) {
+          console.error(
+            `[Orchestrator] Failed to register horse ${horse.name} for SNG: ${err.message}`
+          );
+          // Continue with next horse instead of failing entire SNG launch
+        }
       }
 
       const prizePool = registered * config.buyIn;
@@ -1777,18 +1782,21 @@ class HorseOrchestrator {
         return { tournamentId: null, registered: 0, multiplier };
       }
 
+      const { tournamentService } = await import('./TournamentService');
       const horses = await HydraService.getAvailableHorses(config.horsesToRegister);
       let registered = 0;
 
       for (const horse of horses) {
-        const { error: regError } = await supabase.from('tournament_players').insert({
-          tournament_id: spin.id,
-          user_id: horse.id,
-          username: horse.name,
-          status: 'registered',
-          chips: 0,
-        });
-        if (!regError) registered++;
+        try {
+          // Use atomic tournament registration which deducts buy-in and validates wallet
+          await tournamentService.registerPlayer(spin.id, horse.id, horse.name);
+          registered++;
+        } catch (err: any) {
+          console.error(
+            `[Orchestrator] Failed to register horse ${horse.name} for Spin: ${err.message}`
+          );
+          // Continue with next horse instead of failing entire Spin launch
+        }
       }
 
       await supabase

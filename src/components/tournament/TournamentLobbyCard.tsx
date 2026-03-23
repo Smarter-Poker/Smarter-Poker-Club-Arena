@@ -385,7 +385,7 @@ function TournamentLobbyCardInner({ tournament, onRegister }: TournamentLobbyCar
             <span
               className={`${styles.featureTag} ${styles.lateRegTag} ${!lateRegActive ? styles.lateRegClosed : ''} ${lateRegCountdown === 'Late Reg Closed' ? styles.criticalWarning : ''}`}
             >
-              Late Reg: {lateRegActive ? `${lateRegCountdown} left` : 'Closed'}
+              Late Reg: {lateRegActive ? lateRegCountdown : 'Closed'}
             </span>
           ) : (
             tournament.status === 'registering' &&

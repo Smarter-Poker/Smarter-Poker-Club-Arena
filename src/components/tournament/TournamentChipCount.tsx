@@ -64,7 +64,7 @@ export function TournamentChipCount({ tournamentId, limit = 10 }: TournamentChip
             username: player?.username || 'Unknown',
             avatarUrl: player?.avatar_url || '',
             chipCount: p.chips || 0,
-            tableNumber: p.seat_number || 0,
+            tableNumber: p.table_id || 0,
             rank: idx + 1,
           };
         });

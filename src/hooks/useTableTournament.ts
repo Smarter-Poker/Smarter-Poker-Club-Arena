@@ -8,7 +8,7 @@
  * and winner overlay state.
  */
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -111,6 +111,38 @@ export function useTableTournament(): UseTableTournamentReturn {
 
   // Winner
   const [tournamentWinner, setTournamentWinner] = useState<TournamentWinner | null>(null);
+
+  // Cleanup subscriptions on unmount
+  useEffect(() => {
+    return () => {
+      // Unsubscribe from break channel if active
+      if (breakChannelRef.current) {
+        try {
+          breakChannelRef.current.unsubscribe?.();
+        } catch (err) {
+          console.error('[useTableTournament] Failed to unsubscribe from break channel:', err);
+        }
+      }
+
+      // Unsubscribe from add-on channel if active
+      if (addOnChannelRef.current) {
+        try {
+          addOnChannelRef.current.unsubscribe?.();
+        } catch (err) {
+          console.error('[useTableTournament] Failed to unsubscribe from add-on channel:', err);
+        }
+      }
+
+      // Unsubscribe from bounty channel if active
+      if (bountyChannelRef.current) {
+        try {
+          bountyChannelRef.current.unsubscribe?.();
+        } catch (err) {
+          console.error('[useTableTournament] Failed to unsubscribe from bounty channel:', err);
+        }
+      }
+    };
+  }, []);
 
   return {
     rebuyProcessing,

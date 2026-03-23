@@ -281,50 +281,50 @@ export const PAYOUT_STRUCTURES = {
     { place: 10, percentage: 3.5 },
   ],
   mtt100: [
-    { place: 1, percentage: 22 },
-    { place: 2, percentage: 13.5 },
-    { place: 3, percentage: 9.5 },
-    { place: 4, percentage: 7.5 },
-    { place: 5, percentage: 6 },
-    { place: 6, percentage: 5 },
-    { place: 7, percentage: 4 },
-    { place: 8, percentage: 3.5 },
-    { place: 9, percentage: 3 },
-    { place: 10, percentage: 2.5 },
-    { place: 11, percentage: 2.5 },
+    { place: 1, percentage: 25 },
+    { place: 2, percentage: 16 },
+    { place: 3, percentage: 11 },
+    { place: 4, percentage: 8 },
+    { place: 5, percentage: 6.5 },
+    { place: 6, percentage: 5.5 },
+    { place: 7, percentage: 4.5 },
+    { place: 8, percentage: 4 },
+    { place: 9, percentage: 3.5 },
+    { place: 10, percentage: 3 },
+    { place: 11, percentage: 3 },
     { place: 12, percentage: 2.5 },
-    { place: 13, percentage: 2 },
-    { place: 14, percentage: 2 },
-    { place: 15, percentage: 14.5 }, // Remaining payouts consolidated
+    { place: 13, percentage: 2.5 },
+    { place: 14, percentage: 2.5 },
+    { place: 15, percentage: 2.5 },
   ],
   mtt200: [
-    { place: 1, percentage: 18 },
-    { place: 2, percentage: 11 },
-    { place: 3, percentage: 8 },
-    { place: 4, percentage: 6.5 },
+    { place: 1, percentage: 23.8 },
+    { place: 2, percentage: 13.5 },
+    { place: 3, percentage: 9 },
+    { place: 4, percentage: 6.8 },
     { place: 5, percentage: 5.5 },
     { place: 6, percentage: 4.5 },
     { place: 7, percentage: 3.5 },
     { place: 8, percentage: 3 },
     { place: 9, percentage: 2.5 },
-    { place: 10, percentage: 2.5 },
-    { place: 11, percentage: 2 },
-    { place: 12, percentage: 2 },
-    { place: 13, percentage: 1.8 },
-    { place: 14, percentage: 1.8 },
-    { place: 15, percentage: 1.5 },
-    { place: 16, percentage: 1.5 },
-    { place: 17, percentage: 1.5 },
-    { place: 18, percentage: 1.3 },
-    { place: 19, percentage: 1.3 },
-    { place: 20, percentage: 1.3 },
-    { place: 21, percentage: 1.2 },
+    { place: 10, percentage: 2.2 },
+    { place: 11, percentage: 2.2 },
+    { place: 12, percentage: 2.2 },
+    { place: 13, percentage: 1.9 },
+    { place: 14, percentage: 1.9 },
+    { place: 15, percentage: 1.9 },
+    { place: 16, percentage: 1.6 },
+    { place: 17, percentage: 1.6 },
+    { place: 18, percentage: 1.6 },
+    { place: 19, percentage: 1.4 },
+    { place: 20, percentage: 1.4 },
+    { place: 21, percentage: 1.4 },
     { place: 22, percentage: 1.2 },
-    { place: 23, percentage: 1.1 },
-    { place: 24, percentage: 1.1 },
-    { place: 25, percentage: 1.1 },
-    { place: 26, percentage: 1.31 },
-    { place: 27, percentage: 12 }, // Adjusted to reach 100%
+    { place: 23, percentage: 1.2 },
+    { place: 24, percentage: 1.2 },
+    { place: 25, percentage: 1 },
+    { place: 26, percentage: 1 },
+    { place: 27, percentage: 1 },
   ],
 };
 
@@ -740,16 +740,24 @@ class TournamentService {
       currentBounty = tournament.bounty_amount || 0;
       if (tournament.is_mystery_bounty) {
         const baseBounty = tournament.bounty_amount || 0;
+        // Use same tier logic as collectBounty() — respect mystery_bounty_min/max columns
         const bountyConfig: BountyConfig = {
           bountyType: 'mystery',
           baseBounty,
           mysteryTiers: [
-            { minMultiplier: 1, maxMultiplier: 1, probability: 60 },
+            {
+              minMultiplier: tournament.mystery_bounty_min || 1,
+              maxMultiplier: tournament.mystery_bounty_max || 1,
+              probability: 60,
+            },
             { minMultiplier: 2, maxMultiplier: 2, probability: 25 },
             { minMultiplier: 5, maxMultiplier: 5, probability: 10 },
             { minMultiplier: 10, maxMultiplier: 10, probability: 4 },
-            { minMultiplier: 50, maxMultiplier: 50, probability: 0.9 },
-            { minMultiplier: 500, maxMultiplier: 500, probability: 0.1 },
+            {
+              minMultiplier: tournament.mystery_bounty_max || 50,
+              maxMultiplier: tournament.mystery_bounty_max || 50,
+              probability: 1,
+            },
           ],
         };
         mysteryBountyValue = this.rollMysteryBounty(bountyConfig);
@@ -2491,6 +2499,41 @@ class TournamentService {
       if (bountyInsErr)
         console.error('[TournamentService] Failed to record PKO bounty:', bountyInsErr);
 
+      // Credit bounty to collector's wallet
+      if (collectorPortion > 0) {
+        const { error: bountyWalletError } = await retryAsync(
+          () =>
+            supabase.rpc('credit_player_wallet', {
+              p_user_id: collectorPlayerId,
+              p_amount: collectorPortion,
+            }),
+          3
+        );
+
+        if (bountyWalletError) {
+          console.error(
+            '[TournamentService] Failed to credit bounty to wallet:',
+            bountyWalletError
+          );
+        } else {
+          // Log bounty transaction
+          await WalletService.logTransaction(
+            collectorPlayerId,
+            'PLAYER',
+            collectorPortion,
+            'credit',
+            'bounty',
+            `Progressive bounty: ${tournament.name}`,
+            undefined,
+            undefined,
+            tournamentId
+          );
+        }
+      }
+
+      // Emit balance update
+      masterBus.emit('BALANCE_UPDATED', { source: 'tournament_bounty', userId: collectorPlayerId });
+
       return { bountyAmount: collectorPortion, collectorNewBounty: newCollectorBounty };
     } else if (bountyConfig.bountyType === 'mystery') {
       // Mystery: Reveal hidden bounty value
@@ -2505,6 +2548,41 @@ class TournamentService {
       });
       if (mysteryInsErr)
         console.error('[TournamentService] Failed to record mystery bounty:', mysteryInsErr);
+
+      // Credit bounty to collector's wallet
+      if (mysteryValue > 0) {
+        const { error: bountyWalletError } = await retryAsync(
+          () =>
+            supabase.rpc('credit_player_wallet', {
+              p_user_id: collectorPlayerId,
+              p_amount: mysteryValue,
+            }),
+          3
+        );
+
+        if (bountyWalletError) {
+          console.error(
+            '[TournamentService] Failed to credit mystery bounty to wallet:',
+            bountyWalletError
+          );
+        } else {
+          // Log bounty transaction
+          await WalletService.logTransaction(
+            collectorPlayerId,
+            'PLAYER',
+            mysteryValue,
+            'credit',
+            'bounty',
+            `Mystery bounty revealed: ${tournament.name}`,
+            undefined,
+            undefined,
+            tournamentId
+          );
+        }
+      }
+
+      // Emit balance update
+      masterBus.emit('BALANCE_UPDATED', { source: 'tournament_bounty', userId: collectorPlayerId });
 
       // Notify UI to show mystery bounty reveal animation
       masterBus.emit('MYSTERY_BOUNTY_REVEALED', {
@@ -2526,6 +2604,41 @@ class TournamentService {
       if (fixedInsErr)
         console.error('[TournamentService] Failed to record fixed bounty:', fixedInsErr);
 
+      // Credit bounty to collector's wallet
+      if (bountyAmount > 0) {
+        const { error: bountyWalletError } = await retryAsync(
+          () =>
+            supabase.rpc('credit_player_wallet', {
+              p_user_id: collectorPlayerId,
+              p_amount: bountyAmount,
+            }),
+          3
+        );
+
+        if (bountyWalletError) {
+          console.error(
+            '[TournamentService] Failed to credit bounty to wallet:',
+            bountyWalletError
+          );
+        } else {
+          // Log bounty transaction
+          await WalletService.logTransaction(
+            collectorPlayerId,
+            'PLAYER',
+            bountyAmount,
+            'credit',
+            'bounty',
+            `Bounty: ${tournament.name}`,
+            undefined,
+            undefined,
+            tournamentId
+          );
+        }
+      }
+
+      // Emit balance update
+      masterBus.emit('BALANCE_UPDATED', { source: 'tournament_bounty', userId: collectorPlayerId });
+
       return { bountyAmount };
     }
   }
@@ -2541,7 +2654,7 @@ class TournamentService {
 
     for (const tier of config.mysteryTiers) {
       cumulative += tier.probability;
-      if (random <= cumulative) {
+      if (random < cumulative) {
         // Random value within the tier range
         const multiplier =
           tier.minMultiplier === tier.maxMultiplier

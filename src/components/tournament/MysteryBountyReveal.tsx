@@ -180,7 +180,7 @@ export default function MysteryBountyReveal({
     }
     if (phase === 'reveal') {
       haptic('allIn');
-      if (reveal?.amount > 10000) fireConfetti(isJackpot);
+      if ((reveal?.amount || 0) > 10000) fireConfetti(isJackpot);
       const t2 = setTimeout(() => {
         setPhase('done');
         setBusReveal(null);

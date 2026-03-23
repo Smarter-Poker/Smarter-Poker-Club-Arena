@@ -36,7 +36,7 @@ const TournamentWinnerOverlay: React.FC<TournamentWinnerOverlayProps> = ({
 
   // Animate prize amount
   useEffect(() => {
-    if (!visible) return;
+    if (!visible || prize <= 0) return;
 
     const startTime = Date.now();
     const duration = 1500;
@@ -57,7 +57,8 @@ const TournamentWinnerOverlay: React.FC<TournamentWinnerOverlayProps> = ({
       }
     };
 
-    requestAnimationFrame(animate);
+    const frameId = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(frameId);
   }, [visible, prize]);
 
   const handleDismiss = useCallback(() => {

@@ -284,6 +284,12 @@ export default function TournamentLobbyPage() {
 
     return () => {
       // Cleanup all channels on unmount
+      for (const [, channel] of channelRefsRef.current.entries()) {
+        // Unsubscribe the channel properly
+        if (channel?.unsubscribe) {
+          channel.unsubscribe();
+        }
+      }
       for (const [tourneyId] of channelRefsRef.current.entries()) {
         masterBus.removeRegisteredChannel(`t-break-${tourneyId}`);
       }

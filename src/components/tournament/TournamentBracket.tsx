@@ -79,6 +79,7 @@ export default function TournamentBracket({ tournamentId, totalPlayers }: Tourna
     return () => {
       masterBus.removeRegisteredChannel(channelKey);
       clearInterval(pollInterval);
+      staggerTimersRef.current.forEach(clearTimeout);
     };
   }, [tournamentId]);
 
@@ -124,11 +125,15 @@ export default function TournamentBracket({ tournamentId, totalPlayers }: Tourna
       setVisibleActive(new Set());
       staggerTimersRef.current.forEach(clearTimeout);
       staggerTimersRef.current = active.map((_, i) =>
-        setTimeout(() => setVisibleActive((prev) => new Set(prev).add(i)), i * 60)
+        setTimeout(() => {
+          if (isMounted.current) setVisibleActive((prev) => new Set(prev).add(i));
+        }, i * 60)
       );
       setVisibleEliminated(new Set());
       const elimTimers = elim.map((_, i) =>
-        setTimeout(() => setVisibleEliminated((prev) => new Set(prev).add(i)), i * 60)
+        setTimeout(() => {
+          if (isMounted.current) setVisibleEliminated((prev) => new Set(prev).add(i));
+        }, i * 60)
       );
       staggerTimersRef.current.push(...elimTimers);
     } catch (error) {

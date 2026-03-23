@@ -567,7 +567,7 @@ export default function TournamentResultsPage() {
                     {activeTab === 'standings' && (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                         {results
-                          .filter((r) => r.position !== null)
+                          .filter((r) => r.position !== null && r.position !== undefined)
                           .sort((a, b) => (a.position || 999) - (b.position || 999))
                           .map((r) => {
                             const isMe = r.user_id === user?.id;

@@ -1411,6 +1411,31 @@
   outline-offset: 2px;
 }
 
+.carouselCardFeatured:focus-visible {
+  outline: 2px solid rgba(0, 212, 255, 0.6);
+  outline-offset: 4px;
+  border-radius: 12px;
+}
+
+.ctaCard:focus-visible {
+  outline: 2px solid rgba(0, 212, 255, 0.6);
+  outline-offset: 3px;
+  border-radius: 12px;
+}
+
+.ctaCard:active {
+  transform: scale(0.96);
+}
+
+.contextMenuItem:focus-visible {
+  outline: none;
+  background: rgba(0, 212, 255, 0.12);
+}
+
+.contextMenuItem:active {
+  transform: scale(0.97);
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════════
    STALE CACHE INDICATOR
    ═══════════════════════════════════════════════════════════════════════════════ */

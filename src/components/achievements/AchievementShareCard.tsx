@@ -50,44 +50,57 @@ export const AchievementShareCard: React.FC<AchievementShareCardProps> = ({
     if (!ctx) return null;
 
     canvas.width = 600;
-    canvas.height = 340;
+    canvas.height = 400;
 
-    // Background
-    const gradient = ctx.createLinearGradient(0, 0, 600, 340);
-    gradient.addColorStop(0, '#0a0a14');
-    gradient.addColorStop(0.5, colors.bg);
-    gradient.addColorStop(1, '#0a0a14');
+    // Premium gradient background
+    const gradient = ctx.createLinearGradient(0, 0, 600, 400);
+    gradient.addColorStop(0, '#050a18');
+    gradient.addColorStop(0.4, colors.bg);
+    gradient.addColorStop(1, '#050a18');
     ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, 600, 340);
+    ctx.fillRect(0, 0, 600, 400);
 
-    // Border glow
+    // Inner rarity glow circle behind icon
+    const glowGrad = ctx.createRadialGradient(300, 130, 20, 300, 130, 120);
+    glowGrad.addColorStop(0, colors.glow);
+    glowGrad.addColorStop(1, 'transparent');
+    ctx.fillStyle = glowGrad;
+    ctx.fillRect(180, 10, 240, 240);
+
+    // Border frame with glow
     ctx.strokeStyle = colors.border;
     ctx.lineWidth = 2;
     ctx.shadowColor = colors.glow;
-    ctx.shadowBlur = 16;
-    ctx.strokeRect(10, 10, 580, 320);
+    ctx.shadowBlur = 20;
+    ctx.strokeRect(12, 12, 576, 376);
     ctx.shadowBlur = 0;
 
-    // Rarity badge
+    // Top-left branding
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
+    ctx.font = 'bold 11px system-ui, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('♠  SMARTER.POKER', 28, 36);
+
+    // Top-right rarity badge
     ctx.fillStyle = colors.border;
     ctx.font = 'bold 12px system-ui, sans-serif';
     ctx.textAlign = 'right';
-    ctx.fillText(colors.label.toUpperCase(), 570, 35);
+    ctx.fillText(colors.label.toUpperCase(), 572, 36);
 
-    // Icon (text-based)
-    ctx.font = '60px system-ui, sans-serif';
+    // Icon (large emoji)
+    ctx.font = '72px system-ui, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(icon, 300, 120);
+    ctx.fillText(icon, 300, 150);
 
     // Achievement name
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 28px system-ui, sans-serif';
-    ctx.fillText(name, 300, 180);
+    ctx.font = 'bold 30px system-ui, sans-serif';
+    ctx.fillText(name, 300, 220);
 
     // Description
     ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
     ctx.font = '16px system-ui, sans-serif';
-    ctx.fillText(description, 300, 215);
+    ctx.fillText(description, 300, 260);
 
     // Unlocked date
     if (unlockedAt) {
@@ -98,13 +111,21 @@ export const AchievementShareCard: React.FC<AchievementShareCardProps> = ({
       });
       ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
       ctx.font = '13px system-ui, sans-serif';
-      ctx.fillText(`Unlocked ${date}`, 300, 260);
+      ctx.fillText(`Unlocked ${date}`, 300, 305);
     }
 
-    // Branding
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
-    ctx.font = 'bold 11px system-ui, sans-serif';
-    ctx.fillText('♠ Club Arena by Club Arena', 300, 310);
+    // Bottom divider line
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(60, 340);
+    ctx.lineTo(540, 340);
+    ctx.stroke();
+
+    // Bottom branding
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+    ctx.font = 'bold 12px system-ui, sans-serif';
+    ctx.fillText('🏆  CLUB ARENA  ·  smarter.poker', 300, 370);
 
     return canvas;
   }, [icon, name, description, rarity, unlockedAt, colors]);

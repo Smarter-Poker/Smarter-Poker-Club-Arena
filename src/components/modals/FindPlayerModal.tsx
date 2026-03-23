@@ -35,20 +35,6 @@ interface PlayerResult {
   avatar_url: string | null;
   tables: PlayerTable[];
 }
-
-interface TournamentJoin {
-  id: string;
-  tournament_id: string;
-  tournaments: {
-    id: string;
-    name: string;
-    status: string;
-    buy_in_amount: number;
-    club_id: string;
-    clubs: { name: string } | { name: string }[];
-  } | null;
-}
-
 // Frame image for the modal
 const MODAL_FRAME_URL = `${import.meta.env.BASE_URL}images/modals/find-player-frame.png`;
 

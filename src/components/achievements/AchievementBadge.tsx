@@ -101,6 +101,7 @@ export default function AchievementBadge({
             <span className={styles.progressText}>{Math.round(progress)}%</span>
           </div>
         )}
+        {!unlocked && progress === 0 && <span className={styles.lockedHint}>🔒 Locked</span>}
       </div>
     </div>
   );

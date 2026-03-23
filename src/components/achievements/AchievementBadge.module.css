@@ -233,6 +233,15 @@
   color: rgba(255, 255, 255, 0.5);
 }
 
+/* Locked Hint */
+.lockedHint {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.3);
+  letter-spacing: 0.3px;
+}
+
 /* Grid */
 .grid {
   display: grid;

@@ -37,7 +37,7 @@ jobs:
         run: npx tsc --noEmit
 
   # ─────────────────────────────────────────────────────────────────────────────
-  # STEP 2: Full production build (depends on typecheck passing)
+  # STEP 2: Full production build + bundle metrics (depends on typecheck)
   # ─────────────────────────────────────────────────────────────────────────────
   build:
     name: Production Build
@@ -63,6 +63,59 @@ jobs:
         env:
           NODE_ENV: production
 
+      # ── Bundle Size Tracking ─────────────────────────────────────────────
+      - name: Track Bundle Size
+        if: success()
+        run: |
+          echo "## 📦 Bundle Size Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| File | Size | Gzipped |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|------|---------|" >> $GITHUB_STEP_SUMMARY
+
+          TOTAL_JS=0
+          TOTAL_CSS=0
+
+          # JS bundles
+          for f in dist/assets/*.js; do
+            if [ -f "$f" ]; then
+              SIZE=$(wc -c < "$f" | tr -d ' ')
+              GZIP=$(gzip -c "$f" | wc -c | tr -d ' ')
+              SIZE_KB=$((SIZE / 1024))
+              GZIP_KB=$((GZIP / 1024))
+              TOTAL_JS=$((TOTAL_JS + SIZE))
+              BASENAME=$(basename "$f")
+              echo "| \`${BASENAME}\` | ${SIZE_KB}kB | ${GZIP_KB}kB |" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
+
+          # CSS bundles
+          for f in dist/assets/*.css; do
+            if [ -f "$f" ]; then
+              SIZE=$(wc -c < "$f" | tr -d ' ')
+              GZIP=$(gzip -c "$f" | wc -c | tr -d ' ')
+              SIZE_KB=$((SIZE / 1024))
+              GZIP_KB=$((GZIP / 1024))
+              TOTAL_CSS=$((TOTAL_CSS + SIZE))
+              BASENAME=$(basename "$f")
+              echo "| \`${BASENAME}\` | ${SIZE_KB}kB | ${GZIP_KB}kB |" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
+
+          TOTAL_JS_KB=$((TOTAL_JS / 1024))
+          TOTAL_CSS_KB=$((TOTAL_CSS / 1024))
+          TOTAL_KB=$(( (TOTAL_JS + TOTAL_CSS) / 1024 ))
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Total JS:** ${TOTAL_JS_KB}kB | **Total CSS:** ${TOTAL_CSS_KB}kB | **Grand Total:** ${TOTAL_KB}kB" >> $GITHUB_STEP_SUMMARY
+
+          # Fail if total bundle exceeds 5MB (guard against bloat)
+          if [ $TOTAL_KB -gt 5120 ]; then
+            echo "::error::Bundle size exceeds 5MB limit (${TOTAL_KB}kB). Investigate code splitting."
+            exit 1
+          fi
+
+          echo "✅ Bundle size: ${TOTAL_KB}kB (limit: 5120kB)"
+
   # ─────────────────────────────────────────────────────────────────────────────
   # STEP 3: Deploy to Vercel ONLY after typecheck + build pass (push only)
   # ─────────────────────────────────────────────────────────────────────────────
@@ -78,17 +131,28 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Deploy to Vercel Production
+        id: deploy
         run: |
           npm install -g vercel
-          vercel --prod --token=${{ secrets.VERCEL_TOKEN }} --yes
+          DEPLOY_URL=$(vercel --prod --token=${{ secrets.VERCEL_TOKEN }} --yes 2>&1 | grep -oE 'https://[^ ]+\.vercel\.app' | head -1)
+          echo "url=${DEPLOY_URL}" >> $GITHUB_OUTPUT
+          echo "✅ Deployed: ${DEPLOY_URL}"
         env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
-      - name: Report Success
+      - name: Post Deploy Summary
         if: success()
-        run: echo "✅ Deployed to Vercel production successfully"
+        run: |
+          echo "## 🚀 Deployment Successful" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**URL:** ${{ steps.deploy.outputs.url }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
 
       - name: Report Failure
         if: failure()
-        run: echo "❌ Vercel deployment FAILED"
+        run: |
+          echo "## ❌ Deployment FAILED" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "TypeScript and build passed, but Vercel deployment failed." >> $GITHUB_STEP_SUMMARY
+          echo "Check Vercel dashboard for details." >> $GITHUB_STEP_SUMMARY

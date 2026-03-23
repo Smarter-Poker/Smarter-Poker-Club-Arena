@@ -111,7 +111,7 @@
       ]
     },
     {
-      "source": "/hub/club-arena/((?!assets/).*)",
+      "source": "/hub/club-arena/((?!assets/|cards/|sounds/|images/|videos/|club-logos/).*)",
       "headers": [
         {
           "key": "Cache-Control",

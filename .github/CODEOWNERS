@@ -1,0 +1,10 @@
+# Club Arena CODEOWNERS
+# These owners are automatically requested for review on PRs
+
+# CI/CD and deployment
+/.github/                    @Smarter-Poker/admin
+vercel.json                  @Smarter-Poker/admin
+
+# Core architecture
+/src/core/                   @Smarter-Poker/admin
+/src/components/common/      @Smarter-Poker/admin

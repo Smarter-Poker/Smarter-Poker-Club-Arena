@@ -108,6 +108,25 @@ export default function UnionDetailPage() {
   });
   const [onlineCount, setOnlineCount] = useState(0);
 
+  // Level-change detection — toast when union level goes up or down
+  const prevLevelRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!union) return;
+    const currentLevel = union.level || 1;
+    if (prevLevelRef.current !== null && prevLevelRef.current !== currentLevel) {
+      const uLevel = getUnionLevel({
+        level: currentLevel,
+        totalPlayers: union.totalPlayers || union.memberCount,
+      });
+      if (currentLevel > prevLevelRef.current) {
+        toast.success(`Union leveled up to Lv.${currentLevel} — ${uLevel.tierLabel}!`);
+      } else {
+        toast.info(`Union level changed to Lv.${currentLevel} — ${uLevel.tierLabel}`);
+      }
+    }
+    prevLevelRef.current = currentLevel;
+  }, [union?.level]);
+
   // Real-time presence tracking (non-blocking)
   useEffect(() => {
     if (!unionId) return;
@@ -663,15 +682,49 @@ export default function UnionDetailPage() {
                 </span>
                 <span className={styles.statLabel}>Online Now</span>
               </div>
-        {financialSummary && (
-          <div className={styles.statCard}>
-            <span className={styles.statValue}>
-              {financialSummary.unionRevenue.toLocaleString()}
-            </span>
-            <span className={styles.statLabel}>This Period</span>
-          </div>
-        )}
-      </div>
+              {financialSummary && (
+                <div className={styles.statCard}>
+                  <span className={styles.statValue}>
+                    {financialSummary.unionRevenue.toLocaleString()}
+                  </span>
+                  <span className={styles.statLabel}>This Period</span>
+                </div>
+              )}
+            </div>
+            {/* Level Progress Bar */}
+            <div
+              style={{
+                width: '100%',
+                height: '4px',
+                background: 'rgba(255,255,255,0.08)',
+                borderRadius: '2px',
+                margin: '12px 0 4px',
+                overflow: 'hidden',
+              }}
+            >
+              <div
+                style={{
+                  width: `${uLevel.progressPercent}%`,
+                  height: '100%',
+                  background: uLevel.gradient,
+                  borderRadius: '2px',
+                  transition: 'width 0.8s ease-out',
+                }}
+              />
+            </div>
+            <div
+              style={{
+                textAlign: 'right',
+                fontSize: '0.6rem',
+                color: 'rgba(255,255,255,0.4)',
+                marginBottom: '8px',
+              }}
+            >
+              {uLevel.progressPercent}% to Lv.{Math.min(uLevel.level + 1, 50)}
+            </div>
+          </>
+        );
+      })()}
 
       {/* Tab Navigation */}
       <nav className={styles.tabNav}>
@@ -767,22 +820,39 @@ export default function UnionDetailPage() {
             <div className={styles.card}>
               <h3> Top Clubs</h3>
               <div className={styles.clubList}>
-                {clubs.slice(0, 5).map((club) => (
-                  <Link
-                    key={club.clubId}
-                    to={`/clubs/${club.clubId}`}
-                    className={styles.clubRow}
-                    style={{ textDecoration: 'none', color: 'inherit' }}
-                  >
-                    <div className={styles.clubAvatar}></div>
-                    <div className={styles.clubInfo}>
-                      <strong>{club.clubName}</strong>
-                      <span>
-                        {club.memberCount} {club.memberCount === 1 ? 'member' : 'members'}
-                      </span>
-                    </div>
-                  </Link>
-                ))}
+                {clubs.slice(0, 5).map((club) => {
+                  const cLevel = getClubLevel({ playerCount: club.memberCount });
+                  return (
+                    <Link
+                      key={club.clubId}
+                      to={`/clubs/${club.clubId}`}
+                      className={styles.clubRow}
+                      style={{ textDecoration: 'none', color: 'inherit' }}
+                    >
+                      <div className={styles.clubAvatar}></div>
+                      <div className={styles.clubInfo}>
+                        <strong>{club.clubName}</strong>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span
+                            style={{
+                              fontSize: '0.6rem',
+                              padding: '1px 5px',
+                              borderRadius: '6px',
+                              background: cLevel.gradient,
+                              color: '#fff',
+                              fontWeight: 700,
+                              letterSpacing: '0.3px',
+                              textShadow: '0 1px 2px rgba(0,0,0,0.5)',
+                            }}
+                          >
+                            Lv.{cLevel.level}
+                          </span>
+                          {club.memberCount} {club.memberCount === 1 ? 'member' : 'members'}
+                        </span>
+                      </div>
+                    </Link>
+                  );
+                })}
               </div>
             </div>
 

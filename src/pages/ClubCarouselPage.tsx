@@ -24,7 +24,7 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { useIsMounted } from '../hooks/useIsMounted';
 import haptic from '../services/HapticService';
 import { STORAGE_KEYS } from '../lib/storage';
-import { getClubLevel } from '../utils/clubLevels';
+import { getClubLevel, getUnionLevel } from '../utils/clubLevels';
 
 const SWIPE_THRESHOLD = 50; // px minimum for a horizontal swipe
 
@@ -1043,24 +1043,41 @@ export default function ClubCarouselPage() {
                           <div className="club-info">
                             <span className="club-name">{union.name}</span>
                             <span className="club-meta">
-                              <span
-                                style={{
-                                  fontSize: '0.65rem',
-                                  padding: '1px 6px',
-                                  borderRadius: '8px',
-                                  background: 'linear-gradient(135deg, #9b59b6, #8e44ad)',
-                                  color: '#fff',
-                                  fontWeight: 700,
-                                  letterSpacing: '0.5px',
-                                  textShadow: '0 1px 2px rgba(0,0,0,0.5)',
-                                  marginRight: '6px',
-                                }}
-                              >
-                                Lv.{union.level || 1}
-                              </span>
-                              <span className="member-count">
-                                {(union.totalPlayers || union.memberCount || 0).toLocaleString()}
-                              </span>
+                              {(() => {
+                                const uLevel = getUnionLevel({
+                                  level: union.level,
+                                  playerLevel: union.playerLevel,
+                                  hierarchyLevel: union.hierarchyLevel,
+                                  totalPlayers: union.totalPlayers || union.memberCount,
+                                  hierarchyUnitsRoundedUp: union.hierarchyUnitsRoundedUp,
+                                  playerThresholdCurrent: union.playerThresholdCurrent,
+                                  playerThresholdNext: union.playerThresholdNext,
+                                  hierarchyThresholdCurrent: union.hierarchyThresholdCurrent,
+                                  hierarchyThresholdNext: union.hierarchyThresholdNext,
+                                });
+                                return (
+                                  <>
+                                    <span
+                                      style={{
+                                        fontSize: '0.65rem',
+                                        padding: '1px 6px',
+                                        borderRadius: '8px',
+                                        background: uLevel.gradient,
+                                        color: '#fff',
+                                        fontWeight: 700,
+                                        letterSpacing: '0.5px',
+                                        textShadow: '0 1px 2px rgba(0,0,0,0.5)',
+                                        marginRight: '6px',
+                                      }}
+                                    >
+                                      Lv.{uLevel.level} — {uLevel.tierLabel}
+                                    </span>
+                                    <span className="member-count">
+                                      {union.memberCount.toLocaleString()}
+                                    </span>
+                                  </>
+                                );
+                              })()}
                             </span>
                           </div>
                         </div>

@@ -1,7 +1,7 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- * TOURNAMENT BRACKET — Visual Tournament Display
- * Shows tournament structure, matchups, and progression
+ * TOURNAMENT STANDINGS — Live Chip Leaderboard & Eliminations
+ * Shows active player rankings by chip count and eliminated player positions
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -9,10 +9,10 @@ import { useState, useEffect, useRef } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
-import styles from './TournamentBracket.module.css';
+import styles from './TournamentStandings.module.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 
-interface BracketPlayer {
+interface StandingsPlayer {
   userId: string;
   displayName: string;
   avatarUrl?: string;
@@ -21,24 +21,17 @@ interface BracketPlayer {
   finishPosition?: number;
 }
 
-interface BracketMatch {
-  id: string;
-  round: number;
-  matchNumber: number;
-  player1?: BracketPlayer;
-  player2?: BracketPlayer;
-  winner?: string;
-  status: 'pending' | 'active' | 'complete';
-}
-
-interface TournamentBracketProps {
+interface TournamentStandingsProps {
   tournamentId: string;
   totalPlayers: number;
 }
 
-export default function TournamentBracket({ tournamentId, totalPlayers }: TournamentBracketProps) {
+export default function TournamentStandings({
+  tournamentId,
+  totalPlayers,
+}: TournamentStandingsProps) {
   const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
-  const [players, setPlayers] = useState<BracketPlayer[]>([]);
+  const [players, setPlayers] = useState<StandingsPlayer[]>([]);
   const isMounted = useIsMounted();
   const [loading, setLoading] = useState(true);
   const [visibleActive, setVisibleActive] = useState<Set<number>>(new Set());
@@ -48,7 +41,7 @@ export default function TournamentBracket({ tournamentId, totalPlayers }: Tourna
     loadPlayers();
 
     // Subscribe to realtime updates on tournament_players
-    const channelKey = `bracket-${tournamentId}`;
+    const channelKey = `standings-${tournamentId}`;
 
     const channel = masterBus.getOrCreateChannel(channelKey);
     channel
@@ -66,10 +59,10 @@ export default function TournamentBracket({ tournamentId, totalPlayers }: Tourna
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[TournamentBracket] ❌ Realtime channel error:', err?.message || err);
+          console.error('[TournamentStandings] Realtime channel error:', err?.message || err);
         }
         if (status === 'TIMED_OUT') {
-          console.warn('[TournamentBracket] ⏱️ Realtime channel timed out');
+          console.warn('[TournamentStandings] Realtime channel timed out');
         }
       });
 
@@ -92,13 +85,13 @@ export default function TournamentBracket({ tournamentId, totalPlayers }: Tourna
         .eq('tournament_id', tournamentId);
 
       if (error) {
-        console.error('[TournamentBracket] Failed to load players:', error.message);
+        console.error('[TournamentStandings] Failed to load players:', error.message);
         setPlayers([]);
         if (isMounted.current) setLoading(false);
         return;
       }
 
-      const mapped: BracketPlayer[] = (data || []).map((p: any) => ({
+      const mapped: StandingsPlayer[] = (data || []).map((p: any) => ({
         userId: p.user_id,
         displayName: p.username || 'Unknown',
         avatarUrl: undefined,
@@ -137,7 +130,7 @@ export default function TournamentBracket({ tournamentId, totalPlayers }: Tourna
       );
       staggerTimersRef.current.push(...elimTimers);
     } catch (error) {
-      console.error('Failed to load bracket:', error);
+      console.error('Failed to load standings:', error);
     }
     if (isMounted.current) setLoading(false);
   };
@@ -160,7 +153,7 @@ export default function TournamentBracket({ tournamentId, totalPlayers }: Tourna
   if (loading) {
     return (
       <div className={styles.container}>
-        <div className={styles.loading}>Loading bracket...</div>
+        <div className={styles.loading}>Loading standings...</div>
       </div>
     );
   }
@@ -169,7 +162,7 @@ export default function TournamentBracket({ tournamentId, totalPlayers }: Tourna
     <div className={styles.container}>
       {/* Header */}
       <div className={styles.header}>
-        <h3> Tournament Standings</h3>
+        <h3>Tournament Standings</h3>
         <div className={styles.stats}>
           <span className={styles.stat}>
             <span className={styles.statValue}>{activePlayers.length}</span>

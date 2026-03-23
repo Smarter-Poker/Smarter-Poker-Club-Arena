@@ -12,7 +12,7 @@ import { masterBus } from '../../core/MasterBus';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import type { Tournament } from '../../types/database.types';
 import { useAuthUser } from '../../hooks/useAuthUser';
-import TournamentBracket from '../../components/tournament/TournamentBracket';
+import TournamentStandings from '../../components/tournament/TournamentStandings';
 import BlindLevelProgress from '../../components/tournament/BlindLevelProgress';
 import LiveChipCounts from '../../components/tournament/LiveChipCounts';
 import PayoutStructure from '../../components/tournament/PayoutStructure';
@@ -1126,7 +1126,7 @@ export default function TournamentDetails() {
 
         {activeTab === 'ranking' && (
           <div className="ranking-section">
-            <TournamentBracket
+            <TournamentStandings
               tournamentId={tournamentId || ''}
               totalPlayers={
                 tournament.max_players || entries.length || tournament.current_players || 0

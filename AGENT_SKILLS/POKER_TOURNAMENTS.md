@@ -1,7 +1,9 @@
 # POKER TOURNAMENTS — Complete Expert Reference
 
 ## 1. Tournament Types
+
 ### MTT (Multi-Table Tournament)
+
 - Scheduled start, unlimited players, multiple tables, table balancing
 - Late registration (typically 4-8 blind levels)
 - Late reg players get full starting stack
@@ -9,6 +11,7 @@
 - Hand-for-hand on money bubble
 
 ### SNG (Sit & Go)
+
 - Fixed player count (2, 3, 6, 9, or 10)
 - Starts when all seats filled (NOT time-based)
 - Single table (except multi-table SNGs for 18/27/45/90)
@@ -17,15 +20,17 @@
 - Auto-create new SNG when one fills (perpetual lobbies)
 
 ### Spin & Go / Spins
+
 - 3 players, hyper-turbo
 - Random prize pool multiplier (2x to 10000x buy-in)
 - Multiplier determined at game start via weighted random
 - Typical multiplier weights: 2x=~75%, 3x=~15%, 5x=~5%, 10x=~3%, 25x=~1%, 100x=~0.5%, 1000x=~0.01%
 - Winner-take-all for low multipliers, shared payouts for high multipliers
 - Starting stack: 500 chips, 10/20 blinds, 2-3 min levels
-- Prize pool = buy_in * 3 * multiplier (all 3 entries contribute)
+- Prize pool = buy_in _ 3 _ multiplier (all 3 entries contribute)
 
 ### XMTT (Cross-Club/Union Tournament)
+
 - Runs across all clubs in a union
 - Players from any member club can register
 - Single prize pool, unified blind structure
@@ -33,23 +38,28 @@
 - PokerBros-style club union tournaments
 
 ### Satellite
+
 - Qualifiers that award tournament tickets (not cash)
 - Top N players win seats to target tournament
 - Remaining prize pool divided to bubble finishers
 - Ticket value = target tournament buy-in
 
 ### Multi-Day
+
 - Tournament pauses at end of each day
 - Players bag chips, resume next day
 - Chip counts preserved between days
 - Status: RUNNING → PAUSED → RUNNING → COMPLETED
 
 ## 2. Tournament Variations/Formats
+
 ### Freezeout
+
 - No rebuys, no re-entries, no add-ons
 - You bust, you're out — pure form
 
 ### Rebuy
+
 - Can purchase additional chips during rebuy period
 - Typically first 4-8 blind levels
 - Rebuy cost usually = original buy-in
@@ -58,6 +68,7 @@
 - Multiple rebuys allowed
 
 ### Re-entry
+
 - When eliminated, can re-enter as a new player
 - Gets new starting stack, new seat assignment
 - Re-entry period usually matches late registration period
@@ -65,6 +76,7 @@
 - Different from rebuy: must be fully eliminated first
 
 ### Add-on
+
 - One-time chip purchase available to all players
 - Occurs at end of rebuy period (60-second window)
 - Add-on chips usually > starting stack (e.g., 1.5x)
@@ -72,29 +84,34 @@
 - Add-on cost may differ from buy-in
 
 ### Turbo
+
 - Shortened blind levels: 3-5 minutes per level
 - Same blind structure, just faster
 - More variance, less deep play
 - Common for SNGs and evening MTTs
 
 ### Super Turbo
+
 - Very short levels: 2-3 minutes
 - Starting stacks often reduced
 - High variance format
 
 ### Hyper Turbo
+
 - Shortest levels: 1-2 minutes
 - Low starting stacks (25-50 BB)
 - Used for Spins and some SNGs
 - Nearly pure push/fold poker by level 3-4
 
 ### Bounty / Knockout (KO)
+
 - Fixed bounty per player elimination
 - Typically 50% of buy-in goes to bounty pool, 50% to prize pool
 - Bounty credited immediately to knocker's wallet
 - Buy-in example: $10 total = $5 prize pool + $5 bounty
 
 ### Progressive Knockout (PKO)
+
 - Bounty GROWS as you eliminate players
 - When you knock someone out:
   - 50% of their bounty → your wallet immediately
@@ -104,6 +121,7 @@
 - Most popular bounty format on major sites
 
 ### Mystery Bounty
+
 - Each player has a hidden bounty value
 - Bounty value revealed only when player is eliminated
 - Values range from 1x to 500x+ base bounty
@@ -111,25 +129,30 @@
 - Creates excitement on each elimination
 
 ### Shootout
+
 - Each table plays until one winner
 - Winners advance to next round
-- Bracket-style tournament
+- Round-based elimination (NOT bracket-style — standard MTT table merging)
 - Single table play at each round
 
 ### Double or Nothing
+
 - Top half of players paid equally
 - e.g., 10 players, top 5 each win 2x buy-in minus rake
 - Very tight play near bubble
 
 ### Heads-Up
-- 2 players per table, bracket elimination
-- Winner advances to next round
-- Tournament bracket structure (8, 16, 32, 64 players)
+
+- 2 players per table, winner advances
+- Round-based structure (8, 16, 32, 64 players)
+- NOTE: Online poker does NOT use visual brackets — uses standard standings/leaderboard
 
 ## 3. Blind Structures (DETAILED — with breaks)
 
 ### Standard/Regular MTT (8-10 min levels)
+
 Starting stack: 10,000-20,000 chips (100-200 BB)
+
 ```
 Level 1:  25/50          (8 min)
 Level 2:  50/100         (8 min)
@@ -168,7 +191,9 @@ Level 30: 40000/80000 a10000 (8 min)
 ```
 
 ### Turbo MTT (3-5 min levels)
+
 Starting stack: 10,000 chips (100 BB)
+
 ```
 Level 1:  25/50          (3 min)
 Level 2:  50/100         (3 min)
@@ -200,7 +225,9 @@ Level 24: 20000/40000 a5000 (3 min)
 ```
 
 ### Deep Stack MTT (12-15 min levels)
+
 Starting stack: 25,000-50,000 chips (250-500 BB)
+
 ```
 Level 1:  25/50            (15 min)
 Level 2:  50/100           (15 min)
@@ -239,7 +266,9 @@ Level 30: 40000/80000 a10000 (15 min)
 ```
 
 ### Hyper-Turbo / Spin & Go (2 min levels)
+
 Starting stack: 500 chips (25 BB)
+
 ```
 Level 1:  10/20     (2 min)
 Level 2:  15/30     (2 min)
@@ -259,7 +288,9 @@ Level 15: 1500/3000 (2 min)
 ```
 
 ### SNG 9-Max Standard (6-8 min levels)
+
 Starting stack: 1,500 chips (75 BB)
+
 ```
 Level 1:  10/20     (6 min)
 Level 2:  15/30     (6 min)
@@ -279,6 +310,7 @@ Level 15: 1500/3000 (6 min)
 ```
 
 ## 4. Break Schedule Rules
+
 - Standard: 5-minute break after every 6 levels (~48-60 min of play)
 - Deep Stack: 10-minute break after every 4 levels (~60 min of play)
 - Turbo: 5-minute break after every 6 levels (~18-30 min of play)
@@ -287,6 +319,7 @@ Level 15: 1500/3000 (6 min)
 - Implementation: Breaks are levels with `isBreak: true` — blind timer pauses, countdown displayed, then play resumes
 
 ## 5. Starting Stacks
+
 - Standard MTT: 10,000-20,000 chips (100-200 BB at level 1)
 - Deep Stack MTT: 25,000-50,000 chips (250-500 BB at level 1)
 - Turbo MTT: 5,000-10,000 chips (50-100 BB at level 1)
@@ -298,12 +331,14 @@ Level 15: 1500/3000 (6 min)
 ## 6. Payout Structures
 
 ### SNG Payouts
+
 - 2-player: Winner takes all (100%)
 - 3-player: 1st: 100% (winner take all) — standard for Spins
 - 6-player: 1st: 65%, 2nd: 35%
 - 9-player: 1st: 50%, 2nd: 30%, 3rd: 20%
 
 ### MTT Payouts (by field size)
+
 - 2-9 players: Top 3 paid (SNG rules)
 - 10-18 players: Top 3 paid (40/30/20 + bubble 10%)
 - 19-27 players: Top 4 paid
@@ -319,6 +354,7 @@ Level 15: 1500/3000 (6 min)
 - 721+ players: Top 15% paid
 
 ### Standard MTT Payout Percentages (50 players, 8 paid)
+
 ```
 1st: 28.0%
 2nd: 17.5%
@@ -332,6 +368,7 @@ Level 15: 1500/3000 (6 min)
 ```
 
 ### Standard MTT Payout Percentages (100 players, 15 paid)
+
 ```
 1st: 22.0%
 2nd: 14.0%
@@ -347,15 +384,18 @@ Level 15: 1500/3000 (6 min)
 ```
 
 ## 7. Prize Pool Calculation
-- Basic: prize_pool = (buy_in - rake) * total_entries
-- With rebuys: prize_pool += rebuy_count * (rebuy_cost - rebuy_rake)
-- With add-ons: prize_pool += addon_count * (addon_cost - addon_rake)
+
+- Basic: prize_pool = (buy_in - rake) \* total_entries
+- With rebuys: prize_pool += rebuy_count \* (rebuy_cost - rebuy_rake)
+- With add-ons: prize_pool += addon_count \* (addon_cost - addon_rake)
 - With re-entries: each re-entry counts as a new entry
 - Guaranteed prize: display_prize_pool = MAX(calculated_prize_pool, guaranteed_prize)
 - Overlay: when guaranteed > actual (house covers difference)
 
 ## 8. Tournament Clock Display
+
 Must show:
+
 - Current level number
 - Current blinds (SB/BB)
 - Current ante
@@ -369,6 +409,7 @@ Must show:
 - Rebuy/Add-on period indicator
 
 ## 9. Table Balancing Rules
+
 - Maximum 1 player difference between any two tables
 - Move players from largest table to smallest
 - Move the player in the worst position (big blind due next = move them)
@@ -377,6 +418,7 @@ Must show:
 - Final table forms when total remaining players ≤ table capacity (9 max)
 
 ## 10. Hand-for-Hand (Bubble Play)
+
 - Activated when remaining players = paid positions + 1
 - ALL tables must complete their current hand before any table deals the next hand
 - Prevents slowplay exploitation (running out the clock at one table)
@@ -385,6 +427,7 @@ Must show:
 - Ends when a player busts (bubble bursts) or deal is made
 
 ## 11. Chip Race / Color Up
+
 - When blinds increase, small denomination chips become unnecessary
 - Race chips that can't divide evenly into new smallest denomination
 - Each player gets 1 card per odd chip (standard method)
@@ -393,6 +436,7 @@ Must show:
 - Occurs at each level change where denominations change
 
 ## 12. Big Blind Ante (BBA)
+
 - Modern tournament standard replacing per-player antes
 - Big blind posts the ante for the entire table
 - Ante amount = 1 BB typically
@@ -401,6 +445,7 @@ Must show:
 - Only BB posts, included in their forced bet
 
 ## 13. Re-entry vs Rebuy Distinction
+
 - REBUY: Buy more chips while still at the table, keep your seat
   - Available when stack ≤ starting stack (or at any time, configurable)
   - Same seat, same table
@@ -412,6 +457,7 @@ Must show:
   - Old entry is eliminated with position
 
 ## 14. Late Registration
+
 - Period after tournament starts when new players can join
 - Typically 4-8 blind levels
 - New players get full starting stack regardless of current level
@@ -420,10 +466,11 @@ Must show:
 - Prize pool not finalized until late reg ends
 
 ## 15. Key Formulas
+
 - Starting BBs = starting_chips / big_blind_at_level_1
 - Average stack = total_chips_in_play / players_remaining
 - M-ratio (tournament health) = stack / (SB + BB + antes)
-- Prize for position = prize_pool * (payout_percentage / 100)
+- Prize for position = prize_pool \* (payout_percentage / 100)
 - Tables needed = ceil(players / table_capacity)
 - Players per table = floor(players / tables) or ceil(players / tables) (balanced)
 

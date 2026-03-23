@@ -580,7 +580,13 @@ class DailyChallengeServiceClass {
     }
 
     // Calculate streak (consecutive days with at least 1 completion)
-    const dates = [...new Set(data.map((d) => d.assigned_date))].sort().reverse();
+    // CRITICAL: Filter to DAILY keys only. Weekly keys start with "W" and
+    // monthly keys start with "M" — these are NOT valid dates and would
+    // produce Invalid Date from subtractDays(), silently breaking the streak.
+    const dailyDates = data
+      .map((d) => d.assigned_date)
+      .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)); // Only YYYY-MM-DD
+    const dates = [...new Set(dailyDates)].sort().reverse();
     let currentStreak = 0;
     const today = this.getTodayKey();
 

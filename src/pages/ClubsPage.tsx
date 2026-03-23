@@ -19,7 +19,7 @@ import { CardSkeleton } from '../components/skeletons/CardSkeleton';
 import { useToast } from '../components/common/Toast';
 import IntroVideo from '../components/IntroVideo';
 import haptic from '../services/HapticService';
-import { MetalFrame, MetalButton, MetalInput, MetalCard } from '../components/metal-ui';
+// Metal UI removed — using CSS Modules (Facebook Dark)
 import ClubDiscovery from '../components/clubs/ClubDiscovery';
 import { getClubLevel } from '../utils/clubLevels';
 import styles from './ClubsPage.module.css';
@@ -392,23 +392,19 @@ export default function ClubsPage() {
 
         {/* Tab Content */}
         <div className={styles.content}>
-          {/* Discover Tab - Metal UI */}
+          {/* Discover Tab */}
           {activeTab === 'discover' && (
             <div className={styles.discoverTab}>
-              <MetalFrame title="JOIN A CLUB" variant="form" size="md">
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                  <p style={{ color: '#8899aa', textAlign: 'center', margin: 0 }}>
-                    Enter a 6-digit Club ID to join an existing club.
-                  </p>
+              <section className={styles.joinSection}>
+                <h3>JOIN A CLUB</h3>
+                <p>Enter a 6-digit Club ID to join an existing club.</p>
 
-                  {joinError && (
-                    <div style={{ color: '#ff6b6b', textAlign: 'center', fontSize: '0.875rem' }}>
-                      {joinError}
-                    </div>
-                  )}
+                {joinError && <div className={styles.errorText}>{joinError}</div>}
 
-                  <MetalInput
-                    label="ENTER CLUB ID:"
+                <div className={styles.formGroup}>
+                  <label className={styles.label}>ENTER CLUB ID:</label>
+                  <input
+                    className={styles.joinInput}
                     placeholder="123456"
                     value={joinClubId}
                     onChange={(e) => {
@@ -416,22 +412,20 @@ export default function ClubsPage() {
                       setJoinError(null);
                     }}
                     maxLength={6}
-                    style={{ textAlign: 'center', letterSpacing: '0.2em', fontFamily: 'monospace' }}
                   />
-
-                  <MetalButton
-                    variant="primary"
-                    fullWidth
-                    disabled={joinClubId.length < 6 || isJoining}
-                    onClick={() => {
-                      haptic.medium();
-                      handleJoinClub();
-                    }}
-                  >
-                    {isJoining ? 'Joining...' : 'JOIN CLUB'}
-                  </MetalButton>
                 </div>
-              </MetalFrame>
+
+                <button
+                  className={styles.btnPrimary}
+                  disabled={joinClubId.length < 6 || isJoining}
+                  onClick={() => {
+                    haptic.medium();
+                    handleJoinClub();
+                  }}
+                >
+                  {isJoining ? 'Joining...' : 'JOIN CLUB'}
+                </button>
+              </section>
 
               {/* Club Discovery Browser */}
               <ClubDiscovery
@@ -483,164 +477,72 @@ export default function ClubsPage() {
                           transition: 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
                         }}
                       >
-                        <MetalCard size="md" glow>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                            {/* Club Header */}
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                              <div
-                                style={{
-                                  width: '50px',
-                                  height: '50px',
-                                  fontSize: '24px',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  background: 'linear-gradient(135deg, #1a2a3a 0%, #0d1520 100%)',
-                                  border: '1px solid #2a3a4a',
-                                  borderRadius: '10px',
-                                }}
-                              ></div>
-                              <div style={{ flex: 1 }}>
-                                <h3
-                                  style={{
-                                    margin: 0,
-                                    fontSize: '1.1rem',
-                                    color: '#fff',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '8px',
-                                  }}
-                                >
-                                  {membership.club.name}
-                                  {levelInfo && (
-                                    <span
-                                      style={{
-                                        fontSize: '0.65rem',
-                                        padding: '2px 8px',
-                                        borderRadius: '12px',
-                                        background: levelInfo.gradient,
-                                        color: '#fff',
-                                        fontWeight: 700,
-                                        letterSpacing: '0.5px',
-                                        textShadow: '0 1px 2px rgba(0,0,0,0.5)',
-                                      }}
-                                    >
-                                      Lv.{levelInfo.level}
-                                    </span>
-                                  )}
-                                </h3>
-                                <span
-                                  style={{
-                                    fontSize: '0.75rem',
-                                    fontFamily: 'monospace',
-                                    color: '#6a7a8a',
-                                  }}
-                                >
-                                  ID: {membership.club.club_id}
-                                </span>
-                              </div>
-                              {membership.role === 'owner' && (
-                                <span
-                                  style={{
-                                    fontSize: '0.7rem',
-                                    fontWeight: 600,
-                                    color: '#ffd700',
-                                    padding: '4px 10px',
-                                    background: 'rgba(255, 215, 0, 0.15)',
-                                    border: '1px solid rgba(255, 215, 0, 0.4)',
-                                    borderRadius: '20px',
-                                  }}
-                                >
-                                  OWNER
-                                </span>
-                              )}
+                        <div className={styles.clubCard}>
+                          {/* Club Header */}
+                          <div className={styles.clubHeader}>
+                            <div className={styles.clubAvatar}></div>
+                            <div className={styles.clubInfo}>
+                              <h3 className={styles.clubName}>
+                                {membership.club.name}
+                                {levelInfo && (
+                                  <span
+                                    className={styles.levelBadge}
+                                    style={{ background: levelInfo.gradient }}
+                                  >
+                                    Lv.{levelInfo.level}
+                                  </span>
+                                )}
+                              </h3>
+                              <span className={styles.clubId}>ID: {membership.club.club_id}</span>
                             </div>
-
-                            {/* Stats Row */}
-                            <div
-                              style={{
-                                display: 'flex',
-                                justifyContent: 'space-around',
-                                padding: '12px 0',
-                                borderTop: '1px solid rgba(255,255,255,0.1)',
-                                borderBottom: '1px solid rgba(255,255,255,0.1)',
-                              }}
-                            >
-                              <div style={{ textAlign: 'center' }}>
-                                <div
-                                  style={{ fontSize: '1.25rem', fontWeight: 700, color: '#00d4ff' }}
-                                >
-                                  {membership.club.member_count || 0}
-                                </div>
-                                <div
-                                  style={{
-                                    fontSize: '0.65rem',
-                                    color: '#6a7a8a',
-                                    textTransform: 'uppercase',
-                                  }}
-                                >
-                                  Members
-                                </div>
-                              </div>
-                              <div style={{ textAlign: 'center' }}>
-                                <div
-                                  style={{ fontSize: '1.25rem', fontWeight: 700, color: '#00d4ff' }}
-                                >
-                                  {membership.role === 'owner'
-                                    ? '👑'
-                                    : membership.role === 'admin'
-                                      ? '⚙️'
-                                      : '🎮'}
-                                </div>
-                                <div
-                                  style={{
-                                    fontSize: '0.65rem',
-                                    color: '#6a7a8a',
-                                    textTransform: 'uppercase',
-                                  }}
-                                >
-                                  {membership.role === 'owner'
-                                    ? 'Owner'
-                                    : membership.role === 'admin'
-                                      ? 'Admin'
-                                      : 'Player'}
-                                </div>
-                              </div>
-                              <div style={{ textAlign: 'center' }}>
-                                <div
-                                  style={{
-                                    fontSize: '1.25rem',
-                                    fontWeight: 700,
-                                    color: levelInfo.color,
-                                  }}
-                                >
-                                  Lv.{levelInfo.level}
-                                </div>
-                                <div
-                                  style={{
-                                    fontSize: '0.65rem',
-                                    color: '#6a7a8a',
-                                    textTransform: 'uppercase',
-                                  }}
-                                >
-                                  {levelInfo.tierLabel}
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Enter Button */}
-                            <MetalButton
-                              variant="primary"
-                              fullWidth
-                              onClick={() => {
-                                haptic.success();
-                                navigate(`/clubs/${membership.club.id}`);
-                              }}
-                            >
-                              ENTER CLUB
-                            </MetalButton>
+                            {membership.role === 'owner' && (
+                              <span className={styles.ownerBadge}>OWNER</span>
+                            )}
                           </div>
-                        </MetalCard>
+
+                          {/* Stats Row */}
+                          <div className={styles.clubStats}>
+                            <div className={styles.clubStat}>
+                              <span className={styles.statValue}>
+                                {membership.club.member_count || 0}
+                              </span>
+                              <span className={styles.statLabel}>Members</span>
+                            </div>
+                            <div className={styles.clubStat}>
+                              <span className={styles.statValue}>
+                                {membership.role === 'owner'
+                                  ? '👑'
+                                  : membership.role === 'admin'
+                                    ? '⚙️'
+                                    : '🎮'}
+                              </span>
+                              <span className={styles.statLabel}>
+                                {membership.role === 'owner'
+                                  ? 'Owner'
+                                  : membership.role === 'admin'
+                                    ? 'Admin'
+                                    : 'Player'}
+                              </span>
+                            </div>
+                            <div className={styles.clubStat}>
+                              <span className={styles.statValue} style={{ color: levelInfo.color }}>
+                                Lv.{levelInfo.level}
+                              </span>
+                              <span className={styles.statLabel}>{levelInfo.tierLabel}</span>
+                            </div>
+                          </div>
+
+                          {/* Enter Button */}
+                          <button
+                            className={styles.btnPrimary}
+                            onClick={() => {
+                              haptic.success();
+                              navigate(`/clubs/${membership.club.id}`);
+                            }}
+                          >
+                            ENTER CLUB
+                          </button>
+                        </div>
                       </div>
                     );
                   })}
@@ -674,141 +576,50 @@ export default function ClubsPage() {
                         transition: 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
                       }}
                     >
-                      <MetalCard size="md" glow>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                          {/* Union Header */}
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                            <div
-                              style={{
-                                width: '50px',
-                                height: '50px',
-                                fontSize: '24px',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                background: 'linear-gradient(135deg, #2a1a3a 0%, #150d20 100%)',
-                                border: '1px solid #4a2a6a',
-                                borderRadius: '10px',
-                              }}
-                            >
-                              🏛️
-                            </div>
-                            <div style={{ flex: 1 }}>
-                              <h3
-                                style={{
-                                  margin: 0,
-                                  fontSize: '1.1rem',
-                                  color: '#fff',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '8px',
-                                }}
-                              >
-                                {union.name}
-                                <span
-                                  style={{
-                                    fontSize: '0.6rem',
-                                    padding: '2px 8px',
-                                    borderRadius: '12px',
-                                    background: 'linear-gradient(135deg, #9b59b6, #8e44ad)',
-                                    color: '#fff',
-                                    fontWeight: 700,
-                                    letterSpacing: '0.5px',
-                                    textShadow: '0 1px 2px rgba(0,0,0,0.5)',
-                                  }}
-                                >
-                                  UNION
-                                </span>
-                              </h3>
-                            </div>
-                            <span
-                              style={{
-                                fontSize: '0.7rem',
-                                fontWeight: 600,
-                                color: '#b388ff',
-                                padding: '4px 10px',
-                                background: 'rgba(179, 136, 255, 0.15)',
-                                border: '1px solid rgba(179, 136, 255, 0.4)',
-                                borderRadius: '20px',
-                              }}
-                            >
-                              {union.ownerId === currentUserId ? 'OWNER' : 'MEMBER'}
-                            </span>
+                      <div className={styles.clubCard}>
+                        {/* Union Header */}
+                        <div className={styles.clubHeader}>
+                          <div className={styles.unionAvatar}>🏛️</div>
+                          <div className={styles.clubInfo}>
+                            <h3 className={styles.clubName}>
+                              {union.name}
+                              <span className={styles.unionTag}>UNION</span>
+                            </h3>
                           </div>
-
-                          {/* Stats Row */}
-                          <div
-                            style={{
-                              display: 'flex',
-                              justifyContent: 'space-around',
-                              padding: '12px 0',
-                              borderTop: '1px solid rgba(255,255,255,0.1)',
-                              borderBottom: '1px solid rgba(255,255,255,0.1)',
-                            }}
-                          >
-                            <div style={{ textAlign: 'center' }}>
-                              <div
-                                style={{ fontSize: '1.25rem', fontWeight: 700, color: '#b388ff' }}
-                              >
-                                {union.clubCount || 0}
-                              </div>
-                              <div
-                                style={{
-                                  fontSize: '0.65rem',
-                                  color: '#6a7a8a',
-                                  textTransform: 'uppercase',
-                                }}
-                              >
-                                Clubs
-                              </div>
-                            </div>
-                            <div style={{ textAlign: 'center' }}>
-                              <div
-                                style={{ fontSize: '1.25rem', fontWeight: 700, color: '#b388ff' }}
-                              >
-                                {union.memberCount || 0}
-                              </div>
-                              <div
-                                style={{
-                                  fontSize: '0.65rem',
-                                  color: '#6a7a8a',
-                                  textTransform: 'uppercase',
-                                }}
-                              >
-                                Members
-                              </div>
-                            </div>
-                            <div style={{ textAlign: 'center' }}>
-                              <div
-                                style={{ fontSize: '1.25rem', fontWeight: 700, color: '#b388ff' }}
-                              >
-                                {union.totalRake ? `$${union.totalRake.toLocaleString()}` : '—'}
-                              </div>
-                              <div
-                                style={{
-                                  fontSize: '0.65rem',
-                                  color: '#6a7a8a',
-                                  textTransform: 'uppercase',
-                                }}
-                              >
-                                Total Rake
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Enter Button */}
-                          <MetalButton
-                            variant="primary"
-                            fullWidth
-                            onClick={() => {
-                              haptic.success();
-                              navigate(`/unions/${union.id}`);
-                            }}
-                          >
-                            MANAGE UNION
-                          </MetalButton>
+                          <span className={styles.unionBadge}>
+                            {union.ownerId === currentUserId ? 'OWNER' : 'MEMBER'}
+                          </span>
                         </div>
-                      </MetalCard>
+
+                        {/* Stats Row */}
+                        <div className={styles.clubStats}>
+                          <div className={styles.clubStat}>
+                            <span className={styles.unionStatValue}>{union.clubCount || 0}</span>
+                            <span className={styles.statLabel}>Clubs</span>
+                          </div>
+                          <div className={styles.clubStat}>
+                            <span className={styles.unionStatValue}>{union.memberCount || 0}</span>
+                            <span className={styles.statLabel}>Members</span>
+                          </div>
+                          <div className={styles.clubStat}>
+                            <span className={styles.unionStatValue}>
+                              {union.totalRake ? `$${union.totalRake.toLocaleString()}` : '—'}
+                            </span>
+                            <span className={styles.statLabel}>Total Rake</span>
+                          </div>
+                        </div>
+
+                        {/* Enter Button */}
+                        <button
+                          className={styles.btnPrimary}
+                          onClick={() => {
+                            haptic.success();
+                            navigate(`/unions/${union.id}`);
+                          }}
+                        >
+                          MANAGE UNION
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -816,23 +627,19 @@ export default function ClubsPage() {
             </div>
           )}
 
-          {/* Create Club Tab - Metal UI */}
+          {/* Create Club Tab */}
           {activeTab === 'create' && (
             <div className={styles.createTab}>
-              <MetalFrame title="CREATE A CLUB" variant="form" size="md">
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                  <p style={{ color: '#8899aa', textAlign: 'center', margin: 0 }}>
-                    Start your own private poker community.
-                  </p>
+              <div className={styles.createForm}>
+                <h3>CREATE A CLUB</h3>
+                <p>Start your own private poker community.</p>
 
-                  {createError && (
-                    <div style={{ color: '#ff6b6b', textAlign: 'center', fontSize: '0.875rem' }}>
-                      {createError}
-                    </div>
-                  )}
+                {createError && <div className={styles.errorText}>{createError}</div>}
 
-                  <MetalInput
-                    label="CLUB NAME:"
+                <div className={styles.formGroup}>
+                  <label className={styles.label}>CLUB NAME:</label>
+                  <input
+                    className={styles.input}
                     placeholder="Enter club name"
                     value={clubName}
                     onChange={(e) => {
@@ -840,103 +647,60 @@ export default function ClubsPage() {
                       setCreateError(null);
                     }}
                   />
-
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <label
-                      style={{
-                        fontFamily: "'Orbitron', 'Rajdhani', sans-serif",
-                        fontSize: '0.85rem',
-                        fontWeight: 600,
-                        color: '#fff',
-                        textTransform: 'uppercase',
-                        letterSpacing: '1px',
-                      }}
-                    >
-                      DESCRIPTION:
-                    </label>
-                    <textarea
-                      placeholder="Describe your club..."
-                      rows={3}
-                      maxLength={500}
-                      value={clubDescription}
-                      onChange={(e) => setClubDescription(e.target.value)}
-                      style={{
-                        width: '100%',
-                        padding: '14px 18px',
-                        background: 'linear-gradient(180deg, #0d1520 0%, #1a2332 100%)',
-                        border: '2px solid #2a3a4a',
-                        borderRadius: '6px',
-                        color: '#fff',
-                        fontSize: '1rem',
-                        outline: 'none',
-                        resize: 'vertical',
-                        minHeight: '80px',
-                      }}
-                    />
-                  </div>
-
-                  <MetalCard size="sm">
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                      <label
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '12px',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        <input
-                          type="radio"
-                          name="club-visibility"
-                          checked={isPublic}
-                          onChange={() => {
-                            haptic.selection();
-                            setIsPublic(true);
-                          }}
-                          style={{ width: '18px', height: '18px', accentColor: '#00d4ff' }}
-                        />
-                        <span style={{ color: '#8899aa', fontSize: '0.875rem' }}>
-                          🌐 Public (anyone can find and join)
-                        </span>
-                      </label>
-                      <label
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '12px',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        <input
-                          type="radio"
-                          name="club-visibility"
-                          checked={!isPublic}
-                          onChange={() => {
-                            haptic.selection();
-                            setIsPublic(false);
-                          }}
-                          style={{ width: '18px', height: '18px', accentColor: '#00d4ff' }}
-                        />
-                        <span style={{ color: '#8899aa', fontSize: '0.875rem' }}>
-                          🔒 Private (invite only, requires approval)
-                        </span>
-                      </label>
-                    </div>
-                  </MetalCard>
-
-                  <MetalButton
-                    variant="primary"
-                    fullWidth
-                    onClick={() => {
-                      haptic.success();
-                      handleCreateClub();
-                    }}
-                    disabled={isCreating || !clubName.trim()}
-                  >
-                    {isCreating ? 'Creating...' : 'CREATE CLUB'}
-                  </MetalButton>
                 </div>
-              </MetalFrame>
+
+                <div className={styles.formGroup}>
+                  <label className={styles.label}>DESCRIPTION:</label>
+                  <textarea
+                    className={styles.textarea}
+                    placeholder="Describe your club..."
+                    rows={3}
+                    maxLength={500}
+                    value={clubDescription}
+                    onChange={(e) => setClubDescription(e.target.value)}
+                  />
+                </div>
+
+                <div className={styles.visibilityCard}>
+                  <div className={styles.checkboxGroup}>
+                    <label className={styles.checkbox}>
+                      <input
+                        type="radio"
+                        name="club-visibility"
+                        checked={isPublic}
+                        onChange={() => {
+                          haptic.selection();
+                          setIsPublic(true);
+                        }}
+                      />
+                      <span>🌐 Public (anyone can find and join)</span>
+                    </label>
+                    <label className={styles.checkbox}>
+                      <input
+                        type="radio"
+                        name="club-visibility"
+                        checked={!isPublic}
+                        onChange={() => {
+                          haptic.selection();
+                          setIsPublic(false);
+                        }}
+                      />
+                      <span>🔒 Private (invite only, requires approval)</span>
+                    </label>
+                  </div>
+                </div>
+
+                <button
+                  className={styles.btnPrimary}
+                  onClick={() => {
+                    haptic.success();
+                    handleCreateClub();
+                  }}
+                  disabled={isCreating || !clubName.trim()}
+                >
+                  {isCreating ? 'Creating...' : 'CREATE CLUB'}
+                </button>
+              </div>
             </div>
           )}
         </div>

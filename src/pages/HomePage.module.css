@@ -344,8 +344,10 @@
 /* Aspect-ratio fallback — only fires if aspect-ratio is unsupported */
 @supports not (aspect-ratio: 3 / 4) {
   .cardSkeleton {
+    display: block; /* padding-bottom % trick requires block, not flex */
     height: 0;
     padding-bottom: 133.33%;
+    position: relative;
   }
 }
 
@@ -389,6 +391,19 @@
   scrollbar-width: none;
   z-index: 10;
   position: relative;
+  /* Entrance animation — fade in + slide up */
+  animation: carouselEntrance 0.6s ease-out 200ms both;
+}
+
+@keyframes carouselEntrance {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .clubCarousel::-webkit-scrollbar {
@@ -870,6 +885,7 @@
   position: relative;
 }
 
+/* Carousel edge fade — always visible to hint at off-screen cards */
 .carouselScrollFade::before,
 .carouselScrollFade::after {
   content: '';
@@ -879,7 +895,7 @@
   width: 40px;
   pointer-events: none;
   z-index: 20;
-  opacity: 0;
+  opacity: 1;
   transition: opacity 0.3s ease;
 }
 

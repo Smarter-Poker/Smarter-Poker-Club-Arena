@@ -199,12 +199,25 @@ class PayoutEngineClass {
 
   /**
    * Calculate actual chip amounts from percentages and prize pool
+   * Ensures total payouts never exceed prize pool due to rounding
    */
   calculateAmounts(payouts: PayoutEntry[], prizePool: number): PayoutEntry[] {
-    return payouts.map((p) => ({
+    const amounts = payouts.map((p) => ({
       ...p,
       amount: Math.trunc(((prizePool * p.percentage) / 100) * 100) / 100,
     }));
+
+    // Verify total doesn't exceed prize pool
+    const total = amounts.reduce((s, a) => s + (a.amount ?? 0), 0);
+    if (total > prizePool) {
+      // Adjust the first place payout down to fit
+      if (amounts.length > 0 && amounts[0].amount) {
+        amounts[0].amount = Math.max(0, amounts[0].amount - (total - prizePool));
+        amounts[0].amount = Math.round(amounts[0].amount * 100) / 100;
+      }
+    }
+
+    return amounts;
   }
 
   /**
@@ -304,6 +317,43 @@ class PayoutEngineClass {
     // Filter to only positions that haven't been paid yet
     const remainingPayouts = payouts.filter((p) => p.place <= playersRemaining);
     return this.calculateAmounts(remainingPayouts, prizePool);
+  }
+
+  /**
+   * Calculate bounty payouts for bounty/PKO tournaments
+   * In bounty tournaments, only a portion of buy-in goes to prize pool,
+   * the rest is allocated as bounties to award to knockout winners.
+   *
+   * @param playerCount - Number of players in tournament
+   * @param buyIn - Total buy-in per player
+   * @param bountyPercentage - Percentage of buy-in allocated to bounties (e.g., 0.5 = 50%)
+   * @param payouts - Base payout structure (based on buy-in only)
+   * @returns Bounty and payout structure
+   */
+  calculateBountyPayouts(
+    playerCount: number,
+    buyIn: number,
+    bountyPercentage: number,
+    payouts?: PayoutEntry[]
+  ): {
+    bountyPool: number;
+    baseBounty: number;
+    prizePool: number;
+    payouts: PayoutEntry[];
+  } {
+    const totalAmount = playerCount * buyIn;
+    const bountyPool = totalAmount * bountyPercentage;
+    const prizePool = totalAmount - bountyPool;
+    const baseBounty = bountyPool / playerCount;
+
+    const finalPayouts = payouts ? this.calculateAmounts(payouts, prizePool) : [];
+
+    return {
+      bountyPool,
+      baseBounty,
+      prizePool,
+      payouts: finalPayouts,
+    };
   }
 
   /**

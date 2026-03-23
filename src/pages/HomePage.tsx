@@ -312,8 +312,23 @@ function HomePageInner() {
           if (getIsMounted && !getIsMounted()) return;
           setUserClubs(clubs);
           // Enhancement #9: Update SWR cache
+          // Fix 4/5: Only increment statsRefreshKey when club IDs actually changed
+          // to avoid N×3 RPC cascade on every fetch
           try {
-            setStatsRefreshKey((k) => k + 1);
+            const prevCache = localStorage.getItem(STORAGE_KEYS.CLUBS_CACHE);
+            const prevIds = prevCache
+              ? JSON.parse(prevCache)
+                  .map((c: any) => c.id)
+                  .sort()
+                  .join(',')
+              : '';
+            const newIds = clubs
+              .map((c: UserClub) => c.id)
+              .sort()
+              .join(',');
+            if (prevIds !== newIds) {
+              setStatsRefreshKey((k) => k + 1);
+            }
             localStorage.setItem(STORAGE_KEYS.CLUBS_CACHE, JSON.stringify(clubs));
             localStorage.setItem(STORAGE_KEYS.CLUBS_CACHE_TS, String(Date.now()));
           } catch {
@@ -372,7 +387,9 @@ function HomePageInner() {
 
   useEffect(() => {
     let isMounted = true;
-    fetchUserData(false, () => isMounted);
+    // Fix 2: If SWR cache already gave us clubs, skip loading state (background refresh)
+    const hasCachedClubs = userClubs.length > 0;
+    fetchUserData(hasCachedClubs, () => isMounted);
 
     let channel: ReturnType<typeof masterBus.getOrCreateChannel> | null = null;
     let cachedAuthUserId: string | null = null; // Cache for cleanup — avoids async getAuthUser() in teardown
@@ -630,7 +647,24 @@ function HomePageInner() {
         }
       }
     }
-    fetchSharkClubStats(true);
+
+    // Fix 3: Skip fetch if cached Shark Club stats are fresh (<5 min)
+    let skipInitialFetch = false;
+    try {
+      const cached = sessionStorage.getItem(SHARK_SWR_KEY);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        const age = parsed.cachedAt ? Date.now() - parsed.cachedAt : Infinity;
+        if (parsed.totalMembers > 0 && age < SWR_TTL_MS) {
+          skipInitialFetch = true;
+        }
+      }
+    } catch {
+      /* */
+    }
+    if (!skipInitialFetch) {
+      fetchSharkClubStats(true);
+    }
 
     // Real-time clubs table updates via MasterBus channel registry
     const sharkChannelKey = 'clubs-live-stats';
@@ -1175,7 +1209,9 @@ function HomePageInner() {
     return () => {
       isMounted = false;
     };
-  }, [displayClubs.length, displayClubIdsKey, statsRefreshKey]);
+    // Fix 5: Removed statsRefreshKey from deps — was causing N×3 RPC cascade
+    // Stats re-fetch naturally when displayClubIdsKey changes (membership changes)
+  }, [displayClubs.length, displayClubIdsKey]);
 
   // Tile action handlers (for bottom row tiles using LOBBY_TILES config)
   const tileActions: Record<string, () => void> = useMemo(
@@ -1579,8 +1615,9 @@ function HomePageInner() {
         />
       </Suspense>
 
-      {/* Loading indicator — skeleton card shimmers */}
-      {isLoading && !userClubs.length && (
+      {/* Fix 1: Loading indicator — only on true cold start (no SWR cache), positioned
+          inline so bottom row tiles always render regardless of loading state */}
+      {isLoading && !userClubs.length && !hasFetchedOnceRef.current && (
         <div className={styles.loadingOverlay}>
           <div className={styles.skeletonRow}>
             <div className={styles.skeletonCard}>

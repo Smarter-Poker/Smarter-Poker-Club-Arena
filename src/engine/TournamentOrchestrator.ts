@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
 import type { RealtimeChannel } from '@supabase/supabase-js';
+import { masterBus } from '../core/MasterBus';
 import { TournamentEngine } from './TournamentEngine';
 import { tableBalancer, type BalancerTable } from './TableBalancer';
 
@@ -13,9 +14,12 @@ export class TournamentOrchestrator {
   private activeEngines: Map<string, TournamentEngine> = new Map();
   private isRunning: boolean = false;
   private pollInterval: ReturnType<typeof setInterval> | null = null;
-  // Enhancement #3: Dedup notification emissions
+  // Enhancement #3: Dedup notification emissions (with periodic cleanup)
   private notifiedTournaments: Set<string> = new Set();
+  private notificationCleanupInterval: ReturnType<typeof setInterval> | null = null;
   private realtimeChannel: RealtimeChannel | null = null;
+  // Guard against concurrent spinUp calls for same tournament
+  private spinningUpTournaments: Set<string> = new Set();
 
   // Singleton instance
   private static instance: TournamentOrchestrator;
@@ -57,17 +61,28 @@ export class TournamentOrchestrator {
               const status = newRow?.status;
               if (!tournamentId) return;
 
-              // Spin up if status is active and not already tracked
+              // Spin up if status is active and not already tracked (idempotent check)
               if (
                 ['REGISTERING', 'ANNOUNCED', 'RUNNING'].includes(status) &&
-                !this.activeEngines.has(tournamentId)
+                !this.activeEngines.has(tournamentId) &&
+                !this.spinningUpTournaments.has(tournamentId)
               ) {
                 if (status === 'RUNNING') {
-                  this.spinUpTournament(tournamentId);
+                  this.spinUpTournament(tournamentId).catch((err) => {
+                    console.error(
+                      `[TournamentOrchestrator] Realtime spinUp failed for ${tournamentId}:`,
+                      err
+                    );
+                  });
                 } else if (newRow?.started_at) {
                   const startTime = new Date(newRow.started_at).getTime();
                   if (Date.now() >= startTime - 60_000) {
-                    this.spinUpTournament(tournamentId);
+                    this.spinUpTournament(tournamentId).catch((err) => {
+                      console.error(
+                        `[TournamentOrchestrator] Realtime spinUp failed for ${tournamentId}:`,
+                        err
+                      );
+                    });
                   }
                 }
               }
@@ -80,6 +95,7 @@ export class TournamentOrchestrator {
                 const engine = this.activeEngines.get(tournamentId)!;
                 engine.stop();
                 this.activeEngines.delete(tournamentId);
+                this.spinningUpTournaments.delete(tournamentId);
               }
             }
           }
@@ -106,6 +122,14 @@ export class TournamentOrchestrator {
     this.pollInterval = setInterval(() => {
       this.syncActiveTournaments();
     }, 60_000);
+
+    // 4. Periodic cleanup of notification dedup set (every 6 hours)
+    this.notificationCleanupInterval = setInterval(
+      () => {
+        this.notifiedTournaments.clear();
+      },
+      6 * 60 * 60 * 1000
+    );
   }
 
   /**
@@ -114,33 +138,37 @@ export class TournamentOrchestrator {
   async stop() {
     this.isRunning = false;
     if (this.pollInterval) clearInterval(this.pollInterval);
+    if (this.notificationCleanupInterval) clearInterval(this.notificationCleanupInterval);
 
     // Unsubscribe from Realtime channel
     if (this.realtimeChannel) {
       supabase.removeChannel(this.realtimeChannel);
       this.realtimeChannel = null;
     }
+
+    // Stop all engines (await for clean shutdown)
+    const stopPromises: Promise<void>[] = [];
     for (const [tournamentId, engine] of this.activeEngines.entries()) {
-      engine.stop(); // Synchronous stop
-      this.activeEngines.delete(tournamentId);
+      stopPromises.push(
+        Promise.resolve(engine.stop()).then(() => {
+          this.activeEngines.delete(tournamentId);
+          this.spinningUpTournaments.delete(tournamentId);
+        })
+      );
     }
+    await Promise.all(stopPromises);
   }
 
   /**
-   * Check stats
+   * Check stats (thread-safe snapshot)
    */
   getStats() {
+    const engines = Array.from(this.activeEngines.values());
     return {
       running: this.isRunning,
-      activeTournaments: this.activeEngines.size,
-      totalPlayers: Array.from(this.activeEngines.values()).reduce(
-        (acc, e) => acc + e.getPlayerCount(),
-        0
-      ),
-      totalTables: Array.from(this.activeEngines.values()).reduce(
-        (acc, e) => acc + e.getTableCount(),
-        0
-      ),
+      activeTournaments: engines.length,
+      totalPlayers: engines.reduce((acc, e) => acc + e.getPlayerCount(), 0),
+      totalTables: engines.reduce((acc, e) => acc + e.getTableCount(), 0),
     };
   }
 
@@ -162,9 +190,12 @@ export class TournamentOrchestrator {
 
       const currentTournaments = new Map((data || []).map((t) => [t.id, t]));
 
-      // 1. Start engines for new tournaments
+      // 1. Start engines for new tournaments (avoid race conditions)
       for (const [tournamentId, tInfo] of currentTournaments.entries()) {
-        if (!this.activeEngines.has(tournamentId)) {
+        if (
+          !this.activeEngines.has(tournamentId) &&
+          !this.spinningUpTournaments.has(tournamentId)
+        ) {
           // For REGISTERING/ANNOUNCED, determine if it's time to start
           if (tInfo.status === 'REGISTERING' || tInfo.status === 'ANNOUNCED') {
             if (tInfo.started_at) {
@@ -172,12 +203,22 @@ export class TournamentOrchestrator {
               const now = Date.now();
               // If it's within 1 minute of starting, or already past, boot it up
               if (now >= startTime - 60_000) {
-                this.spinUpTournament(tournamentId);
+                this.spinUpTournament(tournamentId).catch((err) => {
+                  console.error(
+                    `[TournamentOrchestrator] Sync spinUp failed for ${tournamentId}:`,
+                    err
+                  );
+                });
               }
             }
           } else if (tInfo.status === 'RUNNING') {
-            // Always re-hydrate running tournaments
-            this.spinUpTournament(tournamentId);
+            // Always re-hydrate running tournaments (crash recovery)
+            this.spinUpTournament(tournamentId).catch((err) => {
+              console.error(
+                `[TournamentOrchestrator] Sync spinUp failed for ${tournamentId}:`,
+                err
+              );
+            });
           }
         }
       }
@@ -187,6 +228,7 @@ export class TournamentOrchestrator {
         if (!currentTournaments.has(tournamentId) || !engine.isRunning()) {
           engine.stop();
           this.activeEngines.delete(tournamentId);
+          this.spinningUpTournaments.delete(tournamentId);
         }
       }
 
@@ -197,15 +239,27 @@ export class TournamentOrchestrator {
     }
   }
 
-  private spinUpTournament(tournamentId: string) {
-    const engine = new TournamentEngine(tournamentId, supabase);
-    this.activeEngines.set(tournamentId, engine);
+  private async spinUpTournament(tournamentId: string): Promise<void> {
+    // Prevent race condition: only one spinUp per tournament at a time
+    if (this.spinningUpTournaments.has(tournamentId)) {
+      return; // Already spinning up, skip
+    }
 
-    // Fire and forget start
-    engine.start().catch((err) => {
+    this.spinningUpTournaments.add(tournamentId);
+
+    try {
+      const engine = new TournamentEngine(tournamentId, supabase);
+      this.activeEngines.set(tournamentId, engine);
+
+      // Await the start to ensure engine is actually ready before marking complete
+      await engine.start();
+    } catch (err) {
       console.error(`[TournamentOrchestrator] Engine failed to start for ${tournamentId}:`, err);
       this.activeEngines.delete(tournamentId);
-    });
+      throw err; // Re-throw for caller to handle
+    } finally {
+      this.spinningUpTournaments.delete(tournamentId);
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -263,9 +317,10 @@ export class TournamentOrchestrator {
         .update({ status: 'DAY_BREAK', day1_ended_at: new Date().toISOString() })
         .eq('id', tournamentId);
 
-      // 4. Stop the engine for this tournament
-      engine.stop();
+      // 4. Stop the engine for this tournament (await cleanup)
+      await Promise.resolve(engine.stop());
       this.activeEngines.delete(tournamentId);
+      this.spinningUpTournaments.delete(tournamentId);
       // 5. Emit bus event
       try {
         const { masterBus } = await import('../core/MasterBus');
@@ -336,8 +391,8 @@ export class TournamentOrchestrator {
         .update({ status: 'RUNNING', day2_started_at: new Date().toISOString() })
         .eq('id', tournamentId);
 
-      // 5. Spin up the engine
-      this.spinUpTournament(tournamentId);
+      // 5. Spin up the engine (await to ensure it starts)
+      await this.spinUpTournament(tournamentId);
       // 6. Emit bus event
       try {
         const { masterBus } = await import('../core/MasterBus');
@@ -361,6 +416,7 @@ export class TournamentOrchestrator {
    * Check all ANNOUNCED tournaments and emit notification events
    * if within 24h or 1h of start time.
    * Call this from the regular sync poll.
+   * NOTE: Notification keys are cleared every 6 hours to prevent unbounded memory growth.
    */
   async checkNotificationHooks(): Promise<void> {
     try {
@@ -379,11 +435,12 @@ export class TournamentOrchestrator {
         const startTime = new Date(t.started_at).getTime();
         const diff = startTime - now;
 
-        // 24h notification window (between 24h and 23h before start)
+        // 24h notification window: fire once when diff enters [23h, 24h]
+        // (i.e., diff is exactly 24h or just under, but not past 23h)
         const key24 = `${t.id}_24h`;
         if (
-          diff > 23 * 60 * 60 * 1000 &&
-          diff <= 24 * 60 * 60 * 1000 &&
+          diff >= 23 * 60 * 60 * 1000 &&
+          diff < 24 * 60 * 60 * 1000 &&
           !this.notifiedTournaments.has(key24)
         ) {
           this.notifiedTournaments.add(key24);
@@ -394,11 +451,11 @@ export class TournamentOrchestrator {
           });
         }
 
-        // 1h notification window (between 1h and 55m before start)
+        // 1h notification window: fire once when diff enters [55m, 1h]
         const key1h = `${t.id}_1h`;
         if (
-          diff > 55 * 60 * 1000 &&
-          diff <= 60 * 60 * 1000 &&
+          diff >= 55 * 60 * 1000 &&
+          diff < 60 * 60 * 1000 &&
           !this.notifiedTournaments.has(key1h)
         ) {
           this.notifiedTournaments.add(key1h);
@@ -495,6 +552,17 @@ export class TournamentOrchestrator {
               seat_number: playerData?.seat || 1,
               stack: playerData?.stack || 0,
               joined_at: new Date().toISOString(),
+            });
+          } else {
+            // Broadcast TABLE_MOVE event so UI can update seat display
+            masterBus.emit('TABLE_MOVE', {
+              playerId: move.playerId,
+              fromTableId: move.fromTableId,
+              fromSeat: move.fromSeat,
+              toTableId: move.toTableId,
+              toSeat: move.toSeat,
+              reason: move.reason,
+              timestamp: new Date().toISOString(),
             });
           }
         } catch (moveErr: unknown) {

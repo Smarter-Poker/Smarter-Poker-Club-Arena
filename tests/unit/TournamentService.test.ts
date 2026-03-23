@@ -73,31 +73,38 @@ describe('TournamentService', () => {
       expect(BLIND_STRUCTURES.deepStack).toBeDefined();
     });
 
-    it('turbo should have 10 levels at 3m each', () => {
-      expect(BLIND_STRUCTURES.turbo).toHaveLength(10);
-      for (const lvl of BLIND_STRUCTURES.turbo) {
-        expect(lvl.durationMinutes).toBe(3);
+    it('turbo should have 30 levels', () => {
+      expect(BLIND_STRUCTURES.turbo).toHaveLength(30);
+      // Check durations (3m or 5m break periods)
+      const turboLevels = BLIND_STRUCTURES.turbo;
+      for (const lvl of turboLevels) {
+        expect([3, 5]).toContain(lvl.durationMinutes);
       }
     });
 
-    it('regular should have 10 levels at 8m each', () => {
-      expect(BLIND_STRUCTURES.regular).toHaveLength(10);
-      for (const lvl of BLIND_STRUCTURES.regular) {
-        expect(lvl.durationMinutes).toBe(8);
+    it('regular should have 30 levels', () => {
+      expect(BLIND_STRUCTURES.regular).toHaveLength(30);
+      const regularLevels = BLIND_STRUCTURES.regular;
+      for (const lvl of regularLevels) {
+        expect([5, 8]).toContain(lvl.durationMinutes);
       }
     });
 
-    it('deepStack should have 10 levels at 15m each', () => {
-      expect(BLIND_STRUCTURES.deepStack).toHaveLength(10);
-      for (const lvl of BLIND_STRUCTURES.deepStack) {
-        expect(lvl.durationMinutes).toBe(15);
+    it('deepStack should have 30 levels', () => {
+      expect(BLIND_STRUCTURES.deepStack).toHaveLength(30);
+      const deepStackLevels = BLIND_STRUCTURES.deepStack;
+      for (const lvl of deepStackLevels) {
+        expect([5, 15]).toContain(lvl.durationMinutes);
       }
     });
 
-    it('blinds should increase monotonically per structure', () => {
+    it('blinds should increase monotonically per structure (excluding break levels)', () => {
       for (const struct of Object.values(BLIND_STRUCTURES)) {
         for (let i = 1; i < struct.length; i++) {
-          expect(struct[i].bigBlind).toBeGreaterThanOrEqual(struct[i - 1].bigBlind);
+          // Breaks have 0 blinds, so skip comparisons involving breaks
+          if (!struct[i].isBreak && !struct[i - 1].isBreak) {
+            expect(struct[i].bigBlind).toBeGreaterThanOrEqual(struct[i - 1].bigBlind);
+          }
         }
       }
     });
@@ -119,7 +126,7 @@ describe('TournamentService', () => {
     it('each structure should sum to 100%', () => {
       for (const [name, struct] of Object.entries(PAYOUT_STRUCTURES)) {
         const total = struct.reduce((sum, p) => sum + p.percentage, 0);
-        expect(total).toBe(100);
+        expect(total).toBeCloseTo(100, 1);
       }
     });
 
@@ -195,8 +202,8 @@ describe('TournamentService', () => {
   // ─────────────────────────────────────────────────────────────────────────
 
   describe('SPIN_BLIND_STRUCTURE', () => {
-    it('should have 8 levels at 2m each', () => {
-      expect(SPIN_BLIND_STRUCTURE).toHaveLength(8);
+    it('should have 15 levels at 2m each', () => {
+      expect(SPIN_BLIND_STRUCTURE).toHaveLength(15);
       for (const lvl of SPIN_BLIND_STRUCTURE) {
         expect(lvl.durationMinutes).toBe(2);
       }

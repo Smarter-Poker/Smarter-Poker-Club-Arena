@@ -288,21 +288,31 @@ class SpinItEngineClass {
     state.status = 'finished';
     state.winnerId = winnerId;
 
-    // For large multipliers (25x+), 2nd place gets a cut
-    const multiplier = state.multiplier ?? 2;
-    if (multiplier >= 25) {
-      const winnerPayout = state.prizePool * 0.75;
-      const runnerUpPayout = state.prizePool * 0.25;
-      state.payouts.set(winnerId, winnerPayout);
-      // In a real implementation, we'd track elimination order
-      state.players.forEach((p) => {
-        if (p !== winnerId && !state.payouts.has(p)) {
-          state.payouts.set(p, runnerUpPayout);
-        }
-      });
-    } else {
-      // Winner takes all
+    // Validation: Ensure not all 3 players eliminated simultaneously (shouldn't happen)
+    // This is an edge case where the game logic should prevent
+    const remainingPlayers = state.players.length;
+    if (remainingPlayers < 1) {
+      console.error(
+        `[SpinItEngine] Invalid state: no players remaining in game ${lobbyId}. Award full prize to winner.`
+      );
       state.payouts.set(winnerId, state.prizePool);
+    } else {
+      // For large multipliers (25x+), 2nd place gets a cut
+      const multiplier = state.multiplier ?? 2;
+      if (multiplier >= 25) {
+        const winnerPayout = state.prizePool * 0.75;
+        const runnerUpPayout = state.prizePool * 0.25;
+        state.payouts.set(winnerId, winnerPayout);
+        // In a real implementation, we'd track elimination order
+        state.players.forEach((p) => {
+          if (p !== winnerId && !state.payouts.has(p)) {
+            state.payouts.set(p, runnerUpPayout);
+          }
+        });
+      } else {
+        // Winner takes all (full prize pool to winner)
+        state.payouts.set(winnerId, state.prizePool);
+      }
     }
 
     // Stop blind timer

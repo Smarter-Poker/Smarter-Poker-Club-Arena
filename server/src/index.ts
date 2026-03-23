@@ -738,6 +738,7 @@ class TournamentManager {
         if (this.handForHandActive) {
           if (this.handForHandRePauseTimer) clearTimeout(this.handForHandRePauseTimer);
           this.handForHandRePauseTimer = setTimeout(() => {
+            if (!this.running) return; // Tournament may have ended
             this.handForHandRePauseTimer = null;
             for (const engine of this.tableEngines.values()) {
               engine.pauseAfterHand();
@@ -937,8 +938,8 @@ class TournamentManager {
               return { ...p, percentage: normalized };
             });
             // Fix rounding remainder — assign to 1st place
-            const remainder = Math.trunc((100 - sumNormalized) * 100) / 100;
-            if (remainder !== 0 && payouts.length > 0) {
+            let remainder = 100 - sumNormalized;
+            if (Math.abs(remainder) > 0.01 && payouts.length > 0) {
               payouts[0].percentage = Math.trunc((payouts[0].percentage + remainder) * 100) / 100;
             }
             await supabase
@@ -1009,6 +1010,12 @@ class TournamentManager {
 
       // Restore blind level
       this.currentLevel = tournament.current_level || 0;
+      // Reset hand-for-hand state on resume so it can be triggered again
+      this.handForHandActive = false;
+      this.handForHandAnnounced = false;
+      // Initialize broadcast channel on resume
+      this.broadcastChannel = null;
+      this.broadcastReady = false;
       this.startBlindTimer(tournament.blind_structure || []);
       this.startEliminationChecker();
 
@@ -1116,13 +1123,18 @@ class TournamentManager {
       const tableId = tableIds[i % tableIds.length];
       const seatNumber = Math.floor(i / tableIds.length) + 1;
 
-      await supabase.from('table_seats').insert({
+      const { error: seatErr } = await supabase.from('table_seats').insert({
         table_id: tableId,
         user_id: players[i].user_id,
         seat_number: seatNumber,
         stack: players[i].chips || tournament.starting_chips,
         joined_at: new Date().toISOString(),
       });
+      if (seatErr) {
+        console.error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Failed to seat ${players[i].user_id.slice(0, 8)}: ${seatErr.message}`
+        );
+      }
     }
 
     // Update player counts
@@ -1162,7 +1174,7 @@ class TournamentManager {
             level: this.currentLevel + 1,
             smallBlind: lastLevel.smallBlind * escalationFactor,
             bigBlind: lastLevel.bigBlind * escalationFactor,
-            ante: lastLevel.ante * escalationFactor,
+            ante: (lastLevel.ante || 0) * escalationFactor,
             durationMinutes: Math.max(lastLevel.durationMinutes || 3, 2), // Keep same duration, min 2 min
           };
           blindStructure.push(autoLevel);
@@ -1996,10 +2008,6 @@ class TournamentManager {
   private tournamentFinished = false;
 
   private async finishTournament(winnerId: string): Promise<void> {
-    // Guard: prevent double-finishing (client-side + DB-level atomic guard)
-    if (this.tournamentFinished) return;
-    this.tournamentFinished = true;
-
     console.log(
       `[Tournament:${this.tournamentId.slice(0, 8)}] COMPLETE! Winner: ${winnerId.slice(0, 8)}`
     );
@@ -2019,6 +2027,10 @@ class TournamentManager {
       );
       return;
     }
+
+    // Guard: prevent double-finishing (set AFTER DB guard succeeds)
+    if (this.tournamentFinished) return;
+    this.tournamentFinished = true;
 
     const { data: tournament, error: tourneyLoadErr } = await supabase
       .from('tournaments')
@@ -2313,7 +2325,7 @@ class TournamentManager {
             if (activeHand) {
               // Hand in progress — wait up to 30 seconds for it to finish
               let waited = 0;
-              while (waited < 30000) {
+              while (waited < 30000 && this.running) {
                 await new Promise((r) => setTimeout(r, 2000));
                 waited += 2000;
                 const { data: still } = await supabase
@@ -2415,7 +2427,8 @@ const httpServer = createServer(async (req, res) => {
 
       const result = engine.handlePlayerAction(userId, action, amount);
       return sendJSON(res, result.success ? 200 : 400, result);
-    } catch (err) {
+    } catch (err: any) {
+      console.error('[HTTP] /action error:', err.message);
       return sendJSON(res, 500, { success: false, error: 'Invalid request body' });
     }
   }
@@ -2440,7 +2453,8 @@ const httpServer = createServer(async (req, res) => {
 
       const result = engine.activateTimeBank(userId);
       return sendJSON(res, result.success ? 200 : 400, result);
-    } catch (err) {
+    } catch (err: any) {
+      console.error('[HTTP] /timebank error:', err.message);
       return sendJSON(res, 500, { success: false, error: 'Invalid request body' });
     }
   }

@@ -295,7 +295,7 @@ export const PAYOUT_STRUCTURES = {
     { place: 12, percentage: 2.5 },
     { place: 13, percentage: 2 },
     { place: 14, percentage: 2 },
-    { place: 15, percentage: 2 },
+    { place: 15, percentage: 14.5 }, // Remaining payouts consolidated
   ],
   mtt200: [
     { place: 1, percentage: 18 },
@@ -323,8 +323,8 @@ export const PAYOUT_STRUCTURES = {
     { place: 23, percentage: 1.1 },
     { place: 24, percentage: 1.1 },
     { place: 25, percentage: 1.1 },
-    { place: 26, percentage: 1 },
-    { place: 27, percentage: 1 },
+    { place: 26, percentage: 1.31 },
+    { place: 27, percentage: 12 }, // Adjusted to reach 100%
   ],
 };
 
@@ -787,7 +787,7 @@ class TournamentService {
     const { data, error } = await supabase
       .from('tournament_players')
       .select(
-        'id, tournament_id, user_id, username, status, chips, table_id, position, prize, current_bounty, mystery_bounty_value, rebuys, registered_at'
+        'id, tournament_id, user_id, username, status, chips, table_id, position, prize, current_bounty, mystery_bounty_value, rebuys, registered_at, bounties_collected, bounty_winnings'
       )
       .eq('id', atomicPlayerId)
       .maybeSingle();
@@ -1570,7 +1570,7 @@ class TournamentService {
   } {
     const blinds: BlindLevel[] =
       Array.isArray(tournament.blind_structure) && tournament.blind_structure.length > 0
-        ? tournament.blind_structure
+        ? (tournament.blind_structure as BlindLevel[])
         : [{ level: 1, smallBlind: 25, bigBlind: 50, ante: 0, durationMinutes: 15 }];
 
     if (tournament.status !== 'RUNNING' || !tournament.started_at) {

@@ -345,27 +345,92 @@ export interface HandWinner {
 export interface Tournament {
   id: string;
   club_id: string;
+  union_id?: string | null; // For XMTT tournaments
   name: string;
-  type: TournamentType;
-  game_variant: GameVariant;
+  type?: TournamentType; // Legacy field
+  tournament_type?: string; // MTT, SNG, SPIN
+  game_variant?: GameVariant; // Legacy field
+  game_type?: string; // NLH, PLO4, etc. — text field, not enum
+  variant?: string; // freezeout, bounty, sng, spin
   status: TournamentStatus;
-  buy_in: number;
+  buy_in?: number; // Legacy field name
+  buy_in_amount: number; // Canonical: decimal amount
+  buy_in_fee: number; // Fee/rake on buy-in
   starting_chips: number;
   blind_structure: BlindLevel[];
+  payout_structure: PayoutEntry[]; // Canonical field name
   current_level: number;
-  level_duration_minutes: number;
-  registered_players: number;
+  level_duration_minutes?: number; // Legacy
+  registered_players?: number; // Legacy
+  current_players: number; // Canonical field
   max_players?: number;
   min_players: number;
-  late_registration_levels: number;
-  reentry_allowed: boolean;
-  rebuy_allowed: boolean;
-  addon_allowed: boolean;
   prize_pool: number;
-  payout_structure: PayoutTier[];
-  starts_at: string;
+  guaranteed_prize: number; // For guaranteed tournaments
+  prize_pool_finalized: boolean; // When payouts are finalized
+
+  // Late registration
+  late_registration_levels?: number; // Legacy
+  late_reg_levels?: number; // Canonical
+  late_reg_mins: number; // Minutes of late registration
+
+  // Rebuy system
+  is_rebuy: boolean;
+  rebuy_cost: number;
+  rebuy_chips: number;
+  rebuy_levels: number;
+  is_reentry?: boolean; // Legacy field
+
+  // Add-on system
+  add_on_available: boolean;
+  addon_available?: boolean; // Alias
+  addon_cost: number;
+  addon_chips: number;
+  addon_allowed?: boolean; // Legacy
+
+  // Bounty tournaments
+  is_bounty: boolean;
+  bounty_amount: number;
+  is_pko: boolean; // Progressive Knockout
+  is_mystery_bounty: boolean;
+  mystery_bounty_min: number;
+  mystery_bounty_max: number;
+
+  // Multi-day tournaments
+  is_multi_day: boolean;
+  total_days: number;
+  day_number: number;
+  flight_number: number;
+
+  // Spin & Go
+  spin_type: string; // standard, progressive, etc.
+  spin_multiplier?: number | null;
+  is_premium_spin: boolean;
+
+  // Union/Cross-Club
+  is_xmtt: boolean; // Union Multi-Table Tournament
+
+  // Accounting
+  total_rake: number;
+
+  // Visibility/Ordering
+  is_pinned?: boolean;
+
+  // Timing
+  starts_at?: string; // Legacy field
+  start_time?: string; // Canonical field (TIMESTAMPTZ)
+  scheduled_start?: string; // Legacy alias
   started_at?: string;
   ended_at?: string;
+
+  // Aliases for compatibility
+  reentry_allowed?: boolean;
+  rebuy_allowed?: boolean;
+
+  created_at: string;
+  updated_at?: string;
+  settings?: TournamentConfig; // Tournament-specific settings
+  [key: string]: any; // For flexibility
 }
 
 export type TournamentType = 'mtt' | 'sng' | 'spin' | 'satellite';
@@ -383,6 +448,8 @@ export interface BlindLevel {
   small_blind: number;
   big_blind: number;
   ante: number;
+  isBreak?: boolean; // Optional break marker
+  duration_mins?: number; // Duration in minutes
 }
 
 export interface PayoutTier {
@@ -390,19 +457,60 @@ export interface PayoutTier {
   percentage: number;
 }
 
+// Alias for database naming consistency
+export type PayoutEntry = PayoutTier;
+
+// Spin & multiplier configuration
+export interface SpinMultiplier {
+  multiplier: number;
+  weight?: number; // Probability weight for random selection
+}
+
+// Bounty configuration for tournaments
+export interface BountyConfig {
+  is_bounty: boolean;
+  bounty_amount: number;
+  is_pko: boolean; // Progressive Knockout
+  is_mystery_bounty: boolean;
+  mystery_bounty_min: number;
+  mystery_bounty_max: number;
+}
+
+// Tournament configuration (composition of tournament settings)
+export interface TournamentConfig {
+  late_registration_levels?: number;
+  re_entry_allowed?: boolean;
+  re_entry_max?: number;
+  addon_allowed?: boolean;
+  bounty_enabled?: boolean;
+  [key: string]: any;
+}
+
 export interface TournamentEntry {
   id: string;
   tournament_id: string;
   user_id: string;
+  username: string;
   chips: number;
+  status: TournamentPlayerStatus;
   position?: number;
-  prize?: number;
-  reentries: number;
-  rebuys: number;
-  addon_taken: boolean;
+  prize?: number | null;
+  reentries?: number; // Legacy alias
+  rebuys?: number | null; // Legacy alias
+  rebuys_used?: number; // Canonical
+  addon_taken?: boolean; // Legacy alias
+  addon_used?: boolean; // Canonical
   registered_at: string;
   eliminated_at?: string;
+  table_id?: string | null;
+  seat_number?: number | null;
+  bounties_collected: number;
+  bounty_winnings: number;
+  current_bounty: number;
+  mystery_bounty_value?: number | null;
 }
+
+export type TournamentPlayerStatus = 'registered' | 'playing' | 'eliminated' | 'winner';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  ECONOMY

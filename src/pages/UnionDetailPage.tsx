@@ -785,13 +785,91 @@ export default function UnionDetailPage() {
         {/* Overview Tab */}
         {activeTab === 'overview' && (
           <div className={styles.overviewGrid}>
+            {/* Union Activity Summary */}
+            <div
+              className={styles.card}
+              style={{
+                background: 'linear-gradient(135deg, rgba(99,102,241,0.15), rgba(139,92,246,0.10))',
+                border: '1px solid rgba(139,92,246,0.25)',
+              }}
+            >
+              <h3 style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                ⚡ Union Activity
+              </h3>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(3, 1fr)',
+                  gap: '12px',
+                  marginTop: '8px',
+                }}
+              >
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#6ee7b7' }}>
+                    {tables.filter((t) => (t.current_players || 0) > 0).length}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: '0.6rem',
+                      color: 'rgba(255,255,255,0.5)',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px',
+                    }}
+                  >
+                    Active Tables
+                  </div>
+                </div>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#60a5fa' }}>
+                    {tables.reduce((sum, t) => sum + (t.current_players || 0), 0)}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: '0.6rem',
+                      color: 'rgba(255,255,255,0.5)',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px',
+                    }}
+                  >
+                    Seated Players
+                  </div>
+                </div>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#c084fc' }}>
+                    {
+                      unionTournaments.filter(
+                        (t: any) => t.status === 'RUNNING' || t.status === 'REGISTERING'
+                      ).length
+                    }
+                  </div>
+                  <div
+                    style={{
+                      fontSize: '0.6rem',
+                      color: 'rgba(255,255,255,0.5)',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px',
+                    }}
+                  >
+                    Tournaments
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <div className={styles.card}>
               <h3>
                 {' '}
                 Live Tables ({tables.filter((t) => (t.current_players || 0) > 0).length} active)
               </h3>
-              {tables.length === 0 ? (
-                <p className={styles.emptyText}>No active tables</p>
+              {tables.filter((t) => (t.current_players || 0) > 0).length === 0 ? (
+                <div
+                  style={{ textAlign: 'center', padding: '20px 0', color: 'rgba(255,255,255,0.4)' }}
+                >
+                  <div style={{ fontSize: '1.5rem', marginBottom: '6px' }}>🎴</div>
+                  <p style={{ margin: 0, fontSize: '0.75rem' }}>
+                    No active tables — games will appear here when clubs start playing
+                  </p>
+                </div>
               ) : (
                 <div className={styles.tableList}>
                   {tables
@@ -829,7 +907,20 @@ export default function UnionDetailPage() {
                       className={styles.clubRow}
                       style={{ textDecoration: 'none', color: 'inherit' }}
                     >
-                      <div className={styles.clubAvatar}></div>
+                      <div
+                        className={styles.clubAvatar}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontWeight: 700,
+                          fontSize: '0.9rem',
+                          color: '#fff',
+                          textTransform: 'uppercase',
+                        }}
+                      >
+                        {club.clubName?.charAt(0) || '?'}
+                      </div>
                       <div className={styles.clubInfo}>
                         <strong>{club.clubName}</strong>
                         <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -894,47 +985,104 @@ export default function UnionDetailPage() {
         {/* Clubs Tab */}
         {activeTab === 'clubs' && (
           <div className={styles.clubsGrid}>
-            {clubs.map((club) => (
-              <Link
-                key={club.clubId}
-                to={`/clubs/${club.clubId}`}
-                className={`${styles.clubCard} ${visibleClubs.has(club.clubId) ? styles.fadeInUp : styles.hidden}`}
+            {clubs.length === 0 ? (
+              <div
                 style={{
-                  ...(visibleClubs.has(club.clubId)
-                    ? {}
-                    : { opacity: 0, transform: 'translateY(8px)' }),
-                  textDecoration: 'none',
-                  color: 'inherit',
+                  textAlign: 'center',
+                  padding: '40px 20px',
+                  color: 'rgba(255,255,255,0.4)',
                 }}
               >
-                <div className={styles.clubCardAvatar}></div>
-                <div className={styles.clubCardInfo}>
-                  <h4>{club.clubName}</h4>
-                  <p>Owner: {club.ownerName || 'Unknown'}</p>
-                  <span>
-                    {club.memberCount} {club.memberCount === 1 ? 'member' : 'members'}
-                  </span>
-                </div>
-                {union?.ownerId === user?.id && (
-                  <button
-                    className={styles.removeClubBtn}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      if (!unionId || removingClubId) return;
-                      setRemoveConfirm({
-                        show: true,
-                        clubId: club.clubId,
-                        clubName: club.clubName,
-                      });
+                <div style={{ fontSize: '2rem', marginBottom: '8px' }}>🏠</div>
+                <p style={{ margin: 0, fontSize: '0.85rem', fontWeight: 500 }}>No clubs yet</p>
+                <p style={{ margin: '4px 0 0', fontSize: '0.7rem' }}>
+                  Invite clubs to join your union to get started
+                </p>
+              </div>
+            ) : (
+              clubs.map((club) => {
+                const cLevel = getClubLevel({ playerCount: club.memberCount });
+                const clubTables = tables.filter((t: any) => t.club_id === club.clubId);
+                const activeTableCount = clubTables.filter(
+                  (t) => (t.current_players || 0) > 0
+                ).length;
+                return (
+                  <Link
+                    key={club.clubId}
+                    to={`/clubs/${club.clubId}`}
+                    className={`${styles.clubCard} ${visibleClubs.has(club.clubId) ? styles.fadeInUp : styles.hidden}`}
+                    style={{
+                      ...(visibleClubs.has(club.clubId)
+                        ? {}
+                        : { opacity: 0, transform: 'translateY(8px)' }),
+                      textDecoration: 'none',
+                      color: 'inherit',
                     }}
-                    disabled={removingClubId === club.clubId}
                   >
-                    {removingClubId === club.clubId ? 'Removing...' : '✕ Remove'}
-                  </button>
-                )}
-              </Link>
-            ))}
+                    <div
+                      className={styles.clubCardAvatar}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontWeight: 800,
+                        fontSize: '1.2rem',
+                        color: '#fff',
+                        textTransform: 'uppercase',
+                      }}
+                    >
+                      {club.clubName?.charAt(0) || '?'}
+                    </div>
+                    <div className={styles.clubCardInfo}>
+                      <h4 style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        {club.clubName}
+                        <span
+                          style={{
+                            fontSize: '0.55rem',
+                            padding: '1px 5px',
+                            borderRadius: '6px',
+                            background: cLevel.gradient,
+                            color: '#fff',
+                            fontWeight: 700,
+                            letterSpacing: '0.3px',
+                            textShadow: '0 1px 2px rgba(0,0,0,0.3)',
+                          }}
+                        >
+                          Lv.{cLevel.level}
+                        </span>
+                      </h4>
+                      <p>Owner: {club.ownerName || 'Unknown'}</p>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        {club.memberCount} {club.memberCount === 1 ? 'member' : 'members'}
+                        {activeTableCount > 0 && (
+                          <span style={{ color: '#6ee7b7', fontSize: '0.7rem', fontWeight: 600 }}>
+                            🟢 {activeTableCount} {activeTableCount === 1 ? 'table' : 'tables'}
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                    {union?.ownerId === user?.id && (
+                      <button
+                        className={styles.removeClubBtn}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (!unionId || removingClubId) return;
+                          setRemoveConfirm({
+                            show: true,
+                            clubId: club.clubId,
+                            clubName: club.clubName,
+                          });
+                        }}
+                        disabled={removingClubId === club.clubId}
+                      >
+                        {removingClubId === club.clubId ? 'Removing...' : '✕ Remove'}
+                      </button>
+                    )}
+                  </Link>
+                );
+              })
+            )}
           </div>
         )}
 
@@ -942,7 +1090,19 @@ export default function UnionDetailPage() {
         {activeTab === 'tables' && (
           <div>
             {tables.length === 0 ? (
-              <p className={styles.emptyText}>No active tables right now.</p>
+              <div
+                style={{
+                  textAlign: 'center',
+                  padding: '40px 20px',
+                  color: 'rgba(255,255,255,0.4)',
+                }}
+              >
+                <div style={{ fontSize: '2rem', marginBottom: '8px' }}>🎰</div>
+                <p style={{ margin: 0, fontSize: '0.85rem', fontWeight: 500 }}>No tables active</p>
+                <p style={{ margin: '4px 0 0', fontSize: '0.7rem' }}>
+                  Your clubs&apos; tables will appear here when games start
+                </p>
+              </div>
             ) : (
               <>
                 {activeTables.length > 0 && (

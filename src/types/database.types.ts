@@ -346,10 +346,13 @@ export type TournamentStatus =
 
 export interface BlindLevel {
   level: number;
-  smallBlind: number;
-  bigBlind: number;
+  small_blind?: number; // Canonical snake_case
+  smallBlind?: number; // Legacy camelCase
+  big_blind?: number; // Canonical snake_case
+  bigBlind?: number; // Legacy camelCase
   ante: number;
-  durationMinutes: number;
+  duration_minutes?: number; // Canonical snake_case
+  durationMinutes?: number; // Legacy camelCase
   isBreak?: boolean;
 }
 
@@ -367,10 +370,18 @@ export interface TournamentPlayer {
   status: TournamentPlayerStatus;
   position: number | null;
   prize: number | null;
+  table_id?: string | null;
+  seat_number?: number | null;
   rebuys?: number;
+  rebuys_used?: number; // Canonical field name
   add_on?: boolean;
+  addon_used?: boolean; // Canonical field name
   registered_at: string;
   eliminated_at?: string;
+  bounties_collected: number;
+  bounty_winnings: number;
+  current_bounty: number;
+  mystery_bounty_value?: number | null;
 }
 
 export type TournamentPlayerStatus = 'registered' | 'playing' | 'eliminated' | 'winner';

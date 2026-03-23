@@ -250,6 +250,7 @@ export type BusEventType =
   // Phase 9: Telemetry & Table Balance events
   | 'ENGINE_TELEMETRY'
   | 'TABLE_BALANCE_EXECUTED'
+  | 'TABLE_MOVE'
   // Session lifecycle
   | 'SESSION_ENDED'
   // Table creation event

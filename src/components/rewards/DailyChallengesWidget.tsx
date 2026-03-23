@@ -36,6 +36,8 @@ export const DailyChallengesWidget: React.FC = () => {
   const [challenges, setChallenges] = useState<Challenge[]>([]);
   const [loading, setLoading] = useState(true);
   const initialLoadDoneRef = useRef(false);
+  const loadErrorRef = useRef(false);
+  const previousChallengesRef = useRef<Challenge[]>([]);
 
   const isMounted = useIsMounted();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -119,6 +121,7 @@ export const DailyChallengesWidget: React.FC = () => {
       ]);
 
       if (!isMounted.current) return;
+      loadErrorRef.current = false;
 
       const mappedDaily: Challenge[] = dailyData.map((c: UserDailyChallenge) => ({
         id: c.id,
@@ -163,9 +166,27 @@ export const DailyChallengesWidget: React.FC = () => {
         claimed: !!c.claimed,
       }));
 
-      if (isMounted.current) setChallenges([...mappedDaily, ...mappedWeekly, ...mappedMonthly]);
+      const newChallenges = [...mappedDaily, ...mappedWeekly, ...mappedMonthly];
+
+      // Completion celebration — detect newly completed challenges
+      if (initialLoadDoneRef.current && isMounted.current) {
+        for (const nc of newChallenges) {
+          if (nc.completed && !nc.claimed) {
+            const prev = previousChallengesRef.current.find((p) => p.id === nc.id);
+            if (prev && !prev.completed) {
+              toast.success(
+                `🎉 Challenge complete: ${nc.title}! Claim your +${nc.reward.amount} Chips`
+              );
+            }
+          }
+        }
+      }
+      previousChallengesRef.current = newChallenges;
+
+      if (isMounted.current) setChallenges(newChallenges);
     } catch (error) {
       console.error('Failed to load challenges:', error);
+      loadErrorRef.current = true;
     }
     if (isMounted.current) {
       setLoading(false);
@@ -219,8 +240,12 @@ export const DailyChallengesWidget: React.FC = () => {
   if (challenges.length === 0) {
     return (
       <div className="daily-challenges-widget empty">
-        <span className="empty-icon">★</span>
-        <p>All challenges completed for today!</p>
+        <span className="empty-icon">{loadErrorRef.current ? '⚠️' : '★'}</span>
+        <p>
+          {loadErrorRef.current
+            ? 'Could not load challenges. Pull to refresh.'
+            : 'All challenges completed for today!'}
+        </p>
       </div>
     );
   }

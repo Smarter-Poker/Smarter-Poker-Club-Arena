@@ -552,6 +552,8 @@ class DailyChallengeServiceClass {
     totalCompleted: number;
     currentStreak: number;
     totalChipsEarned: number;
+    nextMilestone: number;
+    milestoneReward: number;
   }> {
     const { data, error: statErr } = await supabase
       .from('user_daily_challenges')
@@ -562,7 +564,13 @@ class DailyChallengeServiceClass {
     if (statErr) console.warn('[DailyChallenge] getStats error:', statErr.message);
 
     if (!data) {
-      return { totalCompleted: 0, currentStreak: 0, totalChipsEarned: 0 };
+      return {
+        totalCompleted: 0,
+        currentStreak: 0,
+        totalChipsEarned: 0,
+        nextMilestone: 7,
+        milestoneReward: 500,
+      };
     }
 
     const totalCompleted = data.length;
@@ -598,10 +606,40 @@ class DailyChallengeServiceClass {
       }
     }
 
-    return { totalCompleted, currentStreak, totalChipsEarned };
+    // Dynamic streak milestones — tiered rewards escalate with longer streaks
+    const MILESTONES = [
+      { days: 7, reward: 500 },
+      { days: 14, reward: 1500 },
+      { days: 30, reward: 5000 },
+      { days: 60, reward: 15000 },
+      { days: 100, reward: 50000 },
+    ];
+    const nextMilestoneEntry =
+      MILESTONES.find((m) => m.days > currentStreak) || MILESTONES[MILESTONES.length - 1];
+    const nextMilestone = nextMilestoneEntry.days;
+    const milestoneReward = nextMilestoneEntry.reward;
+
+    return { totalCompleted, currentStreak, totalChipsEarned, nextMilestone, milestoneReward };
   }
 
   // emitDailyResetReminder removed — was dead code (never called from any file)
+
+  /**
+   * Batch fetch all challenge tiers for a user in a single call.
+   * Reduces boilerplate in ProfilePage and DailyChallengesWidget.
+   */
+  async getAllChallenges(userId: string): Promise<{
+    daily: UserDailyChallenge[];
+    weekly: (UserDailyChallenge & { tier: 'weekly' })[];
+    monthly: (UserDailyChallenge & { tier: 'monthly' })[];
+  }> {
+    const [daily, weekly, monthly] = await Promise.all([
+      this.getTodaysChallenges(userId),
+      this.getWeeklyChallenges(userId),
+      this.getMonthlyChallenges(userId),
+    ]);
+    return { daily, weekly, monthly };
+  }
 
   /**
    * Select random challenges for today

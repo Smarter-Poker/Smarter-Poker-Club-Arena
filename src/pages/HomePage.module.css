@@ -1162,7 +1162,7 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   LOADING STATE
+   LOADING STATE — Skeleton Card Shimmers
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .loadingOverlay {
@@ -1200,6 +1200,72 @@
   animation: loadingPulse 2s ease-in-out infinite;
 }
 
+/* Skeleton shimmer cards — match carousel card shape */
+.skeletonRow {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+  padding: 20px 16px;
+  width: 100%;
+  max-width: 600px;
+}
+
+.skeletonCard {
+  width: clamp(100px, 18vw, 140px);
+  aspect-ratio: 7 / 11;
+  border-radius: 12px;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.03) 0%,
+    rgba(255, 255, 255, 0.06) 50%,
+    rgba(255, 255, 255, 0.03) 100%
+  );
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  position: relative;
+  overflow: hidden;
+}
+
+.skeletonCard::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 0%, rgba(0, 212, 255, 0.06) 50%, transparent 100%);
+  animation: skeletonShimmer 1.8s ease-in-out infinite;
+}
+
+.skeletonCardFeatured {
+  width: clamp(140px, 25vw, 200px);
+  aspect-ratio: 7 / 11;
+  border-radius: 12px;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.03) 0%,
+    rgba(255, 255, 255, 0.06) 50%,
+    rgba(255, 255, 255, 0.03) 100%
+  );
+  border: 1px solid rgba(0, 212, 255, 0.1);
+  position: relative;
+  overflow: hidden;
+}
+
+.skeletonStat {
+  width: 60%;
+  height: 10px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.04);
+  margin: 8px auto 0;
+}
+
+@keyframes skeletonShimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
 @keyframes loadingPulse {
   0%,
   100% {
@@ -1213,6 +1279,181 @@
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   EMPTY STATE — Onboarding Card
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.emptyStateCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 32px 24px;
+  margin: 0 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(0, 212, 255, 0.15);
+  background: linear-gradient(135deg, rgba(0, 212, 255, 0.04) 0%, rgba(5, 5, 16, 0.95) 100%);
+  text-align: center;
+  animation: fadeInUp 0.5s ease-out backwards;
+  animation-delay: 300ms;
+}
+
+.emptyStateIcon {
+  font-size: 48px;
+  line-height: 1;
+  filter: drop-shadow(0 0 12px rgba(0, 212, 255, 0.3));
+}
+
+.emptyStateTitle {
+  font-size: 18px;
+  font-weight: 800;
+  color: #fff;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin: 0;
+}
+
+.emptyStateDesc {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.55);
+  line-height: 1.6;
+  max-width: 280px;
+  margin: 0;
+}
+
+.emptyStateActions {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  max-width: 320px;
+  margin-top: 4px;
+}
+
+.emptyStateBtn {
+  flex: 1;
+  padding: 12px 8px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  border-radius: 10px;
+  cursor: pointer;
+  border: none;
+  transition:
+    transform 0.12s ease,
+    box-shadow 0.12s ease;
+}
+
+.emptyStateBtn:active {
+  transform: scale(0.96);
+}
+
+.emptyStateBtnPrimary {
+  flex: 1;
+  padding: 12px 8px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  border-radius: 10px;
+  cursor: pointer;
+  border: none;
+  transition:
+    transform 0.12s ease,
+    box-shadow 0.12s ease;
+  background: linear-gradient(135deg, #00d4ff, #0099cc);
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(0, 212, 255, 0.25);
+}
+
+.emptyStateBtnSecondary {
+  flex: 1;
+  padding: 12px 8px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  border-radius: 10px;
+  cursor: pointer;
+  border: none;
+  transition:
+    transform 0.12s ease,
+    box-shadow 0.12s ease;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   FOCUS RINGS — Keyboard Accessibility
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.actionZoneLeft:focus-visible,
+.actionZoneCenter:focus-visible,
+.actionZoneRight:focus-visible {
+  outline: 2px solid rgba(0, 212, 255, 0.7);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+.tileCard:focus-visible {
+  outline: 2px solid rgba(0, 212, 255, 0.7);
+  outline-offset: 3px;
+  border-radius: 8px;
+}
+
+.modalButtonPrimary:focus-visible,
+.modalButtonSecondary:focus-visible {
+  outline: 2px solid rgba(0, 212, 255, 0.7);
+  outline-offset: 2px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   STALE CACHE INDICATOR
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.staleCacheBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 20px;
+  letter-spacing: 0.5px;
+  margin: 4px auto 0;
+  cursor: pointer;
+  transition:
+    opacity 0.2s ease,
+    color 0.2s ease;
+}
+
+.staleCacheBadge:hover {
+  color: rgba(0, 212, 255, 0.6);
+  border-color: rgba(0, 212, 255, 0.15);
+}
+
+.staleCacheDot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(255, 200, 0, 0.6);
+  animation: stalePulse 2s ease-in-out infinite;
+}
+
+@keyframes stalePulse {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 1;
   }
 }
 

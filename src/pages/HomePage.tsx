@@ -177,6 +177,15 @@ function HomePageInner() {
   const [statsRefreshKey, setStatsRefreshKey] = useState(0);
   // Guard: prevent welcome toast from firing before first server fetch completes
   const hasFetchedOnceRef = useRef(false);
+  // Track last successful fetch timestamp for stale cache indicator
+  const [lastFetchTs, setLastFetchTs] = useState<number | null>(() => {
+    try {
+      const ts = localStorage.getItem(STORAGE_KEYS.CLUBS_CACHE_TS);
+      return ts ? Number(ts) : null;
+    } catch {
+      return null;
+    }
+  });
 
   // Enhancement #2: Context menu state
   const [contextMenu, setContextMenu] = useState<{
@@ -351,6 +360,7 @@ function HomePageInner() {
         if (!getIsMounted || getIsMounted()) {
           setIsLoading(false);
           hasFetchedOnceRef.current = true;
+          setLastFetchTs(Date.now());
         }
       }
     },
@@ -1316,6 +1326,60 @@ function HomePageInner() {
           </HomePageErrorBoundary>
         </div>
 
+        {/* Empty state — premium onboarding when user has no clubs */}
+        {!isLoading && hasFetchedOnceRef.current && displayClubs.length === 0 && (
+          <div className={styles.emptyStateCard}>
+            <div className={styles.emptyStateIcon}>🃏</div>
+            <h3 className={styles.emptyStateTitle}>Welcome to Club Arena</h3>
+            <p className={styles.emptyStateDesc}>
+              Join a club to play poker with friends, compete on leaderboards, and earn rewards.
+            </p>
+            <div className={styles.emptyStateActions}>
+              <button
+                className={styles.emptyStateBtnPrimary}
+                onClick={() => {
+                  haptic.medium();
+                  setShowJoinModal(true);
+                }}
+              >
+                Join a Club
+              </button>
+              <button
+                className={styles.emptyStateBtnSecondary}
+                onClick={() => {
+                  haptic.light();
+                  setShowCreateClubModal(true);
+                }}
+              >
+                Create One
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Stale cache indicator — shows how fresh the data is */}
+        {lastFetchTs &&
+          !isLoading &&
+          hasFetchedOnceRef.current &&
+          (() => {
+            const ageMin = Math.floor((Date.now() - lastFetchTs) / 60000);
+            if (ageMin < 1) return null;
+            return (
+              <div
+                className={styles.staleCacheBadge}
+                onClick={() => {
+                  haptic.light();
+                  fetchUserData(true, () => isMountedRef.current);
+                }}
+                role="button"
+                aria-label={`Data updated ${ageMin} minutes ago. Tap to refresh.`}
+              >
+                <span className={styles.staleCacheDot} />
+                Updated {ageMin}m ago · Tap to refresh
+              </div>
+            );
+          })()}
+
         {/* Welcome message for new users is handled as a toast popup (auto-dismiss) */}
 
         {/* ═══════════════════════════════════════════════════════════════════════
@@ -1508,10 +1572,20 @@ function HomePageInner() {
         />
       </Suspense>
 
-      {/* Loading indicator */}
+      {/* Loading indicator — skeleton card shimmers */}
       {isLoading && !userClubs.length && (
         <div className={styles.loadingOverlay}>
-          <div className={styles.spinner}></div>
+          <div className={styles.skeletonRow}>
+            <div className={styles.skeletonCard}>
+              <div className={styles.skeletonStat} />
+            </div>
+            <div className={styles.skeletonCardFeatured}>
+              <div className={styles.skeletonStat} />
+            </div>
+            <div className={styles.skeletonCard}>
+              <div className={styles.skeletonStat} />
+            </div>
+          </div>
           <span className={styles.loadingText}>Loading Arena</span>
         </div>
       )}

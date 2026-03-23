@@ -210,11 +210,63 @@ jobs:
           echo "Check Vercel dashboard for details." >> $GITHUB_STEP_SUMMARY
 
   # ─────────────────────────────────────────────────────────────────────────────
-  # STEP 4: Notify on failure (runs when any job fails)
+  # STEP 4: Post-deploy smoke test on smarter.poker
+  # ─────────────────────────────────────────────────────────────────────────────
+  post-deploy-check:
+    name: Post-Deploy Verification
+    needs: deploy
+    if: success()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Wait for CDN Propagation
+        run: sleep 15
+
+      - name: Smoke Test — smarter.poker
+        run: |
+          echo "## 🔍 Post-Deploy Smoke Test" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          ERRORS=0
+
+          # Check HTTP status
+          STATUS=$(curl -sI -o /dev/null -w "%{http_code}" https://smarter.poker/hub/club-arena)
+          if [ "$STATUS" = "200" ]; then
+            echo "✅ HTTP $STATUS — smarter.poker/hub/club-arena is live" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ HTTP $STATUS — expected 200" >> $GITHUB_STEP_SUMMARY
+            ERRORS=$((ERRORS + 1))
+          fi
+
+          # Check security headers
+          HEADERS=$(curl -sI https://smarter.poker/hub/club-arena)
+          for HEADER in "x-content-type-options" "x-frame-options" "referrer-policy" "permissions-policy"; do
+            if echo "$HEADERS" | grep -qi "$HEADER"; then
+              echo "✅ $HEADER header present" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "⚠️ $HEADER header MISSING" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
+
+          # Check HTML content marker
+          BODY=$(curl -s https://smarter.poker/hub/club-arena)
+          if echo "$BODY" | grep -q "club-arena"; then
+            echo "✅ HTML contains club-arena content" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ HTML may not contain expected content" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "$ERRORS" -gt 0 ]; then
+            echo "::error::Post-deploy check failed with $ERRORS error(s)"
+            exit 1
+          fi
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # STEP 5: Notify on failure (runs when any job fails)
   # ─────────────────────────────────────────────────────────────────────────────
   notify-failure:
     name: Failure Notification
-    needs: [typecheck, build, deploy]
+    needs: [typecheck, build, deploy, post-deploy-check]
     if: failure() && github.event_name == 'push'
     runs-on: ubuntu-latest
 

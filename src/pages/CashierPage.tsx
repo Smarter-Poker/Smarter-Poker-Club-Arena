@@ -139,7 +139,6 @@ export default function CashierPage() {
 
   const { balances, mintChips, loadBalances } = useWalletStore();
   const toast = useToast();
-  useVisibilityRefresh(() => loadPendingCashouts());
 
   const [action, setAction] = useState<CashierAction>('send');
   const [amount, setAmount] = useState('');
@@ -212,7 +211,10 @@ export default function CashierPage() {
   const [pendingCashouts, setPendingCashouts] = useState<
     { id: string; amount: number; status: string; created_at: string }[]
   >([]);
-  const [_loadingContext, setLoadingContext] = useState(true); // U-01 FIX: loading skeleton
+  // U-01: Loading context state removed — setLoadingContext kept as no-op to avoid breaking callers
+  const setLoadingContext = useCallback((_v: boolean) => {
+    /* no-op — context loading tracked by userRole !== 'member' */
+  }, []);
 
   // ── CRITICAL: Reset per-club state when navigating between clubs ──
   // Prevents financial state (userRole, pending cashouts) from carrying over.
@@ -247,7 +249,7 @@ export default function CashierPage() {
   useEffect(() => {
     if (!clubId || !user?.id) return;
     loadPendingCashouts();
-  }, [clubId, user?.id, action]);
+  }, [clubId, user?.id, action]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Subscribe to wallet updates (BALANCE_UPDATED is handled by debounced subscriber below)
   useMasterBusSubscription(
@@ -394,12 +396,18 @@ export default function CashierPage() {
       // For agents: only show their assigned downline players
       if (userRole === 'agent' || userRole === 'sub_agent') {
         // Get this user's agent record ID
-        const { data: agentRecord } = await supabase
-          .from('agents')
-          .select('id')
-          .eq('user_id', user.id)
-          .eq('club_id', resolvedId)
-          .maybeSingle();
+        const { data: agentRecord } = await retryFetch(
+          () =>
+            supabase
+              .from('agents')
+              .select('id')
+              .eq('user_id', user.id)
+              .eq('club_id', resolvedId)
+              .maybeSingle()
+              .then((r) => r),
+          { maxRetries: 2, isMountedRef: isMounted }
+        );
+        if (!isMounted.current) return;
 
         if (agentRecord?.id) {
           query = query.eq('agent_id', agentRecord.id);
@@ -426,11 +434,17 @@ export default function CashierPage() {
       if (needNames.length > 0) {
         const chunkSize = 200;
         for (let i = 0; i < needNames.length; i += chunkSize) {
+          if (!isMounted.current) return;
           const chunk = needNames.slice(i, i + chunkSize);
-          const { data: profiles } = await supabase
-            .from('profiles')
-            .select('id, display_name, username')
-            .in('id', chunk);
+          const { data: profiles } = await retryFetch(
+            () =>
+              supabase
+                .from('profiles')
+                .select('id, display_name, username')
+                .in('id', chunk)
+                .then((r) => r),
+            { maxRetries: 2, isMountedRef: isMounted }
+          );
           if (profiles) {
             for (const p of profiles) {
               profileMap[p.id] = p.display_name || p.username || 'Player';
@@ -977,7 +991,8 @@ export default function CashierPage() {
         const { lockForBuyIn } = useWalletStore.getState();
         const success = await lockForBuyIn(user.id, value, tableId);
         if (success) {
-          // Log buyin to chip_ledger
+          // Log buyin to chip_ledger (pre-resolve club UUID to avoid await inside fire-and-forget)
+          const resolvedBuyinClub = clubId ? await resolveClubUUID(clubId) : undefined;
           supabase
             .from('chip_ledger')
             .insert({
@@ -992,7 +1007,7 @@ export default function CashierPage() {
               category: 'buyin',
               description: `Table buy-in: ${value.toLocaleString()} chips`,
               table_id: tableId,
-              club_id: clubId ? await resolveClubUUID(clubId) : undefined,
+              club_id: resolvedBuyinClub,
             })
             .then(({ error: le }) => {
               if (le) console.warn('[Cashier] Ledger write failed:', le.message);
@@ -1017,7 +1032,8 @@ export default function CashierPage() {
           const { unlockFromTable } = useWalletStore.getState();
           const success = await unlockFromTable(user.id, value, tableId);
           if (success) {
-            // Log cashout to chip_ledger
+            // Log cashout to chip_ledger (pre-resolve club UUID to avoid await inside fire-and-forget)
+            const resolvedCashoutClub = clubId ? await resolveClubUUID(clubId) : undefined;
             supabase
               .from('chip_ledger')
               .insert({
@@ -1032,7 +1048,7 @@ export default function CashierPage() {
                 category: 'cashout',
                 description: `Table cash-out: ${value.toLocaleString()} chips unlocked`,
                 table_id: tableId,
-                club_id: clubId ? await resolveClubUUID(clubId) : undefined,
+                club_id: resolvedCashoutClub,
               })
               .then(({ error: le }) => {
                 if (le) console.warn('[Cashier] Ledger write failed:', le.message);

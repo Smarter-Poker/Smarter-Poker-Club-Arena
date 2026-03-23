@@ -39,6 +39,7 @@ vi.mock('../../src/core/MasterBus', () => ({
   masterBus: {
     emit: vi.fn(),
     subscribe: vi.fn(() => vi.fn()),
+    removeRegisteredChannel: vi.fn(),
     getOrCreateChannel: vi.fn().mockReturnValue({
       send: vi.fn().mockResolvedValue(undefined),
       on: vi.fn().mockReturnThis(),

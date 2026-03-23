@@ -33,13 +33,41 @@ vi.mock('../../src/lib/supabase', () => {
   };
 });
 
+// Mock the server-side supabase module (uses process.exit at load time without env vars)
+vi.mock('../../server/src/services/supabase.js', () => {
+  const buildChain = (): any => {
+    const handler: ProxyHandler<any> = {
+      get: (_target, prop) => {
+        if (prop === 'maybeSingle' || prop === 'single')
+          return () => Promise.resolve({ data: null, error: null });
+        if (prop === 'then')
+          return (resolve: (v: any) => void) => resolve({ data: null, error: null });
+        return vi.fn().mockReturnValue(new Proxy({}, handler));
+      },
+    };
+    return new Proxy({}, handler);
+  };
+  return {
+    supabase: {
+      from: () => buildChain(),
+      rpc: vi.fn().mockResolvedValue({ data: null, error: null }),
+      channel: vi.fn().mockReturnValue({
+        send: vi.fn().mockResolvedValue(undefined),
+        on: vi.fn().mockReturnThis(),
+        subscribe: vi.fn(),
+      }),
+    },
+  };
+});
+
 vi.mock('../../src/services/HorseBugReporter', () => ({
   horseBugReporter: { report: vi.fn() },
 }));
 
 // ─── Import AFTER mocks ──────────────────────────────────────────────────
 
-import { tournamentRecurringService } from '../../src/services/TournamentRecurringService';
+import { TournamentRecurringService } from '../../server/src/services/TournamentRecurringService';
+const tournamentRecurringService = new TournamentRecurringService();
 
 describe('TournamentRecurringService', () => {
   beforeEach(() => {

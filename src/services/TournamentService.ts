@@ -463,17 +463,39 @@ class TournamentService {
         .maybeSingle();
 
       if (unionClub?.union_id) {
-        const { data: xmttData } = await supabase
-          .from('tournaments')
-          .select(
-            'id, name, club_id, union_id, game_type, variant, tournament_type, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at'
-          )
-          .eq('union_id', unionClub.union_id)
-          .eq('is_xmtt', true)
-          .neq('club_id', resolvedId) // Avoid duplicates (host club already included above)
-          .order('created_at', { ascending: false });
+        // IMPORTANT: Only fetch XMTT if union allows cross-club tournaments
+        const { data: unionData } = await supabase
+          .from('unions')
+          .select('settings')
+          .eq('id', unionClub.union_id)
+          .maybeSingle();
 
-        xmttTournaments = xmttData || [];
+        let allowCrossClub = true;
+        if (unionData?.settings) {
+          try {
+            const settings =
+              typeof unionData.settings === 'string'
+                ? JSON.parse(unionData.settings)
+                : unionData.settings;
+            allowCrossClub = settings.crossClubTournaments !== false;
+          } catch (e) {
+            allowCrossClub = true; // Default allow if parsing fails
+          }
+        }
+
+        if (allowCrossClub) {
+          const { data: xmttData } = await supabase
+            .from('tournaments')
+            .select(
+              'id, name, club_id, union_id, game_type, variant, tournament_type, buy_in_amount, buy_in_fee, starting_chips, max_players, min_players, current_players, status, prize_pool, guaranteed_prize, blind_structure, payout_structure, late_reg_levels, late_reg_mins, start_time, started_at, ended_at, is_rebuy, is_reentry, rebuy_cost, rebuy_chips, rebuy_levels, add_on_available, addon_cost, addon_chips, addon_levels, is_bounty, bounty_amount, is_pko, is_mystery_bounty, mystery_bounty_min, mystery_bounty_max, is_multi_day, total_days, day_number, flight_number, spin_type, spin_multiplier, is_xmtt, total_rake, created_at'
+            )
+            .eq('union_id', unionClub.union_id)
+            .eq('is_xmtt', true)
+            .neq('club_id', resolvedId) // Avoid duplicates (host club already included above)
+            .order('created_at', { ascending: false });
+
+          xmttTournaments = xmttData || [];
+        }
       }
     } catch (e: unknown) {
       console.warn(
@@ -1871,6 +1893,18 @@ class TournamentService {
       throw new Error('Re-entry period has ended');
     }
 
+    // Verify player does NOT already have an active entry
+    const { data: activeEntry } = await supabase
+      .from('tournament_players')
+      .select('id')
+      .eq('tournament_id', tournamentId)
+      .eq('user_id', userId)
+      .in('status', ['registered', 'playing']);
+
+    if (activeEntry && activeEntry.length > 0) {
+      throw new Error('You already have an active entry in this tournament');
+    }
+
     // Verify player was previously eliminated
     const { data: eliminatedEntry } = await supabase
       .from('tournament_players')
@@ -1883,7 +1917,7 @@ class TournamentService {
       .maybeSingle();
 
     if (!eliminatedEntry) {
-      throw new Error('Player not found in eliminated status for re-entry');
+      throw new Error('You have not been eliminated in this tournament');
     }
 
     // Check wallet balance for buy-in
@@ -2462,9 +2496,9 @@ class TournamentService {
 
     if (bountyConfig.bountyType === 'progressive') {
       // Progressive: 50% to collector, 50% added to collector's head
-      // Exact precision split — remainder goes to collector
-      const collectorPortion = Math.trunc((bountyAmount * 100) / 2) / 100;
-      const addedToHead = Math.trunc((bountyAmount - collectorPortion) * 100) / 100;
+      // Collector gets floor, knocked-out player gets ceiling (any odd penny)
+      const collectorPortion = Math.floor((bountyAmount * 100) / 2) / 100;
+      const addedToHead = bountyAmount - collectorPortion; // Explicit remainder
 
       // Get collector's current bounty
       const { data: collector } = await supabase

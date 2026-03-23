@@ -1849,49 +1849,89 @@ export class TournamentEngine {
       table.engine.stop();
     }
 
-    // Award 1st place to winner
-    if (winner) {
-      winner.status = 'winner';
-      const firstPrize = this.calculatePrize(1);
-      await this.supabase
-        .from('tournament_players')
-        .update({
-          status: 'winner',
-          position: 1,
-          prize: firstPrize,
-        })
-        .eq('tournament_id', this.tournamentId)
-        .eq('user_id', winner.user_id);
-
-      if (firstPrize > 0) {
-        await this.creditPrize(winner.user_id, firstPrize);
-      }
-    }
-
-    // Handle satellite tournament — award tickets instead of cash prizes
-    if (
+    // Check if this is a satellite tournament BEFORE awarding prizes
+    const isSatellite =
       this.tournamentInfo?.variant === 'satellite' ||
-      this.tournamentInfo?.tournament_type === 'SATELLITE'
-    ) {
-      // Award tickets to top N finishers based on payout structure
+      this.tournamentInfo?.tournament_type === 'SATELLITE';
+
+    if (isSatellite) {
+      // SATELLITE: Award seats/tickets to top N finishers, NOT cash prizes
       const ticketPlaces = this.tournamentInfo.payout_structure?.length || 1;
-      const playersRanked = Array.from(this.players.values())
-        .filter((p) => p.status === 'eliminated' || p.status === 'winner')
+
+      // Get all finished players sorted by finish position
+      const winners = Array.from(this.players.values())
+        .filter((p) => p.status === 'winner' || p.status === 'eliminated')
         .sort((a, b) => {
-          // Winners and lower positions first
-          if (a.status === 'winner') return -1;
-          if (b.status === 'winner') return 1;
-          return 0;
+          const aPos = a.position || 999;
+          const bPos = b.position || 999;
+          return aPos - bPos; // Lower position = better finish
+        })
+        .slice(0, ticketPlaces);
+
+      // Award tickets to top N finishers (no cash prizes for satellites)
+      const ticketWinnerIds: string[] = [];
+      for (const player of winners) {
+        // Update tournament_players with 0 prize (no cash)
+        await this.supabase
+          .from('tournament_players')
+          .update({
+            status: player === winner ? 'winner' : 'eliminated',
+            position: player.position || 0,
+            prize: 0, // Satellites pay seats, not cash
+          })
+          .eq('tournament_id', this.tournamentId)
+          .eq('user_id', player.user_id);
+
+        // Record ticket award in tournament_bounties table (reusing for satellites)
+        await this.supabase.from('tournament_bounties').insert({
+          tournament_id: this.tournamentId,
+          collector_player_id: player.user_id,
+          bounty_amount: 1, // 1 ticket = 1 seat
+          is_satellite_ticket: true, // Flag as satellite ticket
         });
 
-      // Top N players get tickets (handled via prize credit as ticket value)
-      // Satellite prizes are already calculated as percentages, which represent ticket values
-      // Log satellite ticket awards
+        // Credit ticket to player wallet as tournament currency
+        try {
+          await this.supabase.rpc('credit_player_wallet', {
+            p_user_id: player.user_id,
+            p_amount: 1, // 1 ticket
+          });
+        } catch (e: unknown) {
+          console.error(
+            `[TournamentEngine] Failed to credit satellite ticket to ${player.user_id}:`,
+            e
+          );
+        }
+
+        ticketWinnerIds.push(player.user_id);
+      }
+
+      // Emit satellite completion with actual winner list
       masterBus.emit('SATELLITE_COMPLETE', {
         tournamentId: this.tournamentId,
-        ticketWinners: ticketPlaces,
+        ticketWinners: ticketWinnerIds,
+        seatsAwarded: ticketPlaces,
         targetTournament: this.tournamentInfo.satellite_target || null,
       });
+    } else {
+      // REGULAR TOURNAMENT: Award cash prizes
+      if (winner) {
+        winner.status = 'winner';
+        const firstPrize = this.calculatePrize(1);
+        await this.supabase
+          .from('tournament_players')
+          .update({
+            status: 'winner',
+            position: 1,
+            prize: firstPrize,
+          })
+          .eq('tournament_id', this.tournamentId)
+          .eq('user_id', winner.user_id);
+
+        if (firstPrize > 0) {
+          await this.creditPrize(winner.user_id, firstPrize);
+        }
+      }
     }
 
     // Update tournament status

@@ -175,6 +175,8 @@ function HomePageInner() {
   const [clubStats, setClubStats] = useState<Record<string, ClubStats>>({});
   // Refresh counter — incremented on each fetchUserData call to force stats re-fetch
   const [statsRefreshKey, setStatsRefreshKey] = useState(0);
+  // Guard: prevent welcome toast from firing before first server fetch completes
+  const hasFetchedOnceRef = useRef(false);
 
   // Enhancement #2: Context menu state
   const [contextMenu, setContextMenu] = useState<{
@@ -346,7 +348,10 @@ function HomePageInner() {
         toast.error('Failed to load user data');
       } finally {
         clearTimeout(loadingTimeout);
-        if (!getIsMounted || getIsMounted()) setIsLoading(false);
+        if (!getIsMounted || getIsMounted()) {
+          setIsLoading(false);
+          hasFetchedOnceRef.current = true;
+        }
       }
     },
     [toast]
@@ -457,8 +462,9 @@ function HomePageInner() {
   );
 
   // Welcome toast for new users — auto-dismiss, once per device
+  // Guard: only fires AFTER first fetch completes (prevents false-fire on cache miss)
   useEffect(() => {
-    if (isLoading || userClubs.length > 0) return;
+    if (isLoading || !hasFetchedOnceRef.current || userClubs.length > 0) return;
     const key = 'club_arena_welcome_shown';
     if (localStorage.getItem(key)) return;
     try {
@@ -1289,20 +1295,22 @@ function HomePageInner() {
                     CLUB CAROUSEL — Swipeable: [User Clubs ← SHARK CLUB (center) → User Clubs]
                 ═══════════════════════════════════════════════════════════════════════ */}
         <div className={styles.carouselScrollFade}>
-          <CarouselSection
-            displayClubs={displayClubs}
-            sharkClubId={sharkClubId}
-            sharkClubStats={sharkClubStats}
-            clubStats={clubStats}
-            pinnedClubIds={pinnedClubIds}
-            navigate={navigate}
-            toast={toast}
-            handleContextMenu={handleContextMenu}
-            handleLongPressStart={handleLongPressStart}
-            handleLongPressEnd={handleLongPressEnd}
-            onOpenJoinModal={() => setShowJoinModal(true)}
-            onOpenCreateModal={() => setShowCreateClubModal(true)}
-          />
+          <HomePageErrorBoundary>
+            <CarouselSection
+              displayClubs={displayClubs}
+              sharkClubId={sharkClubId}
+              sharkClubStats={sharkClubStats}
+              clubStats={clubStats}
+              pinnedClubIds={pinnedClubIds}
+              navigate={navigate}
+              toast={toast}
+              handleContextMenu={handleContextMenu}
+              handleLongPressStart={handleLongPressStart}
+              handleLongPressEnd={handleLongPressEnd}
+              onOpenJoinModal={() => setShowJoinModal(true)}
+              onOpenCreateModal={() => setShowCreateClubModal(true)}
+            />
+          </HomePageErrorBoundary>
         </div>
 
         {/* Welcome message for new users is handled as a toast popup (auto-dismiss) */}

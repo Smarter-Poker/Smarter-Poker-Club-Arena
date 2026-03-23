@@ -10,7 +10,7 @@
  * BUG FIX #3: Added onPin/isPinned props for pin-to-top functionality.
  */
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../../components/common/Toast';
 import styles from '../../pages/HomePage.module.css';
@@ -65,6 +65,21 @@ export default function ClubContextMenu({
   }, [club.id, onClose, onPin]);
 
   const menuRef = useRef<HTMLDivElement>(null);
+  const [adjustedY, setAdjustedY] = useState(y);
+
+  // Viewport boundary detection — prevent menu from overflowing below screen edge
+  useLayoutEffect(() => {
+    if (!menuRef.current) return;
+    const menuHeight = menuRef.current.getBoundingClientRect().height;
+    const viewportHeight = window.innerHeight;
+    const PADDING = 12; // keep 12px from edge
+    if (y + menuHeight + PADDING > viewportHeight) {
+      // Flip menu upward — position so bottom edge is at cursor position
+      setAdjustedY(Math.max(PADDING, y - menuHeight));
+    } else {
+      setAdjustedY(y);
+    }
+  }, [y]);
 
   // Phase 8 #6: Auto-focus first item on open
   useEffect(() => {
@@ -105,7 +120,7 @@ export default function ClubContextMenu({
       <div
         ref={menuRef}
         className={styles.contextMenu}
-        style={{ top: y, left: Math.min(x, window.innerWidth - 200) }}
+        style={{ top: adjustedY, left: Math.min(x, window.innerWidth - 200) }}
         role="menu"
         aria-label="Club actions"
         onKeyDown={handleKeyDown}

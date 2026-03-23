@@ -117,6 +117,7 @@ export default function CarouselSection({
   }, [orderedClubs]);
 
   // Auto-scroll to center the Shark Club card on initial mount only
+  // Dep array is [] — hasScrolledRef prevents re-scroll; orderedClubs is not needed
   useEffect(() => {
     if (hasScrolledRef.current) return;
     const timeout = setTimeout(() => {
@@ -130,7 +131,8 @@ export default function CarouselSection({
       }
     }, 400);
     return () => clearTimeout(timeout);
-  }, [orderedClubs.length]);
+     
+  }, []);
 
   // Enhancement #7: Haptic on scroll snap
   useEffect(() => {
@@ -238,67 +240,84 @@ export default function CarouselSection({
     }
   }, [sharkClubId, navigate]);
 
-  // Render a single user club card as a featured-style card
-  const renderClubCard = (club: UserClub) => {
-    const isDragging = draggedId === club.id;
-    const isDragTarget = dragOverId === club.id;
-    const stats = clubStats[club.id];
+  // Render a single user club card as a featured-style card — memoized to prevent
+  // unnecessary re-creation on every render cycle
+  const renderClubCard = useCallback(
+    (club: UserClub) => {
+      const isDragging = draggedId === club.id;
+      const isDragTarget = dragOverId === club.id;
+      const stats = clubStats[club.id];
 
-    return (
-      <div
-        key={club.id}
-        className={[
-          styles.carouselCardFeatured,
-          isDragging ? styles.cardDragging : '',
-          isDragTarget ? styles.cardDragOver : '',
-        ]
-          .filter(Boolean)
-          .join(' ')}
-        onClick={() => handleClubCardClick(club)}
-        onContextMenu={(e) => handleContextMenu(e, club)}
-        onTouchStart={(e) => handleLongPressStart(club, e)}
-        onTouchEnd={handleLongPressEnd}
-        onTouchCancel={handleLongPressEnd}
-        draggable
-        onDragStart={() => handleDragStart(club.id)}
-        onDragOver={(e) => handleDragOver(e, club.id)}
-        onDrop={() => handleDrop(club.id)}
-        onDragEnd={handleDragEnd}
-        role="button"
-        aria-label={`${club.name || 'Club'} — Click to enter lobby`}
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            handleClubCardClick(club);
-          }
-        }}
-      >
-        {pinnedClubIds.includes(club.id) && (
-          <span className={styles.pinnedBadge} title="Pinned">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z" />
-            </svg>
-          </span>
-        )}
-        <div className={styles.carouselFeaturedPedestal}></div>
-        <Suspense fallback={<div className={styles.cardSkeleton} />}>
-          <PageErrorBoundary pageName={club.name || 'Club Card'}>
-            <ClubCardPanel
-              clubName={club.name?.toUpperCase() || 'MY CLUB'}
-              totalMembers={stats?.totalMembers ?? club.member_count ?? 0}
-              clubLevel={stats?.clubLevel ?? 1}
-              activePlayers={stats?.activePlayers ?? 0}
-              clubId={club.club_id}
-              cardImageUrl={club.card_image_url}
-              logoUrl={club.logo_url}
-              entityType={club.entity_type || 'club'}
-            />
-          </PageErrorBoundary>
-        </Suspense>
-      </div>
-    );
-  };
+      return (
+        <div
+          key={club.id}
+          className={[
+            styles.carouselCardFeatured,
+            isDragging ? styles.cardDragging : '',
+            isDragTarget ? styles.cardDragOver : '',
+          ]
+            .filter(Boolean)
+            .join(' ')}
+          onClick={() => handleClubCardClick(club)}
+          onContextMenu={(e) => handleContextMenu(e, club)}
+          onTouchStart={(e) => handleLongPressStart(club, e)}
+          onTouchEnd={handleLongPressEnd}
+          onTouchCancel={handleLongPressEnd}
+          draggable
+          onDragStart={() => handleDragStart(club.id)}
+          onDragOver={(e) => handleDragOver(e, club.id)}
+          onDrop={() => handleDrop(club.id)}
+          onDragEnd={handleDragEnd}
+          role="button"
+          aria-label={`${club.name || 'Club'} — Click to enter lobby`}
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              handleClubCardClick(club);
+            }
+          }}
+        >
+          {pinnedClubIds.includes(club.id) && (
+            <span className={styles.pinnedBadge} title="Pinned">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z" />
+              </svg>
+            </span>
+          )}
+          <div className={styles.carouselFeaturedPedestal}></div>
+          <Suspense fallback={<div className={styles.cardSkeleton} />}>
+            <PageErrorBoundary pageName={club.name || 'Club Card'}>
+              <ClubCardPanel
+                clubName={club.name?.toUpperCase() || 'MY CLUB'}
+                totalMembers={stats?.totalMembers ?? club.member_count ?? 0}
+                clubLevel={stats?.clubLevel ?? 1}
+                activePlayers={stats?.activePlayers ?? 0}
+                clubId={club.club_id}
+                cardImageUrl={club.card_image_url}
+                logoUrl={club.logo_url}
+                entityType={club.entity_type || 'club'}
+              />
+            </PageErrorBoundary>
+          </Suspense>
+        </div>
+      );
+    },
+    [
+      draggedId,
+      dragOverId,
+      clubStats,
+      handleClubCardClick,
+      handleContextMenu,
+      handleLongPressStart,
+      handleLongPressEnd,
+      handleDragStart,
+      handleDragOver,
+      handleDrop,
+      handleDragEnd,
+      pinnedClubIds,
+    ]
+  );
 
   return (
     <div className={styles.clubCarousel} ref={carouselRef}>

@@ -12,6 +12,7 @@
  */
 
 import { supabase } from '../lib/supabase';
+import { resolveClubUUID } from './clubIdResolver';
 
 export interface SettlementLockResult {
   locked: boolean;
@@ -24,21 +25,26 @@ export interface SettlementLockResult {
  * Check if a club is currently in settlement lock (chip-freeze period).
  *
  * Strategy:
- *   1. Check `clubs.settlement_locked` column for an explicit (admin-set) lock.
- *   2. Check `settlement_locks` table for an active time-based lock.
- *   3. If no explicit lock exists, derive from the current PST time window.
+ *   1. Resolve clubId to UUID (route params may be integer slugs like "77777").
+ *   2. Check `clubs.settlement_locked` column for an explicit (admin-set) lock.
+ *   3. Check `settlement_locks` table for an active time-based lock.
  *
  * Returns `{ locked: false }` if the club is free to transact.
  */
 export async function checkSettlementLock(clubId: string): Promise<SettlementLockResult> {
   if (!clubId) return { locked: false };
 
+  // CRITICAL: Resolve slug/integer club IDs to UUID before querying.
+  // Route params can be "77777" (club_id integer) or a UUID — the clubs.id
+  // column is UUID-only, so querying with an integer silently returns no match.
+  const resolvedId = await resolveClubUUID(clubId);
+
   try {
     // 1. Check `clubs` table for an explicit settlement lock flag
     const { data: club } = await supabase
       .from('clubs')
       .select('settlement_locked, settlement_lock_until')
-      .eq('id', clubId)
+      .eq('id', resolvedId)
       .maybeSingle();
 
     if (club?.settlement_locked) {
@@ -50,7 +56,7 @@ export async function checkSettlementLock(clubId: string): Promise<SettlementLoc
           supabase
             .from('clubs')
             .update({ settlement_locked: false, settlement_lock_until: null })
-            .eq('id', clubId)
+            .eq('id', resolvedId)
             .then(() => {
               /* auto-cleared expired lock */
             });
@@ -81,7 +87,7 @@ export async function checkSettlementLock(clubId: string): Promise<SettlementLoc
     const { data: lockRow } = await supabase
       .from('settlement_locks')
       .select('id, lock_start, lock_end, reason')
-      .eq('club_id', clubId)
+      .eq('club_id', resolvedId)
       .gte('lock_end', new Date().toISOString())
       .lte('lock_start', new Date().toISOString())
       .order('lock_start', { ascending: false })

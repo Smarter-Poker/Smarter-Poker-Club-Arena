@@ -28,7 +28,7 @@ interface Mission {
 
 interface MissionsPanelProps {
   missions: Mission[];
-  onClaim: (missionId: string) => void;
+  onClaim: (missionId: string) => Promise<void>;
 }
 
 const TIER_CONFIG: Record<MissionTier, { label: string; icon: string; color: string }> = {
@@ -140,21 +140,26 @@ export default function MissionsPanel({ missions, onClaim }: MissionsPanelProps)
                   ) : mission.completed ? (
                     <button
                       className="mp-claim-btn"
-                      onClick={() => {
-                        triggerHaptic('success');
-                        setCelebratingIds((prev) => [...prev, mission.id]);
-                        const t = setTimeout(() => {
-                          setCelebratingIds((prev) => prev.filter((id) => id !== mission.id));
-                        }, 1500);
-                        celebrateTimers.current.push(t);
+                      onClick={async () => {
+                        try {
+                          await onClaim(mission.id);
+                          // Only celebrate AFTER claim succeeds
+                          triggerHaptic('success');
+                          setCelebratingIds((prev) => [...prev, mission.id]);
+                          const t = setTimeout(() => {
+                            setCelebratingIds((prev) => prev.filter((id) => id !== mission.id));
+                          }, 1500);
+                          celebrateTimers.current.push(t);
 
-                        masterBus.emit('MISSION_CLAIMED', {
-                          missionId: mission.id,
-                          tier: mission.tier,
-                          rewardType: mission.rewardType,
-                          rewardAmount: mission.rewardAmount,
-                        });
-                        onClaim(mission.id);
+                          masterBus.emit('MISSION_CLAIMED', {
+                            missionId: mission.id,
+                            tier: mission.tier,
+                            rewardType: mission.rewardType,
+                            rewardAmount: mission.rewardAmount,
+                          });
+                        } catch {
+                          // Claim failed — no celebration, ProfilePage shows error toast
+                        }
                       }}
                     >
                       Claim

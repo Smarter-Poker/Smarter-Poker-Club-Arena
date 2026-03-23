@@ -1069,7 +1069,7 @@
     transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1),
     filter 0.25s ease;
   position: relative;
-  animation: cardRise 0.5s ease-out both;
+  animation: cardRise 0.5s ease-out backwards;
   /* Button reset — native <button> styling bleeds on Safari/Firefox */
   background: none;
   border: none;

@@ -156,10 +156,10 @@ class AchievementTriggerServiceClass {
 
     // Update Daily Challenge progress for tournaments
     try {
-      const dcResult = await dailyChallengeService.updateProgress(userId, 'tournaments_played', 1);
-      if (dcResult.completed.length > 0) {
-        masterBus.emit('CHALLENGE_PROGRESS_UPDATED', { userId, source: 'tournament_complete' });
-      }
+      await dailyChallengeService.updateProgress(userId, 'tournaments_played', 1);
+      // Always emit on successful progress update (not just completions)
+      // — keeps tournament progress bars in sync with onHandComplete behavior
+      masterBus.emit('CHALLENGE_PROGRESS_UPDATED', { userId, source: 'tournament_complete' });
     } catch (dcErr) {
       console.warn('[AchievementTrigger] Daily challenge tournament progress failed:', dcErr);
     }
@@ -189,10 +189,10 @@ class AchievementTriggerServiceClass {
 
     // Update Daily Challenge progress for friends
     try {
-      const dcResult = await dailyChallengeService.updateProgress(userId, 'friends_added', 1);
-      if (dcResult.completed.length > 0) {
-        masterBus.emit('CHALLENGE_PROGRESS_UPDATED', { userId, source: 'friend_added' });
-      }
+      await dailyChallengeService.updateProgress(userId, 'friends_added', 1);
+      // Always emit on successful progress update (not just completions)
+      // — keeps friend progress bars in sync with onHandComplete behavior
+      masterBus.emit('CHALLENGE_PROGRESS_UPDATED', { userId, source: 'friend_added' });
     } catch (dcErr) {
       console.warn('[AchievementTrigger] Daily challenge friend progress failed:', dcErr);
     }

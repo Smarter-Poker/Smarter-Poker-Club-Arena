@@ -304,7 +304,14 @@ export type BusEventType =
   | 'TABLE_SETTINGS_OPEN'
   // UI navigation toggle events
   | 'HAMBURGER_TOGGLE'
-  | 'MENU_STATE_CHANGED';
+  | 'MENU_STATE_CHANGED'
+  // Tournament break events (TournamentClock + TournamentEngine)
+  | 'BREAK_START'
+  | 'BREAK_END'
+  | 'TOURNAMENT_BREAK'
+  | 'TOURNAMENT_BREAK_END'
+  // Satellite tournament completion
+  | 'SATELLITE_COMPLETE';
 
 // #13: Type-safe payload map — compile-time enforcement of correct payloads
 export interface BusPayloadMap {
@@ -948,6 +955,17 @@ export interface BusPayloadMap {
   // UI navigation toggle
   HAMBURGER_TOGGLE: Record<string, unknown>;
   MENU_STATE_CHANGED: { isOpen: boolean };
+  // Tournament break events
+  BREAK_START: { tournamentId: string; durationMinutes?: number; resumeAt?: string };
+  BREAK_END: { tournamentId: string };
+  TOURNAMENT_BREAK: { tournamentId: string; level?: number; durationMinutes?: number };
+  TOURNAMENT_BREAK_END: { tournamentId: string };
+  // Satellite tournament completion
+  SATELLITE_COMPLETE: {
+    tournamentId: string;
+    ticketWinners: number | unknown[];
+    targetTournament: unknown;
+  };
 }
 
 export interface BusEvent<T = unknown> {

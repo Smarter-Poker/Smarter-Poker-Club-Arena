@@ -19,7 +19,11 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { HeadlessTableEngine } from './HeadlessTableEngine';
 import { tableBreakEngine, type TableSnapshot } from './TableBreakEngine';
 import { chipRaceEngine } from './ChipRaceEngine';
-import { BLIND_STRUCTURES, PAYOUT_STRUCTURES } from '../services/TournamentService';
+import {
+  BLIND_STRUCTURES,
+  PAYOUT_STRUCTURES,
+  SPIN_BLIND_STRUCTURE,
+} from '../services/TournamentService';
 import { WalletService } from '../services/WalletService';
 import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
@@ -76,6 +80,8 @@ interface TournamentInfo {
   is_pko?: boolean;
   is_mystery_bounty?: boolean;
   bounty_amount?: number;
+  // Satellite fields
+  satellite_target?: string | null;
 }
 
 interface TournamentTable {
@@ -112,6 +118,8 @@ function resolveBlindStructure(raw: unknown): BlindLevel[] {
     if (key === 'turbo') return BLIND_STRUCTURES.turbo;
     if (key === 'regular' || key === 'standard') return BLIND_STRUCTURES.regular;
     if (key === 'deepstack' || key === 'deep') return BLIND_STRUCTURES.deepStack;
+    if (key === 'sng') return BLIND_STRUCTURES.sng;
+    if (key === 'hyperturbo' || key === 'hyper' || key === 'spin') return SPIN_BLIND_STRUCTURE;
   }
   // Default to regular (covers empty arrays, null, undefined, unrecognized strings)
   return BLIND_STRUCTURES.regular;
@@ -520,7 +528,8 @@ export class TournamentEngine {
       ).length;
       // Use DB prize pool if available (includes rebuys/addons), otherwise calculate from entries
       const dbPrizePool = this.tournamentInfo.prize_pool;
-      const actualPrizePool = dbPrizePool > 0 ? dbPrizePool : activeCount * this.tournamentInfo.buy_in_amount;
+      const actualPrizePool =
+        dbPrizePool > 0 ? dbPrizePool : activeCount * this.tournamentInfo.buy_in_amount;
       this.tournamentInfo.prize_pool = actualPrizePool;
       this.tournamentInfo.current_players = existingPlayers.length;
 
@@ -587,7 +596,8 @@ export class TournamentEngine {
 
     // Calculate initial prize pool from registrations (rebuys/addons added later by TournamentService)
     const existingPool = this.tournamentInfo.prize_pool;
-    const actualPrizePool = existingPool > 0 ? existingPool : registrations.length * this.tournamentInfo.buy_in_amount;
+    const actualPrizePool =
+      existingPool > 0 ? existingPool : registrations.length * this.tournamentInfo.buy_in_amount;
     this.tournamentInfo.prize_pool = actualPrizePool;
     this.tournamentInfo.current_players = registrations.length;
 
@@ -1857,11 +1867,14 @@ export class TournamentEngine {
     }
 
     // Handle satellite tournament — award tickets instead of cash prizes
-    if (this.tournamentInfo?.variant === 'satellite' || this.tournamentInfo?.tournament_type === 'SATELLITE') {
+    if (
+      this.tournamentInfo?.variant === 'satellite' ||
+      this.tournamentInfo?.tournament_type === 'SATELLITE'
+    ) {
       // Award tickets to top N finishers based on payout structure
       const ticketPlaces = this.tournamentInfo.payout_structure?.length || 1;
       const playersRanked = Array.from(this.players.values())
-        .filter(p => p.status === 'eliminated' || p.status === 'winner')
+        .filter((p) => p.status === 'eliminated' || p.status === 'winner')
         .sort((a, b) => {
           // Winners and lower positions first
           if (a.status === 'winner') return -1;

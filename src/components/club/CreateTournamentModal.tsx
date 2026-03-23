@@ -207,11 +207,11 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
         .replace('progressive_bounty', 'progressive_bounty')
         .replace('mystery_bounty', 'mystery_bounty')
         .replace('satellite', 'satellite')
-        .replace('xmtt', 'xmtt');
+        .replace('xmtt', 'mtt');
 
       await tournamentService.createTournament(clubId, {
         name,
-        type: serviceFormat,
+        type: serviceFormat as import('../../services/TournamentService').TournamentType,
         gameVariant,
         buyIn: parsedBuyIn,
         rake: parsedRake,
@@ -754,11 +754,16 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
                       <input
                         type="checkbox"
                         checked={isRebuy}
-                        onChange={(e) => setIsRebuy(e.target.checked)}
+                        disabled
                         className={styles.checkbox}
                       />
                       Allow Rebuys (same seat)
                     </label>
+                    {!isRebuy && (
+                      <span className={styles.helperText}>
+                        Select "MTT (Rebuy)" format to enable
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className={styles.col}>
@@ -767,11 +772,16 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
                       <input
                         type="checkbox"
                         checked={isReentry}
-                        onChange={(e) => setIsReentry(e.target.checked)}
+                        disabled
                         className={styles.checkbox}
                       />
                       Allow Re-Entry (new seat)
                     </label>
+                    {!isReentry && (
+                      <span className={styles.helperText}>
+                        Select "MTT (Re-Entry)" format to enable
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className={styles.col}>

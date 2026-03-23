@@ -22,7 +22,6 @@ export interface ClubSettings {
   max_buy_in_bb: number;
 }
 
-
 export interface Database {
   public: {
     Tables: {
@@ -351,6 +350,7 @@ export interface BlindLevel {
   bigBlind: number;
   ante: number;
   durationMinutes: number;
+  isBreak?: boolean;
 }
 
 export interface PayoutEntry {

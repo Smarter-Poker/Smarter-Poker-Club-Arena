@@ -79,7 +79,7 @@ class ChipRaceEngineClass {
 
     if (playerStacks.size === 1) {
       // Single player: no race needed, just remove fractional chips
-      const [playerId, stack] = playerStacks.entries().next().value;
+      const [playerId, stack] = playerStacks.entries().next().value!;
       const fractionalChips = stack % newDenomination;
       const newStack = stack - fractionalChips;
       playerStacks.set(playerId, newStack);

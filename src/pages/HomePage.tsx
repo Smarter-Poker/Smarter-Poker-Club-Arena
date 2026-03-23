@@ -1408,7 +1408,14 @@ function HomePageInner() {
             >
               <div className={styles.tilePedestal}></div>
               <div className={styles.tileImageWrapper}>
-                <img src={tile.img} alt={tile.alt} className={styles.tileImage} loading="eager" />
+                <img
+                  src={tile.img}
+                  alt={tile.alt}
+                  className={styles.tileImage}
+                  loading="eager"
+                  width={640}
+                  height={1024}
+                />
                 <span className={styles.tileLabel}>{tile.alt}</span>
               </div>
               <div className={styles.tileEdge}></div>

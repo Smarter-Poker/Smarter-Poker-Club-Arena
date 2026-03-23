@@ -20,7 +20,12 @@ import { masterBus } from '../core/MasterBus';
 import { HeadlessTableEngine } from './HeadlessTableEngine';
 import { supabase } from '../lib/supabase';
 import { secureRandom } from './CryptoRandom';
-import { SPIN_BLIND_STRUCTURE } from '../services/TournamentService';
+import {
+  SPIN_BLIND_STRUCTURE,
+  SPIN_BONUS_TIERS,
+  SPIN_RAKE_PERCENT,
+  SPIN_POOL_CONTRIBUTION_MULTIPLIER,
+} from '../services/TournamentService';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -69,18 +74,30 @@ export interface SpinItState {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// PRIZE WHEEL CONFIGURATION
+// PRIZE WHEEL CONFIGURATION (Pool-Based Economics)
 // ═══════════════════════════════════════════════════════════════════════════════
+//
+// Economics:
+//   3 players pay buy_in + 10% fee each.
+//   Club keeps: 3 × fee (10% rake) — always profitable.
+//   Default payout: winner gets 2 × buy_in, 1 × buy_in goes to pool.
+//   Bonus payout: winner gets 2 × buy_in + bonus from pool (capped at balance).
+//
 
-const PRIZE_TIERS: SpinPrizeConfig[] = [
-  { multiplier: 2, weight: 500, label: '2x', color: '#6B7280' },
-  { multiplier: 3, weight: 250, label: '3x', color: '#3B82F6' },
-  { multiplier: 5, weight: 120, label: '5x', color: '#10B981' },
-  { multiplier: 10, weight: 60, label: '10x', color: '#F59E0B' },
-  { multiplier: 25, weight: 40, label: '25x', color: '#EF4444' },
-  { multiplier: 50, weight: 20, label: '50x', color: '#8B5CF6' },
-  { multiplier: 100, weight: 10, label: '100x', color: '#FFD700' },
-];
+// Visual prize tiers for the wheel UI — maps to SPIN_BONUS_TIERS probabilities
+const PRIZE_TIERS: SpinPrizeConfig[] = SPIN_BONUS_TIERS.standard.map((tier) => ({
+  multiplier: tier.displayMultiplier as SpinMultiplier,
+  weight: Math.round(tier.probability * 10), // Convert % to weight
+  label: `${tier.displayMultiplier}x`,
+  color:
+    tier.displayMultiplier === 2 ? '#6B7280' :
+    tier.displayMultiplier === 3 ? '#3B82F6' :
+    tier.displayMultiplier === 5 ? '#10B981' :
+    tier.displayMultiplier === 10 ? '#F59E0B' :
+    tier.displayMultiplier === 25 ? '#EF4444' :
+    tier.displayMultiplier === 50 ? '#8B5CF6' :
+    '#FFD700',
+}));
 
 // Convert SPIN_BLIND_STRUCTURE from TournamentService to this engine's format
 const DEFAULT_BLIND_LEVELS: BlindLevel[] = SPIN_BLIND_STRUCTURE.map((level) => ({
@@ -152,9 +169,12 @@ class SpinItEngineClass {
   }
 
   /**
-   * Spin the prize wheel — weighted random selection
+   * Spin the prize wheel — weighted random selection with pool-based economics.
+   *
+   * Default (75% of spins): winner gets 2× buy_in. 1× buy_in saved to pool.
+   * Bonus (25% of spins): winner gets 2× buy_in + bonus from pool (capped).
    */
-  private startSpin(lobbyId: string): void {
+  private async startSpin(lobbyId: string): Promise<void> {
     const state = this.games.get(lobbyId);
     const config = this.configs.get(lobbyId);
     if (!state || !config) return;
@@ -175,7 +195,31 @@ class SpinItEngineClass {
     }
 
     state.multiplier = selected.multiplier;
-    state.prizePool = config.buyIn * 3 * (1 - config.rake) * selected.multiplier;
+
+    // ── Pool-Based Prize Calculation ──────────────────────────────────────
+    const buyIn = config.buyIn;
+    const basePayout = 2 * buyIn; // Default winner payout (2 of 3 buy-ins)
+    const poolContribution = SPIN_POOL_CONTRIBUTION_MULTIPLIER * buyIn; // 1× buy_in to pool
+
+    // Look up bonus tier from SPIN_BONUS_TIERS
+    const bonusTier = SPIN_BONUS_TIERS.standard.find(
+      (t) => t.displayMultiplier === selected.multiplier
+    );
+    const requestedBonus = (bonusTier?.bonusBuyIns ?? 0) * buyIn;
+
+    let actualBonus = 0;
+
+    if (requestedBonus > 0) {
+      // Query pool balance and cap bonus
+      actualBonus = await this.drawFromPool(lobbyId, requestedBonus);
+    }
+
+    if (actualBonus === 0) {
+      // No bonus — save 1× buy_in to pool
+      await this.depositToPool(lobbyId, poolContribution);
+    }
+
+    state.prizePool = basePayout + actualBonus;
 
     masterBus.emit('SPIN_RESULT', {
       lobbyId,
@@ -183,6 +227,8 @@ class SpinItEngineClass {
       prizePool: state.prizePool,
       label: selected.label,
       color: selected.color,
+      bonusFromPool: actualBonus,
+      poolContribution: actualBonus === 0 ? poolContribution : 0,
     });
   }
 
@@ -279,7 +325,9 @@ class SpinItEngineClass {
   }
 
   /**
-   * Finish the game — calculate payouts
+   * Finish the game — pool-based payouts.
+   * Winner takes all (the entire prize pool = basePayout + bonus).
+   * For premium spins (50×+), 2nd place gets 10% of the prize pool.
    */
   private finishGame(lobbyId: string, winnerId: string): void {
     const state = this.games.get(lobbyId);
@@ -288,30 +336,28 @@ class SpinItEngineClass {
     state.status = 'finished';
     state.winnerId = winnerId;
 
-    // Validation: Ensure not all 3 players eliminated simultaneously (shouldn't happen)
-    // This is an edge case where the game logic should prevent
-    const remainingPlayers = state.players.length;
-    if (remainingPlayers < 1) {
+    const prizePool = state.prizePool;
+
+    if (prizePool <= 0) {
       console.error(
-        `[SpinItEngine] Invalid state: no players remaining in game ${lobbyId}. Award full prize to winner.`
+        `[SpinItEngine] Invalid prize pool for ${lobbyId}. Awarding 0.`
       );
-      state.payouts.set(winnerId, state.prizePool);
+      state.payouts.set(winnerId, 0);
     } else {
-      // For large multipliers (25x+), 2nd place gets a cut
       const multiplier = state.multiplier ?? 2;
-      if (multiplier >= 25) {
-        const winnerPayout = state.prizePool * 0.75;
-        const runnerUpPayout = state.prizePool * 0.25;
-        state.payouts.set(winnerId, winnerPayout);
-        // In a real implementation, we'd track elimination order
+      // Premium spins (50×+): give runner-up 10% as consolation
+      if (multiplier >= 50) {
+        const runnerUpCut = Math.trunc(prizePool * 0.10 * 100) / 100;
+        const winnerCut = prizePool - runnerUpCut;
+        state.payouts.set(winnerId, winnerCut);
         state.players.forEach((p) => {
           if (p !== winnerId && !state.payouts.has(p)) {
-            state.payouts.set(p, runnerUpPayout);
+            state.payouts.set(p, runnerUpCut);
           }
         });
       } else {
-        // Winner takes all (full prize pool to winner)
-        state.payouts.set(winnerId, state.prizePool);
+        // Winner takes all
+        state.payouts.set(winnerId, prizePool);
       }
     }
 
@@ -327,6 +373,120 @@ class SpinItEngineClass {
       multiplier: state.multiplier,
       payouts: Object.fromEntries(state.payouts),
     });
+  }
+
+  // ═════════════════════════════════════════════════════════════════════════════
+  // POOL OPERATIONS (Supabase spin_bonus_pools table)
+  // ═════════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Resolve the club_id for a lobby/tournament.
+   * Tries to look it up from the tournaments table.
+   */
+  private async getClubIdForLobby(lobbyId: string): Promise<string | null> {
+    try {
+      const { data } = await supabase
+        .from('tournaments')
+        .select('club_id')
+        .eq('id', lobbyId)
+        .single();
+      return data?.club_id ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Deposit buy-ins into the pool for a club.
+   * Called on default (no-bonus) spins.
+   */
+  private async depositToPool(lobbyId: string, amount: number): Promise<void> {
+    const clubId = await this.getClubIdForLobby(lobbyId);
+    if (!clubId || amount <= 0) return;
+
+    try {
+      // Upsert: create row if missing, increment balance if exists
+      const { error } = await supabase.rpc('spin_pool_deposit', {
+        p_club_id: clubId,
+        p_amount: amount,
+      });
+      if (error) {
+        // Fallback: try direct upsert if RPC doesn't exist yet
+        console.warn('[SpinItEngine] spin_pool_deposit RPC failed, using direct upsert:', error.message);
+        await this.directPoolDeposit(clubId, amount);
+      }
+    } catch (e) {
+      console.error('[SpinItEngine] Pool deposit failed:', e);
+    }
+  }
+
+  /**
+   * Draw bonus from the pool — CAPPED at current balance.
+   * Returns the actual amount drawn (may be 0 if pool is empty or less than requested).
+   */
+  private async drawFromPool(lobbyId: string, requestedAmount: number): Promise<number> {
+    const clubId = await this.getClubIdForLobby(lobbyId);
+    if (!clubId || requestedAmount <= 0) return 0;
+
+    try {
+      // Atomic draw: debit pool up to balance, return actual amount drawn
+      const { data, error } = await supabase.rpc('spin_pool_draw', {
+        p_club_id: clubId,
+        p_amount: requestedAmount,
+      });
+      if (error) {
+        console.warn('[SpinItEngine] spin_pool_draw RPC failed, using direct draw:', error.message);
+        return await this.directPoolDraw(clubId, requestedAmount);
+      }
+      return data ?? 0;
+    } catch (e) {
+      console.error('[SpinItEngine] Pool draw failed:', e);
+      return 0;
+    }
+  }
+
+  /**
+   * Fallback direct deposit (no RPC).
+   */
+  private async directPoolDeposit(clubId: string, amount: number): Promise<void> {
+    // Check if row exists
+    const { data: existing } = await supabase
+      .from('spin_bonus_pools')
+      .select('balance')
+      .eq('club_id', clubId)
+      .single();
+
+    if (existing) {
+      await supabase
+        .from('spin_bonus_pools')
+        .update({ balance: existing.balance + amount, updated_at: new Date().toISOString() })
+        .eq('club_id', clubId);
+    } else {
+      await supabase
+        .from('spin_bonus_pools')
+        .insert({ club_id: clubId, balance: amount });
+    }
+  }
+
+  /**
+   * Fallback direct draw (no RPC). Caps at current balance.
+   */
+  private async directPoolDraw(clubId: string, requestedAmount: number): Promise<number> {
+    const { data: existing } = await supabase
+      .from('spin_bonus_pools')
+      .select('balance')
+      .eq('club_id', clubId)
+      .single();
+
+    if (!existing || existing.balance <= 0) return 0;
+
+    const actualDraw = Math.min(requestedAmount, existing.balance);
+    await supabase
+      .from('spin_bonus_pools')
+      .update({ balance: existing.balance - actualDraw, updated_at: new Date().toISOString() })
+      .eq('club_id', clubId);
+
+    return actualDraw;
   }
 
   /**

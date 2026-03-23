@@ -245,18 +245,85 @@ export class TournamentEngine {
         return;
       }
 
-      // Step 2c: For Spin & Go tournaments, roll the multiplier now (at game start, not creation)
+      // Step 2c: For Spin & Go tournaments, roll the multiplier with pool-based economics
       if (
         this.tournamentInfo.variant === 'spin' ||
         this.tournamentInfo.tournament_type === 'SPIN'
       ) {
-        const { tournamentService, SPIN_MULTIPLIERS } =
-          await import('../services/TournamentService');
+        const {
+          tournamentService,
+          SPIN_MULTIPLIERS,
+          SPIN_BONUS_TIERS,
+          SPIN_RAKE_PERCENT,
+          SPIN_POOL_CONTRIBUTION_MULTIPLIER,
+        } = await import('../services/TournamentService');
+
         const spinResult = tournamentService.spinMultiplier(SPIN_MULTIPLIERS.standard);
-        // Prize pool = buy_in * multiplier (NOT net * players * multiplier)
-        // Club profit = (3 * buy_in) - prize_pool + (3 * fee)
         const buyIn = this.tournamentInfo.buy_in_amount || 0;
-        const prizePool = Math.trunc(buyIn * spinResult.multiplier * 100) / 100;
+
+        // ── Pool-Based Prize Calculation ──────────────────────────────────
+        // Base payout: winner always gets at least 2× buy_in
+        const basePayout = 2 * buyIn;
+        const poolContribution = SPIN_POOL_CONTRIBUTION_MULTIPLIER * buyIn;
+        const requestedBonus = spinResult.bonusBuyIns * buyIn;
+
+        let actualBonus = 0;
+        let poolDeposited = 0;
+
+        if (requestedBonus > 0) {
+          // Try to draw bonus from pool (capped at balance)
+          const clubId = this.tournamentInfo.club_id;
+          if (clubId) {
+            const { data: poolBalance } = await this.supabase
+              .from('spin_bonus_pools')
+              .select('balance')
+              .eq('club_id', clubId)
+              .single();
+
+            const available = poolBalance?.balance ?? 0;
+            actualBonus = Math.min(requestedBonus, available);
+
+            if (actualBonus > 0) {
+              // Debit from pool
+              await this.supabase
+                .from('spin_bonus_pools')
+                .update({
+                  balance: available - actualBonus,
+                  updated_at: new Date().toISOString(),
+                })
+                .eq('club_id', clubId);
+            }
+          }
+        }
+
+        if (actualBonus === 0) {
+          // No bonus drawn — deposit 1× buy_in into pool
+          const clubId = this.tournamentInfo.club_id;
+          if (clubId) {
+            poolDeposited = poolContribution;
+            const { data: existing } = await this.supabase
+              .from('spin_bonus_pools')
+              .select('balance')
+              .eq('club_id', clubId)
+              .single();
+
+            if (existing) {
+              await this.supabase
+                .from('spin_bonus_pools')
+                .update({
+                  balance: existing.balance + poolContribution,
+                  updated_at: new Date().toISOString(),
+                })
+                .eq('club_id', clubId);
+            } else {
+              await this.supabase
+                .from('spin_bonus_pools')
+                .insert({ club_id: clubId, balance: poolContribution });
+            }
+          }
+        }
+
+        const prizePool = Math.trunc((basePayout + actualBonus) * 100) / 100;
 
         await this.supabase
           .from('tournaments')
@@ -268,6 +335,12 @@ export class TournamentEngine {
           .eq('id', this.tournamentId);
 
         this.tournamentInfo.prize_pool = prizePool;
+
+        console.debug(
+          `[TournamentEngine:${this.tournamentId.slice(0, 8)}] Spin result: ` +
+          `${spinResult.multiplier}x display | prize=${prizePool} | ` +
+          `bonus=${actualBonus} | poolDeposit=${poolDeposited}`
+        );
       }
 
       // Step 3: Create tournament tables

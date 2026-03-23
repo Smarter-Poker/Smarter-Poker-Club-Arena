@@ -333,34 +333,81 @@ export const PAYOUT_STRUCTURES = {
 // SPIN CONFIGURATIONS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// ── PROFITABLE Spin Multiplier Tables ──────────────────────────────────────
-// Prize pool = buy_in * multiplier (NOT net_buy_in * players * multiplier)
-// 3 players each pay buy_in. Winner gets buy_in * multiplier.
-// Club profit per spin = (3 * buy_in) - (buy_in * multiplier) + (3 * fee)
-// For profitability: E[multiplier] must be < 3.0
+// ── PROFITABLE Spin Economics (Pool-Based) ──────────────────────────────────
 //
-// Standard EV = 2.2415 → Club keeps ~25% margin before fees
-// Hyper EV   = 2.2850 → Club keeps ~24% margin before fees
-export const SPIN_MULTIPLIERS: Record<string, SpinMultiplier[]> = {
+// MODEL:
+//   3 players each pay (buy_in + 10% fee).
+//   Total collected   = 3 × buy_in  +  3 × fee   (fee = 10% of buy_in)
+//   Club guaranteed   = 3 × fee                   (always kept — 10% rake)
+//   Prize pool fund   = 3 × buy_in
+//
+//   DEFAULT PAYOUT (most spins — 67% of the pot goes to winner):
+//     Winner receives  = 2 × buy_in
+//     Pool deposit     = 1 × buy_in   (saved into spin_bonus_pool)
+//
+//   BONUS PAYOUT (random trigger — drawn from the pool):
+//     Winner receives  = 2 × buy_in + bonus_amount
+//     bonus_amount     ≤ current pool balance  (NEVER goes negative)
+//
+//   This guarantees clubs/unions ALWAYS profit from the 10% fee, while
+//   the 1× buy_in saved per default spin funds exciting jackpot-style
+//   bonus payouts when the pool has enough balance.
+//
+// MULTIPLIER DISPLAY:
+//   The "multiplier" shown to players is purely cosmetic (the wheel spin).
+//   The actual payout is determined by the pool-backed algorithm below.
+//
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const SPIN_RAKE_PERCENT = 0.10; // 10% fee on buy-in
+
+// Pool contribution per spin: 1 buy-in saved from the 3 collected
+export const SPIN_POOL_CONTRIBUTION_MULTIPLIER = 1; // × buy_in per default spin
+
+// Bonus trigger tiers — probability-weighted random check at game start.
+// If a bonus triggers, the bonus amount is capped at current pool balance.
+// The "display multiplier" is what the UI wheel shows. The actual bonus
+// comes from the pool, so the club NEVER loses money.
+export const SPIN_BONUS_TIERS = {
   standard: [
-    { multiplier: 2, probability: 92.5 }, // EV: 1.8500
-    { multiplier: 3, probability: 5.0 }, // EV: 0.1500
-    { multiplier: 5, probability: 1.8 }, // EV: 0.0900
-    { multiplier: 10, probability: 0.5 }, // EV: 0.0500
-    { multiplier: 25, probability: 0.15 }, // EV: 0.0375
-    { multiplier: 100, probability: 0.04, isPremium: true }, // EV: 0.0400
-    { multiplier: 240, probability: 0.01, isPremium: true }, // EV: 0.0240
-  ], // TOTAL EV: 2.2415
+    // ~75% of spins: no bonus (default 2× payout, 1× saved to pool)
+    { displayMultiplier: 2, probability: 75.0, bonusBuyIns: 0 },
+    // ~15% of spins: small bonus (3× display, +1 buy-in from pool)
+    { displayMultiplier: 3, probability: 15.0, bonusBuyIns: 1 },
+    // ~6% of spins: medium bonus (5× display, +3 buy-ins from pool)
+    { displayMultiplier: 5, probability: 6.0, bonusBuyIns: 3 },
+    // ~2.5% of spins: large bonus (10× display, +8 buy-ins from pool)
+    { displayMultiplier: 10, probability: 2.5, bonusBuyIns: 8 },
+    // ~1% of spins: big bonus (25× display, +23 buy-ins from pool)
+    { displayMultiplier: 25, probability: 1.0, bonusBuyIns: 23 },
+    // ~0.4% of spins: jackpot (50× display, +48 buy-ins from pool)
+    { displayMultiplier: 50, probability: 0.4, bonusBuyIns: 48, isPremium: true },
+    // ~0.1% of spins: mega jackpot (100× display, +98 buy-ins from pool)
+    { displayMultiplier: 100, probability: 0.1, bonusBuyIns: 98, isPremium: true },
+  ],
   hyper: [
-    { multiplier: 2, probability: 91.1 }, // EV: 1.8200
-    { multiplier: 3, probability: 5.5 }, // EV: 0.1650
-    { multiplier: 5, probability: 2.2 }, // EV: 0.1100
-    { multiplier: 10, probability: 0.8 }, // EV: 0.0800
-    { multiplier: 25, probability: 0.35 }, // EV: 0.0875
-    { multiplier: 100, probability: 0.04, isPremium: true }, // EV: 0.0400
-    { multiplier: 240, probability: 0.01, isPremium: true }, // EV: 0.0240
-    // Hyper spins have slightly more variance but same profitability
-  ], // TOTAL EV: 2.3265 (PENDING RECALC — safe < 3.0)
+    { displayMultiplier: 2, probability: 72.0, bonusBuyIns: 0 },
+    { displayMultiplier: 3, probability: 16.0, bonusBuyIns: 1 },
+    { displayMultiplier: 5, probability: 7.0, bonusBuyIns: 3 },
+    { displayMultiplier: 10, probability: 3.0, bonusBuyIns: 8 },
+    { displayMultiplier: 25, probability: 1.2, bonusBuyIns: 23 },
+    { displayMultiplier: 50, probability: 0.6, bonusBuyIns: 48, isPremium: true },
+    { displayMultiplier: 100, probability: 0.2, bonusBuyIns: 98, isPremium: true },
+  ],
+};
+
+// Legacy export — kept for backwards compat but now routes through pool system
+export const SPIN_MULTIPLIERS: Record<string, SpinMultiplier[]> = {
+  standard: SPIN_BONUS_TIERS.standard.map(t => ({
+    multiplier: t.displayMultiplier,
+    probability: t.probability,
+    isPremium: t.isPremium || false,
+  })),
+  hyper: SPIN_BONUS_TIERS.hyper.map(t => ({
+    multiplier: t.displayMultiplier,
+    probability: t.probability,
+    isPremium: t.isPremium || false,
+  })),
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -2410,22 +2457,35 @@ class TournamentService {
   /**
    * Spin the multiplier wheel for a Spin & Go
    */
-  spinMultiplier(config: SpinMultiplier[]): { multiplier: number; isPremium: boolean } {
+  /**
+   * Spin the multiplier wheel — now pool-aware.
+   * Returns the display multiplier, bonus buy-ins requested, and premium flag.
+   * The caller (TournamentEngine) is responsible for checking pool balance
+   * and capping the actual bonus payout.
+   */
+  spinMultiplier(config: SpinMultiplier[]): { multiplier: number; isPremium: boolean; bonusBuyIns: number } {
     const random = Math.random() * 100;
     let cumulative = 0;
 
-    for (const tier of config) {
+    // Find matching tier from the legacy config array
+    for (let i = 0; i < config.length; i++) {
+      const tier = config[i];
       cumulative += tier.probability;
       if (random <= cumulative) {
+        // Look up bonusBuyIns from SPIN_BONUS_TIERS (match by multiplier)
+        const bonusTier = SPIN_BONUS_TIERS.standard.find(
+          (bt) => bt.displayMultiplier === tier.multiplier
+        );
         return {
           multiplier: tier.multiplier,
           isPremium: tier.isPremium || false,
+          bonusBuyIns: bonusTier?.bonusBuyIns ?? 0,
         };
       }
     }
 
-    // Fallback to lowest multiplier
-    return { multiplier: config[0].multiplier, isPremium: false };
+    // Fallback to lowest multiplier (no bonus)
+    return { multiplier: config[0].multiplier, isPremium: false, bonusBuyIns: 0 };
   }
 
   /**

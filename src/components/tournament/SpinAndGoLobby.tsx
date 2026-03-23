@@ -30,19 +30,19 @@ interface SpinTournament {
   startAt?: Date;
 }
 
-const SPIN_MULTIPLIERS = [2, 3, 4, 5, 10, 25, 50, 100, 1000];
+// Pool-based multipliers — display values for the wheel UI.
+// Actual payouts: winner gets 2× buy_in + bonus from pool (if triggered).
+// 75% of spins = 2×, remainder = bonus spins funded by the pool.
+const SPIN_MULTIPLIERS = [2, 3, 5, 10, 25, 50, 100];
 
-// Multiplier tier probabilities (as percentages)
 const MULTIPLIER_PROBABILITIES: { [key: number]: number } = {
-  2: 60,
-  3: 20,
-  4: 10,
-  5: 5,
+  2: 75,
+  3: 15,
+  5: 6,
   10: 2.5,
-  25: 1.2,
-  50: 0.8,
-  100: 0.4,
-  1000: 0.1,
+  25: 1.0,
+  50: 0.4,
+  100: 0.1,
 };
 
 export function SpinAndGoLobby({ clubId, onRegister }: SpinAndGoLobbyProps) {
@@ -194,7 +194,7 @@ export function SpinAndGoLobby({ clubId, onRegister }: SpinAndGoLobbyProps) {
               </div>
 
               <div className="spin-card__multipliers">
-                {[2, 10, 100, 1000].map((m) => (
+                {[2, 5, 25, 100].map((m) => (
                   <span key={m} className="multiplier">
                     {m}x
                   </span>
@@ -212,13 +212,21 @@ export function SpinAndGoLobby({ clubId, onRegister }: SpinAndGoLobbyProps) {
               {expandedCard === t.id && (
                 <div className="spin-card__prize-wheel">
                   <div className="prize-wheel">
-                    {SPIN_MULTIPLIERS.filter((m) => m <= 100).map((multiplier) => {
+                    {SPIN_MULTIPLIERS.map((multiplier) => {
                       const prob = MULTIPLIER_PROBABILITIES[multiplier] || 0;
-                      const prize = Math.trunc(t.buyIn * 3 * multiplier);
+                      // Prize = 2× buy_in base + bonus buy-ins from pool
+                      const bonusBuyIns =
+                        multiplier === 2 ? 0 : multiplier === 3 ? 1 :
+                        multiplier === 5 ? 3 : multiplier === 10 ? 8 :
+                        multiplier === 25 ? 23 : multiplier === 50 ? 48 : 98;
+                      const prize = Math.trunc(t.buyIn * (2 + bonusBuyIns));
                       return (
                         <div key={multiplier} className="prize-tier">
                           <span className="prize-multiplier">{multiplier}x</span>
-                          <span className="prize-amount">{Math.trunc(prize).toLocaleString()}</span>
+                          <span className="prize-amount">
+                            {multiplier === 2 ? '' : 'Up to '}
+                            {Math.trunc(prize).toLocaleString()}
+                          </span>
                           <span className="prize-prob">{prob}%</span>
                         </div>
                       );
@@ -230,7 +238,7 @@ export function SpinAndGoLobby({ clubId, onRegister }: SpinAndGoLobbyProps) {
               {/* Probability Info */}
               <div className="spin-card__info">
                 <span className="info-label">Prize Tiers</span>
-                <span className="info-text">2x-60%, 5x-5%, 10x-2.5%, 25x-1.2%, 100x-0.4%</span>
+                <span className="info-text">2x-75%, 3x-15%, 5x-6%, 10x-2.5%, 25x+</span>
               </div>
 
               {t.status === 'registering' && (

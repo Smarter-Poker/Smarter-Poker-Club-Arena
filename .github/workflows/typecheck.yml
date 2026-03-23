@@ -1,0 +1,40 @@
+name: TypeScript Check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  typecheck:
+    name: TypeScript Compilation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci --ignore-scripts
+
+      - name: TypeScript Check
+        run: npx tsc --noEmit
+
+      - name: Report Success
+        if: success()
+        run: echo "✅ TypeScript compilation passed — safe to deploy"
+
+      - name: Report Failure
+        if: failure()
+        run: |
+          echo "❌ TypeScript compilation FAILED"
+          echo "This push will cause a Vercel deployment failure."
+          echo "Fix the TypeScript errors before merging."

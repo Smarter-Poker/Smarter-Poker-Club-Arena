@@ -852,6 +852,15 @@ export interface BusPayloadMap {
     cacheHitRatio: number;
   };
   TABLE_BALANCE_EXECUTED: { moveCount: number; tableCount: number; totalPlayers: number };
+  TABLE_MOVE: {
+    playerId: string;
+    fromTableId: string;
+    fromSeat: number;
+    toTableId: string;
+    toSeat: number;
+    reason: string;
+    timestamp: string;
+  };
   // Session lifecycle
   SESSION_ENDED: { tableId: string; sessionId?: string; userId?: string };
   // Table creation

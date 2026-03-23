@@ -97,6 +97,7 @@ interface TournamentPlayer {
   status: 'playing' | 'eliminated' | 'winner';
   tableId?: string;
   seatNumber?: number;
+  position?: number;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1854,7 +1855,7 @@ export class TournamentEngine {
       this.tournamentInfo?.variant === 'satellite' ||
       this.tournamentInfo?.tournament_type === 'SATELLITE';
 
-    if (isSatellite) {
+    if (isSatellite && this.tournamentInfo) {
       // SATELLITE: Award seats/tickets to top N finishers, NOT cash prizes
       const ticketPlaces = this.tournamentInfo.payout_structure?.length || 1;
 
@@ -1910,8 +1911,7 @@ export class TournamentEngine {
       masterBus.emit('SATELLITE_COMPLETE', {
         tournamentId: this.tournamentId,
         ticketWinners: ticketWinnerIds,
-        seatsAwarded: ticketPlaces,
-        targetTournament: this.tournamentInfo.satellite_target || null,
+        targetTournament: this.tournamentInfo?.satellite_target || null,
       });
     } else {
       // REGULAR TOURNAMENT: Award cash prizes

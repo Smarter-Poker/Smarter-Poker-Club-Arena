@@ -535,6 +535,7 @@
 
 .txFilters {
   display: flex;
+  flex-wrap: nowrap;
   gap: 6px;
   margin-bottom: 12px;
   overflow-x: auto;

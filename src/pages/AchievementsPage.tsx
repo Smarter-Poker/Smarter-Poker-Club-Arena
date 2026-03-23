@@ -5,7 +5,7 @@
  * Display unlocked achievements, progress, and badges
  */
 
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -15,11 +15,40 @@ import { AchievementShareCard } from '../components/achievements/AchievementShar
 import BottomSheet from '../components/common/BottomSheet';
 import { StreakFire } from '../components/gamification/StreakFire';
 import ActivityHeatmap from '../components/common/ActivityHeatmap';
+import { ConfettiEffect } from '../components/gamification/ConfettiEffect';
 import { achievementService } from '../services/AchievementService';
+import { haptic } from '../services/HapticService';
 import './AchievementsPage.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { retryFetch } from '../utils/retryFetch';
+
+type SortMode = 'default' | 'rarity' | 'progress' | 'recent';
+const RARITY_ORDER: Record<string, number> = { legendary: 0, epic: 1, rare: 2, common: 3 };
+
+/** Animated count-up hook */
+function useAnimatedCount(target: number, duration = 600) {
+  const [count, setCount] = useState(0);
+  const prevRef = useRef(0);
+  useEffect(() => {
+    const start = prevRef.current;
+    const diff = target - start;
+    if (diff === 0) return;
+    const startTime = Date.now();
+    const tick = () => {
+      const elapsed = Date.now() - startTime;
+      const progress = Math.min(1, elapsed / duration);
+      // ease-out quad
+      const ease = 1 - (1 - progress) * (1 - progress);
+      const current = Math.round(start + diff * ease);
+      setCount(current);
+      if (progress < 1) requestAnimationFrame(tick);
+      else prevRef.current = target;
+    };
+    requestAnimationFrame(tick);
+  }, [target, duration]);
+  return count;
+}
 
 // ── SWR Cache ──
 const ACH_CACHE_KEY = 'ach_cache_';
@@ -452,10 +481,58 @@ export default function AchievementsPage() {
     return unsub;
   }, []);
 
-  const filteredAchievements =
-    category === 'all' ? achievements : achievements.filter((a) => a.category === category);
+  const [sortMode, setSortMode] = useState<SortMode>('default');
+
+  const filteredAchievements = useMemo(() => {
+    const list =
+      category === 'all' ? [...achievements] : achievements.filter((a) => a.category === category);
+    switch (sortMode) {
+      case 'rarity':
+        list.sort((a, b) => (RARITY_ORDER[a.rarity] ?? 9) - (RARITY_ORDER[b.rarity] ?? 9));
+        break;
+      case 'progress':
+        list.sort((a, b) => b.progress - a.progress);
+        break;
+      case 'recent':
+        list.sort((a, b) => {
+          if (a.unlockedAt && b.unlockedAt)
+            return new Date(b.unlockedAt).getTime() - new Date(a.unlockedAt).getTime();
+          if (a.unlockedAt) return -1;
+          if (b.unlockedAt) return 1;
+          return b.progress - a.progress;
+        });
+        break;
+    }
+    return list;
+  }, [achievements, category, sortMode]);
 
   const unlockedCount = achievements.filter((a) => a.unlocked).length;
+  const animatedUnlocked = useAnimatedCount(unlockedCount);
+  const animatedTotal = useAnimatedCount(achievements.length);
+
+  // Category counts for filter chips
+  const getCatCount = useCallback(
+    (cat: AchievementCategory) => {
+      const items = cat === 'all' ? achievements : achievements.filter((a) => a.category === cat);
+      const u = items.filter((a) => a.unlocked).length;
+      return `${u}/${items.length}`;
+    },
+    [achievements]
+  );
+
+  // Haptic + sound on unlock
+  useEffect(() => {
+    if (!newUnlock) return;
+    haptic.success();
+    // Try to play unlock sound
+    try {
+      const audio = new Audio('/sounds/unlock-chime.mp3');
+      audio.volume = 0.4;
+      audio.play().catch(() => {});
+    } catch {
+      /* no audio support */
+    }
+  }, [newUnlock]);
 
   const [dailyStreak, setDailyStreak] = useState(0);
 
@@ -596,14 +673,27 @@ export default function AchievementsPage() {
             colorScheme="cyan"
             weeks={18}
           />
+          {heatmapData.length === 0 && (
+            <p
+              style={{
+                textAlign: 'center',
+                color: 'rgba(255,255,255,0.3)',
+                fontSize: '0.8rem',
+                margin: '0.5rem 0 0',
+                fontStyle: 'italic',
+              }}
+            >
+              Start playing to light up your activity grid!
+            </p>
+          )}
         </div>
       </div>
 
-      {/* Progress Summary */}
+      {/* Progress Summary — Animated Counter */}
       <div className="progress-summary">
         <div className="summary-stat">
           <span className="stat-value">
-            {unlockedCount}/{achievements.length}
+            {animatedUnlocked}/{animatedTotal}
           </span>
           <span className="stat-label">Unlocked</span>
         </div>
@@ -649,16 +739,12 @@ export default function AchievementsPage() {
         </div>
       )}
 
-      {/* Category Filter — Pill Chips (Initiative 5) */}
+      {/* Category Filter — Pill Chips with Counts */}
       <div className="category-filter ach-chip-bar">
         {(['all', 'poker', 'social', 'financial', 'tournament'] as AchievementCategory[]).map(
-          (cat) => (
-            <button
-              key={cat}
-              className={`ach-filter-chip ${category === cat ? 'active' : ''}`}
-              onClick={() => setCategory(cat)}
-            >
-              {cat === 'all'
+          (cat) => {
+            const label =
+              cat === 'all'
                 ? '📋 All'
                 : cat === 'poker'
                   ? '🃏 Poker'
@@ -666,10 +752,58 @@ export default function AchievementsPage() {
                     ? '👥 Social'
                     : cat === 'financial'
                       ? '💰 Financial'
-                      : '🏆 Tournament'}
-            </button>
-          )
+                      : '🏆 Tournament';
+            return (
+              <button
+                key={cat}
+                className={`ach-filter-chip ${category === cat ? 'active' : ''}`}
+                onClick={() => setCategory(cat)}
+              >
+                {label}
+                <span
+                  style={{
+                    marginLeft: '4px',
+                    fontSize: '0.7rem',
+                    opacity: 0.7,
+                    fontWeight: 400,
+                  }}
+                >
+                  ({getCatCount(cat)})
+                </span>
+              </button>
+            );
+          }
         )}
+      </div>
+
+      {/* Sort Dropdown */}
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'flex-end',
+          marginBottom: '0.75rem',
+          paddingRight: '0.25rem',
+        }}
+      >
+        <select
+          value={sortMode}
+          onChange={(e) => setSortMode(e.target.value as SortMode)}
+          style={{
+            background: 'rgba(255,255,255,0.05)',
+            border: '1px solid rgba(255,255,255,0.1)',
+            borderRadius: '8px',
+            color: '#cbd5e1',
+            padding: '6px 12px',
+            fontSize: '0.8rem',
+            cursor: 'pointer',
+            outline: 'none',
+          }}
+        >
+          <option value="default">Default Order</option>
+          <option value="rarity">Rarity ↓</option>
+          <option value="progress">Progress ↓</option>
+          <option value="recent">Recently Unlocked</option>
+        </select>
       </div>
 
       {/* Achievements Grid */}
@@ -786,8 +920,23 @@ export default function AchievementsPage() {
               }}
             >
               <span>{Math.round(selectedAchievement.progress)}% Complete</span>
-              <span>{selectedAchievement.requirement}</span>
+              <span style={{ textTransform: 'capitalize' }}>{selectedAchievement.requirement}</span>
             </div>
+            {!selectedAchievement.unlocked && selectedAchievement.progress > 0 && (
+              <p
+                style={{
+                  color: '#00d4ff',
+                  fontSize: '0.8rem',
+                  marginBottom: '1rem',
+                  background: 'rgba(0, 212, 255, 0.06)',
+                  padding: '0.6rem 1rem',
+                  borderRadius: '8px',
+                  border: '1px solid rgba(0, 212, 255, 0.1)',
+                }}
+              >
+                Almost there — {100 - Math.round(selectedAchievement.progress)}% remaining!
+              </p>
+            )}
 
             {selectedAchievement.unlocked ? (
               <>
@@ -850,13 +999,14 @@ export default function AchievementsPage() {
         )}
       </BottomSheet>
 
-      {/* New Achievement Unlock Popup */}
+      {/* New Achievement Unlock Popup + Confetti */}
+      <ConfettiEffect active={!!newUnlock} />
       {newUnlock && (
         <div className="unlock-popup">
           <div className="unlock-content">
             <div className="unlock-icon">{newUnlock.icon}</div>
             <div className="unlock-text">
-              <span className="unlock-label"> Achievement Unlocked!</span>
+              <span className="unlock-label">🎉 Achievement Unlocked!</span>
               <span className="unlock-name">{newUnlock.name}</span>
             </div>
           </div>

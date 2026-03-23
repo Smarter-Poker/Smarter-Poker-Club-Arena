@@ -361,42 +361,44 @@ export const HydraService = {
     const availableHorses = await this.getAvailableHorses(horsesToAdd);
     const seatedHorses: HorsePlayer[] = [];
 
-    // Use Promise-based delays instead of setTimeout so we can await all results
-    const seatPromises = [];
+    // Track locally claimed seats to avoid RLS-blind collisions.
+    // Without this, every horse tries seat 1 because table_seats SELECT returns empty (RLS).
+    const localClaimedSeats = new Set<number>();
+
+    // Seat horses SEQUENTIALLY to avoid seat collisions (stagger delay between each)
     for (let i = 0; i < Math.min(horsesToAdd, availableHorses.length); i++) {
       const horse = availableHorses[i];
       const delay =
-        randomInRange(this.config.entryDelayRange[0], this.config.entryDelayRange[1]) * 1000; // Convert seconds to ms
+        randomInRange(this.config.entryDelayRange[0], this.config.entryDelayRange[1]) * 1000;
 
-      // Stagger entries for natural appearance
-      const promise = new Promise<void>((resolve) => {
-        setTimeout(
-          async () => {
-            try {
-              const seatedHorse = await this.seatHorse(horse.id, tableId, bigBlind);
-              if (seatedHorse) {
-                seatedHorses.push(seatedHorse);
-              }
-            } catch (err: unknown) {
-              console.error(`Failed to seat horse ${horse.id}:`, err);
-            }
-            resolve();
-          },
-          delay * (i + 1)
-        );
-      });
-      seatPromises.push(promise);
+      // Stagger for natural appearance
+      if (i > 0) {
+        await new Promise<void>((resolve) => setTimeout(resolve, delay));
+      }
+
+      try {
+        const seatedHorse = await this.seatHorse(horse.id, tableId, bigBlind, localClaimedSeats);
+        if (seatedHorse) {
+          seatedHorses.push(seatedHorse);
+          localClaimedSeats.add(seatedHorse.seatNumber);
+        }
+      } catch (err: unknown) {
+        console.error(`Failed to seat horse ${horse.id}:`, err);
+      }
     }
 
-    // Wait for all staggered seats to complete
-    await Promise.all(seatPromises);
     return seatedHorses;
   },
 
   /**
    * Seat a specific horse at a table
    */
-  async seatHorse(horseId: string, tableId: string, bigBlind: number): Promise<HorsePlayer | null> {
+  async seatHorse(
+    horseId: string,
+    tableId: string,
+    bigBlind: number,
+    localClaimedSeats: Set<number> = new Set()
+  ): Promise<HorsePlayer | null> {
     // Get horse info
     const { data: horseData, error: horseErr } = await supabase
       .from('profiles')
@@ -418,7 +420,11 @@ export const HydraService = {
       .is('left_at', null);
     if (seatsErr) console.warn('[Hydra] seatHorse seats error:', seatsErr.message);
 
+    // Merge DB-visible seats with locally tracked seats (to handle RLS-invisible horse seats)
     const takenSeats = new Set((existingSeats || []).map((s) => s.seat_number));
+    for (const claimed of localClaimedSeats) {
+      takenSeats.add(claimed);
+    }
 
     // Get table max_players to know seat range
     const { data: tableData, error: tableErr } = await supabase

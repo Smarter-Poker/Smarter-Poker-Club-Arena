@@ -106,14 +106,15 @@ export const FinancialAlertService = {
       });
     } catch (err) {
 
-      console.error("[FinancialAlertService] Error:", err);
+      console.debug("[FinancialAlertService] Bus emit error:", err);
       // Bus emission failure is non-fatal
     }
 
-    // 3. Always log to console for server-side visibility
+    // 3. Log to console — debug level so it's stripped from production builds
+    // Alerts are persisted to DB (financial_alerts table) and visible on the admin dashboard.
     const prefix =
       severity === 'critical' ? '🔴 CRITICAL' : severity === 'warning' ? '🟡 WARNING' : 'ℹ️ INFO';
-    console.error(`[FinancialAlert] ${prefix}: ${source}: ${message}`, context);
+    console.debug(`[FinancialAlert] ${prefix}: ${source}: ${message}`, context);
 
     // NOTE: Financial alerts are ops-only signals. They are NOT shown as user-facing toasts.
     // They appear on the admin Financial Alerts page (/financial-alerts) via the

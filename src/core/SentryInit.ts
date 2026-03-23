@@ -82,7 +82,7 @@ async function loadAndInitSentry(): Promise<typeof import('@sentry/react') | nul
 
   const dsn = import.meta.env.VITE_SENTRY_DSN;
   if (!dsn) {
-    console.warn('⚠️ [Sentry] DSN not configured, skipping initialization');
+    console.debug('[Sentry] DSN not configured, skipping initialization');
     return null;
   }
 

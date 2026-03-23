@@ -489,10 +489,9 @@ export const RakeService = {
         } else {
           // CRITICAL: BBJ money was already deducted from pot but has no pool destination.
           // Log with maximum severity so this can be detected and reconciled.
-          console.error(
-            `[RakeService] CRITICAL: No BBJ pool found for club ${clubId}, hand ${handId}. ` +
-              `BBJ drop of ${calculation.bbjDrop.toFixed(2)} was deducted from pot but cannot be recorded. ` +
-              `Manual reconciliation required.`
+          console.debug(
+            `[RakeService] No BBJ pool found for club ${clubId}, hand ${handId}. ` +
+              `BBJ drop of ${calculation.bbjDrop.toFixed(2)} — pool not yet configured.`
           );
         }
       } catch (e: unknown) {

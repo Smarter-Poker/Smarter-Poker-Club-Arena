@@ -65,7 +65,7 @@ class PushNotificationServiceClass {
    */
   async init(): Promise<void> {
     if (this.initialized || !ONESIGNAL_APP_ID) {
-      console.warn('[PushService] OneSignal not configured or already initialized');
+      console.debug('[PushService] OneSignal not configured or already initialized');
       return;
     }
 
@@ -103,7 +103,8 @@ class PushNotificationServiceClass {
         await window.OneSignal.login(userId);
       }
     } catch (error: unknown) {
-      console.error('[PushService] Failed to set external user ID:', error);
+      // OneSignal SDK v16 intermittent issue — non-blocking, suppress to warn
+      console.warn('[PushService] External user ID set skipped (OneSignal SDK):', (error as Error)?.message || error);
     }
   }
 

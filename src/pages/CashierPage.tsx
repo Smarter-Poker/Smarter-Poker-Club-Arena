@@ -204,6 +204,12 @@ export default function CashierPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loadingTx, setLoadingTx] = useState(false);
   const [txFilter, setTxFilter] = useState('all');
+  const [txPage, setTxPage] = useState(1);
+  const TX_PAGE_SIZE = 25;
+
+  // Distribute rate limit: 1 per 10 seconds
+  const lastDistributeRef = useRef(0);
+  const DISTRIBUTE_RATE_LIMIT_MS = 10_000;
 
   // Pending cashout state (U-02 FIX: show escrow status)
   const [pendingCashouts, setPendingCashouts] = useState<
@@ -226,12 +232,16 @@ export default function CashierPage() {
     setMessage(null);
     setCashoutConfirm({ show: false, value: 0 });
     setShowCashoutModal(false);
+    setSendConfirm({ show: false, value: 0, recipientId: '', recipientName: '' });
+    setLoadingContext(true);
     setUserRole('member');
     setIsInUnion(false);
     setIsUnionOwner(false);
     setSelectedRecipient('');
     setTxFilter('all');
     setPendingCashouts([]);
+    recipientsCacheRef.current = null;
+    setTxPage(1);
     setLoadingContext(true);
   }, [clubId]);
 
@@ -353,6 +363,8 @@ export default function CashierPage() {
       }
     } catch {
       // Keep defaults
+    } finally {
+      if (isMounted.current) setLoadingContext(false);
     }
   };
 
@@ -1548,6 +1560,15 @@ export default function CashierPage() {
                 }
                 if (!user?.id || !selectedRecipient) return;
 
+                // DISTRIBUTE RATE LIMIT — prevent rapid-fire distributions (10s cooldown)
+                const now = Date.now();
+                const elapsed = now - lastDistributeRef.current;
+                if (elapsed < DISTRIBUTE_RATE_LIMIT_MS) {
+                  const waitSec = Math.ceil((DISTRIBUTE_RATE_LIMIT_MS - elapsed) / 1000);
+                  setMessage({ type: 'error', text: `⏱ Please wait ${waitSec}s before distributing again` });
+                  return;
+                }
+
                 setIsProcessing(true);
                 setMessage(null);
 
@@ -1628,6 +1649,7 @@ export default function CashierPage() {
                   notifyWalletChange(user.id, value);
                   notifyWalletChange(selectedRecipient, value);
                   startCooldown();
+                  lastDistributeRef.current = Date.now();
                 } catch (err: unknown) {
                   const msg =
                     (err instanceof Error ? err.message : String(err)) || 'Distribution failed';
@@ -1892,8 +1914,9 @@ export default function CashierPage() {
                 </span>
               </div>
             ) : (
+              <>
               <div className={styles.txList}>
-                {filteredTransactions.map((tx: any, idx: number) => (
+                {filteredTransactions.slice(0, txPage * TX_PAGE_SIZE).map((tx: any, idx: number) => (
                   <div
                     key={tx.id}
                     className={styles.txRow}
@@ -1929,6 +1952,17 @@ export default function CashierPage() {
                   </div>
                 ))}
               </div>
+              {/* Pagination — Load More */}
+              {filteredTransactions.length > txPage * TX_PAGE_SIZE && (
+                <button
+                  className={styles.loadMoreBtn}
+                  onClick={() => setTxPage((p) => p + 1)}
+                  aria-label="Load more transactions"
+                >
+                  Load More ({filteredTransactions.length - txPage * TX_PAGE_SIZE} remaining)
+                </button>
+              )}
+              </>
             )}
           </div>
         </section>
@@ -1954,6 +1988,47 @@ export default function CashierPage() {
             loadPendingCashouts();
           }}
         />
+      )}
+
+      {/* Send Confirmation Modal for high-value transfers (≥10K) */}
+      {sendConfirm.show && (
+        <div
+          className={styles.modalOverlay}
+          onClick={() => setSendConfirm({ show: false, value: 0, recipientId: '', recipientName: '' })}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="send-confirm-title"
+        >
+          <div className={styles.confirmModal} onClick={(e) => e.stopPropagation()}>
+            <h3 id="send-confirm-title" className={styles.confirmTitle}>
+              ⚠️ Confirm High-Value Transfer
+            </h3>
+            <p className={styles.confirmText}>
+              You are about to send <strong>{sendConfirm.value.toLocaleString()}</strong> chips
+              to <strong>{sendConfirm.recipientName}</strong>.
+            </p>
+            <p className={styles.confirmWarning}>
+              This action cannot be undone. Please verify the amount and recipient.
+            </p>
+            <div className={styles.confirmButtons}>
+              <button
+                className={styles.btnSecondary}
+                onClick={() => setSendConfirm({ show: false, value: 0, recipientId: '', recipientName: '' })}
+              >
+                Cancel
+              </button>
+              <button
+                className={styles.btnDanger}
+                onClick={() => {
+                  setSendConfirm({ show: false, value: 0, recipientId: '', recipientName: '' });
+                  handleAction();
+                }}
+              >
+                Confirm Send {sendConfirm.value.toLocaleString()} Chips
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -25,6 +25,7 @@ import { useToast } from '../components/common/Toast';
 import ConfirmModal from '../components/common/ConfirmModal';
 import CreateTournamentModal from '../components/club/CreateTournamentModal';
 import { ensureMidwayUnionSetup } from '../services/HorseOrchestrator';
+import { getUnionLevel, getClubLevel } from '../utils/clubLevels';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -617,35 +618,51 @@ export default function UnionDetailPage() {
       )}
 
       {/* Stats Row */}
-      <div className={styles.statsRow}>
-        <div className={styles.statCard}>
-          <span className={styles.statValue}>{union.clubCount}</span>
-          <span className={styles.statLabel}>Member Clubs</span>
-        </div>
-        <div className={styles.statCard}>
-          <span
-            className={styles.statValue}
-            style={{
-              background: 'linear-gradient(135deg, #f5c842, #e6a817)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              fontWeight: 800,
-            }}
-          >
-            Lv.{union.level || 1}
-          </span>
-          <span className={styles.statLabel}>Union Level</span>
-        </div>
-        <div className={styles.statCard}>
-          <span className={styles.statValue}>{union.memberCount.toLocaleString()}</span>
-          <span className={styles.statLabel}>Total Players</span>
-        </div>
-        <div className={styles.statCard}>
-          <span className={`${styles.statValue} ${styles.online}`}>
-            {onlineCount.toLocaleString()}
-          </span>
-          <span className={styles.statLabel}>Online Now</span>
-        </div>
+      {(() => {
+        const uLevel = getUnionLevel({
+          level: union.level,
+          playerLevel: union.playerLevel,
+          hierarchyLevel: union.hierarchyLevel,
+          totalPlayers: union.totalPlayers || union.memberCount,
+          hierarchyUnitsRoundedUp: union.hierarchyUnitsRoundedUp,
+          playerThresholdCurrent: union.playerThresholdCurrent,
+          playerThresholdNext: union.playerThresholdNext,
+          hierarchyThresholdCurrent: union.hierarchyThresholdCurrent,
+          hierarchyThresholdNext: union.hierarchyThresholdNext,
+        });
+        return (
+          <>
+            <div className={styles.statsRow}>
+              <div className={styles.statCard}>
+                <span className={styles.statValue}>{union.clubCount}</span>
+                <span className={styles.statLabel}>Member Clubs</span>
+              </div>
+              <div className={styles.statCard}>
+                <span
+                  className={styles.statValue}
+                  style={{
+                    background: uLevel.gradient,
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent',
+                    fontWeight: 800,
+                  }}
+                >
+                  Lv.{uLevel.level}
+                </span>
+                <span className={styles.statLabel} style={{ color: uLevel.color, fontWeight: 600 }}>
+                  {uLevel.tierLabel}
+                </span>
+              </div>
+              <div className={styles.statCard}>
+                <span className={styles.statValue}>{union.memberCount.toLocaleString()}</span>
+                <span className={styles.statLabel}>Total Players</span>
+              </div>
+              <div className={styles.statCard}>
+                <span className={`${styles.statValue} ${styles.online}`}>
+                  {onlineCount.toLocaleString()}
+                </span>
+                <span className={styles.statLabel}>Online Now</span>
+              </div>
         {financialSummary && (
           <div className={styles.statCard}>
             <span className={styles.statValue}>

@@ -11,6 +11,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import CreateUnionModal from '../components/union/CreateUnionModal';
 import { unionService, type Union } from '../services/UnionService';
+import { getUnionLevel } from '../utils/clubLevels';
 import { masterBus } from '../core/MasterBus';
 import { useToast } from '../components/common/Toast';
 
@@ -60,34 +61,78 @@ function UnionCard({ union, idx }: { union: Union; idx: number }) {
         <h3>{union.name}</h3>
       </div>
       <p className="union-description">{union.description}</p>
-      <div className="union-stats">
-        <div className="union-stat">
-          <span className="stat-value">{union.clubCount}</span>
-          <span className="stat-label">Clubs</span>
-        </div>
-        <div className="union-stat">
-          <span
-            className="stat-value"
-            style={{
-              background: 'linear-gradient(135deg, #f5c842, #e6a817)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              fontWeight: 800,
-            }}
-          >
-            Lv.{union.level || 1}
-          </span>
-          <span className="stat-label">Level</span>
-        </div>
-        <div className="union-stat">
-          <span className="stat-value">{memberDisplay.toLocaleString()}</span>
-          <span className="stat-label">Members</span>
-        </div>
-        <div className="union-stat">
-          <span className="stat-value online">{onlineDisplay.toLocaleString()}</span>
-          <span className="stat-label">Online</span>
-        </div>
-      </div>
+      {(() => {
+        const uLevel = getUnionLevel({
+          level: union.level,
+          playerLevel: union.playerLevel,
+          hierarchyLevel: union.hierarchyLevel,
+          totalPlayers: union.totalPlayers || union.memberCount,
+          hierarchyUnitsRoundedUp: union.hierarchyUnitsRoundedUp,
+          playerThresholdCurrent: union.playerThresholdCurrent,
+          playerThresholdNext: union.playerThresholdNext,
+          hierarchyThresholdCurrent: union.hierarchyThresholdCurrent,
+          hierarchyThresholdNext: union.hierarchyThresholdNext,
+        });
+        return (
+          <>
+            <div className="union-stats">
+              <div className="union-stat">
+                <span className="stat-value">{union.clubCount}</span>
+                <span className="stat-label">Clubs</span>
+              </div>
+              <div className="union-stat">
+                <span
+                  className="stat-value"
+                  style={{
+                    background: uLevel.gradient,
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent',
+                    fontWeight: 800,
+                  }}
+                >
+                  Lv.{uLevel.level}
+                </span>
+                <span className="stat-label" style={{ color: uLevel.color, fontSize: '0.6rem', fontWeight: 600 }}>
+                  {uLevel.tierLabel}
+                </span>
+              </div>
+              <div className="union-stat">
+                <span className="stat-value">{memberDisplay.toLocaleString()}</span>
+                <span className="stat-label">Members</span>
+              </div>
+              <div className="union-stat">
+                <span className="stat-value online">{onlineDisplay.toLocaleString()}</span>
+                <span className="stat-label">Online</span>
+              </div>
+            </div>
+            {/* Level Progress Bar */}
+            <div style={{
+              width: '100%',
+              height: '4px',
+              background: 'rgba(255,255,255,0.08)',
+              borderRadius: '2px',
+              margin: '8px 0 4px',
+              overflow: 'hidden',
+            }}>
+              <div style={{
+                width: `${uLevel.progressPercent}%`,
+                height: '100%',
+                background: uLevel.gradient,
+                borderRadius: '2px',
+                transition: 'width 0.6s ease-out',
+              }} />
+            </div>
+            <div style={{
+              textAlign: 'right',
+              fontSize: '0.55rem',
+              color: 'rgba(255,255,255,0.4)',
+              marginBottom: '4px',
+            }}>
+              {uLevel.progressPercent}% to Lv.{Math.min(uLevel.level + 1, 50)}
+            </div>
+          </>
+        );
+      })()}
       <Link
         to={`/unions/${union.id}`}
         className="btn btn-primary"

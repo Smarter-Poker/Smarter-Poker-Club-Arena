@@ -482,6 +482,8 @@ export class TournamentEngine {
       is_pko: data.is_pko || false,
       is_mystery_bounty: data.is_mystery_bounty || false,
       bounty_amount: data.bounty_amount || 0,
+      // Satellite fields
+      satellite_target: data.satellite_target || null,
     };
   }
 

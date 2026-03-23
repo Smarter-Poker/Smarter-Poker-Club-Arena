@@ -47,6 +47,7 @@ interface ClockState {
   totalChips: number;
   tournamentName: string;
   isPaused: boolean;
+  breakStartTime?: number; // Track when break started for countdown
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -74,6 +75,7 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
     totalChips: 0,
     tournamentName: '',
     isPaused: false,
+    breakStartTime: undefined,
   });
 
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -102,13 +104,14 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
         nextBigBlind: levelState.nextLevel?.bigBlind || 0,
         nextAnte: levelState.nextLevel?.ante || 0,
         timeRemaining: levelState.timeRemainingSeconds,
-        isBreak: timerState?.isPaused || false,
+        isBreak: false, // Will be updated via BREAK_START event
         breakTimeRemaining: 0,
         playersRemaining,
         averageStack,
         totalChips,
         tournamentName: tournament.name || 'Tournament',
         isPaused: timerState?.isPaused || false,
+        breakStartTime: undefined,
       });
     } catch (err) {
       console.error('[TournamentClock] Refresh error:', err);
@@ -121,10 +124,23 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
 
     // Tick every second for smooth countdown
     tickRef.current = setInterval(() => {
-      setClock((prev) => ({
-        ...prev,
-        timeRemaining: Math.max(0, prev.timeRemaining - 1),
-      }));
+      setClock((prev) => {
+        // Update break countdown if in a break
+        if (prev.isBreak && prev.breakStartTime) {
+          const elapsed = (Date.now() - prev.breakStartTime) / 1000;
+          const breakDuration = 300; // 5 minutes default
+          const remaining = Math.max(0, breakDuration - elapsed);
+          return {
+            ...prev,
+            breakTimeRemaining: Math.floor(remaining),
+          };
+        }
+        // Normal level countdown
+        return {
+          ...prev,
+          timeRemaining: Math.max(0, prev.timeRemaining - 1),
+        };
+      });
     }, 1000);
 
     // Full refresh from DB every 30s
@@ -151,6 +167,30 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
         smallBlind: payload.smallBlind,
         bigBlind: payload.bigBlind,
         ante: payload.ante,
+        isBreak: false, // Clear break status on new level
+        breakTimeRemaining: 0,
+        breakStartTime: undefined,
+      }));
+    }
+  });
+  // Listen for break start/end events
+  useMasterBusSubscription('BREAK_START', (payload: any) => {
+    if (payload?.tournamentId === tournamentId) {
+      setClock((prev) => ({
+        ...prev,
+        isBreak: true,
+        breakTimeRemaining: payload.durationMinutes ? payload.durationMinutes * 60 : 300,
+        breakStartTime: Date.now(),
+      }));
+    }
+  });
+  useMasterBusSubscription('BREAK_END', (payload: any) => {
+    if (payload?.tournamentId === tournamentId) {
+      setClock((prev) => ({
+        ...prev,
+        isBreak: false,
+        breakTimeRemaining: 0,
+        breakStartTime: undefined,
       }));
     }
   });

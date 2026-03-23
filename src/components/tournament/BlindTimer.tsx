@@ -13,6 +13,7 @@ interface BlindLevel {
   bigBlind: number;
   ante: number;
   duration: number; // minutes
+  isBreak?: boolean; // Indicates if this is a break level
 }
 
 interface BlindTimerProps {
@@ -33,6 +34,7 @@ export const BlindTimer: React.FC<BlindTimerProps> = ({
   const [timeRemaining, setTimeRemaining] = useState(0);
   const [isUrgent, setIsUrgent] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [isBreak, setIsBreak] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -40,10 +42,24 @@ export const BlindTimer: React.FC<BlindTimerProps> = ({
   }, []);
 
   const current = levels[currentLevel - 1];
-  const next = levels[currentLevel];
+
+  // Find next non-break level for preview
+  const findNextNonBreakLevel = (startIdx: number): BlindLevel | undefined => {
+    for (let i = startIdx; i < levels.length; i++) {
+      if (!levels[i]?.isBreak) {
+        return levels[i];
+      }
+    }
+    return undefined;
+  };
+
+  const next = findNextNonBreakLevel(currentLevel);
 
   useEffect(() => {
     if (!current) return;
+
+    // Check if current level is a break
+    setIsBreak(current.isBreak || false);
 
     const calculateRemaining = () => {
       const start = new Date(levelStartTime).getTime();
@@ -80,7 +96,7 @@ export const BlindTimer: React.FC<BlindTimerProps> = ({
 
   return (
     <div
-      className={`blind-timer ${isUrgent ? 'urgent' : ''} ${isPaused ? 'paused' : ''}`}
+      className={`blind-timer ${isUrgent ? 'urgent' : ''} ${isPaused ? 'paused' : ''} ${isBreak ? 'break' : ''}`}
       style={{
         opacity: mounted ? 1 : 0,
         transform: mounted ? 'translateY(0)' : 'translateY(8px)',
@@ -90,31 +106,46 @@ export const BlindTimer: React.FC<BlindTimerProps> = ({
     >
       {/* Current Level */}
       <div className="timer-header">
-        <span className="level-label">Level {currentLevel}</span>
-        {isPaused && <span className="paused-badge">PAUSED</span>}
-      </div>
-
-      {/* Blinds Display */}
-      <div className="blinds-display">
-        <div className="blind-value">
-          <span className="blind-amount">{formatChips(current.smallBlind)}</span>
-          <span className="blind-label">SB</span>
-        </div>
-        <span className="blind-separator">/</span>
-        <div className="blind-value">
-          <span className="blind-amount">{formatChips(current.bigBlind)}</span>
-          <span className="blind-label">BB</span>
-        </div>
-        {current.ante > 0 && (
+        {isBreak ? (
           <>
-            <span className="ante-separator">+</span>
-            <div className="blind-value ante">
-              <span className="blind-amount">{formatChips(current.ante)}</span>
-              <span className="blind-label">Ante</span>
-            </div>
+            <span className="level-label break-label">☕ BREAK</span>
+            {isPaused && <span className="paused-badge">PAUSED</span>}
+          </>
+        ) : (
+          <>
+            <span className="level-label">Level {currentLevel}</span>
+            {isPaused && <span className="paused-badge">PAUSED</span>}
           </>
         )}
       </div>
+
+      {/* Blinds Display or Break Message */}
+      {!isBreak ? (
+        <div className="blinds-display">
+          <div className="blind-value">
+            <span className="blind-amount">{formatChips(current.smallBlind)}</span>
+            <span className="blind-label">SB</span>
+          </div>
+          <span className="blind-separator">/</span>
+          <div className="blind-value">
+            <span className="blind-amount">{formatChips(current.bigBlind)}</span>
+            <span className="blind-label">BB</span>
+          </div>
+          {current.ante > 0 && (
+            <>
+              <span className="ante-separator">+</span>
+              <div className="blind-value ante">
+                <span className="blind-amount">{formatChips(current.ante)}</span>
+                <span className="blind-label">Ante</span>
+              </div>
+            </>
+          )}
+        </div>
+      ) : (
+        <div className="blinds-display break-message">
+          <span>Tournament on Break</span>
+        </div>
+      )}
 
       {/* Countdown */}
       <div className={`countdown ${isUrgent ? 'pulse' : ''}`}>
@@ -122,7 +153,7 @@ export const BlindTimer: React.FC<BlindTimerProps> = ({
       </div>
 
       {/* Next Level Preview */}
-      {next && (
+      {next && !isBreak && (
         <div className="next-level">
           <span className="next-label">Next:</span>
           <span className="next-blinds">

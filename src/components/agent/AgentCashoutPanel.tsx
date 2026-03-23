@@ -11,6 +11,7 @@ import { cashoutService, CashoutRequest } from '../../services/CashoutService';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { masterBus } from '../../core/MasterBus';
 import { supabase } from '../../lib/supabase';
+import { checkSettlementLock } from '../../utils/settlementLock';
 import { formatRelativeShort as formatTime } from '@/lib/date';
 import './AgentCashoutPanel.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
@@ -54,9 +55,6 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
   useEffect(() => {
     loadCashouts();
 
-    // Poll for updates every 30s as fallback
-    const interval = setInterval(loadCashouts, 30000);
-
     // Bus listener: instant refresh when any balance changes (cashout requested/cancelled)
     const unsubBalance = masterBus.subscribeDebounced(
       'BALANCE_UPDATED',
@@ -66,10 +64,19 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
       500
     );
 
-    // Supabase real-time: instant refresh on cashout_requests changes (cross-device)
+    // Bus listener: refresh when data mutations occur (replaces 30s polling)
+    const unsubMutation = masterBus.subscribeDebounced(
+      'DATA_MUTATED',
+      () => {
+        loadCashouts();
+      },
+      500
+    );
+
+    // Supabase real-time via masterBus channel manager: instant refresh on cashout_requests changes
     const channelKey = `agent-cashouts-${user?.id || 'anon'}`;
-    const channel = supabase
-      .channel(channelKey)
+    const channel = masterBus
+      .getOrCreateChannel(channelKey)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'cashout_requests' }, () => {
         loadCashouts();
       })
@@ -83,9 +90,9 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
       });
 
     return () => {
-      clearInterval(interval);
       unsubBalance();
-      supabase.removeChannel(channel);
+      unsubMutation();
+      masterBus.removeRegisteredChannel(channelKey);
       staggerTimersRef.current.forEach((t) => clearTimeout(t));
       staggerTimersRef.current = [];
     };
@@ -97,11 +104,25 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
     setProcessing(cashout.id);
     setError(null);
 
+    // SETTLEMENT FREEZE CHECK
+    try {
+      const lockResult = await checkSettlementLock(clubId || '');
+      if (lockResult.locked) {
+        if (isMounted.current) setError('🔒 Settlement in progress — cashout actions frozen');
+        if (isMounted.current) setProcessing(null);
+        return;
+      }
+    } catch {
+      // Fail-open
+    }
+
     try {
       await cashoutService.approveCashout(cashout.id, user.id);
       await cashoutService.completeCashout(cashout.id, user.id);
       loadCashouts();
       onCashoutProcessed?.();
+      // Emit bus event so DynamicWallet and CashierPage refresh
+      masterBus.emit('BALANCE_UPDATED', { source: 'cashout_approved', playerId: cashout.playerId });
     } catch (err: any) {
       if (isMounted.current) setError(err.message || 'Failed to approve cashout');
     }
@@ -114,10 +135,24 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
     setProcessing(cashout.id);
     setError(null);
 
+    // SETTLEMENT FREEZE CHECK
+    try {
+      const lockResult = await checkSettlementLock(clubId || '');
+      if (lockResult.locked) {
+        if (isMounted.current) setError('🔒 Settlement in progress — cashout actions frozen');
+        if (isMounted.current) setProcessing(null);
+        return;
+      }
+    } catch {
+      // Fail-open
+    }
+
     try {
       await cashoutService.rejectCashout(cashout.id, user.id, reason);
       loadCashouts();
       onCashoutProcessed?.();
+      // Emit bus event so DynamicWallet and CashierPage refresh
+      masterBus.emit('BALANCE_UPDATED', { source: 'cashout_rejected', playerId: cashout.playerId });
     } catch (err: any) {
       if (isMounted.current) setError(err.message || 'Failed to reject cashout');
     }

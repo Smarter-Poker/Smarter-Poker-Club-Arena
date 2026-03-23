@@ -282,16 +282,16 @@ export default function LeaderboardPage() {
     try {
       const memberships = await getUserMemberships(user);
       const clubs = memberships
-        .map((m: any) => ({
-          id: m.club?.id || m.club_id,
+        .map((m) => ({
+          id: (m.club?.id || m.club_id) as string,
           name: m.club?.name || 'Unknown Club',
         }))
-        .filter((c: UserClub) => c.id);
+        .filter((c): c is UserClub => Boolean(c.id));
 
       if (getIsMounted && !getIsMounted()) return;
-      setUserClubs(clubs);
+      setUserClubs(clubs as UserClub[]);
       if (clubs.length > 0 && !selectedClubId) {
-        setSelectedClubId(clubs[0].id);
+        setSelectedClubId(clubs[0].id as string);
       }
     } catch (error) {
       console.error('Failed to load clubs:', error);

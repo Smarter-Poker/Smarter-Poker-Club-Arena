@@ -105,6 +105,8 @@ function TransactionHistoryInner({ walletId, limit = 20 }: TransactionHistoryPro
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>('all');
+  const [txPage, setTxPage] = useState(1);
+  const TX_PAGE_SIZE = 25;
   const isMounted = useIsMounted();
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadRef = useRef<() => void>(() => {});
@@ -184,6 +186,10 @@ function TransactionHistoryInner({ walletId, limit = 20 }: TransactionHistoryPro
           ? transactions.filter((t) => t.type === 'debit')
           : transactions.filter((t) => t.category === filter);
 
+  // Paginate: show txPage * TX_PAGE_SIZE items
+  const visibleTransactions = filteredTransactions.slice(0, txPage * TX_PAGE_SIZE);
+  const hasMore = filteredTransactions.length > visibleTransactions.length;
+
   if (loading) {
     return <div className="transaction-history loading">Loading...</div>;
   }
@@ -210,7 +216,7 @@ function TransactionHistoryInner({ walletId, limit = 20 }: TransactionHistoryPro
         <div className="empty-state">No transactions</div>
       ) : (
         <div className="transaction-list">
-          {filteredTransactions.map((tx, i) => (
+          {visibleTransactions.map((tx, i) => (
             <div key={tx.id} className={`transaction-row ${tx.type}`} style={txStyle(i)}>
               <span className="icon">{CATEGORY_ICONS[tx.category] || '●'}</span>
               <div className="details">
@@ -232,6 +238,25 @@ function TransactionHistoryInner({ walletId, limit = 20 }: TransactionHistoryPro
               </span>
             </div>
           ))}
+          {hasMore && (
+            <button
+              onClick={() => setTxPage((p) => p + 1)}
+              style={{
+                width: '100%',
+                padding: '10px',
+                marginTop: '8px',
+                background: 'rgba(255,255,255,0.05)',
+                border: '1px solid rgba(255,255,255,0.1)',
+                borderRadius: '8px',
+                color: '#94a3b8',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              Load More ({filteredTransactions.length - visibleTransactions.length} remaining)
+            </button>
+          )}
         </div>
       )}
     </div>

@@ -438,6 +438,7 @@ class TournamentTimerServiceClass {
     nextAnte: number;
     timeRemainingSeconds: number;
     isPaused: boolean;
+    isBreak: boolean;
     breakInterval: number;
   } | null> {
     const timer = this.activeTimers.get(tournamentId);
@@ -447,6 +448,11 @@ class TournamentTimerServiceClass {
     if (!tournament) return null;
 
     const levelState = tournamentService.getCurrentLevelState(tournament);
+    const blindStructure = tournament.blind_structure || [];
+
+    // Check if current level is a break level
+    const currentLevelDef = blindStructure[levelState.levelIndex];
+    const isCurrentBreak = currentLevelDef?.isBreak || false;
 
     return {
       tournamentId,
@@ -459,6 +465,7 @@ class TournamentTimerServiceClass {
       nextAnte: levelState.nextLevel?.ante || 0,
       timeRemainingSeconds: levelState.timeRemainingSeconds,
       isPaused: timer.isPaused,
+      isBreak: isCurrentBreak,
       breakInterval: this.breakIntervals.get(tournamentId) || 6,
     };
   }

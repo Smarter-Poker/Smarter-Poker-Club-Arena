@@ -10,6 +10,7 @@ import { useIsMounted } from '../../hooks/useIsMounted';
 import { cashoutService, CashoutRequest } from '../../services/CashoutService';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
+import { checkSettlementLock } from '../../utils/settlementLock';
 import { formatRelativeShort as formatTime } from '@/lib/date';
 import './CashoutRequestModal.css';
 
@@ -173,8 +174,8 @@ export default function CashoutRequestModal({
     if (!isOpen || !playerId) return;
 
     const channelKey = `cashout-modal-${playerId}`;
-    const channel = supabase
-      .channel(channelKey)
+    const channel = masterBus
+      .getOrCreateChannel(channelKey)
       .on(
         'postgres_changes',
         {
@@ -206,7 +207,7 @@ export default function CashoutRequestModal({
     );
 
     return () => {
-      supabase.removeChannel(channel);
+      masterBus.removeRegisteredChannel(channelKey);
       unsubBalance();
     };
   }, [isOpen, playerId, clubId]);
@@ -237,6 +238,18 @@ export default function CashoutRequestModal({
 
     setIsSubmitting(true);
     setError(null);
+
+    // SETTLEMENT FREEZE CHECK — block cashout requests during active settlements
+    try {
+      const lockResult = await checkSettlementLock(clubId);
+      if (lockResult.locked) {
+        setError('🔒 Settlement in progress — cashout requests frozen');
+        setIsSubmitting(false);
+        return;
+      }
+    } catch {
+      // Fail-open: allow cashout if settlement check fails
+    }
 
     try {
       await cashoutService.requestCashout(playerId, clubId, cashoutAmount, note || undefined);
@@ -274,7 +287,7 @@ export default function CashoutRequestModal({
   if (!isOpen) return null;
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" onClick={onClose} role="dialog" aria-modal="true" aria-labelledby="cashout-modal-title">
       <div className="cashout-modal" onClick={(e) => e.stopPropagation()}>
         {/* Bottom-sheet drag handle */}
         <div className="cashout-drag-handle" />

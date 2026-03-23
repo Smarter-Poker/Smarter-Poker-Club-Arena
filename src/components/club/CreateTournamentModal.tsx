@@ -15,7 +15,17 @@ interface Props {
   onSuccess: () => void;
 }
 
-type TournamentFormat = 'mtt' | 'sng' | 'bounty' | 'progressive_bounty' | 'mystery_bounty' | 'spin';
+type TournamentFormat =
+  | 'mtt_freezeout'
+  | 'mtt_rebuy'
+  | 'mtt_reentry'
+  | 'sng'
+  | 'bounty'
+  | 'progressive_bounty'
+  | 'mystery_bounty'
+  | 'spin'
+  | 'satellite'
+  | 'xmtt';
 
 export default function CreateTournamentModal({ clubId, unionId, onClose, onSuccess }: Props) {
   const toast = useToast();
@@ -32,7 +42,7 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
 
   // ── Core Config ──
   const [name, setName] = useState('');
-  const [format, setFormat] = useState<TournamentFormat>('mtt');
+  const [format, setFormat] = useState<TournamentFormat>('mtt_freezeout');
   const [gameVariant, setGameVariant] = useState<
     'NLH' | 'PLO4' | 'PLO5' | 'PLO8' | 'OFC_PINEAPPLE' | 'SHORT_DECK'
   >('NLH');
@@ -53,12 +63,14 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
   const [lateRegLevels, setLateRegLevels] = useState('8');
 
   // ── Rebuy / Re-Entry / Add-On ──
-  const [isRebuy, setIsRebuy] = useState(false);
-  const [isReentry, setIsReentry] = useState(false);
+  // Note: isRebuy/isReentry are managed via format selection, but kept for backward compat
+  const isRebuy = format === 'mtt_rebuy';
+  const isReentry = format === 'mtt_reentry';
   const [rebuyCost, setRebuyCost] = useState('');
   const [rebuyChips, setRebuyChips] = useState('');
   // rebuyLevels is derived from lateRegLevels (always the same cutoff)
-  const [addOnAvailable, setAddOnAvailable] = useState(false);
+  // Auto-enable add-on for rebuy/reentry formats
+  const [addOnAvailable, setAddOnAvailable] = useState(isRebuy || isReentry);
   const [addOnCost, setAddOnCost] = useState('');
   const [addOnChips, setAddOnChips] = useState('');
   const [addOnLevels, setAddOnLevels] = useState('1');
@@ -88,11 +100,13 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
       if (mp <= 6) return PAYOUT_STRUCTURES.sng6;
       return PAYOUT_STRUCTURES.sng9;
     }
-    // MTT / Bounty / PKO / Mystery — no max player limit, use standard MTT payouts
+    // MTT / Bounty / PKO / Mystery / Satellite / XMTT — no max player limit, use standard MTT payouts
     return PAYOUT_STRUCTURES.mtt50;
   }, [maxPlayers, format]);
 
   const isSngOrSpin = format === 'sng' || format === 'spin';
+  const isSatellite = format === 'satellite';
+  const isXmtt = format === 'xmtt';
 
   // ── Auto-set defaults when format changes ──
   const handleFormatChange = (f: TournamentFormat) => {
@@ -103,25 +117,44 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
         setLateRegLevels('0');
         setStartTimeMode('now');
         setIsMultiDay(false);
+        setAddOnAvailable(false);
         break;
       case 'spin':
         setMaxPlayers('3');
         setLateRegLevels('0');
         setStartTimeMode('now');
         setIsMultiDay(false);
-        setIsRebuy(false);
-        setIsReentry(false);
         setAddOnAvailable(false);
+        break;
+      case 'mtt_rebuy':
+      case 'mtt_reentry':
+        setMaxPlayers('0');
+        setLateRegLevels('8');
+        setAddOnAvailable(true);
         break;
       case 'bounty':
       case 'progressive_bounty':
       case 'mystery_bounty':
-        setMaxPlayers('0'); // Unlimited — max players only for SNG/Spin
+        setMaxPlayers('0'); // Unlimited
         setLateRegLevels('10');
+        setAddOnAvailable(false);
         break;
-      default:
-        setMaxPlayers('0'); // Unlimited — max players only for SNG/Spin
+      case 'satellite':
+        setMaxPlayers('0'); // Unlimited
         setLateRegLevels('8');
+        setAddOnAvailable(false);
+        break;
+      case 'xmtt':
+        setMaxPlayers('0'); // Unlimited (union-level)
+        setLateRegLevels('8');
+        setAddOnAvailable(false);
+        setIsMultiDay(true); // XMTTs are typically multi-day
+        break;
+      case 'mtt_freezeout':
+      default:
+        setMaxPlayers('0'); // Unlimited
+        setLateRegLevels('8');
+        setAddOnAvailable(false);
     }
   };
 
@@ -166,14 +199,24 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
         startTime = new Date(Date.now() + 60 * 1000);
       }
 
+      // Map new format types to internal service format
+      const serviceFormat = format
+        .replace('mtt_freezeout', 'mtt')
+        .replace('mtt_rebuy', 'mtt')
+        .replace('mtt_reentry', 'mtt')
+        .replace('progressive_bounty', 'progressive_bounty')
+        .replace('mystery_bounty', 'mystery_bounty')
+        .replace('satellite', 'satellite')
+        .replace('xmtt', 'xmtt');
+
       await tournamentService.createTournament(clubId, {
         name,
-        type: format,
+        type: serviceFormat,
         gameVariant,
         buyIn: parsedBuyIn,
         rake: parsedRake,
         startingStack: parseInt(startingChips),
-        maxPlayers: isSngOrSpin ? parseInt(maxPlayers) : 0, // 0 = unlimited for MTT/Bounty/PKO/Mystery
+        maxPlayers: isSngOrSpin ? parseInt(maxPlayers) : 0, // 0 = unlimited for MTT/Bounty/PKO/Mystery/Satellite
         minPlayers: 3,
         blindStructure: BLIND_STRUCTURES[blindSpeed],
         payoutStructure,
@@ -343,12 +386,24 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
               value={format}
               onChange={(e) => handleFormatChange(e.target.value as TournamentFormat)}
             >
-              <option value="mtt">Multi-Table (MTT)</option>
-              <option value="sng">Sit & Go (SNG)</option>
-              <option value="bounty">Bounty (KO)</option>
-              <option value="progressive_bounty">Progressive KO (PKO)</option>
-              <option value="mystery_bounty">Mystery Bounty</option>
-              <option value="spin">Spin & Go</option>
+              <optgroup label="Multi-Table Tournaments">
+                <option value="mtt_freezeout">MTT (Freezeout)</option>
+                <option value="mtt_rebuy">MTT (Rebuy)</option>
+                <option value="mtt_reentry">MTT (Re-Entry)</option>
+              </optgroup>
+              <optgroup label="Sit & Go">
+                <option value="sng">Sit & Go (SNG)</option>
+                <option value="spin">Spin & Go</option>
+              </optgroup>
+              <optgroup label="Bounty Tournaments">
+                <option value="bounty">Bounty (KO)</option>
+                <option value="progressive_bounty">Progressive KO (PKO)</option>
+                <option value="mystery_bounty">Mystery Bounty</option>
+              </optgroup>
+              <optgroup label="Special Tournaments">
+                <option value="satellite">Satellite</option>
+                {unionId && <option value="xmtt">Union MTT (XMTT)</option>}
+              </optgroup>
             </select>
           </div>
 
@@ -505,7 +560,7 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
           </div>
 
           {/* ── Start Time ── */}
-          {format !== 'sng' && format !== 'spin' && (
+          {format !== 'sng' && format !== 'spin' && !isSatellite && (
             <div className={styles.formGroup}>
               <label>Start Time</label>
               <div className={styles.row}>

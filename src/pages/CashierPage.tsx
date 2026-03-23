@@ -36,7 +36,7 @@ import ClubBottomNav from '../components/club/ClubBottomNav';
 
 import { useToast } from '../components/common/Toast';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
-import { resolveClubIdFilter, resolveClubUUID } from '../utils/clubIdResolver';
+import { resolveClubUUID } from '../utils/clubIdResolver';
 import { checkSettlementLock } from '../utils/settlementLock';
 import AgentPromoPanel from '../components/agent/AgentPromoPanel';
 import CashoutRequestModal from '../components/wallet/CashoutRequestModal';
@@ -294,55 +294,45 @@ export default function CashierPage() {
     if (!clubId || !user?.id) return;
     try {
       const resolvedId = await resolveClubUUID(clubId);
-      // Get user's role in this club
-      const { data: memberData } = await retryFetch(
-        () =>
-          supabase
-            .from('club_members')
-            .select('role')
-            .eq('club_id', resolvedId)
-            .eq('user_id', user.id)
-            .maybeSingle()
-            .then((r) => r),
-        { maxRetries: 2, isMountedRef: isMounted }
-      );
       if (!isMounted.current) return;
-      const role = memberData?.role || 'member';
+
+      // PERF: Parallelize role + club data queries (was 4 sequential, now 2 parallel)
+      const [memberResult, clubResult] = await Promise.all([
+        // Query 1: user role
+        retryFetch(
+          () =>
+            supabase
+              .from('club_members')
+              .select('role')
+              .eq('club_id', resolvedId)
+              .eq('user_id', user.id)
+              .maybeSingle()
+              .then((r) => r),
+          { maxRetries: 2, isMountedRef: isMounted }
+        ),
+        // Query 2: club name + union_id (combined — was 2 separate queries)
+        retryFetch(
+          () =>
+            supabase
+              .from('clubs')
+              .select('name, union_id')
+              .eq('id', resolvedId)
+              .maybeSingle()
+              .then((r) => r),
+          { maxRetries: 2, isMountedRef: isMounted }
+        ),
+      ]);
+      if (!isMounted.current) return;
+
+      const role = memberResult?.data?.role || 'member';
       setUserRole(role);
+      setClubName(clubResult?.data?.name || '');
 
-      // Get club name
-      const { column: clubCol, value: clubVal } = resolveClubIdFilter(clubId);
-      const { data: clubData } = await retryFetch(
-        () =>
-          supabase
-            .from('clubs')
-            .select('name')
-            .eq(clubCol, clubVal)
-            .maybeSingle()
-            .then((r) => r),
-        { maxRetries: 2, isMountedRef: isMounted }
-      );
-      if (!isMounted.current) return;
-      setClubName(clubData?.name || '');
-
-      // Check if club is in a union — use clubs.union_id as primary check (more reliable),
-      // fall back to union_clubs table. Avoid !inner join which can fail silently with RLS.
-      const { data: clubForUnion } = await retryFetch(
-        () =>
-          supabase
-            .from('clubs')
-            .select('union_id')
-            .eq('id', resolvedId)
-            .maybeSingle()
-            .then((r) => r),
-        { maxRetries: 2, isMountedRef: isMounted }
-      );
-
-      if (!isMounted.current) return;
-      const detectedUnionId = clubForUnion?.union_id;
+      // Union check — derived from combined query above
+      const detectedUnionId = clubResult?.data?.union_id;
       if (detectedUnionId) {
         setIsInUnion(true);
-        // Check if this user is the union owner
+        // Only need 1 more query: union owner check
         const { data: unionData } = await retryFetch(
           () =>
             supabase
@@ -354,9 +344,7 @@ export default function CashierPage() {
           { maxRetries: 2, isMountedRef: isMounted }
         );
         if (!isMounted.current) return;
-        if (isMounted.current) {
-          setIsUnionOwner(unionData?.owner_id === user.id);
-        }
+        setIsUnionOwner(unionData?.owner_id === user.id);
       } else {
         setIsInUnion(false);
         setIsUnionOwner(false);
@@ -1275,14 +1263,7 @@ export default function CashierPage() {
 
   return (
     <div className={styles.page}>
-      {/* ── Loading skeleton during initial club context fetch ── */}
-      {loadingContext && user?.id && clubId && (
-        <div className={styles.loadingSkeleton} role="status" aria-label="Loading cashier data">
-          <div className={styles.skeletonBar} style={{ width: '60%', height: 24 }} />
-          <div className={styles.skeletonBar} style={{ width: '40%', height: 18, marginTop: 8 }} />
-          <div className={styles.skeletonBar} style={{ width: '80%', height: 40, marginTop: 16 }} />
-        </div>
-      )}
+      {/* Loading context skeleton — shown INSIDE content area, NOT blocking tabs/nav */}
 
       {/* ── Wallet Display — always visible, real-time updates ── */}
       {user?.id && clubId && (

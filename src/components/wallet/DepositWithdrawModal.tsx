@@ -8,6 +8,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
+import { masterBus } from '../../core/MasterBus';
 import { useToast } from '../common/Toast';
 import styles from './DepositWithdrawModal.module.css';
 
@@ -350,6 +351,8 @@ export default function DepositWithdrawModal({
       setStep('success');
       triggerHaptic([20, 100, 20]);
       onComplete?.();
+      // Emit bus event so DynamicWallet and other components refresh balances
+      masterBus.emit('BALANCE_UPDATED', { source: mode, amount: numericAmount });
     } catch (err) {
       console.error(`${mode} failed:`, err);
       if (isMounted.current) {
@@ -375,7 +378,7 @@ export default function DepositWithdrawModal({
   if (!isOpen) return null;
 
   return (
-    <div className={styles.overlay} onClick={handleClose}>
+    <div className={styles.overlay} onClick={handleClose} role="dialog" aria-modal="true" aria-labelledby="deposit-withdraw-modal-title">
       <div
         className={styles.modal}
         onClick={(e) => e.stopPropagation()}

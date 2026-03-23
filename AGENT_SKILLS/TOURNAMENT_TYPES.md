@@ -44,7 +44,7 @@ The Club Arena supports multiple tournament formats. Each has unique rules, UI t
   - 25x: 1,500/1,000,000 (0.15%)
   - 100x: 400/1,000,000 (0.04%)
   - 1000x: 100/1,000,000 (0.01%)
-- **Prize Pool**: `(buy_in - fee) * 3 * multiplier`
+- **Prize Pool**: `buy_in_amount * multiplier` (e.g., $10 buy-in × 2x = $20 prize pool; players pay 3×$10=$30, so club profit = $30 - $20 + 3×fee)
 - **Stored**: `spin_multiplier`, `is_premium_spin` (≥100x) in tournaments table
 - **Blinds**: Hyper-turbo (very short levels)
 - **Hand-for-hand**: NOT used (single table)

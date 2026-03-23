@@ -134,38 +134,115 @@ export const BLIND_STRUCTURES = {
   turbo: [
     { level: 1, smallBlind: 10, bigBlind: 20, ante: 0, durationMinutes: 3 },
     { level: 2, smallBlind: 15, bigBlind: 30, ante: 0, durationMinutes: 3 },
-    { level: 3, smallBlind: 25, bigBlind: 50, ante: 5, durationMinutes: 3 },
-    { level: 4, smallBlind: 50, bigBlind: 100, ante: 10, durationMinutes: 3 },
-    { level: 5, smallBlind: 75, bigBlind: 150, ante: 15, durationMinutes: 3 },
-    { level: 6, smallBlind: 100, bigBlind: 200, ante: 20, durationMinutes: 3 },
-    { level: 7, smallBlind: 150, bigBlind: 300, ante: 30, durationMinutes: 3 },
-    { level: 8, smallBlind: 200, bigBlind: 400, ante: 40, durationMinutes: 3 },
-    { level: 9, smallBlind: 300, bigBlind: 600, ante: 60, durationMinutes: 3 },
-    { level: 10, smallBlind: 400, bigBlind: 800, ante: 80, durationMinutes: 3 },
+    { level: 3, smallBlind: 25, bigBlind: 50, ante: 0, durationMinutes: 3 },
+    { level: 4, smallBlind: 50, bigBlind: 100, ante: 5, durationMinutes: 3 },
+    { level: 5, smallBlind: 75, bigBlind: 150, ante: 10, durationMinutes: 3 },
+    { level: 6, smallBlind: 100, bigBlind: 200, ante: 15, durationMinutes: 3 },
+    { level: 7, smallBlind: 150, bigBlind: 300, ante: 25, durationMinutes: 3, isBreak: true },
+    { level: 8, smallBlind: 200, bigBlind: 400, ante: 0, durationMinutes: 5, isBreak: true },
+    { level: 9, smallBlind: 200, bigBlind: 400, ante: 30, durationMinutes: 3 },
+    { level: 10, smallBlind: 300, bigBlind: 600, ante: 50, durationMinutes: 3 },
+    { level: 11, smallBlind: 400, bigBlind: 800, ante: 75, durationMinutes: 3 },
+    { level: 12, smallBlind: 500, bigBlind: 1000, ante: 100, durationMinutes: 3 },
+    { level: 13, smallBlind: 600, bigBlind: 1200, ante: 150, durationMinutes: 3, isBreak: true },
+    { level: 14, smallBlind: 0, bigBlind: 0, ante: 0, durationMinutes: 5, isBreak: true },
+    { level: 15, smallBlind: 800, bigBlind: 1600, ante: 200, durationMinutes: 3 },
+    { level: 16, smallBlind: 1000, bigBlind: 2000, ante: 250, durationMinutes: 3 },
+    { level: 17, smallBlind: 1200, bigBlind: 2400, ante: 300, durationMinutes: 3 },
+    { level: 18, smallBlind: 1500, bigBlind: 3000, ante: 400, durationMinutes: 3 },
+    { level: 19, smallBlind: 2000, bigBlind: 4000, ante: 500, durationMinutes: 3, isBreak: true },
+    { level: 20, smallBlind: 0, bigBlind: 0, ante: 0, durationMinutes: 5, isBreak: true },
+    { level: 21, smallBlind: 2500, bigBlind: 5000, ante: 600, durationMinutes: 3 },
+    { level: 22, smallBlind: 3000, bigBlind: 6000, ante: 750, durationMinutes: 3 },
+    { level: 23, smallBlind: 4000, bigBlind: 8000, ante: 1000, durationMinutes: 3 },
+    { level: 24, smallBlind: 5000, bigBlind: 10000, ante: 1200, durationMinutes: 3 },
+    { level: 25, smallBlind: 6000, bigBlind: 12000, ante: 1500, durationMinutes: 3, isBreak: true },
+    { level: 26, smallBlind: 0, bigBlind: 0, ante: 0, durationMinutes: 5, isBreak: true },
+    { level: 27, smallBlind: 8000, bigBlind: 16000, ante: 2000, durationMinutes: 3 },
+    { level: 28, smallBlind: 10000, bigBlind: 20000, ante: 2500, durationMinutes: 3 },
+    { level: 29, smallBlind: 12000, bigBlind: 24000, ante: 3000, durationMinutes: 3 },
+    { level: 30, smallBlind: 15000, bigBlind: 30000, ante: 3500, durationMinutes: 3 },
   ],
   regular: [
     { level: 1, smallBlind: 10, bigBlind: 20, ante: 0, durationMinutes: 8 },
     { level: 2, smallBlind: 15, bigBlind: 30, ante: 0, durationMinutes: 8 },
-    { level: 3, smallBlind: 25, bigBlind: 50, ante: 5, durationMinutes: 8 },
-    { level: 4, smallBlind: 50, bigBlind: 100, ante: 10, durationMinutes: 8 },
-    { level: 5, smallBlind: 75, bigBlind: 150, ante: 15, durationMinutes: 8 },
-    { level: 6, smallBlind: 100, bigBlind: 200, ante: 25, durationMinutes: 8 },
-    { level: 7, smallBlind: 150, bigBlind: 300, ante: 40, durationMinutes: 8 },
-    { level: 8, smallBlind: 200, bigBlind: 400, ante: 50, durationMinutes: 8 },
-    { level: 9, smallBlind: 300, bigBlind: 600, ante: 75, durationMinutes: 8 },
-    { level: 10, smallBlind: 400, bigBlind: 800, ante: 100, durationMinutes: 8 },
+    { level: 3, smallBlind: 20, bigBlind: 40, ante: 0, durationMinutes: 8 },
+    { level: 4, smallBlind: 25, bigBlind: 50, ante: 0, durationMinutes: 8 },
+    { level: 5, smallBlind: 50, bigBlind: 100, ante: 10, durationMinutes: 8 },
+    { level: 6, smallBlind: 75, bigBlind: 150, ante: 15, durationMinutes: 8 },
+    { level: 7, smallBlind: 100, bigBlind: 200, ante: 25, durationMinutes: 8, isBreak: true },
+    { level: 8, smallBlind: 0, bigBlind: 0, ante: 0, durationMinutes: 5, isBreak: true },
+    { level: 9, smallBlind: 150, bigBlind: 300, ante: 40, durationMinutes: 8 },
+    { level: 10, smallBlind: 200, bigBlind: 400, ante: 50, durationMinutes: 8 },
+    { level: 11, smallBlind: 300, bigBlind: 600, ante: 75, durationMinutes: 8 },
+    { level: 12, smallBlind: 400, bigBlind: 800, ante: 100, durationMinutes: 8 },
+    { level: 13, smallBlind: 500, bigBlind: 1000, ante: 150, durationMinutes: 8, isBreak: true },
+    { level: 14, smallBlind: 0, bigBlind: 0, ante: 0, durationMinutes: 5, isBreak: true },
+    { level: 15, smallBlind: 600, bigBlind: 1200, ante: 200, durationMinutes: 8 },
+    { level: 16, smallBlind: 800, bigBlind: 1600, ante: 250, durationMinutes: 8 },
+    { level: 17, smallBlind: 1000, bigBlind: 2000, ante: 300, durationMinutes: 8 },
+    { level: 18, smallBlind: 1200, bigBlind: 2400, ante: 400, durationMinutes: 8 },
+    { level: 19, smallBlind: 1500, bigBlind: 3000, ante: 500, durationMinutes: 8, isBreak: true },
+    { level: 20, smallBlind: 0, bigBlind: 0, ante: 0, durationMinutes: 5, isBreak: true },
+    { level: 21, smallBlind: 2000, bigBlind: 4000, ante: 600, durationMinutes: 8 },
+    { level: 22, smallBlind: 2500, bigBlind: 5000, ante: 750, durationMinutes: 8 },
+    { level: 23, smallBlind: 3000, bigBlind: 6000, ante: 1000, durationMinutes: 8 },
+    { level: 24, smallBlind: 4000, bigBlind: 8000, ante: 1200, durationMinutes: 8 },
+    { level: 25, smallBlind: 5000, bigBlind: 10000, ante: 1500, durationMinutes: 8, isBreak: true },
+    { level: 26, smallBlind: 0, bigBlind: 0, ante: 0, durationMinutes: 5, isBreak: true },
+    { level: 27, smallBlind: 6000, bigBlind: 12000, ante: 2000, durationMinutes: 8 },
+    { level: 28, smallBlind: 8000, bigBlind: 16000, ante: 2500, durationMinutes: 8 },
+    { level: 29, smallBlind: 10000, bigBlind: 20000, ante: 3000, durationMinutes: 8 },
+    { level: 30, smallBlind: 12000, bigBlind: 24000, ante: 3500, durationMinutes: 8 },
   ],
   deepStack: [
     { level: 1, smallBlind: 10, bigBlind: 20, ante: 0, durationMinutes: 15 },
     { level: 2, smallBlind: 15, bigBlind: 30, ante: 0, durationMinutes: 15 },
     { level: 3, smallBlind: 20, bigBlind: 40, ante: 0, durationMinutes: 15 },
-    { level: 4, smallBlind: 25, bigBlind: 50, ante: 5, durationMinutes: 15 },
-    { level: 5, smallBlind: 50, bigBlind: 100, ante: 10, durationMinutes: 15 },
-    { level: 6, smallBlind: 75, bigBlind: 150, ante: 15, durationMinutes: 15 },
-    { level: 7, smallBlind: 100, bigBlind: 200, ante: 25, durationMinutes: 15 },
-    { level: 8, smallBlind: 150, bigBlind: 300, ante: 40, durationMinutes: 15 },
-    { level: 9, smallBlind: 200, bigBlind: 400, ante: 50, durationMinutes: 15 },
-    { level: 10, smallBlind: 300, bigBlind: 600, ante: 75, durationMinutes: 15 },
+    { level: 4, smallBlind: 25, bigBlind: 50, ante: 0, durationMinutes: 15 },
+    { level: 5, smallBlind: 50, bigBlind: 100, ante: 10, durationMinutes: 15, isBreak: true },
+    { level: 6, smallBlind: 0, bigBlind: 0, ante: 0, durationMinutes: 5, isBreak: true },
+    { level: 7, smallBlind: 75, bigBlind: 150, ante: 15, durationMinutes: 15 },
+    { level: 8, smallBlind: 100, bigBlind: 200, ante: 25, durationMinutes: 15 },
+    { level: 9, smallBlind: 150, bigBlind: 300, ante: 40, durationMinutes: 15, isBreak: true },
+    { level: 10, smallBlind: 0, bigBlind: 0, ante: 0, durationMinutes: 5, isBreak: true },
+    { level: 11, smallBlind: 200, bigBlind: 400, ante: 50, durationMinutes: 15 },
+    { level: 12, smallBlind: 300, bigBlind: 600, ante: 75, durationMinutes: 15 },
+    { level: 13, smallBlind: 400, bigBlind: 800, ante: 100, durationMinutes: 15, isBreak: true },
+    { level: 14, smallBlind: 0, bigBlind: 0, ante: 0, durationMinutes: 5, isBreak: true },
+    { level: 15, smallBlind: 500, bigBlind: 1000, ante: 150, durationMinutes: 15 },
+    { level: 16, smallBlind: 600, bigBlind: 1200, ante: 200, durationMinutes: 15 },
+    { level: 17, smallBlind: 800, bigBlind: 1600, ante: 250, durationMinutes: 15, isBreak: true },
+    { level: 18, smallBlind: 0, bigBlind: 0, ante: 0, durationMinutes: 5, isBreak: true },
+    { level: 19, smallBlind: 1000, bigBlind: 2000, ante: 300, durationMinutes: 15 },
+    { level: 20, smallBlind: 1200, bigBlind: 2400, ante: 400, durationMinutes: 15 },
+    { level: 21, smallBlind: 1500, bigBlind: 3000, ante: 500, durationMinutes: 15, isBreak: true },
+    { level: 22, smallBlind: 0, bigBlind: 0, ante: 0, durationMinutes: 5, isBreak: true },
+    { level: 23, smallBlind: 2000, bigBlind: 4000, ante: 600, durationMinutes: 15 },
+    { level: 24, smallBlind: 2500, bigBlind: 5000, ante: 750, durationMinutes: 15 },
+    { level: 25, smallBlind: 3000, bigBlind: 6000, ante: 1000, durationMinutes: 15, isBreak: true },
+    { level: 26, smallBlind: 0, bigBlind: 0, ante: 0, durationMinutes: 5, isBreak: true },
+    { level: 27, smallBlind: 4000, bigBlind: 8000, ante: 1200, durationMinutes: 15 },
+    { level: 28, smallBlind: 5000, bigBlind: 10000, ante: 1500, durationMinutes: 15 },
+    { level: 29, smallBlind: 6000, bigBlind: 12000, ante: 2000, durationMinutes: 15 },
+    { level: 30, smallBlind: 8000, bigBlind: 16000, ante: 2500, durationMinutes: 15 },
+  ],
+  sng: [
+    { level: 1, smallBlind: 10, bigBlind: 20, ante: 0, durationMinutes: 6 },
+    { level: 2, smallBlind: 15, bigBlind: 30, ante: 0, durationMinutes: 6 },
+    { level: 3, smallBlind: 20, bigBlind: 40, ante: 0, durationMinutes: 6 },
+    { level: 4, smallBlind: 25, bigBlind: 50, ante: 0, durationMinutes: 6 },
+    { level: 5, smallBlind: 50, bigBlind: 100, ante: 10, durationMinutes: 6 },
+    { level: 6, smallBlind: 75, bigBlind: 150, ante: 15, durationMinutes: 6 },
+    { level: 7, smallBlind: 100, bigBlind: 200, ante: 25, durationMinutes: 6 },
+    { level: 8, smallBlind: 150, bigBlind: 300, ante: 40, durationMinutes: 6 },
+    { level: 9, smallBlind: 200, bigBlind: 400, ante: 50, durationMinutes: 6 },
+    { level: 10, smallBlind: 300, bigBlind: 600, ante: 75, durationMinutes: 6 },
+    { level: 11, smallBlind: 400, bigBlind: 800, ante: 100, durationMinutes: 6 },
+    { level: 12, smallBlind: 500, bigBlind: 1000, ante: 150, durationMinutes: 6 },
+    { level: 13, smallBlind: 600, bigBlind: 1200, ante: 200, durationMinutes: 6 },
+    { level: 14, smallBlind: 800, bigBlind: 1600, ante: 250, durationMinutes: 6 },
+    { level: 15, smallBlind: 1000, bigBlind: 2000, ante: 300, durationMinutes: 6 },
   ],
 };
 
@@ -202,6 +279,52 @@ export const PAYOUT_STRUCTURES = {
     { place: 8, percentage: 4.5 },
     { place: 9, percentage: 4 },
     { place: 10, percentage: 3.5 },
+  ],
+  mtt100: [
+    { place: 1, percentage: 22 },
+    { place: 2, percentage: 13.5 },
+    { place: 3, percentage: 9.5 },
+    { place: 4, percentage: 7.5 },
+    { place: 5, percentage: 6 },
+    { place: 6, percentage: 5 },
+    { place: 7, percentage: 4 },
+    { place: 8, percentage: 3.5 },
+    { place: 9, percentage: 3 },
+    { place: 10, percentage: 2.5 },
+    { place: 11, percentage: 2.5 },
+    { place: 12, percentage: 2.5 },
+    { place: 13, percentage: 2 },
+    { place: 14, percentage: 2 },
+    { place: 15, percentage: 2 },
+  ],
+  mtt200: [
+    { place: 1, percentage: 18 },
+    { place: 2, percentage: 11 },
+    { place: 3, percentage: 8 },
+    { place: 4, percentage: 6.5 },
+    { place: 5, percentage: 5.5 },
+    { place: 6, percentage: 4.5 },
+    { place: 7, percentage: 3.5 },
+    { place: 8, percentage: 3 },
+    { place: 9, percentage: 2.5 },
+    { place: 10, percentage: 2.5 },
+    { place: 11, percentage: 2 },
+    { place: 12, percentage: 2 },
+    { place: 13, percentage: 1.8 },
+    { place: 14, percentage: 1.8 },
+    { place: 15, percentage: 1.5 },
+    { place: 16, percentage: 1.5 },
+    { place: 17, percentage: 1.5 },
+    { place: 18, percentage: 1.3 },
+    { place: 19, percentage: 1.3 },
+    { place: 20, percentage: 1.3 },
+    { place: 21, percentage: 1.2 },
+    { place: 22, percentage: 1.2 },
+    { place: 23, percentage: 1.1 },
+    { place: 24, percentage: 1.1 },
+    { place: 25, percentage: 1.1 },
+    { place: 26, percentage: 1 },
+    { place: 27, percentage: 1 },
   ],
 };
 
@@ -273,13 +396,20 @@ export const BOUNTY_PRESETS: Record<string, BountyConfig> = {
 
 export const SPIN_BLIND_STRUCTURE: BlindLevel[] = [
   { level: 1, smallBlind: 10, bigBlind: 20, ante: 0, durationMinutes: 2 },
-  { level: 2, smallBlind: 20, bigBlind: 40, ante: 0, durationMinutes: 2 },
-  { level: 3, smallBlind: 30, bigBlind: 60, ante: 0, durationMinutes: 2 },
-  { level: 4, smallBlind: 50, bigBlind: 100, ante: 0, durationMinutes: 2 },
-  { level: 5, smallBlind: 75, bigBlind: 150, ante: 0, durationMinutes: 2 },
-  { level: 6, smallBlind: 100, bigBlind: 200, ante: 0, durationMinutes: 2 },
-  { level: 7, smallBlind: 150, bigBlind: 300, ante: 0, durationMinutes: 2 },
-  { level: 8, smallBlind: 250, bigBlind: 500, ante: 0, durationMinutes: 2 },
+  { level: 2, smallBlind: 15, bigBlind: 30, ante: 0, durationMinutes: 2 },
+  { level: 3, smallBlind: 20, bigBlind: 40, ante: 0, durationMinutes: 2 },
+  { level: 4, smallBlind: 30, bigBlind: 60, ante: 0, durationMinutes: 2 },
+  { level: 5, smallBlind: 50, bigBlind: 100, ante: 0, durationMinutes: 2 },
+  { level: 6, smallBlind: 75, bigBlind: 150, ante: 0, durationMinutes: 2 },
+  { level: 7, smallBlind: 100, bigBlind: 200, ante: 0, durationMinutes: 2 },
+  { level: 8, smallBlind: 150, bigBlind: 300, ante: 0, durationMinutes: 2 },
+  { level: 9, smallBlind: 200, bigBlind: 400, ante: 0, durationMinutes: 2 },
+  { level: 10, smallBlind: 300, bigBlind: 600, ante: 0, durationMinutes: 2 },
+  { level: 11, smallBlind: 400, bigBlind: 800, ante: 0, durationMinutes: 2 },
+  { level: 12, smallBlind: 600, bigBlind: 1200, ante: 0, durationMinutes: 2 },
+  { level: 13, smallBlind: 800, bigBlind: 1600, ante: 0, durationMinutes: 2 },
+  { level: 14, smallBlind: 1200, bigBlind: 2400, ante: 0, durationMinutes: 2 },
+  { level: 15, smallBlind: 1600, bigBlind: 3200, ante: 0, durationMinutes: 2 },
 ];
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1707,6 +1837,101 @@ class TournamentService {
     }
 
     return { success: true, newStack: data?.new_stack };
+  }
+
+  /**
+   * Process a re-entry for an eliminated player
+   * Re-entry creates a NEW tournament_players entry (old one stays as eliminated)
+   * Only allowed if tournament.is_reentry is true and within late registration period
+   */
+  async processReentry(
+    tournamentId: string,
+    userId: string
+  ): Promise<{ success: boolean; newEntryId?: string }> {
+    const tournament = await this.getTournament(tournamentId);
+    if (!tournament) throw new Error('Tournament not found');
+
+    // Check if re-entry is enabled
+    if (!tournament.is_reentry) {
+      throw new Error('Re-entry not available for this tournament');
+    }
+
+    // Check if currently within late registration period
+    const levelState = this.getCurrentLevelState(tournament);
+    const lateRegLevelCap = tournament.late_reg_levels ?? tournament.rebuy_levels ?? 8;
+    if (levelState.levelIndex >= lateRegLevelCap) {
+      throw new Error('Re-entry period has ended');
+    }
+
+    // Verify player was previously eliminated
+    const { data: eliminatedEntry } = await supabase
+      .from('tournament_players')
+      .select('id')
+      .eq('tournament_id', tournamentId)
+      .eq('user_id', userId)
+      .eq('status', 'eliminated')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!eliminatedEntry) {
+      throw new Error('Player not found in eliminated status for re-entry');
+    }
+
+    // Check wallet balance for buy-in
+    const reentryChips = tournament.starting_chips;
+    const reentryCost = tournament.buy_in_amount;
+
+    const { data: walletData } = await supabase
+      .from('wallets')
+      .select('balance')
+      .eq('user_id', userId)
+      .eq('wallet_type', 'PLAYER')
+      .maybeSingle();
+
+    if (!walletData || (walletData.balance || 0) < reentryCost) {
+      throw new Error(
+        `Insufficient chips for re-entry. Need ${reentryCost}, have ${walletData?.balance || 0}`
+      );
+    }
+
+    // Process re-entry via ATOMIC RPC (same as rebuy/addon, type='reentry')
+    const { data, error } = await retryAsync(
+      () =>
+        supabase.rpc('process_tournament_rebuy', {
+          p_tournament_id: tournamentId,
+          p_player_id: userId,
+          p_rebuy_type: 'reentry',
+          p_cost: reentryCost,
+          p_chips: reentryChips,
+          p_current_level: levelState.levelIndex,
+        }),
+      3
+    );
+
+    if (error) {
+      console.error('[TournamentService] Re-entry RPC failed. No chips were deducted:', error);
+      throw error;
+    }
+
+    // Emit AFTER confirmed success
+    masterBus.emit('BALANCE_UPDATED', { source: 'tournament_reentry', userId });
+
+    // Recalculate prize pool: re-entry cost goes to pool
+    await this.recalculatePrizePool(tournamentId);
+
+    // Broadcast re-entry event
+    try {
+      const { realtimeChannelService } = await import('./RealtimeChannelService');
+      await realtimeChannelService.broadcastTournamentEvent(tournamentId, {
+        type: 'player_registered',
+        payload: { type: 'reentry', userId, chips: reentryChips },
+      });
+    } catch (e: unknown) {
+      console.error('Failed to broadcast re-entry event:', e);
+    }
+
+    return { success: true, newEntryId: data?.new_entry_id };
   }
 
   // ─────────────────────────────────────────────────────────────────────────────

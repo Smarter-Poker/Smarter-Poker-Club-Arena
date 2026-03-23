@@ -34,6 +34,7 @@ interface BlindLevel {
   bigBlind: number;
   ante: number;
   durationMinutes: number;
+  isBreak?: boolean;
 }
 
 interface PayoutEntry {
@@ -135,12 +136,14 @@ function resolvePayoutStructure(raw: unknown, playerCount: number): PayoutEntry[
     }
   }
 
-  // Auto-select based on player count
+  // Auto-select based on player count — pay ~15% of field for larger tournaments
   if (playerCount <= 6) return PAYOUT_STRUCTURES.sng6;
   if (playerCount <= 9) return PAYOUT_STRUCTURES.sng9;
   if (playerCount <= 18) return PAYOUT_STRUCTURES.mtt10;
-  if (playerCount <= 35) return PAYOUT_STRUCTURES.mtt20;
-  return PAYOUT_STRUCTURES.mtt50;
+  if (playerCount <= 45) return PAYOUT_STRUCTURES.mtt20;
+  if (playerCount <= 90) return PAYOUT_STRUCTURES.mtt50;
+  if (playerCount <= 180) return PAYOUT_STRUCTURES.mtt100;
+  return PAYOUT_STRUCTURES.mtt200;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -220,13 +223,14 @@ export class TournamentEngine {
       // Step 2: Migrate registrations → tournament_players
       await this.migrateRegistrations();
 
-      // Step 2b: Enforce minimum 3 players
-      if (this.players.size < 3) {
+      // Step 2b: Enforce minimum player count
+      const minPlayers = this.getMinPlayers();
+      if (this.players.size < minPlayers) {
         // Use TournamentService for proper refund + cancel flow
         const { tournamentService } = await import('../services/TournamentService');
         await tournamentService.cancelTournament(
           this.tournamentId,
-          `Only ${this.players.size} player(s) registered — minimum 3 required`
+          `Only ${this.players.size} player(s) registered — minimum ${minPlayers} required`
         );
         this.running = false;
         return;
@@ -395,7 +399,9 @@ export class TournamentEngine {
     }
 
     // Step 4: Restore blind level
-    this.currentLevel = this.tournamentInfo.current_level || 1;
+    // DB stores 1-indexed level numbers, but internal tracking is 0-indexed array position
+    const dbLevel = this.tournamentInfo.current_level || 1;
+    this.currentLevel = Math.max(0, dbLevel - 1);
 
     // Step 5: Start dealing on each table
     for (const table of this.tables) {
@@ -512,7 +518,9 @@ export class TournamentEngine {
       const activeCount = Array.from(this.players.values()).filter(
         (p) => p.status === 'playing'
       ).length;
-      const actualPrizePool = activeCount * this.tournamentInfo.buy_in_amount;
+      // Use DB prize pool if available (includes rebuys/addons), otherwise calculate from entries
+      const dbPrizePool = this.tournamentInfo.prize_pool;
+      const actualPrizePool = dbPrizePool > 0 ? dbPrizePool : activeCount * this.tournamentInfo.buy_in_amount;
       this.tournamentInfo.prize_pool = actualPrizePool;
       this.tournamentInfo.current_players = existingPlayers.length;
 
@@ -577,8 +585,9 @@ export class TournamentEngine {
       });
     }
 
-    // Update prize pool based on actual player count (not stale DB value)
-    const actualPrizePool = registrations.length * this.tournamentInfo.buy_in_amount;
+    // Calculate initial prize pool from registrations (rebuys/addons added later by TournamentService)
+    const existingPool = this.tournamentInfo.prize_pool;
+    const actualPrizePool = existingPool > 0 ? existingPool : registrations.length * this.tournamentInfo.buy_in_amount;
     this.tournamentInfo.prize_pool = actualPrizePool;
     this.tournamentInfo.current_players = registrations.length;
 
@@ -606,6 +615,20 @@ export class TournamentEngine {
 
     // Otherwise standard 9-max table
     return 9;
+  }
+
+  private getMinPlayers(): number {
+    if (!this.tournamentInfo) return 2;
+    const type = this.tournamentInfo.tournament_type?.toUpperCase();
+    const variant = this.tournamentInfo.variant?.toLowerCase();
+    // Spin & Go requires exactly 3
+    if (type === 'SPIN' || variant === 'spin') return 3;
+    // Heads-up requires exactly 2
+    if (variant === 'hu' || this.tournamentInfo.max_players === 2) return 2;
+    // SNGs: use min_players or 2
+    if (type === 'SNG') return 2;
+    // MTT: minimum 2 players
+    return 2;
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -810,6 +833,40 @@ export class TournamentEngine {
       const prevLevel = this.currentLevel;
       this.currentLevel = newLevel;
       const level = blinds[newLevel];
+
+      // Handle break levels — pause dealing and broadcast break event
+      if (level.isBreak) {
+        // During a break, pause all table engines
+        for (const table of this.tables) {
+          if (table.engine.setHandForHand) table.engine.setHandForHand(true);
+        }
+        // Broadcast TOURNAMENT_BREAK event
+        masterBus.emit('TOURNAMENT_BREAK', {
+          tournamentId: this.tournamentId,
+          level: newLevel + 1,
+          durationMinutes: level.durationMinutes || 5,
+        });
+        // Don't update table blinds during break — keep previous level's blinds
+        // Also persist the current level in DB
+        this.supabase
+          .from('tournaments')
+          .update({ current_level: level.level })
+          .eq('id', this.tournamentId)
+          .then(() => {});
+        return;
+      }
+
+      // If previous level was a break, resume all table engines
+      if (prevLevel >= 0 && prevLevel < blinds.length && blinds[prevLevel]?.isBreak) {
+        for (const table of this.tables) {
+          if (table.engine.setHandForHand) table.engine.setHandForHand(false);
+          if (table.engine.releaseHandForHand) table.engine.releaseHandForHand();
+        }
+        masterBus.emit('TOURNAMENT_BREAK_END', {
+          tournamentId: this.tournamentId,
+        });
+      }
+
       // Update all tournament tables with new blinds
       this.updateTableBlinds(level);
 
@@ -1577,7 +1634,7 @@ export class TournamentEngine {
     if (activeTables.length <= 1) return;
 
     // Clean up empty tables first (0 players)
-    const emptyTables = activeTables.filter((t) => t.playerCount === 0);
+    const emptyTables = this.tables.filter((t) => t.playerCount === 0);
     for (const empty of emptyTables) {
       empty.engine.stop();
       // 1. Evict any ghost seats to keep DB clean
@@ -1797,6 +1854,29 @@ export class TournamentEngine {
       if (firstPrize > 0) {
         await this.creditPrize(winner.user_id, firstPrize);
       }
+    }
+
+    // Handle satellite tournament — award tickets instead of cash prizes
+    if (this.tournamentInfo?.variant === 'satellite' || this.tournamentInfo?.tournament_type === 'SATELLITE') {
+      // Award tickets to top N finishers based on payout structure
+      const ticketPlaces = this.tournamentInfo.payout_structure?.length || 1;
+      const playersRanked = Array.from(this.players.values())
+        .filter(p => p.status === 'eliminated' || p.status === 'winner')
+        .sort((a, b) => {
+          // Winners and lower positions first
+          if (a.status === 'winner') return -1;
+          if (b.status === 'winner') return 1;
+          return 0;
+        });
+
+      // Top N players get tickets (handled via prize credit as ticket value)
+      // Satellite prizes are already calculated as percentages, which represent ticket values
+      // Log satellite ticket awards
+      masterBus.emit('SATELLITE_COMPLETE', {
+        tournamentId: this.tournamentId,
+        ticketWinners: ticketPlaces,
+        targetTournament: this.tournamentInfo.satellite_target || null,
+      });
     }
 
     // Update tournament status

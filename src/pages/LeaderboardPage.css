@@ -1822,3 +1822,99 @@
       0 0 40px rgba(255, 215, 0, 0.2);
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   FOCUS RINGS — Keyboard Accessibility
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.tab-btn:focus-visible,
+.scope-toggle button:focus-visible,
+.lb-filter-chip:focus-visible,
+.lb-csv-btn:focus-visible {
+  outline: 2px solid rgba(0, 212, 255, 0.7);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+.podium-place:focus-visible {
+  outline: 2px solid rgba(0, 212, 255, 0.6);
+  outline-offset: 4px;
+  border-radius: 16px;
+}
+
+.leaderboard-entry:focus-visible,
+.tournament-stats-entry:focus-visible {
+  outline: 2px solid rgba(0, 212, 255, 0.6);
+  outline-offset: 2px;
+  border-radius: 12px;
+}
+
+.join-club-btn:focus-visible {
+  outline: 2px solid rgba(0, 212, 255, 0.7);
+  outline-offset: 2px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   ACTIVE PRESS FEEDBACK — Tactile Response
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.tab-btn:active,
+.scope-toggle button:active,
+.lb-filter-chip:active {
+  transform: scale(0.95);
+}
+
+.podium-place:active {
+  transform: scale(0.96);
+}
+
+.leaderboard-entry:active,
+.tournament-stats-entry:active {
+  transform: scale(0.98);
+}
+
+.join-club-btn:active,
+.lb-csv-btn:active {
+  transform: scale(0.96);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   PREFERS REDUCED MOTION — Vestibular Accessibility
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+@media (prefers-reduced-motion: reduce) {
+  .leaderboard-entry,
+  .podium-place,
+  .tab-btn,
+  .scope-toggle button,
+  .lb-filter-chip,
+  .tournament-stats-entry,
+  .user-rank-card {
+    transition: none !important;
+    animation: none !important;
+  }
+
+  .podium-crown,
+  .podium-rank-emoji,
+  .hot-streak-badge,
+  .podium-bar,
+  .lb-skel-pod,
+  .lb-skeleton-row,
+  .rank-change-anim {
+    animation: none !important;
+  }
+
+  .podium-place:hover {
+    transform: none;
+  }
+
+  .leaderboard-entry:hover {
+    transform: none;
+  }
+
+  .user-rank-card.sticky-bottom {
+    animation: none !important;
+    opacity: 1;
+    transform: none;
+  }
+}

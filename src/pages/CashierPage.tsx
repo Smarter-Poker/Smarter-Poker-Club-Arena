@@ -142,6 +142,14 @@ export default function CashierPage() {
   const [cashoutConfirm, setCashoutConfirm] = useState({ show: false, value: 0 });
   const [showCashoutModal, setShowCashoutModal] = useState(false);
 
+  // Send confirmation for high-value transfers (≥10K)
+  const [sendConfirm, setSendConfirm] = useState<{
+    show: boolean;
+    value: number;
+    recipientId: string;
+    recipientName: string;
+  }>({ show: false, value: 0, recipientId: '', recipientName: '' });
+
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const isMounted = useIsMounted();
@@ -201,10 +209,12 @@ export default function CashierPage() {
   const [pendingCashouts, setPendingCashouts] = useState<
     { id: string; amount: number; status: string; created_at: string }[]
   >([]);
-  // U-01: Loading context state removed — setLoadingContext kept as no-op to avoid breaking callers
-  const setLoadingContext = useCallback((_v: boolean) => {
-    /* no-op — context loading tracked by userRole !== 'member' */
-  }, []);
+  // U-01: Loading context state — shows skeleton during initial club data fetch
+  const [loadingContext, setLoadingContext] = useState(true);
+
+  // Recipient cache ref — avoids re-fetching on every tab switch (60s TTL)
+  const recipientsCacheRef = useRef<{ data: Recipient[]; ts: number; clubId: string } | null>(null);
+  const RECIPIENT_CACHE_TTL = 60_000;
 
   // ── CRITICAL: Reset per-club state when navigating between clubs ──
   // Prevents financial state (userRole, pending cashouts) from carrying over.
@@ -241,14 +251,8 @@ export default function CashierPage() {
     loadPendingCashouts();
   }, [clubId, user?.id, action]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Subscribe to wallet updates (BALANCE_UPDATED is handled by debounced subscriber below)
-  useMasterBusSubscription(
-    'WALLET_REFRESHED',
-    () => {
-      if (user?.id) loadBalances(user.id);
-    },
-    { debounce: 500 }
-  );
+  // NOTE: WALLET_REFRESHED is handled by the combined subscriber at line ~710
+  // (removed duplicate subscription that was here)
 
   const loadPendingCashouts = useCallback(async () => {
     if (!clubId || !user?.id) return;
@@ -261,7 +265,7 @@ export default function CashierPage() {
             .select('id, amount, status, created_at')
             .eq('club_id', resolvedId)
             .eq('player_id', user.id)
-            .in('status', ['pending', 'processing'])
+            .in('status', ['pending'])
             .order('created_at', { ascending: false })
             .then((r) => r),
         { maxRetries: 2, isMountedRef: isMounted }
@@ -360,8 +364,19 @@ export default function CashierPage() {
     }
   }, [action, user?.id, clubId, userRole, isUnionOwner]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const loadRecipients = async () => {
+  const loadRecipients = async (forceRefresh = false) => {
     if (!user?.id || !clubId) return;
+
+    // Check cache — skip fetch if fresh data exists (60s TTL)
+    if (
+      !forceRefresh &&
+      recipientsCacheRef.current &&
+      recipientsCacheRef.current.clubId === clubId &&
+      Date.now() - recipientsCacheRef.current.ts < RECIPIENT_CACHE_TTL
+    ) {
+      setRecipients(recipientsCacheRef.current.data);
+      return;
+    }
     setLoadingRecipients(true);
     try {
       const resolvedId = await resolveClubUUID(clubId);
@@ -501,6 +516,8 @@ export default function CashierPage() {
 
       if (isMounted.current) {
         setRecipients(list);
+        // Update cache
+        recipientsCacheRef.current = { data: list, ts: Date.now(), clubId };
       }
     } catch (err: unknown) {
       console.error('Failed to load recipients:', err);
@@ -766,6 +783,19 @@ export default function CashierPage() {
     if (!user?.id) return;
     const chipTxnChannel = masterBus
       .getOrCreateChannel(`cashier-chip-txns-${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'chip_transactions',
+          filter: `from_user_id=eq.${user.id}`,
+        },
+        () => {
+          loadBalances(user.id);
+          loadTransactions();
+        }
+      )
       .on(
         'postgres_changes',
         {
@@ -1233,6 +1263,15 @@ export default function CashierPage() {
 
   return (
     <div className={styles.page}>
+      {/* ── Loading skeleton during initial club context fetch ── */}
+      {loadingContext && user?.id && clubId && (
+        <div className={styles.loadingSkeleton} role="status" aria-label="Loading cashier data">
+          <div className={styles.skeletonBar} style={{ width: '60%', height: 24 }} />
+          <div className={styles.skeletonBar} style={{ width: '40%', height: 18, marginTop: 8 }} />
+          <div className={styles.skeletonBar} style={{ width: '80%', height: 40, marginTop: 16 }} />
+        </div>
+      )}
+
       {/* ── Wallet Display — always visible, real-time updates ── */}
       {user?.id && clubId && (
         <div className={styles.walletHeader}>
@@ -1254,10 +1293,13 @@ export default function CashierPage() {
       )}
 
       {/* Action Tabs */}
-      <nav className={styles.tabNav}>
+      <nav className={styles.tabNav} role="tablist" aria-label="Cashier actions">
         {tabs.map((act) => (
           <button
             key={act}
+            role="tab"
+            aria-selected={action === act}
+            aria-controls={`cashier-panel-${act}`}
             className={`${styles.tab} ${action === act ? styles.tabActive : ''}`}
             onClick={() => {
               setAction(act);
@@ -1413,7 +1455,20 @@ export default function CashierPage() {
 
             <button
               className={styles.btnPrimary}
-              onClick={handleAction}
+              aria-label={`Send ${amount || '0'} chips to selected recipient`}
+              onClick={() => {
+                const value = parseFloat(amount);
+                if (!isNaN(value) && value >= 10000 && selectedRecipientData) {
+                  setSendConfirm({
+                    show: true,
+                    value,
+                    recipientId: selectedRecipient,
+                    recipientName: selectedRecipientData.username,
+                  });
+                } else {
+                  handleAction();
+                }
+              }}
               disabled={isProcessing || cooldown > 0 || !amount || !selectedRecipient}
             >
               {isProcessing ? (

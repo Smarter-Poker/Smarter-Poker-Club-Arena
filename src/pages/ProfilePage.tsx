@@ -386,11 +386,7 @@ export default function ProfilePage() {
             { maxRetries: 2, isMountedRef: isMountedRef }
           ),
           // Missions (daily + weekly + monthly)
-          Promise.all([
-            dailyChallengeService.getTodaysChallenges(authUser.id),
-            dailyChallengeService.getWeeklyChallenges(authUser.id),
-            dailyChallengeService.getMonthlyChallenges(authUser.id),
-          ]),
+          dailyChallengeService.getAllChallenges(authUser.id),
           // Transaction history
           retryFetch(
             () =>
@@ -426,7 +422,7 @@ export default function ProfilePage() {
 
         // Process missions
         if (missionsResult.status === 'fulfilled') {
-          const [daily, weekly, monthly] = missionsResult.value;
+          const { daily, weekly, monthly } = missionsResult.value;
           const allMissions = [...daily, ...weekly, ...monthly];
           setMissions(
             allMissions.map((mc) => ({
@@ -663,12 +659,8 @@ export default function ProfilePage() {
           .getUser()
           .then(({ data: { user: authUser } }) => {
             if (authUser && isMounted) {
-              Promise.all([
-                dailyChallengeService.getTodaysChallenges(authUser.id),
-                dailyChallengeService.getWeeklyChallenges(authUser.id),
-                dailyChallengeService.getMonthlyChallenges(authUser.id),
-              ])
-                .then(([daily, weekly, monthly]) => {
+              dailyChallengeService.getAllChallenges(authUser.id)
+                .then(({ daily, weekly, monthly }) => {
                   if (!isMounted) return;
                   const allMissions = [...daily, ...weekly, ...monthly];
                   setMissions(

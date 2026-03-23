@@ -11,6 +11,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { masterBus } from '../../core/MasterBus';
 import './CashierModal.css';
 
 export interface Transaction {
@@ -67,6 +68,8 @@ export function CashierModal({
       if (activeTab === 'withdraw') await onWithdraw(val);
       setAmount('');
       setActiveTab('balance');
+      // Emit bus event so other components (DynamicWallet, CashierPage) refresh balances
+      masterBus.emit('BALANCE_UPDATED', { source: activeTab, amount: val });
     } catch (err) {
       console.error('Cashier action failed', err);
     } finally {
@@ -75,7 +78,7 @@ export function CashierModal({
   };
 
   return (
-    <div className="cashier-overlay" onClick={onClose}>
+    <div className="cashier-overlay" onClick={onClose} role="dialog" aria-modal="true" aria-labelledby="cashier-modal-title">
       <div
         className="cashier-modal"
         onClick={(e) => e.stopPropagation()}

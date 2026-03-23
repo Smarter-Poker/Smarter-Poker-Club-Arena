@@ -12,6 +12,7 @@ import { supabase } from '../../lib/supabase';
 import haptic from '../../services/HapticService';
 import styles from './FindPlayerModal.module.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
+import { sanitizeInput } from '../../utils/sanitizeInput';
 
 interface FindPlayerModalProps {
   isOpen: boolean;
@@ -35,6 +36,19 @@ interface PlayerResult {
   tables: PlayerTable[];
 }
 
+interface TournamentJoin {
+  id: string;
+  tournament_id: string;
+  tournaments: {
+    id: string;
+    name: string;
+    status: string;
+    buy_in_amount: number;
+    club_id: string;
+    clubs: { name: string } | { name: string }[];
+  } | null;
+}
+
 // Frame image for the modal
 const MODAL_FRAME_URL = `${import.meta.env.BASE_URL}images/modals/find-player-frame.png`;
 
@@ -49,8 +63,11 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
   const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   // Cleanup stagger timers on unmount
+  const isMountedRef = useRef(true);
   useEffect(() => {
+    isMountedRef.current = true;
     return () => {
+      isMountedRef.current = false;
       staggerTimersRef.current.forEach((t) => clearTimeout(t));
     };
   }, []);
@@ -74,12 +91,18 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
     setError(null);
 
     try {
+      // Sanitize input to prevent PostgREST filter injection
+      const safeQuery = sanitizeInput(searchQuery.trim());
+      if (!safeQuery) return;
+
       // Search for player by username or display name (case insensitive)
       const { data: players, error: searchError } = await supabase
         .from('profiles')
         .select('id, username, display_name, avatar_url')
-        .or(`username.ilike.%${searchQuery.trim()}%,display_name.ilike.%${searchQuery.trim()}%`)
+        .or(`username.ilike.%${safeQuery}%,display_name.ilike.%${safeQuery}%`)
         .limit(1);
+
+      if (!isMountedRef.current) return;
 
       if (searchError) {
         throw searchError;
@@ -119,15 +142,25 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
 
       if (tournamentData && tournamentData.length > 0) {
         for (const reg of tournamentData) {
-          if (reg.tournaments) {
-            const tournament = reg.tournaments as any;
+          // Supabase FK join: tournaments is returned as object at runtime but typed as array
+          const tournament = (reg as Record<string, unknown>).tournaments as {
+            id: string;
+            name: string;
+            status: string;
+            buy_in_amount: number;
+            clubs: { name: string } | { name: string }[] | null;
+          } | null;
+          if (tournament) {
             if (tournament.status === 'running' || tournament.status === 'late_reg') {
+              const clubName = Array.isArray(tournament.clubs)
+                ? tournament.clubs[0]?.name
+                : tournament.clubs?.name;
               tables.push({
                 id: tournament.id,
                 name: tournament.name || 'Tournament',
                 game_variant: 'MTT',
-                stakes: `${tournament.buy_in_chips || 0} buy-in`,
-                club_name: tournament.clubs?.name || undefined,
+                stakes: `${tournament.buy_in_amount || 0} buy-in`,
+                club_name: clubName || undefined,
                 is_tournament: true,
               });
             }
@@ -145,10 +178,13 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
         });
       }
     } catch (err) {
+      if (!isMountedRef.current) return;
       console.error('Search error:', err);
       setError('Search failed. Please try again.');
     } finally {
-      setIsSearching(false);
+      if (isMountedRef.current) {
+        setIsSearching(false);
+      }
     }
   };
 

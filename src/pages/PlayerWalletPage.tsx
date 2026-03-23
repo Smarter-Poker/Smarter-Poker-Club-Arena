@@ -11,6 +11,7 @@ import { masterBus } from '../core/MasterBus';
 import { useWalletStore } from '../stores/useWalletStore';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
+import { useIsMounted } from '../hooks/useIsMounted';
 import { TransactionHistory } from '../components/wallet/TransactionHistory';
 import DepositWithdrawModal from '../components/wallet/DepositWithdrawModal';
 import DisputeSubmitModal from '../components/wallet/DisputeSubmitModal';
@@ -190,8 +191,16 @@ export default function PlayerWalletPage() {
   const [showDepositModal, setShowDepositModal] = useState(false);
   const [showWithdrawModal, setShowWithdrawModal] = useState(false);
   const [showDisputeModal, setShowDisputeModal] = useState(false);
+  const isMounted = useIsMounted();
 
   const [visibleCards, setVisibleCards] = useState(new Set<number>());
+
+  // Auto-dismiss messages after 8s
+  useEffect(() => {
+    if (!message) return;
+    const t = setTimeout(() => { if (isMounted.current) setMessage(null); }, 8000);
+    return () => clearTimeout(t);
+  }, [message]);
 
   // Stagger wallet cards animation
   useEffect(() => {
@@ -339,9 +348,9 @@ export default function PlayerWalletPage() {
       loadBalances(user.id);
       masterBus.emit('BALANCE_UPDATED', { source: 'internal_transfer', userId: user.id });
     } catch {
-      setMessage({ type: 'error', text: 'Transfer failed. Please try again.' });
+      if (isMounted.current) setMessage({ type: 'error', text: 'Transfer failed. Please try again.' });
     }
-    setIsTransferring(false);
+    if (isMounted.current) setIsTransferring(false);
   };
 
   return (
@@ -399,10 +408,13 @@ export default function PlayerWalletPage() {
       </div>
 
       {/* ═══════════ TABS ═══════════ */}
-      <div className="wallet-tabs">
+      <div className="wallet-tabs" role="tablist" aria-label="Wallet sections">
         {(['overview', 'transfer', 'history'] as WalletTab[]).map((tab) => (
           <button
             key={tab}
+            role="tab"
+            aria-selected={activeTab === tab}
+            aria-controls={`wallet-panel-${tab}`}
             className={activeTab === tab ? 'active' : ''}
             onClick={() => setActiveTab(tab)}
           >
@@ -492,6 +504,7 @@ export default function PlayerWalletPage() {
                   onChange={(e) => setTransferAmount(e.target.value)}
                   aria-label="Transfer amount"
                   inputMode="decimal"
+                  min="0"
                 />
               </div>
 
@@ -522,8 +535,8 @@ export default function PlayerWalletPage() {
           </div>
         )}
 
-        {/* Chip Ledger Audit Trail */}
-        {user?.id && (
+        {/* Chip Ledger Audit Trail — only visible on history tab */}
+        {activeTab === 'history' && user?.id && (
           <div
             style={{
               background: 'rgba(255,255,255,0.02)',

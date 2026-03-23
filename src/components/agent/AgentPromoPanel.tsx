@@ -16,6 +16,7 @@ import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { masterBus } from '../../core/MasterBus';
 import { triggerHaptic } from '../../services/HapticService';
 import { resolveAvatarDisplay } from '../../utils/avatarUtils';
+import { checkSettlementLock } from '../../utils/settlementLock';
 
 const FB = {
   bg: '#18191A',
@@ -59,6 +60,10 @@ export default function AgentPromoPanel({
   const [toast, setToast] = useState<{ msg: string; type: string } | null>(null);
   const isMounted = useIsMounted();
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Rate limit: 10s between distributions
+  const lastDistributeRef = useRef(0);
+  const DISTRIBUTE_RATE_LIMIT_MS = 10_000;
 
   const isAgent = ['agent', 'sub_agent', 'super_agent'].includes(role);
 
@@ -132,11 +137,12 @@ export default function AgentPromoPanel({
     if (relevant.includes(action)) loadData();
   });
 
-  // Realtime Sync: Listen for REMOTE balance changes
+  // Realtime Sync: Listen for REMOTE balance changes (via masterBus channel manager)
   useEffect(() => {
     if (!clubId || !userId || !isAgent) return;
-    const channel = supabase
-      .channel(`agent-promo-${clubId}-${userId}`)
+    const channelKey = `agent-promo-${clubId}-${userId}`;
+    const channel = masterBus
+      .getOrCreateChannel(channelKey)
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'agents', filter: `user_id=eq.${userId}` },
@@ -162,7 +168,7 @@ export default function AgentPromoPanel({
       });
 
     return () => {
-      supabase.removeChannel(channel);
+      masterBus.removeRegisteredChannel(channelKey);
     };
   }, [clubId, userId, isAgent, loadData]);
 
@@ -180,6 +186,29 @@ export default function AgentPromoPanel({
 
     setDistributing(true);
     triggerHaptic('medium');
+
+    // RATE LIMIT — 10s between distributions
+    const now = Date.now();
+    const elapsed = now - lastDistributeRef.current;
+    if (elapsed < DISTRIBUTE_RATE_LIMIT_MS) {
+      const waitSec = Math.ceil((DISTRIBUTE_RATE_LIMIT_MS - elapsed) / 1000);
+      showToast(`⏱ Please wait ${waitSec}s before distributing again`, 'error');
+      setDistributing(false);
+      return;
+    }
+
+    // SETTLEMENT FREEZE CHECK — block during active settlements
+    try {
+      const lockResult = await checkSettlementLock(clubId);
+      if (lockResult.locked) {
+        showToast('🔒 Settlement in progress — distributions frozen', 'error');
+        setDistributing(false);
+        return;
+      }
+    } catch {
+      // Fail-open: allow distribution if settlement check fails
+    }
+
     try {
       if (!agentPkId) {
         showToast('Agent record not found', 'error');
@@ -206,6 +235,7 @@ export default function AgentPromoPanel({
         setSelectedPlayer(null);
         loadData();
         onDistribute?.();
+        lastDistributeRef.current = Date.now();
       }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Distribution failed';

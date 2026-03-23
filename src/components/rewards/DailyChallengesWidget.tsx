@@ -114,11 +114,8 @@ export const DailyChallengesWidget: React.FC = () => {
     // happen silently to avoid distracting UI flashes on every hand played
     if (!initialLoadDoneRef.current) setLoading(true);
     try {
-      const [dailyData, weeklyData, monthlyData] = await Promise.all([
-        dailyChallengeService.getTodaysChallenges(user.id),
-        dailyChallengeService.getWeeklyChallenges(user.id),
-        dailyChallengeService.getMonthlyChallenges(user.id),
-      ]);
+      const { daily: dailyData, weekly: weeklyData, monthly: monthlyData } =
+        await dailyChallengeService.getAllChallenges(user.id);
 
       if (!isMounted.current) return;
       loadErrorRef.current = false;

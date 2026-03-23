@@ -168,9 +168,9 @@ export const BBJService = {
       .maybeSingle();
 
     if (error || !newPool) {
-      console.error(
+      console.debug(
         'BBJService.ensurePoolExists: Failed to create pool:',
-        error || 'No data returned'
+        error?.message || 'No data returned'
       );
       return null;
     }

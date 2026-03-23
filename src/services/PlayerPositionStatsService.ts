@@ -129,7 +129,7 @@ class PlayerPositionStatsServiceClass {
           3
         );
         if (error) {
-          console.error('[PositionStats] Failed to upsert stats:', error.message);
+          console.debug('[PositionStats] Failed to upsert stats:', error.message);
         } else {
           console.debug(`[PositionStats] Upserted positions for ${statsPayload.length} players`);
         }

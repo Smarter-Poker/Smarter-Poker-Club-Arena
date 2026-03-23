@@ -496,7 +496,7 @@ class HandHistoryServiceClass {
         .maybeSingle();
 
       if (handErr || !handRecord) {
-        console.error('[HandHistory] Failed to save hand:', handErr?.message);
+        console.debug('[HandHistory] Failed to save hand:', handErr?.message);
         return;
       }
 

@@ -185,7 +185,8 @@ class WaitlistServiceClass {
       .order('position', { ascending: true });
 
     if (error) {
-      console.error('[Waitlist] Failed to get table waitlist:', error);
+      // table_waitlists may not exist yet — silently return empty
+      console.debug('[Waitlist] getTableWaitlist:', error.message);
       return [];
     }
 

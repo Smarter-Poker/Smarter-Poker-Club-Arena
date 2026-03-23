@@ -1162,14 +1162,17 @@ export default function CashierPage() {
   const DIAMOND_RATE_DEN = 100;
   const preset = [100, 500, 1000, 5000];
 
-  const filteredTransactions =
-    txFilter === 'all'
-      ? transactions
-      : txFilter === 'credit'
-        ? transactions.filter((t) => t.type === 'credit')
-        : txFilter === 'debit'
-          ? transactions.filter((t) => t.type === 'debit')
-          : transactions.filter((t) => t.category === txFilter);
+  const filteredTransactions = useMemo(
+    () =>
+      txFilter === 'all'
+        ? transactions
+        : txFilter === 'credit'
+          ? transactions.filter((t) => t.type === 'credit')
+          : txFilter === 'debit'
+            ? transactions.filter((t) => t.type === 'debit')
+            : transactions.filter((t) => t.category === txFilter),
+    [transactions, txFilter]
+  );
 
   // ─────────────────────────────────────────────────────────────────────────────
   // CSV EXPORT LOGIC
@@ -1207,6 +1210,8 @@ export default function CashierPage() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    // Prevent blob URL memory leak — release after download triggers
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -1477,6 +1482,25 @@ export default function CashierPage() {
 
                 setIsProcessing(true);
                 setMessage(null);
+
+                // SETTLEMENT FREEZE CHECK — Block distributions during settlement
+                if (clubId) {
+                  try {
+                    const lockResult = await checkSettlementLock(clubId);
+                    if (lockResult.locked) {
+                      if (isMounted.current)
+                        setMessage({
+                          type: 'error',
+                          text: `🔒 Chip movements are frozen during settlement (${lockResult.reason || 'settlement in progress'}). Please try again after settlement completes.`,
+                        });
+                      if (isMounted.current) setIsProcessing(false);
+                      return;
+                    }
+                  } catch {
+                    // Non-blocking: if settlement check fails, allow the action to proceed
+                  }
+                }
+
                 try {
                   // Look up agent PK — distributePromo RPC expects agents.id, not auth.users.id
                   const resolvedClub = await resolveClubUUID(clubId || '');
@@ -1532,6 +1556,9 @@ export default function CashierPage() {
                   setSelectedRecipient('');
                   loadBalances(user.id);
                   loadRecipients();
+                  // Notify both sender and recipient for cross-page sync
+                  notifyWalletChange(user.id, value);
+                  notifyWalletChange(selectedRecipient, value);
                   startCooldown();
                 } catch (err: unknown) {
                   const msg =

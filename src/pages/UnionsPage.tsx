@@ -66,6 +66,20 @@ function UnionCard({ union, idx }: { union: Union; idx: number }) {
           <span className="stat-label">Clubs</span>
         </div>
         <div className="union-stat">
+          <span
+            className="stat-value"
+            style={{
+              background: 'linear-gradient(135deg, #f5c842, #e6a817)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              fontWeight: 800,
+            }}
+          >
+            Lv.{union.level || 1}
+          </span>
+          <span className="stat-label">Level</span>
+        </div>
+        <div className="union-stat">
           <span className="stat-value">{memberDisplay.toLocaleString()}</span>
           <span className="stat-label">Members</span>
         </div>

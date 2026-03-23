@@ -179,12 +179,17 @@ export default function UnionDetailPage() {
 
         if (!isMounted) return;
 
-        const computedMemberCount = (clubsData || []).reduce(
-          (sum, c) => sum + (c.memberCount || 0),
-          0
-        );
+        // Prefer authoritative total_players from the unions table; fall back to client-side sum
         if (unionData) {
-          unionData.memberCount = computedMemberCount;
+          if (!unionData.totalPlayers && !unionData.memberCount) {
+            const computedMemberCount = (clubsData || []).reduce(
+              (sum, c) => sum + (c.memberCount || 0),
+              0
+            );
+            unionData.memberCount = computedMemberCount;
+          } else if (unionData.totalPlayers > unionData.memberCount) {
+            unionData.memberCount = unionData.totalPlayers;
+          }
         }
         setUnion(unionData);
         setClubs(clubsData || []);
@@ -604,6 +609,20 @@ export default function UnionDetailPage() {
         <div className={styles.statCard}>
           <span className={styles.statValue}>{union.clubCount}</span>
           <span className={styles.statLabel}>Member Clubs</span>
+        </div>
+        <div className={styles.statCard}>
+          <span
+            className={styles.statValue}
+            style={{
+              background: 'linear-gradient(135deg, #f5c842, #e6a817)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              fontWeight: 800,
+            }}
+          >
+            Lv.{union.level || 1}
+          </span>
+          <span className={styles.statLabel}>Union Level</span>
         </div>
         <div className={styles.statCard}>
           <span className={styles.statValue}>{union.memberCount.toLocaleString()}</span>

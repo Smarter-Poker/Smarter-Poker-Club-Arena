@@ -150,15 +150,8 @@ export default function CashierPage() {
     type: 'success' | 'error' | 'info';
     text: string;
   } | null>(null);
-  const [_recipientsLoading, setRecipientsLoading] = useState(false);
   const [cashoutConfirm, setCashoutConfirm] = useState({ show: false, value: 0 });
   const [showCashoutModal, setShowCashoutModal] = useState(false);
-  const [_recipientConfirm, setRecipientConfirm] = useState<{
-    show: boolean;
-    recipientId: string;
-    amount: number;
-    username: string;
-  }>({ show: false, recipientId: '', amount: 0, username: '' });
 
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -248,7 +241,7 @@ export default function CashierPage() {
     if (!clubId || !user?.id) return;
     setLoadingContext(true);
     loadUserContext().finally(() => setLoadingContext(false));
-  }, [clubId, user?.id]);
+  }, [clubId, user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load pending cashouts
   useEffect(() => {
@@ -365,7 +358,7 @@ export default function CashierPage() {
     if ((action === 'send' || action === 'distribute') && user?.id && clubId) {
       loadRecipients();
     }
-  }, [action, user?.id, clubId, userRole, isUnionOwner]);
+  }, [action, user?.id, clubId, userRole, isUnionOwner]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadRecipients = async () => {
     if (!user?.id || !clubId) return;

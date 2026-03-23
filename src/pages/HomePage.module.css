@@ -2189,3 +2189,18 @@
     opacity: 0;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   ACCESSIBILITY — Reduced Motion
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+@media (prefers-reduced-motion: reduce) {
+  .actionBarWrapper,
+  .clubCarousel,
+  .featuredCard,
+  .clubCard,
+  .tileCard,
+  .ctaCard {
+    animation: none !important;
+  }
+}

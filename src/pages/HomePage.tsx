@@ -1288,20 +1288,22 @@ function HomePageInner() {
         {/* ═══════════════════════════════════════════════════════════════════════
                     CLUB CAROUSEL — Swipeable: [User Clubs ← SHARK CLUB (center) → User Clubs]
                 ═══════════════════════════════════════════════════════════════════════ */}
-        <CarouselSection
-          displayClubs={displayClubs}
-          sharkClubId={sharkClubId}
-          sharkClubStats={sharkClubStats}
-          clubStats={clubStats}
-          pinnedClubIds={pinnedClubIds}
-          navigate={navigate}
-          toast={toast}
-          handleContextMenu={handleContextMenu}
-          handleLongPressStart={handleLongPressStart}
-          handleLongPressEnd={handleLongPressEnd}
-          onOpenJoinModal={() => setShowJoinModal(true)}
-          onOpenCreateModal={() => setShowCreateClubModal(true)}
-        />
+        <div className={styles.carouselScrollFade}>
+          <CarouselSection
+            displayClubs={displayClubs}
+            sharkClubId={sharkClubId}
+            sharkClubStats={sharkClubStats}
+            clubStats={clubStats}
+            pinnedClubIds={pinnedClubIds}
+            navigate={navigate}
+            toast={toast}
+            handleContextMenu={handleContextMenu}
+            handleLongPressStart={handleLongPressStart}
+            handleLongPressEnd={handleLongPressEnd}
+            onOpenJoinModal={() => setShowJoinModal(true)}
+            onOpenCreateModal={() => setShowCreateClubModal(true)}
+          />
+        </div>
 
         {/* Welcome message for new users is handled as a toast popup (auto-dismiss) */}
 

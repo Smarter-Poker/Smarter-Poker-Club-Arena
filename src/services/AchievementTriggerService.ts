@@ -91,7 +91,7 @@ class AchievementTriggerServiceClass {
     for (const ach of result.triggeredAchievements) {
       pushNotificationService
         .notifyAchievement(userId, ach.name)
-        .catch((err) => console.error('[Achievements] Push notification failed:', err));
+        .catch((err) => console.debug('[Achievements] Push notification failed:', err));
     }
 
     // 6. Update Daily Challenge progress (fire-and-forget, non-blocking)
@@ -104,16 +104,15 @@ class AchievementTriggerServiceClass {
         ].filter(Boolean) as Promise<any>[]
       );
 
-      // Emit on ANY successful progress update (not just completions).
-      // FIX: Previously only emitted when challenges completed, causing
-      // progress bars in the widget/ProfilePage to stay stale (showing 0/10
-      // the entire time, then jumping to 10/10 on completion).
-      const anyUpdated = progressResults.some((r) => r.status === 'fulfilled');
-      if (anyUpdated) {
+      // Check if any challenges were completed
+      const anyCompleted = progressResults.some(
+        (r) => r.status === 'fulfilled' && r.value?.completed?.length > 0
+      );
+      if (anyCompleted) {
         masterBus.emit('CHALLENGE_PROGRESS_UPDATED', { userId, source: 'hand_complete' });
       }
     } catch (dcErr) {
-      console.warn('[AchievementTrigger] Daily challenge progress update failed:', dcErr);
+      console.debug('[AchievementTrigger] Daily challenge progress update failed:', dcErr);
     }
 
     return result;
@@ -156,12 +155,12 @@ class AchievementTriggerServiceClass {
 
     // Update Daily Challenge progress for tournaments
     try {
-      await dailyChallengeService.updateProgress(userId, 'tournaments_played', 1);
-      // Always emit on successful progress update (not just completions)
-      // — keeps tournament progress bars in sync with onHandComplete behavior
-      masterBus.emit('CHALLENGE_PROGRESS_UPDATED', { userId, source: 'tournament_complete' });
+      const dcResult = await dailyChallengeService.updateProgress(userId, 'tournaments_played', 1);
+      if (dcResult.completed.length > 0) {
+        masterBus.emit('CHALLENGE_PROGRESS_UPDATED', { userId, source: 'tournament_complete' });
+      }
     } catch (dcErr) {
-      console.warn('[AchievementTrigger] Daily challenge tournament progress failed:', dcErr);
+      console.debug('[AchievementTrigger] Daily challenge tournament progress failed:', dcErr);
     }
 
     return result;
@@ -189,12 +188,12 @@ class AchievementTriggerServiceClass {
 
     // Update Daily Challenge progress for friends
     try {
-      await dailyChallengeService.updateProgress(userId, 'friends_added', 1);
-      // Always emit on successful progress update (not just completions)
-      // — keeps friend progress bars in sync with onHandComplete behavior
-      masterBus.emit('CHALLENGE_PROGRESS_UPDATED', { userId, source: 'friend_added' });
+      const dcResult = await dailyChallengeService.updateProgress(userId, 'friends_added', 1);
+      if (dcResult.completed.length > 0) {
+        masterBus.emit('CHALLENGE_PROGRESS_UPDATED', { userId, source: 'friend_added' });
+      }
     } catch (dcErr) {
-      console.warn('[AchievementTrigger] Daily challenge friend progress failed:', dcErr);
+      console.debug('[AchievementTrigger] Daily challenge friend progress failed:', dcErr);
     }
 
     return result;
@@ -280,7 +279,7 @@ class AchievementTriggerServiceClass {
         { onConflict: 'user_id', ignoreDuplicates: true }
       );
       if (upsertErr) {
-        console.error('[AchievementTrigger] Stats upsert failed:', upsertErr);
+        console.debug('[AchievementTrigger] Stats upsert failed:', upsertErr);
         return;
       }
 
@@ -304,10 +303,10 @@ class AchievementTriggerServiceClass {
           })
           .eq('user_id', userId);
 
-        if (updateErr) console.error('[AchievementTrigger] Stats update failed:', updateErr);
+        if (updateErr) console.debug('[AchievementTrigger] Stats update failed:', updateErr);
       }
     } catch (err) {
-      console.error('[AchievementTrigger] Stats update unexpected error:', err);
+      console.debug('[AchievementTrigger] Stats update unexpected error:', err);
     }
   }
 }
@@ -330,6 +329,6 @@ masterBus.subscribe('FRIEND_REQUEST_ACCEPTED', async () => {
       await achievementTriggerService.onFriendAdded(user.id);
     }
   } catch (err) {
-    console.warn('[AchievementTrigger] Friend-added challenge update failed:', err);
+    console.debug('[AchievementTrigger] Friend-added challenge update failed:', err);
   }
 });

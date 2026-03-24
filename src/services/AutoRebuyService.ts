@@ -47,12 +47,72 @@ class AutoRebuyServiceCore {
   private intervalHandle: ReturnType<typeof setInterval> | null = null;
   private rebuyInProgress: Set<string> = new Set(); // Track concurrent rebuys by horse:table
 
+  // ── Tab leader election (prevents multi-tab race conditions) ──
+  private tabId = Math.random().toString(36).slice(2, 10);
+  private isLeader = false;
+  private leaderChannel: BroadcastChannel | null = null;
+  private leaderHeartbeatHandle: ReturnType<typeof setInterval> | null = null;
+  private lastLeaderHeartbeat = 0;
+
   constructor(config: Partial<AutoRebuyConfig> = {}) {
     this.monitoringInterval = config.monitoringInterval ?? 30000;
     this.minStackBB = config.minStackBB ?? 20;
     this.rebuyStackBB = config.rebuyStackBB ?? 100;
     this.minHorsesPerTable = config.minHorsesPerTable ?? 4;
     this.minWalletBalance = config.minWalletBalance ?? 50000;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // TAB LEADER ELECTION — Only ONE tab runs AutoRebuy at a time
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  private initLeaderElection(): void {
+    try {
+      this.leaderChannel = new BroadcastChannel('autorebuy-leader');
+      this.leaderChannel.onmessage = (e) => {
+        if (e.data?.type === 'heartbeat' && e.data.tabId !== this.tabId) {
+          // Another tab is the leader — step down
+          if (this.isLeader) {
+            console.debug(`[AutoRebuy:${this.tabId}] Yielding leadership to ${e.data.tabId}`);
+          }
+          this.isLeader = false;
+          this.lastLeaderHeartbeat = Date.now();
+        } else if (e.data?.type === 'claim' && e.data.tabId !== this.tabId) {
+          // Another tab wants leadership — if we're leader, reassert
+          if (this.isLeader) {
+            this.leaderChannel?.postMessage({ type: 'heartbeat', tabId: this.tabId });
+          }
+        }
+      };
+
+      // Try to claim leadership after a short random delay (jitter to avoid simultaneous claims)
+      setTimeout(() => {
+        if (!this.isLeader && Date.now() - this.lastLeaderHeartbeat > 5000) {
+          this.claimLeadership();
+        }
+      }, Math.random() * 2000 + 500);
+
+      // Check for stale leader every 10 seconds
+      this.leaderHeartbeatHandle = setInterval(() => {
+        if (this.isLeader) {
+          // We're leader — send heartbeat
+          this.leaderChannel?.postMessage({ type: 'heartbeat', tabId: this.tabId });
+        } else if (Date.now() - this.lastLeaderHeartbeat > 15000) {
+          // No heartbeat in 15s — leader tab is gone, claim leadership
+          this.claimLeadership();
+        }
+      }, 5000);
+    } catch {
+      // BroadcastChannel not available — just become leader (single tab)
+      this.isLeader = true;
+      console.debug(`[AutoRebuy:${this.tabId}] BroadcastChannel unavailable — becoming leader by default`);
+    }
+  }
+
+  private claimLeadership(): void {
+    this.isLeader = true;
+    this.leaderChannel?.postMessage({ type: 'heartbeat', tabId: this.tabId });
+    console.debug(`[AutoRebuy:${this.tabId}] Claimed leadership`);
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -69,10 +129,11 @@ class AutoRebuyServiceCore {
     }
 
     this.isRunning = true;
-    console.debug('[AutoRebuy] Starting monitoring (interval: ' + this.monitoringInterval + 'ms)');
+    this.initLeaderElection();
+    console.debug(`[AutoRebuy:${this.tabId}] Starting monitoring (interval: ${this.monitoringInterval}ms)`);
 
-    // Initial check
-    this.checkAllTables();
+    // Initial check (delayed to let leader election settle)
+    setTimeout(() => this.checkAllTables(), 3000);
 
     // Recurring checks
     this.intervalHandle = setInterval(() => {
@@ -90,9 +151,18 @@ class AutoRebuyServiceCore {
     }
 
     this.isRunning = false;
+    this.isLeader = false;
     if (this.intervalHandle) {
       clearInterval(this.intervalHandle);
       this.intervalHandle = null;
+    }
+    if (this.leaderHeartbeatHandle) {
+      clearInterval(this.leaderHeartbeatHandle);
+      this.leaderHeartbeatHandle = null;
+    }
+    if (this.leaderChannel) {
+      this.leaderChannel.close();
+      this.leaderChannel = null;
     }
 
     console.debug('[AutoRebuy] Stopped monitoring');
@@ -106,6 +176,11 @@ class AutoRebuyServiceCore {
    * Check all active tables and process rebuys
    */
   private async checkAllTables(): Promise<void> {
+    // Only the leader tab runs AutoRebuy to prevent multi-tab race conditions
+    if (!this.isLeader) {
+      return;
+    }
+
     try {
       // Get all active tables
       const { data: tables, error: tableError } = await supabase

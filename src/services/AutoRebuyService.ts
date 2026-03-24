@@ -182,11 +182,11 @@ class AutoRebuyServiceCore {
     }
 
     try {
-      // Get all active tables
+      // Get all active/waiting tables — horses should be seeded in both states
       const { data: tables, error: tableError } = await supabase
         .from('tables')
         .select('id, big_blind')
-        .eq('status', 'active');
+        .in('status', ['active', 'waiting']);
 
       if (tableError) {
         console.debug('[AutoRebuy] Failed to fetch active tables:', tableError);

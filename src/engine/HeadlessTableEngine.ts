@@ -1775,37 +1775,29 @@ export class HeadlessTableEngine {
   }
 
   private async markHorseAsLeft(userId: string, reason: string): Promise<void> {
-    const { error } = await this.supabaseClient
+    // Use HydraService.removeHorse which properly:
+    // 1. Deletes the seat row (instead of soft-deleting with left_at)
+    // 2. Resets horse_status to "available" so AutoRebuyService can reseed
+    await HydraService.removeHorse(this.tableId, userId);
+    console.debug(
+      `[HeadlessTableEngine:${this.tableId}] Horse ${userId.slice(0, 8)} removed via HydraService (reason: ${reason})`
+    );
+
+    // Sync tables.current_players immediately so merge/balance reads correct count
+    const { count, error: countErr } = await this.supabaseClient
       .from('table_seats')
-      .update({ left_at: new Date().toISOString() })
+      .select('*', { count: 'exact', head: true })
       .eq('table_id', this.tableId)
-      .eq('user_id', userId)
       .is('left_at', null);
 
-    if (error) {
-      console.debug(`[HeadlessTableEngine:${this.tableId}] Failed to mark horse as left:`, error);
-    } else {
-      // Sync tables.current_players immediately so merge/balance reads correct count
-      const { count, error: countErr } = await this.supabaseClient
-        .from('table_seats')
-        .select('*', { count: 'exact', head: true })
-        .eq('table_id', this.tableId)
-        .is('left_at', null);
+    if (!countErr) {
+      await this.supabaseClient
+        .from('tables')
+        .update({ current_players: count ?? 0 })
+        .eq('id', this.tableId);
 
-      if (countErr) {
-        console.debug(
-          `[HeadlessTableEngine:${this.tableId}] Recount failed after horse left:`,
-          countErr
-        );
-      } else {
-        await this.supabaseClient
-          .from('tables')
-          .update({ current_players: count ?? 0 })
-          .eq('id', this.tableId);
-
-        // Emit bus event so lobby/UI updates the table player count in real-time
-        masterBus.emit('TABLE_UPDATED', { tableId: this.tableId });
-      }
+      // Emit bus event so lobby/UI updates the table player count in real-time
+      masterBus.emit('TABLE_UPDATED', { tableId: this.tableId });
     }
   }
 

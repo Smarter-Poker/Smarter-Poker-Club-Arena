@@ -371,6 +371,17 @@ export const HydraService = {
       const delay =
         randomInRange(this.config.entryDelayRange[0], this.config.entryDelayRange[1]) * 1000;
 
+      // Re-check seat count before each seating to prevent multi-tab over-seeding
+      const { data: currentSeats } = await supabase
+        .from('table_seats')
+        .select('id')
+        .eq('table_id', tableId)
+        .is('left_at', null);
+      if ((currentSeats?.length || 0) >= maxHorses) {
+        console.debug(`[Hydra] Table ${tableId} already has ${currentSeats?.length} seats (max ${maxHorses}) — stopping seed`);
+        break;
+      }
+
       // Stagger for natural appearance
       if (i > 0) {
         await new Promise<void>((resolve) => setTimeout(resolve, delay));
@@ -409,6 +420,19 @@ export const HydraService = {
     if (horseErr) console.warn('[Hydra] seatHorse profile error:', horseErr.message);
 
     if (!horseData) return null;
+
+    // GUARD: Prevent duplicate seating — check if horse is already at this table
+    const { data: existingHorseSeat } = await supabase
+      .from('table_seats')
+      .select('id')
+      .eq('table_id', tableId)
+      .eq('user_id', horseId)
+      .is('left_at', null)
+      .maybeSingle();
+    if (existingHorseSeat) {
+      console.debug(`[Hydra] Horse ${horseId} already seated at table ${tableId} — skipping`);
+      return null;
+    }
 
     const stack = getStackForProfile(horseData.horse_profile as HorseProfile, bigBlind);
 

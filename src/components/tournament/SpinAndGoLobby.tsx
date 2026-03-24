@@ -31,18 +31,17 @@ interface SpinTournament {
 }
 
 // Pool-based multipliers — display values for the wheel UI.
-// Actual payouts: winner gets 2× buy_in + bonus from pool (if triggered).
-// 75% of spins = 2×, remainder = bonus spins funded by the pool.
+// Balanced probabilities: expected payout = 3× buy_in, club net = 10%.
 const SPIN_MULTIPLIERS = [2, 3, 5, 10, 25, 50, 100];
 
 const MULTIPLIER_PROBABILITIES: { [key: number]: number } = {
-  2: 75,
-  3: 15,
-  5: 6,
-  10: 2.5,
-  25: 1.0,
-  50: 0.4,
-  100: 0.1,
+  2: 76.19,
+  3: 14.29,
+  5: 5.71,
+  10: 2.38,
+  25: 0.95,
+  50: 0.38,
+  100: 0.10,
 };
 
 export function SpinAndGoLobby({ clubId, onRegister }: SpinAndGoLobbyProps) {
@@ -238,7 +237,7 @@ export function SpinAndGoLobby({ clubId, onRegister }: SpinAndGoLobbyProps) {
               {/* Probability Info */}
               <div className="spin-card__info">
                 <span className="info-label">Prize Tiers</span>
-                <span className="info-text">2x-75%, 3x-15%, 5x-6%, 10x-2.5%, 25x+</span>
+                <span className="info-text">2x-76%, 3x-14%, 5x-6%, 10x-2.4%, 25x+</span>
               </div>
 
               {t.status === 'registering' && (

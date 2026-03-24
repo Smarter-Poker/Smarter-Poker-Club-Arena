@@ -256,70 +256,67 @@ export class TournamentEngine {
           SPIN_BONUS_TIERS,
           SPIN_RAKE_PERCENT,
           SPIN_POOL_CONTRIBUTION_MULTIPLIER,
+          SPIN_POOL_MAX_NEGATIVE,
         } = await import('../services/TournamentService');
 
         const spinResult = tournamentService.spinMultiplier(SPIN_MULTIPLIERS.standard);
         const buyIn = this.tournamentInfo.buy_in_amount || 0;
 
-        // ── Pool-Based Prize Calculation ──────────────────────────────────
-        // Base payout: winner always gets at least 2× buy_in
+        // ── Pool-Based Prize Calculation (10% net return model) ──────────
+        // EVERY spin deposits 1× buy_in to pool, then bonus draws happen.
+        // Pool can go negative up to SPIN_POOL_MAX_NEGATIVE (-500 chips).
         const basePayout = 2 * buyIn;
         const poolContribution = SPIN_POOL_CONTRIBUTION_MULTIPLIER * buyIn;
         const requestedBonus = spinResult.bonusBuyIns * buyIn;
 
         let actualBonus = 0;
-        let poolDeposited = 0;
+        const poolDeposited = poolContribution; // Always deposit
 
-        if (requestedBonus > 0) {
-          // Try to draw bonus from pool (capped at balance)
-          const clubId = this.tournamentInfo.club_id;
-          if (clubId) {
-            const { data: poolBalance } = await this.supabase
+        const clubId = this.tournamentInfo.club_id;
+
+        // Step 1: ALWAYS deposit 1× buy_in to pool
+        if (clubId) {
+          const { data: existing } = await this.supabase
+            .from('spin_bonus_pools')
+            .select('balance')
+            .eq('club_id', clubId)
+            .maybeSingle();
+
+          if (existing) {
+            await this.supabase
               .from('spin_bonus_pools')
-              .select('balance')
-              .eq('club_id', clubId)
-              .single();
-
-            const available = poolBalance?.balance ?? 0;
-            actualBonus = Math.min(requestedBonus, available);
-
-            if (actualBonus > 0) {
-              // Debit from pool
-              await this.supabase
-                .from('spin_bonus_pools')
-                .update({
-                  balance: available - actualBonus,
-                  updated_at: new Date().toISOString(),
-                })
-                .eq('club_id', clubId);
-            }
+              .update({
+                balance: existing.balance + poolContribution,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('club_id', clubId);
+          } else {
+            await this.supabase
+              .from('spin_bonus_pools')
+              .insert({ club_id: clubId, balance: poolContribution });
           }
         }
 
-        if (actualBonus === 0) {
-          // No bonus drawn — deposit 1× buy_in into pool
-          const clubId = this.tournamentInfo.club_id;
-          if (clubId) {
-            poolDeposited = poolContribution;
-            const { data: existing } = await this.supabase
-              .from('spin_bonus_pools')
-              .select('balance')
-              .eq('club_id', clubId)
-              .single();
+        // Step 2: Draw bonus from pool (allow negative to -500)
+        if (requestedBonus > 0 && clubId) {
+          const { data: poolData } = await this.supabase
+            .from('spin_bonus_pools')
+            .select('balance')
+            .eq('club_id', clubId)
+            .maybeSingle();
 
-            if (existing) {
-              await this.supabase
-                .from('spin_bonus_pools')
-                .update({
-                  balance: existing.balance + poolContribution,
-                  updated_at: new Date().toISOString(),
-                })
-                .eq('club_id', clubId);
-            } else {
-              await this.supabase
-                .from('spin_bonus_pools')
-                .insert({ club_id: clubId, balance: poolContribution });
-            }
+          const currentBalance = poolData?.balance ?? 0;
+          const maxDraw = currentBalance - SPIN_POOL_MAX_NEGATIVE;
+
+          if (maxDraw > 0) {
+            actualBonus = Math.min(requestedBonus, maxDraw);
+            await this.supabase
+              .from('spin_bonus_pools')
+              .update({
+                balance: currentBalance - actualBonus,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('club_id', clubId);
           }
         }
 

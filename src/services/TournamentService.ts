@@ -361,38 +361,53 @@ export const PAYOUT_STRUCTURES = {
 
 export const SPIN_RAKE_PERCENT = 0.10; // 10% fee on buy-in
 
-// Pool contribution per spin: 1 buy-in saved from the 3 collected
-export const SPIN_POOL_CONTRIBUTION_MULTIPLIER = 1; // × buy_in per default spin
+// Pool contribution per spin: 1 buy-in saved from the 3 collected.
+// EVERY spin deposits 1× buy_in to pool, then bonus draws happen.
+// This ensures the pool is self-sustaining and club net = exactly 10%.
+export const SPIN_POOL_CONTRIBUTION_MULTIPLIER = 1; // × buy_in per spin (always)
+
+// Maximum negative pool balance a club/union can carry (in chips).
+// When pool is negative, future 2× spin deposits pay it back.
+export const SPIN_POOL_MAX_NEGATIVE = -500;
 
 // Bonus trigger tiers — probability-weighted random check at game start.
-// If a bonus triggers, the bonus amount is capped at current pool balance.
-// The "display multiplier" is what the UI wheel shows. The actual bonus
-// comes from the pool, so the club NEVER loses money.
+// Probabilities are balanced so expected pool draw = expected pool deposit (1× buy_in).
+// This guarantees the club/union net return = exactly 10% over time.
+//
+// Economics per spin (e.g. $1 buy-in):
+//   3 players pay $1.10 each ($1 buy-in + $0.10 fee)
+//   House keeps $0.30 (10% rake) — this is the ONLY house revenue
+//   Prize pool = $3.00 (all 3 buy-ins)
+//   Base payout = $2.00 (2× buy_in to winner)
+//   Pool deposit = $1.00 per spin (always)
+//   Pool draw = bonusBuyIns × buy_in (for bonus tiers)
+//   Expected payout = $3.00 (pool nets to zero over time)
+//   "Free rake spin" (3×) = 3 in, 3 out — players see no rake
 export const SPIN_BONUS_TIERS = {
   standard: [
-    // ~75% of spins: no bonus (default 2× payout, 1× saved to pool)
-    { displayMultiplier: 2, probability: 75.0, bonusBuyIns: 0 },
-    // ~15% of spins: small bonus (3× display, +1 buy-in from pool)
-    { displayMultiplier: 3, probability: 15.0, bonusBuyIns: 1 },
-    // ~6% of spins: medium bonus (5× display, +3 buy-ins from pool)
-    { displayMultiplier: 5, probability: 6.0, bonusBuyIns: 3 },
-    // ~2.5% of spins: large bonus (10× display, +8 buy-ins from pool)
-    { displayMultiplier: 10, probability: 2.5, bonusBuyIns: 8 },
-    // ~1% of spins: big bonus (25× display, +23 buy-ins from pool)
-    { displayMultiplier: 25, probability: 1.0, bonusBuyIns: 23 },
-    // ~0.4% of spins: jackpot (50× display, +48 buy-ins from pool)
-    { displayMultiplier: 50, probability: 0.4, bonusBuyIns: 48, isPremium: true },
-    // ~0.1% of spins: mega jackpot (100× display, +98 buy-ins from pool)
-    { displayMultiplier: 100, probability: 0.1, bonusBuyIns: 98, isPremium: true },
+    // ~76.19% of spins: default (2× payout, 1× deposited to pool, 0 drawn)
+    { displayMultiplier: 2, probability: 76.1904, bonusBuyIns: 0 },
+    // ~14.29% of spins: free-rake spin (3× payout, 1× deposited, 1× drawn — net 0)
+    { displayMultiplier: 3, probability: 14.2857, bonusBuyIns: 1 },
+    // ~5.71% of spins: medium bonus (5× payout, 1× deposited, 3× drawn)
+    { displayMultiplier: 5, probability: 5.7143, bonusBuyIns: 3 },
+    // ~2.38% of spins: large bonus (10× payout, 1× deposited, 8× drawn)
+    { displayMultiplier: 10, probability: 2.3810, bonusBuyIns: 8 },
+    // ~0.95% of spins: big bonus (25× payout, 1× deposited, 23× drawn)
+    { displayMultiplier: 25, probability: 0.9524, bonusBuyIns: 23 },
+    // ~0.38% of spins: jackpot (50× payout, 1× deposited, 48× drawn)
+    { displayMultiplier: 50, probability: 0.3810, bonusBuyIns: 48, isPremium: true },
+    // ~0.10% of spins: mega jackpot (100× payout, 1× deposited, 98× drawn)
+    { displayMultiplier: 100, probability: 0.0952, bonusBuyIns: 98, isPremium: true },
   ],
   hyper: [
-    { displayMultiplier: 2, probability: 72.0, bonusBuyIns: 0 },
-    { displayMultiplier: 3, probability: 16.0, bonusBuyIns: 1 },
-    { displayMultiplier: 5, probability: 7.0, bonusBuyIns: 3 },
-    { displayMultiplier: 10, probability: 3.0, bonusBuyIns: 8 },
-    { displayMultiplier: 25, probability: 1.2, bonusBuyIns: 23 },
-    { displayMultiplier: 50, probability: 0.6, bonusBuyIns: 48, isPremium: true },
-    { displayMultiplier: 100, probability: 0.2, bonusBuyIns: 98, isPremium: true },
+    { displayMultiplier: 2, probability: 79.5620, bonusBuyIns: 0 },
+    { displayMultiplier: 3, probability: 11.6788, bonusBuyIns: 1 },
+    { displayMultiplier: 5, probability: 5.1095, bonusBuyIns: 3 },
+    { displayMultiplier: 10, probability: 2.1898, bonusBuyIns: 8 },
+    { displayMultiplier: 25, probability: 0.8759, bonusBuyIns: 23 },
+    { displayMultiplier: 50, probability: 0.4380, bonusBuyIns: 48, isPremium: true },
+    { displayMultiplier: 100, probability: 0.1460, bonusBuyIns: 98, isPremium: true },
   ],
 };
 

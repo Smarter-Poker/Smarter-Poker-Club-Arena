@@ -25,6 +25,7 @@ import {
   SPIN_BONUS_TIERS,
   SPIN_RAKE_PERCENT,
   SPIN_POOL_CONTRIBUTION_MULTIPLIER,
+  SPIN_POOL_MAX_NEGATIVE,
 } from '../services/TournamentService';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -207,16 +208,17 @@ class SpinItEngineClass {
     );
     const requestedBonus = (bonusTier?.bonusBuyIns ?? 0) * buyIn;
 
+    // ── Pool Economics (10% net return model) ───────────────────────────────
+    // EVERY spin deposits 1× buy_in to pool, then bonus draws happen.
+    // This ensures pool is self-sustaining and club net = exactly 10%.
+    // Pool can go negative up to SPIN_POOL_MAX_NEGATIVE (-500 chips).
+    // Future 2× spin deposits pay back the negative balance.
+    await this.depositToPool(lobbyId, poolContribution);
+
     let actualBonus = 0;
-
     if (requestedBonus > 0) {
-      // Query pool balance and cap bonus
+      // Draw from pool — allowed to go negative up to -500 chips
       actualBonus = await this.drawFromPool(lobbyId, requestedBonus);
-    }
-
-    if (actualBonus === 0) {
-      // No bonus — save 1× buy_in to pool
-      await this.depositToPool(lobbyId, poolContribution);
     }
 
     state.prizePool = basePayout + actualBonus;
@@ -228,7 +230,7 @@ class SpinItEngineClass {
       label: selected.label,
       color: selected.color,
       bonusFromPool: actualBonus,
-      poolContribution: actualBonus === 0 ? poolContribution : 0,
+      poolContribution: poolContribution,
     });
   }
 
@@ -421,24 +423,17 @@ class SpinItEngineClass {
   }
 
   /**
-   * Draw bonus from the pool — CAPPED at current balance.
-   * Returns the actual amount drawn (may be 0 if pool is empty or less than requested).
+   * Draw bonus from the pool — allows negative balance down to SPIN_POOL_MAX_NEGATIVE (-500).
+   * Club/union can "carry" up to 500 chips of debt; future 2× spin deposits pay it back.
+   * Returns the actual amount drawn (may be less than requested if it would exceed -500 floor).
    */
   private async drawFromPool(lobbyId: string, requestedAmount: number): Promise<number> {
     const clubId = await this.getClubIdForLobby(lobbyId);
     if (!clubId || requestedAmount <= 0) return 0;
 
     try {
-      // Atomic draw: debit pool up to balance, return actual amount drawn
-      const { data, error } = await supabase.rpc('spin_pool_draw', {
-        p_club_id: clubId,
-        p_amount: requestedAmount,
-      });
-      if (error) {
-        console.warn('[SpinItEngine] spin_pool_draw RPC failed, using direct draw:', error.message);
-        return await this.directPoolDraw(clubId, requestedAmount);
-      }
-      return data ?? 0;
+      // Use direct draw with negative balance support (RPC may not support negative yet)
+      return await this.directPoolDraw(clubId, requestedAmount);
     } catch (e) {
       console.error('[SpinItEngine] Pool draw failed:', e);
       return 0;
@@ -469,22 +464,36 @@ class SpinItEngineClass {
   }
 
   /**
-   * Fallback direct draw (no RPC). Caps at current balance.
+   * Direct draw — allows pool to go negative down to SPIN_POOL_MAX_NEGATIVE (-500 chips).
+   * If draw would push below -500, caps at what keeps pool at exactly -500.
    */
   private async directPoolDraw(clubId: string, requestedAmount: number): Promise<number> {
     const { data: existing } = await supabase
       .from('spin_bonus_pools')
       .select('balance')
       .eq('club_id', clubId)
-      .single();
+      .maybeSingle();
 
-    if (!existing || existing.balance <= 0) return 0;
+    const currentBalance = existing?.balance ?? 0;
 
-    const actualDraw = Math.min(requestedAmount, existing.balance);
-    await supabase
-      .from('spin_bonus_pools')
-      .update({ balance: existing.balance - actualDraw, updated_at: new Date().toISOString() })
-      .eq('club_id', clubId);
+    // How much can we draw before hitting the -500 floor?
+    const maxDraw = currentBalance - SPIN_POOL_MAX_NEGATIVE; // e.g. balance=100, floor=-500 → maxDraw=600
+    if (maxDraw <= 0) return 0; // Already at or below -500, can't draw
+
+    const actualDraw = Math.min(requestedAmount, maxDraw);
+    const newBalance = currentBalance - actualDraw;
+
+    if (existing) {
+      await supabase
+        .from('spin_bonus_pools')
+        .update({ balance: newBalance, updated_at: new Date().toISOString() })
+        .eq('club_id', clubId);
+    } else {
+      // No row yet — create one with negative balance
+      await supabase
+        .from('spin_bonus_pools')
+        .insert({ club_id: clubId, balance: newBalance });
+    }
 
     return actualDraw;
   }

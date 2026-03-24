@@ -132,6 +132,13 @@ function TransactionHistoryInner({ walletId, limit = 20 }: TransactionHistoryPro
   useMasterBusSubscription('WALLET_REFRESHED', debouncedRefresh);
   useMasterBusSubscription('CHIPS_DISTRIBUTED', debouncedRefresh);
 
+  // Cleanup refreshTimer on unmount to prevent lingering timers
+  useEffect(() => {
+    return () => {
+      if (refreshTimer.current) clearTimeout(refreshTimer.current);
+    };
+  }, []);
+
   const loadTransactions = async () => {
     if (!user?.id && !walletId) return;
     setLoading(true);

@@ -340,11 +340,13 @@ export default function PlayerWalletPage() {
     try {
       if (!user?.id) return;
       await internalTransfer(user.id, transferFrom, transferTo, amount);
-      setMessage({
-        type: 'success',
-        text: `Transferred ${amount.toLocaleString()} chips successfully!`,
-      });
-      setTransferAmount('');
+      if (isMounted.current) {
+        setMessage({
+          type: 'success',
+          text: `Transferred ${amount.toLocaleString()} chips successfully!`,
+        });
+        setTransferAmount('');
+      }
       loadBalances(user.id);
       masterBus.emit('BALANCE_UPDATED', { source: 'internal_transfer', userId: user.id });
     } catch {

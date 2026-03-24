@@ -1172,7 +1172,7 @@ export default function CashierPage() {
       }
       if (!clubId) {
         if (isMounted.current) setMessage({ type: 'error', text: 'Club ID is missing' });
-        setIsProcessing(false);
+        if (isMounted.current) setIsProcessing(false);
         return;
       }
 

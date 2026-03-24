@@ -347,7 +347,7 @@ export default function DepositWithdrawModal({
       }
 
       if (!isMounted.current) return;
-      setReferenceId(data.id);
+      setReferenceId(data?.id ?? null);
       setStep('success');
       triggerHaptic([20, 100, 20]);
       onComplete?.();

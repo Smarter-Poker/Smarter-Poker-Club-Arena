@@ -32,6 +32,8 @@ class TournamentTimerServiceClass {
   private breakIntervals: Map<string, number> = new Map(); // configurable break every N levels
   private headsUpTriggered: Set<string> = new Set(); // Guard against duplicate HEADS_UP_SWITCH emissions
   private playerEliminatedUnsub: (() => void) | null = null;
+  // Synchronized break tracking: all tournaments break at :55 past every hour for 5 minutes
+  private syncBreakActive: Map<string, boolean> = new Map();
 
   constructor() {
     // Listen for player eliminations to trigger final table / heads-up detection
@@ -88,6 +90,7 @@ class TournamentTimerServiceClass {
       // Clean up per-tournament tracking state
       this.headsUpTriggered.delete(tournamentId);
       this.breakIntervals.delete(tournamentId);
+      this.syncBreakActive.delete(tournamentId);
     }
   }
 
@@ -137,6 +140,59 @@ class TournamentTimerServiceClass {
         return;
       }
 
+      // ── SYNCHRONIZED HOURLY BREAKS ──
+      // All MTT tournaments break at :55 past every hour for 5 minutes (synced wall-clock).
+      // SPIN and SNG are excluded (too short for breaks).
+      const tType = (tournament as any).tournament_type || '';
+      if (tType !== 'SPIN' && tType !== 'SNG') {
+        const now = new Date();
+        const minute = now.getMinutes();
+        const inBreakWindow = minute >= 55; // :55 through :59 = 5-minute break
+        const wasInBreak = this.syncBreakActive.get(tournamentId) || false;
+
+        if (inBreakWindow && !wasInBreak) {
+          // Enter synchronized break
+          this.syncBreakActive.set(tournamentId, true);
+          timer.isPaused = true;
+          console.info(`[TournamentTimer] SYNC BREAK START for ${tournamentId.slice(0, 8)} at ${now.toISOString()}`);
+          masterBus.emit('TOURNAMENT_BREAK', {
+            tournamentId,
+            level: timer.currentLevel,
+            durationMinutes: 5,
+            synchronized: true,
+          });
+          masterBus.emit('BLIND_LEVEL_CHANGE', {
+            tournamentId,
+            level: timer.currentLevel,
+            smallBlind: 0,
+            bigBlind: 0,
+            ante: 0,
+            isBreak: true,
+          });
+          await this.broadcastEvent(tournamentId, 'BREAK_START', {
+            durationMinutes: 5,
+            synchronized: true,
+            resumeAt: new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours() + 1, 0, 0).toISOString(),
+          });
+          timer.isTickInProgress = false;
+          return; // Skip normal tick during break
+        } else if (!inBreakWindow && wasInBreak) {
+          // End synchronized break (minute rolled past :59 to :00)
+          this.syncBreakActive.set(tournamentId, false);
+          timer.isPaused = false;
+          console.info(`[TournamentTimer] SYNC BREAK END for ${tournamentId.slice(0, 8)} at ${now.toISOString()}`);
+          masterBus.emit('TOURNAMENT_BREAK_END', { tournamentId });
+          masterBus.emit('BREAK_END', { tournamentId });
+          await this.broadcastEvent(tournamentId, 'BREAK_END', { synchronized: true });
+        }
+
+        if (inBreakWindow) {
+          // Still in break — skip normal processing
+          timer.isTickInProgress = false;
+          return;
+        }
+      }
+
       // Calculate current level based on elapsed time
       const levelState = tournamentService.getCurrentLevelState(tournament);
       const newLevel = levelState.levelIndex + 1; // 1-indexed for display
@@ -159,6 +215,7 @@ class TournamentTimerServiceClass {
 
   /**
    * Handle blind level advancement
+   * TournamentTimerService is the SOLE AUTHORITY for blind level changes.
    */
   private async handleLevelChange(
     tournament: Tournament,
@@ -167,25 +224,61 @@ class TournamentTimerServiceClass {
     levelState: ReturnType<typeof tournamentService.getCurrentLevelState>
   ): Promise<void> {
     const { currentLevel } = levelState;
+    const isBreakLevel = currentLevel.isBreak === true;
 
-    // 1. Update database with new level
-    await supabase
-      .from('tournaments')
-      .update({
-        current_level: newLevel,
-      })
-      .eq('id', tournament.id);
+    // 1. Update database with new level (with error handling)
+    try {
+      await supabase
+        .from('tournaments')
+        .update({ current_level: newLevel })
+        .eq('id', tournament.id);
+    } catch (err) {
+      console.error(`[TournamentTimer] DB update failed for level ${newLevel}:`, err);
+    }
 
-    // 2. Update all tournament tables with new blinds
-    await supabase
-      .from('tables')
-      .update({
-        small_blind: currentLevel.smallBlind,
-        big_blind: currentLevel.bigBlind,
-      })
-      .eq('tournament_id', tournament.id);
+    // 2. Handle break levels — DON'T update table blinds to 0/0 during breaks
+    if (isBreakLevel) {
+      const breakDuration = currentLevel.durationMinutes || 5;
+      masterBus.emit('TOURNAMENT_BREAK', {
+        tournamentId: tournament.id,
+        level: newLevel,
+        durationMinutes: breakDuration,
+      });
+      masterBus.emit('BLIND_LEVEL_CHANGE', {
+        tournamentId: tournament.id,
+        level: newLevel,
+        smallBlind: 0,
+        bigBlind: 0,
+        ante: 0,
+        isBreak: true,
+      });
+      this.pauseTimer(tournament.id);
+      const timer = this.activeTimers.get(tournament.id);
+      if (timer) {
+        timer.breakTimeoutId = setTimeout(() => {
+          this.resumeTimer(tournament.id);
+          masterBus.emit('TOURNAMENT_BREAK_END', { tournamentId: tournament.id });
+          masterBus.emit('BREAK_END', { tournamentId: tournament.id });
+        }, breakDuration * 60_000);
+      }
+      return; // Don't update table blinds during breaks
+    }
 
-    // 3. Broadcast level change to all clients
+    // 3. Update non-closed tournament tables with new blinds
+    try {
+      await supabase
+        .from('tables')
+        .update({
+          small_blind: currentLevel.smallBlind,
+          big_blind: currentLevel.bigBlind,
+        })
+        .eq('tournament_id', tournament.id)
+        .neq('status', 'closed');
+    } catch (err) {
+      console.error(`[TournamentTimer] Table blind update failed:`, err);
+    }
+
+    // 4. Broadcast level change to all clients
     await this.broadcastLevelChange(tournament.id, {
       level: newLevel,
       smallBlind: currentLevel.smallBlind,
@@ -195,26 +288,20 @@ class TournamentTimerServiceClass {
       timeRemainingSeconds: levelState.timeRemainingSeconds,
     });
 
-    // 3.5. Emit specific bus event for TournamentClock and other listeners
+    // 5. Emit bus events for TournamentEngine and TournamentClock
     masterBus.emit('BLIND_LEVEL_CHANGE', {
       tournamentId: tournament.id,
       level: newLevel,
       smallBlind: currentLevel.smallBlind,
       bigBlind: currentLevel.bigBlind,
       ante: currentLevel.ante,
+      isBreak: false,
     });
 
-    // 3.6. Also emit general tournament update for page-level refresh
     masterBus.emit('TOURNAMENT_UPDATED', {
       tournamentId: tournament.id,
       status: `blind_level_${newLevel}`,
     });
-
-    // 4. Check for break times (configurable interval, default every 6 levels)
-    const breakInterval = this.breakIntervals.get(tournament.id) || 6;
-    if (newLevel % breakInterval === 0 && levelState.nextLevel) {
-      await this.handleBreak(tournament.id, 5); // 5-minute break
-    }
   }
 
   /**
@@ -406,6 +493,7 @@ class TournamentTimerServiceClass {
     // Defensive: clear any remaining state
     this.headsUpTriggered.clear();
     this.breakIntervals.clear();
+    this.syncBreakActive.clear();
   }
 
   /**

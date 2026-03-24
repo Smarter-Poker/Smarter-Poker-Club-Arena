@@ -79,6 +79,7 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
   });
 
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const refreshPendingRef = useRef(false); // guard against multiple 0-hit refreshes
   const [isFullscreen, setIsFullscreen] = useState(fullscreen);
 
   // ── Load tournament data and start clock tick ──
@@ -136,9 +137,19 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
           };
         }
         // Normal level countdown
+        const next = Math.max(0, prev.timeRemaining - 1);
+        // When countdown hits 0, trigger an immediate DB refresh to advance level
+        if (next === 0 && prev.timeRemaining > 0 && !refreshPendingRef.current) {
+          refreshPendingRef.current = true;
+          // Small delay to let the server state settle (blind check is 30s granularity)
+          setTimeout(() => {
+            refreshState();
+            refreshPendingRef.current = false;
+          }, 1500);
+        }
         return {
           ...prev,
-          timeRemaining: Math.max(0, prev.timeRemaining - 1),
+          timeRemaining: next,
         };
       });
     }, 1000);
@@ -171,10 +182,14 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
         breakTimeRemaining: 0,
         breakStartTime: undefined,
       }));
+      // Also do a full refresh to get timeRemaining for the new level
+      refreshState();
     }
   });
-  // Listen for break start/end events
-  useMasterBusSubscription('BREAK_START', (payload: any) => {
+  // Listen for break start/end events (handle both event name variants)
+  // TournamentEngine emits TOURNAMENT_BREAK / TOURNAMENT_BREAK_END
+  // TournamentTimerService emits BREAK_START / BREAK_END
+  const handleBreakStart = useCallback((payload: any) => {
     if (payload?.tournamentId === tournamentId) {
       setClock((prev) => ({
         ...prev,
@@ -183,8 +198,8 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
         breakStartTime: Date.now(),
       }));
     }
-  });
-  useMasterBusSubscription('BREAK_END', (payload: any) => {
+  }, [tournamentId]);
+  const handleBreakEnd = useCallback((payload: any) => {
     if (payload?.tournamentId === tournamentId) {
       setClock((prev) => ({
         ...prev,
@@ -192,8 +207,13 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
         breakTimeRemaining: 0,
         breakStartTime: undefined,
       }));
+      refreshState();
     }
-  });
+  }, [tournamentId, refreshState]);
+  useMasterBusSubscription('TOURNAMENT_BREAK', handleBreakStart);
+  useMasterBusSubscription('BREAK_START', handleBreakStart);
+  useMasterBusSubscription('TOURNAMENT_BREAK_END', handleBreakEnd);
+  useMasterBusSubscription('BREAK_END', handleBreakEnd);
 
   // ── Format chip count with K/M abbreviations ──
   const formatChips = (n: number): string => {

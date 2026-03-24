@@ -223,14 +223,19 @@ function TournamentLobbyCardInner({ tournament, onRegister }: TournamentLobbyCar
       try {
         let structure = tournament.blindStructure;
         if (typeof structure === 'string') {
-          structure = JSON.parse(structure);
+          // Only attempt JSON.parse if it looks like JSON (starts with [ or {)
+          const trimmed = structure.trim();
+          if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
+            structure = JSON.parse(trimmed);
+          } else {
+            return null; // Not parseable JSON — skip silently
+          }
         }
         if (Array.isArray(structure) && structure.length > 0) {
           blindDuration = structure[0].durationMinutes || structure[0].duration_minutes;
         }
-      } catch (err) {
-        console.error('[TournamentLobbyCard] Error:', err);
-        // If parsing fails, return no badge
+      } catch {
+        // If parsing fails, return no badge (non-critical)
         return null;
       }
     }

@@ -5355,8 +5355,6 @@ export default function TablePage({
           onDecline={handleInsuranceDecline}
           offer={insuranceOffer}
           timeRemaining={15}
-          tableId={tableId || ''}
-          playerId={userId || ''}
         />
       )}
 

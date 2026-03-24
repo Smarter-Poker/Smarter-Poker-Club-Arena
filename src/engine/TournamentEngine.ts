@@ -2027,6 +2027,18 @@ export class TournamentEngine {
         .eq('id', table.tableId);
     }
 
+    // Emit TOURNAMENT_COMPLETE for cross-page reactivity
+    masterBus.emit('TOURNAMENT_COMPLETE', {
+      tournamentId: this.tournamentId,
+      clubId: this.tournamentInfo?.club_id,
+    });
+
+    // Stop the timer service for this tournament
+    try {
+      const { tournamentTimerService } = await import('../services/TournamentTimerService');
+      tournamentTimerService.stopTimer(this.tournamentId);
+    } catch { /* noop */ }
+
     // Clear intervals
     if (this.blindCheckInterval) clearInterval(this.blindCheckInterval);
     if (this.eliminationCheckInterval) clearInterval(this.eliminationCheckInterval);

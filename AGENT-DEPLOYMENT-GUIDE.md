@@ -251,6 +251,21 @@ Rake is NEVER a fixed amount. It's calculated from the formula in `RakeConfig.ts
 
 ---
 
+## Credentials (Updated 2026-03-24)
+
+| Token | Value | Status |
+|-------|-------|--------|
+| GH PAT (Master All-Access) | `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` | Never Expires, All Scopes |
+| GH CLI OAuth | `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` | Working |
+| VERCEL_TOKEN | `lRnRVWnwQFWcFV2ny1i5XHsa` | Unchanged |
+| VERCEL_ORG_ID | `team_SVD8r7AOPH065G3usBxVvrBc` | Unchanged |
+| Supabase Anon Key | `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt1a2xmbmFwYmttYWN2d3hrdGJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc3MzA4NDQsImV4cCI6MjA4MzMwNjg0NH0.ZGFrUYq7yAbkveFdudh4q_Xk0qN0AZ-jnu4FkX9YKjo` | Working |
+
+> **IMPORTANT**: The old GH PAT `ghp_9HwqeUZtAO...` is EXPIRED (401 Bad Credentials). All agents MUST use the new PAT above.
+> Master `.env` file is at `/tmp/.env` — source it or read tokens from there.
+
+---
+
 ## Environment References
 
 | Resource | ID / URL |
@@ -292,3 +307,4 @@ Rake is NEVER a fixed amount. It's calculated from the formula in `RakeConfig.ts
 
 *Last updated: 2026-03-24 by Gravity (cash game audit agent)*
 *Both AutoRebuyService fixes verified in production build BLShtKdk*
+*Credentials updated: 2026-03-24 — New GH PAT (never expires, all scopes)*

@@ -12,3 +12,5 @@ export { PayoutStructure } from './PayoutStructure';
 export type { PayoutSlot } from './PayoutStructure';
 export { TournamentRegistration } from './TournamentRegistration';
 export { TournamentChipCount } from './TournamentChipCount';
+export { DealMakingModal } from './DealMakingModal';
+export { TournamentDirectorPanel } from './TournamentDirectorPanel';

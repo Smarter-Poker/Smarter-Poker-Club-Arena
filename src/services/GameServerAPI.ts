@@ -247,80 +247,6 @@ export function getWebSocketStatus(): string | null {
   return activeWS?.getStatus() ?? null;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// TOURNAMENT DIRECTOR CONTROLS — HTTP calls to server TD endpoints
-// ═══════════════════════════════════════════════════════════════════════════════
-
-async function tournamentPost(endpoint: string, body: Record<string, unknown>): Promise<{ success: boolean; error?: string }> {
-  try {
-    const response = await fetch(`${GAME_SERVER_URL}/tournament/${endpoint}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    return await response.json();
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Server unreachable';
-    console.error(`[GameServerAPI] /tournament/${endpoint} error:`, message);
-    return { success: false, error: message };
-  }
-}
-
-export async function tournamentPause(tournamentId: string) {
-  return tournamentPost('pause', { tournamentId });
-}
-
-export async function tournamentResume(tournamentId: string) {
-  return tournamentPost('resume', { tournamentId });
-}
-
-export async function tournamentAddTime(tournamentId: string, minutes: number) {
-  return tournamentPost('add-time', { tournamentId, minutes });
-}
-
-export async function tournamentSkipLevel(tournamentId: string) {
-  return tournamentPost('skip-level', { tournamentId });
-}
-
-export async function tournamentPrevLevel(tournamentId: string) {
-  return tournamentPost('prev-level', { tournamentId });
-}
-
-export async function tournamentForceBreak(tournamentId: string, durationMinutes: number = 5) {
-  return tournamentPost('force-break', { tournamentId, durationMinutes });
-}
-
-export async function tournamentAdjustBlinds(tournamentId: string, smallBlind: number, bigBlind: number, ante: number) {
-  return tournamentPost('adjust-blinds', { tournamentId, smallBlind, bigBlind, ante });
-}
-
-export async function tournamentCancel(tournamentId: string, applyRefunds: boolean = false) {
-  return tournamentPost('cancel', { tournamentId, applyRefunds });
-}
-
-export async function tournamentExecuteDeal(tournamentId: string, payouts: { userId: string; amount: number }[]) {
-  return tournamentPost('execute-deal', { tournamentId, payouts });
-}
-
-export async function getTournamentDealState(tournamentId: string): Promise<{ success: boolean; players?: any[]; prizePool?: number; error?: string }> {
-  try {
-    const response = await fetch(`${GAME_SERVER_URL}/tournament/deal-state/${tournamentId}`);
-    return await response.json();
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Server unreachable';
-    return { success: false, error: message };
-  }
-}
-
-export async function getTournamentInfo(tournamentId: string): Promise<any> {
-  try {
-    const response = await fetch(`${GAME_SERVER_URL}/tournament/info/${tournamentId}`);
-    return await response.json();
-  } catch (err: unknown) {
-    return null;
-  }
-}
-
 export default {
   submitAction,
   activateTimeBank,
@@ -329,15 +255,4 @@ export default {
   connectTableWebSocket,
   disconnectTableWebSocket,
   getWebSocketStatus,
-  tournamentPause,
-  tournamentResume,
-  tournamentAddTime,
-  tournamentSkipLevel,
-  tournamentPrevLevel,
-  tournamentForceBreak,
-  tournamentAdjustBlinds,
-  tournamentCancel,
-  tournamentExecuteDeal,
-  getTournamentDealState,
-  getTournamentInfo,
 };

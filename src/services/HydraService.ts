@@ -570,7 +570,9 @@ export const HydraService = {
    */
   async removeHorse(tableId: string, horseId: string): Promise<boolean> {
     // 1. Get the horse's current stack BEFORE removing the seat
-    const { data: seatData, error: seatFetchErr } = await supabase
+    //    Check active seats first, then fall back to departed (left_at set) seats
+    let seatData: { stack: number; seat_number: number } | null = null;
+    const { data: activeSeat, error: activeFetchErr } = await supabase
       .from('table_seats')
       .select('stack, seat_number')
       .eq('table_id', tableId)
@@ -578,17 +580,32 @@ export const HydraService = {
       .is('left_at', null)
       .maybeSingle();
 
-    if (seatFetchErr || !seatData) {
+    if (activeSeat) {
+      seatData = activeSeat;
+    } else {
+      // Seat may already have left_at set by HeadlessTableEngine — still need to clean it up
+      const { data: departedSeat } = await supabase
+        .from('table_seats')
+        .select('stack, seat_number')
+        .eq('table_id', tableId)
+        .eq('user_id', horseId)
+        .not('left_at', 'is', null)
+        .maybeSingle();
+      seatData = departedSeat;
+    }
+
+    if (!seatData) {
+      // No seat at all — just reset horse status to available
+      await supabase.from('profiles').update({ horse_status: 'available' }).eq('id', horseId);
       console.debug(
-        `HydraService.removeHorse: Seat not found for horse ${horseId} at table ${tableId}`
+        `HydraService.removeHorse: No seat found for horse ${horseId} at table ${tableId} — reset to available`
       );
-      return false;
+      return true; // Return true so caller can proceed with reseating
     }
 
     const remainingStack = seatData.stack || 0;
 
-    // 2. Remove seat directly — mark left_at and delete row
-    // atomic_table_cashout RPC is unreliable; direct DELETE is proven to work.
+    // 2. Remove ALL seat rows for this horse at this table (active + departed)
     const { error: deleteErr } = await retryAsync(
       () =>
         supabase

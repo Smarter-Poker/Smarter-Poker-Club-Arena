@@ -23,6 +23,8 @@ import PageErrorBoundary from '../../components/common/PageErrorBoundary';
 import { TournamentClock } from '../../components/tournament/TournamentClock';
 import { HandForHandBanner } from '../../components/tournament/HandForHandBanner';
 import { FinalTableOverlay } from '../../components/tournament/FinalTableOverlay';
+import { DealMakingModal } from '../../components/tournament/DealMakingModal';
+import { TournamentDirectorPanel } from '../../components/tournament/TournamentDirectorPanel';
 
 type TabId =
   | 'detail'
@@ -76,6 +78,8 @@ export default function TournamentDetails() {
   const [tables, setTables] = useState<TournamentTable[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showSignUpModal, setShowSignUpModal] = useState(false);
+  const [showDealModal, setShowDealModal] = useState(false);
+  const [showTDPanel, setShowTDPanel] = useState(false);
   const [countdown, setCountdown] = useState({ hours: 0, minutes: 0, seconds: 0 });
 
   const [walletBalance, setWalletBalance] = useState<number>(0);
@@ -1606,6 +1610,60 @@ export default function TournamentDetails() {
           </div>
         )}
       </div>
+
+      {/* Deal Making & TD Admin Buttons — only for RUNNING tournaments */}
+      {tournament.status === 'RUNNING' && (
+        <div style={{ display: 'flex', gap: '8px', padding: '12px 16px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+          <button
+            onClick={() => setShowDealModal(true)}
+            style={{ flex: 1, padding: '10px', background: '#166534', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 600, fontSize: '13px' }}
+          >
+            Propose Deal
+          </button>
+          <button
+            onClick={() => setShowTDPanel(true)}
+            style={{ flex: 1, padding: '10px', background: '#92400e', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 600, fontSize: '13px' }}
+          >
+            TD Controls
+          </button>
+        </div>
+      )}
+
+      {/* Deal Making Modal */}
+      {showDealModal && tournamentId && tournament.status === 'RUNNING' && (
+        <DealMakingModal
+          tournamentId={tournamentId}
+          prizePool={tournament.prize_pool || 0}
+          payoutStructure={
+            Array.isArray((tournament as any).payout_structure)
+              ? (tournament as any).payout_structure
+              : []
+          }
+          players={entries
+            .filter((e) => e.status === 'playing')
+            .map((e) => ({
+              userId: e.user_id,
+              username: e.username || e.user_id.slice(0, 8),
+              chips: e.chips || 0,
+            }))}
+          onClose={() => setShowDealModal(false)}
+          onDealAccepted={() => {
+            setShowDealModal(false);
+            toast.show('Deal accepted! Tournament completed.', 'success');
+          }}
+        />
+      )}
+
+      {/* Tournament Director Panel */}
+      {showTDPanel && tournamentId && (
+        <TournamentDirectorPanel
+          tournamentId={tournamentId}
+          tournamentName={tournament.name || 'Tournament'}
+          currentLevel={tournament.current_level || 1}
+          isRunning={tournament.status === 'RUNNING'}
+          onClose={() => setShowTDPanel(false)}
+        />
+      )}
 
       {/* Final Table Overlay */}
       {tournament.status === 'RUNNING' && tournamentId && (

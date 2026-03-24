@@ -24,6 +24,10 @@ export type {
 export { PotDisplay } from './PotDisplay';
 export type { PotDisplayProps, SidePot, PotDisplayMode } from './PotDisplay';
 
+// Dealer Button
+export { DealerButton } from './DealerButton';
+export type { DealerButtonProps } from './DealerButton';
+
 // Community Cards
 export { CommunityCards } from './CommunityCards';
 export type { CommunityCardsProps, Card as BoardCard, BoardStage } from './CommunityCards';

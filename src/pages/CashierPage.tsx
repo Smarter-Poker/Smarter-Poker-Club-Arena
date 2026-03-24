@@ -135,6 +135,13 @@ export default function CashierPage() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [cooldown, setCooldown] = useState(0);
   const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Rate limiting: minimum 2s between financial actions (beyond the 3s cooldown)
+  const lastActionRef = useRef<number>(0);
+  const RATE_LIMIT_MS = 2000;
+
+  // Connection status: track realtime channel health
+  const [realtimeStatus, setRealtimeStatus] = useState<'connected' | 'reconnecting' | 'error'>('connected');
   const [message, setMessage] = useState<{
     type: 'success' | 'error' | 'info';
     text: string;
@@ -810,11 +817,16 @@ export default function CashierPage() {
         }
       )
       .subscribe((status: string, err?: Error) => {
+        if (status === 'SUBSCRIBED') {
+          if (isMounted.current) setRealtimeStatus('connected');
+        }
         if (status === 'CHANNEL_ERROR') {
           console.error('[CashierPage] ❌ Realtime channel error:', err?.message || err);
+          if (isMounted.current) setRealtimeStatus('error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[CashierPage] ⏱️ Realtime channel timed out');
+          if (isMounted.current) setRealtimeStatus('reconnecting');
         }
       });
     return () => {
@@ -887,6 +899,26 @@ export default function CashierPage() {
     return recipients.find((r) => r.id === selectedRecipient);
   }, [recipients, selectedRecipient]);
 
+  // ── Keyboard navigation for tabs (Arrow Left/Right) ──
+  const handleTabKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+        e.preventDefault();
+        const idx = tabs.indexOf(action);
+        const next =
+          e.key === 'ArrowRight'
+            ? tabs[(idx + 1) % tabs.length]
+            : tabs[(idx - 1 + tabs.length) % tabs.length];
+        setAction(next);
+        setMessage(null);
+        // Focus the new tab button
+        const btn = document.querySelector(`[aria-controls="cashier-panel-${next}"]`) as HTMLElement;
+        btn?.focus();
+      }
+    },
+    [tabs, action]
+  );
+
   const handleAction = async () => {
     const value = parseFloat(amount);
     if (isNaN(value) || value <= 0) {
@@ -894,6 +926,14 @@ export default function CashierPage() {
       return;
     }
     if (!user?.id) return;
+
+    // Rate limit: block rapid successive actions (2s minimum)
+    const now = Date.now();
+    if (now - lastActionRef.current < RATE_LIMIT_MS) {
+      setMessage({ type: 'error', text: '⏱ Please wait before submitting another action' });
+      return;
+    }
+    lastActionRef.current = now;
 
     setIsProcessing(true);
     setMessage(null);
@@ -1286,11 +1326,27 @@ export default function CashierPage() {
       )}
 
       {/* Action Tabs */}
-      <nav className={styles.tabNav} role="tablist" aria-label="Cashier actions">
+      {/* Connection status indicator */}
+      {realtimeStatus !== 'connected' && (
+        <div
+          className={styles.connectionBanner}
+          role="status"
+          aria-live="polite"
+        >
+          {realtimeStatus === 'reconnecting' ? (
+            <><span className={styles.connectionDot} style={{ background: '#f59e0b' }} /> Reconnecting to live updates…</>
+          ) : (
+            <><span className={styles.connectionDot} style={{ background: '#ef4444' }} /> Live connection lost — data may be stale</>
+          )}
+        </div>
+      )}
+
+      <nav className={styles.tabNav} role="tablist" aria-label="Cashier actions" onKeyDown={handleTabKeyDown}>
         {tabs.map((act) => (
           <button
             key={act}
             role="tab"
+            tabIndex={action === act ? 0 : -1}
             aria-selected={action === act}
             aria-controls={`cashier-panel-${act}`}
             className={`${styles.tab} ${action === act ? styles.tabActive : ''}`}

@@ -5,7 +5,7 @@
  * Modal for players to request chip cashouts from their agent
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { cashoutService, CashoutRequest } from '../../services/CashoutService';
 import { masterBus } from '../../core/MasterBus';
@@ -138,6 +138,59 @@ export default function CashoutRequestModal({
   const [loadingPending, setLoadingPending] = useState(true);
   const [mounted, setMounted] = useState(false);
   const autoCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const modalRef = useRef<HTMLDivElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+
+  // ── Focus Trap: trap focus inside modal when open ──
+  const handleFocusTrap = useCallback((e: KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      onClose();
+      return;
+    }
+    if (e.key !== 'Tab' || !modalRef.current) return;
+
+    const focusable = modalRef.current.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    );
+    if (focusable.length === 0) return;
+
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+
+    if (e.shiftKey) {
+      if (document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      }
+    } else {
+      if (document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+  }, [onClose]);
+
+  useEffect(() => {
+    if (isOpen) {
+      previousFocusRef.current = document.activeElement as HTMLElement;
+      document.addEventListener('keydown', handleFocusTrap);
+      // Auto-focus the first focusable element after mount animation
+      const t = setTimeout(() => {
+        if (modalRef.current) {
+          const first = modalRef.current.querySelector<HTMLElement>(
+            'input:not([disabled]), button:not([disabled])'
+          );
+          first?.focus();
+        }
+      }, 100);
+      return () => {
+        document.removeEventListener('keydown', handleFocusTrap);
+        clearTimeout(t);
+        // Restore focus when modal closes
+        previousFocusRef.current?.focus();
+      };
+    }
+  }, [isOpen, handleFocusTrap]);
 
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -287,7 +340,7 @@ export default function CashoutRequestModal({
 
   return (
     <div className="modal-overlay" onClick={onClose} role="dialog" aria-modal="true" aria-labelledby="cashout-modal-title">
-      <div className="cashout-modal" onClick={(e) => e.stopPropagation()}>
+      <div className="cashout-modal" ref={modalRef} onClick={(e) => e.stopPropagation()}>
         {/* Bottom-sheet drag handle */}
         <div className="cashout-drag-handle" />
         <div className="modal-header">

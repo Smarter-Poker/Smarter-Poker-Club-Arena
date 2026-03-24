@@ -159,4 +159,3 @@ If `git push` fails because another agent pushed first:
 4. Push and verify CI
 
 This is exactly what happened on 2026-03-23: another Claude agent re-introduced the same InsuranceModal error immediately after it was fixed, because they pushed without running tsc.
-

@@ -128,9 +128,9 @@ src/types/               — TypeScript types
 The following images are in `/public` and should be candidates for optimization:
 
 - Card backs: 3.1-3.7MB (backs/black.jpeg, white.jpeg, blue.jpeg, red.jpeg)
-- Club logos: 695K-948K (preset-\*.png files)
-- UI assets: 400K-600K (header-\*.png, vip-card.png, poker-chip-logo.png)
-- Frame images: 82K-102K (frames/frame-\*.jpg)
+- Club logos: 695K-948K (preset-*.png files)
+- UI assets: 400K-600K (header-*.png, vip-card.png, poker-chip-logo.png)
+- Frame images: 82K-102K (frames/frame-*.jpg)
 
 Consider WebP conversion or lazy-loading for these assets.
 

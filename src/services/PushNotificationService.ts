@@ -83,12 +83,12 @@ class PushNotificationServiceClass {
             });
             this.initialized = true;
           } catch (innerErr: unknown) {
-            console.warn('[PushService] OneSignal.init() failed inside deferred:', innerErr);
+            console.debug('[PushService] OneSignal.init() failed inside deferred:', innerErr);
           }
         });
       }
     } catch (error: unknown) {
-      console.error('[PushService] Init failed:', error);
+      console.debug('[PushService] Init failed:', error);
     }
   }
 
@@ -104,7 +104,7 @@ class PushNotificationServiceClass {
       }
     } catch (error: unknown) {
       // OneSignal SDK v16 intermittent issue — non-blocking, suppress to warn
-      console.warn('[PushService] External user ID set skipped (OneSignal SDK):', (error as Error)?.message || error);
+      console.debug('[PushService] External user ID set skipped (OneSignal SDK):', (error as Error)?.message || error);
     }
   }
 

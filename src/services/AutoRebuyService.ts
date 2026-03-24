@@ -182,11 +182,12 @@ class AutoRebuyServiceCore {
     }
 
     try {
-      // Get all active/waiting tables — horses should be seeded in both states
+      // Get all active/waiting/running tables — horses should be managed in all live states.
+      // Tables transition: waiting → active → running during gameplay.
       const { data: tables, error: tableError } = await supabase
         .from('tables')
         .select('id, big_blind')
-        .in('status', ['active', 'waiting']);
+        .in('status', ['active', 'waiting', 'running']);
 
       if (tableError) {
         console.debug('[AutoRebuy] Failed to fetch active tables:', tableError);

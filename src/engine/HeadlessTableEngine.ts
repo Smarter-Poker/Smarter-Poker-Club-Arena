@@ -1778,10 +1778,17 @@ export class HeadlessTableEngine {
     // Use HydraService.removeHorse which properly:
     // 1. Deletes the seat row (instead of soft-deleting with left_at)
     // 2. Resets horse_status to "available" so AutoRebuyService can reseed
-    await HydraService.removeHorse(this.tableId, userId);
-    console.debug(
-      `[HeadlessTableEngine:${this.tableId}] Horse ${userId.slice(0, 8)} removed via HydraService (reason: ${reason})`
-    );
+    try {
+      const result = await HydraService.removeHorse(this.tableId, userId);
+      console.warn(
+        `[HTE] markHorseAsLeft: removeHorse(${this.tableId.slice(0, 8)}, ${userId.slice(0, 8)}) result=${result} reason=${reason}`
+      );
+    } catch (err: unknown) {
+      console.warn(`[HTE] markHorseAsLeft ERROR:`, err);
+      // Fallback: directly delete + reset status
+      await this.supabaseClient.from('table_seats').delete().eq('table_id', this.tableId).eq('user_id', userId);
+      await supabase.from('profiles').update({ horse_status: 'available' }).eq('id', userId);
+    }
 
     // Sync tables.current_players immediately so merge/balance reads correct count
     const { count, error: countErr } = await this.supabaseClient

@@ -10,7 +10,6 @@ import { useIsMounted } from '../../hooks/useIsMounted';
 import { cashoutService, CashoutRequest } from '../../services/CashoutService';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { masterBus } from '../../core/MasterBus';
-import { supabase } from '../../lib/supabase';
 import { checkSettlementLock } from '../../utils/settlementLock';
 import { formatRelativeShort as formatTime } from '@/lib/date';
 import './AgentCashoutPanel.css';

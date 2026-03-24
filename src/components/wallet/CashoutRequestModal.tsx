@@ -8,7 +8,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { cashoutService, CashoutRequest } from '../../services/CashoutService';
-import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { checkSettlementLock } from '../../utils/settlementLock';
 import { formatRelativeShort as formatTime } from '@/lib/date';

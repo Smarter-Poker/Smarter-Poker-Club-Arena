@@ -87,5 +87,8 @@
     "*.{ts,tsx,css,json,md}": [
       "prettier --write"
     ]
+  },
+  "optionalDependencies": {
+    "@rollup/rollup-darwin-arm64": "^4.60.0"
   }
 }

@@ -198,7 +198,7 @@ function TransactionHistoryInner({ walletId, limit = 20 }: TransactionHistoryPro
     <div className="transaction-history">
       <div className="transaction-history__header">
         <h3> Transaction History</h3>
-        <select value={filter} onChange={(e) => setFilter(e.target.value)}>
+        <select value={filter} onChange={(e) => { setFilter(e.target.value); setTxPage(1); }}>
           <option value="all">All</option>
           <option value="credit">Credits</option>
           <option value="debit">Debits</option>

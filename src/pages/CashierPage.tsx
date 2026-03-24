@@ -1889,7 +1889,7 @@ export default function CashierPage() {
                   <button
                     key={f}
                     className={`${styles.txFilterBtn} ${txFilter === f ? styles.txFilterActive : ''}`}
-                    onClick={() => setTxFilter(f)}
+                    onClick={() => { setTxFilter(f); setTxPage(1); }}
                   >
                     {f === 'all'
                       ? 'All'

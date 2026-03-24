@@ -227,8 +227,13 @@ class AutoRebuyServiceCore {
       const stackInBB = horse.stack / bigBlind;
 
       if (horse.stack === 0) {
-        // Horse is busted - reseat with fresh stack
-        await this.reseatHorse(horse.horseId, tableId);
+        // Horse is busted — direct stack update to rebuy amount.
+        // DO NOT use reseatHorse() which does a destructive remove+reseat cycle
+        // that conflicts with HeadlessTableEngine's autorebuyHorses (also does
+        // direct stack updates). The remove+reseat path caused duplicate seats
+        // and phantom "drain" as the old row was deleted mid-hand.
+        const rebuyAmount = this.rebuyStackBB * bigBlind;
+        await this.rebuyHorse(horse.horseId, tableId, rebuyAmount);
       } else if (stackInBB < this.minStackBB) {
         // Horse is short-stacked - top up stack
         const topupAmount = this.rebuyStackBB * bigBlind - horse.stack;

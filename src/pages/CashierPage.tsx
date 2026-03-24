@@ -1984,7 +1984,7 @@ export default function CashierPage() {
                   >
                     <div className={`${styles.skeletonBar}`} style={{ width: '28px', height: '28px', borderRadius: '50%', flexShrink: 0 }} />
                     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      <div className={styles.skeletonBar} style={{ width: `${55 + Math.random() * 25}%`, height: '12px' }} />
+                      <div className={styles.skeletonBar} style={{ width: `${55 + i * 5}%`, height: '12px' }} />
                       <div className={styles.skeletonBar} style={{ width: '40%', height: '10px' }} />
                     </div>
                     <div className={styles.skeletonBar} style={{ width: '60px', height: '14px', flexShrink: 0 }} />

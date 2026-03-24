@@ -304,7 +304,59 @@ export default function AgentPromoPanel({
       )}
 
       {loading ? (
-        <div style={{ textAlign: 'center', padding: 20, color: FB.dim }}>Loading...</div>
+        <div style={{ padding: '12px 0' }}>
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div
+              key={i}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                padding: '10px 0',
+                animation: `shimmerFade 1.4s ease-in-out ${i * 0.1}s infinite`,
+              }}
+            >
+              <div
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: '50%',
+                  background: 'linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%)',
+                  backgroundSize: '200px 100%',
+                  animation: 'shimmerSlide 1.4s ease-in-out infinite',
+                  flexShrink: 0,
+                }}
+              />
+              <div style={{ flex: 1 }}>
+                <div
+                  style={{
+                    width: `${50 + i * 10}%`,
+                    height: 12,
+                    borderRadius: 4,
+                    background: 'linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%)',
+                    backgroundSize: '200px 100%',
+                    animation: 'shimmerSlide 1.4s ease-in-out infinite',
+                    marginBottom: 5,
+                  }}
+                />
+                <div
+                  style={{
+                    width: '40%',
+                    height: 10,
+                    borderRadius: 4,
+                    background: 'linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%)',
+                    backgroundSize: '200px 100%',
+                    animation: 'shimmerSlide 1.4s ease-in-out infinite',
+                  }}
+                />
+              </div>
+            </div>
+          ))}
+          <style>{`
+            @keyframes shimmerSlide { 0% { background-position: -200px 0; } 100% { background-position: 200px 0; } }
+            @keyframes shimmerFade { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+          `}</style>
+        </div>
       ) : promoBalance <= 0 ? (
         <div
           style={{

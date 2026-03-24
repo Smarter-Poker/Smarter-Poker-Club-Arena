@@ -41,7 +41,9 @@ export function CashierModal({
   onDeposit,
   onWithdraw,
 }: CashierModalProps) {
-  const [activeTab, setActiveTab] = useState<'balance' | 'deposit' | 'withdraw' | 'history'>(
+  type ClubCashierTab = 'deposit' | 'withdraw' | 'history';
+  const clubCashierTabs: ClubCashierTab[] = ['deposit', 'withdraw', 'history'];
+  const [activeTab, setActiveTab] = useState<'balance' | ClubCashierTab>(
     'balance'
   );
   const [amount, setAmount] = useState('');
@@ -49,6 +51,29 @@ export function CashierModal({
   const [mounted, setMounted] = useState(false);
   const modalRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
+
+  const handleTabChange = useCallback((tab: ClubCashierTab) => {
+    setActiveTab(tab);
+    setAmount('');
+  }, []);
+
+  const handleTabKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+        e.preventDefault();
+        const idx = clubCashierTabs.indexOf(activeTab as ClubCashierTab);
+        if (idx < 0) return;
+        const next =
+          e.key === 'ArrowRight'
+            ? clubCashierTabs[(idx + 1) % clubCashierTabs.length]
+            : clubCashierTabs[(idx - 1 + clubCashierTabs.length) % clubCashierTabs.length];
+        handleTabChange(next);
+        const btn = document.querySelector(`[aria-controls="club-cashier-panel-${next}"]`) as HTMLElement;
+        btn?.focus();
+      }
+    },
+    [activeTab, handleTabChange]
+  );
 
   useEffect(() => {
     if (isOpen) {
@@ -110,6 +135,7 @@ export function CashierModal({
   const handleAction = async () => {
     const val = parseFloat(amount);
     if (isNaN(val) || val <= 0) return;
+    if (activeTab === 'withdraw' && val > balance) return;
 
     setLoading(true);
     try {
@@ -156,29 +182,44 @@ export function CashierModal({
         </div>
 
         {/* Tabs */}
-        <div className="cashier-tabs">
+        <div className="cashier-tabs" role="tablist" aria-label="Cashier actions" onKeyDown={handleTabKeyDown}>
           <button
+            role="tab"
+            tabIndex={activeTab === 'deposit' ? 0 : -1}
+            aria-selected={activeTab === 'deposit'}
+            aria-controls="club-cashier-panel-deposit"
+            id="club-cashier-tab-deposit"
             className={`cashier-tab ${activeTab === 'deposit' ? 'active' : ''}`}
-            onClick={() => setActiveTab('deposit')}
+            onClick={() => handleTabChange('deposit')}
           >
             Deposit
           </button>
           <button
+            role="tab"
+            tabIndex={activeTab === 'withdraw' ? 0 : -1}
+            aria-selected={activeTab === 'withdraw'}
+            aria-controls="club-cashier-panel-withdraw"
+            id="club-cashier-tab-withdraw"
             className={`cashier-tab ${activeTab === 'withdraw' ? 'active' : ''}`}
-            onClick={() => setActiveTab('withdraw')}
+            onClick={() => handleTabChange('withdraw')}
           >
             Withdraw
           </button>
           <button
+            role="tab"
+            tabIndex={activeTab === 'history' ? 0 : -1}
+            aria-selected={activeTab === 'history'}
+            aria-controls="club-cashier-panel-history"
+            id="club-cashier-tab-history"
             className={`cashier-tab ${activeTab === 'history' ? 'active' : ''}`}
-            onClick={() => setActiveTab('history')}
+            onClick={() => handleTabChange('history')}
           >
             History
           </button>
         </div>
 
         {/* Content */}
-        <div className="cashier-content">
+        <div className="cashier-content" id={`club-cashier-panel-${activeTab}`} role="tabpanel" aria-labelledby={activeTab !== 'balance' ? `club-cashier-tab-${activeTab}` : undefined}>
           {(activeTab === 'deposit' || activeTab === 'withdraw') && (
             <div className="cashier-form">
               <label className="cashier-label">

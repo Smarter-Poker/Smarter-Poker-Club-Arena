@@ -261,6 +261,17 @@ export default function DepositWithdrawModal({
     };
   }, [isOpen]);
 
+  // ── Close handler: resets all form state and calls parent onClose ──
+  const handleClose = useCallback(() => {
+    setStep('method');
+    setSelectedMethod(null);
+    setAmount('');
+    setError(null);
+    setReferenceId(null);
+    setWithdrawAddress('');
+    onClose();
+  }, [onClose]);
+
   // ── Focus Trap: trap focus inside modal when open ──
   const handleFocusTrap = useCallback((e: KeyboardEvent) => {
     if (e.key === 'Escape') {
@@ -288,7 +299,7 @@ export default function DepositWithdrawModal({
         first.focus();
       }
     }
-  }, []);
+  }, [handleClose]);
 
   useEffect(() => {
     if (isOpen) {
@@ -414,15 +425,7 @@ export default function DepositWithdrawModal({
     if (isMounted.current) setProcessing(false);
   };
 
-  const handleClose = () => {
-    setStep('method');
-    setSelectedMethod(null);
-    setAmount('');
-    setError(null);
-    setReferenceId(null);
-    setWithdrawAddress('');
-    onClose();
-  };
+
 
   const quickAmounts = [25, 50, 100, 250, 500, 1000];
 

@@ -688,7 +688,10 @@ class TournamentManager {
       this.blindTimer = setTimeout(() => {
         if (!this.running) return;
         this.currentLevel++;
-        // Auto-extend: don't cap at blindStructure.length — startBlindTimer handles escalation
+        if (this.currentLevel >= blindStructure.length) {
+          this.currentLevel = blindStructure.length - 1;
+          return;
+        }
         this.startBlindTimer(blindStructure);
       }, this.savedBlindTimerRemaining);
     }
@@ -986,38 +989,6 @@ class TournamentManager {
       if (!tournament) throw new Error('Tournament not found');
       this.tournamentCache = tournament;
       this.prizePoolFinalized = tournament.prize_pool_finalized || false;
-
-      // Check if tournament should already be completed (≤1 player remaining)
-      const { count: playingCount } = await supabase
-        .from('tournament_players')
-        .select('*', { count: 'exact', head: true })
-        .eq('tournament_id', this.tournamentId)
-        .eq('status', 'playing');
-
-      if ((playingCount || 0) <= 1) {
-        console.log(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] Resume: only ${playingCount} playing — finishing immediately`
-        );
-        if ((playingCount || 0) === 1) {
-          const { data: winner } = await supabase
-            .from('tournament_players')
-            .select('user_id')
-            .eq('tournament_id', this.tournamentId)
-            .eq('status', 'playing')
-            .maybeSingle();
-          if (winner) {
-            await this.finishTournament(winner.user_id);
-          }
-        } else {
-          // 0 players — just mark completed
-          await supabase
-            .from('tournaments')
-            .update({ status: 'COMPLETED', ended_at: new Date().toISOString() })
-            .eq('id', this.tournamentId);
-        }
-        this.running = false;
-        return;
-      }
 
       // Find existing tables
       const { data: tables } = await supabase

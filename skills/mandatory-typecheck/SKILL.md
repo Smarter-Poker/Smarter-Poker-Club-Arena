@@ -103,6 +103,60 @@ When reporting completion, include this exact output:
 ✅ TypeScript: npx tsc --noEmit → exit code 0
 ✅ Committed: [commit hash]
 ✅ Pushed: [branch] → origin
+✅ CI Status: [pass/fail] (checked within 2 minutes of push)
 ```
 
 If you cannot produce this evidence, the task is NOT complete.
+
+## POST-PUSH CI MONITORING (MANDATORY)
+
+**Pushing is NOT the end of your job. You MUST verify CI passes after every push.**
+
+Agents have been "push and forget" — pushing code, claiming success, and leaving the user to discover CI failures from email notifications. **This is unacceptable.**
+
+### After Every Push — Wait & Check CI
+
+**Step 1: Wait ~90 seconds** for CI to start and run (TypeScript check takes ~60s on CI).
+
+**Step 2: Check CI status** using the GitHub API:
+```bash
+curl -s -H "Accept: application/vnd.github+json" \
+  "https://api.github.com/repos/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs?per_page=3&branch=main" \
+  2>&1 | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+for r in d.get('workflow_runs',[]):
+    print(f'{r[\"head_sha\"][:8]} | {r[\"status\"]:>10} | {r[\"conclusion\"] or \"pending\":>10} | {r[\"name\"]}')"
+```
+
+**Step 3: If CI failed** — DO NOT claim success. Instead:
+1. Read the CI failure annotations
+2. Fix the errors immediately
+3. Commit and push again
+4. Re-check CI status
+
+**Step 4: Check Vercel deployment** (if applicable):
+- Use the Vercel MCP tool: `mcp_vercel_list_deployments` with projectId `prj_oaCq8RYhExLRUYizLG93li0uX468` and teamId `team_SVD8r7AOPH065G3usBxVvrBc`
+- Confirm latest deployment state is `READY`, NOT `ERROR`
+
+### What "Done" Looks Like
+
+```
+✅ tsc --noEmit → exit code 0
+✅ git push → success
+✅ CI workflow → completed/success (verified via API)
+✅ Vercel deployment → READY (verified via MCP)
+```
+
+All four must be confirmed. Missing even one = task is NOT complete.
+
+## HANDLING RACE CONDITIONS WITH OTHER AGENTS
+
+If `git push` fails because another agent pushed first:
+1. `git pull --rebase origin main`
+2. Run `npx tsc --noEmit` AGAIN (the other agent's code may have introduced errors)
+3. If errors exist → fix them BEFORE pushing
+4. Push and verify CI
+
+This is exactly what happened on 2026-03-23: another Claude agent re-introduced the same InsuranceModal error immediately after it was fixed, because they pushed without running tsc.
+

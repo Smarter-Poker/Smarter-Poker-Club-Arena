@@ -1393,6 +1393,18 @@ export default function CashierPage() {
           />
         )}
 
+      {/* Context Loading Skeleton — shown inside content while role/union data loads */}
+      {loadingContext && (
+        <div className={styles.card} aria-busy="true">
+          <div className={styles.loadingSkeleton}>
+            <div className={styles.skeletonBar} style={{ width: '45%', height: '14px' }} />
+            <div className={styles.skeletonBar} style={{ width: '70%', height: '44px' }} />
+            <div className={styles.skeletonBar} style={{ width: '100%', height: '44px' }} />
+            <div className={styles.skeletonBar} style={{ width: '100%', height: '48px' }} />
+          </div>
+        </div>
+      )}
+
       {/* ═══ SEND CHIPS ═══ */}
       {action === 'send' && (
         <section className={styles.card}>
@@ -1963,7 +1975,22 @@ export default function CashierPage() {
             </div>
 
             {loadingTx ? (
-              <div className={styles.txLoading}>Loading transactions...</div>
+              <div className={styles.txLoading} aria-busy="true">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <div
+                    key={i}
+                    className={styles.txSkeletonRow}
+                    style={{ animationDelay: `${i * 0.08}s` }}
+                  >
+                    <div className={`${styles.skeletonBar}`} style={{ width: '28px', height: '28px', borderRadius: '50%', flexShrink: 0 }} />
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <div className={styles.skeletonBar} style={{ width: `${55 + Math.random() * 25}%`, height: '12px' }} />
+                      <div className={styles.skeletonBar} style={{ width: '40%', height: '10px' }} />
+                    </div>
+                    <div className={styles.skeletonBar} style={{ width: '60px', height: '14px', flexShrink: 0 }} />
+                  </div>
+                ))}
+              </div>
             ) : filteredTransactions.length === 0 ? (
               <div className={styles.txEmpty}>
                 <span className={styles.txEmptyIcon}>📊</span>

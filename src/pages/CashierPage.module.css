@@ -600,9 +600,17 @@
 .txLoading,
 .txEmpty {
   text-align: center;
-  padding: 40px 16px;
+  padding: 12px 0;
   color: #6b7280;
   font-size: 14px;
+}
+
+.txSkeletonRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  animation: txFadeIn 0.4s ease-out both;
 }
 
 /* ═══ Recipient Loading Skeleton ═══ */

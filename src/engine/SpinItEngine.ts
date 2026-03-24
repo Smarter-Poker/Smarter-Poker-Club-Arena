@@ -333,7 +333,7 @@ class SpinItEngineClass {
    */
   private finishGame(lobbyId: string, winnerId: string): void {
     const state = this.games.get(lobbyId);
-    if (!state) return;
+    if (!state || state.status === 'finished') return;
 
     state.status = 'finished';
     state.winnerId = winnerId;

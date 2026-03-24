@@ -481,10 +481,10 @@ export class TournamentOrchestrator {
   async checkRebalance(tournamentId: string): Promise<void> {
     try {
       const { data: tables, error } = await supabase
-        .from('tournament_tables')
-        .select('id, table_number, max_players')
+        .from('tables')
+        .select('id, name, max_players')
         .eq('tournament_id', tournamentId)
-        .eq('status', 'active');
+        .neq('status', 'closed');
 
       if (error || !tables || tables.length < 2) return;
 

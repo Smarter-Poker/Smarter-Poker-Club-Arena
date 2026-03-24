@@ -382,7 +382,7 @@ export const RakeService = {
 
       // ABORT waterfall if pot drops failed — cannot attribute rake that was never collected
       if (!potDropSuccess) {
-        console.error('[RakeService] Pot drops failed — aborting waterfall for hand:', handId);
+        console.debug('[RakeService] Pot drops failed — aborting waterfall for hand:', handId);
         return {
           handId,
           tableId,
@@ -444,7 +444,7 @@ export const RakeService = {
               console.warn('[RakeService] Rake attribution persist failed:', attrErr.message);
           });
       } catch (rbErr) {
-        console.error('[RakeService] RakebackEngine recording failed:', rbErr);
+        console.debug('[RakeService] RakebackEngine recording failed:', rbErr);
       }
     }
 
@@ -482,7 +482,7 @@ export const RakeService = {
           });
           bbjContributed = result !== null;
           if (!result) {
-            console.error(
+            console.debug(
               `[RakeService] BBJ contribution failed for hand ${handId} — pool ${pool.id}`
             );
           }
@@ -495,7 +495,7 @@ export const RakeService = {
           );
         }
       } catch (e: unknown) {
-        console.error(`[RakeService] BBJ contribution failed for hand ${handId}:`, e);
+        console.debug(`[RakeService] BBJ contribution failed for hand ${handId}:`, e);
       }
     }
 
@@ -526,14 +526,14 @@ export const RakeService = {
             .update({ total_rake: currentRake + calculation.cappedRake })
             .eq('id', unionId);
           if (fallbackErr) {
-            console.error(
+            console.debug(
               `[RakeService] Failed to update union total_rake for ${unionId}:`,
               fallbackErr
             );
           }
         }
       } catch (e: unknown) {
-        console.error(`[RakeService] Failed to update union total_rake for ${unionId}:`, e);
+        console.debug(`[RakeService] Failed to update union total_rake for ${unionId}:`, e);
       }
     }
 
@@ -573,7 +573,7 @@ export const RakeService = {
     });
 
     if (error) {
-      console.error('RakeService.executePotDrops error:', error);
+      console.debug('RakeService.executePotDrops error:', error);
       return false;
     }
 
@@ -651,7 +651,7 @@ export const RakeService = {
               .eq('club_id', resolvedClubId)
               .eq('user_id', attr.userId);
             if (fallbackErr) {
-              console.error(
+              console.debug(
                 `[RakeService] CRITICAL: All atomic patterns failed for total_rake_paid update. ` +
                   `User: ${attr.userId.substring(0, 8)}, Amount: ${attr.rakeCredit}. ` +
                   `Manual reconciliation may be needed.`
@@ -659,7 +659,7 @@ export const RakeService = {
             }
           }
         } catch (e: unknown) {
-          console.error(
+          console.debug(
             `[RakeService] Failed to update total_rake_paid for ${attr.userId.substring(0, 8)}:`,
             e
           );
@@ -767,7 +767,7 @@ export const RakeService = {
               .update({ lifetime_rake_generated: currentRake + rakeCredit })
               .eq('user_id', agentId);
             if (fallbackErr) {
-              console.error(
+              console.debug(
                 `[RakeService] CRITICAL: All atomic patterns failed for agent rake. ` +
                   `Agent: ${agentId.substring(0, 8)}, Amount: ${rakeCredit}. ` +
                   `Manual reconciliation may be needed.`
@@ -776,13 +776,13 @@ export const RakeService = {
           }
         } catch (e: unknown) {
           // Non-blocking: commission tracking should never break the hand pipeline
-          console.error(`[RakeService] Failed to credit agent ${agentId.substring(0, 8)}:`, e);
+          console.debug(`[RakeService] Failed to credit agent ${agentId.substring(0, 8)}:`, e);
         }
       }
 
       return true;
     } catch (err: unknown) {
-      console.error('[RakeService] Commission queue error:', err);
+      console.debug('[RakeService] Commission queue error:', err);
       return false;
     }
   },
@@ -883,7 +883,7 @@ export const RakeService = {
       );
 
       if (insertErr) {
-        console.error('[RakeService] Failed to record tournament rake:', insertErr);
+        console.debug('[RakeService] Failed to record tournament rake:', insertErr);
         return false;
       }
 
@@ -899,15 +899,15 @@ export const RakeService = {
         );
 
         if (rpcError) {
-          console.error('[RakeService] increment_club_rake RPC failed (may not exist):', rpcError);
+          console.debug('[RakeService] increment_club_rake RPC failed (may not exist):', rpcError);
         }
       } catch (err) {
-        console.error('[RakeService] Error:', err);
+        console.debug('[RakeService] Error:', err);
         /* RPC may not exist — non-blocking */
       }
       return true;
     } catch (err: unknown) {
-      console.error('[RakeService] recordTournamentRake error:', err);
+      console.debug('[RakeService] recordTournamentRake error:', err);
       return false;
     }
   },
@@ -938,8 +938,8 @@ export const RakeService = {
         created_at: new Date().toISOString(),
       });
     } catch (err) {
-      console.error('[RakeService] Error:', err);
-      console.error('[RakeService] rake_rate_audit insert failed (table may not exist)');
+      console.debug('[RakeService] Error:', err);
+      console.debug('[RakeService] rake_rate_audit insert failed (table may not exist)');
     }
   },
 };

@@ -449,7 +449,7 @@ class SpinItEngineClass {
       .from('spin_bonus_pools')
       .select('balance')
       .eq('club_id', clubId)
-      .single();
+      .maybeSingle();
 
     if (existing) {
       await supabase

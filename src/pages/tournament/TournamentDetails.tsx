@@ -310,10 +310,44 @@ export default function TournamentDetails() {
       300
     );
 
+    // ── Blind level changes: update tournament state immediately ──
+    const unsubBlind = masterBus.subscribeDebounced(
+      'BLIND_LEVEL_CHANGE',
+      (event) => {
+        if (event.payload.tournamentId !== tournamentId) return;
+        setTournament((prev: any) =>
+          prev ? { ...prev, current_level: event.payload.level } : prev
+        );
+      },
+      300
+    );
+
+    // ── Tournament break notifications ──
+    const unsubBreak = masterBus.subscribeDebounced(
+      'TOURNAMENT_BREAK',
+      (event) => {
+        if (event.payload.tournamentId !== tournamentId) return;
+        toast.info('Tournament break — play resumes shortly');
+      },
+      300
+    );
+
+    const unsubBreakEnd = masterBus.subscribeDebounced(
+      'TOURNAMENT_BREAK_END',
+      (event) => {
+        if (event.payload.tournamentId !== tournamentId) return;
+        toast.info('Break over — play resuming');
+      },
+      300
+    );
+
     return () => {
       masterBus.removeRegisteredChannel(channelKey);
       unsubElim();
       unsubMerge();
+      unsubBlind();
+      unsubBreak();
+      unsubBreakEnd();
     };
   }, [tournamentId]);
 
@@ -800,7 +834,7 @@ export default function TournamentDetails() {
               </div>
               <div className="stat">
                 <span className="stat-label">Current Level</span>
-                <span className="stat-value">{tournament.current_level || 0}</span>
+                <span className="stat-value">{tournament.current_level || (tournament.status === 'RUNNING' ? 1 : '-')}</span>
               </div>
               <div className="stat">
                 <span className="stat-label">Remaining</span>

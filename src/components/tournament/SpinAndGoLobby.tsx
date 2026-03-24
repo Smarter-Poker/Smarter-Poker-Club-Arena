@@ -66,31 +66,40 @@ export function SpinAndGoLobby({ clubId, onRegister }: SpinAndGoLobbyProps) {
   useEffect(() => {
     loadTournaments();
 
-    // Subscribe to updates
-    const channelKey = 'spin-tournaments';
+    // Subscribe to updates — resolve club UUID for realtime filter
+    const channelKey = `spin-tournaments-${clubId}`;
+    let isMounted = true;
 
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'spin_tournaments',
-          filter: `club_id=eq.${clubId}`,
-        },
-        () => loadTournaments()
-      )
-      .subscribe((status: string, err?: Error) => {
-        if (status === 'CHANNEL_ERROR') {
-          console.error('[SpinAndGoLobby] ❌ Realtime channel error:', err?.message || err);
-        }
-        if (status === 'TIMED_OUT') {
-          console.warn('[SpinAndGoLobby] ⏱️ Realtime channel timed out');
-        }
-      });
+    const setupRealtime = async () => {
+      const resolvedId = await resolveClubUUID(clubId);
+      if (!isMounted) return;
+
+      const channel = masterBus.getOrCreateChannel(channelKey);
+      channel
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'spin_tournaments',
+            filter: `club_id=eq.${resolvedId}`,
+          },
+          () => loadTournaments()
+        )
+        .subscribe((status: string, err?: Error) => {
+          if (status === 'CHANNEL_ERROR') {
+            console.error('[SpinAndGoLobby] ❌ Realtime channel error:', err?.message || err);
+          }
+          if (status === 'TIMED_OUT') {
+            console.warn('[SpinAndGoLobby] ⏱️ Realtime channel timed out');
+          }
+        });
+    };
+
+    setupRealtime().catch((e) => console.warn('[SpinAndGoLobby] Realtime setup failed:', e));
 
     return () => {
+      isMounted = false;
       masterBus.removeRegisteredChannel(channelKey);
     };
   }, [clubId]);

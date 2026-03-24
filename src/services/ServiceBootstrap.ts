@@ -12,16 +12,12 @@ import { OfflineQueueService } from './OfflineQueueService';
 import { SettlementCronService } from './SettlementCronService';
 import { AutoRebuyService } from './AutoRebuyService';
 import { FinancialCronService } from './FinancialCronService';
-import { tournamentTimerService } from './TournamentTimerService';
-import { TournamentOrchestrator } from '../engine/TournamentOrchestrator';
 
 export interface BootResult {
   offlineQueue: boolean;
   settlementCron: boolean;
   autoRebuy: boolean;
   financialCron: boolean;
-  tournamentTimers: boolean;
-  tournamentOrchestrator: boolean;
   timestamp: string;
 }
 
@@ -50,8 +46,6 @@ export async function bootServices(options?: {
     settlementCron: false,
     autoRebuy: false,
     financialCron: false,
-    tournamentTimers: false,
-    tournamentOrchestrator: false,
     timestamp: new Date().toISOString(),
   };
 
@@ -97,25 +91,6 @@ export async function bootServices(options?: {
     console.debug('[ServiceBootstrap] ✗ FinancialCronService failed:', err);
   }
 
-  // 5. Tournament Timer Service — manages blind level advancement for running tournaments
-  try {
-    await tournamentTimerService.initializeAllTimers();
-    result.tournamentTimers = true;
-    console.debug('[ServiceBootstrap] ✓ TournamentTimerService initialized');
-  } catch (err: unknown) {
-    console.debug('[ServiceBootstrap] ✗ TournamentTimerService failed:', err);
-  }
-
-  // 6. Tournament Orchestrator — watches for tournaments to spin up/down engines
-  try {
-    const orchestrator = TournamentOrchestrator.getInstance();
-    orchestrator.start();
-    result.tournamentOrchestrator = true;
-    console.debug('[ServiceBootstrap] ✓ TournamentOrchestrator started');
-  } catch (err: unknown) {
-    console.debug('[ServiceBootstrap] ✗ TournamentOrchestrator failed:', err);
-  }
-
   booted = true;
 
   // Emit ready event so UI can react
@@ -125,8 +100,6 @@ export async function bootServices(options?: {
       settlementCron: result.settlementCron,
       autoRebuy: result.autoRebuy,
       financialCron: result.financialCron,
-      tournamentTimers: result.tournamentTimers,
-      tournamentOrchestrator: result.tournamentOrchestrator,
     } as Record<string, boolean>,
     timestamp: result.timestamp,
   });
@@ -142,8 +115,6 @@ export function shutdownServices(): void {
   OfflineQueueService.dispose();
   SettlementCronService.stop();
   FinancialCronService.stop();
-  try { tournamentTimerService.stopAllTimers(); } catch { /* noop */ }
-  try { TournamentOrchestrator.getInstance().stop(); } catch { /* noop */ }
   booted = false;
   console.debug('[ServiceBootstrap] Services shut down');
 }

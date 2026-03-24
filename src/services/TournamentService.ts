@@ -476,81 +476,6 @@ export const SPIN_BLIND_STRUCTURE: BlindLevel[] = [
 ];
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// SNG BLIND STRUCTURE (no breaks, 6-min levels)
-// ═══════════════════════════════════════════════════════════════════════════════
-
-export const SNG_BLIND_STRUCTURE: BlindLevel[] = [
-  { level: 1, smallBlind: 10, bigBlind: 20, ante: 0, durationMinutes: 6 },
-  { level: 2, smallBlind: 15, bigBlind: 30, ante: 0, durationMinutes: 6 },
-  { level: 3, smallBlind: 20, bigBlind: 40, ante: 0, durationMinutes: 6 },
-  { level: 4, smallBlind: 25, bigBlind: 50, ante: 0, durationMinutes: 6 },
-  { level: 5, smallBlind: 30, bigBlind: 60, ante: 0, durationMinutes: 6 },
-  { level: 6, smallBlind: 50, bigBlind: 100, ante: 0, durationMinutes: 6 },
-  { level: 7, smallBlind: 75, bigBlind: 150, ante: 0, durationMinutes: 6 },
-  { level: 8, smallBlind: 100, bigBlind: 200, ante: 0, durationMinutes: 6 },
-  { level: 9, smallBlind: 150, bigBlind: 300, ante: 0, durationMinutes: 6 },
-  { level: 10, smallBlind: 200, bigBlind: 400, ante: 0, durationMinutes: 6 },
-  { level: 11, smallBlind: 300, bigBlind: 600, ante: 0, durationMinutes: 6 },
-  { level: 12, smallBlind: 400, bigBlind: 800, ante: 0, durationMinutes: 6 },
-  { level: 13, smallBlind: 500, bigBlind: 1000, ante: 0, durationMinutes: 6 },
-  { level: 14, smallBlind: 750, bigBlind: 1500, ante: 0, durationMinutes: 6 },
-  { level: 15, smallBlind: 1000, bigBlind: 2000, ante: 0, durationMinutes: 6 },
-];
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// DEFAULT MTT BLIND STRUCTURE GENERATOR (with breaks every 6 playing levels)
-// ═══════════════════════════════════════════════════════════════════════════════
-
-/**
- * Generate a default MTT blind structure with 30 playing levels and 4 breaks.
- * Breaks are 5-minute entries with isBreak: true inserted after every 6 playing levels.
- * PLO variants get 15-minute levels; NLH gets 12-minute levels.
- */
-export function generateDefaultMTTBlindStructure(gameType: string): BlindLevel[] {
-  const duration = ['PLO4', 'PLO', 'PLO8'].includes(gameType) ? 15 : 12;
-  const blindPairs: [number, number, number][] = [
-    [10,20,0],[15,30,0],[20,40,0],[25,50,0],[30,60,0],[40,80,0],
-    [50,100,10],[60,120,15],[75,150,20],[100,200,25],[120,240,30],[150,300,40],
-    [200,400,50],[250,500,60],[300,600,75],[400,800,100],[500,1000,125],[600,1200,150],
-    [800,1600,200],[1000,2000,250],[1200,2400,300],[1500,3000,400],[2000,4000,500],[2500,5000,600],
-    [3000,6000,750],[4000,8000,1000],[5000,10000,1250],[6000,12000,1500],[8000,16000,2000],[10000,20000,2500],
-  ];
-  const levels: BlindLevel[] = [];
-  let levelNum = 1;
-  for (let i = 0; i < blindPairs.length; i++) {
-    // Insert 5-minute break after every 6 playing levels
-    if (i > 0 && i % 6 === 0) {
-      levels.push({
-        level: levelNum,
-        smallBlind: 0,
-        bigBlind: 0,
-        ante: 0,
-        durationMinutes: 5,
-        isBreak: true,
-      });
-      levelNum++;
-    }
-    const [sb, bb, ante] = blindPairs[i];
-    levels.push({ level: levelNum, smallBlind: sb, bigBlind: bb, ante, durationMinutes: duration });
-    levelNum++;
-  }
-  return levels;
-}
-
-/**
- * Get default blind structure for a tournament type and game variant.
- * Automatically includes breaks for MTTs.
- */
-export function getDefaultBlindStructure(
-  tournamentType: string,
-  gameType: string
-): BlindLevel[] {
-  if (tournamentType === 'spin') return SPIN_BLIND_STRUCTURE;
-  if (tournamentType === 'sng') return SNG_BLIND_STRUCTURE;
-  return generateDefaultMTTBlindStructure(gameType);
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
 // HELPERS
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -735,11 +660,9 @@ class TournamentService {
     }
 
     // VALIDATION: Blind structure must have increasing blinds and positive durations
-    // Skip validation for break levels (isBreak: true) which have 0/0 blinds
     if (config.blindStructure && Array.isArray(config.blindStructure)) {
       for (let i = 0; i < config.blindStructure.length; i++) {
         const level = config.blindStructure[i] as any;
-        if (level.isBreak) continue; // Break levels have 0/0 blinds — skip validation
         if (level.durationMinutes !== undefined && level.durationMinutes <= 0) {
           throw new Error(
             `Blind level ${i + 1} has invalid duration (${level.durationMinutes}). Must be > 0.`
@@ -747,7 +670,7 @@ class TournamentService {
         }
         if (i > 0) {
           const prev = config.blindStructure[i - 1] as any;
-          if (prev.isBreak) continue; // Don't compare against break levels
+          // FIX: Use OR — either blind decreasing is invalid (was AND, which allowed partial decreases)
           if (
             Number(level.smallBlind) < Number(prev.smallBlind) ||
             Number(level.bigBlind) < Number(prev.bigBlind)
@@ -1506,7 +1429,7 @@ class TournamentService {
           min_buy_in: 0,
           max_buy_in: 0,
           max_players: 9,
-          status: 'active',
+          status: 'RUNNING',
           settings: { auto_muck: true, time_bank_seconds: 30 },
         })
         .select()
@@ -1787,47 +1710,12 @@ class TournamentService {
       accumulatedMs += durationMs;
     }
 
-    // Auto-extend: generate new levels beyond the defined structure.
-    // Tournaments never "cap" — blinds keep increasing by doubling until the tournament ends.
-    const lastDefined = blinds[blinds.length - 1];
-    const levelDuration = lastDefined.isBreak ? 12 : lastDefined.durationMinutes;
-    const durationMs = levelDuration * 60 * 1000;
-
-    // Calculate how many extra levels beyond the defined structure
-    const extraElapsed = elapsedMs - accumulatedMs;
-    const extraLevels = Math.floor(extraElapsed / durationMs);
-    const timeIntoCurrentExtra = extraElapsed - extraLevels * durationMs;
-
-    // Find the last non-break level for blind calculations
-    let lastPlayLevel = lastDefined;
-    for (let j = blinds.length - 1; j >= 0; j--) {
-      if (!blinds[j].isBreak) { lastPlayLevel = blinds[j]; break; }
-    }
-
-    // Double blinds for each extra level beyond the structure
-    const multiplier = Math.pow(2, extraLevels);
-    const currentLevel: BlindLevel = {
-      level: blinds.length + extraLevels + 1,
-      smallBlind: Math.round(lastPlayLevel.smallBlind * multiplier),
-      bigBlind: Math.round(lastPlayLevel.bigBlind * multiplier),
-      ante: Math.round((lastPlayLevel.ante || 0) * multiplier),
-      durationMinutes: levelDuration,
-    };
-
-    const nextMultiplier = multiplier * 2;
-    const nextLevel: BlindLevel = {
-      level: currentLevel.level + 1,
-      smallBlind: Math.round(lastPlayLevel.smallBlind * nextMultiplier),
-      bigBlind: Math.round(lastPlayLevel.bigBlind * nextMultiplier),
-      ante: Math.round((lastPlayLevel.ante || 0) * nextMultiplier),
-      durationMinutes: levelDuration,
-    };
-
+    // Capped at last level
     return {
-      currentLevel,
-      nextLevel,
-      timeRemainingSeconds: Math.floor((durationMs - timeIntoCurrentExtra) / 1000),
-      levelIndex: blinds.length + extraLevels,
+      currentLevel: blinds[blinds.length - 1],
+      nextLevel: null,
+      timeRemainingSeconds: 0,
+      levelIndex: blinds.length - 1,
     };
   }
 
@@ -2212,14 +2100,9 @@ class TournamentService {
       console.error('[TournamentService] Could not query rebuy/addon transactions:', e);
     }
 
-    // Calculate total prize pool (deduct bounty amount per entry for bounty/PKO/mystery bounty)
-    const bountyPerEntry =
-      (tournament.is_bounty || tournament.is_pko || tournament.is_mystery_bounty)
-        ? (tournament.bounty_amount || 0)
-        : 0;
-    const entryPoolContribution = Math.max(0, buyIn - bountyPerEntry);
+    // Calculate total prize pool
     const calculatedPool =
-      Math.trunc(((entryCount || 0) * entryPoolContribution + rebuyTotal + addonTotal) * 100) / 100;
+      Math.trunc(((entryCount || 0) * buyIn + rebuyTotal + addonTotal) * 100) / 100;
     const finalPool = guarantee > 0 ? Math.max(calculatedPool, guarantee) : calculatedPool;
 
     // Update tournament
@@ -2407,7 +2290,7 @@ class TournamentService {
           min_buy_in: 0,
           max_buy_in: 0,
           max_players: 9,
-          status: 'active',
+          status: 'RUNNING',
           settings: { auto_muck: true, time_bank_seconds: 45 },
         })
         .select()

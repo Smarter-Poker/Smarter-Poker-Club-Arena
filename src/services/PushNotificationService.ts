@@ -175,7 +175,7 @@ class PushNotificationServiceClass {
       if (error) throw error;
       return true;
     } catch (error: unknown) {
-      console.error('[PushService] Send failed:', error);
+      console.debug('[PushService] Send failed:', error);
       return false;
     }
   }

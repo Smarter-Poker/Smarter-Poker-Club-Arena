@@ -1026,7 +1026,7 @@ export default function TablePage({
           setBbjAmount(pool.main_balance);
         }
       } catch (error) {
-        console.error('Error loading BBJ pool:', error);
+        console.debug('Error loading BBJ pool:', error);
       }
     };
 
@@ -5355,6 +5355,8 @@ export default function TablePage({
           onDecline={handleInsuranceDecline}
           offer={insuranceOffer}
           timeRemaining={15}
+          tableId={tableId || ''}
+          playerId={userId || ''}
         />
       )}
 

@@ -473,7 +473,7 @@ class AchievementServiceClass {
       message: `You earned "${achievement.name}"!`,
       data: { achievement_id: achievement.id },
     });
-    if (notifErr) console.warn('[AchievementService] Notification insert failed:', notifErr);
+    if (notifErr) console.debug('[AchievementService] Notification insert failed:', notifErr);
   }
 
   // ─────────────────────────────────────────────────────────────────────────────

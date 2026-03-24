@@ -11,7 +11,6 @@
  */
 
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
-import { useIsMounted } from '../../hooks/useIsMounted';
 import { haptic } from '../../services/SoundService';
 import './CashierModal.css';
 
@@ -84,7 +83,6 @@ export function CashierModal({
   const [visibleQuick, setVisibleQuick] = useState<boolean[]>([]);
   const modalRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
-  const isMounted = useIsMounted();
 
   // Calculate limits
   const canAddAmount = useMemo(() => {
@@ -264,6 +262,7 @@ export function CashierModal({
             tabIndex={activeTab === 'add' ? 0 : -1}
             aria-selected={activeTab === 'add'}
             aria-controls="table-cashier-panel-add"
+            id="table-cashier-tab-add"
             className={`cashier-modal__tab ${activeTab === 'add' ? 'cashier-modal__tab--active' : ''}`}
             onClick={() => handleTabChange('add')}
           >
@@ -274,6 +273,7 @@ export function CashierModal({
             tabIndex={activeTab === 'withdraw' ? 0 : -1}
             aria-selected={activeTab === 'withdraw'}
             aria-controls="table-cashier-panel-withdraw"
+            id="table-cashier-tab-withdraw"
             className={`cashier-modal__tab ${activeTab === 'withdraw' ? 'cashier-modal__tab--active' : ''}`}
             onClick={() => handleTabChange('withdraw')}
           >
@@ -282,7 +282,7 @@ export function CashierModal({
         </div>
 
         {/* Amount Input */}
-        <div className="cashier-modal__input-section">
+        <div className="cashier-modal__input-section" id={`table-cashier-panel-${activeTab}`} role="tabpanel" aria-labelledby={`table-cashier-tab-${activeTab}`}>
           <div className="cashier-modal__input-wrapper">
             <span className="cashier-modal__currency">{currency}</span>
             <input

@@ -142,7 +142,7 @@ export function CashierModal({
         <div className="cashier-modal__header">
           <div className="cashier-modal__title-group">
             <span className="cashier-modal__icon"></span>
-            <h2 className="cashier-modal__title">Cashier</h2>
+            <h2 id="cashier-modal-title" className="cashier-modal__title">Cashier</h2>
           </div>
           <button className="cashier-modal__close" onClick={onClose}>
             ×

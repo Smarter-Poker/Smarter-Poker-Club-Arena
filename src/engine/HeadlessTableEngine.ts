@@ -419,21 +419,23 @@ export class HeadlessTableEngine {
           // which properly resets horse_status to "available" and cleans up the seat
           const profile = profileMap.get(seat.user_id);
           if (profile?.is_horse) {
-            await HydraService.removeHorse(this.tableId, seat.user_id);
-            console.debug(
-              `[HeadlessTableEngine:${this.tableId}] Removed busted horse ${seat.user_id} via HydraService`
+            // Horse with stack=0 AFTER autorebuyHorses ran means rebuy failed.
+            // Use HydraService.removeHorse which hard-deletes and resets horse_status.
+            console.warn(
+              `[HTE] loadSeatedPlayers: busted horse ${seat.user_id.slice(0, 8)} (${profile.display_name}) stack=${seat.stack} — removing via HydraService`
             );
+            await HydraService.removeHorse(this.tableId, seat.user_id);
           } else {
             // Non-horse player: soft-delete as before
+            console.warn(
+              `[HTE] loadSeatedPlayers: busted non-horse ${seat.user_id.slice(0, 8)} stack=${seat.stack} — setting left_at`
+            );
             await this.supabaseClient
               .from('table_seats')
               .update({ left_at: new Date().toISOString() })
               .eq('table_id', this.tableId)
               .eq('user_id', seat.user_id)
               .is('left_at', null);
-            console.debug(
-              `[HeadlessTableEngine:${this.tableId}] Cleared busted seat for player ${seat.user_id}`
-            );
           }
         }
       }
@@ -1171,29 +1173,38 @@ export class HeadlessTableEngine {
               );
             }
           }
+
+          // Auto-rebuy horses with 0 stack INSIDE stackSyncPromise so it completes
+          // BEFORE loadSeatedPlayers runs on the next hand. This prevents the race
+          // condition where loadSeatedPlayers sees stack=0 and removes the horse
+          // before autorebuyHorses can rebuy it.
+          if (!this.isTournamentTable()) {
+            try {
+              await this.autorebuyHorses(players);
+            } catch (err: unknown) {
+              console.debug(`[HeadlessTableEngine:${this.tableId}] Failed to auto-rebuy horses:`, err);
+            }
+          }
+
+          // Process players who requested to leave mid-hand (leave_pending flag)
+          // Also inside stackSyncPromise to ensure sequential execution
+          if (!this.isTournamentTable()) {
+            try {
+              await this.processLeavePendingPlayers();
+            } catch (err: unknown) {
+              console.debug(
+                `[HeadlessTableEngine:${this.tableId}] Leave-pending processing error:`,
+                err
+              );
+            }
+          }
         })();
 
         // Execute rake waterfall (cash games only — no rake in tournaments)
+        // This can remain fire-and-forget since it doesn't affect seat state
         if (!this.isTournamentTable()) {
           this.executeRakeWaterfall(players).catch((err) =>
             console.debug(`[HeadlessTableEngine:${this.tableId}] Rake waterfall error:`, err)
-          );
-        }
-
-        // Auto-rebuy horses with 0 stack (cash games only — tournaments eliminate)
-        if (!this.isTournamentTable()) {
-          this.autorebuyHorses(players).catch((err) =>
-            console.debug(`[HeadlessTableEngine:${this.tableId}] Failed to auto-rebuy horses:`, err)
-          );
-        }
-
-        // Process players who requested to leave mid-hand (leave_pending flag)
-        if (!this.isTournamentTable()) {
-          this.processLeavePendingPlayers().catch((err) =>
-            console.debug(
-              `[HeadlessTableEngine:${this.tableId}] Leave-pending processing error:`,
-              err
-            )
           );
         }
 
@@ -1615,37 +1626,20 @@ export class HeadlessTableEngine {
       const rebuyAmount = this.tableInfo?.big_blind ? this.tableInfo.big_blind * 100 : 200;
 
       try {
-        // 1. Check horse's Player Wallet balance
-        const balance = await WalletService.getWallet(horse.user_id, 'PLAYER');
-        if (!balance) {
-          console.debug(
-            `[HeadlessTableEngine:${this.tableId}] Horse ${horse.username} has no Player Wallet — cannot rebuy`
-          );
-          await this.markHorseAsLeft(horse.user_id, 'no_wallet');
-          continue;
-        }
-        const walletData = balance;
-
-        const walletBalance = walletData.balance || 0;
-        if (walletBalance < rebuyAmount) {
-          console.debug(
-            `[HeadlessTableEngine:${this.tableId}] Horse ${horse.username} insufficient funds: ` +
-              `wallet ${walletBalance} < rebuy ${rebuyAmount} — stays busted`
-          );
-          await this.markHorseAsLeft(horse.user_id, 'insufficient_funds');
-          continue;
-        }
-
-        // 2 & 3. Deduct from Player Wallet and update seat atomically via SECURITY DEFINER RPC
-        const { error: rebuyError } = await this.supabaseClient.rpc('atomic_table_rebuy', {
-          p_user_id: horse.user_id,
-          p_table_id: this.tableId,
-          p_amount: rebuyAmount,
-        });
+        // Horses are liquidity bots with infinite chips — no wallet needed.
+        // Directly update the seat stack in the DB to rebuy them instantly.
+        // This avoids the broken wallet/RPC path (horses have no Player Wallet,
+        // and atomic_table_rebuy RPC does not exist).
+        const { error: rebuyError } = await this.supabaseClient
+          .from('table_seats')
+          .update({ stack: rebuyAmount })
+          .eq('table_id', this.tableId)
+          .eq('user_id', horse.user_id)
+          .is('left_at', null);
 
         if (rebuyError) {
-          console.debug(
-            `[HeadlessTableEngine:${this.tableId}] Atomic auto-rebuy failed for ${horse.username}:`,
+          console.warn(
+            `[HTE] autorebuyHorses: DB update failed for ${horse.username} (${horse.user_id.slice(0, 8)}):`,
             rebuyError.message
           );
           continue;
@@ -1653,10 +1647,11 @@ export class HeadlessTableEngine {
 
         // Update local stack so the engine knows right away
         horse.stack = rebuyAmount;
+        console.warn(
+          `[HTE] autorebuyHorses: Rebuyed horse ${horse.username} for ${rebuyAmount} at table ${this.tableId.slice(0, 8)}`
+        );
 
-        // Transaction logging is handled inside atomic_table_rebuy RPC via log_wallet_transaction
-
-        // 5. Also log in chip_transactions for club-level accounting
+        // Log in chip_transactions for club-level accounting (fire-and-forget)
         this.supabaseClient
           .from('chip_transactions')
           .insert({
@@ -1664,15 +1659,15 @@ export class HeadlessTableEngine {
             to_user_id: horse.user_id,
             amount: rebuyAmount,
             transaction_type: 'buy_in',
-            notes: `Auto-rebuy at table ${this.tableId}`,
+            notes: `Horse auto-rebuy at table ${this.tableId}`,
           })
           .then(() => {}); // Silent — RLS may block anon writes
 
         // Track rebuy in Horse Brain
         HorseBrainAdapter.recordRebuy(this.tableId, horse.user_id, rebuyAmount);
       } catch (err: unknown) {
-        console.debug(
-          `[HeadlessTableEngine:${this.tableId}] Auto-rebuy failed for ${horse.username}:`,
+        console.warn(
+          `[HTE] autorebuyHorses: Exception for ${horse.username}:`,
           err
         );
       }

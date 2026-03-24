@@ -66,7 +66,7 @@ export class CashGameOrchestrator {
                 const engine = new HeadlessTableEngine(tableId, supabase);
                 this.activeEngines.set(tableId, engine);
                 engine.start().catch((err) => {
-                  console.error(
+                  console.debug(
                     `[CashGameOrchestrator] Engine failed to start for ${tableId}:`,
                     err
                   );
@@ -107,14 +107,14 @@ export class CashGameOrchestrator {
         )
         .subscribe((status: string, err?: Error) => {
           if (status === 'CHANNEL_ERROR') {
-            console.error('[CashGameOrchestrator] ❌ Realtime channel error:', err?.message || err);
+            console.debug('[CashGameOrchestrator] ❌ Realtime channel error:', err?.message || err);
           }
           if (status === 'TIMED_OUT') {
             console.warn('[CashGameOrchestrator] ⏱️ Realtime channel timed out');
           }
         });
     } catch (err: unknown) {
-      console.error(
+      console.debug(
         '[CashGameOrchestrator] Realtime subscription failed, relying on polling:',
         err
       );
@@ -192,7 +192,7 @@ export class CashGameOrchestrator {
 
           // Fire and forget start
           engine.start().catch((err) => {
-            console.error(`[CashGameOrchestrator] Engine failed to start for ${tableId}:`, err);
+            console.debug(`[CashGameOrchestrator] Engine failed to start for ${tableId}:`, err);
             this.activeEngines.delete(tableId);
           });
         }
@@ -205,11 +205,11 @@ export class CashGameOrchestrator {
           this.activeEngines.delete(tableId);
         } else if (!engine.isRunning()) {
           // Engine crashed or stopped internally, restart it
-          engine.start().catch((err) => console.error(err));
+          engine.start().catch((err) => console.debug(err));
         }
       }
     } catch (err: unknown) {
-      console.error('[CashGameOrchestrator] Error syncing active tables:', err);
+      console.debug('[CashGameOrchestrator] Error syncing active tables:', err);
     }
   }
 
@@ -247,7 +247,7 @@ export class CashGameOrchestrator {
           }
         }
       } catch (err: unknown) {
-        console.error(`[CashGameOrchestrator] Error managing liquidity for table ${tableId}:`, err);
+        console.debug(`[CashGameOrchestrator] Error managing liquidity for table ${tableId}:`, err);
       }
     }
   }

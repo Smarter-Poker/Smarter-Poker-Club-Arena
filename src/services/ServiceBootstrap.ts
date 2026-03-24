@@ -55,7 +55,7 @@ export async function bootServices(options?: {
     result.offlineQueue = true;
     console.debug('[ServiceBootstrap] ✓ OfflineQueueService initialized');
   } catch (err: unknown) {
-    console.error('[ServiceBootstrap] ✗ OfflineQueueService failed:', err);
+    console.debug('[ServiceBootstrap] ✗ OfflineQueueService failed:', err);
   }
 
   // 2. Settlement Cron — only for admin/owner roles
@@ -65,18 +65,18 @@ export async function bootServices(options?: {
       result.settlementCron = true;
       console.debug('[ServiceBootstrap] ✓ SettlementCronService started');
     } catch (err: unknown) {
-      console.error('[ServiceBootstrap] ✗ SettlementCronService failed:', err);
+      console.debug('[ServiceBootstrap] ✗ SettlementCronService failed:', err);
     }
   }
 
-  // 3. Auto-Rebuy Service — DISABLED ON FRONTEND (Now runs on Node.js Server to prevent DB overload)
-  // try {
-  //   AutoRebuyService.start();
-  //   result.autoRebuy = true;
-  //   console.debug('[ServiceBootstrap] ✓ AutoRebuyService started');
-  // } catch (err: unknown) {
-  //   console.error('[ServiceBootstrap] ✗ AutoRebuyService failed:', err);
-  // }
+  // 3. Auto-Rebuy Service — monitors all active tables, reseats busted horses, ensures 4 per table
+  try {
+    AutoRebuyService.start();
+    result.autoRebuy = true;
+    console.debug('[ServiceBootstrap] ✓ AutoRebuyService started');
+  } catch (err: unknown) {
+    console.debug('[ServiceBootstrap] ✗ AutoRebuyService failed:', err);
+  }
 
   // 4. Financial Cron — reconciliation, suspension checks, audit trail
   try {
@@ -88,7 +88,7 @@ export async function bootServices(options?: {
     result.financialCron = true;
     console.debug('[ServiceBootstrap] ✓ FinancialCronService started');
   } catch (err: unknown) {
-    console.error('[ServiceBootstrap] ✗ FinancialCronService failed:', err);
+    console.debug('[ServiceBootstrap] ✗ FinancialCronService failed:', err);
   }
 
   booted = true;

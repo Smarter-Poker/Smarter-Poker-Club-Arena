@@ -51,7 +51,7 @@ class AutoRebuyServiceCore {
     this.monitoringInterval = config.monitoringInterval ?? 30000;
     this.minStackBB = config.minStackBB ?? 20;
     this.rebuyStackBB = config.rebuyStackBB ?? 100;
-    this.minHorsesPerTable = config.minHorsesPerTable ?? 2;
+    this.minHorsesPerTable = config.minHorsesPerTable ?? 4;
     this.minWalletBalance = config.minWalletBalance ?? 50000;
   }
 
@@ -130,7 +130,7 @@ class AutoRebuyServiceCore {
       // Log any individual table failures
       results.forEach((result, idx) => {
         if (result.status === 'rejected') {
-          console.error(
+          console.debug(
             '[AutoRebuy] Error processing table ' + tables[idx].id + ':',
             result.reason
           );

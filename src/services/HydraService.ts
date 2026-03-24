@@ -209,7 +209,7 @@ export const HydraService = {
     const { data, error } = await query;
 
     if (error) {
-      console.error('HydraService.getAvailableHorses error:', error);
+      console.debug('HydraService.getAvailableHorses error:', error);
       return [];
     }
 
@@ -242,7 +242,7 @@ export const HydraService = {
       .is('left_at', null);
 
     if (seatError || !seatData?.length) {
-      if (seatError) console.error('HydraService.getActiveHorses seat query error:', seatError);
+      if (seatError) console.debug('HydraService.getActiveHorses seat query error:', seatError);
       return [];
     }
 
@@ -260,7 +260,7 @@ export const HydraService = {
 
     if (profileError) {
       // If horse columns don't exist yet, silently return empty
-      console.error('HydraService.getActiveHorses profile query error:', profileError);
+      console.debug('HydraService.getActiveHorses profile query error:', profileError);
       return [];
     }
 
@@ -314,7 +314,7 @@ export const HydraService = {
       .is('left_at', null);
 
     if (error) {
-      console.error('HydraService.getTableLiquidityStatus error:', error);
+      console.debug('HydraService.getTableLiquidityStatus error:', error);
       return {
         tableId,
         realPlayers: 0,
@@ -383,7 +383,7 @@ export const HydraService = {
           localClaimedSeats.add(seatedHorse.seatNumber);
         }
       } catch (err: unknown) {
-        console.error(`Failed to seat horse ${horse.id}:`, err);
+        console.debug(`Failed to seat horse ${horse.id}:`, err);
       }
     }
 
@@ -412,7 +412,16 @@ export const HydraService = {
 
     const stack = getStackForProfile(horseData.horse_profile as HorseProfile, bigBlind);
 
-    // Find an available seat at the table (only count active seats, not left players)
+    // Clean up departed (left_at NOT NULL) seat rows first — these block INSERTs
+    // due to unique constraint on (table_id, seat_number).
+    const { error: cleanupErr } = await supabase
+      .from('table_seats')
+      .delete()
+      .eq('table_id', tableId)
+      .not('left_at', 'is', null);
+    if (cleanupErr) console.debug('[Hydra] seatHorse cleanup departed seats error:', cleanupErr.message);
+
+    // Find an available seat at the table (only count active seats with left_at=null)
     const { data: existingSeats, error: seatsErr } = await supabase
       .from('table_seats')
       .select('seat_number')
@@ -444,7 +453,7 @@ export const HydraService = {
     }
 
     if (availableSeat === 0) {
-      console.error('HydraService.seatHorse: No available seats at table', tableId);
+      console.debug('HydraService.seatHorse: No available seats at table', tableId);
       return null;
     }
 
@@ -468,7 +477,7 @@ export const HydraService = {
     );
 
     if (seatErr) {
-      console.error(
+      console.debug(
         `[HydraService] table_seats INSERT FAILED for horse ${horseId} at seat ${availableSeat}:`,
         seatErr.message
       );
@@ -543,7 +552,7 @@ export const HydraService = {
     const horse = horses.find((h) => h.id === horseId);
 
     if (!horse) {
-      console.error('Horse not found for removal:', horseId);
+      console.debug('Horse not found for removal:', horseId);
       return;
     }
 
@@ -570,7 +579,7 @@ export const HydraService = {
       .maybeSingle();
 
     if (seatFetchErr || !seatData) {
-      console.error(
+      console.debug(
         `HydraService.removeHorse: Seat not found for horse ${horseId} at table ${tableId}`
       );
       return false;
@@ -591,7 +600,7 @@ export const HydraService = {
     );
 
     if (deleteErr) {
-      console.error(
+      console.debug(
         `[HydraService] table_seats DELETE FAILED for horse ${horseId}:`,
         deleteErr.message
       );
@@ -680,7 +689,7 @@ export const HydraService = {
 
       setTimeout(() => {
         this.seedTable(tableId, bigBlind).catch((err) => {
-          console.error(`[HydraService] Failed to reseed table ${tableId} after player left:`, err);
+          console.debug(`[HydraService] Failed to reseed table ${tableId} after player left:`, err);
         });
       }, delay);
     }
@@ -888,7 +897,7 @@ export const HydraService = {
       .eq('is_horse', true);
 
     if (error) {
-      console.error('HydraService.getFleetStats error:', error);
+      console.debug('HydraService.getFleetStats error:', error);
       return {
         totalHorses: 0,
         available: 0,

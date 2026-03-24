@@ -159,7 +159,6 @@ class TournamentTimerServiceClass {
 
   /**
    * Handle blind level advancement
-   * TournamentTimerService is the SOLE AUTHORITY for blind level changes.
    */
   private async handleLevelChange(
     tournament: Tournament,
@@ -168,61 +167,25 @@ class TournamentTimerServiceClass {
     levelState: ReturnType<typeof tournamentService.getCurrentLevelState>
   ): Promise<void> {
     const { currentLevel } = levelState;
-    const isBreakLevel = currentLevel.isBreak === true;
 
-    // 1. Update database with new level (with error handling)
-    try {
-      await supabase
-        .from('tournaments')
-        .update({ current_level: newLevel })
-        .eq('id', tournament.id);
-    } catch (err) {
-      console.error(`[TournamentTimer] DB update failed for level ${newLevel}:`, err);
-    }
+    // 1. Update database with new level
+    await supabase
+      .from('tournaments')
+      .update({
+        current_level: newLevel,
+      })
+      .eq('id', tournament.id);
 
-    // 2. Handle break levels — DON'T update table blinds to 0/0 during breaks
-    if (isBreakLevel) {
-      const breakDuration = currentLevel.durationMinutes || 5;
-      masterBus.emit('TOURNAMENT_BREAK', {
-        tournamentId: tournament.id,
-        level: newLevel,
-        durationMinutes: breakDuration,
-      });
-      masterBus.emit('BLIND_LEVEL_CHANGE', {
-        tournamentId: tournament.id,
-        level: newLevel,
-        smallBlind: 0,
-        bigBlind: 0,
-        ante: 0,
-        isBreak: true,
-      });
-      this.pauseTimer(tournament.id);
-      const timer = this.activeTimers.get(tournament.id);
-      if (timer) {
-        timer.breakTimeoutId = setTimeout(() => {
-          this.resumeTimer(tournament.id);
-          masterBus.emit('TOURNAMENT_BREAK_END', { tournamentId: tournament.id });
-          masterBus.emit('BREAK_END', { tournamentId: tournament.id });
-        }, breakDuration * 60_000);
-      }
-      return; // Don't update table blinds during breaks
-    }
+    // 2. Update all tournament tables with new blinds
+    await supabase
+      .from('tables')
+      .update({
+        small_blind: currentLevel.smallBlind,
+        big_blind: currentLevel.bigBlind,
+      })
+      .eq('tournament_id', tournament.id);
 
-    // 3. Update non-closed tournament tables with new blinds
-    try {
-      await supabase
-        .from('tables')
-        .update({
-          small_blind: currentLevel.smallBlind,
-          big_blind: currentLevel.bigBlind,
-        })
-        .eq('tournament_id', tournament.id)
-        .neq('status', 'closed');
-    } catch (err) {
-      console.error(`[TournamentTimer] Table blind update failed:`, err);
-    }
-
-    // 4. Broadcast level change to all clients
+    // 3. Broadcast level change to all clients
     await this.broadcastLevelChange(tournament.id, {
       level: newLevel,
       smallBlind: currentLevel.smallBlind,
@@ -232,20 +195,26 @@ class TournamentTimerServiceClass {
       timeRemainingSeconds: levelState.timeRemainingSeconds,
     });
 
-    // 5. Emit bus events for TournamentEngine and TournamentClock
+    // 3.5. Emit specific bus event for TournamentClock and other listeners
     masterBus.emit('BLIND_LEVEL_CHANGE', {
       tournamentId: tournament.id,
       level: newLevel,
       smallBlind: currentLevel.smallBlind,
       bigBlind: currentLevel.bigBlind,
       ante: currentLevel.ante,
-      isBreak: false,
     });
 
+    // 3.6. Also emit general tournament update for page-level refresh
     masterBus.emit('TOURNAMENT_UPDATED', {
       tournamentId: tournament.id,
       status: `blind_level_${newLevel}`,
     });
+
+    // 4. Check for break times (configurable interval, default every 6 levels)
+    const breakInterval = this.breakIntervals.get(tournament.id) || 6;
+    if (newLevel % breakInterval === 0 && levelState.nextLevel) {
+      await this.handleBreak(tournament.id, 5); // 5-minute break
+    }
   }
 
   /**

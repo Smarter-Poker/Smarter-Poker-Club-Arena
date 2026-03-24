@@ -252,7 +252,7 @@ export default function CashierPage() {
   useEffect(() => {
     if (!clubId || !user?.id) return;
     setLoadingContext(true);
-    loadUserContext().finally(() => setLoadingContext(false));
+    loadUserContext();
   }, [clubId, user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load pending cashouts

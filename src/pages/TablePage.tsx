@@ -1801,10 +1801,10 @@ export default function TablePage({
               )
               .subscribe((status: string, err?: Error) => {
                 if (status === 'CHANNEL_ERROR') {
-                  console.error('[TablePage] ❌ Realtime channel error:', err?.message || err);
+                  console.debug('[TablePage] ❌ Realtime channel error:', err?.message || err);
                 }
                 if (status === 'TIMED_OUT') {
-                  console.warn('[TablePage] ⏱️ Realtime channel timed out');
+                  console.debug('[TablePage] ⏱️ Realtime channel timed out');
                 }
               });
             bountyChannelRef.current = bountyChannel;
@@ -1993,10 +1993,10 @@ export default function TablePage({
             })
             .subscribe((status: string, err?: Error) => {
               if (status === 'CHANNEL_ERROR') {
-                console.error('[TablePage] ❌ Realtime channel error:', err?.message || err);
+                console.debug('[TablePage] ❌ Realtime channel error:', err?.message || err);
               }
               if (status === 'TIMED_OUT') {
-                console.warn('[TablePage] ⏱️ Realtime channel timed out');
+                console.debug('[TablePage] ⏱️ Realtime channel timed out');
               }
             });
           breakChannelRef.current = breakChan;
@@ -2668,7 +2668,7 @@ export default function TablePage({
           console.debug(`[RealtimeSeats] Subscribed to table_seats for ${tableId}`);
         }
         if (status === 'CHANNEL_ERROR') {
-          console.error('[RealtimeSeats] Channel error:', err?.message);
+          console.debug('[RealtimeSeats] Channel error:', err?.message);
         }
       });
 

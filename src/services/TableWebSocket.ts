@@ -172,7 +172,7 @@ export class TableWebSocket {
 
             resolve();
           } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-            console.error(`[TableWS] Channel ${status}, will retry...`);
+            console.debug(`[TableWS] Channel ${status}, will retry...`);
             resolve(); // Don't reject — let reconnect handle it gracefully
           }
         });

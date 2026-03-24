@@ -653,10 +653,10 @@ class RealtimeChannelService {
 
     channel.subscribe((status: string, err?: Error) => {
       if (status === 'CHANNEL_ERROR') {
-        console.error(`[RealtimeChannel] ❌ Lobby channel error:`, err?.message || err);
+        console.debug(`[RealtimeChannel] ❌ Lobby channel error:`, err?.message || err);
       }
       if (status === 'TIMED_OUT') {
-        console.warn(`[RealtimeChannel] ⏱️ Lobby channel timed out`);
+        console.debug(`[RealtimeChannel] ⏱️ Lobby channel timed out`);
       }
     });
 

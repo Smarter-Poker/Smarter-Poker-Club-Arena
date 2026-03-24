@@ -111,9 +111,9 @@ class PresenceServiceClass {
           console.error('[PresenceService] Track failed:', e);
         }
       } else if (status === 'CHANNEL_ERROR') {
-        console.error(`[PresenceService] ❌ Channel error on ${channelName}:`, err?.message || err);
+        console.debug(`[PresenceService] ❌ Channel error on ${channelName}:`, err?.message || err);
       } else if (status === 'TIMED_OUT') {
-        console.warn(`[PresenceService] ⏱️ Channel ${channelName} timed out`);
+        console.debug(`[PresenceService] ⏱️ Channel ${channelName} timed out`);
       }
     });
 

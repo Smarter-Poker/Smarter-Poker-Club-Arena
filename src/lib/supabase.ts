@@ -116,13 +116,13 @@ export function subscribeToTable<T>(
     )
     .subscribe((status: string, err?: Error) => {
       if (status === 'CHANNEL_ERROR') {
-        console.error(
+        console.debug(
           `[subscribeToTable] ❌ Channel error on ${channelName}:`,
           err?.message || err
         );
       }
       if (status === 'TIMED_OUT') {
-        console.warn(`[subscribeToTable] ⏱️ Channel ${channelName} timed out — auto-reconnecting`);
+        console.debug(`[subscribeToTable] ⏱️ Channel ${channelName} timed out — auto-reconnecting`);
       }
     });
 
@@ -161,14 +161,14 @@ export function broadcastHandState(tableId: string, handState: Record<string, un
         if (status === 'SUBSCRIBED') {
           resolve(channel);
         } else if (status === 'CHANNEL_ERROR') {
-          console.error(
+          console.debug(
             `[broadcastHandState] ❌ Channel error on ${channelName}:`,
             err?.message || err
           );
           broadcastReady.delete(channelName); // Allow retry on next call
           reject(new Error(`Channel ${channelName} error: ${err?.message || 'unknown'}`));
         } else if (status === 'TIMED_OUT') {
-          console.warn(`[broadcastHandState] ⏱️ Channel ${channelName} timed out`);
+          console.debug(`[broadcastHandState] ⏱️ Channel ${channelName} timed out`);
           broadcastReady.delete(channelName); // Allow retry on next call
           reject(new Error(`Channel ${channelName} timed out`));
         }
@@ -233,13 +233,13 @@ export function subscribeToHandState(
     })
     .subscribe((status: string, err?: Error) => {
       if (status === 'CHANNEL_ERROR') {
-        console.error(
+        console.debug(
           `[subscribeToHandState] ❌ Channel error on hand-state:${tableId}:`,
           err?.message || err
         );
       }
       if (status === 'TIMED_OUT') {
-        console.warn(
+        console.debug(
           `[subscribeToHandState] ⏱️ Channel hand-state:${tableId} timed out — auto-reconnecting`
         );
       }

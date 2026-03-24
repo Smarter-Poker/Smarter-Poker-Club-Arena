@@ -212,7 +212,7 @@ class PostgresSyncHooksService {
             this.retryCount = 0; // Reset on success
             break;
           case 'CHANNEL_ERROR':
-            console.error(`[PostgresSync] ❌ Channel error:`, err?.message || err || 'unknown');
+            console.debug(`[PostgresSync] ❌ Channel error:`, err?.message || err || 'unknown');
             masterBus.emit('REALTIME_DISCONNECTED', {
               channelName,
               reason: `Channel error: ${err?.message || 'unknown'}`,

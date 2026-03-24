@@ -127,9 +127,9 @@ class RoomService {
             status: 'active',
           } as PlayerPresence);
         } else if (status === 'CHANNEL_ERROR') {
-          console.error('[RoomService] ❌ Channel error for table:', tableId, err?.message || err);
+          console.debug('[RoomService] ❌ Channel error for table:', tableId, err?.message || err);
         } else if (status === 'TIMED_OUT') {
-          console.warn('[RoomService] ⏱️ Channel timed out for table:', tableId);
+          console.debug('[RoomService] ⏱️ Channel timed out for table:', tableId);
         }
       });
 

@@ -96,13 +96,13 @@ export function useMasterBusChannel({
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error(
+          console.debug(
             `[useMasterBusChannel] ❌ Channel error on ${channelName}:`,
             err?.message || err
           );
         }
         if (status === 'TIMED_OUT') {
-          console.warn(
+          console.debug(
             `[useMasterBusChannel] ⏱️ Channel ${channelName} timed out — auto-reconnecting`
           );
         }

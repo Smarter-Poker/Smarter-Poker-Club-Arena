@@ -92,14 +92,14 @@ export default function GlobalWaitlistListener() {
         retryCountRef.current = 0; // Reset on success
       } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
         if (retryCountRef.current >= MAX_RETRIES) {
-          console.warn(
+          console.debug(
             `[GlobalWaitlistListener] Max retries (${MAX_RETRIES}) reached — giving up. Will rely on MasterBus health monitor for recovery.`
           );
           return;
         }
 
         const delay = BACKOFF_DELAYS[Math.min(retryCountRef.current, BACKOFF_DELAYS.length - 1)];
-        console.warn(
+        console.debug(
           `[GlobalWaitlistListener] ${status} — retry ${retryCountRef.current + 1}/${MAX_RETRIES} in ${delay}ms`
         );
         retryCountRef.current++;

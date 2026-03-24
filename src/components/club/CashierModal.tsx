@@ -10,7 +10,7 @@
  * - View transaction history
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { masterBus } from '../../core/MasterBus';
 import './CashierModal.css';
 
@@ -47,6 +47,8 @@ export function CashierModal({
   const [amount, setAmount] = useState('');
   const [loading, setLoading] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const modalRef = useRef<HTMLDivElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -55,6 +57,53 @@ export function CashierModal({
       setMounted(false);
     }
   }, [isOpen]);
+
+  // ── Focus Trap: trap focus inside modal when open ──
+  const handleFocusTrap = useCallback((e: KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      onClose();
+      return;
+    }
+    if (e.key !== 'Tab' || !modalRef.current) return;
+
+    const focusable = modalRef.current.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    );
+    if (focusable.length === 0) return;
+
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+
+    if (e.shiftKey) {
+      if (document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      }
+    } else {
+      if (document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+  }, [onClose]);
+
+  useEffect(() => {
+    if (isOpen) {
+      previousFocusRef.current = document.activeElement as HTMLElement;
+      document.addEventListener('keydown', handleFocusTrap);
+      const t = setTimeout(() => {
+        if (modalRef.current) {
+          const first = modalRef.current.querySelector<HTMLElement>('input, button');
+          first?.focus();
+        }
+      }, 100);
+      return () => {
+        document.removeEventListener('keydown', handleFocusTrap);
+        clearTimeout(t);
+        previousFocusRef.current?.focus();
+      };
+    }
+  }, [isOpen, handleFocusTrap]);
 
   if (!isOpen) return null;
 
@@ -81,6 +130,7 @@ export function CashierModal({
     <div className="cashier-overlay" onClick={onClose} role="dialog" aria-modal="true" aria-labelledby="cashier-modal-title">
       <div
         className="cashier-modal"
+        ref={modalRef}
         onClick={(e) => e.stopPropagation()}
         style={{
           opacity: mounted ? 1 : 0,

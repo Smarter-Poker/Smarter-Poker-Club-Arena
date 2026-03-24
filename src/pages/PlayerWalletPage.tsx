@@ -5,7 +5,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { masterBus } from '../core/MasterBus';
 import { useWalletStore } from '../stores/useWalletStore';
@@ -355,6 +355,25 @@ export default function PlayerWalletPage() {
     if (isMounted.current) setIsTransferring(false);
   };
 
+  // ── Keyboard navigation for tabs (Arrow Left/Right) ──
+  const walletTabs: WalletTab[] = ['overview', 'transfer', 'history'];
+  const handleTabKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+        e.preventDefault();
+        const idx = walletTabs.indexOf(activeTab);
+        const next =
+          e.key === 'ArrowRight'
+            ? walletTabs[(idx + 1) % walletTabs.length]
+            : walletTabs[(idx - 1 + walletTabs.length) % walletTabs.length];
+        setActiveTab(next);
+        const btn = document.querySelector(`[aria-controls="wallet-panel-${next}"]`) as HTMLElement;
+        btn?.focus();
+      }
+    },
+    [activeTab]
+  );
+
   return (
     <div className="wallet-page">
       {/* ═══════════ HERO BALANCE CARD ═══════════ */}
@@ -410,11 +429,12 @@ export default function PlayerWalletPage() {
       </div>
 
       {/* ═══════════ TABS ═══════════ */}
-      <div className="wallet-tabs" role="tablist" aria-label="Wallet sections">
+      <div className="wallet-tabs" role="tablist" aria-label="Wallet sections" onKeyDown={handleTabKeyDown}>
         {(['overview', 'transfer', 'history'] as WalletTab[]).map((tab) => (
           <button
             key={tab}
             role="tab"
+            tabIndex={activeTab === tab ? 0 : -1}
             aria-selected={activeTab === tab}
             aria-controls={`wallet-panel-${tab}`}
             className={activeTab === tab ? 'active' : ''}

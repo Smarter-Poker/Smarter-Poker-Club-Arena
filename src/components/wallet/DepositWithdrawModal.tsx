@@ -244,6 +244,8 @@ export default function DepositWithdrawModal({
   const [mounted, setMounted] = useState(false);
   const isMounted = useIsMounted();
   const mountTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const modalRef = useRef<HTMLDivElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
 
   // Withdrawal-specific fields
   const [withdrawAddress, setWithdrawAddress] = useState('');
@@ -258,6 +260,55 @@ export default function DepositWithdrawModal({
       if (mountTimer.current) clearTimeout(mountTimer.current);
     };
   }, [isOpen]);
+
+  // ── Focus Trap: trap focus inside modal when open ──
+  const handleFocusTrap = useCallback((e: KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      handleClose();
+      return;
+    }
+    if (e.key !== 'Tab' || !modalRef.current) return;
+
+    const focusable = modalRef.current.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    );
+    if (focusable.length === 0) return;
+
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+
+    if (e.shiftKey) {
+      if (document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      }
+    } else {
+      if (document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isOpen) {
+      previousFocusRef.current = document.activeElement as HTMLElement;
+      document.addEventListener('keydown', handleFocusTrap);
+      const t = setTimeout(() => {
+        if (modalRef.current) {
+          const first = modalRef.current.querySelector<HTMLElement>(
+            'button:not([disabled]), input:not([disabled])'
+          );
+          first?.focus();
+        }
+      }, 100);
+      return () => {
+        document.removeEventListener('keydown', handleFocusTrap);
+        clearTimeout(t);
+        previousFocusRef.current?.focus();
+      };
+    }
+  }, [isOpen, handleFocusTrap]);
 
   const currentMethod = PAYMENT_METHODS.find((m) => m.id === selectedMethod);
   const numericAmount = parseFloat(amount) || 0;
@@ -381,6 +432,7 @@ export default function DepositWithdrawModal({
     <div className={styles.overlay} onClick={handleClose} role="dialog" aria-modal="true" aria-labelledby="deposit-withdraw-modal-title">
       <div
         className={styles.modal}
+        ref={modalRef}
         onClick={(e) => e.stopPropagation()}
         style={{
           animation: mounted ? 'sheetSlideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards' : 'none',

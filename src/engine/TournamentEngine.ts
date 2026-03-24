@@ -448,7 +448,7 @@ export class TournamentEngine {
       .from('tables')
       .select('id, name, current_players')
       .eq('tournament_id', this.tournamentId)
-      .eq('status', 'RUNNING');
+      .neq('status', 'closed');
 
     if (!existingTables || existingTables.length === 0) {
       // No tables exist — need to create them and seat players
@@ -721,6 +721,29 @@ export class TournamentEngine {
   private async createTournamentTables(): Promise<void> {
     if (!this.tournamentInfo) return;
 
+    // Guard: If tables already exist for this tournament, rehydrate instead of creating new ones
+    const { data: existingTables } = await this.supabase
+      .from('tables')
+      .select('id, name, max_players')
+      .eq('tournament_id', this.tournamentId)
+      .neq('status', 'closed');
+
+    if (existingTables && existingTables.length > 0) {
+      console.debug(
+        `[TournamentEngine:${this.tournamentId}] Found ${existingTables.length} existing tables — rehydrating`
+      );
+      for (const t of existingTables) {
+        const engine = new HeadlessTableEngine(t.id, this.supabase);
+        engine.onHandComplete((tId, players) => this.syncChipsAfterHand(tId, players));
+        this.tables.push({
+          tableId: t.id,
+          engine,
+          playerCount: 0,
+        });
+      }
+      return;
+    }
+
     const capacity = this.getTableCapacity();
     const activePlayers = Array.from(this.players.values()).filter((p) => p.status === 'playing');
     const numTables = Math.max(1, Math.ceil(activePlayers.length / capacity));
@@ -745,7 +768,7 @@ export class TournamentEngine {
         ante: firstBlinds.ante || 0,
         max_players: capacity,
         current_players: 0,
-        status: 'RUNNING',
+        status: 'active',
       };
 
       const { data, error } = await this.supabase
@@ -879,131 +902,95 @@ export class TournamentEngine {
   // BLIND LEVEL TIMER
   // ═══════════════════════════════════════════════════════════════════════════
 
+  /**
+   * Subscribe to TournamentTimerService events instead of running our own timer.
+   * TournamentTimerService is the SOLE AUTHORITY for blind level advancement.
+   */
   private startBlindTimer(): void {
     if (!this.tournamentInfo) return;
+    const dbLevel = this.tournamentInfo.current_level || 1;
+    this.currentLevel = Math.max(0, dbLevel - 1);
 
-    this.currentLevel = 0;
-
-    // Check blind levels every 30 seconds
-    this.blindCheckInterval = setInterval(() => {
-      this.checkBlindLevel();
-    }, 30_000);
-
-    // Initial check
-    this.checkBlindLevel();
+    // Subscribe to bus events from TournamentTimerService
+    masterBus.subscribe('BLIND_LEVEL_CHANGE', (payload: any) => {
+      if (payload?.tournamentId === this.tournamentId) {
+        this.handleExternalLevelChange(payload);
+      }
+    });
+    masterBus.subscribe('TOURNAMENT_BREAK', (payload: any) => {
+      if (payload?.tournamentId === this.tournamentId) {
+        this.handleBreakStart(payload);
+      }
+    });
+    masterBus.subscribe('TOURNAMENT_BREAK_END', (payload: any) => {
+      if (payload?.tournamentId === this.tournamentId) {
+        this.handleBreakEnd();
+      }
+    });
   }
 
-  private checkBlindLevel(): void {
+  // checkBlindLevel removed: TournamentTimerService is now the sole authority.
+
+  private handleExternalLevelChange(payload: any): void {
     if (!this.tournamentInfo || !this.running) return;
-
     const blinds = this.tournamentInfo.blind_structure;
-    const startedAt = new Date(this.tournamentInfo.started_at).getTime();
-    const elapsed = Date.now() - startedAt;
-    const elapsedMinutes = elapsed / 60_000;
+    const newLevelIndex = (payload.level || 1) - 1;
+    if (newLevelIndex < 0) return;
+    if (payload.isBreak) return; // Breaks handled by handleBreakStart
+    const prevLevel = this.currentLevel;
+    this.currentLevel = newLevelIndex;
 
-    // Find current level based on elapsed time
-    let accumulated = 0;
-    let newLevel = blinds.length - 1; // Default to last level (cap)
-    for (let i = 0; i < blinds.length; i++) {
-      accumulated += blinds[i].durationMinutes;
-      if (elapsedMinutes < accumulated) {
-        newLevel = i;
-        break;
+    // Use blind values from event payload — supports auto-extended levels beyond the defined structure
+    const level = newLevelIndex < blinds.length
+      ? blinds[newLevelIndex]
+      : { level: payload.level, smallBlind: payload.smallBlind, bigBlind: payload.bigBlind, ante: payload.ante || 0, durationMinutes: 12 };
+
+    // Update table blinds (no DB tournament update — TimerService handles that)
+    this.updateTableBlinds(level);
+
+    // Execute chip race: remove obsolete small denomination chips
+    const prevBlindEntry = prevLevel < blinds.length ? blinds[prevLevel] : null;
+    if (newLevelIndex > 0 && prevBlindEntry) {
+      const oldSmallest = prevBlindEntry.smallBlind;
+      const newSmallest = level.smallBlind;
+      if (newSmallest > oldSmallest && this.players.size > 0) {
+        const playerStacks = new Map<string, number>();
+        for (const [pid, pdata] of this.players) {
+          playerStacks.set(pid, pdata.chips);
+        }
+        chipRaceEngine.executeChipRace(
+          this.tournamentId,
+          playerStacks,
+          oldSmallest,
+          newSmallest
+        );
+        for (const [pid, newStack] of playerStacks) {
+          const player = this.players.get(pid);
+          if (player) player.chips = newStack;
+        }
       }
     }
 
-    if (newLevel !== this.currentLevel) {
-      const prevLevel = this.currentLevel;
-      this.currentLevel = newLevel;
-      const level = blinds[newLevel];
-
-      // Handle break levels — pause dealing and broadcast break event
-      if (level.isBreak) {
-        // During a break, pause all table engines
-        for (const table of this.tables) {
-          if (table.engine.setHandForHand) table.engine.setHandForHand(true);
-        }
-        // Broadcast TOURNAMENT_BREAK event
-        masterBus.emit('TOURNAMENT_BREAK', {
-          tournamentId: this.tournamentId,
-          level: newLevel + 1,
-          durationMinutes: level.durationMinutes || 5,
-        });
-        // Don't update table blinds during break — keep previous level's blinds
-        // Also persist the current level in DB
-        this.supabase
-          .from('tournaments')
-          .update({ current_level: level.level })
-          .eq('id', this.tournamentId)
-          .then(() => {});
-        return;
+    // ADD-ON PERIOD TRIGGER
+    if (this.tournamentInfo.add_on_available && !this.addOnPeriodTriggered) {
+      const rebuyLevelCap =
+        this.tournamentInfo.late_reg_levels ?? this.tournamentInfo.rebuy_levels ?? 8;
+      if (prevLevel < rebuyLevelCap && newLevelIndex >= rebuyLevelCap) {
+        this.triggerAddOnPeriod();
       }
+    }
+  }
 
-      // If previous level was a break, resume all table engines
-      if (prevLevel >= 0 && prevLevel < blinds.length && blinds[prevLevel]?.isBreak) {
-        for (const table of this.tables) {
-          if (table.engine.setHandForHand) table.engine.setHandForHand(false);
-          if (table.engine.releaseHandForHand) table.engine.releaseHandForHand();
-        }
-        masterBus.emit('TOURNAMENT_BREAK_END', {
-          tournamentId: this.tournamentId,
-        });
-      }
+  private handleBreakStart(_payload: any): void {
+    for (const table of this.tables) {
+      if (table.engine.setHandForHand) table.engine.setHandForHand(true);
+    }
+  }
 
-      // Update all tournament tables with new blinds
-      this.updateTableBlinds(level);
-
-      // Notify listeners about the level change
-      masterBus.emit('BLIND_LEVEL_CHANGE', {
-        tournamentId: this.tournamentId,
-        level: newLevel + 1,
-        smallBlind: level.smallBlind,
-        bigBlind: level.bigBlind,
-        ante: level.ante || 0,
-      });
-      masterBus.emit('TOURNAMENT_LEVEL_CHANGE', {
-        tournamentId: this.tournamentId,
-        level: newLevel + 1,
-        smallBlind: level.smallBlind,
-        bigBlind: level.bigBlind,
-      });
-
-      // Execute chip race: remove obsolete small denomination chips
-      if (newLevel > 0 && this.tournamentInfo.blind_structure[prevLevel]) {
-        const prevBlind = this.tournamentInfo.blind_structure[prevLevel];
-        const oldSmallest = prevBlind.smallBlind;
-        const newSmallest = level.smallBlind;
-        // Only race if the smallest denomination actually increased
-        if (newSmallest > oldSmallest && this.players.size > 0) {
-          const playerStacks = new Map<string, number>();
-          for (const [pid, pdata] of this.players) {
-            playerStacks.set(pid, pdata.chips);
-          }
-          const raceResult = chipRaceEngine.executeChipRace(
-            this.tournamentId,
-            playerStacks,
-            oldSmallest,
-            newSmallest
-          );
-          // Sync adjusted stacks back to player records
-          for (const [pid, newStack] of playerStacks) {
-            const player = this.players.get(pid);
-            if (player) player.chips = newStack;
-          }
-        }
-      }
-
-      // ── ADD-ON PERIOD TRIGGER ──
-      // When we advance past the rebuy_levels threshold and add-on is available,
-      // pause the tournament for 60 seconds and broadcast ADDON_PERIOD_START
-      if (this.tournamentInfo.add_on_available && !this.addOnPeriodTriggered) {
-        const rebuyLevelCap =
-          this.tournamentInfo.late_reg_levels ?? this.tournamentInfo.rebuy_levels ?? 8;
-        // Trigger when we pass from within rebuy period to beyond it
-        if (prevLevel < rebuyLevelCap && newLevel >= rebuyLevelCap) {
-          this.triggerAddOnPeriod();
-        }
-      }
+  private handleBreakEnd(): void {
+    for (const table of this.tables) {
+      if (table.engine.setHandForHand) table.engine.setHandForHand(false);
+      if (table.engine.releaseHandForHand) table.engine.releaseHandForHand();
     }
   }
 
@@ -1025,12 +1012,7 @@ export class TournamentEngine {
         );
       }
     }
-
-    // Also update tournament current_level
-    await this.supabase
-      .from('tournaments')
-      .update({ current_level: level.level })
-      .eq('id', this.tournamentId);
+    // Note: TournamentTimerService is the sole authority for updating tournament current_level in DB.
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1584,8 +1566,8 @@ export class TournamentEngine {
         );
 
         if (bountyResult.bountyAmount > 0) {
-          // Credit bounty winnings to knocker's wallet
-          await this.creditPrize(knockerId, bountyResult.bountyAmount);
+          // Note: collectBounty() already credits the knocker's wallet via credit_player_wallet RPC.
+          // Do NOT call creditPrize() here — that would double-credit the bounty amount.
 
           // Update knocker's bounty stats — manual update (no RPC needed)
           try {

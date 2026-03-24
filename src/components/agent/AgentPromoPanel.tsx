@@ -202,7 +202,7 @@ export default function AgentPromoPanel({
       const lockResult = await checkSettlementLock(clubId);
       if (lockResult.locked) {
         showToast('🔒 Settlement in progress — distributions frozen', 'error');
-        setDistributing(false);
+        if (isMounted.current) setDistributing(false);
         return;
       }
     } catch {

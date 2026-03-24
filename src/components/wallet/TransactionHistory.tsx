@@ -153,7 +153,7 @@ function TransactionHistoryInner({ walletId, limit = 20 }: TransactionHistoryPro
 
       const { data, error } = await query;
 
-      if (!error && data) {
+      if (!error && data && isMounted.current) {
         setTransactions(
           data.map((t) => ({
             id: t.id,

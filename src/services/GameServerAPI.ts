@@ -34,11 +34,13 @@ const GAME_SERVER_URL =
  */
 async function getAuthHeaders(): Promise<Record<string, string>> {
   try {
-    const { data: { session } } = await supabase.auth.getSession();
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
     if (session?.access_token) {
       return {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${session.access_token}`,
+        Authorization: `Bearer ${session.access_token}`,
       };
     }
   } catch {
@@ -199,6 +201,181 @@ export async function getServerStatus(): Promise<ServerStatus | null> {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// PLAYER LIFECYCLE — Heartbeat, Sit-Out, Pre-Actions, Straddle
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Bible V8 §6.3: Send heartbeat to reset disconnect timer.
+ * Must be called every 5 seconds while player is at the table.
+ */
+export async function sendHeartbeat(tableId: string): Promise<ActionResult> {
+  try {
+    const headers = await getAuthHeaders();
+    const response = await fetch(`${GAME_SERVER_URL}/heartbeat`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ tableId }),
+    });
+    if (!response.ok) return { success: false, error: `Server error (${response.status})` };
+    return (await response.json()) as ActionResult;
+  } catch (err: unknown) {
+    console.error('[GameServerAPI] Heartbeat failed:', err);
+    return { success: false, error: 'Server unreachable' };
+  }
+}
+
+/**
+ * Bible V8 §4.15: Set or clear a pre-action (auto-fold, auto-check, etc.)
+ * @param action - Pre-action type or 'clear' to remove
+ * @param maxCallAmount - Optional max call amount for auto_call
+ */
+export async function setPreAction(
+  tableId: string,
+  action: string,
+  maxCallAmount?: number
+): Promise<ActionResult> {
+  try {
+    const headers = await getAuthHeaders();
+    const response = await fetch(`${GAME_SERVER_URL}/preaction`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ tableId, action, maxCallAmount }),
+    });
+    if (!response.ok) return { success: false, error: `Server error (${response.status})` };
+    return (await response.json()) as ActionResult;
+  } catch (err: unknown) {
+    console.error('[GameServerAPI] Set pre-action failed:', err);
+    return { success: false, error: 'Server unreachable' };
+  }
+}
+
+/**
+ * Bible V8 §7.12: Player sit out or sit back in.
+ * @param sitOut - true = sit out, false = sit back in
+ */
+export async function setSitOut(
+  tableId: string,
+  sitOut: boolean
+): Promise<ActionResult & { willFoldNextHand?: boolean }> {
+  try {
+    const headers = await getAuthHeaders();
+    const response = await fetch(`${GAME_SERVER_URL}/sitout`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ tableId, sitOut }),
+    });
+    if (!response.ok) return { success: false, error: `Server error (${response.status})` };
+    return await response.json();
+  } catch (err: unknown) {
+    console.error('[GameServerAPI] Sit out failed:', err);
+    return { success: false, error: 'Server unreachable' };
+  }
+}
+
+/**
+ * Bible V8 §4.4: Toggle auto-straddle for the player.
+ */
+export async function toggleStraddle(tableId: string, enabled: boolean): Promise<ActionResult> {
+  try {
+    const headers = await getAuthHeaders();
+    const response = await fetch(`${GAME_SERVER_URL}/straddle`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ tableId, enabled }),
+    });
+    if (!response.ok) return { success: false, error: `Server error (${response.status})` };
+    return (await response.json()) as ActionResult;
+  } catch (err: unknown) {
+    console.error('[GameServerAPI] Toggle straddle failed:', err);
+    return { success: false, error: 'Server unreachable' };
+  }
+}
+
+/**
+ * Bible V8 §2.4: Get current table state (scrubbed for requesting player).
+ */
+export async function getTableState(tableId: string): Promise<Record<string, unknown> | null> {
+  try {
+    const headers = await getAuthHeaders();
+    const response = await fetch(`${GAME_SERVER_URL}/state/${tableId}`, { headers });
+    if (!response.ok) return null;
+    return await response.json();
+  } catch (err: unknown) {
+    console.error('[GameServerAPI] Get state failed:', err);
+    return null;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ADVANCED FEATURES — RIT, Insurance, Show Hand
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Bible V8 §4.20: Respond to a Run It Twice offer.
+ * @param response - 'accept' or 'decline'
+ */
+export async function respondToRIT(
+  tableId: string,
+  response: 'accept' | 'decline'
+): Promise<ActionResult & { status?: string }> {
+  try {
+    const headers = await getAuthHeaders();
+    const resp = await fetch(`${GAME_SERVER_URL}/rit`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ tableId, response }),
+    });
+    if (!resp.ok) return { success: false, error: `Server error (${resp.status})` };
+    return await resp.json();
+  } catch (err: unknown) {
+    console.error('[GameServerAPI] RIT response failed:', err);
+    return { success: false, error: 'Server unreachable' };
+  }
+}
+
+/**
+ * Bible V8 §4.19: Respond to an insurance offer.
+ * @param response - 'accept' or 'decline'
+ */
+export async function respondToInsurance(
+  tableId: string,
+  response: 'accept' | 'decline'
+): Promise<ActionResult & { status?: string }> {
+  try {
+    const headers = await getAuthHeaders();
+    const resp = await fetch(`${GAME_SERVER_URL}/insurance`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ tableId, response }),
+    });
+    if (!resp.ok) return { success: false, error: `Server error (${resp.status})` };
+    return await resp.json();
+  } catch (err: unknown) {
+    console.error('[GameServerAPI] Insurance response failed:', err);
+    return { success: false, error: 'Server unreachable' };
+  }
+}
+
+/**
+ * Bible V8 §4.21: Voluntarily show hand at showdown.
+ */
+export async function showHand(tableId: string): Promise<ActionResult> {
+  try {
+    const headers = await getAuthHeaders();
+    const resp = await fetch(`${GAME_SERVER_URL}/showhand`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ tableId }),
+    });
+    if (!resp.ok) return { success: false, error: `Server error (${resp.status})` };
+    return (await resp.json()) as ActionResult;
+  } catch (err: unknown) {
+    console.error('[GameServerAPI] Show hand failed:', err);
+    return { success: false, error: 'Server unreachable' };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // WEBSOCKET CONNECTIVITY — Real-time table state sync
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -277,6 +454,14 @@ export default {
   activateTimeBank,
   getAvailableActions,
   getServerStatus,
+  sendHeartbeat,
+  setPreAction,
+  setSitOut,
+  toggleStraddle,
+  getTableState,
+  respondToRIT,
+  respondToInsurance,
+  showHand,
   connectTableWebSocket,
   disconnectTableWebSocket,
   getWebSocketStatus,

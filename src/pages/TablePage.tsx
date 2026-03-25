@@ -123,7 +123,16 @@ import SpectatorBadge from '../components/table/SpectatorBadge';
 import HandStrengthIndicator from '../components/table/HandStrengthIndicator';
 import SessionTimer from '../components/table/SessionTimer';
 import { horseBugReporter } from '../services/HorseBugReporter';
-import GameServerAPI, { submitAction } from '../services/GameServerAPI';
+import GameServerAPI, {
+  submitAction,
+  respondToRIT,
+  respondToInsurance,
+  sendHeartbeat,
+  setPreAction as serverSetPreAction,
+  setSitOut,
+  showHand as serverShowHand,
+  toggleStraddle as serverToggleStraddle,
+} from '../services/GameServerAPI';
 import { retryAsync } from '../utils/retryAsync';
 //monteCarloEquity import removed — server-authoritative
 import './TablePage.css';
@@ -564,21 +573,46 @@ export default function TablePage({
   const [timeBanksRemaining, setTimeBanksRemaining] = useState(4);
   const [timeBankTimeRemaining, setTimeBankTimeRemaining] = useState(15);
 
-  // Phase L: Deep Audit — Wire React state to MasterBus for cross-component telemetry
+  // Bible V8 §4.15: Pre-actions are server-managed — notify server when player sets/clears a pre-action
   useEffect(() => {
-    if (preAction && tableId && userId) {
-      masterBus.emit('PRE_ACTION_SET', {
-        tableId,
-        playerId: userId,
-        action:
+    if (tableId) {
+      if (preAction) {
+        const serverAction =
           preAction === 'fold'
             ? 'auto_fold'
             : preAction === 'check'
               ? 'auto_check'
-              : 'auto_call_any',
-      });
+              : 'auto_call_any';
+        // Tell server about pre-action so it can auto-execute on player's turn
+        serverSetPreAction(tableId, serverAction).catch((e) =>
+          console.error('[PreAction] Failed to set:', e)
+        );
+        // Also emit to MasterBus for local telemetry
+        masterBus.emit('PRE_ACTION_SET', {
+          tableId,
+          playerId: userId || '',
+          action: serverAction,
+        });
+      } else {
+        // Clear pre-action on server
+        serverSetPreAction(tableId, 'clear').catch((e) =>
+          console.error('[PreAction] Failed to clear:', e)
+        );
+      }
     }
   }, [preAction, tableId, userId]);
+
+  // Bible V8 §6.3: Heartbeat every 5 seconds while at the table
+  // Server uses this to detect disconnected players and trigger auto-fold/sit-out
+  useEffect(() => {
+    if (!tableId || !userId) return;
+    // Send initial heartbeat immediately
+    sendHeartbeat(tableId).catch(() => {});
+    const heartbeatInterval = setInterval(() => {
+      sendHeartbeat(tableId).catch((e) => console.error('[Heartbeat] Failed:', e));
+    }, 5000);
+    return () => clearInterval(heartbeatInterval);
+  }, [tableId, userId]);
 
   const [isSideMenuOpen, setIsSideMenuOpen] = useState(false);
   const [showBuyInModal, setShowBuyInModal] = useState(false);
@@ -621,7 +655,9 @@ export default function TablePage({
   const hadShowdownRef = useRef(false); // Tracks if current hand reached showdown (cross-event ref)
   const totalRebuysRef = useRef(0); // Add-chips/rebuy count for session summary
   const actionLockRef = useRef(false); // Debounce rapid action button taps (300ms)
-  const triggerChipAnimationRef = useRef<((fromSeat: number, toPot: boolean, amount: number) => void) | null>(null);
+  const triggerChipAnimationRef = useRef<
+    ((fromSeat: number, toPot: boolean, amount: number) => void) | null
+  >(null);
   const [waitListPlayers, setWaitListPlayers] = useState<
     Array<{
       playerId: string;
@@ -797,22 +833,27 @@ export default function TablePage({
     tableId,
   ]);
 
-  // Handle insurance offer (triggered by game engine)
-  const handleInsuranceAccept = async (coverageAmount: number) => {
-    if (userId && tableId) {
-      try {
-        // Process insurance payment via WalletService
-        const premium = coverageAmount * 0.1; // 10% premium
-        await WalletService.processInsurance(userId, tableId, `hand-${Date.now()}`, premium);
-      } catch (error) {
-        console.error('Insurance processing failed:', error);
+  // Handle insurance offer — Bible V8 §4.19: Use HTTP POST /insurance endpoint
+  // Server's InsuranceEngine calculates premium via Monte Carlo simulation (not hardcoded 10%)
+  // coverageAmount param accepted for InsuranceModal compatibility but ignored — server is authoritative
+  const handleInsuranceAccept = async (_coverageAmount?: number) => {
+    setShowInsurance(false);
+    if (tableId) {
+      const result = await respondToInsurance(tableId, 'accept');
+      if (!result.success) {
+        console.error('[Insurance] Accept failed:', result.error);
       }
     }
-    setShowInsurance(false);
   };
 
-  const handleInsuranceDecline = () => {
+  const handleInsuranceDecline = async () => {
     setShowInsurance(false);
+    if (tableId) {
+      const result = await respondToInsurance(tableId, 'decline');
+      if (!result.success) {
+        console.error('[Insurance] Decline failed:', result.error);
+      }
+    }
     // After insurance decision, show RIT prompt if set up
     if (ritOpponent !== 'Opponent') {
       setShowRIT(true);
@@ -845,16 +886,25 @@ export default function TablePage({
     };
   }, [showInsurance]);
 
-  // Run It Twice handlers
-  const handleRITAccept = () => {
+  // Run It Twice handlers — Bible V8 §4.20: Use HTTP POST /rit endpoint
+  const handleRITAccept = async () => {
     setShowRIT(false);
-    // Broadcast RIT acceptance to WebSocket
-    sendAction('rit_accept', { seat: tableState.heroSeat });
+    if (tableId) {
+      const result = await respondToRIT(tableId, 'accept');
+      if (!result.success) {
+        console.error('[RIT] Accept failed:', result.error);
+      }
+    }
   };
 
-  const handleRITDecline = () => {
+  const handleRITDecline = async () => {
     setShowRIT(false);
-    sendAction('rit_decline', { seat: tableState.heroSeat });
+    if (tableId) {
+      const result = await respondToRIT(tableId, 'decline');
+      if (!result.success) {
+        console.error('[RIT] Decline failed:', result.error);
+      }
+    }
   };
 
   // Animations — extracted to useTableAnimations hook
@@ -880,6 +930,21 @@ export default function TablePage({
   const [isStraddleEnabled, setIsStraddleEnabled] = useState(false);
   const [straddleAmount] = useState(4); // 2x big blind
   const [isStraddleAvailable] = useState(true); // Set based on position
+  // Track whether straddle change originated from server (MasterBus) to avoid echo
+  const straddleFromServerRef = useRef(false);
+
+  // Bible V8 §4.4: Sync straddle toggle to server
+  useEffect(() => {
+    if (straddleFromServerRef.current) {
+      straddleFromServerRef.current = false;
+      return;
+    }
+    if (tableId) {
+      serverToggleStraddle(tableId, isStraddleEnabled).catch((e) =>
+        console.error('[Straddle] Toggle failed:', e)
+      );
+    }
+  }, [isStraddleEnabled, tableId]);
 
   // Handle dealer tip
   const handleTipDealer = async (amount: number) => {
@@ -1581,9 +1646,7 @@ export default function TablePage({
             // Card security: server scrubs hole cards in broadcast (sends []) except at showdown.
             // Hero gets cards via RLS-protected table_hole_cards channel.
             // At showdown, server sends actual cards for all players → use sp.cards.
-            holeCards: sp.cards && sp.cards.length > 0
-              ? sp.cards
-              : existing?.holeCards || [],
+            holeCards: sp.cards && sp.cards.length > 0 ? sp.cards : existing?.holeCards || [],
             status: sp.is_folded
               ? 'folded'
               : sp.is_all_in
@@ -1711,7 +1774,9 @@ export default function TablePage({
         if (table.tournament_id) {
           const { data: tournData } = await supabase
             .from('tournaments')
-            .select('is_bounty, is_pko, is_mystery_bounty, bounty_amount, spin_multiplier, blind_structure, current_level')
+            .select(
+              'is_bounty, is_pko, is_mystery_bounty, bounty_amount, spin_multiplier, blind_structure, current_level'
+            )
             .eq('id', table.tournament_id)
             .maybeSingle();
 
@@ -2034,7 +2099,11 @@ export default function TablePage({
           // CRITICAL: Detect and clean up duplicate seats for the same user
           const heroSeats = existingSeats.filter((s) => s.user_id === userId);
           if (heroSeats.length > 1) {
-            console.error('[Seat] DUPLICATE SEATS DETECTED for user', userId, '— cleaning up extras');
+            console.error(
+              '[Seat] DUPLICATE SEATS DETECTED for user',
+              userId,
+              '— cleaning up extras'
+            );
             // Keep the first seat, remove the rest from DB
             const [keepSeat, ...extraSeats] = heroSeats;
             for (const extra of extraSeats) {
@@ -2169,7 +2238,10 @@ export default function TablePage({
               }
             }
             // Chip animation for bet actions
-            if ((action === 'bet' || action === 'raise' || action === 'call' || action === 'allin') && actionSeat > 0) {
+            if (
+              (action === 'bet' || action === 'raise' || action === 'call' || action === 'allin') &&
+              actionSeat > 0
+            ) {
               triggerChipAnimationRef.current?.(seatIdx, true, actionAmount);
             }
           }, 200); // 200ms after action label per Bible V8 §5.2
@@ -2361,6 +2433,8 @@ export default function TablePage({
 
   useMasterBusSubscription('STRADDLE_TOGGLED', (payload: any) => {
     if (payload.tableId !== tableId || payload.playerId !== userId) return;
+    // Mark as server-originated to prevent useEffect from echoing back to server
+    straddleFromServerRef.current = true;
     setIsStraddleEnabled(payload.enabled);
   });
 
@@ -2483,7 +2557,11 @@ export default function TablePage({
           // Use seedTable return value directly — avoids RLS read issues on table_seats
           const seededHorses = await HydraService.seedTable(tableId, bigBlind);
           if (seededHorses.length > 0) {
-            console.debug('[Horses] seedTable returned', seededHorses.length, 'horses, populating UI');
+            console.debug(
+              '[Horses] seedTable returned',
+              seededHorses.length,
+              'horses, populating UI'
+            );
             populateHorsePlayers(seededHorses);
           } else {
             // Fallback: try DB query in case horses were already seated by another client
@@ -2751,8 +2829,6 @@ export default function TablePage({
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const _migrationStub = null; // Marker: init block removed
 
-
-
   // Handle incoming game events from WebSocket
   useEffect(() => {
     if (!lastEvent) return;
@@ -2853,10 +2929,7 @@ export default function TablePage({
   }, [baseSeatPositions, tableState.heroSeat]);
 
   // Expose the flat positions array for legacy references (same length, rotated)
-  const seatPositions = useMemo(
-    () => seatRotationMap.map((s) => s.pos),
-    [seatRotationMap]
-  );
+  const seatPositions = useMemo(() => seatRotationMap.map((s) => s.pos), [seatRotationMap]);
 
   // ── Dealer Button visual index (after hero rotation) ──
   // dealerSeat is 1-indexed physical seat. Convert to 0-indexed rotated visual index.
@@ -2893,7 +2966,11 @@ export default function TablePage({
     }
     const existingHeroIdx = tableState.players.findIndex((p) => p && p.id === userId);
     if (existingHeroIdx >= 0) {
-      console.debug('[Seat] Hero found at seat', existingHeroIdx + 1, 'via player scan — ignoring click');
+      console.debug(
+        '[Seat] Hero found at seat',
+        existingHeroIdx + 1,
+        'via player scan — ignoring click'
+      );
       return;
     }
     // Block if buy-in is already in progress (race condition guard)
@@ -3249,7 +3326,7 @@ export default function TablePage({
         // TODO: Wire to server-side equity endpoint in Step 3
         // Using heuristic fallback until server endpoint is ready
         const numOpponents = allInPlayers.length - 1;
-        let equityPercent = numOpponents <= 1 ? 55 : Math.max(20, 65 - numOpponents * 10);
+        const equityPercent = numOpponents <= 1 ? 55 : Math.max(20, 65 - numOpponents * 10);
 
         setInsuranceOffer({
           maxCoverage,
@@ -3659,9 +3736,7 @@ export default function TablePage({
               <div className="table-surface">
                 {/* Hand Number Display — shown on table felt during active hands */}
                 {displayHandNumber != null && (
-                  <div className="hand-number-display">
-                    Hand #{displayHandNumber}
-                  </div>
+                  <div className="hand-number-display">Hand #{displayHandNumber}</div>
                 )}
                 {/* Pot Display — click to toggle chips/BB */}
                 <div className="pot-area">
@@ -3942,6 +4017,35 @@ export default function TablePage({
                 })()
               : null}
 
+            {/* ─── SHOW HAND BUTTON — Bible V8 §4.21: Voluntary show at showdown ─── */}
+            {tableState.boardStage === 'showdown' && tableState.heroSeat > 0 && tableId && (
+              <button
+                className="show-hand-btn"
+                onClick={async () => {
+                  const result = await serverShowHand(tableId);
+                  if (!result.success) {
+                    console.error('[ShowHand] Failed:', result.error);
+                  }
+                }}
+                style={{
+                  position: 'absolute',
+                  bottom: '100px',
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  padding: '8px 20px',
+                  borderRadius: '20px',
+                  background: 'rgba(255, 255, 255, 0.15)',
+                  border: '1px solid rgba(255, 255, 255, 0.3)',
+                  color: '#fff',
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                  zIndex: 20,
+                }}
+              >
+                Show Hand
+              </button>
+            )}
+
             {/* ─── PRE-ACTION BAR — Show when not hero's turn ─── */}
             {tableState.isHandInProgress &&
               tableState.currentPlayerSeat !== tableState.heroSeat && (
@@ -4215,7 +4319,7 @@ export default function TablePage({
       <GameRulesModal
         isOpen={showGameRules}
         onClose={() => setShowGameRules(false)}
-        variant={tableState.gameType || 'No Limit Hold\'em'}
+        variant={tableState.gameType || "No Limit Hold'em"}
         stakes={tableState.blinds || '1/2'}
         minBuyIn={(() => {
           const bb = safeBB(tableState.blinds);
@@ -4241,7 +4345,14 @@ export default function TablePage({
       <SitOutModal
         isOpen={showSitOut}
         onClose={() => setShowSitOut(false)}
-        onReturn={() => setShowSitOut(false)}
+        onReturn={() => {
+          setShowSitOut(false);
+          setSitOutNextHand(false);
+          // Bible V8 §7.12: Tell server player is sitting back in
+          if (tableId) {
+            setSitOut(tableId, false).catch((e) => console.error('[SitOut] Return failed:', e));
+          }
+        }}
         onLeaveTable={() => navigate('/')}
         timeRemaining={sitOutTimeRemaining}
         maxSitOutTime={300}
@@ -4457,7 +4568,10 @@ export default function TablePage({
                   .maybeSingle();
 
                 if (existingSeat) {
-                  console.warn('[BuyIn] BLOCKED — user already seated at seat', existingSeat.seat_number);
+                  console.warn(
+                    '[BuyIn] BLOCKED — user already seated at seat',
+                    existingSeat.seat_number
+                  );
                   toast.error(`You're already seated at seat ${existingSeat.seat_number}.`);
                   setShowBuyInModal(false);
                   return;
@@ -4488,7 +4602,9 @@ export default function TablePage({
                 const rpcResult = typeof rpcData === 'string' ? JSON.parse(rpcData) : rpcData;
                 if (rpcResult && rpcResult.success === false) {
                   console.error('[BuyIn] atomic_table_buyin returned failure:', rpcResult);
-                  throw new Error('Buy-in rejected: ' + (rpcResult.error || 'Unknown server error'));
+                  throw new Error(
+                    'Buy-in rejected: ' + (rpcResult.error || 'Unknown server error')
+                  );
                 }
 
                 console.debug('[BuyIn] atomic_table_buyin SUCCESS:', rpcResult);
@@ -4769,6 +4885,12 @@ export default function TablePage({
           }
           if (settingsUpdate.sitOutNextHand !== undefined) {
             setSitOutNextHand(settingsUpdate.sitOutNextHand);
+            // Bible V8 §7.12: Notify server of sit-out status change
+            if (tableId) {
+              setSitOut(tableId, settingsUpdate.sitOutNextHand).catch((e) =>
+                console.error('[SitOut] Failed:', e)
+              );
+            }
           }
           if (settingsUpdate.autoMuckWinners !== undefined) {
             updateSetting('autoMuckWinners', settingsUpdate.autoMuckWinners);

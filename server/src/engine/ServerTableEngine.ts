@@ -290,9 +290,10 @@ export class ServerTableEngine {
       // Chooser gets 5s, responders get 10s — per Dan's rules
       this.runItTwiceEngine.configure(this.tableId, {
         enabled: ritEffective,
-        chooserTimeout: 5, // Phase 1: best hand picks 1/2/3 runs
-        responderTimeout: 10, // Phase 2: others accept/decline
+        autoDeclineTimeout: 10,
         maxRuns: 3, // Support up to 3 boards (Dan's rules: player can choose 1/2/3)
+        chooserTimeout: 5,
+        responderTimeout: 10,
       });
 
       // Bible V8 §4.19: Configure Insurance engine
@@ -1662,11 +1663,11 @@ export class ServerTableEngine {
         // Note: atomicStackService persists across hands (tracks stack versions)
 
         // Bible V8 §4.19: Settle insurance BEFORE disposing (offers cleared on dispose)
-        // FIX 110: Pass ALL winner IDs — chops (multiple winners) = PUSH (insurance voided)
         if (this.currentHandWinnerIds.length > 0) {
+          const winnerId = this.currentHandWinnerIds[0];
           this.currentHandInsuranceSettlements = this.insuranceEngine.settle(
             this.tableId,
-            this.currentHandWinnerIds // Pass all winners — settle() detects chops
+            winnerId
           );
 
           // Bible V8 §4.19: Insurance settlement — applied like rake at the end.
@@ -1885,7 +1886,6 @@ export class ServerTableEngine {
         );
 
         // Broadcast RIT offer to ALL clients
-        // FIX 108: Phase 1 timeout is chooserTimeout (5s), not responderTimeout (10s)
         broadcastHandState(this.tableId, {
           type: 'rit_offer',
           table_id: this.tableId,
@@ -1893,9 +1893,8 @@ export class ServerTableEngine {
           chooserPlayerId,
           allPlayerIds,
           pot,
-          maxRuns: 3, // Max runs the chooser can pick
-          chooserTimeoutSeconds: 5, // Phase 1: chooser has 5s
-          responderTimeoutSeconds: 10, // Phase 2: others have 10s
+          maxRuns: this.runItTwiceEngine.getChosenRuns(this.tableId),
+          timeoutSeconds: 10,
         });
 
         // Wait for all players to respond.
@@ -2114,9 +2113,9 @@ export class ServerTableEngine {
     );
 
     // Finalize the hand (showdown + HAND_COMPLETE)
-    // Note: HandController's normal pot distribution is SKIPPED here — RIT already distributed pots.
-    // Pass skipDistribution=true to prevent double-money bug (FIX 109).
-    this.handController.finalizeRunout(true);
+    // Note: HandController's normal pot distribution is SKIPPED here — we handled it.
+    // Just call finalizeRunout to emit HAND_COMPLETE.
+    this.handController.finalizeRunout();
   }
 
   /**

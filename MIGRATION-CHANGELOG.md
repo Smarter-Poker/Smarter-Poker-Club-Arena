@@ -1652,36 +1652,3 @@ Performed line-by-line re-read of EVERY file modified in Round 6. Results:
 | `src/services/GameServerAPI.ts`           | Updated respondToInsurance() signature, added previewInsurance()                                                                                        |
 | `src/components/table/InsuranceModal.tsx` | Added onDeclineForHand prop, "Decline for Hand" button                                                                                                  |
 | `supabase/migrations/20260325_*.sql`      | Make bbj_payouts.hand_id nullable, add hand_number + table_id columns                                                                                   |
-
----
-
-## Round 11 — Deep Verification: RIT, Insurance, Table Creation Wiring (2026-03-25)
-
-### Fixes Applied
-
-| Fix     | File(s)                                                                          | Description                                                                                                                                                                                                                                                                                                                                                                                                         |
-| ------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| FIX 109 | `server/src/engine/HandController.ts`, `server/src/engine/ServerTableEngine.ts`  | **CRITICAL: Double-money bug.** `finalizeRunout()` called `completeHand()` which re-distributed pots after RIT already handled distribution. Added `skipDistribution: boolean` param to `finalizeRunout()`. When `true`, skips `completeHand()` and only emits HAND_COMPLETE. Updated `dealAndResolveRIT()` caller to pass `true`. Insurance flow correctly passes `false` (default).                               |
-| FIX 110 | `server/src/engine/InsuranceEngine.ts`, `server/src/engine/ServerTableEngine.ts` | **Insurance TIES = PUSH.** Changed `settle()` to accept `winnerIds: string \| string[]`. When multiple winners (chop), any insured player in the winners list gets PUSH: zero payout, zero premium. Insurance is voided. Updated STE caller to pass `this.currentHandWinnerIds` (full array) instead of `[0]`. Added `pushed: true` flag in settlement event for UI.                                                |
-| FIX 111 | `src/services/TableService.ts`, `src/pages/TableConfigPage.tsx`                  | **Table creation wiring.** Server's `loadTable()` reads top-level columns (`run_it_twice_enabled`, `insurance_enabled`, etc.) but client only set JSONB `settings` blob. Added top-level column writes to both `createTable()` (TableService) and `buildTableData()` (TableConfigPage). Without this, RIT/Insurance would ALWAYS be disabled on server.                                                             |
-| FIX 112 | `src/types/database.types.ts`, `src/types/club.types.ts`, + 8 UI files           | **GameVariant type cleanup (completion).** Removed dead variants from type definitions: `flh`, `plo`, `plo_hilo`, `double_board`, `crazy_pineapple`, `mixed`. Cleaned all UI references in: WaitlistPage, TablePage, TableCreationPage, ClubHomePage, ClubLobby, CreateTableModal, DynamicGameCard, HorseOrchestrator. Only valid variants: nlh, plo4, plo5, plo6, plo8, pineapple, short_deck, ofc, ofc_pineapple. |
-
-### Files Modified in Round 11
-
-| File                                       | Changes                                                                                         |
-| ------------------------------------------ | ----------------------------------------------------------------------------------------------- |
-| `server/src/engine/HandController.ts`      | `finalizeRunout(skipDistribution)` param added (FIX 109)                                        |
-| `server/src/engine/ServerTableEngine.ts`   | `finalizeRunout(true)` in dealAndResolveRIT, `settle(this.currentHandWinnerIds)` (FIX 109, 110) |
-| `server/src/engine/InsuranceEngine.ts`     | `settle()` accepts string\|string[], chop=PUSH logic (FIX 110)                                  |
-| `src/services/TableService.ts`             | Top-level DB columns in createTable insert (FIX 111)                                            |
-| `src/pages/TableConfigPage.tsx`            | `run_it_twice_enabled` derived from runItMode (FIX 111)                                         |
-| `src/types/database.types.ts`              | GameVariant cleaned — removed flh, plo, plo_hilo (FIX 112)                                      |
-| `src/types/club.types.ts`                  | GameVariant cleaned — removed flh, plo_hilo, double_board, crazy_pineapple, mixed (FIX 112)     |
-| `src/pages/WaitlistPage.tsx`               | Replaced `case 'plo':` with plo4/plo5/plo6/plo8 (FIX 112)                                       |
-| `src/pages/TablePage.tsx`                  | Removed `gameVariant === 'flo'` typo (FIX 112)                                                  |
-| `src/pages/TableCreationPage.tsx`          | Updated local GameType union and gameTypes array (FIX 112)                                      |
-| `src/pages/ClubHomePage.tsx`               | Cleaned 'mixed'/'double' from game filter (FIX 112)                                             |
-| `src/pages/club/ClubLobby.tsx`             | Cleaned dead variants from filter + label functions (FIX 112)                                   |
-| `src/components/club/CreateTableModal.tsx` | Removed Double Board toggle (FIX 112)                                                           |
-| `src/components/lobby/DynamicGameCard.tsx` | Removed dead VARIANT_DISPLAY + TOURNEY_VARIANT_MAP entries (FIX 112)                            |
-| `src/services/HorseOrchestrator.ts`        | Removed dead variant table entries + cleaned gameTypeMap (FIX 112)                              |

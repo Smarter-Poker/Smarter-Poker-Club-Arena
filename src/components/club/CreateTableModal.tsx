@@ -478,6 +478,16 @@ export default function CreateTableModal({ clubId, onClose, onSuccess }: CreateT
                   No Rathole
                 </label>
 
+                {/* ── Double Board ── */}
+                <label className={styles['checkbox-label']}>
+                  <input
+                    type="checkbox"
+                    checked={settings.double_board}
+                    onChange={() => toggleSetting('double_board')}
+                  />
+                  Double Board
+                </label>
+
                 {/* ── Insurance ── */}
                 <label className={styles['checkbox-label']}>
                   <input

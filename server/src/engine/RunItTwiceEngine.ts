@@ -20,11 +20,12 @@
 
 export interface RITConfig {
   enabled: boolean;
-  /** Timeout for chooser to pick runs — phase 1 (default 5s) */
-  chooserTimeout: number;
-  /** Timeout for responders to accept/decline — phase 2 (default 10s) */
-  responderTimeout: number;
+  autoDeclineTimeout: number;
   maxRuns: 2 | 3;
+  /** FIX 96: Timeout for chooser to pick runs (phase 1) */
+  chooserTimeout?: number;
+  /** FIX 96: Timeout for others to accept/decline (phase 2) */
+  responderTimeout?: number;
 }
 
 export interface RITState {
@@ -122,7 +123,7 @@ export class RunItTwiceEngine {
       offeredTo: primaryOfferedTo,
       allPlayerIds,
       chooserPlayerId: offeredBy,
-      acceptedBy: new Set<string>(),
+      acceptedBy: new Set([offeredBy]),
       pot,
       maxRuns: config.maxRuns || 2,
       chosenRuns: config.maxRuns || 2,
@@ -131,15 +132,13 @@ export class RunItTwiceEngine {
       board3: [],
     };
 
-    // Phase 1 timeout: chooser has chooserTimeout seconds to pick runs
     state.timeoutTimer = setTimeout(
       () => {
         if (state.status === 'offered') {
-          // Chooser didn't decide in time → auto-decline (run once)
-          this.chooserDecides(tableId, offeredBy, 1);
+          this.decline(tableId, primaryOfferedTo);
         }
       },
-      (config.chooserTimeout || 5) * 1000
+      (config.autoDeclineTimeout || 10) * 1000
     );
 
     this.activeOffers.set(tableId, state);
@@ -161,9 +160,7 @@ export class RunItTwiceEngine {
 
     state.acceptedBy.add(playerId);
 
-    // ALL players must accept (not just 2)
-    const allAccepted = state.allPlayerIds.every((id) => state.acceptedBy.has(id));
-    if (allAccepted) {
+    if (state.acceptedBy.has(state.offeredBy) && state.acceptedBy.has(state.offeredTo)) {
       state.status = 'accepted';
       if (state.timeoutTimer) clearTimeout(state.timeoutTimer);
 
@@ -204,8 +201,7 @@ export class RunItTwiceEngine {
     const state = this.activeOffers.get(tableId);
     if (!state || state.status !== 'accepted') return null;
 
-    // FIX 107: Use chosenRuns (set by chooser), not maxRuns (table config)
-    const runs = state.chosenRuns || 2;
+    const runs = state.maxRuns || 2;
     const cardsNeeded = 5 - existingBoard.length;
     if (remainingDeck.length < cardsNeeded * runs) {
       console.error(`[RunItTwiceEngine] Not enough cards for ${runs} runouts at ${tableId}`);
@@ -261,8 +257,7 @@ export class RunItTwiceEngine {
     state.status = 'resolved';
 
     const distribution = new Map<string, number>();
-    // FIX 107: Use chosenRuns (set by chooser), not maxRuns (table config)
-    const runs = state.chosenRuns || 2;
+    const runs = state.maxRuns || 2;
 
     if (runs === 3 && board3Winner) {
       const third = Math.trunc((state.pot / 3) * 100) / 100;
@@ -338,57 +333,17 @@ export class RunItTwiceEngine {
   }
 
   /**
-   * FIX 106: Chooser decides the number of runs.
-   * If runs === 1, this effectively declines RIT (run once).
-   * If runs > 1, chooser is added to acceptedBy, phase 1 timer cleared,
-   * and a new phase 2 timer starts for responders.
+   * FIX 96: Chooser decides the number of runs.
+   * If runs === 1, this effectively declines RIT.
    */
   chooserDecides(tableId: string, userId: string, runs: 1 | 2 | 3): void {
     const state = this.activeOffers.get(tableId);
     if (!state || state.chooserPlayerId !== userId) return;
-
-    // Clear phase 1 timer regardless
-    if (state.timeoutTimer) clearTimeout(state.timeoutTimer);
-    state.timeoutTimer = undefined;
-
     state.chosenRuns = runs;
-
     if (runs === 1) {
-      // Chooser chose run once = decline RIT
       state.status = 'declined';
-      this.emitEvent({
-        type: 'RIT_DECLINED',
-        tableId,
-        handId: state.handId,
-        declinedBy: userId,
-      });
-      return;
+      if (state.timeoutTimer) clearTimeout(state.timeoutTimer);
     }
-
-    // Chooser chose 2 or 3 runs — they implicitly accept
-    state.acceptedBy.add(userId);
-
-    // Check if chooser is the only player (shouldn't happen, but guard)
-    const allAccepted = state.allPlayerIds.every((id) => state.acceptedBy.has(id));
-    if (allAccepted) {
-      state.status = 'accepted';
-      this.emitEvent({ type: 'RIT_ACCEPTED', tableId, handId: state.handId });
-      return;
-    }
-
-    // Start phase 2 timer for responders
-    const config = this.tableConfigs.get(tableId);
-    const responderTimeout = config?.responderTimeout || 10;
-    state.timeoutTimer = setTimeout(() => {
-      if (state.status === 'offered') {
-        // Responder(s) didn't answer in time → auto-decline
-        // Find first player who hasn't accepted
-        const nonAccepted = state.allPlayerIds.find((id) => !state.acceptedBy.has(id));
-        if (nonAccepted) {
-          this.decline(tableId, nonAccepted);
-        }
-      }
-    }, responderTimeout * 1000);
   }
 
   private clearOffer(tableId: string): void {

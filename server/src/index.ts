@@ -2549,6 +2549,158 @@ const httpServer = createServer(async (req, res) => {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
+  // POST /heartbeat — Bible V8 §6.3: Reset disconnect timer
+  // Body: { tableId }
+  // ─────────────────────────────────────────────────────────────────────────
+  if (method === 'POST' && url === '/heartbeat') {
+    try {
+      const auth = await authenticateRequest(req);
+      if (!auth) {
+        return sendJSON(res, 401, { success: false, error: 'Authentication required' });
+      }
+
+      const body = JSON.parse(await readBody(req));
+      const { tableId } = body;
+      const userId = auth.userId;
+
+      if (!tableId) {
+        return sendJSON(res, 400, { success: false, error: 'Missing tableId' });
+      }
+
+      const engine = gameServer.getTableEngine(tableId);
+      if (!engine) {
+        return sendJSON(res, 404, { success: false, error: 'Table engine not found' });
+      }
+
+      const result = engine.heartbeat(userId);
+      return sendJSON(res, 200, result);
+    } catch (err: any) {
+      console.error('[HTTP] /heartbeat error:', err.message);
+      return sendJSON(res, 500, { success: false, error: 'Invalid request body' });
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // POST /preaction — Bible V8 §4.15: Set or clear pre-action
+  // Body: { tableId, action, maxCallAmount? }
+  // ─────────────────────────────────────────────────────────────────────────
+  if (method === 'POST' && url === '/preaction') {
+    try {
+      const auth = await authenticateRequest(req);
+      if (!auth) {
+        return sendJSON(res, 401, { success: false, error: 'Authentication required' });
+      }
+
+      const body = JSON.parse(await readBody(req));
+      const { tableId, action, maxCallAmount } = body;
+      const userId = auth.userId;
+
+      if (!tableId || !action) {
+        return sendJSON(res, 400, { success: false, error: 'Missing tableId or action' });
+      }
+
+      const engine = gameServer.getTableEngine(tableId);
+      if (!engine) {
+        return sendJSON(res, 404, { success: false, error: 'Table engine not found' });
+      }
+
+      const result = engine.setPreAction(userId, action, maxCallAmount);
+      return sendJSON(res, result.success ? 200 : 400, result);
+    } catch (err: any) {
+      console.error('[HTTP] /preaction error:', err.message);
+      return sendJSON(res, 500, { success: false, error: 'Invalid request body' });
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // POST /sitout — Bible V8 §7.12: Player sit out / sit back in
+  // Body: { tableId, sitOut: boolean }
+  // ─────────────────────────────────────────────────────────────────────────
+  if (method === 'POST' && url === '/sitout') {
+    try {
+      const auth = await authenticateRequest(req);
+      if (!auth) {
+        return sendJSON(res, 401, { success: false, error: 'Authentication required' });
+      }
+
+      const body = JSON.parse(await readBody(req));
+      const { tableId, sitOut } = body;
+      const userId = auth.userId;
+
+      if (!tableId || sitOut === undefined) {
+        return sendJSON(res, 400, { success: false, error: 'Missing tableId or sitOut' });
+      }
+
+      const engine = gameServer.getTableEngine(tableId);
+      if (!engine) {
+        return sendJSON(res, 404, { success: false, error: 'Table engine not found' });
+      }
+
+      const result = engine.sitOut(userId, sitOut);
+      return sendJSON(res, result.success ? 200 : 400, result);
+    } catch (err: any) {
+      console.error('[HTTP] /sitout error:', err.message);
+      return sendJSON(res, 500, { success: false, error: 'Invalid request body' });
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // POST /straddle — Bible V8 §4.4: Toggle auto-straddle enrollment
+  // Body: { tableId, enabled: boolean }
+  // ─────────────────────────────────────────────────────────────────────────
+  if (method === 'POST' && url === '/straddle') {
+    try {
+      const auth = await authenticateRequest(req);
+      if (!auth) {
+        return sendJSON(res, 401, { success: false, error: 'Authentication required' });
+      }
+
+      const body = JSON.parse(await readBody(req));
+      const { tableId, enabled } = body;
+      const userId = auth.userId;
+
+      if (!tableId || enabled === undefined) {
+        return sendJSON(res, 400, { success: false, error: 'Missing tableId or enabled' });
+      }
+
+      const engine = gameServer.getTableEngine(tableId);
+      if (!engine) {
+        return sendJSON(res, 404, { success: false, error: 'Table engine not found' });
+      }
+
+      const result = engine.toggleStraddle(userId, enabled);
+      return sendJSON(res, result.success ? 200 : 400, result);
+    } catch (err: any) {
+      console.error('[HTTP] /straddle error:', err.message);
+      return sendJSON(res, 500, { success: false, error: 'Invalid request body' });
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // GET /state/:tableId — Bible V8 §2.4: Get current scrubbed state
+  // ─────────────────────────────────────────────────────────────────────────
+  const stateMatch = url.match(/^\/state\/([^/]+)$/);
+  if (method === 'GET' && stateMatch) {
+    const auth = await authenticateRequest(req);
+    if (!auth) {
+      return sendJSON(res, 401, { success: false, error: 'Authentication required' });
+    }
+
+    const tableId = stateMatch[1];
+    const engine = gameServer.getTableEngine(tableId);
+    if (!engine) {
+      return sendJSON(res, 404, { success: false, error: 'Table engine not found' });
+    }
+
+    const state = engine.getTableState(auth.userId);
+    if (!state) {
+      return sendJSON(res, 200, { table_id: tableId, stage: 'idle', players: [] });
+    }
+
+    return sendJSON(res, 200, state);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
   // 404 — Not Found
   // ─────────────────────────────────────────────────────────────────────────
   sendJSON(res, 404, { error: 'Not Found' });

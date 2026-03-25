@@ -386,17 +386,57 @@ export class InsuranceEngine {
 
   /**
    * Settle all accepted insurance offers based on hand outcome.
+   *
+   * FIX 110: TIES = PUSH — If the insured player is in a chopped pot
+   * (multiple winners), insurance is voided: no payout, no premium charged.
+   * Insurance only pays if the player outright LOST.
+   *
+   * @param winnerIds — ALL winner IDs from the hand (may be 1 for outright win, 2+ for chop)
    */
-  settle(tableId: string, winnerId: string): InsuranceSettlement[] {
+  settle(tableId: string, winnerIds: string | string[]): InsuranceSettlement[] {
     const offers = this.activeOffers.get(tableId);
     if (!offers) return [];
+
+    const winners = Array.isArray(winnerIds) ? winnerIds : [winnerIds];
+    const isChop = winners.length > 1;
 
     const settlements: InsuranceSettlement[] = [];
 
     for (const offer of offers) {
       if (offer.status !== 'accepted') continue;
 
-      const playerLost = offer.playerId !== winnerId;
+      const playerIsWinner = winners.includes(offer.playerId);
+
+      // FIX 110: TIES = PUSH — If chop and player is one of the winners,
+      // insurance is voided: no payout, no premium. Player didn't lose.
+      if (isChop && playerIsWinner) {
+        const settlement: InsuranceSettlement = {
+          playerId: offer.playerId,
+          insuredAmount: offer.insuredAmount,
+          premium: 0, // PUSH — no premium charged
+          payout: 0, // PUSH — no payout
+          won: false, // didn't "win" insurance (it was voided)
+        };
+
+        settlements.push(settlement);
+        offer.status = 'settled';
+
+        this.emitEvent({
+          type: 'INSURANCE_SETTLED',
+          tableId,
+          handId: offer.handId,
+          playerId: offer.playerId,
+          payout: 0,
+          premium: 0,
+          insuredAmount: offer.insuredAmount,
+          coveragePercent: offer.coveragePercent,
+          won: false,
+          pushed: true, // Signal to UI that this was a chop/push
+        });
+        continue;
+      }
+
+      const playerLost = !playerIsWinner;
       const payout = playerLost ? offer.insuredAmount : 0;
 
       const settlement: InsuranceSettlement = {

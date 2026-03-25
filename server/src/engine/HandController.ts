@@ -511,9 +511,39 @@ export class HandController {
   /**
    * Finalize the hand after all streets are dealt (showdown + settlement).
    * Called by ServerTableEngine after the last street in per-street insurance flow.
+   *
+   * @param skipDistribution — If true, skips pot calculation + winner distribution.
+   *   Used by dealAndResolveRIT() which handles its own per-pot per-board distribution.
+   *   Still emits SHOWDOWN, WINNERS (empty), and HAND_COMPLETE with rake/BBJ.
    */
-  public finalizeRunout(): void {
+  public finalizeRunout(skipDistribution: boolean = false): void {
     this.state.stage = 'showdown';
+
+    if (skipDistribution) {
+      // RIT already distributed pots — just emit events for cleanup/logging
+      const playerCount = this.state.players.filter((p) => !p.is_sitting_out).length;
+      const rake = calculateRake(
+        this.state.pot,
+        this.state.sawFlop,
+        this.config.rakeConfig,
+        playerCount
+      );
+
+      let bbjFee = 0;
+      const bbjCfg = this.config.bbjConfig;
+      if (bbjCfg && bbjCfg.enabled && this.state.sawFlop) {
+        const playersDealt = this.state.players.filter((p) => !p.is_sitting_out).length;
+        const potInBB = this.state.pot / this.config.bigBlind;
+        if (playersDealt >= bbjCfg.minPlayersDealt && potInBB >= bbjCfg.minPotBB) {
+          bbjFee = Math.round(this.config.bigBlind * bbjCfg.feeBB * 100) / 100;
+        }
+      }
+
+      this.emit({ type: 'WINNERS', winners: [] });
+      this.emit({ type: 'HAND_COMPLETE', handNumber: this.config.handNumber, rake, bbjFee });
+      return;
+    }
+
     this.completeHand();
   }
 

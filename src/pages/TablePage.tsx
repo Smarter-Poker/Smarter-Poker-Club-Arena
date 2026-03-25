@@ -20,7 +20,7 @@ import type { SeatPlayer, Card, LastAction, PositionBadge } from '../components/
 import type { SidePot } from '../components/table/PotDisplay';
 import type { BoardStage } from '../components/table/CommunityCards';
 import { useTableWebSocket } from '../services/TableWebSocket';
-import { supabase, subscribeToHandState, broadcastHandState, getAuthUser } from '../lib/supabase';
+import { supabase, subscribeToHandState, getAuthUser } from '../lib/supabase';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { masterBus } from '../core/MasterBus';
 import {
@@ -71,7 +71,7 @@ import HandHistoryPanel, {
   type HandHistoryAction,
   type HandHistoryStreet,
 } from '../components/table/HandHistoryPanel';
-import { timeBankEngine } from '../engine/TimeBankEngine';
+import { timeBankEngine } from '../engine/TimeBankEngine'; // KEEP until Step 5
 import { usePlayerStats } from '../hooks/usePlayerStats';
 import { useTableSettings } from '../hooks/useTableSettings';
 import { useTableTimer } from '../hooks/useTableTimer';
@@ -115,11 +115,8 @@ import TimerBar from '../components/table/TimerBar';
 import PremiumCard from '../components/table/PremiumCard';
 import RealTimeResults from '../components/table/RealTimeResults';
 import PlayerCard from '../components/table/PlayerCard';
-import { Deck, compareHands, calculatePots, determineWinners } from '../engine/PokerEngine';
-import { HandController } from '../engine/HandController';
-import { serverActionValidator } from '../engine/ServerActionValidator';
+// [MIGRATION STEP 1] PokerEngine, HandController, ServerActionValidator, OFCPineappleEngine imports removed — server-authoritative
 import { RakeWaterfallEngine } from '../engines/financial/RakeWaterfallEngine';
-import { OFCPineappleEngine } from '../engine/OFCPineappleEngine';
 import { handPersistenceService } from '../services/HandPersistenceService';
 import { handHistoryService } from '../services/HandHistoryService';
 import { achievementTriggerService } from '../services/AchievementTriggerService';
@@ -129,7 +126,7 @@ import SessionTimer from '../components/table/SessionTimer';
 import { horseBugReporter } from '../services/HorseBugReporter';
 import GameServerAPI, { submitAction } from '../services/GameServerAPI';
 import { retryAsync } from '../utils/retryAsync';
-import { monteCarloEquity } from '../engine/MonteCarloEquity';
+// [MIGRATION STEP 1] monteCarloEquity import removed — server-authoritative
 import './TablePage.css';
 import SessionSummary from '../components/table/SessionSummary';
 import { SessionHUD } from '../components/table/SessionHUD';
@@ -164,7 +161,7 @@ import { SpinItWheel } from '../components/table/SpinItWheel';
 import { useIsMounted } from '../hooks/useIsMounted';
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// RAKE CONFIG HELPER — Derives HandController rake from official chart
+// RAKE CONFIG HELPER — Derives rake config from official chart
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /** Official rake chart caps by blind level (mirrors RakeService.RAKE_CHART) */
@@ -348,7 +345,7 @@ const createEmptySeats = (count: 6 | 9): (SeatPlayer | null)[] => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // WINDOW-LEVEL LOCKS — TRUE singletons that survive module reloads, lazy-load
 // chunk duplication, and React component remounts. Using window.* guarantees
-// only ONE HandController exists regardless of how many module instances load.
+// only ONE game loop exists regardless of how many module instances load.
 // ═══════════════════════════════════════════════════════════════════════════════
 const _horsesLoadedForTable: Record<string, boolean> = {};
 const _win = window as any;
@@ -1043,28 +1040,11 @@ export default function TablePage({
   const handleRabbitReveal = async (): Promise<
     Array<{ rank: string; suit: 'h' | 'd' | 'c' | 's' }>
   > => {
-    // Use HandController's actual deck state for accurate rabbit hunt
-    const engineState = handControllerRef.current?.getState();
-    const remainingDeck = engineState?.deck;
+    // [MIGRATION STEP 1] Local engine deck removed — rabbit hunt uses server or random fallback
+    // TODO: Wire to server-side rabbit hunt endpoint in Step 3
     const cardsNeeded = 5 - currentBoard.length;
 
-    if (
-      remainingDeck &&
-      typeof remainingDeck.deal === 'function' &&
-      remainingDeck.remaining() >= cardsNeeded
-    ) {
-      try {
-        const dealt = remainingDeck.deal(cardsNeeded);
-        return dealt.map((c) => ({
-          rank: c.rank,
-          suit: ENGINE_SUIT_MAP[c.suit] || (c.suit as 'h' | 'd' | 'c' | 's'),
-        }));
-      } catch {
-        // Fallback to random if deck deal fails
-      }
-    }
-
-    // Fallback: generate random cards (only if engine deck unavailable)
+    // Generate random cards (server-side rabbit hunt not yet available)
     const suits: Array<'h' | 'd' | 'c' | 's'> = ['h', 'd', 'c', 's'];
     const ranks = ['A', 'K', 'Q', 'J', 'T', '9', '8', '7', '6', '5', '4', '3', '2'];
     const remainingCards: Array<{ rank: string; suit: 'h' | 'd' | 'c' | 's' }> = [];
@@ -2363,9 +2343,8 @@ export default function TablePage({
 
   // ── BUG-02 FIX: Action timer countdown ──────────────────────────────────
   // REMOVED: Duplicate timer lived here, conflicting with the timer at line ~3035.
-  // The authoritative auto-fold timer at ~3035 has sendAction() broadcast,
-  // error handling, and playFold() sound. This duplicate was causing
-  // performAction to fire TWICE and lacked the broadcast.
+  // The server auto-fold timer handles sendAction() broadcast,
+  // error handling, and playFold() sound. This duplicate was removed.
 
   // ── Time Bank countdown interval — decrement timeBankTimeRemaining when active ──
   useEffect(() => {
@@ -2703,976 +2682,43 @@ export default function TablePage({
   }, [tableId, tableState.blinds, tableState.isTournament]);
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // HAND CONTROLLER — Manages poker game loop for ALL tables
+  // [MIGRATION STEP 1] HandController removed — server is authoritative
+  // Only keeping state needed by other parts of the component
   // ═══════════════════════════════════════════════════════════════════════════
-  const [handController, setHandController] = useState<HandController | null>(null);
-  const handNumberRef = useRef(1);
   const [displayHandNumber, setDisplayHandNumber] = useState<number | null>(null);
-  const handControllerRef = useRef<HandController | null>(null);
-  const handInProgressRef = useRef(false); // Stable ref to prevent re-creation
 
-  // Keep a ref to the latest tableState for use inside HandController event closures
+  // Keep a ref to the latest tableState for use inside event closures
   const tableStateRef = useRef(tableState);
   useEffect(() => {
     tableStateRef.current = tableState;
   }, [tableState]);
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // startNextHand — IMPERATIVE hand creation (NOT driven by useEffect deps)
-  // Called directly from: (1) horse loading callback, (2) HAND_COMPLETE handler
-  // This eliminates React dependency-array re-runs that caused duplicate HCs
+  // [MIGRATION STEP 1] startNextHand removed — server manages the game loop
+  // The entire HandController creation, event subscription, and hand lifecycle
+  // has been removed. The client now receives all state updates from the server
+  // via WebSocket/Realtime events below.
   // ═══════════════════════════════════════════════════════════════════════════
-  const startNextHandRef = useRef<() => void>(() => {});
-  startNextHandRef.current = () => {
-    // GUARD: prevent duplicate creation using GLOBAL window locks + timestamp debounce
-    const locks = _win.__pokerLocks;
-    const now = Date.now();
-    if (locks.handActive || locks.activeHC || handControllerRef.current) {
-      return;
-    }
-    // Timestamp debounce: no two hands can start within 3 seconds
-    if (locks.lastHandStartMs && now - locks.lastHandStartMs < 3000) {
-      return;
-    }
 
-    // Read latest state from ref (avoids stale closures)
-    const currentState = tableStateRef.current;
-    if (!currentState || !currentState.players) return; // Guard against null/undefined ref
-    const seatedPlayers = currentState.players.filter((p) => p && p.stack > 0);
-    if (seatedPlayers.length < 2) return;
+  /* REMOVED ~940 lines of client-side HandController logic:
+   * - HandController creation and configuration
+   * - Event subscription (HAND_START, CARDS_DEALT, COMMUNITY_CARDS, POT_UPDATE,
+   *   PLAYER_ACTION, TURN_CHANGE, SHOWDOWN, WINNERS, HAND_COMPLETE)
+   * - Horse auto-action logic
+   * - Hand persistence wiring
+   * - Achievement triggers
+   * - Hand history recording
+   * - Rake waterfall execution
+   * - Auto-rebuy logic
+   * - First-hand trigger useEffect
+   * All of this is now handled server-side. UI updates come via WebSocket events.
+   */
+
+  // Keep actionLockRef for debouncing (used by action handlers below)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _migrationStub = null; // Marker: init block removed
 
-    // IMMEDIATELY set GLOBAL lock — prevents any parallel call from proceeding
-    _win.__pokerLocks.handActive = true;
-    _win.__pokerLocks.activeHC = true; // Sentinel, replaced with actual HC below
-    _win.__pokerLocks.lastHandStartMs = now;
 
-    // Parse table settings
-    const blindParts = (currentState.blinds || '1/2').split('/');
-    const smallBlind = parseFloat(blindParts[0]) || 1;
-    const bigBlind = parseFloat(blindParts[1]) || 2;
-
-    // ENG-02 FIX: Added missing plo8, plo6, SHORT_DECK aliases
-    const variantMap: Record<string, 'nlh' | 'plo4' | 'plo5' | 'plo6' | 'plo8' | 'short_deck'> = {
-      NLH: 'nlh',
-      PLO4: 'plo4',
-      PLO5: 'plo5',
-      PLO6: 'plo6',
-      PLO8: 'plo8',
-      SHORT: 'short_deck',
-      SHORT_DECK: 'short_deck',
-      nlh: 'nlh',
-      plo4: 'plo4',
-      plo5: 'plo5',
-      plo6: 'plo6',
-      plo8: 'plo8',
-    };
-    const gameVariant = variantMap[currentState.gameType] || 'nlh';
-
-    const handNumber = handNumberRef.current;
-
-    // Convert to SeatPlayer format for HandController
-    // FIX: Filter out null/undefined players before mapping to prevent crashes
-    // from non-null assertions on potentially sparse seatedPlayers array
-    const hcPlayers: import('../types/database.types').SeatPlayer[] = seatedPlayers
-      .filter((p): p is NonNullable<typeof p> => p != null)
-      .map((p, idx) => ({
-        seat: currentState.players.indexOf(p) + 1 || idx + 1,
-        user_id: p.id,
-        username: p.name,
-        stack: p.stack,
-        bet: 0,
-        totalInvested: 0,
-        cards: [],
-        is_folded: false,
-        is_all_in: false,
-        is_sitting_out: false,
-      }));
-
-    const config = {
-      tableId: tableId || 'anonymous',
-      handNumber,
-      gameVariant,
-      smallBlind,
-      bigBlind,
-      rakeConfig: getRakeConfigForBlinds(smallBlind, bigBlind),
-    };
-
-    const dealerSeatIndex = (handNumber - 1) % seatedPlayers.length;
-    const dealerSeat = hcPlayers[dealerSeatIndex]?.seat || 1;
-
-    let hand: HandController;
-    try {
-      hand = new HandController(config, hcPlayers, dealerSeat);
-    } catch (err) {
-      console.error('[HC] Failed to create HandController:', err);
-      _win.__pokerLocks.handActive = false;
-      _win.__pokerLocks.activeHC = null;
-      return;
-    }
-    handControllerRef.current = hand;
-    handInProgressRef.current = true;
-    _win.__pokerLocks.activeHC = hand;
-
-    // Wire persistence service — use ACTUAL club_id, not table_id
-    const clubId = actualClubIdRef.current || tableId || 'unknown';
-    handPersistenceService.wireToHandController(hand, {
-      tableId: tableId || 'anonymous',
-      clubId,
-      stakes: currentState.blinds,
-      gameVariant: gameVariant as 'nlh' | 'plo4' | 'plo5' | 'plo6',
-    });
-
-    // Subscribe to events and update UI
-    hand.onEvent(async (event) => {
-      switch (event.type) {
-        case 'HAND_START':
-          handInProgressRef.current = true;
-          _win.__pokerLocks.handActive = true;
-          // Display hand number on the table felt
-          setDisplayHandNumber(handNumberRef.current);
-          // Reset raise slider on new hand — prevents stale raise panel
-          setShowRaiseSlider(false);
-          setTableState((prev) => ({
-            ...prev,
-            isHandInProgress: true,
-            pot: 0,
-            lastActions: Array(prev.maxPlayers).fill(null), // Clear action labels
-            lastBetAmounts: Array(prev.maxPlayers).fill(0), // Clear bet amounts
-          }));
-          // Track hand for HUD stats — record all seated players
-          {
-            const currentState = tableStateRef.current;
-            currentState.players.forEach((p) => {
-              if (p && !p.isHero && p.status !== 'sitting_out' && p.status !== 'away') {
-                recordHandPlayed(p.id);
-              }
-            });
-          }
-          // Reset hand history recording for this hand
-          handActionsRef.current = [];
-          streetPotsRef.current = { preflop: 0, flop: 0, turn: 0, river: 0 };
-          historyHandCountRef.current += 1;
-          {
-            const currentState = tableStateRef.current;
-            const stacks: Record<number, number> = {};
-            currentState.players.forEach((p, i) => {
-              if (p) stacks[i + 1] = p.stack;
-            });
-            handStartStacksRef.current = stacks;
-          }
-          // Play deal/chips sound
-          if (soundService.isEnabled()) soundService.playChips();
-          break;
-
-        case 'CARDS_DEALT':
-          // Play card deal sound — BUG-01 FIX: use soundService.isEnabled() not stale closure
-          if (soundService.isEnabled()) soundService.playDeal();
-
-          {
-            // Convert HandController Card format to UI format
-            const holeCards: Card[] = event.cards.map((c) => ({
-              rank: c.rank,
-              suit: ENGINE_SUIT_MAP[c.suit] || (c.suit as 'h' | 'd' | 'c' | 's'),
-            }));
-
-            setTableState((prev) => {
-              const updatedPlayers = [...prev.players];
-              const seatIndex = event.seat - 1;
-              if (
-                seatIndex >= 0 &&
-                seatIndex < updatedPlayers.length &&
-                updatedPlayers[seatIndex]
-              ) {
-                updatedPlayers[seatIndex] = {
-                  ...updatedPlayers[seatIndex]!,
-                  holeCards,
-                  showCards: updatedPlayers[seatIndex]!.isHero,
-                };
-              }
-              return { ...prev, players: updatedPlayers };
-            });
-          }
-          break;
-
-        case 'COMMUNITY_CARDS': {
-          // Play community card reveal sound (stagger for each card)
-          // BUG-01 FIX: use soundService.isEnabled() not stale closure
-          if (soundService.isEnabled()) {
-            event.cards.forEach((_: any, i: number) => {
-              setTimeout(() => soundService.playCommunityCard(), i * 120);
-            });
-          }
-
-          const uiCards: Card[] = event.cards.map((c) => ({
-            rank: c.rank,
-            suit: ENGINE_SUIT_MAP[c.suit] || (c.suit as 'h' | 'd' | 'c' | 's'),
-          }));
-          setTableState((prev) => ({
-            ...prev,
-            communityCards: [...prev.communityCards, ...uiCards],
-            boardStage: event.stage as any,
-            lastActions: Array(prev.maxPlayers).fill(null), // Clear for new betting round
-            lastBetAmounts: Array(prev.maxPlayers).fill(0), // Reset bets for new street
-          }));
-          // Record pot at this stage for per-street hand history
-          {
-            const hcState = handControllerRef.current?.getState();
-            const stagePot = hcState?.pot || tableStateRef.current.pot || 0;
-            // When flop is dealt, the pot IS the preflop total — capture it for preflop street
-            if (event.stage === 'flop' && !streetPotsRef.current['preflop']) {
-              streetPotsRef.current['preflop'] = stagePot;
-            }
-            streetPotsRef.current[event.stage as string] = stagePot;
-          }
-          break;
-        }
-
-        case 'POT_UPDATE':
-          setTableState((prev) => {
-            // event.pots is Pot[] from HandController: { amount, eligiblePlayers }
-            // Convert to SidePot[] for PotDisplay: { id, amount, eligiblePlayers }
-            const enginePots: Array<{ amount: number; eligiblePlayers: string[] }> =
-              event.pots ?? [];
-            // First pot is the main pot; remaining are side pots
-            const mainPotAmount = enginePots.length > 0
-              ? enginePots[0].amount
-              : (event.pot ?? prev.pot);
-            const sidePots: SidePot[] = enginePots.slice(1).map((p, i) => ({
-              id: `side-${i}`,
-              amount: p.amount,
-              eligiblePlayers: p.eligiblePlayers,
-            }));
-            return {
-              ...prev,
-              pot: event.pot ?? prev.pot,
-              sidePots,
-            };
-          });
-          break;
-
-        case 'PLAYER_ACTION':
-          // Track VPIP/PFR for HUD stats (preflop voluntary actions)
-          {
-            const currentState = tableStateRef.current;
-            const actionPlayer = currentState.players[event.seat - 1];
-            if (actionPlayer && !actionPlayer.isHero && currentState.boardStage === 'preflop') {
-              const act = (event.action || '').toLowerCase();
-              // VPIP = any voluntary money in (call, bet, raise, all_in) — not check/fold
-              if (['call', 'bet', 'raise', 'all_in', 'allin'].includes(act)) {
-                recordVPIP(actionPlayer.id);
-              }
-              // PFR = preflop raise or 3bet+
-              if (['raise', 'bet', 'all_in', 'allin'].includes(act)) {
-                recordPFR(actionPlayer.id);
-              }
-            }
-          }
-          // Record action for hand history
-          {
-            const currentState = tableStateRef.current;
-            handActionsRef.current.push({
-              seat: event.seat,
-              action: (event.action || '').toLowerCase(),
-              amount: event.amount,
-              street: currentState.boardStage || 'preflop',
-            });
-          }
-          // Update last actions display, bet amounts, and player status
-          setTableState((prev) => {
-            const newLastActions = [...prev.lastActions];
-            const newBetAmounts = [...prev.lastBetAmounts];
-            const seatIndex = event.seat - 1;
-
-            // Map action to display label
-            const actionLabel = (event.action || '').toUpperCase() as any;
-            newLastActions[seatIndex] = actionLabel;
-
-            // Track bet amount for chip display + action label
-            newBetAmounts[seatIndex] = event.amount || 0;
-
-            // Update player fold status if folded
-            const updatedPlayers = [...prev.players];
-            if (event.action === 'fold' && updatedPlayers[seatIndex]) {
-              updatedPlayers[seatIndex] = {
-                ...updatedPlayers[seatIndex]!,
-                status: 'folded',
-              };
-            }
-
-            return {
-              ...prev,
-              lastActions: newLastActions,
-              lastBetAmounts: newBetAmounts,
-              players: updatedPlayers,
-            };
-          });
-          break;
-
-        case 'TURN_CHANGE':
-          setTableState((prev) => ({ ...prev, currentPlayerSeat: event.seat }));
-          // Close raise slider if it's no longer hero's turn
-          {
-            const currentState = tableStateRef.current;
-            if (event.seat !== currentState.heroSeat) {
-              setShowRaiseSlider(false);
-            }
-          }
-          // Reset timer on EVERY turn change (visual countdown for all players)
-          // and play alert if it's hero's turn
-          resetTimer(); // Reset action timer for whoever is now acting
-          {
-            const currentState = tableStateRef.current;
-            if (event.seat === currentState.heroSeat) {
-              playTurnAlert();
-            }
-
-            // Auto-action for horses (check extended player properties OR horseMapRef)
-            const actingPlayer = currentState.players[event.seat - 1] as any;
-            const horseInfo = horseMapRef.current.get(event.seat);
-            const isHorse = actingPlayer?.isHorse || !!horseInfo;
-            // Horse auto-action detection
-            if (isHorse && handControllerRef.current) {
-              const bigBlind = safeBB(currentState.blinds, 0.5);
-              const activePlayers = currentState.players.filter(
-                (p) => p && (p as any).status !== 'folded'
-              ).length;
-
-              // Get toCall from HandController state for accurate bet-to-call
-              const hcState = handControllerRef.current.getState();
-              const currentBets = hcState?.players || [];
-              const maxBet = Math.max(...currentBets.map((p: any) => p.bet || 0), 0);
-              const playerBet = currentBets.find((p: any) => p.seat === event.seat)?.bet || 0;
-              const toCall = Math.max(0, maxBet - playerBet);
-
-              // Use actingPlayer stack or horseInfo stack or engine player stack
-              const enginePlayer = currentBets.find((p: any) => p.seat === event.seat);
-              const playerStack =
-                actingPlayer?.stack || horseInfo?.stack || enginePlayer?.stack || 100;
-
-              const context: import('../services/HydraService').HandContext = {
-                pot: currentState.pot || hcState?.pot || 0,
-                toCall,
-                minRaise: Math.max(bigBlind, toCall + bigBlind),
-                maxRaise: playerStack,
-                position: event.seat <= 3 ? 'early' : event.seat <= 5 ? 'middle' : 'late',
-                street: (currentState.boardStage || 'preflop') as
-                  | 'preflop'
-                  | 'flop'
-                  | 'turn'
-                  | 'river',
-                playersInHand: activePlayers,
-                stackToPotRatio:
-                  (currentState.pot || 1) > 0 ? playerStack / (currentState.pot || 1) : 100,
-                isHeadsUp: activePlayers === 2,
-              };
-
-              const horseProfile = actingPlayer?.horseProfile || horseInfo?.profile || 'reg';
-              const decision = HydraService.getDecision(
-                {
-                  ...actingPlayer,
-                  profile: horseProfile,
-                } as import('../services/HydraService').HorsePlayer,
-                context
-              );
-
-              // Execute after think time (workerTimeout is throttle-proof)
-              workerTimeout(() => {
-                if (!isMounted.current) return;
-                if (handControllerRef.current) {
-                  let finalAction = decision.action as string;
-                  let finalAmount = decision.amount;
-
-                  // Map HydraService 'allin' to HandController 'all_in'
-                  if (finalAction === 'allin') finalAction = 'all_in';
-
-                  // Get fresh engine state for accurate validation
-                  const hcStateNow = handControllerRef.current.getState();
-                  const engineCurrentBet = hcStateNow.currentBet || 0;
-                  const freshPlayerBet =
-                    hcStateNow.players?.find((p: any) => p.seat === event.seat)?.bet || 0;
-                  const freshToCall = Math.max(0, engineCurrentBet - freshPlayerBet);
-
-                  // Validate action against game state
-                  if (finalAction === 'check' && freshToCall > 0) {
-                    finalAction = 'call';
-                    finalAmount = freshToCall;
-                  }
-                  if (finalAction === 'call' && freshToCall === 0) {
-                    // Nothing to call — check instead (prevents "Nothing to call" rejection)
-                    finalAction = 'check';
-                    finalAmount = undefined;
-                  }
-                  if (finalAction === 'call') {
-                    finalAmount = freshToCall;
-                  }
-                  if (finalAction === 'fold' && freshToCall === 0) {
-                    finalAction = 'check'; // Don't fold when checking is free
-                  }
-
-                  // Remap raise↔bet based on whether there's an existing bet
-                  // Engine requires 'bet' when opening, 'raise' when increasing
-                  if (finalAction === 'raise' && engineCurrentBet === 0) {
-                    finalAction = 'bet'; // No bet to raise — use bet instead
-                  }
-                  if (finalAction === 'bet' && engineCurrentBet > 0) {
-                    finalAction = 'raise'; // Bet already exists — use raise instead
-                  }
-
-                  // Validate raise/bet amount against HandController's actual minRaise
-                  if (
-                    (finalAction === 'raise' || finalAction === 'bet') &&
-                    handControllerRef.current
-                  ) {
-                    const engineMinRaise = Math.max(bigBlind, hcStateNow.lastRaise || bigBlind);
-                    const minTotalForRaise = engineCurrentBet + engineMinRaise;
-
-                    if (finalAmount === undefined || finalAmount < minTotalForRaise) {
-                      // Can't meet minimum raise — fall back to call or check
-                      if (freshToCall > 0 && playerStack >= freshToCall) {
-                        finalAction = 'call';
-                        finalAmount = freshToCall;
-                      } else if (freshToCall > 0) {
-                        finalAction = 'all_in';
-                        finalAmount = undefined;
-                      } else {
-                        finalAction = 'check';
-                        finalAmount = undefined;
-                      }
-                    } else if (
-                      finalAmount >
-                      playerStack + (engineCurrentBet > 0 ? freshToCall : 0)
-                    ) {
-                      // Over stack — go all-in
-                      finalAction = 'all_in';
-                      finalAmount = undefined;
-                    }
-                  }
-
-                  // Capture stack before action for bug validation
-                  const stackBefore =
-                    hcStateNow.players?.find((p: any) => p.seat === event.seat)?.stack || 0;
-
-                  const result = handControllerRef.current.performAction(
-                    event.seat,
-                    finalAction as any,
-                    finalAmount
-                  );
-
-                  // Horse mini-agent: validate chip integrity after action
-                  const hcStateAfter = handControllerRef.current.getState();
-                  const stackAfter =
-                    hcStateAfter.players?.find((p: any) => p.seat === event.seat)?.stack || 0;
-                  const horseName = actingPlayer?.name || horseInfo?.name || `Seat ${event.seat}`;
-
-                  horseBugReporter.validateChips(
-                    horseName,
-                    actingPlayer?.id || '',
-                    tableId || '',
-                    currentState.tableId || '',
-                    0,
-                    stackBefore,
-                    stackAfter,
-                    finalAction,
-                    finalAmount || 0
-                  );
-
-                  // Report if action was rejected
-                  if (result === false) {
-                    horseBugReporter.reportActionRejected(
-                      horseName,
-                      actingPlayer?.id || '',
-                      tableId || '',
-                      currentState.tableId || '',
-                      0,
-                      finalAction,
-                      finalAmount,
-                      'HandController rejected action'
-                    );
-                  }
-                }
-              }, decision.thinkTime);
-            }
-          }
-          break;
-
-        case 'SHOWDOWN': {
-          // Play showdown dramatic sound
-          // BUG-01 FIX: use soundService.isEnabled() not stale closure
-          if (soundService.isEnabled()) soundService.playShowdown();
-          hadShowdownRef.current = true; // Flag for WINNERS/HAND_COMPLETE showdown tracking
-
-          // Determine winner(s): highest hand ranking
-          const maxRanking = Math.max(0, ...event.results.map((r: any) => r.hand?.ranking || 0));
-
-          // Reveal all cards for showdown
-          setTableState((prev) => {
-            const updatedPlayers = [...prev.players];
-            for (const result of event.results) {
-              const playerIdx = updatedPlayers.findIndex((p) => p?.id === result.userId);
-              if (playerIdx >= 0 && updatedPlayers[playerIdx]) {
-                const isWinner = (result.hand?.ranking || 0) >= maxRanking;
-                const isUncontested = event.results.length === 1;
-                const shouldMuck =
-                  (!isWinner && userSettingsRef.current.autoMuck) ||
-                  (isWinner && isUncontested && userSettingsRef.current.autoMuckWinners);
-
-                // Convert card format and show cards
-                const showdownCards = result.cards.map((c: any) => ({
-                  rank: c.rank as Card['rank'],
-                  suit: (ENGINE_SUIT_MAP[c.suit] || c.suit) as 'h' | 'd' | 'c' | 's',
-                }));
-                updatedPlayers[playerIdx] = {
-                  ...updatedPlayers[playerIdx]!,
-                  holeCards: showdownCards,
-                  showCards: !shouldMuck, // Reveal all cards at showdown unless auto-mucked
-                };
-              }
-            }
-            return { ...prev, players: updatedPlayers };
-          });
-
-          // SHOWDOWN_START event DISABLED — no overlay, cards shown on seats directly
-          break;
-        }
-
-        case 'WINNERS':
-          // Sync all player stacks from the engine state after pot distribution
-          setTableState((prev) => {
-            const updatedPlayers = [...prev.players];
-            const engineState = handControllerRef.current?.getState();
-            if (engineState) {
-              for (const ep of engineState.players) {
-                const playerIdx = updatedPlayers.findIndex((p) => p?.id === ep.user_id);
-                if (playerIdx >= 0 && updatedPlayers[playerIdx]) {
-                  updatedPlayers[playerIdx] = {
-                    ...updatedPlayers[playerIdx]!,
-                    stack: ep.stack,
-                  };
-                }
-              }
-            }
-            return { ...prev, players: updatedPlayers, pot: 0, sidePots: [] };
-          });
-          {
-            const totalWon = event.winners.reduce(
-              (sum: number, w: any) => sum + (w.amount || 0),
-              0
-            );
-            playWinSound(totalWon);
-          }
-          // Clear all-in mode when winners declared
-          setIsAllInMode(false);
-
-          // NOTE: No wallet transactions here — chips stay on the table.
-          // Wallet transfers only happen on buy-in (debit) and leave-table (credit).
-          // Winners' chips are added to their table stack via the state update above.
-
-          // Track winner info for visual highlighting + hand history amounts (BUG-05 FIX)
-          {
-            const winnerIds = event.winners.map((w: any) => w.userId);
-            const bestHand = event.winners.find((w: any) => w.hand?.name)?.hand;
-            const handName = bestHand?.name || '';
-            // Build amounts map for hand history
-            const amountsMap: Record<string, number> = {};
-            for (const w of event.winners) {
-              amountsMap[w.userId] = (amountsMap[w.userId] || 0) + (w.amount || 0);
-            }
-            // Find which community card indices are part of the winning hand
-            const winCardIndices: number[] = [];
-            if (bestHand?.cards) {
-              const communityCards = handControllerRef.current?.getState()?.communityCards || [];
-              bestHand.cards.forEach((wc: any) => {
-                const idx = communityCards.findIndex(
-                  (cc: any) => cc.rank === wc.rank && cc.suit === wc.suit
-                );
-                if (idx >= 0 && !winCardIndices.includes(idx)) {
-                  winCardIndices.push(idx);
-                }
-              });
-            }
-            setWinnerInfo({
-              playerIds: winnerIds,
-              handName,
-              cardIndices: winCardIndices,
-              amounts: amountsMap,
-            });
-
-            // HandReveal DISABLED — no popup overlays after hands
-            // Winner cards auto-muck silently, no show/muck prompt
-          }
-
-          // Track wins for HUD stats + hero session wins
-          {
-            let heroWonThisHand = false;
-            for (const winner of event.winners) {
-              if (winner.userId) {
-                recordHUDWin(winner.userId);
-                // Track hero wins for session summary (once per hand, not per pot)
-                if (winner.userId === userId && !heroWonThisHand) {
-                  handsWonRef.current += 1;
-                  heroWonThisHand = true;
-                  heroWonCurrentHandRef.current = true; // Flag for HAND_COMPLETE to prevent double-count
-                }
-              }
-            }
-          }
-          // Show hero P/L toast — sum ALL pots won (main + side pots)
-          {
-            const heroWinTotal = event.winners
-              .filter((w: any) => w.userId === userId)
-              .reduce((sum: number, w: any) => sum + (w.amount || 0), 0);
-            if (heroWinTotal > 0) {
-              const formatted =
-                heroWinTotal >= 1000
-                  ? `+$${heroWinTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                  : `+$${heroWinTotal.toFixed(2)}`;
-              toast?.success?.(formatted);
-            } else if (heroWinTotal === 0 && event.winners.length > 0) {
-              // Hero was in the hand but didn't win — show loss feedback
-              // Only show if hero saw at least the flop (suppress for preflop folds)
-              const currentHeroSeat = tableStateRef.current.heroSeat;
-              const heroInHand = tableStateRef.current.players[currentHeroSeat - 1];
-              const sawFlop = tableStateRef.current.boardStage !== 'preflop';
-              if (heroInHand && heroInHand.status !== 'sitting_out' && sawFlop) {
-                toast?.info?.('Better luck next hand');
-              }
-            }
-          }
-          // Trigger achievements for winners
-          for (const winner of event.winners) {
-            achievementTriggerService
-              .onHandComplete(winner.userId, {
-                won: true,
-                potSize: winner.amount,
-                handRank: winner.hand?.name, // e.g. 'Royal Flush', 'Full House'
-                showdown: hadShowdownRef.current, // Only credit showdown challenges if SHOWDOWN event fired
-              })
-              .catch((err) => console.error('[Achievements] Trigger failed:', err));
-          }
-          break;
-
-        case 'HAND_COMPLETE':
-          // BUG-D FIX: Increment hand number BEFORE any processing
-          // This ref controls dealer button rotation and hand identity
-          handNumberRef.current += 1;
-          // Close raise slider on hand complete
-          setShowRaiseSlider(false);
-          // First, keep cards visible for 3 seconds so players can see showdown
-          setTableState((prev) => ({
-            ...prev,
-            isHandInProgress: false,
-          }));
-          setLastHandId(`hand-${event.handNumber}`);
-
-          // Trigger Sit Out Next Hand if enabled
-          if (sitOutNextHand) {
-            setSitOutNextHand(false);
-            setShowSitOut(true);
-          }
-
-          // Build HandRecord from accumulated actions
-          {
-            const currentState = tableStateRef.current;
-            const posLabels = ['D', 'SB', 'BB', 'UTG', 'MP', 'CO', 'BTN', 'UTG+1', 'UTG+2'];
-            const streetMap: Record<string, HandHistoryAction[]> = {
-              preflop: [],
-              flop: [],
-              turn: [],
-              river: [],
-            };
-            for (const a of handActionsRef.current) {
-              const player = currentState.players[a.seat - 1];
-              if (streetMap[a.street]) {
-                streetMap[a.street].push({
-                  playerName: player?.name || `Seat ${a.seat}`,
-                  playerId: player?.id || '',
-                  action: a.action as any,
-                  amount: a.amount,
-                });
-              }
-            }
-            const streets: HandHistoryStreet[] = [];
-            for (const name of ['preflop', 'flop', 'turn', 'river'] as const) {
-              if (streetMap[name].length > 0) {
-                streets.push({
-                  name,
-                  actions: streetMap[name],
-                  pot: streetPotsRef.current[name] || event.pot || 0, // Per-street pot from ref
-                });
-              }
-            }
-            // Achievement trigger for non-winner hero moved to single location below (line ~3249)
-            // to avoid duplicate onHandComplete calls. Only one trigger point needed.
-            heroWonCurrentHandRef.current = false; // Reset for next hand
-            hadShowdownRef.current = false; // Reset for next hand
-            const heroPlayer = currentState.players[currentState.heroSeat - 1];
-            const heroStartStack = handStartStacksRef.current[currentState.heroSeat] || 0;
-            const heroEndStack = heroPlayer?.stack || 0;
-            const record: HandRecord = {
-              id: `hand-${event.handNumber || historyHandCountRef.current}`,
-              handNumber: event.handNumber || historyHandCountRef.current,
-              timestamp: Date.now(),
-              gameType: currentState.gameType,
-              blinds: currentState.blinds,
-              players: currentState.players
-                .filter((p): p is NonNullable<typeof p> => !!p)
-                .map((p, i) => {
-                  const startStack = handStartStacksRef.current[i + 1] || p.stack;
-                  const endStack = p.stack;
-                  return {
-                    id: p.id,
-                    name: p.name,
-                    seat: i + 1,
-                    stack: startStack,
-                    position: (currentState.positions[i] ||
-                      posLabels[Math.min(i, posLabels.length - 1)] ||
-                      '') as string,
-                    isWinner: winnerInfo.playerIds.includes(p.id),
-                    result: endStack - startStack,
-                  };
-                }),
-              streets,
-              // BUG-05 FIX: Use actual winner amounts from winnerInfo.amounts
-              winners: winnerInfo.playerIds.map((pid) => {
-                const wp = currentState.players.find((p) => p?.id === pid);
-                return {
-                  playerId: pid,
-                  playerName: wp?.name || 'Unknown',
-                  amount: winnerInfo.amounts[pid] || 0,
-                  hand: winnerInfo.handName || undefined,
-                };
-              }),
-              heroId: userId || '',
-              heroResult: heroEndStack - heroStartStack,
-              potTotal: event.pot || currentState.pot, // Use HC's authoritative pot value
-            };
-            setHandHistory((prev) => [record, ...prev].slice(0, 50)); // Keep last 50 hands
-
-            // Persist to Supabase for cross-device access and admin review (fire-and-forget)
-            if (tableId) {
-              const payload = {
-                handNumber: record.handNumber,
-                pot: record.potTotal,
-                communityCards: currentState.communityCards.map((c) => ({
-                  rank: c.rank,
-                  suit: c.suit,
-                })),
-                players: record.players as any,
-                actions: handActionsRef.current,
-                winners: record.winners.map((w) => ({
-                  playerId: w.playerId,
-                  amount: w.amount,
-                  hand: w.hand,
-                })),
-              };
-
-              handHistoryService
-                .saveHandToSupabase(tableId, payload)
-                .catch((e) => console.warn('[Table] Hand history save failed:', e));
-
-              // Feature 12: Calculate and persist positional VPIP/PFR stats for AnalyticsDashboard
-              playerPositionStatsService
-                .processHand(payload)
-                .catch((e) => console.warn('[Table] Position stats failed:', e));
-            }
-
-            // ── Session Tracking: update refs for end-of-session summary ──
-            handsPlayedRef.current += 1;
-            // Use event.pot (authoritative HC value) — currentState.pot is already 0
-            // because WINNERS handler sets pot: 0 before HAND_COMPLETE fires
-            const handPotForSession = event.pot || 0;
-            if (handPotForSession > biggestPotRef.current) {
-              biggestPotRef.current = handPotForSession;
-            }
-            if (heroEndStack > peakStackRef.current) {
-              peakStackRef.current = heroEndStack;
-            }
-
-            // ── Daily Challenge Progress: track hero hands_played (even if they lost) ──
-            // WINNERS handler only calls onHandComplete for winners → non-winner hero
-            // never gets hands_played challenge incremented. Fix: fire for hero at
-            // HAND_COMPLETE if they weren't already counted as a winner.
-            if (userId) {
-              const heroAlreadyCountedAsWinner = winnerInfo.playerIds.includes(userId);
-              if (!heroAlreadyCountedAsWinner) {
-                achievementTriggerService
-                  .onHandComplete(userId, {
-                    won: false,
-                    potSize: 0,
-                    showdown: false,
-                  })
-                  .catch((err) =>
-                    console.error('[Achievements] Hero non-winner trigger failed:', err)
-                  );
-              }
-            }
-          }
-
-          // Delayed cleanup: clear board and cards after 3 seconds, then start next hand
-          workerTimeout(() => {
-            if (!isMounted.current) return; // Guard: skip if unmounted
-            // Clear ALL locks to allow next hand
-            handInProgressRef.current = false;
-            handControllerRef.current = null;
-            actionLockRef.current = false; // Reset debounce lock for next hand
-            _win.__pokerLocks.handActive = false;
-            _win.__pokerLocks.activeHC = null;
-            // Clear winner highlights
-            setWinnerInfo({ playerIds: [], handName: '', cardIndices: [], amounts: {} });
-            setTableState((prev) => {
-              // Parse big blind for auto-rebuy calculation
-              const bbMatch = prev.blinds.match(/\/(\d+\.?\d*)/);
-              const bb = bbMatch ? parseFloat(bbMatch[1]) : 0.5;
-              const rebuyStack = bb * 100; // 100 BB rebuy
-
-              // Clear all players' hole cards and reset status for next hand
-              // Auto-rebuy horses that busted (stack <= 0)
-              const clearedPlayers = prev.players.map((p, idx) => {
-                if (!p) return null;
-                const isHorse = (p as any).isHorse || horseMapRef.current.has(idx + 1);
-                const needsRebuy = isHorse && p.stack <= 0;
-                return {
-                  ...p,
-                  holeCards: undefined,
-                  showCards: false,
-                  stack: needsRebuy ? rebuyStack : p.stack,
-                  status: needsRebuy || p.stack > 0 ? ('active' as const) : p.status,
-                };
-              });
-              return {
-                ...prev,
-                communityCards: [],
-                boardStage: 'preflop',
-                pot: 0,
-                sidePots: [],
-                lastActions: Array(prev.maxPlayers).fill(null),
-                lastBetAmounts: Array(prev.maxPlayers).fill(0),
-                players: clearedPlayers,
-              };
-            });
-            // Start next hand IMPERATIVELY (not via useEffect)
-            workerTimeout(() => startNextHandRef.current(), 500);
-          }, 3000);
-
-          // Execute rake waterfall
-          {
-            const currentPlayers = tableStateRef.current.players.filter(
-              (p): p is NonNullable<typeof p> => p != null && p.stack > 0
-            );
-            const rakeClubId = actualClubIdRef.current || tableId || 'unknown';
-            const rakePlayers = currentPlayers.map((p) => ({
-              userId: p.id,
-              clubId: rakeClubId,
-              agentId: undefined,
-            }));
-            // BUG-04 FIX: Use the pot value BEFORE winners handler zeroed it
-            // The HandController already calculated correct rake — pass the
-            // original pot stored in event data, not the already-zeroed tableState.pot
-            const handPot = event.pot || tableStateRef.current.pot || 0;
-            // Use authoritative sawFlop from HAND_COMPLETE event (not rake > 0 heuristic)
-            const wentToFlop = (event as any).sawFlop ?? event.rake > 0;
-            await handleHandComplete(
-              handPersistenceService.getCurrentHandId() || crypto.randomUUID(),
-              handPot,
-              wentToFlop,
-              rakePlayers
-            );
-          }
-
-          // Sync player stacks back to table_seats in DB (with retry for resilience)
-          {
-            const allPlayers = tableStateRef.current.players;
-            for (let seatIdx = 0; seatIdx < allPlayers.length; seatIdx++) {
-              const p = allPlayers[seatIdx];
-              if (p && p.id) {
-                retryAsync(
-                  async () =>
-                    await supabase
-                      .from('table_seats')
-                      .update({ stack: p.stack })
-                      .eq('table_id', tableId)
-                      .eq('seat_number', seatIdx + 1)
-                      .is('left_at', null),
-                  2,
-                  500
-                )
-                  .then((result: any) => {
-                    if (result?.error)
-                      console.warn(
-                        '[Seats] Stack sync failed after retries:',
-                        result.error.message
-                      );
-                  })
-                  .catch((err: unknown) => {
-                    console.warn('[Seats] Stack sync exhausted all retries:', err);
-                  });
-              }
-            }
-          }
-
-          // ── Auto-Rebuy: if enabled and hero stack fell below min buy-in, rebuy ──
-          {
-            const heroSeatIdx = tableStateRef.current.heroSeat - 1;
-            const heroPlayer = tableStateRef.current.players[heroSeatIdx];
-            const bb = safeBB(tableStateRef.current.blinds);
-            const minBuyInChips = bb * 40; // minimum 40 BB
-            const maxBuyInChips = bb * 100; // rebuy to 100 BB
-
-            if (
-              heroPlayer &&
-              heroPlayer.id === userId &&
-              heroPlayer.stack < minBuyInChips &&
-              localStorage.getItem('ca_auto_rebuy') === 'true'
-            ) {
-              const rebuyAmount = maxBuyInChips - heroPlayer.stack;
-              if (rebuyAmount > 0) {
-                console.log(`[Auto-Rebuy] Hero stack ${heroPlayer.stack} < min ${minBuyInChips}, rebuying ${rebuyAmount}`);
-                handleAddChips(rebuyAmount).catch((err) =>
-                  console.error('[Auto-Rebuy] Failed:', err)
-                );
-              }
-            }
-
-            // ── Rabbit Hunt: enable reveal after hand ends early (folded before river) ──
-            const communityCount = tableStateRef.current.communityCards?.length ?? 0;
-            if (communityCount > 0 && communityCount < 5) {
-              setIsRabbitAvailable(true);
-            } else {
-              setIsRabbitAvailable(false);
-            }
-          }
-          break;
-      }
-    });
-
-    setHandController(hand);
-    try {
-      hand.start();
-    } catch (err) {
-      console.error('[HC] hand.start() failed:', err);
-      handControllerRef.current = null;
-      handInProgressRef.current = false;
-      _win.__pokerLocks.handActive = false;
-      _win.__pokerLocks.activeHC = null;
-    }
-  };
-
-  // Trigger first hand when horses are loaded (via useEffect that watches for players)
-  // This only fires ONCE — subsequent hands are triggered by HAND_COMPLETE
-  useEffect(() => {
-    // Use GLOBAL flag so component remounts don't re-trigger
-    if (
-      _win.__pokerLocks.firstHandTriggered ||
-      _win.__pokerLocks.handActive ||
-      _win.__pokerLocks.activeHC
-    )
-      return;
-    const seatedPlayers = tableState.players.filter((p) => p && p.stack > 0);
-    if (seatedPlayers.length >= 2) {
-      _win.__pokerLocks.firstHandTriggered = true;
-      startNextHandRef.current();
-    }
-  }, [tableState.players]);
 
   // Handle incoming game events from WebSocket
   useEffect(() => {
@@ -3833,33 +2879,7 @@ export default function TablePage({
     updateSeat(seatNumber).catch((e) => console.warn('[Seat] Presence update failed:', e));
   };
 
-  // Broadcast current hand state via Supabase Realtime — PRIMARY sync mechanism
-  // Mirrors HeadlessTableEngine.broadcastCurrentState() for human player actions
-  const broadcastLocalHandState = useCallback(() => {
-    if (!handControllerRef.current || !tableId) return;
-    const state = handControllerRef.current.getState();
-    const currentSeatPlayer = state.players?.find((p: any) => p.seat === state.currentPlayerSeat);
-    broadcastHandState(tableId, {
-      table_id: tableId,
-      pot: state.pot ?? 0,
-      community_cards: state.communityCards ?? [],
-      current_bet: state.currentBet ?? 0,
-      current_player: currentSeatPlayer?.user_id ?? null,
-      dealer_seat: state.dealerSeat ?? 0,
-      stage: state.stage ?? 'preflop',
-      players: (state.players ?? []).map((p: any) => ({
-        seat: p.seat,
-        user_id: p.user_id,
-        username: p.username,
-        stack: p.stack,
-        bet: p.bet ?? 0,
-        cards: p.cards ?? [],
-        is_folded: p.is_folded ?? false,
-        is_all_in: p.is_all_in ?? false,
-        is_sitting_out: p.is_sitting_out ?? false,
-      })),
-    });
-  }, [tableId]);
+  // [MIGRATION STEP 1] broadcastLocalHandState removed — server broadcasts state authoritatively
 
   // Unified Table Timer Logic (Phase M) - Moved out of the way of all earlier references
   const isHeroTurnContext =
@@ -3867,27 +2887,18 @@ export default function TablePage({
 
   const handleTimerAutoFold = useCallback(() => {
     if (actionLockRef.current) return; // Prevent race with manual fold
-    if (handControllerRef.current) {
-      try {
-        const foldResult = handControllerRef.current.performAction(tableState.heroSeat, 'fold');
-        if (foldResult !== false) {
-          sendAction('fold', { seat: tableState.heroSeat, autoFold: true });
-          soundService.playFold();
-
-          // Real-time broadcast
-          broadcastLocalHandState();
-          if (tableId)
-            submitAction(tableId, userId || 'guest', 'fold').catch((e) =>
-              console.warn('[Table] Server fold failed:', e)
-            );
-        } else {
-          console.warn('[AutoFold] performAction returned false — fold may not have executed');
-        }
-      } catch (err) {
-        console.error('[AutoFold] Error during auto-fold:', err);
-      }
+    // [MIGRATION STEP 1] Local engine call removed — server is authoritative
+    try {
+      sendAction('fold', { seat: tableState.heroSeat, autoFold: true });
+      soundService.playFold();
+      if (tableId)
+        submitAction(tableId, userId || 'guest', 'fold').catch((e) =>
+          console.warn('[Table] Server fold failed:', e)
+        );
+    } catch (err) {
+      console.error('[AutoFold] Error during auto-fold:', err);
     }
-  }, [tableState.heroSeat, tableId, userId, broadcastLocalHandState, sendAction]);
+  }, [tableState.heroSeat, tableId, userId, sendAction]);
 
   const {
     timeRemaining: actionTimeRemaining,
@@ -3934,66 +2945,19 @@ export default function TablePage({
     await timeBankEngine.requestExtension(tableId, userId);
   }, [tableId, userId]);
 
-  // Action handlers — LOCAL engine is authoritative → broadcast via Supabase Realtime (PRIMARY)
-  // → fire-and-forget server call (SECONDARY, for when game server is deployed)
+  // [MIGRATION STEP 1] Validation moved to server — client does basic guard only
   const validateAndExecuteAction = (
     action: 'fold' | 'check' | 'call' | 'raise' | 'allin' | 'bet',
-    amount?: number
+    _amount?: number
   ) => {
-    if (!handControllerRef.current || !tableId) return false;
-
+    if (!tableId) return false;
     // Auto-allow fold
     if (action === 'fold') return true;
-
-    try {
-      const state = handControllerRef.current.getState();
-      const heroSeat = tableState.heroSeat;
-      const heroPlayer = state.players.find((p) => p && p.seat === heroSeat);
-
-      if (!heroPlayer || heroPlayer.is_folded || heroPlayer.is_all_in) return false;
-
-      const validationContext = {
-        currentPlayerId: userId,
-        stage: state.stage,
-        currentBet: state.currentBet,
-        playerBet: heroPlayer.bet,
-        playerStack: heroPlayer.stack,
-        bigBlind: safeBB(tableState.blinds),
-        minRaise: Math.max(safeBB(tableState.blinds), state.lastRaise || safeBB(tableState.blinds)),
-        pot: state.pot,
-        canCheck: state.currentBet - heroPlayer.bet <= 0,
-        actionDeadline: 0,
-        playerActedThisRound: false,
-        isAllIn: heroPlayer.is_all_in,
-        isFolded: heroPlayer.is_folded,
-        numActivePlayers: state.players.filter((p) => !p.is_folded && !p.is_all_in && p.stack > 0)
-          .length,
-      };
-
-      const mappedAction = action === 'allin' ? 'all_in' : action;
-
-      const result = serverActionValidator.validate(
-        {
-          tableId,
-          handId: handNumberRef.current.toString(),
-          playerId: userId,
-          action: mappedAction as any,
-          amount,
-          timestamp: Date.now(),
-        },
-        validationContext
-      );
-
-      if (!result.valid) {
-        console.warn('[TablePage] Action rejected locally:', result.reason);
-        toast?.info?.(result.reason || 'Invalid action');
-        return false;
-      }
-      return true;
-    } catch (e) {
-      console.error('[TablePage] Validation error:', e);
-      return false; // Fail safe
-    }
+    // Basic client-side guard — real validation happens on server
+    const heroSeat = tableState.heroSeat;
+    const heroPlayer = tableState.players[heroSeat - 1];
+    if (!heroPlayer || heroPlayer.status === 'folded') return false;
+    return true;
   };
 
   const handleFold = async () => {
@@ -4005,16 +2969,11 @@ export default function TablePage({
     }, 300);
     const heroSeat = tableState.heroSeat;
     setShowRaiseSlider(false);
-    startTransition(() => {
-      if (handControllerRef.current) {
-        handControllerRef.current.performAction(heroSeat, 'fold');
-      }
-    });
+    // [MIGRATION STEP 1] Local engine call removed — server is authoritative
     soundService.playFold();
     haptic?.light();
-    broadcastLocalHandState();
     if (tableId)
-      submitAction(tableId, userId, 'fold').catch((e) =>
+      await submitAction(tableId, userId, 'fold').catch((e) =>
         console.warn('[Table] Server fold failed:', e)
       );
   };
@@ -4028,16 +2987,11 @@ export default function TablePage({
     }, 300);
     const heroSeat = tableState.heroSeat;
     setShowRaiseSlider(false);
-    startTransition(() => {
-      if (handControllerRef.current) {
-        handControllerRef.current.performAction(heroSeat, 'check');
-      }
-    });
+    // [MIGRATION STEP 1] Local engine call removed — server is authoritative
     soundService.playCheck();
     haptic?.light();
-    broadcastLocalHandState();
     if (tableId)
-      submitAction(tableId, userId, 'check').catch((e) =>
+      await submitAction(tableId, userId, 'check').catch((e) =>
         console.warn('[Table] Server check failed:', e)
       );
   };
@@ -4051,16 +3005,11 @@ export default function TablePage({
     }, 300);
     const heroSeat = tableState.heroSeat;
     setShowRaiseSlider(false);
-    startTransition(() => {
-      if (handControllerRef.current) {
-        handControllerRef.current.performAction(heroSeat, 'call');
-      }
-    });
+    // [MIGRATION STEP 1] Local engine call removed — server is authoritative
     soundService.playChips();
     haptic?.light();
-    broadcastLocalHandState();
     if (tableId)
-      submitAction(tableId, userId, 'call').catch((e) =>
+      await submitAction(tableId, userId, 'call').catch((e) =>
         console.warn('[Table] Server call failed:', e)
       );
   };
@@ -4091,9 +3040,8 @@ export default function TablePage({
       } else if (key === 'c') {
         e.preventDefault();
         // Determine if check is legal (no outstanding bet to match); otherwise call
-        const hcState = handControllerRef.current?.getState?.();
-        const heroP = hcState?.players?.find((p: any) => p && p.seat === tableState.heroSeat);
-        const canCheck = hcState && heroP ? (hcState.currentBet - heroP.bet) <= 0 : false;
+        // [MIGRATION STEP 1] Use tableState instead of local engine state
+        const canCheck = (tableState.lastBetAmounts?.[tableState.heroSeat - 1] || 0) === 0;
         if (canCheck) {
           handleCheck();
         } else {
@@ -4109,8 +3057,7 @@ export default function TablePage({
   }, [isHeroTurnContext, handleFold, handleCheck, handleCall]);
 
   // Unified action handler for ActionPanel component
-  // Architecture: LOCAL engine is authoritative → broadcast via Supabase Realtime (PRIMARY)
-  // → fire-and-forget server call (SECONDARY, for when game server is deployed)
+  // [MIGRATION STEP 1] Server is authoritative — all actions go through submitAction
   const handleActionPanelAction = useCallback(
     async (action: 'fold' | 'check' | 'call' | 'raise' | 'allin', amount?: number) => {
       if (actionLockRef.current) return; // Debounce guard
@@ -4124,46 +3071,32 @@ export default function TablePage({
       const hero = getPlayerAtSeat(heroSeat);
       const heroStack = hero?.stack || 0;
 
+      // [MIGRATION STEP 1] All local engine calls removed — server is authoritative
       switch (action) {
         case 'fold':
           if (!validateAndExecuteAction('fold')) return;
-          startTransition(() => {
-            if (handControllerRef.current)
-              handControllerRef.current.performAction(heroSeat, 'fold');
-          });
           soundService.playFold();
           haptic?.light();
-          broadcastLocalHandState();
           if (tableId)
-            submitAction(tableId, userId, 'fold').catch((e) =>
+            await submitAction(tableId, userId, 'fold').catch((e) =>
               console.warn('[Table] Server fold failed:', e)
             );
           break;
         case 'check':
           if (!validateAndExecuteAction('check')) return;
-          startTransition(() => {
-            if (handControllerRef.current)
-              handControllerRef.current.performAction(heroSeat, 'check');
-          });
           soundService.playCheck();
           haptic?.light();
-          broadcastLocalHandState();
           if (tableId)
-            submitAction(tableId, userId, 'check').catch((e) =>
+            await submitAction(tableId, userId, 'check').catch((e) =>
               console.warn('[Table] Server check failed:', e)
             );
           break;
         case 'call':
           if (!validateAndExecuteAction('call')) return;
-          startTransition(() => {
-            if (handControllerRef.current)
-              handControllerRef.current.performAction(heroSeat, 'call');
-          });
           soundService.playChips();
           haptic?.light();
-          broadcastLocalHandState();
           if (tableId)
-            submitAction(tableId, userId, 'call').catch((e) =>
+            await submitAction(tableId, userId, 'call').catch((e) =>
               console.warn('[Table] Server call failed:', e)
             );
           break;
@@ -4172,16 +3105,10 @@ export default function TablePage({
             const clamped = Math.min(amount, heroStack);
             if (clamped <= 0) return;
             if (!validateAndExecuteAction('raise', clamped)) return;
-            startTransition(() => {
-              if (handControllerRef.current) {
-                handControllerRef.current.performAction(heroSeat, 'raise', clamped);
-              }
-            });
             soundService.playRaise();
             haptic?.light();
-            broadcastLocalHandState();
             if (tableId)
-              submitAction(tableId, userId, 'raise', clamped).catch((e) =>
+              await submitAction(tableId, userId, 'raise', clamped).catch((e) =>
                 console.warn('[Table] Server raise failed:', e)
               );
           }
@@ -4189,22 +3116,17 @@ export default function TablePage({
         case 'allin':
           if (heroStack <= 0) return;
           if (!validateAndExecuteAction('allin')) return;
-          startTransition(() => {
-            if (handControllerRef.current)
-              handControllerRef.current.performAction(heroSeat, 'all_in');
-          });
           soundService.playAllIn();
           haptic?.light();
           setIsAllInMode(true);
-          broadcastLocalHandState();
           if (tableId)
-            submitAction(tableId, userId, 'allin', heroStack).catch((e) =>
+            await submitAction(tableId, userId, 'allin', heroStack).catch((e) =>
               console.warn('[Table] Server allin failed:', e)
             );
           break;
       }
     },
-    [tableState.heroSeat, tableId, userId, broadcastLocalHandState]
+    [tableState.heroSeat, tableId, userId]
   );
 
   const handleConfirmRaise = async () => {
@@ -4227,21 +3149,11 @@ export default function TablePage({
     // Close slider immediately
     setShowRaiseSlider(false);
     try {
-      startTransition(() => {
-        if (handControllerRef.current) {
-          const result = handControllerRef.current.performAction(heroSeat, 'raise', clampedRaise);
-          if (result === false) {
-            console.warn('[TablePage] Raise rejected by engine — amount:', clampedRaise);
-          }
-        }
-      });
+      // [MIGRATION STEP 1] Local engine call removed — server is authoritative
       soundService.playRaise();
       haptic?.light();
-      // PRIMARY: Broadcast via Supabase Realtime
-      broadcastLocalHandState();
-      // SECONDARY: Fire-and-forget server call
       if (tableId)
-        submitAction(tableId, userId, 'raise', clampedRaise).catch((e) =>
+        await submitAction(tableId, userId, 'raise', clampedRaise).catch((e) =>
           console.warn('[Table] Server raise failed:', e)
         );
     } catch (err) {
@@ -4261,19 +3173,12 @@ export default function TablePage({
       actionLockRef.current = false;
     }, 300);
     try {
-      startTransition(() => {
-        if (handControllerRef.current) {
-          handControllerRef.current.performAction(heroSeat, 'all_in');
-        }
-      });
+      // [MIGRATION STEP 1] Local engine call removed — server is authoritative
       soundService.playAllIn();
       haptic?.light();
       setIsAllInMode(true);
-      // PRIMARY: Broadcast via Supabase Realtime
-      broadcastLocalHandState();
-      // SECONDARY: Fire-and-forget server call
       if (tableId)
-        submitAction(tableId, userId, 'allin', heroStack).catch((e) =>
+        await submitAction(tableId, userId, 'allin', heroStack).catch((e) =>
           console.warn('[Table] Server allin failed:', e)
         );
     } catch (err) {
@@ -4310,33 +3215,11 @@ export default function TablePage({
             suit: c.suit as 'h' | 'd' | 'c' | 's',
           })) || [];
 
-        // Calculate real equity using Monte Carlo simulation (1000 iterations)
-        let equityPercent = 65; // fallback
-        try {
-          if (heroCards.length >= 2 && boardCards.length >= 3) {
-            // Cast cards to engine Card format (engine uses full suit names)
-            const suitFullMap: Record<string, string> = {
-              h: 'hearts',
-              d: 'diamonds',
-              c: 'clubs',
-              s: 'spades',
-            };
-            const engineHero = heroCards.map((c) => ({
-              rank: c.rank,
-              suit: suitFullMap[c.suit] || c.suit,
-            })) as any;
-            const engineBoard = boardCards.map((c) => ({
-              rank: c.rank,
-              suit: suitFullMap[c.suit] || c.suit,
-            })) as any;
-            const numOpponents = allInPlayers.length - 1;
-            equityPercent = monteCarloEquity(engineHero, engineBoard, numOpponents, 1000);
-            // Clamp to sensible range for insurance display
-            equityPercent = Math.min(95, Math.max(5, equityPercent));
-          }
-        } catch {
-          /* fallback to 65% */
-        }
+        // [MIGRATION STEP 1] monteCarloEquity removed — equity calc moves to server
+        // TODO: Wire to server-side equity endpoint in Step 3
+        // Using heuristic fallback until server endpoint is ready
+        const numOpponents = allInPlayers.length - 1;
+        let equityPercent = numOpponents <= 1 ? 55 : Math.max(20, 65 - numOpponents * 10);
 
         setInsuranceOffer({
           maxCoverage,
@@ -4375,18 +3258,12 @@ export default function TablePage({
       isSideMenuOpen,
     onFold: handleFold,
     onCallCheck: () => {
-      // Smart check/call routing: detect whether hero should check or call
-      if (handControllerRef.current) {
-        const state = handControllerRef.current.getState();
-        const heroPlayer = state.players?.find((p: any) => p && p.seat === tableState.heroSeat);
-        const canCheck = heroPlayer ? (state.currentBet || 0) - (heroPlayer.bet || 0) <= 0 : false;
-        if (canCheck) {
-          handleCheck();
-        } else {
-          handleCall();
-        }
+      // [MIGRATION STEP 1] Use tableState instead of local engine state
+      const canCheck = (tableState.lastBetAmounts?.[tableState.heroSeat - 1] || 0) === 0;
+      if (canCheck) {
+        handleCheck();
       } else {
-        handleCall(); // Fallback
+        handleCall();
       }
     },
     onRaise: handleRaise,
@@ -4396,9 +3273,8 @@ export default function TablePage({
     onToggleStats: () => updateSetting('showHUD', !userSettings.showHUD),
     onBetPreset: (preset: number) => {
       // Bet presets: 0=1/3 pot, 1=1/2 pot, 2=3/4 pot, 3=pot
-      if (!handControllerRef.current) return;
-      const state = handControllerRef.current.getState();
-      const pot = state.pot || 0;
+      // [MIGRATION STEP 1] Use tableState.pot instead of local engine state
+      const pot = tableState.pot || 0;
       const fractions = [1 / 3, 1 / 2, 3 / 4, 1];
       const fraction = fractions[preset] ?? 0.5;
       const betAmount = Math.max(safeBB(tableState.blinds), Math.round(pot * fraction * 100) / 100);
@@ -4523,10 +3399,8 @@ export default function TablePage({
             });
           } else if (preAction === 'check') {
             // Only check if can check (no bet to call)
-            const handState = handControllerRef.current?.getState();
-            const currentBet = handState?.currentBet || 0;
-            const myEngineBet = handState?.players.find((p) => p.user_id === userId)?.bet || 0;
-            const callAmount = Math.max(0, currentBet - myEngineBet);
+            // [MIGRATION STEP 1] Use tableState instead of local engine state
+            const callAmount = tableState.lastBetAmounts?.[tableState.heroSeat - 1] || 0;
             if (callAmount === 0) {
               await handleCheck();
               masterBus.emit('PRE_ACTION_EXECUTED', {
@@ -4544,10 +3418,8 @@ export default function TablePage({
             }
           } else if (preAction === 'callAny') {
             // "Call Any" = stay in hand: if nothing to call, check instead
-            const handState2 = handControllerRef.current?.getState();
-            const currentBet2 = handState2?.currentBet || 0;
-            const myEngineBet2 = handState2?.players.find((p) => p.user_id === userId)?.bet || 0;
-            const callAmount2 = Math.max(0, currentBet2 - myEngineBet2);
+            // [MIGRATION STEP 1] Use tableState instead of local engine state
+            const callAmount2 = tableState.lastBetAmounts?.[tableState.heroSeat - 1] || 0;
             if (callAmount2 > 0) {
               await handleCall();
             } else {
@@ -4992,16 +3864,11 @@ export default function TablePage({
 
             {tableState.currentPlayerSeat === tableState.heroSeat && tableState.isHandInProgress
               ? (() => {
-                  const handState = handControllerRef.current?.getState();
-                  const currentBet = handState?.currentBet || 0;
-                  const myEngineBet =
-                    handState?.players.find((p) => p.user_id === userId)?.bet || 0;
-                  const callAmount = Math.max(0, currentBet - myEngineBet);
+                  // [MIGRATION STEP 1] Use tableState instead of local engine state
+                  const callAmount = tableState.lastBetAmounts?.[tableState.heroSeat - 1] || 0;
                   const heroStack = getPlayerAtSeat(tableState.heroSeat)?.stack || 0;
                   const bb = safeBB(tableState.blinds);
-                  // Use engine's minRaise (tracks last raise increment correctly per poker rules)
-                  // Fallback: currentBet + bb (open = 2bb, re-raise = currentBet + lastRaise)
-                  const minRaise = handState?.minRaise || Math.max(bb * 2, currentBet + bb);
+                  const minRaise = Math.max(bb * 2, callAmount + bb);
 
                   return (
                     <>
@@ -5030,13 +3897,10 @@ export default function TablePage({
             {tableState.isHandInProgress &&
               tableState.currentPlayerSeat !== tableState.heroSeat && (
                 <PreActionBar
-                  canCheck={(() => {
-                    const handState = handControllerRef.current?.getState();
-                    const currentBet = handState?.currentBet || 0;
-                    const myEngineBet =
-                      handState?.players.find((p) => p.user_id === userId)?.bet || 0;
-                    return Math.max(0, currentBet - myEngineBet) === 0;
-                  })()}
+                  canCheck={
+                    // [MIGRATION STEP 1] Use tableState instead of local engine state
+                    (tableState.lastBetAmounts?.[tableState.heroSeat - 1] || 0) === 0
+                  }
                   isMyTurn={false}
                   preAction={preAction}
                   onPreActionChange={setPreAction}

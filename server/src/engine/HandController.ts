@@ -226,7 +226,6 @@ export class HandController {
 
   private getCardsPerPlayer(): number {
     switch (this.config.gameVariant) {
-      case 'plo':
       case 'plo4':
         return 4;
       case 'plo5':
@@ -234,7 +233,9 @@ export class HandController {
       case 'plo6':
         return 6;
       case 'plo8':
-        return 4;
+        return 4; // Omaha Hi-Lo: 4 cards
+      case 'pineapple':
+        return 3; // Pineapple: 3 hole cards, discard 1 later
       case 'ofc':
       case 'ofc_pineapple':
         return 5;
@@ -511,9 +512,39 @@ export class HandController {
   /**
    * Finalize the hand after all streets are dealt (showdown + settlement).
    * Called by ServerTableEngine after the last street in per-street insurance flow.
+   *
+   * FIX 109: skipDistribution param prevents double-money bug.
+   * When RIT handles its own pot distribution (dealAndResolveRIT), passing
+   * skipDistribution=true skips completeHand() and only emits HAND_COMPLETE.
+   * When insurance flow calls this, skipDistribution=false (default) runs
+   * normal pot distribution via completeHand().
    */
-  public finalizeRunout(): void {
+  public finalizeRunout(skipDistribution: boolean = false): void {
     this.state.stage = 'showdown';
+
+    if (skipDistribution) {
+      // RIT already distributed pots — just calculate rake/BBJ and emit HAND_COMPLETE
+      const playerCount = this.state.players.filter((p) => !p.is_sitting_out).length;
+      const rake = calculateRake(
+        this.state.pot,
+        this.state.sawFlop,
+        this.config.rakeConfig,
+        playerCount
+      );
+      let bbjFee = 0;
+      const bbjCfg = this.config.bbjConfig;
+      if (bbjCfg && bbjCfg.enabled && this.state.sawFlop) {
+        const playersDealt = this.state.players.filter((p) => !p.is_sitting_out).length;
+        const potInBB = this.state.pot / this.config.bigBlind;
+        if (playersDealt >= bbjCfg.minPlayersDealt && potInBB >= bbjCfg.minPotBB) {
+          bbjFee = Math.round(this.config.bigBlind * bbjCfg.feeBB * 100) / 100;
+        }
+      }
+      this.emit({ type: 'WINNERS', winners: [] });
+      this.emit({ type: 'HAND_COMPLETE', handNumber: this.config.handNumber, rake, bbjFee });
+      return;
+    }
+
     this.completeHand();
   }
 

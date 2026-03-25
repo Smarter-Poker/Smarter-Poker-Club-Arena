@@ -1652,3 +1652,58 @@ Performed line-by-line re-read of EVERY file modified in Round 6. Results:
 | `src/services/GameServerAPI.ts`           | Updated respondToInsurance() signature, added previewInsurance()                                                                                        |
 | `src/components/table/InsuranceModal.tsx` | Added onDeclineForHand prop, "Decline for Hand" button                                                                                                  |
 | `supabase/migrations/20260325_*.sql`      | Make bbj_payouts.hand_id nullable, add hand_number + table_id columns                                                                                   |
+
+---
+
+## Round 12 — Re-Apply Round 11 Fixes (Reverted by Rebase) + Additional Cleanup (2026-03-25)
+
+**Context:** All Round 11 fixes (FIX 109-112) were reverted by AntiGravity rebase. Re-applied from scratch with additional catches.
+
+### Fixes Applied
+
+| Fix     | File(s)                                                                                                                                                                                                                                               | Description                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| FIX 109 | `server/src/engine/HandController.ts`, `server/src/engine/ServerTableEngine.ts`                                                                                                                                                                       | **CRITICAL: Double-money bug.** Added `skipDistribution: boolean = false` param to `finalizeRunout()`. When true, skips `completeHand()` and only emits HAND_COMPLETE with rake/BBJ. RIT path passes `true`. Insurance path passes `false` (default).                                                                                                                                                                                           |
+| FIX 110 | `server/src/engine/InsuranceEngine.ts`, `server/src/engine/ServerTableEngine.ts`                                                                                                                                                                      | **Insurance TIES = PUSH.** `settle()` accepts `winnerIds: string \| string[]`. Chop detected via `winners.length > 1`. Insured player in chop → zero payout, zero premium. STE passes `this.currentHandWinnerIds` (full array).                                                                                                                                                                                                                 |
+| FIX 111 | `src/services/TableService.ts`, `src/pages/TableConfigPage.tsx`                                                                                                                                                                                       | **Table creation wiring.** Client `createTable()` now sets top-level DB columns: `run_it_twice_enabled`, `insurance_enabled`, `straddle_enabled`, `auto_muck_enabled`, etc. `TableConfigPage` derives `run_it_twice_enabled` from `runItMode !== 'none'`.                                                                                                                                                                                       |
+| FIX 112 | `server/src/types.ts`, `server/src/engine/HandController.ts`, `server/src/engine/PokerEngine.ts`, `server/src/config/RakeConfig.ts`, `server/src/engine/ServerTableEngine.ts`, `src/types/database.types.ts`, `src/types/club.types.ts`, + 9 UI files | **GameVariant cleanup (COMPLETE).** Removed `flh`, `plo`, `plo_hilo`, `double_board`, `crazy_pineapple`, `mixed`, `flo` from ALL type definitions and ALL code references in both client AND server. Added `pineapple` to all VARIANT arrays. Removed `case 'plo':` from server HandController. Removed mixed game config block from STE. Only 9 valid variants remain: nlh, plo4, plo5, plo6, plo8, pineapple, short_deck, ofc, ofc_pineapple. |
+
+### Verification Results (15-point audit)
+
+All 15 checks PASS after fixes:
+
+- Server HandController: `finalizeRunout(skipDistribution)` ✅
+- Server STE: `finalizeRunout(true)` in RIT ✅, `settle(this.currentHandWinnerIds)` ✅
+- InsuranceEngine: `settle(winnerIds: string | string[])` with chop PUSH ✅
+- TableService: top-level columns in insert ✅
+- TableConfigPage: `run_it_twice_enabled` ✅
+- database.types.ts: clean ✅
+- club.types.ts: clean ✅
+- server/types.ts: clean ✅
+- All UI files (8 files): clean ✅
+- `grep 'flh\|plo_hilo\|double_board\|crazy_pineapple\|flo\|mixed'` returns ZERO code matches in both src/ and server/src/ ✅
+
+### Files Modified in Round 12
+
+| File                                       | Changes                                                                                             |
+| ------------------------------------------ | --------------------------------------------------------------------------------------------------- |
+| `server/src/engine/HandController.ts`      | `finalizeRunout(skipDistribution)`, removed `case 'plo':`, added `case 'pineapple': return 3`       |
+| `server/src/engine/ServerTableEngine.ts`   | `finalizeRunout(true)` in RIT, `settle(this.currentHandWinnerIds)`, removed mixed game config block |
+| `server/src/engine/InsuranceEngine.ts`     | `settle()` accepts `string \| string[]`, chop=PUSH logic                                            |
+| `server/src/types.ts`                      | GameVariant cleaned (removed flh, plo, plo_hilo, mixed; added pineapple)                            |
+| `server/src/engine/PokerEngine.ts`         | Simplified hi-lo check to just `plo8`                                                               |
+| `server/src/config/RakeConfig.ts`          | Removed `flh` from BBJ hole card check                                                              |
+| `src/services/TableService.ts`             | Top-level DB columns in createTable insert                                                          |
+| `src/pages/TableConfigPage.tsx`            | `run_it_twice_enabled` derived from runItMode                                                       |
+| `src/types/database.types.ts`              | GameVariant cleaned                                                                                 |
+| `src/types/club.types.ts`                  | GameVariant cleaned                                                                                 |
+| `src/pages/WaitlistPage.tsx`               | Replaced dead variant labels                                                                        |
+| `src/pages/TableCreationPage.tsx`          | Updated local type + gameTypes array                                                                |
+| `src/pages/CreateTablePage.tsx`            | Replaced dead GAME_TYPES cards                                                                      |
+| `src/pages/TablePage.tsx`                  | Removed `'flo'` typo                                                                                |
+| `src/pages/ClubHomePage.tsx`               | Removed mixed/double from filter                                                                    |
+| `src/pages/club/ClubLobby.tsx`             | Removed dead variants from filter + labels                                                          |
+| `src/components/club/CreateTableModal.tsx` | Removed Double Board toggle, added Pineapple to VARIANTS                                            |
+| `src/components/lobby/DynamicGameCard.tsx` | Cleaned VARIANT_DISPLAY + TOURNEY_VARIANT_MAP                                                       |
+| `src/services/HorseOrchestrator.ts`        | Removed dead variant tables + gameTypeMap entries                                                   |
+| `MIGRATION-CHANGELOG.md`                   | Round 12 documented                                                                                 |

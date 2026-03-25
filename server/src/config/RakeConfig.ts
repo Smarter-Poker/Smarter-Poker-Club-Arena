@@ -601,7 +601,7 @@ function doesHandQualify(
       if (pairRank < 11) return false;
 
       // NLH rule: Player must have at least one Ace in hole cards
-      if (variant === 'nlh' || variant === 'flh') {
+      if (variant === 'nlh') {
         const hasAceInHole = holeCards.some((c) => c.rank === 'A' || c.rank === '14');
         if (!hasAceInHole) return false;
       }

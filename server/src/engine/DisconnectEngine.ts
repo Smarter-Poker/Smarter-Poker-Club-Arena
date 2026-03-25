@@ -40,6 +40,8 @@ export interface PlayerConnectionState {
   isSittingOut: boolean;
   /** Timestamp when disconnect was detected */
   disconnectedAt?: number;
+  /** Timestamp when player reconnected (for grace period tracking — Bible V8 §6.3) */
+  reconnectedAt?: number;
 }
 
 export interface DisconnectAction {
@@ -150,6 +152,8 @@ export class DisconnectEngine {
     if (wasDisconnected) {
       state.disconnectedAt = undefined;
       state.consecutiveTimeouts = 0;
+      // Bible V8 §6.3: Track reconnect time for grace period (5s before auto-action)
+      state.reconnectedAt = Date.now();
 
       // Cancel the disconnect timeout timer — player is back
       this.preciseTimer.cancelTimer(tableId, `disconnect:${playerId}`);
@@ -179,6 +183,42 @@ export class DisconnectEngine {
       tableId,
       playerId,
     });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // HEARTBEAT STALENESS CHECK (Bible V8 §6.3)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Check all players at a table for stale heartbeats and mark them as disconnected.
+   * Should be called periodically by ServerTableEngine (e.g., every 10s or before each hand).
+   * Bible V8 §6.3: "Disconnect detected: no heartbeat for disconnect_timeout_seconds"
+   */
+  checkStaleHeartbeats(tableId: string): void {
+    const config = this.tableConfigs.get(tableId) || this.DEFAULT_CONFIG;
+    const now = Date.now();
+    const timeoutMs = config.disconnectTimeoutSeconds * 1000;
+
+    for (const [key, state] of this.playerStates) {
+      if (!key.startsWith(`${tableId}:`)) continue;
+      if (!state.isConnected) continue; // Already marked disconnected
+
+      if (now - state.lastHeartbeat > timeoutMs) {
+        this.markDisconnected(tableId, state.playerId);
+      }
+    }
+  }
+
+  /**
+   * Bible V8 §6.3: Check if player is within reconnect grace period.
+   * Returns true if the player recently reconnected and should be given extra time.
+   */
+  isInReconnectGrace(tableId: string, playerId: string): boolean {
+    const key = `${tableId}:${playerId}`;
+    const state = this.playerStates.get(key);
+    if (!state || !state.reconnectedAt) return false;
+    const config = this.tableConfigs.get(tableId) || this.DEFAULT_CONFIG;
+    return Date.now() - state.reconnectedAt < config.reconnectGraceSeconds * 1000;
   }
 
   // ═══════════════════════════════════════════════════════════════════════════

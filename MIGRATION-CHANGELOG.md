@@ -630,3 +630,140 @@ this.playerTurnTimer = setTimeout(() => {
 | server/src/engine/ServerTableEngine.ts | MODIFIED | ~50 added | Integration of all 7 modules |
 
 **Next:** Run `npx tsc --noEmit` on server, commit, build, deploy to smarter.poker.
+
+---
+
+## STEP 7: PORT TOURNAMENT & EXTRAS — ChipRace, TableBalancer, TableBreak, OFC, Telemetry
+
+**Date:** 2026-03-25
+**Phase:** STEP 7 — PORT TOURNAMENT & EXTRAS (Final Step)
+**Status:** COMPLETE
+
+### Change #1 — Port ChipRaceEngine
+
+**File:** `server/src/engine/ChipRaceEngine.ts` (NEW — ~145 lines)
+**Source:** `src/engine/ChipRaceEngine.ts` (183 lines)
+
+**Adaptations:**
+- Removed `masterBus` → optional `onEvent` callback
+- Singleton → class export with constructor
+- Uses `secureRandomInt` from `./CryptoRandom.js` for fair lottery
+- Single method: `executeChipRace(tournamentId, playerStacks, oldDenomination, newDenomination)`
+- No player eliminated by chip race (minimum 1 chip guarantee)
+
+---
+
+### Change #2 — Port TableBalancer
+
+**File:** `server/src/engine/TableBalancer.ts` (NEW — ~210 lines)
+**Source:** `src/engine/TableBalancer.ts` (239 lines)
+
+**Adaptations:**
+- Removed `masterBus.emit('TABLE_BALANCE_EXECUTED', ...)` → optional `onEvent` callback
+- `TableBalancerClass` singleton → `TableBalancer` class export with constructor
+- Sum-of-squared-deviations algorithm for balance scoring
+- Moves smallest-stack players first (least disruptive)
+- Methods: `evaluateBalance()`, `shouldRebalance()`, `calculateMoves()`, `shouldBreakTable()`, `breakTable()`
+
+---
+
+### Change #3 — Port TableBreakEngine
+
+**File:** `server/src/engine/TableBreakEngine.ts` (NEW — ~260 lines)
+**Source:** `src/engine/TableBreakEngine.ts` (265 lines)
+
+**Adaptations:**
+- Removed 4 `masterBus.emit()` calls → optional `onEvent` callback with typed events
+- `TableBreakEngineClass` singleton → `TableBreakEngine` class export with constructor
+- Async `initiateBreak()` with countdown warning preserved
+- Round-robin redistribution with seat lottery for fair positioning
+- Methods: `configure()`, `shouldBreak()`, `initiateBreak()`, `calculateRedistribution()`, `checkRebalance()`
+
+---
+
+### Change #4 — Port OFCPineappleEngine
+
+**File:** `server/src/engine/OFCPineappleEngine.ts` (NEW — ~530 lines)
+**Source:** `src/engine/OFCPineappleEngine.ts` (691 lines)
+
+**Adaptations:**
+- PURE LOGIC — no masterBus in original, minimal changes needed
+- Object literal export preserved (not a class)
+- Uses `crypto.randomUUID()` (Node.js native)
+- Full OFC Pineapple: dealing, placement, evaluation, foul detection, royalties, fantasyland, scoring
+
+---
+
+### Change #5 — Port OFCDealingOrchestrator
+
+**File:** `server/src/engine/OFCDealingOrchestrator.ts` (NEW — ~300 lines)
+**Source:** `src/engine/OFCDealingOrchestrator.ts` (305 lines)
+
+**Adaptations:**
+- Removed 7 `masterBus.emit()` calls → optional `onEvent` callback with typed events
+- `OFCDealingOrchestratorClass` singleton → `OFCDealingOrchestrator` class export with constructor
+- Updated import to use server `OFCPineappleEngine.js` with `.js` extension
+- Added `disposeAll()` method for multi-table cleanup
+- Removed unused `secureShuffle` import (OFCPineappleEngine has its own shuffle)
+- Improved `scoreHands()` to use engine's `fantasylandQueue` instead of manual re-check
+
+---
+
+### Change #6 — Port EngineTelemetry
+
+**File:** `server/src/engine/EngineTelemetry.ts` (NEW — ~245 lines)
+**Source:** `src/engine/EngineTelemetry.ts` (246 lines)
+
+**Adaptations:**
+- Removed `masterBus.emit('ENGINE_TELEMETRY', ...)` → optional `onEvent` callback
+- `EngineTelemetryClass` singleton → `EngineTelemetry` class export with constructor
+- Auto-emits snapshot every 60 seconds via `setInterval` (preserved from original)
+- Circular buffer: 100 entries per table for hand timings
+- Tracks: hands/hour, avg durations, timer utilization, cache hit ratio, uptime
+
+---
+
+### Change #7 — Integrate all 6 modules into ServerTableEngine
+
+**File:** `server/src/engine/ServerTableEngine.ts` (MODIFIED — ~30 lines added)
+
+**What changed:**
+
+1. **Imports added:** ChipRaceEngine, TableBalancer, TableBreakEngine, OFCDealingOrchestrator, EngineTelemetry
+2. **Instance variables:** 5 new private fields for Step 7 modules
+3. **Constructor:** Creates instances of all 5 with logging callbacks
+4. **stop():** Disposes `ofcOrchestrator.disposeAll()` and `engineTelemetry.dispose()`. ChipRace/TableBalancer/TableBreak are stateless per-call.
+5. **HAND_COMPLETE handler:** Records player count to telemetry after each hand
+6. Note: OFCPineappleEngine is not directly integrated into ServerTableEngine — it's used through OFCDealingOrchestrator
+
+---
+
+### Summary of All Step 7 Changes
+
+| File | Action | Lines | Purpose |
+|------|--------|-------|---------|
+| server/src/engine/ChipRaceEngine.ts | NEW | ~145 | Tournament chip denomination removal |
+| server/src/engine/TableBalancer.ts | NEW | ~210 | MTT table balancing optimizer |
+| server/src/engine/TableBreakEngine.ts | NEW | ~260 | Table break redistribution |
+| server/src/engine/OFCPineappleEngine.ts | NEW | ~530 | OFC Pineapple game logic |
+| server/src/engine/OFCDealingOrchestrator.ts | NEW | ~300 | OFC dealing flow orchestrator |
+| server/src/engine/EngineTelemetry.ts | NEW | ~245 | Production observability service |
+| server/src/engine/ServerTableEngine.ts | MODIFIED | ~30 added | Integration of all 6 modules |
+
+**Next:** Run `npx tsc --noEmit` on server, commit, build, deploy to smarter.poker.
+
+---
+
+## MIGRATION COMPLETE — ALL 7 STEPS DONE
+
+**Steps completed:**
+1. STEP 1: RIP OUT — Removed client-side engine code
+2. STEP 2: VERIFY CLEAN — Confirmed zero local authoritative state
+3. STEP 3: FIX SERVER BLOCKERS — Card security, auto-fold, timer
+4. STEP 4: PORT CORE — PreciseActionTimer, ServerActionValidator, StateVerifier
+5. STEP 5: PORT SUPPORTING — TimeBankEngine, DisconnectEngine, PreActionEngine, AtomicStackService
+6. STEP 6: PORT ADVANCED — Straddle, RIT, Insurance, MixedGame, Rakeback
+7. STEP 7: PORT TOURNAMENT & EXTRAS — ChipRace, TableBalancer, TableBreak, OFC, Telemetry
+
+**Total new server engine files:** 22
+**Server-authoritative migration:** COMPLETE

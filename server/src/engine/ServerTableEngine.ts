@@ -27,6 +27,11 @@ import { MixedGameEngine } from './MixedGameEngine.js';
 import { RunItTwiceEngine } from './RunItTwiceEngine.js';
 import { InsuranceEngine } from './InsuranceEngine.js';
 import { RakebackEngine } from './RakebackEngine.js';
+import { ChipRaceEngine } from './ChipRaceEngine.js';
+import { TableBalancer } from './TableBalancer.js';
+import { TableBreakEngine } from './TableBreakEngine.js';
+import { OFCDealingOrchestrator } from './OFCDealingOrchestrator.js';
+import { EngineTelemetry } from './EngineTelemetry.js';
 import type { ValidationContext } from './ServerActionValidator.js';
 import {
   broadcastHandState,
@@ -115,6 +120,13 @@ export class ServerTableEngine {
   private insuranceEngine: InsuranceEngine;
   private rakebackEngine: RakebackEngine;
 
+  // ── Step 7: Ported Tournament & Extras Modules ──
+  private chipRaceEngine: ChipRaceEngine;
+  private tableBalancer: TableBalancer;
+  private tableBreakEngine: TableBreakEngine;
+  private ofcOrchestrator: OFCDealingOrchestrator;
+  private engineTelemetry: EngineTelemetry;
+
   constructor(tableId: string) {
     this.tableId = tableId;
 
@@ -158,6 +170,23 @@ export class ServerTableEngine {
     });
     this.rakebackEngine = new RakebackEngine(supabase, (event) => {
       console.log(`[ServerTableEngine:${tableId}] Rakeback: ${event.type}`);
+    });
+
+    // Step 7: Initialize tournament & extras modules
+    this.chipRaceEngine = new ChipRaceEngine((event) => {
+      console.log(`[ServerTableEngine:${tableId}] ChipRace: ${event.type}`);
+    });
+    this.tableBalancer = new TableBalancer((event) => {
+      console.log(`[ServerTableEngine:${tableId}] TableBalancer: ${event.type}`);
+    });
+    this.tableBreakEngine = new TableBreakEngine((event) => {
+      console.log(`[ServerTableEngine:${tableId}] TableBreak: ${event.type}`);
+    });
+    this.ofcOrchestrator = new OFCDealingOrchestrator((event) => {
+      console.log(`[ServerTableEngine:${tableId}] OFC: ${event.type}`);
+    });
+    this.engineTelemetry = new EngineTelemetry((event) => {
+      console.log(`[ServerTableEngine:${tableId}] Telemetry: activeTables=${(event as any).activeTables}`);
     });
 
     console.log(`[ServerTableEngine] Created for table ${tableId}`);
@@ -219,6 +248,11 @@ export class ServerTableEngine {
     this.runItTwiceEngine.disposeAll();
     this.insuranceEngine.disposeAll();
     this.rakebackEngine.disposeAll();
+
+    // Step 7: Dispose tournament & extras modules
+    this.ofcOrchestrator.disposeAll();
+    this.engineTelemetry.dispose();
+    // Note: chipRaceEngine, tableBalancer, tableBreakEngine are stateless per-call — no dispose needed
 
     cleanupChannel(this.tableId);
     console.log(`[ServerTableEngine:${this.tableId}] Stopped. Dealt ${this.handCount} hands.`);
@@ -923,6 +957,9 @@ export class ServerTableEngine {
             : 0;
           this.mixedGameEngine.onHandComplete(this.tableId, activePlayers);
         }
+
+        // Step 7: Record telemetry for this hand
+        this.engineTelemetry.recordPlayerCount(this.tableId, players.length);
 
         // Async post-hand tasks (fire and forget)
         this.postHandTasks(players).catch((err) =>

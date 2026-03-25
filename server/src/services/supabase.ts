@@ -428,7 +428,7 @@ export async function logBBJCollection(
       .from('clubs')
       .select('union_id')
       .eq('id', clubId)
-      .single();
+      .maybeSingle();
 
     if (!club) {
       console.warn(`[logBBJCollection] Club ${clubId} not found — skipping BBJ logging`);
@@ -532,6 +532,7 @@ export async function logHandHistory(params: {
   bigBlind: number;
   potSize: number;
   rakeAmount: number;
+  bbjAmount?: number;
   communityCards: string[];
   winners: { userId: string; amount: number }[];
   players: { userId: string; username: string; seat: number; stack: number; cards: string[] }[];
@@ -546,6 +547,7 @@ export async function logHandHistory(params: {
     big_blind: params.bigBlind,
     pot_size: params.potSize,
     rake_amount: params.rakeAmount,
+    bbj_amount: params.bbjAmount || 0,
     community_cards: params.communityCards,
     winners: params.winners,
     players: params.players,

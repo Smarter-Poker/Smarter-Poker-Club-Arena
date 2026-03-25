@@ -1217,6 +1217,7 @@ export class ServerTableEngine {
     }
 
     // Bible V8 §1.9 / Appendix A: Get full rake + BBJ config for this stakes/variant
+    // Single lookup — used for both rakeConfig and bbjConfig
     const fullRakeConfig = this.getFullRakeAndBBJConfig();
 
     const config: HandConfig = {
@@ -1228,7 +1229,11 @@ export class ServerTableEngine {
       ante: this.tableInfo.ante,
       bigBlindAnte: this.tableInfo.big_blind_ante_enabled ?? false,
       straddles: straddleResults.length > 0 ? straddleResults : undefined,
-      rakeConfig: this.getRakeConfig(this.tableInfo.small_blind, this.tableInfo.big_blind),
+      rakeConfig: {
+        percent: fullRakeConfig.rakePercent,
+        cap: fullRakeConfig.rakeCap,
+        noFlopNoDrop: true,
+      },
       bbjConfig: {
         enabled: fullRakeConfig.bbjEnabled,
         feeBB: fullRakeConfig.bbjFeeBB,
@@ -1408,7 +1413,7 @@ export class ServerTableEngine {
         if (this.handController) {
           const state = this.handController.getState();
           this.currentHandPotSize = state.pot;
-          this.currentHandRake = (state as any).rake || 0;
+          // Note: rake + bbjFee are captured from HAND_COMPLETE event, not from state
           // Bible V8 §1.9: Capture totalInvested for weighted rakeback calculation
           this.currentHandContributions.clear();
           for (const enginePlayer of state.players) {
@@ -1784,6 +1789,7 @@ export class ServerTableEngine {
         bigBlind: this.tableInfo.big_blind,
         potSize: this.currentHandPotSize,
         rakeAmount: this.currentHandRake,
+        bbjAmount: this.currentHandBBJFee,
         communityCards: this.currentHandCommunityCards,
         winners: this.currentHandWinners,
         players: players.map((p) => ({

@@ -1480,3 +1480,25 @@ The DB migration `005_bbj_triple_bank.sql` says: STANDARD (<$100k): 50% MAIN, 25
 | 13   | Log hand history               | ✅     | logHandHistory in postHandTasks                      |
 | 14   | Broadcast final state          | ✅     | broadcastCurrentState in WINNERS handler             |
 | 15   | Unlock table                   | ✅     | HandController nulled, next hand starts              |
+
+### Full Sweep — Post-Implementation Quality Pass (2026-03-25 Session 2)
+
+Performed line-by-line re-read of EVERY file modified in Round 6. Results:
+
+| File                                     | Result             | Fix Applied                                                                                                                                                                                                                                                                                                                      |
+| ---------------------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `server/src/config/RakeConfig.ts`        | CLEAN              | No issues                                                                                                                                                                                                                                                                                                                        |
+| `server/src/types.ts`                    | CLEAN              | No issues                                                                                                                                                                                                                                                                                                                        |
+| `server/src/engine/HandController.ts`    | CLEAN              | No issues                                                                                                                                                                                                                                                                                                                        |
+| `server/src/engine/ServerTableEngine.ts` | **3 issues found** | FIX 60: Removed dead code `(state as any).rake` in WINNERS handler (always returned 0, correct value comes from HAND_COMPLETE event). Eliminated duplicate `getRakeConfig()` call — now builds rakeConfig inline from single `getFullRakeAndBBJConfig()`. Added `bbjAmount` to `logHandHistory()` call for complete audit trail. |
+| `server/src/services/supabase.ts`        | **2 issues found** | FIX 61: Changed `.single()` → `.maybeSingle()` in `logBBJCollection` club lookup (code safety rule). FIX 62: Added `bbjAmount?: number` param to `logHandHistory()` and `bbj_amount` to insert.                                                                                                                                  |
+| `server/src/engine/InsuranceEngine.ts`   | CLEAN              | No issues (known gap: createOffers never called)                                                                                                                                                                                                                                                                                 |
+| `server/src/engine/PokerEngine.ts`       | CLEAN              | `calculateRake` formula verified: `Math.trunc(pot * 10) / 100` truncates to penny, cap enforced                                                                                                                                                                                                                                  |
+| `supabase/migrations/*.sql`              | CLEAN              | FK constraints allow NULL hand_id ✅                                                                                                                                                                                                                                                                                             |
+| `src/config/RakeConfig.ts` (client)      | CLEAN              | All 11 variant entries present, parity confirmed with server                                                                                                                                                                                                                                                                     |
+
+**New migration added:**
+
+- `supabase/migrations/20260325_hand_history_bbj_amount.sql` — Adds `bbj_amount DECIMAL(12,2) DEFAULT 0` column to `hand_history` table
+
+**Total sweep score:** 5 issues found and fixed across 10 files. 0 remaining bugs.

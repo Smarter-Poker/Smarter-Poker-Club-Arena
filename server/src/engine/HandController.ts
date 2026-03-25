@@ -525,7 +525,32 @@ export class HandController {
       playerCount
     );
 
-    const totalWinnings = this.state.pot - rake;
+    // Bible V8 §1.9 / Appendix A: BBJ fee deducted SIMULTANEOUSLY with rake before distribution
+    // BBJ eligibility: must be enabled, hand saw flop (no flop = no BBJ, same as rake),
+    // pot >= minPotBB × BB, players dealt >= minPlayersDealt
+    let bbjFee = 0;
+    const bbjCfg = this.config.bbjConfig;
+    if (bbjCfg && bbjCfg.enabled && this.state.sawFlop) {
+      const playersDealt = this.state.players.filter((p) => !p.is_sitting_out).length;
+      const potInBB = this.state.pot / this.config.bigBlind;
+      if (playersDealt >= bbjCfg.minPlayersDealt && potInBB >= bbjCfg.minPotBB) {
+        // BBJ fee = BB × feeBB, rounded to nearest cent
+        bbjFee = Math.round(this.config.bigBlind * bbjCfg.feeBB * 100) / 100;
+      }
+    }
+
+    // Guard: total deductions cannot exceed pot (prevent negative winnings)
+    // If rake + BBJ > pot, reduce BBJ first, then rake if still over
+    if (rake + bbjFee > this.state.pot) {
+      const overage = rake + bbjFee - this.state.pot;
+      if (overage <= bbjFee) {
+        bbjFee = bbjFee - overage;
+      } else {
+        bbjFee = 0;
+        // This should never happen since rake is capped, but just in case
+      }
+    }
+    const totalWinnings = this.state.pot - rake - bbjFee;
     const totalWinnerAmount = winners.reduce((sum, w) => sum + w.amount, 0);
 
     // If still no winners (impossible edge case), skip distribution to prevent chip loss
@@ -534,7 +559,7 @@ export class HandController {
         `[HandController] CRITICAL: No winners and no active players — pot of ${this.state.pot} cannot be distributed`
       );
       this.emit({ type: 'WINNERS', winners: [] });
-      this.emit({ type: 'HAND_COMPLETE', handNumber: this.config.handNumber, rake: 0 });
+      this.emit({ type: 'HAND_COMPLETE', handNumber: this.config.handNumber, rake: 0, bbjFee: 0 });
       return;
     }
 
@@ -558,7 +583,7 @@ export class HandController {
     }
 
     this.emit({ type: 'WINNERS', winners: adjustedWinners });
-    this.emit({ type: 'HAND_COMPLETE', handNumber: this.config.handNumber, rake });
+    this.emit({ type: 'HAND_COMPLETE', handNumber: this.config.handNumber, rake, bbjFee });
   }
 
   // ─────────────────────────────────────────────────────────────────────────

@@ -190,6 +190,19 @@ export const BBJ_QUALIFYING_HANDS: Record<string, BBJQualifyingHand> = {
     handRank: 'full_house',
     minRankValue: 'AAAJJ',
   },
+  // Alias: flh (Fixed Limit Hold'em) uses same qualifying hand as NLH
+  flh: {
+    label: 'NLH / FLH',
+    minLosingHand: 'AAAJJ',
+    description: 'Full House (Aces full of Jacks) or better must LOSE to Quads or Straight Flush',
+    rules: [
+      'AAAJJ+ must lose to Quads or Straight Flush',
+      'Player holding Full House must have at least one Ace in their hole cards (dealt cards)',
+      'Both cards from hand must play',
+    ],
+    handRank: 'full_house',
+    minRankValue: 'AAAJJ',
+  },
   plo4: {
     label: 'PLO4 / FLO4',
     minLosingHand: 'KKKK2',
@@ -213,6 +226,19 @@ export const BBJ_QUALIFYING_HANDS: Record<string, BBJQualifyingHand> = {
     minRankValue: 'KKKK',
   },
   plo8: {
+    label: 'PLO8 (Hi-Lo 8 or Better)',
+    minLosingHand: 'KKKK2',
+    description: 'Four of a Kind (Kings) or better must LOSE — evaluated on HIGH hand only',
+    rules: [
+      'Must use exactly 2 cards from hand',
+      'Both players must use two cards from their hole cards',
+      'BBJ evaluated on HIGH hand only (low hand does not qualify)',
+    ],
+    handRank: 'four_of_a_kind',
+    minRankValue: 'KKKK',
+  },
+  // Alias: plo_hilo maps to same rules as plo8
+  plo_hilo: {
     label: 'PLO8 (Hi-Lo 8 or Better)',
     minLosingHand: 'KKKK2',
     description: 'Four of a Kind (Kings) or better must LOSE — evaluated on HIGH hand only',

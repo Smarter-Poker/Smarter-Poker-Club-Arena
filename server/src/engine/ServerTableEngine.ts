@@ -1753,7 +1753,8 @@ export class ServerTableEngine {
     const ritEnabled = this.runItTwiceEngine.isEnabled(this.tableId);
 
     // Bible V8 §4.19: Create insurance offers if enabled and board has cards to come
-    if (insuranceEnabled && board.length >= 3 && board.length < 5 && allInPlayers.length >= 2) {
+    // Board can be 0 (preflop all-in), 3 (flop), or 4 (turn). Only skip if board is complete (5).
+    if (insuranceEnabled && board.length < 5 && allInPlayers.length >= 2) {
       const offerPlayers = allInPlayers.map((p) => ({
         playerId: p.user_id,
         holeCards: p.cards || [],
@@ -1769,15 +1770,20 @@ export class ServerTableEngine {
 
       if (offers.length > 0) {
         // Broadcast insurance offers to clients via Supabase Realtime
+        // Include all fields needed for the InsurancePanel slider UI
         broadcastHandState(this.tableId, {
           type: 'insurance_offers',
           table_id: this.tableId,
           hand_number: this.handCount,
+          pot,
           offers: offers.map((o) => ({
             playerId: o.playerId,
             equity: o.equity,
+            fullPremium: o.fullPremium,
             premium: o.premium,
+            fullInsuredAmount: o.fullInsuredAmount,
             insuredAmount: o.insuredAmount,
+            coveragePercent: o.coveragePercent,
             timeoutSeconds: 15,
           })),
         });
@@ -1804,16 +1810,23 @@ export class ServerTableEngine {
    * Once all responded, invoke the callback to continue the hand.
    */
   private waitForInsuranceResponses(onComplete: () => void): void {
+    let completed = false;
+    const finish = () => {
+      if (completed) return; // Guard: exactly-once invocation
+      completed = true;
+      clearInterval(checkInterval);
+      clearTimeout(safetyTimeout);
+      onComplete();
+    };
+
     const checkInterval = setInterval(() => {
       if (this.insuranceEngine.allResponded(this.tableId)) {
-        clearInterval(checkInterval);
-        onComplete();
+        finish();
       }
     }, 250); // Check every 250ms
 
     // Safety timeout: if insurance engine's own timeouts somehow fail, force continue after 20s
-    setTimeout(() => {
-      clearInterval(checkInterval);
+    const safetyTimeout = setTimeout(() => {
       if (!this.insuranceEngine.allResponded(this.tableId)) {
         console.warn(
           `[ServerTableEngine:${this.tableId}] Insurance safety timeout — forcing continue`
@@ -1825,7 +1838,7 @@ export class ServerTableEngine {
           }
         }
       }
-      onComplete();
+      finish();
     }, 20_000);
   }
 

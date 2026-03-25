@@ -237,6 +237,7 @@ export type HandEvent =
   | { type: 'PLAYER_ACTION'; seat: number; action: ActionType; amount: number }
   | { type: 'POT_UPDATE'; pot: number; pots: Pot[] }
   | { type: 'TURN_CHANGE'; seat: number; availableActions: ActionType[] }
+  | { type: 'ALL_IN_RUNOUT'; board: Card[]; pot: number; players: SeatPlayer[] }
   | { type: 'SHOWDOWN'; results: ShowdownResult[] }
   | { type: 'WINNERS'; winners: Winner[] }
   | { type: 'HAND_COMPLETE'; handNumber: number; rake: number; bbjFee: number };

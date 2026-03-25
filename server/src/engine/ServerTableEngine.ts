@@ -32,7 +32,7 @@ import { TableBalancer } from './TableBalancer.js';
 import { TableBreakEngine } from './TableBreakEngine.js';
 import { OFCDealingOrchestrator } from './OFCDealingOrchestrator.js';
 import { EngineTelemetry } from './EngineTelemetry.js';
-import { getFullRakeConfig, calculateBBJFee } from '../config/RakeConfig.js';
+import { getFullRakeConfig, calculateBBJFee, detectBBJHit } from '../config/RakeConfig.js';
 import type { ValidationContext } from './ServerActionValidator.js';
 import {
   broadcastHandState,
@@ -101,6 +101,13 @@ export class ServerTableEngine {
   private currentHandWinners: { userId: string; amount: number }[] = [];
   private currentHandContributions: Map<string, number> = new Map(); // userId → totalInvested
   private currentHandInsuranceSettlements: InsuranceSettlement[] = [];
+  private currentHandShowdownResults: Array<{
+    userId: string;
+    handRanking: number;
+    handName: string;
+    kickers: number[];
+    holeCards: Array<{ rank: string; suit: string }>;
+  }> = [];
   // Hand complete callback for tournament chip sync
   private handCompleteCallback:
     | ((tableId: string, players: { user_id: string; stack: number }[]) => void)
@@ -813,6 +820,10 @@ export class ServerTableEngine {
       if (!accepted) {
         return { success: false, error: 'No pending insurance offer for this player' };
       }
+      // NOTE: Premium is NOT deducted from stack here — player is ALL-IN.
+      // Insurance premium is deducted from the winner's pot at settlement (like rake/BBJ).
+      // If the insured player LOSES, they get paid from union/club bank.
+      // Settlement happens in HAND_COMPLETE handler.
       return { success: true, status: 'accepted' };
     } else {
       this.insuranceEngine.decline(this.tableId, userId);
@@ -1441,6 +1452,28 @@ export class ServerTableEngine {
         this.broadcastCurrentState();
         break;
 
+      case 'ALL_IN_RUNOUT':
+        // Bible V8 §4.19: All players are all-in with cards to come.
+        // Pause for insurance/RIT offers before dealing remaining community cards.
+        this.handleAllInRunout(event, players);
+        break;
+
+      case 'SHOWDOWN':
+        // Capture showdown hand evaluations for BBJ detection
+        this.currentHandShowdownResults = ((event as any).results || []).map((r: any) => ({
+          userId: r.userId,
+          handRanking: r.hand?.ranking ?? 0,
+          handName: r.hand?.name ?? '',
+          kickers: r.hand?.kickers ?? [],
+          holeCards: (r.cards || []).map((c: any) =>
+            typeof c === 'string'
+              ? { rank: c.slice(0, -1), suit: c.slice(-1) }
+              : { rank: c.rank, suit: c.suit }
+          ),
+        }));
+        this.broadcastCurrentState();
+        break;
+
       case 'WINNERS':
         this.currentHandWinnerIds = (event.winners || []).map(
           (w: any) => w.userId || w.user_id || ''
@@ -1518,6 +1551,44 @@ export class ServerTableEngine {
             this.tableId,
             winnerId
           );
+
+          // Bible V8 §4.19: Insurance settlement — applied like rake at the end.
+          // - LOSER who bought insurance: Gets insuredAmount from union/club bank → credited to table stack
+          // - WINNER who bought insurance: Premium deducted from winnings (taken at end like rake)
+          // - Player can't lose more than their premium; can't gain more than insuredAmount
+          for (const settlement of this.currentHandInsuranceSettlements) {
+            const seatedPlayer = this.seatedPlayers.find((p) => p.user_id === settlement.playerId);
+            const enginePlayer = this.handController
+              ? this.handController
+                  .getState()
+                  .players.find((p) => p.user_id === settlement.playerId)
+              : null;
+
+            if (settlement.payout > 0) {
+              // LOSER with insurance: credit payout from union/club bank to table stack
+              if (seatedPlayer) {
+                seatedPlayer.stack += settlement.payout;
+                console.log(
+                  `[ServerTableEngine:${this.tableId}] Insurance payout: ${settlement.playerId} lost hand → +$${settlement.payout} from bank`
+                );
+              }
+              if (enginePlayer) enginePlayer.stack += settlement.payout;
+            }
+
+            // ALL insured players: premium deducted from their stack at end (like rake)
+            // For losers: payout - premium = net gain. For winners: -premium = net cost.
+            if (settlement.premium > 0) {
+              if (seatedPlayer) {
+                seatedPlayer.stack = Math.max(0, seatedPlayer.stack - settlement.premium);
+                console.log(
+                  `[ServerTableEngine:${this.tableId}] Insurance premium: ${settlement.playerId} → -$${settlement.premium} (stack: $${seatedPlayer.stack})`
+                );
+              }
+              if (enginePlayer) {
+                enginePlayer.stack = Math.max(0, enginePlayer.stack - settlement.premium);
+              }
+            }
+          }
         }
 
         // Step 6: Clean up advanced modules between hands
@@ -1545,6 +1616,107 @@ export class ServerTableEngine {
         this.currentHandWinnerIds = [];
         break;
     }
+  }
+
+  /**
+   * Bible V8 §4.19: Handle all-in runout pause for insurance/RIT offers.
+   * When all active players are all-in with cards to come:
+   * 1. Pause the action timer
+   * 2. If insurance is enabled: create offers for all all-in players, wait for responses (or timeout)
+   * 3. If RIT is enabled and exactly 2 players: offer RIT (handled separately via respondToRIT)
+   * 4. After all offers resolved → resume with handController.continueRunout()
+   */
+  private handleAllInRunout(event: HandEvent, players: SeatedPlayer[]): void {
+    if (event.type !== 'ALL_IN_RUNOUT' || !this.handController) return;
+
+    const board = (event as any).board as import('../types.js').Card[];
+    const pot = (event as any).pot as number;
+    const allInPlayers = (event as any).players as import('../types.js').SeatPlayer[];
+
+    // Pause all timers during insurance/RIT decision window
+    this.clearTurnTimer();
+
+    // Broadcast current state so clients see the all-in board
+    this.broadcastCurrentState();
+
+    const insuranceEnabled = this.insuranceEngine.isEnabled(this.tableId);
+    const ritEnabled = this.runItTwiceEngine.isEnabled(this.tableId);
+
+    // Bible V8 §4.19: Create insurance offers if enabled and board has cards to come
+    if (insuranceEnabled && board.length >= 3 && board.length < 5 && allInPlayers.length >= 2) {
+      const offerPlayers = allInPlayers.map((p) => ({
+        playerId: p.user_id,
+        holeCards: p.cards || [],
+      }));
+
+      const offers = this.insuranceEngine.createOffers(
+        this.tableId,
+        `${this.tableId}:${this.handCount}`,
+        offerPlayers,
+        board,
+        pot
+      );
+
+      if (offers.length > 0) {
+        // Broadcast insurance offers to clients via Supabase Realtime
+        broadcastHandState(this.tableId, {
+          type: 'insurance_offers',
+          table_id: this.tableId,
+          hand_number: this.handCount,
+          offers: offers.map((o) => ({
+            playerId: o.playerId,
+            equity: o.equity,
+            premium: o.premium,
+            insuredAmount: o.insuredAmount,
+            timeoutSeconds: 15,
+          })),
+        });
+
+        // Wait for all insurance responses (or timeout) then continue
+        this.waitForInsuranceResponses(() => {
+          // After insurance resolved, continue the runout
+          if (this.handController) {
+            this.handController.continueRunout();
+          }
+        });
+        return;
+      }
+    }
+
+    // No insurance offers needed — continue immediately
+    if (this.handController) {
+      this.handController.continueRunout();
+    }
+  }
+
+  /**
+   * Poll for all insurance responses to be resolved (accepted/declined/timed out).
+   * Once all responded, invoke the callback to continue the hand.
+   */
+  private waitForInsuranceResponses(onComplete: () => void): void {
+    const checkInterval = setInterval(() => {
+      if (this.insuranceEngine.allResponded(this.tableId)) {
+        clearInterval(checkInterval);
+        onComplete();
+      }
+    }, 250); // Check every 250ms
+
+    // Safety timeout: if insurance engine's own timeouts somehow fail, force continue after 20s
+    setTimeout(() => {
+      clearInterval(checkInterval);
+      if (!this.insuranceEngine.allResponded(this.tableId)) {
+        console.warn(
+          `[ServerTableEngine:${this.tableId}] Insurance safety timeout — forcing continue`
+        );
+        // Decline any remaining offers
+        for (const offer of this.insuranceEngine.getOffers(this.tableId)) {
+          if (offer.status === 'offered') {
+            this.insuranceEngine.decline(this.tableId, offer.playerId);
+          }
+        }
+      }
+      onComplete();
+    }, 20_000);
   }
 
   /**

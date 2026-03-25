@@ -19,6 +19,7 @@ import { masterBus } from '../core/MasterBus';
 export interface TableUserSettings {
   isSoundEnabled: boolean;
   soundVolume: number; // 0-100
+  isHapticEnabled: boolean;
   animationSpeed: number; // 0.5, 1, 1.5, 2
   theme: string; // 'green', 'blue', 'red', 'purple', etc.
   fourColorDeck: boolean;
@@ -37,6 +38,7 @@ export interface TableUserSettings {
 const DEFAULT_SETTINGS: TableUserSettings = {
   isSoundEnabled: true,
   soundVolume: 70,
+  isHapticEnabled: true,
   animationSpeed: 1,
   theme: 'black',
   fourColorDeck: false,
@@ -96,6 +98,15 @@ export function useTableSettings() {
       String(settings.animationSpeed)
     );
   }, [settings.animationSpeed]);
+
+  // Sync haptic setting to HapticService's localStorage key
+  useEffect(() => {
+    try {
+      localStorage.setItem('vibrationsEnabled', String(settings.isHapticEnabled));
+    } catch {
+      // localStorage unavailable
+    }
+  }, [settings.isHapticEnabled]);
 
   // Listen for SETTINGS_CHANGED bus events (cross-tab / cross-component sync)
   const localOriginRef = useRef(false);

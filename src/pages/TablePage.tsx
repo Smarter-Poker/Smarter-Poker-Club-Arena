@@ -622,6 +622,7 @@ export default function TablePage({
   const hadShowdownRef = useRef(false); // Tracks if current hand reached showdown (cross-event ref)
   const totalRebuysRef = useRef(0); // Add-chips/rebuy count for session summary
   const actionLockRef = useRef(false); // Debounce rapid action button taps (300ms)
+  const triggerChipAnimationRef = useRef<((fromSeat: number, toPot: boolean, amount: number) => void) | null>(null);
   const [waitListPlayers, setWaitListPlayers] = useState<
     Array<{
       playerId: string;
@@ -1127,6 +1128,11 @@ export default function TablePage({
     userSettingsRef.current = userSettings;
   }, [userSettings]);
 
+  // Sync sound volume from persisted settings on mount (and when slider changes)
+  useEffect(() => {
+    soundService.setMasterVolume(userSettings.soundVolume / 100);
+  }, [userSettings.soundVolume]);
+
   // Hand history state — load from localStorage for session continuity
   const [handHistory, setHandHistory] = useState<HandRecord[]>(() => {
     try {
@@ -1627,6 +1633,13 @@ export default function TablePage({
           isHandInProgress: stage !== 'preflop' || pot > 0,
         };
       });
+
+      // Detect all-in runout: if all non-folded players are all-in, enable dramatic mode
+      const nonFolded = serverPlayers.filter((sp: any) => !sp.is_folded);
+      const allInCount = nonFolded.filter((sp: any) => sp.is_all_in).length;
+      if (nonFolded.length >= 2 && allInCount >= nonFolded.length - 1) {
+        setIsAllInMode(true);
+      }
 
       // --- NEW LOGIC: Hydrate the exact remaining time from the server payload ---
       const serverTurnStart = handState.turn_start_time_ms as number | undefined;
@@ -2134,17 +2147,52 @@ export default function TablePage({
           // Handle player leaving
           break;
         case 'PLAYER_ACTION': {
-          // Handle player action broadcast with sound effects
-          const action = (msg.payload as any)?.action?.toLowerCase() || '';
-          if (soundService.isEnabled()) {
-            if (action === 'bet' || action === 'raise' || action === 'call' || action === 'allin') {
-              soundService.playChips();
-            } else if (action === 'check') {
-              soundService.playCheck();
-            } else if (action === 'fold') {
-              soundService.playFold();
-            }
+          // Handle player action broadcast — Bible V8 §5.2 sequential animation
+          const actionPayload = msg.payload as any;
+          const action = (actionPayload?.action?.toLowerCase() || '') as string;
+          const actionSeat = (actionPayload?.seat as number) || 0;
+          const actionAmount = (actionPayload?.amount as number) || 0;
+          const seatIdx = actionSeat - 1;
+
+          // Step 1: Show action label immediately (200ms display)
+          if (seatIdx >= 0) {
+            setTableState((prev) => {
+              const newActions = [...prev.lastActions];
+              newActions[seatIdx] = action as any;
+              const newBets = [...prev.lastBetAmounts];
+              if (actionAmount > 0) newBets[seatIdx] = actionAmount;
+              return { ...prev, lastActions: newActions, lastBetAmounts: newBets };
+            });
+
+            // Clear action label after 2 seconds
+            setTimeout(() => {
+              setTableState((prev) => {
+                const newActions = [...prev.lastActions];
+                newActions[seatIdx] = null;
+                return { ...prev, lastActions: newActions };
+              });
+            }, 2000);
           }
+
+          // Step 2: Sound + chip animation after 200ms delay (Bible §5.2 sequence)
+          setTimeout(() => {
+            if (soundService.isEnabled()) {
+              if (action === 'allin') {
+                soundService.playAllIn();
+              } else if (action === 'bet' || action === 'raise' || action === 'call') {
+                soundService.playChips();
+              } else if (action === 'check') {
+                soundService.playCheck();
+              } else if (action === 'fold') {
+                soundService.playFold();
+              }
+            }
+            // Chip animation for bet actions
+            if ((action === 'bet' || action === 'raise' || action === 'call' || action === 'allin') && actionSeat > 0) {
+              triggerChipAnimationRef.current?.(seatIdx, true, actionAmount);
+            }
+          }, 200); // 200ms after action label per Bible V8 §5.2
+
           break;
         }
         case 'CHAT': {
@@ -2761,6 +2809,7 @@ export default function TablePage({
           pot: 0,
           sidePots: [],
         }));
+        setIsAllInMode(false);
         break;
     }
   }, [lastEvent]);
@@ -3339,6 +3388,9 @@ export default function TablePage({
     [seatPositions]
   );
 
+  // Keep ref in sync for use in closures that can't capture the callback directly
+  triggerChipAnimationRef.current = triggerChipAnimation;
+
   const handleAnimationComplete = useCallback((id: string) => {
     setChipAnimations((prev) => prev.filter((a) => a.id !== id));
   }, []);
@@ -3456,9 +3508,25 @@ export default function TablePage({
     tableId,
   ]);
 
-  // Trigger board animation on stage transition
+  // Trigger board animation + sounds on stage transition
+  const prevBoardStageRef = useRef<string>('preflop');
   useEffect(() => {
     setBoardStageKey((prev) => prev + 1);
+
+    const prevStage = prevBoardStageRef.current;
+    const newStage = tableState.boardStage;
+    prevBoardStageRef.current = newStage;
+
+    // Play community card sound when new board cards are dealt
+    if (soundService.isEnabled() && prevStage !== newStage) {
+      if (newStage === 'flop' || newStage === 'turn' || newStage === 'river') {
+        soundService.playCommunityCard();
+      }
+      // Play showdown sound when reaching showdown stage
+      if (newStage === 'showdown') {
+        soundService.playShowdown();
+      }
+    }
   }, [tableState.boardStage]);
 
   // Clear pre-action if game state changes significantly (new hand, someone raises after preaction set, etc)
@@ -4678,7 +4746,8 @@ export default function TablePage({
           autoMuckWinners: userSettings.autoMuckWinners,
           autoPostBlinds: userSettings.autoPostBlinds,
           soundEnabled: isSoundEnabled,
-          soundVolume: 70,
+          soundVolume: userSettings.soundVolume,
+          hapticEnabled: userSettings.isHapticEnabled,
           showHandStrength: userSettings.showHUD,
           showPotOdds: userSettings.showPotOdds,
           animationSpeed:
@@ -4692,6 +4761,7 @@ export default function TablePage({
           showBetSizePresets: true,
           confirmAllIn: userSettings.confirmAllIn,
           sitOutNextHand: sitOutNextHand,
+          tableTheme: userSettings.theme,
         }}
         onSettingsChange={(settingsUpdate) => {
           if (settingsUpdate.soundEnabled !== undefined) {
@@ -4730,6 +4800,16 @@ export default function TablePage({
           }
           if (settingsUpdate.autoPostBlinds !== undefined) {
             updateSetting('autoPostBlinds', settingsUpdate.autoPostBlinds);
+          }
+          if (settingsUpdate.hapticEnabled !== undefined) {
+            updateSetting('isHapticEnabled', settingsUpdate.hapticEnabled);
+          }
+          if (settingsUpdate.tableTheme !== undefined) {
+            updateSetting('theme', settingsUpdate.tableTheme);
+          }
+          if (settingsUpdate.soundVolume !== undefined) {
+            updateSetting('soundVolume', settingsUpdate.soundVolume);
+            soundService.setMasterVolume(settingsUpdate.soundVolume / 100);
           }
         }}
       />

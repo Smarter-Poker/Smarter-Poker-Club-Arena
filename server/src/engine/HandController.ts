@@ -770,4 +770,20 @@ export class HandController {
   getPot(): number {
     return this.state.pot;
   }
+
+  /**
+   * FIX 97: Get remaining deck cards for RIT dual/triple board dealing.
+   * Returns a copy of the remaining cards without modifying the deck.
+   */
+  getRemainingDeck(): import('../types.js').Card[] {
+    const deck = this.state.deck as unknown as import('./PokerEngine.js').Deck;
+    return deck.getRemainingCards();
+  }
+
+  /**
+   * FIX 97: Get current pots structure for RIT per-pot resolution.
+   */
+  getPots(): import('../types.js').Pot[] {
+    return this.state.pots.map((p) => ({ ...p, eligiblePlayers: [...p.eligiblePlayers] }));
+  }
 }

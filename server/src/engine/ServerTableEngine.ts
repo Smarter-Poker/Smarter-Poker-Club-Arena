@@ -27,6 +27,7 @@ import { MixedGameEngine } from './MixedGameEngine.js';
 import { RunItTwiceEngine } from './RunItTwiceEngine.js';
 import { InsuranceEngine, type InsuranceSettlement } from './InsuranceEngine.js';
 import { monteCarloEquity } from './MonteCarloEquity.js';
+import { evaluateHand, evaluateOmahaHand, compareHands } from './PokerEngine.js';
 import { RakebackEngine } from './RakebackEngine.js';
 import { ChipRaceEngine } from './ChipRaceEngine.js';
 import { TableBalancer } from './TableBalancer.js';
@@ -269,16 +270,35 @@ export class ServerTableEngine {
         reconnectGraceSeconds: 5,
       });
 
-      // Bible V8 §4.20: Configure Run It Twice engine
+      // ═══════════════════════════════════════════════════════════════════════
+      // FIX 92: MUTUAL EXCLUSION — RIT and Insurance CANNOT coexist on the
+      // same table. Per Dan: "RUN IT TWICE AND INSURANCE ARE NOT ALLOWED ON
+      // THE SAME TABLE." If both are enabled in DB, insurance takes priority
+      // (it's the more complex feature). RIT is disabled.
+      // ═══════════════════════════════════════════════════════════════════════
+      const ritEnabled = this.tableInfo.run_it_twice_enabled ?? false;
+      const insuranceEnabled = this.tableInfo.insurance_enabled ?? false;
+      const ritEffective = ritEnabled && !insuranceEnabled; // Insurance takes priority
+
+      if (ritEnabled && insuranceEnabled) {
+        console.warn(
+          `[ServerTableEngine:${this.tableId}] MUTUAL EXCLUSION: Both RIT and Insurance enabled — disabling RIT. These features cannot coexist.`
+        );
+      }
+
+      // Bible V8 §4.20 + FIX 98: Configure Run It Twice engine
+      // Chooser gets 5s, responders get 10s — per Dan's rules
       this.runItTwiceEngine.configure(this.tableId, {
-        enabled: this.tableInfo.run_it_twice_enabled ?? false,
-        maxRuns: 2,
+        enabled: ritEffective,
         autoDeclineTimeout: 10,
+        maxRuns: 3, // Support up to 3 boards (Dan's rules: player can choose 1/2/3)
+        chooserTimeout: 5,
+        responderTimeout: 10,
       });
 
       // Bible V8 §4.19: Configure Insurance engine
       this.insuranceEngine.configure(this.tableId, {
-        enabled: this.tableInfo.insurance_enabled ?? false,
+        enabled: insuranceEnabled,
       });
 
       // Bible V8 §4.4: Configure Straddle engine
@@ -288,6 +308,24 @@ export class ServerTableEngine {
           mississippiEnabled: this.tableInfo.straddle_type === 'mississippi',
           maxStraddles: this.tableInfo.max_straddles ?? 1,
           straddleMultiplier: 2, // Standard 2x straddle
+        });
+      }
+
+      // FIX 104: Configure MixedGameEngine if table has mixed game mode
+      if (this.tableInfo.game_variant === 'mixed' || this.tableInfo.mixed_game_preset) {
+        const presetName = this.tableInfo.mixed_game_preset || 'HOLDEM_OMAHA';
+        this.mixedGameEngine.configurePreset(
+          this.tableId,
+          presetName,
+          this.tableInfo.mixed_game_hands_per_variant ?? 6,
+          true // rotatePerOrbit
+        );
+      }
+
+      // FIX 104: Configure RakebackEngine for this table's club
+      if (this.tableInfo.club_id) {
+        this.rakebackEngine.configure(this.tableInfo.club_id, {
+          enabled: true, // Rakeback is always tracked when club exists
         });
       }
 
@@ -789,29 +827,65 @@ export class ServerTableEngine {
   }
 
   /**
-   * Bible V8 §4.20: Respond to a Run It Twice offer.
-   * Both players must accept for dual boards to be dealt.
+   * FIX 95: Bible V8 §4.20 + Dan's rules: Respond to a Run It Twice offer.
+   *
+   * Two-phase flow:
+   * Phase 1 — CHOOSER (best hand) picks how many boards: 1 (decline), 2, or 3.
+   *           Body: { tableId, runs: 1|2|3 }
+   * Phase 2 — ALL OTHER players accept or decline the chosen number.
+   *           Body: { tableId, response: 'accept'|'decline' }
+   *
+   * If chooser picks 1 → instant run-once, no further prompts.
+   * If ANY other player declines → fall back to run-once.
+   * If ALL accept → deal that many boards.
    */
   public respondToRIT(
     userId: string,
-    response: 'accept' | 'decline'
+    response?: 'accept' | 'decline',
+    runs?: 1 | 2 | 3
   ): { success: boolean; error?: string; status?: string } {
-    if (!this.runItTwiceEngine.isActive(this.tableId)) {
+    if (!this.runItTwiceEngine.hasPendingOffer(this.tableId)) {
       return { success: false, error: 'No active Run It Twice offer' };
     }
 
+    const state = this.runItTwiceEngine.getState(this.tableId);
+    if (!state) {
+      return { success: false, error: 'No RIT state found' };
+    }
+
+    // Phase 1: Chooser picks how many boards
+    if (userId === state.chooserPlayerId && runs !== undefined) {
+      this.runItTwiceEngine.chooserDecides(this.tableId, userId, runs);
+      if (runs === 1) {
+        return { success: true, status: 'declined_by_chooser' };
+      }
+      // Broadcast chooser's decision to all clients so others can accept/decline
+      broadcastHandState(this.tableId, {
+        type: 'rit_chooser_decided',
+        table_id: this.tableId,
+        chooserPlayerId: userId,
+        chosenRuns: runs,
+        waitingFor: state.allPlayerIds.filter((pid) => pid !== userId),
+      });
+      return { success: true, status: 'waiting_for_others' };
+    }
+
+    // Phase 2: Other players accept or decline
     if (response === 'accept') {
-      const bothAccepted = this.runItTwiceEngine.accept(this.tableId, userId);
-      if (bothAccepted) {
-        // Both players accepted — deal dual boards
-        // The actual dealing is handled by the HAND_COMPLETE/all-in runout flow
+      const allAccepted = this.runItTwiceEngine.accept(this.tableId, userId);
+      if (allAccepted) {
         return { success: true, status: 'accepted' };
       }
-      return { success: true, status: 'waiting_for_other_player' };
-    } else {
+      return { success: true, status: 'waiting_for_others' };
+    } else if (response === 'decline') {
       this.runItTwiceEngine.decline(this.tableId, userId);
       return { success: true, status: 'declined' };
     }
+
+    return {
+      success: false,
+      error: 'Invalid RIT response: provide runs (1/2/3) or response (accept/decline)',
+    };
   }
 
   /**
@@ -1773,9 +1847,275 @@ export class ServerTableEngine {
 
       this.runInsurancePerStreetFlow(offerPlayers, allInPlayers, pot);
     } else {
-      // NON-INSURANCE TABLE: Instant full runout (standard behavior)
-      this.handController.continueRunout();
+      // ═══════════════════════════════════════════════════════════════════════
+      // FIX 94: RIT (Run It Twice) offer — N-player support.
+      // Bible V8 §4.20 + Dan's rules:
+      // - RIT is ONLY offered when ALL active players are all-in
+      // - ANY number of players (2+), no limit — full table all-in is possible
+      // - Player with BEST ACTUAL HAND (not percentages) chooses 1/2/3 boards
+      // - ALL other all-in players must AGREE. Any decline → run once.
+      // - RIT and Insurance are mutually exclusive (FIX 92).
+      // - Multiple side pots are handled: each pot evaluated per board.
+      // ═══════════════════════════════════════════════════════════════════════
+      const ritEnabled = this.runItTwiceEngine.isEnabled(this.tableId);
+      if (ritEnabled && allInPlayers.length >= 2 && board.length < 5) {
+        // Determine the chooser: player with the BEST ACTUAL HAND right now
+        const variant = this.tableInfo?.game_variant || 'nlh';
+        const isOmaha = variant.startsWith('plo');
+        const evaluator = isOmaha ? evaluateOmahaHand : evaluateHand;
+
+        let chooserPlayerId = allInPlayers[0].user_id;
+        let bestEval = evaluator(allInPlayers[0].cards || [], board);
+
+        for (let i = 1; i < allInPlayers.length; i++) {
+          const playerEval = evaluator(allInPlayers[i].cards || [], board);
+          if (compareHands(playerEval, bestEval) > 0) {
+            bestEval = playerEval;
+            chooserPlayerId = allInPlayers[i].user_id;
+          }
+        }
+
+        const allPlayerIds = allInPlayers.map((p) => p.user_id);
+
+        this.runItTwiceEngine.offer(
+          this.tableId,
+          `${this.tableId}:${this.handCount}`,
+          chooserPlayerId,
+          allPlayerIds,
+          pot
+        );
+
+        // Broadcast RIT offer to ALL clients
+        broadcastHandState(this.tableId, {
+          type: 'rit_offer',
+          table_id: this.tableId,
+          hand_number: this.handCount,
+          chooserPlayerId,
+          allPlayerIds,
+          pot,
+          maxRuns: this.runItTwiceEngine.getChosenRuns(this.tableId),
+          timeoutSeconds: 10,
+        });
+
+        // Wait for all players to respond.
+        // Chooser picks 1/2/3 → others accept/decline → engine resolves.
+        this.waitForRITResponse(() => {
+          if (this.runItTwiceEngine.isActive(this.tableId) && this.handController) {
+            // ═══════════════════════════════════════════════════════════════
+            // FIX 97: RIT ACCEPTED — Deal multiple boards, evaluate per pot.
+            // Bible V8 §4.20: Rake applies ONCE (not per board).
+            // Each pot is split across boards (half/half or third/third/third).
+            // Each board is evaluated independently for each pot.
+            // ═══════════════════════════════════════════════════════════════
+            this.dealAndResolveRIT(allInPlayers);
+          } else if (this.handController) {
+            // Declined — normal single runout
+            this.handController.continueRunout();
+          }
+        });
+      } else {
+        // NO INSURANCE, NO RIT: Instant full runout (standard behavior)
+        this.handController.continueRunout();
+      }
     }
+  }
+
+  /**
+   * Wait for both players to respond to RIT offer.
+   * Similar to waitForInsuranceResponses but checks RIT state.
+   */
+  private waitForRITResponse(onComplete: () => void): void {
+    let completed = false;
+    const finish = () => {
+      if (completed) return;
+      completed = true;
+      clearInterval(checkInterval);
+      clearTimeout(safetyTimeout);
+      onComplete();
+    };
+
+    const checkInterval = setInterval(() => {
+      const state = this.runItTwiceEngine.getState(this.tableId);
+      // Complete when status is no longer 'offered' (accepted, declined, or resolved)
+      if (!state || state.status !== 'offered') {
+        finish();
+      }
+    }, 250);
+
+    // FIX 98: Safety timeout: 18 seconds (5s chooser + 10s responders + 3s buffer)
+    const safetyTimeout = setTimeout(() => {
+      finish();
+    }, 18_000);
+  }
+
+  /**
+   * FIX 97: Deal and resolve RIT (Run It Twice/Three Times).
+   * N-player support with side pots.
+   *
+   * Flow:
+   * 1. Get remaining deck cards from HandController
+   * 2. Deal 2 or 3 independent boards from remaining deck
+   * 3. For each board: evaluate each pot's eligible players → find winner
+   * 4. Split each pot across boards (half/half or third/third/third)
+   * 5. Sum up distributions and apply to stacks
+   * 6. Broadcast results, then finalize the hand
+   *
+   * Bible V8 §4.20: Rake applies ONCE (not per board).
+   */
+  private dealAndResolveRIT(allInPlayers: import('../types.js').SeatPlayer[]): void {
+    if (!this.handController) return;
+
+    const runs = this.runItTwiceEngine.getChosenRuns(this.tableId);
+    if (runs < 2) {
+      this.handController.continueRunout();
+      return;
+    }
+
+    const existingBoard = this.handController.getCommunityCards();
+    const remainingDeck = this.handController.getRemainingDeck();
+    const cardsNeeded = 5 - existingBoard.length;
+
+    if (remainingDeck.length < cardsNeeded * runs) {
+      console.error(
+        `[ServerTableEngine:${this.tableId}] RIT: Not enough cards for ${runs} runouts (need ${cardsNeeded * runs}, have ${remainingDeck.length})`
+      );
+      this.handController.continueRunout();
+      return;
+    }
+
+    // Deal independent boards
+    const boards: import('../types.js').Card[][] = [];
+    for (let r = 0; r < runs; r++) {
+      const runCards = remainingDeck.slice(r * cardsNeeded, (r + 1) * cardsNeeded);
+      boards.push([...existingBoard, ...runCards]);
+    }
+
+    // Get pots from HandController for per-pot evaluation
+    const pots = this.handController.getPots();
+    const variant = this.tableInfo?.game_variant || 'nlh';
+    const isOmaha = variant.startsWith('plo');
+    const evaluator = isOmaha ? evaluateOmahaHand : evaluateHand;
+
+    // Distribution: playerId → total chips won across all boards
+    const totalDistribution = new Map<string, number>();
+
+    // For each pot, split across boards and evaluate
+    for (const pot of pots) {
+      const potPerBoard = pot.amount / runs;
+
+      for (let boardIdx = 0; boardIdx < runs; boardIdx++) {
+        const board = boards[boardIdx];
+
+        // Find the best hand among eligible players for this pot on this board
+        let bestPlayerId = '';
+        let bestHand: import('../types.js').EvaluatedHand | null = null;
+        const tiedPlayers: string[] = [];
+
+        for (const playerId of pot.eligiblePlayers) {
+          const player = allInPlayers.find((p) => p.user_id === playerId);
+          if (!player || !player.cards || player.cards.length === 0) continue;
+
+          const hand = evaluator(player.cards, board);
+
+          if (!bestHand) {
+            bestHand = hand;
+            bestPlayerId = playerId;
+            tiedPlayers.length = 0;
+            tiedPlayers.push(playerId);
+          } else {
+            const cmp = compareHands(hand, bestHand);
+            if (cmp > 0) {
+              bestHand = hand;
+              bestPlayerId = playerId;
+              tiedPlayers.length = 0;
+              tiedPlayers.push(playerId);
+            } else if (cmp === 0) {
+              tiedPlayers.push(playerId);
+            }
+          }
+        }
+
+        // Distribute this board's share of this pot
+        if (tiedPlayers.length > 1) {
+          // Split pot among tied players on this board
+          const splitAmount = potPerBoard / tiedPlayers.length;
+          for (const pid of tiedPlayers) {
+            totalDistribution.set(pid, (totalDistribution.get(pid) || 0) + splitAmount);
+          }
+        } else if (bestPlayerId) {
+          totalDistribution.set(
+            bestPlayerId,
+            (totalDistribution.get(bestPlayerId) || 0) + potPerBoard
+          );
+        }
+      }
+    }
+
+    // Round to cents and fix rounding errors
+    const totalPot = pots.reduce((sum, p) => sum + p.amount, 0);
+    let distributed = 0;
+    const entries = [...totalDistribution.entries()];
+    for (const [pid, amount] of entries) {
+      const rounded = Math.trunc(amount * 100) / 100;
+      totalDistribution.set(pid, rounded);
+      distributed += rounded;
+    }
+    // Give rounding remainder to first winner
+    if (entries.length > 0 && Math.abs(totalPot - distributed) > 0.001) {
+      const [firstPid] = entries[0];
+      totalDistribution.set(
+        firstPid,
+        (totalDistribution.get(firstPid) || 0) + (totalPot - distributed)
+      );
+    }
+
+    // Apply distributions to player stacks
+    const state = this.handController.getState();
+    for (const [playerId, amount] of totalDistribution) {
+      const enginePlayer = state.players.find((p) => p.user_id === playerId);
+      const seatedPlayer = this.seatedPlayers.find((p) => p.user_id === playerId);
+      if (enginePlayer) enginePlayer.stack += amount;
+      if (seatedPlayer) seatedPlayer.stack += amount;
+    }
+
+    // Broadcast RIT results
+    broadcastHandState(this.tableId, {
+      type: 'rit_result',
+      table_id: this.tableId,
+      hand_number: this.handCount,
+      runs,
+      boards: boards.map((b) => b.map((c) => `${c.rank}${c.suit}`)),
+      distribution: Object.fromEntries(totalDistribution),
+      pots: pots.map((p) => ({ amount: p.amount, eligiblePlayers: p.eligiblePlayers })),
+    });
+
+    // Resolve in RIT engine (for event emission and cleanup)
+    // Use first eligible winner per board for the engine's simpler tracking
+    const boardWinners = boards.map((board) => {
+      let best: import('../types.js').EvaluatedHand | null = null;
+      let winnerId = '';
+      for (const p of allInPlayers) {
+        if (!p.cards || p.cards.length === 0) continue;
+        const hand = evaluator(p.cards, board);
+        if (!best || compareHands(hand, best) > 0) {
+          best = hand;
+          winnerId = p.user_id;
+        }
+      }
+      return winnerId;
+    });
+
+    this.runItTwiceEngine.resolve(
+      this.tableId,
+      boardWinners[0] || '',
+      boardWinners[1] || '',
+      boardWinners[2]
+    );
+
+    // Finalize the hand (showdown + HAND_COMPLETE)
+    // Note: HandController's normal pot distribution is SKIPPED here — we handled it.
+    // Just call finalizeRunout to emit HAND_COMPLETE.
+    this.handController.finalizeRunout();
   }
 
   /**
@@ -1851,33 +2191,86 @@ export class ServerTableEngine {
 
     const offerTimeout = 15; // Matches InsuranceEngine DEFAULT_CONFIG.offerTimeoutSeconds
 
+    // ═══════════════════════════════════════════════════════════════════════
+    // FIX 103: Insurance is ONLY offered to the player with the BEST HAND.
+    // Dan's rules:
+    // - Evaluate all all-in players' hands against the current board
+    // - Find the leader (best actual hand, not equity percentages)
+    // - If players are TIED (same hand rank + kickers), NO insurance offered
+    // - On later streets, re-evaluate — if a different player takes the lead,
+    //   insurance is offered to THEM (if they haven't declined for hand)
+    // ═══════════════════════════════════════════════════════════════════════
+    const variant = this.tableInfo?.game_variant || 'nlh';
+    const isOmaha = variant.startsWith('plo');
+    const handEvaluator = isOmaha ? evaluateOmahaHand : evaluateHand;
+
+    // Evaluate all hands on current board
+    const playerEvals = offerPlayers.map((p) => ({
+      ...p,
+      hand: handEvaluator(p.holeCards, result.board),
+    }));
+
+    // Sort by hand rank descending (best first)
+    playerEvals.sort((a, b) => compareHands(b.hand, a.hand));
+
+    // Check for tie: if top two players have identical hands, no insurance
+    const isTied =
+      playerEvals.length >= 2 && compareHands(playerEvals[0].hand, playerEvals[1].hand) === 0;
+
+    const bestHandPlayer = isTied ? null : playerEvals[0];
+
     // Check if this is the first street of offers or a recalculation
     const existingOffers = this.insuranceEngine.getOffers(this.tableId);
 
     if (existingOffers.length === 0) {
-      // First time: create offers with current board
-      const offers = this.insuranceEngine.createOffers(
-        this.tableId,
-        `${this.tableId}:${this.handCount}`,
-        offerPlayers,
-        result.board,
-        pot
-      );
+      // First time: create offer for ONLY the best hand player
+      if (bestHandPlayer) {
+        const offers = this.insuranceEngine.createOffers(
+          this.tableId,
+          `${this.tableId}:${this.handCount}`,
+          [bestHandPlayer], // ONLY the leader gets insurance
+          result.board,
+          pot
+        );
 
-      if (offers.length > 0) {
-        this.broadcastInsuranceOffers(offers, pot, offerTimeout);
+        if (offers.length > 0) {
+          this.broadcastInsuranceOffers(offers, pot, offerTimeout);
+        }
+      } else {
+        console.log(
+          `[ServerTableEngine:${this.tableId}] Insurance: Tied hands — no insurance offered`
+        );
       }
     } else {
-      // Subsequent streets: recalculate equity for existing offers.
-      // This re-offers to players who "Declined Now" (not "Declined for Hand")
-      // if their equity improved (they may now be the leader).
-      this.insuranceEngine.recalculateOffers(this.tableId, result.board, pot);
+      // Subsequent streets: recalculate equity and re-evaluate leadership.
+      // Clear old offers and create new one for the current leader.
+      if (bestHandPlayer) {
+        // Dispose old offers and create fresh for the new leader
+        this.insuranceEngine.dispose(this.tableId);
+        this.insuranceEngine.configure(this.tableId, { enabled: true });
 
-      // Broadcast updated offers (if any are still pending)
-      const currentOffers = this.insuranceEngine.getOffers(this.tableId);
-      const pendingOffers = currentOffers.filter((o) => o.status === 'offered');
-      if (pendingOffers.length > 0) {
-        this.broadcastInsuranceOffers(pendingOffers, pot, offerTimeout);
+        // Only re-offer if the leader hasn't declined for hand
+        const prevOffers = existingOffers;
+        const leaderPrevOffer = prevOffers.find((o) => o.playerId === bestHandPlayer.playerId);
+        const leaderDeclinedForHand = leaderPrevOffer?.declinedForHand ?? false;
+
+        if (!leaderDeclinedForHand) {
+          const offers = this.insuranceEngine.createOffers(
+            this.tableId,
+            `${this.tableId}:${this.handCount}`,
+            [bestHandPlayer],
+            result.board,
+            pot
+          );
+
+          if (offers.length > 0) {
+            this.broadcastInsuranceOffers(offers, pot, offerTimeout);
+          }
+        }
+      } else {
+        console.log(
+          `[ServerTableEngine:${this.tableId}] Insurance: Tied hands on new street — no insurance offered`
+        );
       }
     }
 

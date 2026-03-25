@@ -318,19 +318,29 @@ export async function getTableState(tableId: string): Promise<Record<string, unk
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
- * Bible V8 §4.20: Respond to a Run It Twice offer.
- * @param response - 'accept' or 'decline'
+ * FIX 96: Bible V8 §4.20 + Dan's rules: Run It Twice 2-phase flow.
+ *
+ * Phase 1 — CHOOSER (best hand): Call with `runs` param (1=decline, 2=twice, 3=three times)
+ * Phase 2 — OTHER PLAYERS: Call with `response` param ('accept' or 'decline')
+ *
+ * @param tableId - The table UUID
+ * @param options.response - 'accept' or 'decline' (for non-chooser players)
+ * @param options.runs - 1, 2, or 3 (for the chooser only)
  */
 export async function respondToRIT(
   tableId: string,
-  response: 'accept' | 'decline'
+  options: { response?: 'accept' | 'decline'; runs?: 1 | 2 | 3 }
 ): Promise<ActionResult & { status?: string }> {
   try {
     const headers = await getAuthHeaders();
+    const body: Record<string, unknown> = { tableId };
+    if (options.runs !== undefined) body.runs = options.runs;
+    if (options.response !== undefined) body.response = options.response;
+
     const resp = await fetch(`${GAME_SERVER_URL}/rit`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ tableId, response }),
+      body: JSON.stringify(body),
     });
     if (!resp.ok) return { success: false, error: `Server error (${resp.status})` };
     return await resp.json();

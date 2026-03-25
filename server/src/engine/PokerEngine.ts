@@ -107,6 +107,14 @@ export class Deck {
     this.cards = this.cards.filter((c) => RANK_VALUES[c.rank] >= minValue);
     this.shuffle();
   }
+
+  /**
+   * FIX 97: Get remaining cards without modifying the deck.
+   * Used for RIT dual/triple board dealing.
+   */
+  getRemainingCards(): Card[] {
+    return [...this.cards];
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

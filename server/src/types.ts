@@ -35,7 +35,8 @@ export type GameVariant =
   | 'plo8'
   | 'short_deck'
   | 'ofc'
-  | 'ofc_pineapple';
+  | 'ofc_pineapple'
+  | 'mixed';
 /** Bible V8 §3.1: Full table state machine states */
 export type TableStatus =
   | 'empty'
@@ -127,6 +128,10 @@ export interface TableInfo {
   min_players?: number;
   /** Bible V8 §2.1: Table display name */
   name?: string;
+  /** FIX 104: Mixed game preset name (e.g., 'HOLDEM_OMAHA') */
+  mixed_game_preset?: string;
+  /** FIX 104: Hands per variant before rotation */
+  mixed_game_hands_per_variant?: number;
 }
 
 export interface SeatedPlayer {

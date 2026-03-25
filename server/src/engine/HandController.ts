@@ -123,6 +123,7 @@ export class HandController {
             sbPlayer.totalInvested += sbAmount;
             sbPlayer.stack -= sbAmount;
             this.state.pot += sbAmount;
+            if (sbPlayer.stack === 0) sbPlayer.is_all_in = true;
         }
 
         const bbPlayer = this.state.players.find(p => p.seat === bbSeat);
@@ -133,6 +134,7 @@ export class HandController {
             bbPlayer.stack -= bbAmount;
             this.state.pot += bbAmount;
             this.state.currentBet = bbAmount;
+            if (bbPlayer.stack === 0) bbPlayer.is_all_in = true;
         }
 
         if (this.config.ante) {

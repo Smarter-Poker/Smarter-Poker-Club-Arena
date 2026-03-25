@@ -57,11 +57,18 @@ function variantMatchesFilter(variant: string | undefined, filter: GameFilter): 
   const v = (variant || 'nlh').toLowerCase();
   switch (filter) {
     case "Hold'em":
-      return v === 'nlh' || v === 'short_deck';
+      return v === 'nlh' || v === 'flh' || v === 'short_deck';
     case 'Omaha':
-      return v.startsWith('plo') || v === 'plo8';
+      return v.startsWith('plo') || v === 'plo_hilo' || v === 'plo8';
     case 'Mixed':
-      return v === 'ofc' || v === 'ofc_pineapple' || v === 'pineapple';
+      return (
+        v === 'mixed' ||
+        v === 'ofc' ||
+        v === 'ofc_pineapple' ||
+        v === 'double_board' ||
+        v === 'pineapple' ||
+        v === 'crazy_pineapple'
+      );
     default:
       return true;
   }
@@ -72,15 +79,20 @@ function getVariantLabel(variant: string | undefined): string {
   const v = (variant || 'nlh').toLowerCase();
   const map: Record<string, string> = {
     nlh: 'NLH',
+    flh: 'FLH',
     short_deck: '6+',
     plo: 'PLO',
     plo4: 'PLO4',
     plo5: 'PLO5',
     plo6: 'PLO6',
+    plo_hilo: 'PLO Hi-Lo',
     plo8: 'PLO8',
     ofc: 'OFC',
     ofc_pineapple: 'OFC-P',
+    mixed: 'MIXED',
+    double_board: '2Board',
     pineapple: 'Pine',
+    crazy_pineapple: 'CPine',
   };
   return map[v] || v.toUpperCase();
 }

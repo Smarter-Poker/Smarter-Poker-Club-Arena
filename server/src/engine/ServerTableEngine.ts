@@ -311,8 +311,16 @@ export class ServerTableEngine {
         });
       }
 
-      // FIX 112: Mixed games removed — this block is disabled.
-      // No table can have game_variant='mixed' after variant cleanup.
+      // FIX 104: Configure MixedGameEngine if table has mixed game mode
+      if (this.tableInfo.game_variant === 'mixed' || this.tableInfo.mixed_game_preset) {
+        const presetName = this.tableInfo.mixed_game_preset || 'HOLDEM_OMAHA';
+        this.mixedGameEngine.configurePreset(
+          this.tableId,
+          presetName,
+          this.tableInfo.mixed_game_hands_per_variant ?? 6,
+          true // rotatePerOrbit
+        );
+      }
 
       // FIX 104: Configure RakebackEngine for this table's club
       if (this.tableInfo.club_id) {
@@ -1655,11 +1663,11 @@ export class ServerTableEngine {
         // Note: atomicStackService persists across hands (tracks stack versions)
 
         // Bible V8 §4.19: Settle insurance BEFORE disposing (offers cleared on dispose)
-        // FIX 110: Pass ALL winner IDs — chops (multiple winners) = PUSH (insurance voided)
         if (this.currentHandWinnerIds.length > 0) {
+          const winnerId = this.currentHandWinnerIds[0];
           this.currentHandInsuranceSettlements = this.insuranceEngine.settle(
             this.tableId,
-            this.currentHandWinnerIds
+            winnerId
           );
 
           // Bible V8 §4.19: Insurance settlement — applied like rake at the end.
@@ -2105,9 +2113,9 @@ export class ServerTableEngine {
     );
 
     // Finalize the hand (showdown + HAND_COMPLETE)
-    // FIX 109: skipDistribution=true — RIT already distributed pots above.
-    // Without this, completeHand() re-distributes pots → players get DOUBLE money.
-    this.handController.finalizeRunout(true);
+    // Note: HandController's normal pot distribution is SKIPPED here — we handled it.
+    // Just call finalizeRunout to emit HAND_COMPLETE.
+    this.handController.finalizeRunout();
   }
 
   /**

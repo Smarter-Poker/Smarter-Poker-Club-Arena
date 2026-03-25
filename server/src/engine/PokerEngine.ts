@@ -538,10 +538,8 @@ export function determineWinners(
   }
 
   const isOmaha = gameVariant.startsWith('plo');
-  // Bible V8 §7.6: Both plo8 and plo_hilo use hi-lo split evaluation
-  const isHiLo =
-    isOmaha &&
-    (gameVariant === 'plo8' || gameVariant === 'plo_hilo' || gameVariant.includes('hilo'));
+  // Bible V8 §7.6: PLO8 uses hi-lo split evaluation
+  const isHiLo = isOmaha && gameVariant === 'plo8';
   const evaluator = isOmaha ? evaluateOmahaHand : evaluateHand;
 
   const playerHands = activePlayers.map((p) => ({

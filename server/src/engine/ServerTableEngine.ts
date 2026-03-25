@@ -32,7 +32,13 @@ import { TableBalancer } from './TableBalancer.js';
 import { TableBreakEngine } from './TableBreakEngine.js';
 import { OFCDealingOrchestrator } from './OFCDealingOrchestrator.js';
 import { EngineTelemetry } from './EngineTelemetry.js';
-import { getFullRakeConfig, calculateBBJFee, detectBBJHit } from '../config/RakeConfig.js';
+import {
+  getFullRakeConfig,
+  calculateBBJFee,
+  detectBBJHit,
+  type BBJDetectionResult,
+  type ServerRakeConfigResult,
+} from '../config/RakeConfig.js';
 import type { ValidationContext } from './ServerActionValidator.js';
 import {
   broadcastHandState,
@@ -48,6 +54,7 @@ import {
   logBBJCollection,
   logInsuranceSettlement,
   logHandHistory,
+  processBBJPayout,
   cleanupChannel,
   supabase,
 } from '../services/supabase.js';
@@ -101,6 +108,8 @@ export class ServerTableEngine {
   private currentHandWinners: { userId: string; amount: number }[] = [];
   private currentHandContributions: Map<string, number> = new Map(); // userId → totalInvested
   private currentHandInsuranceSettlements: InsuranceSettlement[] = [];
+  private currentHandBBJHit: BBJDetectionResult | null = null;
+  private currentHandBBJPayoutConfig: ServerRakeConfigResult | null = null;
   private currentHandShowdownResults: Array<{
     userId: string;
     handRanking: number;
@@ -806,17 +815,29 @@ export class ServerTableEngine {
 
   /**
    * Bible V8 §4.19: Respond to an insurance offer.
+   * @param coveragePercent — Optional partial coverage (1-100%). Default = 100% (full insurance).
+   *   Player uses a slider UI to adjust. e.g., 75 = "75% insurance" = 75% of the payout/cost.
+   * @param declineForHand — If declining, true = "Decline for Hand" (never re-offer),
+   *   false = "Decline Now" (may re-offer on next street if equity shifts).
    */
   public respondToInsurance(
     userId: string,
-    response: 'accept' | 'decline'
-  ): { success: boolean; error?: string; status?: string } {
+    response: 'accept' | 'decline',
+    coveragePercent: number = 100,
+    declineForHand: boolean = false
+  ): {
+    success: boolean;
+    error?: string;
+    status?: string;
+    premium?: number;
+    insuredAmount?: number;
+  } {
     if (!this.insuranceEngine.isEnabled(this.tableId)) {
       return { success: false, error: 'Insurance is not enabled at this table' };
     }
 
     if (response === 'accept') {
-      const accepted = this.insuranceEngine.accept(this.tableId, userId);
+      const accepted = this.insuranceEngine.acceptPartial(this.tableId, userId, coveragePercent);
       if (!accepted) {
         return { success: false, error: 'No pending insurance offer for this player' };
       }
@@ -824,11 +845,30 @@ export class ServerTableEngine {
       // Insurance premium is deducted from the winner's pot at settlement (like rake/BBJ).
       // If the insured player LOSES, they get paid from union/club bank.
       // Settlement happens in HAND_COMPLETE handler.
-      return { success: true, status: 'accepted' };
+      const offers = this.insuranceEngine.getOffers(this.tableId);
+      const accepted_offer = offers.find((o) => o.playerId === userId && o.status === 'accepted');
+      return {
+        success: true,
+        status: 'accepted',
+        premium: accepted_offer?.premium,
+        insuredAmount: accepted_offer?.insuredAmount,
+      };
     } else {
-      this.insuranceEngine.decline(this.tableId, userId);
-      return { success: true, status: 'declined' };
+      // Two decline modes: "Decline Now" (this street) or "Decline for Hand" (all streets)
+      this.insuranceEngine.decline(this.tableId, userId, declineForHand);
+      return { success: true, status: declineForHand ? 'declined_for_hand' : 'declined' };
     }
+  }
+
+  /**
+   * Bible V8 §4.19: Preview insurance cost for a given coverage percentage.
+   * Used by client slider to show real-time cost/payout as player adjusts.
+   */
+  public previewInsurance(
+    userId: string,
+    coveragePercent: number
+  ): { premium: number; insuredAmount: number; coveragePercent: number } | null {
+    return this.insuranceEngine.getPreview(this.tableId, userId, coveragePercent);
   }
 
   /**
@@ -1190,6 +1230,9 @@ export class ServerTableEngine {
     this.currentHandWinners = [];
     this.currentHandContributions.clear(); // Bible V8 §4.18: Reset weighted rakeback tracking
     this.currentHandInsuranceSettlements = []; // Bible V8 §4.19: Reset insurance settlements
+    this.currentHandShowdownResults = []; // BBJ: Reset showdown results for new hand
+    this.currentHandBBJHit = null; // BBJ: Reset hit detection for new hand
+    this.currentHandBBJPayoutConfig = null;
     this.timeBankActivatedThisTurn = false; // Bible V8 §6.2: Reset time bank flag for new hand
     this.showHandPlayers = null; // Reset voluntary show-hand set for new hand
 
@@ -1588,6 +1631,73 @@ export class ServerTableEngine {
                 enginePlayer.stack = Math.max(0, enginePlayer.stack - settlement.premium);
               }
             }
+          }
+        }
+
+        // ═══════════════════════════════════════════════════════════════════════
+        // BBJ HIT DETECTION — Check if showdown qualifies as a Bad Beat Jackpot
+        // ═══════════════════════════════════════════════════════════════════════
+        if (
+          this.currentHandShowdownResults.length >= 2 &&
+          this.currentHandWinnerIds.length > 0 &&
+          this.tableInfo
+        ) {
+          const variant = this.tableInfo.game_variant || 'nlh';
+          const dealtInPlayerIds = players.map((p) => p.user_id);
+          const bbjResult = detectBBJHit(
+            this.currentHandShowdownResults,
+            this.currentHandWinnerIds[0],
+            variant,
+            this.currentHandPotSize,
+            this.tableInfo.big_blind,
+            dealtInPlayerIds.length,
+            dealtInPlayerIds
+          );
+
+          if (bbjResult.hit) {
+            console.log(
+              `[ServerTableEngine:${this.tableId}] *** BBJ HIT! *** ` +
+                `Loser: ${bbjResult.loserUserId} (${bbjResult.loserHand?.name}), ` +
+                `Winner: ${bbjResult.winnerUserId} (${bbjResult.winnerHand?.name})`
+            );
+
+            // Get BBJ payout config for this stakes level
+            const rakeConfig = getFullRakeConfig(
+              this.tableInfo.small_blind,
+              this.tableInfo.big_blind,
+              variant
+            );
+
+            // BBJ payout: chips credited directly to players' table balances
+            // The actual pool amounts are fetched from Supabase and paid from union/club bank
+            // For now, broadcast the BBJ_HIT event with payout percentages.
+            // The actual payout amounts will be calculated in postHandTasks() using the pool balance.
+            broadcastHandState(this.tableId, {
+              type: 'bbj_hit',
+              table_id: this.tableId,
+              hand_number: this.handCount,
+              loser: {
+                userId: bbjResult.loserUserId,
+                hand: bbjResult.loserHand,
+                payoutPercent: rakeConfig.bbjPayoutLoser, // % of BBJ pool
+              },
+              winner: {
+                userId: bbjResult.winnerUserId,
+                hand: bbjResult.winnerHand,
+                payoutPercent: rakeConfig.bbjPayoutWinner,
+              },
+              tableShare: {
+                playerIds: dealtInPlayerIds,
+                payoutPercent: rakeConfig.bbjPayoutTable,
+              },
+              totalPayoutPercent: rakeConfig.bbjPayoutTotalPercent,
+              variant,
+              qualifyingHandLabel: bbjResult.qualifyingHandLabel,
+            });
+
+            // Store BBJ hit for postHandTasks to process the actual payouts
+            this.currentHandBBJHit = bbjResult;
+            this.currentHandBBJPayoutConfig = rakeConfig;
           }
         }
 
@@ -2035,6 +2145,93 @@ export class ServerTableEngine {
           payout: settlement.payout,
           playerWon: !settlement.won, // settlement.won = insurance paid out = player lost the hand
         });
+      }
+    }
+
+    // 3c. BBJ Payout — if a BBJ hit was detected in HAND_COMPLETE, process the actual payout
+    // Chips credited directly to players' table balances from union/club BBJ pool
+    if (
+      !this.isTournamentTable() &&
+      this.tableInfo?.club_id &&
+      this.currentHandBBJHit?.hit &&
+      this.currentHandBBJPayoutConfig
+    ) {
+      const bbjHit = this.currentHandBBJHit;
+      const payoutConfig = this.currentHandBBJPayoutConfig;
+      const result = await processBBJPayout({
+        tableId: this.tableId,
+        clubId: this.tableInfo.club_id,
+        handNumber: this.handCount,
+        loserUserId: bbjHit.loserUserId!,
+        winnerUserId: bbjHit.winnerUserId!,
+        loserHandName: bbjHit.loserHand?.name || 'Unknown',
+        winnerHandName: bbjHit.winnerHand?.name || 'Unknown',
+        dealtInPlayerIds: bbjHit.dealtInPlayerIds || [],
+        payoutTotalPercent: payoutConfig.bbjPayoutTotalPercent,
+      });
+
+      if (result) {
+        // Credit chips directly to players' table stacks
+        // LOSER (bad beat holder) gets 50% of total payout
+        const loserSeat = players.find((p) => p.user_id === bbjHit.loserUserId);
+        if (loserSeat) {
+          loserSeat.stack += result.loserShare;
+          console.log(
+            `[ServerTableEngine:${this.tableId}] BBJ → Loser ${bbjHit.loserUserId} +$${result.loserShare}`
+          );
+        }
+
+        // WINNER (hand winner) gets 25% of total payout
+        const winnerSeat = players.find((p) => p.user_id === bbjHit.winnerUserId);
+        if (winnerSeat) {
+          winnerSeat.stack += result.winnerShare;
+          console.log(
+            `[ServerTableEngine:${this.tableId}] BBJ → Winner ${bbjHit.winnerUserId} +$${result.winnerShare}`
+          );
+        }
+
+        // TABLE SHARE: remaining 25% split equally among dealt-in players (excluding loser/winner)
+        const tableOnlyPlayers = (bbjHit.dealtInPlayerIds || []).filter(
+          (id) => id !== bbjHit.loserUserId && id !== bbjHit.winnerUserId
+        );
+        for (const playerId of tableOnlyPlayers) {
+          const seat = players.find((p) => p.user_id === playerId);
+          if (seat) {
+            seat.stack += result.perPlayerShare;
+            console.log(
+              `[ServerTableEngine:${this.tableId}] BBJ → Table player ${playerId} +$${result.perPlayerShare}`
+            );
+          }
+        }
+
+        // Re-sync stacks to database with BBJ payouts included
+        await syncStacks(
+          this.tableId,
+          players.map((p) => ({
+            user_id: p.user_id,
+            stack: p.stack,
+            time_bank_uses_remaining: p.time_bank_uses_remaining,
+          }))
+        );
+
+        // Broadcast updated stacks + BBJ payout details so clients show the celebration
+        broadcastHandState(this.tableId, {
+          type: 'bbj_payout_complete',
+          table_id: this.tableId,
+          hand_number: this.handCount,
+          totalPayout: result.totalPayout,
+          loser: { userId: bbjHit.loserUserId, share: result.loserShare },
+          winner: { userId: bbjHit.winnerUserId, share: result.winnerShare },
+          tableShare: result.tableShare,
+          perPlayerShare: result.perPlayerShare,
+          tablePlayerIds: tableOnlyPlayers,
+          // Include updated stacks for all players
+          updatedStacks: players.map((p) => ({ userId: p.user_id, stack: p.stack })),
+        });
+
+        console.log(
+          `[ServerTableEngine:${this.tableId}] BBJ payout complete: $${result.totalPayout} distributed to ${players.length} players`
+        );
       }
     }
 

@@ -6,13 +6,18 @@
  * Manages insurance offers when players go all-in:
  * - Triggered when 2+ players are all-in before the river
  * - Uses MonteCarloEquity to calculate real equity percentages
- * - Premium = (1 - equity%) × insuredAmount × margin
+ * - Premium = (1 - equity%) × insuredAmount × houseMargin (20% edge)
  * - Offer/accept/decline flow with configurable timeout
- * - Settlement after board is dealt
+ * - Partial coverage: player can insure 1-100% via slider (default 100%)
+ * - Per-street recalculation: equity changes as board cards are dealt
+ * - Max insurable = pot amount
+ * - Settlement after board is dealt — premium deducted like rake at end
  * - Optional event callbacks for UI synchronization
  *
  * Ported from client: src/engine/InsuranceEngine.ts (291 lines)
  * Server adaptation: No masterBus — uses optional onEvent callback. Class export, not singleton.
+ *
+ * FIX 78: House margin 5%→20%, partial coverage slider, per-street recalc
  */
 
 import { monteCarloEquity } from './MonteCarloEquity.js';
@@ -24,7 +29,9 @@ import type { Card } from '../types.js';
 
 export interface InsuranceConfig {
   enabled: boolean;
+  /** House margin multiplier: 1.20 = 20% house edge on premiums */
   houseMargin: number;
+  /** Max insurable as % of pot (100 = can insure up to full pot) */
   maxInsurablePercent: number;
   offerTimeoutSeconds: number;
   minPotForInsurance: number;
@@ -36,10 +43,21 @@ export interface InsuranceOffer {
   handId: string;
   playerId: string;
   holeCards: Card[];
+  /** Player's equity % (0-100) at current board state */
   equity: number;
+  /** Premium for FULL insurance (100% coverage) — scales with coveragePercent */
+  fullPremium: number;
+  /** Actual premium to pay based on coveragePercent */
   premium: number;
+  /** Full insured amount (100% coverage) — scales with coveragePercent */
+  fullInsuredAmount: number;
+  /** Actual insured amount based on coveragePercent */
   insuredAmount: number;
+  /** Coverage percentage chosen by player (1-100, default 100) */
+  coveragePercent: number;
   status: 'offered' | 'accepted' | 'declined' | 'settled';
+  /** If true, player declined for the entire hand (won't be re-offered on later streets) */
+  declinedForHand: boolean;
   timeoutTimer?: ReturnType<typeof setTimeout>;
 }
 
@@ -48,6 +66,7 @@ export interface InsuranceSettlement {
   insuredAmount: number;
   premium: number;
   payout: number;
+  /** true = insurance paid out (player lost the hand) */
   won: boolean;
 }
 
@@ -55,7 +74,8 @@ export type InsuranceEventType =
   | 'INSURANCE_OFFERED'
   | 'INSURANCE_ACCEPTED'
   | 'INSURANCE_DECLINED'
-  | 'INSURANCE_SETTLED';
+  | 'INSURANCE_SETTLED'
+  | 'INSURANCE_RECALCULATED';
 
 export interface InsuranceEvent {
   type: InsuranceEventType;
@@ -74,8 +94,8 @@ export class InsuranceEngine {
 
   private readonly DEFAULT_CONFIG: InsuranceConfig = {
     enabled: false,
-    houseMargin: 1.05,
-    maxInsurablePercent: 100,
+    houseMargin: 1.2, // 20% house edge — per Dan's explicit instruction
+    maxInsurablePercent: 100, // Max insurable = pot amount
     offerTimeoutSeconds: 15,
     minPotForInsurance: 0,
     equityIterations: 5000,
@@ -96,6 +116,11 @@ export class InsuranceEngine {
   /**
    * Create insurance offers for all-in players.
    * Called by ServerTableEngine when an all-in runout is pending.
+   *
+   * Default offer is FULL insurance (100% coverage).
+   * Player can adjust via acceptPartial() with a slider before accepting.
+   * Premium = (1 - equity%) × insuredAmount × houseMargin
+   * Max insurable = min(pot × maxInsurablePercent%, pot × equity%)
    */
   createOffers(
     tableId: string,
@@ -119,10 +144,15 @@ export class InsuranceEngine {
         config.equityIterations
       );
 
+      // Max insurable = pot amount (maxInsurablePercent defaults to 100%)
       const maxInsurable = pot * (config.maxInsurablePercent / 100);
       const lossProbability = 1 - equity / 100;
-      const insuredAmount = Math.min(maxInsurable, pot * (equity / 100));
-      const premium = Math.round(insuredAmount * lossProbability * config.houseMargin * 100) / 100;
+      // Full insured amount = the portion of pot the player "expects" to win
+      const fullInsuredAmount =
+        Math.round(Math.min(maxInsurable, pot * (equity / 100)) * 100) / 100;
+      // Full premium = insuredAmount × lossProbability × houseMargin (20% edge)
+      const fullPremium =
+        Math.round(fullInsuredAmount * lossProbability * config.houseMargin * 100) / 100;
 
       const offer: InsuranceOffer = {
         tableId,
@@ -130,9 +160,13 @@ export class InsuranceEngine {
         playerId: player.playerId,
         holeCards: player.holeCards,
         equity,
-        premium,
-        insuredAmount: Math.round(insuredAmount * 100) / 100,
+        fullPremium,
+        premium: fullPremium, // Default: 100% coverage
+        fullInsuredAmount,
+        insuredAmount: fullInsuredAmount, // Default: 100% coverage
+        coveragePercent: 100,
         status: 'offered',
+        declinedForHand: false,
       };
 
       offer.timeoutTimer = setTimeout(() => {
@@ -149,8 +183,12 @@ export class InsuranceEngine {
         handId,
         playerId: player.playerId,
         equity,
-        premium,
-        insuredAmount: offer.insuredAmount,
+        fullPremium,
+        premium: fullPremium,
+        fullInsuredAmount,
+        insuredAmount: fullInsuredAmount,
+        coveragePercent: 100,
+        pot,
       });
     }
 
@@ -158,13 +196,33 @@ export class InsuranceEngine {
     return offers;
   }
 
+  /**
+   * Accept insurance with full coverage (100%).
+   */
   accept(tableId: string, playerId: string): boolean {
+    return this.acceptPartial(tableId, playerId, 100);
+  }
+
+  /**
+   * Accept insurance with partial coverage (1-100%).
+   * Player uses a slider to choose how much coverage they want.
+   * e.g., 75% coverage = 75% of the insuredAmount, 75% of the premium.
+   */
+  acceptPartial(tableId: string, playerId: string, coveragePercent: number): boolean {
     const offers = this.activeOffers.get(tableId);
     if (!offers) return false;
 
     const offer = offers.find((o) => o.playerId === playerId && o.status === 'offered');
     if (!offer) return false;
 
+    // Clamp coverage to valid range
+    const coverage = Math.max(1, Math.min(100, Math.round(coveragePercent)));
+    const coverageMultiplier = coverage / 100;
+
+    // Scale insured amount and premium by coverage percentage
+    offer.coveragePercent = coverage;
+    offer.insuredAmount = Math.round(offer.fullInsuredAmount * coverageMultiplier * 100) / 100;
+    offer.premium = Math.round(offer.fullPremium * coverageMultiplier * 100) / 100;
     offer.status = 'accepted';
     if (offer.timeoutTimer) clearTimeout(offer.timeoutTimer);
 
@@ -174,12 +232,19 @@ export class InsuranceEngine {
       handId: offer.handId,
       playerId,
       premium: offer.premium,
+      insuredAmount: offer.insuredAmount,
+      coveragePercent: coverage,
     });
 
     return true;
   }
 
-  decline(tableId: string, playerId: string): void {
+  /**
+   * Decline insurance.
+   * @param forHand — If true, player declines for the ENTIRE hand (won't be re-offered on later streets).
+   *                  If false (default), player declines this street only — may be re-offered if equity shifts.
+   */
+  decline(tableId: string, playerId: string, forHand: boolean = false): void {
     const offers = this.activeOffers.get(tableId);
     if (!offers) return;
 
@@ -187,6 +252,7 @@ export class InsuranceEngine {
     if (!offer) return;
 
     offer.status = 'declined';
+    offer.declinedForHand = forHand;
     if (offer.timeoutTimer) clearTimeout(offer.timeoutTimer);
 
     this.emitEvent({
@@ -194,7 +260,126 @@ export class InsuranceEngine {
       tableId,
       handId: offer.handId,
       playerId,
+      declinedForHand: forHand,
     });
+  }
+
+  /**
+   * Recalculate equity and premiums for all offers when a new street is dealt.
+   * Called by ServerTableEngine when board changes (turn/river dealt during insurance window).
+   *
+   * Key behaviors:
+   * - Recalculates equity for all players
+   * - Updates premiums dynamically per-street
+   * - If a player who "Declined Now" (not "Declined for Hand") was NOT the leader before
+   *   but IS now the leader, they get a new offer (equity shifted in their favor)
+   * - Players who "Declined for Hand" are NEVER re-offered
+   */
+  recalculateOffers(tableId: string, newBoard: Card[], pot: number): void {
+    const offers = this.activeOffers.get(tableId);
+    if (!offers) return;
+
+    const config = this.tableConfigs.get(tableId) || this.DEFAULT_CONFIG;
+    const maxInsurable = pot * (config.maxInsurablePercent / 100);
+    const numOpponents = offers.length - 1;
+
+    // First pass: recalculate equity for ALL offers
+    for (const offer of offers) {
+      const newEquity = monteCarloEquity(
+        offer.holeCards,
+        newBoard,
+        numOpponents,
+        config.equityIterations
+      );
+
+      const lossProbability = 1 - newEquity / 100;
+      const newFullInsured =
+        Math.round(Math.min(maxInsurable, pot * (newEquity / 100)) * 100) / 100;
+      const newFullPremium =
+        Math.round(newFullInsured * lossProbability * config.houseMargin * 100) / 100;
+
+      const oldEquity = offer.equity;
+      offer.equity = newEquity;
+      offer.fullInsuredAmount = newFullInsured;
+      offer.fullPremium = newFullPremium;
+
+      // Recalculate actual premium/insured based on current coverage selection
+      const coverageMultiplier = offer.coveragePercent / 100;
+      offer.insuredAmount = Math.round(newFullInsured * coverageMultiplier * 100) / 100;
+      offer.premium = Math.round(newFullPremium * coverageMultiplier * 100) / 100;
+
+      // Re-offer to players who only declined THIS street (not for hand)
+      // if their equity has now become the highest (they took the lead)
+      if (offer.status === 'declined' && !offer.declinedForHand && newEquity > oldEquity) {
+        // Player's equity improved — they may now be the leader. Re-offer insurance.
+        offer.status = 'offered';
+        offer.coveragePercent = 100;
+        offer.insuredAmount = newFullInsured;
+        offer.premium = newFullPremium;
+
+        // Set a new timeout for the re-offer
+        offer.timeoutTimer = setTimeout(() => {
+          if (offer.status === 'offered') {
+            this.decline(tableId, offer.playerId);
+          }
+        }, config.offerTimeoutSeconds * 1000);
+
+        this.emitEvent({
+          type: 'INSURANCE_OFFERED',
+          tableId,
+          handId: offer.handId,
+          playerId: offer.playerId,
+          equity: newEquity,
+          fullPremium: newFullPremium,
+          premium: newFullPremium,
+          fullInsuredAmount: newFullInsured,
+          insuredAmount: newFullInsured,
+          coveragePercent: 100,
+          reoffered: true,
+          board: newBoard,
+        });
+      } else if (offer.status === 'offered') {
+        // Still pending — just update the numbers
+        this.emitEvent({
+          type: 'INSURANCE_RECALCULATED',
+          tableId,
+          handId: offer.handId,
+          playerId: offer.playerId,
+          equity: newEquity,
+          fullPremium: newFullPremium,
+          premium: offer.premium,
+          fullInsuredAmount: newFullInsured,
+          insuredAmount: offer.insuredAmount,
+          coveragePercent: offer.coveragePercent,
+          board: newBoard,
+        });
+      }
+    }
+  }
+
+  /**
+   * Get a premium preview for a specific coverage percentage.
+   * Used by the client slider to show real-time cost/payout as user adjusts.
+   */
+  getPreview(
+    tableId: string,
+    playerId: string,
+    coveragePercent: number
+  ): { premium: number; insuredAmount: number; coveragePercent: number } | null {
+    const offers = this.activeOffers.get(tableId);
+    if (!offers) return null;
+
+    const offer = offers.find((o) => o.playerId === playerId && o.status === 'offered');
+    if (!offer) return null;
+
+    const coverage = Math.max(1, Math.min(100, Math.round(coveragePercent)));
+    const coverageMultiplier = coverage / 100;
+
+    return {
+      premium: Math.round(offer.fullPremium * coverageMultiplier * 100) / 100,
+      insuredAmount: Math.round(offer.fullInsuredAmount * coverageMultiplier * 100) / 100,
+      coveragePercent: coverage,
+    };
   }
 
   /**
@@ -229,6 +414,9 @@ export class InsuranceEngine {
         handId: offer.handId,
         playerId: offer.playerId,
         payout,
+        premium: offer.premium,
+        insuredAmount: offer.insuredAmount,
+        coveragePercent: offer.coveragePercent,
         won: playerLost,
       });
     }

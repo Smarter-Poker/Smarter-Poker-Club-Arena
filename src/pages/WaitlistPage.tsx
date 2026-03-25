@@ -209,20 +209,10 @@ export default function WaitlistPage() {
     switch (type.toLowerCase()) {
       case 'nlh':
         return "No Limit Hold'em";
-      case 'plo4':
-        return 'PLO 4-Card';
+      case 'plo':
+        return 'Pot Limit Omaha';
       case 'plo5':
         return 'PLO 5-Card';
-      case 'plo6':
-        return 'PLO 6-Card';
-      case 'plo8':
-        return 'PLO Hi-Lo';
-      case 'pineapple':
-        return 'Pineapple';
-      case 'short_deck':
-        return 'Short Deck 6+';
-      case 'ofc':
-        return 'Open Face Chinese';
       default:
         return type.toUpperCase();
     }

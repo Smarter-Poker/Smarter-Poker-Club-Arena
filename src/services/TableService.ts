@@ -158,9 +158,6 @@ class TableService {
       );
     }
 
-    // FIX 111: Set BOTH JSONB `settings` blob AND top-level columns that
-    // the server reads via loadTable(). Without this, RIT/Insurance/Straddle
-    // would always be disabled on server (top-level columns default FALSE).
     const { data, error } = await supabase
       .from('tables')
       .insert({
@@ -177,19 +174,6 @@ class TableService {
         current_players: 0,
         status: 'waiting',
         settings: defaultSettings,
-        // Top-level columns read by server's loadTable() — FIX 111
-        run_it_twice_enabled: defaultSettings.run_it_twice ?? false,
-        insurance_enabled: defaultSettings.insurance_enabled ?? false,
-        straddle_enabled: defaultSettings.straddle_enabled ?? false,
-        straddle_type: defaultSettings.straddle_type ?? 'utg',
-        max_straddles: 1,
-        auto_muck_enabled: defaultSettings.auto_muck ?? true,
-        show_hand_enabled: true,
-        action_time_seconds: defaultSettings.action_time_seconds ?? 15,
-        disconnect_timeout_seconds: 30,
-        max_consecutive_timeouts: 3,
-        prefer_check_over_fold: true,
-        time_bank_max_uses: 4,
       })
       .select()
       .maybeSingle();

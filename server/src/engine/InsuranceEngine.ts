@@ -386,54 +386,17 @@ export class InsuranceEngine {
 
   /**
    * Settle all accepted insurance offers based on hand outcome.
-   *
-   * FIX 110: TIES = PUSH — If the insured player is in a chopped pot
-   * (multiple winners), insurance is voided: no payout, no premium charged.
-   * Insurance only pays if the player outright LOST.
-   *
-   * @param winnerIds — ALL winner IDs from the hand (single string or array for chops)
    */
-  settle(tableId: string, winnerIds: string | string[]): InsuranceSettlement[] {
+  settle(tableId: string, winnerId: string): InsuranceSettlement[] {
     const offers = this.activeOffers.get(tableId);
     if (!offers) return [];
-
-    const winners = Array.isArray(winnerIds) ? winnerIds : [winnerIds];
-    const isChop = winners.length > 1;
 
     const settlements: InsuranceSettlement[] = [];
 
     for (const offer of offers) {
       if (offer.status !== 'accepted') continue;
 
-      const playerIsWinner = winners.includes(offer.playerId);
-
-      // FIX 110: TIES = PUSH — chop + player is a winner → insurance voided
-      if (isChop && playerIsWinner) {
-        const settlement: InsuranceSettlement = {
-          playerId: offer.playerId,
-          insuredAmount: offer.insuredAmount,
-          premium: 0, // PUSH — no premium charged
-          payout: 0, // PUSH — no payout
-          won: false,
-        };
-        settlements.push(settlement);
-        offer.status = 'settled';
-        this.emitEvent({
-          type: 'INSURANCE_SETTLED',
-          tableId,
-          handId: offer.handId,
-          playerId: offer.playerId,
-          payout: 0,
-          premium: 0,
-          insuredAmount: offer.insuredAmount,
-          coveragePercent: offer.coveragePercent,
-          won: false,
-          pushed: true,
-        });
-        continue;
-      }
-
-      const playerLost = !playerIsWinner;
+      const playerLost = offer.playerId !== winnerId;
       const payout = playerLost ? offer.insuredAmount : 0;
 
       const settlement: InsuranceSettlement = {

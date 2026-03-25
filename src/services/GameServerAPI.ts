@@ -83,16 +83,17 @@ export interface ServerStatus {
 /**
  * Submit a player action to the game server.
  * This is the PRIMARY way real players interact with the game engine.
+ * Server identifies the player from the JWT token — userId is NOT sent in the body.
  *
  * @param tableId - The table UUID
- * @param userId - The player's user UUID
+ * @param _userId - DEPRECATED: Server uses JWT auth. Kept for backward compatibility.
  * @param action - Action type: 'fold', 'check', 'call', 'raise', 'allin'
  * @param amount - Optional amount for raise/bet actions
  * @returns ActionResult with success status and optional error message
  */
 export async function submitAction(
   tableId: string,
-  userId: string,
+  _userId: string,
   action: string,
   amount?: number
 ): Promise<ActionResult> {
@@ -119,12 +120,13 @@ export async function submitAction(
 /**
  * Activate the Time Bank for the current player's turn.
  * Asks the game server to extend their authoritative timer.
+ * Server identifies the player from JWT — userId is NOT sent in the body.
  *
  * @param tableId - The table UUID
- * @param userId - The player's user UUID
+ * @param _userId - DEPRECATED: Server uses JWT auth. Kept for backward compatibility.
  * @returns ActionResult with success status and optional error message
  */
-export async function activateTimeBank(tableId: string, userId: string): Promise<ActionResult> {
+export async function activateTimeBank(tableId: string, _userId?: string): Promise<ActionResult> {
   try {
     const headers = await getAuthHeaders();
     const response = await fetch(`${GAME_SERVER_URL}/timebank`, {
@@ -148,15 +150,20 @@ export async function activateTimeBank(tableId: string, userId: string): Promise
 /**
  * Get available actions for a player at a specific table.
  * Used to populate the ActionPanel with valid options.
+ * Server identifies the player from JWT — the userId URL param is ignored by the server.
  *
  * @param tableId - The table UUID
- * @param userId - The player's user UUID
+ * @param _userId - DEPRECATED: Server uses JWT auth. Kept for backward compatibility.
  * @returns PlayerActions with available actions and betting limits
  */
-export async function getAvailableActions(tableId: string, userId: string): Promise<PlayerActions> {
+export async function getAvailableActions(
+  tableId: string,
+  _userId?: string
+): Promise<PlayerActions> {
   try {
     const headers = await getAuthHeaders();
-    const response = await fetch(`${GAME_SERVER_URL}/actions/${tableId}/${userId}`, { headers });
+    // Server ignores the userId URL param and uses JWT — pass 'me' as placeholder
+    const response = await fetch(`${GAME_SERVER_URL}/actions/${tableId}/me`, { headers });
 
     if (!response.ok) {
       return {

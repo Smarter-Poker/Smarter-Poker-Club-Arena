@@ -85,8 +85,15 @@ export class ServerTableEngine {
   private currentHandWinnerIds: string[] = [];
   private currentHandRake: number = 0;
   private currentHandCommunityCards: string[] = [];
-  private currentHandActions: { seat: number; action: string; amount?: number; stage: string }[] =
-    [];
+  // Bible V8 §2.5: Action Record requires seat, userId, action, amount, timestamp, stage
+  private currentHandActions: {
+    seat: number;
+    userId: string;
+    action: string;
+    amount?: number;
+    timestamp: number;
+    stage: string;
+  }[] = [];
   private currentHandWinners: { userId: string; amount: number }[] = [];
   private currentHandContributions: Map<string, number> = new Map(); // userId → totalInvested
   // Hand complete callback for tournament chip sync
@@ -137,24 +144,36 @@ export class ServerTableEngine {
 
     // Initialize ported core modules
     this.preciseTimer = new PreciseActionTimer((event) => {
-      console.log(`[ServerTableEngine:${tableId}] Timer event: ${event.type} player=${event.playerId}`);
+      console.log(
+        `[ServerTableEngine:${tableId}] Timer event: ${event.type} player=${event.playerId}`
+      );
     });
     this.actionValidator = new ServerActionValidator((event) => {
-      console.warn(`[ServerTableEngine:${tableId}] Action rejected: ${event.code} — ${event.reason}`);
+      console.warn(
+        `[ServerTableEngine:${tableId}] Action rejected: ${event.code} — ${event.reason}`
+      );
     });
     this.stateVerifier = new StateVerifier((event) => {
-      console.error(`[ServerTableEngine:${tableId}] STATE INTEGRITY VIOLATION: ${event.violationCount} issue(s) in hand #${event.handNumber}`);
+      console.error(
+        `[ServerTableEngine:${tableId}] STATE INTEGRITY VIOLATION: ${event.violationCount} issue(s) in hand #${event.handNumber}`
+      );
     });
 
     // Step 5: Initialize supporting modules
     this.timeBankEngine = new TimeBankEngine(this.preciseTimer, (event) => {
-      console.log(`[ServerTableEngine:${tableId}] TimeBank: ${event.type} player=${event.playerId}`);
+      console.log(
+        `[ServerTableEngine:${tableId}] TimeBank: ${event.type} player=${event.playerId}`
+      );
     });
     this.disconnectEngine = new DisconnectEngine(this.preciseTimer, (event) => {
-      console.log(`[ServerTableEngine:${tableId}] Disconnect: ${event.type} player=${event.playerId}`);
+      console.log(
+        `[ServerTableEngine:${tableId}] Disconnect: ${event.type} player=${event.playerId}`
+      );
     });
     this.preActionEngine = new PreActionEngine((event) => {
-      console.log(`[ServerTableEngine:${tableId}] PreAction: ${event.type} player=${event.playerId}`);
+      console.log(
+        `[ServerTableEngine:${tableId}] PreAction: ${event.type} player=${event.playerId}`
+      );
     });
     this.atomicStackService = new AtomicStackService((event) => {
       console.log(`[ServerTableEngine:${tableId}] Stack: ${event.type}`);
@@ -191,7 +210,9 @@ export class ServerTableEngine {
       console.log(`[ServerTableEngine:${tableId}] OFC: ${event.type}`);
     });
     this.engineTelemetry = new EngineTelemetry((event) => {
-      console.log(`[ServerTableEngine:${tableId}] Telemetry: activeTables=${(event as any).activeTables}`);
+      console.log(
+        `[ServerTableEngine:${tableId}] Telemetry: activeTables=${(event as any).activeTables}`
+      );
     });
 
     console.log(`[ServerTableEngine] Created for table ${tableId}`);
@@ -213,7 +234,9 @@ export class ServerTableEngine {
       this.timeBankEngine.configure(this.tableId, {
         totalBankSeconds: this.tableInfo.time_bank_seconds ?? 30,
         maxUses: this.tableInfo.time_bank_max_uses ?? 4,
-        secondsPerUse: this.tableInfo.time_bank_seconds ? Math.ceil(this.tableInfo.time_bank_seconds / (this.tableInfo.time_bank_max_uses ?? 4)) : 15,
+        secondsPerUse: this.tableInfo.time_bank_seconds
+          ? Math.ceil(this.tableInfo.time_bank_seconds / (this.tableInfo.time_bank_max_uses ?? 4))
+          : 15,
         autoActivate: true,
       });
 
@@ -387,13 +410,27 @@ export class ServerTableEngine {
               const tbCanCheck = tbToCall === 0;
 
               if (tbCanCheck) {
-                console.warn(`[ServerTableEngine:${this.tableId}] Player ${userId} time bank expired. Auto-checking.`);
-                try { this.handController!.performAction(seat, 'check'); }
-                catch { try { this.handController!.performAction(seat, 'fold'); } catch { /* done */ } }
+                console.warn(
+                  `[ServerTableEngine:${this.tableId}] Player ${userId} time bank expired. Auto-checking.`
+                );
+                try {
+                  this.handController!.performAction(seat, 'check');
+                } catch {
+                  try {
+                    this.handController!.performAction(seat, 'fold');
+                  } catch {
+                    /* done */
+                  }
+                }
               } else {
-                console.warn(`[ServerTableEngine:${this.tableId}] Player ${userId} time bank expired. Auto-folding.`);
-                try { this.handController!.performAction(seat, 'fold'); }
-                catch { /* done */ }
+                console.warn(
+                  `[ServerTableEngine:${this.tableId}] Player ${userId} time bank expired. Auto-folding.`
+                );
+                try {
+                  this.handController!.performAction(seat, 'fold');
+                } catch {
+                  /* done */
+                }
               }
             }
           );
@@ -409,17 +446,22 @@ export class ServerTableEngine {
 
             // Broadcast time bank activation to other players
             try {
-              supabase.channel(`table:${this.tableId}`).send({
-                type: 'broadcast',
-                event: 'time_bank_activated',
-                payload: {
-                  player_id: userId,
-                  table_id: this.tableId,
-                  additional_seconds: bankSeconds,
-                  auto_activated: true,
-                },
-              }).catch(() => {});
-            } catch { /* broadcast failure is non-fatal */ }
+              supabase
+                .channel(`table:${this.tableId}`)
+                .send({
+                  type: 'broadcast',
+                  event: 'time_bank_activated',
+                  payload: {
+                    player_id: userId,
+                    table_id: this.tableId,
+                    additional_seconds: bankSeconds,
+                    auto_activated: true,
+                  },
+                })
+                .catch(() => {});
+            } catch {
+              /* broadcast failure is non-fatal */
+            }
             return; // Time bank activated — don't auto-fold/check yet
           }
         }
@@ -441,7 +483,10 @@ export class ServerTableEngine {
             try {
               this.handController.performAction(seat, 'fold');
             } catch (foldErr) {
-              console.error(`[ServerTableEngine:${this.tableId}] Auto-fold fallback also failed:`, foldErr);
+              console.error(
+                `[ServerTableEngine:${this.tableId}] Auto-fold fallback also failed:`,
+                foldErr
+              );
             }
           }
         } else {
@@ -536,7 +581,11 @@ export class ServerTableEngine {
   /**
    * POST /heartbeat — Bible V8 §6.3: Reset disconnect timer for a player
    */
-  public heartbeat(userId: string): { success: boolean; connected: boolean; gracePeriodRemaining: number } {
+  public heartbeat(userId: string): {
+    success: boolean;
+    connected: boolean;
+    gracePeriodRemaining: number;
+  } {
     this.disconnectEngine.heartbeat(this.tableId, userId);
     const connected = this.disconnectEngine.isConnected(this.tableId, userId);
     return { success: true, connected, gracePeriodRemaining: 0 };
@@ -565,7 +614,13 @@ export class ServerTableEngine {
     }
 
     // Validate the pre-action type
-    const validPreActions = ['auto_fold', 'auto_check_fold', 'auto_check', 'auto_call', 'auto_call_any'];
+    const validPreActions = [
+      'auto_fold',
+      'auto_check_fold',
+      'auto_check',
+      'auto_call',
+      'auto_call_any',
+    ];
     if (!validPreActions.includes(action)) {
       return { success: false, error: `Invalid pre-action: ${action}` };
     }
@@ -577,7 +632,10 @@ export class ServerTableEngine {
   /**
    * POST /sitout — Bible V8 §7.12: Player sits out or back in
    */
-  public sitOut(userId: string, sitOut: boolean): { success: boolean; error?: string; willFoldNextHand: boolean } {
+  public sitOut(
+    userId: string,
+    sitOut: boolean
+  ): { success: boolean; error?: string; willFoldNextHand: boolean } {
     const player = this.seatedPlayers.find((p) => p.user_id === userId);
     if (!player) {
       return { success: false, error: 'Player not found at this table', willFoldNextHand: false };
@@ -616,40 +674,57 @@ export class ServerTableEngine {
       stage: state.stage ?? 'preflop',
       min_raise: state.minRaise ?? 0,
       last_raise: state.lastRaise ?? 0,
+      // Bible V8 §2.4: Timer fields required for client-side countdown
+      turn_start_time_ms: this.playerTurnStartTime,
+      turn_duration_ms: this.playerTurnDuration * 1000, // Convert seconds → milliseconds
       pots: (state.pots ?? []).map((p) => ({
         amount: p.amount,
         eligible: p.eligiblePlayers ?? [],
       })),
+      // Bible V8 §2.5: Action Record — seat, userId, action, amount, timestamp, stage
       action_history: (state.actionHistory ?? []).map((a) => ({
         seat: a.seat,
+        userId: a.userId ?? '',
         action: a.action,
         amount: a.amount,
+        timestamp: a.timestamp ?? 0,
         stage: a.stage,
       })),
-      players: (state.players ?? []).map((p) => {
-        let showCards = false;
-        if (p.user_id === requestingUserId) {
-          // Always show own cards
-          showCards = true;
-        } else if (state.stage === 'showdown' && !p.is_folded) {
-          // Bible V8 §4.21: Auto-muck — only show winners, voluntary showers, or if auto-muck disabled
-          const isWinner = this.currentHandWinnerIds.includes(p.user_id);
-          const voluntarilyShowing = this.showHandPlayers?.has(p.user_id) ?? false;
-          const autoMuckEnabled = this.tableInfo?.auto_muck_enabled ?? true;
-          showCards = isWinner || voluntarilyShowing || !autoMuckEnabled;
-        }
-        return {
-          seat: p.seat,
-          user_id: p.user_id,
-          username: p.username,
-          stack: p.stack,
-          bet: p.bet ?? 0,
-          cards: showCards ? (p.cards ?? []) : [],
-          is_folded: p.is_folded ?? false,
-          is_all_in: p.is_all_in ?? false,
-          is_sitting_out: p.is_sitting_out ?? false,
-        };
-      }),
+      players: (() => {
+        const positionLabels = this.getPositionLabels(
+          state.dealerSeat ?? this.currentHandDealerSeat,
+          state.players ?? []
+        );
+        return (state.players ?? []).map((p) => {
+          let showCards = false;
+          if (p.user_id === requestingUserId) {
+            showCards = true;
+          } else if (state.stage === 'showdown' && !p.is_folded) {
+            const isWinner = this.currentHandWinnerIds.includes(p.user_id);
+            const voluntarilyShowing = this.showHandPlayers?.has(p.user_id) ?? false;
+            const autoMuckEnabled = this.tableInfo?.auto_muck_enabled ?? true;
+            showCards = isWinner || voluntarilyShowing || !autoMuckEnabled;
+          }
+          return {
+            seat: p.seat,
+            user_id: p.user_id,
+            username: p.username,
+            stack: p.stack,
+            bet: p.bet ?? 0,
+            totalInvested: p.totalInvested ?? 0,
+            cards: showCards ? (p.cards ?? []) : [],
+            is_folded: p.is_folded ?? false,
+            is_all_in: p.is_all_in ?? false,
+            is_sitting_out: p.is_sitting_out ?? false,
+            is_disconnected: !this.disconnectEngine.isConnected(this.tableId, p.user_id),
+            time_bank_remaining: this.timeBankEngine.getRemainingSeconds(this.tableId, p.user_id),
+            time_bank_uses_remaining: this.timeBankEngine.getUsesRemaining(this.tableId, p.user_id),
+            position: positionLabels.get(p.seat) ?? '',
+            avatar_url: p.avatar_url ?? '', // Bible V8 §2.3
+            is_horse: p.is_horse ?? false, // Bible V8 §2.3
+          };
+        });
+      })(),
     };
   }
 
@@ -668,7 +743,10 @@ export class ServerTableEngine {
    * Bible V8 §4.20: Respond to a Run It Twice offer.
    * Both players must accept for dual boards to be dealt.
    */
-  public respondToRIT(userId: string, response: 'accept' | 'decline'): { success: boolean; error?: string; status?: string } {
+  public respondToRIT(
+    userId: string,
+    response: 'accept' | 'decline'
+  ): { success: boolean; error?: string; status?: string } {
     if (!this.runItTwiceEngine.isActive(this.tableId)) {
       return { success: false, error: 'No active Run It Twice offer' };
     }
@@ -690,7 +768,10 @@ export class ServerTableEngine {
   /**
    * Bible V8 §4.19: Respond to an insurance offer.
    */
-  public respondToInsurance(userId: string, response: 'accept' | 'decline'): { success: boolean; error?: string; status?: string } {
+  public respondToInsurance(
+    userId: string,
+    response: 'accept' | 'decline'
+  ): { success: boolean; error?: string; status?: string } {
     if (!this.insuranceEngine.isEnabled(this.tableId)) {
       return { success: false, error: 'Insurance is not enabled at this table' };
     }
@@ -801,10 +882,22 @@ export class ServerTableEngine {
     if (normalizedAction === 'raise' && state.currentBet === 0) normalizedAction = 'bet';
     if (normalizedAction === 'bet' && state.currentBet > 0) normalizedAction = 'raise';
 
+    // Bible V8 §4.14: Pot-limit max raise for PLO variants
+    const isPotLimit = this.tableInfo?.game_variant?.startsWith('plo');
+    let potLimitMaxBet = Infinity;
+    if (isPotLimit) {
+      // Pot-limit max = current pot + call + call (standard pot-limit formula)
+      potLimitMaxBet = state.pot + toCall + toCall;
+    }
+
     // Clamp amounts
     if (normalizedAction === 'call') amount = toCall;
     if (normalizedAction === 'bet' && amount !== undefined) {
       amount = Math.max(state.minRaise, amount);
+      // Bible V8 §4.14: Cap at pot-limit max for PLO
+      if (isPotLimit) {
+        amount = Math.min(amount, potLimitMaxBet);
+      }
       if (amount >= player.stack) {
         normalizedAction = 'all_in';
         amount = undefined;
@@ -812,6 +905,11 @@ export class ServerTableEngine {
     } else if (normalizedAction === 'raise' && amount !== undefined) {
       const minRaiseTo = state.currentBet + state.minRaise;
       amount = Math.max(minRaiseTo, amount);
+      // Bible V8 §4.14: Cap at pot-limit max for PLO (raise TO = currentBet + potLimitMaxBet)
+      if (isPotLimit) {
+        const potLimitRaiseTo = state.currentBet + potLimitMaxBet;
+        amount = Math.min(amount, potLimitRaiseTo);
+      }
       const maxRaiseTo = player.stack + player.bet;
       if (amount >= maxRaiseTo) {
         normalizedAction = 'all_in';
@@ -1076,21 +1174,20 @@ export class ServerTableEngine {
     let straddleResults: { seat: number; amount: number }[] = [];
     if (this.tableInfo.straddle_enabled) {
       // Build seat order starting from UTG (left of BB)
-      const sbSeat = players.length === 2
-        ? dealerSeat
-        : this.getNextSeat(dealerSeat, players);
+      const sbSeat = players.length === 2 ? dealerSeat : this.getNextSeat(dealerSeat, players);
       const bbSeat = this.getNextSeat(sbSeat, players);
       const utgSeat = this.getNextSeat(bbSeat, players);
 
       const seatOrder: Array<{ seat: number; playerId: string }> = [];
       let currentSeat = utgSeat;
-      for (let i = 0; i < players.length - 2; i++) { // Exclude SB and BB
-        const p = players.find(pl => pl.seat_number === currentSeat);
+      for (let i = 0; i < players.length - 2; i++) {
+        // Exclude SB and BB
+        const p = players.find((pl) => pl.seat_number === currentSeat);
         if (p) seatOrder.push({ seat: p.seat_number, playerId: p.user_id });
         currentSeat = this.getNextSeat(currentSeat, players);
       }
 
-      const stackMap = new Map(players.map(p => [p.user_id, p.stack]));
+      const stackMap = new Map(players.map((p) => [p.user_id, p.stack]));
       const straddleConfig = {
         enabled: true,
         mississippiEnabled: this.tableInfo.straddle_type === 'mississippi',
@@ -1099,10 +1196,13 @@ export class ServerTableEngine {
       };
       this.straddleEngine.configure(this.tableId, straddleConfig);
       const result = this.straddleEngine.processStraddles(
-        this.tableId, this.tableInfo.big_blind, seatOrder, stackMap
+        this.tableId,
+        this.tableInfo.big_blind,
+        seatOrder,
+        stackMap
       );
       if (result.posted) {
-        straddleResults = result.straddles.map(s => ({ seat: s.seatNumber, amount: s.amount }));
+        straddleResults = result.straddles.map((s) => ({ seat: s.seatNumber, amount: s.amount }));
       }
     }
 
@@ -1237,18 +1337,24 @@ export class ServerTableEngine {
         break;
 
       case 'TURN_CHANGE':
-        this.handleTurnChange(event, players);
+        // Bible V8 §1.2.4: Broadcast FIRST, then start timer.
+        // "Timer starts only AFTER broadcast confirms turn change."
         this.broadcastCurrentState();
+        this.handleTurnChange(event, players);
         break;
 
       case 'PLAYER_ACTION':
         // Track action for hand history
         if (event.seat !== undefined && event.action) {
-          const stage = this.handController?.getState()?.stage || 'preflop';
+          const hcState = this.handController?.getState();
+          const stage = hcState?.stage || 'preflop';
+          const actingPlayer = hcState?.players.find((p) => p.seat === event.seat);
           this.currentHandActions.push({
             seat: event.seat,
+            userId: actingPlayer?.user_id ?? '', // Bible V8 §2.5
             action: event.action,
             amount: event.amount,
+            timestamp: Date.now(), // Bible V8 §2.5
             stage,
           });
 
@@ -1290,7 +1396,10 @@ export class ServerTableEngine {
             const localPlayer = players.find((p) => p.user_id === enginePlayer.user_id);
             if (localPlayer) localPlayer.stack = enginePlayer.stack;
             // Track actual contributions for rakeback (totalInvested = blinds + bets + raises + calls)
-            this.currentHandContributions.set(enginePlayer.user_id, enginePlayer.totalInvested ?? 0);
+            this.currentHandContributions.set(
+              enginePlayer.user_id,
+              enginePlayer.totalInvested ?? 0
+            );
           }
         }
         this.broadcastCurrentState();
@@ -1398,12 +1507,19 @@ export class ServerTableEngine {
           );
           return; // Pre-action handled the turn — no timer needed
         } catch (err) {
-          console.warn(`[ServerTableEngine:${this.tableId}] Pre-action failed, falling through to timer:`, err);
+          console.warn(
+            `[ServerTableEngine:${this.tableId}] Pre-action failed, falling through to timer:`,
+            err
+          );
         }
       }
 
       // Step 5: Check disconnect state before starting timer
-      const playerCanAct = this.disconnectEngine.onPlayerTurn(this.tableId, player.user_id, canCheckForPreAction);
+      const playerCanAct = this.disconnectEngine.onPlayerTurn(
+        this.tableId,
+        player.user_id,
+        canCheckForPreAction
+      );
       if (!playerCanAct) {
         // Player is disconnected or sitting out — DisconnectEngine will handle auto-action via callback
         return;
@@ -1519,39 +1635,55 @@ export class ServerTableEngine {
         eligible: p.eligiblePlayers ?? [],
       })),
       // Bible V8 §2.4: Action history for the current hand
+      // Bible V8 §2.5: Action Record — seat, userId, action, amount, timestamp, stage
       action_history: (state.actionHistory ?? []).map((a) => ({
         seat: a.seat,
+        userId: a.userId ?? '',
         action: a.action,
         amount: a.amount,
+        timestamp: a.timestamp ?? 0,
         stage: a.stage,
       })),
+      // Bible V8 §2.3: Complete player objects with all required fields
       // CARD SECURITY: Scrub hole cards from public broadcast.
       // Players receive their own cards via RLS-protected table_hole_cards channel.
       // Bible V8 §4.21: Auto-muck — at showdown, only show:
       //   - Winners (must always show)
       //   - Players who voluntarily chose to show (showHandPlayers set)
       //   - All non-folded players if auto_muck is DISABLED
-      players: (state.players ?? []).map((p) => {
-        let showCards = false;
-        if (state.stage === 'showdown' && !p.is_folded) {
-          const isWinner = this.currentHandWinnerIds.includes(p.user_id);
-          const voluntarilyShowing = this.showHandPlayers?.has(p.user_id) ?? false;
-          const autoMuckEnabled = this.tableInfo?.auto_muck_enabled ?? true; // Default: auto-muck ON
-          // Winners MUST show. Others show if auto-muck is off OR they voluntarily show.
-          showCards = isWinner || voluntarilyShowing || !autoMuckEnabled;
-        }
-        return {
-          seat: p.seat,
-          user_id: p.user_id,
-          username: p.username,
-          stack: p.stack,
-          bet: p.bet ?? 0,
-          cards: showCards ? (p.cards ?? []) : [],
-          is_folded: p.is_folded ?? false,
-          is_all_in: p.is_all_in ?? false,
-          is_sitting_out: p.is_sitting_out ?? false,
-        };
-      }),
+      players: (() => {
+        const positionLabels = this.getPositionLabels(
+          state.dealerSeat ?? this.currentHandDealerSeat,
+          state.players ?? []
+        );
+        return (state.players ?? []).map((p) => {
+          let showCards = false;
+          if (state.stage === 'showdown' && !p.is_folded) {
+            const isWinner = this.currentHandWinnerIds.includes(p.user_id);
+            const voluntarilyShowing = this.showHandPlayers?.has(p.user_id) ?? false;
+            const autoMuckEnabled = this.tableInfo?.auto_muck_enabled ?? true;
+            showCards = isWinner || voluntarilyShowing || !autoMuckEnabled;
+          }
+          return {
+            seat: p.seat,
+            user_id: p.user_id,
+            username: p.username,
+            stack: p.stack,
+            bet: p.bet ?? 0,
+            totalInvested: p.totalInvested ?? 0, // Bible V8 §2.3
+            cards: showCards ? (p.cards ?? []) : [],
+            is_folded: p.is_folded ?? false,
+            is_all_in: p.is_all_in ?? false,
+            is_sitting_out: p.is_sitting_out ?? false,
+            is_disconnected: !this.disconnectEngine.isConnected(this.tableId, p.user_id), // Bible V8 §2.3
+            time_bank_remaining: this.timeBankEngine.getRemainingSeconds(this.tableId, p.user_id), // Bible V8 §2.3
+            time_bank_uses_remaining: this.timeBankEngine.getUsesRemaining(this.tableId, p.user_id), // Bible V8 §2.3
+            position: positionLabels.get(p.seat) ?? '', // Bible V8 §2.3, Appendix B
+            avatar_url: p.avatar_url ?? '', // Bible V8 §2.3
+            is_horse: p.is_horse ?? false, // Bible V8 §2.3
+          };
+        });
+      })(),
     });
   }
 
@@ -1718,12 +1850,60 @@ export class ServerTableEngine {
     await updateTableStatus(this.tableId, finalCount, finalCount >= 2 ? 'running' : 'waiting');
   }
 
+  /**
+   * Bible V8 §2.3 — Calculate position labels for each seat (BTN, SB, BB, UTG, MP, CO, etc.)
+   * Uses Appendix B position naming convention.
+   */
+  private getPositionLabels(dealerSeat: number, players: SeatPlayer[]): Map<number, string> {
+    const labels = new Map<number, string>();
+    const seats = players.map((p) => p.seat).sort((a, b) => a - b);
+    const n = seats.length;
+    if (n === 0) return labels;
+
+    // Find dealer seat index in sorted seats
+    let dealerIdx = seats.indexOf(dealerSeat);
+    if (dealerIdx === -1) {
+      // Dealer seat not found in active players — use first seat
+      dealerIdx = 0;
+    }
+
+    if (n === 2) {
+      // Heads-up: dealer=SB/BTN, other=BB
+      labels.set(seats[dealerIdx], 'BTN');
+      labels.set(seats[(dealerIdx + 1) % n], 'BB');
+    } else if (n === 3) {
+      labels.set(seats[dealerIdx], 'BTN');
+      labels.set(seats[(dealerIdx + 1) % n], 'SB');
+      labels.set(seats[(dealerIdx + 2) % n], 'BB');
+    } else {
+      // 4+ players — BTN, SB, BB, then positional names
+      labels.set(seats[dealerIdx], 'BTN');
+      labels.set(seats[(dealerIdx + 1) % n], 'SB');
+      labels.set(seats[(dealerIdx + 2) % n], 'BB');
+
+      // Bible V8 Appendix B position names
+      const positionNames: Record<number, string[]> = {
+        4: ['UTG'],
+        5: ['UTG', 'CO'],
+        6: ['UTG', 'MP', 'CO'],
+        7: ['UTG', 'UTG+1', 'MP', 'CO'],
+        8: ['UTG', 'UTG+1', 'MP', 'MP+1', 'CO'],
+        9: ['UTG', 'UTG+1', 'UTG+2', 'MP', 'HJ', 'CO'],
+      };
+      const names = positionNames[n] || positionNames[9] || [];
+      for (let i = 0; i < n - 3 && i < names.length; i++) {
+        labels.set(seats[(dealerIdx + 3 + i) % n], names[i]);
+      }
+    }
+    return labels;
+  }
+
   // ═════════════════════════════════════════════════════════════════════════════
   // SEAT HELPERS
   // ═════════════════════════════════════════════════════════════════════════════
 
   private getNextSeat(fromSeat: number, players: SeatedPlayer[]): number {
-    const seats = players.map(p => p.seat_number).sort((a, b) => a - b);
+    const seats = players.map((p) => p.seat_number).sort((a, b) => a - b);
     if (seats.length === 0) return -1;
     for (const seat of seats) {
       if (seat > fromSeat) return seat;
@@ -1754,7 +1934,7 @@ export class ServerTableEngine {
     ];
 
     const exact = CAPS.find(([s, b]) => s === sb && b === bb);
-    if (exact) return { percent: 10, cap: exact[2], noFlop: true };
+    if (exact) return { percent: 10, cap: exact[2], noFlopNoDrop: true };
 
     let closest = CAPS[0];
     let minDiff = Math.abs(bb - closest[1]);
@@ -1765,7 +1945,7 @@ export class ServerTableEngine {
         closest = tier;
       }
     }
-    return { percent: 10, cap: closest[2], noFlop: true };
+    return { percent: 10, cap: closest[2], noFlopNoDrop: true };
   }
 
   // ═════════════════════════════════════════════════════════════════════════════

@@ -71,6 +71,12 @@ export interface TableInfo {
   tournament_id?: string;
   action_time_seconds?: number;
   time_bank_seconds?: number;
+  /** Bible V8 §4.3: Big Blind Ante — BB posts ante for entire table */
+  big_blind_ante_enabled?: boolean;
+  /** Bible V8 §4.4: Straddle settings */
+  straddle_enabled?: boolean;
+  straddle_type?: 'utg' | 'mississippi';
+  max_straddles?: number;
 }
 
 export interface SeatedPlayer {
@@ -95,6 +101,10 @@ export interface HandConfig {
   smallBlind: number;
   bigBlind: number;
   ante?: number;
+  /** Bible V8 §4.3: Big Blind Ante — BB posts ante for entire table */
+  bigBlindAnte?: boolean;
+  /** Bible V8 §4.4: Straddle positions queued for this hand (UTG or Mississippi) */
+  straddles?: { seat: number; amount: number }[];
   rakeConfig: RakeConfig;
   bombPot?: {
     anteMultiplier: number;
@@ -124,6 +134,8 @@ export interface ActionRecord {
   amount: number;
   timestamp: number;
   stage: HandStage;
+  /** Bible V8 §4.14: Short all-in (less than a full raise) does NOT reopen betting */
+  isFullRaise?: boolean;
 }
 
 export type HandEvent =
@@ -165,6 +177,8 @@ export interface BettingState {
   minRaise: number;
   pot: number;
   toCall: number;
+  /** Bible V8 §4.14: Max raise — Infinity for NL, pot+call for PL */
+  maxRaise?: number;
 }
 
 export interface RakeConfig {

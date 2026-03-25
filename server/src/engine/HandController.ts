@@ -93,10 +93,13 @@ export class HandController {
 
         if (this.config.bombPot) {
             this.postBombPotAntes();
-        } else {
-            this.postBlinds();
+            this.dealHoleCards();
+            // Bible V8 §4.22: Bomb pot skips preflop betting — deal directly to flop
+            this.advanceStage(); // preflop → flop, deals 3 community cards, sets first postflop player
+            return;
         }
 
+        this.postBlinds();
         this.dealHoleCards();
         this.setNextPlayer();
         this.emitTurnChange();
@@ -133,11 +136,40 @@ export class HandController {
         }
 
         if (this.config.ante) {
-            for (const player of this.state.players.filter(p => !p.is_sitting_out)) {
-                const anteAmount = Math.min(this.config.ante, player.stack);
-                player.totalInvested += anteAmount;
-                player.stack -= anteAmount;
-                this.state.pot += anteAmount;
+            if (this.config.bigBlindAnte && bbPlayer) {
+                // Bible V8 §4.3: BBA — Big blind posts ante for entire table
+                const totalBBA = this.config.ante * activePlayers.length;
+                const bbaAmount = Math.min(totalBBA, bbPlayer.stack);
+                bbPlayer.totalInvested += bbaAmount;
+                bbPlayer.stack -= bbaAmount;
+                this.state.pot += bbaAmount;
+                if (bbPlayer.stack === 0) bbPlayer.is_all_in = true;
+            } else {
+                // Traditional ante: each player posts individually
+                for (const player of this.state.players.filter(p => !p.is_sitting_out)) {
+                    const anteAmount = Math.min(this.config.ante, player.stack);
+                    player.totalInvested += anteAmount;
+                    player.stack -= anteAmount;
+                    this.state.pot += anteAmount;
+                    if (player.stack === 0) player.is_all_in = true;
+                }
+            }
+        }
+
+        // Bible V8 §4.4: Post straddles after blinds/antes
+        if (this.config.straddles && this.config.straddles.length > 0) {
+            for (const straddle of this.config.straddles) {
+                const straddler = this.state.players.find(p => p.seat === straddle.seat);
+                if (straddler && !straddler.is_sitting_out && straddler.stack >= straddle.amount) {
+                    const straddleAmount = Math.min(straddle.amount, straddler.stack);
+                    straddler.bet = straddleAmount;
+                    straddler.totalInvested += straddleAmount;
+                    straddler.stack -= straddleAmount;
+                    this.state.pot += straddleAmount;
+                    this.state.currentBet = straddleAmount;
+                    // Straddle is live — straddler can raise when action comes back (§4.4)
+                    if (straddler.stack === 0) straddler.is_all_in = true;
+                }
             }
         }
 
@@ -189,14 +221,17 @@ export class HandController {
         const player = this.state.players.find(p => p.seat === seat);
         if (!player || seat !== this.state.currentPlayerSeat) return false;
 
+        // Bible V8 §4.14: PLO variants use pot-limit betting
+        const isPotLimit = this.config.gameVariant.startsWith('plo');
         const bettingState = calculateBettingState(
-            this.state.pot, this.state.currentBet, player.bet, this.config.bigBlind, this.state.lastRaise
+            this.state.pot, this.state.currentBet, player.bet, this.config.bigBlind, this.state.lastRaise, isPotLimit
         );
 
         const validation = validateAction(action, amount, player.stack, bettingState);
         if (!validation.valid) return false;
 
         let actualAmount = 0;
+        let isFullRaiseFlag: boolean | undefined;
 
         switch (action) {
             case 'fold':
@@ -213,9 +248,10 @@ export class HandController {
                 if (player.stack === 0) player.is_all_in = true;
                 break;
             case 'bet':
-            case 'raise':
+            case 'raise': {
                 actualAmount = amount!;
                 const raiseSize = actualAmount - player.bet;
+                isFullRaiseFlag = true; // Normal bet/raise is always a full raise
                 if (raiseSize > this.state.lastRaise) this.state.lastRaise = raiseSize;
                 const chipsAdded = actualAmount - player.bet;
                 player.totalInvested += chipsAdded;
@@ -225,6 +261,7 @@ export class HandController {
                 this.state.currentBet = actualAmount;
                 if (player.stack === 0) player.is_all_in = true;
                 break;
+            }
             case 'all_in':
                 actualAmount = player.stack + player.bet;
                 player.totalInvested += player.stack;
@@ -232,9 +269,12 @@ export class HandController {
                 player.bet += player.stack;
                 player.stack = 0;
                 player.is_all_in = true;
+                // Bible V8 §4.14: Track whether this all-in constitutes a full raise
+                // A short all-in (raise increment < lastRaise) does NOT reopen betting
                 if (player.bet > this.state.currentBet) {
                     const rs = player.bet - this.state.currentBet;
-                    if (rs >= this.state.lastRaise) this.state.lastRaise = rs;
+                    isFullRaiseFlag = rs >= this.state.lastRaise;
+                    if (isFullRaiseFlag) this.state.lastRaise = rs;
                     this.state.currentBet = player.bet;
                 }
                 break;
@@ -242,6 +282,7 @@ export class HandController {
 
         this.state.actionHistory.push({
             seat, userId: player.user_id, action, amount: actualAmount, timestamp: Date.now(), stage: this.state.stage,
+            isFullRaise: isFullRaiseFlag,
         });
 
         this.emit({ type: 'PLAYER_ACTION', seat, action, amount: actualAmount });
@@ -282,14 +323,16 @@ export class HandController {
 
         const stageActions = this.state.actionHistory.filter(a => a.stage === this.state.stage);
 
+        // Bible V8 §4.14: Only full raises reopen betting.
+        // A short all-in (raise increment < lastRaise) does NOT count as aggression.
         let lastAggressorSeat = -1;
         for (const action of stageActions) {
-            if (action.action === 'bet' || action.action === 'raise' ||
-                (action.action === 'all_in' && action.amount > 0)) {
-                const player = this.state.players.find(p => p.seat === action.seat);
-                if (player && (player.bet >= this.state.currentBet || player.is_all_in)) {
-                    lastAggressorSeat = action.seat;
-                }
+            if (action.action === 'bet' || action.action === 'raise') {
+                // Normal bet/raise always reopens
+                lastAggressorSeat = action.seat;
+            } else if (action.action === 'all_in' && action.isFullRaise) {
+                // All-in only reopens if it was a full raise
+                lastAggressorSeat = action.seat;
             }
         }
 
@@ -301,7 +344,7 @@ export class HandController {
                 let lastAggressorActionIdx = -1;
                 for (let i = stageActions.length - 1; i >= 0; i--) {
                     const a = stageActions[i];
-                    if (a.seat === lastAggressorSeat && (a.action === 'bet' || a.action === 'raise' || a.action === 'all_in')) {
+                    if (a.seat === lastAggressorSeat && (a.action === 'bet' || a.action === 'raise' || (a.action === 'all_in' && a.isFullRaise))) {
                         lastAggressorActionIdx = i;
                         break;
                     }
@@ -401,11 +444,28 @@ export class HandController {
             this.emit({ type: 'SHOWDOWN', results: showdownResults });
         }
 
-        const winners = determineWinners(this.state.players, this.state.communityCards, pots, this.config.gameVariant);
+        let winners = determineWinners(this.state.players, this.state.communityCards, pots, this.config.gameVariant);
+
+        // Bible V8 §1.9 — No-winners guard: if determineWinners returns empty
+        // (edge case: all eligible players gone), award pot to last active player
+        if (winners.length === 0 && activePlayers.length > 0) {
+            console.warn(`[HandController] No winners found — awarding pot to last active player ${activePlayers[0].user_id}`);
+            const totalPot = pots.reduce((sum, p) => sum + p.amount, 0);
+            winners = [{ userId: activePlayers[0].user_id, amount: totalPot }];
+        }
+
         const rake = calculateRake(this.state.pot, this.state.sawFlop, this.config.rakeConfig);
 
         const totalWinnings = this.state.pot - rake;
         const totalWinnerAmount = winners.reduce((sum, w) => sum + w.amount, 0);
+
+        // If still no winners (impossible edge case), skip distribution to prevent chip loss
+        if (winners.length === 0 || totalWinnerAmount === 0) {
+            console.error(`[HandController] CRITICAL: No winners and no active players — pot of ${this.state.pot} cannot be distributed`);
+            this.emit({ type: 'WINNERS', winners: [] });
+            this.emit({ type: 'HAND_COMPLETE', handNumber: this.config.handNumber, rake: 0 });
+            return;
+        }
 
         // Integer-cents arithmetic to prevent floating-point distribution errors
         const totalCents = Math.trunc(totalWinnings * 100);
@@ -485,7 +545,13 @@ export class HandController {
             } else {
                 const sbSeat = this.getNextActiveSeat(this.state.dealerSeat);
                 const bbSeat = this.getNextActiveSeat(sbSeat);
-                this.state.currentPlayerSeat = this.getNextActiveSeat(bbSeat);
+                // Bible V8 §4.4: If straddles are posted, first to act is left of last straddler
+                if (this.config.straddles && this.config.straddles.length > 0) {
+                    const lastStraddleSeat = this.config.straddles[this.config.straddles.length - 1].seat;
+                    this.state.currentPlayerSeat = this.getNextActiveSeat(lastStraddleSeat);
+                } else {
+                    this.state.currentPlayerSeat = this.getNextActiveSeat(bbSeat);
+                }
             }
             return;
         }

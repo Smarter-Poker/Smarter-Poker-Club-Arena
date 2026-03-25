@@ -2378,6 +2378,26 @@ function sendJSON(res: import('http').ServerResponse, statusCode: number, data: 
   res.end(JSON.stringify(data));
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// Bible V8 §1.3 Step 3: JWT Authentication — Verify Supabase auth token
+// ═══════════════════════════════════════════════════════════════════════════════
+
+async function authenticateRequest(req: import('http').IncomingMessage): Promise<{ userId: string } | null> {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
+
+  const token = authHeader.slice(7);
+  if (!token) return null;
+
+  try {
+    const { data, error } = await supabase.auth.getUser(token);
+    if (error || !data?.user) return null;
+    return { userId: data.user.id };
+  } catch {
+    return null;
+  }
+}
+
 function readBody(req: import('http').IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     let body = '';
@@ -2413,11 +2433,19 @@ const httpServer = createServer(async (req, res) => {
   // ─────────────────────────────────────────────────────────────────────────
   if (method === 'POST' && url === '/action') {
     try {
-      const body = JSON.parse(await readBody(req));
-      const { tableId, userId, action, amount } = body;
+      // Bible V8 §1.3 Step 3: Verify JWT before processing action
+      const auth = await authenticateRequest(req);
+      if (!auth) {
+        return sendJSON(res, 401, { success: false, error: 'Authentication required' });
+      }
 
-      if (!tableId || !userId || !action) {
-        return sendJSON(res, 400, { success: false, error: 'Missing tableId, userId, or action' });
+      const body = JSON.parse(await readBody(req));
+      const { tableId, action, amount } = body;
+      // Use authenticated userId from JWT, NOT from request body (prevents spoofing)
+      const userId = auth.userId;
+
+      if (!tableId || !action) {
+        return sendJSON(res, 400, { success: false, error: 'Missing tableId or action' });
       }
 
       const engine = gameServer.getTableEngine(tableId);
@@ -2439,11 +2467,17 @@ const httpServer = createServer(async (req, res) => {
   // ─────────────────────────────────────────────────────────────────────────
   if (method === 'POST' && url === '/timebank') {
     try {
-      const body = JSON.parse(await readBody(req));
-      const { tableId, userId } = body;
+      const auth = await authenticateRequest(req);
+      if (!auth) {
+        return sendJSON(res, 401, { success: false, error: 'Authentication required' });
+      }
 
-      if (!tableId || !userId) {
-        return sendJSON(res, 400, { success: false, error: 'Missing tableId or userId' });
+      const body = JSON.parse(await readBody(req));
+      const { tableId } = body;
+      const userId = auth.userId;
+
+      if (!tableId) {
+        return sendJSON(res, 400, { success: false, error: 'Missing tableId' });
       }
 
       const engine = gameServer.getTableEngine(tableId);
@@ -2464,8 +2498,14 @@ const httpServer = createServer(async (req, res) => {
   // ─────────────────────────────────────────────────────────────────────────
   const actionsMatch = url.match(/^\/actions\/([^/]+)\/([^/]+)$/);
   if (method === 'GET' && actionsMatch) {
+    const auth = await authenticateRequest(req);
+    if (!auth) {
+      return sendJSON(res, 401, { canAct: false, error: 'Authentication required' });
+    }
+
     const tableId = actionsMatch[1];
-    const userId = actionsMatch[2];
+    // Use authenticated userId, ignore URL param to prevent info leakage
+    const userId = auth.userId;
 
     const engine = gameServer.getTableEngine(tableId);
     if (!engine) {

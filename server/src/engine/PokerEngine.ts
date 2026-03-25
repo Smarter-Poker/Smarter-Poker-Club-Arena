@@ -330,13 +330,17 @@ export function calculatePots(players: SeatPlayer[]): Pot[] {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export function calculateBettingState(
-    pot: number, currentBet: number, playerBet: number, bigBlind: number, lastRaise: number = 0
+    pot: number, currentBet: number, playerBet: number, bigBlind: number, lastRaise: number = 0, isPotLimit: boolean = false
 ): BettingState {
+    const toCall = currentBet - playerBet;
+    // Bible V8 §4.14: pot-limit max raise = current pot + call amount
+    const maxRaise = isPotLimit ? (pot + toCall + toCall) : undefined;
     return {
         currentBet,
         minRaise: Math.max(bigBlind, lastRaise || bigBlind),
         pot,
-        toCall: currentBet - playerBet,
+        toCall,
+        maxRaise,
     };
 }
 
@@ -357,6 +361,10 @@ export function validateAction(
             if (currentBet > 0) return { valid: false, error: 'Cannot bet when there is already a bet (use raise)' };
             if (!amount || amount < minRaise) return { valid: false, error: `Minimum bet is ${minRaise}` };
             if (amount > playerStack) return { valid: false, error: 'Insufficient chips' };
+            // Bible V8 §4.14: Pot-limit max bet
+            if (bettingState.maxRaise !== undefined && amount > bettingState.maxRaise) {
+                return { valid: false, error: `Pot-limit max bet is ${bettingState.maxRaise}` };
+            }
             return { valid: true };
         case 'raise': {
             if (currentBet === 0) return { valid: false, error: 'Cannot raise when there is no bet (use bet)' };
@@ -368,6 +376,10 @@ export function validateAction(
                 return { valid: false, error: `Minimum raise is ${minRaise}` };
             }
             if (amount > maxRaiseTo) return { valid: false, error: 'Insufficient chips' };
+            // Bible V8 §4.14: Pot-limit max raise = pot + call + call
+            if (bettingState.maxRaise !== undefined && raiseAmount > bettingState.maxRaise) {
+                return { valid: false, error: `Pot-limit max raise is ${bettingState.maxRaise}` };
+            }
             return { valid: true };
         }
         case 'all_in': return { valid: true };

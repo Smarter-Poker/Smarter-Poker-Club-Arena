@@ -728,6 +728,40 @@ export class ServerTableEngine {
     this.currentHandDealerSeat = dealerSeat;
     this.dealerSeatIndex++;
 
+    // Bible V8 §4.4: Process straddles before hand starts
+    let straddleResults: { seat: number; amount: number }[] = [];
+    if (this.tableInfo.straddle_enabled) {
+      // Build seat order starting from UTG (left of BB)
+      const sbSeat = players.length === 2
+        ? dealerSeat
+        : this.getNextSeat(dealerSeat, players);
+      const bbSeat = this.getNextSeat(sbSeat, players);
+      const utgSeat = this.getNextSeat(bbSeat, players);
+
+      const seatOrder: Array<{ seat: number; playerId: string }> = [];
+      let currentSeat = utgSeat;
+      for (let i = 0; i < players.length - 2; i++) { // Exclude SB and BB
+        const p = players.find(pl => pl.seat_number === currentSeat);
+        if (p) seatOrder.push({ seat: p.seat_number, playerId: p.user_id });
+        currentSeat = this.getNextSeat(currentSeat, players);
+      }
+
+      const stackMap = new Map(players.map(p => [p.user_id, p.stack]));
+      const straddleConfig = {
+        enabled: true,
+        mississippiEnabled: this.tableInfo.straddle_type === 'mississippi',
+        maxStraddles: this.tableInfo.max_straddles ?? 1,
+        straddleMultiplier: 2,
+      };
+      this.straddleEngine.configure(this.tableId, straddleConfig);
+      const result = this.straddleEngine.processStraddles(
+        this.tableId, this.tableInfo.big_blind, seatOrder, stackMap
+      );
+      if (result.posted) {
+        straddleResults = result.straddles.map(s => ({ seat: s.seatNumber, amount: s.amount }));
+      }
+    }
+
     const config: HandConfig = {
       tableId: this.tableId,
       handNumber,
@@ -735,6 +769,8 @@ export class ServerTableEngine {
       smallBlind: this.tableInfo.small_blind,
       bigBlind: this.tableInfo.big_blind,
       ante: this.tableInfo.ante,
+      bigBlindAnte: this.tableInfo.big_blind_ante_enabled ?? false,
+      straddles: straddleResults.length > 0 ? straddleResults : undefined,
       rakeConfig: this.getRakeConfig(this.tableInfo.small_blind, this.tableInfo.big_blind),
     };
 
@@ -1302,6 +1338,19 @@ export class ServerTableEngine {
       .is('left_at', null);
     const finalCount = dbPlayerCount ?? 0;
     await updateTableStatus(this.tableId, finalCount, finalCount >= 2 ? 'running' : 'waiting');
+  }
+
+  // ═════════════════════════════════════════════════════════════════════════════
+  // SEAT HELPERS
+  // ═════════════════════════════════════════════════════════════════════════════
+
+  private getNextSeat(fromSeat: number, players: SeatedPlayer[]): number {
+    const seats = players.map(p => p.seat_number).sort((a, b) => a - b);
+    if (seats.length === 0) return -1;
+    for (const seat of seats) {
+      if (seat > fromSeat) return seat;
+    }
+    return seats[0];
   }
 
   // ═════════════════════════════════════════════════════════════════════════════

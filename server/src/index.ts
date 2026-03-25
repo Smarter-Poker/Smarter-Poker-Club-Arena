@@ -288,22 +288,54 @@ class GameServer {
         .in('status', ['waiting', 'running']);
       console.log('[GameServer] Reset all cash table player counts');
 
-      // 4. Cancel stale REGISTERING/ANNOUNCED tournaments older than 4 hours
-      const fourHoursAgo = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString();
+      // 4. Cancel stale REGISTERING/ANNOUNCED tournaments older than 1 hour
+      const oneHourAgo = new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString();
       await supabase
         .from('tournaments')
         .update({ status: 'CANCELLED' })
         .in('status', ['ANNOUNCED', 'REGISTERING'])
-        .lt('created_at', fourHoursAgo);
+        .lt('created_at', oneHourAgo);
+      console.log('[GameServer] Cancelled stale REGISTERING/ANNOUNCED tournaments');
 
-      // 5. Cancel stale RUNNING tournaments older than 12 hours (likely stuck from crashed server)
-      const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
+      // 5. Cancel ALL RUNNING SNG/Spin tournaments (they can't survive a server restart —
+      //    lobby IDs change, table engines are lost, players are already cleaned out)
+      const { data: runningSngSpins } = await supabase
+        .from('tournaments')
+        .select('id, name, variant, tournament_type')
+        .eq('status', 'RUNNING');
+
+      let cancelledCount = 0;
+      for (const t of runningSngSpins || []) {
+        const isSngOrSpin = t.variant === 'sng' || t.variant === 'spin' ||
+          t.tournament_type === 'SNG' || t.tournament_type === 'SPIN';
+        if (isSngOrSpin) {
+          await supabase
+            .from('tournaments')
+            .update({ status: 'CANCELLED' })
+            .eq('id', t.id)
+            .eq('status', 'RUNNING');
+          cancelledCount++;
+        }
+      }
+      if (cancelledCount > 0) {
+        console.log(`[GameServer] Cancelled ${cancelledCount} orphaned SNG/Spin RUNNING tournaments`);
+      }
+
+      // 6. Cancel stale RUNNING MTT tournaments older than 2 hours (stuck from crashed server)
+      const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
       await supabase
         .from('tournaments')
         .update({ status: 'CANCELLED' })
         .eq('status', 'RUNNING')
-        .lt('created_at', twelveHoursAgo);
-      console.log('[GameServer] Cancelled stale RUNNING tournaments');
+        .lt('created_at', twoHoursAgo);
+      console.log('[GameServer] Cancelled stale RUNNING tournaments (>2h)');
+
+      // 7. Cancel stuck COMPLETING tournaments (crashed during finishTournament flow)
+      await supabase
+        .from('tournaments')
+        .update({ status: 'COMPLETED', ended_at: new Date().toISOString() })
+        .eq('status', 'COMPLETING');
+      console.log('[GameServer] Finalized stuck COMPLETING tournaments');
 
       console.log('[GameServer] Stale data cleanup complete');
     } catch (err) {

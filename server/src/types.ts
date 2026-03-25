@@ -138,6 +138,8 @@ export interface SeatedPlayer {
   horse_profile?: string;
   time_bank_remaining?: number;
   time_bank_uses_remaining?: number;
+  /** Bible V8 §2.3: Player avatar for broadcast */
+  avatar_url?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

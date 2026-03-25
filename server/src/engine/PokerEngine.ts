@@ -526,11 +526,14 @@ export function determineWinners(
 
   if (activePlayers.length === 1) {
     const totalPot = pots.reduce((sum, p) => sum + p.amount, 0);
-    return [{ userId: activePlayers[0].user_id, amount: totalPot }];
+    return [{ userId: activePlayers[0].user_id, amount: totalPot, potIndex: 0 }];
   }
 
   const isOmaha = gameVariant.startsWith('plo');
-  const isHiLo = isOmaha && (gameVariant.includes('8') || gameVariant === 'plo8');
+  // Bible V8 §7.6: Both plo8 and plo_hilo use hi-lo split evaluation
+  const isHiLo =
+    isOmaha &&
+    (gameVariant === 'plo8' || gameVariant === 'plo_hilo' || gameVariant.includes('hilo'));
   const evaluator = isOmaha ? evaluateOmahaHand : evaluateHand;
 
   const playerHands = activePlayers.map((p) => ({
@@ -539,7 +542,8 @@ export function determineWinners(
     lowHand: isHiLo ? evaluateOmahaLowHand(p.cards, communityCards) : null,
   }));
 
-  for (const pot of pots) {
+  for (let potIdx = 0; potIdx < pots.length; potIdx++) {
+    const pot = pots[potIdx];
     const eligible = playerHands.filter((ph) => pot.eligiblePlayers.includes(ph.player.user_id));
     if (eligible.length === 0) continue;
 
@@ -563,7 +567,8 @@ export function determineWinners(
         ph.hand.ranking === bestHiRanking &&
         JSON.stringify(ph.hand.kickers) === JSON.stringify(bestHiKickers)
     );
-    distributePot(winners, hiWinners, hiPotAmount, 'High');
+    // Bible V8 §2.7: Pass potIndex so Winner objects know which pot they won from
+    distributePot(winners, hiWinners, hiPotAmount, 'High', potIdx);
 
     // Low half
     if (loPotAmount > 0) {
@@ -572,7 +577,7 @@ export function determineWinners(
       const loWinners = qualifyingLowPlayers.filter(
         (ph) => JSON.stringify(ph.lowHand!.kickers) === JSON.stringify(bestLoKickers)
       );
-      distributePot(winners, loWinners, loPotAmount, 'Low');
+      distributePot(winners, loWinners, loPotAmount, 'Low', potIdx);
     }
   }
 
@@ -583,7 +588,8 @@ function distributePot(
   globalWinners: Winner[],
   roundWinners: { player: SeatPlayer; hand: EvaluatedHand; lowHand?: EvaluatedHand | null }[],
   amount: number,
-  _type: 'High' | 'Low'
+  _type: 'High' | 'Low',
+  potIndex: number = 0
 ): void {
   const totalCents = Math.trunc(amount * 100);
   const shareCents = Math.trunc(totalCents / roundWinners.length);
@@ -598,7 +604,7 @@ function distributePot(
     if (existing) {
       existing.amount += winAmt;
     } else {
-      globalWinners.push({ userId: pw.player.user_id, amount: winAmt, hand: pw.hand });
+      globalWinners.push({ userId: pw.player.user_id, amount: winAmt, hand: pw.hand, potIndex });
     }
   });
 }

@@ -321,6 +321,7 @@ export class HandController {
 
   private getCardsPerPlayer(): number {
     switch (this.config.gameVariant) {
+      case 'plo': // Generic PLO = PLO4
       case 'plo4':
         return 4;
       case 'plo5':
@@ -329,13 +330,11 @@ export class HandController {
         return 6;
       case 'plo8':
         return 4; // Omaha Hi/Lo
-      case 'pineapple':
-        return 3; // Pineapple: 3 hole cards, discard 1 later
       case 'ofc':
       case 'ofc_pineapple':
         return 5; // Initial deal for OFC
       default:
-        return 2; // NLH, Short Deck
+        return 2; // NLH, FLH, Short Deck
     }
   }
 

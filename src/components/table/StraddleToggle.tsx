@@ -12,8 +12,6 @@
 import React from 'react';
 import { haptic } from '../../services/SoundService';
 import './StraddleToggle.css';
-import { straddleEngine } from '../../engine/StraddleEngine';
-import './StraddleToggle.css';
 
 export interface StraddleToggleProps {
   tableId: string;
@@ -46,8 +44,7 @@ export function StraddleToggle({
       console.error("[StraddleToggle] Error:", err);
       /* noop */
     }
-    // Wire to engine for bus emission
-    straddleEngine.toggleAutoStraddle(tableId, playerId, enabled);
+    // Server-authoritative: parent handles the server API call via onToggle
     onToggle(enabled);
   };
 

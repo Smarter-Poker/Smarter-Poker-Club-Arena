@@ -737,6 +737,11 @@ export class ServerTableEngine {
     this.currentHandDealerSeat = dealerSeat;
     this.dealerSeatIndex++;
 
+    // Bible V8 §6: Detect orbit completion (dealer wrapped around table) → refill time banks
+    if (this.dealerSeatIndex > 0 && this.dealerSeatIndex % players.length === 0) {
+      this.timeBankEngine.onOrbitComplete(this.tableId);
+    }
+
     // Bible V8 §4.4: Process straddles before hand starts
     let straddleResults: { seat: number; amount: number }[] = [];
     if (this.tableInfo.straddle_enabled) {

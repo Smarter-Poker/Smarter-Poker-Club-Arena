@@ -47,6 +47,8 @@ export interface StakesTier {
   rakeCap: number;
   rakeCapBB: number;
   bbjFeeBB: number;
+  /** % of BBJ pool paid out when jackpot hits at this stakes level */
+  bbjPayoutTotalPercent: number;
 }
 
 export interface BBJQualifyingHand {
@@ -69,8 +71,13 @@ export interface ServerRakeConfigResult {
   bbjFeeBB: number;
   bbjFeeDollars: number;
   bbjPoolAllocation: typeof BBJ_POOL_ALLOCATION;
+  /** % of BBJ pool paid out when jackpot hits (varies by stakes: 15%-85%) */
+  bbjPayoutTotalPercent: number;
+  /** Loser gets 50% of the total payout */
   bbjPayoutLoser: number;
+  /** Winner gets 25% of the total payout */
   bbjPayoutWinner: number;
+  /** Table share: all other dealt-in players split 25% of total payout */
   bbjPayoutTable: number;
   qualifyingHand: BBJQualifyingHand;
   rules: typeof BBJ_RULES;
@@ -113,33 +120,36 @@ export const BBJ_POOL_ALLOCATION = {
 export const STAKES_TIERS: Record<string, StakesTier> = {
   nano: {
     label: 'Nano',
-    blindRange: '0.05/0.10 - 0.25/0.50',
+    blindRange: '0.05/0.10 - 0.1/0.2',
     minBB: 0.1,
-    maxBB: 0.5,
+    maxBB: 0.2,
     rakePercent: 10,
     rakeCap: 3,
     rakeCapBB: 3,
     bbjFeeBB: 0.6,
+    bbjPayoutTotalPercent: 15, // 7.5% loser / 3.75% winner / 3.75% table
   },
   micro: {
     label: 'Micro',
-    blindRange: '0.30/0.60 - 0.50/1.00',
-    minBB: 0.6,
-    maxBB: 1,
+    blindRange: '0.2/0.4 - 0.4/0.8',
+    minBB: 0.3,
+    maxBB: 0.8,
     rakePercent: 10,
-    rakeCap: 5,
-    rakeCapBB: 5,
-    bbjFeeBB: 0.25,
+    rakeCap: 3,
+    rakeCapBB: 3,
+    bbjFeeBB: 0.6, // Per PDF rake schedule: .20/.40 and .30/.60 are both 0.6bb
+    bbjPayoutTotalPercent: 25, // 12.5% loser / 6.25% winner / 6.25% table
   },
   small: {
     label: 'Small',
-    blindRange: '1/2',
-    minBB: 1.5,
+    blindRange: '0.5/1 - 1.5/3',
+    minBB: 1,
     maxBB: 3,
     rakePercent: 10,
     rakeCap: 5,
     rakeCapBB: 5,
     bbjFeeBB: 0.25,
+    bbjPayoutTotalPercent: 40, // 20% loser / 10% winner / 10% table
   },
   mid: {
     label: 'Mid',
@@ -150,26 +160,29 @@ export const STAKES_TIERS: Record<string, StakesTier> = {
     rakeCap: 8,
     rakeCapBB: 8,
     bbjFeeBB: 0.12,
+    bbjPayoutTotalPercent: 55, // 27.5% loser / 13.75% winner / 13.75% table
   },
   high: {
     label: 'High',
-    blindRange: '5/10 - 10/25',
+    blindRange: '5/10 - 20/40',
     minBB: 9,
-    maxBB: 25,
+    maxBB: 40,
     rakePercent: 10,
     rakeCap: 15,
     rakeCapBB: 15,
     bbjFeeBB: 0.06,
+    bbjPayoutTotalPercent: 70, // 35% loser / 17.5% winner / 17.5% table
   },
   nosebleeds: {
     label: 'Nosebleeds',
     blindRange: '25/50+',
-    minBB: 26,
+    minBB: 41,
     maxBB: Infinity,
     rakePercent: 10,
     rakeCap: 20,
     rakeCapBB: 20,
     bbjFeeBB: 0.03,
+    bbjPayoutTotalPercent: 85, // 42.5% loser / 21.25% winner / 21.25% table
   },
 };
 
@@ -263,11 +276,10 @@ export const BBJ_QUALIFYING_HANDS: Record<string, BBJQualifyingHand> = {
   },
   plo6: {
     label: 'PLO6',
-    minLosingHand: '87654',
-    description: 'Straight Flush (8-high) or better must LOSE',
-    rules: ['Must use exactly 2 cards from hand'],
-    handRank: 'straight_flush',
-    minRankValue: '87654',
+    minLosingHand: null,
+    description: 'BBJ not available for PLO6',
+    rules: [],
+    eligible: false,
   },
   short_deck: {
     label: 'Short Deck',
@@ -276,19 +288,28 @@ export const BBJ_QUALIFYING_HANDS: Record<string, BBJQualifyingHand> = {
     rules: [],
     eligible: false,
   },
-  ofc: {
-    label: 'Open Face Chinese',
-    minLosingHand: null,
-    description: 'BBJ not available for OFC',
-    rules: [],
-    eligible: false,
+  pineapple: {
+    label: 'Pineapple',
+    minLosingHand: 'KKKK2',
+    description: 'Four of a Kind (Kings) or better must LOSE',
+    rules: [
+      'Must use exactly 2 cards from hand',
+      'Both players must use two cards from their hole cards',
+    ],
+    handRank: 'four_of_a_kind',
+    minRankValue: 'KKKK',
   },
+  // Alias: ofc_pineapple maps to pineapple (same game, different variant key)
   ofc_pineapple: {
-    label: 'OFC Pineapple',
-    minLosingHand: null,
-    description: 'BBJ not available for OFC Pineapple',
-    rules: [],
-    eligible: false,
+    label: 'Pineapple',
+    minLosingHand: 'KKKK2',
+    description: 'Four of a Kind (Kings) or better must LOSE',
+    rules: [
+      'Must use exactly 2 cards from hand',
+      'Both players must use two cards from their hole cards',
+    ],
+    handRank: 'four_of_a_kind',
+    minRankValue: 'KKKK',
   },
 };
 
@@ -325,11 +346,18 @@ export function findScheduleMatch(smallBlind: number, bigBlind: number): RakeSch
  * Get tier config for a given Big-Blind size (fallback for non-exact matches).
  */
 export function getTierForBB(bigBlind: number): StakesTier {
-  if (bigBlind <= 0.5) return STAKES_TIERS.nano;
-  if (bigBlind <= 1) return STAKES_TIERS.micro;
+  // Tier boundaries based on Dan's BBJ payout screenshot + rake PDF:
+  // Nano:  0.10 - 0.20   (fee 0.6bb,  payout 15%)
+  // Micro: 0.40 - 0.80   (fee 0.6bb,  payout 25%)
+  // Small: 1.00 - 3.00   (fee 0.25bb, payout 40%)
+  // Mid:   4.00 - 8.00   (fee 0.12bb, payout 55%)
+  // High:  10.0 - 40.0   (fee 0.06bb, payout 70%)
+  // Nose:  50+            (fee 0.03bb, payout 85%)
+  if (bigBlind <= 0.2) return STAKES_TIERS.nano;
+  if (bigBlind <= 0.8) return STAKES_TIERS.micro;
   if (bigBlind <= 3) return STAKES_TIERS.small;
   if (bigBlind <= 8) return STAKES_TIERS.mid;
-  if (bigBlind <= 25) return STAKES_TIERS.high;
+  if (bigBlind <= 40) return STAKES_TIERS.high;
   return STAKES_TIERS.nosebleeds;
 }
 
@@ -355,6 +383,10 @@ export function getFullRakeConfig(
   const rakeCap = scheduleMatch ? scheduleMatch.rakeCap : tier.rakeCap;
   const bbjFeeBB = scheduleMatch ? scheduleMatch.bbjFeeBB : tier.bbjFeeBB;
 
+  // BBJ payout: total % of pool varies by stakes tier (Dan's authoritative table)
+  // Distribution is always 50/25/25 split of the total payout amount.
+  const totalPayoutPercent = tier.bbjPayoutTotalPercent;
+
   return {
     tier: tier.label,
     blindRange: tier.blindRange,
@@ -365,9 +397,10 @@ export function getFullRakeConfig(
     bbjFeeBB: bbjEligible ? bbjFeeBB : 0,
     bbjFeeDollars: bbjEligible ? Math.round(bigBlind * bbjFeeBB * 100) / 100 : 0,
     bbjPoolAllocation: BBJ_POOL_ALLOCATION,
-    bbjPayoutLoser: 50,
-    bbjPayoutWinner: 25,
-    bbjPayoutTable: 25,
+    bbjPayoutTotalPercent: totalPayoutPercent,
+    bbjPayoutLoser: totalPayoutPercent / 2, // 50% of total payout
+    bbjPayoutWinner: totalPayoutPercent / 4, // 25% of total payout
+    bbjPayoutTable: totalPayoutPercent / 4, // 25% of total payout (split among all dealt-in)
     qualifyingHand: qualifying,
     rules: BBJ_RULES,
     _exactMatch: !!scheduleMatch,
@@ -394,4 +427,212 @@ export function calculateBBJFee(
 
   // BBJ fee = BB × bbjFeeBB, rounded to nearest cent
   return Math.round(bigBlind * config.bbjFeeBB * 100) / 100;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// BBJ QUALIFYING HAND DETECTION
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Hand ranking values matching PokerEngine.HAND_RANKINGS.
+ * Used here to avoid circular import (RakeConfig should not depend on PokerEngine).
+ */
+const HAND_RANK = {
+  FULL_HOUSE: 7,
+  FOUR_OF_A_KIND: 8,
+  STRAIGHT_FLUSH: 9,
+  ROYAL_FLUSH: 10,
+} as const;
+
+/** Rank values: A=14, K=13, Q=12, J=11, T=10, 9=9, ... 2=2 */
+const RANK_VALUES: Record<string, number> = {
+  A: 14,
+  K: 13,
+  Q: 12,
+  J: 11,
+  T: 10,
+  '10': 10,
+  '9': 9,
+  '8': 8,
+  '7': 7,
+  '6': 6,
+  '5': 5,
+  '4': 4,
+  '3': 3,
+  '2': 2,
+};
+
+export interface BBJDetectionResult {
+  hit: boolean;
+  /** The player whose LOSING hand qualifies for BBJ (the "loser" gets biggest share) */
+  loserUserId?: string;
+  loserHand?: { ranking: number; name: string; kickers: number[] };
+  /** The player whose WINNING hand beat the qualifying hand */
+  winnerUserId?: string;
+  winnerHand?: { ranking: number; name: string; kickers: number[] };
+  /** All players dealt in (for table share) */
+  dealtInPlayerIds?: string[];
+  variant?: string;
+  qualifyingHandLabel?: string;
+}
+
+/**
+ * Check if a showdown resulted in a BBJ qualifying hit.
+ *
+ * BBJ rules (from Dan's authoritative screenshots):
+ * - NLH/FLH: AAAJJ (Full House, Aces full of Jacks) or better must LOSE
+ *   - Player holding Full House must have at least one Ace in hole cards
+ *   - Both cards from hand must play
+ * - PLO4/PLO8/Pineapple: KKKK (Four Kings) or better must LOSE
+ *   - Must use exactly 2 cards from hand
+ * - PLO5: 87654 Straight Flush or better must LOSE
+ * - PLO6: NOT eligible
+ * - Short Deck: NOT eligible
+ *
+ * Additional rules:
+ * - Pot must be >= 10 BB
+ * - 4+ players must be dealt in preflop
+ * - Not available for Double/Triple Board games
+ * - If run it multiple times, only first runout counts
+ * - If multiple losers qualify, prize split proportionally
+ *
+ * @param showdownResults - Array of { userId, handRanking, handName, kickers, holeCards }
+ * @param winnerId - The user ID of the hand winner
+ * @param variant - Game variant (nlh, plo4, plo5, etc.)
+ * @param potSize - Pot size in chips/dollars
+ * @param bigBlind - Big blind amount
+ * @param numPlayersDealt - Number of players dealt in preflop
+ * @param dealtInPlayerIds - All player IDs dealt in (for table share)
+ */
+export function detectBBJHit(
+  showdownResults: Array<{
+    userId: string;
+    handRanking: number;
+    handName: string;
+    kickers: number[];
+    holeCards?: Array<{ rank: string; suit: string }>;
+  }>,
+  winnerId: string,
+  variant: string,
+  potSize: number,
+  bigBlind: number,
+  numPlayersDealt: number,
+  dealtInPlayerIds: string[]
+): BBJDetectionResult {
+  const noHit: BBJDetectionResult = { hit: false };
+
+  // 1. Check basic BBJ eligibility
+  if (numPlayersDealt < BBJ_RULES.minPlayersDealt) return noHit;
+  if (potSize < bigBlind * BBJ_RULES.minPotBB) return noHit;
+
+  const normalizedVariant = variant.toLowerCase();
+  const qualifying = BBJ_QUALIFYING_HANDS[normalizedVariant];
+  if (!qualifying || qualifying.eligible === false || !qualifying.minLosingHand) return noHit;
+
+  // 2. Find the LOSER(s) with qualifying hands
+  // A "loser" is any non-winner showdown player whose hand meets the minimum
+  const losers = showdownResults.filter((r) => r.userId !== winnerId);
+  const winner = showdownResults.find((r) => r.userId === winnerId);
+  if (!winner || losers.length === 0) return noHit;
+
+  // 3. Check each loser against the qualifying minimum
+  for (const loser of losers) {
+    const qualifies = doesHandQualify(
+      loser.handRanking,
+      loser.kickers,
+      loser.holeCards || [],
+      qualifying,
+      normalizedVariant
+    );
+
+    if (qualifies) {
+      return {
+        hit: true,
+        loserUserId: loser.userId,
+        loserHand: {
+          ranking: loser.handRanking,
+          name: loser.handName,
+          kickers: loser.kickers,
+        },
+        winnerUserId: winnerId,
+        winnerHand: {
+          ranking: winner.handRanking,
+          name: winner.handName,
+          kickers: winner.kickers,
+        },
+        dealtInPlayerIds,
+        variant: normalizedVariant,
+        qualifyingHandLabel: qualifying.label,
+      };
+    }
+  }
+
+  return noHit;
+}
+
+/**
+ * Check if a specific hand meets the BBJ minimum qualifying hand.
+ */
+function doesHandQualify(
+  handRanking: number,
+  kickers: number[],
+  holeCards: Array<{ rank: string; suit: string }>,
+  qualifying: BBJQualifyingHand,
+  variant: string
+): boolean {
+  if (!qualifying.handRank || !qualifying.minRankValue) return false;
+
+  switch (qualifying.handRank) {
+    case 'full_house': {
+      // NLH/FLH: Must have Full House (7) or better.
+      // Minimum: AAAJJ → kickers [14,14,14,11,11] or better
+      if (handRanking < HAND_RANK.FULL_HOUSE) return false;
+      if (handRanking > HAND_RANK.FULL_HOUSE) return true; // Quads+ always qualifies
+
+      // Full House: check if it's Aces full of Jacks or better
+      // kickers format: [trip_rank, pair_rank] (e.g., [14, 11] for AAAJJ)
+      if (kickers.length < 2) return false;
+      const tripRank = kickers[0];
+      const pairRank = kickers[1];
+
+      // Must be Aces full (tripRank = 14)
+      if (tripRank < 14) return false;
+      // Pair must be Jacks (11) or better
+      if (pairRank < 11) return false;
+
+      // NLH rule: Player must have at least one Ace in hole cards
+      if (variant === 'nlh' || variant === 'flh') {
+        const hasAceInHole = holeCards.some((c) => c.rank === 'A' || c.rank === '14');
+        if (!hasAceInHole) return false;
+      }
+
+      return true;
+    }
+
+    case 'four_of_a_kind': {
+      // PLO4/PLO8/Pineapple: Must have Four of a Kind (8) with Kings or better
+      if (handRanking < HAND_RANK.FOUR_OF_A_KIND) return false;
+      if (handRanking > HAND_RANK.FOUR_OF_A_KIND) return true; // SF+ always qualifies
+
+      // Four of a Kind: check if quads rank is Kings (13) or better
+      if (kickers.length < 1) return false;
+      const quadsRank = kickers[0];
+      return quadsRank >= 13; // K=13, A=14
+    }
+
+    case 'straight_flush': {
+      // PLO5: Must have Straight Flush (9) with 8-high or better
+      if (handRanking < HAND_RANK.STRAIGHT_FLUSH) return false;
+      if (handRanking >= HAND_RANK.ROYAL_FLUSH) return true; // Royal always qualifies
+
+      // Straight Flush: check if the high card is 8 or better
+      // kickers for straight flush: [high_card_rank]
+      if (kickers.length < 1) return false;
+      const highCardRank = kickers[0];
+      return highCardRank >= 8; // 87654 SF = high card 8
+    }
+
+    default:
+      return false;
+  }
 }

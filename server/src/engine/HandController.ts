@@ -451,12 +451,29 @@ export class HandController {
 
     const activePlayers = this.getActivePlayers().filter((p) => !p.is_all_in);
     if (activePlayers.length < 2) {
-      this.runOutCommunityCards();
+      // Bible V8 §4.19: Emit ALL_IN_RUNOUT so ServerTableEngine can pause
+      // for insurance/RIT offers before dealing remaining cards.
+      // ServerTableEngine calls continueRunout() after offers are resolved.
+      this.emit({
+        type: 'ALL_IN_RUNOUT',
+        board: [...this.state.communityCards],
+        pot: this.state.pot,
+        players: this.getActivePlayers().map((p) => ({ ...p })),
+      });
       return;
     }
 
     this.state.currentPlayerSeat = this.getFirstPostflopPlayer();
     this.emitTurnChange();
+  }
+
+  /**
+   * Bible V8 §4.19: Public method called by ServerTableEngine AFTER insurance/RIT
+   * offers have been resolved. Deals remaining community cards and completes the hand.
+   * This is the resumption point after the ALL_IN_RUNOUT pause.
+   */
+  public continueRunout(): void {
+    this.runOutCommunityCards();
   }
 
   private runOutCommunityCards(): void {

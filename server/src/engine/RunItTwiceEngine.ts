@@ -22,6 +22,10 @@ export interface RITConfig {
   enabled: boolean;
   autoDeclineTimeout: number;
   maxRuns: 2 | 3;
+  /** FIX 96: Timeout for chooser to pick runs (phase 1) */
+  chooserTimeout?: number;
+  /** FIX 96: Timeout for others to accept/decline (phase 2) */
+  responderTimeout?: number;
 }
 
 export interface RITState {
@@ -30,9 +34,15 @@ export interface RITState {
   status: 'idle' | 'offered' | 'accepted' | 'declined' | 'resolved';
   offeredBy: string;
   offeredTo: string;
+  /** FIX 96: All player IDs involved in the all-in (for multi-player RIT) */
+  allPlayerIds: string[];
+  /** FIX 96: Player who chooses the number of runs */
+  chooserPlayerId?: string;
   acceptedBy: Set<string>;
   pot: number;
   maxRuns: 2 | 3;
+  /** FIX 96: Chosen number of runs (set by chooser in phase 1) */
+  chosenRuns: 1 | 2 | 3;
   board1: string[];
   board2: string[];
   board3: string[];
@@ -87,21 +97,36 @@ export class RunItTwiceEngine {
    * Offer RIT when all-in is detected.
    * Called by ServerTableEngine when 2+ players are all-in.
    */
-  offer(tableId: string, handId: string, offeredBy: string, offeredTo: string, pot: number): void {
+  offer(
+    tableId: string,
+    handId: string,
+    offeredBy: string,
+    offeredTo: string | string[],
+    pot: number
+  ): void {
     const config = this.tableConfigs.get(tableId);
     if (!config?.enabled) return;
 
     this.clearOffer(tableId);
+
+    // Support both single player (string) and multi-player (string[]) for backward compatibility
+    const allPlayerIds = Array.isArray(offeredTo) ? offeredTo : [offeredBy, offeredTo];
+    const primaryOfferedTo = Array.isArray(offeredTo)
+      ? offeredTo.find((id) => id !== offeredBy) || offeredTo[0]
+      : offeredTo;
 
     const state: RITState = {
       tableId,
       handId,
       status: 'offered',
       offeredBy,
-      offeredTo,
+      offeredTo: primaryOfferedTo,
+      allPlayerIds,
+      chooserPlayerId: offeredBy,
       acceptedBy: new Set([offeredBy]),
       pot,
       maxRuns: config.maxRuns || 2,
+      chosenRuns: config.maxRuns || 2,
       board1: [],
       board2: [],
       board3: [],
@@ -110,7 +135,7 @@ export class RunItTwiceEngine {
     state.timeoutTimer = setTimeout(
       () => {
         if (state.status === 'offered') {
-          this.decline(tableId, offeredTo);
+          this.decline(tableId, primaryOfferedTo);
         }
       },
       (config.autoDeclineTimeout || 10) * 1000
@@ -123,7 +148,8 @@ export class RunItTwiceEngine {
       tableId,
       handId,
       offeredBy,
-      offeredTo,
+      offeredTo: primaryOfferedTo,
+      allPlayerIds,
       pot,
     });
   }
@@ -277,6 +303,47 @@ export class RunItTwiceEngine {
 
   getState(tableId: string): RITState | null {
     return this.activeOffers.get(tableId) ?? null;
+  }
+
+  /**
+   * FIX 96: Get the chosen number of runs for a table.
+   * Returns state.chosenRuns (set by chooser), falls back to maxRuns config.
+   */
+  getChosenRuns(tableId: string): number {
+    const state = this.activeOffers.get(tableId);
+    if (state) return state.chosenRuns;
+    const config = this.tableConfigs.get(tableId);
+    return config?.maxRuns ?? 2;
+  }
+
+  /**
+   * FIX 96: Chooser decides how many runs (1, 2, or 3).
+   */
+  setChosenRuns(tableId: string, runs: 1 | 2 | 3): void {
+    const state = this.activeOffers.get(tableId);
+    if (state) state.chosenRuns = runs;
+  }
+
+  /**
+   * FIX 96: Check if there's a pending (offered) RIT for this table.
+   */
+  hasPendingOffer(tableId: string): boolean {
+    const state = this.activeOffers.get(tableId);
+    return state?.status === 'offered' || state?.status === 'accepted';
+  }
+
+  /**
+   * FIX 96: Chooser decides the number of runs.
+   * If runs === 1, this effectively declines RIT.
+   */
+  chooserDecides(tableId: string, userId: string, runs: 1 | 2 | 3): void {
+    const state = this.activeOffers.get(tableId);
+    if (!state || state.chooserPlayerId !== userId) return;
+    state.chosenRuns = runs;
+    if (runs === 1) {
+      state.status = 'declined';
+      if (state.timeoutTimer) clearTimeout(state.timeoutTimer);
+    }
   }
 
   private clearOffer(tableId: string): void {

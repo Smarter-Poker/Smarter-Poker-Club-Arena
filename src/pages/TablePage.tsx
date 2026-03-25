@@ -773,10 +773,14 @@ export default function TablePage({
   const [showInsurance, setShowInsurance] = useState(false);
   const [insuranceOffer, setInsuranceOffer] = useState<InsuranceOffer | null>(null);
 
-  // Run It Twice state
+  // Run It Twice state — FIX 96: 2-phase flow with chooser model
   const [showRIT, setShowRIT] = useState(false);
   const [ritTimer, setRitTimer] = useState(10);
   const [ritOpponent, setRitOpponent] = useState('Opponent');
+  const [ritIsChooser, setRitIsChooser] = useState(false);
+  const [ritChosenRuns, setRitChosenRuns] = useState<2 | 3>(2);
+  const [ritMaxRuns, setRitMaxRuns] = useState<2 | 3>(2);
+  const [ritPlayerCount, setRitPlayerCount] = useState(2);
 
   // Winner state — tracks winning players, hand names, amounts for highlighting + hand history
   const [winnerInfo, setWinnerInfo] = useState<{
@@ -923,11 +927,22 @@ export default function TablePage({
     };
   }, [showInsurance]);
 
-  // Run It Twice handlers — Bible V8 §4.20: Use HTTP POST /rit endpoint
+  // FIX 96: Run It Twice handlers — Bible V8 §4.20 + Dan's rules
+  // 2-phase flow: Chooser picks runs (1/2/3), others accept/decline
+  const handleRITChooserDecide = async (runs: 1 | 2 | 3) => {
+    setShowRIT(false);
+    if (tableId) {
+      const result = await respondToRIT(tableId, { runs });
+      if (!result.success) {
+        console.error('[RIT] Chooser decide failed:', result.error);
+      }
+    }
+  };
+
   const handleRITAccept = async () => {
     setShowRIT(false);
     if (tableId) {
-      const result = await respondToRIT(tableId, 'accept');
+      const result = await respondToRIT(tableId, { response: 'accept' });
       if (!result.success) {
         console.error('[RIT] Accept failed:', result.error);
       }
@@ -937,7 +952,7 @@ export default function TablePage({
   const handleRITDecline = async () => {
     setShowRIT(false);
     if (tableId) {
-      const result = await respondToRIT(tableId, 'decline');
+      const result = await respondToRIT(tableId, { response: 'decline' });
       if (!result.success) {
         console.error('[RIT] Decline failed:', result.error);
       }
@@ -1695,6 +1710,51 @@ export default function TablePage({
           setShowInsurance(true);
         }
         return; // Don't process as regular state
+      }
+
+      // FIX 96: RIT offer — show prompt to chooser or wait for chooser's decision
+      if (eventType === 'rit_offer') {
+        const chooserId = handState.chooserPlayerId as string;
+        const allPlayerIds = handState.allPlayerIds as string[];
+        const maxRuns = (handState.maxRuns as number) || 2;
+
+        // Only show to all-in players involved in the RIT offer
+        if (!userId || !allPlayerIds?.includes(userId)) return;
+
+        if (userId === chooserId) {
+          // This user is the CHOOSER (best hand) — show 1/2/3 options, 5 second timer
+          setRitIsChooser(true);
+          setRitMaxRuns((maxRuns === 3 ? 3 : 2) as 2 | 3);
+          setRitPlayerCount(allPlayerIds.length);
+          setRitTimer(5); // Chooser gets 5 seconds per Dan's rules
+          setShowRIT(true);
+        }
+        // Non-choosers wait for rit_chooser_decided event
+        return;
+      }
+
+      // FIX 96: Chooser decided — show accept/decline to other players
+      if (eventType === 'rit_chooser_decided') {
+        const chooserId = handState.chooserPlayerId as string;
+        const chosenRuns = handState.chosenRuns as number;
+        const waitingFor = handState.waitingFor as string[];
+
+        if (!userId || userId === chooserId) return;
+        if (!waitingFor?.includes(userId)) return;
+
+        setRitIsChooser(false);
+        setRitChosenRuns((chosenRuns === 3 ? 3 : 2) as 2 | 3);
+        setRitOpponent(chooserId); // Will resolve to username via player list
+        setRitTimer(10); // Others get 10 seconds
+        setShowRIT(true);
+        return;
+      }
+
+      // FIX 97: RIT result — display board results (future: animation)
+      if (eventType === 'rit_result') {
+        setShowRIT(false);
+        // RIT boards and distribution can be displayed via a future component
+        return;
       }
 
       if (eventType === 'all_in_equity') {
@@ -4558,12 +4618,17 @@ export default function TablePage({
         />
       )}
 
-      {/* Run It Twice Prompt */}
+      {/* Run It Twice Prompt — FIX 96: 2-phase flow with chooser model */}
       <RunItTwicePrompt
         isOpen={showRIT}
+        isChooser={ritIsChooser}
+        onChooserDecide={handleRITChooserDecide}
         onAccept={handleRITAccept}
         onDecline={handleRITDecline}
         timeRemaining={ritTimer}
+        chosenRuns={ritChosenRuns}
+        maxRuns={ritMaxRuns}
+        playerCount={ritPlayerCount}
         opponentName={ritOpponent}
       />
 

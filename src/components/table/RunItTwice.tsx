@@ -25,9 +25,19 @@ export interface Card {
 
 export interface RunItTwicePromptProps {
   isOpen: boolean;
+  /** FIX 96: true = this player chooses how many runs (2 or 3) */
+  isChooser?: boolean;
+  /** FIX 96: callback when chooser decides number of runs */
+  onChooserDecide?: (runs: 1 | 2 | 3) => Promise<void>;
   onAccept: () => void;
   onDecline: () => void;
   timeRemaining: number; // seconds
+  /** FIX 96: number of runs chosen (2 or 3) */
+  chosenRuns?: 2 | 3;
+  /** FIX 96: max runs allowed (2 or 3) */
+  maxRuns?: 2 | 3;
+  /** FIX 96: number of players in the all-in (affects RIT eligibility) */
+  playerCount?: number;
   opponentName: string;
 }
 
@@ -62,9 +72,14 @@ function toCardImage(card: Card): CardImageCard {
 
 export function RunItTwicePrompt({
   isOpen,
+  isChooser: _isChooser,
+  onChooserDecide: _onChooserDecide,
   onAccept,
   onDecline,
   timeRemaining,
+  chosenRuns: _chosenRuns,
+  maxRuns: _maxRuns,
+  playerCount: _playerCount,
   opponentName,
 }: RunItTwicePromptProps) {
   const [mounted, setMounted] = useState(false);

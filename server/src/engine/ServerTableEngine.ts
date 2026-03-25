@@ -236,12 +236,11 @@ export class ServerTableEngine {
       this.tableInfo = tableData as TableInfo;
 
       // Bible V8 §6.2: Configure time bank engine with table-specific settings
+      // Time banks: 20 seconds each, max 2 per hand, 120/month with VIP (or purchasable with Diamonds)
       this.timeBankEngine.configure(this.tableId, {
-        totalBankSeconds: this.tableInfo.time_bank_seconds ?? 30,
-        maxUses: this.tableInfo.time_bank_max_uses ?? 4,
-        secondsPerUse: this.tableInfo.time_bank_seconds
-          ? Math.ceil(this.tableInfo.time_bank_seconds / (this.tableInfo.time_bank_max_uses ?? 4))
-          : 15,
+        totalBankSeconds: (this.tableInfo.time_bank_max_uses ?? 120) * 20, // uses × 20s each
+        maxUses: this.tableInfo.time_bank_max_uses ?? 120,
+        secondsPerUse: 20, // Each time bank adds exactly 20 seconds
         autoActivate: true,
       });
 
@@ -511,6 +510,7 @@ export class ServerTableEngine {
 
   /**
    * Activate Time Bank triggered by the client HTTP POST to `/timebank`
+   * Bible V8 §6.2: Manual activate — delegates to TimeBankEngine (single source of truth)
    */
   public activateTimeBank(userId: string): { success: boolean; error?: string } {
     if (!this.handController || !this.tableInfo) {
@@ -524,38 +524,67 @@ export class ServerTableEngine {
       return { success: false, error: 'Not your turn' };
     }
 
-    const seatedPlayer = this.seatedPlayers.find((p) => p.user_id === userId);
-    if (!seatedPlayer) return { success: false, error: 'Player not seated' };
-
     if (this.timeBankActivatedThisTurn) {
       return { success: false, error: 'Time bank already activated this turn' };
     }
 
-    // Check if they have uses remaining
-    if ((seatedPlayer.time_bank_uses_remaining || 0) <= 0) {
+    // Bible V8 §6.2: Check via TimeBankEngine (single source of truth for pool + per-hand limits)
+    if (!this.timeBankEngine.hasTimeBank(this.tableId, userId)) {
       return { success: false, error: 'No time bank uses remaining' };
     }
 
-    // Deduct a use on the server state
-    seatedPlayer.time_bank_uses_remaining = (seatedPlayer.time_bank_uses_remaining || 0) - 1;
+    // Activate via TimeBankEngine — it handles pool depletion, per-hand limit, and event emission
+    const activated = this.timeBankEngine.activate(this.tableId, userId, () => {
+      // This callback fires when the manual time bank expires
+      if (!this.running || !this.handController) return;
+      const tbState = this.handController.getState();
+      if (tbState.currentPlayerSeat !== player.seat) return;
+
+      const tbPlayer = tbState.players.find((p) => p.seat === player.seat);
+      const tbToCall = tbPlayer ? Math.max(0, tbState.currentBet - (tbPlayer.bet ?? 0)) : 0;
+      const tbCanCheck = tbToCall === 0;
+
+      if (tbCanCheck) {
+        try {
+          this.handController!.performAction(player.seat, 'check');
+        } catch {
+          try {
+            this.handController!.performAction(player.seat, 'fold');
+          } catch {
+            /* done */
+          }
+        }
+      } else {
+        try {
+          this.handController!.performAction(player.seat, 'fold');
+        } catch {
+          /* done */
+        }
+      }
+    });
+
+    if (!activated) {
+      return { success: false, error: 'Time bank activation failed (per-hand limit or depleted)' };
+    }
+
     this.timeBankActivatedThisTurn = true;
 
-    // Extend timer based on table's time bank setting
-    const bankDuration = this.tableInfo.time_bank_seconds || 60;
+    // Get bank info for the broadcast
+    const bank = this.timeBankEngine.getPlayerBank(this.tableId, userId);
+    const bankSeconds = bank ? bank.currentUseSeconds : 15;
 
-    // Calculate how much normal time was already used
+    // Calculate remaining normal time and add bank time
     const elapsed = (Date.now() - this.playerTurnStartTime) / 1000;
     const remainingBeforeBank = Math.max(0, this.playerTurnDuration - elapsed);
+    const newDuration = remainingBeforeBank + bankSeconds;
 
-    // New duration is remaining normal time PLUS full time bank
-    const newDuration = remainingBeforeBank + bankDuration;
     console.log(
-      `[ServerTableEngine:${this.tableId}] Player ${userId} activated time bank. Adding ${bankDuration}s. Total new countdown: ${Math.round(newDuration)}s`
+      `[ServerTableEngine:${this.tableId}] Player ${userId} manually activated time bank. Adding ${bankSeconds}s. Total: ${Math.round(newDuration)}s`
     );
 
     this.startTurnTimer(userId, player.seat, newDuration);
 
-    // Broadcast a master UI event via standard table channel so OTHER players see the timer reload
+    // Broadcast time bank activation to other players
     try {
       supabase
         .channel(`table:${this.tableId}`)
@@ -565,12 +594,10 @@ export class ServerTableEngine {
           payload: {
             player_id: userId,
             table_id: this.tableId,
-            additional_seconds: bankDuration,
-            uses_remaining: seatedPlayer.time_bank_uses_remaining ?? 0,
-            total_remaining:
-              (seatedPlayer.time_bank_uses_remaining ?? 0) > 0
-                ? (seatedPlayer.time_bank_uses_remaining ?? 0) * bankDuration
-                : 0,
+            additional_seconds: bankSeconds,
+            uses_remaining: bank?.usesRemaining ?? 0,
+            total_remaining: bank?.remainingSeconds ?? 0,
+            auto_activated: false,
           },
         })
         .catch(() => {});
@@ -968,6 +995,10 @@ export class ServerTableEngine {
     try {
       this.clearTurnTimer();
       this.preciseTimer.cancelTimer(this.tableId, userId); // Step 4: Cancel precise deadline
+      // Bible V8 §6.2: If time bank was active, notify engine to deduct used time from pool
+      if (this.timeBankActivatedThisTurn) {
+        this.timeBankEngine.playerActed(this.tableId, userId);
+      }
       this.handController.performAction(seat, normalizedAction as any, amount);
       console.log(
         `[ServerTableEngine:${this.tableId}] Player ${userId} → ${normalizedAction}${amount ? ` ${amount}` : ''}`
@@ -1056,6 +1087,9 @@ export class ServerTableEngine {
         // Reload players + refresh blinds before each hand
         this.seatedPlayers = await loadSeatedPlayers(this.tableId);
         await this.refreshBlinds();
+
+        // Bible V8 §6.3: Check for stale heartbeats before each hand
+        this.disconnectEngine.checkStaleHeartbeats(this.tableId);
 
         const activePlayers = this.seatedPlayers.filter((p) => p.stack > 0);
 
@@ -1248,9 +1282,14 @@ export class ServerTableEngine {
     this.stateVerifier.recordInitialChipTotal(this.tableId, hcPlayers);
 
     // Step 5: Initialize atomic stacks, time banks, and disconnect tracking for each player
+    // Bible V8 §6.2: Reset per-hand time bank activation counters
+    this.timeBankEngine.resetHandActivations(this.tableId);
     for (const p of hcPlayers) {
       this.atomicStackService.initializeStack(this.tableId, p.user_id, p.stack);
-      this.timeBankEngine.initializePlayer(this.tableId, p.user_id);
+      // Only initialize time bank if player is NEW (don't reset existing pool per session)
+      if (!this.timeBankEngine.getPlayerBank(this.tableId, p.user_id)) {
+        this.timeBankEngine.initializePlayer(this.tableId, p.user_id);
+      }
       this.disconnectEngine.registerPlayer(this.tableId, p.user_id);
     }
 
@@ -1467,7 +1506,8 @@ export class ServerTableEngine {
 
         // Step 5: Clean up supporting modules between hands
         this.preActionEngine.dispose(this.tableId);
-        this.timeBankEngine.dispose(this.tableId);
+        // Note: timeBankEngine persists across hands (pool model — depletes per session, not per hand)
+        //       Per-hand activation counter is reset in dealHand() via resetHandActivations()
         // Note: disconnectEngine persists across hands (tracks connection state)
         // Note: atomicStackService persists across hands (tracks stack versions)
 

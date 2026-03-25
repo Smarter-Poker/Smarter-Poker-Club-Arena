@@ -3,11 +3,14 @@
  *  TIME BANK ENGINE — Extended Think Time for Critical Decisions
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * Manages time bank allocations for poker players:
- * - Configurable time banks per session (default: 30s pool, 4 uses)
- * - Auto-activate when player's primary action timer expires
- * - Optional orbit-based refill (1 bank per orbit)
- * - Integrates with PreciseActionTimer for countdown
+ * TIME BANK RULES:
+ * - Each time bank adds 20 seconds of extra decision time
+ * - Max 2 time bank uses per individual hand (1 auto + 1 manual, or 2 manual)
+ * - No limit per session — player can use as many as they have available
+ * - VIP members receive 120 time banks per month
+ * - Non-VIP (or depleted VIP) can purchase individually with Diamonds
+ * - Auto-activate when player's primary action timer expires (if available)
+ * - Player pool depletes over time; balance tracked in database
  *
  * Ported from client: src/engine/TimeBankEngine.ts
  * Server adaptation: No masterBus, no VIPService — uses callbacks for events.
@@ -43,6 +46,8 @@ export interface PlayerTimeBank {
   activatedAt?: number;
   currentUseSeconds: number;
   onExpire?: () => void;
+  /** Per-hand activation count (Bible V8 §6.2: max 2 per hand — 1 auto + 1 manual) */
+  handActivations: number;
 }
 
 export type TimeBankEventType =
@@ -70,11 +75,11 @@ export class TimeBankEngine {
   private onEvent?: (event: TimeBankEvent) => void;
 
   private readonly DEFAULT_CONFIG: TimeBankConfig = {
-    totalBankSeconds: 30,
-    maxUses: 4,
-    secondsPerUse: 15,
+    totalBankSeconds: 2400, // 120 uses × 20 seconds = 2400s per month (VIP default)
+    maxUses: 120, // 120 time banks per month with VIP
+    secondsPerUse: 20, // Each time bank adds 20 seconds to the clock
     refillPerOrbit: false,
-    refillSeconds: 15,
+    refillSeconds: 20,
     autoActivate: true,
   };
 
@@ -110,6 +115,7 @@ export class TimeBankEngine {
       usesRemaining: initialState?.usesRemaining ?? config.maxUses,
       isActive: false,
       currentUseSeconds: 0,
+      handActivations: 0,
     });
   }
 
@@ -147,6 +153,8 @@ export class TimeBankEngine {
 
     if (!bank || bank.isActive) return false;
     if (bank.usesRemaining <= 0 || bank.remainingSeconds <= 0) return false;
+    // Bible V8 §6.2: Per-hand limit — max 2 activations per hand (1 auto + 1 manual)
+    if (bank.handActivations >= 2) return false;
 
     const useSeconds = Math.min(config.secondsPerUse, bank.remainingSeconds);
 
@@ -154,6 +162,7 @@ export class TimeBankEngine {
     bank.activatedAt = Date.now();
     bank.currentUseSeconds = useSeconds;
     bank.usesRemaining--;
+    bank.handActivations++;
     bank.onExpire = onExpire;
 
     this.emitEvent({
@@ -175,14 +184,16 @@ export class TimeBankEngine {
 
   /**
    * Player acted before time bank expired — cancel the countdown.
+   * USE IT OR LOSE IT: The full time bank allocation (20s) is burned regardless
+   * of how quickly the player acted. No partial refunds, no rollover.
    */
   playerActed(tableId: string, playerId: string): void {
     const key = `${tableId}:${playerId}`;
     const bank = this.playerBanks.get(key);
     if (!bank || !bank.isActive) return;
 
-    const elapsed = bank.activatedAt ? Math.ceil((Date.now() - bank.activatedAt) / 1000) : 0;
-    const secondsUsed = Math.min(elapsed, bank.currentUseSeconds);
+    // USE IT OR LOSE IT — deduct the FULL currentUseSeconds, not just elapsed time
+    const secondsUsed = bank.currentUseSeconds;
     bank.remainingSeconds = Math.max(0, bank.remainingSeconds - secondsUsed);
 
     // Cancel PreciseActionTimer
@@ -199,6 +210,22 @@ export class TimeBankEngine {
       remainingSeconds: bank.remainingSeconds,
       usesRemaining: bank.usesRemaining,
     });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PER-HAND RESET (Bible V8 §6.2: max 2 activations per hand)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Reset per-hand activation counter for all players at a table.
+   * Must be called at the START of every new hand.
+   */
+  resetHandActivations(tableId: string): void {
+    for (const [key, bank] of this.playerBanks) {
+      if (key.startsWith(`${tableId}:`)) {
+        bank.handActivations = 0;
+      }
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════

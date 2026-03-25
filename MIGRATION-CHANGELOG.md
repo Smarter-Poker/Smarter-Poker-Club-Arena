@@ -1502,3 +1502,68 @@ Performed line-by-line re-read of EVERY file modified in Round 6. Results:
 - `supabase/migrations/20260325_hand_history_bbj_amount.sql` — Adds `bbj_amount DECIMAL(12,2) DEFAULT 0` column to `hand_history` table
 
 **Total sweep score:** 5 issues found and fixed across 10 files. 0 remaining bugs.
+
+---
+
+## Post-Migration Verification — Round 7: Supporting & Advanced Engine Deep Audit (2026-03-25)
+
+### Phase: COMPLETE (2026-03-25)
+
+**Focus:** Line-by-line verification of ALL supporting engines (TimeBankEngine, DisconnectEngine, PreActionEngine, AtomicStackService) and advanced engines (StraddleEngine, RunItTwiceEngine, MixedGameEngine, StateVerifier) against Bible V8 + Dan's explicit game rules.
+
+### Fixes Applied
+
+| #   | Category                                                    | Description                                                                                                                                                                                                                                                                                          |
+| --- | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 63  | **TimeBankEngine: Per-hand activation limit**               | Added `handActivations` counter to `PlayerTimeBank`. Max 2 activations per hand (1 auto + 1 manual, or 2 of either). `activate()` checks `bank.handActivations >= 2` before allowing. New `resetHandActivations(tableId)` method called at start of every hand in `dealHand()`.                      |
+| 64  | **Manual time bank: Unified to use TimeBankEngine**         | `activateTimeBank()` in ServerTableEngine was using `seatedPlayer.time_bank_uses_remaining` — completely separate tracking from TimeBankEngine. Rewrote to delegate to `timeBankEngine.activate()` with proper onExpire callback. Single source of truth for time bank pool.                         |
+| 65  | **DisconnectEngine: Heartbeat staleness + reconnect grace** | Added `checkStaleHeartbeats(tableId)` — iterates all players and marks as disconnected if `now - lastHeartbeat > timeoutMs`. Called before each hand in dealing loop. Added `reconnectedAt` field and `isInReconnectGrace(tableId, playerId)` method for 5s grace period.                            |
+| 66  | **Time bank: 20s per use, pool persists across hands**      | Updated `secondsPerUse` from 15 → 20 (Dan's spec). Updated `maxUses` default to 120 (VIP monthly allocation). **REMOVED** `timeBankEngine.dispose(tableId)` from HAND_COMPLETE handler — was wiping all player banks between hands, destroying the session pool model. Only initializes NEW players. |
+| 67  | **TimeBankEngine.playerActed() never called**               | When player submitted action during time bank, `handlePlayerAction()` cleared the setTimeout but never called `timeBankEngine.playerActed()`. PreciseActionTimer leaked, pool not depleted. Added the call in `_handlePlayerActionInner()` when `timeBankActivatedThisTurn` is true.                 |
+| 68  | **Time bank: USE IT OR LOSE IT rule**                       | `playerActed()` was calculating partial elapsed time and only deducting that. Dan's rule: once a time bank is activated, the FULL 20 seconds are burned regardless of when the player acts. Changed to deduct `bank.currentUseSeconds` (full allocation), not elapsed time.                          |
+
+### Time Bank Rules Summary (Dan's Authoritative Rules)
+
+- **Each time bank adds 20 seconds** of extra decision time
+- **Max 2 per hand** — whether auto-activated or manually clicked
+- **Use it or lose it** — once activated, the full 20 seconds are burned (no partial refund)
+- **No per-session limit** — player can use as many as they have available
+- **VIP: 120 time banks per month** (monthly allocation)
+- **Non-VIP or depleted VIP**: Purchase individually with Diamonds
+- **Auto-activate**: When primary 15s timer expires and player has time banks available
+
+### Engines Verified Clean (No Fixes Needed)
+
+| Engine                 | Bible V8 Section | Status | Notes                                                                                                                             |
+| ---------------------- | ---------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| **PreActionEngine**    | §4.15            | CLEAN  | All 5 pre-action types correct. Always cleared after evaluation. `onBetPlaced()` invalidates auto_check correctly.                |
+| **AtomicStackService** | §1.9             | CLEAN  | Versioned optimistic locking, batch settlement, dry-run validation. Not actively used for core settlement (HC handles in-memory). |
+| **StraddleEngine**     | §4.4             | CLEAN  | UTG + Mississippi. Re-straddle chain. Max cap. Auto-enrollment. firstToAct adjusted to left of last straddler.                    |
+| **RunItTwiceEngine**   | §4.20            | CLEAN  | Both must accept. Timeout auto-declines. Dual/triple boards. Integer-cents pot split. Rake applies once.                          |
+| **MixedGameEngine**    | §7.20            | CLEAN  | Orbit-based + hands-based rotation. HORSE preset simplified (NLH/PLO only — Razz/Stud not yet supported).                         |
+| **StateVerifier**      | §1.4.4, §9.2     | CLEAN  | 6 integrity checks. BBJ fee deducted from expected total (line 1471-1474 in STE). 0.001 rounding tolerance.                       |
+
+### Timer Flow Verification (Bible V8 §6.1 + §6.2)
+
+**Action Timer (15s per turn):**
+
+1. `TURN_CHANGE` event → `handleTurnChange()` → `startTurnTimer(userId, seat, 15)`
+2. Player submits action → `handlePlayerAction()` → `clearTurnTimer()` → `performAction()`
+3. `performAction()` emits next `TURN_CHANGE` → fresh 15s for next player
+4. Timer expires → auto-activate time bank (if available) OR auto-check/fold
+
+**Time Bank (20s extra):**
+
+1. Primary timer expires → `timeBankEngine.onPrimaryTimerExpired()` → adds 20s
+2. Player acts during time bank → `playerActed()` → burns full 20s from pool
+3. Time bank expires → auto-check/fold via onExpire callback
+4. Max 2 per hand → `handActivations >= 2` blocks further activations
+5. Reset at hand start → `resetHandActivations(tableId)`
+
+### Files Modified in Round 7
+
+| File                                     | Changes                                                                                                                                                                                                                                                                                                                           |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `server/src/engine/TimeBankEngine.ts`    | FIX 63: `handActivations` field + per-hand limit + `resetHandActivations()`. FIX 66: 20s default, 120 uses. FIX 68: use-it-or-lose-it rule. Updated header docs.                                                                                                                                                                  |
+| `server/src/engine/DisconnectEngine.ts`  | FIX 65: `checkStaleHeartbeats()`, `isInReconnectGrace()`, `reconnectedAt` field.                                                                                                                                                                                                                                                  |
+| `server/src/engine/ServerTableEngine.ts` | FIX 63: `resetHandActivations()` call in `dealHand()`. Only init new players. FIX 64: Rewrote `activateTimeBank()` to delegate to TimeBankEngine. FIX 66: Removed `timeBankEngine.dispose()` between hands. Updated config to 20s. FIX 67: `playerActed()` call in `_handlePlayerActionInner()`. Staleness check in dealing loop. |

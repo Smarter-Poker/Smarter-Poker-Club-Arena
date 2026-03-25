@@ -409,6 +409,118 @@ export async function logRakeCollection(
 }
 
 /**
+ * Log BBJ contribution — splits fee into main/backup/promo pools per allocation.
+ * BBJ pool ownership: union-level (if club is in union) or club-level (standalone).
+ * Allocation: 40% Main, 30% Backup, 30% Promotional (from authoritative RakeConfig).
+ */
+export async function logBBJCollection(
+  tableId: string,
+  clubId: string,
+  handNumber: number,
+  bbjAmount: number,
+  bigBlind: number
+): Promise<void> {
+  if (bbjAmount <= 0) return;
+
+  try {
+    // Find the BBJ pool for this club (or its union)
+    const { data: club } = await supabase
+      .from('clubs')
+      .select('union_id')
+      .eq('id', clubId)
+      .single();
+
+    if (!club) {
+      console.warn(`[logBBJCollection] Club ${clubId} not found — skipping BBJ logging`);
+      return;
+    }
+
+    // Look up pool: union-level first, then club-level
+    let poolQuery = supabase.from('bbj_pools').select('id');
+    if (club.union_id) {
+      poolQuery = poolQuery.eq('union_id', club.union_id);
+    } else {
+      poolQuery = poolQuery.eq('club_id', clubId);
+    }
+    const { data: pool } = await poolQuery.maybeSingle();
+
+    if (!pool) {
+      console.warn(`[logBBJCollection] No BBJ pool found for club ${clubId} — skipping`);
+      return;
+    }
+
+    // Allocation: 40% Main, 30% Backup, 30% Promotional
+    const mainPortion = Math.round(bbjAmount * 0.4 * 100) / 100;
+    const backupPortion = Math.round(bbjAmount * 0.3 * 100) / 100;
+    const promoPortion = Math.round(bbjAmount * 100) / 100 - mainPortion - backupPortion;
+
+    // Use bbj_record_contribution RPC — atomically updates pool balances + logs contribution
+    // hand_id is nullable (migration 20260325) since server uses hand_history not hands table
+    const { error } = await supabase.rpc('bbj_record_contribution', {
+      p_pool_id: pool.id,
+      p_hand_id: null,
+      p_table_id: tableId,
+      p_amount: bbjAmount,
+      p_main_portion: mainPortion,
+      p_backup_portion: backupPortion,
+      p_promo_portion: promoPortion,
+      p_big_blind: bigBlind,
+      p_hand_number: handNumber,
+    });
+
+    if (error) {
+      console.error(
+        `[logBBJCollection] BBJ contribution RPC failed for hand #${handNumber}:`,
+        error.message
+      );
+    }
+  } catch (e) {
+    console.warn(`[logBBJCollection] BBJ logging failed for hand #${handNumber}:`, e);
+  }
+}
+
+/**
+ * Log insurance settlement — Bible V8 §4.19.
+ * Records premium collection and payout, routed to union bank or club bank.
+ * - Union clubs: premiums/payouts flow through union bank
+ * - Standalone clubs: premiums/payouts flow through club main bank
+ */
+export async function logInsuranceSettlement(params: {
+  tableId: string;
+  clubId: string;
+  handNumber: number;
+  playerId: string;
+  equityPercent: number;
+  premium: number;
+  insuredAmount: number;
+  payout: number;
+  playerWon: boolean;
+}): Promise<void> {
+  try {
+    const { error } = await supabase.rpc('record_insurance_transaction', {
+      p_table_id: params.tableId,
+      p_club_id: params.clubId,
+      p_hand_number: params.handNumber,
+      p_player_id: params.playerId,
+      p_equity_percent: params.equityPercent,
+      p_premium: params.premium,
+      p_insured_amount: params.insuredAmount,
+      p_payout: params.payout,
+      p_player_won: params.playerWon,
+    });
+
+    if (error) {
+      console.error(
+        `[logInsuranceSettlement] RPC failed for player ${params.playerId} hand #${params.handNumber}:`,
+        error.message
+      );
+    }
+  } catch (e) {
+    console.warn(`[logInsuranceSettlement] Failed for hand #${params.handNumber}:`, e);
+  }
+}
+
+/**
  * Log hand history — every hand documented for audit and replay.
  */
 export async function logHandHistory(params: {

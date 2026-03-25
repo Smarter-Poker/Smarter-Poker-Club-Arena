@@ -3,7 +3,7 @@
 ## Every Change, Documented. No Exceptions.
 
 **Started:** 2026-03-24
-**Current Step:** POST-MIGRATION — Deep Verification Round 5 Complete (22 fixes: 28-49)
+**Current Step:** POST-MIGRATION — Deep Verification Round 6 In Progress (fixes 50-56)
 
 ---
 
@@ -1402,3 +1402,81 @@ All 12 endpoints from MASTER-MIGRATION-DOCUMENT Section 3 are now implemented.
 ### Known Remaining Gaps (Settlement Steps 9-11)
 
 - Bible V8 §1.9 Steps 9-11: Leaderboards, achievements, VIP points are not yet implemented in postHandTasks(). These are future features that require additional infrastructure.
+
+---
+
+## Post-Migration Verification — Round 6: Rake & BBJ Schedule + Insurance Financial Flow
+
+### Phase: IN PROGRESS (2026-03-25)
+
+**Focus:** Verify rake schedule, wire BBJ into settlement, solidify insurance financial routing.
+
+### Fixes Applied
+
+| #   | Category                          | Description                                                                                                                                                                                                                                                                                                          |
+| --- | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 50  | **BBJ Config Port**               | Created `server/src/config/RakeConfig.ts` — ported Dan's authoritative rake schedule with all 14 stake levels, BBJ fee rates, BBJ pool allocation (40/30/30), qualifying hands per variant (NLH=AAAJJ, PLO4/PLO8=KKKK, PLO5/PLO6=87654 SF), BBJ rules (min 10BB pot, 4+ players, no double board, first runout only) |
+| 51  | **ServerTableEngine Wiring**      | Updated `ServerTableEngine.getRakeConfig()` to use ported `getFullRakeConfig()`. Added `getFullRakeAndBBJConfig()` helper. Replaced hardcoded 14-entry array with proper import from authoritative config                                                                                                            |
+| 52  | **Types: bbjConfig + bbjFee**     | Added `bbjConfig` to `HandConfig` (enabled, feeBB, minPotBB, minPlayersDealt). Added `bbjFee: number` to HAND_COMPLETE event in `HandEvent` type                                                                                                                                                                     |
+| 53  | **HandController BBJ Settlement** | Wired BBJ fee calculation into `completeHand()`. BBJ deducted SIMULTANEOUSLY with rake BEFORE pot distribution. Respects `noFlopNoDrop` (no flop = no BBJ). Uses integer-cents arithmetic. Fee = BB × feeBB. Eligibility: sawFlop + pot >= minPotBB × BB + players >= minPlayersDealt                                |
+| 54  | **ServerTableEngine BBJ Flow**    | Added `currentHandBBJFee` tracking field. Captures BBJ from HAND_COMPLETE event. State verifier deducts rake + BBJ combined. Created `logBBJCollection()` in supabase.ts — finds BBJ pool (union or club), splits 40/30/30, calls `bbj_record_contribution` RPC                                                      |
+| 55  | **calculateRake Verification**    | Verified `calculateRake()` in PokerEngine.ts uses correct flow: noFlopNoDrop check → 10% rake with integer-cents → playerCountCaps tier lookup → Math.min(rake, cap). Cap comes from authoritative per-stake schedule via `getFullRakeConfig()`                                                                      |
+| 56  | **Insurance Financial Flow**      | Created `insurance_transactions` table (SQL migration). Added `logInsuranceSettlement()` to supabase.ts with `record_insurance_transaction` RPC. Routes premiums/payouts to union bank (union clubs) or club bank (standalone). Settled in HAND_COMPLETE handler BEFORE dispose. Logged in postHandTasks             |
+
+### Files Modified
+
+| File                                                          | Changes                                                                                                                                                                                                      |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `server/src/config/RakeConfig.ts`                             | NEW — Full authoritative rake schedule with BBJ support                                                                                                                                                      |
+| `server/src/types.ts`                                         | `HandConfig` +bbjConfig, `HandEvent` HAND_COMPLETE +bbjFee                                                                                                                                                   |
+| `server/src/engine/HandController.ts`                         | BBJ fee calculation in completeHand(), both HAND_COMPLETE emits include bbjFee                                                                                                                               |
+| `server/src/engine/ServerTableEngine.ts`                      | +currentHandBBJFee, +currentHandInsuranceSettlements, bbjConfig in HandConfig, BBJ in HAND_COMPLETE handler, insurance settlement before dispose, logBBJCollection + logInsuranceSettlement in postHandTasks |
+| `server/src/services/supabase.ts`                             | +logBBJCollection(), +logInsuranceSettlement()                                                                                                                                                               |
+| `supabase/migrations/20260325_insurance_financial_tables.sql` | NEW — insurance_transactions table + record_insurance_transaction RPC                                                                                                                                        |
+
+### BBJ Pool Allocation Discrepancy Note
+
+The DB migration `005_bbj_triple_bank.sql` says: STANDARD (<$100k): 50% MAIN, 25% BACKUP, 25% PROMO. Dan's authoritative `RakeConfig.ts` says: 40% Main, 30% Backup, 30% Promotional. The code uses Dan's authoritative 40/30/30 split. The DB allocation logic in the `bbj_record_contribution` RPC just adds the portions as passed — it doesn't enforce ratios. So the server code controls the split.
+
+### Insurance Financial Routing Summary
+
+- **Union clubs**: Premiums collected → union bank. Payouts → from union bank.
+- **Standalone clubs**: Premiums → club main bank. Payouts → from club main bank.
+- **Tournaments**: No insurance (skipped if `isTournamentTable()`)
+- Insurance is a COMPLETELY SEPARATE financial flow from rake/BBJ. It's a side bet between the player and the house (union or club), not deducted from the pot.
+
+### Deep Audit Fixes (Post-Initial Implementation)
+
+| #   | Category                             | Description                                                                                                                                                                                                                                                                                                                                                       |
+| --- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 57  | **Missing BBJ variant aliases**      | Added `flh`, `plo`, `plo8`, `plo_hilo`, `ofc_pineapple` to BOTH client AND server `BBJ_QUALIFYING_HANDS`. Without these, `plo_hilo` (a valid GameVariant) would fall back to `nlh` qualifying hand (AAAJJ) instead of correct `plo8` rules (KKKK). Client was also missing `plo`, `plo8`, `plo_hilo`, `ofc_pineapple` entirely.                                   |
+| 58  | **BBJ contributions hand_id FK bug** | `logBBJCollection` was passing `tableId` as `hand_id` — would cause FK violation since `bbj_contributions.hand_id` references `hands(id)`. Server uses `hand_history` table (not `hands`). Created migration to make `hand_id` nullable and add `hand_number` column. Updated `bbj_record_contribution` RPC to accept nullable hand_id and new hand_number param. |
+| 59  | **Rake+BBJ overage guard**           | Added guard in `completeHand()`: if rake + bbjFee > pot, reduce BBJ first to prevent negative totalWinnings. Edge case for tiny pots at low stakes.                                                                                                                                                                                                               |
+
+### Known Gaps (Documented, Not Yet Wired)
+
+1. **Insurance offer creation not wired**: `insuranceEngine.createOffers()` is never called in ServerTableEngine. The all-in runout flow needs to pause, offer insurance, wait for responses, then continue dealing. The settlement logging IS wired for when this is eventually connected.
+2. **Insurance premium deduction from player stack**: When a player accepts insurance, the premium should be deducted from their table stack. This deduction is not yet implemented in `ServerTableEngine.respondToInsurance()`.
+3. **Insurance payout credit to player stack**: When insurance settles with a payout, the payout amount needs to be credited to the player's stack. Not yet wired.
+4. **Bible V8 §1.9 Steps 9-11**: Leaderboards, achievements, VIP points remain future features.
+
+### Bible V8 §1.9 Settlement Law — Full Cross-Reference
+
+| Step | Requirement                    | Status | Implementation                                       |
+| ---- | ------------------------------ | ------ | ---------------------------------------------------- |
+| 1    | Lock table                     | ✅     | HandController single-threaded                       |
+| 2    | Calculate side pots            | ✅     | `calculatePots()` in completeHand                    |
+| 3    | Evaluate hands (variant-aware) | ✅     | evaluateHand / evaluateOmahaHand                     |
+| 4    | Determine winners per pot      | ✅     | `determineWinners()` with hi-lo                      |
+| 5    | Calculate rake                 | ✅     | `calculateRake()` with noFlopNoDrop, playerCountCaps |
+| 5b   | Calculate BBJ fee              | ✅     | Inline in completeHand, sawFlop + pot/player checks  |
+| 6    | Distribute winnings            | ✅     | Integer-cents arithmetic                             |
+| 7    | Update player stacks           | ✅     | Winner loop in completeHand                          |
+| 8    | Persist to database            | ✅     | syncStacks, logHandHistory in postHandTasks          |
+| 9    | Update leaderboards            | ⏳     | Future feature                                       |
+| 10   | Trigger achievements           | ⏳     | Future feature                                       |
+| 11   | Calculate VIP points           | ⏳     | Future feature                                       |
+| 12   | Calculate rakeback             | ✅     | rakebackEngine.recordHandRake                        |
+| 13   | Log hand history               | ✅     | logHandHistory in postHandTasks                      |
+| 14   | Broadcast final state          | ✅     | broadcastCurrentState in WINNERS handler             |
+| 15   | Unlock table                   | ✅     | HandController nulled, next hand starts              |

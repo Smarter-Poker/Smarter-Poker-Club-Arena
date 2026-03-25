@@ -25,7 +25,7 @@ import { AtomicStackService } from './AtomicStackService.js';
 import { StraddleEngine } from './StraddleEngine.js';
 import { MixedGameEngine } from './MixedGameEngine.js';
 import { RunItTwiceEngine } from './RunItTwiceEngine.js';
-import { InsuranceEngine } from './InsuranceEngine.js';
+import { InsuranceEngine, type InsuranceSettlement } from './InsuranceEngine.js';
 import { RakebackEngine } from './RakebackEngine.js';
 import { ChipRaceEngine } from './ChipRaceEngine.js';
 import { TableBalancer } from './TableBalancer.js';
@@ -45,6 +45,8 @@ import {
   markSeatAsLeft,
   processLeavePending,
   logRakeCollection,
+  logBBJCollection,
+  logInsuranceSettlement,
   logHandHistory,
   cleanupChannel,
   supabase,
@@ -85,6 +87,7 @@ export class ServerTableEngine {
   private currentHandDealerSeat: number = 0;
   private currentHandWinnerIds: string[] = [];
   private currentHandRake: number = 0;
+  private currentHandBBJFee: number = 0;
   private currentHandCommunityCards: string[] = [];
   // Bible V8 §2.5: Action Record requires seat, userId, action, amount, timestamp, stage
   private currentHandActions: {
@@ -97,6 +100,7 @@ export class ServerTableEngine {
   }[] = [];
   private currentHandWinners: { userId: string; amount: number }[] = [];
   private currentHandContributions: Map<string, number> = new Map(); // userId → totalInvested
+  private currentHandInsuranceSettlements: InsuranceSettlement[] = [];
   // Hand complete callback for tournament chip sync
   private handCompleteCallback:
     | ((tableId: string, players: { user_id: string; stack: number }[]) => void)
@@ -1135,10 +1139,12 @@ export class ServerTableEngine {
     this.currentHandPotSize = 0;
     this.currentHandWinnerIds = [];
     this.currentHandRake = 0;
+    this.currentHandBBJFee = 0;
     this.currentHandCommunityCards = [];
     this.currentHandActions = [];
     this.currentHandWinners = [];
     this.currentHandContributions.clear(); // Bible V8 §4.18: Reset weighted rakeback tracking
+    this.currentHandInsuranceSettlements = []; // Bible V8 §4.19: Reset insurance settlements
     this.timeBankActivatedThisTurn = false; // Bible V8 §6.2: Reset time bank flag for new hand
     this.showHandPlayers = null; // Reset voluntary show-hand set for new hand
 
@@ -1210,6 +1216,9 @@ export class ServerTableEngine {
       }
     }
 
+    // Bible V8 §1.9 / Appendix A: Get full rake + BBJ config for this stakes/variant
+    const fullRakeConfig = this.getFullRakeAndBBJConfig();
+
     const config: HandConfig = {
       tableId: this.tableId,
       handNumber,
@@ -1220,6 +1229,12 @@ export class ServerTableEngine {
       bigBlindAnte: this.tableInfo.big_blind_ante_enabled ?? false,
       straddles: straddleResults.length > 0 ? straddleResults : undefined,
       rakeConfig: this.getRakeConfig(this.tableInfo.small_blind, this.tableInfo.big_blind),
+      bbjConfig: {
+        enabled: fullRakeConfig.bbjEnabled,
+        feeBB: fullRakeConfig.bbjFeeBB,
+        minPotBB: fullRakeConfig.rules.minPotBB,
+        minPlayersDealt: fullRakeConfig.rules.minPlayersDealt,
+      },
     };
 
     this.handController = new HandController(config, hcPlayers, dealerSeat);
@@ -1410,14 +1425,18 @@ export class ServerTableEngine {
         break;
 
       case 'HAND_COMPLETE':
-        // Capture rake from hand completion event
+        // Capture rake and BBJ fee from hand completion event
         if ((event as any).rake !== undefined) {
           this.currentHandRake = (event as any).rake;
         }
+        if ((event as any).bbjFee !== undefined) {
+          this.currentHandBBJFee = (event as any).bbjFee;
+        }
 
-        // Step 4: State verification — deduct rake and verify chip conservation
-        if (this.currentHandRake > 0) {
-          this.stateVerifier.deductRake(this.tableId, this.currentHandRake);
+        // Step 4: State verification — deduct rake + BBJ and verify chip conservation
+        const totalDeductions = this.currentHandRake + this.currentHandBBJFee;
+        if (totalDeductions > 0) {
+          this.stateVerifier.deductRake(this.tableId, totalDeductions);
         }
         if (this.handController) {
           const finalState = this.handController.getState();
@@ -1446,6 +1465,15 @@ export class ServerTableEngine {
         this.timeBankEngine.dispose(this.tableId);
         // Note: disconnectEngine persists across hands (tracks connection state)
         // Note: atomicStackService persists across hands (tracks stack versions)
+
+        // Bible V8 §4.19: Settle insurance BEFORE disposing (offers cleared on dispose)
+        if (this.currentHandWinnerIds.length > 0) {
+          const winnerId = this.currentHandWinnerIds[0];
+          this.currentHandInsuranceSettlements = this.insuranceEngine.settle(
+            this.tableId,
+            winnerId
+          );
+        }
 
         // Step 6: Clean up advanced modules between hands
         this.runItTwiceEngine.dispose(this.tableId);
@@ -1717,6 +1745,17 @@ export class ServerTableEngine {
       );
     }
 
+    // 2a. Log BBJ contribution — simultaneous with rake, per authoritative schedule
+    if (!this.isTournamentTable() && this.currentHandBBJFee > 0 && this.tableInfo?.club_id) {
+      await logBBJCollection(
+        this.tableId,
+        this.tableInfo.club_id,
+        this.handCount,
+        this.currentHandBBJFee,
+        this.tableInfo.big_blind
+      );
+    }
+
     // 2b. Step 6: Track rake contributions for weighted rakeback (Bible V8 §1.9 step 12)
     if (!this.isTournamentTable() && this.currentHandRake > 0 && this.tableInfo?.club_id) {
       // Use actual totalInvested from HandController state (captured in WINNERS handler)
@@ -1756,6 +1795,29 @@ export class ServerTableEngine {
         })),
         actions: this.currentHandActions,
       });
+    }
+
+    // 3b. Bible V8 §4.19: Log insurance settlements (settled in HAND_COMPLETE handler)
+    // Insurance premiums → union bank (or club bank for standalone)
+    // Insurance payouts → from union bank (or club bank) to player
+    if (
+      !this.isTournamentTable() &&
+      this.tableInfo?.club_id &&
+      this.currentHandInsuranceSettlements.length > 0
+    ) {
+      for (const settlement of this.currentHandInsuranceSettlements) {
+        await logInsuranceSettlement({
+          tableId: this.tableId,
+          clubId: this.tableInfo.club_id,
+          handNumber: this.handCount,
+          playerId: settlement.playerId,
+          equityPercent: 0, // Equity was in the offer, not settlement — will enhance later
+          premium: settlement.premium,
+          insuredAmount: settlement.insuredAmount,
+          payout: settlement.payout,
+          playerWon: !settlement.won, // settlement.won = insurance paid out = player lost the hand
+        });
+      }
     }
 
     // 4. Tournament chip sync

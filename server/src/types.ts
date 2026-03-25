@@ -165,6 +165,17 @@ export interface HandConfig {
   ritEnabled?: boolean;
   /** Bible V8 §2.8 / §4.19: Whether Insurance is enabled for this hand */
   insuranceEnabled?: boolean;
+  /** Bible V8 §1.9 / Appendix A: BBJ config for this hand */
+  bbjConfig?: {
+    /** Whether BBJ is enabled for this variant */
+    enabled: boolean;
+    /** BBJ fee in BB units (e.g., 0.25 means 0.25 × BB per qualifying hand) */
+    feeBB: number;
+    /** Minimum pot in BB for BBJ eligibility */
+    minPotBB: number;
+    /** Minimum players dealt in for BBJ eligibility */
+    minPlayersDealt: number;
+  };
 }
 
 export interface GameState {
@@ -228,7 +239,7 @@ export type HandEvent =
   | { type: 'TURN_CHANGE'; seat: number; availableActions: ActionType[] }
   | { type: 'SHOWDOWN'; results: ShowdownResult[] }
   | { type: 'WINNERS'; winners: Winner[] }
-  | { type: 'HAND_COMPLETE'; handNumber: number; rake: number };
+  | { type: 'HAND_COMPLETE'; handNumber: number; rake: number; bbjFee: number };
 
 export interface ShowdownResult {
   seat: number;

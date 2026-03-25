@@ -306,8 +306,11 @@ class GameServer {
 
       let cancelledCount = 0;
       for (const t of runningSngSpins || []) {
-        const isSngOrSpin = t.variant === 'sng' || t.variant === 'spin' ||
-          t.tournament_type === 'SNG' || t.tournament_type === 'SPIN';
+        const isSngOrSpin =
+          t.variant === 'sng' ||
+          t.variant === 'spin' ||
+          t.tournament_type === 'SNG' ||
+          t.tournament_type === 'SPIN';
         if (isSngOrSpin) {
           await supabase
             .from('tournaments')
@@ -318,7 +321,9 @@ class GameServer {
         }
       }
       if (cancelledCount > 0) {
-        console.log(`[GameServer] Cancelled ${cancelledCount} orphaned SNG/Spin RUNNING tournaments`);
+        console.log(
+          `[GameServer] Cancelled ${cancelledCount} orphaned SNG/Spin RUNNING tournaments`
+        );
       }
 
       // 6. Cancel stale RUNNING MTT tournaments older than 2 hours (stuck from crashed server)
@@ -2414,7 +2419,9 @@ function sendJSON(res: import('http').ServerResponse, statusCode: number, data: 
 // Bible V8 §1.3 Step 3: JWT Authentication — Verify Supabase auth token
 // ═══════════════════════════════════════════════════════════════════════════════
 
-async function authenticateRequest(req: import('http').IncomingMessage): Promise<{ userId: string } | null> {
+async function authenticateRequest(
+  req: import('http').IncomingMessage
+): Promise<{ userId: string } | null> {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
 
@@ -2501,7 +2508,10 @@ const httpServer = createServer(async (req, res) => {
 
       // Bible V8 §9.3: Rate limiting — reject rapid-fire action submissions
       if (!checkRateLimit(userId)) {
-        return sendJSON(res, 429, { success: false, error: 'Rate limited — wait before submitting another action' });
+        return sendJSON(res, 429, {
+          success: false,
+          error: 'Rate limited — wait before submitting another action',
+        });
       }
 
       if (!tableId || !action) {
@@ -2656,7 +2666,10 @@ const httpServer = createServer(async (req, res) => {
       const userId = auth.userId;
 
       if (!tableId || typeof sitOut !== 'boolean') {
-        return sendJSON(res, 400, { success: false, error: 'Missing tableId or sitOut must be a boolean' });
+        return sendJSON(res, 400, {
+          success: false,
+          error: 'Missing tableId or sitOut must be a boolean',
+        });
       }
 
       const engine = gameServer.getTableEngine(tableId);
@@ -2688,7 +2701,10 @@ const httpServer = createServer(async (req, res) => {
       const userId = auth.userId;
 
       if (!tableId || typeof enabled !== 'boolean') {
-        return sendJSON(res, 400, { success: false, error: 'Missing tableId or enabled must be a boolean' });
+        return sendJSON(res, 400, {
+          success: false,
+          error: 'Missing tableId or enabled must be a boolean',
+        });
       }
 
       const engine = gameServer.getTableEngine(tableId);
@@ -2744,7 +2760,10 @@ const httpServer = createServer(async (req, res) => {
       const userId = auth.userId;
 
       if (!tableId || !response || !['accept', 'decline'].includes(response)) {
-        return sendJSON(res, 400, { success: false, error: 'Missing tableId or invalid response (must be accept or decline)' });
+        return sendJSON(res, 400, {
+          success: false,
+          error: 'Missing tableId or invalid response (must be accept or decline)',
+        });
       }
 
       const engine = gameServer.getTableEngine(tableId);
@@ -2762,7 +2781,8 @@ const httpServer = createServer(async (req, res) => {
 
   // ─────────────────────────────────────────────────────────────────────────
   // POST /insurance — Bible V8 §4.19: Respond to insurance offer
-  // Body: { tableId, response: 'accept' | 'decline' }
+  // Body: { tableId, response: 'accept' | 'decline', coveragePercent?: number }
+  // coveragePercent: 1-100 (default 100). Player can take partial insurance via slider.
   // ─────────────────────────────────────────────────────────────────────────
   if (method === 'POST' && url === '/insurance') {
     try {
@@ -2772,11 +2792,14 @@ const httpServer = createServer(async (req, res) => {
       }
 
       const body = JSON.parse(await readBody(req));
-      const { tableId, response } = body;
+      const { tableId, response, coveragePercent, declineForHand } = body;
       const userId = auth.userId;
 
       if (!tableId || !response || !['accept', 'decline'].includes(response)) {
-        return sendJSON(res, 400, { success: false, error: 'Missing tableId or invalid response (must be accept or decline)' });
+        return sendJSON(res, 400, {
+          success: false,
+          error: 'Missing tableId or invalid response (must be accept or decline)',
+        });
       }
 
       const engine = gameServer.getTableEngine(tableId);
@@ -2784,11 +2807,50 @@ const httpServer = createServer(async (req, res) => {
         return sendJSON(res, 404, { success: false, error: 'Table engine not found' });
       }
 
-      const result = engine.respondToInsurance(userId, response);
+      // coveragePercent defaults to 100 (full insurance) if not provided
+      const coverage = typeof coveragePercent === 'number' ? coveragePercent : 100;
+      // declineForHand: true = "Decline for Hand" (never re-offer), false = "Decline Now" (may re-offer)
+      const forHand = declineForHand === true;
+      const result = engine.respondToInsurance(userId, response, coverage, forHand);
       return sendJSON(res, result.success ? 200 : 400, result);
     } catch (err: any) {
       console.error('[HTTP] /insurance error:', err.message);
       return sendJSON(res, 500, { success: false, error: 'Invalid request body' });
+    }
+  }
+
+  // GET /insurance-preview — Preview insurance cost for a coverage percentage
+  // Query: ?tableId=xxx&coveragePercent=75
+  // ─────────────────────────────────────────────────────────────────────────
+  if (method === 'GET' && url?.startsWith('/insurance-preview')) {
+    try {
+      const auth = await authenticateRequest(req);
+      if (!auth) {
+        return sendJSON(res, 401, { success: false, error: 'Authentication required' });
+      }
+
+      const params = new URL(req.url || '', `http://${req.headers.host}`).searchParams;
+      const tableId = params.get('tableId');
+      const coveragePercent = Number(params.get('coveragePercent') || 100);
+
+      if (!tableId) {
+        return sendJSON(res, 400, { success: false, error: 'Missing tableId' });
+      }
+
+      const engine = gameServer.getTableEngine(tableId);
+      if (!engine) {
+        return sendJSON(res, 404, { success: false, error: 'Table engine not found' });
+      }
+
+      const preview = engine.previewInsurance(auth.userId, coveragePercent);
+      if (!preview) {
+        return sendJSON(res, 404, { success: false, error: 'No pending insurance offer' });
+      }
+
+      return sendJSON(res, 200, { success: true, ...preview });
+    } catch (err: any) {
+      console.error('[HTTP] /insurance-preview error:', err.message);
+      return sendJSON(res, 500, { success: false, error: 'Server error' });
     }
   }
 

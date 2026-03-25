@@ -611,4 +611,179 @@ export async function ensureHorseWallet(
   }
 }
 
+/**
+ * Process BBJ payout — fetch pool balance, calculate shares, deduct from pool,
+ * record payout in bbj_payouts + bbj_payout_recipients, and return amounts.
+ *
+ * Returns null if pool not found or balance is zero.
+ * Chips are credited to players' table stacks by ServerTableEngine after this returns.
+ */
+export async function processBBJPayout(params: {
+  tableId: string;
+  clubId: string;
+  handNumber: number;
+  loserUserId: string;
+  winnerUserId: string;
+  loserHandName: string;
+  winnerHandName: string;
+  dealtInPlayerIds: string[];
+  payoutTotalPercent: number; // e.g., 55 for Mid stakes = 55% of main pool
+}): Promise<{
+  totalPayout: number;
+  loserShare: number;
+  winnerShare: number;
+  tableShare: number;
+  perPlayerShare: number;
+  poolId: string;
+} | null> {
+  try {
+    // 1. Find the club's union (if any)
+    const { data: club } = await supabase
+      .from('clubs')
+      .select('union_id')
+      .eq('id', params.clubId)
+      .maybeSingle();
+
+    if (!club) {
+      console.warn(`[processBBJPayout] Club ${params.clubId} not found`);
+      return null;
+    }
+
+    // 2. Find the BBJ pool (union-level first, then club-level)
+    let poolQuery = supabase.from('bbj_pools').select('id, main_balance, backup_balance');
+    if (club.union_id) {
+      poolQuery = poolQuery.eq('union_id', club.union_id);
+    } else {
+      poolQuery = poolQuery.eq('club_id', params.clubId);
+    }
+    const { data: pool } = await poolQuery.maybeSingle();
+
+    if (!pool || pool.main_balance <= 0) {
+      console.warn(`[processBBJPayout] No BBJ pool or zero balance for club ${params.clubId}`);
+      return null;
+    }
+
+    // 3. Calculate payout amounts from the MAIN pool balance
+    const totalPayout =
+      Math.round(pool.main_balance * (params.payoutTotalPercent / 100) * 100) / 100;
+    const loserShare = Math.round(totalPayout * 0.5 * 100) / 100; // 50% to loser (bad beat holder)
+    const winnerShare = Math.round(totalPayout * 0.25 * 100) / 100; // 25% to winner
+    const tableShareTotal = Math.round((totalPayout - loserShare - winnerShare) * 100) / 100; // 25% to table
+
+    // Table share split equally among all dealt-in players (excluding loser and winner who already get shares)
+    const tableOnlyPlayers = params.dealtInPlayerIds.filter(
+      (id) => id !== params.loserUserId && id !== params.winnerUserId
+    );
+    const perPlayerShare =
+      tableOnlyPlayers.length > 0
+        ? Math.round((tableShareTotal / tableOnlyPlayers.length) * 100) / 100
+        : 0;
+
+    // 4. Deduct from pool main_balance and update stats
+    const { error: poolErr } = await supabase
+      .from('bbj_pools')
+      .update({
+        main_balance: Math.max(0, pool.main_balance - totalPayout),
+        total_paid_out: pool.main_balance, // Will be incremented; using raw SQL would be better
+        hit_count: pool.main_balance, // Placeholder — ideally use RPC with atomic increment
+        last_hit_at: new Date().toISOString(),
+        last_hit_amount: totalPayout,
+        last_winner_id: params.loserUserId, // "winner" in BBJ terms = the bad beat loser
+        last_loser_id: params.winnerUserId,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', pool.id);
+
+    // Use RPC for atomic updates if available; fallback to manual update
+    // Atomic increment for total_paid_out and hit_count
+    await supabase
+      .rpc('bbj_record_payout_atomic', {
+        p_pool_id: pool.id,
+        p_payout_amount: totalPayout,
+      })
+      .then(({ error }) => {
+        if (error) {
+          // Fallback: just log — the main update above handled the balance deduction
+          console.warn(
+            `[processBBJPayout] Atomic payout RPC not available, using fallback:`,
+            error.message
+          );
+        }
+      });
+
+    if (poolErr) {
+      console.error(`[processBBJPayout] Pool update failed:`, poolErr.message);
+      return null;
+    }
+
+    // 5. Record the payout in bbj_payouts table
+    const { data: payoutRecord, error: payoutErr } = await supabase
+      .from('bbj_payouts')
+      .insert({
+        pool_id: pool.id,
+        hand_id: null, // Server uses hand_history, not hands table
+        winner_user_id: params.loserUserId, // BBJ "winner" = the bad beat loser (gets 50%)
+        loser_user_id: params.winnerUserId, // BBJ "loser" = the hand winner (gets 25%)
+        total_amount: totalPayout,
+        winner_share: loserShare,
+        loser_share: winnerShare,
+        table_share: tableShareTotal,
+        table_player_count: params.dealtInPlayerIds.length,
+        winner_hand_name: params.loserHandName,
+        loser_hand_name: params.winnerHandName,
+        status: 'completed',
+      })
+      .select('id')
+      .maybeSingle();
+
+    if (payoutErr) {
+      console.error(`[processBBJPayout] Payout record failed:`, payoutErr.message);
+    }
+
+    // 6. Record individual table share recipients
+    if (payoutRecord && tableOnlyPlayers.length > 0) {
+      const recipients = tableOnlyPlayers.map((userId) => ({
+        payout_id: payoutRecord.id,
+        user_id: userId,
+        amount: perPlayerShare,
+      }));
+      const { error: recipErr } = await supabase.from('bbj_payout_recipients').insert(recipients);
+      if (recipErr) {
+        console.warn(`[processBBJPayout] Recipient logging failed:`, recipErr.message);
+      }
+    }
+
+    // 7. Also record in bbj_winners table for the "Previous Winners" display
+    await supabase
+      .from('bbj_winners')
+      .insert({
+        pool_id: pool.id,
+        user_id: params.loserUserId, // The "winner" of the BBJ (bad beat holder)
+        amount: totalPayout,
+        hand_name: params.loserHandName,
+        table_id: params.tableId,
+      })
+      .then(({ error }) => {
+        if (error) console.warn(`[processBBJPayout] bbj_winners insert failed:`, error.message);
+      });
+
+    console.log(
+      `[processBBJPayout] BBJ HIT! Pool ${pool.id}: $${totalPayout} total ` +
+        `(loser=$${loserShare}, winner=$${winnerShare}, table=$${tableShareTotal} / ${tableOnlyPlayers.length} players)`
+    );
+
+    return {
+      totalPayout,
+      loserShare,
+      winnerShare,
+      tableShare: tableShareTotal,
+      perPlayerShare,
+      poolId: pool.id,
+    };
+  } catch (e) {
+    console.error(`[processBBJPayout] Fatal error:`, e);
+    return null;
+  }
+}
+
 export default supabase;

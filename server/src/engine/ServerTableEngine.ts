@@ -32,6 +32,7 @@ import { TableBalancer } from './TableBalancer.js';
 import { TableBreakEngine } from './TableBreakEngine.js';
 import { OFCDealingOrchestrator } from './OFCDealingOrchestrator.js';
 import { EngineTelemetry } from './EngineTelemetry.js';
+import { getFullRakeConfig, calculateBBJFee } from '../config/RakeConfig.js';
 import type { ValidationContext } from './ServerActionValidator.js';
 import {
   broadcastHandState,
@@ -1157,6 +1158,9 @@ export class ServerTableEngine {
       is_folded: false,
       is_all_in: false,
       is_sitting_out: false,
+      // Bible V8 §2.3: Carry through identity fields for broadcast
+      is_horse: p.is_horse ?? false,
+      avatar_url: p.avatar_url ?? '',
     }));
 
     // Rotate dealer
@@ -1915,37 +1919,29 @@ export class ServerTableEngine {
   // RAKE CONFIG
   // ═════════════════════════════════════════════════════════════════════════════
 
+  /**
+   * Get rake config from the AUTHORITATIVE rake schedule (server/src/config/RakeConfig.ts).
+   * Uses Dan's official schedule with exact SB/BB match, tier fallback, and BBJ support.
+   */
   private getRakeConfig(sb: number, bb: number): RakeConfig {
-    const CAPS: [number, number, number][] = [
-      [0.1, 0.2, 3],
-      [0.2, 0.4, 3],
-      [0.25, 0.5, 3],
-      [0.3, 0.6, 5],
-      [0.5, 1.0, 5],
-      [1.0, 2.0, 5],
-      [2.0, 4.0, 7.5],
-      [2.0, 5.0, 7.5],
-      [5.0, 5.0, 7.5],
-      [3.0, 6.0, 8],
-      [4.0, 8.0, 10],
-      [5.0, 10.0, 12.5],
-      [10.0, 20.0, 15],
-      [10.0, 25.0, 15],
-    ];
+    const variant = this.tableInfo?.game_variant || 'nlh';
+    const fullConfig = getFullRakeConfig(sb, bb, variant);
+    return {
+      percent: fullConfig.rakePercent,
+      cap: fullConfig.rakeCap,
+      noFlopNoDrop: true,
+    };
+  }
 
-    const exact = CAPS.find(([s, b]) => s === sb && b === bb);
-    if (exact) return { percent: 10, cap: exact[2], noFlopNoDrop: true };
-
-    let closest = CAPS[0];
-    let minDiff = Math.abs(bb - closest[1]);
-    for (const tier of CAPS) {
-      const diff = Math.abs(bb - tier[1]);
-      if (diff < minDiff) {
-        minDiff = diff;
-        closest = tier;
-      }
-    }
-    return { percent: 10, cap: closest[2], noFlopNoDrop: true };
+  /**
+   * Get full rake + BBJ config for the current table.
+   * Used by postHandTasks for BBJ fee calculation and logging.
+   */
+  private getFullRakeAndBBJConfig() {
+    const sb = this.tableInfo?.small_blind ?? 1;
+    const bb = this.tableInfo?.big_blind ?? 2;
+    const variant = this.tableInfo?.game_variant || 'nlh';
+    return getFullRakeConfig(sb, bb, variant);
   }
 
   // ═════════════════════════════════════════════════════════════════════════════

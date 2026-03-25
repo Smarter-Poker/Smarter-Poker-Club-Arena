@@ -127,7 +127,7 @@ export async function loadSeatedPlayers(tableId: string) {
   const userIds = seats.map((d) => d.user_id);
   const { data: profiles } = await supabase
     .from('profiles')
-    .select('id, display_name, username, is_horse, horse_profile')
+    .select('id, display_name, username, is_horse, horse_profile, avatar_url')
     .in('id', userIds);
 
   const profileMap = new Map(profiles?.map((p) => [p.id, p]) || []);
@@ -145,6 +145,7 @@ export async function loadSeatedPlayers(tableId: string) {
         horse_profile: profile.horse_profile || 'balanced',
         time_bank_remaining: seat.time_bank_remaining || 0,
         time_bank_uses_remaining: seat.time_bank_uses_remaining || 0,
+        avatar_url: profile.avatar_url || '',
       };
     });
 }

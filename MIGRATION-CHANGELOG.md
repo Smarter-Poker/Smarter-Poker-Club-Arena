@@ -767,3 +767,67 @@ this.playerTurnTimer = setTimeout(() => {
 
 **Total new server engine files:** 22
 **Server-authoritative migration:** COMPLETE
+
+---
+
+## POST-MIGRATION: Bible V8 Verification & Bug Fixes (2026-03-25)
+
+### Phase 1 Verification: PASSED (7/7 checks)
+- POST /action returns {success, error} ✅
+- Card broadcast scrubbed (RLS-protected hole cards) ✅
+- Timer auto-check/fold logic correct ✅
+- Card security (anti-god-mode) ✅
+- Invalid action returns error, NOT auto-fold ✅
+- BB timeout auto-check ✅
+- TypeScript passes ✅
+
+### Phase 2 Verification: BUGS FOUND AND FIXED
+
+**FIX 1: Bomb Pot — Skip Preflop Betting** (Bible V8 §4.22)
+- File: `server/src/engine/HandController.ts` → `start()`
+- Bug: Bomb pot entered preflop betting instead of skipping to flop
+- Fix: After `postBombPotAntes()` + `dealHoleCards()`, call `advanceStage()` to jump to flop
+
+**FIX 2: No-Winners Guard** (Bible V8 §1.9)
+- File: `server/src/engine/HandController.ts` → `completeHand()`
+- Bug: If `determineWinners()` returned empty, pot chips vanished
+- Fix: Guard checks for empty winners → awards pot to last active player; second guard prevents distribution with zero winners
+
+**FIX 3: Short All-In Reopening** (Bible V8 §4.14)
+- File: `server/src/engine/HandController.ts` → `performAction()` + `isBettingRoundComplete()`
+- File: `server/src/types.ts` → `ActionRecord.isFullRaise`
+- Bug: Short all-in (raise increment < lastRaise) incorrectly reopened betting for players who already acted
+- Fix: Added `isFullRaise` flag to ActionRecord; only full raises count as aggression in `isBettingRoundComplete()`
+
+**FIX 4: Big Blind Ante (BBA)** (Bible V8 §4.3)
+- File: `server/src/types.ts` → `HandConfig.bigBlindAnte`, `TableInfo.big_blind_ante_enabled`
+- File: `server/src/engine/HandController.ts` → `postBlinds()`
+- Missing: BBA was not implemented at all
+- Fix: Added BBA field to HandConfig + TableInfo; `postBlinds()` now handles BBA where BB posts ante × player_count
+
+**FIX 5: Straddle Injection** (Bible V8 §4.4)
+- File: `server/src/types.ts` → `HandConfig.straddles`, `TableInfo.straddle_enabled/straddle_type/max_straddles`
+- File: `server/src/engine/HandController.ts` → `postBlinds()` + `setNextPlayer()`
+- File: `server/src/engine/ServerTableEngine.ts` → hand start config + `getNextSeat()` helper
+- Missing: StraddleEngine was imported but NEVER called; no straddle posting in hand flow
+- Fix: Wired `straddleEngine.processStraddles()` into hand config; HandController posts straddles after blinds; first-to-act adjusted left of last straddler
+
+**FIX 6: Pot-Limit Max Raise for PLO** (Bible V8 §4.14)
+- File: `server/src/types.ts` → `BettingState.maxRaise`
+- File: `server/src/engine/PokerEngine.ts` → `calculateBettingState()` + `validateAction()`
+- File: `server/src/engine/HandController.ts` → `performAction()`
+- Missing: No pot-limit validation existed; PLO games used NL rules
+- Fix: Added `isPotLimit` param to `calculateBettingState()`; max raise = pot + call + call; validated in bet/raise paths
+
+**FIX 7: JWT Authentication on HTTP Endpoints** (Bible V8 §1.3, General Security)
+- File: `server/src/index.ts` → `authenticateRequest()` function + all endpoints
+- Missing: ZERO authentication on any endpoint; userId trusted from request body
+- Fix: Added `authenticateRequest()` using `supabase.auth.getUser(token)`; all POST endpoints + GET /actions now require Bearer JWT; userId comes from verified token, NOT request body (prevents spoofing)
+
+### Files Modified:
+- `server/src/engine/HandController.ts` — 7 changes (bomb pot, no-winners, short all-in, BBA, straddle, pot-limit)
+- `server/src/engine/PokerEngine.ts` — pot-limit betting state + validation
+- `server/src/engine/ServerTableEngine.ts` — straddle wiring, getNextSeat helper, BBA config
+- `server/src/types.ts` — HandConfig (bigBlindAnte, straddles), TableInfo (BBA/straddle fields), ActionRecord (isFullRaise), BettingState (maxRaise)
+- `server/src/index.ts` — JWT auth middleware + all endpoints secured
+- `CLAUDE.md` — Added FIX-FIRST PROCEDURE

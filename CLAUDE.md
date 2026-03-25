@@ -26,6 +26,82 @@ Every change: READ → DOCUMENT → CHANGE → VERIFY → LOG IN CHANGELOG.
 
 ---
 
+## MANDATORY: FIX-FIRST PROCEDURE (NON-NEGOTIABLE)
+
+**When auditing, verifying, or reviewing code against the Bible V8 spec:**
+
+1. **FIND** an issue, bug, gap, or anything that needs to change
+2. **FIX IT FULLY** — write the actual code fix, not just a note about it
+3. **MOVE ON** to the next item
+4. **REPEAT** until all items in the current phase are verified + fixed
+
+**At the end of EVERY session:**
+- All changes MUST be pushed to git (`git add → commit → push origin main`)
+- Any database schema changes MUST be written to Supabase via SQL migration files
+- Update `MIGRATION-CHANGELOG.md` with what was found AND fixed
+- NEVER leave a session with unfixed identified issues — fix them or document them as blockers with exact reasons
+
+**DO NOT:**
+- Audit 10 items, list all the problems, then ask "what should I fix?" — FIX THEM AS YOU GO
+- Mark something as "conditional pass" without fixing the condition
+- Identify a bug and move to the next check without writing the fix
+
+---
+
+## MANDATORY: AntiGravity Handoff Protocol (WHILE VM DISK IS FULL)
+
+**The Cowork VM disk is FULL. Agents CANNOT run bash commands (`git`, `npx tsc`, `npm`, etc.).**
+**Until this is resolved, EVERY session MUST end with an AntiGravity handoff prompt.**
+
+At the end of EVERY session, the agent MUST:
+
+1. **Write all code fixes** using Read/Edit/Write tools (these still work on the mounted folder)
+2. **Write a SQL migration file** if any database schema changes are needed (save to `supabase/migrations/`)
+3. **Prepare a COMPLETE AntiGravity prompt** that contains EVERY command the agent could not run, including:
+   - `npx tsc --noEmit` (TypeScript verification)
+   - `git add -A && git status` (review staged files)
+   - `git commit -m "message"` (commit with descriptive message)
+   - `git push origin main` (push to remote)
+   - `npm run build` (if frontend changes were made)
+   - `bash scripts/sync-to-world-hub.sh ~/Documents/Smarter-Poker-World-Hub` (if frontend deploy needed)
+   - Any Supabase SQL that needs to be run (`supabase db push` or manual SQL execution)
+   - Any Railway deployment steps
+4. **Present the prompt to the user** so they can paste it into AntiGravity or run it manually
+
+**The handoff prompt format:**
+```
+## AntiGravity Handoff — [DATE] [SESSION SUMMARY]
+
+### Step 1: TypeScript Check
+cd ~/path/to/Smarter-Poker-Club-Arena
+npx tsc --noEmit
+
+### Step 2: Review Changes
+git diff --stat
+git status
+
+### Step 3: Commit & Push
+git add -A
+git commit -m "descriptive message"
+git push origin main
+
+### Step 4: Supabase Migration (if needed)
+[SQL commands or migration instructions]
+
+### Step 5: Frontend Deploy (if needed)
+npm run build
+bash scripts/sync-to-world-hub.sh ~/Documents/Smarter-Poker-World-Hub
+cd ~/Documents/Smarter-Poker-World-Hub
+bash scripts/git-safe-push.sh "sync club-arena changes"
+
+### What Changed:
+[Bullet list of every file modified and why]
+```
+
+**NEVER end a session without this handoff. The user relies on it to complete the deployment pipeline.**
+
+---
+
 ## MANDATORY: TypeScript Check Before EVERY Commit (NON-NEGOTIABLE)
 
 **Before EVERY `git commit`, run `npx tsc --noEmit`. If it has ANY errors, DO NOT commit. Fix all errors first.**
@@ -44,6 +120,38 @@ git add -A && git commit -m "your message" && git push origin main
 - Passing JSX props not in the component's Props interface → add to interface or remove prop
 
 See `skills/mandatory-typecheck/SKILL.md` for the full protocol.
+
+## INFRASTRUCTURE — Where Everything Runs
+
+**This project uses THREE services:**
+
+| Service | Purpose | Location |
+|---------|---------|----------|
+| **Vercel** | Frontend hosting (smarter.poker) | `Smarter-Poker-World-Hub` repo → auto-deploys |
+| **Railway** | Poker engine server (Node.js) | `server/` directory in this repo → deploys to Railway |
+| **Supabase** | Database (PostgreSQL) + Auth + Realtime | `kuklfnapbkmacvwxktbh.supabase.co` |
+
+### Railway (Poker Engine Server)
+- Runs the server-authoritative game engine: `server/src/index.ts`
+- Contains ALL game logic: HandController, ServerTableEngine, all engines
+- HTTP endpoints: POST /action, POST /timebank, GET /actions, GET /health
+- Uses `SUPABASE_SERVICE_ROLE_KEY` for database access (bypasses RLS)
+- Deploy: push to Railway via Git or Railway CLI
+
+### Supabase (Database + Auth + Realtime)
+- PostgreSQL database: tables, table_seats, table_hole_cards, hand_history, etc.
+- Auth: JWT-based authentication, shared with smarter.poker frontend
+- Realtime: Broadcasts hand state to connected clients via WebSocket channels
+- RLS: Row-Level Security protects hole cards (`table_hole_cards` — users can only read own cards)
+- Migrations: `supabase/migrations/` directory
+- **Any schema changes MUST be written as SQL migration files and applied to Supabase**
+
+### Vercel (Frontend)
+- Hosts the static SPA at `smarter.poker/hub/club-arena/`
+- Files live in `Smarter-Poker-World-Hub/public/hub/club-arena/`
+- Auto-deploys when World Hub repo is pushed
+
+---
 
 ## MANDATORY FOR ALL AGENTS (AntiGravity, Claude, any AI agent)
 

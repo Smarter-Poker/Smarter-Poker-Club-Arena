@@ -186,6 +186,7 @@ export class HandController {
             player.totalInvested += actualAnte;
             player.stack -= actualAnte;
             this.state.pot += actualAnte;
+            if (player.stack === 0) player.is_all_in = true;
         }
 
         this.state.currentBet = 0;

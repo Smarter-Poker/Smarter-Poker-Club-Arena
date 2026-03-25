@@ -2,7 +2,7 @@ import { supabase } from '../lib/supabase';
 import { BBJService } from './BBJService';
 import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
-import { rakebackEngine } from '../engine/RakebackEngine';
+// [MIGRATION] rakebackEngine removed — server-authoritative (Step 6). Rakeback tracked via DB RPC.
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -402,31 +402,17 @@ export const RakeService = {
       players
     );
 
-    // STEP 3.5: Record per-player contributions for rakeback engine
+    // STEP 3.5: Record per-player contributions to DB for server-side rakeback
     if (calculation.cappedRake > 0 && attributions.length > 0 && clubId) {
       try {
-        // Auto-configure rakeback for this club if not yet enabled
-        if (!rakebackEngine.isEnabled(clubId)) {
-          rakebackEngine.configure(clubId, { enabled: true });
-        }
-
         // Build contribution map from rake attributions (each attribution has userId + share)
         const contributions = new Map<string, number>();
-        let totalContributions = 0;
         for (const attr of attributions) {
           const existing = contributions.get(attr.userId) || 0;
           contributions.set(attr.userId, existing + attr.rakeCredit);
-          totalContributions += attr.rakeCredit;
         }
-        // recordHandRake signature: (clubId, totalRake, contributions Map, totalPotContributions)
-        rakebackEngine.recordHandRake(
-          clubId,
-          calculation.cappedRake,
-          contributions,
-          totalContributions > 0 ? totalContributions : calculation.cappedRake
-        );
 
-        // Persist rake attributions to DB (non-blocking — survives server restart)
+        // Persist rake attributions to DB — server's RakebackEngine handles settlement
         const attrPayload = attributions.map((a) => ({
           user_id: a.userId,
           rake_amount: a.rakeCredit,

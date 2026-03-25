@@ -71,7 +71,7 @@ import HandHistoryPanel, {
   type HandHistoryAction,
   type HandHistoryStreet,
 } from '../components/table/HandHistoryPanel';
-import { timeBankEngine } from '../engine/TimeBankEngine'; // KEEP until Step 5
+// [MIGRATION] timeBankEngine removed — server-authoritative (Step 5). Time bank via GameServerAPI + DB.
 import { usePlayerStats } from '../hooks/usePlayerStats';
 import { useTableSettings } from '../hooks/useTableSettings';
 import { useTableTimer } from '../hooks/useTableTimer';
@@ -115,8 +115,7 @@ import TimerBar from '../components/table/TimerBar';
 import PremiumCard from '../components/table/PremiumCard';
 import RealTimeResults from '../components/table/RealTimeResults';
 import PlayerCard from '../components/table/PlayerCard';
-// [MIGRATION STEP 1] PokerEngine, HandController, ServerActionValidator, OFCPineappleEngine imports removed — server-authoritative
-import { RakeWaterfallEngine } from '../engines/financial/RakeWaterfallEngine';
+// [MIGRATION] All engine imports removed — server-authoritative (Steps 1-7 complete)
 import { handPersistenceService } from '../services/HandPersistenceService';
 import { handHistoryService } from '../services/HandHistoryService';
 import { achievementTriggerService } from '../services/AchievementTriggerService';
@@ -126,7 +125,7 @@ import SessionTimer from '../components/table/SessionTimer';
 import { horseBugReporter } from '../services/HorseBugReporter';
 import GameServerAPI, { submitAction } from '../services/GameServerAPI';
 import { retryAsync } from '../utils/retryAsync';
-// [MIGRATION STEP 1] monteCarloEquity import removed — server-authoritative
+//monteCarloEquity import removed — server-authoritative
 import './TablePage.css';
 import SessionSummary from '../components/table/SessionSummary';
 import { SessionHUD } from '../components/table/SessionHUD';
@@ -1041,7 +1040,7 @@ export default function TablePage({
   const handleRabbitReveal = async (): Promise<
     Array<{ rank: string; suit: 'h' | 'd' | 'c' | 's' }>
   > => {
-    // [MIGRATION STEP 1] Local engine deck removed — rabbit hunt uses server or random fallback
+    //Local engine deck removed — rabbit hunt uses server or random fallback
     // TODO: Wire to server-side rabbit hunt endpoint in Step 3
     const cardsNeeded = 5 - currentBoard.length;
 
@@ -2093,31 +2092,13 @@ export default function TablePage({
           // No second setTableState needed — avoids unnecessary re-render
         }
 
-        // ─── Initialize Time Bank Engine for the human player ───
-        const isTournamentTable = table.game_type === 'tournament' || !!table.tournament_id;
-        // Use table settings from Supabase; fall back to sensible defaults
-        const tbSeconds = (table as any).time_bank_seconds || (isTournamentTable ? 15 : 30);
-        const perUseSeconds = (table as any).action_time_seconds || 15;
-        timeBankEngine.configure(table.id, {
-          totalBankSeconds: tbSeconds,
-          maxUses: isTournamentTable ? 2 : Math.max(1, Math.ceil(tbSeconds / perUseSeconds)),
-          secondsPerUse: perUseSeconds,
-          refillPerOrbit: !isTournamentTable,
-          refillSeconds: perUseSeconds,
-          autoActivate: true,
-        });
+        // ─── Initialize Time Bank state from DB (server-authoritative) ───
         if (userId && userId !== 'guest') {
           const heroSeatData = existingSeats?.find((s) => s.user_id === userId);
-          timeBankEngine.initializePlayer(table.id, userId, {
-            remainingSeconds: (heroSeatData as any)?.time_bank_remaining ?? undefined,
-            usesRemaining: (heroSeatData as any)?.time_bank_uses_remaining ?? undefined,
-          });
-          // Sync React state from engine
-          const bank = timeBankEngine.getPlayerBank(table.id, userId);
-          if (bank) {
-            setTimeBanksRemaining(bank.usesRemaining);
-            setTimeBankTimeRemaining(bank.remainingSeconds);
-          }
+          const dbRemaining = (heroSeatData as any)?.time_bank_remaining;
+          const dbUses = (heroSeatData as any)?.time_bank_uses_remaining;
+          if (dbRemaining != null) setTimeBankTimeRemaining(dbRemaining);
+          if (dbUses != null) setTimeBanksRemaining(dbUses);
         }
       }
     }
@@ -2219,7 +2200,7 @@ export default function TablePage({
     return () => {
       unsubscribe();
       roomService.leaveRoom(tableId);
-      timeBankEngine.dispose(tableId); // Clean up timer entries to prevent zombie accumulation
+      // Time bank cleanup handled server-side — no client engine to dispose
       if (breakChannelRef.current) {
         // BUG-C FIX: Read tournamentId from tableStateRef (fresh) instead of stale closure
         const tournId = tableStateRef.current.tournamentId || tableId;
@@ -2417,7 +2398,7 @@ export default function TablePage({
     if (!tableId || !userId) return;
     const isHeroTurn =
       tableState.currentPlayerSeat === tableState.heroSeat && tableState.isHandInProgress;
-    if (isHeroTurn && timeBankEngine.hasTimeBank(tableId, userId)) {
+    if (isHeroTurn && timeBanksRemaining > 0) {
       setShowTimeBank(true);
     } else if (!timeBankActive) {
       // Only hide when time bank is NOT currently counting down
@@ -2440,9 +2421,7 @@ export default function TablePage({
       // Hero acted or hand ended — cancel time bank state
       setTimeBankActive(false);
       setShowTimeBank(false);
-      if (tableId && userId) {
-        timeBankEngine.playerActed(tableId, userId);
-      }
+      // Server tracks time bank state — no client engine call needed
     }
   }, [
     tableState.currentPlayerSeat,
@@ -2736,7 +2715,7 @@ export default function TablePage({
   }, [tableId, tableState.blinds, tableState.isTournament]);
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // [MIGRATION STEP 1] HandController removed — server is authoritative
+  //HandController removed — server is authoritative
   // Only keeping state needed by other parts of the component
   // ═══════════════════════════════════════════════════════════════════════════
   const [displayHandNumber, setDisplayHandNumber] = useState<number | null>(null);
@@ -2748,7 +2727,7 @@ export default function TablePage({
   }, [tableState]);
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // [MIGRATION STEP 1] startNextHand removed — server manages the game loop
+  //startNextHand removed — server manages the game loop
   // The entire HandController creation, event subscription, and hand lifecycle
   // has been removed. The client now receives all state updates from the server
   // via WebSocket/Realtime events below.
@@ -2934,7 +2913,7 @@ export default function TablePage({
     updateSeat(seatNumber).catch((e) => console.warn('[Seat] Presence update failed:', e));
   };
 
-  // [MIGRATION STEP 1] broadcastLocalHandState removed — server broadcasts state authoritatively
+  //broadcastLocalHandState removed — server broadcasts state authoritatively
 
   // Unified Table Timer Logic (Phase M) - Moved out of the way of all earlier references
   const isHeroTurnContext =
@@ -2942,7 +2921,7 @@ export default function TablePage({
 
   const handleTimerAutoFold = useCallback(() => {
     if (actionLockRef.current) return; // Prevent race with manual fold
-    // [MIGRATION STEP 1] Local engine call removed — server is authoritative
+    //Local engine call removed — server is authoritative
     try {
       sendAction('fold', { seat: tableState.heroSeat, autoFold: true });
       soundService.playFold();
@@ -2965,18 +2944,14 @@ export default function TablePage({
     isHeroTurn: isHeroTurnContext && !timeBankActive,
     isSoundEnabled,
     onTimeout: () => {
-      // Auto-activate time bank if available
-      if (tableId && userId && timeBankEngine.hasTimeBank(tableId, userId)) {
-        const didActivate = timeBankEngine.onPrimaryTimerExpired(
-          tableId,
-          userId,
-          handleTimerAutoFold
-        );
-        if (didActivate) {
-          GameServerAPI.activateTimeBank(tableId, userId).catch(console.error);
-        } else {
+      // Server-authoritative: when client timer expires, try to activate time bank
+      if (tableId && userId && timeBanksRemaining > 0) {
+        setTimeBankActive(true);
+        setShowTimeBank(true);
+        GameServerAPI.activateTimeBank(tableId, userId).catch(() => {
+          // Server rejected — fall back to auto-fold
           handleTimerAutoFold();
-        }
+        });
       } else {
         handleTimerAutoFold();
       }
@@ -2986,21 +2961,21 @@ export default function TablePage({
 
   // Handle immediate UI Activation when button is clicked
   const handleActivateTimeBank = useCallback(() => {
-    if (!tableId || !userId) return;
-    const activated = timeBankEngine.activate(tableId, userId, handleTimerAutoFold);
-    if (activated) {
-      soundService.playChips();
-      GameServerAPI.activateTimeBank(tableId, userId).catch(console.error);
-    }
-  }, [tableId, userId, handleTimerAutoFold]);
+    if (!tableId || !userId || timeBanksRemaining <= 0) return;
+    // Server-authoritative: just send the request; server manages countdown
+    setTimeBankActive(true);
+    soundService.playChips();
+    GameServerAPI.activateTimeBank(tableId, userId).catch(console.error);
+  }, [tableId, userId, timeBanksRemaining]);
 
   // Handle buying a time bank extension (VIP quota or diamond purchase)
   const handleBuyTimeBank = useCallback(async () => {
     if (!tableId || !userId) return;
-    await timeBankEngine.requestExtension(tableId, userId);
+    // Server-authoritative: request time bank extension via API
+    await GameServerAPI.activateTimeBank(tableId, userId);
   }, [tableId, userId]);
 
-  // [MIGRATION STEP 1] Validation moved to server — client does basic guard only
+  //Validation moved to server — client does basic guard only
   const validateAndExecuteAction = (
     action: 'fold' | 'check' | 'call' | 'raise' | 'allin' | 'bet',
     _amount?: number
@@ -3024,7 +2999,7 @@ export default function TablePage({
     }, 300);
     const heroSeat = tableState.heroSeat;
     setShowRaiseSlider(false);
-    // [MIGRATION STEP 1] Local engine call removed — server is authoritative
+    //Local engine call removed — server is authoritative
     soundService.playFold();
     haptic?.light();
     if (tableId)
@@ -3042,7 +3017,7 @@ export default function TablePage({
     }, 300);
     const heroSeat = tableState.heroSeat;
     setShowRaiseSlider(false);
-    // [MIGRATION STEP 1] Local engine call removed — server is authoritative
+    //Local engine call removed — server is authoritative
     soundService.playCheck();
     haptic?.light();
     if (tableId)
@@ -3060,7 +3035,7 @@ export default function TablePage({
     }, 300);
     const heroSeat = tableState.heroSeat;
     setShowRaiseSlider(false);
-    // [MIGRATION STEP 1] Local engine call removed — server is authoritative
+    //Local engine call removed — server is authoritative
     soundService.playChips();
     haptic?.light();
     if (tableId)
@@ -3095,7 +3070,7 @@ export default function TablePage({
       } else if (key === 'c') {
         e.preventDefault();
         // Determine if check is legal (no outstanding bet to match); otherwise call
-        // [MIGRATION STEP 1] Use tableState instead of local engine state
+        //Use tableState instead of local engine state
         const canCheck = (tableState.lastBetAmounts?.[tableState.heroSeat - 1] || 0) === 0;
         if (canCheck) {
           handleCheck();
@@ -3112,7 +3087,7 @@ export default function TablePage({
   }, [isHeroTurnContext, handleFold, handleCheck, handleCall]);
 
   // Unified action handler for ActionPanel component
-  // [MIGRATION STEP 1] Server is authoritative — all actions go through submitAction
+  //Server is authoritative — all actions go through submitAction
   const handleActionPanelAction = useCallback(
     async (action: 'fold' | 'check' | 'call' | 'raise' | 'allin', amount?: number) => {
       if (actionLockRef.current) return; // Debounce guard
@@ -3126,7 +3101,7 @@ export default function TablePage({
       const hero = getPlayerAtSeat(heroSeat);
       const heroStack = hero?.stack || 0;
 
-      // [MIGRATION STEP 1] All local engine calls removed — server is authoritative
+      //All local engine calls removed — server is authoritative
       switch (action) {
         case 'fold':
           if (!validateAndExecuteAction('fold')) return;
@@ -3204,7 +3179,7 @@ export default function TablePage({
     // Close slider immediately
     setShowRaiseSlider(false);
     try {
-      // [MIGRATION STEP 1] Local engine call removed — server is authoritative
+      //Local engine call removed — server is authoritative
       soundService.playRaise();
       haptic?.light();
       if (tableId)
@@ -3228,7 +3203,7 @@ export default function TablePage({
       actionLockRef.current = false;
     }, 300);
     try {
-      // [MIGRATION STEP 1] Local engine call removed — server is authoritative
+      //Local engine call removed — server is authoritative
       soundService.playAllIn();
       haptic?.light();
       setIsAllInMode(true);
@@ -3270,7 +3245,7 @@ export default function TablePage({
             suit: c.suit as 'h' | 'd' | 'c' | 's',
           })) || [];
 
-        // [MIGRATION STEP 1] monteCarloEquity removed — equity calc moves to server
+        //monteCarloEquity removed — equity calc moves to server
         // TODO: Wire to server-side equity endpoint in Step 3
         // Using heuristic fallback until server endpoint is ready
         const numOpponents = allInPlayers.length - 1;
@@ -3313,7 +3288,7 @@ export default function TablePage({
       isSideMenuOpen,
     onFold: handleFold,
     onCallCheck: () => {
-      // [MIGRATION STEP 1] Use tableState instead of local engine state
+      //Use tableState instead of local engine state
       const canCheck = (tableState.lastBetAmounts?.[tableState.heroSeat - 1] || 0) === 0;
       if (canCheck) {
         handleCheck();
@@ -3328,7 +3303,7 @@ export default function TablePage({
     onToggleStats: () => updateSetting('showHUD', !userSettings.showHUD),
     onBetPreset: (preset: number) => {
       // Bet presets: 0=1/3 pot, 1=1/2 pot, 2=3/4 pot, 3=pot
-      // [MIGRATION STEP 1] Use tableState.pot instead of local engine state
+      //Use tableState.pot instead of local engine state
       const pot = tableState.pot || 0;
       const fractions = [1 / 3, 1 / 2, 3 / 4, 1];
       const fraction = fractions[preset] ?? 0.5;
@@ -3457,7 +3432,7 @@ export default function TablePage({
             });
           } else if (preAction === 'check') {
             // Only check if can check (no bet to call)
-            // [MIGRATION STEP 1] Use tableState instead of local engine state
+            //Use tableState instead of local engine state
             const callAmount = tableState.lastBetAmounts?.[tableState.heroSeat - 1] || 0;
             if (callAmount === 0) {
               await handleCheck();
@@ -3476,7 +3451,7 @@ export default function TablePage({
             }
           } else if (preAction === 'callAny') {
             // "Call Any" = stay in hand: if nothing to call, check instead
-            // [MIGRATION STEP 1] Use tableState instead of local engine state
+            //Use tableState instead of local engine state
             const callAmount2 = tableState.lastBetAmounts?.[tableState.heroSeat - 1] || 0;
             if (callAmount2 > 0) {
               await handleCall();
@@ -3938,7 +3913,7 @@ export default function TablePage({
 
             {tableState.currentPlayerSeat === tableState.heroSeat && tableState.isHandInProgress
               ? (() => {
-                  // [MIGRATION STEP 1] Use tableState instead of local engine state
+                  //Use tableState instead of local engine state
                   const callAmount = tableState.lastBetAmounts?.[tableState.heroSeat - 1] || 0;
                   const heroStack = getPlayerAtSeat(tableState.heroSeat)?.stack || 0;
                   const bb = safeBB(tableState.blinds);
@@ -3972,7 +3947,7 @@ export default function TablePage({
               tableState.currentPlayerSeat !== tableState.heroSeat && (
                 <PreActionBar
                   canCheck={
-                    // [MIGRATION STEP 1] Use tableState instead of local engine state
+                    //Use tableState instead of local engine state
                     (tableState.lastBetAmounts?.[tableState.heroSeat - 1] || 0) === 0
                   }
                   isMyTurn={false}

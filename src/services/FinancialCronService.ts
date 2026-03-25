@@ -17,7 +17,7 @@ import { ChipFlowService } from './ChipFlowService';
 import { CreditService } from './CreditService';
 import { FinancialAlertService } from './FinancialAlertService';
 import { masterBus } from '../core/MasterBus';
-import { rakebackEngine } from '../engine/RakebackEngine';
+// [MIGRATION] rakebackEngine removed — server-authoritative (Step 6). Settlement via Supabase RPC.
 import { QUERY_LIMITS } from '../lib/constants';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -290,7 +290,7 @@ export const FinancialCronService = {
 
   /**
    * Settle rakeback for ALL active clubs. Queries the clubs table for active clubs,
-   * then calls rakebackEngine.settleRakeback() for each, which persists accumulated
+   * then settles rakeback via Supabase RPC for each, which persists accumulated
    * rakeback to the `rakeback_periods` table for player claiming via RakebackPage.
    */
   async settleAllClubRakebacks(): Promise<{ clubsSettled: number; totalDistributed: number }> {
@@ -308,12 +308,13 @@ export const FinancialCronService = {
 
       for (const club of clubs) {
         try {
-          const distribution = await rakebackEngine.settleRakeback(club.id);
-          if (distribution.size > 0) {
+          // Server-authoritative: settle rakeback via Supabase RPC
+          const { data: settlement } = await supabase.rpc('settle_club_rakeback', {
+            p_club_id: club.id,
+          });
+          if (settlement && settlement.total_distributed > 0) {
             clubsSettled++;
-            for (const amount of distribution.values()) {
-              totalDistributed += amount;
-            }
+            totalDistributed += settlement.total_distributed;
           }
         } catch (err) {
           console.error(`[FinancialCron] Rakeback settlement failed for club ${club.id}:`, err);

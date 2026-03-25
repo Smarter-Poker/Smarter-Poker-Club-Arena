@@ -15,7 +15,7 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
-import { flashPoolEngine, type FlashPoolConfig } from '../engine/FlashPoolEngine';
+// [MIGRATION] flashPoolEngine removed — server-authoritative (join via Supabase RPC)
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
@@ -222,9 +222,14 @@ export default function FlashPoolPage() {
       }
       setJoiningPool(pool.poolId);
       try {
-        const joined = flashPoolEngine.joinPool(pool.poolId, user.id, buyIn);
-        if (!joined) {
-          toast.error('Unable to join pool — you may already be in this pool');
+        // Server-authoritative: join pool via Supabase RPC
+        const { error: joinError } = await supabase.rpc('join_flash_pool', {
+          p_pool_id: pool.poolId,
+          p_user_id: user.id,
+          p_buy_in: buyIn,
+        });
+        if (joinError) {
+          toast.error(joinError.message || 'Unable to join pool — you may already be in this pool');
           return;
         }
         toast.success(`Joining ${pool.stakes} flash pool...`);

@@ -12,6 +12,8 @@
  * sent via Realtime but never reached the server-side engine.
  */
 
+import { supabase } from '../lib/supabase';
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONFIGURATION
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -24,6 +26,26 @@ const GAME_SERVER_URL =
   (import.meta.env.PROD
     ? 'https://smarter-poker-game-server-production.up.railway.app'
     : 'http://localhost:8080');
+
+/**
+ * Get JWT auth headers for server requests.
+ * Bible V8 §1.3: All game server endpoints require Supabase JWT auth.
+ * The server extracts userId from the token — prevents spoofing.
+ */
+async function getAuthHeaders(): Promise<Record<string, string>> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token) {
+      return {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`,
+      };
+    }
+  } catch {
+    // Silent — fall through to no-auth headers
+  }
+  return { 'Content-Type': 'application/json' };
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -73,10 +95,11 @@ export async function submitAction(
   amount?: number
 ): Promise<ActionResult> {
   try {
+    const headers = await getAuthHeaders();
     const response = await fetch(`${GAME_SERVER_URL}/action`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tableId, userId, action, amount }),
+      headers,
+      body: JSON.stringify({ tableId, action, amount }),
     });
 
     if (!response.ok) {
@@ -101,10 +124,11 @@ export async function submitAction(
  */
 export async function activateTimeBank(tableId: string, userId: string): Promise<ActionResult> {
   try {
+    const headers = await getAuthHeaders();
     const response = await fetch(`${GAME_SERVER_URL}/timebank`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tableId, userId }),
+      headers,
+      body: JSON.stringify({ tableId }),
     });
 
     if (!response.ok) {
@@ -129,7 +153,8 @@ export async function activateTimeBank(tableId: string, userId: string): Promise
  */
 export async function getAvailableActions(tableId: string, userId: string): Promise<PlayerActions> {
   try {
-    const response = await fetch(`${GAME_SERVER_URL}/actions/${tableId}/${userId}`);
+    const headers = await getAuthHeaders();
+    const response = await fetch(`${GAME_SERVER_URL}/actions/${tableId}/${userId}`, { headers });
 
     if (!response.ok) {
       return {

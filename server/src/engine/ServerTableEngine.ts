@@ -26,6 +26,7 @@ import { StraddleEngine } from './StraddleEngine.js';
 import { MixedGameEngine } from './MixedGameEngine.js';
 import { RunItTwiceEngine } from './RunItTwiceEngine.js';
 import { InsuranceEngine, type InsuranceSettlement } from './InsuranceEngine.js';
+import { monteCarloEquity } from './MonteCarloEquity.js';
 import { RakebackEngine } from './RakebackEngine.js';
 import { ChipRaceEngine } from './ChipRaceEngine.js';
 import { TableBalancer } from './TableBalancer.js';
@@ -1749,60 +1750,201 @@ export class ServerTableEngine {
     // Broadcast current state so clients see the all-in board
     this.broadcastCurrentState();
 
-    const insuranceEnabled = this.insuranceEngine.isEnabled(this.tableId);
-    const ritEnabled = this.runItTwiceEngine.isEnabled(this.tableId);
+    // ═══════════════════════════════════════════════════════════════════════
+    // EQUITY DISPLAY: Calculate and broadcast equity for ALL all-in players
+    // This is shown on every table (insurance or not) for all players/observers.
+    // ═══════════════════════════════════════════════════════════════════════
+    if (allInPlayers.length >= 2) {
+      this.broadcastAllInEquity(allInPlayers, board, pot);
+    }
 
-    // Bible V8 §4.19: Create insurance offers if enabled and board has cards to come
-    // Board can be 0 (preflop all-in), 3 (flop), or 4 (turn). Only skip if board is complete (5).
+    const insuranceEnabled = this.insuranceEngine.isEnabled(this.tableId);
+
     if (insuranceEnabled && board.length < 5 && allInPlayers.length >= 2) {
+      // ═══════════════════════════════════════════════════════════════════════
+      // INSURANCE TABLE: Per-street pause flow
+      // Deal one street at a time, pause for insurance offers, then deal next.
+      // Each street recalculates equity and re-offers to eligible players.
+      // ═══════════════════════════════════════════════════════════════════════
       const offerPlayers = allInPlayers.map((p) => ({
         playerId: p.user_id,
         holeCards: p.cards || [],
       }));
 
+      this.runInsurancePerStreetFlow(offerPlayers, allInPlayers, pot);
+    } else {
+      // NON-INSURANCE TABLE: Instant full runout (standard behavior)
+      this.handController.continueRunout();
+    }
+  }
+
+  /**
+   * Calculate and broadcast equity percentages for all all-in players.
+   * Shown to ALL players and observers at the table — not just insurance tables.
+   * Updates each street as new board cards are dealt.
+   */
+  private broadcastAllInEquity(
+    allInPlayers: import('../types.js').SeatPlayer[],
+    board: import('../types.js').Card[],
+    pot: number
+  ): void {
+    const numOpponents = allInPlayers.length - 1;
+    const equities: Array<{ userId: string; username: string; equity: number; seat: number }> = [];
+
+    for (const player of allInPlayers) {
+      const holeCards = player.cards || [];
+      if (holeCards.length < 2) continue;
+
+      const equity = monteCarloEquity(holeCards, board, numOpponents, 5000);
+      equities.push({
+        userId: player.user_id,
+        username: player.username || 'Unknown',
+        equity: Math.round(equity * 10) / 10, // 1 decimal place
+        seat: player.seat,
+      });
+    }
+
+    // Broadcast to all clients — this is public information during all-in
+    broadcastHandState(this.tableId, {
+      type: 'all_in_equity',
+      table_id: this.tableId,
+      hand_number: this.handCount,
+      board: board.map((c) => `${c.rank}${c.suit}`),
+      pot,
+      equities,
+    });
+  }
+
+  /**
+   * Per-street insurance flow:
+   * 1. Deal one street (flop/turn/river)
+   * 2. Re-broadcast equity percentages (updates on-screen equity display)
+   * 3. Create or recalculate insurance offers
+   * 4. Broadcast offers, wait for responses
+   * 5. After responses: check if any eligible players remain
+   *    - If ALL players declined for hand → instant runout for remaining streets
+   *    - If board incomplete and eligible players exist → go back to step 1
+   * 6. After all 5 cards dealt: finalize the hand
+   *
+   * Dan's rule: "THIS IS VOID IF THE PLAYER DECLINES INSURANCE FOR HAND OPTION.
+   * IT WILL RUN OUT NORMAL, UNLESS THAT PLAYER IS NOT 'BEHIND' —
+   * INSURANCE WILL BE OFFERED TO THE PLAYER THAT IS 'AHEAD' IF ANY STREETS
+   * ARE STILL PENDING."
+   */
+  private runInsurancePerStreetFlow(
+    offerPlayers: Array<{ playerId: string; holeCards: import('../types.js').Card[] }>,
+    allInPlayers: import('../types.js').SeatPlayer[],
+    pot: number
+  ): void {
+    if (!this.handController) return;
+
+    // Deal the next street
+    const result = this.handController.dealNextStreet();
+    this.broadcastCurrentState();
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // RE-BROADCAST EQUITY: Update on-screen equity percentages per street.
+    // All players and observers see updated equity as each card is dealt.
+    // Uses the original allInPlayers (SeatPlayer[]) for proper username/seat data.
+    // ═══════════════════════════════════════════════════════════════════════
+    this.broadcastAllInEquity(allInPlayers, result.board, pot);
+
+    const offerTimeout = 15; // Matches InsuranceEngine DEFAULT_CONFIG.offerTimeoutSeconds
+
+    // Check if this is the first street of offers or a recalculation
+    const existingOffers = this.insuranceEngine.getOffers(this.tableId);
+
+    if (existingOffers.length === 0) {
+      // First time: create offers with current board
       const offers = this.insuranceEngine.createOffers(
         this.tableId,
         `${this.tableId}:${this.handCount}`,
         offerPlayers,
-        board,
+        result.board,
         pot
       );
 
       if (offers.length > 0) {
-        // Broadcast insurance offers to clients via Supabase Realtime
-        // Include all fields needed for the InsurancePanel slider UI
-        broadcastHandState(this.tableId, {
-          type: 'insurance_offers',
-          table_id: this.tableId,
-          hand_number: this.handCount,
-          pot,
-          offers: offers.map((o) => ({
-            playerId: o.playerId,
-            equity: o.equity,
-            fullPremium: o.fullPremium,
-            premium: o.premium,
-            fullInsuredAmount: o.fullInsuredAmount,
-            insuredAmount: o.insuredAmount,
-            coveragePercent: o.coveragePercent,
-            timeoutSeconds: 15,
-          })),
-        });
+        this.broadcastInsuranceOffers(offers, pot, offerTimeout);
+      }
+    } else {
+      // Subsequent streets: recalculate equity for existing offers.
+      // This re-offers to players who "Declined Now" (not "Declined for Hand")
+      // if their equity improved (they may now be the leader).
+      this.insuranceEngine.recalculateOffers(this.tableId, result.board, pot);
 
-        // Wait for all insurance responses (or timeout) then continue
-        this.waitForInsuranceResponses(() => {
-          // After insurance resolved, continue the runout
-          if (this.handController) {
-            this.handController.continueRunout();
-          }
-        });
-        return;
+      // Broadcast updated offers (if any are still pending)
+      const currentOffers = this.insuranceEngine.getOffers(this.tableId);
+      const pendingOffers = currentOffers.filter((o) => o.status === 'offered');
+      if (pendingOffers.length > 0) {
+        this.broadcastInsuranceOffers(pendingOffers, pot, offerTimeout);
       }
     }
 
-    // No insurance offers needed — continue immediately
-    if (this.handController) {
-      this.handController.continueRunout();
+    // If all 5 cards are dealt, finalize after insurance responses
+    if (result.complete) {
+      // Wait for any pending offers then finalize
+      this.waitForInsuranceResponses(() => {
+        if (this.handController) {
+          this.handController.finalizeRunout();
+        }
+      });
+    } else {
+      // More streets to come — wait for responses, then check eligibility
+      this.waitForInsuranceResponses(() => {
+        // ═══════════════════════════════════════════════════════════════════
+        // FIX 88: Check if per-street pause should continue or revert to
+        // instant runout. If ALL players have declined for the entire hand,
+        // the per-street pause is VOID — run out remaining streets instantly.
+        // If at least one player hasn't declined for hand, continue pausing.
+        //
+        // Dan's rule: "THIS IS VOID IF THE PLAYER DECLINES INSURANCE FOR
+        // HAND OPTION. IT WILL RUN OUT NORMAL, UNLESS THAT PLAYER IS NOT
+        // 'BEHIND' — INSURANCE WILL BE OFFERED TO THE PLAYER THAT IS
+        // 'AHEAD' IF ANY STREETS ARE STILL PENDING."
+        // ═══════════════════════════════════════════════════════════════════
+        if (!this.insuranceEngine.anyEligibleForInsurance(this.tableId)) {
+          // ALL players declined for hand — per-street pause is void.
+          // Deal remaining streets instantly and finalize.
+          console.log(
+            `[ServerTableEngine:${this.tableId}] All players declined insurance for hand — switching to instant runout`
+          );
+          if (this.handController) {
+            this.handController.continueRunout();
+          }
+        } else {
+          // At least one player eligible — continue per-street pause
+          this.runInsurancePerStreetFlow(offerPlayers, allInPlayers, pot);
+        }
+      });
     }
+  }
+
+  /**
+   * Broadcast insurance offers to clients via Supabase Realtime.
+   * Includes all fields needed for the InsurancePanel slider UI.
+   */
+  private broadcastInsuranceOffers(
+    offers: import('./InsuranceEngine.js').InsuranceOffer[],
+    pot: number,
+    timeoutSeconds: number
+  ): void {
+    broadcastHandState(this.tableId, {
+      type: 'insurance_offers',
+      table_id: this.tableId,
+      hand_number: this.handCount,
+      pot,
+      offers: offers.map((o) => ({
+        playerId: o.playerId,
+        equity: o.equity,
+        fullPremium: o.fullPremium,
+        premium: o.premium,
+        fullInsuredAmount: o.fullInsuredAmount,
+        insuredAmount: o.insuredAmount,
+        coveragePercent: o.coveragePercent,
+        timeoutSeconds,
+      })),
+    });
   }
 
   /**

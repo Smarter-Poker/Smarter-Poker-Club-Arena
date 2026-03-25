@@ -679,13 +679,22 @@ export async function processBBJPayout(params: {
         ? Math.round((tableShareTotal / tableOnlyPlayers.length) * 100) / 100
         : 0;
 
-    // 4. Deduct from pool main_balance and update stats
+    // 4. Deduct from pool main_balance and update stats (read-then-increment for correct totals)
+    const { data: poolStats } = await supabase
+      .from('bbj_pools')
+      .select('total_paid_out, hit_count')
+      .eq('id', pool.id)
+      .maybeSingle();
+
+    const currentTotalPaidOut = Number(poolStats?.total_paid_out ?? 0);
+    const currentHitCount = Number(poolStats?.hit_count ?? 0);
+
     const { error: poolErr } = await supabase
       .from('bbj_pools')
       .update({
         main_balance: Math.max(0, pool.main_balance - totalPayout),
-        total_paid_out: pool.main_balance, // Will be incremented; using raw SQL would be better
-        hit_count: pool.main_balance, // Placeholder — ideally use RPC with atomic increment
+        total_paid_out: currentTotalPaidOut + totalPayout,
+        hit_count: currentHitCount + 1,
         last_hit_at: new Date().toISOString(),
         last_hit_amount: totalPayout,
         last_winner_id: params.loserUserId, // "winner" in BBJ terms = the bad beat loser
@@ -694,34 +703,21 @@ export async function processBBJPayout(params: {
       })
       .eq('id', pool.id);
 
-    // Use RPC for atomic updates if available; fallback to manual update
-    // Atomic increment for total_paid_out and hit_count
-    await supabase
-      .rpc('bbj_record_payout_atomic', {
-        p_pool_id: pool.id,
-        p_payout_amount: totalPayout,
-      })
-      .then(({ error }) => {
-        if (error) {
-          // Fallback: just log — the main update above handled the balance deduction
-          console.warn(
-            `[processBBJPayout] Atomic payout RPC not available, using fallback:`,
-            error.message
-          );
-        }
-      });
-
     if (poolErr) {
       console.error(`[processBBJPayout] Pool update failed:`, poolErr.message);
       return null;
     }
 
     // 5. Record the payout in bbj_payouts table
+    // hand_id is NULL (server uses hand_history table, not legacy hands table)
+    // hand_number + table_id provide the reference instead
     const { data: payoutRecord, error: payoutErr } = await supabase
       .from('bbj_payouts')
       .insert({
         pool_id: pool.id,
-        hand_id: null, // Server uses hand_history, not hands table
+        hand_id: null, // Nullable after migration 20260325_bbj_payouts_hand_id_nullable
+        table_id: params.tableId,
+        hand_number: params.handNumber,
         winner_user_id: params.loserUserId, // BBJ "winner" = the bad beat loser (gets 50%)
         loser_user_id: params.winnerUserId, // BBJ "loser" = the hand winner (gets 25%)
         total_amount: totalPayout,

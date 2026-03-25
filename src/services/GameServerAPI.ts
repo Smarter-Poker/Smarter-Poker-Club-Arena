@@ -343,22 +343,49 @@ export async function respondToRIT(
 /**
  * Bible V8 §4.19: Respond to an insurance offer.
  * @param response - 'accept' or 'decline'
+ * @param coveragePercent - 1-100 (default 100). Partial insurance via slider.
+ * @param declineForHand - true = "Decline for Hand" (never re-offer on later streets).
+ *                         false = "Decline Now" (may be re-offered if equity shifts).
  */
 export async function respondToInsurance(
   tableId: string,
-  response: 'accept' | 'decline'
-): Promise<ActionResult & { status?: string }> {
+  response: 'accept' | 'decline',
+  coveragePercent: number = 100,
+  declineForHand: boolean = false
+): Promise<ActionResult & { status?: string; premium?: number; insuredAmount?: number }> {
   try {
     const headers = await getAuthHeaders();
     const resp = await fetch(`${GAME_SERVER_URL}/insurance`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ tableId, response }),
+      body: JSON.stringify({ tableId, response, coveragePercent, declineForHand }),
     });
     if (!resp.ok) return { success: false, error: `Server error (${resp.status})` };
     return await resp.json();
   } catch (err: unknown) {
     console.error('[GameServerAPI] Insurance response failed:', err);
+    return { success: false, error: 'Server unreachable' };
+  }
+}
+
+/**
+ * Bible V8 §4.19: Preview insurance cost for a given coverage percentage.
+ * Used by the client slider to show real-time cost/payout as user adjusts.
+ */
+export async function previewInsurance(
+  tableId: string,
+  coveragePercent: number = 100
+): Promise<ActionResult & { premium?: number; insuredAmount?: number; coveragePercent?: number }> {
+  try {
+    const headers = await getAuthHeaders();
+    const resp = await fetch(
+      `${GAME_SERVER_URL}/insurance-preview?tableId=${encodeURIComponent(tableId)}&coveragePercent=${coveragePercent}`,
+      { method: 'GET', headers }
+    );
+    if (!resp.ok) return { success: false, error: `Server error (${resp.status})` };
+    return await resp.json();
+  } catch (err: unknown) {
+    console.error('[GameServerAPI] Insurance preview failed:', err);
     return { success: false, error: 'Server unreachable' };
   }
 }
@@ -468,6 +495,7 @@ export default {
   getTableState,
   respondToRIT,
   respondToInsurance,
+  previewInsurance,
   showHand,
   connectTableWebSocket,
   disconnectTableWebSocket,

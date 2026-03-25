@@ -849,25 +849,49 @@ export default function TablePage({
   // Handle insurance offer — Bible V8 §4.19: Use HTTP POST /insurance endpoint
   // Server's InsuranceEngine calculates premium via Monte Carlo simulation (not hardcoded 10%)
   // coverageAmount param accepted for InsuranceModal compatibility but ignored — server is authoritative
-  const handleInsuranceAccept = async (_coverageAmount?: number) => {
+  // FIX 89: Insurance accept with server-authoritative coverage percentage
+  const handleInsuranceAccept = async (coverageAmount?: number) => {
     setShowInsurance(false);
     if (tableId) {
-      const result = await respondToInsurance(tableId, 'accept');
+      // coverageAmount from slider maps to coveragePercent on server
+      // If not provided, defaults to 100% (full insurance)
+      const coveragePct =
+        coverageAmount && insuranceOffer
+          ? Math.round((coverageAmount / insuranceOffer.maxCoverage) * 100)
+          : 100;
+      const result = await respondToInsurance(tableId, 'accept', coveragePct);
       if (!result.success) {
         console.error('[Insurance] Accept failed:', result.error);
       }
     }
   };
 
+  // FIX 89: "Decline Now" — may be re-offered on later streets if equity shifts
   const handleInsuranceDecline = async () => {
     setShowInsurance(false);
     if (tableId) {
-      const result = await respondToInsurance(tableId, 'decline');
+      const result = await respondToInsurance(tableId, 'decline', 100, false);
       if (!result.success) {
         console.error('[Insurance] Decline failed:', result.error);
       }
     }
     // After insurance decision, show RIT prompt if set up
+    if (ritOpponent !== 'Opponent') {
+      setShowRIT(true);
+    }
+  };
+
+  // FIX 89: "Decline for Hand" — never re-offered on later streets.
+  // Per-street pause continues only for the player who is "ahead" (highest equity).
+  // If all players decline for hand, remaining streets run out instantly.
+  const handleInsuranceDeclineForHand = async () => {
+    setShowInsurance(false);
+    if (tableId) {
+      const result = await respondToInsurance(tableId, 'decline', 100, true);
+      if (!result.success) {
+        console.error('[Insurance] Decline for hand failed:', result.error);
+      }
+    }
     if (ritOpponent !== 'Opponent') {
       setShowRIT(true);
     }
@@ -1184,6 +1208,12 @@ export default function TablePage({
 
   // All-in dramatic mode
   const [isAllInMode, setIsAllInMode] = useState(false);
+
+  // FIX 89: All-in equity display — shows equity percentages for all all-in players
+  // Populated by server's 'all_in_equity' Realtime event, visible to all players/observers
+  const [allInEquities, setAllInEquities] = useState<
+    Array<{ userId: string; username: string; equity: number; seat: number }>
+  >([]);
 
   // ═══════════════════════════════════════════════════════════════════════════
   //  PHASE 4 — Premium Features (HUD, Pot Odds, Hand History, Settings)
@@ -1630,6 +1660,56 @@ export default function TablePage({
     if (!tableId) return;
     const unsubscribe = subscribeToHandState(tableId, (handState: Record<string, unknown>) => {
       if (!handState) return;
+
+      // ═══════════════════════════════════════════════════════════════════════
+      // FIX 89: Dispatch server Realtime event types.
+      // The server sends different event types on the same hand-state channel:
+      // - Regular hand state: players, stage, community_cards, etc.
+      // - insurance_offers: insurance offer data for InsuranceModal
+      // - all_in_equity: equity percentages for all-in display
+      // ═══════════════════════════════════════════════════════════════════════
+      const eventType = handState.type as string | undefined;
+
+      if (eventType === 'insurance_offers') {
+        // Server insurance offers — show InsuranceModal with server-calculated data
+        const serverOffers = handState.offers as any[];
+        if (!serverOffers || serverOffers.length === 0) return;
+
+        // Find the offer for the current hero player
+        const heroOffer = serverOffers.find((o: any) => o.playerId === userId);
+        if (heroOffer) {
+          // Map server offer format to InsuranceModal's InsuranceOffer format
+          setInsuranceOffer({
+            maxCoverage: heroOffer.fullInsuredAmount || heroOffer.insuredAmount || 0,
+            equityPercent: heroOffer.equity || 50,
+            premiumRate:
+              heroOffer.fullPremium && heroOffer.fullInsuredAmount
+                ? heroOffer.fullPremium / heroOffer.fullInsuredAmount
+                : 0.2,
+            potAmount: (handState.pot as number) || 0,
+            yourStack: 0, // All-in — stack is 0
+            opponentStack: 0,
+            yourCards: [], // Cards already displayed on table
+            board: [],
+          });
+          setShowInsurance(true);
+        }
+        return; // Don't process as regular state
+      }
+
+      if (eventType === 'all_in_equity') {
+        // All-in equity percentages — update equity display overlay
+        const equities = handState.equities as Array<{
+          userId: string;
+          username: string;
+          equity: number;
+          seat: number;
+        }>;
+        if (equities && equities.length > 0) {
+          setAllInEquities(equities);
+        }
+        return; // Don't process as regular state
+      }
 
       const serverPlayers = (handState.players as any[]) || [];
       const stage = (handState.stage as string) || 'preflop';
@@ -2419,11 +2499,9 @@ export default function TablePage({
     setPreAction(payload.action);
   });
 
-  useMasterBusSubscription('INSURANCE_OFFERED', (payload: any) => {
-    if (payload.tableId !== tableId || payload.playerId !== userId) return;
-    setInsuranceOffer(payload.offer);
-    setShowInsurance(true);
-  });
+  // FIX 89: INSURANCE_OFFERED is now server-authoritative via Realtime broadcast.
+  // The subscribeToHandState callback handles 'insurance_offers' events.
+  // Legacy MasterBus handler removed — server is the single source of truth.
 
   useMasterBusSubscription('TIME_BANK_ACTIVATED', (payload: any) => {
     if (payload.tableId !== tableId) return;
@@ -2930,6 +3008,7 @@ export default function TablePage({
           sidePots: [],
         }));
         setIsAllInMode(false);
+        setAllInEquities([]); // Clear equity display on new hand
         break;
     }
   }, [lastEvent]);
@@ -3368,48 +3447,17 @@ export default function TablePage({
       );
       const allInPlayers = currentState.players.filter((p) => p && p.status === 'all_in');
 
-      // If heads-up all-in (2 players all-in), trigger insurance
+      // FIX 89: Insurance offers are now SERVER-AUTHORITATIVE.
+      // The server's InsuranceEngine creates offers and broadcasts via Realtime
+      // (event type: 'insurance_offers'). The client listens in the subscribeToHandState
+      // callback and shows InsuranceModal when the hero receives an offer.
+      // No local insurance calculation — server uses MonteCarloEquity with 5000 iterations.
+      //
+      // RIT prompt: triggered after insurance decision completes (in handleInsuranceDecline)
       if (activePlayers.length === 0 && allInPlayers.length >= 2) {
         const opponent = allInPlayers.find((p) => p?.id !== hero?.id);
-        const potSize = currentState.pot;
-        const maxCoverage = Math.trunc(potSize * 0.8 * 100) / 100; // 80% of pot coverage
-
-        // Convert board cards to proper format — use ref for fresh data inside workerTimeout
-        const boardCards = tableStateRef.current.communityCards.map((c) => ({
-          rank: c.rank,
-          suit: c.suit as 'h' | 'd' | 'c' | 's',
-        }));
-
-        // Hero's hole cards — BUG-F FIX: read from fresh ref, not stale 'hero' closure
-        const freshHero = tableStateRef.current.players[heroSeat - 1];
-        const heroCards =
-          (freshHero?.holeCards || hero?.holeCards)?.map((c) => ({
-            rank: c.rank,
-            suit: c.suit as 'h' | 'd' | 'c' | 's',
-          })) || [];
-
-        //monteCarloEquity removed — equity calc moves to server
-        // TODO: Wire to server-side equity endpoint in Step 3
-        // Using heuristic fallback until server endpoint is ready
-        const numOpponents = allInPlayers.length - 1;
-        const equityPercent = numOpponents <= 1 ? 55 : Math.max(20, 65 - numOpponents * 10);
-
-        setInsuranceOffer({
-          maxCoverage,
-          equityPercent,
-          premiumRate: 0.1, // 10% premium rate
-          potAmount: potSize,
-          yourStack: heroStack,
-          opponentStack: opponent?.stack || 0,
-          yourCards: heroCards,
-          board: boardCards,
-        });
-        setShowInsurance(true);
-
-        // Also trigger Run It Twice prompt after insurance decision
         setRitOpponent(opponent?.name || 'Opponent');
         setRitTimer(10);
-        // RIT prompt will show after insurance modal closes
       }
     }, 500);
   };
@@ -3962,6 +4010,41 @@ export default function TablePage({
                     }
                   }}
                 />
+
+                {/* FIX 89: All-In Equity Overlay — shown per seat during all-in */}
+                {allInEquities.length > 0 &&
+                  player &&
+                  (() => {
+                    const eq = allInEquities.find(
+                      (e) => e.seat === seatNumber || e.userId === player.id
+                    );
+                    if (!eq) return null;
+                    const isAhead = eq.equity >= 50;
+                    return (
+                      <div
+                        className={`equity-overlay ${isAhead ? 'equity-overlay--ahead' : 'equity-overlay--behind'}`}
+                        style={{
+                          position: 'absolute',
+                          bottom: '-18px',
+                          left: '50%',
+                          transform: 'translateX(-50%)',
+                          fontSize: '12px',
+                          fontWeight: 700,
+                          padding: '2px 8px',
+                          borderRadius: '10px',
+                          backgroundColor: isAhead
+                            ? 'rgba(46, 204, 113, 0.9)'
+                            : 'rgba(231, 76, 60, 0.9)',
+                          color: '#fff',
+                          whiteSpace: 'nowrap',
+                          zIndex: 50,
+                          textShadow: '0 1px 2px rgba(0,0,0,0.5)',
+                        }}
+                      >
+                        {eq.equity}%
+                      </div>
+                    );
+                  })()}
               </div>
             );
           })}
@@ -4469,6 +4552,7 @@ export default function TablePage({
           onClose={() => setShowInsurance(false)}
           onAccept={handleInsuranceAccept}
           onDecline={handleInsuranceDecline}
+          onDeclineForHand={handleInsuranceDeclineForHand}
           offer={insuranceOffer}
           timeRemaining={15}
         />

@@ -105,6 +105,7 @@ export class ServerTableEngine {
   private playerTurnStartTime: number = 0;
   private playerTurnDuration: number = 0;
   private timeBankActivatedThisTurn: boolean = false;
+  private showHandPlayers: Set<string> | null = null; // Bible V8 §4.21: players who voluntarily show hand
 
   // ── Step 4: Ported Core Modules ──
   private preciseTimer: PreciseActionTimer;
@@ -207,6 +208,44 @@ export class ServerTableEngine {
     try {
       const tableData = await loadTable(this.tableId);
       this.tableInfo = tableData as TableInfo;
+
+      // Bible V8 §6.2: Configure time bank engine with table-specific settings
+      this.timeBankEngine.configure(this.tableId, {
+        totalBankSeconds: this.tableInfo.time_bank_seconds ?? 30,
+        maxUses: this.tableInfo.time_bank_max_uses ?? 4,
+        secondsPerUse: this.tableInfo.time_bank_seconds ? Math.ceil(this.tableInfo.time_bank_seconds / (this.tableInfo.time_bank_max_uses ?? 4)) : 15,
+        autoActivate: true,
+      });
+
+      // Bible V8 §6.3: Configure disconnect engine with table-specific settings
+      this.disconnectEngine.configure(this.tableId, {
+        disconnectTimeoutSeconds: this.tableInfo.disconnect_timeout_seconds ?? 30,
+        maxConsecutiveTimeouts: this.tableInfo.max_consecutive_timeouts ?? 3,
+        preferCheckOverFold: this.tableInfo.prefer_check_over_fold ?? true,
+        reconnectGraceSeconds: 5,
+      });
+
+      // Bible V8 §4.20: Configure Run It Twice engine
+      this.runItTwiceEngine.configure(this.tableId, {
+        enabled: this.tableInfo.run_it_twice_enabled ?? false,
+        maxRuns: 2,
+        autoDeclineTimeout: 10,
+      });
+
+      // Bible V8 §4.19: Configure Insurance engine
+      this.insuranceEngine.configure(this.tableId, {
+        enabled: this.tableInfo.insurance_enabled ?? false,
+      });
+
+      // Bible V8 §4.4: Configure Straddle engine
+      if (this.tableInfo.straddle_enabled) {
+        this.straddleEngine.configure(this.tableId, {
+          enabled: true,
+          mississippiEnabled: this.tableInfo.straddle_type === 'mississippi',
+          maxStraddles: this.tableInfo.max_straddles ?? 1,
+          straddleMultiplier: 2, // Standard 2x straddle
+        });
+      }
 
       // Wait for minimum 2 players
       while (this.running) {
@@ -545,7 +584,7 @@ export class ServerTableEngine {
     }
 
     if (sitOut) {
-      this.disconnectEngine.sitOut(this.tableId, userId, 'player_requested');
+      this.disconnectEngine.sitOut(this.tableId, userId, 'voluntary');
     } else {
       this.disconnectEngine.sitBack(this.tableId, userId);
     }
@@ -587,20 +626,30 @@ export class ServerTableEngine {
         amount: a.amount,
         stage: a.stage,
       })),
-      players: (state.players ?? []).map((p) => ({
-        seat: p.seat,
-        user_id: p.user_id,
-        username: p.username,
-        stack: p.stack,
-        bet: p.bet ?? 0,
-        // Per-player card security: only show own cards (or all at showdown)
-        cards: (state.stage === 'showdown' && !p.is_folded)
-          ? (p.cards ?? [])
-          : (p.user_id === requestingUserId ? (p.cards ?? []) : []),
-        is_folded: p.is_folded ?? false,
-        is_all_in: p.is_all_in ?? false,
-        is_sitting_out: p.is_sitting_out ?? false,
-      })),
+      players: (state.players ?? []).map((p) => {
+        let showCards = false;
+        if (p.user_id === requestingUserId) {
+          // Always show own cards
+          showCards = true;
+        } else if (state.stage === 'showdown' && !p.is_folded) {
+          // Bible V8 §4.21: Auto-muck — only show winners, voluntary showers, or if auto-muck disabled
+          const isWinner = this.currentHandWinnerIds.includes(p.user_id);
+          const voluntarilyShowing = this.showHandPlayers?.has(p.user_id) ?? false;
+          const autoMuckEnabled = this.tableInfo?.auto_muck_enabled ?? true;
+          showCards = isWinner || voluntarilyShowing || !autoMuckEnabled;
+        }
+        return {
+          seat: p.seat,
+          user_id: p.user_id,
+          username: p.username,
+          stack: p.stack,
+          bet: p.bet ?? 0,
+          cards: showCards ? (p.cards ?? []) : [],
+          is_folded: p.is_folded ?? false,
+          is_all_in: p.is_all_in ?? false,
+          is_sitting_out: p.is_sitting_out ?? false,
+        };
+      }),
     };
   }
 
@@ -612,6 +661,84 @@ export class ServerTableEngine {
       return { success: false, error: 'Straddles are not enabled at this table' };
     }
     this.straddleEngine.toggleAutoStraddle(this.tableId, userId, enabled);
+    return { success: true };
+  }
+
+  /**
+   * Bible V8 §4.20: Respond to a Run It Twice offer.
+   * Both players must accept for dual boards to be dealt.
+   */
+  public respondToRIT(userId: string, response: 'accept' | 'decline'): { success: boolean; error?: string; status?: string } {
+    if (!this.runItTwiceEngine.isActive(this.tableId)) {
+      return { success: false, error: 'No active Run It Twice offer' };
+    }
+
+    if (response === 'accept') {
+      const bothAccepted = this.runItTwiceEngine.accept(this.tableId, userId);
+      if (bothAccepted) {
+        // Both players accepted — deal dual boards
+        // The actual dealing is handled by the HAND_COMPLETE/all-in runout flow
+        return { success: true, status: 'accepted' };
+      }
+      return { success: true, status: 'waiting_for_other_player' };
+    } else {
+      this.runItTwiceEngine.decline(this.tableId, userId);
+      return { success: true, status: 'declined' };
+    }
+  }
+
+  /**
+   * Bible V8 §4.19: Respond to an insurance offer.
+   */
+  public respondToInsurance(userId: string, response: 'accept' | 'decline'): { success: boolean; error?: string; status?: string } {
+    if (!this.insuranceEngine.isEnabled(this.tableId)) {
+      return { success: false, error: 'Insurance is not enabled at this table' };
+    }
+
+    if (response === 'accept') {
+      const accepted = this.insuranceEngine.accept(this.tableId, userId);
+      if (!accepted) {
+        return { success: false, error: 'No pending insurance offer for this player' };
+      }
+      return { success: true, status: 'accepted' };
+    } else {
+      this.insuranceEngine.decline(this.tableId, userId);
+      return { success: true, status: 'declined' };
+    }
+  }
+
+  /**
+   * Bible V8 §4.21: Player chooses to show hand at showdown (even if not required).
+   * Auto-muck: losing hands are hidden unless player explicitly shows.
+   */
+  public showHand(userId: string): { success: boolean; error?: string } {
+    if (!this.handController) {
+      return { success: false, error: 'No active hand' };
+    }
+
+    const state = this.handController.getState();
+    if (state.stage !== 'showdown') {
+      return { success: false, error: 'Can only show hand during showdown' };
+    }
+
+    const player = state.players.find((p) => p.user_id === userId);
+    if (!player) {
+      return { success: false, error: 'Player not found at this table' };
+    }
+
+    if (player.is_folded) {
+      return { success: false, error: 'Cannot show a folded hand' };
+    }
+
+    // Mark this player as voluntarily showing their hand
+    if (!this.showHandPlayers) {
+      this.showHandPlayers = new Set<string>();
+    }
+    this.showHandPlayers.add(userId);
+
+    // Broadcast updated state so this player's cards become visible
+    this.broadcastCurrentState();
+
     return { success: true };
   }
 
@@ -912,6 +1039,7 @@ export class ServerTableEngine {
     this.currentHandCommunityCards = [];
     this.currentHandActions = [];
     this.currentHandWinners = [];
+    this.showHandPlayers = null; // Reset voluntary show-hand set for new hand
 
     console.log(
       `[ServerTableEngine:${this.tableId}] Hand #${handNumber} — ${players.length} players`
@@ -1125,7 +1253,8 @@ export class ServerTableEngine {
           // Bible V8 §4.15: When a bet or raise occurs, invalidate all auto_check pre-actions
           // (they're no longer valid because there's now a bet to face)
           if (event.action === 'bet' || event.action === 'raise' || event.action === 'all_in') {
-            this.preActionEngine.onBetPlaced(this.tableId);
+            const actingPlayer = this.seatedPlayers.find((p) => p.seat_number === event.seat);
+            this.preActionEngine.onBetPlaced(this.tableId, actingPlayer?.user_id || '');
           }
         }
         this.broadcastCurrentState();
@@ -1396,19 +1525,31 @@ export class ServerTableEngine {
       })),
       // CARD SECURITY: Scrub hole cards from public broadcast.
       // Players receive their own cards via RLS-protected table_hole_cards channel.
-      // Only reveal all cards at showdown (when remaining players show hands).
-      players: (state.players ?? []).map((p) => ({
-        seat: p.seat,
-        user_id: p.user_id,
-        username: p.username,
-        stack: p.stack,
-        bet: p.bet ?? 0,
-        // Only reveal cards at showdown for players still in the hand (not folded)
-        cards: (state.stage === 'showdown' && !p.is_folded) ? (p.cards ?? []) : [],
-        is_folded: p.is_folded ?? false,
-        is_all_in: p.is_all_in ?? false,
-        is_sitting_out: p.is_sitting_out ?? false,
-      })),
+      // Bible V8 §4.21: Auto-muck — at showdown, only show:
+      //   - Winners (must always show)
+      //   - Players who voluntarily chose to show (showHandPlayers set)
+      //   - All non-folded players if auto_muck is DISABLED
+      players: (state.players ?? []).map((p) => {
+        let showCards = false;
+        if (state.stage === 'showdown' && !p.is_folded) {
+          const isWinner = this.currentHandWinnerIds.includes(p.user_id);
+          const voluntarilyShowing = this.showHandPlayers?.has(p.user_id) ?? false;
+          const autoMuckEnabled = this.tableInfo?.auto_muck_enabled ?? true; // Default: auto-muck ON
+          // Winners MUST show. Others show if auto-muck is off OR they voluntarily show.
+          showCards = isWinner || voluntarilyShowing || !autoMuckEnabled;
+        }
+        return {
+          seat: p.seat,
+          user_id: p.user_id,
+          username: p.username,
+          stack: p.stack,
+          bet: p.bet ?? 0,
+          cards: showCards ? (p.cards ?? []) : [],
+          is_folded: p.is_folded ?? false,
+          is_all_in: p.is_all_in ?? false,
+          is_sitting_out: p.is_sitting_out ?? false,
+        };
+      }),
     });
   }
 

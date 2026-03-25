@@ -77,6 +77,22 @@ export interface TableInfo {
   straddle_enabled?: boolean;
   straddle_type?: 'utg' | 'mississippi';
   max_straddles?: number;
+  /** Bible V8 §4.20: Run It Twice */
+  run_it_twice_enabled?: boolean;
+  /** Bible V8 §4.19: Insurance */
+  insurance_enabled?: boolean;
+  /** Bible V8 §4.21: Auto-muck losing hands at showdown */
+  auto_muck_enabled?: boolean;
+  /** Bible V8 §4.21: Allow players to voluntarily show hand */
+  show_hand_enabled?: boolean;
+  /** Bible V8 §6.3: Disconnect timeout in seconds */
+  disconnect_timeout_seconds?: number;
+  /** Bible V8 §1.7.6: Auto sit-out after N consecutive timeouts */
+  max_consecutive_timeouts?: number;
+  /** Bible V8 §1.7.4: Prefer check over fold on disconnect */
+  prefer_check_over_fold?: boolean;
+  /** Bible V8 §6.2: Time bank uses per session */
+  time_bank_max_uses?: number;
 }
 
 export interface SeatedPlayer {

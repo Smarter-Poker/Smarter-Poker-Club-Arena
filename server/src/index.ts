@@ -2441,6 +2441,29 @@ function readBody(req: import('http').IncomingMessage): Promise<string> {
   });
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// Bible V8 §9.3: Rate limiting — 1 action per 100ms per player
+// ═══════════════════════════════════════════════════════════════════════════════
+const actionRateLimiter: Map<string, number> = new Map();
+const RATE_LIMIT_MS = 100; // Minimum ms between action submissions per player
+
+function checkRateLimit(userId: string): boolean {
+  const now = Date.now();
+  const lastAction = actionRateLimiter.get(userId) ?? 0;
+  if (now - lastAction < RATE_LIMIT_MS) {
+    return false; // Rate limited
+  }
+  actionRateLimiter.set(userId, now);
+  // Clean up old entries every 1000 checks to prevent memory leak
+  if (actionRateLimiter.size > 1000) {
+    const cutoff = now - 60000; // Remove entries older than 60s
+    for (const [uid, ts] of actionRateLimiter) {
+      if (ts < cutoff) actionRateLimiter.delete(uid);
+    }
+  }
+  return true;
+}
+
 const httpServer = createServer(async (req, res) => {
   const method = req.method || 'GET';
   const url = req.url || '/';
@@ -2475,6 +2498,11 @@ const httpServer = createServer(async (req, res) => {
       const { tableId, action, amount } = body;
       // Use authenticated userId from JWT, NOT from request body (prevents spoofing)
       const userId = auth.userId;
+
+      // Bible V8 §9.3: Rate limiting — reject rapid-fire action submissions
+      if (!checkRateLimit(userId)) {
+        return sendJSON(res, 429, { success: false, error: 'Rate limited — wait before submitting another action' });
+      }
 
       if (!tableId || !action) {
         return sendJSON(res, 400, { success: false, error: 'Missing tableId or action' });
@@ -2698,6 +2726,102 @@ const httpServer = createServer(async (req, res) => {
     }
 
     return sendJSON(res, 200, state);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // POST /rit — Bible V8 §4.20: Respond to Run It Twice offer
+  // Body: { tableId, response: 'accept' | 'decline' }
+  // ─────────────────────────────────────────────────────────────────────────
+  if (method === 'POST' && url === '/rit') {
+    try {
+      const auth = await authenticateRequest(req);
+      if (!auth) {
+        return sendJSON(res, 401, { success: false, error: 'Authentication required' });
+      }
+
+      const body = JSON.parse(await readBody(req));
+      const { tableId, response } = body;
+      const userId = auth.userId;
+
+      if (!tableId || !response || !['accept', 'decline'].includes(response)) {
+        return sendJSON(res, 400, { success: false, error: 'Missing tableId or invalid response (must be accept or decline)' });
+      }
+
+      const engine = gameServer.getTableEngine(tableId);
+      if (!engine) {
+        return sendJSON(res, 404, { success: false, error: 'Table engine not found' });
+      }
+
+      const result = engine.respondToRIT(userId, response);
+      return sendJSON(res, result.success ? 200 : 400, result);
+    } catch (err: any) {
+      console.error('[HTTP] /rit error:', err.message);
+      return sendJSON(res, 500, { success: false, error: 'Invalid request body' });
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // POST /insurance — Bible V8 §4.19: Respond to insurance offer
+  // Body: { tableId, response: 'accept' | 'decline' }
+  // ─────────────────────────────────────────────────────────────────────────
+  if (method === 'POST' && url === '/insurance') {
+    try {
+      const auth = await authenticateRequest(req);
+      if (!auth) {
+        return sendJSON(res, 401, { success: false, error: 'Authentication required' });
+      }
+
+      const body = JSON.parse(await readBody(req));
+      const { tableId, response } = body;
+      const userId = auth.userId;
+
+      if (!tableId || !response || !['accept', 'decline'].includes(response)) {
+        return sendJSON(res, 400, { success: false, error: 'Missing tableId or invalid response (must be accept or decline)' });
+      }
+
+      const engine = gameServer.getTableEngine(tableId);
+      if (!engine) {
+        return sendJSON(res, 404, { success: false, error: 'Table engine not found' });
+      }
+
+      const result = engine.respondToInsurance(userId, response);
+      return sendJSON(res, result.success ? 200 : 400, result);
+    } catch (err: any) {
+      console.error('[HTTP] /insurance error:', err.message);
+      return sendJSON(res, 500, { success: false, error: 'Invalid request body' });
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // POST /showhand — Bible V8 §4.21: Voluntarily show hand at showdown
+  // Body: { tableId }
+  // ─────────────────────────────────────────────────────────────────────────
+  if (method === 'POST' && url === '/showhand') {
+    try {
+      const auth = await authenticateRequest(req);
+      if (!auth) {
+        return sendJSON(res, 401, { success: false, error: 'Authentication required' });
+      }
+
+      const body = JSON.parse(await readBody(req));
+      const { tableId } = body;
+      const userId = auth.userId;
+
+      if (!tableId) {
+        return sendJSON(res, 400, { success: false, error: 'Missing tableId' });
+      }
+
+      const engine = gameServer.getTableEngine(tableId);
+      if (!engine) {
+        return sendJSON(res, 404, { success: false, error: 'Table engine not found' });
+      }
+
+      const result = engine.showHand(userId);
+      return sendJSON(res, result.success ? 200 : 400, result);
+    } catch (err: any) {
+      console.error('[HTTP] /showhand error:', err.message);
+      return sendJSON(res, 500, { success: false, error: 'Invalid request body' });
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────────────

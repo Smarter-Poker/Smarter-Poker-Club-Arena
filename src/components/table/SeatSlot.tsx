@@ -36,7 +36,20 @@ export interface Card {
 }
 
 export type PlayerStatus = 'active' | 'away' | 'sitting_out' | 'folded' | 'all_in';
-export type PositionBadge = 'D' | 'SB' | 'BB' | null;
+/** Bible V8 Appendix B: Position labels for all table sizes */
+export type PositionBadge =
+  | 'D'
+  | 'BTN'
+  | 'SB'
+  | 'BB'
+  | 'UTG'
+  | 'UTG+1'
+  | 'UTG+2'
+  | 'MP'
+  | 'MP+1'
+  | 'HJ'
+  | 'CO'
+  | null;
 export type LastAction = 'fold' | 'check' | 'call' | 'bet' | 'raise' | 'all_in' | null;
 
 export interface SeatPlayer {

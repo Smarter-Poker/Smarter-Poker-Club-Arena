@@ -294,6 +294,19 @@ interface TableState {
   rakePercent?: number;
   rakeCap?: number;
   runItTwice?: boolean;
+  // Bible V8 §2.4: Server-authoritative hand state fields
+  minRaise?: number;
+  lastRaise?: number;
+  currentBet?: number;
+  actionHistory?: {
+    seat: number;
+    userId: string;
+    action: string;
+    amount: number;
+    timestamp: number;
+    stage: string;
+  }[];
+  handNumber?: number;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1625,6 +1638,12 @@ export default function TablePage({
       const currentBet = (handState.current_bet as number) || 0;
       const currentPlayer = handState.current_player as string | null;
       const dealerSeat = (handState.dealer_seat as number) || 0;
+      // Bible V8 §2.4: Extract betting state fields from server broadcast
+      const serverMinRaise = (handState.min_raise as number) || 0;
+      const serverLastRaise = (handState.last_raise as number) || 0;
+      const serverPots = (handState.pots as any[]) || [];
+      const serverActionHistory = (handState.action_history as any[]) || [];
+      const handNumber = (handState.hand_number as number) || 0;
 
       setTableState((prev) => {
         const updatedPlayers = [...prev.players];
@@ -1653,7 +1672,9 @@ export default function TablePage({
                 ? 'all_in'
                 : sp.is_sitting_out
                   ? 'sitting_out'
-                  : 'active',
+                  : sp.is_disconnected
+                    ? 'away'
+                    : 'active',
             isHero,
             // Show cards for hero always; show opponent cards at showdown ONLY if not folded
             showCards: isHero || (sp.cards && sp.cards.length > 0 && !sp.is_folded),
@@ -1693,6 +1714,50 @@ export default function TablePage({
           currentPlayerSeat,
           dealerSeat,
           isHandInProgress: stage !== 'preflop' || pot > 0,
+          // Bible V8 §2.4: Server-authoritative betting state
+          minRaise: serverMinRaise,
+          lastRaise: serverLastRaise,
+          currentBet,
+          sidePots: serverPots,
+          actionHistory: serverActionHistory,
+          handNumber,
+          // Sync lastBetAmounts from server broadcast player bets
+          lastBetAmounts: (() => {
+            const bets = [...prev.lastBetAmounts];
+            for (const sp of serverPlayers) {
+              const idx = (sp.seat as number) - 1;
+              if (idx >= 0 && idx < bets.length) {
+                bets[idx] = (sp.bet as number) || 0;
+              }
+            }
+            return bets;
+          })(),
+          // Bible V8 §2.3: Sync position labels from server broadcast
+          positions: (() => {
+            const pos = [...prev.positions];
+            for (const sp of serverPlayers) {
+              const idx = (sp.seat as number) - 1;
+              if (idx >= 0 && idx < pos.length) {
+                const label = (sp.position as string) || '';
+                // Map server BTN → D for dealer chip display
+                if (label === 'BTN') pos[idx] = 'D';
+                else if (
+                  label === 'SB' ||
+                  label === 'BB' ||
+                  label === 'UTG' ||
+                  label === 'MP' ||
+                  label === 'CO' ||
+                  label === 'HJ' ||
+                  label.startsWith('UTG+') ||
+                  label.startsWith('MP+')
+                )
+                  pos[idx] = label as any;
+                else if (label) pos[idx] = label as any;
+                else pos[idx] = null;
+              }
+            }
+            return pos;
+          })(),
         };
       });
 
@@ -2998,18 +3063,17 @@ export default function TablePage({
 
   const handleTimerAutoFold = useCallback(() => {
     if (actionLockRef.current) return; // Prevent race with manual fold
-    //Local engine call removed — server is authoritative
+    // Bible V8 §1.4: Server is authoritative — only send HTTP action, no Realtime broadcast
     try {
-      sendAction('fold', { seat: tableState.heroSeat, autoFold: true });
       soundService.playFold();
       if (tableId)
         submitAction(tableId, userId || 'guest', 'fold').catch((e) =>
-          console.warn('[Table] Server fold failed:', e)
+          console.warn('[Table] Server auto-fold failed:', e)
         );
     } catch (err) {
       console.error('[AutoFold] Error during auto-fold:', err);
     }
-  }, [tableState.heroSeat, tableId, userId, sendAction]);
+  }, [tableState.heroSeat, tableId, userId]);
 
   const {
     timeRemaining: actionTimeRemaining,
@@ -3147,8 +3211,10 @@ export default function TablePage({
       } else if (key === 'c') {
         e.preventDefault();
         // Determine if check is legal (no outstanding bet to match); otherwise call
-        //Use tableState instead of local engine state
-        const canCheck = (tableState.lastBetAmounts?.[tableState.heroSeat - 1] || 0) === 0;
+        // Bible V8: Check is legal when currentBet <= hero's current bet
+        const canCheck =
+          (tableState.currentBet || 0) <=
+          (tableState.lastBetAmounts?.[tableState.heroSeat - 1] || 0);
         if (canCheck) {
           handleCheck();
         } else {
@@ -3365,8 +3431,9 @@ export default function TablePage({
       isSideMenuOpen,
     onFold: handleFold,
     onCallCheck: () => {
-      //Use tableState instead of local engine state
-      const canCheck = (tableState.lastBetAmounts?.[tableState.heroSeat - 1] || 0) === 0;
+      // Bible V8: Check is legal when currentBet <= hero's current bet
+      const canCheck =
+        (tableState.currentBet || 0) <= (tableState.lastBetAmounts?.[tableState.heroSeat - 1] || 0);
       if (canCheck) {
         handleCheck();
       } else {
@@ -3509,9 +3576,10 @@ export default function TablePage({
             });
           } else if (preAction === 'check') {
             // Only check if can check (no bet to call)
-            //Use tableState instead of local engine state
-            const callAmount = tableState.lastBetAmounts?.[tableState.heroSeat - 1] || 0;
-            if (callAmount === 0) {
+            // Bible V8: Check legal when currentBet <= hero's current bet
+            const heroBetForCheck = tableState.lastBetAmounts?.[tableState.heroSeat - 1] || 0;
+            const toCallForCheck = Math.max(0, (tableState.currentBet || 0) - heroBetForCheck);
+            if (toCallForCheck === 0) {
               await handleCheck();
               masterBus.emit('PRE_ACTION_EXECUTED', {
                 tableId: tableId!,
@@ -3528,9 +3596,10 @@ export default function TablePage({
             }
           } else if (preAction === 'callAny') {
             // "Call Any" = stay in hand: if nothing to call, check instead
-            //Use tableState instead of local engine state
-            const callAmount2 = tableState.lastBetAmounts?.[tableState.heroSeat - 1] || 0;
-            if (callAmount2 > 0) {
+            // Bible V8: Derive call amount from server's currentBet vs hero's bet
+            const heroBetForCall = tableState.lastBetAmounts?.[tableState.heroSeat - 1] || 0;
+            const toCallForCallAny = Math.max(0, (tableState.currentBet || 0) - heroBetForCall);
+            if (toCallForCallAny > 0) {
               await handleCall();
             } else {
               await handleCheck();
@@ -3538,7 +3607,7 @@ export default function TablePage({
             masterBus.emit('PRE_ACTION_EXECUTED', {
               tableId: tableId!,
               playerId: userId!,
-              action: callAmount2 > 0 ? 'call' : 'check',
+              action: toCallForCallAny > 0 ? 'call' : 'check',
               amount: 0,
             });
           }
@@ -3988,11 +4057,29 @@ export default function TablePage({
 
             {tableState.currentPlayerSeat === tableState.heroSeat && tableState.isHandInProgress
               ? (() => {
-                  //Use tableState instead of local engine state
-                  const callAmount = tableState.lastBetAmounts?.[tableState.heroSeat - 1] || 0;
-                  const heroStack = getPlayerAtSeat(tableState.heroSeat)?.stack || 0;
+                  // Bible V8 §1.4: Use SERVER-AUTHORITATIVE values, not local calculations
+                  const heroPlayer = getPlayerAtSeat(tableState.heroSeat);
+                  const heroStack = heroPlayer?.stack || 0;
+                  const heroBet = tableState.lastBetAmounts?.[tableState.heroSeat - 1] || 0;
                   const bb = safeBB(tableState.blinds);
-                  const minRaise = Math.max(bb * 2, callAmount + bb);
+
+                  // Derive callAmount from server's currentBet minus hero's current bet
+                  const serverCurrentBet = tableState.currentBet || 0;
+                  const callAmount = Math.min(Math.max(0, serverCurrentBet - heroBet), heroStack);
+
+                  // Use server's authoritative minRaise (Bible V8 §4.14)
+                  // Fallback to local calc only if server hasn't broadcast yet
+                  const minRaise =
+                    tableState.minRaise && tableState.minRaise > 0
+                      ? tableState.minRaise
+                      : Math.max(bb * 2, serverCurrentBet + bb);
+
+                  // Bible V8 §4.14: maxRaise = stack for NL, pot-limited for PLO
+                  const gameVariant = tableState.gameType?.toLowerCase() || '';
+                  const isPotLimit = gameVariant.startsWith('plo') || gameVariant === 'flo';
+                  const maxRaise = isPotLimit
+                    ? Math.min(heroStack, tableState.pot + callAmount + callAmount)
+                    : heroStack;
 
                   return (
                     <>
@@ -4000,11 +4087,11 @@ export default function TablePage({
                         canFold={true}
                         canCheck={callAmount === 0}
                         canCall={callAmount > 0}
-                        canRaise={heroStack >= minRaise}
+                        canRaise={heroStack > callAmount && heroStack >= minRaise}
                         canAllIn={heroStack > 0}
                         callAmount={callAmount}
                         minRaise={minRaise}
-                        maxRaise={heroStack}
+                        maxRaise={maxRaise}
                         pot={tableState.pot}
                         bigBlind={bb}
                         onAction={handleActionPanelAction}
@@ -4018,41 +4105,46 @@ export default function TablePage({
               : null}
 
             {/* ─── SHOW HAND BUTTON — Bible V8 §4.21: Voluntary show at showdown ─── */}
-            {tableState.boardStage === 'showdown' && tableState.heroSeat > 0 && tableId && (
-              <button
-                className="show-hand-btn"
-                onClick={async () => {
-                  const result = await serverShowHand(tableId);
-                  if (!result.success) {
-                    console.error('[ShowHand] Failed:', result.error);
-                  }
-                }}
-                style={{
-                  position: 'absolute',
-                  bottom: '100px',
-                  left: '50%',
-                  transform: 'translateX(-50%)',
-                  padding: '8px 20px',
-                  borderRadius: '20px',
-                  background: 'rgba(255, 255, 255, 0.15)',
-                  border: '1px solid rgba(255, 255, 255, 0.3)',
-                  color: '#fff',
-                  fontSize: '13px',
-                  cursor: 'pointer',
-                  zIndex: 20,
-                }}
-              >
-                Show Hand
-              </button>
-            )}
+            {tableState.boardStage === 'showdown' &&
+              tableState.heroSeat > 0 &&
+              tableId &&
+              getPlayerAtSeat(tableState.heroSeat)?.status !== 'folded' && (
+                <button
+                  className="show-hand-btn"
+                  onClick={async () => {
+                    const result = await serverShowHand(tableId);
+                    if (!result.success) {
+                      console.error('[ShowHand] Failed:', result.error);
+                    }
+                  }}
+                  style={{
+                    position: 'absolute',
+                    bottom: '100px',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    padding: '8px 20px',
+                    borderRadius: '20px',
+                    background: 'rgba(255, 255, 255, 0.15)',
+                    border: '1px solid rgba(255, 255, 255, 0.3)',
+                    color: '#fff',
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                    zIndex: 20,
+                  }}
+                >
+                  Show Hand
+                </button>
+              )}
 
             {/* ─── PRE-ACTION BAR — Show when not hero's turn ─── */}
             {tableState.isHandInProgress &&
               tableState.currentPlayerSeat !== tableState.heroSeat && (
                 <PreActionBar
                   canCheck={
-                    //Use tableState instead of local engine state
-                    (tableState.lastBetAmounts?.[tableState.heroSeat - 1] || 0) === 0
+                    // Bible V8: Check is available when there's no outstanding bet to call
+                    // Compare server's currentBet to hero's current bet
+                    (tableState.currentBet || 0) <=
+                    (tableState.lastBetAmounts?.[tableState.heroSeat - 1] || 0)
                   }
                   isMyTurn={false}
                   preAction={preAction}

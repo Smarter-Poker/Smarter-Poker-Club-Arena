@@ -3,7 +3,7 @@
 ## Every Change, Documented. No Exceptions.
 
 **Started:** 2026-03-24
-**Current Step:** Step 6 — PORT ADVANCED (Straddle, RIT, Insurance, MixedGame, Rakeback)
+**Current Step:** POST-MIGRATION — Deep Verification Round 5 Complete (22 fixes: 28-49)
 
 ---
 
@@ -1212,3 +1212,193 @@ All 12 endpoints from MASTER-MIGRATION-DOCUMENT Section 3 are now implemented.
 - StraddleToggle component is imported but not rendered in JSX — straddle is managed via MasterBus events and settings. Consider adding the visual toggle in a future UI pass.
 - HandReveal component is imported but not rendered — may be intended for future hand reveal animations.
 - GET /state/:tableId is available as an API method but not actively used for polling — state comes via Realtime subscription. Could serve as fallback.
+
+---
+
+## POST-MIGRATION: Deep Verification Round 5 — Bible V8 Full Cross-Reference (2026-03-25)
+
+### Session Focus: Line-by-line verification of every file against Bible V8, with immediate fixes
+
+**FIX 28: SeatPlayer missing 6 fields** (Bible V8 §2.3)
+
+- File: `server/src/types.ts`
+- Added: `is_disconnected?`, `time_bank_remaining?`, `time_bank_uses_remaining?`, `position?`, `avatar_url?`, `is_horse?`
+- Before: Only had seat, user_id, username, stack, bet, totalInvested, cards, is_folded, is_all_in, is_sitting_out
+
+**FIX 29: TableStatus missing states** (Bible V8 §3.1)
+
+- File: `server/src/types.ts`
+- Before: `'waiting' | 'running' | 'paused' | 'closed'`
+- After: `'empty' | 'waiting' | 'seating' | 'running' | 'paused' | 'closing' | 'closed'`
+
+**FIX 30: HandConfig missing ritEnabled and insuranceEnabled** (Bible V8 §2.8)
+
+- File: `server/src/types.ts`
+- Added: `ritEnabled?: boolean`, `insuranceEnabled?: boolean`
+
+**FIX 31: RakeConfig field rename + missing features** (Bible V8 §2.9)
+
+- File: `server/src/types.ts`
+- Renamed: `noFlop` → `noFlopNoDrop`
+- Added: `playerCountCaps?: { players: number; cap: number }[]`, `timedRake?: { amountPerMinute: number }`
+
+**FIX 31b: RakeConfig noFlop → noFlopNoDrop in PokerEngine** (Bible V8 §2.9)
+
+- File: `server/src/engine/PokerEngine.ts`
+- Updated: `config.noFlop` → `config.noFlopNoDrop` in calculateRake
+
+**FIX 31c: RakeConfig noFlop → noFlopNoDrop in ServerTableEngine** (Bible V8 §2.9)
+
+- File: `server/src/engine/ServerTableEngine.ts`
+- Updated: `noFlop: true` → `noFlopNoDrop: true` in 2 locations in getRakeConfig
+
+**FIX 32: Winner missing potIndex** (Bible V8 §2.7)
+
+- File: `server/src/types.ts`
+- Added: `potIndex?: number`
+
+**FIX 33: HandStateBroadcast type definition** (Bible V8 §2.4)
+
+- File: `server/src/types.ts`
+- Added complete interface with all 15 required fields: table_id, hand_number, pot, community_cards, current_bet, current_player, dealer_seat, stage, min_raise, last_raise, turn_start_time_ms, turn_duration_ms, players[], pots[], action_history[]
+
+**FIX 34: TableInfo missing 7 fields** (Bible V8 §2.2)
+
+- File: `server/src/types.ts`
+- Added: `time_bank_enabled?`, `ante_enabled?`, `bomb_pot_enabled?`, `bomb_pot_frequency?`, `bomb_pot_ante_multiplier?`, `min_players?`, `name?`
+
+**FIX 35: calculateRake missing playerCountCaps support** (Bible V8 §2.9)
+
+- File: `server/src/engine/PokerEngine.ts`
+- Added `playerCount` parameter to calculateRake
+- Implements tiered cap lookup from `config.playerCountCaps`
+
+**FIX 36a: GameServerAPI submitAction userId param deprecated** (Server uses JWT)
+
+- File: `src/services/GameServerAPI.ts`
+- Changed: `userId` → `_userId` with deprecation comment
+
+**FIX 36b: GameServerAPI activateTimeBank userId param deprecated** (Server uses JWT)
+
+- File: `src/services/GameServerAPI.ts`
+- Changed: `userId` → `_userId` (optional, deprecated)
+
+**FIX 36c: GameServerAPI getAvailableActions URL uses 'me' placeholder** (Server uses JWT)
+
+- File: `src/services/GameServerAPI.ts`
+- Changed: URL from `/actions/${tableId}/${userId}` to `/actions/${tableId}/me`
+
+**FIX 37: TablePage TableState missing 5 broadcast fields** (Bible V8 §2.4)
+
+- File: `src/pages/TablePage.tsx`
+- Added to TableState interface: `minRaise?`, `lastRaise?`, `currentBet?`, `actionHistory?`, `handNumber?`
+
+**FIX 38: ActionPanel uses server-authoritative values** (Bible V8 §4.14)
+
+- File: `src/pages/TablePage.tsx`
+- ActionPanel now computes callAmount, minRaise, maxRaise from server broadcast data
+- Pot-limit max raise enforced for PLO variants
+
+**FIX 39: lastBetAmounts synced from server broadcast** (Bible V8 §2.3)
+
+- File: `src/pages/TablePage.tsx`
+- Realtime handler now populates lastBetAmounts[] from server player bet fields
+
+**FIX 40: Positions populated from server broadcast** (Bible V8 §2.3, Appendix B)
+
+- File: `src/pages/TablePage.tsx`
+- Realtime handler maps server position labels (BTN→D, SB, BB, UTG, etc.) to UI positions array
+
+**FIX 41: is_disconnected mapped to 'away' status** (Bible V8 §2.3)
+
+- File: `src/pages/TablePage.tsx`
+- Player status mapping now includes: `sp.is_disconnected ? 'away'`
+
+**FIX 42: PositionBadge type expanded** (Bible V8 Appendix B)
+
+- File: `src/components/table/SeatSlot.tsx`
+- Before: `'D' | 'SB' | 'BB' | null`
+- After: `'D' | 'BTN' | 'SB' | 'BB' | 'UTG' | 'UTG+1' | 'UTG+2' | 'MP' | 'MP+1' | 'HJ' | 'CO' | null`
+
+**FIX 43: canCheck logic wrong in 4 locations** (Bible V8 §4.9)
+
+- File: `src/pages/TablePage.tsx`
+- Before: `lastBetAmounts[heroSeat-1] === 0` (checks if hero bet is 0)
+- After: `(tableState.currentBet || 0) <= (tableState.lastBetAmounts?.[heroSeat-1] || 0)` (checks if hero owes nothing)
+- Fixed in: keyboard handler, onCallCheck handler, PreActionBar canCheck prop, original ActionPanel
+
+**FIX 44: Pre-action handler callAmount wrong** (Bible V8 §4.15)
+
+- File: `src/pages/TablePage.tsx`
+- Pre-action check/callAny handlers now compute callAmount as `max(0, currentBet - heroBet)` using server values
+
+**FIX 45: Legacy Realtime broadcast in auto-fold handler** (Migration Law 9 — client is dumb terminal)
+
+- File: `src/pages/TablePage.tsx`
+- Removed `sendAction('fold', ...)` Realtime broadcast from handleTimerAutoFold
+- Now only calls `submitAction()` HTTP POST (correct server-authoritative path)
+
+**FIX 46: Show Hand button visible for folded players** (Bible V8 §4.21)
+
+- File: `src/pages/TablePage.tsx`
+- Added: `getPlayerAtSeat(heroSeat)?.status !== 'folded'` guard to Show Hand button render
+
+**FIX 47: GameState.minRaise never updated — stale broadcast** (Bible V8 §4.14, §2.4) [CRITICAL]
+
+- File: `server/src/engine/HandController.ts`
+- Bug: `state.minRaise` initialized to `config.bigBlind` and never changed
+- Impact: Broadcast `min_raise`, `/actions` endpoint `minRaise`, and server action clamping ALL used the stale value. After any raise, clients saw wrong minimum and valid-looking raises could be rejected.
+- Fix: Added `this.state.minRaise = Math.max(this.config.bigBlind, this.state.lastRaise)` in:
+  1. bet/raise case (after lastRaise update)
+  2. all_in case (after full-raise lastRaise update)
+  3. advanceStage() (reset to bigBlind for new street)
+
+**FIX 48: Broadcast missing avatar_url and is_horse** (Bible V8 §2.3)
+
+- File: `server/src/engine/ServerTableEngine.ts`
+- Added `avatar_url` and `is_horse` to player objects in both `broadcastCurrentState()` and `getTableState()`
+
+**FIX 49: getTableState() missing turn timer fields** (Bible V8 §2.4)
+
+- File: `server/src/engine/ServerTableEngine.ts`
+- Added `turn_start_time_ms` and `turn_duration_ms` to getTableState() HTTP response
+- These were already present in broadcastCurrentState() but missing from the HTTP endpoint
+
+### Files Modified in Round 5
+
+| File                                     | Changes                                                                                                                                                                                                               |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `server/src/types.ts`                    | FIX 28-34: SeatPlayer +6 fields, TableStatus +3 states, HandConfig +2 fields, RakeConfig rename+2 fields, Winner +potIndex, HandStateBroadcast type, TableInfo +7 fields                                              |
+| `server/src/engine/PokerEngine.ts`       | FIX 31b: noFlop→noFlopNoDrop, FIX 35: calculateRake playerCountCaps                                                                                                                                                   |
+| `server/src/engine/ServerTableEngine.ts` | FIX 31c: noFlop→noFlopNoDrop, FIX 48: avatar_url+is_horse in broadcast, FIX 49: timer fields in getTableState                                                                                                         |
+| `server/src/engine/HandController.ts`    | FIX 47: minRaise kept in sync with lastRaise in performAction and advanceStage                                                                                                                                        |
+| `src/services/GameServerAPI.ts`          | FIX 36a-c: Deprecated userId params, 'me' placeholder URL                                                                                                                                                             |
+| `src/pages/TablePage.tsx`                | FIX 37-41, 43-46: TableState +5 fields, server-authoritative ActionPanel, lastBetAmounts sync, positions sync, is_disconnected, canCheck fix ×4, pre-action callAmount fix, legacy broadcast removal, show-hand guard |
+| `src/components/table/SeatSlot.tsx`      | FIX 42: PositionBadge type expanded                                                                                                                                                                                   |
+
+### HandController Deep Audit Results (Bible V8 Cross-Reference)
+
+**Methods verified line-by-line:**
+
+- `constructor()` — deck init, short deck removal, state initialization ✓
+- `initializePlayers()` — resets bet/totalInvested/cards/is_folded/is_all_in ✓
+- `start()` — bomb pot handling, blind posting, dealing, setNextPlayer ✓
+- `postBlinds()` — heads-up SB=dealer, short blind, BBA, traditional ante, straddles ✓
+- `postBombPotAntes()` — per-player ante with multiplier ✓
+- `dealHoleCards()` — cards per variant (NLH=2, PLO=4, PLO5=5, PLO6=6, OFC=5) ✓
+- `performAction()` — fold, check, call, bet/raise, all_in with short all-in tracking ✓
+- `advanceGame()` — single player → complete, round complete → advance stage, else next player ✓
+- `isBettingRoundComplete()` — all-in-only → true, single player logic, full-raise-only reopening, last-aggressor tracking ✓
+- `advanceStage()` — bet reset, lastRaise+minRaise reset, community card dealing, all-in runout ✓
+- `runOutCommunityCards()` — deals remaining cards when all players all-in ✓
+- `completeHand()` — pots, evaluation, hi-lo (PLO8), no-winners guard, rake with playerCount, integer-cents distribution, odd chip handling ✓
+- `setNextPlayer()` — heads-up preflop (dealer first), UTG preflop, straddle-aware, postflop rotation ✓
+- `getFirstPostflopPlayer()` — first active player left of dealer ✓
+- `getNextActiveSeat()` — wrapping clockwise rotation ✓
+- `emitTurnChange()` — emits available actions for current player ✓
+- `getAvailableActions()` — fold/check/bet/call/raise/all_in per §4.9-4.14 ✓
+- `getState()` — deep copy prevents external mutation ✓
+
+### Known Remaining Gaps (Settlement Steps 9-11)
+
+- Bible V8 §1.9 Steps 9-11: Leaderboards, achievements, VIP points are not yet implemented in postHandTasks(). These are future features that require additional infrastructure.

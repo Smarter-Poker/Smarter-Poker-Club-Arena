@@ -36,7 +36,15 @@ export type GameVariant =
   | 'short_deck'
   | 'ofc'
   | 'ofc_pineapple';
-export type TableStatus = 'waiting' | 'running' | 'paused' | 'closed';
+/** Bible V8 §3.1: Full table state machine states */
+export type TableStatus =
+  | 'empty'
+  | 'waiting'
+  | 'seating'
+  | 'running'
+  | 'paused'
+  | 'closing'
+  | 'closed';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Player Types
@@ -53,6 +61,18 @@ export interface SeatPlayer {
   is_folded: boolean;
   is_all_in: boolean;
   is_sitting_out: boolean;
+  /** Bible V8 §2.3: Added in broadcast — true when heartbeat missed */
+  is_disconnected?: boolean;
+  /** Bible V8 §2.3: Seconds remaining in time bank pool */
+  time_bank_remaining?: number;
+  /** Bible V8 §2.3: Number of time bank activations left this session */
+  time_bank_uses_remaining?: number;
+  /** Bible V8 §2.3: Position label (BTN, SB, BB, UTG, MP, CO, HJ, etc.) */
+  position?: string;
+  /** Bible V8 §2.3: Player avatar URL */
+  avatar_url?: string;
+  /** Bible V8 §2.3: Whether this player is an AI horse */
+  is_horse?: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -93,6 +113,20 @@ export interface TableInfo {
   prefer_check_over_fold?: boolean;
   /** Bible V8 §6.2: Time bank uses per session */
   time_bank_max_uses?: number;
+  /** Bible V8 §6.2: Whether time bank feature is enabled */
+  time_bank_enabled?: boolean;
+  /** Bible V8 §4.3: Whether ante is enabled */
+  ante_enabled?: boolean;
+  /** Bible V8 §4.22: Whether bomb pots are enabled */
+  bomb_pot_enabled?: boolean;
+  /** Bible V8 §4.22: Bomb pot frequency — every N hands */
+  bomb_pot_frequency?: number;
+  /** Bible V8 §4.22: Bomb pot ante multiplier (× BB) */
+  bomb_pot_ante_multiplier?: number;
+  /** Bible V8 §2.1: Minimum players to start a hand */
+  min_players?: number;
+  /** Bible V8 §2.1: Table display name */
+  name?: string;
 }
 
 export interface SeatedPlayer {
@@ -125,6 +159,10 @@ export interface HandConfig {
   bombPot?: {
     anteMultiplier: number;
   };
+  /** Bible V8 §2.8 / §4.20: Whether Run It Twice is enabled for this hand */
+  ritEnabled?: boolean;
+  /** Bible V8 §2.8 / §4.19: Whether Insurance is enabled for this hand */
+  insuranceEnabled?: boolean;
 }
 
 export interface GameState {
@@ -141,6 +179,31 @@ export interface GameState {
   pots: Pot[];
   actionHistory: ActionRecord[];
   sawFlop: boolean;
+}
+
+/**
+ * Bible V8 §2.4 — Hand State Broadcast Payload
+ * This is the shape of the object broadcast to all clients via Supabase Realtime.
+ * The server constructs this in broadcastCurrentState() and getTableState().
+ */
+export interface HandStateBroadcast {
+  table_id: string;
+  hand_number: number;
+  pot: number;
+  community_cards: Card[];
+  current_bet: number;
+  current_player: string; // user_id of player whose turn it is
+  dealer_seat: number;
+  stage: HandStage;
+  min_raise: number;
+  last_raise: number;
+  /** Bible V8 §6.1: Absolute timestamp (ms) when the current turn started */
+  turn_start_time_ms: number;
+  /** Bible V8 §6.1: Total turn duration in ms (action_time_seconds × 1000) */
+  turn_duration_ms: number;
+  players: SeatPlayer[];
+  pots: Pot[];
+  action_history: ActionRecord[];
 }
 
 export interface ActionRecord {
@@ -200,12 +263,19 @@ export interface BettingState {
 export interface RakeConfig {
   percent: number;
   cap: number;
-  noFlop: boolean;
+  /** Bible V8 §2.9 / Appendix A: No rake if hand doesn't reach flop */
+  noFlopNoDrop: boolean;
+  /** Bible V8 §2.9: Rake caps by player count — e.g. [{players: 2, cap: 100}, {players: 5, cap: 200}] */
+  playerCountCaps?: { players: number; cap: number }[];
+  /** Bible V8 §2.9: Alternative timed rake (rake per time period instead of per pot) */
+  timedRake?: { amountPerMinute: number };
 }
 
 export interface Winner {
   userId: string;
   amount: number;
+  /** Bible V8 §2.7: Which pot (0 = main, 1+ = side pots) this win came from */
+  potIndex?: number;
   hand?: EvaluatedHand;
 }
 

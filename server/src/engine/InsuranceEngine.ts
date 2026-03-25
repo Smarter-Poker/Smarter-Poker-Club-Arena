@@ -131,7 +131,9 @@ export class InsuranceEngine {
   ): InsuranceOffer[] {
     const config = this.tableConfigs.get(tableId) || this.DEFAULT_CONFIG;
     if (!config.enabled || pot < config.minPotForInsurance) return [];
-    if (allInPlayers.length < 2 || board.length < 3) return [];
+    if (allInPlayers.length < 2) return [];
+    // Insurance requires cards still to come (board < 5). Board can be 0 (preflop all-in).
+    if (board.length >= 5) return [];
 
     const offers: InsuranceOffer[] = [];
     const numOpponents = allInPlayers.length - 1;
@@ -429,6 +431,26 @@ export class InsuranceEngine {
     const offers = this.activeOffers.get(tableId);
     if (!offers || offers.length === 0) return true;
     return offers.every((o) => o.status !== 'offered');
+  }
+
+  /**
+   * Check if any player is still eligible for insurance offers on future streets.
+   * Returns false if ALL players have declined for the entire hand — meaning
+   * per-street pause is void and remaining streets should run out instantly.
+   *
+   * Per Dan's rule: "THIS IS VOID IF THE PLAYER DECLINES INSURANCE FOR HAND OPTION.
+   * IT WILL RUN OUT NORMAL, UNLESS THAT PLAYER IS NOT 'BEHIND' —
+   * INSURANCE WILL BE OFFERED TO THE PLAYER THAT IS 'AHEAD' IF ANY STREETS ARE STILL PENDING."
+   *
+   * So we check: is there at least one player who hasn't declined for the entire hand?
+   * If yes → per-street pause continues (that player can be offered next street).
+   * If no → all have declined for hand → instant runout.
+   */
+  anyEligibleForInsurance(tableId: string): boolean {
+    const offers = this.activeOffers.get(tableId);
+    if (!offers || offers.length === 0) return false;
+    // At least one player must NOT have declinedForHand
+    return offers.some((o) => !o.declinedForHand);
   }
 
   getOffers(tableId: string): InsuranceOffer[] {

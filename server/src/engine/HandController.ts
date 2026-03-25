@@ -472,8 +472,49 @@ export class HandController {
    * offers have been resolved. Deals remaining community cards and completes the hand.
    * This is the resumption point after the ALL_IN_RUNOUT pause.
    */
+  /**
+   * Resume full runout — deals all remaining cards and completes the hand.
+   * Used by non-insurance tables for instant runout.
+   */
   public continueRunout(): void {
     this.runOutCommunityCards();
+  }
+
+  /**
+   * Deal exactly ONE street of community cards (flop=3, turn=1, river=1).
+   * Returns the new board state. Does NOT complete the hand.
+   * Used by insurance tables for per-street pause/offer flow.
+   *
+   * @returns { board: Card[], stage: string, complete: boolean }
+   *   - board: current community cards after dealing
+   *   - stage: 'flop' | 'turn' | 'river'
+   *   - complete: true if all 5 cards are now dealt (caller should complete the hand)
+   */
+  public dealNextStreet(): { board: Card[]; stage: string; complete: boolean } {
+    const deck = this.state.deck as unknown as Deck;
+    const currentLength = this.state.communityCards.length;
+
+    if (currentLength >= 5) {
+      return { board: [...this.state.communityCards], stage: 'river', complete: true };
+    }
+
+    const stage = currentLength < 3 ? 'flop' : currentLength < 4 ? 'turn' : 'river';
+    const count = stage === 'flop' ? 3 - currentLength : 1;
+    const cards = deck.deal(count);
+    this.state.communityCards.push(...cards);
+    this.emit({ type: 'COMMUNITY_CARDS', stage: stage as HandStage, cards });
+
+    const complete = this.state.communityCards.length >= 5;
+    return { board: [...this.state.communityCards], stage, complete };
+  }
+
+  /**
+   * Finalize the hand after all streets are dealt (showdown + settlement).
+   * Called by ServerTableEngine after the last street in per-street insurance flow.
+   */
+  public finalizeRunout(): void {
+    this.state.stage = 'showdown';
+    this.completeHand();
   }
 
   private runOutCommunityCards(): void {

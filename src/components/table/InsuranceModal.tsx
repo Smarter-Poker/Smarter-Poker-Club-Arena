@@ -37,6 +37,9 @@ export interface InsuranceModalProps {
   onClose: () => void;
   onAccept: (coverageAmount: number) => void;
   onDecline: () => void;
+  /** FIX 89: "Decline for Hand" — never re-offered on later streets.
+   * If omitted, only "Decline Now" button is shown. */
+  onDeclineForHand?: () => void;
   onEvCashout?: (cashoutAmount: number) => void;
   offer: InsuranceOffer;
   timeRemaining?: number;
@@ -68,6 +71,7 @@ export function InsuranceModal({
   onClose,
   onAccept,
   onDecline,
+  onDeclineForHand,
   onEvCashout,
   offer,
   timeRemaining = 15,
@@ -115,6 +119,13 @@ export function InsuranceModal({
     haptic.light();
     onDecline();
   }, [onDecline]);
+
+  // FIX 89: "Decline for Hand" — player won't be re-offered insurance on later streets
+  const handleDeclineForHand = useCallback(() => {
+    haptic.light();
+    if (onDeclineForHand) onDeclineForHand();
+    else onDecline(); // Fallback if prop not provided
+  }, [onDeclineForHand, onDecline]);
 
   const handleEvCashout = useCallback(() => {
     haptic.medium();
@@ -299,8 +310,17 @@ export function InsuranceModal({
                 className="insurance-modal__btn insurance-modal__btn--decline"
                 onClick={handleDecline}
               >
-                No Insurance
+                Decline Now
               </button>
+              {onDeclineForHand && (
+                <button
+                  className="insurance-modal__btn insurance-modal__btn--decline-hand"
+                  onClick={handleDeclineForHand}
+                  title="Decline insurance for all remaining streets this hand"
+                >
+                  Decline for Hand
+                </button>
+              )}
               <button
                 className="insurance-modal__btn insurance-modal__btn--accept"
                 onClick={handleAccept}

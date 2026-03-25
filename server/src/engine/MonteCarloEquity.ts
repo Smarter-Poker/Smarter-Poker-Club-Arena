@@ -42,9 +42,10 @@ export function monteCarloEquity(
   numOpponents: number = 1,
   iterations: number = 1000
 ): number {
-  if (heroCards.length < 2 || boardCards.length < 3) {
-    return 50; // Not enough information — return 50%
+  if (heroCards.length < 2) {
+    return 50; // Need at least 2 hole cards
   }
+  // Note: boardCards can be empty (preflop all-in) — simulation will deal all 5 community cards
 
   // Build set of known cards (hero + board)
   const knownSet = new Set<string>();

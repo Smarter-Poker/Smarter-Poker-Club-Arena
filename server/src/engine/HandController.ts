@@ -226,20 +226,20 @@ export class HandController {
 
   private getCardsPerPlayer(): number {
     switch (this.config.gameVariant) {
+      case 'plo':
       case 'plo4':
-      case 'plo8':
         return 4;
       case 'plo5':
         return 5;
       case 'plo6':
         return 6;
-      case 'pineapple':
-        return 3;
+      case 'plo8':
+        return 4;
       case 'ofc':
       case 'ofc_pineapple':
         return 5;
       default:
-        return 2; // nlh, short_deck
+        return 2;
     }
   }
 

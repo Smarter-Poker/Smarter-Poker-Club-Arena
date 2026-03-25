@@ -88,6 +88,7 @@ export class ServerTableEngine {
   private currentHandActions: { seat: number; action: string; amount?: number; stage: string }[] =
     [];
   private currentHandWinners: { userId: string; amount: number }[] = [];
+  private currentHandContributions: Map<string, number> = new Map(); // userId → totalInvested
   // Hand complete callback for tournament chip sync
   private handCompleteCallback:
     | ((tableId: string, players: { user_id: string; stack: number }[]) => void)
@@ -95,6 +96,9 @@ export class ServerTableEngine {
   // Hand-for-hand pause: set by tournament manager, checked between hands
   private handForHandPaused: boolean = false;
   private handForHandResolve: (() => void) | null = null;
+
+  // Bible V8 §1.1.4: Action serialization lock — prevents parallel action processing
+  private actionLock: boolean = false;
 
   // Real Player Turn Management
   private playerTurnTimer: NodeJS.Timeout | null = null;
@@ -327,6 +331,60 @@ export class ServerTableEngine {
 
       const state = this.handController.getState();
       if (state.currentPlayerSeat === seat) {
+        // Bible V8 §6.2: Auto-activate time bank when primary timer expires
+        // Check BEFORE auto-fold/check — give player extra time if they have time bank remaining
+        if (!this.timeBankActivatedThisTurn) {
+          const autoActivated = this.timeBankEngine.onPrimaryTimerExpired(
+            this.tableId,
+            userId,
+            () => {
+              // This callback fires when the TIME BANK itself expires
+              if (!this.running || !this.handController) return;
+              const tbState = this.handController.getState();
+              if (tbState.currentPlayerSeat !== seat) return;
+
+              const tbPlayer = tbState.players.find((p) => p.seat === seat);
+              const tbToCall = tbPlayer ? Math.max(0, tbState.currentBet - (tbPlayer.bet ?? 0)) : 0;
+              const tbCanCheck = tbToCall === 0;
+
+              if (tbCanCheck) {
+                console.warn(`[ServerTableEngine:${this.tableId}] Player ${userId} time bank expired. Auto-checking.`);
+                try { this.handController!.performAction(seat, 'check'); }
+                catch { try { this.handController!.performAction(seat, 'fold'); } catch { /* done */ } }
+              } else {
+                console.warn(`[ServerTableEngine:${this.tableId}] Player ${userId} time bank expired. Auto-folding.`);
+                try { this.handController!.performAction(seat, 'fold'); }
+                catch { /* done */ }
+              }
+            }
+          );
+
+          if (autoActivated) {
+            this.timeBankActivatedThisTurn = true;
+            const bankSeconds = this.timeBankEngine.getRemainingSeconds(this.tableId, userId);
+            console.log(
+              `[ServerTableEngine:${this.tableId}] Auto-activated time bank for ${userId} (${bankSeconds}s remaining)`
+            );
+            // Restart turn timer with time bank duration
+            this.startTurnTimer(userId, seat, bankSeconds);
+
+            // Broadcast time bank activation to other players
+            try {
+              supabase.channel(`table:${this.tableId}`).send({
+                type: 'broadcast',
+                event: 'time_bank_activated',
+                payload: {
+                  player_id: userId,
+                  table_id: this.tableId,
+                  additional_seconds: bankSeconds,
+                  auto_activated: true,
+                },
+              }).catch(() => {});
+            } catch { /* broadcast failure is non-fatal */ }
+            return; // Time bank activated — don't auto-fold/check yet
+          }
+        }
+
         const player = state.players.find((p) => p.seat === seat);
         const amountToCall = player ? Math.max(0, state.currentBet - (player.bet ?? 0)) : 0;
         const canCheck = amountToCall === 0;
@@ -433,6 +491,131 @@ export class ServerTableEngine {
   }
 
   // ═════════════════════════════════════════════════════════════════════════════
+  // MISSING ENDPOINTS — Bible V8 Required (heartbeat, preaction, sitout, state)
+  // ═════════════════════════════════════════════════════════════════════════════
+
+  /**
+   * POST /heartbeat — Bible V8 §6.3: Reset disconnect timer for a player
+   */
+  public heartbeat(userId: string): { success: boolean; connected: boolean; gracePeriodRemaining: number } {
+    this.disconnectEngine.heartbeat(this.tableId, userId);
+    const connected = this.disconnectEngine.isConnected(this.tableId, userId);
+    return { success: true, connected, gracePeriodRemaining: 0 };
+  }
+
+  /**
+   * POST /preaction — Bible V8 §4.15: Set or clear a pre-action
+   */
+  public setPreAction(
+    userId: string,
+    action: string,
+    maxCallAmount?: number
+  ): { success: boolean; error?: string } {
+    if (!this.handController) {
+      return { success: false, error: 'No active hand' };
+    }
+    const state = this.handController.getState();
+    const player = state.players.find((p) => p.user_id === userId);
+    if (!player) {
+      return { success: false, error: 'Player not found at this table' };
+    }
+
+    if (action === 'clear') {
+      this.preActionEngine.clearPreAction(this.tableId, userId);
+      return { success: true };
+    }
+
+    // Validate the pre-action type
+    const validPreActions = ['auto_fold', 'auto_check_fold', 'auto_check', 'auto_call', 'auto_call_any'];
+    if (!validPreActions.includes(action)) {
+      return { success: false, error: `Invalid pre-action: ${action}` };
+    }
+
+    this.preActionEngine.setPreAction(this.tableId, userId, action as any, maxCallAmount);
+    return { success: true };
+  }
+
+  /**
+   * POST /sitout — Bible V8 §7.12: Player sits out or back in
+   */
+  public sitOut(userId: string, sitOut: boolean): { success: boolean; error?: string; willFoldNextHand: boolean } {
+    const player = this.seatedPlayers.find((p) => p.user_id === userId);
+    if (!player) {
+      return { success: false, error: 'Player not found at this table', willFoldNextHand: false };
+    }
+
+    if (sitOut) {
+      this.disconnectEngine.sitOut(this.tableId, userId, 'player_requested');
+    } else {
+      this.disconnectEngine.sitBack(this.tableId, userId);
+    }
+
+    // If hand is active and it's their turn, they can't sit out mid-action
+    const isInHand = this.handController !== null;
+    const willFoldNextHand = sitOut && isInHand;
+
+    return { success: true, willFoldNextHand };
+  }
+
+  /**
+   * GET /state/:tableId — Bible V8 §2.4: Get current hand state (scrubbed for requesting player)
+   */
+  public getTableState(requestingUserId: string): Record<string, any> | null {
+    if (!this.handController || !this.tableInfo) return null;
+
+    const state = this.handController.getState();
+    const currentSeatPlayer = state.players.find((p) => p.seat === state.currentPlayerSeat);
+
+    return {
+      table_id: this.tableId,
+      hand_number: this.handCount,
+      pot: state.pot ?? 0,
+      community_cards: state.communityCards ?? [],
+      current_bet: state.currentBet ?? 0,
+      current_player: currentSeatPlayer?.user_id ?? null,
+      dealer_seat: state.dealerSeat ?? this.currentHandDealerSeat,
+      stage: state.stage ?? 'preflop',
+      min_raise: state.minRaise ?? 0,
+      last_raise: state.lastRaise ?? 0,
+      pots: (state.pots ?? []).map((p) => ({
+        amount: p.amount,
+        eligible: p.eligiblePlayers ?? [],
+      })),
+      action_history: (state.actionHistory ?? []).map((a) => ({
+        seat: a.seat,
+        action: a.action,
+        amount: a.amount,
+        stage: a.stage,
+      })),
+      players: (state.players ?? []).map((p) => ({
+        seat: p.seat,
+        user_id: p.user_id,
+        username: p.username,
+        stack: p.stack,
+        bet: p.bet ?? 0,
+        // Per-player card security: only show own cards (or all at showdown)
+        cards: (state.stage === 'showdown' && !p.is_folded)
+          ? (p.cards ?? [])
+          : (p.user_id === requestingUserId ? (p.cards ?? []) : []),
+        is_folded: p.is_folded ?? false,
+        is_all_in: p.is_all_in ?? false,
+        is_sitting_out: p.is_sitting_out ?? false,
+      })),
+    };
+  }
+
+  /**
+   * POST /straddle — Bible V8 §4.4: Toggle auto-straddle enrollment
+   */
+  public toggleStraddle(userId: string, enabled: boolean): { success: boolean; error?: string } {
+    if (!this.tableInfo?.straddle_enabled) {
+      return { success: false, error: 'Straddles are not enabled at this table' };
+    }
+    this.straddleEngine.toggleAutoStraddle(this.tableId, userId, enabled);
+    return { success: true };
+  }
+
+  // ═════════════════════════════════════════════════════════════════════════════
   // REAL PLAYER ACTION — Accept actions from HTTP endpoint
   // ═════════════════════════════════════════════════════════════════════════════
 
@@ -441,6 +624,23 @@ export class ServerTableEngine {
    * Called from the HTTP /action endpoint when a player clicks fold/call/raise.
    */
   handlePlayerAction(
+    userId: string,
+    action: string,
+    amount?: number
+  ): { success: boolean; error?: string } {
+    // Bible V8 §1.1.4: Serialize all actions — no parallel processing
+    if (this.actionLock) {
+      return { success: false, error: 'Action already being processed — try again' };
+    }
+    this.actionLock = true;
+    try {
+      return this._handlePlayerActionInner(userId, action, amount);
+    } finally {
+      this.actionLock = false;
+    }
+  }
+
+  private _handlePlayerActionInner(
     userId: string,
     action: string,
     amount?: number
@@ -921,6 +1121,12 @@ export class ServerTableEngine {
             amount: event.amount,
             stage,
           });
+
+          // Bible V8 §4.15: When a bet or raise occurs, invalidate all auto_check pre-actions
+          // (they're no longer valid because there's now a bet to face)
+          if (event.action === 'bet' || event.action === 'raise' || event.action === 'all_in') {
+            this.preActionEngine.onBetPlaced(this.tableId);
+          }
         }
         this.broadcastCurrentState();
         break;
@@ -947,9 +1153,13 @@ export class ServerTableEngine {
           const state = this.handController.getState();
           this.currentHandPotSize = state.pot;
           this.currentHandRake = (state as any).rake || 0;
+          // Bible V8 §1.9: Capture totalInvested for weighted rakeback calculation
+          this.currentHandContributions.clear();
           for (const enginePlayer of state.players) {
             const localPlayer = players.find((p) => p.user_id === enginePlayer.user_id);
             if (localPlayer) localPlayer.stack = enginePlayer.stack;
+            // Track actual contributions for rakeback (totalInvested = blinds + bets + raises + calls)
+            this.currentHandContributions.set(enginePlayer.user_id, enginePlayer.totalInvested ?? 0);
           }
         }
         this.broadcastCurrentState();
@@ -1167,8 +1377,23 @@ export class ServerTableEngine {
       current_player: currentSeatPlayer?.user_id ?? null,
       dealer_seat: state.dealerSeat ?? this.currentHandDealerSeat,
       stage: state.stage ?? 'preflop',
+      // Bible V8 §2.4: Required betting state fields
+      min_raise: state.minRaise ?? 0,
+      last_raise: state.lastRaise ?? 0,
       turn_start_time_ms: this.playerTurnStartTime,
       turn_duration_ms: this.playerTurnDuration * 1000, // Convert seconds → milliseconds
+      // Bible V8 §2.4: Side pot information for multi-way all-ins
+      pots: (state.pots ?? []).map((p) => ({
+        amount: p.amount,
+        eligible: p.eligiblePlayers ?? [],
+      })),
+      // Bible V8 §2.4: Action history for the current hand
+      action_history: (state.actionHistory ?? []).map((a) => ({
+        seat: a.seat,
+        action: a.action,
+        amount: a.amount,
+        stage: a.stage,
+      })),
       // CARD SECURITY: Scrub hole cards from public broadcast.
       // Players receive their own cards via RLS-protected table_hole_cards channel.
       // Only reveal all cards at showdown (when remaining players show hands).
@@ -1213,22 +1438,18 @@ export class ServerTableEngine {
       );
     }
 
-    // 2b. Step 6: Track rake contributions for rakeback
+    // 2b. Step 6: Track rake contributions for weighted rakeback (Bible V8 §1.9 step 12)
     if (!this.isTournamentTable() && this.currentHandRake > 0 && this.tableInfo?.club_id) {
-      // Build contribution map from player totalInvested
-      const contributions = new Map<string, number>();
+      // Use actual totalInvested from HandController state (captured in WINNERS handler)
       let totalContributions = 0;
-      for (const p of players) {
-        // Use the player's final state from this hand
-        const invested = p.stack >= 0 ? 1 : 0; // Fallback: equal weight if no totalInvested
-        contributions.set(p.user_id, invested);
+      for (const [, invested] of this.currentHandContributions) {
         totalContributions += invested;
       }
       if (totalContributions > 0) {
         this.rakebackEngine.recordHandRake(
           this.tableInfo.club_id,
           this.currentHandRake,
-          contributions,
+          this.currentHandContributions,
           totalContributions
         );
       }

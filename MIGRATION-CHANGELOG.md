@@ -831,3 +831,126 @@ this.playerTurnTimer = setTimeout(() => {
 - `server/src/types.ts` — HandConfig (bigBlindAnte, straddles), TableInfo (BBA/straddle fields), ActionRecord (isFullRaise), BettingState (maxRaise)
 - `server/src/index.ts` — JWT auth middleware + all endpoints secured
 - `CLAUDE.md` — Added FIX-FIRST PROCEDURE
+
+---
+
+## POST-MIGRATION: Deep Verification Round 2 — Bible V8 Line-by-Line (2026-03-25)
+
+### Session Focus: ServerTableEngine.ts deep verification against all 8 Bible V8 chapters
+
+**FIX 8: PreActionEngine.onBetPlaced() not wired** (Bible V8 §4.15)
+- File: `server/src/engine/ServerTableEngine.ts` → PLAYER_ACTION handler
+- Bug: When a player bet or raised, other players' auto_check pre-actions were NOT invalidated
+- The `onBetPlaced()` method existed in PreActionEngine but was never called from ServerTableEngine
+- Fix: Added `this.preActionEngine.onBetPlaced(this.tableId)` call in PLAYER_ACTION handler for bet/raise/all_in actions
+- Verified: Re-read file after change ✅
+
+**FIX 9: No auto-activate time bank on timer expiry** (Bible V8 §6.2)
+- File: `server/src/engine/ServerTableEngine.ts` → startTurnTimer setTimeout handler
+- Bug: When primary timer expired, server went straight to auto-fold/check without checking if player had time bank remaining
+- Bible V8 §6.2: "Auto-activate: when primary timer expires and time bank available"
+- Fix: Added `timeBankEngine.onPrimaryTimerExpired()` call before auto-fold/check. If time bank is activated, timer restarts with bank duration. If time bank also expires, THEN auto-fold/check fires.
+- Also broadcasts `time_bank_activated` event with `auto_activated: true` to inform other players
+- Verified: Re-read file after change ✅
+
+**FIX 10: Broadcast missing required fields** (Bible V8 §2.4)
+- File: `server/src/engine/ServerTableEngine.ts` → broadcastCurrentState()
+- Bug: Hand state broadcast was missing `min_raise`, `last_raise`, `pots[]` (side pots), and `action_history[]`
+- These are all required by Bible V8 §2.4 Hand State Object spec
+- Fix: Added `min_raise`, `last_raise`, `pots` (mapped from state.pots), and `action_history` (mapped from state.actionHistory) to broadcast payload
+- Verified: Re-read file after change ✅
+
+**FIX 11: No action serialization lock** (Bible V8 §1.1.4)
+- File: `server/src/engine/ServerTableEngine.ts` → handlePlayerAction()
+- Bug: Two simultaneous HTTP requests for the same player could both pass the turn check before either executed
+- Bible V8 §1.1.4: "No parallel action processing — actions are serialized"
+- Fix: Added `actionLock` boolean flag. handlePlayerAction() checks lock, rejects with error if locked. Wraps actual logic in try/finally to always release lock.
+- Note: This is a simple synchronous lock sufficient for single-process Node.js. For multi-process, would need Redis-based lock.
+- Verified: Re-read file after change ✅
+
+**FIX 12: Rakeback contribution tracking broken** (Bible V8 §1.9 step 12)
+- File: `server/src/engine/ServerTableEngine.ts` → WINNERS handler + postHandTasks
+- Bug: Rakeback contributions used `p.stack >= 0 ? 1 : 0` (boolean-like) instead of actual `totalInvested` amounts
+- This meant all players got equal rakeback regardless of how much they contributed to the pot
+- Fix: Added `currentHandContributions` Map. In WINNERS handler, captures `enginePlayer.totalInvested` for each player from HandController state. postHandTasks uses actual contributions for weighted rakeback.
+- Verified: Re-read file after change ✅
+
+**FIX 13: Missing public methods on ServerTableEngine** (Bible V8 §§4.4, 4.15, 6.3, 7.12)
+- File: `server/src/engine/ServerTableEngine.ts`
+- Bug: ServerTableEngine lacked public methods for heartbeat, pre-action, sit-out, state query, and straddle toggle
+- Fix: Added 5 new public methods:
+  - `heartbeat(userId)` — calls disconnectEngine.heartbeat()
+  - `setPreAction(userId, action, maxCallAmount?)` — calls preActionEngine.setPreAction() or clearPreAction()
+  - `sitOut(userId, sitOut)` — calls disconnectEngine.sitOut() or sitBack()
+  - `getTableState(requestingUserId)` — returns scrubbed state with per-player card security
+  - `toggleStraddle(userId, enabled)` — calls straddleEngine.toggleAutoStraddle()
+- Verified: Re-read file after change ✅
+
+**FIX 14: Missing HTTP endpoints** (Bible V8 §§4.4, 4.15, 6.3, 7.12, 2.4)
+- File: `server/src/index.ts`
+- Bug: Only 4 endpoints existed (health, action, timebank, actions). MASTER-MIGRATION Section 3 specifies 12+ required endpoints.
+- Fix: Added 5 new endpoints:
+  - `POST /heartbeat` — reset disconnect timer (Bible V8 §6.3)
+  - `POST /preaction` — set or clear pre-action (Bible V8 §4.15)
+  - `POST /sitout` — player sit out / sit back in (Bible V8 §7.12)
+  - `POST /straddle` — toggle auto-straddle (Bible V8 §4.4)
+  - `GET /state/:tableId` — get scrubbed hand state (Bible V8 §2.4)
+- All 5 endpoints require JWT authentication (Bearer token via `authenticateRequest()`)
+- All 5 use `auth.userId` from verified token, NOT from request body
+- Still missing (lower priority, Phase 4 features): POST /rit, POST /insurance, POST /showhand
+- Verified: Re-read file after change ✅
+
+### Verification Summary — What Passed Without Fixes
+
+**HandController.ts** — Deep line-by-line verification against Bible V8 §§4.1-4.22:
+- Blind posting (heads-up, short blind, BBA) ✅
+- Straddle posting and first-to-act adjustment ✅
+- Card dealing (Hold'em 2, PLO 4, PLO5 5, PLO6 6, Short Deck removal) ✅
+- Bomb pot (skip preflop, deal to flop) ✅
+- Action validation (fold, check, call, bet, raise, all-in) ✅
+- Short all-in tracking (isFullRaise flag) ✅
+- Pot-limit enforcement (isPotLimit param) ✅
+- Stage progression (preflop→flop→turn→river→showdown) ✅
+- All-in runout (deal remaining community cards) ✅
+- No-winners guard (award to last active player) ✅
+- Rake calculation (no-flop-no-drop, 10% with cap) ✅
+- Integer-cents arithmetic (prevents floating-point errors) ✅
+- Winner distribution with exact cent accounting ✅
+
+**PokerEngine.ts** — Deep verification against Bible V8 §§4.9-4.14, Appendix A, C:
+- calculateBettingState with pot-limit support ✅
+- validateAction (fold, check, call, bet, raise, all_in) ✅
+- Pot-limit max bet/raise enforcement ✅
+- calculatePots (side pots with multi-way all-ins) ✅
+- determineWinners (single player, showdown, hi-lo, split pot) ✅
+- Rake calculation (no-flop-no-drop, percentage with cap) ✅
+- Hand evaluation and comparison ✅
+
+**ServerActionValidator.ts** — Deep verification against Bible V8 §1.3:
+- 12 error codes ✅
+- 5-step validation flow ✅
+- Duplicate suppression ✅
+- Timing check with 2s grace period ✅
+
+**PreciseActionTimer.ts** — Deep verification against Bible V8 §6.1:
+- Deadline-based (not setTimeout) ✅
+- 100ms precision polling ✅
+- Immune to CPU drift ✅
+- Pause/resume for RIT/insurance offers ✅
+
+**StateVerifier.ts** — Deep verification against Bible V8 §1.4.4, §9.2:
+- 6 integrity checks ✅
+- Chip conservation with rounding tolerance ✅
+- Deducts rake before verification ✅
+
+### Files Modified in This Session
+- `server/src/engine/ServerTableEngine.ts` — 7 fixes (onBetPlaced, time bank auto-activate, broadcast fields, action lock, rakeback contributions, 5 new public methods)
+- `server/src/index.ts` — 5 new HTTP endpoints (heartbeat, preaction, sitout, straddle, state)
+
+### Known Remaining Gaps (Lower Priority)
+- POST /rit endpoint (Bible V8 §4.20)
+- POST /insurance endpoint (Bible V8 §4.19)
+- POST /showhand endpoint (Bible V8 §4.21)
+- Auto-muck at showdown (Bible V8 §4.21)
+- Rate limiting on action submissions (Bible V8 §9.3)
+- TimeBankEngine configure() not called per-table with table settings

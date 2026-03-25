@@ -71,35 +71,27 @@ interface TournamentData {
 
 const VARIANT_DISPLAY: Record<string, { label: string; sub?: string; css: string }> = {
   nlh: { label: 'NLH', css: 'nlh' },
-  flh: { label: 'FLH', css: 'nlh' },
   plo4: { label: 'PLO', sub: '4', css: 'plo4' },
   plo5: { label: 'PLO', sub: '5', css: 'plo5' },
   plo6: { label: 'PLO', sub: '6', css: 'plo6' },
   plo8: { label: 'PLO', sub: '8', css: 'plo8' },
-  plo_hilo: { label: 'PLO', sub: 'HL', css: 'plo_hilo' },
   ofc_pineapple: { label: 'OFC', css: 'ofc_pineapple' },
   pineapple: { label: 'PNPL', css: 'pineapple' },
-  crazy_pineapple: { label: 'CRAZY', css: 'crazy_pineapple' },
   short_deck: { label: '6+', sub: 'SD', css: 'short_deck' },
-  double_board: { label: 'DBL', sub: 'BRD', css: 'double_board' },
-  mixed: { label: 'MIXED', css: 'mixed' },
+  ofc: { label: 'OFC', css: 'ofc' },
 };
 
 // Map tournament game_type (uppercase) to variant CSS class
 const TOURNEY_VARIANT_MAP: Record<string, string> = {
   NLH: 'nlh',
-  FLH: 'flh',
   PLO4: 'plo4',
   PLO5: 'plo5',
   PLO6: 'plo6',
   PLO8: 'plo8',
-  PLO_HILO: 'plo_hilo',
   OFC_PINEAPPLE: 'ofc_pineapple',
   SHORT_DECK: 'short_deck',
   PINEAPPLE: 'pineapple',
-  CRAZY_PINEAPPLE: 'crazy_pineapple',
-  DOUBLE_BOARD: 'double_board',
-  MIXED: 'mixed',
+  OFC: 'ofc',
   PLO: 'plo4',
 };
 
@@ -111,8 +103,7 @@ function parseSettings(settings: TableSettings | string | undefined): TableSetti
     try {
       return JSON.parse(settings);
     } catch (err) {
-
-      console.error("[DynamicGameCard] Error:", err);
+      console.error('[DynamicGameCard] Error:', err);
       return {};
     }
   }

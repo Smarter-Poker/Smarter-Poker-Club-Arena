@@ -1573,7 +1573,12 @@ export default function TablePage({
             name: sp.username || existing?.name || `Seat ${sp.seat}`,
             stack: sp.stack,
             bet: sp.bet || 0,
-            holeCards: isHero ? sp.cards || existing?.holeCards || [] : existing?.holeCards || [],
+            // Card security: server scrubs hole cards in broadcast (sends []) except at showdown.
+            // Hero gets cards via RLS-protected table_hole_cards channel.
+            // At showdown, server sends actual cards for all players → use sp.cards.
+            holeCards: sp.cards && sp.cards.length > 0
+              ? sp.cards
+              : existing?.holeCards || [],
             status: sp.is_folded
               ? 'folded'
               : sp.is_all_in
@@ -1582,7 +1587,8 @@ export default function TablePage({
                   ? 'sitting_out'
                   : 'active',
             isHero,
-            showCards: isHero,
+            // Show cards for hero always; show opponent cards at showdown ONLY if not folded
+            showCards: isHero || (sp.cards && sp.cards.length > 0 && !sp.is_folded),
           } as any;
         }
 

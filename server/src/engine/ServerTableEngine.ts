@@ -195,13 +195,36 @@ export class ServerTableEngine {
 
       const state = this.handController.getState();
       if (state.currentPlayerSeat === seat) {
-        console.warn(
-          `[ServerTableEngine:${this.tableId}] Player ${userId} timed out. Auto-folding.`
-        );
-        try {
-          this.handController.performAction(seat, 'fold');
-        } catch (err) {
-          console.error(`[ServerTableEngine:${this.tableId}] Auto-fold failed:`, err);
+        const player = state.players.find((p) => p.seat === seat);
+        const amountToCall = player ? Math.max(0, state.currentBet - (player.bet ?? 0)) : 0;
+        const canCheck = amountToCall === 0;
+
+        if (canCheck) {
+          // No bet outstanding → auto-check (standard poker behavior)
+          console.warn(
+            `[ServerTableEngine:${this.tableId}] Player ${userId} timed out. Auto-checking (no bet to call).`
+          );
+          try {
+            this.handController.performAction(seat, 'check');
+          } catch (err) {
+            console.error(`[ServerTableEngine:${this.tableId}] Auto-check failed:`, err);
+            // Fallback to fold if check somehow fails
+            try {
+              this.handController.performAction(seat, 'fold');
+            } catch (foldErr) {
+              console.error(`[ServerTableEngine:${this.tableId}] Auto-fold fallback also failed:`, foldErr);
+            }
+          }
+        } else {
+          // Bet outstanding → auto-fold
+          console.warn(
+            `[ServerTableEngine:${this.tableId}] Player ${userId} timed out. Auto-folding (${amountToCall} to call).`
+          );
+          try {
+            this.handController.performAction(seat, 'fold');
+          } catch (err) {
+            console.error(`[ServerTableEngine:${this.tableId}] Auto-fold failed:`, err);
+          }
         }
       }
     }, safeDurationSeconds * 1000);
@@ -347,13 +370,10 @@ export class ServerTableEngine {
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : 'Action failed';
       console.warn(`[ServerTableEngine:${this.tableId}] Player action failed:`, errMsg);
-      // Auto-fold on invalid action
-      try {
-        this.handController.performAction(seat, 'fold');
-        return { success: true, error: `Original action failed, auto-folded: ${errMsg}` };
-      } catch {
-        return { success: false, error: errMsg };
-      }
+      // Return error to client — do NOT auto-fold. The player should see the error
+      // and choose their next action. Auto-folding on invalid actions silently
+      // destroys hands (e.g., a raise with wrong amount shouldn't fold the player).
+      return { success: false, error: errMsg };
     }
   }
 
@@ -601,6 +621,39 @@ export class ServerTableEngine {
         this.broadcastCurrentState();
         break;
 
+      case 'CARDS_DEALT':
+        // Write hole cards to RLS-protected table for secure per-player delivery.
+        // The client subscribes to table_hole_cards INSERTs (RLS filters to own cards only).
+        // This prevents card data from leaking via the public Realtime broadcast.
+        if (event.seat !== undefined && event.cards && this.handController) {
+          const state = this.handController.getState();
+          const player = state.players.find((p) => p.seat === event.seat);
+          if (player) {
+            supabase
+              .rpc('insert_hole_cards', {
+                p_table_id: this.tableId,
+                p_hand_number: this.handCount,
+                p_cards: JSON.stringify([
+                  {
+                    user_id: player.user_id,
+                    seat_number: player.seat,
+                    cards: event.cards,
+                  },
+                ]),
+              })
+              .then(({ error }: { error: any }) => {
+                if (error) {
+                  console.warn(
+                    `[ServerTableEngine:${this.tableId}] Failed to insert hole cards for seat ${event.seat}:`,
+                    error.message
+                  );
+                }
+              });
+          }
+        }
+        // Do NOT broadcast state here — cards are delivered securely via table_hole_cards
+        break;
+
       case 'TURN_CHANGE':
         this.handleTurnChange(event, players);
         this.broadcastCurrentState();
@@ -783,13 +836,17 @@ export class ServerTableEngine {
       stage: state.stage ?? 'preflop',
       turn_start_time_ms: this.playerTurnStartTime,
       turn_duration_ms: this.playerTurnDuration * 1000, // Convert seconds → milliseconds
+      // CARD SECURITY: Scrub hole cards from public broadcast.
+      // Players receive their own cards via RLS-protected table_hole_cards channel.
+      // Only reveal all cards at showdown (when remaining players show hands).
       players: (state.players ?? []).map((p) => ({
         seat: p.seat,
         user_id: p.user_id,
         username: p.username,
         stack: p.stack,
         bet: p.bet ?? 0,
-        cards: p.cards ?? [],
+        // Only reveal cards at showdown for players still in the hand (not folded)
+        cards: (state.stage === 'showdown' && !p.is_folded) ? (p.cards ?? []) : [],
         is_folded: p.is_folded ?? false,
         is_all_in: p.is_all_in ?? false,
         is_sitting_out: p.is_sitting_out ?? false,

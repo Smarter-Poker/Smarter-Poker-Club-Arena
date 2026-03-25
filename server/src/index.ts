@@ -2655,8 +2655,8 @@ const httpServer = createServer(async (req, res) => {
       const { tableId, sitOut } = body;
       const userId = auth.userId;
 
-      if (!tableId || sitOut === undefined) {
-        return sendJSON(res, 400, { success: false, error: 'Missing tableId or sitOut' });
+      if (!tableId || typeof sitOut !== 'boolean') {
+        return sendJSON(res, 400, { success: false, error: 'Missing tableId or sitOut must be a boolean' });
       }
 
       const engine = gameServer.getTableEngine(tableId);
@@ -2687,8 +2687,8 @@ const httpServer = createServer(async (req, res) => {
       const { tableId, enabled } = body;
       const userId = auth.userId;
 
-      if (!tableId || enabled === undefined) {
-        return sendJSON(res, 400, { success: false, error: 'Missing tableId or enabled' });
+      if (!tableId || typeof enabled !== 'boolean') {
+        return sendJSON(res, 400, { success: false, error: 'Missing tableId or enabled must be a boolean' });
       }
 
       const engine = gameServer.getTableEngine(tableId);

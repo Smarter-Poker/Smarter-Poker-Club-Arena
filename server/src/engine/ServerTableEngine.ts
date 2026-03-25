@@ -1039,6 +1039,8 @@ export class ServerTableEngine {
     this.currentHandCommunityCards = [];
     this.currentHandActions = [];
     this.currentHandWinners = [];
+    this.currentHandContributions.clear(); // Bible V8 §4.18: Reset weighted rakeback tracking
+    this.timeBankActivatedThisTurn = false; // Bible V8 §6.2: Reset time bank flag for new hand
     this.showHandPlayers = null; // Reset voluntary show-hand set for new hand
 
     console.log(

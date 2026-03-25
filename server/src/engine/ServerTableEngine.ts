@@ -311,8 +311,16 @@ export class ServerTableEngine {
         });
       }
 
-      // Mixed game rotation DISABLED — no HORSE/mixed game presets for now
-      // MixedGameEngine is still instantiated but not configured
+      // FIX 104: Configure MixedGameEngine if table has mixed game mode
+      if (this.tableInfo.game_variant === 'mixed' || this.tableInfo.mixed_game_preset) {
+        const presetName = this.tableInfo.mixed_game_preset || 'HOLDEM_OMAHA';
+        this.mixedGameEngine.configurePreset(
+          this.tableId,
+          presetName,
+          this.tableInfo.mixed_game_hands_per_variant ?? 6,
+          true // rotatePerOrbit
+        );
+      }
 
       // FIX 104: Configure RakebackEngine for this table's club
       if (this.tableInfo.club_id) {

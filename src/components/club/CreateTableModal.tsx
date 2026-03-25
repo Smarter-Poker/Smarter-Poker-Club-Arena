@@ -20,7 +20,6 @@ const VARIANTS: { value: GameVariant; label: string }[] = [
   { value: 'plo5', label: 'PLO 5-Card' },
   { value: 'plo6', label: 'PLO 6-Card' },
   { value: 'plo8', label: 'PLO Hi/Lo (8-or-Better)' },
-  { value: 'pineapple', label: 'Pineapple' },
   { value: 'short_deck', label: 'Short Deck (6+)' },
   { value: 'ofc', label: 'Open Face Chinese' },
 ];
@@ -477,6 +476,16 @@ export default function CreateTableModal({ clubId, onClose, onSuccess }: CreateT
                     onChange={() => toggleSetting('no_rathole')}
                   />
                   No Rathole
+                </label>
+
+                {/* ── Double Board ── */}
+                <label className={styles['checkbox-label']}>
+                  <input
+                    type="checkbox"
+                    checked={settings.double_board}
+                    onChange={() => toggleSetting('double_board')}
+                  />
+                  Double Board
                 </label>
 
                 {/* ── Insurance ── */}

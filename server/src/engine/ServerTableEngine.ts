@@ -18,6 +18,10 @@ import { HorseLogic } from './HorseLogic.js';
 import { PreciseActionTimer } from './PreciseActionTimer.js';
 import { ServerActionValidator } from './ServerActionValidator.js';
 import { StateVerifier } from './StateVerifier.js';
+import { TimeBankEngine } from './TimeBankEngine.js';
+import { DisconnectEngine } from './DisconnectEngine.js';
+import { PreActionEngine } from './PreActionEngine.js';
+import { AtomicStackService } from './AtomicStackService.js';
 import type { ValidationContext } from './ServerActionValidator.js';
 import {
   broadcastHandState,
@@ -93,6 +97,12 @@ export class ServerTableEngine {
   private actionValidator: ServerActionValidator;
   private stateVerifier: StateVerifier;
 
+  // ── Step 5: Ported Supporting Modules ──
+  private timeBankEngine: TimeBankEngine;
+  private disconnectEngine: DisconnectEngine;
+  private preActionEngine: PreActionEngine;
+  private atomicStackService: AtomicStackService;
+
   constructor(tableId: string) {
     this.tableId = tableId;
 
@@ -105,6 +115,20 @@ export class ServerTableEngine {
     });
     this.stateVerifier = new StateVerifier((event) => {
       console.error(`[ServerTableEngine:${tableId}] STATE INTEGRITY VIOLATION: ${event.violationCount} issue(s) in hand #${event.handNumber}`);
+    });
+
+    // Step 5: Initialize supporting modules
+    this.timeBankEngine = new TimeBankEngine(this.preciseTimer, (event) => {
+      console.log(`[ServerTableEngine:${tableId}] TimeBank: ${event.type} player=${event.playerId}`);
+    });
+    this.disconnectEngine = new DisconnectEngine(this.preciseTimer, (event) => {
+      console.log(`[ServerTableEngine:${tableId}] Disconnect: ${event.type} player=${event.playerId}`);
+    });
+    this.preActionEngine = new PreActionEngine((event) => {
+      console.log(`[ServerTableEngine:${tableId}] PreAction: ${event.type} player=${event.playerId}`);
+    });
+    this.atomicStackService = new AtomicStackService((event) => {
+      console.log(`[ServerTableEngine:${tableId}] Stack: ${event.type}`);
     });
 
     console.log(`[ServerTableEngine] Created for table ${tableId}`);
@@ -153,6 +177,12 @@ export class ServerTableEngine {
     this.preciseTimer.dispose();
     this.actionValidator.dispose();
     this.stateVerifier.dispose();
+
+    // Step 5: Dispose supporting modules
+    this.timeBankEngine.disposeAll();
+    this.disconnectEngine.disposeAll();
+    this.preActionEngine.disposeAll();
+    this.atomicStackService.dispose();
 
     cleanupChannel(this.tableId);
     console.log(`[ServerTableEngine:${this.tableId}] Stopped. Dealt ${this.handCount} hands.`);
@@ -643,6 +673,29 @@ export class ServerTableEngine {
     // Step 4: Record initial chip totals for state verification
     this.stateVerifier.recordInitialChipTotal(this.tableId, hcPlayers);
 
+    // Step 5: Initialize atomic stacks, time banks, and disconnect tracking for each player
+    for (const p of hcPlayers) {
+      this.atomicStackService.initializeStack(this.tableId, p.user_id, p.stack);
+      this.timeBankEngine.initializePlayer(this.tableId, p.user_id);
+      this.disconnectEngine.registerPlayer(this.tableId, p.user_id);
+    }
+
+    // Step 5: Wire disconnect auto-action callback into HandController
+    this.disconnectEngine.onAutoAction(this.tableId, (disconnectAction) => {
+      if (!this.handController) return;
+      const state = this.handController.getState();
+      const dcPlayer = state.players.find((p) => p.user_id === disconnectAction.playerId);
+      if (!dcPlayer) return;
+      try {
+        this.handController.performAction(dcPlayer.seat, disconnectAction.action as any);
+        console.log(
+          `[ServerTableEngine:${this.tableId}] Disconnect auto-${disconnectAction.action} for ${disconnectAction.playerId} (${disconnectAction.reason})`
+        );
+      } catch (err) {
+        console.error(`[ServerTableEngine:${this.tableId}] Disconnect auto-action failed:`, err);
+      }
+    });
+
     // Wait for hand to complete
     return new Promise<void>((resolve) => {
       const handTimeout = setTimeout(() => {
@@ -814,6 +867,12 @@ export class ServerTableEngine {
         this.actionValidator.clearTable(this.tableId);
         this.preciseTimer.clearTable(this.tableId);
 
+        // Step 5: Clean up supporting modules between hands
+        this.preActionEngine.dispose(this.tableId);
+        this.timeBankEngine.dispose(this.tableId);
+        // Note: disconnectEngine persists across hands (tracks connection state)
+        // Note: atomicStackService persists across hands (tracks stack versions)
+
         // Async post-hand tasks (fire and forget)
         this.postHandTasks(players).catch((err) =>
           console.error(`[ServerTableEngine:${this.tableId}] Post-hand error:`, err)
@@ -841,6 +900,36 @@ export class ServerTableEngine {
     if (!player.is_horse) {
       const actionTime = this.tableInfo?.action_time_seconds || 15;
       this.timeBankActivatedThisTurn = false; // Reset anti-spam lock for this NEW turn
+
+      // Step 5: Check for queued pre-action before starting timer
+      const toCallForPreAction = Math.max(0, state.currentBet - enginePlayer.bet);
+      const canCheckForPreAction = toCallForPreAction === 0;
+      const preResult = this.preActionEngine.executePreAction(
+        this.tableId,
+        player.user_id,
+        canCheckForPreAction,
+        toCallForPreAction,
+        enginePlayer.stack
+      );
+      if (preResult.executed && preResult.action) {
+        try {
+          this.handController!.performAction(seat, preResult.action as any, preResult.amount);
+          console.log(
+            `[ServerTableEngine:${this.tableId}] Pre-action executed: ${player.user_id} → ${preResult.action}${preResult.amount ? ` ${preResult.amount}` : ''}`
+          );
+          return; // Pre-action handled the turn — no timer needed
+        } catch (err) {
+          console.warn(`[ServerTableEngine:${this.tableId}] Pre-action failed, falling through to timer:`, err);
+        }
+      }
+
+      // Step 5: Check disconnect state before starting timer
+      const playerCanAct = this.disconnectEngine.onPlayerTurn(this.tableId, player.user_id, canCheckForPreAction);
+      if (!playerCanAct) {
+        // Player is disconnected or sitting out — DisconnectEngine will handle auto-action via callback
+        return;
+      }
+
       this.startTurnTimer(player.user_id, seat, actionTime);
       return;
     }

@@ -2,7 +2,7 @@
 ## Every Change, Documented. No Exceptions.
 
 **Started:** 2026-03-24
-**Current Step:** Step 4 — PORT CORE (PreciseActionTimer, ServerActionValidator, StateVerifier)
+**Current Step:** Step 5 — PORT SUPPORTING (TimeBankEngine, DisconnectEngine, PreActionEngine, AtomicStackService)
 
 ---
 
@@ -284,7 +284,7 @@ this.playerTurnTimer = setTimeout(() => {
 
 ## Step 4 — PORT CORE (PreciseActionTimer, ServerActionValidator, StateVerifier)
 
-### Phase: IN PROGRESS 2026-03-25
+### Phase: COMPLETED 2026-03-25
 
 **3 new files created, 1 file modified.**
 
@@ -386,5 +386,116 @@ this.playerTurnTimer = setTimeout(() => {
 | server/src/engine/ServerActionValidator.ts | NEW | 278 | 12-error-code action validation |
 | server/src/engine/StateVerifier.ts | NEW | 263 | 6-check state integrity verification |
 | server/src/engine/ServerTableEngine.ts | MODIFIED | ~30 added | Integration of all 3 modules |
+
+**Deployed:** 2026-03-25 — Club Arena + World Hub pushed, Vercel auto-deployed.
+
+---
+
+## Step 5 — PORT SUPPORTING (TimeBankEngine, DisconnectEngine, PreActionEngine, AtomicStackService)
+
+### Phase: IN PROGRESS 2026-03-25
+
+**4 new files created, 1 file modified.**
+
+---
+
+### Change #1 — Port TimeBankEngine to server
+
+**File:** `server/src/engine/TimeBankEngine.ts` (NEW — ~280 lines)
+**Ported from:** `src/engine/TimeBankEngine.ts` (374 lines)
+
+**Purpose:** Pool-based time bank system with configurable uses per session, auto-activate on timer expiry, and orbit-based refill support.
+
+**Key adaptation from client version:**
+- Removed `masterBus` dependency
+- Removed `VIPService` / `requestExtension` (server doesn't need VIP gating)
+- Constructor takes injected `PreciseActionTimer` instance (not singleton import)
+- Added optional `onEvent` callback for logging
+- Exported as `class TimeBankEngine` (not singleton)
+- Uses `preciseTimer.startTimer(tableId, 'timebank:${playerId}', ...)` for countdown
+
+**Public API:** `configure()`, `initializePlayer()`, `removePlayer()`, `onPrimaryTimerExpired()`, `activate()`, `playerActed()`, `onOrbitComplete()`, `getPlayerBank()`, `hasTimeBank()`, `getRemainingSeconds()`, `getUsesRemaining()`, `dispose()`, `disposeAll()`
+
+---
+
+### Change #2 — Port DisconnectEngine to server
+
+**File:** `server/src/engine/DisconnectEngine.ts` (NEW — ~310 lines)
+**Ported from:** `src/engine/DisconnectEngine.ts` (363 lines)
+
+**Purpose:** Heartbeat-based disconnect detection with auto-fold/check on timeout, reconnection recovery, consecutive timeout tracking, and forced sit-out.
+
+**Key adaptation from client version:**
+- Removed `masterBus` dependency (6 event emissions replaced with callback)
+- Constructor takes injected `PreciseActionTimer` instance
+- Added optional `onEvent` callback with typed `DisconnectEvent` and `DisconnectEventType`
+- Exported as `class DisconnectEngine` (not singleton)
+- Added `disposeAll()` for full cleanup
+
+**Public API:** `configure()`, `onAutoAction()`, `registerPlayer()`, `unregisterPlayer()`, `heartbeat()`, `markDisconnected()`, `onPlayerTurn()`, `cancelTimeout()`, `sitOut()`, `sitBack()`, `isConnected()`, `isSittingOut()`, `getState()`, `getConnectedPlayers()`, `dispose()`, `disposeAll()`
+
+---
+
+### Change #3 — Port PreActionEngine to server
+
+**File:** `server/src/engine/PreActionEngine.ts` (NEW — ~270 lines)
+**Ported from:** `src/engine/PreActionEngine.ts` (264 lines)
+
+**Purpose:** Queued pre-actions (auto-fold, auto-check/fold, auto-check, auto-call, auto-call-any) that execute instantly when a player's turn arrives, with validation that the action is still legal.
+
+**Key adaptation from client version:**
+- Removed `masterBus` dependency (3 event emissions replaced with callback)
+- Uses server `ActionType` from `../types.js` instead of client import
+- Added optional `onEvent` callback with typed `PreActionEvent` and `PreActionEventType`
+- Exported as `class PreActionEngine` (not singleton)
+- Added `disposeAll()` for full cleanup
+
+**Public API:** `setPreAction()`, `clearPreAction()`, `getPreAction()`, `hasPreAction()`, `executePreAction()`, `onBetPlaced()`, `clearTable()`, `dispose()`, `disposeAll()`
+
+---
+
+### Change #4 — Port AtomicStackService to server
+
+**File:** `server/src/engine/AtomicStackService.ts` (NEW — ~240 lines)
+**Ported from:** `src/engine/AtomicStackService.ts` (235 lines)
+
+**Purpose:** Versioned optimistic locking for race-condition-proof stack mutations. Eliminates races between concurrent rebuy, cashout, and hand settlement.
+
+**Key adaptation from client version:**
+- Removed `masterBus` dependency (2 event emissions replaced with callback)
+- Added optional `onEvent` callback with typed `StackEvent` and `StackEventType`
+- Exported as `class AtomicStackService` (not singleton)
+
+**Public API:** `getStackWithVersion()`, `initializeStack()`, `atomicDebit()`, `atomicCredit()`, `atomicSettle()`, `getTableStacks()`, `clearTable()`, `dispose()`
+
+---
+
+### Change #5 — Integrate all 4 modules into ServerTableEngine
+
+**File:** `server/src/engine/ServerTableEngine.ts` (MODIFIED — ~40 lines added)
+
+**What changed:**
+
+1. **Imports added (lines 21-24):** TimeBankEngine, DisconnectEngine, PreActionEngine, AtomicStackService
+2. **Instance variables (lines 100-104):** `timeBankEngine`, `disconnectEngine`, `preActionEngine`, `atomicStackService`
+3. **Constructor (lines 120-131):** Creates instances of all 4 modules with table-scoped logging. TimeBankEngine and DisconnectEngine receive injected PreciseActionTimer.
+4. **stop() (lines 157-161):** Disposes all 4 supporting modules on engine shutdown
+5. **dealHand() (after line 644):** Initializes atomic stacks, time banks, and disconnect tracking for each player at hand start. Wires disconnect auto-action callback into HandController.
+6. **handleTurnChange() — real player branch:** Pre-action check before starting timer. If pre-action executes successfully, turn completes instantly. Disconnect state check — if player is disconnected, DisconnectEngine handles auto-action via callback.
+7. **HAND_COMPLETE handler:** Cleans up preActionEngine and timeBankEngine between hands. DisconnectEngine and AtomicStackService persist across hands.
+
+**Why:** These 4 modules provide the full supporting infrastructure for server-authoritative play — time banks, disconnect handling, pre-queued actions, and race-condition-proof stack management.
+
+---
+
+### Summary of All Step 5 Changes
+
+| File | Action | Lines | Purpose |
+|------|--------|-------|---------|
+| server/src/engine/TimeBankEngine.ts | NEW | ~280 | Pool-based time bank with auto-activate |
+| server/src/engine/DisconnectEngine.ts | NEW | ~310 | Heartbeat disconnect detection + auto-fold |
+| server/src/engine/PreActionEngine.ts | NEW | ~270 | Queued pre-actions with validation |
+| server/src/engine/AtomicStackService.ts | NEW | ~240 | Versioned optimistic locking for stacks |
+| server/src/engine/ServerTableEngine.ts | MODIFIED | ~40 added | Integration of all 4 modules |
 
 **Next:** Run `npx tsc --noEmit` on server, commit, build, deploy to smarter.poker.

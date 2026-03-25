@@ -280,9 +280,20 @@ class SoundService {
 
   /**
    * Raise — triple chip cascade (larger bet sound)
+   * Bible V8 §5.3: "chip stack sound (louder for larger amounts)"
+   * @param betAmount optional bet amount — larger amounts produce louder, more dramatic sound
+   * @param bigBlind optional BB for scaling reference
    */
-  playRaise() {
+  playRaise(betAmount?: number, bigBlind?: number) {
     if (!this.enabled || !this.ensureContext()) return;
+
+    // Scale volume based on bet size relative to BB (Bible V8 §5.3: louder for larger amounts)
+    let volumeScale = 1.0;
+    if (betAmount != null && bigBlind && bigBlind > 0) {
+      const bbMultiple = betAmount / bigBlind;
+      // 2-3 BB = normal (1.0), 10 BB = louder (1.3), 50+ BB = max (1.6)
+      volumeScale = Math.min(1.6, 0.8 + Math.log2(Math.max(1, bbMultiple)) * 0.15);
+    }
 
     // Three staggered chip clinks with increasing pitch
     const freqs = [1800, 2200, 2800];
@@ -294,7 +305,7 @@ class SoundService {
         const gain = this.ctx.createGain();
         osc.frequency.setValueAtTime(freq, t);
         osc.frequency.exponentialRampToValueAtTime(100, t + 0.06);
-        gain.gain.setValueAtTime(0.22, t);
+        gain.gain.setValueAtTime(0.22 * volumeScale, t);
         gain.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
         osc.connect(gain);
         gain.connect(this.out);
@@ -303,9 +314,9 @@ class SoundService {
       }, i * 45);
     });
 
-    // Subtle bass thud on final chip
+    // Subtle bass thud on final chip — also scaled
     setTimeout(() => {
-      this.playTone(80, 0.1, 0.15, 'sine');
+      this.playTone(80, 0.1 * volumeScale, 0.15, 'sine');
     }, 100);
 
     haptic.medium();
@@ -721,6 +732,34 @@ class SoundService {
       osc.stop(now + i * 0.07 + 0.05);
     }
 
+    haptic.light();
+  }
+
+  /**
+   * Disconnect — subtle offline indicator sound (Bible V8 §5.3)
+   * Descending tone sequence to indicate connection lost
+   */
+  playDisconnect() {
+    if (!this.enabled || !this.ensureContext()) return;
+    const now = this.ctx!.currentTime;
+    const gain = this.createGain(0.1);
+
+    // Descending two-note drop (opposite of reconnect's rising chime)
+    [440, 330].forEach((freq, i) => {
+      const osc = this.ctx!.createOscillator();
+      osc.type = 'sine';
+      const env = this.ctx!.createGain();
+      env.gain.setValueAtTime(0.4, now + i * 0.12);
+      env.gain.exponentialRampToValueAtTime(0.001, now + i * 0.12 + 0.25);
+      osc.frequency.value = freq;
+      osc.connect(env);
+      env.connect(gain);
+      osc.start(now + i * 0.12);
+      osc.stop(now + i * 0.12 + 0.3);
+    });
+
+    // Subtle filtered noise tail (fading static)
+    this.createNoiseBurst(now + 0.15, 0.3, 0.08, 600);
     haptic.light();
   }
 

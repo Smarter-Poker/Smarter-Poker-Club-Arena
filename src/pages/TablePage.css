@@ -1113,9 +1113,18 @@
   }
 }
 
-/* Slow community card dealing in all-in mode */
+/* Slow community card dealing in all-in mode — Bible V8 dramatic runout */
+.table-page--allin-mode .community-cards__card {
+  animation-duration: calc(0.8s * var(--animation-speed, 1));
+}
 .table-page--allin-mode .community-cards__card--dealing {
-  animation-duration: 0.9s;
+  animation-duration: calc(1.2s * var(--animation-speed, 1));
+}
+.table-page--allin-mode .community-cards__card--turn {
+  animation-duration: calc(1.0s * var(--animation-speed, 1)) !important;
+}
+.table-page--allin-mode .community-cards__card--river {
+  animation-duration: calc(1.3s * var(--animation-speed, 1)) !important;
 }
 
 /* Pot display glows during all-in */

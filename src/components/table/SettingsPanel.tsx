@@ -25,6 +25,7 @@ export interface TableSettings {
   autoPostBlinds: boolean;
   soundEnabled: boolean;
   soundVolume: number;
+  hapticEnabled: boolean;
   showHandStrength: boolean;
   showPotOdds: boolean;
   animationSpeed: 'slow' | 'normal' | 'fast';
@@ -33,6 +34,7 @@ export interface TableSettings {
   showBetSizePresets: boolean;
   confirmAllIn: boolean;
   sitOutNextHand: boolean;
+  tableTheme: string;
 }
 
 export interface SettingsPanelProps {
@@ -62,6 +64,7 @@ export const DEFAULT_TABLE_SETTINGS: TableSettings = {
   autoPostBlinds: true,
   soundEnabled: true,
   soundVolume: 70,
+  hapticEnabled: true,
   showHandStrength: true,
   showPotOdds: false,
   animationSpeed: 'normal',
@@ -70,7 +73,19 @@ export const DEFAULT_TABLE_SETTINGS: TableSettings = {
   showBetSizePresets: true,
   confirmAllIn: true,
   sitOutNextHand: false,
+  tableTheme: 'black',
 };
+
+/** Available table themes from design-tokens.css */
+const TABLE_THEMES = [
+  { value: 'green', label: 'Classic Green' },
+  { value: 'blue', label: 'Ocean Blue' },
+  { value: 'red', label: 'Ruby Red' },
+  { value: 'purple', label: 'Royal Purple' },
+  { value: 'black', label: 'Midnight Black' },
+  { value: 'gold', label: 'VIP Gold' },
+  { value: 'light', label: 'Light Mode' },
+];
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENT
@@ -257,6 +272,24 @@ export function SettingsPanel({
                 </select>
               </div>
             </div>
+
+            <div className="settings-item">
+              <div className="settings-item__info">
+                <span className="settings-item__label">Table Theme</span>
+              </div>
+              <div className="settings-item__select">
+                <select
+                  value={settings.tableTheme}
+                  onChange={(e) => handleSelect('tableTheme', e.target.value)}
+                >
+                  {TABLE_THEMES.map((t) => (
+                    <option key={t.value} value={t.value}>
+                      {t.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
           </div>
 
           {/* Sound Section */}
@@ -292,6 +325,13 @@ export function SettingsPanel({
                 disabled={!settings.soundEnabled}
               />
             </div>
+
+            <SettingToggle
+              label="Haptic feedback"
+              description="Vibrate on actions, wins, and alerts"
+              checked={settings.hapticEnabled}
+              onChange={() => handleToggle('hapticEnabled')}
+            />
           </div>
 
           {/* Customization Section */}

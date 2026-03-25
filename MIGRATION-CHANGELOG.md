@@ -2,7 +2,7 @@
 ## Every Change, Documented. No Exceptions.
 
 **Started:** 2026-03-24
-**Current Step:** Step 5 — PORT SUPPORTING (TimeBankEngine, DisconnectEngine, PreActionEngine, AtomicStackService)
+**Current Step:** Step 6 — PORT ADVANCED (Straddle, RIT, Insurance, MixedGame, Rakeback)
 
 ---
 
@@ -497,5 +497,136 @@ this.playerTurnTimer = setTimeout(() => {
 | server/src/engine/PreActionEngine.ts | NEW | ~270 | Queued pre-actions with validation |
 | server/src/engine/AtomicStackService.ts | NEW | ~240 | Versioned optimistic locking for stacks |
 | server/src/engine/ServerTableEngine.ts | MODIFIED | ~40 added | Integration of all 4 modules |
+
+**Deployed:** 2026-03-25 — Club Arena `96c6f4db` pushed, zero TypeScript errors.
+
+---
+
+## Step 6 — PORT ADVANCED (Straddle, RIT, Insurance, MixedGame, Rakeback)
+
+### Phase: IN PROGRESS 2026-03-25
+
+**7 new files created + 1 dependency, 1 file modified.**
+
+---
+
+### Change #1 — Port CryptoRandom to server (dependency)
+
+**File:** `server/src/engine/CryptoRandom.ts` (NEW — 93 lines)
+**Ported from:** `src/engine/CryptoRandom.ts` (93 lines — identical)
+
+**Purpose:** Cryptographically secure random number generator for Fisher-Yates shuffle. Needed by MonteCarloEquity.
+
+**No adaptation needed** — already supports Node.js `crypto.randomInt()`.
+
+**Exports:** `secureRandomInt()`, `secureRandom()`, `secureShuffle()`
+
+---
+
+### Change #2 — Port MonteCarloEquity to server
+
+**File:** `server/src/engine/MonteCarloEquity.ts` (NEW — 122 lines)
+**Ported from:** `src/engine/MonteCarloEquity.ts` (127 lines)
+
+**Purpose:** Monte Carlo equity calculator for insurance premium calculations. Runs N simulations (default 1000) in <10ms.
+
+**Key adaptation:** Updated imports to use server `Card` type from `../types.js`, server `PokerEngine.js` exports, and server `CryptoRandom.js`.
+
+**No masterBus** — pure function, stateless.
+
+---
+
+### Change #3 — Port StraddleEngine to server
+
+**File:** `server/src/engine/StraddleEngine.ts` (NEW — ~240 lines)
+**Ported from:** `src/engine/StraddleEngine.ts` (247 lines)
+
+**Purpose:** Auto-straddle and Mississippi straddle support for cash games.
+
+**Key adaptation:** Removed 2 `masterBus.emit` calls → optional `onEvent` callback. Class export, not singleton. Added `disposeAll()`.
+
+**Public API:** `configure()`, `toggleAutoStraddle()`, `isAutoStraddleOn()`, `processStraddles()`, `postManualStraddle()`, `getState()`, `dispose()`, `disposeAll()`
+
+---
+
+### Change #4 — Port MixedGameEngine to server
+
+**File:** `server/src/engine/MixedGameEngine.ts` (NEW — ~210 lines)
+**Ported from:** `src/engine/MixedGameEngine.ts` (230 lines)
+
+**Purpose:** Automatic game variant rotation (HORSE, Hold'em/Omaha, custom sequences).
+
+**Key adaptation:** Removed 1 `masterBus.emit` → optional `onEvent` callback. Uses server `GameVariant` type from `../types.js`. Class export, not singleton. Added `disposeAll()`.
+
+**Presets:** HORSE, HOLDEM_OMAHA, HOLDEM_PLO5, DOUBLE_BOARD_ROTATION, OMAHA_VARIANTS
+
+---
+
+### Change #5 — Port RunItTwiceEngine to server
+
+**File:** `server/src/engine/RunItTwiceEngine.ts` (NEW — ~290 lines)
+**Ported from:** `src/engine/RunItTwiceEngine.ts` (316 lines)
+
+**Purpose:** Dual-board (or triple-board) dealing for all-in scenarios with pot division.
+
+**Key adaptation:** Removed 4 `masterBus.emit` calls → optional `onEvent` callback. Class export, not singleton. Added `disposeAll()`.
+
+**Public API:** `configure()`, `isEnabled()`, `offer()`, `accept()`, `decline()`, `dealDualBoards()`, `resolve()`, `isActive()`, `getState()`, `dispose()`, `disposeAll()`
+
+---
+
+### Change #6 — Port InsuranceEngine to server
+
+**File:** `server/src/engine/InsuranceEngine.ts` (NEW — ~275 lines)
+**Ported from:** `src/engine/InsuranceEngine.ts` (291 lines)
+
+**Purpose:** All-in equity insurance with Monte Carlo-based premium calculation.
+
+**Key adaptation:** Removed 4 `masterBus.emit` calls → optional `onEvent` callback. Uses server `MonteCarloEquity.js` and server `Card` type. Class export, not singleton. Added `disposeAll()`.
+
+**Premium formula:** `(1 - equity%) × insuredAmount × houseMargin`
+
+---
+
+### Change #7 — Port RakebackEngine to server
+
+**File:** `server/src/engine/RakebackEngine.ts` (NEW — ~290 lines)
+**Ported from:** `src/engine/RakebackEngine.ts` (301 lines)
+
+**Purpose:** Weighted contributed rake tracking with volume-based tier system and Supabase persistence.
+
+**Key adaptation:** Removed 2 `masterBus.emit` calls → optional `onEvent` callback. Replaced global `supabase` import with constructor-injected `SupabaseClient`. Class export, not singleton. Added `disposeAll()`.
+
+**Tiers:** Bronze (5%), Silver (10%), Gold (15%), Platinum (20%), Diamond (25%), Elite (30%)
+
+---
+
+### Change #8 — Integrate all 7 modules into ServerTableEngine
+
+**File:** `server/src/engine/ServerTableEngine.ts` (MODIFIED — ~50 lines added)
+
+**What changed:**
+
+1. **Imports added (lines 25-29):** StraddleEngine, MixedGameEngine, RunItTwiceEngine, InsuranceEngine, RakebackEngine
+2. **Instance variables (lines 110-114):** 5 new private fields for advanced modules
+3. **Constructor (lines 140-158):** Creates instances of all 5 modules with logging callbacks. RakebackEngine receives injected `supabase` client.
+4. **stop():** Disposes all 5 advanced modules on engine shutdown
+5. **HAND_COMPLETE handler:** Cleans up RIT and insurance between hands. Triggers mixedGameEngine rotation. Straddle, mixed game, and rakeback persist across hands.
+6. **postHandTasks():** Records per-hand rake contributions to rakebackEngine after logRakeCollection.
+
+---
+
+### Summary of All Step 6 Changes
+
+| File | Action | Lines | Purpose |
+|------|--------|-------|---------|
+| server/src/engine/CryptoRandom.ts | NEW | 93 | Cryptographic RNG (dependency) |
+| server/src/engine/MonteCarloEquity.ts | NEW | 122 | Monte Carlo equity calculator |
+| server/src/engine/StraddleEngine.ts | NEW | ~240 | UTG/Mississippi straddles |
+| server/src/engine/MixedGameEngine.ts | NEW | ~210 | HORSE / variant rotation |
+| server/src/engine/RunItTwiceEngine.ts | NEW | ~290 | Dual-board all-in dealing |
+| server/src/engine/InsuranceEngine.ts | NEW | ~275 | All-in equity insurance |
+| server/src/engine/RakebackEngine.ts | NEW | ~290 | Weighted rakeback tracking |
+| server/src/engine/ServerTableEngine.ts | MODIFIED | ~50 added | Integration of all 7 modules |
 
 **Next:** Run `npx tsc --noEmit` on server, commit, build, deploy to smarter.poker.

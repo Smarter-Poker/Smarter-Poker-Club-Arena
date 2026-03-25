@@ -595,7 +595,16 @@ export class ServerTableEngine {
     actions.push('all_in');
 
     const minRaiseTo = state.currentBet > 0 ? state.currentBet + state.minRaise : state.minRaise;
-    const maxRaiseTo = player.stack + player.bet;
+    let maxRaiseTo = player.stack + player.bet;
+
+    // Bible V8 §4.14: Cap maxRaise for pot-limit games (PLO variants)
+    const isPotLimit = this.tableInfo?.game_variant?.startsWith('plo');
+    if (isPotLimit) {
+      // Pot-limit max raise = current pot + call + call (same formula as calculateBettingState)
+      const potLimitMax = state.pot + toCall + toCall;
+      const potLimitRaiseTo = state.currentBet + potLimitMax;
+      maxRaiseTo = Math.min(maxRaiseTo, potLimitRaiseTo);
+    }
 
     return {
       canAct: true,

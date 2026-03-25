@@ -22,6 +22,11 @@ import { TimeBankEngine } from './TimeBankEngine.js';
 import { DisconnectEngine } from './DisconnectEngine.js';
 import { PreActionEngine } from './PreActionEngine.js';
 import { AtomicStackService } from './AtomicStackService.js';
+import { StraddleEngine } from './StraddleEngine.js';
+import { MixedGameEngine } from './MixedGameEngine.js';
+import { RunItTwiceEngine } from './RunItTwiceEngine.js';
+import { InsuranceEngine } from './InsuranceEngine.js';
+import { RakebackEngine } from './RakebackEngine.js';
 import type { ValidationContext } from './ServerActionValidator.js';
 import {
   broadcastHandState,
@@ -103,6 +108,13 @@ export class ServerTableEngine {
   private preActionEngine: PreActionEngine;
   private atomicStackService: AtomicStackService;
 
+  // ── Step 6: Ported Advanced Modules ──
+  private straddleEngine: StraddleEngine;
+  private mixedGameEngine: MixedGameEngine;
+  private runItTwiceEngine: RunItTwiceEngine;
+  private insuranceEngine: InsuranceEngine;
+  private rakebackEngine: RakebackEngine;
+
   constructor(tableId: string) {
     this.tableId = tableId;
 
@@ -129,6 +141,23 @@ export class ServerTableEngine {
     });
     this.atomicStackService = new AtomicStackService((event) => {
       console.log(`[ServerTableEngine:${tableId}] Stack: ${event.type}`);
+    });
+
+    // Step 6: Initialize advanced modules
+    this.straddleEngine = new StraddleEngine((event) => {
+      console.log(`[ServerTableEngine:${tableId}] Straddle: ${event.type}`);
+    });
+    this.mixedGameEngine = new MixedGameEngine((event) => {
+      console.log(`[ServerTableEngine:${tableId}] MixedGame: ${event.type}`);
+    });
+    this.runItTwiceEngine = new RunItTwiceEngine((event) => {
+      console.log(`[ServerTableEngine:${tableId}] RIT: ${event.type}`);
+    });
+    this.insuranceEngine = new InsuranceEngine((event) => {
+      console.log(`[ServerTableEngine:${tableId}] Insurance: ${event.type}`);
+    });
+    this.rakebackEngine = new RakebackEngine(supabase, (event) => {
+      console.log(`[ServerTableEngine:${tableId}] Rakeback: ${event.type}`);
     });
 
     console.log(`[ServerTableEngine] Created for table ${tableId}`);
@@ -183,6 +212,13 @@ export class ServerTableEngine {
     this.disconnectEngine.disposeAll();
     this.preActionEngine.disposeAll();
     this.atomicStackService.dispose();
+
+    // Step 6: Dispose advanced modules
+    this.straddleEngine.disposeAll();
+    this.mixedGameEngine.disposeAll();
+    this.runItTwiceEngine.disposeAll();
+    this.insuranceEngine.disposeAll();
+    this.rakebackEngine.disposeAll();
 
     cleanupChannel(this.tableId);
     console.log(`[ServerTableEngine:${this.tableId}] Stopped. Dealt ${this.handCount} hands.`);
@@ -873,6 +909,21 @@ export class ServerTableEngine {
         // Note: disconnectEngine persists across hands (tracks connection state)
         // Note: atomicStackService persists across hands (tracks stack versions)
 
+        // Step 6: Clean up advanced modules between hands
+        this.runItTwiceEngine.dispose(this.tableId);
+        this.insuranceEngine.dispose(this.tableId);
+        // Note: straddleEngine persists (auto-straddle enrollment persists)
+        // Note: mixedGameEngine persists (variant rotation is multi-hand)
+        // Note: rakebackEngine persists (accumulates across hands)
+
+        // Step 6: Mixed game rotation — notify after each hand
+        if (this.mixedGameEngine.isActive(this.tableId)) {
+          const activePlayers = this.handController
+            ? this.handController.getState().players.filter((p) => !p.is_folded).length
+            : 0;
+          this.mixedGameEngine.onHandComplete(this.tableId, activePlayers);
+        }
+
         // Async post-hand tasks (fire and forget)
         this.postHandTasks(players).catch((err) =>
           console.error(`[ServerTableEngine:${this.tableId}] Post-hand error:`, err)
@@ -1073,6 +1124,27 @@ export class ServerTableEngine {
         this.currentHandRake,
         this.currentHandPotSize
       );
+    }
+
+    // 2b. Step 6: Track rake contributions for rakeback
+    if (!this.isTournamentTable() && this.currentHandRake > 0 && this.tableInfo?.club_id) {
+      // Build contribution map from player totalInvested
+      const contributions = new Map<string, number>();
+      let totalContributions = 0;
+      for (const p of players) {
+        // Use the player's final state from this hand
+        const invested = p.stack >= 0 ? 1 : 0; // Fallback: equal weight if no totalInvested
+        contributions.set(p.user_id, invested);
+        totalContributions += invested;
+      }
+      if (totalContributions > 0) {
+        this.rakebackEngine.recordHandRake(
+          this.tableInfo.club_id,
+          this.currentHandRake,
+          contributions,
+          totalContributions
+        );
+      }
     }
 
     // 3. Log hand history — complete audit trail

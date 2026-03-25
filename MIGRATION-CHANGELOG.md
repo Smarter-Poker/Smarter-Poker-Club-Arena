@@ -2,7 +2,7 @@
 ## Every Change, Documented. No Exceptions.
 
 **Started:** 2026-03-24
-**Current Step:** Step 1 — RIP OUT client-side engine code
+**Current Step:** Step 4 — PORT CORE (PreciseActionTimer, ServerActionValidator, StateVerifier)
 
 ---
 
@@ -278,4 +278,113 @@ this.playerTurnTimer = setTimeout(() => {
 | #2 Auto-Fold | ServerTableEngine.ts | 347-354 | Removed auto-fold catch, return error to client |
 | #3 Timer | ServerTableEngine.ts | 192-230 | Auto-check when canCheck, auto-fold only when bet outstanding |
 
-**Next:** Verify with `npx tsc --noEmit`, then commit and push.
+**Step 3 Status:** DEPLOYED to smarter.poker ✅ (World Hub commit: `chore: update Club Arena — Step 3 server blockers fixed`, 2026-03-25)
+
+---
+
+## Step 4 — PORT CORE (PreciseActionTimer, ServerActionValidator, StateVerifier)
+
+### Phase: IN PROGRESS 2026-03-25
+
+**3 new files created, 1 file modified.**
+
+---
+
+### Change #1 — Port PreciseActionTimer to server
+
+**File:** `server/src/engine/PreciseActionTimer.ts` (NEW — 261 lines)
+**Ported from:** `src/engine/PreciseActionTimer.ts` (233 lines)
+
+**Purpose:** Deadline-based timer immune to CPU drift. Replaces unreliable `setTimeout`-based timers with absolute deadline timestamps checked via 100ms polling.
+
+**Key adaptation from client version:**
+- Removed `masterBus` dependency (client-side event bus)
+- Added optional `onEvent` callback constructor parameter for logging
+- Exported as `class PreciseActionTimer` (not singleton) — each ServerTableEngine gets its own instance
+- Added `hasTimer()` method for checking timer existence
+- Added typed `TimerEvent` and `TimerEventType` interfaces
+
+**Public API:** `startTimer()`, `getRemainingMs()`, `getRemainingSec()`, `isExpired()`, `getDeadline()`, `extendTimer()`, `pauseTimer()`, `resumeTimer()`, `cancelTimer()`, `clearTable()`, `hasTimer()`, `dispose()`
+
+**Verified:** File created and read back ✅
+
+---
+
+### Change #2 — Port ServerActionValidator to server
+
+**File:** `server/src/engine/ServerActionValidator.ts` (NEW — 278 lines)
+**Ported from:** `src/engine/ServerActionValidator.ts` (323 lines)
+
+**Purpose:** Full action validation with 12 error codes — turn order, timing, duplicate suppression, amount bounds, stack sufficiency.
+
+**Key adaptation from client version:**
+- Removed `masterBus` dependency
+- Added optional `onRejection` callback for logging rejected actions
+- Exported as `class ServerActionValidator` (not singleton)
+- Uses server `ActionType` from `../types.js` instead of custom type
+- Added `RejectionEvent` interface for typed rejection callbacks
+
+**Validation flow (5 steps):**
+1. Turn order (NOT_YOUR_TURN)
+2. Player state (ALREADY_FOLDED, ALREADY_ALL_IN)
+3. Duplicate suppression (ALREADY_ACTED)
+4. Timing check (ACTION_EXPIRED — 2s grace period)
+5. Action-specific: fold/check/call/bet/raise/all_in
+
+**Verified:** File created and read back ✅
+
+---
+
+### Change #3 — Port StateVerifier to server
+
+**File:** `server/src/engine/StateVerifier.ts` (NEW — 263 lines)
+**Ported from:** `src/engine/StateVerifier.ts` (275 lines)
+
+**Purpose:** Game state integrity checking — chip conservation, no negative stacks, no duplicate cards, community card count vs stage, pot sanity.
+
+**Key adaptation from client version:**
+- Removed `masterBus` dependency
+- Added optional `onViolation` callback for alerting on integrity failures
+- Exported as `class StateVerifier` (not singleton)
+- Uses server types `Card`, `SeatPlayer`, `HandStage` from `../types.js`
+- Added `ViolationEvent` interface for typed violation callbacks
+
+**6 integrity checks:** Chip conservation, negative stacks, duplicate cards, community card count, player counts, pot sanity
+
+**Verified:** File created and read back ✅
+
+---
+
+### Change #4 — Integrate all 3 modules into ServerTableEngine
+
+**File:** `server/src/engine/ServerTableEngine.ts` (MODIFIED — ~15 integration points)
+
+**What changed:**
+
+1. **Imports added (lines 18-21):** PreciseActionTimer, ServerActionValidator, StateVerifier, ValidationContext
+2. **Instance variables (lines 91-94):** `preciseTimer`, `actionValidator`, `stateVerifier` — initialized in constructor with logging callbacks
+3. **Constructor (lines 100-108):** Creates instances of all 3 modules with table-scoped logging
+4. **stop() (lines 152-155):** Disposes all 3 modules on engine shutdown
+5. **clearTurnTimer() (line 207):** Comment noting preciseTimer coordination
+6. **startTurnTimer() (line 222):** Registers deadline with PreciseActionTimer alongside existing setTimeout
+7. **handlePlayerAction() (lines 395-438):** ServerActionValidator validates before performAction — timing, duplicates, state, amounts
+8. **handlePlayerAction() (line 440):** Cancels precise timer on successful action
+9. **dealHand() (line 643-644):** Records initial chip totals via StateVerifier
+10. **HAND_COMPLETE handler (lines 791-815):** Deducts rake, runs StateVerifier.verify(), cleans up validator and timer state
+
+**Why:** The existing code had no action validation beyond basic turn checks, no deadline-based timers, and no state integrity verification. These 3 modules close those gaps.
+
+**Verified:** Grep confirmed all 15 integration points present ✅
+
+---
+
+### Summary of All Step 4 Changes
+
+| File | Action | Lines | Purpose |
+|------|--------|-------|---------|
+| server/src/engine/PreciseActionTimer.ts | NEW | 261 | Deadline-based timer, immune to drift |
+| server/src/engine/ServerActionValidator.ts | NEW | 278 | 12-error-code action validation |
+| server/src/engine/StateVerifier.ts | NEW | 263 | 6-check state integrity verification |
+| server/src/engine/ServerTableEngine.ts | MODIFIED | ~30 added | Integration of all 3 modules |
+
+**Next:** Run `npx tsc --noEmit` on server, commit, build, deploy to smarter.poker.

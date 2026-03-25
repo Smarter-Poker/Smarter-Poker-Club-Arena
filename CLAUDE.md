@@ -1,6 +1,32 @@
 # Claude Instructions for Club Arena
 
-## 🚨 MANDATORY: TypeScript Check Before EVERY Commit (NON-NEGOTIABLE)
+## ACTIVE MIGRATION IN PROGRESS — READ BEFORE DOING ANYTHING
+
+**There is an active server-authoritative migration happening. Before ANY code work, you MUST read these files:**
+
+1. `MIGRATION-LAW.md` — 10 laws governing all migration work (ZERO exceptions)
+2. `MASTER-MIGRATION-DOCUMENT.md` — Section 8 for current phase order
+3. `STEP1-REMOVAL-CATALOG.md` — Exact removal targets with line numbers
+4. `MIGRATION-CHANGELOG.md` — What's been done, where to resume
+5. `skills/bible-v8/BIBLE-V8-REFERENCE.md` — The spec being built against
+
+**Phase order (SACRED — Law 1):**
+```
+STEP 1: RIP OUT client-side engine code (establish ONE source of truth)
+STEP 2: VERIFY CLEAN (grep confirms zero local authoritative state)
+STEP 3: FIX SERVER BLOCKERS (card security, auto-fold, timer)
+STEP 4: PORT CORE (PreciseActionTimer, ServerActionValidator, StateVerifier)
+STEP 5: PORT SUPPORTING (TimeBankEngine, DisconnectEngine, PreActionEngine)
+STEP 6: PORT ADVANCED (Straddle, RIT, Insurance, MixedGame, Rakeback)
+STEP 7: TOURNAMENT & EXTRAS (ChipRace, TableBalancer, OFC, Telemetry)
+```
+
+**You CANNOT skip ahead. You CANNOT build before cleanup. You CANNOT rubber-stamp.**
+Every change: READ → DOCUMENT → CHANGE → VERIFY → LOG IN CHANGELOG.
+
+---
+
+## MANDATORY: TypeScript Check Before EVERY Commit (NON-NEGOTIABLE)
 
 **Before EVERY `git commit`, run `npx tsc --noEmit`. If it has ANY errors, DO NOT commit. Fix all errors first.**
 

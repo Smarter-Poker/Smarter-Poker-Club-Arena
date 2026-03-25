@@ -15,6 +15,10 @@
 
 import { HandController } from './HandController.js';
 import { HorseLogic } from './HorseLogic.js';
+import { PreciseActionTimer } from './PreciseActionTimer.js';
+import { ServerActionValidator } from './ServerActionValidator.js';
+import { StateVerifier } from './StateVerifier.js';
+import type { ValidationContext } from './ServerActionValidator.js';
 import {
   broadcastHandState,
   loadTable,
@@ -84,8 +88,25 @@ export class ServerTableEngine {
   private playerTurnDuration: number = 0;
   private timeBankActivatedThisTurn: boolean = false;
 
+  // ── Step 4: Ported Core Modules ──
+  private preciseTimer: PreciseActionTimer;
+  private actionValidator: ServerActionValidator;
+  private stateVerifier: StateVerifier;
+
   constructor(tableId: string) {
     this.tableId = tableId;
+
+    // Initialize ported core modules
+    this.preciseTimer = new PreciseActionTimer((event) => {
+      console.log(`[ServerTableEngine:${tableId}] Timer event: ${event.type} player=${event.playerId}`);
+    });
+    this.actionValidator = new ServerActionValidator((event) => {
+      console.warn(`[ServerTableEngine:${tableId}] Action rejected: ${event.code} — ${event.reason}`);
+    });
+    this.stateVerifier = new StateVerifier((event) => {
+      console.error(`[ServerTableEngine:${tableId}] STATE INTEGRITY VIOLATION: ${event.violationCount} issue(s) in hand #${event.handNumber}`);
+    });
+
     console.log(`[ServerTableEngine] Created for table ${tableId}`);
   }
 
@@ -127,6 +148,12 @@ export class ServerTableEngine {
     this.running = false;
     this.clearTurnTimer();
     this.handController = null;
+
+    // Step 4: Dispose ported core modules
+    this.preciseTimer.dispose();
+    this.actionValidator.dispose();
+    this.stateVerifier.dispose();
+
     cleanupChannel(this.tableId);
     console.log(`[ServerTableEngine:${this.tableId}] Stopped. Dealt ${this.handCount} hands.`);
   }
@@ -176,6 +203,8 @@ export class ServerTableEngine {
       clearTimeout(this.playerTurnTimer);
       this.playerTurnTimer = null;
     }
+    // Also cancel precise timer for the current player (if any)
+    // Note: preciseTimer.clearTable is used in HAND_COMPLETE; individual cancel here
   }
 
   private startTurnTimer(userId: string, seat: number, durationSeconds: number): void {
@@ -188,6 +217,9 @@ export class ServerTableEngine {
 
     // Safety fallback: if no duration, default to 15s to prevent infinite loops
     const safeDurationSeconds = this.playerTurnDuration > 0 ? this.playerTurnDuration : 15;
+
+    // Step 4: Register with PreciseActionTimer for deadline tracking (used by ServerActionValidator)
+    this.preciseTimer.startTimer(this.tableId, userId, safeDurationSeconds * 1000);
 
     this.playerTurnTimer = setTimeout(() => {
       this.playerTurnTimer = null;
@@ -360,8 +392,52 @@ export class ServerTableEngine {
       }
     }
 
+    // Step 4: Run ServerActionValidator for timing, duplicate suppression, and state validation
+    const currentPlayer = state.players.find((p) => p.seat === state.currentPlayerSeat);
+    const validationCtx: ValidationContext = {
+      currentPlayerId: currentPlayer?.user_id ?? '',
+      stage: state.stage,
+      currentBet: state.currentBet,
+      playerBet: player.bet,
+      playerStack: player.stack,
+      bigBlind: this.tableInfo?.big_blind ?? 2,
+      minRaise: state.minRaise,
+      pot: state.pot,
+      canCheck: toCall === 0,
+      actionDeadline: this.preciseTimer.getDeadline(this.tableId, userId),
+      playerActedThisRound: false,
+      isAllIn: player.is_all_in,
+      isFolded: player.is_folded,
+      numActivePlayers: state.players.filter((p) => !p.is_folded && !p.is_all_in).length,
+    };
+
+    const validation = this.actionValidator.validate(
+      {
+        tableId: this.tableId,
+        handId: `${this.handCount}`,
+        playerId: userId,
+        action: normalizedAction as any,
+        amount,
+        timestamp: Date.now(),
+      },
+      validationCtx
+    );
+
+    if (!validation.valid) {
+      return { success: false, error: validation.reason || 'Action validation failed' };
+    }
+
+    // Use sanitized action/amount from validator if provided
+    if (validation.sanitizedAction) {
+      normalizedAction = validation.sanitizedAction;
+    }
+    if (validation.sanitizedAmount !== undefined) {
+      amount = validation.sanitizedAmount;
+    }
+
     try {
       this.clearTurnTimer();
+      this.preciseTimer.cancelTimer(this.tableId, userId); // Step 4: Cancel precise deadline
       this.handController.performAction(seat, normalizedAction as any, amount);
       console.log(
         `[ServerTableEngine:${this.tableId}] Player ${userId} → ${normalizedAction}${amount ? ` ${amount}` : ''}`
@@ -564,6 +640,9 @@ export class ServerTableEngine {
 
     this.handController = new HandController(config, hcPlayers, dealerSeat);
 
+    // Step 4: Record initial chip totals for state verification
+    this.stateVerifier.recordInitialChipTotal(this.tableId, hcPlayers);
+
     // Wait for hand to complete
     return new Promise<void>((resolve) => {
       const handTimeout = setTimeout(() => {
@@ -708,6 +787,33 @@ export class ServerTableEngine {
         if ((event as any).rake !== undefined) {
           this.currentHandRake = (event as any).rake;
         }
+
+        // Step 4: State verification — deduct rake and verify chip conservation
+        if (this.currentHandRake > 0) {
+          this.stateVerifier.deductRake(this.tableId, this.currentHandRake);
+        }
+        if (this.handController) {
+          const finalState = this.handController.getState();
+          const verifyResult = this.stateVerifier.verify({
+            tableId: this.tableId,
+            handNumber: this.handCount,
+            players: finalState.players,
+            communityCards: finalState.communityCards,
+            pot: finalState.pot,
+            stage: finalState.stage,
+          });
+          if (!verifyResult.valid) {
+            console.error(
+              `[ServerTableEngine:${this.tableId}] Hand #${this.handCount} FAILED integrity check:`,
+              verifyResult.violations.map((v) => v.message).join('; ')
+            );
+          }
+        }
+
+        // Step 4: Clean up validator state between hands
+        this.actionValidator.clearTable(this.tableId);
+        this.preciseTimer.clearTable(this.tableId);
+
         // Async post-hand tasks (fire and forget)
         this.postHandTasks(players).catch((err) =>
           console.error(`[ServerTableEngine:${this.tableId}] Post-hand error:`, err)

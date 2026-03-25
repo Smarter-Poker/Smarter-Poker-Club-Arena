@@ -397,7 +397,35 @@ const DEFAULT_TABLES: TableConfig[] = [
     gameVariant: 'plo6',
   },
 
-  // ─── PINEAPPLE ───────────────────────────────────────────────────────────
+  // ─── PLO HI-LO TABLES ────────────────────────────────────────────────────
+  {
+    name: 'PLO Hi-Lo 5/10',
+    smallBlind: 5,
+    bigBlind: 10,
+    maxPlayers: 6,
+    horsesPerTable: 5,
+    gameVariant: 'plo_hilo',
+  },
+
+  // ─── FIXED LIMIT HOLD'EM ─────────────────────────────────────────────────
+  {
+    name: 'FLH 1/2',
+    smallBlind: 1,
+    bigBlind: 2,
+    maxPlayers: 9,
+    horsesPerTable: 7,
+    gameVariant: 'flh',
+  },
+  {
+    name: 'FLH 2/4',
+    smallBlind: 2,
+    bigBlind: 4,
+    maxPlayers: 9,
+    horsesPerTable: 7,
+    gameVariant: 'flh',
+  },
+
+  // ─── PINEAPPLE & CRAZY PINEAPPLE ─────────────────────────────────────────
   {
     name: 'Pineapple 1/2',
     smallBlind: 1,
@@ -406,8 +434,34 @@ const DEFAULT_TABLES: TableConfig[] = [
     horsesPerTable: 7,
     gameVariant: 'pineapple',
   },
+  {
+    name: 'Crazy Pineapple 1/2',
+    smallBlind: 1,
+    bigBlind: 2,
+    maxPlayers: 9,
+    horsesPerTable: 7,
+    gameVariant: 'crazy_pineapple',
+  },
 
-  // ─── OFC ──────────────────────────────────────────────────────────────────
+  // ─── DOUBLE BOARD ─────────────────────────────────────────────────────────
+  {
+    name: 'Double Board NLH 1/2',
+    smallBlind: 1,
+    bigBlind: 2,
+    maxPlayers: 6,
+    horsesPerTable: 5,
+    gameVariant: 'double_board',
+  },
+
+  // ─── MIXED GAMES (HORSE) ─────────────────────────────────────────────────
+  {
+    name: 'HORSE Mixed 1/2',
+    smallBlind: 1,
+    bigBlind: 2,
+    maxPlayers: 9,
+    horsesPerTable: 7,
+    gameVariant: 'mixed',
+  },
 ];
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1473,10 +1527,14 @@ class HorseOrchestrator {
         plo5: 'PLO5',
         plo6: 'PLO6',
         plo8: 'PLO8',
+        plo_hilo: 'PLO_HILO',
         ofc_pineapple: 'OFC_PINEAPPLE',
         short_deck: 'SHORT_DECK',
+        flh: 'FLH',
         pineapple: 'PINEAPPLE',
-        ofc: 'OFC',
+        crazy_pineapple: 'CRAZY_PINEAPPLE',
+        double_board: 'DOUBLE_BOARD',
+        mixed: 'MIXED',
       };
       const dbGameType = gameTypeMap[config.gameVariant || 'nlh'] || 'NLH';
 

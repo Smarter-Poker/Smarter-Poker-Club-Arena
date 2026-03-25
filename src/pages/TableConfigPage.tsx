@@ -601,8 +601,6 @@ export default function TableConfigPage() {
 
     // Run it multi-times
     run_it_mode: config.runItMode,
-    // FIX 111: Server reads run_it_twice_enabled as top-level boolean column
-    run_it_twice_enabled: config.runItMode !== 'none',
 
     // Rake settings
     rake_percent: config.rakePercent,

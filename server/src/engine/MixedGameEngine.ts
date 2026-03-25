@@ -19,13 +19,9 @@ import type { GameVariant } from '../types.js';
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export const MIXED_GAME_PRESETS: Record<string, GameVariant[]> = {
-  HORSE: ['nlh', 'plo4', 'nlh', 'nlh', 'plo4'],
-  HOLDEM_OMAHA: ['nlh', 'plo4'],
-  HOLDEM_PLO5: ['nlh', 'plo5'],
-  DOUBLE_BOARD_ROTATION: ['nlh', 'plo4', 'plo5', 'plo6'],
-  OMAHA_VARIANTS: ['plo4', 'plo5', 'plo6'],
-};
+// Mixed game presets — DISABLED (no mixed/HORSE games for now)
+// Presets can be re-added here when mixed game support is implemented
+export const MIXED_GAME_PRESETS: Record<string, GameVariant[]> = {};
 
 export interface MixedGameConfig {
   presetName: string;

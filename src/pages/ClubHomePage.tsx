@@ -709,11 +709,7 @@ export default function ClubHomePage() {
         else if (activeFilter === 'Mixed') {
           const v = table.game_variant?.toLowerCase() || '';
           passesGameFilter =
-            v.includes('pineapple') ||
-            v.includes('short_deck') ||
-            v.includes('ofc') ||
-            v.includes('mixed') ||
-            v.includes('double');
+            v.includes('pineapple') || v.includes('short_deck') || v.includes('ofc');
         }
         if (!passesGameFilter) return false;
 

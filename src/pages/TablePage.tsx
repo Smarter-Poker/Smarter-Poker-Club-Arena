@@ -586,6 +586,57 @@ export default function TablePage({
   const [timeBanksRemaining, setTimeBanksRemaining] = useState(4);
   const [timeBankTimeRemaining, setTimeBankTimeRemaining] = useState(15);
 
+  // FIX 126: Cross-tab BroadcastChannel for multi-table time bank warnings
+  // Players can have up to 4 tables open simultaneously — warnings must appear on ALL tabs
+  const timeBankChannelRef = useRef<BroadcastChannel | null>(null);
+
+  useEffect(() => {
+    try {
+      const channel = new BroadcastChannel('club-arena-timebank-warnings');
+      timeBankChannelRef.current = channel;
+
+      channel.onmessage = (event) => {
+        const data = event.data;
+        if (!data || !data.type) return;
+
+        if (data.type === 'time_bank_timeout') {
+          if (data.showBuyMore) {
+            toast.warning(
+              `You were auto-${data.timedOutAction === 'check' ? 'checked' : 'folded'} — no time banks remaining. Visit the Diamond Store to purchase more!`,
+              2500
+            );
+          } else {
+            toast.info(
+              `You were auto-${data.timedOutAction === 'check' ? 'checked' : 'folded'} (time expired)`,
+              2500
+            );
+          }
+        } else if (data.type === 'time_bank_low') {
+          const usesLeft = data.usesLeft as number;
+          if (usesLeft <= 0) {
+            toast.warning(
+              `That was your last time bank! Visit the Diamond Store to purchase more.`,
+              2500
+            );
+          } else {
+            toast.warning(
+              `Warning: Only ${usesLeft} time bank${usesLeft === 1 ? '' : 's'} remaining!`,
+              2500
+            );
+          }
+        }
+      };
+
+      return () => {
+        channel.close();
+        timeBankChannelRef.current = null;
+      };
+    } catch {
+      // BroadcastChannel not supported in this browser — multi-table relay disabled
+      return;
+    }
+  }, [toast]);
+
   // Bible V8 §4.15: Pre-actions are server-managed — notify server when player sets/clears a pre-action
   useEffect(() => {
     if (tableId) {
@@ -1758,6 +1809,7 @@ export default function TablePage({
       }
 
       // FIX 124: Player timed out without time bank — show buy-more popup if depleted
+      // FIX 126: All time bank toasts auto-dismiss after 2500ms + relay to other tables via BroadcastChannel
       if (eventType === 'time_bank_timeout') {
         const targetPlayer = handState.player_id as string;
         if (targetPlayer === userId) {
@@ -1766,26 +1818,52 @@ export default function TablePage({
           if (showBuyMore) {
             // Player has ZERO time banks left — prompt to buy more
             toast.warning(
-              `You were auto-${timedOutAction === 'check' ? 'checked' : 'folded'} — no time banks remaining. Visit the Diamond Store to purchase more!`
+              `You were auto-${timedOutAction === 'check' ? 'checked' : 'folded'} — no time banks remaining. Visit the Diamond Store to purchase more!`,
+              2500
             );
-            // Future: open DiamondTopUpModal or navigate to VIP page
           } else {
             toast.info(
-              `You were auto-${timedOutAction === 'check' ? 'checked' : 'folded'} (time expired)`
+              `You were auto-${timedOutAction === 'check' ? 'checked' : 'folded'} (time expired)`,
+              2500
             );
+          }
+          // FIX 126: Relay to other open table tabs so multi-table players see it everywhere
+          try {
+            timeBankChannelRef.current?.postMessage({
+              type: 'time_bank_timeout',
+              showBuyMore,
+              timedOutAction,
+            });
+          } catch {
+            /* BroadcastChannel not supported or closed */
           }
         }
         return;
       }
 
-      // FIX 125: Low time bank warning — alert when down to last 5
+      // FIX 125: Low time bank warning — alert when down to last 5 (includes 0 = just used last one)
+      // FIX 126: 2500ms auto-dismiss + multi-table relay
       if (eventType === 'time_bank_low') {
         const targetPlayer = handState.player_id as string;
         if (targetPlayer === userId) {
           const usesLeft = handState.uses_remaining as number;
-          toast.warning(
-            `Warning: Only ${usesLeft} time bank${usesLeft === 1 ? '' : 's'} remaining!`
-          );
+          if (usesLeft <= 0) {
+            toast.warning(
+              `That was your last time bank! Visit the Diamond Store to purchase more.`,
+              2500
+            );
+          } else {
+            toast.warning(
+              `Warning: Only ${usesLeft} time bank${usesLeft === 1 ? '' : 's'} remaining!`,
+              2500
+            );
+          }
+          // FIX 126: Relay to other open table tabs
+          try {
+            timeBankChannelRef.current?.postMessage({ type: 'time_bank_low', usesLeft });
+          } catch {
+            /* BroadcastChannel not supported or closed */
+          }
         }
         return;
       }

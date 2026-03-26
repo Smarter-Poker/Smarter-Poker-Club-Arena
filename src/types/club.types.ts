@@ -189,18 +189,14 @@ export type GameType = 'cash' | 'tournament' | 'sng' | 'spin';
 
 export type GameVariant =
   | 'nlh' // No-Limit Hold'em
-  | 'flh' // Fixed-Limit Hold'em
   | 'short_deck' // Short Deck (6+)
   | 'plo4' // Pot-Limit Omaha 4-card
   | 'plo5' // Pot-Limit Omaha 5-card
   | 'plo6' // Pot-Limit Omaha 6-card
-  | 'plo_hilo' // Omaha Hi-Lo
+  | 'plo8' // Omaha Hi-Lo (8 or better)
   | 'ofc' // Open Face Chinese
   | 'ofc_pineapple' // OFC Pineapple
-  | 'double_board' // Double Board Hold'em
-  | 'pineapple' // Pineapple Hold'em
-  | 'crazy_pineapple'
-  | 'mixed'; // Mixed Games
+  | 'pineapple'; // Pineapple Hold'em
 
 export interface TableSettings {
   // Blinds & Stakes
@@ -234,7 +230,7 @@ export interface TableSettings {
   allow_observers: boolean;
 }
 
-export type StraddleType = 'none' | 'utg_only' | 'all_positions' | 'mississippi';
+export type StraddleType = 'none' | 'utg'; // FIX 114: UTG straddle only
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 🪑 TABLE PLAYERS

@@ -1652,3 +1652,34 @@ Performed line-by-line re-read of EVERY file modified in Round 6. Results:
 | `src/services/GameServerAPI.ts`           | Updated respondToInsurance() signature, added previewInsurance()                                                                                        |
 | `src/components/table/InsuranceModal.tsx` | Added onDeclineForHand prop, "Decline for Hand" button                                                                                                  |
 | `supabase/migrations/20260325_*.sql`      | Make bbj_payouts.hand_id nullable, add hand_number + table_id columns                                                                                   |
+
+## Post-Migration Verification — Round 13: Deep Straddle Engine Verification (2026-03-25)
+
+### Phase: IN PROGRESS (2026-03-25)
+
+**Focus:** Deep verification of StraddleEngine against Bible V8 §4.4, per Dan's directive.
+
+### FIX 114 — Remove Mississippi Straddle (UTG Only)
+
+**Dan's directive:** "ONLY STRADDLE WE ARE ALLOWING IS UTG. (2ND BIG BLIND ONLY)"
+
+**What existed:** StraddleEngine supported both UTG and Mississippi straddle modes via `mississippiEnabled` config flag. Mississippi allowed any position to straddle with re-straddle chains.
+
+**What changed:** Removed ALL Mississippi straddle support. UTG straddle only — one straddle per hand, 2x BB, posted by first player after BB (UTG position).
+
+**Files Modified:**
+
+| File                                                                | Change                                                                                                                                                                         | Verified |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------- |
+| `server/src/types.ts` (line 96)                                     | `straddle_type?: 'utg' \| 'mississippi'` → `straddle_type?: 'utg'`                                                                                                             | YES      |
+| `server/src/engine/StraddleEngine.ts`                               | Removed `mississippiEnabled` from `StraddleConfig` interface. Simplified `processStraddles()` loop — removed Mississippi skip logic, UTG-only breaks. Updated header/comments. | YES      |
+| `server/src/engine/ServerTableEngine.ts` (lines 304-311, 1354-1359) | Removed `mississippiEnabled` from both straddle config locations. Hardcoded `maxStraddles: 1`.                                                                                 | YES      |
+| `src/engine/StraddleEngine.ts`                                      | Same as server: removed `mississippiEnabled`, simplified UTG-only loop                                                                                                         | YES      |
+| `src/components/club/CreateTableModal.tsx` (line 385)               | Removed straddle type dropdown (UTG/Any Position/Mississippi selector)                                                                                                         | YES      |
+| `src/types/database.types.ts` (line 122)                            | `straddle_type: 'utg' \| 'any_position' \| 'mississippi'` → `straddle_type: 'utg'`                                                                                             | YES      |
+| `src/types/club.types.ts` (line 233)                                | `StraddleType = 'none' \| 'utg_only' \| 'all_positions' \| 'mississippi'` → `StraddleType = 'none' \| 'utg'`                                                                   | YES      |
+| `tests/engine/StraddleEngine.test.ts`                               | Removed all `mississippiEnabled` from configs. Replaced Mississippi test section with UTG-only tests.                                                                          | YES      |
+| `supabase/migrations/20260325_fix114_utg_straddle_only.sql`         | NEW: Updates existing Mississippi rows to UTG, drops old CHECK constraint, adds UTG-only CHECK, forces max_straddles=1                                                         | YES      |
+
+**TypeScript:** Pending (VM disk full — AntiGravity handoff required)
+**Verified:** All 9 files re-read and confirmed correct

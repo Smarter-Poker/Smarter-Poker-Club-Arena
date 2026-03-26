@@ -26,17 +26,14 @@ export type HandStage = 'preflop' | 'flop' | 'turn' | 'river' | 'showdown';
 export type ActionType = 'fold' | 'check' | 'call' | 'bet' | 'raise' | 'all_in';
 export type GameVariant =
   | 'nlh'
-  | 'flh'
-  | 'plo'
+  | 'short_deck'
   | 'plo4'
   | 'plo5'
   | 'plo6'
-  | 'plo_hilo'
   | 'plo8'
-  | 'short_deck'
   | 'ofc'
   | 'ofc_pineapple'
-  | 'mixed';
+  | 'pineapple';
 /** Bible V8 §3.1: Full table state machine states */
 export type TableStatus =
   | 'empty'
@@ -96,7 +93,7 @@ export interface TableInfo {
   big_blind_ante_enabled?: boolean;
   /** Bible V8 §4.4: Straddle settings */
   straddle_enabled?: boolean;
-  straddle_type?: 'utg' | 'mississippi';
+  straddle_type?: 'utg'; // FIX 114: Only UTG straddle allowed (2x BB)
   max_straddles?: number;
   /** Bible V8 §4.20: Run It Twice */
   run_it_twice_enabled?: boolean;

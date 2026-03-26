@@ -1807,3 +1807,108 @@ Removed `mississippiEnabled` from StraddleConfig, simplified processStraddles() 
 
 **Verified:** YES — re-read all modified files
 **Client UI note:** The card selection UI for discard is NOT yet implemented in TablePage.tsx — the server-side flow is complete and will auto-discard until the UI is built.
+
+### FIX 121 — Pot-Limit Max Raise Formula Off by +toCall (2026-03-26)
+
+**File:** `server/src/engine/PokerEngine.ts` → `calculateBettingState()`
+**What existed:** `maxRaise = pot + toCall + toCall` (pot + 2×toCall)
+**What changed:** `maxRaise = pot + toCall` (pot after calling = correct pot-limit max raise)
+**Why:** Bible V8 §4.14 — "pot-limit = current pot + call amount". The old formula allowed raises ~toCall larger than pot-limit should permit. Example: pot=60, toCall=10 → old maxRaise=80, correct maxRaise=70.
+**Also fixed:** Comment in raise validation updated from "pot + call + call" to "pot after calling"
+**Verified:** YES — traced through multiple bet/raise scenarios
+
+### FIX 122 — Short Deck Showdown Display Uses Wrong Hand Rankings (2026-03-26)
+
+**File:** `server/src/engine/HandController.ts` → `completeHand()`
+**What existed:** Showdown evaluator `evaluateHand(cards, community)` — no `shortDeck` param. Display showed wrong rankings for Short Deck (flush as rank 6 instead of 7).
+**What changed:** Added `isShortDeck` detection and passes flag via lambda: `(h, c) => evaluateHand(h, c, isShortDeck)`. Mirrors the pattern already used in `determineWinners()`.
+**Why:** FIX 119 added `shortDeck` to `evaluateHand()` and wired it in `determineWinners()`, but the showdown DISPLAY evaluator in `completeHand()` was missed. Winners were determined correctly but showdown result labels were wrong.
+**Verified:** YES
+
+### Deep Verification Results (2026-03-26)
+
+**Action Validation (Bible V8 §4.9-4.14):** PASSED with FIX 121
+
+- Fold: always legal ✅
+- Check: only when toCall=0 ✅
+- Call: when toCall>0, amount=min(toCall, stack) ✅
+- Bet: when currentBet=0, amount >= BB ✅
+- Raise: when currentBet>0, amount >= currentBet + lastRaise ✅
+- All-in: always legal ✅
+- Min raise: max(BB, lastRaise) ✅
+- Max raise: NL=stack, PL=pot+toCall (FIX 121) ✅
+- Short all-in does NOT reopen betting (isFullRaise flag) ✅
+- Timer auto-check when toCall=0 ✅
+
+**Hand Settlement:** PASSED with FIX 122
+
+- Side pots: correct totalInvested-based calculation ✅
+- Hi-Lo split: 50/50 in integer cents, only plo8 ✅
+- Rake: noFlopNoDrop, player-count caps, exact cents ✅
+- BBJ fee: deducted with rake, guard against > pot ✅
+- Chip conservation: integer cents arithmetic, remainder distributed ✅
+- Showdown display: now uses variant-aware evaluation (FIX 122) ✅
+
+**Client Realtime:** PASSED
+
+- Hand state subscription: broadcast channel ✅
+- Event routing: insurance, RIT, equity, regular state ✅
+- Card security: RLS-protected hero cards ✅
+- Timer sync: server-authoritative timestamps ✅
+- Betting state: server-authoritative ✅
+- Cleanup: proper unsubscribe ✅
+- Pineapple discard UI: NOT YET BUILT (auto-discard handles gracefully)
+
+**Server Broadcast (Bible V8 §2.4):** PASSED
+
+- All 15 required fields present: table_id, hand_number, pot, community_cards, current_bet, current_player, dealer_seat, stage, min_raise, last_raise, turn_start_time_ms, turn_duration_ms, players[], pots[], action_history[] ✅
+- Player objects include all §2.3 fields: seat, user_id, username, stack, bet, totalInvested, cards, is_folded, is_all_in, is_sitting_out, is_disconnected, time_bank_remaining, time_bank_uses_remaining, position, avatar_url, is_horse ✅
+- Card security: scrubbed in broadcast, shown at showdown for winners/voluntary ✅
+
+**Straddle (Bible V8 §4.4):** PASSED
+
+- UTG-only posting, live straddle, first-to-act left of straddler ✅
+- Stack check before posting ✅
+
+**BBA (Bible V8 §4.3):** PASSED
+
+- BB posts ante × activePlayers.length ✅
+- Short stack handled via Math.min ✅
+
+**PreAction (Bible V8 §4.15):** PASSED
+
+- All 5 types: auto_fold, auto_check_fold, auto_check, auto_call, auto_call_any ✅
+- Cleared after evaluation ✅
+- auto_check invalidated on bet ✅
+- Wired in turn change flow (executes before timer starts) ✅
+
+**Timer System (Bible V8 §6.1-6.3):** PASSED
+
+- Server-authoritative setTimeout with PreciseTimer deadline tracking ✅
+- Time bank auto-activates on primary expiry ✅
+- Per-hand limit: 2 activations max (handActivations counter, reset at hand start) ✅
+- Anti-spam: timeBankActivatedThisTurn flag ✅
+
+**Showdown (Bible V8 §4.21):** PASSED
+
+- Auto-muck: enabled by default, losing hands hidden ✅
+- Winner must show cards ✅
+- Voluntary show via showHandPlayers Set ✅
+- Set reset at hand start ✅
+
+**Server Endpoints:** PASSED
+
+- 13 endpoints: /action, /timebank, /actions, /heartbeat, /preaction, /sitout, /straddle, /state, /rit, /insurance, /insurance-preview, /showhand, /discard ✅
+- ALL authenticated via authenticateRequest (supabase.auth.getUser) ✅
+- /health unauthenticated (monitoring) ✅
+
+**Short Deck Deck Building (Bible V8 §4.5):** PASSED
+
+- deck.removeCardsBelow('6') when gameVariant === 'short_deck' ✅
+- Called at HandController construction ✅
+
+### Known Gaps (Lower Priority)
+
+1. **MonteCarloEquity shortDeck**: Insurance equity calculations don't pass shortDeck flag — lower priority
+2. **Pineapple discard UI**: TablePage.tsx needs card selection UI — server auto-discards until built
+3. **Dead blind**: Player returning from sit-out should post both SB+BB (SB dead) — not implemented

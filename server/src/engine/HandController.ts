@@ -66,6 +66,7 @@ export class HandController {
       pots: [],
       actionHistory: [],
       sawFlop: false,
+      lastAggressorSeat: -1, // Bible V8 §4.21: Track for showdown reveal order
     };
   }
 
@@ -156,6 +157,29 @@ export class HandController {
       this.state.pot += bbAmount;
       this.state.currentBet = bbAmount;
       if (bbPlayer.stack === 0) bbPlayer.is_all_in = true;
+    }
+
+    // Bible V8 §4.2: Dead blinds — players returning from sit-out post SB+BB (SB is dead money)
+    if (this.config.deadBlinds && this.config.deadBlinds.length > 0) {
+      for (const db of this.config.deadBlinds) {
+        const dbPlayer = this.state.players.find((p) => p.seat === db.seat);
+        if (dbPlayer && dbPlayer.seat !== sbSeat && dbPlayer.seat !== bbSeat) {
+          // Dead SB goes straight to pot (dead money, not a live bet)
+          const deadSBAmount = Math.min(smallBlind, dbPlayer.stack);
+          dbPlayer.totalInvested += deadSBAmount;
+          dbPlayer.stack -= deadSBAmount;
+          this.state.pot += deadSBAmount;
+          // Live BB — counts as their current bet
+          if (dbPlayer.stack > 0) {
+            const liveBBAmount = Math.min(bigBlind, dbPlayer.stack);
+            dbPlayer.bet = liveBBAmount;
+            dbPlayer.totalInvested += liveBBAmount;
+            dbPlayer.stack -= liveBBAmount;
+            this.state.pot += liveBBAmount;
+          }
+          if (dbPlayer.stack === 0) dbPlayer.is_all_in = true;
+        }
+      }
     }
 
     if (this.config.ante) {
@@ -299,6 +323,8 @@ export class HandController {
         this.state.pot += chipsAdded;
         player.bet = actualAmount;
         this.state.currentBet = actualAmount;
+        // Bible V8 §4.21: Track last aggressor for showdown reveal order
+        this.state.lastAggressorSeat = seat;
         if (player.stack === 0) player.is_all_in = true;
         break;
       }
@@ -318,6 +344,8 @@ export class HandController {
             this.state.lastRaise = rs;
             // Bible V8 §4.14: Keep minRaise in sync for full-raise all-ins
             this.state.minRaise = Math.max(this.config.bigBlind, this.state.lastRaise);
+            // Bible V8 §4.21: Full-raise all-in counts as aggression for showdown order
+            this.state.lastAggressorSeat = seat;
           }
           this.state.currentBet = player.bet;
         }
@@ -669,6 +697,22 @@ export class HandController {
         cards: p.cards,
         hand: evaluator(p.cards, this.state.communityCards),
       }));
+
+      // Bible V8 §4.21: Sort showdown results — last aggressor shows first,
+      // then clockwise. If no aggressor, first player left of dealer shows first.
+      const firstToShow =
+        this.state.lastAggressorSeat >= 0
+          ? this.state.lastAggressorSeat
+          : this.getFirstPostflopPlayer();
+      if (firstToShow >= 0) {
+        const maxSeats = this.state.players.length;
+        showdownResults.sort((a, b) => {
+          const aDist = (a.seat - firstToShow + maxSeats * 10) % maxSeats;
+          const bDist = (b.seat - firstToShow + maxSeats * 10) % maxSeats;
+          return aDist - bDist;
+        });
+      }
+
       this.emit({ type: 'SHOWDOWN', results: showdownResults });
     }
 

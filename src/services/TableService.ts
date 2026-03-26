@@ -357,6 +357,25 @@ class TableService {
           `[TableService] Returned ${returnedChips} chips to Player Wallet for user ${userId}`
         );
         masterBus.emit('BALANCE_UPDATED', { source: 'table_leave_cashout', userId });
+
+        // FIX 136: Record cashout for 2-hour re-entry restriction
+        // Player cannot return to THIS table and buy in for less than their cashout for 2 hours
+        if (returnedChips > 0) {
+          await supabase
+            .rpc('record_table_cashout', {
+              p_user_id: userId,
+              p_table_id: tableId,
+              p_cashout_amount: returnedChips,
+            })
+            .then(({ error: cashoutHistErr }) => {
+              if (cashoutHistErr) {
+                console.warn(
+                  '[TableService] Failed to record cashout history:',
+                  cashoutHistErr.message
+                );
+              }
+            });
+        }
       } else {
         // For tournaments, just clear the seat without crediting wallets
         await supabase

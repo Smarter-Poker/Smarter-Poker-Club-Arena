@@ -90,6 +90,9 @@ export class ServerTableEngine {
   // Max is 2 rebuys (meaning 3 total buy-ins). If they bust a 3rd time, they leave.
   private horseRebuys: Map<string, number> = new Map();
 
+  // Bible V8 §4.2: Track players returning from sit-out who must post dead blind
+  private returningFromSitout: Set<string> = new Set();
+
   // Per-hand tracking
   private currentHandWentToFlop: boolean = false;
   private currentHandPotSize: number = 0;
@@ -807,6 +810,8 @@ export class ServerTableEngine {
       this.disconnectEngine.sitOut(this.tableId, userId, 'voluntary');
     } else {
       this.disconnectEngine.sitBack(this.tableId, userId);
+      // Bible V8 §4.2: Mark player as returning — must post dead blind on next hand
+      this.returningFromSitout.add(userId);
     }
 
     // If hand is active and it's their turn, they can't sit out mid-action
@@ -1467,6 +1472,13 @@ export class ServerTableEngine {
       ante: this.tableInfo.ante,
       bigBlindAnte: this.tableInfo.big_blind_ante_enabled ?? false,
       straddles: straddleResults.length > 0 ? straddleResults : undefined,
+      // Bible V8 §4.2: Dead blinds for players returning from sit-out
+      deadBlinds:
+        this.returningFromSitout.size > 0
+          ? players
+              .filter((p) => this.returningFromSitout.has(p.user_id))
+              .map((p) => ({ seat: p.seat_number }))
+          : undefined,
       rakeConfig: {
         percent: fullRakeConfig.rakePercent,
         cap: fullRakeConfig.rakeCap,
@@ -1481,6 +1493,11 @@ export class ServerTableEngine {
     };
 
     this.handController = new HandController(config, hcPlayers, dealerSeat);
+
+    // Bible V8 §4.2: Clear returning-from-sitout after dead blinds are passed to config
+    if (this.returningFromSitout.size > 0) {
+      this.returningFromSitout.clear();
+    }
 
     // Step 4: Record initial chip totals for state verification
     this.stateVerifier.recordInitialChipTotal(this.tableId, hcPlayers);
@@ -2676,6 +2693,10 @@ export class ServerTableEngine {
       current_player: currentSeatPlayer?.user_id ?? null,
       dealer_seat: state.dealerSeat ?? this.currentHandDealerSeat,
       stage: state.stage ?? 'preflop',
+      // Bible V8 §5.1: Winner IDs for client-side winner highlighting + sound
+      winner_ids: this.currentHandWinnerIds.length > 0 ? this.currentHandWinnerIds : [],
+      // Bible V8 §2.7: Winner amounts for pot distribution display
+      winners: this.currentHandWinners.length > 0 ? this.currentHandWinners : [],
       // Bible V8 §2.4: Required betting state fields
       min_raise: state.minRaise ?? 0,
       last_raise: state.lastRaise ?? 0,

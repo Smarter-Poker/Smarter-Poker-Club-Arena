@@ -796,4 +796,91 @@ export async function processBBJPayout(params: {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// FIX 137: Hand State Snapshots for Crash Recovery (Bible V8 §7.17, §9.2)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Save or update the hand state snapshot after every action.
+ * Uses UPSERT — one active snapshot per table at a time.
+ */
+export async function saveHandStateSnapshot(params: {
+  tableId: string;
+  handNumber: number;
+  stateJson: Record<string, unknown>;
+  configJson: Record<string, unknown>;
+  dealerSeat: number;
+  playersJson: Record<string, unknown>[];
+  stage: string;
+}): Promise<void> {
+  try {
+    const { error } = await supabase.rpc('save_hand_state_snapshot', {
+      p_table_id: params.tableId,
+      p_hand_number: params.handNumber,
+      p_state_json: params.stateJson,
+      p_config_json: params.configJson,
+      p_dealer_seat: params.dealerSeat,
+      p_players_json: params.playersJson,
+      p_stage: params.stage,
+    });
+    if (error) {
+      console.warn(`[saveHandStateSnapshot] Error:`, error.message);
+    }
+  } catch (e) {
+    console.warn(`[saveHandStateSnapshot] Exception:`, e);
+  }
+}
+
+/**
+ * Mark a hand snapshot as complete (after settlement).
+ * Allows the table to start a fresh hand.
+ */
+export async function completeHandSnapshot(tableId: string, handNumber: number): Promise<void> {
+  try {
+    const { error } = await supabase.rpc('complete_hand_snapshot', {
+      p_table_id: tableId,
+      p_hand_number: handNumber,
+    });
+    if (error) {
+      console.warn(`[completeHandSnapshot] Error:`, error.message);
+    }
+  } catch (e) {
+    console.warn(`[completeHandSnapshot] Exception:`, e);
+  }
+}
+
+/**
+ * Get active (incomplete) hand snapshot for crash recovery.
+ * Returns null if no active hand found.
+ */
+export async function getActiveHandSnapshot(tableId: string): Promise<{
+  handNumber: number;
+  stateJson: Record<string, unknown>;
+  configJson: Record<string, unknown>;
+  dealerSeat: number;
+  playersJson: Record<string, unknown>[];
+  stage: string;
+  updatedAt: string;
+} | null> {
+  try {
+    const { data, error } = await supabase.rpc('get_active_hand_snapshot', {
+      p_table_id: tableId,
+    });
+    if (error || !data || data.length === 0) return null;
+    const row = data[0];
+    return {
+      handNumber: row.hand_number,
+      stateJson: row.state_json,
+      configJson: row.config_json,
+      dealerSeat: row.dealer_seat,
+      playersJson: row.players_json,
+      stage: row.stage,
+      updatedAt: row.updated_at,
+    };
+  } catch (e) {
+    console.warn(`[getActiveHandSnapshot] Exception:`, e);
+    return null;
+  }
+}
+
 export default supabase;

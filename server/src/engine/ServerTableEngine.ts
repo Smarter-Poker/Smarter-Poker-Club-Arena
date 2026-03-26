@@ -58,6 +58,9 @@ import {
   logHandHistory,
   processBBJPayout,
   cleanupChannel,
+  saveHandStateSnapshot,
+  completeHandSnapshot,
+  getActiveHandSnapshot,
   supabase,
 } from '../services/supabase.js';
 import type {
@@ -326,6 +329,14 @@ export class ServerTableEngine {
         });
       }
 
+      // FIX 137: Bible V8 §7.17 — Check for interrupted hand from a server crash
+      const recovered = await this.checkCrashRecovery();
+      if (recovered) {
+        console.log(
+          `[ServerTableEngine:${this.tableId}] Crash recovery complete — resuming from hand #${this.handCount}`
+        );
+      }
+
       // Wait for minimum 2 players
       while (this.running) {
         this.seatedPlayers = await loadSeatedPlayers(this.tableId);
@@ -443,172 +454,185 @@ export class ServerTableEngine {
     // Step 4: Register with PreciseActionTimer for deadline tracking (used by ServerActionValidator)
     this.preciseTimer.startTimer(this.tableId, userId, safeDurationSeconds * 1000);
 
-    this.playerTurnTimer = setTimeout(() => {
-      this.playerTurnTimer = null;
-      if (!this.running || !this.handController) return;
+    // FIX 138: Bible V8 §6.1 — 2-second grace period for network latency.
+    // The ServerActionValidator already accepts actions until deadline + 2000ms,
+    // so the auto-fold/check must also wait that long to avoid racing with late actions.
+    const GRACE_PERIOD_MS = 2000;
 
-      const state = this.handController.getState();
-      if (state.currentPlayerSeat === seat) {
-        // Bible V8 §6.2: Auto-activate time bank when primary timer expires
-        // Check BEFORE auto-fold/check — give player extra time if they have time bank remaining
-        if (!this.timeBankActivatedThisTurn) {
-          const autoActivated = this.timeBankEngine.onPrimaryTimerExpired(
-            this.tableId,
-            userId,
-            () => {
-              // This callback fires when the TIME BANK itself expires
-              if (!this.running || !this.handController) return;
-              const tbState = this.handController.getState();
-              if (tbState.currentPlayerSeat !== seat) return;
+    this.playerTurnTimer = setTimeout(
+      () => {
+        this.playerTurnTimer = null;
+        if (!this.running || !this.handController) return;
 
-              const tbPlayer = tbState.players.find((p) => p.seat === seat);
-              const tbToCall = tbPlayer ? Math.max(0, tbState.currentBet - (tbPlayer.bet ?? 0)) : 0;
-              const tbCanCheck = tbToCall === 0;
+        const state = this.handController.getState();
+        if (state.currentPlayerSeat === seat) {
+          // Bible V8 §6.2: Auto-activate time bank when primary timer expires
+          // Check BEFORE auto-fold/check — give player extra time if they have time bank remaining
+          if (!this.timeBankActivatedThisTurn) {
+            const autoActivated = this.timeBankEngine.onPrimaryTimerExpired(
+              this.tableId,
+              userId,
+              () => {
+                // This callback fires when the TIME BANK itself expires
+                if (!this.running || !this.handController) return;
+                const tbState = this.handController.getState();
+                if (tbState.currentPlayerSeat !== seat) return;
 
-              if (tbCanCheck) {
-                console.warn(
-                  `[ServerTableEngine:${this.tableId}] Player ${userId} time bank expired. Auto-checking.`
-                );
-                try {
-                  this.handController!.performAction(seat, 'check');
-                } catch {
+                const tbPlayer = tbState.players.find((p) => p.seat === seat);
+                const tbToCall = tbPlayer
+                  ? Math.max(0, tbState.currentBet - (tbPlayer.bet ?? 0))
+                  : 0;
+                const tbCanCheck = tbToCall === 0;
+
+                if (tbCanCheck) {
+                  console.warn(
+                    `[ServerTableEngine:${this.tableId}] Player ${userId} time bank expired. Auto-checking.`
+                  );
+                  try {
+                    this.handController!.performAction(seat, 'check');
+                  } catch {
+                    try {
+                      this.handController!.performAction(seat, 'fold');
+                    } catch {
+                      /* done */
+                    }
+                  }
+                } else {
+                  console.warn(
+                    `[ServerTableEngine:${this.tableId}] Player ${userId} time bank expired. Auto-folding.`
+                  );
                   try {
                     this.handController!.performAction(seat, 'fold');
                   } catch {
                     /* done */
                   }
                 }
-              } else {
-                console.warn(
-                  `[ServerTableEngine:${this.tableId}] Player ${userId} time bank expired. Auto-folding.`
-                );
+
+                // FIX 124b: Time bank expired → also broadcast timeout event
+                // Without this, players who used a time bank and STILL timed out
+                // would not see the "buy more" popup.
+                const tbUsesLeft = this.timeBankEngine.getUsesRemaining(this.tableId, userId);
                 try {
-                  this.handController!.performAction(seat, 'fold');
+                  broadcastHandState(this.tableId, {
+                    type: 'time_bank_timeout',
+                    table_id: this.tableId,
+                    player_id: userId,
+                    uses_remaining: tbUsesLeft,
+                    timed_out_action: tbCanCheck ? 'check' : 'fold',
+                    show_buy_more: tbUsesLeft <= 0,
+                  });
                 } catch {
-                  /* done */
+                  /* broadcast failure is non-fatal */
+                }
+              }
+            );
+
+            if (autoActivated) {
+              this.timeBankActivatedThisTurn = true;
+              const bankSeconds = this.timeBankEngine.getRemainingSeconds(this.tableId, userId);
+              const usesAfterActivation = this.timeBankEngine.getUsesRemaining(
+                this.tableId,
+                userId
+              );
+              console.log(
+                `[ServerTableEngine:${this.tableId}] Auto-activated time bank for ${userId} (${bankSeconds}s remaining, ${usesAfterActivation} uses left)`
+              );
+              // Restart turn timer with time bank duration
+              this.startTurnTimer(userId, seat, bankSeconds);
+
+              // Broadcast time bank activation to other players
+              try {
+                supabase
+                  .channel(`table:${this.tableId}`)
+                  .send({
+                    type: 'broadcast',
+                    event: 'time_bank_activated',
+                    payload: {
+                      player_id: userId,
+                      table_id: this.tableId,
+                      additional_seconds: bankSeconds,
+                      auto_activated: true,
+                      uses_remaining: usesAfterActivation,
+                    },
+                  })
+                  .catch(() => {});
+              } catch {
+                /* broadcast failure is non-fatal */
+              }
+
+              // FIX 125: Warn player when down to last 5 time banks (includes 0 = last one just used)
+              if (usesAfterActivation >= 0 && usesAfterActivation <= 5) {
+                try {
+                  broadcastHandState(this.tableId, {
+                    type: 'time_bank_low',
+                    table_id: this.tableId,
+                    player_id: userId,
+                    uses_remaining: usesAfterActivation,
+                  });
+                } catch {
+                  /* broadcast failure is non-fatal */
                 }
               }
 
-              // FIX 124b: Time bank expired → also broadcast timeout event
-              // Without this, players who used a time bank and STILL timed out
-              // would not see the "buy more" popup.
-              const tbUsesLeft = this.timeBankEngine.getUsesRemaining(this.tableId, userId);
-              try {
-                broadcastHandState(this.tableId, {
-                  type: 'time_bank_timeout',
-                  table_id: this.tableId,
-                  player_id: userId,
-                  uses_remaining: tbUsesLeft,
-                  timed_out_action: tbCanCheck ? 'check' : 'fold',
-                  show_buy_more: tbUsesLeft <= 0,
-                });
-              } catch {
-                /* broadcast failure is non-fatal */
-              }
+              return; // Time bank activated — don't auto-fold/check yet
             }
-          );
-
-          if (autoActivated) {
-            this.timeBankActivatedThisTurn = true;
-            const bankSeconds = this.timeBankEngine.getRemainingSeconds(this.tableId, userId);
-            const usesAfterActivation = this.timeBankEngine.getUsesRemaining(this.tableId, userId);
-            console.log(
-              `[ServerTableEngine:${this.tableId}] Auto-activated time bank for ${userId} (${bankSeconds}s remaining, ${usesAfterActivation} uses left)`
-            );
-            // Restart turn timer with time bank duration
-            this.startTurnTimer(userId, seat, bankSeconds);
-
-            // Broadcast time bank activation to other players
-            try {
-              supabase
-                .channel(`table:${this.tableId}`)
-                .send({
-                  type: 'broadcast',
-                  event: 'time_bank_activated',
-                  payload: {
-                    player_id: userId,
-                    table_id: this.tableId,
-                    additional_seconds: bankSeconds,
-                    auto_activated: true,
-                    uses_remaining: usesAfterActivation,
-                  },
-                })
-                .catch(() => {});
-            } catch {
-              /* broadcast failure is non-fatal */
-            }
-
-            // FIX 125: Warn player when down to last 5 time banks (includes 0 = last one just used)
-            if (usesAfterActivation >= 0 && usesAfterActivation <= 5) {
-              try {
-                broadcastHandState(this.tableId, {
-                  type: 'time_bank_low',
-                  table_id: this.tableId,
-                  player_id: userId,
-                  uses_remaining: usesAfterActivation,
-                });
-              } catch {
-                /* broadcast failure is non-fatal */
-              }
-            }
-
-            return; // Time bank activated — don't auto-fold/check yet
           }
-        }
 
-        const player = state.players.find((p) => p.seat === seat);
-        const amountToCall = player ? Math.max(0, state.currentBet - (player.bet ?? 0)) : 0;
-        const canCheck = amountToCall === 0;
+          const player = state.players.find((p) => p.seat === seat);
+          const amountToCall = player ? Math.max(0, state.currentBet - (player.bet ?? 0)) : 0;
+          const canCheck = amountToCall === 0;
 
-        if (canCheck) {
-          // No bet outstanding → auto-check (standard poker behavior)
-          console.warn(
-            `[ServerTableEngine:${this.tableId}] Player ${userId} timed out. Auto-checking (no bet to call).`
-          );
-          try {
-            this.handController.performAction(seat, 'check');
-          } catch (err) {
-            console.error(`[ServerTableEngine:${this.tableId}] Auto-check failed:`, err);
-            // Fallback to fold if check somehow fails
+          if (canCheck) {
+            // No bet outstanding → auto-check (standard poker behavior)
+            console.warn(
+              `[ServerTableEngine:${this.tableId}] Player ${userId} timed out. Auto-checking (no bet to call).`
+            );
+            try {
+              this.handController.performAction(seat, 'check');
+            } catch (err) {
+              console.error(`[ServerTableEngine:${this.tableId}] Auto-check failed:`, err);
+              // Fallback to fold if check somehow fails
+              try {
+                this.handController.performAction(seat, 'fold');
+              } catch (foldErr) {
+                console.error(
+                  `[ServerTableEngine:${this.tableId}] Auto-fold fallback also failed:`,
+                  foldErr
+                );
+              }
+            }
+          } else {
+            // Bet outstanding → auto-fold
+            console.warn(
+              `[ServerTableEngine:${this.tableId}] Player ${userId} timed out. Auto-folding (${amountToCall} to call).`
+            );
             try {
               this.handController.performAction(seat, 'fold');
-            } catch (foldErr) {
-              console.error(
-                `[ServerTableEngine:${this.tableId}] Auto-fold fallback also failed:`,
-                foldErr
-              );
+            } catch (err) {
+              console.error(`[ServerTableEngine:${this.tableId}] Auto-fold failed:`, err);
             }
           }
-        } else {
-          // Bet outstanding → auto-fold
-          console.warn(
-            `[ServerTableEngine:${this.tableId}] Player ${userId} timed out. Auto-folding (${amountToCall} to call).`
-          );
+
+          // FIX 124: After timeout → broadcast event so client shows "Buy More Time Banks" popup
+          // This fires when player times out WITHOUT time bank auto-extending (disabled or depleted)
+          const usesLeft = this.timeBankEngine.getUsesRemaining(this.tableId, userId);
           try {
-            this.handController.performAction(seat, 'fold');
-          } catch (err) {
-            console.error(`[ServerTableEngine:${this.tableId}] Auto-fold failed:`, err);
+            broadcastHandState(this.tableId, {
+              type: 'time_bank_timeout',
+              table_id: this.tableId,
+              player_id: userId,
+              uses_remaining: usesLeft,
+              timed_out_action: canCheck ? 'check' : 'fold',
+              // FIX 124: If zero uses remaining, client should show buy-more popup
+              show_buy_more: usesLeft <= 0,
+            });
+          } catch {
+            /* broadcast failure is non-fatal */
           }
         }
-
-        // FIX 124: After timeout → broadcast event so client shows "Buy More Time Banks" popup
-        // This fires when player times out WITHOUT time bank auto-extending (disabled or depleted)
-        const usesLeft = this.timeBankEngine.getUsesRemaining(this.tableId, userId);
-        try {
-          broadcastHandState(this.tableId, {
-            type: 'time_bank_timeout',
-            table_id: this.tableId,
-            player_id: userId,
-            uses_remaining: usesLeft,
-            timed_out_action: canCheck ? 'check' : 'fold',
-            // FIX 124: If zero uses remaining, client should show buy-more popup
-            show_buy_more: usesLeft <= 0,
-          });
-        } catch {
-          /* broadcast failure is non-fatal */
-        }
-      }
-    }, safeDurationSeconds * 1000);
+      },
+      safeDurationSeconds * 1000 + GRACE_PERIOD_MS
+    );
   }
 
   /**
@@ -1209,6 +1233,10 @@ export class ServerTableEngine {
       console.log(
         `[ServerTableEngine:${this.tableId}] Player ${userId} → ${normalizedAction}${amount ? ` ${amount}` : ''}`
       );
+
+      // FIX 137: Bible V8 §7.17 — Snapshot hand state after every successful action (fire-and-forget)
+      this.saveSnapshot().catch(() => {});
+
       return { success: true };
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : 'Action failed';
@@ -1567,6 +1595,9 @@ export class ServerTableEngine {
       // Start the hand!
       try {
         this.handController!.start();
+
+        // FIX 137: Bible V8 §7.17 — Snapshot initial hand state for crash recovery
+        this.saveSnapshot().catch(() => {});
       } catch (err) {
         console.error(`[ServerTableEngine:${this.tableId}] Failed to start hand:`, err);
         clearTimeout(handTimeout);
@@ -1720,6 +1751,9 @@ export class ServerTableEngine {
         break;
 
       case 'HAND_COMPLETE':
+        // FIX 137: Bible V8 §7.17 — Mark hand snapshot as complete (settlement done)
+        completeHandSnapshot(this.tableId, this.handCount).catch(() => {});
+
         // Capture rake and BBJ fee from hand completion event
         if ((event as any).rake !== undefined) {
           this.currentHandRake = (event as any).rake;
@@ -3141,5 +3175,87 @@ export class ServerTableEngine {
 
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  // ═════════════════════════════════════════════════════════════════════════════
+  // FIX 137: Bible V8 §7.17 — CRASH RECOVERY HELPERS
+  // ═════════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Save a snapshot of the current hand state to the database.
+   * Called after every successful action and after hand start.
+   * The snapshot excludes the `deck` field (not JSON-serializable).
+   */
+  private async saveSnapshot(): Promise<void> {
+    if (!this.handController || !this.tableInfo) return;
+
+    const state = this.handController.getState();
+
+    // Serialize state — exclude `deck` (internal Deck instance, not JSON-safe)
+    const { deck, ...serializableState } = state as any;
+
+    const fullRakeConfig = this.getFullRakeAndBBJConfig();
+
+    const config: HandConfig = {
+      tableId: this.tableId,
+      handNumber: this.handCount,
+      gameVariant: this.tableInfo.game_variant as GameVariant,
+      smallBlind: this.tableInfo.small_blind,
+      bigBlind: this.tableInfo.big_blind,
+      ante: this.tableInfo.ante,
+      rakeConfig: {
+        percent: fullRakeConfig.rakePercent,
+        cap: fullRakeConfig.rakeCap,
+        noFlopNoDrop: true,
+      },
+      bbjConfig: {
+        enabled: fullRakeConfig.bbjEnabled,
+        feeBB: fullRakeConfig.bbjFeeBB,
+        minPotBB: fullRakeConfig.rules.minPotBB,
+        minPlayersDealt: fullRakeConfig.rules.minPlayersDealt,
+      },
+    };
+
+    await saveHandStateSnapshot({
+      tableId: this.tableId,
+      handNumber: this.handCount,
+      stateJson: serializableState,
+      configJson: config as unknown as Record<string, unknown>,
+      dealerSeat: this.currentHandDealerSeat,
+      playersJson: state.players.map((p) => ({
+        seat: p.seat,
+        user_id: p.user_id,
+        username: p.username,
+        stack: p.stack,
+        is_horse: p.is_horse ?? false,
+      })),
+      stage: state.stage,
+    });
+  }
+
+  /**
+   * Check for an incomplete hand snapshot on server startup.
+   * If found, log it for now — full resume requires reconstructing HandController
+   * from serialized state, which is a future enhancement.
+   */
+  async checkCrashRecovery(): Promise<boolean> {
+    const snapshot = await getActiveHandSnapshot(this.tableId);
+    if (!snapshot) return false;
+
+    console.warn(
+      `[ServerTableEngine:${this.tableId}] CRASH RECOVERY: Found incomplete hand #${snapshot.handNumber} ` +
+        `(stage: ${snapshot.stage}, last updated: ${snapshot.updatedAt}). ` +
+        `Marking as complete and starting fresh — players retain their last-known stacks.`
+    );
+
+    // For now: mark the orphaned hand as complete so we don't get stuck.
+    // Full state reconstruction (rebuilding HandController from snapshot) is a future enhancement.
+    // The snapshot data IS preserved in the DB for manual recovery/auditing if needed.
+    await completeHandSnapshot(this.tableId, snapshot.handNumber);
+
+    // Set handCount to continue from where we left off
+    this.handCount = snapshot.handNumber;
+
+    return true;
   }
 }

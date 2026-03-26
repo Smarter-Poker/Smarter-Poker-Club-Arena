@@ -9,17 +9,31 @@
   z-index: 100;
 }
 
-/* Position variants — top-left/top-right use default dropdown positioning (top:100%) */
+/* Position variants */
+
+.table-menu--top-left .table-menu__dropdown {
+  left: 0;
+  right: auto;
+}
+
+.table-menu--top-right .table-menu__dropdown {
+  right: 0;
+  left: auto;
+}
 
 .table-menu--bottom-left .table-menu__dropdown {
   top: auto;
   bottom: 100%;
+  left: 0;
+  right: auto;
   margin-bottom: 8px;
 }
 
 .table-menu--bottom-right .table-menu__dropdown {
   top: auto;
   bottom: 100%;
+  right: 0;
+  left: auto;
   margin-bottom: 8px;
 }
 
@@ -87,7 +101,7 @@
 .table-menu__dropdown {
   position: absolute;
   top: 100%;
-  right: 0;
+  left: 0;
   margin-top: 8px;
   min-width: 220px;
   background: linear-gradient(180deg, rgba(28, 33, 40, 0.96) 0%, rgba(22, 27, 34, 0.98) 100%);

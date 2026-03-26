@@ -6,7 +6,7 @@
  * Theme customization modal with:
  *   - Game type selector dropdown (ALL, NLH, FLH, 6+, PLO, etc.)
  *   - 5-tab layout (Themes, Table, Button, Background, Cards)
- *   - VIP tier gating (Free/Bronze/Silver/Gold)
+ *   - Binary VIP gating (Free items vs VIP-only items)
  *   - Per-game-type persistence via user_theme_settings table
  *
  * Bible V8 §11.2.4: Stored in user_theme_settings table
@@ -26,7 +26,8 @@ export interface ThemeSettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   userId: string;
-  vipLevel: string; // 'free' | 'bronze' | 'silver' | 'gold' | 'platinum' | 'diamond'
+  /** Whether the user is a VIP member (binary: free or VIP) */
+  isVip: boolean;
 }
 
 interface ThemeSelection {
@@ -43,7 +44,8 @@ interface ThemeAsset {
   id: string;
   name: string;
   thumbnail: string; // CSS gradient or image URL for preview
-  tier: 'free' | 'bronze' | 'silver' | 'gold';
+  /** Whether the asset requires VIP access */
+  vipOnly: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -70,31 +72,31 @@ const THEME_ASSETS: Record<ThemeTab, ThemeAsset[]> = {
       id: 'default-dark',
       name: 'Default Dark',
       thumbnail: 'linear-gradient(135deg, #1a1a2e, #16213e)',
-      tier: 'free',
+      vipOnly: false,
     },
     {
       id: 'classic-brown',
       name: 'Classic Brown',
       thumbnail: 'linear-gradient(135deg, #3e2723, #5d4037)',
-      tier: 'free',
+      vipOnly: false,
     },
     {
       id: 'neon-blue',
       name: 'Neon Blue',
       thumbnail: 'linear-gradient(135deg, #0d47a1, #1565c0)',
-      tier: 'bronze',
+      vipOnly: true,
     },
     {
       id: 'rustic-wood',
       name: 'Rustic Wood',
       thumbnail: 'linear-gradient(135deg, #4e342e, #795548)',
-      tier: 'silver',
+      vipOnly: true,
     },
     {
       id: 'casino-green',
       name: 'Casino Green',
       thumbnail: 'linear-gradient(135deg, #1b5e20, #2e7d32)',
-      tier: 'gold',
+      vipOnly: true,
     },
   ],
   table: [
@@ -102,31 +104,31 @@ const THEME_ASSETS: Record<ThemeTab, ThemeAsset[]> = {
       id: 'dark-felt',
       name: 'Dark Felt',
       thumbnail: 'linear-gradient(135deg, #1a1a2e, #0f0f1a)',
-      tier: 'free',
+      vipOnly: false,
     },
     {
       id: 'brown-felt',
       name: 'Brown Felt',
       thumbnail: 'linear-gradient(135deg, #3e2723, #4e342e)',
-      tier: 'free',
+      vipOnly: false,
     },
     {
       id: 'neon-blue-felt',
       name: 'Neon Blue',
       thumbnail: 'linear-gradient(135deg, #0d47a1, #1a237e)',
-      tier: 'bronze',
+      vipOnly: true,
     },
     {
       id: 'red-leather',
       name: 'Red Leather',
       thumbnail: 'linear-gradient(135deg, #b71c1c, #c62828)',
-      tier: 'silver',
+      vipOnly: true,
     },
     {
       id: 'green-casino',
       name: 'Green Casino',
       thumbnail: 'linear-gradient(135deg, #1b5e20, #388e3c)',
-      tier: 'gold',
+      vipOnly: true,
     },
   ],
   button: [
@@ -134,31 +136,31 @@ const THEME_ASSETS: Record<ThemeTab, ThemeAsset[]> = {
       id: 'red-d-gear',
       name: 'Red D',
       thumbnail: 'linear-gradient(135deg, #c62828, #e53935)',
-      tier: 'free',
+      vipOnly: false,
     },
     {
       id: 'gray-d-gear',
       name: 'Gray D',
       thumbnail: 'linear-gradient(135deg, #616161, #757575)',
-      tier: 'free',
+      vipOnly: false,
     },
     {
       id: 'blue-crystal',
       name: 'Blue Crystal',
       thumbnail: 'linear-gradient(135deg, #1565c0, #42a5f5)',
-      tier: 'bronze',
+      vipOnly: true,
     },
     {
       id: 'gold-star',
       name: 'Gold Star',
       thumbnail: 'linear-gradient(135deg, #f57f17, #fbc02d)',
-      tier: 'silver',
+      vipOnly: true,
     },
     {
       id: 'sports-themed',
       name: 'Sports',
       thumbnail: 'linear-gradient(135deg, #33691e, #558b2f)',
-      tier: 'gold',
+      vipOnly: true,
     },
   ],
   background: [
@@ -166,31 +168,31 @@ const THEME_ASSETS: Record<ThemeTab, ThemeAsset[]> = {
       id: 'diamond-pattern',
       name: 'Diamond',
       thumbnail: 'linear-gradient(135deg, #263238, #37474f)',
-      tier: 'free',
+      vipOnly: false,
     },
     {
       id: 'stone-concrete',
       name: 'Stone',
       thumbnail: 'linear-gradient(135deg, #424242, #616161)',
-      tier: 'free',
+      vipOnly: false,
     },
     {
       id: 'galaxy-nebula',
       name: 'Galaxy',
       thumbnail: 'linear-gradient(135deg, #1a237e, #311b92)',
-      tier: 'bronze',
+      vipOnly: true,
     },
     {
       id: 'hardwood-floor',
       name: 'Hardwood',
       thumbnail: 'linear-gradient(135deg, #5d4037, #795548)',
-      tier: 'silver',
+      vipOnly: true,
     },
     {
       id: 'teal-tile',
       name: 'Teal Tile',
       thumbnail: 'linear-gradient(135deg, #00695c, #00897b)',
-      tier: 'gold',
+      vipOnly: true,
     },
   ],
   cards: [
@@ -198,31 +200,31 @@ const THEME_ASSETS: Record<ThemeTab, ThemeAsset[]> = {
       id: 'standard-red',
       name: 'Standard Red',
       thumbnail: 'linear-gradient(135deg, #c62828, #e53935)',
-      tier: 'free',
+      vipOnly: false,
     },
     {
       id: 'standard-blue',
       name: 'Standard Blue',
       thumbnail: 'linear-gradient(135deg, #1565c0, #1976d2)',
-      tier: 'free',
+      vipOnly: false,
     },
     {
       id: 'premium-gold',
       name: 'Premium Gold',
       thumbnail: 'linear-gradient(135deg, #f57f17, #ff8f00)',
-      tier: 'bronze',
+      vipOnly: true,
     },
     {
       id: 'premium-black',
       name: 'Premium Black',
       thumbnail: 'linear-gradient(135deg, #212121, #424242)',
-      tier: 'silver',
+      vipOnly: true,
     },
     {
       id: 'premium-platinum',
       name: 'Platinum',
       thumbnail: 'linear-gradient(135deg, #78909c, #90a4ae)',
-      tier: 'gold',
+      vipOnly: true,
     },
   ],
 };
@@ -243,21 +245,17 @@ const DEFAULT_SELECTION: ThemeSelection = {
   cards_id: 'standard-red',
 };
 
-// VIP tier hierarchy for gating
-const VIP_TIERS = ['free', 'bronze', 'silver', 'gold', 'platinum', 'diamond'] as const;
-
-function canAccessTier(userTier: string, requiredTier: string): boolean {
-  const userIdx = VIP_TIERS.indexOf(userTier as any);
-  const reqIdx = VIP_TIERS.indexOf(requiredTier as any);
-  if (userIdx === -1) return requiredTier === 'free';
-  return userIdx >= reqIdx;
+// Binary VIP access check: user is either VIP or not
+function canAccessAsset(isVip: boolean, vipOnly: boolean): boolean {
+  if (!vipOnly) return true; // Free items always accessible
+  return isVip; // VIP-only items require VIP status
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export function ThemeSettingsModal({ isOpen, onClose, userId, vipLevel }: ThemeSettingsModalProps) {
+export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSettingsModalProps) {
   const toast = useToast();
   const [activeTab, setActiveTab] = useState<ThemeTab>('themes');
   const [gameType, setGameType] = useState<string>('ALL');
@@ -328,17 +326,15 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, vipLevel }: ThemeS
   }, [isOpen, userId, gameType]);
 
   const handleAssetSelect = useCallback(
-    (tab: ThemeTab, assetId: string, tier: string) => {
-      if (!canAccessTier(vipLevel, tier)) {
-        toast.info(
-          `This item requires VIP ${tier.charAt(0).toUpperCase() + tier.slice(1)} or higher.`
-        );
+    (tab: ThemeTab, assetId: string, vipOnly: boolean) => {
+      if (!canAccessAsset(isVip, vipOnly)) {
+        toast.info('This item requires VIP membership.');
         return;
       }
       const field = TAB_TO_FIELD[tab];
       setSelection((prev) => ({ ...prev, [field]: assetId }));
     },
-    [vipLevel, toast]
+    [isVip, toast]
   );
 
   const handleSave = useCallback(async () => {
@@ -422,29 +418,24 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, vipLevel }: ThemeS
         <div className="theme-modal__grid">
           {currentAssets.map((asset) => {
             const isSelected = currentSelected === asset.id;
-            const isLocked = !canAccessTier(vipLevel, asset.tier);
+            const isLocked = !canAccessAsset(isVip, asset.vipOnly);
 
             return (
               <div
                 key={asset.id}
                 className={`theme-asset ${isSelected ? 'theme-asset--selected' : ''} ${isLocked ? 'theme-asset--locked' : ''}`}
-                onClick={() => handleAssetSelect(activeTab, asset.id, asset.tier)}
+                onClick={() => handleAssetSelect(activeTab, asset.id, asset.vipOnly)}
               >
                 <div className="theme-asset__preview" style={{ background: asset.thumbnail }}>
                   {isLocked && (
                     <div className="theme-asset__lock">
                       <span className="theme-asset__lock-icon">VIP</span>
-                      <span className="theme-asset__lock-tier">
-                        {asset.tier.charAt(0).toUpperCase() + asset.tier.slice(1)}
-                      </span>
                     </div>
                   )}
                   {isSelected && !isLocked && <div className="theme-asset__check">✓</div>}
                 </div>
                 <span className="theme-asset__name">{asset.name}</span>
-                {asset.tier !== 'free' && !isLocked && (
-                  <span className="theme-asset__tier-badge">{asset.tier}</span>
-                )}
+                {asset.vipOnly && !isLocked && <span className="theme-asset__tier-badge">VIP</span>}
               </div>
             );
           })}

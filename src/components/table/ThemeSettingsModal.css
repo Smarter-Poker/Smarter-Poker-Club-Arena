@@ -185,12 +185,6 @@
   letter-spacing: 0.05em;
 }
 
-.theme-asset__lock-tier {
-  font-size: 10px;
-  color: rgba(255, 255, 255, 0.7);
-  margin-top: 2px;
-}
-
 .theme-asset__check {
   position: absolute;
   top: 6px;

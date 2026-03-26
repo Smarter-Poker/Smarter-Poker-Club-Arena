@@ -817,6 +817,7 @@ export default function TablePage({
 
   // Actual club_id from the table record (NOT the tableId)
   const actualClubIdRef = useRef<string>('');
+  const [actualClubIdLoaded, setActualClubIdLoaded] = useState(false); // Tracks when club_id is available
   const [actionTimeSeconds, setActionTimeSeconds] = useState(15);
 
   // Chat — extracted to useTableChat hook
@@ -916,7 +917,7 @@ export default function TablePage({
       }
     };
     checkObserverChatPermission();
-  }, [userId, tableState.heroSeat]);
+  }, [userId, tableState.heroSeat, actualClubIdLoaded]);
 
   // Reaction picker state
   const [isReactionPickerOpen, setIsReactionPickerOpen] = useState(false);
@@ -2294,6 +2295,7 @@ export default function TablePage({
 
         // Store actual club_id for persistence and rake
         actualClubIdRef.current = table.club_id || '';
+        setActualClubIdLoaded(true); // Signal observer chat permission check
         setActionTimeSeconds(table.action_time_seconds || 15);
 
         // ─── Load bounty data for KO/PKO tournaments ───
@@ -3400,6 +3402,17 @@ export default function TablePage({
   // ═══════════════════════════════════════════════════════════════════════
   const prevHandNumberRef = useRef<number>(0);
   const prevHandStackRef = useRef<number>(0);
+  const heroFoldedInCurrentHandRef = useRef(false);
+
+  // Track if hero folds during the current hand (status changes mid-hand)
+  useEffect(() => {
+    const heroPlayer = tableState.players[tableState.heroSeat - 1];
+    if (heroPlayer?.status === 'folded') {
+      heroFoldedInCurrentHandRef.current = true;
+    }
+  }, [tableState.players, tableState.heroSeat]);
+
+  // Detect hand number change → capture previous hand result
   useEffect(() => {
     const handNum = tableState.handNumber ?? 0;
     const heroPlayer = tableState.players[tableState.heroSeat - 1];
@@ -3409,18 +3422,20 @@ export default function TablePage({
       // Hand number changed — the previous hand just completed
       if (prevHandNumberRef.current > 0 && heroPlayer) {
         const stackChange = heroStack - prevHandStackRef.current;
-        const heroFolded = heroPlayer.status === 'folded';
+        const heroDidWin = stackChange > 0;
         setPrevHandResult({
           handNumber: prevHandNumberRef.current,
           result: stackChange,
-          didWin: stackChange > 0,
-          didFold: heroFolded,
+          didWin: heroDidWin,
+          didFold: heroFoldedInCurrentHandRef.current,
         });
-        // Track hands played + VPIP for mini stats card
+        // Track hands played + wins for mini stats card
         handsPlayedRef.current++;
+        if (heroDidWin) handsWonRef.current++;
       }
       prevHandNumberRef.current = handNum;
       prevHandStackRef.current = heroStack;
+      heroFoldedInCurrentHandRef.current = false; // Reset for new hand
     }
   }, [tableState.handNumber, tableState.heroSeat, tableState.players]);
 
@@ -3733,6 +3748,14 @@ export default function TablePage({
       const heroSeat = tableState.heroSeat;
       const hero = getPlayerAtSeat(heroSeat);
       const heroStack = hero?.stack || 0;
+
+      // Track VPIP: voluntary preflop action (call/raise/allin, NOT fold/check)
+      if (
+        tableState.boardStage === 'preflop' &&
+        (action === 'call' || action === 'raise' || action === 'allin')
+      ) {
+        vpipCountRef.current++;
+      }
 
       //All local engine calls removed — server is authoritative
       switch (action) {

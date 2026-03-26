@@ -1113,7 +1113,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
         isOpen={showThemeSettings}
         onClose={() => setShowThemeSettings(false)}
         userId={user?.id || ''}
-        vipLevel={isVIP ? 'gold' : 'free'}
+        isVip={isVIP}
       />
     </>
   );

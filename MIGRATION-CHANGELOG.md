@@ -2172,3 +2172,42 @@ All 12 settings verified against Bible V8 §11.1.1 table — correct column name
 All 5 theme tabs verified against Bible V8 §11.2.2 — correct items per tab, tier distribution.
 Both UI locations verified — table settings panel and hamburger menu both render inline.
 Database migration verified — correct schema, RLS, triggers, constraints.
+
+---
+
+### FIX 129 — VIP Simplification: Multi-Tier → Binary (2026-03-26)
+
+**Reason**: Per Dan's direction, simplified VIP gating from a multi-tier hierarchy (free/bronze/silver/gold/platinum/diamond) to a binary system (free vs VIP). This affects Theme Customization and HUD observer name visibility.
+
+**Files Modified (6):**
+
+1. **`src/components/table/ThemeSettingsModal.tsx`**
+   - BEFORE: `ThemeSettingsModalProps.vipLevel: string`, `ThemeAsset.tier: 'free'|'bronze'|'silver'|'gold'`, `VIP_TIERS` array, `canAccessTier()` index-comparison function
+   - AFTER: `ThemeSettingsModalProps.isVip: boolean`, `ThemeAsset.vipOnly: boolean`, `canAccessAsset(isVip, vipOnly)` simple boolean check
+   - Updated all 25 asset entries: 10 free (2 per tab) → `vipOnly: false`, 15 VIP (3 per tab) → `vipOnly: true`
+   - JSX: Lock overlay simplified from showing tier name to just "VIP" text
+
+2. **`src/components/table/ThemeSettingsModal.css`**
+   - Removed dead `.theme-asset__lock-tier` class (no longer referenced after JSX update)
+
+3. **`src/components/table/MiniStatsCard.tsx`**
+   - Removed `isVip?: boolean` from `MiniStatsCardProps` interface
+   - Removed `isVip = false` from component destructuring
+   - Observer names now visible to ALL users (removed VIP gating on name visibility)
+   - Removed "VIP to see" hint text for non-VIP users
+
+4. **`src/components/table/TableMenu.tsx`**
+   - Removed `isVip?: boolean` from `TableMenuProps` interface
+   - Removed `isVip = false` from component destructuring
+   - Observer names now unconditionally displayed (removed VIP conditional rendering)
+   - Removed `.table-menu__observers-vip-hint` JSX (dead code after VIP removal)
+
+5. **`src/components/table/SettingsPanel.tsx`**
+   - Line 427: Changed `vipLevel={isVip ? 'gold' : 'free'}` → `isVip={isVip}`
+
+6. **`src/components/navigation/HamburgerMenu.tsx`**
+   - Line 1116: Changed `vipLevel={isVIP ? 'gold' : 'free'}` → `isVip={isVIP}`
+
+**Deviation from Bible V8**: §11.2.3 specifies multi-tier VIP (bronze/silver/gold). This was intentionally simplified to binary per Dan's direction. The database `user_theme_settings` table is unaffected (stores asset IDs, not tier info).
+
+**Verification**: 4-pass maximum-rigor audit completed (Wiring, Real-Time, Adversarial, Edge Cases) — 0 bugs found across all 4 consecutive passes.

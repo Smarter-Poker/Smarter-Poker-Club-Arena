@@ -491,8 +491,9 @@ export class ServerTableEngine {
           if (autoActivated) {
             this.timeBankActivatedThisTurn = true;
             const bankSeconds = this.timeBankEngine.getRemainingSeconds(this.tableId, userId);
+            const usesAfterActivation = this.timeBankEngine.getUsesRemaining(this.tableId, userId);
             console.log(
-              `[ServerTableEngine:${this.tableId}] Auto-activated time bank for ${userId} (${bankSeconds}s remaining)`
+              `[ServerTableEngine:${this.tableId}] Auto-activated time bank for ${userId} (${bankSeconds}s remaining, ${usesAfterActivation} uses left)`
             );
             // Restart turn timer with time bank duration
             this.startTurnTimer(userId, seat, bankSeconds);
@@ -509,12 +510,28 @@ export class ServerTableEngine {
                     table_id: this.tableId,
                     additional_seconds: bankSeconds,
                     auto_activated: true,
+                    uses_remaining: usesAfterActivation,
                   },
                 })
                 .catch(() => {});
             } catch {
               /* broadcast failure is non-fatal */
             }
+
+            // FIX 125: Warn player when down to last 5 time banks
+            if (usesAfterActivation > 0 && usesAfterActivation <= 5) {
+              try {
+                broadcastHandState(this.tableId, {
+                  type: 'time_bank_low',
+                  table_id: this.tableId,
+                  player_id: userId,
+                  uses_remaining: usesAfterActivation,
+                });
+              } catch {
+                /* broadcast failure is non-fatal */
+              }
+            }
+
             return; // Time bank activated — don't auto-fold/check yet
           }
         }
@@ -552,6 +569,23 @@ export class ServerTableEngine {
           } catch (err) {
             console.error(`[ServerTableEngine:${this.tableId}] Auto-fold failed:`, err);
           }
+        }
+
+        // FIX 124: After timeout → broadcast event so client shows "Buy More Time Banks" popup
+        // This fires when player times out WITHOUT time bank auto-extending (disabled or depleted)
+        const usesLeft = this.timeBankEngine.getUsesRemaining(this.tableId, userId);
+        try {
+          broadcastHandState(this.tableId, {
+            type: 'time_bank_timeout',
+            table_id: this.tableId,
+            player_id: userId,
+            uses_remaining: usesLeft,
+            timed_out_action: canCheck ? 'check' : 'fold',
+            // FIX 124: If zero uses remaining, client should show buy-more popup
+            show_buy_more: usesLeft <= 0,
+          });
+        } catch {
+          /* broadcast failure is non-fatal */
         }
       }
     }, safeDurationSeconds * 1000);
@@ -651,6 +685,21 @@ export class ServerTableEngine {
         })
         .catch(() => {});
     } catch (e) {}
+
+    // FIX 125: Warn player when down to last 5 time banks (manual activation path)
+    const manualUsesLeft = bank?.usesRemaining ?? 0;
+    if (manualUsesLeft > 0 && manualUsesLeft <= 5) {
+      try {
+        broadcastHandState(this.tableId, {
+          type: 'time_bank_low',
+          table_id: this.tableId,
+          player_id: userId,
+          uses_remaining: manualUsesLeft,
+        });
+      } catch {
+        /* broadcast failure is non-fatal */
+      }
+    }
 
     return { success: true };
   }

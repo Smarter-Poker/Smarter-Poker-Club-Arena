@@ -1907,8 +1907,60 @@ Removed `mississippiEnabled` from StraddleConfig, simplified processStraddles() 
 - deck.removeCardsBelow('6') when gameVariant === 'short_deck' ✅
 - Called at HandController construction ✅
 
+### FIX 123 — Time Bank Auto-Extend Only If Enabled + Available (2026-03-26)
+
+**Dan's directive:** "TIME BANK ONLY AUTO EXTENDS IF USER HAS ENABLED IT AND HAVE TIME BANKS AVAILABLE. IF THEY DON'T HAVE ANY AVAILABLE, THEY GET FOLDED"
+
+**File:** `server/src/engine/ServerTableEngine.ts` → TimeBankEngine.configure()
+**What existed:** `autoActivate: true` hardcoded — time bank always tried to auto-activate on timeout
+**What changed:** `autoActivate: timeBankEnabled` — reads `time_bank_enabled` from table settings. If disabled, player is auto-folded/checked immediately on timeout.
+**Flow:** Table has `time_bank_enabled=false` → `autoActivate=false` → `onPrimaryTimerExpired` returns false → auto-fold/check fires
+**Verified:** YES — traced through all 4 scenarios
+
+### FIX 124 — Buy More Time Banks Popup After Timeout (2026-03-26)
+
+**Dan's directive:** "A POP UP TO BUY MORE SHOULD BE ENABLED AFTER THEY ARE 'TIMED OUT'"
+
+**Server file:** `server/src/engine/ServerTableEngine.ts` → startTurnTimer timeout handler
+**Client file:** `src/pages/TablePage.tsx` → hand state subscription
+
+**Server change:** After auto-fold/check on timeout, broadcasts `time_bank_timeout` event:
+
+```
+{ type: 'time_bank_timeout', player_id, uses_remaining, timed_out_action, show_buy_more }
+```
+
+`show_buy_more: true` when `usesRemaining <= 0` (depleted)
+
+**Client change:** Listens for `time_bank_timeout` event. If `show_buy_more=true`, shows toast: "no time banks remaining. Visit the Diamond Store to purchase more!" If `show_buy_more=false`, shows info toast about the timeout action.
+
+**Verified:** YES
+
+### FIX 125 — Low Time Bank Warning at 5 Remaining (2026-03-26)
+
+**Dan's directive:** "POP UP NOTIFICATION SHOULD ALERT USER WHEN THEY ARE DOWN TO THERE LAST 5 TIME BANKS"
+
+**Server file:** `server/src/engine/ServerTableEngine.ts` → both auto-activate and manual activate paths
+**Client file:** `src/pages/TablePage.tsx` → hand state subscription
+
+**Server change:** After EACH time bank activation (auto OR manual), if `usesRemaining > 0 && usesRemaining <= 5`, broadcasts `time_bank_low` event:
+
+```
+{ type: 'time_bank_low', player_id, uses_remaining }
+```
+
+Added in BOTH paths:
+
+1. Auto-activate path (primary timer expiry → auto-extension)
+2. Manual activate path (POST /timebank → activateTimeBank())
+
+**Client change:** Listens for `time_bank_low` event. Shows warning toast: "Warning: Only X time bank(s) remaining!"
+
+**Verified:** YES — traced through auto-activate (3→2 uses) and manual activate (5→4 uses)
+
 ### Known Gaps (Lower Priority)
 
 1. **MonteCarloEquity shortDeck**: Insurance equity calculations don't pass shortDeck flag — lower priority
 2. **Pineapple discard UI**: TablePage.tsx needs card selection UI — server auto-discards until built
 3. **Dead blind**: Player returning from sit-out should post both SB+BB (SB dead) — not implemented
+4. **Buy-more modal**: FIX 124 currently shows a toast; a dedicated modal with Diamond purchase flow would be a better UX

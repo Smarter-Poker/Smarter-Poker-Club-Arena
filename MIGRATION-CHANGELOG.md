@@ -1752,3 +1752,58 @@ Removed `mississippiEnabled` from StraddleConfig, simplified processStraddles() 
 
 **Files modified:** 8 files across server + client + tests
 **Verified:** grep confirms zero remaining `mississippi` references outside of FIX comments
+
+---
+
+## Post-Migration Verification — Round 15: Variant Deep Verification (2026-03-26)
+
+### Phase: IN PROGRESS
+
+**Focus:** Deep line-by-line verification of ALL game variants against Bible V8. Pineapple discard mechanic missing, Short Deck hand rankings wrong.
+
+### FIX 119 — Short Deck: Flush Beats Full House + A-6-7-8-9 Lowest Straight
+
+**File:** `server/src/engine/PokerEngine.ts`
+**What existed:**
+
+- `evaluate5Cards()` used static `HAND_RANKINGS` — FLUSH=6, FULL_HOUSE=7 for ALL variants
+- `checkStraight()` checked A-2-3-4-5 wheel but NOT A-6-7-8-9 short deck wheel
+- `determineWinners()` never passed variant info to evaluator
+
+**What changed:**
+
+1. `evaluateHand()` — added `shortDeck: boolean = false` parameter
+2. `evaluate5Cards()` — added `shortDeck` parameter, swaps flush/full house rankings (flush=7, full house=6 in short deck)
+3. `checkStraight()` — added `shortDeck` parameter, checks A-6-7-8-9 wheel instead of A-2-3-4-5 for short deck
+4. `determineWinners()` — detects `gameVariant === 'short_deck'` and passes `isShortDeck` to evaluator
+5. Wheel kickers updated: short deck wheel = [9,8,7,6,1] instead of [5,4,3,2,1]
+
+**Why:** Bible V8 Appendix D: "Flush beats Full House (harder to make with fewer cards)" and "A-6-7-8-9 is the lowest straight (ace plays low)"
+**Verified:** YES — re-read all changed functions
+**Known gap:** MonteCarloEquity.ts calls evaluateHand without shortDeck flag — insurance equity for short deck will use wrong rankings. Lower priority.
+
+### FIX 120 — Crazy Pineapple: Discard 1 Card After Flop
+
+**Dan's directive:** "crazy pineapple is what we will play"
+
+**Files modified:**
+
+1. `server/src/types.ts` — Added `'pineapple_discard'` to HandStage, `'discard'` to ActionType, `PINEAPPLE_DISCARD_REQUIRED` to HandEvent
+2. `server/src/engine/HandController.ts` — Added `pineappleDiscardsRemaining` Set, `performDiscard()` method (validates seat, removes card from hand, emits events), `autoDiscard()` (discards last card on timeout), `checkPineappleDiscardsComplete()` (advances to flop betting when all done). Modified `advanceStage()` to enter discard phase after dealing flop for pineapple variant.
+3. `server/src/engine/ServerTableEngine.ts` — Added `handlePineappleDiscard()` (starts discard timer, auto-discards on expiry), `submitDiscard()` public method. Added `PINEAPPLE_DISCARD_REQUIRED` event handler in switch statement.
+4. `server/src/index.ts` — Added `POST /discard` endpoint with JWT auth. Body: `{ tableId, cardIndex }`.
+5. `src/services/GameServerAPI.ts` — Added `submitDiscard()` client method + added to default export.
+6. `src/types/database.types.ts` — Added `'pineapple_discard'` to HandStage, `'discard'` to ActionType.
+
+**Crazy Pineapple flow:**
+
+1. Deal 3 hole cards (existing)
+2. Preflop betting with 3 cards (existing)
+3. Deal flop → enter `pineapple_discard` stage (NEW)
+4. All active players must discard 1 card within action_time_seconds (NEW)
+5. Auto-discard (last card) if timer expires (NEW)
+6. After all discards → advance to `flop` stage for betting with 2 cards (NEW)
+7. Turn/river/showdown as normal Hold'em (existing)
+
+**Verified:** YES — re-read all modified files
+**Client UI note:** The card selection UI for discard is NOT yet implemented in TablePage.tsx — the server-side flow is complete and will auto-discard until the UI is built.

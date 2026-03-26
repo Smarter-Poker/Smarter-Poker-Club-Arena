@@ -2887,6 +2887,38 @@ const httpServer = createServer(async (req, res) => {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
+  // POST /discard — FIX 120: Crazy Pineapple discard
+  // Body: { tableId, cardIndex }
+  // ─────────────────────────────────────────────────────────────────────────
+  if (method === 'POST' && url === '/discard') {
+    try {
+      const auth = await authenticateRequest(req);
+      if (!auth) {
+        return sendJSON(res, 401, { success: false, error: 'Authentication required' });
+      }
+
+      const body = JSON.parse(await readBody(req));
+      const { tableId, cardIndex } = body;
+      const userId = auth.userId;
+
+      if (!tableId || cardIndex === undefined) {
+        return sendJSON(res, 400, { success: false, error: 'Missing tableId or cardIndex' });
+      }
+
+      const engine = gameServer.getTableEngine(tableId);
+      if (!engine) {
+        return sendJSON(res, 404, { success: false, error: 'Table engine not found' });
+      }
+
+      const result = engine.submitDiscard(userId, cardIndex);
+      return sendJSON(res, result.success ? 200 : 400, result);
+    } catch (err: any) {
+      console.error('[HTTP] /discard error:', err.message);
+      return sendJSON(res, 500, { success: false, error: 'Invalid request body' });
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
   // 404 — Not Found
   // ─────────────────────────────────────────────────────────────────────────
   sendJSON(res, 404, { error: 'Not Found' });

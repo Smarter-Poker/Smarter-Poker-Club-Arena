@@ -419,6 +419,27 @@ export async function showHand(tableId: string): Promise<ActionResult> {
   }
 }
 
+/**
+ * FIX 120: Crazy Pineapple — submit discard action
+ * @param tableId - The table
+ * @param cardIndex - Which card to discard (0, 1, or 2)
+ */
+export async function submitDiscard(tableId: string, cardIndex: number): Promise<ActionResult> {
+  try {
+    const headers = await getAuthHeaders();
+    const resp = await fetch(`${GAME_SERVER_URL}/discard`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ tableId, cardIndex }),
+    });
+    if (!resp.ok) return { success: false, error: `Server error (${resp.status})` };
+    return (await resp.json()) as ActionResult;
+  } catch (err: unknown) {
+    console.error('[GameServerAPI] Discard failed:', err);
+    return { success: false, error: 'Server unreachable' };
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // WEBSOCKET CONNECTIVITY — Real-time table state sync
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -507,6 +528,7 @@ export default {
   respondToInsurance,
   previewInsurance,
   showHand,
+  submitDiscard, // FIX 120: Crazy Pineapple
   connectTableWebSocket,
   disconnectTableWebSocket,
   getWebSocketStatus,

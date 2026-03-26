@@ -41,6 +41,8 @@ export class HandController {
   private config: HandConfig;
   private state: GameState;
   private eventHandlers: ((event: HandEvent) => void)[] = [];
+  /** FIX 120: Crazy Pineapple — tracks seats that still need to discard after flop */
+  private pineappleDiscardsRemaining: Set<number> = new Set();
 
   constructor(config: HandConfig, players: SeatPlayer[], dealerSeat: number) {
     this.config = config;
@@ -338,6 +340,64 @@ export class HandController {
     return true;
   }
 
+  /**
+   * FIX 120: Crazy Pineapple — player discards one of their 3 hole cards after the flop.
+   * Called by ServerTableEngine when a player submits a discard action.
+   * @param seat - The seat number of the player discarding
+   * @param cardIndex - The index (0, 1, or 2) of the card to discard from their hand
+   * @returns true if discard was accepted
+   */
+  performDiscard(seat: number, cardIndex: number): boolean {
+    if (this.state.stage !== 'pineapple_discard') {
+      return false; // Not in discard phase
+    }
+    if (!this.pineappleDiscardsRemaining.has(seat)) {
+      return false; // Already discarded or not eligible
+    }
+
+    const player = this.state.players.find((p) => p.seat === seat);
+    if (!player || player.is_folded) {
+      this.pineappleDiscardsRemaining.delete(seat);
+      this.checkPineappleDiscardsComplete();
+      return true;
+    }
+
+    if (!player.cards || player.cards.length !== 3) {
+      return false; // Invalid state — should have 3 cards
+    }
+    if (cardIndex < 0 || cardIndex >= player.cards.length) {
+      return false; // Invalid card index
+    }
+
+    // Remove the selected card from the player's hand
+    const discarded = player.cards.splice(cardIndex, 1);
+    this.pineappleDiscardsRemaining.delete(seat);
+
+    // Emit discard action for logging
+    this.emit({ type: 'PLAYER_ACTION', seat, action: 'discard', amount: 0 });
+    // Send updated cards to the player (secure per-player)
+    this.emit({ type: 'CARDS_DEALT', seat, cards: [...player.cards] });
+
+    this.checkPineappleDiscardsComplete();
+    return true;
+  }
+
+  /**
+   * FIX 120: Auto-discard for players who didn't respond in time.
+   * Discards the last (3rd) card by default.
+   */
+  autoDiscard(seat: number): boolean {
+    return this.performDiscard(seat, 2); // Discard last card
+  }
+
+  /** FIX 120: Check if all players have discarded; if so, advance to flop betting */
+  private checkPineappleDiscardsComplete(): void {
+    if (this.pineappleDiscardsRemaining.size === 0) {
+      // All players have discarded — advance to flop betting
+      this.advanceStage(); // stage is 'pineapple_discard' → will set to 'flop' and begin betting
+    }
+  }
+
   // ─────────────────────────────────────────────────────────────────────────
   // Game Flow
   // ─────────────────────────────────────────────────────────────────────────
@@ -425,25 +485,46 @@ export class HandController {
     const deck = this.state.deck as unknown as Deck;
 
     switch (this.state.stage) {
-      case 'preflop':
+      case 'preflop': {
         this.state.stage = 'flop';
         this.state.sawFlop = true;
         const flop = deck.deal(3);
         this.state.communityCards.push(...flop);
         this.emit({ type: 'COMMUNITY_CARDS', stage: 'flop', cards: flop });
+
+        // FIX 120: Crazy Pineapple — after dealing flop, enter discard phase
+        if (this.config.gameVariant === 'pineapple') {
+          this.state.stage = 'pineapple_discard';
+          const activePlayers = this.getActivePlayers();
+          this.pineappleDiscardsRemaining = new Set(activePlayers.map((p) => p.seat));
+          this.emit({
+            type: 'PINEAPPLE_DISCARD_REQUIRED',
+            seats: [...this.pineappleDiscardsRemaining],
+          });
+          // Each player will call performDiscard() — no turn rotation needed,
+          // all players discard simultaneously. Timer managed by ServerTableEngine.
+          return;
+        }
         break;
-      case 'flop':
+      }
+      case 'pineapple_discard':
+        // FIX 120: After all discards are in, proceed to flop betting
+        this.state.stage = 'flop';
+        break;
+      case 'flop': {
         this.state.stage = 'turn';
         const turn = deck.deal(1);
         this.state.communityCards.push(...turn);
         this.emit({ type: 'COMMUNITY_CARDS', stage: 'turn', cards: turn });
         break;
-      case 'turn':
+      }
+      case 'turn': {
         this.state.stage = 'river';
         const river = deck.deal(1);
         this.state.communityCards.push(...river);
         this.emit({ type: 'COMMUNITY_CARDS', stage: 'river', cards: river });
         break;
+      }
       case 'river':
         this.state.stage = 'showdown';
         this.completeHand();
@@ -575,9 +656,12 @@ export class HandController {
     const activePlayers = this.getActivePlayers();
 
     if (activePlayers.length > 1) {
-      const evaluator = this.config.gameVariant.startsWith('plo')
+      // FIX 122: Pass shortDeck flag so showdown display uses correct hand rankings
+      const isShortDeck = this.config.gameVariant === 'short_deck';
+      const isOmaha = this.config.gameVariant.startsWith('plo');
+      const evaluator = isOmaha
         ? evaluateOmahaHand
-        : evaluateHand;
+        : (h: Card[], c: Card[]) => evaluateHand(h, c, isShortDeck);
       const playersWithCards = activePlayers.filter((p) => p.cards && p.cards.length > 0);
       const showdownResults: ShowdownResult[] = playersWithCards.map((p) => ({
         seat: p.seat,

@@ -139,7 +139,15 @@ export function cardsToString(cards: Card[]): string {
 // HAND EVALUATOR
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export function evaluateHand(holeCards: Card[], communityCards: Card[]): EvaluatedHand {
+/**
+ * FIX 119: Added shortDeck parameter for variant-aware evaluation.
+ * Short Deck: flush beats full house, A-6-7-8-9 is the lowest straight.
+ */
+export function evaluateHand(
+  holeCards: Card[],
+  communityCards: Card[],
+  shortDeck: boolean = false
+): EvaluatedHand {
   const allCards = [...holeCards, ...communityCards];
 
   if (allCards.length < 5) {
@@ -150,7 +158,7 @@ export function evaluateHand(holeCards: Card[], communityCards: Card[]): Evaluat
   let bestHand: EvaluatedHand | null = null;
 
   for (const combo of combinations) {
-    const evaluated = evaluate5Cards(combo);
+    const evaluated = evaluate5Cards(combo, shortDeck);
     if (!bestHand || compareHands(evaluated, bestHand) > 0) {
       bestHand = evaluated;
     }
@@ -163,18 +171,31 @@ export function evaluateHand(holeCards: Card[], communityCards: Card[]): Evaluat
   return bestHand;
 }
 
-function evaluate5Cards(cards: Card[]): EvaluatedHand {
+/**
+ * FIX 119: shortDeck param for variant-aware ranking.
+ * Bible V8 Appendix D: In Short Deck, flush beats full house.
+ */
+function evaluate5Cards(cards: Card[], shortDeck: boolean = false): EvaluatedHand {
   const sorted = [...cards].sort((a, b) => RANK_VALUES[b.rank] - RANK_VALUES[a.rank]);
   const isFlush = cards.every((c) => c.suit === cards[0].suit);
   const ranks = sorted.map((c) => RANK_VALUES[c.rank]);
-  const isStraight = checkStraight(ranks);
-  const isWheel = ranks[0] === 14 && ranks[1] === 5;
+  const isStraight = checkStraight(ranks, shortDeck);
+  const isWheel = shortDeck
+    ? ranks[0] === 14 && ranks[1] === 9 // Short Deck wheel: A-6-7-8-9
+    : ranks[0] === 14 && ranks[1] === 5; // Standard wheel: A-2-3-4-5
 
   const rankCounts = new Map<number, number>();
   for (const r of ranks) {
     rankCounts.set(r, (rankCounts.get(r) || 0) + 1);
   }
   const counts = [...rankCounts.values()].sort((a, b) => b - a);
+
+  // FIX 119: Short Deck hand rankings — flush > full house (Bible V8 Appendix D)
+  const FLUSH_RANK = shortDeck ? HAND_RANKINGS.FULL_HOUSE + 0.5 : HAND_RANKINGS.FLUSH;
+  // In Short Deck, flush (6.5) > full house (7) won't work with static ints.
+  // Instead, we swap: flush gets ranking 7, full house gets ranking 6.
+  const flushRanking = shortDeck ? 7 : HAND_RANKINGS.FLUSH; // 7 in short deck, 6 normally
+  const fullHouseRanking = shortDeck ? 6 : HAND_RANKINGS.FULL_HOUSE; // 6 in short deck, 7 normally
 
   if (isFlush && isStraight) {
     if (ranks[0] === 14 && ranks[1] === 13 && !isWheel) {
@@ -189,7 +210,7 @@ function evaluate5Cards(cards: Card[]): EvaluatedHand {
       ranking: HAND_RANKINGS.STRAIGHT_FLUSH,
       name: 'Straight Flush',
       cards: sorted,
-      kickers: isWheel ? [5, 4, 3, 2, 1] : ranks,
+      kickers: isWheel ? (shortDeck ? [9, 8, 7, 6, 1] : [5, 4, 3, 2, 1]) : ranks,
     };
   }
   if (counts[0] === 4)
@@ -199,21 +220,21 @@ function evaluate5Cards(cards: Card[]): EvaluatedHand {
       cards: sorted,
       kickers: getKickers(rankCounts),
     };
+  // FIX 119: In Short Deck, full house is ranked BELOW flush
   if (counts[0] === 3 && counts[1] === 2)
     return {
-      ranking: HAND_RANKINGS.FULL_HOUSE,
+      ranking: fullHouseRanking,
       name: 'Full House',
       cards: sorted,
       kickers: getKickers(rankCounts),
     };
-  if (isFlush)
-    return { ranking: HAND_RANKINGS.FLUSH, name: 'Flush', cards: sorted, kickers: ranks };
+  if (isFlush) return { ranking: flushRanking, name: 'Flush', cards: sorted, kickers: ranks };
   if (isStraight)
     return {
       ranking: HAND_RANKINGS.STRAIGHT,
       name: 'Straight',
       cards: sorted,
-      kickers: isWheel ? [5, 4, 3, 2, 1] : ranks,
+      kickers: isWheel ? (shortDeck ? [9, 8, 7, 6, 1] : [5, 4, 3, 2, 1]) : ranks,
     };
   if (counts[0] === 3)
     return {
@@ -239,21 +260,37 @@ function evaluate5Cards(cards: Card[]): EvaluatedHand {
   return { ranking: HAND_RANKINGS.HIGH_CARD, name: 'High Card', cards: sorted, kickers: ranks };
 }
 
-function checkStraight(ranks: number[]): boolean {
+/**
+ * FIX 119: Short Deck support — A-6-7-8-9 is lowest straight (Bible V8 Appendix D).
+ */
+function checkStraight(ranks: number[], shortDeck: boolean = false): boolean {
   const unique = [...new Set(ranks)].sort((a, b) => b - a);
   if (unique.length < 5) return false;
   for (let i = 0; i <= unique.length - 5; i++) {
     if (unique[i] - unique[i + 4] === 4) return true;
   }
-  // Wheel (A-2-3-4-5)
-  if (
-    unique.includes(14) &&
-    unique.includes(5) &&
-    unique.includes(4) &&
-    unique.includes(3) &&
-    unique.includes(2)
-  ) {
-    return true;
+  if (shortDeck) {
+    // Short Deck wheel: A-6-7-8-9 (ace plays low)
+    if (
+      unique.includes(14) &&
+      unique.includes(9) &&
+      unique.includes(8) &&
+      unique.includes(7) &&
+      unique.includes(6)
+    ) {
+      return true;
+    }
+  } else {
+    // Standard wheel: A-2-3-4-5
+    if (
+      unique.includes(14) &&
+      unique.includes(5) &&
+      unique.includes(4) &&
+      unique.includes(3) &&
+      unique.includes(2)
+    ) {
+      return true;
+    }
   }
   return false;
 }
@@ -432,8 +469,10 @@ export function calculateBettingState(
   isPotLimit: boolean = false
 ): BettingState {
   const toCall = currentBet - playerBet;
-  // Bible V8 §4.14: pot-limit max raise = current pot + call amount
-  const maxRaise = isPotLimit ? pot + toCall + toCall : undefined;
+  // FIX 121: Bible V8 §4.14 — pot-limit max raise = pot after calling
+  // Pot-limit formula: max raise SIZE = pot + toCall (the pot after you call)
+  // Previous code had pot + toCall + toCall which was too permissive.
+  const maxRaise = isPotLimit ? pot + toCall : undefined;
   return {
     currentBet,
     minRaise: Math.max(bigBlind, lastRaise || bigBlind),
@@ -482,7 +521,7 @@ export function validateAction(
         return { valid: false, error: `Minimum raise is ${minRaise}` };
       }
       if (amount > maxRaiseTo) return { valid: false, error: 'Insufficient chips' };
-      // Bible V8 §4.14: Pot-limit max raise = pot + call + call
+      // FIX 121: Bible V8 §4.14: Pot-limit max raise = pot after calling
       if (bettingState.maxRaise !== undefined && raiseAmount > bettingState.maxRaise) {
         return { valid: false, error: `Pot-limit max raise is ${bettingState.maxRaise}` };
       }
@@ -540,7 +579,11 @@ export function determineWinners(
   const isOmaha = gameVariant.startsWith('plo');
   // Bible V8 §7.6: plo8 = Omaha Hi-Lo (FIX 116: plo_hilo dead variant removed)
   const isHiLo = isOmaha && gameVariant === 'plo8';
-  const evaluator = isOmaha ? evaluateOmahaHand : evaluateHand;
+  // FIX 119: Short Deck variant-aware evaluation
+  const isShortDeck = gameVariant === 'short_deck';
+  const evaluator = isOmaha
+    ? evaluateOmahaHand
+    : (h: Card[], c: Card[]) => evaluateHand(h, c, isShortDeck);
 
   const playerHands = activePlayers.map((p) => ({
     player: p,

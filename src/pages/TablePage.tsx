@@ -1757,6 +1757,39 @@ export default function TablePage({
         return;
       }
 
+      // FIX 124: Player timed out without time bank — show buy-more popup if depleted
+      if (eventType === 'time_bank_timeout') {
+        const targetPlayer = handState.player_id as string;
+        if (targetPlayer === userId) {
+          const showBuyMore = handState.show_buy_more as boolean;
+          const timedOutAction = handState.timed_out_action as string;
+          if (showBuyMore) {
+            // Player has ZERO time banks left — prompt to buy more
+            toast.warning(
+              `You were auto-${timedOutAction === 'check' ? 'checked' : 'folded'} — no time banks remaining. Visit the Diamond Store to purchase more!`
+            );
+            // Future: open DiamondTopUpModal or navigate to VIP page
+          } else {
+            toast.info(
+              `You were auto-${timedOutAction === 'check' ? 'checked' : 'folded'} (time expired)`
+            );
+          }
+        }
+        return;
+      }
+
+      // FIX 125: Low time bank warning — alert when down to last 5
+      if (eventType === 'time_bank_low') {
+        const targetPlayer = handState.player_id as string;
+        if (targetPlayer === userId) {
+          const usesLeft = handState.uses_remaining as number;
+          toast.warning(
+            `Warning: Only ${usesLeft} time bank${usesLeft === 1 ? '' : 's'} remaining!`
+          );
+        }
+        return;
+      }
+
       if (eventType === 'all_in_equity') {
         // All-in equity percentages — update equity display overlay
         const equities = handState.equities as Array<{

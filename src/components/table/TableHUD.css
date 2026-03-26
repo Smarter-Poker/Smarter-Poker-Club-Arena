@@ -1,0 +1,82 @@
+/* ═══════════════════════════════════════════════════════════════════════════════
+ * TABLE HUD — 4-Corner Overlay Layout
+ * ═══════════════════════════════════════════════════════════════════════════════ */
+
+.table-hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: env(safe-area-inset-top, 8px) env(safe-area-inset-right, 8px)
+    env(safe-area-inset-bottom, 8px) env(safe-area-inset-left, 8px);
+}
+
+/* Allow child interactive elements to receive clicks */
+.table-hud__corner,
+.table-hud__center-top {
+  pointer-events: auto;
+}
+
+/* ── Upper Row ── */
+.table-hud__upper {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 6px 4px;
+  gap: 8px;
+}
+
+.table-hud__center-top {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-width: 0;
+}
+
+/* ── Lower Row ── */
+.table-hud__lower {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  padding: 6px 4px;
+  /* Stay above the action panel area */
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), 130px);
+  gap: 8px;
+}
+
+/* ── Corner containers ── */
+.table-hud__corner {
+  flex-shrink: 0;
+}
+
+.table-hud__corner--ul {
+  z-index: 101;
+}
+
+.table-hud__corner--ur {
+  z-index: 101;
+}
+
+.table-hud__corner--bl {
+  z-index: 99;
+}
+
+.table-hud__corner--br {
+  z-index: 99;
+}
+
+/* ── Responsive ── */
+@media (max-width: 480px) {
+  .table-hud__upper {
+    padding: 4px 2px;
+  }
+
+  .table-hud__lower {
+    padding: 4px 2px;
+    padding-bottom: max(env(safe-area-inset-bottom, 0px), 110px);
+  }
+}

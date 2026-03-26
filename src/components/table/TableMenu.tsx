@@ -42,6 +42,12 @@ export interface MenuSection {
   actions: MenuAction[];
 }
 
+export interface TableMenuObserver {
+  id: string;
+  name: string;
+  avatar?: string;
+}
+
 export interface TableMenuProps {
   isOpen: boolean;
   onClose: () => void;
@@ -57,6 +63,10 @@ export interface TableMenuProps {
   handNumber?: number;
   /** Session duration string (e.g. "1h 23m") */
   sessionDuration?: string;
+  /** Observers watching the table — shown in menu dropdown */
+  observers?: TableMenuObserver[];
+  /** Whether user is VIP (can see observer names) */
+  isVip?: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -165,6 +175,8 @@ export function TableMenu({
   badgeCount,
   handNumber,
   sessionDuration,
+  observers = [],
+  isVip = false,
 }: TableMenuProps) {
   const prevOpenRef = useRef(false);
 
@@ -346,6 +358,27 @@ export function TableMenu({
               </div>
             ))}
           </div>
+
+          {/* Observers Section */}
+          {observers.length > 0 && (
+            <div className="table-menu__observers">
+              <span className="table-menu__observers-title">
+                <span className="table-menu__observers-icon">◉</span>
+                {observers.length} Watching
+              </span>
+              {isVip ? (
+                <div className="table-menu__observers-list">
+                  {observers.map((obs) => (
+                    <span key={obs.id} className="table-menu__observer-name">
+                      {obs.name}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <span className="table-menu__observers-vip-hint">VIP to see who's watching</span>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -42,6 +42,7 @@ import TableChat, { type ChatMessage } from '../components/table/TableChat';
 import InsuranceModal, { type InsuranceOffer } from '../components/table/InsuranceModal';
 import { RunItTwicePrompt } from '../components/table/RunItTwice';
 import BadBeatJackpot from '../components/table/BadBeatJackpot';
+import { BBJCelebration } from '../components/table/BBJCelebration';
 import { ThrowableSelector } from '../components/table/ThrowableSelector';
 import { ThrowAnimationContainer } from '../components/table/ThrowAnimation';
 import { throwableService, type Throwable, type ThrowEvent } from '../services/ThrowableService';
@@ -876,6 +877,24 @@ export default function TablePage({
   // Bad Beat Jackpot state
   const [showBBJ, setShowBBJ] = useState(false);
   const [bbjAmount, setBbjAmount] = useState(0);
+
+  // FIX 128: BBJ Celebration overlay state — triggered by server bbj_hit + bbj_payout_complete events
+  const [showBBJCelebration, setShowBBJCelebration] = useState(false);
+  const bbjHitDataRef = useRef<{
+    loserUserId: string;
+    loserHandName: string;
+    winnerUserId: string;
+    winnerHandName: string;
+    qualifyingHandLabel: string;
+  } | null>(null);
+  const [bbjCelebrationData, setBbjCelebrationData] = useState<{
+    totalPayout: number;
+    loser: { userId: string; username: string; share: number; handName: string };
+    winner: { userId: string; username: string; share: number; handName: string };
+    tableShare: number;
+    perPlayerShare: number;
+    tablePlayerCount: number;
+  } | null>(null);
 
   // Q3: Auto-set "Playing At" status for friends to see
   useEffect(() => {
@@ -1865,6 +1884,97 @@ export default function TablePage({
             /* BroadcastChannel not supported or closed */
           }
         }
+        return;
+      }
+
+      // ═══════════════════════════════════════════════════════════════════════
+      // FIX 128: Bad Beat Jackpot event handlers
+      // Server sends bbj_hit first (with hand names), then bbj_payout_complete (with dollar amounts)
+      // We store the hit data in a ref, then combine with payout data to show the celebration overlay.
+      // ═══════════════════════════════════════════════════════════════════════
+      if (eventType === 'bbj_hit') {
+        // FIX 128: BBJ hit detected — store hand names silently.
+        // DO NOT trigger celebration yet. The server sends bbj_hit during HAND_COMPLETE
+        // processing, but we need to let the showdown animation finish before showing
+        // the celebration overlay. The actual celebration triggers on bbj_payout_complete
+        // (which arrives after postHandTasks DB writes — a natural 1-3s delay).
+        const loserData = handState.loser as { userId: string; hand: { name: string } };
+        const winnerData = handState.winner as { userId: string; hand: { name: string } };
+        bbjHitDataRef.current = {
+          loserUserId: loserData?.userId || '',
+          loserHandName: loserData?.hand?.name || 'Unknown',
+          winnerUserId: winnerData?.userId || '',
+          winnerHandName: winnerData?.hand?.name || 'Unknown',
+          qualifyingHandLabel: (handState.qualifyingHandLabel as string) || '',
+        };
+        // Don't show toast or HUD hit yet — wait for payout_complete after showdown finishes
+        return;
+      }
+
+      if (eventType === 'bbj_payout_complete') {
+        // FIX 128: BBJ payout calculated — NOW show the celebration.
+        // This event arrives from postHandTasks() which runs AFTER the hand is fully complete,
+        // AFTER showdown cards are displayed, AFTER winners are shown.
+        // Add a 3-second delay so players can see the winning/losing hands before the overlay.
+        const totalPayout = (handState.totalPayout as number) || 0;
+        const loserPayout = handState.loser as { userId: string; share: number };
+        const winnerPayout = handState.winner as { userId: string; share: number };
+        const tblShare = (handState.tableShare as number) || 0;
+        const perPlayer = (handState.perPlayerShare as number) || 0;
+        const tablePlayerIds = (handState.tablePlayerIds as string[]) || [];
+        const updatedStacks =
+          (handState.updatedStacks as Array<{ userId: string; stack: number }>) || [];
+
+        // Update local player stacks immediately (so stacks reflect BBJ payout)
+        if (updatedStacks.length > 0) {
+          setTableState((prev) => ({
+            ...prev,
+            players: prev.players.map((p) => {
+              if (!p) return p;
+              const updated = updatedStacks.find((s) => s.userId === p.id);
+              return updated ? { ...p, stack: updated.stack } : p;
+            }),
+          }));
+        }
+
+        // Delay celebration overlay by 3s so showdown cards + winner display are visible first
+        setTimeout(() => {
+          // Resolve usernames from current player list at time of display
+          const resolveUsername = (uid: string): string => {
+            const player = tableState.players.find((p) => p && p.id === uid);
+            return player?.name || `Player`;
+          };
+
+          // Use hit data for hand names (stored from prior bbj_hit event)
+          const hitData = bbjHitDataRef.current;
+
+          setBbjCelebrationData({
+            totalPayout,
+            loser: {
+              userId: loserPayout?.userId || hitData?.loserUserId || '',
+              username: resolveUsername(loserPayout?.userId || hitData?.loserUserId || ''),
+              share: loserPayout?.share || 0,
+              handName: hitData?.loserHandName || 'Unknown',
+            },
+            winner: {
+              userId: winnerPayout?.userId || hitData?.winnerUserId || '',
+              username: resolveUsername(winnerPayout?.userId || hitData?.winnerUserId || ''),
+              share: winnerPayout?.share || 0,
+              handName: hitData?.winnerHandName || 'Unknown',
+            },
+            tableShare: tblShare,
+            perPlayerShare: perPlayer,
+            tablePlayerCount: tablePlayerIds.length,
+          });
+
+          // NOW trigger the HUD hit animation + full celebration overlay
+          setShowBBJ(true);
+          setShowBBJCelebration(true);
+
+          // Clear the hit ref
+          bbjHitDataRef.current = null;
+        }, 3000); // 3s delay — lets showdown cards + winner chips animation play out
+
         return;
       }
 
@@ -4748,6 +4858,24 @@ export default function TablePage({
 
       {/* Bad Beat Jackpot Display */}
       <BadBeatJackpot amount={bbjAmount} qualifyingHand="Quad 8s or better" isHit={showBBJ} />
+
+      {/* FIX 128: BBJ Celebration Overlay — full-screen explosion when jackpot pays out */}
+      {bbjCelebrationData && (
+        <BBJCelebration
+          visible={showBBJCelebration}
+          totalPayout={bbjCelebrationData.totalPayout}
+          loser={bbjCelebrationData.loser}
+          winner={bbjCelebrationData.winner}
+          tableShare={bbjCelebrationData.tableShare}
+          perPlayerShare={bbjCelebrationData.perPlayerShare}
+          tablePlayerCount={bbjCelebrationData.tablePlayerCount}
+          onComplete={() => {
+            setShowBBJCelebration(false);
+            setBbjCelebrationData(null);
+            setShowBBJ(false);
+          }}
+        />
+      )}
 
       {/* Bomb Pot Overlay (dramatic announcement) */}
       {tableId && (

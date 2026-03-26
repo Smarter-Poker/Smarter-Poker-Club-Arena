@@ -2005,6 +2005,64 @@ Added in BOTH paths:
 
 - `src/pages/TablePage.tsx` — BroadcastChannel ref + useEffect listener + relay calls + 2500ms duration
 
+### FIX 127 — Replace .single() with .maybeSingle() in supabase.ts (2026-03-26)
+
+**Bug:** Three `.single()` calls in `server/src/services/supabase.ts` that crash with PostgREST error when a row is missing (deleted club, deleted union, missing table). Violates CLAUDE.md Code Safety Rule #1.
+
+**Fix:** All 3 locations changed to `.maybeSingle()` with proper error handling and null checks:
+
+- **Line ~108** (`loadTable`): Fixed in prior session — added `if (!data) throw new Error(...)` after `.maybeSingle()`
+- **Line ~354** (`logRakeCollection` club lookup): Changed to `.maybeSingle()` + `clubErr` warning + early return
+- **Line ~367** (`logRakeCollection` union lookup): Changed to `.maybeSingle()` + `unionErr` warning
+
+**Files changed:**
+
+- `server/src/services/supabase.ts` — 3× `.single()` → `.maybeSingle()` with error handling
+
+---
+
+### FIX 128 — BBJ Celebration Event Handlers Missing in Client (2026-03-26)
+
+**Bug:** Server broadcasts `bbj_hit` and `bbj_payout_complete` events via Supabase Realtime, but `TablePage.tsx` had NO handlers for either event. The `BBJCelebration` component existed but was never imported, wired, or rendered. Result: BBJ jackpot hits are invisible to players — no celebration, no payout display, no stack update.
+
+**Fix — Server-to-client BBJ event pipeline:**
+
+1. **Import** `BBJCelebration` component from `src/components/table/BBJCelebration.tsx`
+2. **State** added: `showBBJCelebration`, `bbjCelebrationData`, `bbjHitDataRef` (stores hand names from `bbj_hit` until `bbj_payout_complete` arrives)
+3. **`bbj_hit` handler**: Silently stores loser/winner hand names in ref. Does NOT show toast or overlay — lets showdown animation play out.
+4. **`bbj_payout_complete` handler**:
+   - Updates player stacks immediately from `updatedStacks` payload
+   - **3-second delay** before showing celebration overlay — ensures showdown cards + winner chips animation are visible before the full-screen overlay takes over
+   - Resolves usernames from `tableState.players`
+   - Triggers `setShowBBJ(true)` (HUD widget) + `setShowBBJCelebration(true)` (full overlay)
+5. **JSX** renders `<BBJCelebration>` with all props from `bbjCelebrationData`, auto-cleans up on `onComplete`
+6. **Field name fix**: Verification caught `.chips` → `.stack` mismatch in stack update (SeatPlayer uses `.stack`)
+
+**Server broadcast payloads verified field-by-field against client handler consumption:**
+
+- `bbj_hit`: type, loser.userId, loser.hand.name, winner.userId, winner.hand.name, qualifyingHandLabel ✅
+- `bbj_payout_complete`: totalPayout, loser.userId, loser.share, winner.userId, winner.share, tableShare, perPlayerShare, tablePlayerIds, updatedStacks ✅
+
+**Files changed:**
+
+- `src/pages/TablePage.tsx` — import, state, 2 event handlers, JSX render, stack update fix
+
+---
+
+### Deep Secondary Sweep Rounds 9-13 — Results (2026-03-26)
+
+**Scope:** Bugs 95 to present, covering server endpoints, insurance lifecycle, Round 13 fixes, BBJ pipeline + Realtime wiring.
+
+**Results:**
+
+- **14 HTTP endpoints** (13 action + 1 discard): ALL PASS — JWT auth, validation, error handling verified
+- **Insurance Engine lifecycle** (8 steps): ALL PASS — 20% house margin, partial coverage, dual decline, chop handling
+- **FIX 114-118** (straddle UTG-only, PLO variants, dead variant cleanup, finalizeRunout, insurance chop): ALL PASS
+- **BBJ pipeline**: Server detection + payout PASS, but client handlers were MISSING → FIX 128
+- **Supabase .single() calls**: 3 violations → FIX 127
+
+---
+
 ### Known Gaps (Lower Priority)
 
 1. **MonteCarloEquity shortDeck**: Insurance equity calculations don't pass shortDeck flag — lower priority

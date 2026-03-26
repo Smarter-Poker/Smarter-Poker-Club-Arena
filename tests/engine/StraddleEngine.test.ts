@@ -1,8 +1,8 @@
 /**
  * ♠ CLUB ARENA — StraddleEngine Tests
  * ═══════════════════════════════════════════════════════════════════════════════
- * Tests UTG straddle configuration, auto-straddle, manual straddle,
- * and straddle processing logic. FIX 114: Mississippi removed — UTG only.
+ * Tests straddle configuration, auto-straddle, manual straddle, Mississippi,
+ * and straddle processing logic.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -22,6 +22,7 @@ describe('StraddleEngine - Configuration', () => {
   it('should configure straddle for a table', () => {
     straddleEngine.configure('str-cfg', {
       enabled: true,
+      mississippiEnabled: false,
       maxStraddles: 1,
       straddleMultiplier: 2,
     });
@@ -36,6 +37,7 @@ describe('StraddleEngine - Auto-Straddle Toggle', () => {
     vi.clearAllMocks();
     straddleEngine.configure('str-auto', {
       enabled: true,
+      mississippiEnabled: false,
       maxStraddles: 1,
       straddleMultiplier: 2,
     });
@@ -72,6 +74,7 @@ describe('StraddleEngine - processStraddles', () => {
     vi.clearAllMocks();
     straddleEngine.configure('str-proc', {
       enabled: true,
+      mississippiEnabled: false,
       maxStraddles: 1,
       straddleMultiplier: 2,
     });
@@ -147,10 +150,10 @@ describe('StraddleEngine - processStraddles', () => {
     straddleEngine.toggleAutoStraddle('str-proc', 'p1', true);
     // p2 is NOT enrolled
 
-    // FIX 114: UTG only — even with maxStraddles > 1, only UTG can straddle
     straddleEngine.configure('str-proc', {
       enabled: true,
-      maxStraddles: 1,
+      mississippiEnabled: true,
+      maxStraddles: 3,
       straddleMultiplier: 2,
     });
 
@@ -173,26 +176,26 @@ describe('StraddleEngine - processStraddles', () => {
   });
 });
 
-// FIX 114: Mississippi straddle REMOVED — UTG only
-describe('StraddleEngine - UTG Only (no re-straddle)', () => {
+describe('StraddleEngine - Mississippi Straddle', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    straddleEngine.configure('str-utg', {
+    straddleEngine.configure('str-miss', {
       enabled: true,
-      maxStraddles: 1,
+      mississippiEnabled: true,
+      maxStraddles: 3,
       straddleMultiplier: 2,
     });
   });
 
-  afterEach(() => straddleEngine.dispose('str-utg'));
+  afterEach(() => straddleEngine.dispose('str-miss'));
 
-  it('should only allow one straddle even if multiple players enrolled', () => {
-    straddleEngine.toggleAutoStraddle('str-utg', 'p1', true);
-    straddleEngine.toggleAutoStraddle('str-utg', 'p2', true);
-    straddleEngine.toggleAutoStraddle('str-utg', 'p3', true);
+  it('should allow multiple straddles with Mississippi enabled', () => {
+    straddleEngine.toggleAutoStraddle('str-miss', 'p1', true);
+    straddleEngine.toggleAutoStraddle('str-miss', 'p2', true);
+    straddleEngine.toggleAutoStraddle('str-miss', 'p3', true);
 
     const result = straddleEngine.processStraddles(
-      'str-utg',
+      'str-miss',
       10,
       [
         { seat: 3, playerId: 'p1' },
@@ -206,31 +209,38 @@ describe('StraddleEngine - UTG Only (no re-straddle)', () => {
       ])
     );
 
-    expect(result.straddles).toHaveLength(1); // UTG only
+    expect(result.straddles).toHaveLength(3);
     expect(result.straddles[0].amount).toBe(20); // 10 * 2
-    expect(result.straddles[0].playerId).toBe('p1'); // UTG player
-    expect(result.adjustedBigBlind).toBe(20);
+    expect(result.straddles[1].amount).toBe(40); // 20 * 2
+    expect(result.straddles[2].amount).toBe(80); // 40 * 2
+    expect(result.adjustedBigBlind).toBe(80);
   });
 
-  it('should set firstToAct to seat after UTG straddler', () => {
-    straddleEngine.toggleAutoStraddle('str-utg', 'p1', true);
+  it('should not allow multiple without Mississippi enabled', () => {
+    straddleEngine.configure('str-miss', {
+      enabled: true,
+      mississippiEnabled: false,
+      maxStraddles: 3,
+      straddleMultiplier: 2,
+    });
+
+    straddleEngine.toggleAutoStraddle('str-miss', 'p1', true);
+    straddleEngine.toggleAutoStraddle('str-miss', 'p2', true);
 
     const result = straddleEngine.processStraddles(
-      'str-utg',
+      'str-miss',
       10,
       [
         { seat: 3, playerId: 'p1' },
         { seat: 4, playerId: 'p2' },
-        { seat: 5, playerId: 'p3' },
       ],
       new Map([
         ['p1', 5000],
         ['p2', 5000],
-        ['p3', 5000],
       ])
     );
 
-    expect(result.firstToAct).toBe(4); // Seat after UTG straddler
+    expect(result.straddles).toHaveLength(1); // Only UTG
   });
 });
 
@@ -239,6 +249,7 @@ describe('StraddleEngine - Manual Straddle', () => {
     vi.clearAllMocks();
     straddleEngine.configure('str-man', {
       enabled: true,
+      mississippiEnabled: false,
       maxStraddles: 1,
       straddleMultiplier: 2,
     });
@@ -269,6 +280,7 @@ describe('StraddleEngine - Cleanup', () => {
   it('should dispose table state', () => {
     straddleEngine.configure('str-disp', {
       enabled: true,
+      mississippiEnabled: false,
       maxStraddles: 1,
       straddleMultiplier: 2,
     });

@@ -301,16 +301,26 @@ export class ServerTableEngine {
         enabled: insuranceEnabled,
       });
 
-      // Bible V8 §4.4: Configure Straddle engine — FIX 114: UTG only, no Mississippi
+      // Bible V8 §4.4: Configure Straddle engine
       if (this.tableInfo.straddle_enabled) {
         this.straddleEngine.configure(this.tableId, {
           enabled: true,
-          maxStraddles: 1, // UTG only — one straddle max
-          straddleMultiplier: 2, // Standard 2x BB
+          mississippiEnabled: this.tableInfo.straddle_type === 'mississippi',
+          maxStraddles: this.tableInfo.max_straddles ?? 1,
+          straddleMultiplier: 2, // Standard 2x straddle
         });
       }
 
-      // FIX 112: Mixed game mode removed from GameVariant — block removed
+      // FIX 104: Configure MixedGameEngine if table has mixed game mode
+      if (this.tableInfo.game_variant === 'mixed' || this.tableInfo.mixed_game_preset) {
+        const presetName = this.tableInfo.mixed_game_preset || 'HOLDEM_OMAHA';
+        this.mixedGameEngine.configurePreset(
+          this.tableId,
+          presetName,
+          this.tableInfo.mixed_game_hands_per_variant ?? 6,
+          true // rotatePerOrbit
+        );
+      }
 
       // FIX 104: Configure RakebackEngine for this table's club
       if (this.tableInfo.club_id) {
@@ -1351,11 +1361,11 @@ export class ServerTableEngine {
       }
 
       const stackMap = new Map(players.map((p) => [p.user_id, p.stack]));
-      // FIX 114: UTG straddle only — no Mississippi
       const straddleConfig = {
         enabled: true,
-        maxStraddles: 1, // UTG only — one straddle max
-        straddleMultiplier: 2, // Standard 2x BB
+        mississippiEnabled: this.tableInfo.straddle_type === 'mississippi',
+        maxStraddles: this.tableInfo.max_straddles ?? 1,
+        straddleMultiplier: 2,
       };
       this.straddleEngine.configure(this.tableId, straddleConfig);
       const result = this.straddleEngine.processStraddles(
@@ -1655,10 +1665,9 @@ export class ServerTableEngine {
         // Bible V8 §4.19: Settle insurance BEFORE disposing (offers cleared on dispose)
         if (this.currentHandWinnerIds.length > 0) {
           const winnerId = this.currentHandWinnerIds[0];
-          // FIX 110: Pass ALL winner IDs — if chop, insurance is voided (PUSH)
           this.currentHandInsuranceSettlements = this.insuranceEngine.settle(
             this.tableId,
-            this.currentHandWinnerIds
+            winnerId
           );
 
           // Bible V8 §4.19: Insurance settlement — applied like rake at the end.
@@ -2106,7 +2115,7 @@ export class ServerTableEngine {
     // Finalize the hand (showdown + HAND_COMPLETE)
     // Note: HandController's normal pot distribution is SKIPPED here — we handled it.
     // Just call finalizeRunout to emit HAND_COMPLETE.
-    this.handController.finalizeRunout(true);
+    this.handController.finalizeRunout();
   }
 
   /**

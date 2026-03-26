@@ -386,46 +386,28 @@ export class InsuranceEngine {
 
   /**
    * Settle all accepted insurance offers based on hand outcome.
-   * FIX 110: Accepts single winner or array of winners (chop).
-   * TIES = PUSH: If pot is chopped, all insurance is voided (no premium, no payout).
    */
-  settle(tableId: string, winnerIds: string | string[]): InsuranceSettlement[] {
+  settle(tableId: string, winnerId: string): InsuranceSettlement[] {
     const offers = this.activeOffers.get(tableId);
     if (!offers) return [];
-
-    const winners = Array.isArray(winnerIds) ? winnerIds : [winnerIds];
-    const isChop = winners.length > 1;
 
     const settlements: InsuranceSettlement[] = [];
 
     for (const offer of offers) {
       if (offer.status !== 'accepted') continue;
 
-      if (isChop) {
-        // PUSH: Chopped pot = insurance voided. Player didn't lose, so no payout.
-        // Premium is also refunded (not charged) since the insurance outcome is void.
-        const settlement: InsuranceSettlement = {
-          playerId: offer.playerId,
-          insuredAmount: offer.insuredAmount,
-          premium: 0, // PUSH: no premium charged
-          payout: 0, // PUSH: no payout
-          won: false,
-        };
-        settlements.push(settlement);
-      } else {
-        const playerLost = !winners.includes(offer.playerId);
-        const payout = playerLost ? offer.insuredAmount : 0;
+      const playerLost = offer.playerId !== winnerId;
+      const payout = playerLost ? offer.insuredAmount : 0;
 
-        const settlement: InsuranceSettlement = {
-          playerId: offer.playerId,
-          insuredAmount: offer.insuredAmount,
-          premium: offer.premium,
-          payout,
-          won: playerLost,
-        };
-        settlements.push(settlement);
-      }
+      const settlement: InsuranceSettlement = {
+        playerId: offer.playerId,
+        insuredAmount: offer.insuredAmount,
+        premium: offer.premium,
+        payout,
+        won: playerLost,
+      };
 
+      settlements.push(settlement);
       offer.status = 'settled';
 
       this.emitEvent({
@@ -433,12 +415,11 @@ export class InsuranceEngine {
         tableId,
         handId: offer.handId,
         playerId: offer.playerId,
-        payout: settlements[settlements.length - 1].payout,
-        premium: settlements[settlements.length - 1].premium,
+        payout,
+        premium: offer.premium,
         insuredAmount: offer.insuredAmount,
         coveragePercent: offer.coveragePercent,
-        won: settlements[settlements.length - 1].won,
-        isChop,
+        won: playerLost,
       });
     }
 

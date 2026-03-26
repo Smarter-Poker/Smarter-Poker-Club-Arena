@@ -485,6 +485,23 @@ export class ServerTableEngine {
                   /* done */
                 }
               }
+
+              // FIX 124b: Time bank expired → also broadcast timeout event
+              // Without this, players who used a time bank and STILL timed out
+              // would not see the "buy more" popup.
+              const tbUsesLeft = this.timeBankEngine.getUsesRemaining(this.tableId, userId);
+              try {
+                broadcastHandState(this.tableId, {
+                  type: 'time_bank_timeout',
+                  table_id: this.tableId,
+                  player_id: userId,
+                  uses_remaining: tbUsesLeft,
+                  timed_out_action: tbCanCheck ? 'check' : 'fold',
+                  show_buy_more: tbUsesLeft <= 0,
+                });
+              } catch {
+                /* broadcast failure is non-fatal */
+              }
             }
           );
 
@@ -518,8 +535,8 @@ export class ServerTableEngine {
               /* broadcast failure is non-fatal */
             }
 
-            // FIX 125: Warn player when down to last 5 time banks
-            if (usesAfterActivation > 0 && usesAfterActivation <= 5) {
+            // FIX 125: Warn player when down to last 5 time banks (includes 0 = last one just used)
+            if (usesAfterActivation >= 0 && usesAfterActivation <= 5) {
               try {
                 broadcastHandState(this.tableId, {
                   type: 'time_bank_low',
@@ -644,6 +661,21 @@ export class ServerTableEngine {
           /* done */
         }
       }
+
+      // FIX 124c: Manual time bank expired → broadcast timeout event (same as FIX 124b for auto path)
+      const tbUsesLeft = this.timeBankEngine.getUsesRemaining(this.tableId, userId);
+      try {
+        broadcastHandState(this.tableId, {
+          type: 'time_bank_timeout',
+          table_id: this.tableId,
+          player_id: userId,
+          uses_remaining: tbUsesLeft,
+          timed_out_action: tbCanCheck ? 'check' : 'fold',
+          show_buy_more: tbUsesLeft <= 0,
+        });
+      } catch {
+        /* broadcast failure is non-fatal */
+      }
     });
 
     if (!activated) {
@@ -686,9 +718,9 @@ export class ServerTableEngine {
         .catch(() => {});
     } catch (e) {}
 
-    // FIX 125: Warn player when down to last 5 time banks (manual activation path)
+    // FIX 125: Warn player when down to last 5 time banks (manual path, includes 0 = last one just used)
     const manualUsesLeft = bank?.usesRemaining ?? 0;
-    if (manualUsesLeft > 0 && manualUsesLeft <= 5) {
+    if (manualUsesLeft >= 0 && manualUsesLeft <= 5) {
       try {
         broadcastHandState(this.tableId, {
           type: 'time_bank_low',

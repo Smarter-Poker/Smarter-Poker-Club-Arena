@@ -1958,6 +1958,53 @@ Added in BOTH paths:
 
 **Verified:** YES — traced through auto-activate (3→2 uses) and manual activate (5→4 uses)
 
+### FIX 123b — time_bank_enabled Missing from loadTable Query (2026-03-26)
+
+**Bug:** `loadTable()` in `server/src/services/supabase.ts` did NOT include `time_bank_enabled` in the SELECT. This meant `this.tableInfo.time_bank_enabled` was always `undefined`, and the `?? true` fallback meant time bank auto-activation was ALWAYS enabled regardless of the DB setting.
+
+**Fix:** Added `time_bank_enabled` to the loadTable SELECT query.
+**Migration:** Created `supabase/migrations/20260326_time_bank_enabled_column.sql` — adds `time_bank_enabled BOOLEAN DEFAULT TRUE` to `tables`.
+
+### FIX 124b — Time Bank Expiry Path Missing Timeout Broadcast (2026-03-26)
+
+**Bug:** When a player's primary timer expires and time bank auto-activates, the time bank itself has a `PreciseActionTimer` countdown. If THAT timer expires too (player still didn't act), the `onExpire` callback auto-folds/checks BUT did NOT broadcast `time_bank_timeout`. The player would never see the "buy more" popup after exhausting their time bank.
+
+**Fix:** Added `time_bank_timeout` broadcast (with `show_buy_more`) in the auto-activate `onExpire` callback in `ServerTableEngine.startTurnTimer()`.
+
+### FIX 124c — Manual Time Bank Expiry Path Missing Timeout Broadcast (2026-03-26)
+
+**Bug:** Same as FIX 124b but on the MANUAL activation path. When a player manually activates a time bank via POST `/timebank` and the time bank itself expires, the `onExpire` callback auto-folds/checks but did NOT broadcast `time_bank_timeout`.
+
+**Fix:** Added `time_bank_timeout` broadcast in the manual activation `onExpire` callback in `ServerTableEngine.activateTimeBank()`.
+
+### FIX 125 Fix — Edge Case: Last Time Bank (uses=0) Triggers No Warning (2026-03-26)
+
+**Bug:** FIX 125 check was `usesAfterActivation > 0 && usesAfterActivation <= 5`. When the player uses their LAST time bank, uses drops to 0, and `0 > 0` is false — NO low warning fires.
+
+**Fix (server):** Changed both auto and manual paths from `> 0` to `>= 0`:
+
+- Auto path: `if (usesAfterActivation >= 0 && usesAfterActivation <= 5)`
+- Manual path: `if (manualUsesLeft >= 0 && manualUsesLeft <= 5)`
+
+**Fix (client):** Added special message when `usesLeft <= 0`: "That was your last time bank! Visit the Diamond Store to purchase more."
+
+### FIX 126 — Toast Duration 2500ms + Multi-Table BroadcastChannel Relay (2026-03-26)
+
+**Dan's directive:** "THESE POP UPS SHOULD LAST 2500 MILASECONDS AND AUTO DISAPPEAR AFTER COMING UP... IF USER IS PLAYING MULTIPLE TABLES, SHOULD POP UP ON ALL TABLE SCREENS TO INSURE THEY SEE IT"
+
+**Toast duration fix:** All time bank toast calls (`time_bank_timeout` and `time_bank_low` handlers) now pass `2500` as the duration parameter. Toast system default was 4000ms.
+
+**Multi-table relay:** Added `BroadcastChannel('club-arena-timebank-warnings')` in `TablePage.tsx`:
+
+- When a tab receives a time bank warning for the current user via Supabase Realtime, it relays the message via `BroadcastChannel.postMessage()` to all other open table tabs
+- Each tab listens on the channel and shows the same toast (2500ms)
+- Players can have up to 4 tables open simultaneously (cross-tab built-in functionality)
+- Graceful degradation: if `BroadcastChannel` is unsupported, only the originating tab shows the toast
+
+**Files changed:**
+
+- `src/pages/TablePage.tsx` — BroadcastChannel ref + useEffect listener + relay calls + 2500ms duration
+
 ### Known Gaps (Lower Priority)
 
 1. **MonteCarloEquity shortDeck**: Insurance equity calculations don't pass shortDeck flag — lower priority

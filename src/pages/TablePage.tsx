@@ -814,6 +814,9 @@ export default function TablePage({
 
   // Buy-in processing lock to prevent double-click
   const buyInProcessingRef = useRef(false);
+  // FIX 132: Persistent hero seat ref — set IMMEDIATELY on buy-in, never stale
+  // Prevents race condition where tableState.heroSeat is 0 during DB query but user tries to sit again
+  const heroSeatRef = useRef(0);
 
   // Actual club_id from the table record (NOT the tableId)
   const actualClubIdRef = useRef<string>('');
@@ -1184,6 +1187,8 @@ export default function TablePage({
   // Cashier state
   const [showCashier, setShowCashier] = useState(false);
   const [accountBalance, setAccountBalance] = useState(0); // Player Wallet balance from wallets table
+  // FIX 136: 2-hour re-entry restriction — minimum buy-in from recent cashout
+  const [cashoutMinBuyIn, setCashoutMinBuyIn] = useState(0);
 
   // Handle cashier add chips (deducts from wallet, adds to table stack)
   const handleAddChips = async (amount: number) => {
@@ -1659,6 +1664,8 @@ export default function TablePage({
     try {
       const result = await tableService.leaveTable(tableId, tableState.heroSeat, userId);
       if (result.success) {
+        // FIX 132: Clear heroSeatRef so player can re-seat at another table
+        heroSeatRef.current = 0;
         console.debug(`[Leave] Success — ${result.chipsReturned} chips returned to wallet`);
 
         // Notify system (TABLE_LEFT is deliberately delayed until Session Summary closes)
@@ -1694,6 +1701,7 @@ export default function TablePage({
       }
       // Force cashout instantly without triggering the UI summary
       await tableService.leaveTable(tableId, tableState.heroSeat, userId);
+      heroSeatRef.current = 0; // FIX 132: Clear on force leave
       masterBus.emit('TABLE_LEFT', { tableId, seat: tableState.heroSeat });
       masterBus.emit('SESSION_ENDED', { tableId, userId });
       playerStatusService.clearPlayingAt(userId);
@@ -2223,6 +2231,36 @@ export default function TablePage({
         };
       });
 
+      // ═══════════════════════════════════════════════════════════════════════
+      // Bible V8 §5.1 + §5.3: Winner detection — play win sound + set winner highlighting
+      // Server broadcasts winner_ids[] when WINNERS event fires (stage = showdown).
+      // ═══════════════════════════════════════════════════════════════════════
+      const serverWinnerIds = (handState.winner_ids as string[]) || [];
+      if (serverWinnerIds.length > 0) {
+        // Check if hero won — play appropriate sound
+        const heroWon = serverWinnerIds.includes(userId);
+        if (heroWon) {
+          playWinSound(pot);
+        }
+        // Set winner info for UI highlighting (community card indices, hand name)
+        // Winner hand name comes from the evaluated hand at showdown
+        const winnerPlayers = serverPlayers.filter((sp: any) =>
+          serverWinnerIds.includes(sp.user_id)
+        );
+        const handName =
+          winnerPlayers.length > 0 ? (winnerPlayers[0].hand_name as string) || '' : '';
+        setWinnerInfo({
+          playerIds: serverWinnerIds,
+          handName,
+          cardIndices: [], // Server can provide highlighted community card indices in future
+          amounts: {},
+        });
+        // Clear winner highlighting after 4 seconds so it doesn't persist into next hand
+        setTimeout(() => {
+          setWinnerInfo({ playerIds: [], handName: '', cardIndices: [], amounts: {} });
+        }, 4000);
+      }
+
       // Detect all-in runout: if all non-folded players are all-in, enable dramatic mode
       const nonFolded = serverPlayers.filter((sp: any) => !sp.is_folded);
       const allInCount = nonFolded.filter((sp: any) => sp.is_all_in).length;
@@ -2600,6 +2638,21 @@ export default function TablePage({
         if (userId && userId !== 'guest') {
           const balance = await WalletService.getPlayerBalance(userId);
           setAccountBalance(balance);
+
+          // FIX 136: Check 2-hour re-entry restriction from recent cashout
+          const { data: cashoutHistory } = await supabase
+            .from('table_cashout_history')
+            .select('cashout_amount, restriction_expires_at')
+            .eq('table_id', table.id)
+            .eq('user_id', userId)
+            .gt('restriction_expires_at', new Date().toISOString())
+            .order('cashed_out_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (cashoutHistory) {
+            setCashoutMinBuyIn(cashoutHistory.cashout_amount);
+          }
         }
 
         // ─── Load existing seated players from DB (reconnection support) ───
@@ -2682,6 +2735,10 @@ export default function TablePage({
               if (isHero) {
                 resolvedHeroSeat = seat.seat_number;
               }
+            }
+            // FIX 132: Set heroSeatRef immediately so duplicate-seat guard works
+            if (resolvedHeroSeat > 0) {
+              heroSeatRef.current = resolvedHeroSeat;
             }
             return { ...prev, players: updatedPlayers, heroSeat: resolvedHeroSeat };
           });
@@ -3378,9 +3435,15 @@ export default function TablePage({
           }));
         }
         break;
-      case 'POT_WIN':
-        // Show winner animation
+      case 'POT_WIN': {
+        // Bible V8 §5.1: Winner event — play sound + trigger chip-to-winner animation
+        const winnerIds = (lastEvent.data.winner_ids as string[]) || [];
+        const potAmount = (lastEvent.data.pot as number) || 0;
+        if (winnerIds.length > 0 && winnerIds.includes(userId)) {
+          playWinSound(potAmount);
+        }
         break;
+      }
       case 'HAND_COMPLETE':
         // Reset for next hand
         setTableState((prev) => ({
@@ -3392,6 +3455,8 @@ export default function TablePage({
         }));
         setIsAllInMode(false);
         setAllInEquities([]); // Clear equity display on new hand
+        // Clear winner highlighting (may already be cleared by 4s timeout, but ensure clean slate)
+        setWinnerInfo({ playerIds: [], handName: '', cardIndices: [], amounts: {} });
         break;
     }
   }, [lastEvent]);
@@ -3528,8 +3593,16 @@ export default function TablePage({
       console.debug('[Seat] Seat', seatNumber, 'is occupied — ignoring click');
       return;
     }
-    // Don't allow sitting if already seated at this table
-    // Check BOTH heroSeat AND scan players array for any seat with our userId
+    // FIX 132: Don't allow sitting if already seated at this table
+    // Check THREE sources: heroSeatRef (instant), heroSeat (state), and players array scan
+    if (heroSeatRef.current > 0) {
+      console.debug(
+        '[Seat] Hero already seated (ref) at seat',
+        heroSeatRef.current,
+        '— ignoring click'
+      );
+      return;
+    }
     if (tableState.heroSeat > 0) {
       console.debug('[Seat] Hero already seated at seat', tableState.heroSeat, '— ignoring click');
       return;
@@ -3646,8 +3719,7 @@ export default function TablePage({
     const heroSeat = tableState.heroSeat;
     setShowRaiseSlider(false);
     //Local engine call removed — server is authoritative
-    soundService.playFold();
-    haptic?.light();
+    soundService.playFold(); // SoundService handles haptic (light) per Bible V8 §5.4
     if (tableId)
       await submitAction(tableId, userId, 'fold').catch((e) =>
         console.warn('[Table] Server fold failed:', e)
@@ -3664,8 +3736,7 @@ export default function TablePage({
     const heroSeat = tableState.heroSeat;
     setShowRaiseSlider(false);
     //Local engine call removed — server is authoritative
-    soundService.playCheck();
-    haptic?.light();
+    soundService.playCheck(); // SoundService handles haptic (light) per Bible V8 §5.4
     if (tableId)
       await submitAction(tableId, userId, 'check').catch((e) =>
         console.warn('[Table] Server check failed:', e)
@@ -3682,8 +3753,7 @@ export default function TablePage({
     const heroSeat = tableState.heroSeat;
     setShowRaiseSlider(false);
     //Local engine call removed — server is authoritative
-    soundService.playChips();
-    haptic?.light();
+    soundService.playChips(); // SoundService handles haptic (light) per Bible V8 §5.4
     if (tableId)
       await submitAction(tableId, userId, 'call').catch((e) =>
         console.warn('[Table] Server call failed:', e)
@@ -3761,8 +3831,7 @@ export default function TablePage({
       switch (action) {
         case 'fold':
           if (!validateAndExecuteAction('fold')) return;
-          soundService.playFold();
-          haptic?.light();
+          soundService.playFold(); // SoundService handles haptic per Bible V8 §5.4
           if (tableId)
             await submitAction(tableId, userId, 'fold').catch((e) =>
               console.warn('[Table] Server fold failed:', e)
@@ -3771,7 +3840,6 @@ export default function TablePage({
         case 'check':
           if (!validateAndExecuteAction('check')) return;
           soundService.playCheck();
-          haptic?.light();
           if (tableId)
             await submitAction(tableId, userId, 'check').catch((e) =>
               console.warn('[Table] Server check failed:', e)
@@ -3780,7 +3848,6 @@ export default function TablePage({
         case 'call':
           if (!validateAndExecuteAction('call')) return;
           soundService.playChips();
-          haptic?.light();
           if (tableId)
             await submitAction(tableId, userId, 'call').catch((e) =>
               console.warn('[Table] Server call failed:', e)
@@ -3791,8 +3858,7 @@ export default function TablePage({
             const clamped = Math.min(amount, heroStack);
             if (clamped <= 0) return;
             if (!validateAndExecuteAction('raise', clamped)) return;
-            soundService.playRaise();
-            haptic?.light();
+            soundService.playRaise(); // SoundService handles haptic (medium) per Bible V8 §5.4
             if (tableId)
               await submitAction(tableId, userId, 'raise', clamped).catch((e) =>
                 console.warn('[Table] Server raise failed:', e)
@@ -3802,8 +3868,7 @@ export default function TablePage({
         case 'allin':
           if (heroStack <= 0) return;
           if (!validateAndExecuteAction('allin')) return;
-          soundService.playAllIn();
-          haptic?.light();
+          soundService.playAllIn(); // SoundService handles haptic (strong) per Bible V8 §5.4
           setIsAllInMode(true);
           if (tableId)
             await submitAction(tableId, userId, 'allin', heroStack).catch((e) =>
@@ -3836,8 +3901,7 @@ export default function TablePage({
     setShowRaiseSlider(false);
     try {
       //Local engine call removed — server is authoritative
-      soundService.playRaise();
-      haptic?.light();
+      soundService.playRaise(); // SoundService handles haptic (medium) per Bible V8 §5.4
       if (tableId)
         await submitAction(tableId, userId, 'raise', clampedRaise).catch((e) =>
           console.warn('[Table] Server raise failed:', e)
@@ -3860,8 +3924,7 @@ export default function TablePage({
     }, 300);
     try {
       //Local engine call removed — server is authoritative
-      soundService.playAllIn();
-      haptic?.light();
+      soundService.playAllIn(); // SoundService handles haptic (strong) per Bible V8 §5.4
       setIsAllInMode(true);
       if (tableId)
         await submitAction(tableId, userId, 'allin', heroStack).catch((e) =>
@@ -5351,6 +5414,9 @@ export default function TablePage({
                   return { ...prev, players: updatedPlayers, heroSeat: selectedSeat };
                 });
 
+                // FIX 132: Set heroSeatRef immediately on buy-in success
+                heroSeatRef.current = selectedSeat;
+
                 // Notify Hydra service that a real player joined (triggers horse recede)
                 HydraService.onRealPlayerJoined(tableId, userId);
 
@@ -5399,7 +5465,9 @@ export default function TablePage({
         tableName={tableState.tableName}
         minBuyIn={(() => {
           const bb = safeBB(tableState.blinds);
-          return bb * 40;
+          const standardMin = bb * 40;
+          // FIX 136: If player has a recent cashout at this table, min buy-in is the cashout amount
+          return cashoutMinBuyIn > standardMin ? cashoutMinBuyIn : standardMin;
         })()}
         maxBuyIn={(() => {
           const bb = safeBB(tableState.blinds);
@@ -5407,6 +5475,7 @@ export default function TablePage({
         })()}
         accountBalance={accountBalance}
         bigBlind={safeBB(tableState.blinds)}
+        cashoutRestriction={cashoutMinBuyIn > 0 ? cashoutMinBuyIn : undefined}
       />
 
       {/* Rabbit Hunt (post-hand card reveal) */}

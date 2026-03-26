@@ -2211,3 +2211,117 @@ Database migration verified — correct schema, RLS, triggers, constraints.
 **Deviation from Bible V8**: §11.2.3 specifies multi-tier VIP (bronze/silver/gold). This was intentionally simplified to binary per Dan's direction. The database `user_theme_settings` table is unaffected (stores asset IDs, not tier info).
 
 **Verification**: 4-pass maximum-rigor audit completed (Wiring, Real-Time, Adversarial, Edge Cases) — 0 bugs found across all 4 consecutive passes.
+
+---
+
+### FIX 130 — Remove Duplicate Haptic Calls from Action Handlers (2026-03-26)
+
+**File:** `src/pages/TablePage.tsx`
+**What existed:** Every action handler (handleFold, handleCheck, handleCall, handleActionPanelAction switch cases for all 5 actions, handleConfirmRaise, handleAllIn) called `haptic?.light()` AFTER calling `soundService.playXxx()`. The SoundService already fires the correct haptic level internally (light for fold/check/call, medium for raise, strong for all-in per Bible V8 §5.4). Result: double haptic on every action, with wrong intensity for raise/all-in.
+**What changed:** Removed all 10 `haptic?.light()` calls from action handlers. SoundService is now the single source of haptic truth.
+**Why:** Bible V8 §1.12 (Haptic Truth Law) — haptic intensity must match event significance. §5.4 — fold/check=light, bet/raise=medium, all-in=heavy. Double-fire violated both laws.
+**Lines removed:** 3650, 3668, 3686, 3762, 3771, 3780, 3792, 3803, 3832, 3856 (original line numbers before edit)
+**Verified:** Yes — `grep 'haptic\?\..*()' src/pages/TablePage.tsx` returns 0 matches.
+
+---
+
+### FIX 131 — Wire Winner Sound + Highlighting (Dead Code Revival) (2026-03-26)
+
+**Problem (3 bugs):**
+
+1. `playWinSound()` (line 1492) was defined but NEVER called anywhere — win sound never played
+2. `setWinnerInfo()` was declared via `useState` but never called — winner highlighting in JSX (CSS flash, community card highlights, hand name display) never activated
+3. `POT_WIN` event handler (line 3382) was empty — just `// Show winner animation` with a `break`
+
+**Files Modified (2):**
+
+1. **`server/src/engine/ServerTableEngine.ts`** — `broadcastCurrentState()`
+   - Added `winner_ids: this.currentHandWinnerIds` to broadcast payload
+   - Added `winners: this.currentHandWinners` (userId + amount pairs)
+   - Enables client to know WHO won for sound/highlighting
+
+2. **`src/pages/TablePage.tsx`** — 3 changes:
+   - **subscribeToHandState callback** (after state update): Added winner detection block that reads `handState.winner_ids`, calls `playWinSound(pot)` if hero won, calls `setWinnerInfo()` with winner player IDs + hand name, sets 4-second auto-clear timeout
+   - **POT_WIN handler**: Wired to call `playWinSound()` when hero wins (dual path — both Realtime broadcast and WebSocket event can trigger)
+   - **HAND_COMPLETE handler**: Added `setWinnerInfo({ playerIds: [], handName: '', cardIndices: [] })` to ensure clean slate for next hand
+
+**Why:** Bible V8 §5.1 (every significant game event triggers a popup), §5.3 (winner = celebration sound), §1.10 (Visual Truth Law — no visual without event, no event without visual). Winner was the single biggest missing event trigger.
+**Verified:** Yes — re-read all modified sections.
+
+---
+
+### FIX 132 — Prevent Duplicate Seats at Same Table (2026-03-26)
+
+**User report:** "CURRENTLY YOU CAN SITE DOWN, THEN SIT AT THE SAME TABLE A 2ND OR 3RD TIME."
+
+**Fix — 3 layers:** (1) Partial unique index on `table_seats(table_id, user_id) WHERE left_at IS NULL`. (2) Explicit duplicate check in `atomic_table_buyin` RPC. (3) Client `heroSeatRef` instant guard — set on page load + buy-in success, cleared on leave/force-leave.
+
+**Files:** `supabase/migrations/20260326_prevent_duplicate_seats.sql` (NEW), `src/pages/TablePage.tsx` (7 heroSeatRef references)
+
+---
+
+### FIX 134 — Dead Blind: Player Returning from Sit-Out Posts SB+BB (2026-03-26)
+
+**Bible V8 §4.2:** "player returning from sit-out posts both SB+BB, SB is dead"
+
+**Files modified:**
+
+1. **`server/src/types.ts`** — Added `deadBlinds?: { seat: number }[]` to HandConfig. Added `returning_from_sitout?: boolean` to SeatedPlayer.
+2. **`server/src/engine/HandController.ts`** — Added dead blind posting in `postBlinds()`: dead SB goes to pot as dead money (not a live bet), live BB counts as player's current bet. Skips if player is already SB or BB.
+3. **`server/src/engine/ServerTableEngine.ts`** — Added `returningFromSitout` Set. When player sits back in (`sitOut(userId, false)`), adds to set. When building HandConfig in `dealHand()`, maps returning players to `deadBlinds` config. Clears set after config is built (post once only).
+
+---
+
+### FIX 135 — Showdown Reveal Order: Last Aggressor Shows First (2026-03-26)
+
+**Bible V8 §4.21:** "Last aggressor shows first. If no aggressor, first player left of dealer shows first."
+
+**Files modified:**
+
+1. **`server/src/types.ts`** — Added `lastAggressorSeat: number` to GameState.
+2. **`server/src/engine/HandController.ts`** — Initialize `lastAggressorSeat: -1` in state. Update to current seat on bet/raise and full-raise all-in. In `completeHand()`, sort showdownResults: first player = last aggressor (or first left of dealer if no aggressor), then clockwise.
+
+---
+
+### FIX 136 — 2-Hour Re-Entry Restriction (2026-03-26)
+
+**Dan's directive:** "IF A PLAYER LEAVE A TABLE, THEY CAN'T BUY IN FOR LESS THEN WHAT THEY CASHED OUT FOR TWO HOURS. THEY CAN JOIN ANY OTHER GAME, EVEN THE SAME STAKES, BUT TWO HOURS TO GO BACK TO THAT SAME GAME WITH LESS CHIPS."
+
+**Files created/modified:**
+
+1. **`supabase/migrations/20260326_cashout_reentry_restriction.sql`** (NEW) — `table_cashout_history` table with `restriction_expires_at` (NOW + 2 hours), RLS, index. Updated `atomic_table_buyin` RPC to check for active restrictions. Added `record_table_cashout` function.
+2. **`src/services/TableService.ts`** — After successful `atomic_table_cashout` in `leaveTable()`, calls `record_table_cashout` RPC to record the cashout amount.
+3. **`src/pages/TablePage.tsx`** — Added `cashoutMinBuyIn` state. Fetches from `table_cashout_history` on page load. Passes as `minBuyIn` override to BuyInModal when active.
+4. **`src/components/table/BuyInModal.tsx`** — Added `cashoutRestriction` prop. Shows orange notice banner when restriction is active: "You cashed out X from this table. Min buy-in is X for 2 hours."
+
+**Key rule:** Applies ONLY to the SAME table. Player can join any other table (even same stakes) without restriction.
+
+**User report:** "CURRENTLY YOU CAN SITE DOWN, THEN SIT AT THE SAME TABLE A 2ND OR 3RD TIME. THATS NOT ALLOWED AND NEEDS TO BE FIXED."
+
+**Root cause:** No unique constraint on `table_seats` for active seats, and `atomic_table_buyin` RPC had no duplicate check. Client's `handleSeatClick` relied on `tableState.heroSeat` which is 0 during the async buy-in flow — race window allowed double-clicks.
+
+**Fix — 3 layers of protection:**
+
+1. **Database: Partial unique index** (strongest guard)
+   - File: `supabase/migrations/20260326_prevent_duplicate_seats.sql` (NEW)
+   - `CREATE UNIQUE INDEX idx_table_seats_one_active_per_user_per_table ON table_seats (table_id, user_id) WHERE left_at IS NULL`
+   - Impossible to bypass from any client — DB rejects duplicate active seats
+
+2. **Database: Explicit RPC check** (clear error message)
+   - File: `supabase/migrations/20260326_prevent_duplicate_seats.sql`
+   - Updated `atomic_table_buyin` to check for existing active seat BEFORE wallet deduction
+   - Raises: `'Player already seated at this table'`
+
+3. **Client: heroSeatRef instant guard** (prevents UI double-click)
+   - File: `src/pages/TablePage.tsx`
+   - Added `heroSeatRef = useRef(0)` — synchronous ref that updates IMMEDIATELY (no React re-render delay)
+   - `handleSeatClick` checks `heroSeatRef.current > 0` as FIRST guard — blocks click instantly
+   - SET in 2 locations:
+     - Page load DB query: `heroSeatRef.current = resolvedHeroSeat` (line 2720)
+     - Buy-in success: `heroSeatRef.current = selectedSeat` (line 5393)
+   - CLEARED in 2 locations:
+     - `handleLeaveTable` success: `heroSeatRef.current = 0` (line 1666)
+     - `handleForceLeaveTable`: `heroSeatRef.current = 0` (line 1702)
+
+**Why:** Bible V8 §1.5 (Fairness Law) — every player receives equal treatment. A player MUST NOT occupy two seats at the same table simultaneously.
+**Verified:** Yes — grep confirms all 7 heroSeatRef references are correct (1 declaration, 2 sets, 2 clears, 2 reads).

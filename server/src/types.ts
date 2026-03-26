@@ -145,6 +145,8 @@ export interface SeatedPlayer {
   time_bank_uses_remaining?: number;
   /** Bible V8 §2.3: Player avatar for broadcast */
   avatar_url?: string;
+  /** Bible V8 §4.2: Player returning from sit-out must post dead blind */
+  returning_from_sitout?: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -170,6 +172,8 @@ export interface HandConfig {
   ritEnabled?: boolean;
   /** Bible V8 §2.8 / §4.19: Whether Insurance is enabled for this hand */
   insuranceEnabled?: boolean;
+  /** Bible V8 §4.2: Dead blinds — seats of players returning from sit-out who must post SB+BB */
+  deadBlinds?: { seat: number }[];
   /** Bible V8 §1.9 / Appendix A: BBJ config for this hand */
   bbjConfig?: {
     /** Whether BBJ is enabled for this variant */
@@ -197,6 +201,8 @@ export interface GameState {
   pots: Pot[];
   actionHistory: ActionRecord[];
   sawFlop: boolean;
+  /** Bible V8 §4.21: Seat of last aggressive bettor/raiser — shows first at showdown */
+  lastAggressorSeat: number;
 }
 
 /**

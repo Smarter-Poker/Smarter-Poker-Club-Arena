@@ -30,6 +30,8 @@ export interface BuyInModalProps {
   bigBlind: number;
   currency?: string;
   countdown?: number; // Seconds remaining to buy in
+  /** FIX 136: If set, player recently cashed out and must buy in for at least this amount */
+  cashoutRestriction?: number;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -57,6 +59,7 @@ export function BuyInModal({
   bigBlind,
   currency = '',
   countdown,
+  cashoutRestriction,
 }: BuyInModalProps) {
   // State
   const [buyInAmount, setBuyInAmount] = useState(defaultBuyIn || Math.min(minBuyIn * 2, maxBuyIn));
@@ -168,6 +171,26 @@ export function BuyInModal({
             ×
           </button>
         </div>
+
+        {/* FIX 136: 2-hour re-entry restriction notice */}
+        {cashoutRestriction && cashoutRestriction > 0 && (
+          <div
+            className="buy-in-modal__restriction-notice"
+            style={{
+              background: 'rgba(255, 165, 0, 0.15)',
+              border: '1px solid rgba(255, 165, 0, 0.4)',
+              borderRadius: '8px',
+              padding: '8px 12px',
+              margin: '0 0 12px 0',
+              fontSize: '12px',
+              color: '#ffaa33',
+              textAlign: 'center',
+            }}
+          >
+            You cashed out {formatAmount(cashoutRestriction)} from this table. Min buy-in is{' '}
+            {formatAmount(cashoutRestriction)} for 2 hours.
+          </div>
+        )}
 
         {/* Amount Display */}
         <div className="buy-in-modal__amount-display">

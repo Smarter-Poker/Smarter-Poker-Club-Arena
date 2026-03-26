@@ -205,14 +205,27 @@ export default function WaitlistPage() {
     };
   }, [entries]);
 
+  // FIX 116: Updated to 9 approved variants — removed dead 'plo'
   const getGameTypeLabel = (type: string): string => {
     switch (type.toLowerCase()) {
       case 'nlh':
         return "No Limit Hold'em";
-      case 'plo':
-        return 'Pot Limit Omaha';
+      case 'plo4':
+        return 'PLO 4-Card';
       case 'plo5':
         return 'PLO 5-Card';
+      case 'plo6':
+        return 'PLO 6-Card';
+      case 'plo8':
+        return 'PLO Hi-Lo';
+      case 'pineapple':
+        return 'Pineapple';
+      case 'short_deck':
+        return 'Short Deck 6+';
+      case 'ofc':
+        return 'Open Face Chinese';
+      case 'ofc_pineapple':
+        return 'OFC Pineapple';
       default:
         return type.toUpperCase();
     }

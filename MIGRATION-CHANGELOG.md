@@ -1652,3 +1652,67 @@ Performed line-by-line re-read of EVERY file modified in Round 6. Results:
 | `src/services/GameServerAPI.ts`           | Updated respondToInsurance() signature, added previewInsurance()                                                                                        |
 | `src/components/table/InsuranceModal.tsx` | Added onDeclineForHand prop, "Decline for Hand" button                                                                                                  |
 | `supabase/migrations/20260325_*.sql`      | Make bbj_payouts.hand_id nullable, add hand_number + table_id columns                                                                                   |
+
+## Post-Migration Verification — Round 13: Deep Verification + Rebase Recovery (2026-03-25)
+
+### Phase: IN PROGRESS
+
+**Context:** Multiple rebases from parallel sessions reverted Rounds 10-12 fixes. This round re-applies ALL reverted fixes plus new findings from deep line-by-line audit.
+
+### FIX 114 — Remove Mississippi Straddle (UTG Only)
+
+**Status:** COMPLETE + DEPLOYED (commit `7953b09e`, Supabase migration applied)
+Dan's directive: "ONLY STRADDLE WE ARE ALLOWING IS UTG. (2ND BIG BLIND ONLY)"
+Removed `mississippiEnabled` from StraddleConfig, simplified processStraddles() to UTG-only, removed UI dropdown, cleaned types, wrote DB migration.
+
+### FIX 115 — Server HandController `case 'plo':` (5th revert fix) + Missing Pineapple
+
+**File:** `server/src/engine/HandController.ts` (line 229)
+**What existed:** `case 'plo':` fallthrough to `case 'plo4':` — dead variant. `case 'pineapple':` missing.
+**What changed:** Removed `case 'plo':`, added `case 'pineapple': return 3;`
+**Why:** `plo` is not in the approved 9 GameVariant list. Pineapple deals 3 cards. 5th time this revert has been fixed.
+**Verified:** YES
+
+### FIX 116 — Dead Variant Cleanup (Server + Client — COMPREHENSIVE)
+
+**What existed:** Dead variants `flh`, `plo`, `plo_hilo`, `mixed`, `flo`, `crazy_pineapple`, `double_board` scattered across 15+ files
+**What changed:** Removed all dead variants from all files. Dan's 9 approved variants: nlh, plo4, plo5, plo6, plo8, pineapple, short_deck, ofc, ofc_pineapple.
+
+**Server files fixed:**
+| File | Change |
+|------|--------|
+| `server/src/types.ts` | GameVariant cleaned to 9 variants + pineapple added |
+| `server/src/engine/PokerEngine.ts` | Simplified isHiLo to `gameVariant === 'plo8'` only |
+| `server/src/config/RakeConfig.ts` | Removed `plo_hilo` BBJ entry, removed `flh` check |
+| `server/src/engine/ServerTableEngine.ts` | Removed MixedGameEngine config block |
+
+**Client files fixed:**
+| File | Change |
+|------|--------|
+| `src/types/database.types.ts` | GameVariant cleaned to 9 variants |
+| `src/types/club.types.ts` | GameVariant cleaned to 9 variants |
+| `src/pages/WaitlistPage.tsx` | getGameTypeLabel updated for all 9 variants |
+| `src/pages/TablePage.tsx` | Removed `flo` from isPotLimit check |
+| `src/pages/TableCreationPage.tsx` | Updated GameType union + gameTypes array |
+| `src/pages/CreateTablePage.tsx` | GAME_TYPES array rebuilt with all 9 variants |
+| `src/pages/ClubHomePage.tsx` | Removed `mixed` and `double` from game filter |
+| `src/pages/club/ClubLobby.tsx` | variantMatchesFilter cleaned |
+| `src/components/lobby/DynamicGameCard.tsx` | VARIANT_DISPLAY + TOURNEY_VARIANT_MAP cleaned |
+| `src/components/club/CreateTableModal.tsx` | Removed Double Board toggle |
+| `src/services/HorseOrchestrator.ts` | Removed dead variant table definitions |
+
+### FIX 117 — Restore finalizeRunout(skipDistribution) — DOUBLE MONEY BUG
+
+**File:** `server/src/engine/HandController.ts` + `ServerTableEngine.ts`
+**What existed:** `finalizeRunout()` called `completeHand()` unconditionally. RIT path distributes pots per-board, then calls `finalizeRunout()` → `completeHand()` re-distributes ALL pots → DOUBLE MONEY.
+**What changed:** Added `skipDistribution` parameter (default false). When true, emits HAND_COMPLETE with rake/BBJ but skips pot distribution. STE RIT path now calls `finalizeRunout(true)`.
+**Why:** Bible V8 §1.9 — settlement must happen exactly ONCE. RIT already settles per-board.
+**Verified:** YES
+
+### FIX 118 — Restore InsuranceEngine.settle() Chop Handling (TIES = PUSH)
+
+**File:** `server/src/engine/InsuranceEngine.ts` + `ServerTableEngine.ts`
+**What existed:** `settle(tableId, winnerId: string)` — single winner only. Chops not detected.
+**What changed:** `settle(tableId, winnerIds: string | string[])` — accepts array. If multiple winners (chop), insurance is PUSHED for winning players (no premium, no payout). STE caller now passes `this.currentHandWinnerIds` (full array).
+**Why:** Bible V8 §4.19 — TIES = PUSH. Insurance should be voided on chopped pots.
+**Verified:** YES

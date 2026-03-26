@@ -187,20 +187,17 @@ export type TableStatus = 'waiting' | 'running' | 'paused' | 'closed';
 
 export type GameType = 'cash' | 'tournament' | 'sng' | 'spin';
 
+// FIX 116: Dead variants removed — Dan's 9 approved variants only
 export type GameVariant =
   | 'nlh' // No-Limit Hold'em
-  | 'flh' // Fixed-Limit Hold'em
-  | 'short_deck' // Short Deck (6+)
   | 'plo4' // Pot-Limit Omaha 4-card
   | 'plo5' // Pot-Limit Omaha 5-card
   | 'plo6' // Pot-Limit Omaha 6-card
-  | 'plo_hilo' // Omaha Hi-Lo
-  | 'ofc' // Open Face Chinese
-  | 'ofc_pineapple' // OFC Pineapple
-  | 'double_board' // Double Board Hold'em
+  | 'plo8' // Omaha Hi-Lo (8 or better)
   | 'pineapple' // Pineapple Hold'em
-  | 'crazy_pineapple'
-  | 'mixed'; // Mixed Games
+  | 'short_deck' // Short Deck (6+)
+  | 'ofc' // Open Face Chinese
+  | 'ofc_pineapple'; // OFC Pineapple
 
 export interface TableSettings {
   // Blinds & Stakes

@@ -387,16 +387,50 @@ export class InsuranceEngine {
   /**
    * Settle all accepted insurance offers based on hand outcome.
    */
-  settle(tableId: string, winnerId: string): InsuranceSettlement[] {
+  /**
+   * FIX 118 (restored FIX 110): Accept string | string[] for winnerIds.
+   * Bible V8 §4.19: TIES = PUSH — if pot is chopped (multiple winners),
+   * insurance is voided for the winner (no premium charged, no payout).
+   */
+  settle(tableId: string, winnerIds: string | string[]): InsuranceSettlement[] {
     const offers = this.activeOffers.get(tableId);
     if (!offers) return [];
 
+    const winners = Array.isArray(winnerIds) ? winnerIds : [winnerIds];
+    const isChop = winners.length > 1;
     const settlements: InsuranceSettlement[] = [];
 
     for (const offer of offers) {
       if (offer.status !== 'accepted') continue;
 
-      const playerLost = offer.playerId !== winnerId;
+      const playerIsWinner = winners.includes(offer.playerId);
+
+      // FIX 118: TIES = PUSH — chop + player is a winner → insurance voided
+      if (isChop && playerIsWinner) {
+        const settlement: InsuranceSettlement = {
+          playerId: offer.playerId,
+          insuredAmount: offer.insuredAmount,
+          premium: 0, // PUSH — no premium charged
+          payout: 0, // PUSH — no payout
+          won: false,
+        };
+        settlements.push(settlement);
+        offer.status = 'settled';
+        this.emitEvent({
+          type: 'INSURANCE_SETTLED',
+          tableId,
+          handId: offer.handId,
+          playerId: offer.playerId,
+          payout: 0,
+          premium: 0,
+          insuredAmount: offer.insuredAmount,
+          coveragePercent: offer.coveragePercent,
+          won: false,
+        });
+        continue;
+      }
+
+      const playerLost = !playerIsWinner;
       const payout = playerLost ? offer.insuredAmount : 0;
 
       const settlement: InsuranceSettlement = {

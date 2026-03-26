@@ -250,19 +250,7 @@ export const BBJ_QUALIFYING_HANDS: Record<string, BBJQualifyingHand> = {
     handRank: 'four_of_a_kind',
     minRankValue: 'KKKK',
   },
-  // Alias: plo_hilo maps to same rules as plo8
-  plo_hilo: {
-    label: 'PLO8 (Hi-Lo 8 or Better)',
-    minLosingHand: 'KKKK2',
-    description: 'Four of a Kind (Kings) or better must LOSE — evaluated on HIGH hand only',
-    rules: [
-      'Must use exactly 2 cards from hand',
-      'Both players must use two cards from their hole cards',
-      'BBJ evaluated on HIGH hand only (low hand does not qualify)',
-    ],
-    handRank: 'four_of_a_kind',
-    minRankValue: 'KKKK',
-  },
+  // FIX 116: plo_hilo dead variant removed — plo8 is the only hi-lo variant
   plo5: {
     label: 'PLO5 / FLO5',
     minLosingHand: '87654',
@@ -601,7 +589,8 @@ function doesHandQualify(
       if (pairRank < 11) return false;
 
       // NLH rule: Player must have at least one Ace in hole cards
-      if (variant === 'nlh' || variant === 'flh') {
+      if (variant === 'nlh') {
+        // FIX 116: flh removed from GameVariant
         const hasAceInHole = holeCards.some((c) => c.rank === 'A' || c.rank === '14');
         if (!hasAceInHole) return false;
       }

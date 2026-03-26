@@ -104,15 +104,14 @@ export interface PokerTable {
 }
 
 export type GameType = 'cash' | 'tournament' | 'sit_n_go';
+// FIX 116: Dead variants removed — Dan's 9 approved variants only
 export type GameVariant =
   | 'nlh'
-  | 'flh'
-  | 'plo'
   | 'plo4'
   | 'plo5'
   | 'plo6'
-  | 'plo_hilo'
   | 'plo8'
+  | 'pineapple'
   | 'short_deck'
   | 'ofc'
   | 'ofc_pineapple';

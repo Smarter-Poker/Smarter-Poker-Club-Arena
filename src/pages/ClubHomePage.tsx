@@ -706,14 +706,11 @@ export default function ClubHomePage() {
           passesGameFilter =
             table.game_variant?.toLowerCase().includes('plo') ||
             table.game_variant?.toLowerCase().includes('omaha');
+        // FIX 116: removed dead 'mixed' and 'double' variants from filter
         else if (activeFilter === 'Mixed') {
           const v = table.game_variant?.toLowerCase() || '';
           passesGameFilter =
-            v.includes('pineapple') ||
-            v.includes('short_deck') ||
-            v.includes('ofc') ||
-            v.includes('mixed') ||
-            v.includes('double');
+            v.includes('pineapple') || v.includes('short_deck') || v.includes('ofc');
         }
         if (!passesGameFilter) return false;
 

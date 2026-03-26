@@ -479,14 +479,7 @@ export default function CreateTableModal({ clubId, onClose, onSuccess }: CreateT
                 </label>
 
                 {/* ── Double Board ── */}
-                <label className={styles['checkbox-label']}>
-                  <input
-                    type="checkbox"
-                    checked={settings.double_board}
-                    onChange={() => toggleSetting('double_board')}
-                  />
-                  Double Board
-                </label>
+                {/* FIX 116: Double Board removed — dead variant */}
 
                 {/* ── Insurance ── */}
                 <label className={styles['checkbox-label']}>

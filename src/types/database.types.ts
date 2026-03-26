@@ -264,7 +264,8 @@ export interface HandState {
   players: SeatPlayer[];
 }
 
-export type HandStage = 'preflop' | 'flop' | 'turn' | 'river' | 'showdown';
+// FIX 120: Added 'pineapple_discard' for Crazy Pineapple
+export type HandStage = 'preflop' | 'flop' | 'pineapple_discard' | 'turn' | 'river' | 'showdown';
 
 export interface SeatPlayer {
   seat: number;
@@ -279,7 +280,8 @@ export interface SeatPlayer {
   is_sitting_out: boolean;
 }
 
-export type ActionType = 'fold' | 'check' | 'call' | 'bet' | 'raise' | 'all_in';
+// FIX 120: Added 'discard' for Crazy Pineapple
+export type ActionType = 'fold' | 'check' | 'call' | 'bet' | 'raise' | 'all_in' | 'discard';
 
 export interface PlayerAction {
   type: ActionType;

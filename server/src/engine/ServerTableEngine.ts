@@ -1561,6 +1561,14 @@ export class ServerTableEngine {
         this.broadcastCurrentState();
         break;
 
+      case 'PINEAPPLE_DISCARD_REQUIRED':
+        // FIX 120: Crazy Pineapple — broadcast discard requirement to all players
+        // Each player must discard 1 of their 3 hole cards within the action timer.
+        // ServerTableEngine starts a discard timer; auto-discards (last card) on expiry.
+        this.handlePineappleDiscard(event);
+        this.broadcastCurrentState();
+        break;
+
       case 'ALL_IN_RUNOUT':
         // Bible V8 §4.19: All players are all-in with cards to come.
         // Pause for insurance/RIT offers before dealing remaining community cards.
@@ -1802,6 +1810,69 @@ export class ServerTableEngine {
    * 3. If RIT is enabled and exactly 2 players: offer RIT (handled separately via respondToRIT)
    * 4. After all offers resolved → resume with handController.continueRunout()
    */
+  /**
+   * FIX 120: Crazy Pineapple — start a discard timer for all active players.
+   * Each player has action_time_seconds to pick which card to discard.
+   * If they don't respond, auto-discard the last (3rd) card.
+   */
+  private pineappleDiscardTimer: ReturnType<typeof setTimeout> | null = null;
+  private handlePineappleDiscard(event: HandEvent): void {
+    if (event.type !== 'PINEAPPLE_DISCARD_REQUIRED' || !this.handController) return;
+
+    const seats = (event as any).seats as number[];
+    const timeoutMs = (this.tableInfo?.action_time_seconds || 15) * 1000;
+
+    // Start a single discard timer — when it expires, auto-discard for anyone remaining
+    this.pineappleDiscardTimer = setTimeout(() => {
+      if (!this.handController) return;
+      for (const seat of seats) {
+        // Auto-discard last card for any player who hasn't responded
+        this.handController.autoDiscard(seat);
+      }
+      // checkPineappleDiscardsComplete() inside autoDiscard will advance the game
+    }, timeoutMs);
+  }
+
+  /**
+   * FIX 120: Public method for players to submit their Pineapple discard.
+   * @param userId - The user submitting the discard
+   * @param cardIndex - Which card to discard (0, 1, or 2)
+   * @returns success/error
+   */
+  submitDiscard(userId: string, cardIndex: number): { success: boolean; error?: string } {
+    if (!this.handController) {
+      return { success: false, error: 'No active hand' };
+    }
+
+    const hcState = this.handController.getState();
+    if (hcState.stage !== 'pineapple_discard') {
+      return { success: false, error: 'Not in discard phase' };
+    }
+
+    const player = this.seatedPlayers.find((p) => p.user_id === userId);
+    if (!player) {
+      return { success: false, error: 'Player not seated' };
+    }
+
+    const result = this.handController.performDiscard(player.seat_number, cardIndex);
+    if (!result) {
+      return { success: false, error: 'Discard rejected' };
+    }
+
+    // If all discards are complete, the HandController will advance the game
+    // and emit events that trigger broadcasting. Clear the discard timer.
+    if (hcState.stage !== 'pineapple_discard') {
+      // Stage already advanced — all discards are in
+      if (this.pineappleDiscardTimer) {
+        clearTimeout(this.pineappleDiscardTimer);
+        this.pineappleDiscardTimer = null;
+      }
+    }
+
+    this.broadcastCurrentState();
+    return { success: true };
+  }
+
   private handleAllInRunout(event: HandEvent, players: SeatedPlayer[]): void {
     if (event.type !== 'ALL_IN_RUNOUT' || !this.handController) return;
 

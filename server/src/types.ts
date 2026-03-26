@@ -22,8 +22,10 @@ export interface Card {
 // Game Types
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type HandStage = 'preflop' | 'flop' | 'turn' | 'river' | 'showdown';
-export type ActionType = 'fold' | 'check' | 'call' | 'bet' | 'raise' | 'all_in';
+// FIX 120: Added 'pineapple_discard' stage for Crazy Pineapple (discard after flop)
+export type HandStage = 'preflop' | 'flop' | 'pineapple_discard' | 'turn' | 'river' | 'showdown';
+// FIX 120: Added 'discard' action for Crazy Pineapple
+export type ActionType = 'fold' | 'check' | 'call' | 'bet' | 'raise' | 'all_in' | 'discard';
 // FIX 116: Dead variants removed (flh, plo, plo_hilo, mixed) — Dan's 9 approved variants only
 export type GameVariant =
   | 'nlh'
@@ -241,6 +243,7 @@ export type HandEvent =
   | { type: 'POT_UPDATE'; pot: number; pots: Pot[] }
   | { type: 'TURN_CHANGE'; seat: number; availableActions: ActionType[] }
   | { type: 'ALL_IN_RUNOUT'; board: Card[]; pot: number; players: SeatPlayer[] }
+  | { type: 'PINEAPPLE_DISCARD_REQUIRED'; seats: number[] } // FIX 120: Crazy Pineapple
   | { type: 'SHOWDOWN'; results: ShowdownResult[] }
   | { type: 'WINNERS'; winners: Winner[] }
   | { type: 'HAND_COMPLETE'; handNumber: number; rake: number; bbjFee: number };

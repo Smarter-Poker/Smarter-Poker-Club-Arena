@@ -120,7 +120,7 @@ export type TableStatus = 'waiting' | 'running' | 'active' | 'paused' | 'closed'
 export interface TableSettings {
   // ── Core Features ──
   straddle_enabled: boolean;
-  straddle_type: 'utg' | 'any_position' | 'mississippi';
+  straddle_type: 'utg'; // FIX 114: UTG straddle only
   run_it_twice: boolean;
   bomb_pot_enabled: boolean;
   bomb_pot_frequency: number; // Every N hands

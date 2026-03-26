@@ -1716,3 +1716,39 @@ Removed `mississippiEnabled` from StraddleConfig, simplified processStraddles() 
 **What changed:** `settle(tableId, winnerIds: string | string[])` — accepts array. If multiple winners (chop), insurance is PUSHED for winning players (no premium, no payout). STE caller now passes `this.currentHandWinnerIds` (full array).
 **Why:** Bible V8 §4.19 — TIES = PUSH. Insurance should be voided on chopped pots.
 **Verified:** YES
+
+---
+
+## Post-Migration Verification — Round 14: FIX 114 Re-Application (2026-03-25)
+
+### Phase: COMPLETE
+
+**Context:** Round 13 handoff (commit 379eee80 + 30fe7074) triggered a parallel AntiGravity session rebase that REVERTED FIX 114 (Mississippi straddle removal) in 4 files. FIX 115-118 persisted. This round re-applies FIX 114 everywhere.
+
+### FIX 114 Re-Applied — All Files (6th Application)
+
+**Rebase damage detected:**
+
+- `server/src/engine/StraddleEngine.ts` — `mississippiEnabled` back in StraddleConfig + processStraddles loop
+- `server/src/engine/ServerTableEngine.ts` — both straddle config locations (init + dealHand) had `mississippiEnabled`
+- `src/engine/StraddleEngine.ts` — client mirror of same issue
+- `tests/engine/StraddleEngine.test.ts` — all config objects had `mississippiEnabled`
+- `server/src/types.ts` — straddle_type still had `'mississippi'` option
+- `src/types/database.types.ts` — straddle_type had `'utg' | 'any_position' | 'mississippi'`
+- `src/types/club.types.ts` — StraddleType had `'none' | 'utg_only' | 'all_positions' | 'mississippi'`
+- `src/components/club/CreateTableModal.tsx` — straddle type dropdown still had Mississippi option
+
+**What changed (all files):**
+
+1. Server StraddleEngine: Removed `mississippiEnabled` from StraddleConfig interface, changed processStraddles to always break after first straddle (UTG only), updated header docs
+2. ServerTableEngine: Both straddle config locations simplified — removed `mississippiEnabled`, hardcoded `maxStraddles: 1`
+3. Client StraddleEngine: Mirrored server changes exactly
+4. Test file: Removed all `mississippiEnabled` from config objects, replaced Mississippi test suite with UTG-only test suite
+5. Server types.ts: `straddle_type?: 'utg'` only (removed `'mississippi'`)
+6. Client database.types.ts: `straddle_type: 'utg'` only
+7. Client club.types.ts: `StraddleType = 'none' | 'utg'` (removed `'utg_only' | 'all_positions' | 'mississippi'`)
+8. CreateTableModal: Replaced straddle type dropdown with static "UTG Straddle (2× BB)" label
+9. Server types.ts: Updated HandConfig straddle comment to "UTG straddle only"
+
+**Files modified:** 8 files across server + client + tests
+**Verified:** grep confirms zero remaining `mississippi` references outside of FIX comments

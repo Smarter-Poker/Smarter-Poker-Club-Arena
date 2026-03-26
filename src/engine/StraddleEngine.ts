@@ -1,12 +1,11 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  STRADDLE ENGINE — Auto-Straddle and Mississippi Straddle Support
+ *  STRADDLE ENGINE — UTG Straddle Only (FIX 114)
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Manages straddle logic for cash game tables:
- * - UTG straddle (standard: 2x BB)
- * - Mississippi straddle (any position except blinds)
- * - Configurable cap (2x, 3x, unlimited re-straddles)
+ * - UTG straddle ONLY (standard: 2x BB, single straddle per hand)
+ * - Mississippi straddle REMOVED per Dan's directive
  * - Auto-straddle enrollment per player
  * - Bus emissions for UI synchronization
  */
@@ -17,11 +16,11 @@ import { masterBus } from '../core/MasterBus';
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/** FIX 114: UTG straddle only — Mississippi removed per Dan's directive */
 export interface StraddleConfig {
   enabled: boolean;
-  mississippiEnabled: boolean; // Allow straddle from any position
-  maxStraddles: number; // Max consecutive re-straddles (1 = UTG only, 0 = unlimited)
-  straddleMultiplier: number; // Usually 2x the previous blind/straddle
+  maxStraddles: number; // FIX 114: Always 1 (UTG only, no re-straddles)
+  straddleMultiplier: number; // Standard 2x BB
 }
 
 export interface StraddleState {
@@ -128,15 +127,15 @@ class StraddleEngineClass {
     let straddleCount = 0;
     const maxStraddles = config.maxStraddles === 0 ? Infinity : config.maxStraddles;
 
-    // Iterate through seats starting from UTG
+    // FIX 114: UTG only — first eligible seat posts, then we stop.
     for (const { seat, playerId } of seatOrder) {
       if (straddleCount >= maxStraddles) break;
 
       // Check if this player has auto-straddle enabled
       if (!state.enrolledPlayers.has(playerId)) break; // Stop at first non-straddler
 
-      // Mississippi straddle: any position (if enabled), else only UTG
-      if (!config.mississippiEnabled && straddleCount > 0) break;
+      // FIX 114: Only UTG straddle — always break after first straddle
+      if (straddleCount > 0) break;
 
       const straddleAmount = currentAmount * config.straddleMultiplier;
       const stack = playerStacks.get(playerId) ?? 0;

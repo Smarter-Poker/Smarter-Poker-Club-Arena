@@ -253,13 +253,16 @@ export class ServerTableEngine {
       const tableData = await loadTable(this.tableId);
       this.tableInfo = tableData as TableInfo;
 
-      // Bible V8 §6.2: Configure time bank engine with table-specific settings
-      // Time banks: 20 seconds each, max 2 per hand, 120/month with VIP (or purchasable with Diamonds)
+      // FIX 123: Bible V8 §6.2 + Dan's directive — Time bank auto-extend ONLY if:
+      //   1. Table has time_bank_enabled = true
+      //   2. Player has time banks available (checked in TimeBankEngine.activate())
+      // If disabled or depleted → player gets folded on timeout, then client shows buy-more popup.
+      const timeBankEnabled = this.tableInfo.time_bank_enabled ?? true;
       this.timeBankEngine.configure(this.tableId, {
         totalBankSeconds: (this.tableInfo.time_bank_max_uses ?? 120) * 20, // uses × 20s each
         maxUses: this.tableInfo.time_bank_max_uses ?? 120,
         secondsPerUse: 20, // Each time bank adds exactly 20 seconds
-        autoActivate: true,
+        autoActivate: timeBankEnabled, // FIX 123: Respect table setting — false means no auto-extend
       });
 
       // Bible V8 §6.3: Configure disconnect engine with table-specific settings

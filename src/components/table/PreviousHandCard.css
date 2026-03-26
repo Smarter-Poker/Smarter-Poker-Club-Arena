@@ -1,0 +1,138 @@
+/* ═══════════════════════════════════════════════════════════════════════════════
+ * PREVIOUS HAND CARD — Bottom-Left HUD Widget
+ * ═══════════════════════════════════════════════════════════════════════════════ */
+
+.prev-hand-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(12px) saturate(1.2);
+  -webkit-backdrop-filter: blur(12px) saturate(1.2);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  max-width: 200px;
+}
+
+.prev-hand-card:hover {
+  background: rgba(0, 0, 0, 0.7);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.prev-hand-card:active {
+  transform: scale(0.97);
+}
+
+/* ── Card Icon ── */
+.prev-hand-card__icon {
+  color: var(--soft-white, #b0b3b8);
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+/* ── Info ── */
+.prev-hand-card__info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.prev-hand-card__hand {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--soft-white, #b0b3b8);
+  opacity: 0.8;
+}
+
+.prev-hand-card__result {
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+/* ── Hand Description ── */
+.prev-hand-card__desc {
+  font-size: 9px;
+  color: var(--soft-white, #b0b3b8);
+  opacity: 0.6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 80px;
+}
+
+/* ── Wrapper ── */
+.prev-hand-card-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* ── Action Buttons (Replay / Share) ── */
+.prev-hand-card__actions {
+  display: flex;
+  gap: 4px;
+  animation: prev-hand-actions-in 0.2s ease;
+}
+
+@keyframes prev-hand-actions-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.prev-hand-card__action-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 5px 10px;
+  color: var(--soft-white, #b0b3b8);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.prev-hand-card__action-btn:hover {
+  background: rgba(0, 0, 0, 0.7);
+  color: var(--off-white, #e4e6eb);
+}
+
+.prev-hand-card__action-btn:active {
+  transform: scale(0.95);
+}
+
+/* ── Responsive ── */
+@media (max-width: 480px) {
+  .prev-hand-card {
+    padding: 6px 10px;
+    gap: 6px;
+    border-radius: 8px;
+  }
+
+  .prev-hand-card__result {
+    font-size: 12px;
+  }
+
+  .prev-hand-card__desc {
+    display: none;
+  }
+}

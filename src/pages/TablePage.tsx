@@ -168,6 +168,10 @@ import { StreakBadge } from '../components/table/StreakBadge';
 import { SpinItWheel } from '../components/table/SpinItWheel';
 
 import { useIsMounted } from '../hooks/useIsMounted';
+// Bible V8 §11: 4-Corner Table HUD Components
+import { TableHUD } from '../components/table/TableHUD';
+import { MiniStatsCard } from '../components/table/MiniStatsCard';
+import { PreviousHandCard } from '../components/table/PreviousHandCard';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // RAKE CONFIG HELPER — Derives rake config from official chart
@@ -720,6 +724,18 @@ export default function TablePage({
   const hadShowdownRef = useRef(false); // Tracks if current hand reached showdown (cross-event ref)
   const totalRebuysRef = useRef(0); // Add-chips/rebuy count for session summary
   const actionLockRef = useRef(false); // Debounce rapid action button taps (300ms)
+
+  // Previous hand tracking for bottom-left HUD card
+  const [prevHandResult, setPrevHandResult] = useState<{
+    handNumber: number;
+    result: number;
+    didWin: boolean;
+    didFold: boolean;
+    handDescription?: string;
+  } | null>(null);
+
+  // VPIP count tracking for mini stats card
+  const vpipCountRef = useRef(0);
   const triggerChipAnimationRef = useRef<
     ((fromSeat: number, toPot: boolean, amount: number) => void) | null
   >(null);
@@ -817,6 +833,90 @@ export default function TablePage({
     unreadCount,
     clearUnread,
   } = useTableChat(tableId, userId, tableState.players);
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Observer chat permission — Admin/Owner roles can chat even when observing
+  // Union Owners/Admins, Club Owners/Admins, Super Agents, and smarter.poker Admins
+  // can send messages even if they are NOT seated at the table.
+  // Regular observers CANNOT post.
+  // ═══════════════════════════════════════════════════════════════════════
+  const [canChatAsObserver, setCanChatAsObserver] = useState(false);
+  useEffect(() => {
+    if (!userId || userId === 'guest') return;
+    const isSeated = tableState.heroSeat > 0;
+    if (isSeated) {
+      setCanChatAsObserver(true); // Seated players can always chat
+      return;
+    }
+    // Check if observer has admin/owner role in this club or union
+    const checkObserverChatPermission = async () => {
+      try {
+        const clubId = actualClubIdRef.current;
+        if (!clubId) {
+          setCanChatAsObserver(false);
+          return;
+        }
+        // Check club membership role
+        const { data: membership } = await supabase
+          .from('club_members')
+          .select('role')
+          .eq('club_id', clubId)
+          .eq('user_id', userId)
+          .maybeSingle();
+
+        if (membership) {
+          const role = membership.role?.toLowerCase() || '';
+          // Club Owner, Club Admin, Super Agent can chat as observer
+          if (['owner', 'admin', 'super_agent'].includes(role)) {
+            setCanChatAsObserver(true);
+            return;
+          }
+        }
+
+        // Check union-level role (union_owners, union_admins)
+        const { data: club } = await supabase
+          .from('clubs')
+          .select('union_id')
+          .eq('id', clubId)
+          .maybeSingle();
+
+        if (club?.union_id) {
+          const { data: unionMembership } = await supabase
+            .from('union_members')
+            .select('role')
+            .eq('union_id', club.union_id)
+            .eq('user_id', userId)
+            .maybeSingle();
+
+          if (unionMembership) {
+            const unionRole = unionMembership.role?.toLowerCase() || '';
+            if (['owner', 'admin'].includes(unionRole)) {
+              setCanChatAsObserver(true);
+              return;
+            }
+          }
+        }
+
+        // Check smarter.poker admin status
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('is_admin')
+          .eq('id', userId)
+          .maybeSingle();
+
+        if (profile?.is_admin) {
+          setCanChatAsObserver(true);
+          return;
+        }
+
+        setCanChatAsObserver(false);
+      } catch (err) {
+        console.warn('[TablePage] Observer chat permission check failed:', err);
+        setCanChatAsObserver(false);
+      }
+    };
+    checkObserverChatPermission();
+  }, [userId, tableState.heroSeat]);
 
   // Reaction picker state
   const [isReactionPickerOpen, setIsReactionPickerOpen] = useState(false);
@@ -3294,6 +3394,36 @@ export default function TablePage({
     }
   }, [lastEvent]);
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // Previous hand tracking — detects hand number change, captures result
+  // for the bottom-left PreviousHandCard HUD widget
+  // ═══════════════════════════════════════════════════════════════════════
+  const prevHandNumberRef = useRef<number>(0);
+  const prevHandStackRef = useRef<number>(0);
+  useEffect(() => {
+    const handNum = tableState.handNumber ?? 0;
+    const heroPlayer = tableState.players[tableState.heroSeat - 1];
+    const heroStack = heroPlayer?.stack || 0;
+
+    if (handNum > 0 && handNum !== prevHandNumberRef.current) {
+      // Hand number changed — the previous hand just completed
+      if (prevHandNumberRef.current > 0 && heroPlayer) {
+        const stackChange = heroStack - prevHandStackRef.current;
+        const heroFolded = heroPlayer.status === 'folded';
+        setPrevHandResult({
+          handNumber: prevHandNumberRef.current,
+          result: stackChange,
+          didWin: stackChange > 0,
+          didFold: heroFolded,
+        });
+        // Track hands played + VPIP for mini stats card
+        handsPlayedRef.current++;
+      }
+      prevHandNumberRef.current = handNum;
+      prevHandStackRef.current = heroStack;
+    }
+  }, [tableState.handNumber, tableState.heroSeat, tableState.players]);
+
   // Update players from presence state
   useEffect(() => {
     if (!presence) return;
@@ -4070,58 +4200,146 @@ export default function TablePage({
           <span className="header-game-type">{tableState.gameType}</span>
           <span className="header-blinds">{tableState.blinds}</span>
         </div>
-        <div className="header-right">
-          <button
-            className="header-btn"
-            onClick={() => {
-              soundService.playButtonClick();
-              setShowHandHistory((prev) => !prev);
-            }}
-            title="Hand History"
-          >
-            <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-              <path
-                d="M3 4h12M3 7h8M3 10h10M3 13h6"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-              />
-            </svg>
-          </button>
-          <button
-            className="header-btn"
-            onClick={() => {
-              soundService.playButtonClick();
-              setShowSettings(true);
-            }}
-            title="Settings"
-          >
-            <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-              <circle cx="9" cy="9" r="2" stroke="currentColor" strokeWidth="1.5" />
-              <path
-                d="M9 1v2M9 15v2M1 9h2M15 9h2M3.3 3.3l1.4 1.4M13.3 13.3l1.4 1.4M3.3 14.7l1.4-1.4M13.3 4.7l1.4-1.4"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-              />
-            </svg>
-          </button>
-          <button
-            className="header-btn menu-btn"
-            onClick={() => {
-              soundService.playButtonClick();
-              setShowTableMenu(true);
-            }}
-            title="Menu"
-          >
-            <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-              <circle cx="9" cy="4" r="1.5" fill="currentColor" />
-              <circle cx="9" cy="9" r="1.5" fill="currentColor" />
-              <circle cx="9" cy="14" r="1.5" fill="currentColor" />
-            </svg>
-          </button>
-        </div>
+        {/* Header-right cleared — buttons moved to 4-corner HUD layout */}
+        <div className="header-right" />
       </div>
+
+      {/* ═══════════════════════════════════════════════════════════════════════
+          4-CORNER TABLE HUD — Bible V8 §11
+          Upper-left: Hamburger menu | Upper-right: Mini stats card
+          Bottom-left: Previous hand   | Bottom-right: (Chat via TableChat)
+          ═══════════════════════════════════════════════════════════════════════ */}
+      <TableHUD
+        upperLeft={
+          <TableMenu
+            isOpen={showTableMenu}
+            onClose={() => setShowTableMenu(false)}
+            onToggle={() => setShowTableMenu((prev) => !prev)}
+            position="top-left"
+            sections={[
+              {
+                title: 'Quick Actions',
+                actions: [
+                  {
+                    id: 'sitout',
+                    label: 'Sit Out',
+                    icon: <SitOutIcon />,
+                    onClick: () => setShowSitOut(true),
+                  },
+                  ...(tableState.isTournament
+                    ? [
+                        {
+                          id: 'rebuy',
+                          label: 'Rebuy',
+                          icon: <RebuyIcon />,
+                          onClick: handleTournamentRebuy,
+                        },
+                        {
+                          id: 'addon',
+                          label: 'Add-On',
+                          icon: <AddOnIcon />,
+                          onClick: handleTournamentAddOn,
+                        },
+                      ]
+                    : [
+                        {
+                          id: 'rebuy',
+                          label: 'Add Chips',
+                          icon: <RebuyIcon />,
+                          onClick: () => setShowCashier(true),
+                        },
+                      ]),
+                ],
+              },
+              {
+                title: 'Table Info',
+                actions: [
+                  {
+                    id: 'history',
+                    label: 'Hand History',
+                    icon: <HandHistoryIcon />,
+                    onClick: () => setShowHandReplay(true),
+                  },
+                  {
+                    id: 'leaderboard',
+                    label: 'Leaderboard',
+                    icon: <LeaderboardIcon />,
+                    onClick: () => setShowLeaderboard(true),
+                  },
+                  ...(!tableState.isTournament
+                    ? [
+                        {
+                          id: 'session-stats',
+                          label: 'Session Stats',
+                          icon: <SessionStatsIcon />,
+                          onClick: () => setShowSessionStats(true),
+                        },
+                      ]
+                    : []),
+                  {
+                    id: 'settings',
+                    label: 'Settings',
+                    icon: <SettingsIcon />,
+                    onClick: () => setShowSettings(true),
+                  },
+                ],
+              },
+              {
+                title: 'Support',
+                actions: [
+                  {
+                    id: 'help',
+                    label: 'Help & Rules',
+                    icon: <HelpIcon />,
+                    onClick: () => setShowGameRules(true),
+                  },
+                ],
+              },
+              {
+                actions: [
+                  {
+                    id: 'leave',
+                    label: 'Leave Table',
+                    icon: <LeaveTableIcon />,
+                    onClick: () => setShowLeaveConfirm(true),
+                    danger: true,
+                  },
+                ],
+              },
+            ]}
+            tableName={tableState.tableName}
+            connectionStatus={isConnected ? 'connected' : 'disconnected'}
+          />
+        }
+        upperRight={
+          <MiniStatsCard
+            currentStack={tableState.players[tableState.heroSeat - 1]?.stack || 0}
+            totalBuyIn={totalBuyInRef.current}
+            handsPlayed={handsPlayedRef.current}
+            vpipCount={vpipCountRef.current}
+            handsWon={handsWonRef.current}
+            isSeated={tableState.heroSeat > 0}
+            onTap={() => setShowSessionStats(true)}
+          />
+        }
+        bottomLeft={
+          <PreviousHandCard
+            handNumber={prevHandResult?.handNumber ?? null}
+            result={prevHandResult?.result ?? 0}
+            didWin={prevHandResult?.didWin ?? false}
+            didFold={prevHandResult?.didFold ?? false}
+            handDescription={prevHandResult?.handDescription}
+            onTap={() => setShowHandReplay(true)}
+            onShareHand={() => setShowShareHand(true)}
+          />
+        }
+        centerTop={
+          <div className="hud-game-info">
+            <span className="hud-game-info__type">{tableState.gameType}</span>
+            <span className="hud-game-info__blinds">{tableState.blinds}</span>
+          </div>
+        }
+      />
 
       {/* ═══════════════════════════════════════════════════════════════════════
           TABLE AREA
@@ -4714,8 +4932,9 @@ export default function TablePage({
         tableId={tableId}
         isCollapsed={isChatCollapsed}
         onToggleCollapse={() => setIsChatCollapsed(!isChatCollapsed)}
-        placeholder="Say something..."
+        placeholder={canChatAsObserver ? 'Say something...' : 'Observers cannot chat'}
         isMuted={isChatMuted}
+        isDisabled={!canChatAsObserver}
         unreadCount={unreadCount}
       />
 
@@ -5184,105 +5403,7 @@ export default function TablePage({
         onPeriodChange={setLeaderboardPeriod}
       />
 
-      {/* Table Menu */}
-      <TableMenu
-        isOpen={showTableMenu}
-        onClose={() => setShowTableMenu(false)}
-        onToggle={() => setShowTableMenu((prev) => !prev)}
-        sections={[
-          {
-            title: 'Quick Actions',
-            actions: [
-              {
-                id: 'sitout',
-                label: 'Sit Out',
-                icon: <SitOutIcon />,
-                onClick: () => setShowSitOut(true),
-              },
-              ...(tableState.isTournament
-                ? [
-                    {
-                      id: 'rebuy',
-                      label: 'Rebuy',
-                      icon: <RebuyIcon />,
-                      onClick: handleTournamentRebuy,
-                    },
-                    {
-                      id: 'addon',
-                      label: 'Add-On',
-                      icon: <AddOnIcon />,
-                      onClick: handleTournamentAddOn,
-                    },
-                  ]
-                : [
-                    {
-                      id: 'rebuy',
-                      label: 'Add Chips',
-                      icon: <RebuyIcon />,
-                      onClick: () => setShowCashier(true),
-                    },
-                  ]),
-            ],
-          },
-          {
-            title: 'Table Info',
-            actions: [
-              {
-                id: 'history',
-                label: 'Hand History',
-                icon: <HandHistoryIcon />,
-                onClick: () => setShowHandReplay(true),
-              },
-              {
-                id: 'leaderboard',
-                label: 'Leaderboard',
-                icon: <LeaderboardIcon />,
-                onClick: () => setShowLeaderboard(true),
-              },
-              ...(!tableState.isTournament
-                ? [
-                    {
-                      id: 'session-stats',
-                      label: 'Session Stats',
-                      icon: <SessionStatsIcon />,
-                      onClick: () => setShowSessionStats(true),
-                    },
-                  ]
-                : []),
-              {
-                id: 'settings',
-                label: 'Settings',
-                icon: <SettingsIcon />,
-                onClick: () => setShowSettings(true),
-              },
-            ],
-          },
-          {
-            title: 'Support',
-            actions: [
-              {
-                id: 'help',
-                label: 'Help & Rules',
-                icon: <HelpIcon />,
-                onClick: () => setShowGameRules(true),
-              },
-            ],
-          },
-          {
-            actions: [
-              {
-                id: 'leave',
-                label: 'Leave Table',
-                icon: <LeaveTableIcon />,
-                onClick: () => setShowLeaveConfirm(true),
-                danger: true,
-              },
-            ],
-          },
-        ]}
-        tableName={tableState.tableName}
-        connectionStatus={isConnected ? 'connected' : 'disconnected'}
-      />
+      {/* Old TableMenu removed — now rendered inside TableHUD upper-left corner */}
 
       {/* Leave Table Confirmation */}
       <LeaveTableConfirm

@@ -13,6 +13,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { CardBackSelector } from '../customization/CardBackSelector';
 import { AvatarGallery } from '../customization/AvatarGallery';
+import { TableSettingsPanel } from './TableSettingsPanel';
+import { ThemeSettingsModal } from './ThemeSettingsModal';
+import { useUserTableSettings } from '../../hooks/useUserTableSettings';
+import { useAuthUser } from '../../hooks/useAuthUser';
 import './SettingsPanel.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -108,6 +112,15 @@ export function SettingsPanel({
 }: SettingsPanelProps) {
   const [visibleSections, setVisibleSections] = useState<boolean[]>([]);
   const [showAvatarGallery, setShowAvatarGallery] = useState(false);
+  const [showThemeSettings, setShowThemeSettings] = useState(false);
+
+  // Bible V8 §11.1: User table settings (12 toggles) from Supabase
+  const { user: authUser } = useAuthUser();
+  const {
+    settings: v8Settings,
+    loading: v8Loading,
+    toggleSetting: v8Toggle,
+  } = useUserTableSettings(authUser?.id);
 
   useEffect(() => {
     if (isOpen) {
@@ -372,6 +385,20 @@ export function SettingsPanel({
               onPurchase={onCardBackPurchase}
             />
           </div>
+
+          {/* ═══════════════════════════════════════════════════════════
+              Bible V8 §11.1: User Table Preferences (12 toggles)
+          ═══════════════════════════════════════════════════════════ */}
+          <div className="settings-section">
+            <h3 className="settings-section__title">Table Preferences</h3>
+            <TableSettingsPanel
+              settings={v8Settings}
+              loading={v8Loading}
+              onToggle={v8Toggle}
+              mode="inline"
+              onOpenThemeSettings={() => setShowThemeSettings(true)}
+            />
+          </div>
         </div>
 
         {/* Footer */}
@@ -390,6 +417,14 @@ export function SettingsPanel({
         currentAvatarUrl={currentAvatarUrl}
         isVip={isVip}
         onAvatarChanged={onAvatarChanged}
+      />
+
+      {/* Bible V8 §11.2: Theme Settings Modal */}
+      <ThemeSettingsModal
+        isOpen={showThemeSettings}
+        onClose={() => setShowThemeSettings(false)}
+        userId={authUser?.id || userId}
+        vipLevel={isVip ? 'gold' : 'free'}
       />
     </div>
   );

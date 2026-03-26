@@ -2069,3 +2069,106 @@ Added in BOTH paths:
 2. **Pineapple discard UI**: TablePage.tsx needs card selection UI — server auto-discards until built
 3. **Dead blind**: Player returning from sit-out should post both SB+BB (SB dead) — not implemented
 4. **Buy-more modal**: FIX 124 currently shows a toast; a dedicated modal with Diamond purchase flow would be a better UX
+
+---
+
+## Step 8 — TABLE SETTINGS & THEME CUSTOMIZATION (Bible V8 Chapter 11)
+
+### Phase: COMPLETED 2026-03-26
+
+### Overview
+
+Built the complete Table Settings system (12 toggles) and Theme Customization modal (5 tabs, per-game-type, VIP gating) per Bible V8 Chapter 11 spec. Additionally redesigned the table HUD with a clean 4-corner layout per Dan's vision.
+
+### New Files Created
+
+1. **`supabase/migrations/20260326_user_table_settings.sql`** — Database migration
+   - `user_table_settings` table: 12 boolean columns matching §11.1.1 exactly
+   - `user_theme_settings` table: per-game-type theme selections (§11.2.4)
+   - RLS policies for both tables (users own rows only)
+   - Auto-update triggers for `updated_at` timestamps
+   - UNIQUE constraint on (user_id, game_type) for theme settings
+
+2. **`src/hooks/useUserTableSettings.ts`** — Central data layer hook
+   - `UserTableSettings` interface with all 12 boolean fields
+   - `DEFAULT_USER_TABLE_SETTINGS` with spec-matching defaults
+   - `TABLE_SETTINGS_META` array with labels/descriptions for UI rendering
+   - `useUserTableSettings(userId)` hook: localStorage cache → Supabase load → MasterBus sync
+   - Optimistic toggle with rollback on failure
+   - Backward compat: syncs `show_stack_in_bb` to old localStorage key
+
+3. **`src/components/table/TableSettingsPanel.tsx`** + `.css` — Reusable toggle panel
+   - Renders all 12 toggles from TABLE_SETTINGS_META
+   - Dual mode: `overlay` (table gear icon) and `inline` (hamburger menu)
+   - Accessible toggles with `role="switch"` and `aria-checked`
+   - Optional `onOpenThemeSettings` callback for Theme Settings link
+
+4. **`src/components/table/ThemeSettingsModal.tsx`** + `.css` — Theme customization modal
+   - 5-tab layout: Themes, Table, Button, Background, Cards
+   - 10 game types: ALL, NLH, FLH, 6+, PLO, FLO, OFC, MIXED, MTT, SNG
+   - 25 theme assets (5 per tab): 2 free + 1 bronze + 1 silver + 1 gold each
+   - VIP tier gating via `canAccessTier()` function
+   - Per-game-type persistence via Supabase upsert
+   - Fallback logic: loads 'ALL' game type if no per-game-type override
+
+5. **`src/components/table/TableHUD.tsx`** + `.css` — 4-corner overlay layout
+   - Fixed-position overlay with pointer-events passthrough
+   - 4 corner slots: upper-left, upper-right, bottom-left, bottom-right
+   - Center-top slot for game info
+   - Safe-area-inset support for mobile notches
+
+6. **`src/components/table/MiniStatsCard.tsx`** + `.css` — Upper-right stats widget
+   - Compact P&L + VPIP display (always visible)
+   - Expandable: buy-in, stack, hands played, win rate
+   - Observer count with VIP-gated name visibility
+   - Taps to open full Session Stats modal
+
+7. **`src/components/table/PreviousHandCard.tsx`** + `.css` — Bottom-left hand card
+   - Shows last hand number + result (win/loss/fold)
+   - Expandable action buttons: Replay + Share Hand
+   - Color-coded results (green win, red loss, gray fold)
+
+### Modified Files
+
+8. **`src/components/table/index.ts`** — Added exports for all new components + types
+
+9. **`src/components/table/SettingsPanel.tsx`** — Wired Bible V8 §11.1 + §11.2
+   - Added `useUserTableSettings` hook for 12-toggle settings
+   - Added `TableSettingsPanel` in inline mode (Table Preferences section)
+   - Added `ThemeSettingsModal` with `onOpenThemeSettings` callback
+
+10. **`src/components/navigation/HamburgerMenu.tsx`** — Wired Bible V8 §11.1 + §11.2
+    - Added expandable "Table Settings" section with full `TableSettingsPanel` inline
+    - Added `ThemeSettingsModal` accessible via `onOpenThemeSettings` callback
+
+11. **`src/components/table/TableMenu.tsx`** + `.css` — Added observers section
+    - New `TableMenuObserver` type and `observers` prop
+    - Observers displayed in dropdown with VIP-gated name visibility
+    - Non-VIP users see count only ("VIP to see who's watching")
+
+12. **`src/pages/TablePage.tsx`** — Major HUD layout redesign
+    - Added `TableHUD` 4-corner overlay (hamburger UL, stats UR, hands BL, chat BR)
+    - Moved `TableMenu` from header-right to upper-left corner (position="top-left")
+    - Added `MiniStatsCard` in upper-right with session stats
+    - Added `PreviousHandCard` in bottom-left with replay + share
+    - Removed old header-right buttons (history, settings, menu dots)
+    - Added game info center-top badge (game type + blinds)
+    - Added previous hand tracking via handNumber change detection
+    - Added observer chat permission system (admin/owner/super_agent can chat as observers)
+    - Regular observers cannot post messages (isDisabled based on role check)
+
+13. **`src/pages/TablePage.css`** — Added `.hud-game-info` styles for center-top badge
+
+### Observer Chat Permissions (Dan's Requirement)
+
+- **CAN chat as observer**: Union Owners, Union Admins, Club Owners, Club Admins, Super Agents (only if they have that status in THAT specific club/union), and smarter.poker platform Admins
+- **CANNOT chat as observer**: Regular users watching a table
+- **Always can chat**: Any seated player
+- Implementation: async role check queries `club_members.role`, `union_members.role`, and `profiles.is_admin`
+
+### Verification Status
+
+All 12 settings verified against Bible V8 §11.1.1 table — correct column names, types, and defaults.
+All 5 theme tabs verified against Bible V8 §11.2.2 — correct items per tab, tier distribution.
+Both UI locations verified — table settings panel and hamburger menu both render inline.
+Database migration verified — correct schema, RLS, triggers, constraints.

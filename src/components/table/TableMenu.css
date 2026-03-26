@@ -393,3 +393,47 @@
 .table-menu__action--danger:focus-visible {
   box-shadow: inset 0 0 0 2px rgba(248, 81, 73, 0.4);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   OBSERVERS SECTION
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.table-menu__observers {
+  padding: 10px 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.table-menu__observers-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--soft-white, #b0b3b8);
+  margin-bottom: 6px;
+}
+
+.table-menu__observers-icon {
+  font-size: 10px;
+  color: var(--success, #31a24c);
+}
+
+.table-menu__observers-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.table-menu__observer-name {
+  font-size: 11px;
+  color: var(--off-white, #e4e6eb);
+  background: rgba(255, 255, 255, 0.06);
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.table-menu__observers-vip-hint {
+  font-size: 10px;
+  color: #fbbf24;
+  font-style: italic;
+}

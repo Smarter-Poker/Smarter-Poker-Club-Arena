@@ -20,6 +20,9 @@ import { useHeaderDataStore } from '../../stores/useHeaderDataStore';
 import { STORAGE_KEYS } from '../../lib/storage';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 import { preloadRoute } from '../../utils/ChunkPreloader';
+import { useUserTableSettings } from '../../hooks/useUserTableSettings';
+import { TableSettingsPanel } from '../table/TableSettingsPanel';
+import { ThemeSettingsModal } from '../table/ThemeSettingsModal';
 
 interface HamburgerMenuProps {
   isOpen: boolean;
@@ -62,6 +65,15 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
       return 'default';
     }
   });
+
+  // Bible V8 §11.1: User table settings (12 toggles) from Supabase
+  const {
+    settings: tableSettings,
+    loading: tableSettingsLoading,
+    toggleSetting: toggleTableSetting,
+  } = useUserTableSettings(user?.id);
+  const [showTableSettings, setShowTableSettings] = useState(false);
+  const [showThemeSettings, setShowThemeSettings] = useState(false);
 
   const drawerRef = useRef<HTMLDivElement>(null);
 
@@ -755,48 +767,37 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           </button>
         </div>
 
-        {/* Show Stack in BBs Toggle (FREE) */}
-        <div style={{ ...menuItemStyle, justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <span style={{ fontSize: 15, fontWeight: 500, color: colors.text }}>
-              Show Stack in BBs
-            </span>
-            <span style={{ fontSize: 11, color: colors.textSecondary }}>
-              Display stacks as big blind multiples
-            </span>
-          </div>
-          <button
-            onClick={handleShowBBToggle}
-            aria-checked={showBBEnabled}
-            role="switch"
+        {/* Bible V8 §11.1: Table Settings — 12 toggles (expandable) */}
+        <div
+          style={{
+            ...menuItemStyle,
+            justifyContent: 'space-between',
+          }}
+          onClick={() => setShowTableSettings(!showTableSettings)}
+        >
+          <span style={{ fontSize: 15, fontWeight: 500, color: colors.text }}>Table Settings</span>
+          <span
             style={{
-              width: 52,
-              height: 28,
-              borderRadius: 14,
-              border: showBBEnabled ? '2px solid #4ade80' : '2px solid #6b7280',
-              padding: 2,
-              cursor: 'pointer',
-              backgroundColor: showBBEnabled ? '#22c55e' : '#374151',
-              transition: 'all 0.25s ease',
-              display: 'flex',
-              alignItems: 'center',
-              position: 'relative' as const,
-              flexShrink: 0,
+              color: colors.textSecondary,
+              fontSize: 18,
+              transform: showTableSettings ? 'rotate(90deg)' : 'rotate(0deg)',
+              transition: 'transform 0.2s ease',
             }}
           >
-            <span
-              style={{
-                width: 20,
-                height: 20,
-                borderRadius: '50%',
-                backgroundColor: 'white',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
-                transform: showBBEnabled ? 'translateX(24px)' : 'translateX(0)',
-                transition: 'transform 0.25s ease',
-              }}
-            />
-          </button>
+            ›
+          </span>
         </div>
+        {showTableSettings && (
+          <div style={{ padding: '0 0 8px' }}>
+            <TableSettingsPanel
+              settings={tableSettings}
+              loading={tableSettingsLoading}
+              onToggle={toggleTableSetting}
+              mode="inline"
+              onOpenThemeSettings={() => setShowThemeSettings(true)}
+            />
+          </div>
+        )}
 
         {/* #6: Card Color Customization */}
         <div style={sectionHeaderStyle}>Card Colors</div>
@@ -1106,6 +1107,14 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           Club Arena v1.12
         </div>
       </div>
+
+      {/* Bible V8 §11.2: Theme Settings Modal */}
+      <ThemeSettingsModal
+        isOpen={showThemeSettings}
+        onClose={() => setShowThemeSettings(false)}
+        userId={user?.id || ''}
+        vipLevel={isVIP ? 'gold' : 'free'}
+      />
     </>
   );
 }

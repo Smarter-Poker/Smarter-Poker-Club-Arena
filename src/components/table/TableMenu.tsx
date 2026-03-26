@@ -65,8 +65,6 @@ export interface TableMenuProps {
   sessionDuration?: string;
   /** Observers watching the table — shown in menu dropdown */
   observers?: TableMenuObserver[];
-  /** Whether user is VIP (can see observer names) */
-  isVip?: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -176,7 +174,6 @@ export function TableMenu({
   handNumber,
   sessionDuration,
   observers = [],
-  isVip = false,
 }: TableMenuProps) {
   const prevOpenRef = useRef(false);
 
@@ -366,17 +363,13 @@ export function TableMenu({
                 <span className="table-menu__observers-icon">◉</span>
                 {observers.length} Watching
               </span>
-              {isVip ? (
-                <div className="table-menu__observers-list">
-                  {observers.map((obs) => (
-                    <span key={obs.id} className="table-menu__observer-name">
-                      {obs.name}
-                    </span>
-                  ))}
-                </div>
-              ) : (
-                <span className="table-menu__observers-vip-hint">VIP to see who's watching</span>
-              )}
+              <div className="table-menu__observers-list">
+                {observers.map((obs) => (
+                  <span key={obs.id} className="table-menu__observer-name">
+                    {obs.name}
+                  </span>
+                ))}
+              </div>
             </div>
           )}
         </div>

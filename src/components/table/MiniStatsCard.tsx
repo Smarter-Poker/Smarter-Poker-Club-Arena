@@ -13,7 +13,7 @@
  * Transparent glass design to not obstruct the table.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import './MiniStatsCard.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -43,8 +43,6 @@ export interface MiniStatsCardProps {
   onTap?: () => void;
   /** Observers watching the table */
   observers?: MiniStatsObserver[];
-  /** Whether user is VIP (can see observer names) */
-  isVip?: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -60,7 +58,6 @@ export function MiniStatsCard({
   isSeated,
   onTap,
   observers = [],
-  isVip = false,
 }: MiniStatsCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
 
@@ -119,15 +116,14 @@ export function MiniStatsCard({
             <span className="mini-stats-card__value">{winRate}%</span>
           </div>
 
-          {/* Observers — VIP can see names, non-VIP sees count only */}
+          {/* Observers watching the table */}
           {observers.length > 0 && (
             <div className="mini-stats-card__observers">
               <span className="mini-stats-card__observer-icon">◉</span>
               <span className="mini-stats-card__observer-count">{observers.length} watching</span>
-              {!isVip && <span className="mini-stats-card__observer-vip">VIP to see</span>}
             </div>
           )}
-          {observers.length > 0 && isVip && (
+          {observers.length > 0 && (
             <div className="mini-stats-card__observer-list">
               {observers.slice(0, 5).map((obs) => (
                 <span key={obs.id} className="mini-stats-card__observer-name">

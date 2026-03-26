@@ -424,7 +424,7 @@ export function SettingsPanel({
         isOpen={showThemeSettings}
         onClose={() => setShowThemeSettings(false)}
         userId={authUser?.id || userId}
-        vipLevel={isVip ? 'gold' : 'free'}
+        isVip={isVip}
       />
     </div>
   );

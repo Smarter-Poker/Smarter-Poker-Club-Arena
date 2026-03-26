@@ -106,22 +106,20 @@ export interface PokerTable {
 export type GameType = 'cash' | 'tournament' | 'sit_n_go';
 export type GameVariant =
   | 'nlh'
-  | 'flh'
-  | 'plo'
+  | 'short_deck'
   | 'plo4'
   | 'plo5'
   | 'plo6'
-  | 'plo_hilo'
   | 'plo8'
-  | 'short_deck'
   | 'ofc'
-  | 'ofc_pineapple';
+  | 'ofc_pineapple'
+  | 'pineapple';
 export type TableStatus = 'waiting' | 'running' | 'active' | 'paused' | 'closed' | 'deleted';
 
 export interface TableSettings {
   // ── Core Features ──
   straddle_enabled: boolean;
-  straddle_type: 'utg' | 'any_position' | 'mississippi';
+  straddle_type: 'utg'; // FIX 114: UTG straddle only
   run_it_twice: boolean;
   bomb_pot_enabled: boolean;
   bomb_pot_frequency: number; // Every N hands

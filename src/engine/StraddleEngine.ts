@@ -1,14 +1,14 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  STRADDLE ENGINE — Auto-Straddle and Mississippi Straddle Support
+ *  STRADDLE ENGINE — UTG Straddle Support (2x BB)
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * Manages straddle logic for cash game tables:
- * - UTG straddle (standard: 2x BB)
- * - Mississippi straddle (any position except blinds)
- * - Configurable cap (2x, 3x, unlimited re-straddles)
+ * Manages UTG straddle logic for cash game tables:
+ * - UTG straddle only (standard: 2x BB, posted by first player after BB)
  * - Auto-straddle enrollment per player
  * - Bus emissions for UI synchronization
+ *
+ * FIX 114: Mississippi straddle REMOVED per Dan's directive — UTG only.
  */
 
 import { masterBus } from '../core/MasterBus';
@@ -19,9 +19,9 @@ import { masterBus } from '../core/MasterBus';
 
 export interface StraddleConfig {
   enabled: boolean;
-  mississippiEnabled: boolean; // Allow straddle from any position
-  maxStraddles: number; // Max consecutive re-straddles (1 = UTG only, 0 = unlimited)
-  straddleMultiplier: number; // Usually 2x the previous blind/straddle
+  // FIX 114: mississippiEnabled REMOVED — UTG straddle only
+  maxStraddles: number; // Always 1 for UTG-only
+  straddleMultiplier: number; // Always 2 (2x BB)
 }
 
 export interface StraddleState {
@@ -132,11 +132,9 @@ class StraddleEngineClass {
     for (const { seat, playerId } of seatOrder) {
       if (straddleCount >= maxStraddles) break;
 
-      // Check if this player has auto-straddle enabled
-      if (!state.enrolledPlayers.has(playerId)) break; // Stop at first non-straddler
-
-      // Mississippi straddle: any position (if enabled), else only UTG
-      if (!config.mississippiEnabled && straddleCount > 0) break;
+      // FIX 114: UTG only — if not enrolled, stop. After one straddle, stop.
+      if (!state.enrolledPlayers.has(playerId)) break;
+      if (straddleCount > 0) break;
 
       const straddleAmount = currentAmount * config.straddleMultiplier;
       const stack = playerStacks.get(playerId) ?? 0;

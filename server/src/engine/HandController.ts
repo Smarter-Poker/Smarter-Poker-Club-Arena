@@ -226,7 +226,6 @@ export class HandController {
 
   private getCardsPerPlayer(): number {
     switch (this.config.gameVariant) {
-      case 'plo':
       case 'plo4':
         return 4;
       case 'plo5':
@@ -235,6 +234,8 @@ export class HandController {
         return 6;
       case 'plo8':
         return 4;
+      case 'pineapple':
+        return 3;
       case 'ofc':
       case 'ofc_pineapple':
         return 5;
@@ -512,8 +513,33 @@ export class HandController {
    * Finalize the hand after all streets are dealt (showdown + settlement).
    * Called by ServerTableEngine after the last street in per-street insurance flow.
    */
-  public finalizeRunout(): void {
+  public finalizeRunout(skipDistribution?: boolean): void {
     this.state.stage = 'showdown';
+    if (skipDistribution) {
+      // RIT already distributed pots — only emit HAND_COMPLETE, skip completeHand's pot distribution
+      const rake = calculateRake(
+        this.state.pot,
+        this.state.sawFlop,
+        this.config.rakeConfig,
+        this.state.players.filter((p) => !p.is_sitting_out).length
+      );
+      let bbjFee = 0;
+      const bbjCfg = this.config.bbjConfig;
+      if (bbjCfg && bbjCfg.enabled && this.state.sawFlop) {
+        const playersDealt = this.state.players.filter((p) => !p.is_sitting_out).length;
+        const potInBB = this.state.pot / this.config.bigBlind;
+        if (playersDealt >= bbjCfg.minPlayersDealt && potInBB >= bbjCfg.minPotBB) {
+          bbjFee = Math.round(this.config.bigBlind * bbjCfg.feeBB * 100) / 100;
+        }
+      }
+      this.emit({
+        type: 'HAND_COMPLETE',
+        handNumber: this.config.handNumber,
+        rake,
+        bbjFee,
+      });
+      return;
+    }
     this.completeHand();
   }
 

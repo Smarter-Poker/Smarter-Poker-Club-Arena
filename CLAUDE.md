@@ -11,6 +11,7 @@
 5. `skills/bible-v8/BIBLE-V8-REFERENCE.md` — The spec being built against
 
 **Phase order (SACRED — Law 1):**
+
 ```
 STEP 1: RIP OUT client-side engine code (establish ONE source of truth)
 STEP 2: VERIFY CLEAN (grep confirms zero local authoritative state)
@@ -19,6 +20,7 @@ STEP 4: PORT CORE (PreciseActionTimer, ServerActionValidator, StateVerifier)
 STEP 5: PORT SUPPORTING (TimeBankEngine, DisconnectEngine, PreActionEngine)
 STEP 6: PORT ADVANCED (Straddle, RIT, Insurance, MixedGame, Rakeback)
 STEP 7: TOURNAMENT & EXTRAS (ChipRace, TableBalancer, OFC, Telemetry)
+STEP 8: TABLE SETTINGS & THEME CUSTOMIZATION (Bible V8 Chapter 11)
 ```
 
 **You CANNOT skip ahead. You CANNOT build before cleanup. You CANNOT rubber-stamp.**
@@ -36,12 +38,14 @@ Every change: READ → DOCUMENT → CHANGE → VERIFY → LOG IN CHANGELOG.
 4. **REPEAT** until all items in the current phase are verified + fixed
 
 **At the end of EVERY session:**
+
 - All changes MUST be pushed to git (`git add → commit → push origin main`)
 - Any database schema changes MUST be written to Supabase via SQL migration files
 - Update `MIGRATION-CHANGELOG.md` with what was found AND fixed
 - NEVER leave a session with unfixed identified issues — fix them or document them as blockers with exact reasons
 
 **DO NOT:**
+
 - Audit 10 items, list all the problems, then ask "what should I fix?" — FIX THEM AS YOU GO
 - Mark something as "conditional pass" without fixing the condition
 - Identify a bug and move to the next check without writing the fix
@@ -69,6 +73,7 @@ At the end of EVERY session, the agent MUST:
 4. **Present the prompt to the user** so they can paste it into AntiGravity or run it manually
 
 **The handoff prompt format:**
+
 ```
 ## AntiGravity Handoff — [DATE] [SESSION SUMMARY]
 
@@ -115,6 +120,7 @@ git add -A && git commit -m "your message" && git push origin main
 ```
 
 **Common mistakes that WILL break CI:**
+
 - Importing a component that doesn't exist → create the file AND add to barrel `index.ts`
 - Emitting bus events with fields not in `BusPayloadMap` → update `src/core/MasterBus.ts`
 - Passing JSX props not in the component's Props interface → add to interface or remove prop
@@ -125,13 +131,14 @@ See `skills/mandatory-typecheck/SKILL.md` for the full protocol.
 
 **This project uses THREE services:**
 
-| Service | Purpose | Location |
-|---------|---------|----------|
-| **Vercel** | Frontend hosting (smarter.poker) | `Smarter-Poker-World-Hub` repo → auto-deploys |
-| **Railway** | Poker engine server (Node.js) | `server/` directory in this repo → deploys to Railway |
-| **Supabase** | Database (PostgreSQL) + Auth + Realtime | `kuklfnapbkmacvwxktbh.supabase.co` |
+| Service      | Purpose                                 | Location                                              |
+| ------------ | --------------------------------------- | ----------------------------------------------------- |
+| **Vercel**   | Frontend hosting (smarter.poker)        | `Smarter-Poker-World-Hub` repo → auto-deploys         |
+| **Railway**  | Poker engine server (Node.js)           | `server/` directory in this repo → deploys to Railway |
+| **Supabase** | Database (PostgreSQL) + Auth + Realtime | `kuklfnapbkmacvwxktbh.supabase.co`                    |
 
 ### Railway (Poker Engine Server)
+
 - Runs the server-authoritative game engine: `server/src/index.ts`
 - Contains ALL game logic: HandController, ServerTableEngine, all engines
 - HTTP endpoints: POST /action, POST /timebank, GET /actions, GET /health
@@ -139,6 +146,7 @@ See `skills/mandatory-typecheck/SKILL.md` for the full protocol.
 - Deploy: push to Railway via Git or Railway CLI
 
 ### Supabase (Database + Auth + Realtime)
+
 - PostgreSQL database: tables, table_seats, table_hole_cards, hand_history, etc.
 - Auth: JWT-based authentication, shared with smarter.poker frontend
 - Realtime: Broadcasts hand state to connected clients via WebSocket channels
@@ -147,6 +155,7 @@ See `skills/mandatory-typecheck/SKILL.md` for the full protocol.
 - **Any schema changes MUST be written as SQL migration files and applied to Supabase**
 
 ### Vercel (Frontend)
+
 - Hosts the static SPA at `smarter.poker/hub/club-arena/`
 - Files live in `Smarter-Poker-World-Hub/public/hub/club-arena/`
 - Auto-deploys when World Hub repo is pushed
@@ -262,9 +271,9 @@ src/types/               — TypeScript types
 The following images are in `/public` and should be candidates for optimization:
 
 - Card backs: 3.1-3.7MB (backs/black.jpeg, white.jpeg, blue.jpeg, red.jpeg)
-- Club logos: 695K-948K (preset-*.png files)
-- UI assets: 400K-600K (header-*.png, vip-card.png, poker-chip-logo.png)
-- Frame images: 82K-102K (frames/frame-*.jpg)
+- Club logos: 695K-948K (preset-\*.png files)
+- UI assets: 400K-600K (header-\*.png, vip-card.png, poker-chip-logo.png)
+- Frame images: 82K-102K (frames/frame-\*.jpg)
 
 Consider WebP conversion or lazy-loading for these assets.
 

@@ -382,20 +382,12 @@ export default function CreateTableModal({ clubId, onClose, onSuccess }: CreateT
                   Straddle
                 </label>
 
+                {/* FIX 114: Straddle type dropdown removed — UTG only per Dan's directive */}
                 {settings.straddle_enabled && (
-                  <div style={{ paddingLeft: 20, marginBottom: 4 }}>
-                    <select
-                      className={styles['form-select']}
-                      value={settings.straddle_type || 'utg'}
-                      onChange={(e) =>
-                        setSettings((prev) => ({ ...prev, straddle_type: e.target.value as any }))
-                      }
-                      style={{ fontSize: '0.7rem', padding: '2px 6px' }}
-                    >
-                      <option value="utg">UTG Straddle</option>
-                      <option value="any_position">Any Position</option>
-                      <option value="mississippi">Mississippi</option>
-                    </select>
+                  <div
+                    style={{ paddingLeft: 20, marginBottom: 4, fontSize: '0.7rem', color: '#aaa' }}
+                  >
+                    UTG Straddle (2× BB)
                   </div>
                 )}
 

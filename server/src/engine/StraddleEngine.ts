@@ -1,12 +1,11 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  STRADDLE ENGINE — Auto-Straddle and Mississippi Straddle Support
+ *  STRADDLE ENGINE — UTG Straddle Only (FIX 114)
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Manages straddle logic for cash game tables:
- * - UTG straddle (standard: 2x BB)
- * - Mississippi straddle (any position except blinds)
- * - Configurable cap (2x, 3x, unlimited re-straddles)
+ * - UTG straddle ONLY (standard: 2x BB, single straddle per hand)
+ * - Mississippi straddle REMOVED per Dan's directive
  * - Auto-straddle enrollment per player
  * - Optional event callbacks for UI synchronization
  *
@@ -18,9 +17,10 @@
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/** FIX 114: UTG straddle only — Mississippi removed per Dan's directive */
 export interface StraddleConfig {
   enabled: boolean;
-  mississippiEnabled: boolean;
+  /** FIX 114: maxStraddles always 1 (UTG only, no re-straddles) */
   maxStraddles: number;
   straddleMultiplier: number;
 }
@@ -122,10 +122,13 @@ export class StraddleEngine {
     let straddleCount = 0;
     const maxStraddles = config.maxStraddles === 0 ? Infinity : config.maxStraddles;
 
+    // FIX 114: UTG only — first eligible seat in seatOrder posts, then we stop.
+    // No Mississippi (multi-position) straddles allowed.
     for (const { seat, playerId } of seatOrder) {
       if (straddleCount >= maxStraddles) break;
       if (!state.enrolledPlayers.has(playerId)) break;
-      if (!config.mississippiEnabled && straddleCount > 0) break;
+      // FIX 114: Only UTG straddle — always break after first straddle
+      if (straddleCount > 0) break;
 
       const straddleAmount = currentAmount * config.straddleMultiplier;
       const stack = playerStacks.get(playerId) ?? 0;

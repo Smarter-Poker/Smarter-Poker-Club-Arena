@@ -301,13 +301,12 @@ export class ServerTableEngine {
         enabled: insuranceEnabled,
       });
 
-      // Bible V8 §4.4: Configure Straddle engine
+      // Bible V8 §4.4 / FIX 114: Configure Straddle engine — UTG only
       if (this.tableInfo.straddle_enabled) {
         this.straddleEngine.configure(this.tableId, {
           enabled: true,
-          mississippiEnabled: this.tableInfo.straddle_type === 'mississippi',
-          maxStraddles: this.tableInfo.max_straddles ?? 1,
-          straddleMultiplier: 2, // Standard 2x straddle
+          maxStraddles: 1, // FIX 114: UTG straddle only — always 1
+          straddleMultiplier: 2, // Standard 2x BB
         });
       }
 
@@ -1353,10 +1352,10 @@ export class ServerTableEngine {
       }
 
       const stackMap = new Map(players.map((p) => [p.user_id, p.stack]));
+      // FIX 114: UTG straddle only — no Mississippi
       const straddleConfig = {
         enabled: true,
-        mississippiEnabled: this.tableInfo.straddle_type === 'mississippi',
-        maxStraddles: this.tableInfo.max_straddles ?? 1,
+        maxStraddles: 1, // FIX 114: UTG only — always 1
         straddleMultiplier: 2,
       };
       this.straddleEngine.configure(this.tableId, straddleConfig);

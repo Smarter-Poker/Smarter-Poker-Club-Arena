@@ -231,7 +231,8 @@ export interface TableSettings {
   allow_observers: boolean;
 }
 
-export type StraddleType = 'none' | 'utg_only' | 'all_positions' | 'mississippi';
+// FIX 114: UTG straddle only — Mississippi and all_positions removed per Dan's directive
+export type StraddleType = 'none' | 'utg';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 🪑 TABLE PLAYERS

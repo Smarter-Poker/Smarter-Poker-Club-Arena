@@ -94,7 +94,7 @@ export interface TableInfo {
   big_blind_ante_enabled?: boolean;
   /** Bible V8 §4.4: Straddle settings */
   straddle_enabled?: boolean;
-  straddle_type?: 'utg' | 'mississippi';
+  straddle_type?: 'utg'; // FIX 114: Only UTG straddle allowed (2x BB)
   max_straddles?: number;
   /** Bible V8 §4.20: Run It Twice */
   run_it_twice_enabled?: boolean;
@@ -158,7 +158,7 @@ export interface HandConfig {
   ante?: number;
   /** Bible V8 §4.3: Big Blind Ante — BB posts ante for entire table */
   bigBlindAnte?: boolean;
-  /** Bible V8 §4.4: Straddle positions queued for this hand (UTG or Mississippi) */
+  /** Bible V8 §4.4 / FIX 114: UTG straddle only (2× BB) */
   straddles?: { seat: number; amount: number }[];
   rakeConfig: RakeConfig;
   bombPot?: {

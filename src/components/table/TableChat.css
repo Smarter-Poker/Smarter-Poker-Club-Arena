@@ -6,7 +6,7 @@
 
 .table-chat {
   position: fixed;
-  left: 8px;
+  right: 8px;
   bottom: 120px;
   z-index: 100;
   display: flex;
@@ -29,7 +29,7 @@
 @keyframes chatSlideIn {
   0% {
     opacity: 0;
-    transform: translateX(-10px) scale(0.95);
+    transform: translateX(10px) scale(0.95);
   }
   100% {
     opacity: 1;
@@ -43,7 +43,7 @@
 
 .chat-collapsed {
   position: fixed;
-  left: 8px;
+  right: 8px;
   bottom: 120px;
   z-index: 100;
   width: 44px;
@@ -513,6 +513,7 @@
   }
 
   .chat-collapsed {
+    right: 8px;
     bottom: 100px;
   }
 }

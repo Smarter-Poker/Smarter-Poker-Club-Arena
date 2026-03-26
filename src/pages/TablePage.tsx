@@ -4219,7 +4219,7 @@ export default function TablePage({
 
                   // Bible V8 §4.14: maxRaise = stack for NL, pot-limited for PLO
                   const gameVariant = tableState.gameType?.toLowerCase() || '';
-                  const isPotLimit = gameVariant.startsWith('plo') || gameVariant === 'flo';
+                  const isPotLimit = gameVariant.startsWith('plo'); // FIX 116: 'flo' dead variant removed
                   const maxRaise = isPotLimit
                     ? Math.min(heroStack, tableState.pot + callAmount + callAmount)
                     : heroStack;

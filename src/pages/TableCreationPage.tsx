@@ -16,7 +16,17 @@ const sectionAnimationStyle = (index: number) => ({
   animation: `fadeInUp 0.5s ease-out ${index * 80}ms forwards`,
 });
 
-type GameType = 'nlh' | 'plo' | 'plo5' | 'ofc';
+// FIX 116: 9 approved variants only
+type GameType =
+  | 'nlh'
+  | 'plo4'
+  | 'plo5'
+  | 'plo6'
+  | 'plo8'
+  | 'pineapple'
+  | 'short_deck'
+  | 'ofc'
+  | 'ofc_pineapple';
 
 interface TableSettings {
   name: string;
@@ -96,7 +106,9 @@ export default function TableCreationPage() {
         .limit(1)
         .maybeSingle();
       if (unionCheck) {
-        throw new Error('Clubs inside a union cannot create standalone tables. Tables are managed at the union level.');
+        throw new Error(
+          'Clubs inside a union cannot create standalone tables. Tables are managed at the union level.'
+        );
       }
 
       const { data, error: createError } = await supabase
@@ -139,11 +151,17 @@ export default function TableCreationPage() {
     setSettings((prev) => ({ ...prev, [key]: value }));
   };
 
+  // FIX 116: All 9 approved variants
   const gameTypes: { value: GameType; label: string; icon: string }[] = [
     { value: 'nlh', label: "No Limit Hold'em", icon: '♠' },
-    { value: 'plo', label: 'Pot Limit Omaha', icon: '♦' },
+    { value: 'plo4', label: 'PLO 4-Card', icon: '♦' },
     { value: 'plo5', label: 'PLO 5-Card', icon: '♥' },
+    { value: 'plo6', label: 'PLO 6-Card', icon: '♦' },
+    { value: 'plo8', label: 'PLO Hi-Lo', icon: '♠' },
+    { value: 'pineapple', label: 'Pineapple', icon: '♥' },
+    { value: 'short_deck', label: 'Short Deck 6+', icon: '♦' },
     { value: 'ofc', label: 'Open Face Chinese', icon: '♣' },
+    { value: 'ofc_pineapple', label: 'OFC Pineapple', icon: '♣' },
   ];
 
   const stakesPresets = [

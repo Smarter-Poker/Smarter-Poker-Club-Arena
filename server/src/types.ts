@@ -24,19 +24,17 @@ export interface Card {
 
 export type HandStage = 'preflop' | 'flop' | 'turn' | 'river' | 'showdown';
 export type ActionType = 'fold' | 'check' | 'call' | 'bet' | 'raise' | 'all_in';
+// FIX 116: Dead variants removed (flh, plo, plo_hilo, mixed) — Dan's 9 approved variants only
 export type GameVariant =
   | 'nlh'
-  | 'flh'
-  | 'plo'
   | 'plo4'
   | 'plo5'
   | 'plo6'
-  | 'plo_hilo'
   | 'plo8'
+  | 'pineapple'
   | 'short_deck'
   | 'ofc'
-  | 'ofc_pineapple'
-  | 'mixed';
+  | 'ofc_pineapple';
 /** Bible V8 §3.1: Full table state machine states */
 export type TableStatus =
   | 'empty'

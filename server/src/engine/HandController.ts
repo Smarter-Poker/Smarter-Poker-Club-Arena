@@ -226,7 +226,6 @@ export class HandController {
 
   private getCardsPerPlayer(): number {
     switch (this.config.gameVariant) {
-      case 'plo':
       case 'plo4':
         return 4;
       case 'plo5':
@@ -234,12 +233,14 @@ export class HandController {
       case 'plo6':
         return 6;
       case 'plo8':
-        return 4;
+        return 4; // Omaha Hi-Lo: 4 cards
+      case 'pineapple':
+        return 3; // Pineapple: 3 hole cards, discard 1 later
       case 'ofc':
       case 'ofc_pineapple':
         return 5;
       default:
-        return 2;
+        return 2; // nlh, short_deck
     }
   }
 
@@ -511,9 +512,38 @@ export class HandController {
   /**
    * Finalize the hand after all streets are dealt (showdown + settlement).
    * Called by ServerTableEngine after the last street in per-street insurance flow.
+   *
+   * FIX 117 (restored FIX 109): skipDistribution=true prevents double-money bug.
+   * When RIT already distributed pots per-board, we must NOT call completeHand()
+   * again because that would re-distribute all pots to winners a SECOND time.
+   * Instead, emit HAND_COMPLETE with rake/BBJ fees but skip pot distribution.
+   *
+   * @param skipDistribution - true when caller (e.g. RIT) already distributed pots
    */
-  public finalizeRunout(): void {
+  public finalizeRunout(skipDistribution: boolean = false): void {
     this.state.stage = 'showdown';
+    if (skipDistribution) {
+      // RIT or other caller already distributed pots — just emit completion events
+      const playerCount = this.state.players.filter((p) => !p.is_sitting_out).length;
+      const rake = calculateRake(
+        this.state.pot,
+        this.state.sawFlop,
+        this.config.rakeConfig,
+        playerCount
+      );
+      let bbjFee = 0;
+      const bbjCfg = this.config.bbjConfig;
+      if (bbjCfg && bbjCfg.enabled && this.state.sawFlop) {
+        const playersDealt = this.state.players.filter((p) => !p.is_sitting_out).length;
+        const potInBB = this.state.pot / this.config.bigBlind;
+        if (playersDealt >= bbjCfg.minPlayersDealt && potInBB >= bbjCfg.minPotBB) {
+          bbjFee = Math.round(this.config.bigBlind * bbjCfg.feeBB * 100) / 100;
+        }
+      }
+      this.emit({ type: 'WINNERS', winners: [] });
+      this.emit({ type: 'HAND_COMPLETE', handNumber: this.config.handNumber, rake, bbjFee });
+      return;
+    }
     this.completeHand();
   }
 

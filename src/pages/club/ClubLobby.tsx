@@ -52,23 +52,17 @@ const cardAnimationStyle = (index: number) => ({
 type GameFilter = 'ALL' | "Hold'em" | 'Omaha' | 'Mixed' | 'MTT' | 'Spin-It' | 'SN';
 
 // Map game_variant strings to filter categories
+// FIX 116: Dead variants removed — 9 approved variants only
 function variantMatchesFilter(variant: string | undefined, filter: GameFilter): boolean {
   if (filter === 'ALL') return true;
   const v = (variant || 'nlh').toLowerCase();
   switch (filter) {
     case "Hold'em":
-      return v === 'nlh' || v === 'flh' || v === 'short_deck';
+      return v === 'nlh' || v === 'short_deck';
     case 'Omaha':
-      return v.startsWith('plo') || v === 'plo_hilo' || v === 'plo8';
+      return v.startsWith('plo');
     case 'Mixed':
-      return (
-        v === 'mixed' ||
-        v === 'ofc' ||
-        v === 'ofc_pineapple' ||
-        v === 'double_board' ||
-        v === 'pineapple' ||
-        v === 'crazy_pineapple'
-      );
+      return v === 'ofc' || v === 'ofc_pineapple' || v === 'pineapple';
     default:
       return true;
   }

@@ -397,35 +397,19 @@ const DEFAULT_TABLES: TableConfig[] = [
     gameVariant: 'plo6',
   },
 
-  // ─── PLO HI-LO TABLES ────────────────────────────────────────────────────
+  // FIX 116: Dead variants removed (plo_hilo → use plo8, flh, crazy_pineapple, double_board, mixed)
+
+  // ─── PLO8 (HI-LO) TABLES ───────────────────────────────────────────────
   {
-    name: 'PLO Hi-Lo 5/10',
+    name: 'PLO8 Hi-Lo 5/10',
     smallBlind: 5,
     bigBlind: 10,
     maxPlayers: 6,
     horsesPerTable: 5,
-    gameVariant: 'plo_hilo',
+    gameVariant: 'plo8',
   },
 
-  // ─── FIXED LIMIT HOLD'EM ─────────────────────────────────────────────────
-  {
-    name: 'FLH 1/2',
-    smallBlind: 1,
-    bigBlind: 2,
-    maxPlayers: 9,
-    horsesPerTable: 7,
-    gameVariant: 'flh',
-  },
-  {
-    name: 'FLH 2/4',
-    smallBlind: 2,
-    bigBlind: 4,
-    maxPlayers: 9,
-    horsesPerTable: 7,
-    gameVariant: 'flh',
-  },
-
-  // ─── PINEAPPLE & CRAZY PINEAPPLE ─────────────────────────────────────────
+  // ─── PINEAPPLE ──────────────────────────────────────────────────────────
   {
     name: 'Pineapple 1/2',
     smallBlind: 1,
@@ -433,34 +417,6 @@ const DEFAULT_TABLES: TableConfig[] = [
     maxPlayers: 9,
     horsesPerTable: 7,
     gameVariant: 'pineapple',
-  },
-  {
-    name: 'Crazy Pineapple 1/2',
-    smallBlind: 1,
-    bigBlind: 2,
-    maxPlayers: 9,
-    horsesPerTable: 7,
-    gameVariant: 'crazy_pineapple',
-  },
-
-  // ─── DOUBLE BOARD ─────────────────────────────────────────────────────────
-  {
-    name: 'Double Board NLH 1/2',
-    smallBlind: 1,
-    bigBlind: 2,
-    maxPlayers: 6,
-    horsesPerTable: 5,
-    gameVariant: 'double_board',
-  },
-
-  // ─── MIXED GAMES (HORSE) ─────────────────────────────────────────────────
-  {
-    name: 'HORSE Mixed 1/2',
-    smallBlind: 1,
-    bigBlind: 2,
-    maxPlayers: 9,
-    horsesPerTable: 7,
-    gameVariant: 'mixed',
   },
 ];
 

@@ -105,9 +105,10 @@ export async function loadTable(tableId: string) {
       'id, club_id, small_blind, big_blind, game_variant, max_players, ante, game_type, tournament_id, action_time_seconds, time_bank_seconds, big_blind_ante_enabled, straddle_enabled, straddle_type, max_straddles, run_it_twice_enabled, insurance_enabled, auto_muck_enabled, show_hand_enabled, disconnect_timeout_seconds, max_consecutive_timeouts, prefer_check_over_fold, time_bank_max_uses, time_bank_enabled'
     )
     .eq('id', tableId)
-    .single();
+    .maybeSingle();
 
   if (error) throw new Error(`Failed to load table ${tableId}: ${error.message}`);
+  if (!data) throw new Error(`Table ${tableId} not found`);
   return data;
 }
 
@@ -347,12 +348,17 @@ export async function logRakeCollection(
 
   // Credit rake to the correct wallet: union owner or standalone club owner
   try {
-    const { data: club } = await supabase
+    // FIX 127: Use .maybeSingle() — club may not exist (deleted/invalid ID)
+    const { data: club, error: clubErr } = await supabase
       .from('clubs')
       .select('owner_id, union_id, name')
       .eq('id', clubId)
-      .single();
+      .maybeSingle();
 
+    if (clubErr) {
+      console.warn(`[DB] Failed to look up club ${clubId} for rake credit:`, clubErr.message);
+      return;
+    }
     if (!club) return;
 
     let rakeRecipientId: string | null = null;
@@ -360,11 +366,19 @@ export async function logRakeCollection(
 
     if (club.union_id) {
       // Club is in a union — rake held by union owner until weekly settlement
-      const { data: union } = await supabase
+      // FIX 127: Use .maybeSingle() — union may not exist (deleted/invalid ID)
+      const { data: union, error: unionErr } = await supabase
         .from('unions')
         .select('owner_id, name')
         .eq('id', club.union_id)
-        .single();
+        .maybeSingle();
+
+      if (unionErr) {
+        console.warn(
+          `[DB] Failed to look up union ${club.union_id} for rake credit:`,
+          unionErr.message
+        );
+      }
 
       if (union?.owner_id) {
         rakeRecipientId = union.owner_id;

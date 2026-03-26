@@ -1,4 +1,5 @@
 # MASTER MIGRATION DOCUMENT
+
 ## Club Arena Engine Migration: Client → Server
 
 **Last Updated:** 2026-03-24
@@ -14,6 +15,7 @@
 ### Current Broken Architecture (MUST FIX)
 
 **Dual Engine Model (WRONG):**
+
 ```
 Client (TablePage.tsx):
   ├─ Local HandController (917 lines)
@@ -46,6 +48,7 @@ PROBLEM: Client is authoritative. Server is decorative. NO validation. Cards lea
 ### Target Architecture (REQUIRED)
 
 **Server-Authoritative Model (CORRECT):**
+
 ```
 Client (TablePage.tsx):
   ├─ State machine (read from Supabase Realtime only)
@@ -152,7 +155,7 @@ useEffect(() => {
     tableId,
     players,
     blindStructure,
-    ...config
+    ...config,
   });
 
   handControllerRef.current.on('hand_complete', (result) => {
@@ -164,6 +167,7 @@ useEffect(() => {
 **Impact:** 48 direct references throughout TablePage.tsx. Client runs its own game loop completely independent of server. Server's HandController on Railroad tracks — never invoked.
 
 **Fix:**
+
 - DELETE line 2711
 - DELETE lines 2727-2813
 - DELETE all 48 references (see spreadsheet in SECTION 7)
@@ -194,6 +198,7 @@ broadcastCurrentState() {
 **Impact:** Every player receives every other player's hole cards in real-time. Removes all bluffing. Removes all poker.
 
 **Fix:**
+
 ```typescript
 // CORRECT
 broadcastCurrentState(requestingPlayerId: string) {
@@ -239,6 +244,7 @@ async handlePlayerAction(
 ```
 
 **Impact:**
+
 - Invalid raise amount? Auto-fold (should show error to player)
 - Duplicate action within 2s? Auto-fold (should reject)
 - Timer expired? Auto-fold (should be pre-action, not surprise)
@@ -247,6 +253,7 @@ async handlePlayerAction(
 Players think they folded intentionally; they actually hit a validation bug. Frustration ↑ trust ↓.
 
 **Fix:**
+
 ```typescript
 // CORRECT
 async handlePlayerAction(
@@ -277,6 +284,7 @@ async handlePlayerAction(
 ### EXISTING ENDPOINTS (server/src/index.ts)
 
 **1. GET /health**
+
 ```
 Response: {
   status: "online",
@@ -289,11 +297,13 @@ Response: {
   }
 }
 ```
+
 No changes needed.
 
 ---
 
 **2. POST /action**
+
 ```
 Request:
 {
@@ -327,6 +337,7 @@ REQUIRED FIXES:
 ---
 
 **3. POST /timebank**
+
 ```
 Request:
 {
@@ -354,6 +365,7 @@ REQUIRED CHANGES:
 ---
 
 **4. GET /actions/:tableId/:userId**
+
 ```
 Response: PlayerActions[] {
   tableId: string,
@@ -377,6 +389,7 @@ REQUIRED CHANGES:
 ### MISSING ENDPOINTS (MUST ADD — PHASE 3-5)
 
 **5. POST /preaction** (PHASE 3)
+
 ```
 Request:
 {
@@ -400,6 +413,7 @@ Implementation:
 ---
 
 **6. POST /heartbeat** (PHASE 3)
+
 ```
 Request:
 {
@@ -423,6 +437,7 @@ Implementation:
 ---
 
 **7. POST /sitout** (PHASE 3)
+
 ```
 Request:
 {
@@ -446,6 +461,7 @@ Implementation:
 ---
 
 **8. POST /rit** (PHASE 4)
+
 ```
 Request:
 {
@@ -471,6 +487,7 @@ Implementation:
 ---
 
 **9. POST /insurance** (PHASE 4)
+
 ```
 Request:
 {
@@ -496,6 +513,7 @@ Implementation:
 ---
 
 **10. POST /straddle** (PHASE 4)
+
 ```
 Request:
 {
@@ -517,6 +535,7 @@ Implementation:
 ---
 
 **11. POST /showhand** (PHASE 4)
+
 ```
 Request:
 {
@@ -537,6 +556,7 @@ Implementation:
 ---
 
 **12. GET /state/:tableId** (PHASE 3)
+
 ```
 Query Params:
   - userId? (if provided, scrub cards for other players)
@@ -624,11 +644,13 @@ async broadcastHandState(
 ```
 
 **Channel Naming Convention:**
+
 - `hand-state:{tableId}` — broadcast every state change
 - Event name: `hand_state`
 - Payload: Full TableState (serializable)
 
 **Broadcast Frequency:**
+
 - Every action (fold, check, call, bet, raise, allin)
 - Every timer change (started, extended, paused, resumed, expired)
 - Every street change (start of new round)
@@ -636,6 +658,7 @@ async broadcastHandState(
 - NOT on every 100ms timer tick (broadcast only on meaningful changes)
 
 **Error Handling:**
+
 - `.send().catch(err => console.error(...))` — fire-and-forget
 - No retry logic — client can request full state via GET /state/:tableId
 
@@ -653,10 +676,12 @@ export function subscribeToHandState(
 ): () => void {
   const channel = supabase.channel(`hand-state:${tableId}`);
 
-  channel.on('broadcast', { event: 'hand_state' }, (payload) => {
-    console.log('Received hand state broadcast:', payload);
-    callback(payload.payload);
-  }).subscribe();
+  channel
+    .on('broadcast', { event: 'hand_state' }, (payload) => {
+      console.log('Received hand state broadcast:', payload);
+      callback(payload.payload);
+    })
+    .subscribe();
 
   return () => {
     supabase.removeChannel(channel);
@@ -670,7 +695,7 @@ export function subscribeToHandState(
 // PHASE 5 REPLACEMENT
 useEffect(() => {
   const unsubscribe = subscribeToHandState(tableId, (newState) => {
-    setTableState(newState);  // React state
+    setTableState(newState); // React state
     // Re-render automatically
   });
 
@@ -679,6 +704,7 @@ useEffect(() => {
 ```
 
 **Card Scrubbing Verification:**
+
 - Client receives broadcast with `players[i].cards` = empty array for other players
 - Client receives broadcast with `players[requesting].cards` = actual hole cards
 - Client receives broadcast with ALL `cards` populated at showdown
@@ -695,28 +721,30 @@ useEffect(() => {
 **Purpose:** Extended think time pool management — configurable per table, per-player tracking
 
 **Config Type:**
+
 ```typescript
 interface TimeBankConfig {
-  totalBankSeconds: number;      // Total seconds in pool (default 30)
-  maxUses: number;               // Max activations per hand (default 4)
-  secondsPerUse: number;         // Seconds consumed per activation (default 15)
-  refillPerOrbit: boolean;       // Refill on button pass (default false)
-  refillSeconds: number;         // Seconds to add per orbit (default 15)
-  autoActivate: boolean;         // Auto-activate when timeout approaches (default true)
+  totalBankSeconds: number; // Total seconds in pool (default 30)
+  maxUses: number; // Max activations per hand (default 4)
+  secondsPerUse: number; // Seconds consumed per activation (default 15)
+  refillPerOrbit: boolean; // Refill on button pass (default false)
+  refillSeconds: number; // Seconds to add per orbit (default 15)
+  autoActivate: boolean; // Auto-activate when timeout approaches (default true)
 }
 ```
 
 **State Type:**
+
 ```typescript
 interface PlayerTimeBank {
   playerId: string;
   tableId: string;
-  remainingSeconds: number;      // Pool remaining
-  usesRemaining: number;         // Activations left this hand
-  isActive: boolean;             // Currently using time bank
-  activatedAt?: number;          // Timestamp of activation
-  currentUseSeconds?: number;    // Time in current use
-  onExpire?: () => void;         // Callback when activated time expires
+  remainingSeconds: number; // Pool remaining
+  usesRemaining: number; // Activations left this hand
+  isActive: boolean; // Currently using time bank
+  activatedAt?: number; // Timestamp of activation
+  currentUseSeconds?: number; // Time in current use
+  onExpire?: () => void; // Callback when activated time expires
 }
 ```
 
@@ -785,11 +813,13 @@ dispose(tableId: string): void
 ```
 
 **Dependencies:**
+
 - `src/services/VIPService.ts` → REMOVE for server version
 - Uses `setTimeout()` internally → REPLACE with `PreciseActionTimer`
 - Emits events: `TIME_BANK_ACTIVATED`, `TIME_BANK_EXPIRED`, `TIME_BANK_EXTENDED`
 
 **Server Changes Needed:**
+
 1. Remove VIPService dependency (use HTTP endpoint for extensions instead)
 2. Inject `PreciseActionTimer` for countdown
 3. Call `onPrimaryTimerExpired()` in ServerTableEngine.handleTurnChange()
@@ -808,25 +838,27 @@ dispose(tableId: string): void
 **Purpose:** Player disconnect detection and auto-action (fold/check/sit-out)
 
 **Config Type:**
+
 ```typescript
 interface DisconnectConfig {
-  disconnectTimeoutSeconds: number;   // Time before marking disconnected (default 30)
-  maxConsecutiveTimeouts: number;     // Timeouts before sit-out (default 3)
-  preferCheckOverFold: boolean;       // Auto-check instead of auto-fold if possible (default true)
-  reconnectGraceSeconds: number;      // Grace period after reconnect (default 5)
+  disconnectTimeoutSeconds: number; // Time before marking disconnected (default 30)
+  maxConsecutiveTimeouts: number; // Timeouts before sit-out (default 3)
+  preferCheckOverFold: boolean; // Auto-check instead of auto-fold if possible (default true)
+  reconnectGraceSeconds: number; // Grace period after reconnect (default 5)
 }
 ```
 
 **State Type:**
+
 ```typescript
 interface PlayerConnectionState {
   playerId: string;
   tableId: string;
   isConnected: boolean;
-  lastHeartbeat: number;              // Timestamp of last heartbeat
-  consecutiveTimeouts: number;        // Count toward sit-out threshold
-  isSittingOut: boolean;              // Voluntarily or forced
-  disconnectedAt?: number;            // Timestamp of disconnection
+  lastHeartbeat: number; // Timestamp of last heartbeat
+  consecutiveTimeouts: number; // Count toward sit-out threshold
+  isSittingOut: boolean; // Voluntarily or forced
+  disconnectedAt?: number; // Timestamp of disconnection
 }
 ```
 
@@ -903,10 +935,12 @@ dispose(tableId: string): void
 ```
 
 **Dependencies:**
+
 - Uses `setTimeout()` internally → REPLACE with `PreciseActionTimer`
 - Emits events: `PLAYER_DISCONNECTED`, `PLAYER_RECONNECTED`, `PLAYER_SIT_OUT`, `PLAYER_SAT_BACK`
 
 **Server Changes Needed:**
+
 1. Add POST /heartbeat endpoint (client calls every 5 seconds)
 2. Inject `PreciseActionTimer` for timeout countdowns
 3. Call `registerPlayer()` on seat taken
@@ -927,26 +961,27 @@ dispose(tableId: string): void
 **Purpose:** Queued pre-actions (auto-fold, auto-check/fold, auto-check, auto-call, auto-call-any)
 
 **Type Definitions:**
+
 ```typescript
 type PreActionType =
-  | 'auto_fold'       // Always fold
+  | 'auto_fold' // Always fold
   | 'auto_check_fold' // Check if can, else fold
-  | 'auto_check'      // Check if can, else invalid (wait)
-  | 'auto_call'       // Call current bet (even if all-in)
-  | 'auto_call_any'   // Call any amount (up to stack)
+  | 'auto_check' // Check if can, else invalid (wait)
+  | 'auto_call' // Call current bet (even if all-in)
+  | 'auto_call_any'; // Call any amount (up to stack)
 
 interface PreActionEntry {
   tableId: string;
   playerId: string;
   action: PreActionType;
-  maxCallAmount?: number;  // For auto_call_any
+  maxCallAmount?: number; // For auto_call_any
   createdAt: number;
 }
 
 interface PreActionResult {
   valid: boolean;
   action?: PlayerAction;
-  wasInvalidated?: boolean;  // e.g., auto_check → bet placed → invalidated
+  wasInvalidated?: boolean; // e.g., auto_check → bet placed → invalidated
 }
 ```
 
@@ -1001,10 +1036,12 @@ dispose(tableId: string): void
 ```
 
 **Dependencies:**
+
 - No external dependencies
 - Emits events: `PRE_ACTION_SET`, `PRE_ACTION_CLEARED`, `PRE_ACTION_EXECUTED`
 
 **Server Changes Needed:**
+
 1. Add POST /preaction endpoint
 2. Call `executePreAction()` in HandController.handleTurnChange() BEFORE starting action timer
 3. If `executePreAction()` returns valid result, apply action immediately
@@ -1024,16 +1061,17 @@ dispose(tableId: string): void
 **Key Difference:** Instead of `setTimeout(callback, 5000)`, stores absolute deadline timestamp and checks against `Date.now()` every 100ms.
 
 **State Type:**
+
 ```typescript
 interface ActionDeadline {
   tableId: string;
   playerId: string;
-  deadline: number;              // Absolute ms timestamp (Date.now() + durationMs)
-  durationMs: number;            // Original duration
-  startedAt: number;             // When timer started
-  isPaused: boolean;             // Pause state
-  pausedRemainingMs?: number;    // Time left when paused
-  onExpiry?: () => void;         // Callback
+  deadline: number; // Absolute ms timestamp (Date.now() + durationMs)
+  durationMs: number; // Original duration
+  startedAt: number; // When timer started
+  isPaused: boolean; // Pause state
+  pausedRemainingMs?: number; // Time left when paused
+  onExpiry?: () => void; // Callback
 }
 ```
 
@@ -1099,6 +1137,7 @@ dispose(): void
 ```
 
 **Polling Mechanism:**
+
 ```typescript
 private startPolling() {
   this.pollingInterval = setInterval(() => {
@@ -1113,10 +1152,12 @@ private startPolling() {
 ```
 
 **Dependencies:**
+
 - `Date.now()` — JavaScript built-in
 - No external libraries
 
 **Server Changes Needed:**
+
 1. Port directly to server/src/engine/PreciseActionTimer.ts
 2. Replace all `setTimeout()` calls in ServerTableEngine.ts with this
 3. Inject into DisconnectEngine, TimeBankEngine, RunItTwiceEngine for their countdowns
@@ -1134,6 +1175,7 @@ private startPolling() {
 **Purpose:** Game state integrity checking between hands (chip conservation, no negative stacks, etc.)
 
 **Verification Context:**
+
 ```typescript
 interface VerificationContext {
   tableId: string;
@@ -1151,12 +1193,12 @@ enum VerificationErrorCode {
   INVALID_BOARD_STAGE = 'INVALID_BOARD_STAGE',
   INVALID_PLAYER_COUNT = 'INVALID_PLAYER_COUNT',
   POT_INTEGRITY_FAILED = 'POT_INTEGRITY',
-  UNKNOWN = 'UNKNOWN'
+  UNKNOWN = 'UNKNOWN',
 }
 
 interface VerificationResult {
   passed: boolean;
-  errors: {code: VerificationErrorCode, details: string}[];
+  errors: { code: VerificationErrorCode; details: string }[];
 }
 ```
 
@@ -1198,6 +1240,7 @@ dispose(): void
 ```
 
 **Event:**
+
 ```typescript
 // Emitted on failure
 STATE_INTEGRITY_VIOLATION: {
@@ -1207,10 +1250,12 @@ STATE_INTEGRITY_VIOLATION: {
 ```
 
 **Dependencies:**
+
 - No external dependencies
 - Must be called at specific points in HandController flow
 
 **Server Changes Needed:**
+
 1. Call `recordInitialChipTotal()` at start of HandController.dealHand()
 2. Call `deductRake()` after rake calculation in HandController.distributeWinnings()
 3. Call `verify()` BEFORE moveToNextHand()
@@ -1227,6 +1272,7 @@ STATE_INTEGRITY_VIOLATION: {
 **Purpose:** Full action validation with turn order, timing, duplicate suppression
 
 **Request Type:**
+
 ```typescript
 interface ActionRequest {
   tableId: string;
@@ -1237,30 +1283,31 @@ interface ActionRequest {
 ```
 
 **Validation Context:**
+
 ```typescript
 interface ValidationContext {
-  currentPlayerId: string;          // Whose turn is it?
+  currentPlayerId: string; // Whose turn is it?
   stage: GameStage;
-  currentBet: number;               // Highest bet this round
-  playerBet: number;                // This player's total bet this round
-  playerStack: number;              // Remaining chips
+  currentBet: number; // Highest bet this round
+  playerBet: number; // This player's total bet this round
+  playerStack: number; // Remaining chips
   bigBlind: number;
-  minRaise: number;                 // Min legal raise
+  minRaise: number; // Min legal raise
   pot: number;
-  canCheck: boolean;                // Amount to call === 0
-  actionDeadline: number;           // Absolute ms timestamp (from PreciseActionTimer)
-  playerActedThisRound: boolean;    // Already acted?
-  isAllIn: boolean;                 // Player all-in already?
-  isFolded: boolean;                // Already folded?
+  canCheck: boolean; // Amount to call === 0
+  actionDeadline: number; // Absolute ms timestamp (from PreciseActionTimer)
+  playerActedThisRound: boolean; // Already acted?
+  isAllIn: boolean; // Player all-in already?
+  isFolded: boolean; // Already folded?
   numActivePlayers: number;
-  lastActionTime?: number;          // Timestamp of last action (for duplicate suppression)
+  lastActionTime?: number; // Timestamp of last action (for duplicate suppression)
 }
 
 interface ValidationResult {
   valid: boolean;
   errorCode?: ActionValidationErrorCode;
   errorMessage?: string;
-  normalizedAction?: PlayerAction;  // For all-in conversions
+  normalizedAction?: PlayerAction; // For all-in conversions
 }
 
 enum ActionValidationErrorCode {
@@ -1275,7 +1322,7 @@ enum ActionValidationErrorCode {
   ABOVE_MAX_RAISE = 'ABOVE_MAX_RAISE',
   CANNOT_CHECK = 'CANNOT_CHECK',
   NOTHING_TO_CALL = 'NOTHING_TO_CALL',
-  INVALID_AMOUNT = 'INVALID_AMOUNT'
+  INVALID_AMOUNT = 'INVALID_AMOUNT',
 }
 ```
 
@@ -1355,12 +1402,14 @@ private validateAllIn(amount: number | undefined, context): ValidationResult
 **Special Cases:**
 
 1. **All-In Aggression:** Raise with <minRaise is valid if all-in
+
    ```
    Example: Stack=200, BB=100, minRaise=200
    Player raises to 200 → valid (all-in), not below min
    ```
 
 2. **Short All-In:** Bet/raise <1BB all-in is valid
+
    ```
    Example: Stack=50, BB=100, can't bet full blind but can go all-in
    ```
@@ -1371,10 +1420,12 @@ private validateAllIn(amount: number | undefined, context): ValidationResult
    ```
 
 **Dependencies:**
+
 - No external dependencies
 - Called from ServerTableEngine.handlePlayerAction()
 
 **Server Changes Needed:**
+
 1. Replace basic validateAction() with this richer validator
 2. Use error codes in HTTP response (not auto-fold)
 3. Return specific error message to client for UI feedback
@@ -1390,26 +1441,27 @@ private validateAllIn(amount: number | undefined, context): ValidationResult
 **Purpose:** UTG straddle and Mississippi straddle support
 
 **Config Type:**
+
 ```typescript
 interface StraddleConfig {
   enabled: boolean;
-  mississippiEnabled: boolean;  // Allow straddles after flop
-  maxStraddles: number;         // Max straddles per hand (default 2)
-  straddleMultiplier: number;   // Straddle = multiplier × BB (default 2)
+  mississippiEnabled: boolean; // Allow straddles after flop
+  maxStraddles: number; // Max straddles per hand (default 2)
+  straddleMultiplier: number; // Straddle = multiplier × BB (default 2)
 }
 
 interface StraddlePost {
   playerId: string;
   seatNumber: number;
-  amount: number;  // Actual straddle amount
+  amount: number; // Actual straddle amount
   postedAt: number;
 }
 
 interface StraddleResult {
   posted: StraddlePost[];
-  straddles: number;            // Total straddle posts
-  adjustedBigBlind: number;     // BB after straddles (for min raise calc)
-  firstToAct: string;           // UTG+straddles
+  straddles: number; // Total straddle posts
+  adjustedBigBlind: number; // BB after straddles (for min raise calc)
+  firstToAct: string; // UTG+straddles
 }
 ```
 
@@ -1457,20 +1509,24 @@ dispose(tableId: string): void
 ```
 
 **Impact on Betting:**
+
 - Straddle is "bet to act on" → first to act is UTG + (straddle count)
 - Min raise = BB + all straddles
 - Straddle amount = straddleMultiplier × BB
 
 **Client Current Implementation (REMOVE):**
+
 - Lines 274-291 in client HandController: Injects straddles after blinds but BEFORE first-to-act calculation
 - Incorrect: First to act doesn't move past straddle
 - Server version must fix this
 
 **Dependencies:**
+
 - No external dependencies
 - Emits events: `STRADDLE_POSTED`, `STRADDLE_REJECTED`
 
 **Server Changes Needed:**
+
 1. Add POST /straddle endpoint
 2. Call `processStraddles()` in HandController.dealHand() AFTER postBlinds()
 3. Use `StraddleResult.firstToAct` to set initial turn
@@ -1488,11 +1544,12 @@ dispose(tableId: string): void
 **Purpose:** Dual/triple board dealing when all players are all-in (run-it-twice/thrice)
 
 **Config Type:**
+
 ```typescript
 interface RITConfig {
   enabled: boolean;
-  autoDeclineTimeout: number;   // Seconds before auto-decline offer (default 10)
-  maxRuns: 2 | 3;               // Allow 2 or 3 boards (default 2)
+  autoDeclineTimeout: number; // Seconds before auto-decline offer (default 10)
+  maxRuns: 2 | 3; // Allow 2 or 3 boards (default 2)
 }
 
 type RITStatus = 'idle' | 'offered' | 'accepted' | 'declined' | 'resolved';
@@ -1500,14 +1557,14 @@ type RITStatus = 'idle' | 'offered' | 'accepted' | 'declined' | 'resolved';
 interface RITState {
   status: RITStatus;
   handId: string;
-  offeredBy: string;            // Player proposing RIT
-  offeredTo: string;            // Other all-in player
-  acceptedBy: Set<string>;      // Who accepted (if both accept → status='accepted')
-  pot: number;                  // Amount to distribute
+  offeredBy: string; // Player proposing RIT
+  offeredTo: string; // Other all-in player
+  acceptedBy: Set<string>; // Who accepted (if both accept → status='accepted')
+  pot: number; // Amount to distribute
   board1: Card[];
   board2?: Card[];
   board3?: Card[];
-  winners?: Map<string, number>;  // Result: who won how much on each board
+  winners?: Map<string, number>; // Result: who won how much on each board
   createdAt: number;
 }
 
@@ -1515,8 +1572,8 @@ interface RITResult {
   board1: Card[];
   board2: Card[];
   board3?: Card[];
-  winners: string[];  // Winners per board
-  distribution: Map<string, number>;  // playerId → chips
+  winners: string[]; // Winners per board
+  distribution: Map<string, number>; // playerId → chips
 }
 ```
 
@@ -1582,6 +1639,7 @@ dispose(tableId: string): void
 ```
 
 **Integration with HandController:**
+
 ```
 Normal all-in flow:
   handlePlayerAction() → last player acts
@@ -1600,15 +1658,18 @@ Normal all-in flow:
 ```
 
 **Client Current Implementation (REMOVE):**
+
 - Lines 614-630: ALL_IN_RUNOUT_PENDING event
 - Lines 652-715: resumeRunout/resolveRunItTwice handlers
 - These must move to server
 
 **Dependencies:**
+
 - Uses PreciseActionTimer.pauseTimer/resumeTimer
 - Emits events: `RIT_OFFERED`, `RIT_ACCEPTED`, `RIT_DECLINED`, `RIT_RESOLVED`
 
 **Server Changes Needed:**
+
 1. Add POST /rit endpoint
 2. Call `offer()` in HandController when all-in
 3. Call `pauseTimer()` on all-in player while waiting for responses
@@ -1627,37 +1688,39 @@ Normal all-in flow:
 **Purpose:** All-in equity insurance with Monte Carlo calculation
 
 **Config Type:**
+
 ```typescript
 interface InsuranceConfig {
   enabled: boolean;
-  houseMargin: number;          // Multiplier on premium (default 1.05)
-  maxInsurablePercent: number;  // % of pot that can be insured (default 100)
-  offerTimeoutSeconds: number;  // Offer expires after N seconds (default 15)
-  minPotForInsurance: number;   // Minimum pot to offer insurance (default 0)
-  equityIterations: number;     // MC iterations for equity calc (default 5000)
+  houseMargin: number; // Multiplier on premium (default 1.05)
+  maxInsurablePercent: number; // % of pot that can be insured (default 100)
+  offerTimeoutSeconds: number; // Offer expires after N seconds (default 15)
+  minPotForInsurance: number; // Minimum pot to offer insurance (default 0)
+  equityIterations: number; // MC iterations for equity calc (default 5000)
 }
 
 interface InsuranceOffer {
   offerId: string;
   handId: string;
-  playerId: string;              // All-in player
-  equity: number;                // Probability of winning (0-1)
-  insuredAmount: number;         // Amount to insure (can be partial)
-  premium: number;               // Cost = (1 - equity) × amount × margin
+  playerId: string; // All-in player
+  equity: number; // Probability of winning (0-1)
+  insuredAmount: number; // Amount to insure (can be partial)
+  premium: number; // Cost = (1 - equity) × amount × margin
   status: 'offered' | 'accepted' | 'declined' | 'settled';
-  response?: boolean;            // true = accepted, false = declined
+  response?: boolean; // true = accepted, false = declined
   createdAt: number;
 }
 
 interface InsuranceSettlement {
   offerId: string;
   playerId: string;
-  won: boolean;                  // Did they win the hand?
-  payout: number;                // Insurance payout (if lost)
+  won: boolean; // Did they win the hand?
+  payout: number; // Insurance payout (if lost)
 }
 ```
 
 **Premium Calculation:**
+
 ```
 equity = monteCarloEquity(playerCards, boardCards, numOpponents, 5000)
 insuredAmount = min(pot × maxInsurablePercent, playerStack)
@@ -1722,11 +1785,13 @@ dispose(tableId: string): void
 ```
 
 **Dependencies:**
+
 - Uses `MonteCarloEquity.monteCarloEquity()` for equity calculation
 - Uses PreciseActionTimer for offer timeout
 - Emits events: `INSURANCE_OFFERED`, `INSURANCE_ACCEPTED`, `INSURANCE_DECLINED`, `INSURANCE_SETTLED`
 
 **Server Changes Needed:**
+
 1. Port MonteCarloEquity to server
 2. Add POST /insurance endpoint
 3. Call `createOffers()` when players all-in
@@ -1745,12 +1810,13 @@ dispose(tableId: string): void
 **Purpose:** Race-condition-proof stack operations with versioned optimistic locking
 
 **State Type:**
+
 ```typescript
 interface StackVersion {
   playerId: string;
   tableId: string;
   stack: number;
-  version: number;  // Incremented on each change
+  version: number; // Incremented on each change
 }
 
 interface AtomicResult {
@@ -1762,7 +1828,7 @@ interface AtomicResult {
 
 interface StackSettlement {
   playerId: string;
-  amount: number;  // +/- chips
+  amount: number; // +/- chips
 }
 
 interface BatchSettlementResult {
@@ -1829,6 +1895,7 @@ dispose(): void
 ```
 
 **Why Versioning?**
+
 ```
 Without versioning (WRONG):
   Player A reads stack = 1000
@@ -1848,10 +1915,12 @@ With versioning (CORRECT):
 ```
 
 **Dependencies:**
+
 - No external dependencies
 - Emits events: `STACK_RACE_DETECTED`
 
 **Server Changes Needed:**
+
 1. Port to server/src/engine/AtomicStackService.ts
 2. Use in HandController.distributeWinnings() for all stack updates
 3. Every debit call must use atomicDebit() with current version
@@ -1868,18 +1937,19 @@ With versioning (CORRECT):
 **Purpose:** Automatic game variant rotation (HORSE, custom sequences)
 
 **Type Definitions:**
+
 ```typescript
 type GameVariant = 'holdem' | 'omaha' | 'omaha5' | 'razz' | '7stud' | 'badugi' | '2-7' | 'horse';
 
 interface GameVariantInfo {
   name: GameVariant;
-  holeCards: number;       // 2 for holdem, 4 for omaha, 5 for omaha5, etc.
-  communityCards: number;  // 0 for stud games, 5 for flop games
+  holeCards: number; // 2 for holdem, 4 for omaha, 5 for omaha5, etc.
+  communityCards: number; // 0 for stud games, 5 for flop games
   evaluationMethod: string; // 'hilo' or 'high'
 }
 
 interface MixedGameConfig {
-  presetName?: string;     // 'HORSE', 'HOLDEM_OMAHA', etc.
+  presetName?: string; // 'HORSE', 'HOLDEM_OMAHA', etc.
   variants: GameVariant[];
   handsPerVariant: number; // Rotate every N hands
   rotatePerOrbit: boolean; // Rotate on button pass instead of hand count
@@ -1890,7 +1960,7 @@ enum MixedGamePreset {
   HOLDEM_OMAHA = ['holdem', 'omaha', 'holdem', 'omaha'],
   HOLDEM_PLO5 = ['holdem', 'omaha5', 'holdem', 'omaha5'],
   DOUBLE_BOARD_ROTATION = ['holdem', 'holdem_double_board'],
-  OMAHA_VARIANTS = ['omaha', 'omaha5', 'omaha_hilo']
+  OMAHA_VARIANTS = ['omaha', 'omaha5', 'omaha_hilo'],
 }
 ```
 
@@ -1933,6 +2003,7 @@ dispose(tableId: string): void
 ```
 
 **Integration with HandController:**
+
 ```
 dealHand():
   variant = getCurrentVariant(tableId)
@@ -1953,10 +2024,12 @@ distributeWinnings():
 ```
 
 **Dependencies:**
+
 - No external dependencies
 - Emits events: `GAME_ROTATED`
 
 **Server Changes Needed:**
+
 1. Port to server/src/engine/MixedGameEngine.ts
 2. Call `getCurrentVariant()` at dealHand() to determine hole card count
 3. Call `onHandComplete()` at end of hand to check for rotation
@@ -1973,6 +2046,7 @@ distributeWinnings():
 **Purpose:** Tournament chip denomination removal via card-deal lottery
 
 **Function:**
+
 ```typescript
 executeChipRace(
   tournamentId: string,
@@ -1983,6 +2057,7 @@ executeChipRace(
 ```
 
 **Algorithm:**
+
 ```
 1. For each player:
    - Fractional chips = stack % newDenomination
@@ -1994,9 +2069,11 @@ executeChipRace(
 ```
 
 **Dependencies:**
+
 - Uses CryptoRandom for fair card dealing
 
 **Server Changes Needed:**
+
 1. Port for tournament support
 2. Call during tournament chip denomination change
 
@@ -2011,6 +2088,7 @@ executeChipRace(
 **Purpose:** Per-player rake contribution tracking + weighted rakeback tiers
 
 **Tier Structure:**
+
 ```
 Bronze:   5% rakeback
 Silver:   10% rakeback
@@ -2021,6 +2099,7 @@ Elite:    30% rakeback
 ```
 
 **Calculation (Weighted Contributed Method):**
+
 ```
 Player's share of rake = (player's contribution to pot) / (total pot) × total rake
 
@@ -2032,6 +2111,7 @@ Example:
 ```
 
 **Functions:**
+
 ```typescript
 // Record hand rake for tracking
 recordHandRake(
@@ -2060,6 +2140,7 @@ settleRakeback(
 ```
 
 **Server Changes Needed:**
+
 1. Port to server/src/engine/RakebackEngine.ts
 2. Call `recordHandRake()` in HandController.postHandTasks()
 3. Set up cron job for `settleRakeback()` (daily or weekly)
@@ -2076,6 +2157,7 @@ settleRakeback(
 **Purpose:** Crypto-secure random for fair dealing and shuffling
 
 **Functions:**
+
 ```typescript
 secureRandomInt(exclusiveMax: number): number
 // Return random int [0, exclusiveMax)
@@ -2091,10 +2173,12 @@ secureShuffle<T>(array: T[]): T[]
 ```
 
 **Server Status:**
+
 - Server already has `Deck.shuffle()` in `PokerEngine.ts` using `crypto.getRandomValues()`
 - Can either reuse existing code or copy this utility
 
 **Server Changes Needed:**
+
 1. If reusing: no changes
 2. If copying: duplicate to server/src/engine/CryptoRandom.ts
 3. Use in Deck.shuffle() and InsuranceEngine.monteCarloEquity()
@@ -2124,6 +2208,7 @@ secureShuffle<T>(array: T[]): T[]
 **Purpose:** Production observability — hands/hour, avg timing, cache hits, timer utilization
 
 **Metrics Tracked:**
+
 - Hands played / hour
 - Avg action time (turntime)
 - Timer cache hit rate
@@ -2134,6 +2219,7 @@ secureShuffle<T>(array: T[]): T[]
 **Auto-emit:** Every 60 seconds
 
 **Server Changes Needed:**
+
 1. Port for production monitoring
 2. Emit to logging service (e.g., Datadog, LogRocket)
 3. Set up alerts on error rate thresholds
@@ -2147,6 +2233,7 @@ secureShuffle<T>(array: T[]): T[]
 **Purpose:** MTT table balancing — minimize player movement
 
 **Functions:**
+
 ```typescript
 evaluateBalance(tables: Table[], balanceTarget: number): boolean
 shouldRebalance(tables: Table[]): boolean  // gap > 1
@@ -2164,6 +2251,7 @@ breakTable(table: Table): Player[]  // players to redistribute
 **Purpose:** Tournament table breaking with countdown warning
 
 **Flow:**
+
 1. Check if table should break (all-but-one players busted)
 2. Initiate break: 30s warning
 3. Move remaining players to other tables
@@ -2178,6 +2266,7 @@ breakTable(table: Table): Player[]  // players to redistribute
 **Purpose:** Open Face Chinese Poker game logic
 
 **Includes:**
+
 - Full deck/dealing/placement
 - Evaluation (high hand, middle hand, low hand)
 - Foul detection
@@ -2212,6 +2301,7 @@ monteCarloEquity(
 ```
 
 **Algorithm:**
+
 ```
 for (let i = 0; i < iterations; i++) {
   Deal random cards to opponents
@@ -2223,10 +2313,12 @@ return (equity / iterations) × 100
 ```
 
 **Dependencies:**
+
 - Uses `evaluateHand()` from PokerEngine (already on server)
 - Uses `secureShuffle()` from CryptoRandom
 
 **Server Changes Needed:**
+
 1. Port to server/src/engine/MonteCarloEquity.ts
 2. Use in InsuranceEngine.createOffers()
 
@@ -2241,18 +2333,21 @@ return (equity / iterations) × 100
 **Purpose:** Step-by-step hand history replayer with playback controls (UI feature)
 
 **Functionality:**
+
 - Load hand history from hand_history table
 - Reconstruct game state from action list
 - Playback controls: play, pause, rewind, fast-forward
 - Show cards as they're revealed
 
 **Why Client Only:**
+
 - Pure UI state (replay position, playback speed)
 - Reads from immutable hand_history (no writes)
 - No game logic — just visualization
 - No real-time requirements
 
 **Server Changes Needed:**
+
 1. Persist hand_history table (already done?)
 2. Endpoint to query: GET /handhistory/:handId
 3. Return: {actions[], finalState, outcome}
@@ -2267,20 +2362,21 @@ return (equity / iterations) × 100
 
 **Missing Features (vs Client's 917 lines):**
 
-| Gap | Client Lines | Current Server | Impact |
-|-----|-------|---------|--------|
-| Big Blind Ante (BBA) | 252-271 | Missing | BBA games unplayable |
-| Straddle injection | 274-291 | Missing | Straddles don't post |
-| Bomb pot preflop skip | 191-208 | Missing | Bomb pot doesn't skip preflop betting |
-| ALL_IN_RUNOUT_PENDING event | 614-630 | Missing | RIT not supported |
-| Raise clamp fix (ENG-01) | 394-398 | Missing | Can over-raise in edge cases |
-| No-winners safety guard | 755-781 | Missing | Crash if no winner detected |
-| resumeRunout() | 652-715 | Missing | Can't pause for insurance |
-| resolveRunItTwice() | 652-715 | Missing | RIT settlement broken |
-| Correct aggression tracking | ✓ | Incorrect | Min-raise calc wrong for all-ins |
-| runningCurrentBet for short all-in | 498-511 | Missing | Short all-in detection broken |
+| Gap                                | Client Lines | Current Server | Impact                                |
+| ---------------------------------- | ------------ | -------------- | ------------------------------------- |
+| Big Blind Ante (BBA)               | 252-271      | Missing        | BBA games unplayable                  |
+| Straddle injection                 | 274-291      | Missing        | Straddles don't post                  |
+| Bomb pot preflop skip              | 191-208      | Missing        | Bomb pot doesn't skip preflop betting |
+| ALL_IN_RUNOUT_PENDING event        | 614-630      | Missing        | RIT not supported                     |
+| Raise clamp fix (ENG-01)           | 394-398      | Missing        | Can over-raise in edge cases          |
+| No-winners safety guard            | 755-781      | Missing        | Crash if no winner detected           |
+| resumeRunout()                     | 652-715      | Missing        | Can't pause for insurance             |
+| resolveRunItTwice()                | 652-715      | Missing        | RIT settlement broken                 |
+| Correct aggression tracking        | ✓            | Incorrect      | Min-raise calc wrong for all-ins      |
+| runningCurrentBet for short all-in | 498-511      | Missing        | Short all-in detection broken         |
 
 **PRIORITY UPGRADES:**
+
 1. Add BBA support
 2. Add straddle processing
 3. Add bomb pot skip logic
@@ -2294,21 +2390,22 @@ return (equity / iterations) × 100
 
 **Critical Gaps:**
 
-| Issue | Line | Current | Required | Blocker |
-|-------|------|---------|----------|---------|
-| Cards leaked to all players | 792 | `cards: p.cards ?? []` | Scrub for non-requesting players | **BLOCKER #2** |
-| Auto-fold on error | 351-353 | Auto-folds | Return error response | **BLOCKER #3** |
-| Timer always auto-folds | 199-205 | `if(!canCheck) fold()` | Auto-check if toCall=0 | **BLOCKER #3** |
-| setTimeout not deadline-based | 192 | `setTimeout(...)` | Use PreciseActionTimer | Drift issue |
-| No time bank pool model | N/A | Single use per turn | Pool model with refill | Feature gap |
-| No orbit refill | N/A | Missing | onOrbitComplete hook | Feature gap |
-| No disconnect detection | N/A | Missing | DisconnectEngine | Feature gap |
-| No pre-action system | N/A | Missing | PreActionEngine | Feature gap |
-| No state verification | N/A | Missing | StateVerifier | Data integrity |
-| No action validation beyond basics | N/A | calculateBettingState only | ServerActionValidator | Security gap |
-| No bomb pot detection | N/A | Missing | Check for preflop skip | Feature gap |
+| Issue                              | Line    | Current                    | Required                         | Blocker        |
+| ---------------------------------- | ------- | -------------------------- | -------------------------------- | -------------- |
+| Cards leaked to all players        | 792     | `cards: p.cards ?? []`     | Scrub for non-requesting players | **BLOCKER #2** |
+| Auto-fold on error                 | 351-353 | Auto-folds                 | Return error response            | **BLOCKER #3** |
+| Timer always auto-folds            | 199-205 | `if(!canCheck) fold()`     | Auto-check if toCall=0           | **BLOCKER #3** |
+| setTimeout not deadline-based      | 192     | `setTimeout(...)`          | Use PreciseActionTimer           | Drift issue    |
+| No time bank pool model            | N/A     | Single use per turn        | Pool model with refill           | Feature gap    |
+| No orbit refill                    | N/A     | Missing                    | onOrbitComplete hook             | Feature gap    |
+| No disconnect detection            | N/A     | Missing                    | DisconnectEngine                 | Feature gap    |
+| No pre-action system               | N/A     | Missing                    | PreActionEngine                  | Feature gap    |
+| No state verification              | N/A     | Missing                    | StateVerifier                    | Data integrity |
+| No action validation beyond basics | N/A     | calculateBettingState only | ServerActionValidator            | Security gap   |
+| No bomb pot detection              | N/A     | Missing                    | Check for preflop skip           | Feature gap    |
 
 **PRIORITY FIXES:**
+
 1. Scrub cards in broadcast (BLOCKER #2)
 2. Return error instead of auto-fold (BLOCKER #3)
 3. Auto-check when toCall=0 (BLOCKER #3)
@@ -2321,15 +2418,16 @@ return (equity / iterations) × 100
 
 **Security Gaps:**
 
-| Endpoint | Current | Issue | Fix |
-|----------|---------|-------|-----|
-| POST /action | No auth | Trust userId param | Add JWT validation |
-| POST /action | No auth | No rate limiting | Add 1 req/100ms per player |
-| POST /timebank | No auth | Trust userId param | Add JWT validation |
-| GET /actions/:tableId/:userId | No auth | Trust userId param | Add JWT validation |
-| All | Fire-and-forget | No error response | Return {success, error} |
+| Endpoint                      | Current         | Issue              | Fix                        |
+| ----------------------------- | --------------- | ------------------ | -------------------------- |
+| POST /action                  | No auth         | Trust userId param | Add JWT validation         |
+| POST /action                  | No auth         | No rate limiting   | Add 1 req/100ms per player |
+| POST /timebank                | No auth         | Trust userId param | Add JWT validation         |
+| GET /actions/:tableId/:userId | No auth         | Trust userId param | Add JWT validation         |
+| All                           | Fire-and-forget | No error response  | Return {success, error}    |
 
 **PHASE 3 Additions:**
+
 ```
 Missing endpoints:
   POST /preaction
@@ -2347,6 +2445,7 @@ Missing endpoints:
 ### Server Types (server/src/types.ts)
 
 **HandConfig Missing Fields:**
+
 ```typescript
 // Current
 interface HandConfig {
@@ -2369,6 +2468,7 @@ interface HandConfig {
 ```
 
 **HandEvent Missing Variants:**
+
 ```typescript
 // Current
 type HandEvent =
@@ -2386,6 +2486,7 @@ type HandEvent =
 ```
 
 **HAND_COMPLETE Missing Fields:**
+
 ```typescript
 // Current
 interface HandCompleteEvent {
@@ -2408,6 +2509,7 @@ interface HandCompleteEvent {
 ```
 
 **SeatPlayer Missing Fields:**
+
 ```typescript
 // Current
 interface SeatPlayer {
@@ -2437,6 +2539,7 @@ interface SeatPlayer {
 ### handControllerRef References (48 total)
 
 **Initialization & Setup (lines 2711, 2727-2813):**
+
 ```
 Line 2711:   const handControllerRef = useRef<HandController | null>(null);
 Line 2732:   handControllerRef.current = new HandController({...})
@@ -2445,6 +2548,7 @@ Line 2753:   handControllerRef.current.dispose()
 ```
 
 **Action Handlers (lines 4005-4206):**
+
 ```
 Line 4012:   handleFold:        () => handControllerRef.current?.performAction(...)
 Line 4018:   handleCheck:       () => handControllerRef.current?.performAction(...)
@@ -2457,6 +2561,7 @@ Line 4048:   handleTimebank:    () => handControllerRef.current?.activate(...)
 ```
 
 **State Reads (lines 2919-2926, 3034-3193, 3242-3253):**
+
 ```
 Line 2921:   streetPotsRef.current = handControllerRef.current?.getState().streetPots
 Line 3045:   Hand rotation uses handControllerRef.current?.getState().variant
@@ -2464,6 +2569,7 @@ Line 3243:   WINNERS event reads engineState = handControllerRef.current?.getSta
 ```
 
 **broadcastLocalHandState Calls (15 total):**
+
 ```
 Line 2741:   broadcastLocalHandState('HAND_STARTED', ...)
 Line 2855:   broadcastLocalHandState('STREET_CHANGED', ...)
@@ -2479,32 +2585,33 @@ Line 3243:   broadcastLocalHandState('WINNERS', ...)
 ### REPLACEMENT PATTERN (Every Handler)
 
 **Before (WRONG):**
+
 ```typescript
 handleFold: () => {
   handControllerRef.current?.performAction('fold');
-  broadcastLocalHandState('ACTION_PERFORMED', {action: 'fold'});
-}
+  broadcastLocalHandState('ACTION_PERFORMED', { action: 'fold' });
+};
 ```
 
 **After (CORRECT):**
+
 ```typescript
 handleFold: async () => {
-  setPendingAction('fold');  // Show spinner immediately
+  setPendingAction('fold'); // Show spinner immediately
 
   try {
     const result = await GameServerAPI.submitAction(tableId, userId, {
-      action: 'fold'
+      action: 'fold',
     });
 
     if (!result.success) {
-      showError(result.error);  // e.g., "Action already performed"
+      showError(result.error); // e.g., "Action already performed"
       setPendingAction(null);
       return;
     }
 
     // Do NOT update state here!
     // State update comes from Supabase Realtime broadcast (subscribeToHandState)
-
   } catch (err) {
     showError('Network error: ' + err.message);
     setPendingAction(null);
@@ -2515,14 +2622,15 @@ handleFold: async () => {
 ### Removed Imports (7 total)
 
 Lines 1-165 in TablePage.tsx:
+
 ```typescript
-import { HandController } from 'src/engine/HandController';        // DELETE
-import { PokerEngine } from 'src/engine/PokerEngine';              // DELETE (use server)
-import { ServerActionValidator } from 'src/engine/ServerActionValidator';  // DELETE
-import { RakeWaterfallEngine } from 'src/engine/RakeWaterfallEngine';      // DELETE
-import { OFCPineappleEngine } from 'src/engine/OFCPineappleEngine';        // DELETE
-import { MonteCarloEquity } from 'src/engine/MonteCarloEquity';   // DELETE
-import { TimeBankEngine } from 'src/engine/TimeBankEngine';       // DELETE
+import { HandController } from 'src/engine/HandController'; // DELETE
+import { PokerEngine } from 'src/engine/PokerEngine'; // DELETE (use server)
+import { ServerActionValidator } from 'src/engine/ServerActionValidator'; // DELETE
+import { RakeWaterfallEngine } from 'src/engine/RakeWaterfallEngine'; // DELETE
+import { OFCPineappleEngine } from 'src/engine/OFCPineappleEngine'; // DELETE
+import { MonteCarloEquity } from 'src/engine/MonteCarloEquity'; // DELETE
+import { TimeBankEngine } from 'src/engine/TimeBankEngine'; // DELETE
 ```
 
 ---
@@ -2539,6 +2647,7 @@ STEP 4: PORT CORE — PreciseActionTimer, ServerActionValidator, StateVerifier
 STEP 5: PORT SUPPORTING — TimeBankEngine, DisconnectEngine, PreActionEngine
 STEP 6: PORT ADVANCED — Straddle, RIT, Insurance, MixedGame, Rakeback
 STEP 7: TOURNAMENT & EXTRAS — ChipRace, TableBalancer, OFC, Telemetry
+STEP 8: TABLE SETTINGS & THEME CUSTOMIZATION — See Bible V8 Chapter 11
 ```
 
 YOU CANNOT BUILD ON A BROKEN FOUNDATION.
@@ -2551,11 +2660,13 @@ Client engine MUST be removed BEFORE server gets fixed or enhanced.
 **Duration:** 3-4 days
 **Approval:** CRITICAL — this is the foundational change
 **Files Modified:**
+
 - src/pages/TablePage.tsx (MAJOR — remove 48 handControllerRef + 15 broadcastLocalHandState)
 - src/pages/TablePage.tsx action handlers (convert to server-only API calls)
 - All src/engine/ imports removed from TablePage.tsx
 
 **What gets removed:**
+
 - handControllerRef and ALL 48 references
 - broadcastLocalHandState() function and ALL 15 calls
 - ALL local engine imports (HandController, etc.)
@@ -2563,11 +2674,13 @@ Client engine MUST be removed BEFORE server gets fixed or enhanced.
 - ALL "client is authoritative" patterns
 
 **What replaces it:**
+
 - Action handlers become: async POST to server → wait for response → show error or wait for Realtime broadcast
 - State updates come ONLY from Supabase Realtime subscriptions
 - Client becomes a dumb terminal: send actions, receive state, render
 
 **Verification:**
+
 - grep -rn "handControllerRef" src/ → ZERO results
 - grep -rn "broadcastLocalHandState" src/ → ZERO results
 - grep -rn "performAction" src/pages/TablePage.tsx → ZERO local engine calls
@@ -2578,6 +2691,7 @@ Client engine MUST be removed BEFORE server gets fixed or enhanced.
 ### PHASE 2: VERIFY CLEAN (MANDATORY GATE)
 
 Comprehensive grep of entire src/ directory for ANY remaining:
+
 - Local HandController usage
 - Local engine calculations
 - Local state that claims to be authoritative
@@ -2592,12 +2706,14 @@ Only after this gate passes do we touch the server.
 **Duration:** 2-3 days
 **Approval:** Not needed (bugfixes)
 **Files Modified:**
+
 - server/src/engine/ServerTableEngine.ts (3 fixes)
 
 **BLOCKER #1: Card Security**
 
 **File:** `server/src/engine/ServerTableEngine.ts` (line 792)
 **Current:**
+
 ```typescript
 broadcastCurrentState() {
   const state = {
@@ -2612,6 +2728,7 @@ broadcastCurrentState() {
 ```
 
 **Fixed:**
+
 ```typescript
 broadcastCurrentState(requestingPlayerId?: string) {
   const scrubbed = this.players.map(p => ({
@@ -2632,6 +2749,7 @@ broadcastCurrentState(requestingPlayerId?: string) {
 ```
 
 **Verification:**
+
 ```bash
 # After fix: test with 2 players
 # Player A should see: own 2 cards + opponent 0 cards (preflop)
@@ -2645,6 +2763,7 @@ broadcastCurrentState(requestingPlayerId?: string) {
 
 **File:** `server/src/engine/ServerTableEngine.ts` (lines 351-353)
 **Current:**
+
 ```typescript
 async handlePlayerAction(tableId: string, userId: string, action: PlayerAction): Promise<void> {
   const result = await this.validateAction(action);
@@ -2656,6 +2775,7 @@ async handlePlayerAction(tableId: string, userId: string, action: PlayerAction):
 ```
 
 **Fixed:**
+
 ```typescript
 async handlePlayerAction(
   tableId: string,
@@ -2677,6 +2797,7 @@ async handlePlayerAction(
 ```
 
 **HTTP Endpoint Change:**
+
 ```typescript
 app.post('/action', async (req, res) => {
   // OLD: fire-and-forget
@@ -2684,26 +2805,32 @@ app.post('/action', async (req, res) => {
   // res.send('OK')
 
   // NEW: return result
-  const result = await engine.handlePlayerAction(req.body.tableId, req.body.userId, req.body.action);
+  const result = await engine.handlePlayerAction(
+    req.body.tableId,
+    req.body.userId,
+    req.body.action
+  );
   res.json(result);
 });
 ```
 
 **Client Updates:**
+
 ```typescript
 async function handleFold() {
   const result = await fetch('/action', {
     method: 'POST',
-    body: JSON.stringify({tableId, userId, action: 'fold'})
-  }).then(r => r.json());
+    body: JSON.stringify({ tableId, userId, action: 'fold' }),
+  }).then((r) => r.json());
 
   if (!result.success) {
-    showError(result.error);  // "Action invalid: INSUFFICIENT_STACK"
+    showError(result.error); // "Action invalid: INSUFFICIENT_STACK"
   }
 }
 ```
 
 **Verification:**
+
 ```bash
 # Test 1: Valid action
 # POST /action {action: 'fold'} → {success: true}
@@ -2724,6 +2851,7 @@ async function handleFold() {
 
 **File:** `server/src/engine/ServerTableEngine.ts` (lines 199-205)
 **Current:**
+
 ```typescript
 private async handleActionTimer(tableId: string, playerId: string) {
   if (!canCheck) {
@@ -2734,6 +2862,7 @@ private async handleActionTimer(tableId: string, playerId: string) {
 ```
 
 **Fixed:**
+
 ```typescript
 private async handleActionTimer(tableId: string, playerId: string) {
   if (canCheck && amountToCall === 0) {
@@ -2751,6 +2880,7 @@ private async handleActionTimer(tableId: string, playerId: string) {
 ```
 
 **Verification:**
+
 ```bash
 # Test 1: Timer expires on big blind (no bet)
 # canCheck=true, amountToCall=0 → AUTO-CHECK (not fold)
@@ -2772,6 +2902,7 @@ private async handleActionTimer(tableId: string, playerId: string) {
 **Duration:** 5-6 days
 **Approval:** Required before start
 **Files Modified:**
+
 - server/src/engine/PreciseActionTimer.ts (NEW — 233 lines)
 - server/src/engine/ServerActionValidator.ts (ENHANCED — 323 lines)
 - server/src/engine/HandController.ts (UPGRADED — +200 lines)
@@ -2817,6 +2948,7 @@ private async handleActionTimer(tableId: string, playerId: string) {
 **Duration:** 6-7 days
 **Approval:** Required before start
 **Files Modified:**
+
 - server/src/engine/TimeBankEngine.ts (NEW)
 - server/src/engine/DisconnectEngine.ts (NEW)
 - server/src/engine/PreActionEngine.ts (NEW)
@@ -2865,6 +2997,7 @@ private async handleActionTimer(tableId: string, playerId: string) {
 **Duration:** 8-9 days
 **Approval:** Required before start
 **Files Modified:**
+
 - server/src/engine/StraddleEngine.ts (NEW)
 - server/src/engine/RunItTwiceEngine.ts (NEW)
 - server/src/engine/InsuranceEngine.ts (NEW)
@@ -2927,9 +3060,10 @@ private async handleActionTimer(tableId: string, playerId: string) {
 **Duration:** 3-4 days
 **Approval:** CRITICAL — cannot rollback after this
 **Files Modified:**
+
 - src/pages/TablePage.tsx (MAJOR — remove 48 refs + 15 calls)
 - src/lib/supabase.ts (MINOR — ensure subscribeToHandState works)
-- src/components/*.tsx (UPDATE all action handlers)
+- src/components/\*.tsx (UPDATE all action handlers)
 
 **STEP-BY-STEP (in order):**
 
@@ -2977,6 +3111,7 @@ private async handleActionTimer(tableId: string, playerId: string) {
 **Duration:** 4-5 days
 **Approval:** Required only if tournament feature needed
 **Files Modified:**
+
 - server/src/engine/ChipRaceEngine.ts
 - server/src/engine/TableBalancer.ts
 - server/src/engine/TableBreakEngine.ts
@@ -2985,6 +3120,7 @@ private async handleActionTimer(tableId: string, playerId: string) {
 - server/src/engine/EngineTelemetry.ts
 
 **Scope:**
+
 - ChipRaceEngine: Chip denomination removal via lottery
 - TableBalancer/TableBreakEngine: MTT table management
 - OFCPineappleEngine/OFCDealingOrchestrator: Open Face Chinese Poker game mode
@@ -3100,6 +3236,7 @@ interface SeatPlayer {
 For EACH phase, before marking complete:
 
 ### PHASE 1 (Blockers)
+
 - [ ] POST /action returns `{success, error}` not void
 - [ ] Card broadcast scrubbed: opponent cards = `[]` until showdown
 - [ ] Timer expires: auto-check if `canCheck=true`, else auto-fold
@@ -3109,6 +3246,7 @@ For EACH phase, before marking complete:
 - [ ] TypeScript: `npx tsc --noEmit` (zero errors)
 
 ### PHASE 2 (Core Extensions)
+
 - [ ] PreciseActionTimer: Timer not drift under 10+ concurrent timers
 - [ ] ServerActionValidator: All 11 error codes return correct error
 - [ ] HandController: BBA posting correct amount
@@ -3121,6 +3259,7 @@ For EACH phase, before marking complete:
 - [ ] TypeScript: `npx tsc --noEmit`
 
 ### PHASE 3 (Supporting Systems)
+
 - [ ] TimeBankEngine: Pool persists, refills per orbit
 - [ ] DisconnectEngine: 30s timeout → auto-fold, reconnect clears
 - [ ] PreActionEngine: auto_check clears on bet, auto_call converts to all-in
@@ -3133,6 +3272,7 @@ For EACH phase, before marking complete:
 - [ ] TypeScript: `npx tsc --noEmit`
 
 ### PHASE 4 (Advanced Features)
+
 - [ ] StraddleEngine: Straddles post in correct position
 - [ ] MixedGameEngine: Game rotates at threshold
 - [ ] RunItTwiceEngine: Both boards dealt, pot split correctly
@@ -3145,6 +3285,7 @@ For EACH phase, before marking complete:
 - [ ] TypeScript: `npx tsc --noEmit`
 
 ### PHASE 5 (Remove Client Engine)
+
 - [ ] handControllerRef: 0 references (was 48)
 - [ ] broadcastLocalHandState: 0 calls (was 15)
 - [ ] Engine imports: 0 remaining (was 7)
@@ -3156,6 +3297,7 @@ For EACH phase, before marking complete:
 - [ ] TypeScript: `npx tsc --noEmit`
 
 ### PHASE 6 (Tournament — if applicable)
+
 - [ ] ChipRaceEngine: Chip race lottery fair (uses CryptoRandom)
 - [ ] TableBalancer: Tables balanced to within 1 player
 - [ ] TableBreakEngine: Table breaks correctly, seats assigned fairly
@@ -3166,18 +3308,21 @@ For EACH phase, before marking complete:
 ### GENERAL VERIFICATION (All Phases)
 
 **Code Quality:**
+
 - [ ] No `console.log` debugging statements left
 - [ ] No `TODO` comments without jira issues
 - [ ] No commented-out code
 - [ ] Variable names clear and consistent
 
 **Type Safety:**
+
 - [ ] `npx tsc --noEmit` returns exit code 0
 - [ ] No `any` types used without justification
 - [ ] All function parameters typed
 - [ ] All return types specified
 
 **Testing:**
+
 - [ ] Full hand from deal to showdown
 - [ ] Multi-hand sequence (5+ hands)
 - [ ] Error cases (invalid action, timeout, disconnect)
@@ -3185,12 +3330,14 @@ For EACH phase, before marking complete:
 - [ ] Concurrent actions (multiple players acting simultaneously)
 
 **Performance:**
+
 - [ ] Timer accuracy within 100ms under load
 - [ ] Broadcast latency < 500ms (Supabase Realtime)
 - [ ] No memory leaks (dispose() called on cleanup)
 - [ ] No infinite loops in polling intervals
 
 **Security:**
+
 - [ ] All HTTP endpoints validate JWT
 - [ ] No SQL injection vectors (using parameterized queries)
 - [ ] No card information leakage (scrubbed in broadcasts)
@@ -3203,28 +3350,33 @@ For EACH phase, before marking complete:
 This migration impacts the following sections of the Club Arena Poker Bible:
 
 **Chapter 1 — Game States & Transitions**
+
 - Updates: Add RIT_OFFERED, INSURANCE_OFFERED, STRADDLE_POSTED states
 - Updates: Pause states during RIT/insurance offer windows
 
 **Chapter 2 — Dealing & Card Flow**
+
 - Updates: BBA posting logic
 - Updates: Straddle injection
 - Updates: RIT dual board dealing
 - NEW: MixedGameEngine variant support
 
 **Chapter 3 — Betting & Action**
+
 - Updates: ServerActionValidator (20 checks vs current 3)
 - Updates: PreActionEngine auto-action execution
 - Updates: Timer behavior (auto-check when toCall=0)
 - Updates: Raise clamping fixes
 
 **Chapter 4 — Settlement**
+
 - Updates: AtomicStackService versioned debits
 - Updates: RIT settlement (pot split per board)
 - NEW: Rakeback settlement
 - NEW: Insurance settlement
 
 **Chapter 5 — Tournaments** (if Phase 6 executed)
+
 - NEW: ChipRaceEngine
 - NEW: TableBalancer
 - NEW: TableBreakEngine
@@ -3247,9 +3399,9 @@ If any phase fails catastrophically:
 
 ## DOCUMENT VERSION HISTORY
 
-| Version | Date | Changes |
-|---------|------|---------|
-| 1.0 | 2026-03-24 | Initial comprehensive blueprint |
+| Version | Date       | Changes                         |
+| ------- | ---------- | ------------------------------- |
+| 1.0     | 2026-03-24 | Initial comprehensive blueprint |
 
 ---
 

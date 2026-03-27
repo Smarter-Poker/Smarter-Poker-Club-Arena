@@ -40,7 +40,8 @@ export function monteCarloEquity(
   heroCards: Card[],
   boardCards: Card[],
   numOpponents: number = 1,
-  iterations: number = 1000
+  iterations: number = 1000,
+  shortDeck: boolean = false
 ): number {
   if (heroCards.length < 2) {
     return 50; // Need at least 2 hole cards
@@ -52,8 +53,12 @@ export function monteCarloEquity(
   for (const c of heroCards) knownSet.add(cardKey(c));
   for (const c of boardCards) knownSet.add(cardKey(c));
 
+  // FIX 139: Short Deck removes 2s through 5s (Bible V8 §4.5)
+  const SHORT_DECK_REMOVED: Set<string> = new Set(['2', '3', '4', '5']);
+  const baseDeck = shortDeck ? FULL_DECK.filter((c) => !SHORT_DECK_REMOVED.has(c.rank)) : FULL_DECK;
+
   // Remaining deck = all cards NOT in heroCards or boardCards
-  const remainingDeck = FULL_DECK.filter((c) => !knownSet.has(cardKey(c)));
+  const remainingDeck = baseDeck.filter((c) => !knownSet.has(cardKey(c)));
 
   const cardsNeeded = 5 - boardCards.length + numOpponents * 2;
   if (remainingDeck.length < cardsNeeded) {
@@ -75,8 +80,8 @@ export function monteCarloEquity(
       fullBoard.push(remainingDeck[dealIdx++]);
     }
 
-    // Evaluate hero's hand
-    const heroResult = evaluateHand(heroCards, fullBoard);
+    // Evaluate hero's hand (FIX 139: pass shortDeck for correct Short Deck rankings)
+    const heroResult = evaluateHand(heroCards, fullBoard, shortDeck);
 
     // Deal and evaluate each opponent's hand
     let heroBeat = true;
@@ -84,7 +89,7 @@ export function monteCarloEquity(
 
     for (let opp = 0; opp < numOpponents; opp++) {
       const oppCards = [remainingDeck[dealIdx++], remainingDeck[dealIdx++]];
-      const oppResult = evaluateHand(oppCards, fullBoard);
+      const oppResult = evaluateHand(oppCards, fullBoard, shortDeck);
 
       // Compare: higher ranking wins, ties broken by kickers
       if (oppResult.ranking > heroResult.ranking) {

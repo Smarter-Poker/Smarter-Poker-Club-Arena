@@ -127,7 +127,8 @@ export class InsuranceEngine {
     handId: string,
     allInPlayers: Array<{ playerId: string; holeCards: Card[] }>,
     board: Card[],
-    pot: number
+    pot: number,
+    shortDeck: boolean = false
   ): InsuranceOffer[] {
     const config = this.tableConfigs.get(tableId) || this.DEFAULT_CONFIG;
     if (!config.enabled || pot < config.minPotForInsurance) return [];
@@ -139,11 +140,13 @@ export class InsuranceEngine {
     const numOpponents = allInPlayers.length - 1;
 
     for (const player of allInPlayers) {
+      // FIX 139: Pass shortDeck flag for correct Short Deck hand rankings in equity calculation
       const equity = monteCarloEquity(
         player.holeCards,
         board,
         numOpponents,
-        config.equityIterations
+        config.equityIterations,
+        shortDeck
       );
 
       // Max insurable = pot amount (maxInsurablePercent defaults to 100%)
@@ -277,7 +280,12 @@ export class InsuranceEngine {
    *   but IS now the leader, they get a new offer (equity shifted in their favor)
    * - Players who "Declined for Hand" are NEVER re-offered
    */
-  recalculateOffers(tableId: string, newBoard: Card[], pot: number): void {
+  recalculateOffers(
+    tableId: string,
+    newBoard: Card[],
+    pot: number,
+    shortDeck: boolean = false
+  ): void {
     const offers = this.activeOffers.get(tableId);
     if (!offers) return;
 
@@ -287,11 +295,13 @@ export class InsuranceEngine {
 
     // First pass: recalculate equity for ALL offers
     for (const offer of offers) {
+      // FIX 139: Pass shortDeck flag for correct Short Deck hand rankings
       const newEquity = monteCarloEquity(
         offer.holeCards,
         newBoard,
         numOpponents,
-        config.equityIterations
+        config.equityIterations,
+        shortDeck
       );
 
       const lossProbability = 1 - newEquity / 100;

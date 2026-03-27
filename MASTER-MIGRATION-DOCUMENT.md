@@ -73,7 +73,7 @@ Supabase Realtime (Single Source of Truth):
   │
   └─ Player disconnection stream (optional)
 
-Server (Railway Node.js — SOLE AUTHORITY):
+Server (Hetzner VPS Node.js — SOLE AUTHORITY):
   ├─ HTTP Endpoints (10+)
   │  ├─ POST /action { tableId, userId, action, amount? } → validates, executes, broadcasts
   │  ├─ POST /heartbeat { tableId, userId } → resets disconnect timer

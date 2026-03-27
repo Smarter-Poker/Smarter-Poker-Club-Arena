@@ -1,5 +1,6 @@
 # SINGLE ENGINE ARCHITECTURE PLAN
-## One Engine. One Truth. Railway Server + Supabase Realtime.
+
+## One Engine. One Truth. Hetzner VPS Server + Supabase Realtime.
 
 **Date:** 2026-03-24
 **Status:** APPROVED PLAN — Do not deviate.
@@ -10,7 +11,7 @@
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│                    RAILWAY SERVER (Node.js)                       │
+│                    HETZNER VPS SERVER (Node.js)                    │
 │                    ========================                       │
 │                                                                  │
 │  GameServer                                                      │
@@ -100,86 +101,86 @@
 
 These are the specific poisonous patterns that must be surgically removed:
 
-| Line(s) | What | Why it's poison |
-|---------|------|-----------------|
-| 74 | `import { timeBankEngine } from '../engine/TimeBankEngine'` | Client-side TB — server handles this |
-| 118 | `import { Deck, compareHands, calculatePots, determineWinners } from '../engine/PokerEngine'` | Client should never run game logic |
-| 119 | `import { HandController } from '../engine/HandController'` | THE root cause — client has its own engine |
-| 120 | `import { serverActionValidator } from '../engine/ServerActionValidator'` | Validation happens on server only |
-| 121 | `import { RakeWaterfallEngine } from '../engines/financial/RakeWaterfallEngine'` | Rake is server-side |
-| 122 | `import { OFCPineappleEngine } from '../engine/OFCPineappleEngine'` | Game logic is server-side |
-| 132 | `import { monteCarloEquity } from '../engine/MonteCarloEquity'` | Equity calc can stay for display only, but MUST NOT affect game state |
-| 2708 | `const [handController, setHandController] = useState<HandController \| null>(null)` | Local engine state |
-| 2711 | `const handControllerRef = useRef<HandController \| null>(null)` | Local engine ref — 48 references throughout file |
-| 2712 | `const handInProgressRef = useRef(false)` | Local hand tracking |
-| 2727-2813 | Entire HandController creation block | Creates local engine with own deck, own cards |
-| 2919-3300 | `handleHandEvent` block | Processes LOCAL engine events — all of this is server's job |
-| 3034-3200 | Horse AI decision block in handleHandEvent | Horse decisions happen on server |
-| 3516 | `handControllerRef.current = null` | Cleanup of thing that shouldn't exist |
-| 3838-3860 | `broadcastLocalHandState()` definition | Client broadcasting "authoritative" state |
-| 3870-3890 | `handleTimerAutoFold` with local performAction | Client running auto-fold logic |
-| 3943-3960 | `validateAndExecuteAction` | Client validating actions locally |
-| 4005-4020 | `handleFold` with local performAction + broadcastLocalHandState | Dual engine pattern |
-| 4022-4043 | `handleCheck` with local performAction + broadcastLocalHandState | Dual engine pattern |
-| 4045-4066 | `handleCall` with local performAction + broadcastLocalHandState | Dual engine pattern |
-| 4068-4100 | `handleBet` with local state reads | Client reading local engine |
-| 4114-4206 | `handleActionPanelAction` with ALL local performAction calls | The mega dual-engine function |
-| 4225-4247 | `handleRaiseConfirm` with local performAction | Dual engine pattern |
-| 4253-4281 | `handleAllIn` with local performAction | Dual engine pattern |
-| 4379-4410 | Insurance/RIT flows reading local engine state | Should come from server |
-| 4526, 4547 | `handControllerRef.current?.getState()` for UI reads | Should read from server state |
-| 4995, 5034 | Additional engine state reads | Should use server state |
+| Line(s)    | What                                                                                          | Why it's poison                                                       |
+| ---------- | --------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| 74         | `import { timeBankEngine } from '../engine/TimeBankEngine'`                                   | Client-side TB — server handles this                                  |
+| 118        | `import { Deck, compareHands, calculatePots, determineWinners } from '../engine/PokerEngine'` | Client should never run game logic                                    |
+| 119        | `import { HandController } from '../engine/HandController'`                                   | THE root cause — client has its own engine                            |
+| 120        | `import { serverActionValidator } from '../engine/ServerActionValidator'`                     | Validation happens on server only                                     |
+| 121        | `import { RakeWaterfallEngine } from '../engines/financial/RakeWaterfallEngine'`              | Rake is server-side                                                   |
+| 122        | `import { OFCPineappleEngine } from '../engine/OFCPineappleEngine'`                           | Game logic is server-side                                             |
+| 132        | `import { monteCarloEquity } from '../engine/MonteCarloEquity'`                               | Equity calc can stay for display only, but MUST NOT affect game state |
+| 2708       | `const [handController, setHandController] = useState<HandController \| null>(null)`          | Local engine state                                                    |
+| 2711       | `const handControllerRef = useRef<HandController \| null>(null)`                              | Local engine ref — 48 references throughout file                      |
+| 2712       | `const handInProgressRef = useRef(false)`                                                     | Local hand tracking                                                   |
+| 2727-2813  | Entire HandController creation block                                                          | Creates local engine with own deck, own cards                         |
+| 2919-3300  | `handleHandEvent` block                                                                       | Processes LOCAL engine events — all of this is server's job           |
+| 3034-3200  | Horse AI decision block in handleHandEvent                                                    | Horse decisions happen on server                                      |
+| 3516       | `handControllerRef.current = null`                                                            | Cleanup of thing that shouldn't exist                                 |
+| 3838-3860  | `broadcastLocalHandState()` definition                                                        | Client broadcasting "authoritative" state                             |
+| 3870-3890  | `handleTimerAutoFold` with local performAction                                                | Client running auto-fold logic                                        |
+| 3943-3960  | `validateAndExecuteAction`                                                                    | Client validating actions locally                                     |
+| 4005-4020  | `handleFold` with local performAction + broadcastLocalHandState                               | Dual engine pattern                                                   |
+| 4022-4043  | `handleCheck` with local performAction + broadcastLocalHandState                              | Dual engine pattern                                                   |
+| 4045-4066  | `handleCall` with local performAction + broadcastLocalHandState                               | Dual engine pattern                                                   |
+| 4068-4100  | `handleBet` with local state reads                                                            | Client reading local engine                                           |
+| 4114-4206  | `handleActionPanelAction` with ALL local performAction calls                                  | The mega dual-engine function                                         |
+| 4225-4247  | `handleRaiseConfirm` with local performAction                                                 | Dual engine pattern                                                   |
+| 4253-4281  | `handleAllIn` with local performAction                                                        | Dual engine pattern                                                   |
+| 4379-4410  | Insurance/RIT flows reading local engine state                                                | Should come from server                                               |
+| 4526, 4547 | `handControllerRef.current?.getState()` for UI reads                                          | Should read from server state                                         |
+| 4995, 5034 | Additional engine state reads                                                                 | Should use server state                                               |
 
 **Total: ~48 handControllerRef usages + ~15 broadcastLocalHandState calls + all surrounding logic must be rewritten.**
 
 ### B. Client-Side Engine Files — Classification
 
-| File | Verdict | Reason |
-|------|---------|--------|
-| `src/engine/HandController.ts` | MOVE TO SERVER | This is the richer version — port features to server's HC |
-| `src/engine/HeadlessTableEngine.ts` | DELETE (server has ServerTableEngine) | Redundant with server |
-| `src/engine/CashGameOrchestrator.ts` | DELETE (server has discoverCashTables) | Redundant with server |
-| `src/engine/TournamentEngine.ts` | DELETE (server has TournamentManager) | Redundant with server |
-| `src/engine/TournamentOrchestrator.ts` | DELETE (server has discoverTournaments) | Redundant with server |
-| `src/engine/SpinItEngine.ts` | DELETE (server handles spins) | Redundant with server |
-| `src/engine/FlashPoolEngine.ts` | EVALUATE — may need server equivalent | |
-| `src/engine/PokerEngine.ts` | MOVE TO SERVER (merge with server's copy) | Core math — server-only |
-| `src/engine/TimeBankEngine.ts` | MOVE TO SERVER | Server needs this |
-| `src/engine/DisconnectEngine.ts` | MOVE TO SERVER | Server needs this |
-| `src/engine/PreActionEngine.ts` | MOVE TO SERVER | Server needs this |
-| `src/engine/PreciseActionTimer.ts` | MOVE TO SERVER | Replace server's setTimeout |
-| `src/engine/StateVerifier.ts` | MOVE TO SERVER | Server needs this |
-| `src/engine/AtomicStackService.ts` | MOVE TO SERVER | Server needs this |
-| `src/engine/ServerActionValidator.ts` | MOVE TO SERVER | Server needs this |
-| `src/engine/StraddleEngine.ts` | MOVE TO SERVER | Server needs this |
-| `src/engine/RunItTwiceEngine.ts` | MOVE TO SERVER | Server needs this |
-| `src/engine/InsuranceEngine.ts` | MOVE TO SERVER | Server needs this |
-| `src/engine/HorseLogic.ts` | ALREADY ON SERVER | Keep server copy |
-| `src/engine/HorseBrainAdapter.ts` | DELETE (server has HorseLogic) | Redundant |
-| `src/engine/MixedGameEngine.ts` | MOVE TO SERVER | Server needs for rotation |
-| `src/engine/ChipRaceEngine.ts` | MOVE TO SERVER | Tournament chip race |
-| `src/engine/TableBalancer.ts` | MOVE TO SERVER | Tournament table balancing |
-| `src/engine/TableBreakEngine.ts` | MOVE TO SERVER | Tournament break management |
-| `src/engine/OFCPineappleEngine.ts` | MOVE TO SERVER | OFC is server-side |
-| `src/engine/OFCDealingOrchestrator.ts` | MOVE TO SERVER | OFC dealing is server-side |
-| `src/engine/MonteCarloEquity.ts` | KEEP ON CLIENT (display only) | Equity display doesn't affect game state |
-| `src/engine/HandReplayEngine.ts` | KEEP ON CLIENT | Replay is a client feature |
-| `src/engine/EngineTelemetry.ts` | MOVE TO SERVER | Telemetry should be server-side |
-| `src/engine/RakebackEngine.ts` | MOVE TO SERVER | Financial calc is server-side |
-| `src/engine/CryptoRandom.ts` | MOVE TO SERVER | Crypto shuffle is server-side |
-| `src/engine/demo.ts` | DELETE | Dev demo only |
-| `src/engine/index.ts` | REWRITE (only export client-safe modules) | |
+| File                                   | Verdict                                   | Reason                                                    |
+| -------------------------------------- | ----------------------------------------- | --------------------------------------------------------- |
+| `src/engine/HandController.ts`         | MOVE TO SERVER                            | This is the richer version — port features to server's HC |
+| `src/engine/HeadlessTableEngine.ts`    | DELETE (server has ServerTableEngine)     | Redundant with server                                     |
+| `src/engine/CashGameOrchestrator.ts`   | DELETE (server has discoverCashTables)    | Redundant with server                                     |
+| `src/engine/TournamentEngine.ts`       | DELETE (server has TournamentManager)     | Redundant with server                                     |
+| `src/engine/TournamentOrchestrator.ts` | DELETE (server has discoverTournaments)   | Redundant with server                                     |
+| `src/engine/SpinItEngine.ts`           | DELETE (server handles spins)             | Redundant with server                                     |
+| `src/engine/FlashPoolEngine.ts`        | EVALUATE — may need server equivalent     |                                                           |
+| `src/engine/PokerEngine.ts`            | MOVE TO SERVER (merge with server's copy) | Core math — server-only                                   |
+| `src/engine/TimeBankEngine.ts`         | MOVE TO SERVER                            | Server needs this                                         |
+| `src/engine/DisconnectEngine.ts`       | MOVE TO SERVER                            | Server needs this                                         |
+| `src/engine/PreActionEngine.ts`        | MOVE TO SERVER                            | Server needs this                                         |
+| `src/engine/PreciseActionTimer.ts`     | MOVE TO SERVER                            | Replace server's setTimeout                               |
+| `src/engine/StateVerifier.ts`          | MOVE TO SERVER                            | Server needs this                                         |
+| `src/engine/AtomicStackService.ts`     | MOVE TO SERVER                            | Server needs this                                         |
+| `src/engine/ServerActionValidator.ts`  | MOVE TO SERVER                            | Server needs this                                         |
+| `src/engine/StraddleEngine.ts`         | MOVE TO SERVER                            | Server needs this                                         |
+| `src/engine/RunItTwiceEngine.ts`       | MOVE TO SERVER                            | Server needs this                                         |
+| `src/engine/InsuranceEngine.ts`        | MOVE TO SERVER                            | Server needs this                                         |
+| `src/engine/HorseLogic.ts`             | ALREADY ON SERVER                         | Keep server copy                                          |
+| `src/engine/HorseBrainAdapter.ts`      | DELETE (server has HorseLogic)            | Redundant                                                 |
+| `src/engine/MixedGameEngine.ts`        | MOVE TO SERVER                            | Server needs for rotation                                 |
+| `src/engine/ChipRaceEngine.ts`         | MOVE TO SERVER                            | Tournament chip race                                      |
+| `src/engine/TableBalancer.ts`          | MOVE TO SERVER                            | Tournament table balancing                                |
+| `src/engine/TableBreakEngine.ts`       | MOVE TO SERVER                            | Tournament break management                               |
+| `src/engine/OFCPineappleEngine.ts`     | MOVE TO SERVER                            | OFC is server-side                                        |
+| `src/engine/OFCDealingOrchestrator.ts` | MOVE TO SERVER                            | OFC dealing is server-side                                |
+| `src/engine/MonteCarloEquity.ts`       | KEEP ON CLIENT (display only)             | Equity display doesn't affect game state                  |
+| `src/engine/HandReplayEngine.ts`       | KEEP ON CLIENT                            | Replay is a client feature                                |
+| `src/engine/EngineTelemetry.ts`        | MOVE TO SERVER                            | Telemetry should be server-side                           |
+| `src/engine/RakebackEngine.ts`         | MOVE TO SERVER                            | Financial calc is server-side                             |
+| `src/engine/CryptoRandom.ts`           | MOVE TO SERVER                            | Crypto shuffle is server-side                             |
+| `src/engine/demo.ts`                   | DELETE                                    | Dev demo only                                             |
+| `src/engine/index.ts`                  | REWRITE (only export client-safe modules) |                                                           |
 
 ### C. Other Client Files Importing Engine (need audit/cleanup)
 
-| File | Action |
-|------|--------|
-| `src/pages/FlashPoolPage.tsx` | Remove engine imports, make server-driven |
-| `src/services/RakeService.ts` | Evaluate — if just display math, keep; if game logic, move to server |
-| `src/services/HydraService.ts` | Evaluate — likely needs refactoring |
-| `src/services/BBJService.ts` | Bad beat jackpot — trigger should be server-side |
-| `src/services/FinancialCronService.ts` | Should run server-side |
-| `src/services/HandPersistenceService.ts` | Server already has logHandHistory — remove client version |
+| File                                     | Action                                                               |
+| ---------------------------------------- | -------------------------------------------------------------------- |
+| `src/pages/FlashPoolPage.tsx`            | Remove engine imports, make server-driven                            |
+| `src/services/RakeService.ts`            | Evaluate — if just display math, keep; if game logic, move to server |
+| `src/services/HydraService.ts`           | Evaluate — likely needs refactoring                                  |
+| `src/services/BBJService.ts`             | Bad beat jackpot — trigger should be server-side                     |
+| `src/services/FinancialCronService.ts`   | Should run server-side                                               |
+| `src/services/HandPersistenceService.ts` | Server already has logHandHistory — remove client version            |
 
 ---
 
@@ -189,55 +190,57 @@ These are the specific poisonous patterns that must be surgically removed:
 
 The server currently has 4 engine files. It needs ~15 more. These get ported from `src/engine/` to `server/src/engine/`:
 
-| Priority | Engine | Port From | What It Does |
-|----------|--------|-----------|-------------|
-| P0 | **Card Security** | NEW | Scrub cards from broadcast, per-player secure delivery |
-| P0 | **DisconnectEngine** | src/engine/DisconnectEngine.ts | Heartbeat, timeout, auto-sit-out |
-| P0 | **PreciseActionTimer** | src/engine/PreciseActionTimer.ts | Replace setTimeout with deadline-based timer |
-| P1 | **PreActionEngine** | src/engine/PreActionEngine.ts | Auto-fold/check/call queue |
-| P1 | **TimeBankEngine** | src/engine/TimeBankEngine.ts | Pool model, per-player tracking |
-| P1 | **StateVerifier** | src/engine/StateVerifier.ts | Chip conservation between hands |
-| P1 | **ServerActionValidator** | src/engine/ServerActionValidator.ts | Full validation (replace auto-fold-on-error) |
-| P2 | **StraddleEngine** | src/engine/StraddleEngine.ts | UTG/Mississippi straddles |
-| P2 | **RunItTwiceEngine** | src/engine/RunItTwiceEngine.ts | Dual/triple board support |
-| P2 | **InsuranceEngine** | src/engine/InsuranceEngine.ts | Equity calc, offer/accept flow |
-| P2 | **AtomicStackService** | src/engine/AtomicStackService.ts | Versioned stack mutations |
-| P3 | **MixedGameEngine** | src/engine/MixedGameEngine.ts | Variant rotation per orbit |
-| P3 | **ChipRaceEngine** | src/engine/ChipRaceEngine.ts | Tournament chip denomination |
-| P3 | **TableBalancer** | src/engine/TableBalancer.ts | Tournament table balancing |
-| P3 | **OFCPineappleEngine** | src/engine/OFCPineappleEngine.ts | OFC game variant |
+| Priority | Engine                    | Port From                           | What It Does                                           |
+| -------- | ------------------------- | ----------------------------------- | ------------------------------------------------------ |
+| P0       | **Card Security**         | NEW                                 | Scrub cards from broadcast, per-player secure delivery |
+| P0       | **DisconnectEngine**      | src/engine/DisconnectEngine.ts      | Heartbeat, timeout, auto-sit-out                       |
+| P0       | **PreciseActionTimer**    | src/engine/PreciseActionTimer.ts    | Replace setTimeout with deadline-based timer           |
+| P1       | **PreActionEngine**       | src/engine/PreActionEngine.ts       | Auto-fold/check/call queue                             |
+| P1       | **TimeBankEngine**        | src/engine/TimeBankEngine.ts        | Pool model, per-player tracking                        |
+| P1       | **StateVerifier**         | src/engine/StateVerifier.ts         | Chip conservation between hands                        |
+| P1       | **ServerActionValidator** | src/engine/ServerActionValidator.ts | Full validation (replace auto-fold-on-error)           |
+| P2       | **StraddleEngine**        | src/engine/StraddleEngine.ts        | UTG/Mississippi straddles                              |
+| P2       | **RunItTwiceEngine**      | src/engine/RunItTwiceEngine.ts      | Dual/triple board support                              |
+| P2       | **InsuranceEngine**       | src/engine/InsuranceEngine.ts       | Equity calc, offer/accept flow                         |
+| P2       | **AtomicStackService**    | src/engine/AtomicStackService.ts    | Versioned stack mutations                              |
+| P3       | **MixedGameEngine**       | src/engine/MixedGameEngine.ts       | Variant rotation per orbit                             |
+| P3       | **ChipRaceEngine**        | src/engine/ChipRaceEngine.ts        | Tournament chip denomination                           |
+| P3       | **TableBalancer**         | src/engine/TableBalancer.ts         | Tournament table balancing                             |
+| P3       | **OFCPineappleEngine**    | src/engine/OFCPineappleEngine.ts    | OFC game variant                                       |
 
 ### Phase 2: Upgrade Server HandController
 
 The server's HandController (500 lines) is a stripped-down version. It needs features from the client's richer version (800 lines):
 
-| Feature | Current Server Status | Required Action |
-|---------|----------------------|----------------|
-| BBA (Big Blind Ante) | Missing | Add to postBlinds() |
-| Straddle integration | Missing | Wire StraddleEngine |
-| RIT integration | Missing | Wire RunItTwiceEngine |
-| Insurance integration | Missing | Wire InsuranceEngine |
-| ALL_IN_RUNOUT_PENDING event | Missing | Emit before runOutCommunityCards() |
-| Showdown muck/show logic | Missing | Add showdown procedure |
-| Hi-Lo split | In PokerEngine, not wired in HC | Wire evaluateOmahaLowHand |
-| Short all-in reopening check | Unclear | Verify in isBettingRoundComplete |
-| minRaise tracking | Basic | Ensure full Bible compliance |
+| Feature                      | Current Server Status           | Required Action                    |
+| ---------------------------- | ------------------------------- | ---------------------------------- |
+| BBA (Big Blind Ante)         | Missing                         | Add to postBlinds()                |
+| Straddle integration         | Missing                         | Wire StraddleEngine                |
+| RIT integration              | Missing                         | Wire RunItTwiceEngine              |
+| Insurance integration        | Missing                         | Wire InsuranceEngine               |
+| ALL_IN_RUNOUT_PENDING event  | Missing                         | Emit before runOutCommunityCards() |
+| Showdown muck/show logic     | Missing                         | Add showdown procedure             |
+| Hi-Lo split                  | In PokerEngine, not wired in HC | Wire evaluateOmahaLowHand          |
+| Short all-in reopening check | Unclear                         | Verify in isBettingRoundComplete   |
+| minRaise tracking            | Basic                           | Ensure full Bible compliance       |
 
 ### Phase 3: Upgrade Server Broadcast
 
 The broadcast must be SECURE and COMPLETE:
 
 **Current broadcast (broken):**
+
 ```typescript
 // ServerTableEngine.ts line 775-797
 broadcastHandState(this.tableId, {
-    players: state.players.map(p => ({
-        cards: p.cards ?? [],  // ← EXPOSES ALL CARDS
-    }))
+  players: state.players.map((p) => ({
+    cards: p.cards ?? [], // ← EXPOSES ALL CARDS
+  })),
 });
 ```
 
 **Required broadcast (secure):**
+
 ```typescript
 // Scrubbed public state — everyone gets this
 broadcastHandState(this.tableId, {
@@ -266,19 +269,19 @@ for (const player of state.players) {
 
 ### Phase 4: New HTTP Endpoints
 
-| Endpoint | Purpose | Current Status |
-|----------|---------|---------------|
-| `POST /action` | Submit action | EXISTS — needs auth + better validation |
-| `POST /timebank` | Activate time bank | EXISTS — needs per-hand limits |
-| `GET /actions/:t/:u` | Available actions | EXISTS |
-| `GET /health` | Health check | EXISTS |
-| `POST /preaction` | Set pre-action | NEW |
-| `POST /insurance` | Accept/decline insurance | NEW |
-| `POST /rit` | Accept/decline RIT | NEW |
-| `POST /sitout` | Sit out / sit in | NEW |
-| `POST /showhand` | Show/muck at showdown | NEW |
-| `GET /state/:t` | Full table state (initial load) | NEW |
-| `POST /heartbeat` | Player heartbeat for disconnect | NEW |
+| Endpoint             | Purpose                         | Current Status                          |
+| -------------------- | ------------------------------- | --------------------------------------- |
+| `POST /action`       | Submit action                   | EXISTS — needs auth + better validation |
+| `POST /timebank`     | Activate time bank              | EXISTS — needs per-hand limits          |
+| `GET /actions/:t/:u` | Available actions               | EXISTS                                  |
+| `GET /health`        | Health check                    | EXISTS                                  |
+| `POST /preaction`    | Set pre-action                  | NEW                                     |
+| `POST /insurance`    | Accept/decline insurance        | NEW                                     |
+| `POST /rit`          | Accept/decline RIT              | NEW                                     |
+| `POST /sitout`       | Sit out / sit in                | NEW                                     |
+| `POST /showhand`     | Show/muck at showdown           | NEW                                     |
+| `GET /state/:t`      | Full table state (initial load) | NEW                                     |
+| `POST /heartbeat`    | Player heartbeat for disconnect | NEW                                     |
 
 ---
 
@@ -348,6 +351,7 @@ That's it. No HandController. No Deck. No PokerEngine. No broadcastLocalHandStat
 ## EXECUTION ORDER (PHASES)
 
 ### Phase 0: Preparation (Do First, Break Nothing)
+
 1. Port all missing engine files to `server/src/engine/`
 2. Upgrade server HandController with missing features
 3. Add new HTTP endpoints
@@ -356,6 +360,7 @@ That's it. No HandController. No Deck. No PokerEngine. No broadcastLocalHandStat
 6. Test server standalone (can it deal hands, process actions, broadcast correctly?)
 
 ### Phase 1: Cut the Client Engine (The Surgery)
+
 1. Remove ALL `src/engine/` imports from TablePage.tsx except MonteCarloEquity (display only)
 2. Remove `handControllerRef`, `handInProgressRef`, `handController` state
 3. Remove entire HandController creation block (lines ~2727-2813)
@@ -369,6 +374,7 @@ That's it. No HandController. No Deck. No PokerEngine. No broadcastLocalHandStat
 11. Remove all `startTransition(() => performAction(...))` patterns
 
 ### Phase 2: Wire Client to Server
+
 1. Make `subscribeToHandState` the ONLY source of game state
 2. Add `subscribeToSecureCards` for per-player hole card delivery
 3. Add `subscribeToTableEvents` for popup/animation triggers
@@ -379,6 +385,7 @@ That's it. No HandController. No Deck. No PokerEngine. No broadcastLocalHandStat
 8. Handle server errors gracefully (show error, don't auto-fold)
 
 ### Phase 3: Clean Up
+
 1. Remove unused `src/engine/` files (HeadlessTableEngine, CashGameOrchestrator, etc.)
 2. Update `src/engine/index.ts` to only export client-safe modules
 3. Remove `broadcastHandState` export from `src/lib/supabase.ts` (client should never broadcast game state)
@@ -388,6 +395,7 @@ That's it. No HandController. No Deck. No PokerEngine. No broadcastLocalHandStat
 7. Build and deploy
 
 ### Phase 4: Verify Against Bible v8
+
 1. Trace complete action flow end-to-end against Bible Law 1.3
 2. Verify card security against Bible 4.6
 3. Verify timer behavior against Bible Chapter 6
@@ -404,7 +412,7 @@ Player clicks "Raise $50" in ActionPanel
     │
     ▼
 Client: submitAction(tableId, userId, 'raise', 50)
-    │   → HTTP POST to Railway server /action
+    │   → HTTP POST to Hetzner VPS server /action
     │   → Client shows "pending" spinner on ActionPanel
     │   → Client WAITS for response
     │
@@ -489,6 +497,7 @@ Client C (spectator): subscribeToHandState callback fires
 ## FILE INVENTORY — FINAL STATE
 
 ### Server (`server/src/`)
+
 ```
 server/src/
 ├── index.ts                    — HTTP server + GameServer orchestrator
@@ -518,6 +527,7 @@ server/src/
 ```
 
 ### Client (`src/`) — Engine directory after cleanup
+
 ```
 src/engine/
 ├── MonteCarloEquity.ts         — KEEP: display-only equity estimation
@@ -528,6 +538,7 @@ src/engine/
 ```
 
 ### Client (`src/pages/TablePage.tsx`) — After cleanup
+
 ```
 - ZERO imports from src/engine/ (except MonteCarloEquity if needed)
 - ZERO HandController references

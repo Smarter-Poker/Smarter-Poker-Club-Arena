@@ -15,7 +15,7 @@
  * - Auto-recovers from crashes
  * - Health check endpoint for monitoring
  *
- * Deploy to: Railway, Supabase, or any Node.js host
+ * Deploy to: Hetzner VPS, Supabase, or any Node.js host
  */
 
 import { createServer } from 'http';
@@ -2394,7 +2394,7 @@ class TournamentManager {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// HTTP HEALTH CHECK SERVER — Required for Railway / monitoring
+// HTTP HEALTH CHECK SERVER — Required for Hetzner VPS / monitoring
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const gameServer = new GameServer();
@@ -2483,7 +2483,7 @@ const httpServer = createServer(async (req, res) => {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // GET /health — Health check for monitoring / Railway
+  // GET /health — Health check for monitoring / Hetzner VPS
   // ─────────────────────────────────────────────────────────────────────────
   if (url === '/health' || url === '/') {
     return sendJSON(res, 200, gameServer.getStatus());

@@ -2065,9 +2065,9 @@ Added in BOTH paths:
 
 ### Known Gaps (Lower Priority)
 
-1. **MonteCarloEquity shortDeck**: Insurance equity calculations don't pass shortDeck flag — lower priority
+1. ~~**MonteCarloEquity shortDeck**: Insurance equity calculations don't pass shortDeck flag~~ — **FIXED (FIX 139, 2026-03-27)**
 2. **Pineapple discard UI**: TablePage.tsx needs card selection UI — server auto-discards until built
-3. **Dead blind**: Player returning from sit-out should post both SB+BB (SB dead) — not implemented
+3. **Dead blind**: Player returning from sit-out should post both SB+BB (SB dead) — server logic exists but client-side wiring needs verification
 4. **Buy-more modal**: FIX 124 currently shows a toast; a dedicated modal with Diamond purchase flow would be a better UX
 
 ---
@@ -2418,3 +2418,107 @@ Now auto-fold/check fires at deadline+2000ms, matching the ServerActionValidator
 
 **Why:** Bible V8 §1.5 (Fairness Law) — every player receives equal treatment. A player MUST NOT occupy two seats at the same table simultaneously.
 **Verified:** Yes — grep confirms all 7 heroSeatRef references are correct (1 declaration, 2 sets, 2 clears, 2 reads).
+
+---
+
+### FIX 139 — MonteCarloEquity Short Deck Flag (2026-03-27)
+
+**Bible V8 §4.5 (Short Deck), Appendix D (Monte Carlo Equity)**
+
+**Problem:** `monteCarloEquity()` used the full 52-card deck and standard hand rankings for ALL game variants, including Short Deck. This caused three critical bugs in Short Deck games:
+
+1. Equity simulations drew from 52 cards instead of 36 (2-5 removed)
+2. Hand evaluations used standard rankings instead of Short Deck rankings (flush should beat full house)
+3. A-6-7-8-9 lowest straight not recognized in equity calculations
+
+**Impact:** Insurance offers in Short Deck games showed wildly incorrect equity percentages, making insurance pricing meaningless.
+
+**Fix (3 files, 5 changes):**
+
+1. **`server/src/engine/MonteCarloEquity.ts`**:
+   - Added `shortDeck: boolean = false` parameter to `monteCarloEquity()`
+   - Added deck filtering: removes ranks 2-5 when `shortDeck` is true
+   - Passes `shortDeck` flag to both `evaluateHand()` calls (hero + opponent)
+
+2. **`server/src/engine/InsuranceEngine.ts`**:
+   - Added `shortDeck: boolean = false` parameter to `createOffers()`
+   - Added `shortDeck: boolean = false` parameter to `recalculateOffers()`
+   - Both internal `monteCarloEquity()` calls now pass the flag through
+
+3. **`server/src/engine/ServerTableEngine.ts`**:
+   - `broadcastAllInEquity()`: Reads `this.tableInfo?.game_variant === 'short_deck'` and passes to `monteCarloEquity()`
+   - `runInsurancePerStreetFlow()`: Reads variant and passes `isShortDeckInsurance` to `createOffers()` calls
+
+**Verification:** Short Deck equity now simulates with 36-card deck and correct rankings. Standard games unaffected (default `false`).
+
+---
+
+### FIX 140 — BBJ Pool Allocation Pivot-Based (2026-03-27)
+
+**Bible V8 §4.13 (Bad Beat Jackpot)**
+
+**Problem:** `logBBJCollection()` in `server/src/services/supabase.ts` used a flat 40/30/30 allocation (Main/Backup/Promo) for all BBJ contributions regardless of pool size. The BBJService client spec defines pivot-based allocation:
+
+- STANDARD (<100k main pool): 50% Main, 25% Backup, 25% Promo
+- PIVOT (≥100k main pool): 30% Main, 40% Backup, 30% Promo
+
+**Impact:** Backup pool received too much (30% vs 25%) in standard mode, main pool received too little (40% vs 50%). After 100k threshold, allocation was accidentally correct-ish but still wrong (40/30/30 vs 30/40/30).
+
+**Fix:** Updated `logBBJCollection()` to:
+
+1. Query `main_balance` from `bbj_pools` table alongside pool ID
+2. Compare against `BBJ_PIVOT_THRESHOLD` (100,000 chips)
+3. Use correct allocation ratios based on current pool size
+
+**File modified:** `server/src/services/supabase.ts` — `logBBJCollection()` function
+
+---
+
+### Infrastructure Migration: Railway → Hetzner VPS (2026-03-27)
+
+**Change:** Server hosting platform changing from Railway to Hetzner VPS. Updated all documentation and code references.
+
+**Files modified (8 total):**
+
+1. `CLAUDE.md` — Infrastructure table, server section, handoff template
+2. `MASTER-MIGRATION-DOCUMENT.md` — Architecture diagram label
+3. `SINGLE-ENGINE-ARCHITECTURE-PLAN.md` — Title, ASCII diagram, action flow
+4. `POKER_GAMEPLAY_SPEC.md` — File reference table
+5. `.agent/skills/poker-gameplay/SKILL.md` — File reference table
+6. `src/services/GameServerAPI.ts` — Production URL placeholder updated to `poker-engine.smarter.poker`
+7. `server/src/index.ts` — Deploy comment, health check comments (3 locations)
+8. `server/railway.json` — DEPRECATED (left in place; AntiGravity to remove during Hetzner setup)
+
+**Note:** The production URL in `GameServerAPI.ts` is set to `https://poker-engine.smarter.poker` as a placeholder. AntiGravity agent should update `VITE_GAME_SERVER_URL` env var once the Hetzner VPS DNS is configured.
+
+---
+
+### Deep Verification Round 16 — Bible V8 Engine-by-Engine Audit (2026-03-27)
+
+**Scope:** Verified ALL remaining Bible V8 engine sections not covered in Round 15.
+
+**Results:**
+
+| Engine           | Bible V8 Section | Status         | Notes                                                                                                           |
+| ---------------- | ---------------- | -------------- | --------------------------------------------------------------------------------------------------------------- |
+| Dead Blind       | §4.2             | PASS           | Server tracks `returningFromSitout`, posts SB(dead)+BB(live). Client gap: no "dead blind" label (cosmetic only) |
+| Mixed Game       | §7.20            | PASS           | Fully ported, intentionally deactivated (FIX 116). Engine ready for future activation                           |
+| Run It Twice     | §4.18/§4.20      | PASS           | Complete: chooser selection, N-player, 2/3 boards, per-pot resolution, FIX 117 skipDistribution                 |
+| Straddle         | §4.4             | PASS           | UTG-only (FIX 114), 2×BB, correct action order, live bettor rights                                              |
+| Rakeback         | §4.12            | PASS           | Weighted contribution, 6-tier system (5-30%), atomic claiming, full DB pipeline                                 |
+| Bad Beat Jackpot | §4.13            | PASS + FIX 140 | Pivot-based allocation was broken → fixed. Detection, payout split (50/25/25), DB persistence all correct       |
+| ChipRace         | Step 7           | SCAFFOLDED     | Fully ported (154 lines), instantiated, NOT actively wired                                                      |
+| TableBalancer    | Step 7           | SCAFFOLDED     | Fully ported (253 lines), instantiated, NOT actively wired                                                      |
+| OFC Pineapple    | Step 7           | SCAFFOLDED     | Fully ported (695 lines), NOT imported in STE                                                                   |
+| OFC Orchestrator | Step 7           | SCAFFOLDED     | Fully ported (343 lines), instantiated, only disposeAll wired                                                   |
+| TableBreak       | Step 7           | SCAFFOLDED     | Fully ported (265 lines), instantiated, NOT actively wired                                                      |
+| EngineTelemetry  | Step 7           | SCAFFOLDED     | Fully ported (246 lines), instantiated, only disposeAll wired                                                   |
+
+**Step 7 engines:** All code is ported and present. Integration wiring (calling tournament lifecycle methods from STE) is pending — these engines are ready to be activated when tournament mode is built.
+
+**Known Gaps Updated:**
+
+1. ~~MonteCarloEquity shortDeck~~ → **FIXED (FIX 139)**
+2. Pineapple discard UI → still pending (server auto-discards)
+3. Dead blind client label → cosmetic, low priority
+4. Buy-more modal → UX enhancement, low priority

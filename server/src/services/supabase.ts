@@ -425,7 +425,9 @@ export async function logRakeCollection(
 /**
  * Log BBJ contribution — splits fee into main/backup/promo pools per allocation.
  * BBJ pool ownership: union-level (if club is in union) or club-level (standalone).
- * Allocation: 40% Main, 30% Backup, 30% Promotional (from authoritative RakeConfig).
+ * FIX 140: Pivot-based allocation matching Bible V8 §4.13 / BBJService spec:
+ *   STANDARD (<100k main pool): 50% Main, 25% Backup, 25% Promo
+ *   PIVOT (≥100k main pool): 30% Main, 40% Backup, 30% Promo
  */
 export async function logBBJCollection(
   tableId: string,
@@ -435,6 +437,13 @@ export async function logBBJCollection(
   bigBlind: number
 ): Promise<void> {
   if (bbjAmount <= 0) return;
+
+  // FIX 140: Pivot-based allocation thresholds (Bible V8 §4.13)
+  const BBJ_PIVOT_THRESHOLD = 100000; // 100,000 chips
+  const BBJ_ALLOCATION = {
+    STANDARD: { MAIN: 0.5, BACKUP: 0.25, PROMO: 0.25 },
+    PIVOT: { MAIN: 0.3, BACKUP: 0.4, PROMO: 0.3 },
+  };
 
   try {
     // Find the BBJ pool for this club (or its union)
@@ -449,8 +458,8 @@ export async function logBBJCollection(
       return;
     }
 
-    // Look up pool: union-level first, then club-level
-    let poolQuery = supabase.from('bbj_pools').select('id');
+    // Look up pool: union-level first, then club-level — include main_balance for pivot check
+    let poolQuery = supabase.from('bbj_pools').select('id, main_balance');
     if (club.union_id) {
       poolQuery = poolQuery.eq('union_id', club.union_id);
     } else {
@@ -463,9 +472,13 @@ export async function logBBJCollection(
       return;
     }
 
-    // Allocation: 40% Main, 30% Backup, 30% Promotional
-    const mainPortion = Math.round(bbjAmount * 0.4 * 100) / 100;
-    const backupPortion = Math.round(bbjAmount * 0.3 * 100) / 100;
+    // FIX 140: Determine allocation ratios based on current pool size
+    const currentMainBalance = pool.main_balance ?? 0;
+    const ratios =
+      currentMainBalance >= BBJ_PIVOT_THRESHOLD ? BBJ_ALLOCATION.PIVOT : BBJ_ALLOCATION.STANDARD;
+
+    const mainPortion = Math.round(bbjAmount * ratios.MAIN * 100) / 100;
+    const backupPortion = Math.round(bbjAmount * ratios.BACKUP * 100) / 100;
     const promoPortion = Math.round(bbjAmount * 100) / 100 - mainPortion - backupPortion;
 
     // Use bbj_record_contribution RPC — atomically updates pool balances + logs contribution

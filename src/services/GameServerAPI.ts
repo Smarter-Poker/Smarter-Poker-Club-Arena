@@ -18,14 +18,12 @@ import { supabase } from '../lib/supabase';
 // CONFIGURATION
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// Server URL — Railway for production, localhost for development.
-// The game server runs on Railway.app as a dedicated Node.js process with persistent
+// Server URL — Hetzner VPS for production, localhost for development.
+// The game server runs on a Hetzner VPS as a dedicated Node.js process with persistent
 // WebSocket connections. Never use Vercel serverless for this (cold starts, no WS).
 const GAME_SERVER_URL =
   import.meta.env.VITE_GAME_SERVER_URL ||
-  (import.meta.env.PROD
-    ? 'https://smarter-poker-game-server-production.up.railway.app'
-    : 'http://localhost:8080');
+  (import.meta.env.PROD ? 'https://poker-engine.smarter.poker' : 'http://localhost:8080');
 
 /**
  * Get JWT auth headers for server requests.

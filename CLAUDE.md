@@ -69,7 +69,7 @@ At the end of EVERY session, the agent MUST:
    - `npm run build` (if frontend changes were made)
    - `bash scripts/sync-to-world-hub.sh ~/Documents/Smarter-Poker-World-Hub` (if frontend deploy needed)
    - Any Supabase SQL that needs to be run (`supabase db push` or manual SQL execution)
-   - Any Railway deployment steps
+   - Any Hetzner VPS deployment steps
 4. **Present the prompt to the user** so they can paste it into AntiGravity or run it manually
 
 **The handoff prompt format:**
@@ -131,19 +131,19 @@ See `skills/mandatory-typecheck/SKILL.md` for the full protocol.
 
 **This project uses THREE services:**
 
-| Service      | Purpose                                 | Location                                              |
-| ------------ | --------------------------------------- | ----------------------------------------------------- |
-| **Vercel**   | Frontend hosting (smarter.poker)        | `Smarter-Poker-World-Hub` repo → auto-deploys         |
-| **Railway**  | Poker engine server (Node.js)           | `server/` directory in this repo → deploys to Railway |
-| **Supabase** | Database (PostgreSQL) + Auth + Realtime | `kuklfnapbkmacvwxktbh.supabase.co`                    |
+| Service         | Purpose                                 | Location                                                  |
+| --------------- | --------------------------------------- | --------------------------------------------------------- |
+| **Vercel**      | Frontend hosting (smarter.poker)        | `Smarter-Poker-World-Hub` repo → auto-deploys             |
+| **Hetzner VPS** | Poker engine server (Node.js)           | `server/` directory in this repo → deploys to Hetzner VPS |
+| **Supabase**    | Database (PostgreSQL) + Auth + Realtime | `kuklfnapbkmacvwxktbh.supabase.co`                        |
 
-### Railway (Poker Engine Server)
+### Hetzner VPS (Poker Engine Server)
 
 - Runs the server-authoritative game engine: `server/src/index.ts`
 - Contains ALL game logic: HandController, ServerTableEngine, all engines
 - HTTP endpoints: POST /action, POST /timebank, GET /actions, GET /health
 - Uses `SUPABASE_SERVICE_ROLE_KEY` for database access (bypasses RLS)
-- Deploy: push to Railway via Git or Railway CLI
+- Deploy: push to Hetzner VPS via Git pull + PM2 restart (or deploy script)
 
 ### Supabase (Database + Auth + Realtime)
 

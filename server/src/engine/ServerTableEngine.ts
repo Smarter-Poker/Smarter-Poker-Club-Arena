@@ -2331,7 +2331,9 @@ export class ServerTableEngine {
       const holeCards = player.cards || [];
       if (holeCards.length < 2) continue;
 
-      const equity = monteCarloEquity(holeCards, board, numOpponents, 5000);
+      // FIX 139: Pass shortDeck flag for correct Short Deck hand rankings
+      const isShortDeck = this.tableInfo?.game_variant === 'short_deck';
+      const equity = monteCarloEquity(holeCards, board, numOpponents, 5000, isShortDeck);
       equities.push({
         userId: player.user_id,
         username: player.username || 'Unknown',
@@ -2415,6 +2417,9 @@ export class ServerTableEngine {
 
     const bestHandPlayer = isTied ? null : playerEvals[0];
 
+    // FIX 139: Pass shortDeck to insurance engine for correct equity calculations
+    const isShortDeckInsurance = this.tableInfo?.game_variant === 'short_deck';
+
     // Check if this is the first street of offers or a recalculation
     const existingOffers = this.insuranceEngine.getOffers(this.tableId);
 
@@ -2426,7 +2431,8 @@ export class ServerTableEngine {
           `${this.tableId}:${this.handCount}`,
           [bestHandPlayer], // ONLY the leader gets insurance
           result.board,
-          pot
+          pot,
+          isShortDeckInsurance
         );
 
         if (offers.length > 0) {
@@ -2456,7 +2462,8 @@ export class ServerTableEngine {
             `${this.tableId}:${this.handCount}`,
             [bestHandPlayer],
             result.board,
-            pot
+            pot,
+            isShortDeckInsurance
           );
 
           if (offers.length > 0) {

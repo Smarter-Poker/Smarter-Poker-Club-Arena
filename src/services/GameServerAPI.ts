@@ -18,12 +18,13 @@ import { supabase } from '../lib/supabase';
 // CONFIGURATION
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// Server URL — Hetzner VPS for production, localhost for development.
-// The game server runs on a Hetzner VPS as a dedicated Node.js process with persistent
-// WebSocket connections. Never use Vercel serverless for this (cold starts, no WS).
+// Server URL — Hetzner Cloud VPS (Ashburn, VA) for production, localhost for development.
+// The game server runs on a Hetzner CPX11 as a dedicated Node.js process with persistent
+// in-memory state. Caddy reverse proxy handles HTTPS via Let's Encrypt.
+// NEVER use Railway, Fly.io, or Vercel serverless for this (cold starts, no persistent state).
 const GAME_SERVER_URL =
   import.meta.env.VITE_GAME_SERVER_URL ||
-  (import.meta.env.PROD ? 'https://poker-engine.smarter.poker' : 'http://localhost:8080');
+  (import.meta.env.PROD ? 'https://engine.smarter.poker' : 'http://localhost:8080');
 
 /**
  * Get JWT auth headers for server requests.

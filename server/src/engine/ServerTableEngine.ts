@@ -21,7 +21,7 @@ import { StateVerifier } from './StateVerifier.js';
 import { TimeBankEngine } from './TimeBankEngine.js';
 import { DisconnectEngine } from './DisconnectEngine.js';
 import { PreActionEngine } from './PreActionEngine.js';
-import { AtomicStackService } from './AtomicStackService.js';
+import { AtomicStackService, type StackSettlement } from './AtomicStackService.js';
 import { StraddleEngine } from './StraddleEngine.js';
 import { MixedGameEngine } from './MixedGameEngine.js';
 import { RunItTwiceEngine } from './RunItTwiceEngine.js';
@@ -140,6 +140,11 @@ export class ServerTableEngine {
 
   // Bible V8 §1.1.4: Action serialization lock — prevents parallel action processing
   private actionLock: boolean = false;
+
+  // FIX 147: Bible V8 §6.3 — Periodic heartbeat checker to detect disconnects mid-hand
+  // Without this, disconnects are only detected between hands in dealingLoop().
+  // This interval runs every 10 seconds to catch disconnects during long hands.
+  private heartbeatCheckInterval: NodeJS.Timeout | null = null;
 
   // Real Player Turn Management
   private playerTurnTimer: NodeJS.Timeout | null = null;
@@ -352,6 +357,13 @@ export class ServerTableEngine {
         await this.sleep(5000);
       }
 
+      // FIX 147: Start periodic heartbeat checker (every 10 seconds)
+      // This detects disconnects mid-hand, not just between hands.
+      this.heartbeatCheckInterval = setInterval(() => {
+        if (!this.running) return;
+        this.disconnectEngine.checkStaleHeartbeats(this.tableId);
+      }, 10_000);
+
       // Start dealing loop
       this.dealingLoop();
     } catch (err) {
@@ -368,6 +380,12 @@ export class ServerTableEngine {
     this.running = false;
     this.clearTurnTimer();
     this.handController = null;
+
+    // FIX 147: Clear periodic heartbeat checker
+    if (this.heartbeatCheckInterval) {
+      clearInterval(this.heartbeatCheckInterval);
+      this.heartbeatCheckInterval = null;
+    }
 
     // Step 4: Dispose ported core modules
     this.preciseTimer.dispose();
@@ -513,6 +531,9 @@ export class ServerTableEngine {
                   }
                 }
 
+                // FIX 149: Wire telemetry — time bank also expired
+                this.engineTelemetry.recordTimerExpired(this.tableId);
+
                 // FIX 124b: Time bank expired → also broadcast timeout event
                 // Without this, players who used a time bank and STILL timed out
                 // would not see the "buy more" popup.
@@ -618,6 +639,9 @@ export class ServerTableEngine {
             }
           }
 
+          // FIX 149: Wire telemetry — record that timer expired (player timed out)
+          this.engineTelemetry.recordTimerExpired(this.tableId);
+
           // FIX 124: After timeout → broadcast event so client shows "Buy More Time Banks" popup
           // This fires when player times out WITHOUT time bank auto-extending (disabled or depleted)
           const usesLeft = this.timeBankEngine.getUsesRemaining(this.tableId, userId);
@@ -693,6 +717,9 @@ export class ServerTableEngine {
           /* done */
         }
       }
+
+      // FIX 149: Wire telemetry — manual time bank expiry
+      this.engineTelemetry.recordTimerExpired(this.tableId);
 
       // FIX 124c: Manual time bank expired → broadcast timeout event (same as FIX 124b for auto path)
       const tbUsesLeft = this.timeBankEngine.getUsesRemaining(this.tableId, userId);
@@ -1250,6 +1277,9 @@ export class ServerTableEngine {
         `[ServerTableEngine:${this.tableId}] Player ${userId} → ${normalizedAction}${amount ? ` ${amount}` : ''}`
       );
 
+      // FIX 149: Wire telemetry — record that player acted within timer
+      this.engineTelemetry.recordTimerActed(this.tableId);
+
       // FIX 137: Bible V8 §7.17 — Snapshot hand state after every successful action (fire-and-forget)
       this.saveSnapshot().catch(() => {});
 
@@ -1424,6 +1454,7 @@ export class ServerTableEngine {
 
     this.handCount++;
     const handNumber = this.handCount;
+    const handStartMs = Date.now(); // FIX 149: Capture hand start time for telemetry
     this.currentHandWentToFlop = false;
     this.currentHandPotSize = 0;
     this.currentHandWinnerIds = [];
@@ -1593,6 +1624,10 @@ export class ServerTableEngine {
         if (event.type === 'HAND_COMPLETE') {
           clearTimeout(handTimeout);
           unsub();
+
+          // FIX 149: Wire telemetry — record hand timing
+          const handElapsedMs = Date.now() - handStartMs;
+          this.engineTelemetry.recordHandTiming(this.tableId, 0, 0, handElapsedMs);
 
           // Fire hand-complete callback for tournament chip sync
           this.clearTurnTimer();
@@ -1806,6 +1841,30 @@ export class ServerTableEngine {
           }
         }
 
+        // FIX 150: Wire AtomicStackService — settle final stacks through atomic layer
+        // Computes delta (final stack - initial stack tracked by version service) for each player
+        // so version tracking stays in sync and race conditions with concurrent rebuy/cashout are prevented.
+        if (this.handController) {
+          const finalState = this.handController.getState();
+          const settlements: StackSettlement[] = [];
+          for (const p of finalState.players) {
+            const initial = this.atomicStackService.getStackWithVersion(this.tableId, p.user_id);
+            const delta = p.stack - initial.stack;
+            if (delta !== 0) {
+              settlements.push({ userId: p.user_id, delta });
+            }
+          }
+          if (settlements.length > 0) {
+            const settleResult = this.atomicStackService.atomicSettle(this.tableId, settlements);
+            if (!settleResult.success) {
+              console.error(
+                `[ServerTableEngine:${this.tableId}] AtomicSettle failed:`,
+                settleResult.errors.join('; ')
+              );
+            }
+          }
+        }
+
         // Step 4: Clean up validator state between hands
         this.actionValidator.clearTable(this.tableId);
         this.preciseTimer.clearTable(this.tableId);
@@ -1815,7 +1874,7 @@ export class ServerTableEngine {
         // Note: timeBankEngine persists across hands (pool model — depletes per session, not per hand)
         //       Per-hand activation counter is reset in dealHand() via resetHandActivations()
         // Note: disconnectEngine persists across hands (tracks connection state)
-        // Note: atomicStackService persists across hands (tracks stack versions)
+        // Note: atomicStackService persists across hands (tracks stack versions via FIX 150)
 
         // Bible V8 §4.19: Settle insurance BEFORE disposing (offers cleared on dispose)
         // FIX 118: Pass ALL winner IDs — chops (multiple winners) = PUSH (insurance voided)
@@ -2656,7 +2715,17 @@ export class ServerTableEngine {
         return;
       }
 
-      this.startTurnTimer(player.user_id, seat, actionTime);
+      // FIX 148: Bible V8 §6.3 — If player recently reconnected, grant extra grace time
+      // so they aren't immediately timed out after network recovery.
+      const reconnectGrace = this.disconnectEngine.isInReconnectGrace(this.tableId, player.user_id);
+      const effectiveActionTime = reconnectGrace ? actionTime + 5 : actionTime;
+      if (reconnectGrace) {
+        console.log(
+          `[ServerTableEngine:${this.tableId}] Player ${player.user_id} in reconnect grace — extending timer by 5s (${effectiveActionTime}s total)`
+        );
+      }
+
+      this.startTurnTimer(player.user_id, seat, effectiveActionTime);
       return;
     }
 

@@ -4,7 +4,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * TIME BANK RULES:
- * - Each time bank adds 20 seconds of extra decision time
+ * - Each time bank adds 15 seconds of extra decision time (Bible V8 §6.2)
  * - Max 2 time bank uses per individual hand (1 auto + 1 manual, or 2 manual)
  * - No limit per session — player can use as many as they have available
  * - VIP members receive 120 time banks per month
@@ -75,11 +75,11 @@ export class TimeBankEngine {
   private onEvent?: (event: TimeBankEvent) => void;
 
   private readonly DEFAULT_CONFIG: TimeBankConfig = {
-    totalBankSeconds: 2400, // 120 uses × 20 seconds = 2400s per month (VIP default)
+    totalBankSeconds: 1800, // 120 uses × 15 seconds = 1800s per month (VIP default)
     maxUses: 120, // 120 time banks per month with VIP
-    secondsPerUse: 20, // Each time bank adds 20 seconds to the clock
+    secondsPerUse: 15, // Bible V8 §6.2: Each time bank adds 15 seconds to the clock
     refillPerOrbit: false,
-    refillSeconds: 20,
+    refillSeconds: 15,
     autoActivate: true,
   };
 

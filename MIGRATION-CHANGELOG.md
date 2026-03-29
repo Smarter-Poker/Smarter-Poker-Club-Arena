@@ -3,7 +3,7 @@
 ## Every Change, Documented. No Exceptions.
 
 **Started:** 2026-03-24
-**Current Step:** ALL 8 STEPS COMPLETE — Server-Authoritative Migration Finished (156 fixes total)
+**Current Step:** ALL 8 STEPS COMPLETE — Deep Bible V8 Verification In Progress (158 fixes total)
 
 ---
 
@@ -3036,3 +3036,88 @@ Every "PASS" verdict from prior rounds was re-examined with one question: **Is t
 - `src/components/table/ThemeSettingsModal.css` — Full styling for modal, grid, asset cards
 - `src/components/navigation/HamburgerMenu.tsx` — Both TableSettingsPanel and ThemeSettingsModal wired
 - `supabase/migrations/20260326_user_table_settings.sql` — Both tables with RLS policies
+
+---
+
+## Round 22 — Deep Bible V8 Verification: Chapters 1, 4, 6, 7, 9 (2026-03-29)
+
+### Phase: Line-by-line verification against Bible V8 spec
+
+**BUGS FOUND AND FIXED:**
+
+**FIX 157: Critical — lastRaise tracking used wrong base (HandController.ts)**
+- **Bug:** `raiseSize = actualAmount - player.bet` was wrong. For a player who hasn't called yet
+  (e.g., CO raising preflop with bet=0), this computed the FULL raise-to amount instead of the
+  raise INCREMENT over the current bet level.
+- **Impact:** Minimum raise requirements were calculated too high. Example: BB=100, CO raises to
+  300 → code set lastRaise=300 instead of 200. Next player would need to raise to 600 instead
+  of the correct 500.
+- **Fix:** Changed to `raiseSize = actualAmount - this.state.currentBet` which correctly computes
+  the raise increment (newBetLevel - previousBetLevel).
+- **File:** `server/src/engine/HandController.ts` line ~315
+
+**FIX 158: TimeBankEngine default secondsPerUse was 20s, Bible V8 §6.2 says 15s**
+- **Bug:** `secondsPerUse: 20` and `totalBankSeconds: 2400` didn't match Bible V8 §6.2 which
+  specifies "Each activation adds configurable seconds (default 15s per use)".
+- **Fix:** Changed to `secondsPerUse: 15`, `totalBankSeconds: 1800` (120 uses × 15s), and
+  `refillSeconds: 15`.
+- **File:** `server/src/engine/TimeBankEngine.ts` lines 78-84
+
+### Chapters Verified (Line-by-Line):
+
+**Chapter 6 — Timer System (§6.1-§6.3):**
+- ✅ PreciseActionTimer: deadline-based (Date.now()+duration), 100ms polling, pause/resume/extend
+- ✅ TimeBankEngine: 2 activations max per hand, auto-activate on expiry, USE-IT-OR-LOSE-IT, per-hand reset wired at dealHand()
+- ✅ DisconnectEngine: 30s default timeout, 3 consecutive timeout → auto-sit-out, 5s reconnect grace, heartbeat checker wired
+- ✅ All three engines wired in ServerTableEngine (resetHandActivations, onPrimaryTimerExpired, onOrbitComplete, checkStaleHeartbeats, isInReconnectGrace)
+
+**Chapter 4 — Operational Procedures (§4.1-§4.22):**
+- ✅ §4.1 Hand Start: Dealer rotation, positions, blinds, antes, straddles, crypto-random shuffle, hole card security (RPC not broadcast)
+- ✅ §4.2 Blinds: Heads-up dealer=SB, short blind all-in, dead blind support
+- ✅ §4.3 Antes: Traditional + BBA, can't-cover handling
+- ✅ §4.4 Straddles: UTG/Mississippi, last straddler acts last preflop, straddle is live
+- ✅ §4.5 Card Dealing: crypto.getRandomValues Fisher-Yates, correct cards per variant (2/4/5/6)
+- ✅ §4.6 Hole Card Security: Per-player RPC, broadcast scrubs cards
+- ✅ §4.7-4.8 Betting Flow: First player logic (preflop/postflop), betting round complete detection, short all-in doesn't reopen
+- ✅ §4.9-4.14 Action Validation: All actions validated, pot-limit formula correct (maxRaise = pot + toCall)
+- ✅ §4.15 Pre-Actions: All 5 types exist, invalidation on bet, always cleared after evaluation
+- ✅ §4.19 Insurance: ALL_IN_RUNOUT pause, per-street dealNextStreet(), continueRunout()
+- ✅ §4.20 RIT: RunItTwiceEngine exists, getRemainingDeck(), finalizeRunout(skipDistribution=true)
+- ✅ §4.21 Showdown: lastAggressorSeat tracking, showdown order sorted correctly
+- ✅ §4.22 Bomb Pot: postBombPotAntes(), skip preflop betting, normal from flop
+
+**Law 1.9 — Settlement (15 steps):**
+- ✅ Steps 1-7: Lock table, calculate pots, evaluate hands (variant-aware), determine winners (hi-lo), calculate rake, distribute winnings (integer-cents), update stacks
+- ✅ Step 8: syncStacks() to DB
+- ✅ Step 9-12: logRakeCollection, rakebackEngine.recordHandRake, logHandHistory, logInsuranceSettlement
+- ✅ Step 13: logHandHistory with full audit trail
+- ✅ Step 14: broadcastCurrentState
+- ✅ Step 15: Cleanup (validators, pre-actions, RIT/insurance dispose)
+- ✅ StateVerifier: chip conservation, no negative stacks, no duplicate cards — wired between hands
+- ✅ AtomicStackService: version-tracked stack settlement (FIX 150)
+- ✅ BBJ detection + payout processing
+
+**Chapter 7 — Edge Cases:**
+- ✅ §7.1 Heads-up: dealer=SB posts first, dealer acts first preflop
+- ✅ §7.2 Short blind: Math.min(blind, stack), mark all-in
+- ✅ §7.3 Short all-in: isFullRaise flag, doesn't reopen betting
+- ✅ §7.4 Side pots: calculatePots() with sorted contribution levels
+- ✅ §7.5 Split pot: integer-cent distribution, remainder to seat closest to dealer
+- ✅ §7.6 Hi-Lo: plo8 variant, qualifyingLowPlayers check, no-qualifying-low = full pot to high
+- ✅ §7.7 Odd chip: floor division gives lo half, remainder (odd cent) to high
+- ✅ §7.18 No-flop-no-drop: sawFlop check in calculateRake
+- ✅ §7.19 Rake caps: playerCountCaps array lookup
+- ✅ §7.20 Mixed game: MixedGameEngine wired
+
+**Chapter 9 — Security:**
+- ✅ §9.3 All game logic server-side (Hetzner VPS)
+- ✅ §9.3 Per-player card provisioning (RPC, not broadcast)
+- ✅ §9.3 Rate limiting on /action endpoint
+- ✅ §9.3 JWT auth on every endpoint (12+ endpoints verified)
+- ✅ userId always from JWT, never from request body (prevents spoofing)
+- ✅ CORS headers on all responses
+
+**Files Modified:**
+- `server/src/engine/HandController.ts` — FIX 157: raiseSize calculation
+- `server/src/engine/TimeBankEngine.ts` — FIX 158: secondsPerUse 20→15, totalBankSeconds 2400→1800
+- `MIGRATION-CHANGELOG.md` — This entry

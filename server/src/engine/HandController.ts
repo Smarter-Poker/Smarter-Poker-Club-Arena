@@ -312,7 +312,11 @@ export class HandController {
       case 'bet':
       case 'raise': {
         actualAmount = amount!;
-        const raiseSize = actualAmount - player.bet;
+        // FIX 157: Bible V8 §4.14 — raiseSize must be the INCREMENT over the current bet level,
+        // NOT the increment over the player's personal bet. Old code used player.bet which was
+        // wrong when the player hadn't called yet (e.g., CO raising preflop with bet=0).
+        // Correct: raiseSize = newBetLevel - previousBetLevel
+        const raiseSize = actualAmount - this.state.currentBet;
         isFullRaiseFlag = true; // Normal bet/raise is always a full raise
         if (raiseSize > this.state.lastRaise) this.state.lastRaise = raiseSize;
         // Bible V8 §4.14: Keep minRaise in sync — must be at least lastRaise or BB

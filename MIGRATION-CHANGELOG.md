@@ -2573,4 +2573,49 @@ This permissive policy OR'd with the secure policy from `20260312`, allowing ANY
 
 ### Critical Fix This Round:
 
-- **FIX 141**: Dropped permissive `hole_cards_all` RLS policy that defeated card security. Migration written to `supabase/migrations/20260329_fix_hole_cards_rls_godmode.sql`. **MUST be applied to Supabase before any live play.**
+- **FIX 141**: Dropped permissive `hole_cards_all` RLS policy that defeated card security. Migration written to `supabase/migrations/20260329_fix_hole_cards_rls_godmode.sql`. **Applied to Supabase — VERIFIED via dashboard.**
+
+---
+
+## Change #142 — FIX 142: PLO Pot-Limit Clamping Formula Correction
+**File:** `server/src/engine/ServerTableEngine.ts` (line ~1150)
+**What existed:** STE pre-clamping used `pot + toCall + toCall` for pot-limit max raise size.
+**What changed:** Corrected to `pot + toCall` (the pot after calling).
+**Why:** The standard pot-limit formula for max raise SIZE = pot after you call = pot + toCall. The old formula was one `toCall` too permissive. While the HandController's `validateAction()` (using the correct formula via FIX 121) was the real enforcement layer and would reject oversize raises, the STE pre-clamping should match to avoid confusing error paths.
+**Verified:** TypeScript clean (`npx tsc --noEmit` = 0 errors). Formula now matches PokerEngine.calculateBettingState.
+
+---
+
+## Deep Verification Round 18 — Full Player Lifecycle (2026-03-29)
+
+### Verification Scope: Complete player lifecycle from sit-down through hand completion
+
+| Area | Bible V8 Section | Result | Details |
+|------|------------------|--------|---------|
+| Seat click → BuyIn modal | — | ✅ PASS | Triple-check duplicate prevention (ref, state, player scan) — FIX 132 |
+| atomic_table_buyin RPC | — | ✅ PASS | SECURITY DEFINER, wallet deduction atomic, duplicate seat check + unique index |
+| 2-hour re-entry restriction | §1.5 (Fairness) | ✅ PASS | table_cashout_history checked, min buy-in enforced — FIX 136 |
+| atomic_table_cashout RPC | — | ✅ PASS | Row lock (FOR UPDATE), wallet credit, soft-delete seat, tx logged |
+| atomic_table_rebuy RPC | — | ✅ PASS | Seat existence check, wallet deduction, stack update |
+| Server player pickup | — | ✅ PASS | `loadSeatedPlayers()` from DB each dealing loop — no stale in-memory |
+| Blind posting: heads-up | §4.2 | ✅ PASS | Dealer=SB, other=BB |
+| Blind posting: short blind | §4.2 | ✅ PASS | `Math.min(blind, stack)`, marks all-in |
+| Blind posting: dead blind | §4.2 | ✅ PASS | SB dead money to pot, live BB as current bet |
+| Ante: traditional + BBA | §4.3 | ✅ PASS | BBA = ante × playerCount from BB; traditional = individual |
+| Straddle: UTG only | §4.4 | ✅ PASS | straddleEngine processes, live straddle, currentBet updated |
+| Betting round flow | §4.7-4.8 | ✅ PASS | First to act correct (UTG/straddle/dealer), round complete logic |
+| Short all-in doesn't reopen | §7.3 | ✅ PASS | `isFullRaiseFlag` tracked, only full raises reopen |
+| Pre-action system | §4.15 | ✅ PASS | All 5 types verified, bet invalidation, execution at turn start, endpoint wired |
+| Heartbeat system | §6.3 | ✅ PASS | Client sends every 5s, server `/heartbeat` endpoint, JWT auth |
+| Disconnect engine | §6.3 | ✅ PASS | Stale heartbeat check, timeout countdown, auto-fold/check, consecutive timeout → sit-out |
+| Reconnect grace | §6.3 | ✅ PASS | 5-second grace period, timer cancelled on reconnect |
+| Showdown evaluation | §1.9 | ✅ PASS | Variant-aware (NLH, PLO, Short Deck, Hi-Lo), last aggressor shows first |
+| Side pot calculation | §1.9 | ✅ PASS | Layered contribution algorithm, pot merging |
+| Winner determination | §1.9 | ✅ PASS | Per-pot evaluation, kicker comparison, split pot support |
+| Hi-Lo split | §7.6 | ✅ PASS | 50/50 in integer cents, odd chip to high winner |
+| Pot distribution | §1.9 | ✅ PASS | Integer-cents arithmetic, Math.trunc, remainder to lowest seat |
+| Rake calculation | §1.9 | ✅ PASS | No-flop-no-drop, player-count cap, Math.trunc cents |
+| PLO pot-limit clamping | §4.14 | 🔧 FIX 142 | STE formula corrected from pot+2*toCall to pot+toCall |
+
+### Fixes This Round:
+- **FIX 142**: PLO pot-limit clamping formula in STE corrected to match HandController

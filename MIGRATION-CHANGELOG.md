@@ -2981,3 +2981,58 @@ Every "PASS" verdict from prior rounds was re-examined with one question: **Is t
 - **Broadcasts `table_expansion` event** with new table IDs, total tables, total players, and reason
 
 **Files:** `server/src/index.ts`
+
+---
+
+## Step 8 — TABLE SETTINGS & THEME CUSTOMIZATION (Bible V8 Chapter 11)
+
+### Phase: AUDIT COMPLETE 2026-03-29
+
+### Step 8 Audit Results
+
+**§11.1 — Table Settings (12 Toggles)**
+
+| Requirement | Status | Details |
+|-------------|--------|---------|
+| 12 toggle settings matching spec | ✅ PASS | All 12 in `useUserTableSettings.ts` with correct defaults |
+| Accessible from hamburger menu | ✅ PASS | `HamburgerMenu.tsx` renders `TableSettingsPanel` inline (mode="inline") |
+| Accessible from table gear icon | ✅ REMOVED | Per user directive — settings only in hamburger menu now |
+| Same Supabase row for both locations | ✅ PASS | `useUserTableSettings` hook shared, reads/writes `user_table_settings` |
+| Persist via `user_table_settings` table | ✅ PASS | Upsert on toggle, localStorage cache for instant loads |
+| Optimistic update + rollback on failure | ✅ PASS | `toggleSetting()` does optimistic setState + rollback if Supabase fails |
+| Cross-component sync via MasterBus | ✅ PASS | Emits/subscribes `SETTINGS_CHANGED` events |
+| DB migration exists | ✅ PASS | `supabase/migrations/20260326_user_table_settings.sql` — 12 boolean columns, RLS |
+
+**§11.2 — Theme Settings (5-Tab Modal)**
+
+| Requirement | Status | Details |
+|-------------|--------|---------|
+| Game type selector (10 types) | ✅ PASS | ALL, NLH, FLH, 6+, PLO, FLO, OFC, MIXED, MTT, SNG |
+| 5-tab layout | ✅ PASS | Themes, Table, Button, Background, Cards |
+| 5 assets per tab (2 free + 3 VIP) | ✅ PASS | All 25 assets defined with gradient thumbnails |
+| VIP gating (single tier) | ✅ PASS | Binary `isVip`/`vipOnly` — no Bronze/Silver/Gold tiers |
+| Per-game-type persistence | ✅ PASS | `user_theme_settings` table keyed by (user_id, game_type) |
+| "ALL" fallback | ✅ PASS | Falls back to ALL game type if no per-type override |
+| Reset button | ✅ PASS | Resets to DEFAULT_SELECTION |
+| Confirm button (save + close) | ✅ PASS | Upserts to Supabase, shows toast, closes modal |
+| Opened from TableSettingsPanel link | ✅ PASS | `onOpenThemeSettings` callback wired in HamburgerMenu |
+| DB migration exists | ✅ PASS | Same migration file — `user_theme_settings` with UNIQUE(user_id, game_type), RLS |
+
+**Changes Made:**
+- **FIX 156**: Removed settings menu entry from TablePage table menu (gear icon removed per user directive)
+- **Bible V8 §11.2.2**: Updated theme asset tier descriptions — single VIP tier (no Bronze/Silver/Gold layers)
+- **Bible V8 §11.2.3**: Updated VIP gating spec — single tier, checks `is_vip` from profiles
+
+**Files Modified:**
+- `src/pages/TablePage.tsx` — Removed settings menu entry from table info menu
+- `skills/bible-v8/BIBLE-V8-REFERENCE.md` — Updated §11.2.2 and §11.2.3 for single VIP tier
+- `MIGRATION-CHANGELOG.md` — This entry
+
+**Files Verified (no changes needed — already correct):**
+- `src/hooks/useUserTableSettings.ts` — All 12 toggles, correct defaults, optimistic update + rollback
+- `src/components/table/TableSettingsPanel.tsx` — Reusable panel with overlay/inline modes
+- `src/components/table/ThemeSettingsModal.tsx` — 5-tab modal with binary VIP gating
+- `src/components/table/TableSettingsPanel.css` — Full styling for toggle switches
+- `src/components/table/ThemeSettingsModal.css` — Full styling for modal, grid, asset cards
+- `src/components/navigation/HamburgerMenu.tsx` — Both TableSettingsPanel and ThemeSettingsModal wired
+- `supabase/migrations/20260326_user_table_settings.sql` — Both tables with RLS policies

@@ -4362,12 +4362,7 @@ export default function TablePage({
                         },
                       ]
                     : []),
-                  {
-                    id: 'settings',
-                    label: 'Settings',
-                    icon: <SettingsIcon />,
-                    onClick: () => setShowSettings(true),
-                  },
+                  // Settings removed from table menu — accessible only via hamburger menu (Bible V8 §11.1)
                 ],
               },
               {

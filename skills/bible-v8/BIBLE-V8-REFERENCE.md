@@ -661,41 +661,33 @@ Themes are customizable PER GAME TYPE — each game type can have independent th
 **Tab 1: Themes** — Complete table appearance presets
 
 - Free (2 options): Default dark, Classic brown
-- VIP Bronze: Neon blue hexagonal
-- VIP Silver: Rustic wood/leather
-- VIP Gold: Casino green felt
+- VIP: Neon blue hexagonal, Rustic wood/leather, Casino green felt
 
 **Tab 2: Table** — Table felt/surface customization
 
 - Free (2 options): Dark felt, Brown felt
-- VIP Bronze: Neon blue
-- VIP Silver: Red leather
-- VIP Gold: Green casino felt
+- VIP: Neon blue, Red leather, Green casino felt
 
 **Tab 3: Button** — Dealer button style
 
 - Free (2 options): Red "D" gear, Gray "D" gear
-- VIP Bronze: Blue crystal "D"
-- VIP Silver: Gold star badge
-- VIP Gold: Football/sports themed
+- VIP: Blue crystal "D", Gold star badge, Football/sports themed
 
 **Tab 4: Background** — Room/environment behind table
 
 - Free (2 options): Diamond pattern, Stone/concrete
-- VIP Bronze: Galaxy/space nebula
-- VIP Silver: Hardwood floor
-- VIP Gold: Teal tile pattern
+- VIP: Galaxy/space nebula, Hardwood floor, Teal tile pattern
 
 **Tab 5: Cards** — Card face design
 
 - Free (2 options): Standard red/diamond, Standard blue/diamond
-- VIP Bronze+: Additional premium card designs (locked behind VIP tier)
+- VIP: Premium gold, Premium black, Platinum card designs
 
-#### 11.2.3 — VIP Tier Gating
+#### 11.2.3 — VIP Gating (Single Tier)
 
 - **Free items**: Available to all users (2 per category)
-- **VIP Bronze/Silver/Gold**: Locked with "VIP" badge overlay — requires matching VIP subscription tier
-- Client checks user's `vip_level` from `profiles` or `vip_subscriptions` table
+- **VIP items**: Locked with "VIP" badge overlay — requires active VIP subscription (single tier, no Bronze/Silver/Gold)
+- Client checks user's `is_vip` from `profiles` table
 - Locked items show padlock overlay; tapping shows VIP upgrade prompt
 
 #### 11.2.4 — Theme Persistence

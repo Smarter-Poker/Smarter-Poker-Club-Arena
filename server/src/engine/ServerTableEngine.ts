@@ -1148,8 +1148,11 @@ export class ServerTableEngine {
     const isPotLimit = this.tableInfo?.game_variant?.startsWith('plo');
     let potLimitMaxBet = Infinity;
     if (isPotLimit) {
-      // Pot-limit max = current pot + call + call (standard pot-limit formula)
-      potLimitMaxBet = state.pot + toCall + toCall;
+      // FIX 142: Pot-limit max raise SIZE = pot + toCall (the pot after you call).
+      // Previous formula (pot + toCall + toCall) was one toCall too permissive.
+      // For a BET (toCall=0): maxBet = pot. For a RAISE: maxRaiseSize = pot + toCall.
+      // This matches PokerEngine.calculateBettingState (FIX 121).
+      potLimitMaxBet = state.pot + toCall;
     }
 
     // Clamp amounts

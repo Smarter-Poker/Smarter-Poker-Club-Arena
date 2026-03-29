@@ -96,6 +96,11 @@ export class ServerTableEngine {
   // Bible V8 §4.2: Track players returning from sit-out who must post dead blind
   private returningFromSitout: Set<string> = new Set();
 
+  // FIX 143: Bible V8 §7.12: Deferred sit-out — can't fold mid-hand
+  // Players who request sit-out during an active hand are queued here.
+  // The sit-out is applied AFTER the current hand completes in postHandTasks().
+  private pendingSitOut: Set<string> = new Set();
+
   // Per-hand tracking
   private currentHandWentToFlop: boolean = false;
   private currentHandPotSize: number = 0;
@@ -831,16 +836,24 @@ export class ServerTableEngine {
     }
 
     if (sitOut) {
-      this.disconnectEngine.sitOut(this.tableId, userId, 'voluntary');
+      // FIX 143: Bible V8 §7.12 — Can't fold mid-hand.
+      // If a hand is in progress, defer the sit-out until after the hand completes.
+      // The player continues playing the current hand normally.
+      if (this.handController !== null) {
+        this.pendingSitOut.add(userId);
+      } else {
+        this.disconnectEngine.sitOut(this.tableId, userId, 'voluntary');
+      }
     } else {
+      // Cancel any pending sit-out
+      this.pendingSitOut.delete(userId);
       this.disconnectEngine.sitBack(this.tableId, userId);
       // Bible V8 §4.2: Mark player as returning — must post dead blind on next hand
       this.returningFromSitout.add(userId);
     }
 
-    // If hand is active and it's their turn, they can't sit out mid-action
-    const isInHand = this.handController !== null;
-    const willFoldNextHand = sitOut && isInHand;
+    // FIX 143: willFoldNextHand is informational — player finishes current hand normally
+    const willFoldNextHand = sitOut && this.handController !== null;
 
     return { success: true, willFoldNextHand };
   }
@@ -1328,7 +1341,12 @@ export class ServerTableEngine {
         // Bible V8 §6.3: Check for stale heartbeats before each hand
         this.disconnectEngine.checkStaleHeartbeats(this.tableId);
 
-        const activePlayers = this.seatedPlayers.filter((p) => p.stack > 0);
+        // FIX 143: Bible V8 §7.12 — Exclude sitting-out players from the deal.
+        // Standard online poker: sitting-out players skip the hand entirely.
+        // They miss their blind and owe a dead blind when they return (§4.2).
+        const activePlayers = this.seatedPlayers.filter(
+          (p) => p.stack > 0 && !this.disconnectEngine.isSittingOut(this.tableId, p.user_id)
+        );
 
         // Clean up rebuy map (Garbage Collection for horses no longer sitting here)
         const currentHorseIds = new Set(
@@ -1414,7 +1432,7 @@ export class ServerTableEngine {
     this.currentHandCommunityCards = [];
     this.currentHandActions = [];
     this.currentHandWinners = [];
-    this.currentHandContributions.clear(); // Bible V8 §4.18: Reset weighted rakeback tracking
+    this.currentHandContributions.clear(); // Bible V8 §4.18: Reset equal-share rakeback tracking (FIX 144)
     this.currentHandInsuranceSettlements = []; // Bible V8 §4.19: Reset insurance settlements
     this.currentHandShowdownResults = []; // BBJ: Reset showdown results for new hand
     this.currentHandBBJHit = null; // BBJ: Reset hit detection for new hand
@@ -1738,7 +1756,7 @@ export class ServerTableEngine {
           const state = this.handController.getState();
           this.currentHandPotSize = state.pot;
           // Note: rake + bbjFee are captured from HAND_COMPLETE event, not from state
-          // Bible V8 §1.9: Capture totalInvested for weighted rakeback calculation
+          // Bible V8 §1.9: Capture totalInvested for equal-share rakeback tracking (FIX 144)
           this.currentHandContributions.clear();
           for (const enginePlayer of state.players) {
             const localPlayer = players.find((p) => p.user_id === enginePlayer.user_id);
@@ -2841,19 +2859,18 @@ export class ServerTableEngine {
       );
     }
 
-    // 2b. Step 6: Track rake contributions for weighted rakeback (Bible V8 §1.9 step 12)
+    // 2b. Step 6: FIX 144: Track rake for EQUAL-SHARE rakeback (NOT weighted)
+    // Each dealt-in player gets credited with an EQUAL share of the total rake.
+    // This is the key metric for weekly player/agent earnings.
     if (!this.isTournamentTable() && this.currentHandRake > 0 && this.tableInfo?.club_id) {
-      // Use actual totalInvested from HandController state (captured in WINNERS handler)
-      let totalContributions = 0;
-      for (const [, invested] of this.currentHandContributions) {
-        totalContributions += invested;
-      }
-      if (totalContributions > 0) {
+      // Pass contributions map (used to identify dealt-in players, NOT for weighting)
+      const dealtInCount = this.currentHandContributions.size;
+      if (dealtInCount > 0) {
         this.rakebackEngine.recordHandRake(
           this.tableInfo.club_id,
           this.currentHandRake,
           this.currentHandContributions,
-          totalContributions
+          0 // totalPotContributions no longer used for weighting (FIX 144)
         );
       }
     }
@@ -3072,6 +3089,17 @@ export class ServerTableEngine {
           `[ServerTableEngine:${this.tableId}] Bankroll Management: Horse ${horse.username} hit profit target (${Math.floor(horse.stack)} chips) and cashed out before posting the Big Blind.`
         );
       }
+    }
+
+    // 5.9 FIX 143: Bible V8 §7.12 — Apply deferred sit-outs now that the hand is over
+    if (this.pendingSitOut.size > 0) {
+      for (const userId of this.pendingSitOut) {
+        this.disconnectEngine.sitOut(this.tableId, userId, 'voluntary');
+        console.log(
+          `[ServerTableEngine:${this.tableId}] Deferred sit-out applied: ${userId}`
+        );
+      }
+      this.pendingSitOut.clear();
     }
 
     // 6. Process leave-pending players (cash games only)

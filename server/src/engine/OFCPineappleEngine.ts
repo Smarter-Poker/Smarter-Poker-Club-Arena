@@ -25,6 +25,9 @@
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// FIX 162: Use crypto-secure shuffle for OFC card dealing (fairness)
+import { secureShuffle } from './CryptoRandom.js';
+
 export type OFCSuit = 'h' | 'd' | 'c' | 's';
 export type OFCRank = '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | 'T' | 'J' | 'Q' | 'K' | 'A';
 
@@ -177,14 +180,11 @@ export const OFCPineappleEngine = {
   },
 
   /**
-   * Fisher-Yates shuffle
+   * FIX 162: Fisher-Yates shuffle using crypto-secure random (same as PokerEngine)
    */
   shuffle<T>(array: T[]): T[] {
     const arr = [...array];
-    for (let i = arr.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [arr[i], arr[j]] = [arr[j], arr[i]];
-    }
+    secureShuffle(arr);
     return arr;
   },
 

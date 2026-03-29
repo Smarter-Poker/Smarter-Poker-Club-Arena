@@ -2003,11 +2003,17 @@ export class ServerTableEngine {
         // Note: rakebackEngine persists (accumulates across hands)
 
         // Step 6: Mixed game rotation — notify after each hand
+        // FIX 159: Bible V8 §7.20 — when variant rotates, UPDATE tableInfo.game_variant
+        // so the NEXT hand uses the new variant for dealing, evaluation, and validation.
         if (this.mixedGameEngine.isActive(this.tableId)) {
           const activePlayers = this.handController
             ? this.handController.getState().players.filter((p) => !p.is_folded).length
             : 0;
-          this.mixedGameEngine.onHandComplete(this.tableId, activePlayers);
+          const newVariant = this.mixedGameEngine.onHandComplete(this.tableId, activePlayers);
+          if (newVariant && this.tableInfo) {
+            console.log(`[ServerTableEngine:${this.tableId}] Mixed game rotation: ${this.tableInfo.game_variant} → ${newVariant}`);
+            this.tableInfo.game_variant = newVariant;
+          }
         }
 
         // Step 7: Record telemetry for this hand

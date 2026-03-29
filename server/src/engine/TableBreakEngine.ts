@@ -15,6 +15,9 @@
  * Server adaptation: No masterBus — uses optional onEvent callback. Class export, not singleton.
  */
 
+// FIX 163: Use crypto-secure random for seat lottery fairness
+import { secureRandomInt } from './CryptoRandom.js';
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -238,8 +241,8 @@ export class TableBreakEngine {
 
     if (emptySeats.length === 0) return 1; // Shouldn't happen
 
-    // Random seat from available (seat lottery)
-    return emptySeats[Math.floor(Math.random() * emptySeats.length)];
+    // FIX 163: Random seat from available (seat lottery) — crypto-secure for fairness
+    return emptySeats[secureRandomInt(emptySeats.length)];
   }
 
   /**

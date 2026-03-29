@@ -19,9 +19,14 @@ import type { GameVariant } from '../types.js';
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// FIX 160: Bible V8 §7.20 — HORSE preset corrected to include plo8 (Omaha Hi/Lo)
+// True HORSE = Hold'em → Omaha Hi/Lo → Razz → Stud → Eight-or-Better
+// Since Razz/Stud are not yet supported, we approximate with available variants.
+// When Stud variants are added, update this preset.
 export const MIXED_GAME_PRESETS: Record<string, GameVariant[]> = {
-  HORSE: ['nlh', 'plo4', 'nlh', 'nlh', 'plo4'],
+  HORSE: ['nlh', 'plo4', 'plo8', 'short_deck', 'plo8'],
   HOLDEM_OMAHA: ['nlh', 'plo4'],
+  HOLDEM_PLO_HILO: ['nlh', 'plo4', 'plo8'],
   HOLDEM_PLO5: ['nlh', 'plo5'],
   DOUBLE_BOARD_ROTATION: ['nlh', 'plo4', 'plo5', 'plo6'],
   OMAHA_VARIANTS: ['plo4', 'plo5', 'plo6'],

@@ -709,10 +709,13 @@ export class HandController {
           ? this.state.lastAggressorSeat
           : this.getFirstPostflopPlayer();
       if (firstToShow >= 0) {
-        const maxSeats = this.state.players.length;
+        // FIX 165: Use max physical seat + 1 for modular distance, not player count.
+        // Players may have non-contiguous seats (e.g., seats 1,3,5,7 at a 9-seat table).
+        // Using players.length would give wrong clockwise distances.
+        const maxSeatNum = Math.max(...this.state.players.map((p) => p.seat), firstToShow) + 1;
         showdownResults.sort((a, b) => {
-          const aDist = (a.seat - firstToShow + maxSeats * 10) % maxSeats;
-          const bDist = (b.seat - firstToShow + maxSeats * 10) % maxSeats;
+          const aDist = (a.seat - firstToShow + maxSeatNum * 10) % maxSeatNum;
+          const bDist = (b.seat - firstToShow + maxSeatNum * 10) % maxSeatNum;
           return aDist - bDist;
         });
       }

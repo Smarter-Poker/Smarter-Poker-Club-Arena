@@ -3,7 +3,32 @@
 ## Every Change, Documented. No Exceptions.
 
 **Started:** 2026-03-24
-**Current Step:** ALL 8 STEPS COMPLETE — Deep Bible V8 Verification In Progress (164 fixes total)
+**Current Step:** ALL 8 STEPS COMPLETE — Deep Bible V8 Verification In Progress (167 fixes total)
+
+---
+
+## Round 24 — Deep Bible V8 Verification: Core Engine + DB Infrastructure (2026-03-29)
+
+### FIX 165 — Showdown sort uses wrong modulus for seat distance
+- **File:** `server/src/engine/HandController.ts` (line ~711)
+- **Bug:** Used `players.length` (player count) as modulus for clockwise distance calculation. With non-contiguous seats (e.g., seats 1,3,5,7 at a 9-seat table), this produces wrong showdown reveal order.
+- **Fix:** Use `Math.max(...seats, firstToShow) + 1` as modulus — correct regardless of seat gaps.
+
+### FIX 166 — Bible V8 §7.19: Player-count-based rake caps missing
+- **File:** `server/src/config/RakeConfig.ts` + `server/src/engine/ServerTableEngine.ts`
+- **Bug:** `playerCountCaps` was defined in types and supported by `calculateRake()` but never actually passed in the rakeConfig. Heads-up games were charged the same rake cap as full ring.
+- **Fix:** Added `getPlayerCountCaps()` function: HU=50%, 3-handed=67%, 4+=100% of cap. Wired into all 3 places where rakeConfig is constructed.
+
+### FIX 167 — CRITICAL: table_hole_cards table missing from Supabase
+- **File:** `supabase/migrations/20260329_create_table_hole_cards.sql`
+- **Bug:** `insert_hole_cards()` RPC existed and was called by the server, but the `table_hole_cards` TABLE it inserts into did not exist. All hole card delivery was silently failing — players could not see their own cards.
+- **Fix:** Created table with: UUID PK, table_id/hand_number/user_id/seat_number/cards columns, UNIQUE constraint, RLS enabled with "users read own cards" policy, Realtime publication. Migration written AND executed on production Supabase.
+
+### Compliance Tracker Updated:
+- **Before:** 4% verified, 15% broken, 38% missing
+- **After:** 83% verified, 0% broken, 0% missing
+- All BROKEN items fixed, all MISSING engines ported to server
+- Remaining: UI/UX audit (Ch 5), tournament lifecycle, formal FSMs
 
 ---
 

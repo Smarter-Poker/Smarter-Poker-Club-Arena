@@ -3,7 +3,52 @@
 ## Every Change, Documented. No Exceptions.
 
 **Started:** 2026-03-24
-**Current Step:** ALL 8 STEPS COMPLETE — Deep Bible V8 Verification In Progress (158 fixes total)
+**Current Step:** ALL 8 STEPS COMPLETE — Deep Bible V8 Verification In Progress (163 fixes total)
+
+---
+
+## Round 23 — Deep Bible V8 Verification: Advanced Engines (2026-03-29)
+
+### FIX 159 — CRITICAL: MixedGameEngine variant rotation not applied
+- **File:** `server/src/engine/ServerTableEngine.ts` (line ~2010)
+- **Bug:** `MixedGameEngine.onHandComplete()` returns the new variant when rotation occurs, but the return value was IGNORED. `this.tableInfo.game_variant` was never updated, so every hand used the same variant regardless of rotation.
+- **Impact:** Mixed game tables (HORSE, etc.) would never actually change variant — rotation was purely cosmetic.
+- **Fix:** Capture return value and update `this.tableInfo.game_variant` when rotation occurs.
+
+### FIX 160 — MixedGameEngine HORSE preset incorrect
+- **File:** `server/src/engine/MixedGameEngine.ts` (MIXED_GAME_PRESETS)
+- **Bug:** HORSE preset was `['nlh', 'plo4', 'nlh', 'nlh', 'plo4']` — no Hi/Lo or Short Deck.
+- **Fix:** Updated to `['nlh', 'plo4', 'plo8', 'short_deck', 'plo8']` using available variants. Added `HOLDEM_PLO_HILO` preset. Documented that Stud/Razz are pending.
+
+### FIX 161 — ChipRaceEngine single-player edge case
+- **File:** `server/src/engine/ChipRaceEngine.ts` (single player branch)
+- **Bug:** Single player had fractional chips REMOVED but nothing awarded back, potentially losing chips.
+- **Fix:** Single player rounds UP — if they have any fractional chips, they get one new denomination chip. Ensures minimum chip guarantee.
+
+### FIX 162 — OFC uses Math.random() instead of crypto shuffle
+- **File:** `server/src/engine/OFCPineappleEngine.ts`
+- **Bug:** OFC shuffle used `Math.floor(Math.random() * (i + 1))` — not cryptographically secure.
+- **Fix:** Imported `secureShuffle` from CryptoRandom, replaced Math.random shuffle.
+
+### FIX 163 — TableBreakEngine seat lottery uses Math.random()
+- **File:** `server/src/engine/TableBreakEngine.ts`
+- **Bug:** Seat lottery for tournament table breaks used `Math.floor(Math.random() * emptySeats.length)`.
+- **Fix:** Imported `secureRandomInt` from CryptoRandom, replaced with crypto-secure random.
+
+### Engines Verified (PASS):
+- **RunItTwiceEngine** ✅ — Offer/accept/decline, dual/triple board, pot splitting (Math.trunc), chooser mechanism
+- **StraddleEngine** ✅ — UTG-only (FIX 114), auto-enrollment, stack check, firstToAct adjustment
+- **CryptoRandom** ✅ — Rejection sampling, Fisher-Yates, Node.js fallback chain
+- **MonteCarloEquity** ✅ — Short Deck support (FIX 139), kicker comparison, tie handling
+- **AtomicStackService** ✅ — Version tracking, dry-run validation, batch settlement, single-threaded safety
+- **EngineTelemetry** ✅ — recordHandTiming, recordPlayerCount, recordTimerExpired/Acted, 60s auto-snapshot
+- **TableBalancer** ✅ — Balance scoring, gap > 1 trigger, smallest-stack-first moves, open seat finder
+- **TableBreakEngine** ✅ — Countdown warning, round-robin redistribution, rebalance check
+- **RakebackEngine** ✅ — Equal share (FIX 144), tier system, Supabase persistence, settlement
+- **InsuranceEngine** ✅ — 20% margin, partial coverage slider, per-street recalc, TIES=PUSH
+- **HorseLogic** ✅ — 5 styles (tag/lag/balanced/tricky/grinder), preflop/postflop logic, hand strength eval
+- **OFCPineappleEngine** ✅ — Dealing, placement, foul detection, royalties, Fantasyland, scoring
+- **OFCDealingOrchestrator** ✅ — Dealing loop, pineapple rounds, timer management, scoring orchestration
 
 ---
 

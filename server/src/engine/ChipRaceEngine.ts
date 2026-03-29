@@ -71,10 +71,15 @@ export class ChipRaceEngine {
       throw new Error('Cannot execute chip race with no players');
     }
 
+    // FIX 161: Single player — no race needed, round UP to nearest denomination.
+    // A single player's fractional chips have no opponents to race against,
+    // and no player can be eliminated by a chip race (minimum 1 chip guarantee).
     if (playerStacks.size === 1) {
       const [playerId, stack] = playerStacks.entries().next().value!;
       const fractionalChips = stack % newDenomination;
-      const newStack = stack - fractionalChips;
+      // Round up: if they have any fractional chips, award one new denomination
+      const chipsAwarded = fractionalChips > 0 ? newDenomination : 0;
+      const newStack = Math.max(newDenomination, stack - fractionalChips + chipsAwarded);
       playerStacks.set(playerId, newStack);
 
       return {
@@ -86,10 +91,10 @@ export class ChipRaceEngine {
           stack: newStack,
           fractionalChips,
           lotteryValue: 0,
-          chipsAwarded: 0,
+          chipsAwarded,
         }],
         totalFractionalCollected: fractionalChips,
-        totalNewChipsDistributed: 0,
+        totalNewChipsDistributed: chipsAwarded > 0 ? 1 : 0,
       };
     }
 

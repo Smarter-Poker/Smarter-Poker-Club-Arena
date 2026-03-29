@@ -2912,3 +2912,33 @@ Every "PASS" verdict from prior rounds was re-examined with one question: **Is t
 | Ch 7: Edge Cases | ✅ Verified + Fixed | FIX 143-146 (prior) |
 | Ch 8: Extensibility | ✅ Verified | OFC flagged as Step 7 |
 | Ch 9: Excellence | ✅ Verified + Fixed | FIX 149 (telemetry wiring), FIX 150 (atomic stack) |
+
+---
+
+## Round 21b — Step 7: Tournament & Extras Verification (2026-03-29)
+
+### FIX 151 — Wire ChipRaceEngine into Tournament Blind Advancement
+**Problem:** `ChipRaceEngine` was fully built (154 lines, secure random lottery, no-elimination guarantee) but **NEVER called**. When tournament blind levels advance and the smallest denomination changes, no chip race was executed.
+**Fix:**
+- Imported `ChipRaceEngine` into `server/src/index.ts`
+- Added `chipRaceEngine` instance to `TournamentManager`
+- In `startBlindTimer` → level-up handler: when `level.smallBlind > prevSmallBlind`, gather all player stacks across all tables, execute chip race, update `table_seats` with new stacks, broadcast `chip_race` event
+**File:** `server/src/index.ts` — TournamentManager class
+
+### FIX 153 — Wire EngineTelemetry into Health Endpoint
+**Problem:** `EngineTelemetry` recorded data via FIX 149 but the health endpoint only returned basic status (running, uptime, table/tournament counts). No observability data exposed.
+**Fix:**
+- Added `getTelemetrySnapshot()` method to `ServerTableEngine`
+- `GameServer.getStatus()` now aggregates telemetry from all engines: `avgHandDurationMs`, `avgHandsPerHour`, `tablesWithMetrics`
+**Files:** `server/src/engine/ServerTableEngine.ts`, `server/src/index.ts`
+
+### Step 7 Audit Results
+
+| Module | Status | Notes |
+|--------|--------|-------|
+| ChipRaceEngine | 🔴→✅ FIX 151 | Now wired into TournamentManager blind advancement |
+| TableBalancer | ⚠️ Enhancement | Inline balancing in TournamentManager works (merges tables < 3 players). Dedicated engine is more sophisticated (gap > 1 rule) — wire as enhancement |
+| TableBreakEngine | ⚠️ Enhancement | Inline breaking works. Dedicated engine adds countdown warnings — wire as enhancement |
+| OFCDealingOrchestrator | ⏭️ Deferred | OFC is a separate game mode, not part of standard poker flow. Wire when OFC feature is enabled |
+| OFCPineappleEngine | ⏭️ Deferred | Same as above |
+| EngineTelemetry | 🔴→✅ FIX 153 | Now exposed via /health endpoint with aggregated metrics |

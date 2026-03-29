@@ -421,6 +421,11 @@ export class ServerTableEngine {
     return this.handCount;
   }
 
+  // FIX 153: Expose telemetry snapshot for health endpoint
+  getTelemetrySnapshot() {
+    return this.engineTelemetry.getSnapshot();
+  }
+
   onHandComplete(
     callback: (tableId: string, players: { user_id: string; stack: number }[]) => void
   ): void {

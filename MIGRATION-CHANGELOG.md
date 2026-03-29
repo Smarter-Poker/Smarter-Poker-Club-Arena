@@ -3,7 +3,7 @@
 ## Every Change, Documented. No Exceptions.
 
 **Started:** 2026-03-24
-**Current Step:** ALL 8 STEPS COMPLETE — Deep Bible V8 Verification In Progress (163 fixes total)
+**Current Step:** ALL 8 STEPS COMPLETE — Deep Bible V8 Verification In Progress (164 fixes total)
 
 ---
 
@@ -34,6 +34,11 @@
 - **File:** `server/src/engine/TableBreakEngine.ts`
 - **Bug:** Seat lottery for tournament table breaks used `Math.floor(Math.random() * emptySeats.length)`.
 - **Fix:** Imported `secureRandomInt` from CryptoRandom, replaced with crypto-secure random.
+
+### FIX 164 — CRITICAL: rakeback_periods missing total_rake_paid column
+- **File:** `supabase/migrations/20260329_rakeback_periods_total_rake_paid.sql`
+- **Bug:** `RakebackEngine.settleRakeback()` inserts rows with `total_rake_paid`, but this column never existed in the `rakeback_periods` table. Every rakeback settlement insert would fail.
+- **Fix:** `ALTER TABLE rakeback_periods ADD COLUMN IF NOT EXISTS total_rake_paid DECIMAL(15, 2) DEFAULT 0;` — Migration written, committed, pushed to GitHub, AND **executed on Supabase production** (verified via pooler connection 2026-03-29).
 
 ### Engines Verified (PASS):
 - **RunItTwiceEngine** ✅ — Offer/accept/decline, dual/triple board, pot splitting (Math.trunc), chooser mechanism

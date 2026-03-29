@@ -235,6 +235,7 @@ export default function App() {
 
     // Register SW for background notifications
     // FIX: Use base-relative path so the SW is found under /hub/club-arena/
+    // HARDENED: Force update check every time to bust stale SW caches after re-deploy
     if ('serviceWorker' in navigator) {
       const swPath =
         import.meta.env.BASE_URL && import.meta.env.BASE_URL !== '/'
@@ -242,6 +243,12 @@ export default function App() {
           : '/sw-bus.js';
       navigator.serviceWorker
         .register(swPath)
+        .then((reg) => {
+          // Force the browser to check for a new version of the SW immediately.
+          // If sw-bus.js has changed (e.g., DEPLOY_TS updated), the browser will
+          // install the new SW, which triggers activate → clears old caches.
+          reg.update().catch(() => {});
+        })
         .catch((err) => console.warn('[App] Service worker registration failed:', err));
     }
 

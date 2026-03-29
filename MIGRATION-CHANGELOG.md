@@ -2937,8 +2937,47 @@ Every "PASS" verdict from prior rounds was re-examined with one question: **Is t
 | Module | Status | Notes |
 |--------|--------|-------|
 | ChipRaceEngine | 🔴→✅ FIX 151 | Now wired into TournamentManager blind advancement |
-| TableBalancer | ⚠️ Enhancement | Inline balancing in TournamentManager works (merges tables < 3 players). Dedicated engine is more sophisticated (gap > 1 rule) — wire as enhancement |
-| TableBreakEngine | ⚠️ Enhancement | Inline breaking works. Dedicated engine adds countdown warnings — wire as enhancement |
+| TableBalancer | 🔴→✅ FIX 154 | Now wired into TournamentManager — replaces inline balancing with proper gap-1 rebalancing + table breaking |
+| TableBreakEngine | ✅ Via FIX 154 | TableBalancer.shouldBreakTable() + breakTable() now used instead of inline merge logic |
 | OFCDealingOrchestrator | ⏭️ Deferred | OFC is a separate game mode, not part of standard poker flow. Wire when OFC feature is enabled |
 | OFCPineappleEngine | ⏭️ Deferred | Same as above |
 | EngineTelemetry | 🔴→✅ FIX 153 | Now exposed via /health endpoint with aggregated metrics |
+
+---
+
+## Round 21c — FIX 154+155: TableBalancer Wiring + Dynamic Table Expansion (2026-03-29)
+
+### FIX 154: Wire TableBalancer into TournamentManager
+
+**Problem:** TournamentManager used inline table merging (merge tables with < 3 players into any other table that fits). This was crude — it didn't respect the standard gap-1 tournament rule and couldn't handle multi-directional rebalancing.
+
+**Fix:**
+- Imported `TableBalancer` + types (`BalancerTable`, `MoveInstruction`) into `index.ts`
+- Added `tableBalancer` instance to TournamentManager class
+- **Rewrote `checkTableBalance()`** to use TableBalancer:
+  - **Step 1**: `shouldBreakTable()` + `breakTable()` — dissolves tables with ≤3 players when others can absorb
+  - **Step 2**: `shouldRebalance()` + `calculateMoves()` — moves players to achieve gap ≤1 across all tables
+- Extracted `executePlayerMoves(moves)` helper — executes DB seat transfers for any MoveInstruction[]
+- Extracted `waitForHandComplete(tableId)` helper — polls for active hand completion before stopping engine
+- Both table-break and gap-rebalance paths now emit `table_rebalance` broadcast events
+
+**Files:** `server/src/index.ts`
+
+### FIX 155: Dynamic Table Creation During Rebuy/Re-Entry/Late-Reg Period
+
+**Problem:** `createTablesAndSeatPlayers()` only ran once during `start()`. If players joined via late registration or rebuy and the total player count exceeded table capacity, there was no way to create additional tables. Players would be crammed into existing tables beyond max capacity.
+
+**Fix:**
+- Added `checkDynamicTableExpansion()` method to TournamentManager
+- **Called every 5s** from the elimination checker cycle (after `checkTableBalance()`)
+- **Guards**: Only runs when:
+  - Prize pool NOT finalized (still in rebuy/late-reg period)
+  - `late_reg_levels` or `rebuy_levels` > 0 configured
+  - Current level < cutoff level
+  - Total playing > (tableCount × maxPerTable)
+- **Creates new tables**: Inserts into `tables` DB, creates `ServerTableEngine`, registers with `GameServer`, starts engine
+- **Tables use current blind level**: Not level 1 — uses the actual current blind/ante for the tournament's active level
+- **Post-expansion rebalance**: After creating tables, builds fresh `BalancerTable[]` snapshot and runs `TableBalancer.calculateMoves()` to distribute players optimally
+- **Broadcasts `table_expansion` event** with new table IDs, total tables, total players, and reason
+
+**Files:** `server/src/index.ts`

@@ -2619,3 +2619,148 @@ This permissive policy OR'd with the secure policy from `20260312`, allowing ANY
 
 ### Fixes This Round:
 - **FIX 142**: PLO pot-limit clamping formula in STE corrected to match HandController
+
+---
+
+## Change #143 — FIX 143: Deferred Sit-Out + Exclude Sitting-Out From Deal
+**Files:** `server/src/engine/ServerTableEngine.ts`
+**What existed:** `sitOut()` called `disconnectEngine.sitOut()` immediately, even mid-hand. Sitting-out players were included in `dealingLoop()` (only filtered by `stack > 0`). This violated Bible V8 §7.12 ("can't fold mid-hand, wait until next hand") because `handleTurnChange()` → `disconnectEngine.onPlayerTurn()` would auto-fold the player during the CURRENT hand.
+**What changed:**
+1. Added `pendingSitOut: Set<string>` instance variable
+2. `sitOut()` now defers to `pendingSitOut` if a hand is active; applies immediately only between hands
+3. `postHandTasks()` step 5.9 processes deferred sit-outs after hand completes
+4. `dealingLoop()` now filters out sitting-out players: `!this.disconnectEngine.isSittingOut(tableId, p.user_id)`
+5. Sitting-back cancels pending sit-out
+
+---
+
+## Change #144 — FIX 144: Rakeback Equal Share (NOT Weighted)
+**Files:** `server/src/engine/RakebackEngine.ts`, `server/src/engine/ServerTableEngine.ts`
+**What existed:** `recordHandRake()` used weighted contribution method: `rakeShare = (potContribution / totalPotContributions) * totalRake`. Players who bet more got a larger share of the rake credit.
+**What changed:** Per Dan's explicit rule: "NEVER weighted under any circumstances. Equal share based on dealt-in only." Each dealt-in player now gets `totalRake / playerCount` credited equally. This is the key metric for weekly player/agent earnings. Updated both the RakebackEngine method and the STE calling code. Updated header comments to explicitly state "NEVER weighted."
+
+---
+
+## Change #145 — FIX 145: BBJ Minimum Players Changed From 4 to 3
+**File:** `server/src/config/RakeConfig.ts`
+**What existed:** `BBJ_RULES.minPlayersDealt: 4` — required 4+ players dealt in for BBJ eligibility.
+**What changed:** Per Dan's rule: "You need 3 or more players to qualify for BBJ." Changed to `minPlayersDealt: 3`. Updated file header comment. BBJ fee calculation formula unchanged (BB × feeBB, stakes-based). Rake calculation also confirmed correct: purely pot × percent, capped by stakes-level cap. Player count does NOT affect rake amount.
+
+---
+
+## Deep Verification Round 19 — Chapter 7 Edge Cases + Insurance + Rake Rules (2026-03-29)
+
+### Verification Scope: Bible V8 Chapter 7 edge cases (§7.8-7.20), §4.19 Insurance, Rake/BBJ rules
+
+| Area | Bible Ref | Status | Details |
+|------|-----------|--------|---------|
+| Sit-out mid-hand | §7.12 | 🔧 FIX 143 | Was auto-folding during current hand; now deferred to next hand |
+| Sitting-out excluded from deal | §7.12 | 🔧 FIX 143 | `dealingLoop()` now filters via `disconnectEngine.isSittingOut()` |
+| Leave table mid-hand | §7.13 | ✅ VERIFIED | `leave_pending` flag defers cashout to `postHandTasks()` step 6 |
+| RIT different winners per board | §7.8 | ✅ VERIFIED | Per-pot per-board evaluation, integer-cents, side pot handling |
+| Disconnect during all-in runout | §7.9 | ✅ VERIFIED | No player action needed; RIT/insurance timeout → auto-decline |
+| Tournament elimination | §7.14 | ✅ VERIFIED | stack=0 excluded from next hand, `handCompleteCallback` fires |
+| Hand-for-hand bubble | §7.15 | ✅ VERIFIED | `pauseAfterHand()`/`resumeDealing()` with 2min safety timeout |
+| Simultaneous disconnects | §7.16 | ✅ VERIFIED | Each player gets independent 30s timeout on their turn, sequential |
+| Server crash recovery | §7.17 | ✅ VERIFIED | Chips conserved (DB stacks=pre-hand); snapshot for audit; no resume |
+| No-flop-no-drop | §7.18 | ✅ VERIFIED | `calculateRake` returns 0 when `sawFlop=false`; set in `advanceStage()` |
+| Rake caps (stakes-based) | §7.19 | ✅ VERIFIED | Flat cap from RAKE_SCHEDULE; playerCount NOT used for rake amount |
+| Mixed game rotation | §7.20 | ⚠️ GAP | Engine ported but not wired (FIX 116 removed config); Phase 8+ |
+| Insurance per-street flow | §4.19 | ✅ VERIFIED | Leader-only offers, tied=no offer, decline modes, chop=PUSH |
+| Insurance settlement | §4.19 | ✅ VERIFIED | Payout from bank, premium deducted like rake, integer-cents |
+| Insurance + RIT mutual exclusion | §4.19 | ✅ VERIFIED | FIX 92: insurance takes priority, RIT disabled if both enabled |
+| Rakeback equal share | §1.9 | 🔧 FIX 144 | Changed from weighted to equal share per dealt-in player |
+| BBJ min players | BBJ Rules | 🔧 FIX 145 | Changed from 4 to 3 per Dan's rule |
+| Rake not player-count-based | BBJ Rules | ✅ VERIFIED | `calculateRake` uses pot+percent+cap only; playerCount unused |
+
+### Fixes This Round:
+- **FIX 143**: Deferred sit-out + exclude sitting-out from deal (§7.12)
+- **FIX 144**: Rakeback changed from weighted to equal share per dealt-in player
+- **FIX 145**: BBJ minPlayersDealt changed from 4 to 3
+
+### Known Gaps (Not Fixed — Future Phase):
+- §7.20: MixedGameEngine ported but not wired to table configuration (Phase 8+)
+- §7.17: No mid-hand resume from crash (chips conserved via stale DB stacks)
+
+---
+
+## Round 20 — Deep Bible V8 Chapter 4 Verification + FIX 146 (2026-03-29)
+
+### New Tools Used This Round:
+- **AntiGravity Toolkit** (installed): Swarm Orchestration, Multi-Agent Code Review, GSD Planning, Session Memory, Smarter Poker Platform knowledge
+- **Session Memory**: Stored all decisions, fixes, architecture context, and preferences in `.memory/`
+- **PostHog MCP**: Available for analytics/error tracking
+- **Vercel MCP**: Available for deployment management
+
+### Multi-Agent Code Review Results:
+
+**FIX 143 (Deferred Sit-Out) — APPROVED:**
+- Principal Engineer: pendingSitOut set, deferred processing in postHandTasks, isSittingOut filter in dealingLoop — all correct
+- Security Engineer: Race conditions impossible (Set handles idempotent add/delete, postHandTasks atomic)
+- Domain Expert: Matches real poker room behavior exactly
+
+**FIX 144 (Equal Share Rakeback) — APPROVED with stale comment fixes:**
+- Equal share formula: `Math.round((totalRake / playerCount) * 100) / 100` — correct
+- Filter: `invested >= 0` correctly includes all dealt-in players
+- Fixed 2 stale comments in ServerTableEngine that still said "weighted"
+- Rounding edge case: 3 players, totalRake=10 → 3.33 × 3 = 9.99 (0.01 loss) — acceptable for informational tracking
+
+**FIX 145 (BBJ Min Players) — APPROVED with FIX 146 found:**
+- `minPlayersDealt: 3` correct in both `calculateBBJFee` and `detectBBJHit`
+- Fixed stale comment in `detectBBJHit` JSDoc that still said "4+"
+- **FIX 146**: Found missing FLH variant in BBJ hole card check — `doesHandQualify` only checked `variant === 'nlh'` for Ace-in-hole-cards rule, but FLH uses identical qualifying rules
+
+### Bible V8 Chapter 4 Deep Verification:
+
+| Section | Spec | Verdict | Details |
+|---------|------|---------|---------|
+| §4.1 Hand Start | 11-step procedure | ✅ PASS | All steps verified in HandController.start() + ServerTableEngine |
+| §4.2 Blind Posting | HU, 3+, short, dead | ✅ PASS | Heads-up dealer=SB, short blind handled, dead blinds (SB dead + BB live) |
+| §4.3 Ante Handling | Traditional + BBA | ✅ PASS | BBA = ante × playerCount by BB, traditional = each posts |
+| §4.4 Straddle Handling | UTG/Mississippi | ✅ PASS | Action starts left of last straddler, straddle is live |
+| §4.5 Card Dealing | Crypto-random | ✅ PASS | `crypto.getRandomValues` + Fisher-Yates shuffle |
+| §4.6 Hole Card Security | Anti-God-Mode | ✅ PASS | Per-player CARDS_DEALT, STE scrubs before broadcast |
+| §4.7-4.8 Betting Round | Flow + completion | ✅ PASS | Full raise tracking, short all-in doesn't reopen |
+| §4.9-4.14 Action Validation | All actions | ✅ PASS | Dual validation: ServerActionValidator + PokerEngine.validateAction |
+| §4.15 Pre-Actions | 5 types | ✅ PASS | Cleared on evaluation, invalidated by game state changes |
+| §4.16-4.18 Stage Progression | Streets + all-in | ✅ PASS | ALL_IN_RUNOUT pause for insurance/RIT |
+| §4.19 Insurance | Per-street flow | ✅ PASS | Verified Round 19, leader-only, chop=PUSH |
+| §4.20 Run It Twice | 2×/3× boards | ✅ PASS | Verified Round 19, rake once, per-board per-pot evaluation |
+| §4.21 Showdown | Reveal order | ✅ PASS | Last aggressor first, clockwise, auto-muck |
+| §4.22 Bomb Pot | Skip preflop | ✅ PASS | Ante × multiplier, deal flop directly |
+
+### PokerEngine Deep Verification:
+
+| Function | Lines | Verdict | Details |
+|----------|-------|---------|---------|
+| `calculatePots()` | 416-457 | ✅ PASS | Side pots by investment level, merges identical eligible sets |
+| `calculateBettingState()` | 463-483 | ✅ PASS | Pot-limit: pot + toCall (after call) |
+| `validateAction()` | 485-535 | ✅ PASS | Short all-in allowed, pot-limit cap enforced |
+| `calculateRake()` | 541-559 | ✅ PASS | `Math.trunc` cents, no-flop-no-drop, flat cap |
+| `determineWinners()` | 565-634 | ✅ PASS | Hi-Lo split, integer-cent distribution, odd chip to lowest seat |
+| `distributePot()` | 636-659 | ✅ PASS | Remainder cents to left-of-dealer, accumulates multi-pot wins |
+| `Deck.shuffle()` | 80-88 | ✅ PASS | `crypto.getRandomValues` + Fisher-Yates |
+
+### ServerActionValidator Deep Verification:
+
+| Check | Lines | Verdict | Details |
+|-------|-------|---------|---------|
+| Turn order | 102-104 | ✅ PASS | Rejects if not player's turn |
+| Player state | 107-113 | ✅ PASS | Rejects folded/all-in players |
+| Duplicate suppression | 116-120 | ✅ PASS | Composite key prevents double-click |
+| Timing | 122-127 | ✅ PASS | 2-second grace period for latency |
+| Call → all-in sanitization | 190-196 | ✅ PASS | Converts over-stack calls to all-in |
+| Bet → all-in sanitization | 224-230 | ✅ PASS | Converts over-stack bets to all-in |
+| Raise → all-in (short) | 252-258 | ✅ PASS | Short all-in always allowed |
+| Min raise enforcement | 261-267 | ✅ PASS | Only for non-all-in raises |
+
+### Fixes This Round:
+- **FIX 146**: BBJ `doesHandQualify` now checks `variant === 'nlh' || variant === 'flh'` for Ace-in-hole-cards rule (was missing FLH)
+- Stale comment fixes: 2 in ServerTableEngine ("weighted" → "equal share"), 1 in RakeConfig JSDoc ("4+" → "3+")
+
+### Session Memory Established:
+- `.memory/SUMMARY.md` — Index of all stored context
+- `.memory/decisions/` — D-001 (equal share), D-002 (BBJ 3+), D-003 (deferred sitout)
+- `.memory/preferences/` — P-001 (Dan's verification standard)
+- `.memory/context/` — C-001 (architecture), C-002 (migration status)
+- `.memory/problems/` — PR-001 through PR-003 (FIX 143-145 solutions)

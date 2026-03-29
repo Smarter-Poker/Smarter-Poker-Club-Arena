@@ -3,8 +3,9 @@
  *  RAKEBACK ENGINE — Player Rake Contribution Tracking & Rebate System
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * Tracks per-player contributed rake and distributes rakeback:
- * - Weighted contributed method: only players who put chips in the pot
+ * Tracks per-player rake credit and distributes rakeback:
+ * - FIX 144: EQUAL share method — each dealt-in player gets 1/N of total rake
+ *   (NOT weighted by pot contribution — NEVER weighted under any circumstances)
  * - Volume-based tier system for rakeback percentage
  * - Periodic settlement (daily/weekly/monthly)
  * - Supabase persistence for rakeback_periods table
@@ -91,7 +92,10 @@ export class RakebackEngine {
 
   /**
    * Record rake contributions from a hand.
-   * Uses the weighted contributed method.
+   * FIX 144: EQUAL SHARE method — each dealt-in player gets credited with an
+   * equal portion of the total rake generated for that hand.
+   * Rake is taken from the POT (not per player), but each dealt-in player
+   * gets 1/N of the rake credited for rakeback tracking purposes.
    */
   recordHandRake(
     clubId: string,
@@ -100,13 +104,18 @@ export class RakebackEngine {
     totalPotContributions: number
   ): void {
     const config = this.configs.get(clubId) || this.DEFAULT_CONFIG;
-    if (!config.enabled || totalRake <= 0 || totalPotContributions <= 0) return;
+    if (!config.enabled || totalRake <= 0) return;
 
-    for (const [playerId, potContribution] of contributions) {
-      if (potContribution <= 0) continue;
+    // FIX 144: Count dealt-in players (anyone in the contributions map with any investment)
+    const dealtInPlayers = [...contributions.entries()].filter(([, invested]) => invested >= 0);
+    const playerCount = dealtInPlayers.length;
+    if (playerCount === 0) return;
 
-      const rakeShare = (potContribution / totalPotContributions) * totalRake;
-      const roundedShare = Math.round(rakeShare * 100) / 100;
+    // Equal share: each dealt-in player gets totalRake / playerCount
+    const equalShare = Math.round((totalRake / playerCount) * 100) / 100;
+
+    for (const [playerId] of dealtInPlayers) {
+      const roundedShare = equalShare;
 
       const key = `${clubId}:${playerId}`;
       let record = this.playerRecords.get(key);

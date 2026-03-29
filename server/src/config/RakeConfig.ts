@@ -14,7 +14,7 @@
  *
  * BBJ RULES:
  *   - Pot must be >= 10BB
- *   - 4+ players must be dealt in preflop
+ *   - 3+ players must be dealt in preflop (FIX 145)
  *   - Not available for Double/Triple Board games
  *   - If run it multiple times, only first runout counts
  *   - If multiple losers qualify, prize split proportionally
@@ -307,7 +307,7 @@ export const BBJ_QUALIFYING_HANDS: Record<string, BBJQualifyingHand> = {
 
 export const BBJ_RULES = {
   minPotBB: 10,
-  minPlayersDealt: 4,
+  minPlayersDealt: 3, // FIX 145: BBJ requires 3+ players dealt in (not 4) per Dan's rule
   excludeDoubleBoard: true,
   onlyFirstRunout: true,
   splitIfMultipleQualify: true,
@@ -479,7 +479,7 @@ export interface BBJDetectionResult {
  *
  * Additional rules:
  * - Pot must be >= 10 BB
- * - 4+ players must be dealt in preflop
+ * - 3+ players must be dealt in preflop (FIX 145)
  * - Not available for Double/Triple Board games
  * - If run it multiple times, only first runout counts
  * - If multiple losers qualify, prize split proportionally
@@ -588,9 +588,9 @@ function doesHandQualify(
       // Pair must be Jacks (11) or better
       if (pairRank < 11) return false;
 
-      // NLH rule: Player must have at least one Ace in hole cards
-      if (variant === 'nlh') {
-        // FIX 116: flh removed from GameVariant
+      // NLH/FLH rule: Player must have at least one Ace in hole cards
+      // FIX 146: Both NLH and FLH require this check (same qualifying rules)
+      if (variant === 'nlh' || variant === 'flh') {
         const hasAceInHole = holeCards.some((c) => c.rank === 'A' || c.rank === '14');
         if (!hasAceInHole) return false;
       }

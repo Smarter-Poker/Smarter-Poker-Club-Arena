@@ -25,6 +25,8 @@ import { HorseFleetManager } from './services/HorseFleetManager.js';
 import { TournamentRecurringService } from './services/TournamentRecurringService.js';
 import { HorseLifecycleManager } from './services/HorseLifecycleManager.js';
 import { AutoRebuyService } from './services/AutoRebuyService.js';
+// FIX 151: Import ChipRaceEngine for tournament blind level denomination changes
+import { ChipRaceEngine } from './engine/ChipRaceEngine.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONFIGURATION
@@ -129,15 +131,32 @@ class GameServer {
 
   getStatus() {
     let totalHands = 0;
-    for (const engine of this.tableEngines.values()) {
+    // FIX 153: Aggregate telemetry from all table engines for health endpoint
+    const tableMetrics: any[] = [];
+    for (const [tableId, engine] of this.tableEngines) {
       totalHands += engine.getHandCount();
+      const snapshot = engine.getTelemetrySnapshot();
+      if (snapshot.tables.length > 0) {
+        tableMetrics.push(...snapshot.tables);
+      }
     }
+    const avgHandDurationMs = tableMetrics.length > 0
+      ? Math.round(tableMetrics.reduce((s, t) => s + t.avgHandDurationMs, 0) / tableMetrics.length)
+      : 0;
+    const avgHandsPerHour = tableMetrics.length > 0
+      ? Math.round(tableMetrics.reduce((s, t) => s + t.handsPerHour, 0) / tableMetrics.length)
+      : 0;
     return {
       running: this.running,
       uptime: Math.floor((Date.now() - this.startTime) / 1000),
       activeTables: this.tableEngines.size,
       activeTournaments: this.tournamentEngines.size,
       totalHandsDealt: totalHands,
+      telemetry: {
+        avgHandDurationMs,
+        avgHandsPerHour,
+        tablesWithMetrics: tableMetrics.length,
+      },
     };
   }
 
@@ -623,6 +642,10 @@ class TournamentManager {
   private prizePoolFinalized: boolean = false;
   // Tournament metadata cache
   private tournamentCache: any = null;
+  // FIX 151: ChipRaceEngine for denomination removal on level-up
+  private chipRaceEngine: ChipRaceEngine = new ChipRaceEngine((event) => {
+    console.log(`[Tournament:${this.tournamentId.slice(0, 8)}] ChipRace: ${event.type}`);
+  });
   // Reusable broadcast channel (prevents memory leak from creating per-event)
   private broadcastChannel: any = null;
   private broadcastReady: boolean = false;
@@ -1255,6 +1278,54 @@ class TournamentManager {
           console.error(
             `[Tournament:${this.tournamentId.slice(0, 8)}] Level persist failed: ${levelErr.message}`
           );
+
+        // FIX 151: Chip race when denomination changes on level-up
+        // If the new small blind is a larger denomination than the previous level's,
+        // remove the old denomination via fair chip-race lottery.
+        const prevLevelData = blindStructure[prevLevel] || blindStructure[0];
+        const prevSmallBlind = prevLevelData?.smallBlind || level.smallBlind;
+        if (level.smallBlind > prevSmallBlind) {
+          try {
+            // Gather all tournament player stacks across all tables
+            const playerStacks = new Map<string, number>();
+            for (const tableId of this.tableEngines.keys()) {
+              const { data: seats } = await supabase
+                .from('table_seats')
+                .select('user_id, stack')
+                .eq('table_id', tableId)
+                .is('left_at', null);
+              for (const seat of seats || []) {
+                if (seat.stack > 0) playerStacks.set(seat.user_id, seat.stack);
+              }
+            }
+            if (playerStacks.size >= 2) {
+              const result = this.chipRaceEngine.executeChipRace(
+                this.tournamentId,
+                playerStacks,
+                prevSmallBlind,
+                level.smallBlind
+              );
+              console.log(
+                `[Tournament:${this.tournamentId.slice(0, 8)}] Chip race: removed ${prevSmallBlind} denomination, ${result.totalNewChipsDistributed} chips redistributed to ${result.players.filter(p => p.chipsAwarded > 0).length} players`
+              );
+              // Update table_seats with new stacks after chip race
+              for (const [userId, newStack] of playerStacks) {
+                await supabase
+                  .from('table_seats')
+                  .update({ stack: newStack })
+                  .eq('user_id', userId)
+                  .is('left_at', null);
+              }
+              await this.broadcast('chip_race', {
+                removedDenomination: prevSmallBlind,
+                newSmallestDenomination: level.smallBlind,
+                playersAffected: result.players.filter(p => p.chipsAwarded > 0).length,
+              });
+            }
+          } catch (crErr) {
+            console.error(`[Tournament:${this.tournamentId.slice(0, 8)}] Chip race error:`, crErr);
+          }
+        }
 
         // Broadcast level_up event to all table pages
         await this.broadcast('level_up', {

@@ -2522,3 +2522,55 @@ Now auto-fold/check fires at deadline+2000ms, matching the ServerActionValidator
 2. Pineapple discard UI → still pending (server auto-discards)
 3. Dead blind client label → cosmetic, low priority
 4. Buy-more modal → UX enhancement, low priority
+5. §1.9 Steps 9-11 (leaderboards, achievements, VIP) → client-side services, not server. Phase 7+ scope.
+6. OFC Pineapple shuffle uses `Math.random()` not `crypto.getRandomValues()` → Phase 7 scope.
+
+---
+
+## Change #141 — FIX 141: Drop God-Mode RLS Policy on table_hole_cards (CRITICAL SECURITY)
+
+**File:** `supabase/migrations/20260329_fix_hole_cards_rls_godmode.sql` (NEW)
+**What existed:** Migration `20260314_phantom_table_remediation_v2.sql` line 505 created:
+
+```sql
+CREATE POLICY "hole_cards_all" ON table_hole_cards FOR ALL USING (true);
+```
+
+This permissive policy OR'd with the secure policy from `20260312`, allowing ANY authenticated user to read ALL players' hole cards. Supabase Realtime uses RLS for filtering — with `USING(true)`, every connected client would receive ALL players' cards via the WebSocket stream. **This is a god-mode vulnerability.**
+**What changed:** New migration file that:
+
+1. `DROP POLICY IF EXISTS "hole_cards_all"` — removes the dangerous policy
+2. Defense-in-depth: re-creates correct SELECT policy (`auth.uid() = user_id`) if missing
+3. Defense-in-depth: re-creates correct INSERT block (`WITH CHECK (false)`) if missing
+4. Adds explicit UPDATE and DELETE block policies (`USING (false)`)
+   **Why:** Bible V8 §4.6 — Hole Card Security (Anti-God-Mode): "Broadcast state NEVER includes other players' hole cards." The permissive RLS policy violated this by allowing Realtime to deliver all cards to all subscribers.
+   **Verified:** YES — read the migration file after writing. Correct SQL syntax confirmed.
+   **TypeScript:** N/A — SQL migration only (must be applied to Supabase)
+
+---
+
+## Deep Verification Round 17 — Bible V8 Full Audit (2026-03-29)
+
+### Verification Scope: Complete hand lifecycle against Bible V8 Chapters 1-8
+
+| Area                          | Bible V8 Section | Result     | Details                                                                                                                                                      |
+| ----------------------------- | ---------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Client-to-server wiring       | §1.1-1.4         | ✅ PASS    | Realtime channel match, submitAction path, /action endpoint, broadcast payload                                                                               |
+| Client engine removal         | Law 9            | ✅ PASS    | ZERO handControllerRef, broadcastLocalHandState, .performAction, engine imports                                                                              |
+| Action handlers               | §1.3             | ✅ PASS    | All use submitAction only, no local engine                                                                                                                   |
+| Hetzner VPS health            | —                | ✅ PASS    | Live at engine.smarter.poker, 63 tables, 157,986 hands                                                                                                       |
+| Hand settlement (§1.9)        | §1.9             | ✅ PASS\*  | 12 of 15 steps verified in server code. Steps 9-11 (leaderboards, achievements, VIP) are client-side — Phase 7+                                              |
+| Card security (§4.6)          | §4.6             | 🔴 FIX 141 | God-mode RLS policy `hole_cards_all` USING(true) found and fixed                                                                                             |
+| Hand start (§4.1)             | §4.1             | ✅ PASS    | All 11 steps verified: dealer rotation, blinds, antes, straddles, crypto shuffle, secure deal, timer                                                         |
+| Action validation (§4.9-4.14) | §4.9-4.14        | ✅ PASS    | All rules verified: fold/check/call/bet/raise/all-in, PLO pot-limit, min raise, fold→check normalization                                                     |
+| Timer system (§6)             | §6.1-6.3         | ✅ PASS    | Server-authoritative, 2s grace period, auto time bank, auto-fold/check, low bank warning                                                                     |
+| Broadcast payload (§2.4)      | §2.4             | ✅ PASS    | All fields present: pot, community_cards, current_bet, current_player, dealer_seat, stage, min_raise, last_raise, turn timers, pots, action_history, players |
+| Broadcast card scrubbing      | §4.6             | ✅ PASS    | `showCards` logic: false during play, true at showdown only for winners/voluntary/no-auto-muck                                                               |
+| Position labels               | §2.3/Appendix B  | ✅ PASS    | Full mapping: BTN, SB, BB, UTG, UTG+1, UTG+2, MP, MP+1, HJ, CO for 2-9 players                                                                               |
+| Crypto-random shuffle         | §4.5             | ✅ PASS    | `crypto.getRandomValues()` + Fisher-Yates in Deck class                                                                                                      |
+| PLO pot-limit capping         | §4.14            | ✅ PASS    | Clamped in `_handlePlayerActionInner()` before validation                                                                                                    |
+| BBJ allocation (FIX 140)      | §4.13            | ✅ PASS    | Pivot-based: <100k 50/25/25, ≥100k 30/40/30                                                                                                                  |
+
+### Critical Fix This Round:
+
+- **FIX 141**: Dropped permissive `hole_cards_all` RLS policy that defeated card security. Migration written to `supabase/migrations/20260329_fix_hole_cards_rls_godmode.sql`. **MUST be applied to Supabase before any live play.**

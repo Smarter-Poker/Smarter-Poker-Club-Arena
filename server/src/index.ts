@@ -27,6 +27,8 @@ import { HorseLifecycleManager } from './services/HorseLifecycleManager.js';
 import { AutoRebuyService } from './services/AutoRebuyService.js';
 // FIX 151: Import ChipRaceEngine for tournament blind level denomination changes
 import { ChipRaceEngine } from './engine/ChipRaceEngine.js';
+// FIX 154: Import TableBalancer for proper tournament table rebalancing
+import { TableBalancer, type BalancerTable, type MoveInstruction } from './engine/TableBalancer.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONFIGURATION
@@ -645,6 +647,10 @@ class TournamentManager {
   // FIX 151: ChipRaceEngine for denomination removal on level-up
   private chipRaceEngine: ChipRaceEngine = new ChipRaceEngine((event) => {
     console.log(`[Tournament:${this.tournamentId.slice(0, 8)}] ChipRace: ${event.type}`);
+  });
+  // FIX 154: TableBalancer for proper gap-1 rebalancing across tournament tables
+  private tableBalancer: TableBalancer = new TableBalancer((event) => {
+    console.log(`[Tournament:${this.tournamentId.slice(0, 8)}] TableBalance: ${event.type} — ${(event as any).moveCount || 0} moves`);
   });
   // Reusable broadcast channel (prevents memory leak from creating per-event)
   private broadcastChannel: any = null;
@@ -1574,6 +1580,9 @@ class TournamentManager {
 
         await this.checkTableBalance();
 
+        // FIX 155: Check if new tables need to be created during rebuy/late-reg period
+        await this.checkDynamicTableExpansion();
+
         // ── HAND-FOR-HAND BUBBLE MODE ──
         // Multi-table tournaments only (not Spin/SNG single-table)
         if (this.tableEngines.size > 1 && this.tournamentCache) {
@@ -2370,97 +2379,337 @@ class TournamentManager {
 
     if (this.tableEngines.size <= 1) return;
 
-    const tableCounts: { tableId: string; count: number }[] = [];
+    // ── FIX 154: Build BalancerTable[] from live DB state ──
+    const balancerTables: BalancerTable[] = [];
     for (const tableId of this.tableEngines.keys()) {
-      const { count } = await supabase
+      const { data: seats } = await supabase
         .from('table_seats')
-        .select('*', { count: 'exact', head: true })
+        .select('user_id, stack, seat_number')
         .eq('table_id', tableId)
         .is('left_at', null);
-      tableCounts.push({ tableId, count: count || 0 });
+
+      const { data: tableRow } = await supabase
+        .from('tables')
+        .select('max_players')
+        .eq('id', tableId)
+        .maybeSingle();
+
+      balancerTables.push({
+        tableId,
+        playerCount: (seats || []).length,
+        maxSeats: tableRow?.max_players || 9,
+        players: (seats || []).map((s: any) => ({
+          userId: s.user_id,
+          stack: s.stack || 0,
+          seat: s.seat_number || 0,
+        })),
+      });
     }
 
-    for (const tc of tableCounts) {
-      if (tc.count < 3 && tc.count > 0 && tableCounts.length > 1) {
-        const target = tableCounts.find((t) => t.tableId !== tc.tableId && t.count > 0);
-        if (target && target.count + tc.count <= 9) {
-          console.log(`[Tournament:${this.tournamentId.slice(0, 8)}] Merging tables`);
+    // ── STEP 1: Check if any table should be broken (merged into others) ──
+    for (const bt of balancerTables) {
+      if (this.tableBalancer.shouldBreakTable(bt, balancerTables)) {
+        const otherTables = balancerTables.filter((t) => t.tableId !== bt.tableId);
+        const breakMoves = this.tableBalancer.breakTable(bt, otherTables);
 
-          const { data: seats } = await supabase
-            .from('table_seats')
-            .select('user_id, stack, seat_number')
-            .eq('table_id', tc.tableId)
-            .is('left_at', null);
+        if (breakMoves.length > 0 && breakMoves.length === bt.playerCount) {
+          console.log(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Breaking table ${bt.tableId.slice(0, 8)} — moving ${breakMoves.length} players`
+          );
+          await this.executePlayerMoves(breakMoves);
 
-          let nextSeat = target.count + 1;
-          for (const seat of seats || []) {
-            // Mark old seat as left FIRST to prevent duplicate active seats
-            await supabase
-              .from('table_seats')
-              .update({ left_at: new Date().toISOString() })
-              .eq('table_id', tc.tableId)
-              .eq('user_id', seat.user_id)
-              .is('left_at', null);
-
-            // Then insert new seat at target table
-            await supabase.from('table_seats').insert({
-              table_id: target.tableId,
-              user_id: seat.user_id,
-              seat_number: nextSeat++,
-              stack: seat.stack,
-              joined_at: new Date().toISOString(),
-            });
-
-            // Update tournament_players table_id
-            await supabase
-              .from('tournament_players')
-              .update({ table_id: target.tableId })
-              .eq('tournament_id', this.tournamentId)
-              .eq('user_id', seat.user_id);
-          }
-
-          const engine = this.tableEngines.get(tc.tableId);
+          // Close the broken table's engine
+          const engine = this.tableEngines.get(bt.tableId);
           if (engine) {
-            // Wait for any active hand to complete before stopping
-            // Check if a hand is in progress by looking for an active hand
-            const { data: activeHand } = await supabase
-              .from('hand_history')
-              .select('id')
-              .eq('table_id', tc.tableId)
-              .is('ended_at', null)
-              .maybeSingle();
-
-            if (activeHand) {
-              // Hand in progress — wait up to 30 seconds for it to finish
-              let waited = 0;
-              while (waited < 30000 && this.running) {
-                await new Promise((r) => setTimeout(r, 2000));
-                waited += 2000;
-                const { data: still } = await supabase
-                  .from('hand_history')
-                  .select('id')
-                  .eq('id', activeHand.id)
-                  .is('ended_at', null)
-                  .maybeSingle();
-                if (!still) break; // Hand completed
-              }
-            }
+            await this.waitForHandComplete(bt.tableId);
             await engine.stop();
           }
-          this.tableEngines.delete(tc.tableId);
-          await supabase.from('tables').update({ status: 'closed' }).eq('id', tc.tableId);
+          this.tableEngines.delete(bt.tableId);
+          await supabase.from('tables').update({ status: 'closed' }).eq('id', bt.tableId);
 
-          // Broadcast table_rebalance so clients refresh seats
           await this.broadcast('table_rebalance', {
-            closedTableId: tc.tableId,
-            targetTableId: target.tableId,
-            movedPlayers: (seats || []).length,
+            closedTableId: bt.tableId,
+            movedPlayers: breakMoves.length,
+            reason: 'table_break',
           });
 
-          break; // One merge per cycle
+          break; // One break per cycle to avoid stale data
         }
       }
     }
+
+    // ── STEP 2: Standard gap-1 rebalancing across remaining tables ──
+    // Re-fetch after potential break (tables may have changed)
+    if (this.tableEngines.size > 1) {
+      const freshTables: BalancerTable[] = [];
+      for (const tableId of this.tableEngines.keys()) {
+        const { data: seats } = await supabase
+          .from('table_seats')
+          .select('user_id, stack, seat_number')
+          .eq('table_id', tableId)
+          .is('left_at', null);
+
+        const { data: tableRow } = await supabase
+          .from('tables')
+          .select('max_players')
+          .eq('id', tableId)
+          .maybeSingle();
+
+        freshTables.push({
+          tableId,
+          playerCount: (seats || []).length,
+          maxSeats: tableRow?.max_players || 9,
+          players: (seats || []).map((s: any) => ({
+            userId: s.user_id,
+            stack: s.stack || 0,
+            seat: s.seat_number || 0,
+          })),
+        });
+      }
+
+      if (this.tableBalancer.shouldRebalance(freshTables)) {
+        const moves = this.tableBalancer.calculateMoves(freshTables);
+        if (moves.length > 0) {
+          const score = this.tableBalancer.evaluateBalance(freshTables);
+          console.log(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Rebalancing: ${moves.length} moves (gap was ${score.gap}, target ≤1)`
+          );
+          await this.executePlayerMoves(moves);
+
+          await this.broadcast('table_rebalance', {
+            moveCount: moves.length,
+            reason: 'gap_balance',
+          });
+        }
+      }
+    }
+  }
+
+  /**
+   * FIX 154: Execute a set of player move instructions (used by both table break + rebalance).
+   * Moves player seats in DB: marks old seat as left, inserts new seat, updates tournament_players.
+   */
+  private async executePlayerMoves(moves: MoveInstruction[]): Promise<void> {
+    for (const move of moves) {
+      try {
+        // Mark old seat as left FIRST to prevent duplicate active seats
+        await supabase
+          .from('table_seats')
+          .update({ left_at: new Date().toISOString() })
+          .eq('table_id', move.fromTableId)
+          .eq('user_id', move.playerId)
+          .is('left_at', null);
+
+        // Get the player's current stack from the old seat
+        // (the move instruction has stack info from the snapshot, but DB is truth)
+        const { data: oldSeat } = await supabase
+          .from('table_seats')
+          .select('stack')
+          .eq('table_id', move.fromTableId)
+          .eq('user_id', move.playerId)
+          .order('left_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        // Insert new seat at target table
+        await supabase.from('table_seats').insert({
+          table_id: move.toTableId,
+          user_id: move.playerId,
+          seat_number: move.toSeat,
+          stack: oldSeat?.stack || 0,
+          joined_at: new Date().toISOString(),
+        });
+
+        // Update tournament_players table_id
+        await supabase
+          .from('tournament_players')
+          .update({ table_id: move.toTableId })
+          .eq('tournament_id', this.tournamentId)
+          .eq('user_id', move.playerId);
+
+        console.log(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Moved ${move.playerId.slice(0, 8)}: table ${move.fromTableId.slice(0, 8)} seat ${move.fromSeat} → table ${move.toTableId.slice(0, 8)} seat ${move.toSeat}`
+        );
+      } catch (moveErr) {
+        console.error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Move failed for ${move.playerId.slice(0, 8)}:`,
+          moveErr
+        );
+      }
+    }
+  }
+
+  /**
+   * Wait for any active hand on a table to complete before stopping engine.
+   * Polls every 2s, up to 30s timeout.
+   */
+  private async waitForHandComplete(tableId: string): Promise<void> {
+    const { data: activeHand } = await supabase
+      .from('hand_history')
+      .select('id')
+      .eq('table_id', tableId)
+      .is('ended_at', null)
+      .maybeSingle();
+
+    if (activeHand) {
+      let waited = 0;
+      while (waited < 30000 && this.running) {
+        await new Promise((r) => setTimeout(r, 2000));
+        waited += 2000;
+        const { data: still } = await supabase
+          .from('hand_history')
+          .select('id')
+          .eq('id', activeHand.id)
+          .is('ended_at', null)
+          .maybeSingle();
+        if (!still) break;
+      }
+    }
+  }
+
+  /**
+   * FIX 155: Dynamic table creation during rebuy/re-entry/late-reg period.
+   * When player count exceeds (tableCount × maxPerTable), create new tables
+   * and rebalance players across all tables using TableBalancer.
+   *
+   * Called from the elimination checker cycle so it runs every 5s.
+   */
+  private async checkDynamicTableExpansion(): Promise<void> {
+    // Only expand during rebuy/late-reg period (before prize pool is finalized)
+    if (this.prizePoolFinalized) return;
+
+    const lateRegLevelCap =
+      this.tournamentCache?.late_reg_levels ?? this.tournamentCache?.rebuy_levels ?? 0;
+    if (lateRegLevelCap <= 0) return; // No late reg/rebuy configured
+    if (this.currentLevel >= lateRegLevelCap) return; // Past the cutoff
+
+    // Count active playing players across all tables
+    const { count: totalPlaying } = await supabase
+      .from('tournament_players')
+      .select('*', { count: 'exact', head: true })
+      .eq('tournament_id', this.tournamentId)
+      .eq('status', 'playing');
+
+    if (!totalPlaying || totalPlaying <= 0) return;
+
+    // Determine max per table from tournament config
+    const tType = (this.tournamentCache?.tournament_type || '').toUpperCase();
+    const variant = (this.tournamentCache?.variant || '').toLowerCase();
+    let maxPerTable = this.tournamentCache?.max_players || 9;
+    if (variant === 'spin' || tType === 'SPIN') {
+      maxPerTable = 3;
+    } else if (variant === 'sng' || tType === 'SNG') {
+      maxPerTable = Math.min(this.tournamentCache?.max_players || 6, 9);
+    } else {
+      maxPerTable = 9;
+    }
+
+    const currentTableCount = this.tableEngines.size;
+    const totalCapacity = currentTableCount * maxPerTable;
+
+    // Only create new tables when we're actually over capacity
+    if (totalPlaying <= totalCapacity) return;
+
+    const neededTables = Math.ceil(totalPlaying / maxPerTable);
+    const tablesToCreate = neededTables - currentTableCount;
+    if (tablesToCreate <= 0) return;
+
+    console.log(
+      `[Tournament:${this.tournamentId.slice(0, 8)}] DYNAMIC TABLE EXPANSION: ${totalPlaying} players across ${currentTableCount} tables (capacity ${totalCapacity}) — creating ${tablesToCreate} new table(s)`
+    );
+
+    const blindStructure = this.tournamentCache?.blind_structure || [];
+    const currentLevelData = blindStructure[Math.min(this.currentLevel, blindStructure.length - 1)] || { smallBlind: 10, bigBlind: 20, ante: 0 };
+
+    const newTableIds: string[] = [];
+    for (let i = 0; i < tablesToCreate; i++) {
+      const tableNumber = currentTableCount + i + 1;
+
+      const { data: newTable, error: createErr } = await supabase
+        .from('tables')
+        .insert({
+          club_id: this.tournamentCache?.club_id,
+          tournament_id: this.tournamentId,
+          name: `${this.tournamentCache?.name || 'Tournament'} - Table ${tableNumber}`,
+          game_type: 'tournament',
+          game_variant: this.tournamentCache?.game_type?.toLowerCase() || 'nlh',
+          stakes: `${currentLevelData.smallBlind}/${currentLevelData.bigBlind}`,
+          small_blind: currentLevelData.smallBlind,
+          big_blind: currentLevelData.bigBlind,
+          ante: currentLevelData.ante || 0,
+          min_buy_in: 0,
+          max_buy_in: 0,
+          max_players: maxPerTable,
+          current_players: 0,
+          status: 'running',
+        })
+        .select()
+        .single();
+
+      if (createErr || !newTable) {
+        console.error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Failed to create expansion table:`,
+          createErr
+        );
+        continue;
+      }
+
+      // Create engine + register with game server
+      const engine = new ServerTableEngine(newTable.id);
+      this.tableEngines.set(newTable.id, engine);
+      this.gameServer.registerTableEngine(newTable.id, engine);
+      engine.start().catch((err) =>
+        console.error(`[Tournament:${this.tournamentId.slice(0, 8)}] Expansion table engine error:`, err)
+      );
+      newTableIds.push(newTable.id);
+
+      console.log(
+        `[Tournament:${this.tournamentId.slice(0, 8)}] Created expansion table ${newTable.id.slice(0, 8)} (Table ${tableNumber})`
+      );
+    }
+
+    if (newTableIds.length === 0) return;
+
+    // Now rebalance players across ALL tables (existing + new) using TableBalancer
+    // Build fresh BalancerTable snapshot
+    const allTables: BalancerTable[] = [];
+    for (const tableId of this.tableEngines.keys()) {
+      const { data: seats } = await supabase
+        .from('table_seats')
+        .select('user_id, stack, seat_number')
+        .eq('table_id', tableId)
+        .is('left_at', null);
+
+      allTables.push({
+        tableId,
+        playerCount: (seats || []).length,
+        maxSeats: maxPerTable,
+        players: (seats || []).map((s: any) => ({
+          userId: s.user_id,
+          stack: s.stack || 0,
+          seat: s.seat_number || 0,
+        })),
+      });
+    }
+
+    // Calculate optimal moves to balance all tables
+    if (this.tableBalancer.shouldRebalance(allTables)) {
+      const moves = this.tableBalancer.calculateMoves(allTables);
+      if (moves.length > 0) {
+        console.log(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Post-expansion rebalance: ${moves.length} player moves`
+        );
+        await this.executePlayerMoves(moves);
+      }
+    }
+
+    // Broadcast expansion event
+    await this.broadcast('table_expansion', {
+      newTableIds,
+      totalTables: this.tableEngines.size,
+      totalPlayers: totalPlaying,
+      reason: 'rebuy_reentry_overflow',
+    });
   }
 }
 

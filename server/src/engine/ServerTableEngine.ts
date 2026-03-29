@@ -38,6 +38,7 @@ import {
   getFullRakeConfig,
   calculateBBJFee,
   detectBBJHit,
+  getPlayerCountCaps,
   type BBJDetectionResult,
   type ServerRakeConfigResult,
 } from '../config/RakeConfig.js';
@@ -1568,6 +1569,8 @@ export class ServerTableEngine {
         percent: fullRakeConfig.rakePercent,
         cap: fullRakeConfig.rakeCap,
         noFlopNoDrop: true,
+        // FIX 166: Bible V8 §7.19 — player-count-based rake caps (heads-up = 50%, 3-handed = 67%)
+        playerCountCaps: getPlayerCountCaps(fullRakeConfig.rakeCap),
       },
       bbjConfig: {
         enabled: fullRakeConfig.bbjEnabled,
@@ -3273,6 +3276,8 @@ export class ServerTableEngine {
       percent: fullConfig.rakePercent,
       cap: fullConfig.rakeCap,
       noFlopNoDrop: true,
+      // FIX 166: Bible V8 §7.19 — player-count-based rake caps
+      playerCountCaps: getPlayerCountCaps(fullConfig.rakeCap),
     };
   }
 
@@ -3325,6 +3330,8 @@ export class ServerTableEngine {
         percent: fullRakeConfig.rakePercent,
         cap: fullRakeConfig.rakeCap,
         noFlopNoDrop: true,
+        // FIX 166: Bible V8 §7.19 — player-count-based rake caps (heads-up = 50%, 3-handed = 67%)
+        playerCountCaps: getPlayerCountCaps(fullRakeConfig.rakeCap),
       },
       bbjConfig: {
         enabled: fullRakeConfig.bbjEnabled,

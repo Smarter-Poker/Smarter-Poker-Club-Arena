@@ -133,12 +133,11 @@ function CommunityCardsComponent({
   const prevHighlightRef = useRef<number[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Haptic feedback when new community cards are dealt (triggered when cards array length increases)
+  // FIX 184: Removed duplicate haptic here — stage transition useEffect below already
+  // fires haptic on flop/turn/river. Having both caused double-haptic on every deal.
+  // Track card count for reference only (no haptic).
   useEffect(() => {
-    if (cards.length > prevCardCountRef.current) {
-      haptic.medium();
-      prevCardCountRef.current = cards.length;
-    }
+    prevCardCountRef.current = cards.length;
   }, [cards.length]);
 
   // Haptic feedback on stage transitions

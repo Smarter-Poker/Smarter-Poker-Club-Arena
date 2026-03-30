@@ -322,7 +322,7 @@ export default function ActionPanel({
         <button
           className="action-btn action-btn--fold"
           onClick={() => {
-            haptic.medium();
+            haptic.light(); // FIX 183: Bible V8 §5.4 — fold = light haptic (was medium)
             onAction('fold');
           }}
           disabled={!canFold}
@@ -338,7 +338,7 @@ export default function ActionPanel({
           <button
             className="action-btn action-btn--check"
             onClick={() => {
-              haptic.medium();
+              haptic.light(); // FIX 183: Bible V8 §5.4 — check = light haptic (was medium)
               onAction('check');
             }}
             title={isDesktop ? 'C' : undefined}
@@ -351,7 +351,7 @@ export default function ActionPanel({
           <button
             className="action-btn action-btn--call"
             onClick={() => {
-              haptic.medium();
+              haptic.light(); // FIX 183: Bible V8 §5.4 — call = light haptic (was medium)
               onAction('call');
             }}
             title={isDesktop ? 'C' : undefined}

@@ -35,7 +35,8 @@ export interface Card {
   suit: 'h' | 'd' | 'c' | 's';
 }
 
-export type PlayerStatus = 'active' | 'away' | 'sitting_out' | 'folded' | 'all_in';
+/** FIX 186: Bible V8 §2.3 — Added 'disconnected' status (was missing) */
+export type PlayerStatus = 'active' | 'away' | 'sitting_out' | 'folded' | 'all_in' | 'disconnected';
 /** Bible V8 Appendix B: Position labels for all table sizes */
 export type PositionBadge =
   | 'D'
@@ -448,12 +449,18 @@ export const SeatSlot = memo(
             {lastAction === 'fold' && <div className="seat__avatar-fold-overlay" />}
           </div>
 
-          {/* Status dot (away/sitting out) */}
+          {/* Status dot (away/sitting out/disconnected) — Bible V8 §2.3 */}
           {player.status !== 'active' &&
             player.status !== 'folded' &&
             player.status !== 'all_in' && (
               <span className={`seat__status-dot seat__status-dot--${player.status}`} />
             )}
+          {/* FIX 186: Disconnected overlay — shows wifi-off icon */}
+          {player.status === 'disconnected' && (
+            <div className="seat__disconnect-overlay" title="Player disconnected">
+              ⚡
+            </div>
+          )}
 
           {/* Position Chip — bottom-right of avatar */}
           <PositionChip position={position} />

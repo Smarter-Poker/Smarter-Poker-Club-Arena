@@ -264,7 +264,8 @@ export type PlayerStatus =
   | 'folded' // Folded this hand
   | 'all_in' // All-in
   | 'sitting_out' // Sitting out
-  | 'away'; // Marked away
+  | 'away' // Marked away
+  | 'disconnected'; // FIX 186: Bible V8 §2.3 — Disconnected from server
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  CARDS & HANDS

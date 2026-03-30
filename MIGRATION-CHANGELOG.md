@@ -3,7 +3,38 @@
 ## Every Change, Documented. No Exceptions.
 
 **Started:** 2026-03-24
-**Current Step:** ALL 8 STEPS COMPLETE — Deep Bible V8 Verification Complete (182 fixes total)
+**Current Step:** ALL 8 STEPS COMPLETE — Deep Bible V8 Verification Complete (186 fixes total)
+
+---
+
+## Round 29 — Component Deep Audit: ActionPanel, PreActionBar, CommunityCards, SeatSlot, GameServerAPI (2026-03-29)
+
+### FIX 183 — Wrong haptic intensity on fold/check/call buttons (ActionPanel.tsx)
+- **File:** `src/components/table/ActionPanel.tsx`
+- **Bug:** Fold, Check, and Call buttons all used `haptic.medium()` but Bible V8 §5.4 specifies fold/check = light, call = light
+- **Fix:** Changed all three to `haptic.light()` — matches spec exactly
+
+### FIX 184 — Duplicate haptic on community card deals (CommunityCards.tsx)
+- **File:** `src/components/table/CommunityCards.tsx`
+- **Bug:** Two independent `useEffect` hooks both fired haptic on every deal: one triggered by `cards.length` change, another by `stage` transition. This caused double-haptic on flop/turn/river.
+- **Fix:** Removed haptic from the `cards.length` watcher — stage transition handler already covers all deal events correctly
+
+### FIX 185 — Missing auto_call pre-action (PreActionBar.tsx + TablePage.tsx)
+- **Files:** `src/components/table/PreActionBar.tsx`, `src/pages/TablePage.tsx`, `src/components/table/PreActionBar.css`
+- **Bug:** Bible V8 §4.15 lists 5 pre-actions: auto_fold, auto_check_fold, auto_check, auto_call, auto_call_any. Component only had 3 (fold, check, callAny). Missing: auto_call (call current bet only, distinct from call any).
+- **Fix:** Added `'call'` type to PreActionBar interface, added Call button that shows current bet amount, added handler in TablePage.tsx pre-action execution, added server mapping to `auto_call`, added CSS for `.call-any` class, made Check button conditional on `canCheck`
+
+### FIX 186 — Missing 'disconnected' player status (SeatSlot.tsx + club.types.ts)
+- **Files:** `src/components/table/SeatSlot.tsx`, `src/types/club.types.ts`, `src/components/table/SeatSlot.css`
+- **Bug:** Bible V8 §2.3 requires `is_disconnected` field. PlayerStatus type was missing `'disconnected'` variant — no visual indicator for disconnected players.
+- **Fix:** Added `'disconnected'` to PlayerStatus in both SeatSlot and club.types.ts, added red pulsing status dot, disconnect overlay icon, and grayscale avatar filter for disconnected state
+
+### Component Audit Results:
+- **ActionPanel.tsx** — 3 haptic bugs fixed (FIX 183), all other logic verified ✅
+- **PreActionBar.tsx** — Missing pre-action added (FIX 185), all 5 Bible V8 §4.15 options now supported ✅
+- **CommunityCards.tsx** — Duplicate haptic fixed (FIX 184), stage animations verified ✅
+- **SeatSlot.tsx** — Missing disconnect status added (FIX 186), all §2.3 display fields verified ✅
+- **GameServerAPI.ts** — All endpoints match Bible V8 §1.3, JWT auth on all calls, no bugs found ✅
 
 ---
 

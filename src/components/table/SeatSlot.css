@@ -215,6 +215,28 @@
 .seat__status-dot--sitting_out {
   background: #6b7280;
 }
+/* FIX 186: Bible V8 §2.3 — Disconnected status indicator */
+.seat__status-dot--disconnected {
+  background: #ef4444;
+  animation: seat-disconnect-pulse 1.5s ease-in-out infinite;
+}
+@keyframes seat-disconnect-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+.seat__disconnect-overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 18px;
+  z-index: 5;
+  pointer-events: none;
+  filter: drop-shadow(0 0 4px rgba(239, 68, 68, 0.6));
+}
+.seat--disconnected .seat__avatar-img {
+  filter: grayscale(0.7) brightness(0.6);
+}
 
 /* ─── POSITION CHIP (D / SB / BB) — Animated Dealer Button ─────────── */
 

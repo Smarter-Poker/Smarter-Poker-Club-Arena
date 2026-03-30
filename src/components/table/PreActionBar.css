@@ -183,6 +183,35 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════
+   CALL ANY — Same amber but slightly different shade (FIX 185)
+   ═══════════════════════════════════════════════════════════════ */
+
+.pre-action-btn.call-any {
+  border-color: rgba(245, 158, 11, 0.2);
+}
+
+.pre-action-btn.call-any:hover {
+  background: rgba(245, 158, 11, 0.1);
+  border-color: rgba(245, 158, 11, 0.4);
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.pre-action-btn.call-any.active {
+  background: linear-gradient(180deg, rgba(245, 158, 11, 0.3) 0%, rgba(217, 119, 6, 0.3) 100%);
+  border-color: #f59e0b;
+  color: #fcd34d;
+  box-shadow:
+    0 0 16px rgba(245, 158, 11, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.pre-action-btn.call-any.active .pre-action-btn__check {
+  background: #f59e0b;
+  border-color: #f59e0b;
+  color: #fff;
+}
+
+/* ═══════════════════════════════════════════════════════════════
    RESPONSIVE
    ═══════════════════════════════════════════════════════════════ */
 

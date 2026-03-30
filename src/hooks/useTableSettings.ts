@@ -10,7 +10,7 @@ import { masterBus } from '../core/MasterBus';
  * - Sound and haptic feedback control
  * - Animation speed adjustments
  * - Table appearance (theme, deck style)
- * - Display options (HUD, pot odds, hand strength)
+ * - Display options (HUD, pot odds)
  * - Gameplay preferences (auto-muck, confirm all-in, etc.)
  *
  * All settings are persisted to localStorage and automatically applied to the DOM.

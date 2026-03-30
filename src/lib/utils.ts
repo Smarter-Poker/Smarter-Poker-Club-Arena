@@ -132,24 +132,7 @@ export function calculatePotOdds(potSize: number, callAmount: number): number {
   return (callAmount / (potSize + callAmount)) * 100;
 }
 
-/**
- * Get hand strength label
- */
-export function getHandStrengthLabel(rank: number): string {
-  const labels = [
-    'High Card',
-    'Pair',
-    'Two Pair',
-    'Three of a Kind',
-    'Straight',
-    'Flush',
-    'Full House',
-    'Four of a Kind',
-    'Straight Flush',
-    'Royal Flush',
-  ];
-  return labels[rank] || 'Unknown';
-}
+// FIX 199: getHandStrengthLabel REMOVED — not allowed for live online gameplay
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // VALIDATION

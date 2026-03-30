@@ -15,6 +15,7 @@
  */
 
 import { PreciseActionTimer } from './PreciseActionTimer.js';
+import { reportError } from '../services/errorReporter.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -437,7 +438,7 @@ export class DisconnectEngine {
       try {
         this.onEvent(event);
       } catch (err) {
-        console.error('[DisconnectEngine] Event handler error:', err);
+        reportError(err, 'DisconnectEngine.Event_handler_error');
       }
     }
   }

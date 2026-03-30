@@ -1,3 +1,5 @@
+import { reportError } from '../services/errorReporter.js';
+
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  ATOMIC STACK SERVICE — Race-Condition-Proof Stack Operations
@@ -258,7 +260,7 @@ export class AtomicStackService {
       try {
         this.onEvent(event);
       } catch (err) {
-        console.error('[AtomicStackService] Event handler error:', err);
+        reportError(err, 'AtomicStackService.Event_handler_error');
       }
     }
   }

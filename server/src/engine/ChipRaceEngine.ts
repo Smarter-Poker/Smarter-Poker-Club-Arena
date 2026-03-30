@@ -15,6 +15,7 @@
  */
 
 import { secureRandomInt } from './CryptoRandom.js';
+import { reportError } from '../services/errorReporter.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -152,7 +153,7 @@ export class ChipRaceEngine {
 
   private emitEvent(event: ChipRaceEvent): void {
     if (this.onEvent) {
-      try { this.onEvent(event); } catch (err) { console.error('[ChipRaceEngine] Event handler error:', err); }
+      try { this.onEvent(event); } catch (err) { reportError(err, 'ChipRaceEngine.eventHandler'); }
     }
   }
 }

@@ -75,6 +75,7 @@ import type {
   HorseDecision,
   RakeConfig,
 } from '../types.js';
+import { reportError } from '../services/errorReporter.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SERVER TABLE ENGINE
@@ -200,9 +201,7 @@ export class ServerTableEngine {
       );
     });
     this.stateVerifier = new StateVerifier((event) => {
-      console.error(
-        `[ServerTableEngine:${tableId}] STATE INTEGRITY VIOLATION: ${event.violationCount} issue(s) in hand #${event.handNumber}`
-      );
+      reportError(new Error(`[ServerTableEngine:${tableId}] STATE INTEGRITY VIOLATION: ${event.violationCount} issue(s) in hand #${event.handNumber}`), 'ServerTableEnginetableId.STATE_INTEGRITY_VIOLATION');
     });
 
     // Step 5: Initialize supporting modules
@@ -376,7 +375,7 @@ export class ServerTableEngine {
       // Start dealing loop
       this.dealingLoop();
     } catch (err) {
-      console.error(`[ServerTableEngine:${this.tableId}] Failed to start:`, err);
+      reportError(err, 'ServerTableEnginethistableId.Failed_to_start');
       this.running = false;
     }
   }
@@ -630,15 +629,12 @@ export class ServerTableEngine {
             try {
               this.handController.performAction(seat, 'check');
             } catch (err) {
-              console.error(`[ServerTableEngine:${this.tableId}] Auto-check failed:`, err);
+              reportError(err, 'ServerTableEnginethistableId.Autocheck_failed');
               // Fallback to fold if check somehow fails
               try {
                 this.handController.performAction(seat, 'fold');
               } catch (foldErr) {
-                console.error(
-                  `[ServerTableEngine:${this.tableId}] Auto-fold fallback also failed:`,
-                  foldErr
-                );
+                reportError(foldErr, 'ServerTableEnginethistableId.Autofold_fallback_also_failed');
               }
             }
           } else {
@@ -649,7 +645,7 @@ export class ServerTableEngine {
             try {
               this.handController.performAction(seat, 'fold');
             } catch (err) {
-              console.error(`[ServerTableEngine:${this.tableId}] Auto-fold failed:`, err);
+              reportError(err, 'ServerTableEnginethistableId.Autofold_failed');
             }
           }
 
@@ -1444,12 +1440,9 @@ export class ServerTableEngine {
       } catch (err) {
         this.consecutiveErrors++;
         const backoffMs = Math.min(3000 * Math.pow(2, this.consecutiveErrors - 1), 30000);
-        console.error(
-          `[ServerTableEngine:${this.tableId}] Error (attempt ${this.consecutiveErrors}):`,
-          err
-        );
+        reportError(err, 'ServerTableEnginethistableId.Error_attempt_thisconsecutiveE');
         if (this.consecutiveErrors >= 10) {
-          console.error(`[ServerTableEngine:${this.tableId}] Too many errors — stopping`);
+          reportError(new Error(`[ServerTableEngine:${this.tableId}] Too many errors — stopping`), 'ServerTableEnginethistableId.Too_many_errors__stopping');
           this.running = false;
         } else {
           await this.sleep(backoffMs);
@@ -1632,7 +1625,7 @@ export class ServerTableEngine {
           `[ServerTableEngine:${this.tableId}] Disconnect auto-${disconnectAction.action} for ${disconnectAction.playerId} (${disconnectAction.reason})`
         );
       } catch (err) {
-        console.error(`[ServerTableEngine:${this.tableId}] Disconnect auto-action failed:`, err);
+        reportError(err, 'ServerTableEnginethistableId.Disconnect_autoaction_failed');
       }
     });
 
@@ -1670,7 +1663,7 @@ export class ServerTableEngine {
             try {
               this.handCompleteCallback(this.tableId, finalStacks);
             } catch (e) {
-              console.error(`[ServerTableEngine:${this.tableId}] handCompleteCallback error:`, e);
+              reportError(e, 'ServerTableEnginethistableId.handCompleteCallback_error');
             }
           }
 
@@ -1686,7 +1679,7 @@ export class ServerTableEngine {
         // FIX 137: Bible V8 §7.17 — Snapshot initial hand state for crash recovery
         this.saveSnapshot().catch(() => {});
       } catch (err) {
-        console.error(`[ServerTableEngine:${this.tableId}] Failed to start hand:`, err);
+        reportError(err, 'ServerTableEnginethistableId.Failed_to_start_hand');
         clearTimeout(handTimeout);
         unsub();
         this.handController = null;
@@ -1876,10 +1869,7 @@ export class ServerTableEngine {
             stage: finalState.stage,
           });
           if (!verifyResult.valid) {
-            console.error(
-              `[ServerTableEngine:${this.tableId}] Hand #${this.handCount} FAILED integrity check:`,
-              verifyResult.violations.map((v) => v.message).join('; ')
-            );
+            reportError(verifyResult.violations.map((v) => v.message).join('; '), 'ServerTableEnginethistableId.Hand_thishandCount_FAILED_inte');
           }
         }
 
@@ -1899,10 +1889,7 @@ export class ServerTableEngine {
           if (settlements.length > 0) {
             const settleResult = this.atomicStackService.atomicSettle(this.tableId, settlements);
             if (!settleResult.success) {
-              console.error(
-                `[ServerTableEngine:${this.tableId}] AtomicSettle failed:`,
-                settleResult.errors.join('; ')
-              );
+              reportError(settleResult.errors.join('; '), 'ServerTableEnginethistableId.AtomicSettle_failed');
             }
           }
         }
@@ -2058,9 +2045,7 @@ export class ServerTableEngine {
 
         // FIX 211: Bible V8 §1.9 — Track postHandTasks promise so dealingLoop can await
         // it before starting the next hand, preventing stale DB stacks from race conditions.
-        this.postHandTasksPromise = this.postHandTasks(players).catch((err) =>
-          console.error(`[ServerTableEngine:${this.tableId}] Post-hand error:`, err)
-        );
+        this.postHandTasksPromise = this.postHandTasks(players).catch((err) => reportError(err, 'ServerTableEnginethistableId.Posthand_error'));
         this.currentHandWinnerIds = [];
 
         // Rabbit Hunt: Broadcast captured remaining deck as a separate event
@@ -2313,9 +2298,7 @@ export class ServerTableEngine {
     const cardsNeeded = 5 - existingBoard.length;
 
     if (remainingDeck.length < cardsNeeded * runs) {
-      console.error(
-        `[ServerTableEngine:${this.tableId}] RIT: Not enough cards for ${runs} runouts (need ${cardsNeeded * runs}, have ${remainingDeck.length})`
-      );
+      reportError(new Error(`[ServerTableEngine:${this.tableId}] RIT: Not enough cards for ${runs} runouts (need ${cardsNeeded * runs}, have ${remainingDeck.length})`), 'ServerTableEnginethistableId.RIT');
       this.handController.continueRunout();
       return;
     }

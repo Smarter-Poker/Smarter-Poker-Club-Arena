@@ -17,6 +17,7 @@
 
 // FIX 163: Use crypto-secure random for seat lottery fairness
 import { secureRandomInt } from './CryptoRandom.js';
+import { reportError } from '../services/errorReporter.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -285,7 +286,7 @@ export class TableBreakEngine {
 
   private emitEvent(event: TableBreakEvent): void {
     if (this.onEvent) {
-      try { this.onEvent(event); } catch (err) { console.error('[TableBreakEngine] Event handler error:', err); }
+      try { this.onEvent(event); } catch (err) { reportError(err, 'TableBreakEngine.eventHandler'); }
     }
   }
 }

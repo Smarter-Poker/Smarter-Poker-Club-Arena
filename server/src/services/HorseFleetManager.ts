@@ -14,6 +14,7 @@
  */
 
 import { supabase } from './supabase.js';
+import { reportError } from './errorReporter.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -368,12 +369,12 @@ export class HorseFleetManager {
         console.log('[HorseFleet] Initial seeding complete');
       })
       .catch((err) => {
-        console.error('[HorseFleet] Initial seeding error:', err);
+        reportError(err, 'HorseFleet.Initial_seeding_error');
       });
 
     // Recurring check: every 30 seconds, ensure horses are seated
     this.seedInterval = setInterval(() => {
-      this.seedAllTables().catch((err) => console.error('[HorseFleet] Seed cycle error:', err));
+      this.seedAllTables().catch((err) => reportError(err, 'HorseFleet.Seed_cycle_error'));
     }, 30000);
 
     console.log('[HorseFleet] Running — seeding in background, checking every 30s');
@@ -439,12 +440,12 @@ export class HorseFleetManager {
         });
 
         if (error) {
-          console.error(`[HorseFleet] Failed to create table "${config.name}":`, error.message);
+          reportError(error, 'HorseFleet.Failed_to_create_table_confign');
         } else {
           console.log(`[HorseFleet] Created table: ${config.name} (club: ${clubId}, union: ${MIDWAY_UNION_ID})`);
         }
       } catch (err: any) {
-        console.error(`[HorseFleet] Error creating table "${config.name}":`, err.message);
+        reportError(err, 'HorseFleet.Error_creating_table_confignam');
       }
     }
   }
@@ -465,7 +466,7 @@ export class HorseFleetManager {
         .in('status', ['waiting', 'running']);
 
       if (tablesError || !tables) {
-        console.error('[HorseFleet] Failed to fetch tables:', tablesError?.message);
+        reportError(tablesError, 'HorseFleet.Failed_to_fetch_tables');
         return;
       }
 
@@ -593,7 +594,7 @@ export class HorseFleetManager {
             }
           }
         } catch (err: any) {
-          console.error(`[HorseFleet] Error seeding table "${table.name}":`, err.message);
+          reportError(err, 'HorseFleet.Error_seeding_table_tablename');
         }
       }
 
@@ -601,7 +602,7 @@ export class HorseFleetManager {
         console.log(`[HorseFleet] Seated ${totalSeated} horses across tables`);
       }
     } catch (err: any) {
-      console.error('[HorseFleet] seedAllTables error:', err.message);
+      reportError(err, 'HorseFleet.seedAllTables_error');
     } finally {
       this.seeding = false;
     }
@@ -643,7 +644,7 @@ export class HorseFleetManager {
         .eq('wallet_type', 'PLAYER');
 
       if (deductErr) {
-        console.error(`[HorseFleet] wallet deduct failed for ${horseId}:`, deductErr.message);
+        reportError(deductErr, 'HorseFleet.wallet_deduct_failed_for_horse');
         return false;
       }
 
@@ -670,7 +671,7 @@ export class HorseFleetManager {
       if (seatErr) {
         // FIX 206: Silence expected duplicate key errors (race condition between seed cycles)
         if (!seatErr.message.includes('duplicate key')) {
-          console.error(`[HorseFleet] seat insert failed for ${horseId}:`, seatErr.message);
+          reportError(seatErr, 'HorseFleet.seat_insert_failed_for_horseId');
         }
         // Refund wallet on seat failure
         await supabase
@@ -695,7 +696,7 @@ export class HorseFleetManager {
 
       return true;
     } catch (err: any) {
-      console.error(`[HorseFleet] seatHorse error:`, err.message);
+      reportError(err, 'HorseFleet.seatHorse_error');
       return false;
     }
   }

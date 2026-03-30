@@ -14,6 +14,7 @@
  */
 
 import type { GameVariant } from '../types.js';
+import { reportError } from '../services/errorReporter.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -87,7 +88,7 @@ export class MixedGameEngine {
   ): void {
     const variants = MIXED_GAME_PRESETS[presetName];
     if (!variants) {
-      console.error(`[MixedGameEngine] Unknown preset: ${presetName}`);
+      reportError(new Error(`[MixedGameEngine] Unknown preset: ${presetName}`), 'MixedGameEngine.Unknown_preset');
       return;
     }
 
@@ -207,7 +208,7 @@ export class MixedGameEngine {
       try {
         this.onEvent(event);
       } catch (err) {
-        console.error('[MixedGameEngine] Event handler error:', err);
+        reportError(err, 'MixedGameEngine.Event_handler_error');
       }
     }
   }

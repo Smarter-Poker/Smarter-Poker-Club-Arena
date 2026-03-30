@@ -22,6 +22,7 @@
 
 import { monteCarloEquity } from './MonteCarloEquity.js';
 import type { Card } from '../types.js';
+import { reportError } from '../services/errorReporter.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -524,7 +525,7 @@ export class InsuranceEngine {
       try {
         this.onEvent(event);
       } catch (err) {
-        console.error('[InsuranceEngine] Event handler error:', err);
+        reportError(err, 'InsuranceEngine.Event_handler_error');
       }
     }
   }

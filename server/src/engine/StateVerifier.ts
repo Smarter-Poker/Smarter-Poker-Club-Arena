@@ -19,6 +19,7 @@
  */
 
 import type { Card, SeatPlayer, HandStage } from '../types.js';
+import { reportError } from '../services/errorReporter.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -126,16 +127,13 @@ export class StateVerifier {
         })),
       };
 
-      console.error(
-        `[StateVerifier] ${violations.length} violation(s) detected for table ${context.tableId}, hand #${context.handNumber}:`,
-        violations.map((v) => `${v.severity.toUpperCase()}: ${v.type} — ${v.message}`).join('; ')
-      );
+      reportError(violations.map((v) => `${v.severity.toUpperCase()}: ${v.type} — ${v.message}`).join('; '), 'StateVerifier.violationslength_violations_de');
 
       if (this.onViolation) {
         try {
           this.onViolation(event);
         } catch (err) {
-          console.error('[StateVerifier] Violation handler error:', err);
+          reportError(err, 'StateVerifier.Violation_handler_error');
         }
       }
     }

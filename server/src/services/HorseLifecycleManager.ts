@@ -14,6 +14,7 @@
  */
 
 import { supabase, atomicCashout } from './supabase.js';
+import { reportError } from './errorReporter.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONFIGURATION
@@ -79,7 +80,7 @@ export class HorseLifecycleManager {
         this.cleanupStaleSeats(),
       ]);
     } catch (err) {
-      console.error('[Lifecycle] Maintenance cycle error:', err);
+      reportError(err, 'Lifecycle.Maintenance_cycle_error');
     }
   }
 
@@ -137,7 +138,7 @@ export class HorseLifecycleManager {
               profiles.map((p) => p.id)
             );
         } catch (err) {
-          console.error(`[Lifecycle] Error processing tournament ${tournament.id}:`, err);
+          reportError(err, 'Lifecycle.Error_processing_tournament_to');
         }
       }
 
@@ -147,7 +148,7 @@ export class HorseLifecycleManager {
         );
       }
     } catch (err) {
-      console.error('[Lifecycle] cleanupFinishedTournaments error:', err);
+      reportError(err, 'Lifecycle.cleanupFinishedTournaments_err');
     }
   }
 
@@ -217,7 +218,7 @@ export class HorseLifecycleManager {
         console.log(`[Lifecycle] Force-reset ${forcedResets} stuck horses`);
       }
     } catch (err) {
-      console.error('[Lifecycle] detectStuckHorses error:', err);
+      reportError(err, 'Lifecycle.detectStuckHorses_error');
     }
   }
 
@@ -287,7 +288,7 @@ export class HorseLifecycleManager {
           .eq('id', horseId);
 
         if (error) {
-          console.error(`[Lifecycle] Failed to reset horse ${horseId}:`, error.message);
+          reportError(error, 'Lifecycle.Failed_to_reset_horse_horseId');
           return false;
         }
         await this.persistLifecycleLog(horseId, 'natural_reset', {
@@ -377,9 +378,7 @@ export class HorseLifecycleManager {
                 p_amount: buyInAmount,
               });
               if (refundErr)
-                console.error(
-                  `[HorseLifecycle] SNG cancel refund FAILED for ${player.user_id.slice(0, 8)}: ${refundErr.message}`
-                );
+                reportError(new Error(`[HorseLifecycle] SNG cancel refund FAILED for ${player.user_id.slice(0, 8)}: ${refundErr.message}`), 'HorseLifecycle.SNG_cancel_refund_FAILED_for_p');
             }
           }
 
@@ -474,7 +473,7 @@ export class HorseLifecycleManager {
       });
 
       if (error) {
-        console.error(`[Lifecycle] Failed to credit winnings to ${horseId}:`, error.message);
+        reportError(error, 'Lifecycle.Failed_to_credit_winnings_to_h');
         return false;
       }
 

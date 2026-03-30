@@ -1,3 +1,5 @@
+import { reportError } from '../services/errorReporter.js';
+
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  RUN IT TWICE ENGINE — Dual-Board Card Dealing for All-In Scenarios
@@ -206,7 +208,7 @@ export class RunItTwiceEngine {
     const runs = state.chosenRuns || state.maxRuns || 2;
     const cardsNeeded = 5 - existingBoard.length;
     if (remainingDeck.length < cardsNeeded * runs) {
-      console.error(`[RunItTwiceEngine] Not enough cards for ${runs} runouts at ${tableId}`);
+      reportError(new Error(`[RunItTwiceEngine] Not enough cards for ${runs} runouts at ${tableId}`), 'RunItTwiceEngine.Not_enough_cards_for_runs_runo');
       return null;
     }
 
@@ -372,7 +374,7 @@ export class RunItTwiceEngine {
       try {
         this.onEvent(event);
       } catch (err) {
-        console.error('[RunItTwiceEngine] Event handler error:', err);
+        reportError(err, 'RunItTwiceEngine.Event_handler_error');
       }
     }
   }

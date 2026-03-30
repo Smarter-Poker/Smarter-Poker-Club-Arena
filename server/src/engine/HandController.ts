@@ -32,6 +32,7 @@ import type {
   Winner,
   RakeConfig,
 } from '../types.js';
+import { reportError } from '../services/errorReporter.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // HAND CONTROLLER
@@ -778,9 +779,7 @@ export class HandController {
 
     // If still no winners (impossible edge case), skip distribution to prevent chip loss
     if (winners.length === 0 || totalWinnerAmount === 0) {
-      console.error(
-        `[HandController] CRITICAL: No winners and no active players — pot of ${this.state.pot} cannot be distributed`
-      );
+      reportError(new Error(`[HandController] CRITICAL: No winners and no active players — pot of ${this.state.pot} cannot be distributed`), 'HandController.CRITICAL');
       this.emit({ type: 'WINNERS', winners: [] });
       this.emit({ type: 'HAND_COMPLETE', handNumber: this.config.handNumber, rake: 0, bbjFee: 0 });
       return;

@@ -87,6 +87,10 @@ export interface SeatSlotProps {
   onSit?: () => void;
   onAction?: () => void;
   onAvatarClick?: () => void;
+  /** Bible V8 §11.1: Show/hide player avatar images */
+  showAvatar?: boolean;
+  /** Bible V8 §11.1: Show/hide VIP/achievement badges */
+  showBadges?: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -241,6 +245,8 @@ export const SeatSlot = memo(
       onSit,
       onAction,
       onAvatarClick,
+      showAvatar = true,
+      showBadges = false,
     } = props;
 
     // Animated stack change — flash green/red when stack changes
@@ -397,7 +403,8 @@ export const SeatSlot = memo(
         )}
 
         {/* Avatar Circle — large, sits on top of info box */}
-        <div className="seat__avatar-wrap">
+        {/* Bible V8 §11.1: show_avatars toggle */}
+        <div className="seat__avatar-wrap" style={showAvatar ? undefined : { visibility: 'hidden' }}>
           {/* Circular Timer Arc — PokerBros-style ring around avatar */}
           {isActive && timerProgress !== undefined && (
             <div className="seat__circular-timer">
@@ -493,7 +500,8 @@ export const SeatSlot = memo(
         )}
 
         {/* Player Style Badge — auto-classified archetype */}
-        {!player.isHero && playerStyle && playerStyle.style !== 'unknown' && (
+        {/* Bible V8 §11.1: show_badges toggle controls badge visibility */}
+        {showBadges && !player.isHero && playerStyle && playerStyle.style !== 'unknown' && (
           <div
             className="seat__style-badge"
             style={{

@@ -1,3 +1,5 @@
+import { reportError } from '../services/errorReporter.js';
+
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  ENGINE TELEMETRY — Production Observability Service
@@ -254,7 +256,7 @@ export class EngineTelemetry {
 
   private emitEvent(event: TelemetryEvent): void {
     if (this.onEvent) {
-      try { this.onEvent(event); } catch (err) { console.error('[EngineTelemetry] Event handler error:', err); }
+      try { this.onEvent(event); } catch (err) { reportError(err, 'EngineTelemetry.eventHandler'); }
     }
   }
 }

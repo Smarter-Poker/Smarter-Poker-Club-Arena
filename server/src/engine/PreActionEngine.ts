@@ -16,6 +16,7 @@
  */
 
 import type { ActionType } from '../types.js';
+import { reportError } from '../services/errorReporter.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -296,7 +297,7 @@ export class PreActionEngine {
       try {
         this.onEvent(event);
       } catch (err) {
-        console.error('[PreActionEngine] Event handler error:', err);
+        reportError(err, 'PreActionEngine.Event_handler_error');
       }
     }
   }

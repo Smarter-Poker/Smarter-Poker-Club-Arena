@@ -29,6 +29,7 @@ import { AutoRebuyService } from './services/AutoRebuyService.js';
 import { ChipRaceEngine } from './engine/ChipRaceEngine.js';
 // FIX 154: Import TableBalancer for proper tournament table rebalancing
 import { TableBalancer, type BalancerTable, type MoveInstruction } from './engine/TableBalancer.js';
+import { reportError, initSentry, flushSentry, setServerContext } from './services/errorReporter.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONFIGURATION
@@ -63,6 +64,9 @@ class GameServer {
     this.running = true;
     const maintenanceMode = process.env.MAINTENANCE_MODE === 'true';
 
+    // Initialize Sentry FIRST so all subsequent errors are captured
+    initSentry();
+
     console.log('═══════════════════════════════════════════════════════════════');
     console.log(' SMARTER POKER GAME SERVER — Starting...');
     console.log(maintenanceMode
@@ -88,12 +92,8 @@ class GameServer {
 
       // Step 6: Start discovery loops (finds tables with players, starts engines)
       // These are infinite while-loops — fire-and-forget with error handling
-      this.discoverCashTables().catch((err) =>
-        console.error('[GameServer] Cash table discovery fatal error:', err)
-      );
-      this.discoverTournaments().catch((err) =>
-        console.error('[GameServer] Tournament discovery fatal error:', err)
-      );
+      this.discoverCashTables().catch((err) => reportError(err, 'GameServer.Cash_table_discovery_fatal_err'));
+      this.discoverTournaments().catch((err) => reportError(err, 'GameServer.Tournament_discovery_fatal_err'));
 
       // Step 7: Start synchronized break timer (top of every hour, 5 min duration)
       this.scheduleSynchronizedBreaks();
@@ -136,6 +136,10 @@ class GameServer {
 
     // Clean up Realtime channels
     cleanupAllChannels();
+
+    // Flush pending Sentry events before exit
+    await flushSentry();
+
     console.log('[GameServer] Shutdown complete.');
   }
 
@@ -222,7 +226,7 @@ class GameServer {
       try {
         await tm.pauseForBreak(GameServer.BREAK_DURATION_MS);
       } catch (err: any) {
-        console.error(`[GameServer] Failed to pause tournament:`, err.message);
+        reportError(err, 'GameServer.Failed_to_pause_tournament');
       }
     }
 
@@ -235,7 +239,7 @@ class GameServer {
         try {
           await tm.resumeFromBreak();
         } catch (err: any) {
-          console.error(`[GameServer] Failed to resume tournament:`, err.message);
+          reportError(err, 'GameServer.Failed_to_resume_tournament');
         }
       }
     }, GameServer.BREAK_DURATION_MS);
@@ -379,7 +383,7 @@ class GameServer {
 
       console.log('[GameServer] Stale data cleanup complete');
     } catch (err) {
-      console.error('[GameServer] Stale data cleanup error:', err);
+      reportError(err, 'GameServer.Stale_data_cleanup_error');
     }
   }
 
@@ -398,7 +402,7 @@ class GameServer {
           .in('status', ['waiting', 'running']);
 
         if (error) {
-          console.error('[GameServer] Cash table discovery error:', error);
+          reportError(error, 'GameServer.Cash_table_discovery_error');
           await this.sleep(TABLE_DISCOVERY_INTERVAL);
           continue;
         }
@@ -421,7 +425,7 @@ class GameServer {
             const engine = new ServerTableEngine(table.id);
             this.tableEngines.set(table.id, engine);
             engine.start().catch((err) => {
-              console.error(`[GameServer] Engine start failed for ${table.id}:`, err);
+              reportError(err, 'GameServer.Engine_start_failed_for_tablei');
               this.tableEngines.delete(table.id);
             });
           }
@@ -434,7 +438,7 @@ class GameServer {
           }
         }
       } catch (err) {
-        console.error('[GameServer] Cash table discovery error:', err);
+        reportError(err, 'GameServer.Cash_table_discovery_error');
       }
 
       await this.sleep(TABLE_DISCOVERY_INTERVAL);
@@ -494,9 +498,7 @@ class GameServer {
                   p_amount: refundAmount,
                 });
                 if (creditErr) {
-                  console.error(
-                    `[GameServer] Refund FAILED for ${p.user_id.slice(0, 8)} in ${tournament.name}: ${creditErr.message}`
-                  );
+                  reportError(new Error(`[GameServer] Refund FAILED for ${p.user_id.slice(0, 8)} in ${tournament.name}: ${creditErr.message}`), 'GameServer.Refund_FAILED_for_puser_idslic');
                   continue; // Skip log for this player but keep refunding others
                 }
                 const { error: logErr } = await supabase.rpc('log_wallet_transaction', {
@@ -511,14 +513,9 @@ class GameServer {
                   p_related_entity_id: tournament.id,
                 });
                 if (logErr)
-                  console.error(
-                    `[GameServer] Refund log FAILED for ${p.user_id.slice(0, 8)}: ${logErr.message}`
-                  );
+                  reportError(new Error(`[GameServer] Refund log FAILED for ${p.user_id.slice(0, 8)}: ${logErr.message}`), 'GameServer.Refund_log_FAILED_for_puser_id');
               } catch (refundErr) {
-                console.error(
-                  `[GameServer] Refund exception for ${p.user_id.slice(0, 8)}:`,
-                  refundErr
-                );
+                reportError(refundErr, 'GameServer.Refund_exception_for_puser_ids');
               }
             }
             await supabase.from('tournament_players').delete().eq('tournament_id', tournament.id);
@@ -548,7 +545,7 @@ class GameServer {
             const tm = new TournamentManager(tournament.id, this);
             this.tournamentEngines.set(tournament.id, tm);
             tm.start().catch((err) => {
-              console.error(`[GameServer] Tournament start failed for ${tournament.name}:`, err);
+              reportError(err, 'GameServer.Tournament_start_failed_for_to');
               this.tournamentEngines.delete(tournament.id);
             });
           }
@@ -567,7 +564,7 @@ class GameServer {
           const tm = new TournamentManager(tournament.id, this);
           this.tournamentEngines.set(tournament.id, tm);
           tm.resume().catch((err) => {
-            console.error(`[GameServer] Tournament resume failed for ${tournament.name}:`, err);
+            reportError(err, 'GameServer.Tournament_resume_failed_for_t');
             this.tournamentEngines.delete(tournament.id);
           });
         }
@@ -601,7 +598,7 @@ class GameServer {
           }
         }
       } catch (err) {
-        console.error('[GameServer] Tournament discovery error:', err);
+        reportError(err, 'GameServer.Tournament_discovery_error');
       }
 
       await this.sleep(TOURNAMENT_DISCOVERY_INTERVAL);
@@ -693,10 +690,7 @@ class TournamentManager {
         payload: { type: eventType, payload },
       });
     } catch (e) {
-      console.error(
-        `[Tournament:${this.tournamentId.slice(0, 8)}] Broadcast ${eventType} failed:`,
-        e
-      );
+      reportError(e, 'TournamentthistournamentIdslic.Broadcast_eventType_failed');
       // Reset channel on error so next call re-creates
       this.broadcastChannel = null;
       this.broadcastReady = false;
@@ -877,9 +871,7 @@ class TournamentManager {
               p_amount: refundAmt,
             });
             if (creditErr) {
-              console.error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] Refund FAILED for ${p.user_id.slice(0, 8)}: ${creditErr.message}`
-              );
+              reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] Refund FAILED for ${p.user_id.slice(0, 8)}: ${creditErr.message}`), 'TournamentthistournamentIdslic.Refund_FAILED_for_puser_idslic');
               continue;
             }
             const { error: logErr } = await supabase.rpc('log_wallet_transaction', {
@@ -894,14 +886,9 @@ class TournamentManager {
               p_related_entity_id: this.tournamentId,
             });
             if (logErr)
-              console.error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] Refund log FAILED for ${p.user_id.slice(0, 8)}: ${logErr.message}`
-              );
+              reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] Refund log FAILED for ${p.user_id.slice(0, 8)}: ${logErr.message}`), 'TournamentthistournamentIdslic.Refund_log_FAILED_for_puser_id');
           } catch (refundErr) {
-            console.error(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Refund exception for ${p.user_id.slice(0, 8)}:`,
-              refundErr
-            );
+            reportError(refundErr, 'TournamentthistournamentIdslic.Refund_exception_for_puser_ids');
           }
         }
         await supabase.from('tournament_players').delete().eq('tournament_id', this.tournamentId);
@@ -1035,9 +1022,7 @@ class TournamentManager {
         this.gameServer.registerTableEngine(tableId, engine);
         engine
           .start()
-          .catch((err) =>
-            console.error(`[Tournament:${this.tournamentId.slice(0, 8)}] Table engine error:`, err)
-          );
+          .catch((err) => reportError(err, 'TournamentthistournamentIdslic.Table_engine_error'));
       }
 
       // Start blind timer
@@ -1050,7 +1035,7 @@ class TournamentManager {
         `[Tournament:${this.tournamentId.slice(0, 8)}] RUNNING — ${this.tableEngines.size} tables`
       );
     } catch (err) {
-      console.error(`[Tournament:${this.tournamentId.slice(0, 8)}] Start failed:`, err);
+      reportError(err, 'TournamentthistournamentIdslic.Start_failed');
       this.running = false;
     }
   }
@@ -1083,9 +1068,7 @@ class TournamentManager {
         this.gameServer.registerTableEngine(table.id, engine);
         engine
           .start()
-          .catch((err) =>
-            console.error(`[Tournament:${this.tournamentId.slice(0, 8)}] Resume table error:`, err)
-          );
+          .catch((err) => reportError(err, 'TournamentthistournamentIdslic.Resume_table_error'));
       }
 
       // Restore blind level
@@ -1103,7 +1086,7 @@ class TournamentManager {
         `[Tournament:${this.tournamentId.slice(0, 8)}] Resumed — ${this.tableEngines.size} tables, level ${this.currentLevel}`
       );
     } catch (err) {
-      console.error(`[Tournament:${this.tournamentId.slice(0, 8)}] Resume failed:`, err);
+      reportError(err, 'TournamentthistournamentIdslic.Resume_failed');
       this.running = false;
     }
   }
@@ -1186,10 +1169,7 @@ class TournamentManager {
         .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
 
       if (error || !table) {
-        console.error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] Failed to create table:`,
-          error
-        );
+        reportError(error, 'TournamentthistournamentIdslic.Failed_to_create_table');
         continue;
       }
 
@@ -1211,9 +1191,7 @@ class TournamentManager {
         joined_at: new Date().toISOString(),
       });
       if (seatErr) {
-        console.error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] Failed to seat ${players[i].user_id.slice(0, 8)}: ${seatErr.message}`
-        );
+        reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] Failed to seat ${players[i].user_id.slice(0, 8)}: ${seatErr.message}`), 'TournamentthistournamentIdslic.Failed_to_seat_playersiuser_id');
       }
     }
 
@@ -1285,9 +1263,7 @@ class TournamentManager {
             })
             .eq('id', tableId);
           if (blindErr)
-            console.error(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Blind update failed for table ${tableId.slice(0, 8)}: ${blindErr.message}`
-            );
+            reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] Blind update failed for table ${tableId.slice(0, 8)}: ${blindErr.message}`), 'TournamentthistournamentIdslic.Blind_update_failed_for_table_');
         }
 
         const { error: levelErr } = await supabase
@@ -1295,9 +1271,7 @@ class TournamentManager {
           .update({ current_level: this.currentLevel })
           .eq('id', this.tournamentId);
         if (levelErr)
-          console.error(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] Level persist failed: ${levelErr.message}`
-          );
+          reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] Level persist failed: ${levelErr.message}`), 'TournamentthistournamentIdslic.Level_persist_failed');
 
         // FIX 151: Chip race when denomination changes on level-up
         // If the new small blind is a larger denomination than the previous level's,
@@ -1343,7 +1317,7 @@ class TournamentManager {
               });
             }
           } catch (crErr) {
-            console.error(`[Tournament:${this.tournamentId.slice(0, 8)}] Chip race error:`, crErr);
+            reportError(crErr, 'TournamentthistournamentIdslic.Chip_race_error');
           }
         }
 
@@ -1585,10 +1559,7 @@ class TournamentManager {
               }
             }
           } catch (finishErr) {
-            console.error(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] finishTournament error — will retry next cycle:`,
-              finishErr
-            );
+            reportError(finishErr, 'TournamentthistournamentIdslic.finishTournament_error__will_r');
           }
         }
 
@@ -1662,10 +1633,7 @@ class TournamentManager {
           }
         }
       } catch (err) {
-        console.error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] Elimination check error:`,
-          err
-        );
+        reportError(err, 'TournamentthistournamentIdslic.Elimination_check_error');
       } finally {
         this.isProcessingEliminations = false;
       }
@@ -1746,9 +1714,7 @@ class TournamentManager {
           creditSuccess = true;
           break;
         }
-        console.error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] Prize credit attempt ${attempt}/3 failed for ${userId.slice(0, 8)}: ${creditErr.message}`
-        );
+        reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] Prize credit attempt ${attempt}/3 failed for ${userId.slice(0, 8)}: ${creditErr.message}`), 'TournamentthistournamentIdslic.Prize_credit_attempt_attempt3_');
         if (attempt < 3) await new Promise((r) => setTimeout(r, attempt * 1000));
       }
       if (creditSuccess) {
@@ -1764,13 +1730,9 @@ class TournamentManager {
           p_related_entity_id: this.tournamentId,
         });
         if (prizeLogErr)
-          console.error(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] Prize log FAILED for ${userId.slice(0, 8)}: ${prizeLogErr.message}`
-          );
+          reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] Prize log FAILED for ${userId.slice(0, 8)}: ${prizeLogErr.message}`), 'TournamentthistournamentIdslic.Prize_log_FAILED_for_userIdsli');
       } else {
-        console.error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: Prize credit FAILED after 3 retries for ${userId.slice(0, 8)} — ${prize} chips lost`
-        );
+        reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: Prize credit FAILED after 3 retries for ${userId.slice(0, 8)} — ${prize} chips lost`), 'TournamentthistournamentIdslic.CRITICAL');
       }
     }
 
@@ -1816,10 +1778,7 @@ class TournamentManager {
           );
         }
       } catch (bountyErr) {
-        console.error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] Bounty processing error:`,
-          bountyErr
-        );
+        reportError(bountyErr, 'TournamentthistournamentIdslic.Bounty_processing_error');
       }
     }
 
@@ -2033,16 +1992,12 @@ class TournamentManager {
         creditSuccess = true;
         break;
       }
-      console.error(
-        `[Tournament:${this.tournamentId.slice(0, 8)}] Bounty credit attempt ${attempt}/3 failed for ${knockerUserId.slice(0, 8)}: ${creditErr.message}`
-      );
+      reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] Bounty credit attempt ${attempt}/3 failed for ${knockerUserId.slice(0, 8)}: ${creditErr.message}`), 'TournamentthistournamentIdslic.Bounty_credit_attempt_attempt3');
       if (attempt < 3) await new Promise((r) => setTimeout(r, attempt * 1000));
     }
 
     if (!creditSuccess) {
-      console.error(
-        `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: Bounty credit FAILED after 3 retries for ${knockerUserId.slice(0, 8)} — ${amount} chips lost`
-      );
+      reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: Bounty credit FAILED after 3 retries for ${knockerUserId.slice(0, 8)} — ${amount} chips lost`), 'TournamentthistournamentIdslic.CRITICAL');
       return;
     }
 
@@ -2058,9 +2013,7 @@ class TournamentManager {
       p_related_entity_id: this.tournamentId,
     });
     if (bountyLogErr)
-      console.error(
-        `[Tournament:${this.tournamentId.slice(0, 8)}] Bounty log FAILED for ${knockerUserId.slice(0, 8)}: ${bountyLogErr.message}`
-      );
+      reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] Bounty log FAILED for ${knockerUserId.slice(0, 8)}: ${bountyLogErr.message}`), 'TournamentthistournamentIdslic.Bounty_log_FAILED_for_knockerU');
   }
 
   /**
@@ -2128,9 +2081,7 @@ class TournamentManager {
             p_related_entity_id: this.tournamentId,
           });
         } else {
-          console.error(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] Prize recalc credit FAILED for ${player.user_id.slice(0, 8)}: ${creditErr.message}`
-          );
+          reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] Prize recalc credit FAILED for ${player.user_id.slice(0, 8)}: ${creditErr.message}`), 'TournamentthistournamentIdslic.Prize_recalc_credit_FAILED_for');
         }
       }
     }
@@ -2170,9 +2121,7 @@ class TournamentManager {
       .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
 
     if (!tournament || tourneyLoadErr) {
-      console.error(
-        `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: Could not load tournament for finish: ${tourneyLoadErr?.message} — marking COMPLETED without payouts`
-      );
+      reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: Could not load tournament for finish: ${tourneyLoadErr?.message} — marking COMPLETED without payouts`), 'TournamentthistournamentIdslic.CRITICAL');
       await supabase
         .from('tournaments')
         .update({ status: 'COMPLETED', ended_at: new Date().toISOString() })
@@ -2223,9 +2172,7 @@ class TournamentManager {
           creditSuccess = true;
           break;
         }
-        console.error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] Winner prize credit attempt ${attempt}/3 failed: ${creditErr.message}`
-        );
+        reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] Winner prize credit attempt ${attempt}/3 failed: ${creditErr.message}`), 'TournamentthistournamentIdslic.Winner_prize_credit_attempt_at');
         if (attempt < 3) await new Promise((r) => setTimeout(r, attempt * 1000));
       }
 
@@ -2242,13 +2189,9 @@ class TournamentManager {
           p_related_entity_id: this.tournamentId,
         });
         if (prizeLogErr)
-          console.error(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] Prize log FAILED for ${winnerId.slice(0, 8)}: ${prizeLogErr.message}`
-          );
+          reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] Prize log FAILED for ${winnerId.slice(0, 8)}: ${prizeLogErr.message}`), 'TournamentthistournamentIdslic.Prize_log_FAILED_for_winnerIds');
       } else {
-        console.error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: Winner prize credit FAILED after 3 retries for ${winnerId.slice(0, 8)} — ${winnerPrize} chips lost`
-        );
+        reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: Winner prize credit FAILED after 3 retries for ${winnerId.slice(0, 8)} — ${winnerPrize} chips lost`), 'TournamentthistournamentIdslic.CRITICAL');
       }
     }
 
@@ -2289,9 +2232,7 @@ class TournamentManager {
             rakeRecipientId = union.owner_id;
             rakeDescription = `Tournament rake held by ${union.name || 'Union'}: ${tournament.name || 'tournament'} (${totalEntries} entries x ${rakePerEntry}) — ${club.name || 'club'}`;
           } else {
-            console.error(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: Union ${club.union_id} has no owner_id — ${totalRake} rake LOST`
-            );
+            reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: Union ${club.union_id} has no owner_id — ${totalRake} rake LOST`), 'TournamentthistournamentIdslic.CRITICAL');
           }
         } else {
           // Standalone club — rake goes directly to club owner
@@ -2299,9 +2240,7 @@ class TournamentManager {
             rakeRecipientId = club.owner_id;
             rakeDescription = `Tournament rake: ${tournament.name || 'tournament'} (${totalEntries} entries x ${rakePerEntry})`;
           } else {
-            console.error(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: Club ${tournament.club_id} has no owner_id — ${totalRake} rake LOST`
-            );
+            reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: Club ${tournament.club_id} has no owner_id — ${totalRake} rake LOST`), 'TournamentthistournamentIdslic.CRITICAL');
           }
         }
 
@@ -2317,9 +2256,7 @@ class TournamentManager {
               rakeSuccess = true;
               break;
             }
-            console.error(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Rake credit attempt ${attempt}/3 failed: ${rakeErr.message}`
-            );
+            reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] Rake credit attempt ${attempt}/3 failed: ${rakeErr.message}`), 'TournamentthistournamentIdslic.Rake_credit_attempt_attempt3_f');
             if (attempt < 3) await new Promise((r) => setTimeout(r, attempt * 1000));
           }
 
@@ -2336,16 +2273,12 @@ class TournamentManager {
               p_related_entity_id: this.tournamentId,
             });
             if (txErr)
-              console.error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] Rake transaction log failed: ${txErr.message}`
-              );
+              reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] Rake transaction log failed: ${txErr.message}`), 'TournamentthistournamentIdslic.Rake_transaction_log_failed');
             console.log(
               `[Tournament:${this.tournamentId.slice(0, 8)}] Rake settled: ${totalRake} to ${club.union_id ? 'union' : 'club'} owner ${rakeRecipientId.slice(0, 8)}`
             );
           } else {
-            console.error(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: Rake credit FAILED after 3 retries — ${totalRake} chips LOST for recipient ${rakeRecipientId.slice(0, 8)}`
-            );
+            reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: Rake credit FAILED after 3 retries — ${totalRake} chips LOST for recipient ${rakeRecipientId.slice(0, 8)}`), 'TournamentthistournamentIdslic.CRITICAL');
           }
         }
       }
@@ -2545,10 +2478,7 @@ class TournamentManager {
           `[Tournament:${this.tournamentId.slice(0, 8)}] Moved ${move.playerId.slice(0, 8)}: table ${move.fromTableId.slice(0, 8)} seat ${move.fromSeat} → table ${move.toTableId.slice(0, 8)} seat ${move.toSeat}`
         );
       } catch (moveErr) {
-        console.error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] Move failed for ${move.playerId.slice(0, 8)}:`,
-          moveErr
-        );
+        reportError(moveErr, 'TournamentthistournamentIdslic.Move_failed_for_moveplayerIdsl');
       }
     }
   }
@@ -2661,10 +2591,7 @@ class TournamentManager {
         .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
 
       if (createErr || !newTable) {
-        console.error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] Failed to create expansion table:`,
-          createErr
-        );
+        reportError(createErr, 'TournamentthistournamentIdslic.Failed_to_create_expansion_tab');
         continue;
       }
 
@@ -2672,9 +2599,7 @@ class TournamentManager {
       const engine = new ServerTableEngine(newTable.id);
       this.tableEngines.set(newTable.id, engine);
       this.gameServer.registerTableEngine(newTable.id, engine);
-      engine.start().catch((err) =>
-        console.error(`[Tournament:${this.tournamentId.slice(0, 8)}] Expansion table engine error:`, err)
-      );
+      engine.start().catch((err) => reportError(err, 'TournamentthistournamentIdslic.Expansion_table_engine_error'));
       newTableIds.push(newTable.id);
 
       console.log(
@@ -2870,7 +2795,7 @@ const httpServer = createServer(async (req, res) => {
       const result = engine.handlePlayerAction(userId, action, amount);
       return sendJSON(res, result.success ? 200 : 400, result);
     } catch (err: any) {
-      console.error('[HTTP] /action error:', err.message);
+      reportError(err, 'HTTP.action_error');
       return sendJSON(res, 500, { success: false, error: 'Invalid request body' });
     }
   }
@@ -2902,7 +2827,7 @@ const httpServer = createServer(async (req, res) => {
       const result = engine.activateTimeBank(userId);
       return sendJSON(res, result.success ? 200 : 400, result);
     } catch (err: any) {
-      console.error('[HTTP] /timebank error:', err.message);
+      reportError(err, 'HTTP.timebank_error');
       return sendJSON(res, 500, { success: false, error: 'Invalid request body' });
     }
   }
@@ -2957,7 +2882,7 @@ const httpServer = createServer(async (req, res) => {
       const result = engine.heartbeat(userId);
       return sendJSON(res, 200, result);
     } catch (err: any) {
-      console.error('[HTTP] /heartbeat error:', err.message);
+      reportError(err, 'HTTP.heartbeat_error');
       return sendJSON(res, 500, { success: false, error: 'Invalid request body' });
     }
   }
@@ -2989,7 +2914,7 @@ const httpServer = createServer(async (req, res) => {
       const result = engine.setPreAction(userId, action, maxCallAmount);
       return sendJSON(res, result.success ? 200 : 400, result);
     } catch (err: any) {
-      console.error('[HTTP] /preaction error:', err.message);
+      reportError(err, 'HTTP.preaction_error');
       return sendJSON(res, 500, { success: false, error: 'Invalid request body' });
     }
   }
@@ -3024,7 +2949,7 @@ const httpServer = createServer(async (req, res) => {
       const result = engine.sitOut(userId, sitOut);
       return sendJSON(res, result.success ? 200 : 400, result);
     } catch (err: any) {
-      console.error('[HTTP] /sitout error:', err.message);
+      reportError(err, 'HTTP.sitout_error');
       return sendJSON(res, 500, { success: false, error: 'Invalid request body' });
     }
   }
@@ -3059,7 +2984,7 @@ const httpServer = createServer(async (req, res) => {
       const result = engine.toggleStraddle(userId, enabled);
       return sendJSON(res, result.success ? 200 : 400, result);
     } catch (err: any) {
-      console.error('[HTTP] /straddle error:', err.message);
+      reportError(err, 'HTTP.straddle_error');
       return sendJSON(res, 500, { success: false, error: 'Invalid request body' });
     }
   }
@@ -3118,7 +3043,7 @@ const httpServer = createServer(async (req, res) => {
       const result = engine.respondToRIT(userId, response);
       return sendJSON(res, result.success ? 200 : 400, result);
     } catch (err: any) {
-      console.error('[HTTP] /rit error:', err.message);
+      reportError(err, 'HTTP.rit_error');
       return sendJSON(res, 500, { success: false, error: 'Invalid request body' });
     }
   }
@@ -3158,7 +3083,7 @@ const httpServer = createServer(async (req, res) => {
       const result = engine.respondToInsurance(userId, response, coverage, forHand);
       return sendJSON(res, result.success ? 200 : 400, result);
     } catch (err: any) {
-      console.error('[HTTP] /insurance error:', err.message);
+      reportError(err, 'HTTP.insurance_error');
       return sendJSON(res, 500, { success: false, error: 'Invalid request body' });
     }
   }
@@ -3193,7 +3118,7 @@ const httpServer = createServer(async (req, res) => {
 
       return sendJSON(res, 200, { success: true, ...preview });
     } catch (err: any) {
-      console.error('[HTTP] /insurance-preview error:', err.message);
+      reportError(err, 'HTTP.insurancepreview_error');
       return sendJSON(res, 500, { success: false, error: 'Server error' });
     }
   }
@@ -3225,7 +3150,7 @@ const httpServer = createServer(async (req, res) => {
       const result = engine.showHand(userId);
       return sendJSON(res, result.success ? 200 : 400, result);
     } catch (err: any) {
-      console.error('[HTTP] /showhand error:', err.message);
+      reportError(err, 'HTTP.showhand_error');
       return sendJSON(res, 500, { success: false, error: 'Invalid request body' });
     }
   }
@@ -3257,7 +3182,7 @@ const httpServer = createServer(async (req, res) => {
       const result = engine.submitDiscard(userId, cardIndex);
       return sendJSON(res, result.success ? 200 : 400, result);
     } catch (err: any) {
-      console.error('[HTTP] /discard error:', err.message);
+      reportError(err, 'HTTP.discard_error');
       return sendJSON(res, 500, { success: false, error: 'Invalid request body' });
     }
   }
@@ -3275,7 +3200,7 @@ const httpServer = createServer(async (req, res) => {
 httpServer.listen(PORT, () => {
   console.log(`[HTTP] Health check server listening on port ${PORT}`);
   gameServer.start().catch((err) => {
-    console.error('[GameServer] Fatal error:', err);
+    reportError(err, 'GameServer.Fatal_error');
     process.exit(1);
   });
 });
@@ -3294,10 +3219,10 @@ const shutdown = async () => {
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
 process.on('uncaughtException', (err) => {
-  console.error('[GameServer] Uncaught exception:', err);
+  reportError(err, 'GameServer.Uncaught_exception');
   // Don't crash — keep running
 });
 process.on('unhandledRejection', (err) => {
-  console.error('[GameServer] Unhandled rejection:', err);
+  reportError(err, 'GameServer.Unhandled_rejection');
   // Don't crash — keep running
 });

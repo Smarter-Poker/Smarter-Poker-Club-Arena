@@ -15,6 +15,7 @@
  */
 
 import { supabase } from './supabase.js';
+import { reportError } from './errorReporter.js';
 
 const MIN_WALLET_BALANCE = 50000;
 const REFILL_AMOUNT = 100000;
@@ -91,9 +92,7 @@ export class AutoRebuyService {
           });
 
           if (creditError) {
-            console.error(
-              `[AutoRebuyService] Failed to refill wallet for ${horseName}: ${creditError.message}`
-            );
+            reportError(new Error(`[AutoRebuyService] Failed to refill wallet for ${horseName}: ${creditError.message}`), 'AutoRebuyService.Failed_to_refill_wallet_for_ho');
           } else {
             refilledCount++;
             console.log(
@@ -109,7 +108,7 @@ export class AutoRebuyService {
         );
       }
     } catch (err: any) {
-      console.error(`[AutoRebuyService] Wallet check error: ${err.message}`);
+      reportError(new Error(`[AutoRebuyService] Wallet check error: ${err.message}`), 'AutoRebuyService.Wallet_check_error');
     }
   }
 }

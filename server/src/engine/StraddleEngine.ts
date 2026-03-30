@@ -1,3 +1,5 @@
+import { reportError } from '../services/errorReporter.js';
+
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  STRADDLE ENGINE — UTG Straddle Only (FIX 114)
@@ -232,7 +234,7 @@ export class StraddleEngine {
       try {
         this.onEvent(event);
       } catch (err) {
-        console.error('[StraddleEngine] Event handler error:', err);
+        reportError(err, 'StraddleEngine.Event_handler_error');
       }
     }
   }

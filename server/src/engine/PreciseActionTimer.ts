@@ -1,3 +1,5 @@
+import { reportError } from '../services/errorReporter.js';
+
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  PRECISE ACTION TIMER — Server-Side Deadline Tracking
@@ -248,7 +250,7 @@ export class PreciseActionTimer {
             try {
               dl.onExpiry();
             } catch (err: unknown) {
-              console.error(`[PreciseActionTimer] Expiry callback error for ${dl.tableId}:${dl.playerId}:`, err);
+              reportError(err, 'PreciseActionTimer.Expiry_callback_error_for_dlta');
             }
           }
         }
@@ -269,7 +271,7 @@ export class PreciseActionTimer {
       try {
         this.onEvent(event);
       } catch (err) {
-        console.error('[PreciseActionTimer] Event handler error:', err);
+        reportError(err, 'PreciseActionTimer.Event_handler_error');
       }
     }
   }

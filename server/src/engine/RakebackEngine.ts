@@ -17,6 +17,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { reportError } from '../services/errorReporter.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -214,14 +215,14 @@ export class RakebackEngine {
           .insert(rows);
 
         if (error) {
-          console.error('[RakebackEngine] Failed to persist rakeback periods:', error.message);
+          reportError(error, 'RakebackEngine.Failed_to_persist_rakeback_per');
         } else {
           console.debug(
             `[RakebackEngine] Persisted ${rows.length} rakeback periods for club ${clubId.substring(0, 8)}...`
           );
         }
       } catch (err) {
-        console.error('[RakebackEngine] Exception persisting rakeback periods:', err);
+        reportError(err, 'RakebackEngine.Exception_persisting_rakeback_');
       }
     }
 
@@ -284,7 +285,7 @@ export class RakebackEngine {
       try {
         this.onEvent(event);
       } catch (err) {
-        console.error('[RakebackEngine] Event handler error:', err);
+        reportError(err, 'RakebackEngine.Event_handler_error');
       }
     }
   }

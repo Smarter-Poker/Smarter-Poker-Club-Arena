@@ -17,6 +17,7 @@
  */
 
 import { PreciseActionTimer } from './PreciseActionTimer.js';
+import { reportError } from '../services/errorReporter.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -333,7 +334,7 @@ export class TimeBankEngine {
       try {
         this.onEvent(event);
       } catch (err) {
-        console.error('[TimeBankEngine] Event handler error:', err);
+        reportError(err, 'TimeBankEngine.Event_handler_error');
       }
     }
   }

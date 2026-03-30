@@ -7,6 +7,52 @@
 
 ---
 
+## Round 35 — Root Cause Analysis & Fix: Zero Active Tables (2026-03-30)
+
+### ROOT CAUSE IDENTIFIED: 3 Bugs Preventing Live Gameplay
+
+**Bug 1 — cleanupStaleData() ignores closed tables (FIX 202)**
+- `server/src/index.ts` line 315: `.in('status', ['waiting', 'running'])` — only resets tables already active
+- Closed cash tables stay closed FOREVER across server restarts
+- **FIX:** Changed to `.in('status', ['waiting', 'running', 'closed'])` — all cash tables reset to 'waiting' on startup
+
+**Bug 2 — ensureAllTablesExist() creates duplicates instead of reactivating (FIX 201)**
+- `server/src/services/HorseFleetManager.ts` line 401: checks `.in('status', ['waiting', 'running'])`
+- If table exists as "closed", returns null → tries to INSERT new duplicate
+- Result: 342 tables in DB, 97 unique names (massive duplicates), all closed
+- **FIX:** Now checks for table by name in ANY status. If closed, reactivates to 'waiting' instead of creating duplicate
+
+**Bug 3 — Tables assigned to clubs, not Union (FIX 201)**
+- HorseFleetManager alternated between SHARK_CLUB_ID and JAQK_CLUB_ID
+- All 34 cash tables had `union_id: NULL` — invisible on UnionGamesPage
+- **FIX:** Tables now set BOTH `club_id` (for rake routing) AND `union_id = 'fade0000-...'` (Midway Union) for Union-level discovery
+
+### Database Findings (Live Supabase Verification)
+- **342 total tables, 97 unique names** — massive tournament table duplicates
+- **34 cash tables, ALL "closed"** — zero waiting/running tables for HorseFleetManager
+- **574 horse profiles** with `is_horse: true`, `horse_status: 'available'`
+- **Horse wallets funded** — e.g., "Peachtree" has $29,497.93 PLAYER wallet balance
+- **`profiles.is_horse` column** ✅ EXISTS (574 horses found)
+- **`profiles.horse_status` column** ✅ EXISTS (all 'available')
+- **`horse_fleet` table** ❌ DOES NOT EXIST — NOT needed (server uses profiles directly)
+- **`table_seats.is_horse` column** ❌ DOES NOT EXIST — NOT needed (server gets is_horse from profiles)
+- **`atomic_seat_horse` RPC** ✅ EXISTS but has duplicate overload (2 versions with same params in different order)
+- **Midway Union** exists: `fade0000-0000-0000-0000-000000000001` with JAQK + Shark clubs
+
+### Files Modified
+- `server/src/services/HorseFleetManager.ts` — FIX 201: Union-level tables, reactivate closed tables, no duplicates
+- `server/src/index.ts` — FIX 202: cleanupStaleData() resets closed cash tables to 'waiting'
+- `server/src/engine/ServerTableEngine.ts` — FIX 200: TimeBankEngine secondsPerUse 20→15 (Bible V8 §6.2)
+
+### SQL Migration
+- `supabase/migrations/20260330_fix_cash_tables_union_activation.sql`
+  - Sets `union_id` on all 34 cash tables to Midway Union
+  - Reactivates all closed cash tables to 'waiting'
+  - Cleans up duplicate tournament tables (keeps newest per name)
+  - Removes duplicate `atomic_seat_horse` overload
+
+---
+
 ## Round 34 — Live E2E Gameplay Audit Against Bible V8 (2026-03-30)
 
 ### Swarm Audit — Star Topology (5-domain parallel cross-reference)
@@ -29,9 +75,9 @@
 - **Rate limiting:** 100ms per player per action ✅
 - **Frontend:** SPA loads at smarter.poker/hub/club-arena/ (React root div present, error recovery active)
 
-### Operational Gaps Found (NOT code bugs)
-- Horse fleet not seeding tables (0 active tables) — likely horse wallets unfunded
-- No live hands being dealt — blocked by empty tables
+### Operational Gaps Found → RESOLVED IN ROUND 35 ✅
+- Horse fleet not seeding tables (0 active tables) — Root cause: all tables "closed", cleanupStaleData bug
+- No live hands being dealt — Root cause: 3 bugs (see Round 35)
 
 ### Deliverable: `E2E-GAMEPLAY-AUDIT-REPORT.md` — Full structured report with line-by-line evidence
 

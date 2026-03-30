@@ -55,6 +55,28 @@
   overscroll-behavior: none;
 }
 
+/* ─── Multi-table mode: use absolute positioning instead of fixed.
+   CSS transforms create a new containing block for fixed-position descendants,
+   so position:fixed breaks inside the translateX carousel. §FIX-214 ─── */
+.table-page--multi-table {
+  position: absolute;
+  height: 100%;
+  z-index: 1; /* Lower z-index inside slot — slot handles stacking */
+}
+
+/* Override ALL position:fixed descendants inside multi-table mode.
+   The ancestor transform on .multi-table-page__container shifts the
+   containing block for fixed-position elements, breaking their placement. */
+.table-page--multi-table .menu-overlay,
+.table-page--multi-table .side-menu,
+.table-page--multi-table .observing-indicator {
+  position: absolute;
+}
+
+.table-page--multi-table.table-page--allin-mode::after {
+  position: absolute;
+}
+
 /* ─── Hero Turn Indicator — subtle border glow when it's your turn ─── */
 .table-page--hero-turn {
   animation: heroTurnPulse 2s ease-in-out infinite;

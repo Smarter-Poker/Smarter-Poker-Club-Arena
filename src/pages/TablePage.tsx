@@ -4318,7 +4318,7 @@ export default function TablePage({
 
   return (
     <div
-      className={`table-page${isAllInMode ? ' table-page--allin-mode' : ''}${tableState.currentPlayerSeat === tableState.heroSeat && tableState.isHandInProgress ? ' table-page--hero-turn' : ''}${winnerInfo.playerIds.length > 0 ? ' table-page--winner-flash' : ''}`}
+      className={`table-page${isMultiTable ? ' table-page--multi-table' : ''}${isAllInMode ? ' table-page--allin-mode' : ''}${tableState.currentPlayerSeat === tableState.heroSeat && tableState.isHandInProgress ? ' table-page--hero-turn' : ''}${winnerInfo.playerIds.length > 0 ? ' table-page--winner-flash' : ''}`}
       data-felt-theme={v8Theme.theme_id || userSettings.theme || 'black'}
       data-background-theme={v8Theme.background_id || 'diamond-pattern'}
       data-button-theme={v8Theme.button_id || 'red-d-gear'}

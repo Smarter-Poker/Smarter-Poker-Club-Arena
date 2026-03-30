@@ -1560,14 +1560,30 @@ export class ServerTableEngine {
     // Single lookup — used for both rakeConfig and bbjConfig
     const fullRakeConfig = this.getFullRakeAndBBJConfig();
 
+    // FIX-218: Bible V8 §4.22 — Bomb pot detection based on table settings
+    // Triggers every N hands when bomb_pot_enabled + bomb_pot_frequency are set
+    let bombPotConfig: { anteMultiplier: number } | undefined;
+    if (
+      this.tableInfo.bomb_pot_enabled &&
+      this.tableInfo.bomb_pot_frequency &&
+      this.tableInfo.bomb_pot_frequency > 0 &&
+      handNumber % this.tableInfo.bomb_pot_frequency === 0
+    ) {
+      bombPotConfig = {
+        anteMultiplier: this.tableInfo.bomb_pot_ante_multiplier ?? 2,
+      };
+    }
+
     const config: HandConfig = {
       tableId: this.tableId,
       handNumber,
       gameVariant: this.tableInfo.game_variant as GameVariant,
       smallBlind: this.tableInfo.small_blind,
       bigBlind: this.tableInfo.big_blind,
-      ante: this.tableInfo.ante,
+      // FIX-219: Bible V8 §4.3 — Respect ante_enabled toggle; if disabled, zero out ante
+      ante: (this.tableInfo.ante_enabled ?? true) ? this.tableInfo.ante : undefined,
       bigBlindAnte: this.tableInfo.big_blind_ante_enabled ?? false,
+      bombPot: bombPotConfig,
       straddles: straddleResults.length > 0 ? straddleResults : undefined,
       // Bible V8 §4.2: Dead blinds for players returning from sit-out
       deadBlinds:
@@ -1692,7 +1708,7 @@ export class ServerTableEngine {
   // EVENT HANDLING
   // ═════════════════════════════════════════════════════════════════════════════
 
-  private handleHandEvent(event: HandEvent, players: SeatedPlayer[]): void {
+  private async handleHandEvent(event: HandEvent, players: SeatedPlayer[]): Promise<void> {
     switch (event.type) {
       case 'HAND_START':
         this.broadcastCurrentState();
@@ -1732,9 +1748,9 @@ export class ServerTableEngine {
         break;
 
       case 'TURN_CHANGE':
-        // Bible V8 §1.2.4: Broadcast FIRST, then start timer.
-        // "Timer starts only AFTER broadcast confirms turn change."
-        this.broadcastCurrentState();
+        // FIX-217 + Bible V8 §1.2.3/§1.2.4: Await broadcast delivery BEFORE starting timer.
+        // "Broadcast must confirm before next turn begins" + "Timer starts only AFTER broadcast confirms"
+        await this.broadcastCurrentState();
         this.handleTurnChange(event, players);
         break;
 
@@ -2857,15 +2873,17 @@ export class ServerTableEngine {
   }
 
   /**
-   * Broadcast current hand state to all table viewers
+   * Broadcast current hand state to all table viewers.
+   * FIX-217: Now returns Promise so critical paths can await delivery.
+   * Bible V8 §1.2.3: "Broadcast must confirm before next turn begins"
    */
-  private broadcastCurrentState(): void {
-    if (!this.handController || !this.tableInfo) return;
+  private broadcastCurrentState(): Promise<void> {
+    if (!this.handController || !this.tableInfo) return Promise.resolve();
 
     const state = this.handController.getState();
     const currentSeatPlayer = state.players.find((p) => p.seat === state.currentPlayerSeat);
 
-    broadcastHandState(this.tableId, {
+    return broadcastHandState(this.tableId, {
       table_id: this.tableId,
       hand_number: this.handCount,
       pot: state.pot ?? 0,

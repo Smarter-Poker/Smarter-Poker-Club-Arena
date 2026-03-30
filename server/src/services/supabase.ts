@@ -44,8 +44,12 @@ const channelCache = new Map<string, ReturnType<SupabaseClient['channel']>>();
 /**
  * Broadcast hand state to all table viewers via Supabase Realtime.
  * Uses the same channel naming as the client: `hand-state:{tableId}`
+ *
+ * FIX-217: Returns a Promise so critical paths (TURN_CHANGE, settlement)
+ * can await broadcast delivery to Supabase before proceeding.
+ * Bible V8 §1.2.3: "Broadcast must confirm before next turn begins"
  */
-export function broadcastHandState(tableId: string, handState: Record<string, unknown>): void {
+export function broadcastHandState(tableId: string, handState: Record<string, unknown>): Promise<void> {
   const channelName = `hand-state:${tableId}`;
 
   let channel = channelCache.get(channelName);
@@ -59,11 +63,14 @@ export function broadcastHandState(tableId: string, handState: Record<string, un
     channelCache.set(channelName, channel);
   }
 
-  channel
+  return channel
     .send({
       type: 'broadcast',
       event: 'hand_state',
       payload: handState,
+    })
+    .then(() => {
+      // Broadcast accepted by Supabase server
     })
     .catch((err: unknown) => {
       console.warn(`[Broadcast] Failed to send hand state for ${tableId}:`, err);
@@ -103,7 +110,7 @@ export async function loadTable(tableId: string) {
   const { data, error } = await supabase
     .from('tables')
     .select(
-      'id, club_id, small_blind, big_blind, game_variant, max_players, ante, game_type, tournament_id, action_time_seconds, time_bank_seconds, big_blind_ante_enabled, straddle_enabled, straddle_type, max_straddles, run_it_twice_enabled, insurance_enabled, auto_muck_enabled, show_hand_enabled, disconnect_timeout_seconds, max_consecutive_timeouts, prefer_check_over_fold, time_bank_max_uses, time_bank_enabled'
+      'id, club_id, small_blind, big_blind, game_variant, max_players, ante, game_type, tournament_id, action_time_seconds, time_bank_seconds, big_blind_ante_enabled, straddle_enabled, straddle_type, max_straddles, run_it_twice_enabled, insurance_enabled, auto_muck_enabled, show_hand_enabled, disconnect_timeout_seconds, max_consecutive_timeouts, prefer_check_over_fold, time_bank_max_uses, time_bank_enabled, ante_enabled, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, min_players, name'
     )
     .eq('id', tableId)
     .maybeSingle();

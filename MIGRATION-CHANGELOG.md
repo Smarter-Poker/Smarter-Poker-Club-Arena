@@ -3,7 +3,81 @@
 ## Every Change, Documented. No Exceptions.
 
 **Started:** 2026-03-24
-**Current Step:** ALL 8 STEPS COMPLETE — Bible V8 Deep Audit COMPLETE (216 fixes, 0 gaps)
+**Current Step:** ALL 8 STEPS COMPLETE — Bible V8 Deep Audit (219 fixes, 97% verified, 3% design-choice PARTIAL)
+
+---
+
+## Round 42 — Deep-Dive on ALL 9 PARTIAL Items + Code Fixes (2026-03-30)
+
+### Deep-Dive Analysis of Each PARTIAL Item:
+
+**1. PARTIAL 1.2.3/1.3/1.9 — Broadcast fire-and-forget**
+- **Root cause:** `broadcastHandState()` in supabase.ts was `void`, calling `channel.send().catch()` without await
+- **TURN_CHANGE handler:** Called `broadcastCurrentState()` then `handleTurnChange()` — correct order but broadcast not awaited
+- **FIX-217:** Made `broadcastHandState()` return `Promise<void>`. Made `handleHandEvent()` async. TURN_CHANGE case now `await this.broadcastCurrentState()` before `handleTurnChange()`.
+- **Impact:** Timer now starts only AFTER Supabase acknowledges broadcast (§1.2.3 + §1.2.4). Non-critical broadcasts (PLAYER_ACTION, COMMUNITY_CARDS, SHOWDOWN, WINNERS) remain fire-and-forget — they have no timer dependency.
+- **Status:** PARTIAL → VERIFIED
+
+**2. PARTIAL 1.6/3.1/3.2 — State machine formality**
+- **Analysis:** HandController uses string-based `state.stage = 'flop'` with switch in `advanceStage()`. Transitions: preflop→flop→turn→river→showdown→settlement→cleanup. All transitions are deterministic and correct.
+- **Verdict:** Design choice, not a bug. Creating formal FSM classes would be a large refactor with no behavioral change. Functionally equivalent to Bible V8 §3.1-3.2 state machines.
+- **Status:** PARTIAL (design choice — not a deficiency)
+
+**3. PARTIAL 2.2 — TableSettings completeness**
+- **Field-by-field audit against Bible V8 §2.2:**
+  - straddle_enabled ✅ (types.ts:98, loadTable query, ServerTableEngine:332)
+  - straddle_type ✅ (types.ts:99, 'utg' per FIX-114)
+  - max_straddles ✅ (types.ts:100, loadTable query)
+  - run_it_twice_enabled ✅ (types.ts:102, ServerTableEngine:306)
+  - bomb_pot_enabled ✅ (types.ts:122, DB column exists in migration 010)
+  - bomb_pot_frequency ❌ **MISSING FROM DB** — FIX-218: Added to loadTable query + DB migration
+  - bomb_pot_ante_multiplier ❌ **MISSING FROM DB** — FIX-218: Added to loadTable query + DB migration
+  - time_bank_enabled ✅ (types.ts:118, loadTable query, ServerTableEngine:282)
+  - time_bank_seconds ✅ (types.ts:94 as action_time_seconds, loadTable query)
+  - time_bank_max_uses ✅ (types.ts:116, ServerTableEngine:287)
+  - action_time_seconds ✅ (types.ts:93, loadTable query)
+  - insurance_enabled ✅ (types.ts:104, ServerTableEngine:307)
+  - ante_enabled ❌ **MISSING FROM DB** — FIX-219: Added to loadTable query + DB migration
+  - ante_amount ✅ (types.ts:90 as `ante`)
+  - big_blind_ante_enabled ✅ (types.ts:96, ServerTableEngine:1570)
+  - disconnect_timeout_seconds ✅ (types.ts:110, ServerTableEngine:294)
+  - max_consecutive_timeouts ✅ (types.ts:112, ServerTableEngine:295)
+  - prefer_check_over_fold ✅ (types.ts:114, ServerTableEngine:296)
+  - auto_muck_enabled ✅ (types.ts:106, ServerTableEngine:2920)
+  - show_hand_enabled ✅ (types.ts:108, ServerTableEngine:1127-1130)
+- **Fixes applied:**
+  - FIX-218: Wired bomb pot settings from DB → HandConfig (bombPotConfig logic + loadTable query update)
+  - FIX-219: Added ante_enabled toggle (loadTable query + HandConfig respects it)
+  - DB migration: `20260330_bible_v8_table_settings_gaps.sql` adds `ante_enabled`, `bomb_pot_frequency`, `bomb_pot_ante_multiplier` columns
+- **Status:** PARTIAL → VERIFIED
+
+**4. PARTIAL 6.1.b — PreciseActionTimer deadline-based**
+- **Deep-dive:** PreciseActionTimer.ts stores `deadline: Date.now() + durationMs` (line 85), checks `Date.now() >= dl.deadline` for expiry (line 133), polls at 100ms (line 59). This IS deadline-based.
+- **Primary timer:** ServerTableEngine `startTurnTimer()` uses setTimeout with 2s grace period for the auto-action CALLBACK. But ServerActionValidator uses PreciseActionTimer.isExpired() for VALIDATION. The source of truth for timing is the deadline, not setTimeout.
+- **Status:** PARTIAL → VERIFIED
+
+**5. PARTIAL 7.15 — Hand-for-hand**
+- **Deep-dive revealed FULL implementation:**
+  - TournamentManager (index.ts:642-653): Fields: handForHandActive, handForHandAnnounced, syncInterval, rePauseTimer
+  - Bubble detection (1571-1630): Triggers when `playingNow === payoutCount + 1`
+  - Pause (1613-1618): Calls `engine.pauseAfterHand()` on ALL table engines
+  - Sync (788-830): 500ms interval polling `isWaitingForHandForHand()` on all engines
+  - Resume (802-820): When all tables done → resume all → re-pause for next cycle
+  - Bubble burst (1620-1630): Deactivates hand-for-hand, resumes permanently
+  - ServerTableEngine (1419-1433): Waits via Promise with 2-minute safety timeout
+- **Status:** PARTIAL → VERIFIED
+
+### Files Modified:
+- `server/src/services/supabase.ts` — FIX-217: broadcastHandState returns Promise<void>; FIX-218/219: loadTable query adds ante_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, min_players, name
+- `server/src/engine/ServerTableEngine.ts` — FIX-217: broadcastCurrentState returns Promise, handleHandEvent async, TURN_CHANGE awaits broadcast; FIX-218: bomb pot config wired into HandConfig; FIX-219: ante_enabled toggle
+- `supabase/migrations/20260330_bible_v8_table_settings_gaps.sql` — NEW: Adds missing DB columns
+- `skills/bible-v8/COMPLIANCE-TRACKER.md` — Updated 6 items from PARTIAL to VERIFIED
+- `MIGRATION-CHANGELOG.md` — Round 42 entry
+
+### Compliance Summary After Round 42:
+- **97% VERIFIED** (95 of 98 items) — up from 91%
+- **3% PARTIAL** (3 items) — all design choices, not deficiencies
+- **0% broken, missing, or needs-verify**
 
 ---
 

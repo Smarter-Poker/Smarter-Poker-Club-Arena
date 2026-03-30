@@ -569,15 +569,16 @@ function HomePageInner() {
           activePlayers = Number(rpcCount) || 0;
         } catch (e) {
           reportError(e, 'HomePage');
-          // RPC not deployed yet — use legacy 2-query fallback
+          // RPC not deployed yet — use legacy 2-query fallback (DISTINCT user_id)
           if (tablesResult.status === 'fulfilled' && tablesResult.value.data?.length) {
             const tableIds = tablesResult.value.data.map((t: any) => t.id);
-            const { count: seatCount } = await supabase
+            const { data: seatRows } = await supabase
               .from('table_seats')
-              .select('*', { count: 'exact', head: true })
+              .select('user_id')
               .in('table_id', tableIds)
               .is('left_at', null);
-            activePlayers = seatCount || 0;
+            // Deduplicate by user_id to match the RPC behavior
+            activePlayers = seatRows ? new Set(seatRows.map((s: any) => s.user_id)).size : 0;
           }
         }
 
@@ -710,6 +711,17 @@ function HomePageInner() {
           event: '*',
           schema: 'public',
           table: 'club_members',
+        },
+        debouncedSharkRefresh
+      )
+      // Listen to table_seats changes — active player count must update
+      // when players sit down or leave tables
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'table_seats',
         },
         debouncedSharkRefresh
       )
@@ -1233,7 +1245,7 @@ function HomePageInner() {
               }
             }
           } catch (e) {
-            console.warn('[HomePage] Union stats overlay failed:', e);
+            reportError(e, 'HomePage.Union_stats_overlay_failed');
           }
         }
 

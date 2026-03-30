@@ -3,7 +3,42 @@
 ## Every Change, Documented. No Exceptions.
 
 **Started:** 2026-03-24
-**Current Step:** ALL 8 STEPS COMPLETE — Bible V8 Deep Audit (222 fixes, 97% verified, 3% design-choice PARTIAL)
+**Current Step:** ALL 8 STEPS COMPLETE — Bible V8 Deep Audit (222 fixes, 95% verified, 5% PARTIAL across 171 tracked items)
+
+---
+
+## Round 44 — Bible V8 Chapters 5, 8, 9, 10 Deep-Dive Audit (2026-03-30)
+
+**Focus:** Line-by-line code verification of UI/UX (Ch5), Extensibility (Ch8), Performance/Security (Ch9), and Animation Standards (Ch10) against Bible V8 spec.
+
+### Chapter 5: UI/UX — Popups, Sounds, Haptics (23 detail items added)
+- **5.1.1–5.1.3**: Action popups (FOLD/CHECK/CALL/RAISE/ALL-IN labels), winner announcement overlay, Insurance/RIT modal overlays — all VERIFIED
+- **5.2.1**: Animation sequencing via useActionSequencer hook — 4-step pipeline (label→chip→pot→turn = 800ms) — VERIFIED
+- **5.3.1–5.3.12**: All 12 sound events verified end-to-end:
+  - SoundService.ts: Web Audio API procedural synthesis (fold, check, call, raise, all-in, deal, community, showdown, win, bigWin, timer warning, time bank, disconnect)
+  - TablePage.tsx: Every sound method wired to correct game event with exact line numbers confirmed
+- **5.4.1–5.4.7**: All 7 haptic mappings verified — fold/check=light, call=light, raise=medium, all-in=heavy, your_turn=medium, you_win=heavy/triple, timer_warning=double
+
+### Chapter 8: Extensibility (8 items added)
+- **8.1.1–8.1.4**: Game variant extensibility — evaluator dispatch, cards-per-player switch, blind/ante/straddle per variant, UI card layout — all VERIFIED
+- **8.2.1–8.2.4**: Tournament configuration — blind structure, payouts, elimination/rebuy/addon, timer/break — all VERIFIED
+
+### Chapter 9: Performance, Reliability & Security (14 items added)
+- **9.1.1–9.1.3**: Performance targets (< 50ms action, < 100ms broadcast, < 16ms UI) — PARTIAL (no instrumentation)
+- **9.1.4**: Hand throughput 30+ hands/hour — VERIFIED (configurable action_time)
+- **9.2.1–9.2.4**: Reliability — StateVerifier (6 checks), zero card exposure, graceful disconnect, crash recovery — all VERIFIED
+- **9.3.1–9.3.5**: Security — server-side logic, per-player cards, rate limiting (100ms/player), JWT auth on all 13 endpoints, 16KB body limit — all VERIFIED
+
+### Chapter 10: Animation Standards (8 items added)
+- **10.1.1–10.1.3**: Card animations — deal (slide+scale), community (slide+flip), showdown (3D rotateY) — all VERIFIED with CSS keyframe analysis
+- **10.2.1–10.2.2**: Chip animations — bet-to-pot (chipMove), pot-to-winner (chipMoveReverse) — VERIFIED
+- **10.3.1–10.3.3**: Sequencing, budget (800ms), skip option (--animation-speed: 0) — all VERIFIED
+
+### Compliance Tracker Update:
+- Added 53 new items across 4 chapters to COMPLIANCE-TRACKER.md
+- Updated summary statistics: 171 total items, 163 VERIFIED (95%), 8 PARTIAL (5%)
+- 0 BROKEN, 0 MISSING, 0 NEEDS-VERIFY
+- New PARTIAL items: 9.1.1-9.1.3 (performance instrumentation gaps)
 
 ---
 

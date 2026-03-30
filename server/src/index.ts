@@ -832,7 +832,7 @@ class TournamentManager {
         .from('tournaments')
         .select('*')
         .eq('id', this.tournamentId)
-        .single();
+        .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
 
       if (!tournament) throw new Error('Tournament not found');
       this.tournamentCache = tournament;
@@ -1050,7 +1050,7 @@ class TournamentManager {
         .from('tournaments')
         .select('*')
         .eq('id', this.tournamentId)
-        .single();
+        .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
 
       if (!tournament) throw new Error('Tournament not found');
       this.tournamentCache = tournament;
@@ -1169,7 +1169,7 @@ class TournamentManager {
           status: 'running',
         })
         .select()
-        .single();
+        .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
 
       if (error || !table) {
         console.error(
@@ -1358,7 +1358,7 @@ class TournamentManager {
               .from('tournaments')
               .select('prize_pool')
               .eq('id', this.tournamentId)
-              .single();
+              .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
             if (freshT) {
               await supabase
                 .from('tournaments')
@@ -1454,7 +1454,7 @@ class TournamentManager {
       .from('tournaments')
       .select('prize_pool')
       .eq('id', this.tournamentId)
-      .single();
+      .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
     if (freshT) {
       await supabase
         .from('tournaments')
@@ -1682,7 +1682,7 @@ class TournamentManager {
         'payout_structure, prize_pool, is_bounty, is_pko, is_mystery_bounty, bounty_amount, mystery_bounty_min, mystery_bounty_max'
       )
       .eq('id', this.tournamentId)
-      .single();
+      .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
 
     let prize = 0;
     if (tournament?.payout_structure) {
@@ -1853,7 +1853,7 @@ class TournamentManager {
       .select('current_bounty')
       .eq('tournament_id', this.tournamentId)
       .eq('user_id', eliminatedUserId)
-      .single();
+      .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
 
     const bountyValue = eliminatedPlayer?.current_bounty || baseBounty;
 
@@ -1871,7 +1871,7 @@ class TournamentManager {
         .select('current_bounty, bounties_collected, bounty_winnings')
         .eq('tournament_id', this.tournamentId)
         .eq('user_id', knockerUserId)
-        .single();
+        .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
 
       const newKnockerBounty = (knocker?.current_bounty || baseBounty) + addedToHead;
 
@@ -1939,7 +1939,7 @@ class TournamentManager {
         .select('bounties_collected, bounty_winnings')
         .eq('tournament_id', this.tournamentId)
         .eq('user_id', knockerUserId)
-        .single();
+        .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
 
       await supabase
         .from('tournament_players')
@@ -1972,7 +1972,7 @@ class TournamentManager {
         .select('bounties_collected, bounty_winnings')
         .eq('tournament_id', this.tournamentId)
         .eq('user_id', knockerUserId)
-        .single();
+        .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
 
       await supabase
         .from('tournament_players')
@@ -2153,7 +2153,7 @@ class TournamentManager {
       .from('tournaments')
       .select('payout_structure, prize_pool, buy_in_fee, current_players, club_id, name, status')
       .eq('id', this.tournamentId)
-      .single();
+      .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
 
     if (!tournament || tourneyLoadErr) {
       console.error(
@@ -2257,7 +2257,7 @@ class TournamentManager {
         .from('clubs')
         .select('owner_id, name, union_id')
         .eq('id', tournament.club_id)
-        .single();
+        .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
 
       if (club) {
         let rakeRecipientId: string | null = null;
@@ -2269,7 +2269,7 @@ class TournamentManager {
             .from('unions')
             .select('owner_id, name')
             .eq('id', club.union_id)
-            .single();
+            .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
 
           if (union?.owner_id) {
             rakeRecipientId = union.owner_id;
@@ -2644,7 +2644,7 @@ class TournamentManager {
           status: 'running',
         })
         .select()
-        .single();
+        .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
 
       if (createErr || !newTable) {
         console.error(

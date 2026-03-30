@@ -6,7 +6,8 @@
  * Compact glassmorphism pill bar above the action panel with commonly-used
  * table toggles. Eliminates deep menu diving for frequent operations.
  *
- * Buttons: Auto-Rebuy | Chat | Hand Strength | Stats | Sound | Settings
+ * Buttons: Auto-Rebuy | Chat | Stats | Sound | Settings
+ * FIX 199: Hand Strength toggle REMOVED — not allowed for live online gameplay
  */
 
 import React, { useState, useCallback } from 'react';
@@ -16,12 +17,12 @@ import './QuickActionsBar.css';
 export interface QuickActionsBarProps {
   isSoundEnabled: boolean;
   isChatVisible: boolean;
-  isHandStrengthVisible: boolean;
+  // FIX 199: isHandStrengthVisible REMOVED — not allowed for live online gameplay
   isStatsVisible: boolean;
   isAutoRebuyEnabled: boolean;
   onToggleSound: () => void;
   onToggleChat: () => void;
-  onToggleHandStrength: () => void;
+  // FIX 199: onToggleHandStrength REMOVED — not allowed for live online gameplay
   onToggleStats: () => void;
   onToggleAutoRebuy: () => void;
   onOpenSettings: () => void;
@@ -38,12 +39,10 @@ interface QuickAction {
 export function QuickActionsBar({
   isSoundEnabled,
   isChatVisible,
-  isHandStrengthVisible,
   isStatsVisible,
   isAutoRebuyEnabled,
   onToggleSound,
   onToggleChat,
-  onToggleHandStrength,
   onToggleStats,
   onToggleAutoRebuy,
   onOpenSettings,
@@ -70,13 +69,7 @@ export function QuickActionsBar({
       isActive: isChatVisible,
       onClick: () => handleAction(onToggleChat),
     },
-    {
-      id: 'hand-strength',
-      icon: '🎯',
-      label: 'Strength',
-      isActive: isHandStrengthVisible,
-      onClick: () => handleAction(onToggleHandStrength),
-    },
+    // FIX 199: Hand strength toggle REMOVED — not allowed for live online gameplay
     {
       id: 'stats',
       icon: '📊',

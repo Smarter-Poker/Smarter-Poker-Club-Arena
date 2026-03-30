@@ -30,7 +30,7 @@ export interface TableSettings {
   soundEnabled: boolean;
   soundVolume: number;
   hapticEnabled: boolean;
-  showHandStrength: boolean;
+  // FIX 199: showHandStrength REMOVED — not allowed for live online gameplay
   showPotOdds: boolean;
   animationSpeed: 'slow' | 'normal' | 'fast';
   fourColorDeck: boolean;
@@ -69,7 +69,6 @@ export const DEFAULT_TABLE_SETTINGS: TableSettings = {
   soundEnabled: true,
   soundVolume: 70,
   hapticEnabled: true,
-  showHandStrength: true,
   showPotOdds: false,
   animationSpeed: 'normal',
   fourColorDeck: false,
@@ -235,12 +234,7 @@ export function SettingsPanel({
           >
             <h3 className="settings-section__title">Display</h3>
 
-            <SettingToggle
-              label="Show hand strength"
-              description="Display current hand rank"
-              checked={settings.showHandStrength}
-              onChange={() => handleToggle('showHandStrength')}
-            />
+            {/* FIX 199: Hand strength toggle REMOVED — not allowed for live online gameplay */}
 
             <SettingToggle
               label="Show pot odds"

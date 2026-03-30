@@ -11,6 +11,7 @@
  */
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { haptic } from '../../services/SoundService';
 import {
   SitOutIcon,
   RebuyIcon,
@@ -247,8 +248,8 @@ export function TableMenu({
   const handleActionClick = useCallback(
     (action: MenuAction) => {
       if (action.disabled) return;
-      // Haptic feedback for premium feel
-      if (typeof navigator !== 'undefined' && 'vibrate' in navigator) navigator.vibrate(8);
+      // FIX 198: Bible V8 §5.4 — use haptic service, not raw navigator.vibrate
+      haptic.light();
       action.onClick();
       onClose();
     },

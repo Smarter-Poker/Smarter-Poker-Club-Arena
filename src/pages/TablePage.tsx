@@ -4459,7 +4459,13 @@ export default function TablePage({
                         },
                       ]
                     : []),
-                  // Settings removed from table menu — accessible only via hamburger menu (Bible V8 §11.1)
+                  // Bible V8 §11.1 — Settings accessible from BOTH table HUD menu AND hamburger menu
+                  {
+                    id: 'settings',
+                    label: 'Table Settings',
+                    icon: <HelpIcon />,
+                    onClick: () => setShowSettings(true),
+                  },
                 ],
               },
               {
@@ -5065,6 +5071,18 @@ export default function TablePage({
             >
               <span className="menu-item-icon">⌂</span>
               <span className="menu-item-label">Wait List</span>
+              <span className="menu-item-arrow">›</span>
+            </button>
+            {/* Bible V8 §11.1 — Table Settings accessible from hamburger menu */}
+            <button
+              className="menu-item"
+              onClick={() => {
+                setShowSettings(true);
+                setIsSideMenuOpen(false);
+              }}
+            >
+              <span className="menu-item-icon">⚙</span>
+              <span className="menu-item-label">Table Settings</span>
               <span className="menu-item-arrow">›</span>
             </button>
             <button

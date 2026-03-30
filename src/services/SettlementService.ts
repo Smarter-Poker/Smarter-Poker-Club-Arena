@@ -641,9 +641,10 @@ export const SettlementService = {
     // CRITICAL ALERT: Insufficient balance — abort all payouts
     if (unionOwnerBalance < totalEstimatedRakeBack) {
       const shortfall = totalEstimatedRakeBack - unionOwnerBalance;
-      console.error(
-        `[Settlement] CRITICAL: Union owner insufficient balance for rakeback. ` +
-          `Balance: ${unionOwnerBalance}, Required: ${totalEstimatedRakeBack}, Shortfall: ${shortfall}`
+      reportError(
+        `Union owner insufficient balance: Balance=${unionOwnerBalance}, Required=${totalEstimatedRakeBack}, Shortfall=${shortfall}`,
+        'SettlementService.executeUnionRakeBack.insufficientBalance',
+        { unionId, unionOwnerBalance, totalEstimatedRakeBack, shortfall }
       );
 
       try {

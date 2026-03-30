@@ -758,7 +758,7 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
                                 {table.club_name && ` • ${table.club_name}`}
                               </span>
                             </div>
-                            <span className={styles.watchButton}>👁 Observe</span>
+                            <span className={styles.watchButton}>Watch</span>
                           </button>
                         ))}
                       </div>

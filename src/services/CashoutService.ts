@@ -19,6 +19,7 @@ import { FinancialAlertService } from './FinancialAlertService';
 import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -102,7 +103,7 @@ class CashoutServiceClass {
     );
 
     if (error) {
-      console.error('[Cashout] Failed to request cashout:', error);
+      reportError(error, 'CashoutService.requestCashout');
       throw new Error(error.message || 'Failed to request cashout');
     }
 
@@ -120,7 +121,7 @@ class CashoutServiceClass {
           cashout.id
         );
       } catch (notifyError) {
-        console.error('[Cashout] Failed to notify agent:', notifyError);
+        reportError(notifyError, 'CashoutService.notifyAgent');
         // Don't fail the cashout if notification fails
       }
     }
@@ -165,7 +166,7 @@ class CashoutServiceClass {
     );
 
     if (error) {
-      console.error('[Cashout] Failed to cancel cashout:', error);
+      reportError(error, 'CashoutService.cancelCashout');
       throw new Error(error.message || 'Failed to cancel cashout');
     }
 
@@ -209,7 +210,7 @@ class CashoutServiceClass {
     );
 
     if (error) {
-      console.error('[Cashout] Failed to approve cashout:', error);
+      reportError(error, 'CashoutService.approveCashout');
       throw new Error(error.message || 'Failed to approve cashout');
     }
 
@@ -256,7 +257,7 @@ class CashoutServiceClass {
     );
 
     if (error) {
-      console.error('[Cashout] Failed to complete cashout:', error);
+      reportError(error, 'CashoutService.completeCashout');
       throw new Error(error.message || 'Failed to complete cashout');
     }
 
@@ -300,7 +301,7 @@ class CashoutServiceClass {
         }
       }
     } catch (err) {
-      console.error('[CashoutService] Post-cashout bus emission failed:', err);
+      reportError(err, 'CashoutService.postCashoutBus');
     }
 
     return data === true;
@@ -325,7 +326,7 @@ class CashoutServiceClass {
     );
 
     if (error) {
-      console.error('[Cashout] CRITICAL: Failed to reject cashout:', error);
+      reportError(error, 'CashoutService.rejectCashout');
       throw new Error(error.message || 'Cannot reject cashout.');
     }
 
@@ -399,7 +400,7 @@ class CashoutServiceClass {
     const { data, error } = await query;
 
     if (error) {
-      console.error('[Cashout] Failed to get agent cashouts:', error);
+      reportError(error, 'CashoutService.getAgentCashouts');
       return [];
     }
 
@@ -430,7 +431,7 @@ class CashoutServiceClass {
     const { data, error } = await query;
 
     if (error) {
-      console.error('[Cashout] Failed to get player cashouts:', error);
+      reportError(error, 'CashoutService.getPlayerCashouts');
       return [];
     }
 
@@ -458,7 +459,7 @@ class CashoutServiceClass {
     );
 
     if (error) {
-      console.error('[Cashout] Failed to check remove permission:', error);
+      reportError(error, 'CashoutService.checkRemovePermission');
       return false;
     }
 
@@ -503,7 +504,7 @@ class CashoutServiceClass {
     });
 
     if (txError) {
-      console.error('[Cashout] Failed to record reversal metadata (transfer succeeded):', txError);
+      reportError(txError, 'CashoutService.reversalMetadata');
     }
 
     return true;
@@ -564,7 +565,7 @@ class CashoutServiceClass {
         .eq('id', reversibleTx.id);
 
       if (reverseError) {
-        console.error('[Cashout] Failed to mark reversal on column:', reverseError);
+        reportError(reverseError, 'CashoutService.markReversal');
       }
     } else {
       console.warn('[Cashout] No reversible transaction found to mark — reversal metadata skipped');
@@ -581,7 +582,7 @@ class CashoutServiceClass {
     });
 
     if (txError) {
-      console.error('[Cashout] Failed to record removal metadata:', txError);
+      reportError(txError, 'CashoutService.removalMetadata');
     }
 
     return true;
@@ -625,7 +626,7 @@ class CashoutServiceClass {
     );
 
     if (error) {
-      console.error('[Cashout] Failed to expire stale cashouts:', error);
+      reportError(error, 'CashoutService.expireStale');
       return { expired: 0, playersRefunded: [] };
     }
 

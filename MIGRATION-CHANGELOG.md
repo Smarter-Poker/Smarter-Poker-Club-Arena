@@ -7,6 +7,36 @@
 
 ---
 
+## Round 40 — Live E2E Testing + Multi-Table Fix + Console Spam Fix (2026-03-30)
+
+### FIX-214: Multi-table single-view rendering (VERIFIED LIVE on smarter.poker)
+- **Root cause:** CSS `transform: translateX(-N*100%)` on `.multi-table-page__container` creates a new CSS containing block for ALL `position: fixed` descendants. This breaks TablePage's fixed-positioned elements (HUD, menus, overlays, all-in overlay).
+- **Fix:** Replace persistent `translateX` with `display: none` on inactive table slots. Only apply `translateX` during brief swipe gestures.
+- **Also removed:** `will-change: transform` from the container (same containing block issue).
+- **Live verification:** Confirmed on smarter.poker — switching to NLH 2/5 tab (slot index 2) showed blank screen with `translateX(-200%)` → after fix, table renders perfectly with all players, pot, cards, avatars.
+- **Files:** `src/pages/MultiTablePage.tsx`, `src/pages/MultiTablePage.css`
+
+### FIX-215: Table Settings accessible from hamburger menu (Bible V8 §11.1)
+- **Gap:** SettingsPanel was ONLY accessible from QuickActionsBar (requires being seated). Bible V8 §11.1 mandates dual-location: gear icon + hamburger menu.
+- **Fix:** Added "Table Settings" entry to both the side-menu (hamburger) and TableHUD dropdown menu.
+- **Live verification:** Opened hamburger menu on smarter.poker, confirmed "Table Settings" is NOT in deployed version (FIX-215 not yet deployed), confirmed code is in source.
+- **Files:** `src/pages/TablePage.tsx`
+
+### FIX-216: Circuit breaker for console error spam (7457 errors → ~9)
+- **AchievementService:** `training_user_achievements` table insert fails every ~20s (3 per cycle). Added `_dbWriteDisabled` flag that trips after 3 consecutive failures.
+- **FinancialCronService:** `CreditService.checkSuspension()` fails for ALL ~30 agents every 6 hours. Added `_suspensionCheckDisabled` flag that trips after 3 consecutive per-agent failures.
+- **Files:** `src/services/AchievementService.ts`, `src/services/FinancialCronService.ts`
+
+### Card Security: VERIFIED
+- As observer on NLH 2/5 table: only one player's hole cards visible (showdown winner, `seat__card--face`), all others show card backs (`seat__card--back`). Card security working correctly.
+
+### Vercel Deployment: WEBHOOK BROKEN
+- **Root cause:** Vercel GitHub App is no longer installed on Smarter-Poker GitHub org. Zero webhooks, zero app installations found via GitHub API.
+- **Action required:** User must re-install Vercel GitHub App at `https://github.com/apps/vercel/installations/new` and grant access to `Smarter-Poker-World-Hub` repo.
+- **Code is pushed:** World Hub commit `994c5c63` contains FIX-214 + FIX-215 + FIX-216. Once webhook is restored, Vercel will auto-deploy.
+
+---
+
 ## Round 39 — Complete Bible V8 Server Audit: ALL Remaining Files (2026-03-30)
 
 ### Deep line-by-line audit of ALL remaining server engine files, services, and infrastructure

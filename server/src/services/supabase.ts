@@ -483,6 +483,7 @@ export async function logBBJCollection(
 
     // Use bbj_record_contribution RPC — atomically updates pool balances + logs contribution
     // hand_id is nullable (migration 20260325) since server uses hand_history not hands table
+    // FIX 205: Pass club_id to avoid NOT NULL constraint violation
     const { error } = await supabase.rpc('bbj_record_contribution', {
       p_pool_id: pool.id,
       p_hand_id: null,
@@ -493,6 +494,7 @@ export async function logBBJCollection(
       p_promo_portion: promoPortion,
       p_big_blind: bigBlind,
       p_hand_number: handNumber,
+      p_club_id: clubId,
     });
 
     if (error) {

@@ -668,7 +668,10 @@ export class HorseFleetManager {
       });
 
       if (seatErr) {
-        console.error(`[HorseFleet] seat insert failed for ${horseId}:`, seatErr.message);
+        // FIX 206: Silence expected duplicate key errors (race condition between seed cycles)
+        if (!seatErr.message.includes('duplicate key')) {
+          console.error(`[HorseFleet] seat insert failed for ${horseId}:`, seatErr.message);
+        }
         // Refund wallet on seat failure
         await supabase
           .from('wallets')

@@ -13,6 +13,7 @@
 
 import { RealtimeChannel, RealtimePresenceState } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -105,7 +106,7 @@ export class TableWebSocket {
 
   async connect(): Promise<boolean> {
     if (!this.supabase) {
-      console.error('[TableWS] Supabase not configured, running in offline mode');
+      reportError('Supabase not configured, running in offline mode', 'TableWS.connect.noSupabase');
       return false;
     }
 
@@ -115,7 +116,7 @@ export class TableWebSocket {
         data: { session },
       } = await this.supabase.auth.getSession();
       if (!session) {
-        console.error('[TableWS] No auth session, scheduling reconnect...');
+        reportError('No auth session, scheduling reconnect', 'TableWS.connect.noAuth');
         this.scheduleReconnect();
         return false;
       }
@@ -183,7 +184,7 @@ export class TableWebSocket {
       }
       return this.isConnected;
     } catch (error: unknown) {
-      console.error('[TableWS] Connection attempt failed, scheduling reconnect...');
+      reportError(error, 'TableWS.connect.failed');
       this.scheduleReconnect();
       return false;
     }
@@ -229,13 +230,13 @@ export class TableWebSocket {
 
     // Check sequence for ordering
     if (event.sequence <= this.lastSequence) {
-      console.error('[TableWS] Ignoring out-of-order event:', event.sequence);
+      console.warn('[TableWS] Ignoring out-of-order event:', event.sequence);
       return;
     }
 
     // Handle missing events (gap in sequence) — queue and request resync
     if (event.sequence > this.lastSequence + 1) {
-      console.error(
+      console.warn(
         '[TableWS] Missing events (expected:',
         this.lastSequence + 1,
         'got:',
@@ -259,7 +260,7 @@ export class TableWebSocket {
       try {
         handler(event);
       } catch (error: unknown) {
-        console.error('[TableWS] Event handler error:', error);
+        reportError(error, 'TableWS.dispatchEvent');
       }
     });
   }
@@ -290,7 +291,7 @@ export class TableWebSocket {
       try {
         handler(state);
       } catch (error: unknown) {
-        console.error('[TableWS] Presence handler error:', error);
+        reportError(error, 'TableWS.presenceHandler');
       }
     });
   }
@@ -321,7 +322,7 @@ export class TableWebSocket {
       try {
         handler(connected);
       } catch (error: unknown) {
-        console.error('[TableWS] Connection handler error:', error);
+        reportError(error, 'TableWS.connectionHandler');
       }
     });
   }
@@ -332,7 +333,7 @@ export class TableWebSocket {
 
   async sendAction(action: string, data: Record<string, unknown>): Promise<boolean> {
     if (!this.channel || !this.isConnected) {
-      console.error('[TableWS] Cannot send: not connected');
+      reportError('Cannot send: not connected', 'TableWS.sendAction.notConnected');
       return false;
     }
 
@@ -353,7 +354,7 @@ export class TableWebSocket {
       });
       return true;
     } catch (error: unknown) {
-      console.error('[TableWS] Send error:', error);
+      reportError(error, 'TableWS.sendAction');
       return false;
     }
   }
@@ -378,7 +379,7 @@ export class TableWebSocket {
       });
       return true;
     } catch (error: unknown) {
-      console.error('[TableWS] Chat error:', error);
+      reportError(error, 'TableWS.sendChat');
       return false;
     }
   }
@@ -398,7 +399,7 @@ export class TableWebSocket {
     // Request full state from server via Supabase RPC
 
     if (!this.supabase) {
-      console.error('[TableWS] Cannot resync: Supabase not configured');
+      reportError('Cannot resync: Supabase not configured', 'TableWS.resync.noSupabase');
       return;
     }
 
@@ -413,7 +414,7 @@ export class TableWebSocket {
       );
 
       if (error) {
-        console.error('[TableWS] Resync RPC error:', error);
+        reportError(error, 'TableWS.resync.rpcError');
         return;
       }
 
@@ -435,7 +436,7 @@ export class TableWebSocket {
         this.pendingEvents = [];
       }
     } catch (err: unknown) {
-      console.error('[TableWS] Resync failed:', err);
+      reportError(err, 'TableWS.resync.failed');
     }
   }
 

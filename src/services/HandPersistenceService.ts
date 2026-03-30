@@ -17,6 +17,7 @@
 
 import { supabase } from '../lib/supabase';
 import type { HandController, HandEvent } from '../engine/HandController';
+import { reportError } from '../utils/errorReporter';
 
 interface HandRecord {
   id?: string;
@@ -94,7 +95,7 @@ export class HandPersistence {
         );
       }
     } catch (err) {
-      console.error('[HandPersistenceService] Error:', err);
+      reportError(err, 'HandPersistence.cleanupOrphanedHands');
       // Silently ignore — cleanup is non-critical
     }
   }
@@ -149,9 +150,10 @@ export class HandPersistence {
       try {
         await this.handleEvent(event, config);
       } catch (err: unknown) {
-        console.error(
-          `[HandPersistence:${this.tableId}] Event handler error for ${event.type}:`,
-          err
+        reportError(
+          err,
+          'HandPersistence.enqueueEvent',
+          { eventType: event.type }
         );
       }
     });
@@ -190,8 +192,9 @@ export class HandPersistence {
     // Guard: if a previous hand is still in progress, finalize it first.
     // With serialized events this should be rare, but handle it defensively.
     if (this.currentHand) {
-      console.error(
-        `[HandPersistence:${this.tableId}] Previous hand #${this.currentHand.hand_number} still open — finalizing before hand #${handNumber}`
+      reportError(
+        `Previous hand #${this.currentHand.hand_number} still open — finalizing before hand #${handNumber}`,
+        'HandPersistence.onHandStart.orphanedHand'
       );
       await this.onHandComplete(this.currentHand.hand_number, 0);
     }
@@ -251,9 +254,10 @@ export class HandPersistence {
       .maybeSingle();
 
     if (error) {
-      console.error(
-        `[HandPersistence:${this.tableId}] Failed to insert hand #${handNumber}:`,
-        error
+      reportError(
+        error,
+        'HandPersistence.onHandStart.insertFailed',
+        { handNumber }
       );
       // Retry once
       try {
@@ -266,7 +270,7 @@ export class HandPersistence {
         if (!retryError && retryData) {
           if (this.currentHand) this.currentHand.id = retryData.id;
         } else {
-          console.error(`[HandPersistence:${this.tableId}] Retry also failed:`, retryError);
+          reportError(retryError, 'HandPersistence.onHandStart.retryFailed');
           // Mark as local-only so we don't try to update a non-existent DB row
           if (this.currentHand) {
             this.currentHand.id = crypto.randomUUID();
@@ -274,7 +278,7 @@ export class HandPersistence {
           }
         }
       } catch (e: unknown) {
-        console.error(`[HandPersistence:${this.tableId}] Retry exception:`, e);
+        reportError(e, 'HandPersistence.onHandStart.retryException');
         if (this.currentHand) {
           this.currentHand.id = crypto.randomUUID();
           (this.currentHand as any)._localOnly = true;
@@ -317,8 +321,9 @@ export class HandPersistence {
 
   private async onHandComplete(handNumber: number, rake: number): Promise<void> {
     if (!this.currentHand) {
-      console.error(
-        `[HandPersistence:${this.tableId}] HAND_COMPLETE for #${handNumber} but no currentHand`
+      reportError(
+        `HAND_COMPLETE for #${handNumber} but no currentHand`,
+        'HandPersistence.onHandComplete.noCurrentHand'
       );
       return;
     }
@@ -330,8 +335,9 @@ export class HandPersistence {
     // With event serialization, the insert should always have completed by now.
     // But handle the edge case defensively.
     if (!this.currentHand.id) {
-      console.error(
-        `[HandPersistence:${this.tableId}] HAND_COMPLETE for #${handNumber} but no DB id — should not happen with serialization`
+      reportError(
+        `HAND_COMPLETE for #${handNumber} but no DB id`,
+        'HandPersistence.onHandComplete.noDbId'
       );
       this.currentHand = null;
       this.handActions = [];
@@ -360,8 +366,10 @@ export class HandPersistence {
         .eq('id', this.currentHand.id);
 
       if (error) {
-        console.error(
-          `[HandPersistence:${this.tableId}] Failed to update hand #${handNumber}: ${error.message || error.code || JSON.stringify(error)}`
+        reportError(
+          error,
+          'HandPersistence.onHandComplete.updateFailed',
+          { handNumber }
         );
         // Retry once
         try {
@@ -370,12 +378,10 @@ export class HandPersistence {
             .update(updatePayload)
             .eq('id', this.currentHand.id);
           if (retryErr) {
-            console.error(
-              `[HandPersistence:${this.tableId}] Retry update also failed: ${retryErr.message || retryErr.code}`
-            );
+            reportError(retryErr, 'HandPersistence.onHandComplete.retryUpdateFailed');
           }
         } catch (e: unknown) {
-          console.error(`[HandPersistence:${this.tableId}] Retry update exception:`, e);
+          reportError(e, 'HandPersistence.onHandComplete.retryUpdateException');
         }
       }
     }
@@ -419,9 +425,10 @@ export class HandPersistence {
         const { error: hpError } = await supabase.from('hand_players').insert(handPlayerRows);
 
         if (hpError) {
-          console.error(
-            `[HandPersistence:${this.tableId}] Failed to insert hand_players for hand #${handNumber}:`,
-            hpError
+          reportError(
+            hpError,
+            'HandPersistence.onHandComplete.insertPlayers',
+            { handNumber }
           );
         }
       }
@@ -461,7 +468,7 @@ class HandPersistenceServiceClass extends HandPersistence {
       .limit(limit);
 
     if (error) {
-      console.error('[HandPersistence] Failed to load hand history:', error);
+      reportError(error, 'HandPersistence.getTableHandHistory');
       return [];
     }
     return data || [];
@@ -481,7 +488,7 @@ class HandPersistenceServiceClass extends HandPersistence {
       .limit(limit);
 
     if (error) {
-      console.error('[HandPersistence] Failed to load player hands:', error);
+      reportError(error, 'HandPersistence.getPlayerHandHistory');
       return [];
     }
     return data || [];

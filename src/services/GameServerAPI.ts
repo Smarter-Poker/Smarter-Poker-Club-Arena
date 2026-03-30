@@ -13,6 +13,7 @@
  */
 
 import { supabase } from '../lib/supabase';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONFIGURATION
@@ -111,7 +112,7 @@ export async function submitAction(
     const result = await response.json();
     return result as ActionResult;
   } catch (err: unknown) {
-    console.error('[GameServerAPI] Failed to submit action:', err);
+    reportError(err, 'GameServerAPI.submitAction');
     return { success: false, error: 'Server unreachable' };
   }
 }
@@ -141,7 +142,7 @@ export async function activateTimeBank(tableId: string, _userId?: string): Promi
     const result = await response.json();
     return result as ActionResult;
   } catch (err: unknown) {
-    console.error('[GameServerAPI] Failed to activate time bank:', err);
+    reportError(err, 'GameServerAPI.activateTimeBank');
     return { success: false, error: 'Server unreachable' };
   }
 }
@@ -179,7 +180,7 @@ export async function getAvailableActions(
     const result = await response.json();
     return result as PlayerActions;
   } catch (err: unknown) {
-    console.error('[GameServerAPI] Failed to get actions:', err);
+    reportError(err, 'GameServerAPI.getActions');
     return {
       canAct: false,
       actions: [],
@@ -201,7 +202,7 @@ export async function getServerStatus(): Promise<ServerStatus | null> {
     if (!response.ok) return null;
     return (await response.json()) as ServerStatus;
   } catch (err) {
-    console.error('[GameServerAPI] Error:', err);
+    reportError(err, 'GameServerAPI.getStatus');
     return null;
   }
 }
@@ -225,7 +226,7 @@ export async function sendHeartbeat(tableId: string): Promise<ActionResult> {
     if (!response.ok) return { success: false, error: `Server error (${response.status})` };
     return (await response.json()) as ActionResult;
   } catch (err: unknown) {
-    console.error('[GameServerAPI] Heartbeat failed:', err);
+    reportError(err, 'GameServerAPI.heartbeat');
     return { success: false, error: 'Server unreachable' };
   }
 }
@@ -250,7 +251,7 @@ export async function setPreAction(
     if (!response.ok) return { success: false, error: `Server error (${response.status})` };
     return (await response.json()) as ActionResult;
   } catch (err: unknown) {
-    console.error('[GameServerAPI] Set pre-action failed:', err);
+    reportError(err, 'GameServerAPI.setPreAction');
     return { success: false, error: 'Server unreachable' };
   }
 }
@@ -273,7 +274,7 @@ export async function setSitOut(
     if (!response.ok) return { success: false, error: `Server error (${response.status})` };
     return await response.json();
   } catch (err: unknown) {
-    console.error('[GameServerAPI] Sit out failed:', err);
+    reportError(err, 'GameServerAPI.setSitOut');
     return { success: false, error: 'Server unreachable' };
   }
 }
@@ -292,7 +293,7 @@ export async function toggleStraddle(tableId: string, enabled: boolean): Promise
     if (!response.ok) return { success: false, error: `Server error (${response.status})` };
     return (await response.json()) as ActionResult;
   } catch (err: unknown) {
-    console.error('[GameServerAPI] Toggle straddle failed:', err);
+    reportError(err, 'GameServerAPI.toggleStraddle');
     return { success: false, error: 'Server unreachable' };
   }
 }
@@ -307,7 +308,7 @@ export async function getTableState(tableId: string): Promise<Record<string, unk
     if (!response.ok) return null;
     return await response.json();
   } catch (err: unknown) {
-    console.error('[GameServerAPI] Get state failed:', err);
+    reportError(err, 'GameServerAPI.getState');
     return null;
   }
 }
@@ -344,7 +345,7 @@ export async function respondToRIT(
     if (!resp.ok) return { success: false, error: `Server error (${resp.status})` };
     return await resp.json();
   } catch (err: unknown) {
-    console.error('[GameServerAPI] RIT response failed:', err);
+    reportError(err, 'GameServerAPI.respondToRIT');
     return { success: false, error: 'Server unreachable' };
   }
 }
@@ -372,7 +373,7 @@ export async function respondToInsurance(
     if (!resp.ok) return { success: false, error: `Server error (${resp.status})` };
     return await resp.json();
   } catch (err: unknown) {
-    console.error('[GameServerAPI] Insurance response failed:', err);
+    reportError(err, 'GameServerAPI.respondToInsurance');
     return { success: false, error: 'Server unreachable' };
   }
 }
@@ -394,7 +395,7 @@ export async function previewInsurance(
     if (!resp.ok) return { success: false, error: `Server error (${resp.status})` };
     return await resp.json();
   } catch (err: unknown) {
-    console.error('[GameServerAPI] Insurance preview failed:', err);
+    reportError(err, 'GameServerAPI.previewInsurance');
     return { success: false, error: 'Server unreachable' };
   }
 }
@@ -413,7 +414,7 @@ export async function showHand(tableId: string): Promise<ActionResult> {
     if (!resp.ok) return { success: false, error: `Server error (${resp.status})` };
     return (await resp.json()) as ActionResult;
   } catch (err: unknown) {
-    console.error('[GameServerAPI] Show hand failed:', err);
+    reportError(err, 'GameServerAPI.showHand');
     return { success: false, error: 'Server unreachable' };
   }
 }
@@ -434,7 +435,7 @@ export async function submitDiscard(tableId: string, cardIndex: number): Promise
     if (!resp.ok) return { success: false, error: `Server error (${resp.status})` };
     return (await resp.json()) as ActionResult;
   } catch (err: unknown) {
-    console.error('[GameServerAPI] Discard failed:', err);
+    reportError(err, 'GameServerAPI.submitDiscard');
     return { success: false, error: 'Server unreachable' };
   }
 }

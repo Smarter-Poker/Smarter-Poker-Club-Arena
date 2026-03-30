@@ -3,7 +3,87 @@
 ## Every Change, Documented. No Exceptions.
 
 **Started:** 2026-03-24
-**Current Step:** ALL 8 STEPS COMPLETE — Deep Bible V8 Verification Complete (178 fixes total)
+**Current Step:** ALL 8 STEPS COMPLETE — Deep Bible V8 Verification Complete (179 fixes total)
+
+---
+
+## Round 27 — Deep Bible V8 Cross-Reference Audit: PokerEngine + Services + Full Spec Verification (2026-03-29)
+
+### FIX 179 — Floating-point truncation bug in pot distribution (PokerEngine.ts)
+- **File:** `server/src/engine/PokerEngine.ts` (distributePot + determineWinners Hi-Lo split)
+- **Bug:** `Math.trunc(amount * 100)` loses cents due to IEEE 754 floating-point representation. Example: `Math.trunc(0.51 * 100)` = `Math.trunc(50.999...)` = 50, losing 1 cent. This affects pot distribution and Hi-Lo pot splitting.
+- **Fix:** Changed both instances to `Math.round(amount * 100)`. `Math.round(0.51 * 100)` = 51 (correct). Applied to:
+  - Line ~604: Hi-Lo pot split `potCents` calculation
+  - Line ~649: `distributePot()` total cents calculation
+
+### Deep Bible V8 Cross-Reference Results:
+**Every section of Bible V8 was cross-referenced against actual code line-by-line:**
+
+#### Chapter 1 (Master Laws):
+- §1.1 Single Pending Action: `actionLock` boolean in ServerTableEngine (line 143) prevents parallel processing ✅
+- §1.2 Hard Block: `handlePlayerAction` acquires lock → processes → releases in `finally` block ✅
+- §1.4 Truth Law: Server is sole authority, client derives display from broadcasts ✅
+- §1.5 Fairness: Card security via RLS-protected `table_hole_cards`, broadcast scrubs cards ✅
+- §1.5.6: Validation errors return error messages, NEVER auto-fold ✅
+- §1.7 Disconnect Law: DisconnectEngine tracks heartbeats, auto-check/fold on timeout ✅
+- §1.9 Settlement Law: Full 15-step sequence implemented in postHandTasks() ✅
+
+#### Chapter 2 (Object Schemas):
+- §2.3 Seat/Player: All 16 fields present in broadcast payload ✅
+- §2.4 Hand State: All 14 required fields present in broadcastCurrentState() ✅
+- §2.5 Action Record: All 6 fields (seat, userId, action, amount, timestamp, stage) ✅
+- §2.6 Pot Object: amount + eligiblePlayers ✅
+- §2.7 Winner Object: userId, amount, potIndex, hand ✅
+- §2.9 Rake Config: percent (10 = 10%), cap, noFlopNoDrop, playerCountCaps ✅
+
+#### Chapter 4 (Operational Procedures):
+- §4.1 Hand Start: 11-step procedure verified in startHand() ✅
+- §4.2 Blind Posting: HU dealer=SB, 3+: left of dealer=SB, short blind=all-in ✅
+- §4.3 Ante: Traditional (each player) + BBA (BB posts for table) ✅
+- §4.4 Straddle: UTG straddle, live (can re-raise), updates currentBet ✅
+- §4.5 Card Dealing: Crypto-random, variant-aware cards-per-player ✅
+- §4.6 Anti-God-Mode: Hole cards via RPC to RLS table, NOT broadcast ✅
+- §4.7-4.8 Betting Rounds: First player, action cycle, completion detection ✅
+- §4.9-4.14 Action Validation: fold/check/call/bet/raise/all-in rules all correct ✅
+- §4.14 Short All-in: `isFullRaiseFlag` tracks; short all-in does NOT reopen betting ✅
+- §4.14 Min Raise: `Math.max(bigBlind, lastRaise || bigBlind)` ✅
+- §4.14 Pot-limit: `pot + toCall` for max raise SIZE ✅
+- §4.21 Showdown: Last aggressor first, clockwise order, auto-muck ✅
+- §4.22 Bomb Pot: ante = BB × multiplier, skip preflop, deal flop directly ✅
+
+#### Chapter 6 (Timer System):
+- §6.1 Action Timer: Deadline-based via PreciseActionTimer, 2s grace period ✅
+- §6.2 Time Bank: 15s per use, max 2 per hand, auto + manual activation ✅
+- §6.3 Disconnect: 30s timeout, heartbeat check, reconnect 5s grace, 3 consecutive = sit-out ✅
+
+#### Chapter 7 (Edge Cases):
+- §7.1 HU Blinds: dealer=SB ✅
+- §7.3 Short All-in: doesn't reopen ✅
+- §7.4 Side Pots: calculatePots() with sorted investment levels ✅
+- §7.5 Split Pot: kicker comparison in compareHands() ✅
+- §7.6 Hi-Lo with no qualifying low: only high awarded ✅
+- §7.7 Hi-Lo odd chip: high gets extra cent ✅
+- §7.17 Crash Recovery: saveHandStateSnapshot/getActiveHandSnapshot via Supabase RPCs ✅
+- §7.18 No-flop-no-drop ✅
+- §7.19 Player count rake caps: HU=50%, 3-handed=67%, 4+=full ✅
+
+#### Appendices:
+- Appendix A (Rake): 10% across all tiers, tiered caps by blind level ✅
+- Appendix B (Positions): All 8 player counts (2-9) verified line-by-line ✅
+- Appendix C (Hand Rankings): Standard rankings ✅
+- Appendix D (Short Deck): Flush beats Full House (flushRanking=7, fullHouseRanking=6) ✅
+
+### Files Deep-Audited This Session (Line-by-Line):
+- **PokerEngine.ts** (672 lines): 1 bug found (FIX 179), all evaluators/pot/betting/rake verified
+- **supabase.ts** (899 lines): No bugs. All `.maybeSingle()`, atomic RPCs, BBJ pivot allocation correct
+- **ServerActionValidator.ts** (342 lines): No bugs. Turn/timing/duplicate/amount checks all per spec
+- **DisconnectEngine.ts** (444 lines): No bugs. Heartbeat/grace/timeout/sit-out all per §6.3
+- **AutoRebuyService.ts** (115 lines): No bugs. Atomic wallet credit via RPC
+- **HorseFleetManager.ts** (664 lines): No bugs. Atomic seating via RPC, concurrency guard
+- **HorseLifecycleManager.ts** (539 lines): No bugs. Atomic cashout, stuck detection, SNG refunds
+- **TournamentRecurringService.ts** (1273 lines): No bugs. Retry logic, weighted spins, correct payout structures
+
+### Cumulative Fix Count: 179
 
 ---
 

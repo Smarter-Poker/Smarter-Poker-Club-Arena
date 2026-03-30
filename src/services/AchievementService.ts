@@ -300,6 +300,10 @@ export const ACHIEVEMENTS: Achievement[] = [
 // ═══════════════════════════════════════════════════════════════════════════════
 
 class AchievementServiceClass {
+  /** FIX-216: Circuit breaker — disable DB writes after persistent failures (missing table) */
+  private _dbWriteDisabled = false;
+  private _dbWriteFailures = 0;
+
   // ─────────────────────────────────────────────────────────────────────────────
   // Get Achievements
   // ─────────────────────────────────────────────────────────────────────────────
@@ -363,6 +367,9 @@ class AchievementServiceClass {
     achievementId: string,
     amount: number = 1
   ): Promise<{ unlocked: boolean; achievement?: Achievement }> {
+    // FIX-216: Circuit breaker — skip DB writes after persistent failures
+    if (this._dbWriteDisabled) return { unlocked: false };
+
     const achievement = this.getById(achievementId);
     if (!achievement) return { unlocked: false };
 
@@ -405,6 +412,11 @@ class AchievementServiceClass {
         unlocked_at: justUnlocked ? new Date().toISOString() : null,
       });
       if (insErr) {
+        this._dbWriteFailures++;
+        if (this._dbWriteFailures >= 3) {
+          this._dbWriteDisabled = true;
+          console.debug('[AchievementService] DB writes disabled — training_user_achievements table unavailable');
+        }
         reportError(insErr, 'AchievementService.incrementProgress.insert', { userId, achievementId });
         return { unlocked: false };
       }
@@ -419,6 +431,7 @@ class AchievementServiceClass {
   }
 
   async setProgress(userId: string, achievementId: string, progress: number): Promise<void> {
+    if (this._dbWriteDisabled) return;
     const achievement = this.getById(achievementId);
     if (!achievement) return;
 

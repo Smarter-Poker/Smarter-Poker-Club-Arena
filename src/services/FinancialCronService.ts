@@ -59,6 +59,9 @@ export const FinancialCronService = {
   _isRunning: false,
   _lastReconciliation: null as ReconciliationResult | null,
   _lastSuspensionCheck: null as SuspensionCheckResult | null,
+  /** FIX-216: Circuit breaker — disable suspension checks after persistent failures */
+  _suspensionCheckFailed: 0,
+  _suspensionCheckDisabled: false,
   _config: {
     reconciliationIntervalMs: 24 * 60 * 60 * 1000, // 24 hours
     suspensionCheckIntervalMs: 6 * 60 * 60 * 1000, // 6 hours
@@ -194,6 +197,11 @@ export const FinancialCronService = {
    * Otherwise, just log warnings for ops review.
    */
   async runSuspensionCheck(): Promise<SuspensionCheckResult> {
+    // FIX-216: Circuit breaker — skip if disabled after 2+ consecutive global failures
+    if (this._suspensionCheckDisabled) {
+      return { agentsChecked: 0, agentsSuspended: 0, agentsWarned: 0 };
+    }
+
     let agentsChecked = 0;
     let agentsSuspended = 0;
     let agentsWarned = 0;
@@ -207,9 +215,17 @@ export const FinancialCronService = {
         .gt('credit_limit', 0);
 
       if (error || !agents) {
+        this._suspensionCheckFailed++;
+        if (this._suspensionCheckFailed >= 2) {
+          this._suspensionCheckDisabled = true;
+          console.debug('[FinancialCron] Suspension check disabled after repeated failures');
+        }
         reportError(error, 'FinancialCronService.runSuspensionCheck.fetchAgents');
         return { agentsChecked: 0, agentsSuspended: 0, agentsWarned: 0 };
       }
+
+      // FIX-216: Track per-agent failures; if ALL fail, disable future runs
+      let consecutiveFailures = 0;
 
       for (const agent of agents) {
         agentsChecked++;
@@ -219,6 +235,7 @@ export const FinancialCronService = {
 
         try {
           const result = await CreditService.checkSuspension(agent.id);
+          consecutiveFailures = 0; // Reset on success
 
           if (result.shouldSuspend) {
             if (this._config.autoSuspendEnabled) {
@@ -240,6 +257,13 @@ export const FinancialCronService = {
             }
           }
         } catch (e: unknown) {
+          consecutiveFailures++;
+          // FIX-216: If first 3 agents all fail, the infrastructure is broken — stop spamming
+          if (consecutiveFailures >= 3) {
+            this._suspensionCheckDisabled = true;
+            console.debug('[FinancialCron] Suspension check disabled — CreditService.checkSuspension unavailable');
+            break;
+          }
           reportError(e, 'FinancialCronService.runSuspensionCheck.agent', { agentId: agent.id });
         }
       }

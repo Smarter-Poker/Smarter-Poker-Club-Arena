@@ -118,11 +118,14 @@ export function getPlayerCountCaps(fullCap: number): { players: number; cap: num
   ];
 }
 
-// BBJ Pool Allocation — uniform across all stakes
+// BBJ Pool Allocation — FIX 212: Updated to match actual pivot-based allocation in logBBJCollection.
+// STANDARD allocation (main pool < $100k): 50% Main / 25% Backup / 25% Promo
+// PIVOT allocation (main pool >= $100k): 30% Main / 40% Backup / 30% Promo (see FIX 140 in supabase.ts)
+// This constant reflects the STANDARD (default) allocation shown to clients.
 export const BBJ_POOL_ALLOCATION = {
-  mainBBJ: 0.4, // 40% of BBJ rake goes to Main BBJ pool
-  backUpBBJ: 0.3, // 30% goes to Back Up BBJ pool
-  promotional: 0.3, // 30% goes to Promotional fund
+  mainBBJ: 0.5, // 50% of BBJ rake goes to Main BBJ pool (standard)
+  backUpBBJ: 0.25, // 25% goes to Back Up BBJ pool (standard)
+  promotional: 0.25, // 25% goes to Promotional fund (standard)
 } as const;
 
 // ═══════════════════════════════════════════════════════════════════════════════

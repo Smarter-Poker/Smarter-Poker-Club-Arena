@@ -70,7 +70,9 @@ const circuitBreaker = {
   isOpen(): boolean {
     if (this.failures < this.THRESHOLD) return false;
     if (Date.now() - this.trippedAt > this.COOLDOWN_MS) {
+      // Cooldown expired — allow a retry
       this.failures = 0;
+      this.trippedAt = 0;
       return false;
     }
     return true;

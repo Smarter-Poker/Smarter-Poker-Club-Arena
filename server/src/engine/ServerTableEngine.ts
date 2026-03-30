@@ -275,10 +275,12 @@ export class ServerTableEngine {
       //   2. Player has time banks available (checked in TimeBankEngine.activate())
       // If disabled or depleted → player gets folded on timeout, then client shows buy-more popup.
       const timeBankEnabled = this.tableInfo.time_bank_enabled ?? true;
+      // FIX 200: Bible V8 §6.2 — Each time bank adds exactly 15 seconds (was incorrectly 20).
+      // TimeBankEngine DEFAULT_CONFIG already has secondsPerUse: 15 — this override must match.
       this.timeBankEngine.configure(this.tableId, {
-        totalBankSeconds: (this.tableInfo.time_bank_max_uses ?? 120) * 20, // uses × 20s each
+        totalBankSeconds: (this.tableInfo.time_bank_max_uses ?? 120) * 15, // uses × 15s each (Bible V8 §6.2)
         maxUses: this.tableInfo.time_bank_max_uses ?? 120,
-        secondsPerUse: 20, // Each time bank adds exactly 20 seconds
+        secondsPerUse: 15, // Bible V8 §6.2: Each time bank adds exactly 15 seconds
         autoActivate: timeBankEnabled, // FIX 123: Respect table setting — false means no auto-extend
       });
 

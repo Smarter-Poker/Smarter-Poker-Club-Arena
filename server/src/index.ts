@@ -20,7 +20,7 @@
 
 import { createServer } from 'http';
 import { ServerTableEngine } from './engine/ServerTableEngine.js';
-import { supabase, cleanupAllChannels } from './services/supabase.js';
+import { supabase, cleanupAllChannels, atomicCashout } from './services/supabase.js';
 import { HorseFleetManager } from './services/HorseFleetManager.js';
 import { TournamentRecurringService } from './services/TournamentRecurringService.js';
 import { HorseLifecycleManager } from './services/HorseLifecycleManager.js';
@@ -264,41 +264,12 @@ class GameServer {
         .select('user_id, table_id, seat_number, stack')
         .is('left_at', null);
 
+      // FIX 208: Use direct atomicCashout instead of RPC to avoid PostgREST cache issues
       if (activeSeats && activeSeats.length > 0) {
         let cashedOut = 0;
         for (const seat of activeSeats) {
-          if (seat.stack > 0) {
-            const { error: cashoutErr } = await supabase.rpc('atomic_table_cashout', {
-              p_user_id: seat.user_id,
-              p_table_id: seat.table_id,
-              p_seat_number: seat.seat_number,
-            });
-            if (cashoutErr) {
-              // Fallback: directly credit wallet if atomic cashout fails
-              await supabase.rpc('credit_player_wallet', {
-                p_user_id: seat.user_id,
-                p_amount: seat.stack,
-              });
-              // Force-close the seat
-              await supabase
-                .from('table_seats')
-                .update({ left_at: new Date().toISOString() })
-                .eq('table_id', seat.table_id)
-                .eq('user_id', seat.user_id)
-                .eq('seat_number', seat.seat_number)
-                .is('left_at', null);
-            }
-            cashedOut++;
-          } else {
-            // stack is 0, just mark as left
-            await supabase
-              .from('table_seats')
-              .update({ left_at: new Date().toISOString() })
-              .eq('table_id', seat.table_id)
-              .eq('user_id', seat.user_id)
-              .eq('seat_number', seat.seat_number)
-              .is('left_at', null);
-          }
+          await atomicCashout(seat.user_id, seat.table_id, seat.seat_number);
+          if (seat.stack > 0) cashedOut++;
         }
         if (cashedOut > 0) {
           console.log(`[GameServer] Safely cashed out ${cashedOut} seated players before cleanup`);

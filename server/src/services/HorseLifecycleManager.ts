@@ -13,7 +13,7 @@
  * ZERO browser dependency — this is the SERVER version.
  */
 
-import { supabase } from './supabase.js';
+import { supabase, atomicCashout } from './supabase.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONFIGURATION
@@ -311,24 +311,10 @@ export class HorseLifecycleManager {
         .eq('user_id', horseId)
         .is('left_at', null);
 
-      // Cash out each seat atomically to prevent chip loss
+      // FIX 208: Cash out each seat using direct queries (avoids PostgREST RPC cache issues)
       if (activeSeats && activeSeats.length > 0) {
         for (const seat of activeSeats) {
-          const { error: cashoutErr } = await supabase.rpc('atomic_table_cashout', {
-            p_user_id: horseId,
-            p_table_id: seat.table_id,
-            p_seat_number: seat.seat_number,
-          });
-          if (cashoutErr) {
-            // Fallback: if atomic cashout fails (e.g. seat already gone), force-close
-            await supabase
-              .from('table_seats')
-              .update({ left_at: new Date().toISOString() })
-              .eq('user_id', horseId)
-              .eq('table_id', seat.table_id)
-              .eq('seat_number', seat.seat_number)
-              .is('left_at', null);
-          }
+          await atomicCashout(horseId, seat.table_id, seat.seat_number);
         }
       }
 
@@ -443,20 +429,8 @@ export class HorseLifecycleManager {
       let cleaned = 0;
       for (const seat of staleSeats) {
         try {
-          // Use atomic cashout to prevent chip loss
-          const { error: cashoutErr } = await supabase.rpc('atomic_table_cashout', {
-            p_user_id: seat.user_id,
-            p_table_id: seat.table_id,
-            p_seat_number: seat.seat_number,
-          });
-
-          if (cashoutErr) {
-            // Fallback: force-close the seat if atomic cashout fails
-            await supabase
-              .from('table_seats')
-              .update({ left_at: new Date().toISOString() })
-              .eq('id', seat.id);
-          }
+          // FIX 208: Use direct atomicCashout instead of RPC
+          await atomicCashout(seat.user_id, seat.table_id, seat.seat_number);
           cleaned++;
 
           // If horse, reset to available

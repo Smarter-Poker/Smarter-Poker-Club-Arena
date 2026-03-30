@@ -217,6 +217,7 @@ export async function updateTableStatus(
 
 /**
  * Auto-rebuy a horse from their Player Wallet atomically
+ * FIX 208: Replaced RPC with direct queries to avoid PostgREST schema cache "text = uuid" errors
  */
 export async function autoRebuyHorse(
   tableId: string,
@@ -224,48 +225,253 @@ export async function autoRebuyHorse(
   rebuyAmount: number,
   clubId: string
 ): Promise<boolean> {
-  const { error } = await supabase.rpc('atomic_table_rebuy', {
-    p_user_id: userId,
-    p_table_id: tableId,
-    p_amount: rebuyAmount,
-  });
+  try {
+    // 1. Verify active seat exists and get current stack
+    const { data: seat } = await supabase
+      .from('table_seats')
+      .select('id, stack')
+      .eq('table_id', tableId)
+      .eq('user_id', userId)
+      .is('left_at', null)
+      .maybeSingle();
 
-  if (error) {
-    if (
-      !error.message.includes('Insufficient balance') &&
-      !error.message.includes('Active seat not found')
-    ) {
-      console.error(`[DB] Unexpected atomic auto-rebuy failure for ${userId}:`, error.message);
+    if (!seat) return false;
+
+    // 2. Check and deduct wallet
+    const { data: wallet } = await supabase
+      .from('wallets')
+      .select('balance')
+      .eq('user_id', userId)
+      .eq('wallet_type', 'PLAYER')
+      .maybeSingle();
+
+    if (!wallet || wallet.balance < rebuyAmount) return false;
+
+    const { error: deductErr } = await supabase
+      .from('wallets')
+      .update({ balance: wallet.balance - rebuyAmount, updated_at: new Date().toISOString() })
+      .eq('user_id', userId)
+      .eq('wallet_type', 'PLAYER');
+
+    if (deductErr) {
+      console.error(`[DB] Rebuy wallet deduct failed for ${userId}:`, deductErr.message);
+      return false;
+    }
+
+    // 3. Add to seat stack (read current + add)
+    const currentStack = seat.stack ?? 0;
+    await supabase
+      .from('table_seats')
+      .update({ stack: currentStack + rebuyAmount })
+      .eq('table_id', tableId)
+      .eq('user_id', userId)
+      .is('left_at', null);
+
+    // 4. Log transaction
+    await supabase.from('wallet_transactions').insert({
+      user_id: userId,
+      wallet_type: 'PLAYER',
+      type: 'debit',
+      amount: rebuyAmount,
+      category: 'rebuy',
+      description: 'Auto-rebuy topup at table',
+      table_id: tableId,
+    });
+
+    return true;
+  } catch (err: any) {
+    if (!err.message?.includes('Insufficient balance') && !err.message?.includes('Active seat not found')) {
+      console.error(`[DB] Unexpected atomic auto-rebuy failure for ${userId}:`, err.message);
     }
     return false;
   }
-
-  return true;
 }
 
 /**
  * Mark a horse as having left the table, cash them out atomically, and sync players count.
+ * FIX 208: Replaced RPC with direct queries to avoid PostgREST schema cache "text = uuid" errors
  */
 export async function markSeatAsLeft(
   tableId: string,
   userId: string,
   seatNumber: number
 ): Promise<void> {
-  const { error: txErr } = await supabase.rpc('atomic_table_cashout', {
-    p_user_id: userId,
-    p_table_id: tableId,
-    p_seat_number: seatNumber,
-  });
+  try {
+    // 1. Get the active seat and its stack
+    const { data: seat } = await supabase
+      .from('table_seats')
+      .select('stack')
+      .eq('table_id', tableId)
+      .eq('user_id', userId)
+      .eq('seat_number', seatNumber)
+      .is('left_at', null)
+      .maybeSingle();
 
-  if (txErr) {
-    console.warn(`[DB] Failed to atomic cash-out horse ${userId} at ${tableId}:`, txErr.message);
-    // Fallback to old simple update if the stack was already 0 or an anomaly occurred
+    if (!seat) {
+      // Seat already gone — just update if stale
+      await supabase
+        .from('table_seats')
+        .update({ left_at: new Date().toISOString() })
+        .eq('table_id', tableId)
+        .eq('user_id', userId)
+        .is('left_at', null);
+      return;
+    }
+
+    const stack = seat.stack ?? 0;
+
+    // 2. Credit wallet if stack > 0
+    if (stack > 0) {
+      const { data: wallet } = await supabase
+        .from('wallets')
+        .select('balance')
+        .eq('user_id', userId)
+        .eq('wallet_type', 'PLAYER')
+        .maybeSingle();
+
+      const currentBalance = wallet?.balance ?? 0;
+      await supabase
+        .from('wallets')
+        .upsert({
+          user_id: userId,
+          wallet_type: 'PLAYER',
+          balance: currentBalance + stack,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'user_id,wallet_type' });
+
+      // Log transaction
+      await supabase.from('wallet_transactions').insert({
+        user_id: userId,
+        wallet_type: 'PLAYER',
+        type: 'credit',
+        amount: stack,
+        category: 'cashout',
+        description: 'Cash-out from table',
+        table_id: tableId,
+      });
+    }
+
+    // 3. Soft-delete the seat
+    await supabase
+      .from('table_seats')
+      .update({ left_at: new Date().toISOString(), leave_pending: false })
+      .eq('table_id', tableId)
+      .eq('user_id', userId)
+      .eq('seat_number', seatNumber)
+      .is('left_at', null);
+
+    // 4. Update player count
+    const { count } = await supabase
+      .from('table_seats')
+      .select('*', { count: 'exact', head: true })
+      .eq('table_id', tableId)
+      .is('left_at', null);
+
+    await supabase
+      .from('tables')
+      .update({ current_players: count ?? 0 })
+      .eq('id', tableId);
+
+  } catch (err: any) {
+    console.warn(`[DB] Failed to cash-out horse ${userId} at ${tableId}:`, err.message);
+    // Fallback: just mark as left
     await supabase
       .from('table_seats')
       .update({ left_at: new Date().toISOString() })
       .eq('table_id', tableId)
       .eq('user_id', userId)
       .is('left_at', null);
+  }
+}
+
+/**
+ * Atomic cashout — direct query version for use by HorseLifecycleManager and index.ts
+ * FIX 208: Avoids PostgREST RPC "text = uuid" errors
+ * Returns the cashed-out stack amount, or 0 if seat not found
+ */
+export async function atomicCashout(
+  userId: string,
+  tableId: string,
+  seatNumber?: number
+): Promise<number> {
+  try {
+    // 1. Find active seat
+    let query = supabase
+      .from('table_seats')
+      .select('stack, seat_number')
+      .eq('table_id', tableId)
+      .eq('user_id', userId)
+      .is('left_at', null);
+
+    if (seatNumber !== undefined) {
+      query = query.eq('seat_number', seatNumber);
+    }
+
+    const { data: seat } = await query.maybeSingle();
+    if (!seat) return 0;
+
+    const stack = seat.stack ?? 0;
+
+    // 2. Credit wallet
+    if (stack > 0) {
+      const { data: wallet } = await supabase
+        .from('wallets')
+        .select('balance')
+        .eq('user_id', userId)
+        .eq('wallet_type', 'PLAYER')
+        .maybeSingle();
+
+      const currentBalance = wallet?.balance ?? 0;
+      await supabase
+        .from('wallets')
+        .upsert({
+          user_id: userId,
+          wallet_type: 'PLAYER',
+          balance: currentBalance + stack,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'user_id,wallet_type' });
+
+      await supabase.from('wallet_transactions').insert({
+        user_id: userId,
+        wallet_type: 'PLAYER',
+        type: 'credit',
+        amount: stack,
+        category: 'cashout',
+        description: 'Cash-out from table',
+        table_id: tableId,
+      });
+    }
+
+    // 3. Soft-delete seat
+    await supabase
+      .from('table_seats')
+      .update({ left_at: new Date().toISOString(), leave_pending: false })
+      .eq('table_id', tableId)
+      .eq('user_id', userId)
+      .is('left_at', null);
+
+    // 4. Update player count
+    const { count } = await supabase
+      .from('table_seats')
+      .select('*', { count: 'exact', head: true })
+      .eq('table_id', tableId)
+      .is('left_at', null);
+
+    await supabase
+      .from('tables')
+      .update({ current_players: count ?? 0 })
+      .eq('id', tableId);
+
+    return stack;
+  } catch (err: any) {
+    // Fallback: just mark as left
+    await supabase
+      .from('table_seats')
+      .update({ left_at: new Date().toISOString() })
+      .eq('table_id', tableId)
+      .eq('user_id', userId)
+      .is('left_at', null);
+    return 0;
   }
 }
 
@@ -283,29 +489,8 @@ export async function processLeavePending(tableId: string, clubId: string): Prom
   if (!pendingSeats || pendingSeats.length === 0) return;
 
   for (const seat of pendingSeats) {
-    // Use atomic cashout — credits wallet + marks left + updates count in one transaction
-    const { error: cashoutErr } = await supabase.rpc('atomic_table_cashout', {
-      p_user_id: seat.user_id,
-      p_table_id: tableId,
-      p_seat_number: seat.seat_number,
-    });
-
-    if (cashoutErr) {
-      console.error(
-        `[processLeavePending] Atomic cashout failed for ${seat.user_id}: ${cashoutErr.message}`
-      );
-      // Fallback: if stack is 0, just mark as left
-      if (seat.stack === 0) {
-        await supabase
-          .from('table_seats')
-          .update({ left_at: new Date().toISOString(), leave_pending: false })
-          .eq('table_id', tableId)
-          .eq('user_id', seat.user_id)
-          .eq('seat_number', seat.seat_number)
-          .is('left_at', null);
-      }
-      // If stack > 0 and cashout failed, leave them seated to prevent chip loss
-    }
+    // FIX 208: Use direct atomicCashout instead of RPC
+    await atomicCashout(seat.user_id, tableId, seat.seat_number);
   }
 
   // Authoritative recount after all departures

@@ -47,7 +47,7 @@ export default function PlayerActivityFeed({ userId }: PlayerActivityFeedProps) 
 
       // Fetch recent achievements
       const { data: achievements } = await supabase
-        .from('user_achievements')
+        .from('training_user_achievements')
         .select('id, achievement_id, unlocked_at')
         .eq('user_id', userId)
         .not('unlocked_at', 'is', null)

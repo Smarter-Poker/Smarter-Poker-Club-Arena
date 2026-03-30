@@ -403,16 +403,16 @@ export const CreditService = {
     method: 'wallet' | 'diamonds' | 'external'
   ): Promise<CreditPayment> {
     // Get current invoice
-    const { data: invoice, error: fetchError } = await supabase
-      .from('credit_invoices')
+    const { data: invoiceResult, error: invoiceError } = await supabase
+      .from('settlement_invoices')
       .select(
         'id, agent_id, period_start, period_end, debt_owed, amount_paid, amount_remaining, status, due_date, created_at, paid_at'
       )
       .eq('id', invoiceId)
       .maybeSingle();
 
-    if (fetchError) throw fetchError;
-    if (!invoice) throw new Error(`Invoice not found: ${invoiceId}`);
+    if (invoiceError) throw invoiceError;
+    if (!invoiceResult) throw new Error(`Invoice not found: ${invoiceId}`);
 
     // STEP 1: If paying from wallet, deduct FIRST (before recording anything)
     if (method === 'wallet') {
@@ -420,7 +420,7 @@ export const CreditService = {
       const { data: agentData } = await supabase
         .from('agents')
         .select('user_id')
-        .eq('id', invoice.agent_id)
+        .eq('id', invoiceResult.agent_id)
         .maybeSingle();
 
       if (!agentData?.user_id) {
@@ -457,15 +457,11 @@ export const CreditService = {
     }
 
     // STEP 2: Atomically update invoice amounts using ALREADY-FETCHED invoice data (no re-fetch TOCTOU)
-    const newAmountPaid = (invoice?.amount_paid || 0) + amount;
-    const newAmountRemaining = Math.max(0, (invoice?.amount_remaining || 0) - amount);
-
     const { error: updateError } = await supabase
       .from('credit_invoices')
       .update({
-        amount_paid: newAmountPaid,
-        amount_remaining: newAmountRemaining,
-        status: newAmountRemaining <= 0 ? 'paid' : 'partial',
+        amount_remaining: Math.max(0, invoiceResult.amount_remaining - amount),
+        status: invoiceResult.amount_remaining - amount <= 0 ? 'paid' : 'pending',
       })
       .eq('id', invoiceId);
 
@@ -476,7 +472,7 @@ export const CreditService = {
           const { data: agentForRollback } = await supabase
             .from('agents')
             .select('user_id')
-            .eq('id', invoice.agent_id)
+            .eq('id', invoiceResult.agent_id)
             .maybeSingle();
 
           if (agentForRollback?.user_id) {
@@ -495,14 +491,14 @@ export const CreditService = {
             );
             if (rollbackErr2) {
               console.error(
-                `[CreditService] CRITICAL: Wallet rollback failed for agent ${invoice.agent_id}: ${rollbackErr2.message}`
+                `[CreditService] CRITICAL: Wallet rollback failed for agent ${invoiceResult.agent_id}: ${rollbackErr2.message}`
               );
               FinancialAlertService.logCritical(
                 'CreditService',
                 'Wallet rollback failed after invoice update failure',
                 {
                   invoiceId,
-                  agentId: invoice.agent_id,
+                  agentId: invoiceResult.agent_id,
                   amount,
                   rollbackError: rollbackErr2.message,
                 }

@@ -351,7 +351,7 @@ export default function AchievementsPage() {
           {
             event: '*',
             schema: 'public',
-            table: 'user_achievements',
+            table: 'training_user_achievements',
             filter: `user_id=eq.${user.id}`,
           },
           async (payload) => {

@@ -75,7 +75,7 @@ export default function ArenaLedger({ clubId, maxEntries = 200 }: ArenaLedgerPro
     try {
       // Fetch audit logs
       const { data: auditData } = await supabase
-        .from('audit_logs')
+        .from('club_arena_audit_logs')
         .select('id, action, actor_id, details, created_at')
         .eq('club_id', clubId)
         .order('created_at', { ascending: false })
@@ -136,7 +136,7 @@ export default function ArenaLedger({ clubId, maxEntries = 200 }: ArenaLedgerPro
         {
           event: 'INSERT',
           schema: 'public',
-          table: 'audit_logs',
+          table: 'club_arena_audit_logs',
           filter: `club_id=eq.${clubId}`,
         },
         (payload) => {

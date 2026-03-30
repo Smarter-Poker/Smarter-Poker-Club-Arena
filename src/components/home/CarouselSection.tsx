@@ -45,7 +45,7 @@ export interface ClubStats {
 export interface CarouselSectionProps {
   displayClubs: UserClub[];
   sharkClubId: string | null;
-  sharkClubStats: { totalMembers: number; clubLevel: number; activePlayers: number };
+  sharkClubStats: { totalMembers: number | null; clubLevel: number | null; activePlayers: number | null };
   clubStats: Record<string, ClubStats>;
   pinnedClubIds: string[];
   navigate: (path: string) => void;

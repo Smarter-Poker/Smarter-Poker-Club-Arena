@@ -378,7 +378,7 @@ export default function ProfilePage() {
           retryFetch(
             () =>
               supabase
-                .from('user_achievements')
+                .from('training_user_achievements')
                 .select('*, achievement:achievements(*)')
                 .eq('user_id', authUser.id)
                 .limit(200)

@@ -102,7 +102,15 @@ export const HandStrengthIndicator: React.FC<HandStrengthIndicatorProps> = ({
   );
 };
 
-// Simple hand evaluation (demo purposes)
+// FIX 193: Full hand evaluation with flush and straight detection
+// (previous version was missing flush + straight — §1.10 Visual Truth Law violation)
+const RANK_ORDER = '23456789TJQKA';
+
+function getRankValue(rank: string): number {
+  const idx = RANK_ORDER.indexOf(rank);
+  return idx >= 0 ? idx : -1;
+}
+
 function evaluateHand(holeCards: string[], communityCards: string[]): HandEvaluation {
   const allCards = [...holeCards, ...communityCards];
 
@@ -140,20 +148,104 @@ function evaluateHand(holeCards: string[], communityCards: string[]): HandEvalua
     return { rank: 'high_card', name: 'High Card', strength: 30, color: '#e74c3c' };
   }
 
-  // Post-flop simplified eval
+  // ── Post-flop evaluation with flush + straight detection ──
+
+  // Rank counts for pair/trips/quads
   const rankCounts: Record<string, number> = {};
   allCards.forEach((c) => {
     const r = c[0];
     rankCounts[r] = (rankCounts[r] || 0) + 1;
   });
-
   const counts = Object.values(rankCounts).sort((a, b) => b - a);
 
+  // Flush detection: 5+ cards of same suit
+  const suitCounts: Record<string, number> = {};
+  allCards.forEach((c) => {
+    const s = c[c.length - 1]; // last char is suit
+    suitCounts[s] = (suitCounts[s] || 0) + 1;
+  });
+  const hasFlush = Object.values(suitCounts).some((count) => count >= 5);
+
+  // Straight detection: 5 consecutive rank values
+  const uniqueRanks = [...new Set(allCards.map((c) => getRankValue(c[0])))].filter(
+    (v) => v >= 0
+  );
+  uniqueRanks.sort((a, b) => a - b);
+  // Ace can also be low (value 12 plays as -1 for A-2-3-4-5)
+  if (uniqueRanks.includes(12)) uniqueRanks.unshift(-1);
+
+  let hasStraight = false;
+  for (let i = 0; i <= uniqueRanks.length - 5; i++) {
+    if (uniqueRanks[i + 4] - uniqueRanks[i] === 4) {
+      // Verify all 5 values are consecutive (no gaps)
+      let consecutive = true;
+      for (let j = 1; j < 5; j++) {
+        if (uniqueRanks[i + j] - uniqueRanks[i + j - 1] !== 1) {
+          consecutive = false;
+          break;
+        }
+      }
+      if (consecutive) {
+        hasStraight = true;
+        break;
+      }
+    }
+  }
+
+  // Check for straight flush (both straight + flush in same suit)
+  let hasStraightFlush = false;
+  if (hasFlush && hasStraight) {
+    // Check if the flush suit cards form a straight
+    const flushSuit = Object.entries(suitCounts).find(([, count]) => count >= 5)?.[0];
+    if (flushSuit) {
+      const flushRanks = [
+        ...new Set(
+          allCards.filter((c) => c[c.length - 1] === flushSuit).map((c) => getRankValue(c[0]))
+        ),
+      ]
+        .filter((v) => v >= 0)
+        .sort((a, b) => a - b);
+      if (flushRanks.includes(12)) flushRanks.unshift(-1);
+      for (let i = 0; i <= flushRanks.length - 5; i++) {
+        let consecutive = true;
+        for (let j = 1; j < 5; j++) {
+          if (flushRanks[i + j] - flushRanks[i + j - 1] !== 1) {
+            consecutive = false;
+            break;
+          }
+        }
+        if (consecutive) {
+          hasStraightFlush = true;
+          // Check for royal flush (T-J-Q-K-A of same suit)
+          if (flushRanks[i + 4] === 12 && flushRanks[i] === 8) {
+            return {
+              rank: 'royal_flush',
+              name: 'Royal Flush',
+              strength: 100,
+              color: '#9b59b6',
+            };
+          }
+          break;
+        }
+      }
+    }
+  }
+
+  // Return best hand (ordered by strength)
+  if (hasStraightFlush) {
+    return { rank: 'straight_flush', name: 'Straight Flush', strength: 99, color: '#9b59b6' };
+  }
   if (counts[0] >= 4) {
     return { rank: 'four_kind', name: 'Four of a Kind', strength: 98, color: '#9b59b6' };
   }
   if (counts[0] === 3 && counts[1] >= 2) {
     return { rank: 'full_house', name: 'Full House', strength: 95, color: '#9b59b6' };
+  }
+  if (hasFlush) {
+    return { rank: 'flush', name: 'Flush', strength: 85, color: '#27ae60' };
+  }
+  if (hasStraight) {
+    return { rank: 'straight', name: 'Straight', strength: 80, color: '#27ae60' };
   }
   if (counts[0] === 3) {
     return { rank: 'three_kind', name: 'Three of a Kind', strength: 75, color: '#27ae60' };

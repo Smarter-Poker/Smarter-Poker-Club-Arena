@@ -26,7 +26,7 @@ export type ExportType =
   | 'wallet_transactions'
   | 'rake_records'
   | 'cashout_history'
-  | 'credit_invoices';
+  | 'settlement_invoices';
 
 export interface ExportOptions {
   type: ExportType;
@@ -86,8 +86,8 @@ export const FinancialExportService = {
         return this.fetchRakeRecords(options);
       case 'cashout_history':
         return this.fetchCashoutHistory(options);
-      case 'credit_invoices':
-        return this.fetchCreditInvoices(options);
+      case 'settlement_invoices':
+        return this.fetchSettlementInvoices(options);
       default:
         throw new Error(`Unknown export type: ${options.type}`);
     }
@@ -285,9 +285,9 @@ export const FinancialExportService = {
     };
   },
 
-  async fetchCreditInvoices(options: ExportOptions) {
+  async fetchSettlementInvoices(options: ExportOptions) {
     let query = supabase
-      .from('credit_invoices')
+      .from('settlement_invoices')
       .select(
         'id, agent_id, period_start, period_end, debt_owed, amount_paid, amount_remaining, status, due_date, created_at'
       )

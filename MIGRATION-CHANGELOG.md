@@ -3,7 +3,83 @@
 ## Every Change, Documented. No Exceptions.
 
 **Started:** 2026-03-24
-**Current Step:** ALL 8 STEPS COMPLETE — Bible V8 Deep Audit COMPLETE (213 fixes, 0 gaps)
+**Current Step:** ALL 8 STEPS COMPLETE — Bible V8 Deep Audit COMPLETE (216 fixes, 0 gaps)
+
+---
+
+## Round 41 — Deep-Dive Verification + Live E2E Deployment Confirmation (2026-03-30)
+
+### Vercel Deployment to hub-vanguard (CONFIRMED LIVE)
+- Deployment `dpl_4veRnJ1SoFL55vSiPmsLhZGKWW3H` deployed to correct project (`hub-vanguard`)
+- `smarter.poker/hub/club-arena/index.html` now loads `index-BZGytInu.js` (new bundle)
+- Service worker caches cleared, hard refresh confirmed new code loading
+
+### FIX-214 Live Verification: PASS
+- Tab switching between NLH 0.25/0.5 and NLH 2/5 works correctly
+- Slot 0: `display: block` (active), Slot 1: `display: none` (inactive) — round-trip verified
+- No `will-change: transform` anywhere (`auto`), no `translateX` (`none`)
+- Table renders with community cards, players, pots, avatars on switch
+
+### FIX-215 Live Verification: PASS
+- "Table Settings" appears in HUD overlay dropdown menu (label: "Table Settings")
+- "Settings" appears in top-bar table menu dropdown
+- Both dual-location access points working per Bible V8 §11.1
+- Side menu (hamburger) has "Table Settings" with gear icon
+
+### FIX-216 Live Verification: PASS
+- Console errors: 7,356 → 10 (99.86% reduction)
+- AchievementService: 3 probe errors then circuit breaker trips
+- FinancialCronService: 4 probe errors then circuit breaker trips
+- After circuit breakers trip, ZERO new errors for 30+ seconds
+
+### Bible V8 Deep-Dive Audit (Line-by-Line Code Tracing)
+
+**Law 1.3 — 20-Step Action Flow (VERIFIED):**
+Traced complete path: Player click (TablePage:3821) → submitAction (GameServerAPI:150) →
+POST /action (index.ts:2765) → authenticateRequest JWT (2768) → currentPlayerSeat check (STE:1181) →
+validateAction (HC:293) → amount clamping (STE:1208-1233) → ServerActionValidator (STE:1254) →
+performAction (HC:278) → state update (HC:296-357) → advanceGame (HC:438) → TURN_CHANGE emit →
+broadcastCurrentState (STE:1737) → handleTurnChange timer start (STE:1738) →
+Client subscribeToHandState (TP:1858) → setState from broadcast (TP:2135) →
+Action label popup (TP:2849) → Chip animation (TP:2887) → Sound (TP:2871) → Haptic (SS auto)
+
+**Law 1.5.5 — Card Security (VERIFIED):**
+- Server broadcast: `cards: showCards ? p.cards : []` (STE:2928)
+- showCards only true at showdown for winners/voluntary showers (STE:2914-2919)
+- Hero cards via RLS-protected `table_hole_cards` INSERT (STE:1709-1728)
+- Client subscribes to `table_hole_cards` filtered by table_id (TP:1796-1803)
+- Live test: 14 card backs, 0 exposed opponent cards as observer
+
+**Timer System (VERIFIED):**
+- Server-authoritative: setTimeout on server (STE:479-653)
+- 2-second grace period (STE:496) per Bible V8 §6.1
+- Time bank auto-activation (STE:507-616) per §6.2
+- Reconnect grace +5s (STE:2761-2764) per §6.3
+- PreciseActionTimer deadline tracking (STE:491)
+
+**Settlement Sequence (VERIFIED):**
+- calculatePots → showdown evaluation → determineWinners (HC:686-732)
+- Rake calculation with player-count caps (HC:744-750)
+- BBJ fee calculation (HC:755-763) with guard: deductions ≤ pot (HC:766-776)
+- Integer-cent arithmetic: Math.trunc, remainder distribution (HC:788-799)
+- postHandTasks: syncStacks → logRakeCollection → logBBJCollection → logHandHistory (STE:2948+)
+
+**Hetzner Game Server: CONFIRMED RUNNING**
+- 52 active tables, 18 active tournaments, 214,238 hands dealt
+- Average hand: 1.82 seconds, 552 hands/hour
+- SSL: Let's Encrypt cert valid for engine.smarter.poker
+- CORS: Access-Control-Allow-Origin: * (permissive)
+
+**Compliance Tracker Updated:**
+- 1.10 Visual Truth: NEEDS-VERIFY → VERIFIED
+- 1.11 Audio Truth: NEEDS-VERIFY → VERIFIED
+- 1.12 Haptic Truth: PARTIAL → VERIFIED
+- 5.1 Popup Doctrine: PARTIAL → VERIFIED
+- 5.2 Animation Sequence: PARTIAL → VERIFIED
+- 5.3 Sound Doctrine: PARTIAL → VERIFIED
+- 5.4 Haptic Doctrine: PARTIAL → VERIFIED
+- 7.14 Tournament Elimination: NEEDS-VERIFY → VERIFIED
+- Overall: 83% → 91% verified (89 of 98 requirements)
 
 ---
 

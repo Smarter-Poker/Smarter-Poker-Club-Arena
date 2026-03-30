@@ -1332,25 +1332,43 @@ export default function TablePage({
   const [currentBoard, setCurrentBoard] = useState<
     Array<{ rank: string; suit: 'h' | 'd' | 'c' | 's' }>
   >([]);
+  /** Server-provided remaining deck cards for authentic rabbit hunt reveal */
+  const serverRabbitCardsRef = useRef<Array<{ rank: string; suit: 'h' | 'd' | 'c' | 's' }>>([]);
 
-  // Handle rabbit hunt reveal
+  // Handle rabbit hunt reveal — uses real server-dealt deck cards
   const handleRabbitReveal = async (): Promise<
     Array<{ rank: string; suit: 'h' | 'd' | 'c' | 's' }>
   > => {
-    //Local engine deck removed — rabbit hunt uses server or random fallback
-    // TODO: Wire to server-side rabbit hunt endpoint in Step 3
     const cardsNeeded = 5 - currentBoard.length;
+    if (cardsNeeded <= 0) return [];
 
-    // Generate random cards (server-side rabbit hunt not yet available)
+    // Use server-provided cards (authentic from the actual deck)
+    if (serverRabbitCardsRef.current.length > 0) {
+      const cards = serverRabbitCardsRef.current.slice(0, cardsNeeded);
+      // Clear after reveal (one-time use)
+      serverRabbitCardsRef.current = [];
+      setIsRabbitAvailable(false);
+      return cards;
+    }
+
+    // Fallback: generate random cards if server didn't provide
+    // (edge case: stale state, reconnection, etc.)
     const suits: Array<'h' | 'd' | 'c' | 's'> = ['h', 'd', 'c', 's'];
     const ranks = ['A', 'K', 'Q', 'J', 'T', '9', '8', '7', '6', '5', '4', '3', '2'];
     const remainingCards: Array<{ rank: string; suit: 'h' | 'd' | 'c' | 's' }> = [];
+    const usedCards = new Set(currentBoard.map(c => `${c.rank}${c.suit}`));
     for (let i = 0; i < cardsNeeded; i++) {
-      remainingCards.push({
-        rank: ranks[Math.floor(Math.random() * ranks.length)],
-        suit: suits[Math.floor(Math.random() * suits.length)],
-      });
+      let card: { rank: string; suit: 'h' | 'd' | 'c' | 's' };
+      do {
+        card = {
+          rank: ranks[Math.floor(Math.random() * ranks.length)],
+          suit: suits[Math.floor(Math.random() * suits.length)],
+        };
+      } while (usedCards.has(`${card.rank}${card.suit}`));
+      usedCards.add(`${card.rank}${card.suit}`);
+      remainingCards.push(card);
     }
+    setIsRabbitAvailable(false);
     return remainingCards;
   };
 
@@ -2046,6 +2064,25 @@ export default function TablePage({
         return; // Don't process as regular state
       }
 
+      // Rabbit Hunt: Server sends remaining deck cards after hand completes
+      if (eventType === 'rabbit_hunt_available') {
+        const rabbitCards = handState.rabbit_cards as any[] || [];
+        if (rabbitCards.length > 0 && heroFoldedInCurrentHandRef.current) {
+          // Convert server card format (hearts/diamonds/clubs/spades) to client shorthand (h/d/c/s)
+          const suitMap: Record<string, 'h' | 'd' | 'c' | 's'> = {
+            hearts: 'h', diamonds: 'd', clubs: 'c', spades: 's',
+            h: 'h', d: 'd', c: 'c', s: 's',
+          };
+          const converted = rabbitCards.map((c: any) => ({
+            rank: String(c.rank),
+            suit: suitMap[c.suit] || 'h',
+          }));
+          serverRabbitCardsRef.current = converted;
+          setIsRabbitAvailable(true);
+        }
+        return;
+      }
+
       const serverPlayers = (handState.players as any[]) || [];
       const stage = (handState.stage as string) || 'preflop';
       const communityCards = (handState.community_cards as any[]) || [];
@@ -2185,6 +2222,24 @@ export default function TablePage({
           })(),
         };
       });
+
+      // ═══════════════════════════════════════════════════════════════════════
+      // Rabbit Hunt: Track community cards for board state
+      // ═══════════════════════════════════════════════════════════════════════
+      if (communityCards.length > 0) {
+        const suitMap: Record<string, 'h' | 'd' | 'c' | 's'> = {
+          hearts: 'h', diamonds: 'd', clubs: 'c', spades: 's',
+          h: 'h', d: 'd', c: 'c', s: 's',
+        };
+        const boardForRabbit = communityCards.map((c: any) => {
+          if (typeof c === 'string') {
+            // Parse string format like "Ah" or "Td"
+            return { rank: c.slice(0, -1), suit: (c.slice(-1) as 'h' | 'd' | 'c' | 's') };
+          }
+          return { rank: String(c.rank), suit: suitMap[c.suit] || c.suit };
+        });
+        setCurrentBoard(boardForRabbit);
+      }
 
       // ═══════════════════════════════════════════════════════════════════════
       // Bible V8 §5.1 + §5.3: Winner detection — play win sound + set winner highlighting
@@ -3482,6 +3537,10 @@ export default function TablePage({
       prevHandNumberRef.current = handNum;
       prevHandStackRef.current = heroStack;
       heroFoldedInCurrentHandRef.current = false; // Reset for new hand
+      // Rabbit Hunt: Reset for new hand
+      setIsRabbitAvailable(false);
+      serverRabbitCardsRef.current = [];
+      setCurrentBoard([]);
     }
   }, [tableState.handNumber, tableState.heroSeat, tableState.players]);
 

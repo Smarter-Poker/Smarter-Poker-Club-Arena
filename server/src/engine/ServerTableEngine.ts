@@ -124,6 +124,8 @@ export class ServerTableEngine {
   private currentHandInsuranceSettlements: InsuranceSettlement[] = [];
   private currentHandBBJHit: BBJDetectionResult | null = null;
   private currentHandBBJPayoutConfig: ServerRakeConfigResult | null = null;
+  /** Remaining deck cards at hand completion — used for Rabbit Hunt reveal */
+  private currentHandRabbitCards: import('../types.js').Card[] = [];
   private currentHandShowdownResults: Array<{
     userId: string;
     handRanking: number;
@@ -1478,6 +1480,7 @@ export class ServerTableEngine {
     this.currentHandShowdownResults = []; // BBJ: Reset showdown results for new hand
     this.currentHandBBJHit = null; // BBJ: Reset hit detection for new hand
     this.currentHandBBJPayoutConfig = null;
+    this.currentHandRabbitCards = []; // Rabbit Hunt: Reset remaining deck
     this.timeBankActivatedThisTurn = false; // Bible V8 §6.2: Reset time bank flag for new hand
     this.showHandPlayers = null; // Reset voluntary show-hand set for new hand
 
@@ -1824,6 +1827,17 @@ export class ServerTableEngine {
         break;
 
       case 'HAND_COMPLETE':
+        // Rabbit Hunt: Capture remaining deck cards BEFORE handController is nulled
+        if (this.handController) {
+          try {
+            const remainingDeck = this.handController.getRemainingDeck();
+            // Only take the next 5 cards max (enough for any board completion)
+            this.currentHandRabbitCards = remainingDeck.slice(0, 5);
+          } catch {
+            this.currentHandRabbitCards = [];
+          }
+        }
+
         // FIX 137: Bible V8 §7.17 — Mark hand snapshot as complete (settlement done)
         completeHandSnapshot(this.tableId, this.handCount).catch(() => {});
 
@@ -2036,6 +2050,17 @@ export class ServerTableEngine {
           console.error(`[ServerTableEngine:${this.tableId}] Post-hand error:`, err)
         );
         this.currentHandWinnerIds = [];
+
+        // Rabbit Hunt: Broadcast captured remaining deck as a separate event
+        // so clients can offer Rabbit Hunt reveal with real cards
+        if (this.currentHandRabbitCards.length > 0) {
+          broadcastHandState(this.tableId, {
+            type: 'rabbit_hunt_available',
+            table_id: this.tableId,
+            hand_number: this.handCount,
+            rabbit_cards: this.currentHandRabbitCards,
+          });
+        }
         break;
     }
   }

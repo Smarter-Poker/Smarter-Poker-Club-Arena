@@ -19,6 +19,7 @@ import { FinancialAlertService } from './FinancialAlertService';
 import { masterBus } from '../core/MasterBus';
 // [MIGRATION] rakebackEngine removed — server-authoritative (Step 6). Settlement via Supabase RPC.
 import { QUERY_LIMITS } from '../lib/constants';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -173,12 +174,12 @@ export const FinancialCronService = {
           created_at: reconciliationResult.checkedAt,
         });
       } catch (err) {
-        console.error('[FinancialCron] Reconciliation audit log failed:', err);
+        reportError(err, 'FinancialCronService.runReconciliation.auditLog');
       }
 
       return reconciliationResult;
     } catch (err: unknown) {
-      console.error('[FinancialCron] Reconciliation failed:', err);
+      reportError(err, 'FinancialCronService.runReconciliation');
       return { isBalanced: false, difference: -1, checkedAt: new Date().toISOString() };
     }
   },
@@ -206,7 +207,7 @@ export const FinancialCronService = {
         .gt('credit_limit', 0);
 
       if (error || !agents) {
-        console.error('[FinancialCron] Failed to fetch credit agents:', error);
+        reportError(error, 'FinancialCronService.runSuspensionCheck.fetchAgents');
         return { agentsChecked: 0, agentsSuspended: 0, agentsWarned: 0 };
       }
 
@@ -239,7 +240,7 @@ export const FinancialCronService = {
             }
           }
         } catch (e: unknown) {
-          console.error(`[FinancialCron] Suspension check failed for agent ${agent.id}:`, e);
+          reportError(e, 'FinancialCronService.runSuspensionCheck.agent', { agentId: agent.id });
         }
       }
 
@@ -247,7 +248,7 @@ export const FinancialCronService = {
       this._lastSuspensionCheck = result;
       return result;
     } catch (err: unknown) {
-      console.error('[FinancialCron] Suspension check failed:', err);
+      reportError(err, 'FinancialCronService.runSuspensionCheck');
       return { agentsChecked, agentsSuspended, agentsWarned };
     }
   },
@@ -279,8 +280,7 @@ export const FinancialCronService = {
         created_at: new Date().toISOString(),
       });
     } catch (err) {
-      console.error('[FinancialCron] Audit insert failed:', err);
-      console.error('[FinancialCron] commission_rate_audit insert failed (table may not exist)');
+      reportError(err, 'FinancialCronService.logRateChange');
     }
   },
 
@@ -317,7 +317,7 @@ export const FinancialCronService = {
             totalDistributed += settlement.total_distributed;
           }
         } catch (err) {
-          console.error(`[FinancialCron] Rakeback settlement failed for club ${club.id}:`, err);
+          reportError(err, 'FinancialCronService.settleClubRakeback', { clubId: club.id });
         }
       }
 
@@ -327,7 +327,7 @@ export const FinancialCronService = {
         );
       }
     } catch (err) {
-      console.error('[FinancialCron] settleAllClubRakebacks failed:', err);
+      reportError(err, 'FinancialCronService.settleAllClubRakebacks');
     }
 
     return { clubsSettled, totalDistributed };
@@ -375,7 +375,7 @@ export const FinancialCronService = {
             { disputeId: dispute.id, clubId: dispute.club_id }
           );
         } catch (e: unknown) {
-          console.error(`[FinancialCron] Dispute escalation failed for ${dispute.id}:`, e);
+          reportError(e, 'FinancialCronService.escalateStaleDisputes', { disputeId: dispute.id });
         }
       }
 
@@ -389,7 +389,7 @@ export const FinancialCronService = {
         });
       }
     } catch (err: unknown) {
-      console.error('[FinancialCron] Dispute escalation check failed:', err);
+      reportError(err, 'FinancialCronService.escalateStaleDisputes');
     }
     return escalated;
   },

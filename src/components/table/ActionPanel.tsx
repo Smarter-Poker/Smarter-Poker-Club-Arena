@@ -117,7 +117,7 @@ export default function ActionPanel({
   }, [canRaise, canAllIn, minRaise]);
 
   const handleConfirmRaise = useCallback(() => {
-    haptic.strong();
+    haptic.medium(); // FIX 196: Bible V8 §5.4 — raise = medium haptic (was strong/heavy, reserved for all_in)
     if (raiseAmount >= maxRaise) {
       if (confirmAllIn) {
         setPendingAllIn(true);

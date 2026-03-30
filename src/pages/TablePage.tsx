@@ -3949,7 +3949,7 @@ export default function TablePage({
     onRaise: handleRaise,
     onAllIn: handleAllIn,
     onToggleSound: () => setIsSoundEnabled((prev) => !prev),
-    onToggleHandStrength: () => updateSetting('showHUD', !userSettings.showHUD),
+    // FIX 199: onToggleHandStrength REMOVED — not allowed for live online gameplay
     onToggleStats: () => updateSetting('showHUD', !userSettings.showHUD),
     onBetPreset: (preset: number) => {
       // Bet presets: 0=1/3 pot, 1=1/2 pot, 2=3/4 pot, 3=pot
@@ -4667,12 +4667,10 @@ export default function TablePage({
             <QuickActionsBar
               isSoundEnabled={isSoundEnabled}
               isChatVisible={!isChatCollapsed}
-              isHandStrengthVisible={userSettings.showHUD}
               isStatsVisible={userSettings.showHUD}
               isAutoRebuyEnabled={isAutoRebuyEnabled}
               onToggleSound={() => setIsSoundEnabled((prev) => !prev)}
               onToggleChat={() => setIsChatCollapsed((prev) => !prev)}
-              onToggleHandStrength={() => updateSetting('showHUD', !userSettings.showHUD)}
               onToggleStats={() => updateSetting('showHUD', !userSettings.showHUD)}
               onToggleAutoRebuy={() => {
                 const next = !isAutoRebuyEnabled;
@@ -5500,7 +5498,6 @@ export default function TablePage({
           soundEnabled: isSoundEnabled,
           soundVolume: userSettings.soundVolume,
           hapticEnabled: userSettings.isHapticEnabled,
-          showHandStrength: userSettings.showHUD,
           showPotOdds: userSettings.showPotOdds,
           animationSpeed:
             userSettings.animationSpeed === 0.5
@@ -5523,8 +5520,7 @@ export default function TablePage({
           }
           if (settingsUpdate.autoMuckLosers !== undefined)
             updateSetting('autoMuck', settingsUpdate.autoMuckLosers);
-          if (settingsUpdate.showHandStrength !== undefined)
-            updateSetting('showHUD', settingsUpdate.showHandStrength);
+          // FIX 199: showHandStrength handler REMOVED — not allowed for live online gameplay
           if (settingsUpdate.showPotOdds !== undefined)
             updateSetting('showPotOdds', settingsUpdate.showPotOdds);
           if (settingsUpdate.fourColorDeck !== undefined)

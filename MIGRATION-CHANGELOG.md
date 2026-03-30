@@ -3,7 +3,57 @@
 ## Every Change, Documented. No Exceptions.
 
 **Started:** 2026-03-24
-**Current Step:** ALL 8 STEPS COMPLETE — Deep Bible V8 Verification In Progress (194 fixes total)
+**Current Step:** ALL 8 STEPS COMPLETE — Deep Bible V8 Verification In Progress (199 fixes total)
+
+---
+
+## Round 32 — Full Table Component Audit + HandStrength Removal (2026-03-29)
+
+### FIX 196 — ActionPanel handleConfirmRaise wrong haptic level (ActionPanel.tsx)
+- **File:** `src/components/table/ActionPanel.tsx`
+- **Bug:** `handleConfirmRaise` used `haptic.strong()` (heavy) but Bible V8 §5.4 says raise = medium haptic. Only all_in gets heavy.
+- **Fix:** Changed to `haptic.medium()`.
+
+### FIX 197 — RebuyModal amounts not formatted (RebuyModal.tsx)
+- **File:** `src/components/table/RebuyModal.tsx`
+- **Bug:** `rebuyCost`, `rebuyChips`, `walletBalance` displayed as raw unformatted numbers. Violates Bible V8 code safety rules.
+- **Fix:** Added `.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })` to all three values.
+
+### FIX 198 — TableMenu raw navigator.vibrate instead of haptic service (TableMenu.tsx)
+- **File:** `src/components/table/TableMenu.tsx`
+- **Bug:** Used raw `navigator.vibrate(8)` in `handleActionClick`. Bible V8 §5.4 requires centralized haptic service.
+- **Fix:** Imported `haptic` from SoundService and replaced with `haptic.light()`.
+
+### FIX 199 — HandStrengthIndicator fully removed from all UI surfaces
+- **Files:** `SettingsPanel.tsx`, `QuickActionsBar.tsx`, `TablePage.tsx`, `SettingsPage.tsx`, `useTableKeyboard.ts`
+- **Bug:** HandStrengthIndicator was still referenced in settings toggles, quick actions bar, keyboard shortcuts (H key), and settings props even though FIX 194 removed the render. User directive: "REMOVE THE HAND STRENGTH INDICATOR. ITS NOT ALLOWED FOR LIVE ONLINE GAME PLAY."
+- **Fix:** Removed `showHandStrength` from all interfaces, defaults, toggles, keyboard shortcuts, and prop passing. Only the dead component file remains (not imported anywhere).
+
+### Components Audited Round 32 (ALL CLEAN):
+- ActionPanel.tsx — FIX 196 (haptic level)
+- RebuyModal.tsx — FIX 197 (number formatting)
+- TableMenu.tsx — FIX 198 (haptic service) + menu open sound cue verified
+- TableSettings.tsx — Clean. VIP gating, diamond pricing ✅
+- TableTabBar.tsx — Clean. Multi-table nav, MasterBus events, formatted jackpot ✅
+- ThemeSelector.tsx — Clean. 7 themes, localStorage persistence ✅
+- SettingsPanel.tsx — FIX 199 (hand strength removal) + Bible V8 §11.1 integration ✅
+- StreakBadge.tsx — Clean. Memo'd, tiered badge ✅
+- PremiumCard.tsx — Clean. Deck themes, lazy loading ✅
+- PremiumPot.tsx — Clean. Animated counter, tier glow, side pots ✅
+- PreviousHandCard.tsx — Clean. Formatted results ✅
+- QuickActionBar.tsx — Clean. Simple action buttons ✅
+- QuickActionsBar.tsx — FIX 199 (hand strength removal) ✅
+- RealTimeResults.tsx — Clean. Formatted amounts, observers ✅
+- ReplayActions.tsx — Clean. Street-based action log ✅
+- SessionStatsTracker.tsx — Clean. BB/100, VPIP/PFR stats ✅
+- SessionTimer.tsx — Clean. Break reminders ✅
+- SessionTrajectoryMini.tsx — Clean. SVG sparkline, MasterBus subscription ✅
+- TournamentAnnouncementOverlay.tsx — Clean. Auto-dismiss timers ✅
+- TournamentBreakScreen.tsx — Clean. Math.trunc integer-cent, SVG timer ring ✅
+- TournamentWinnerOverlay.tsx — Clean. Animated prize counter ✅
+- TableMenuIcons.tsx — Clean. SVG icon components ✅
+- PlayerCard.tsx — Clean. PLO support (FIX 195 already applied) ✅
+- HandStrengthIndicator.tsx — Dead code (not imported anywhere) ✅
 
 ---
 

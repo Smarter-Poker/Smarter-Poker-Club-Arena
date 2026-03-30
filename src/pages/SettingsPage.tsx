@@ -54,7 +54,7 @@ interface UserSettings {
   autoRebuy: boolean;
   autoRebuyThreshold: number;
   confirmAllIn: boolean;
-  showHandStrength: boolean;
+  // FIX 199: showHandStrength REMOVED — not allowed for live online gameplay
   runItTwiceDefault: boolean;
   straddleDefault: boolean;
 
@@ -95,7 +95,6 @@ const DEFAULT_SETTINGS: UserSettings = {
   autoRebuy: false,
   autoRebuyThreshold: 50,
   confirmAllIn: true,
-  showHandStrength: false,
   runItTwiceDefault: false,
   straddleDefault: false,
 
@@ -156,7 +155,6 @@ function validateSettings(raw: unknown): UserSettings {
     autoRebuy: bool('autoRebuy'),
     autoRebuyThreshold: num('autoRebuyThreshold', 0, 100),
     confirmAllIn: bool('confirmAllIn'),
-    showHandStrength: bool('showHandStrength'),
     runItTwiceDefault: bool('runItTwiceDefault'),
     straddleDefault: bool('straddleDefault'),
     chatEnabled: bool('chatEnabled'),

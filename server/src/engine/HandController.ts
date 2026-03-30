@@ -33,6 +33,7 @@ import type {
   RakeConfig,
 } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
+import { createHandStateMachine, type HandFSMState } from './StateMachine.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // HAND CONTROLLER
@@ -44,6 +45,8 @@ export class HandController {
   private eventHandlers: ((event: HandEvent) => void)[] = [];
   /** FIX 120: Crazy Pineapple — tracks seats that still need to discard after flop */
   private pineappleDiscardsRemaining: Set<number> = new Set();
+  /** FIX-225: Bible V8 §1.6/§3.2 — Formal Hand State Machine */
+  private handFSM = createHandStateMachine('idle');
 
   constructor(config: HandConfig, players: SeatPlayer[], dealerSeat: number) {
     this.config = config;
@@ -89,6 +92,33 @@ export class HandController {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
+  // FIX-225: Stage Transition with FSM Validation
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /** Map HandStage strings to HandFSMState for validation */
+  private static readonly STAGE_TO_FSM: Record<string, HandFSMState> = {
+    preflop: 'preflop',
+    flop: 'flop',
+    pineapple_discard: 'pineapple_discard',
+    turn: 'turn',
+    river: 'river',
+    showdown: 'showdown',
+  };
+
+  /**
+   * Transition to a new hand stage with FSM validation.
+   * The FSM validates the transition is legal per Bible V8 §3.2.
+   * If invalid, logs warning but still sets stage (defensive — don't break game).
+   */
+  private transitionStage(newStage: HandStage): void {
+    const fsmState = HandController.STAGE_TO_FSM[newStage];
+    if (fsmState) {
+      this.handFSM.transition(fsmState);
+    }
+    this.state.stage = newStage;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
   // Initialization
   // ─────────────────────────────────────────────────────────────────────────
 
@@ -108,6 +138,9 @@ export class HandController {
   // ─────────────────────────────────────────────────────────────────────────
 
   start(): void {
+    // FIX-225: FSM transitions for hand start sequence
+    this.handFSM.transition('posting_blinds');
+
     this.emit({
       type: 'HAND_START',
       handNumber: this.config.handNumber,
@@ -116,6 +149,7 @@ export class HandController {
 
     if (this.config.bombPot) {
       this.postBombPotAntes();
+      this.handFSM.transition('dealing');
       this.dealHoleCards();
       // Bible V8 §4.22: Bomb pot skips preflop betting — deal directly to flop
       this.advanceStage(); // preflop → flop, deals 3 community cards, sets first postflop player
@@ -123,7 +157,9 @@ export class HandController {
     }
 
     this.postBlinds();
+    this.handFSM.transition('dealing');
     this.dealHoleCards();
+    this.handFSM.transition('preflop');
     this.setNextPlayer();
     this.emitTurnChange();
   }
@@ -519,7 +555,7 @@ export class HandController {
 
     switch (this.state.stage) {
       case 'preflop': {
-        this.state.stage = 'flop';
+        this.transitionStage('flop');
         this.state.sawFlop = true;
         const flop = deck.deal(3);
         this.state.communityCards.push(...flop);
@@ -527,7 +563,7 @@ export class HandController {
 
         // FIX 120: Crazy Pineapple — after dealing flop, enter discard phase
         if (this.config.gameVariant === 'pineapple') {
-          this.state.stage = 'pineapple_discard';
+          this.transitionStage('pineapple_discard');
           const activePlayers = this.getActivePlayers();
           this.pineappleDiscardsRemaining = new Set(activePlayers.map((p) => p.seat));
           this.emit({
@@ -542,24 +578,24 @@ export class HandController {
       }
       case 'pineapple_discard':
         // FIX 120: After all discards are in, proceed to flop betting
-        this.state.stage = 'flop';
+        this.transitionStage('flop');
         break;
       case 'flop': {
-        this.state.stage = 'turn';
+        this.transitionStage('turn');
         const turn = deck.deal(1);
         this.state.communityCards.push(...turn);
         this.emit({ type: 'COMMUNITY_CARDS', stage: 'turn', cards: turn });
         break;
       }
       case 'turn': {
-        this.state.stage = 'river';
+        this.transitionStage('river');
         const river = deck.deal(1);
         this.state.communityCards.push(...river);
         this.emit({ type: 'COMMUNITY_CARDS', stage: 'river', cards: river });
         break;
       }
       case 'river':
-        this.state.stage = 'showdown';
+        this.transitionStage('showdown');
         this.completeHand();
         return;
     }
@@ -635,7 +671,7 @@ export class HandController {
    * @param skipDistribution - true when caller (e.g. RIT) already distributed pots
    */
   public finalizeRunout(skipDistribution: boolean = false): void {
-    this.state.stage = 'showdown';
+    this.transitionStage('showdown');
     if (skipDistribution) {
       // RIT or other caller already distributed pots — just emit completion events
       const playerCount = this.state.players.filter((p) => !p.is_sitting_out).length;
@@ -655,7 +691,9 @@ export class HandController {
         }
       }
       this.emit({ type: 'WINNERS', winners: [] });
+      this.handFSM.transition('settlement');
       this.emit({ type: 'HAND_COMPLETE', handNumber: this.config.handNumber, rake, bbjFee });
+      this.handFSM.transition('idle');
       return;
     }
     this.completeHand();
@@ -675,7 +713,7 @@ export class HandController {
       this.state.communityCards.push(...cards);
       this.emit({ type: 'COMMUNITY_CARDS', stage: stage as HandStage, cards });
     }
-    this.state.stage = 'showdown';
+    this.transitionStage('showdown');
     this.completeHand();
   }
 
@@ -781,7 +819,9 @@ export class HandController {
     if (winners.length === 0 || totalWinnerAmount === 0) {
       reportError(new Error(`[HandController] CRITICAL: No winners and no active players — pot of ${this.state.pot} cannot be distributed`), 'HandController.CRITICAL');
       this.emit({ type: 'WINNERS', winners: [] });
+      this.handFSM.transition('settlement');
       this.emit({ type: 'HAND_COMPLETE', handNumber: this.config.handNumber, rake: 0, bbjFee: 0 });
+      this.handFSM.transition('idle');
       return;
     }
 
@@ -805,7 +845,9 @@ export class HandController {
     }
 
     this.emit({ type: 'WINNERS', winners: adjustedWinners });
+    this.handFSM.transition('settlement');
     this.emit({ type: 'HAND_COMPLETE', handNumber: this.config.handNumber, rake, bbjFee });
+    this.handFSM.transition('idle');
   }
 
   // ─────────────────────────────────────────────────────────────────────────

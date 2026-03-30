@@ -3,41 +3,7 @@
 ## Every Change, Documented. No Exceptions.
 
 **Started:** 2026-03-24
-**Current Step:** ALL 8 STEPS COMPLETE — Bible V8 Deep Audit (222 fixes, 97% verified, 3% design-choice PARTIAL)
-
----
-
-## Round 43 — Bible V8 Chapter 11 Deep-Dive Audit (2026-03-30)
-
-### Scope: Table Settings (§11.1) + Theme Customization (§11.2)
-
-**FIX-220: Remove duplicate show_stack_in_bb toggle**
-- **File:** `src/components/table/SettingsPanel.tsx` line 253-258
-- **Issue:** Legacy `TableSettings` interface had its own "Show stack in BBs" toggle alongside the Bible V8 `TableSettingsPanel` which also renders it. Users saw the toggle twice.
-- **Fix:** Removed the legacy toggle, replaced with comment explaining the Bible V8 panel handles it. Backward compat sync preserved in `useUserTableSettings.ts`.
-
-**FIX-221: VIP upgrade prompt overlay (replaces plain toast)**
-- **File:** `src/components/table/ThemeSettingsModal.tsx` + `ThemeSettingsModal.css`
-- **Issue:** Clicking a VIP-locked theme asset showed a plain browser toast ("VIP only"). Bible V8 §11.2.3 specifies a proper upgrade prompt with CTA.
-- **Fix:** Added `showVipPrompt` state, full overlay with lock icon, "Upgrade to VIP" button (navigates to /vip), and "Maybe Later" dismiss. Added 90 lines of CSS for the VIP prompt overlay with gold gradient branding.
-
-**FIX-222: Wire entire CSS theme rendering layer**
-- **Files:** `src/pages/TablePage.css` (130 lines added), `src/pages/TablePage.tsx` (data attribute fixes), `src/components/table/DealerButton.tsx` (CSS var consumption)
-- **Issue:** The entire Bible V8 theme system was wired in JS (saves to DB, applies data attributes to DOM) but had ZERO CSS rules to actually render the 25 theme assets. All themes were "visually dead."
-- **Fix:**
-  - Added CSS selectors for all 25 asset IDs across 5 tabs (Themes, Table, Button, Background, Cards)
-  - DealerButton now reads `--dealer-btn-bg` and `--dealer-btn-color` CSS custom properties
-  - TablePage.tsx: `data-felt-theme` now prioritizes `table_id` over `theme_id`
-  - Added new `data-theme-preset` attribute for full-theme presets
-  - Card theme tokens (`--card-accent`, `--card-back-gradient`) defined as forward-compatible infrastructure
-
-**Compliance:**
-- 20 new items added to COMPLIANCE-TRACKER.md (Chapter 11 section)
-- 19 VERIFIED, 1 PARTIAL (11.2.5 — gradient placeholders, real image assets not yet created)
-- Total: 118 items, 114 VERIFIED (97%), 4 PARTIAL (3%)
-
-**DB Migration:**
-- `supabase/migrations/20260330_user_table_settings_skip_animations.sql` — adds `skip_animations` column
+**Current Step:** ALL 8 STEPS COMPLETE — Bible V8 Deep Audit (219 fixes, 97% verified, 3% design-choice PARTIAL)
 
 ---
 

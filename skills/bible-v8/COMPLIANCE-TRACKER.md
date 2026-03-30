@@ -10,8 +10,8 @@
 - N/A = Not applicable to current scope
 
 **Last Updated:** 2026-03-30
-**Updated By:** Claude (Round 43 — Bible V8 Chapter 11 deep-dive audit + FIX-220/221/222)
-**Total Fixes:** 222
+**Updated By:** Claude (Round 42 — deep-dive on all 9 PARTIAL items with code fixes)
+**Total Fixes:** 219
 
 ---
 
@@ -168,31 +168,6 @@
 
 ---
 
-## CHAPTER 11: TABLE SETTINGS & THEME CUSTOMIZATION
-
-| ID | Requirement | Status | File(s) | Notes |
-|----|------------|--------|---------|-------|
-| 11.1.1 | 12 toggle settings with correct defaults | VERIFIED | src/hooks/useUserTableSettings.ts | All 12 from spec + skip_animations from §10.3. Defaults match Bible V8 table exactly |
-| 11.1.2 | Settings persist to user_table_settings table | VERIFIED | src/hooks/useUserTableSettings.ts:187 | Upsert on toggle, maybeSingle() for load |
-| 11.1.3 | Cross-component sync via MasterBus | VERIFIED | src/hooks/useUserTableSettings.ts:143-162 | SETTINGS_CHANGED events with localOriginRef de-dup |
-| 11.1.4 | Backward compat: show_stack_in_bb → localStorage | VERIFIED | src/hooks/useUserTableSettings.ts:113-120 | Syncs to SHOW_STACK_BB localStorage key |
-| 11.1.5 | TableSettingsPanel renders all toggles | VERIFIED | src/components/table/TableSettingsPanel.tsx | TABLE_SETTINGS_META array, stagger animation |
-| 11.1.6 | Accessible from table gear icon (SettingsPanel) | VERIFIED | src/components/table/SettingsPanel.tsx:386 | FIX-220: Removed duplicate show_stack_in_bb toggle |
-| 11.1.7 | Accessible from hamburger menu | VERIFIED | src/components/navigation/HamburgerMenu.tsx:888 | mode="inline" rendering |
-| 11.1.8 | skip_animations controls --animation-speed | VERIFIED | src/pages/TablePage.tsx:1473 | Sets CSS property to 0 when skip_animations=true |
-| 11.1.9 | DB schema: user_table_settings table | VERIFIED | supabase/migrations/20260326_user_table_settings.sql | 12 columns + skip_animations migration |
-| 11.1.10 | RLS policies on user_table_settings | VERIFIED | supabase/migrations/20260326_user_table_settings.sql:85-107 | select/insert/update own rows only |
-| 11.2.1 | 5-tab theme system (Themes/Table/Button/Background/Cards) | VERIFIED | src/components/table/ThemeSettingsModal.tsx | THEME_TABS array with 5 entries |
-| 11.2.2 | 10 game types including ALL fallback | VERIFIED | src/components/table/ThemeSettingsModal.tsx | GAME_TYPES array, ALL fallback in useUserThemeSettings |
-| 11.2.3 | 25 assets (5 per tab: 2 free + 3 VIP) | VERIFIED | src/components/table/ThemeSettingsModal.tsx | Each tab has exactly 5 items with correct free/VIP split |
-| 11.2.4 | VIP gating with upgrade prompt | VERIFIED | src/components/table/ThemeSettingsModal.tsx + .css | FIX-221: Full overlay with /vip navigation, not plain toast |
-| 11.2.5 | Theme image assets render visually | PARTIAL | src/pages/TablePage.css:427+ | FIX-222: 130 lines of CSS for all 25 asset IDs. Uses gradient/pattern placeholders — real image assets not created |
-| 11.2.6 | Per-game-type persistence in user_theme_settings | VERIFIED | src/hooks/useUserThemeSettings.ts | UNIQUE(user_id, game_type), ALL fallback |
-| 11.2.7 | data-felt-theme attribute on .table-page | VERIFIED | src/pages/TablePage.tsx:4328 | FIX-222: table_id priority over theme_id |
-| 11.2.8 | data-background-theme attribute | VERIFIED | src/pages/TablePage.tsx:4329 | Applied from v8Theme.background_id |
-| 11.2.9 | data-button-theme for dealer button | VERIFIED | src/pages/TablePage.tsx:4331 + DealerButton.tsx | FIX-222: DealerButton reads --dealer-btn-bg/--dealer-btn-color |
-| 11.2.10 | data-cards-theme attribute | VERIFIED | src/pages/TablePage.tsx:4332 | Forward-compatible: --card-accent/--card-back-gradient defined |
-
 ## SUMMARY STATISTICS
 
 | Category | Total | VERIFIED | NEEDS-VERIFY | PARTIAL | MISSING | BROKEN |
@@ -204,20 +179,18 @@
 | Ch 5: UI/UX | 4 | 4 | 0 | 0 | 0 | 0 |
 | Ch 6: Timers | 12 | 12 | 0 | 0 | 0 | 0 |
 | Ch 7: Edge Cases | 20 | 20 | 0 | 0 | 0 | 0 |
-| Ch 11: Table Settings | 10 | 10 | 0 | 0 | 0 | 0 |
-| Ch 11: Theme Settings | 10 | 9 | 0 | 1 | 0 | 0 |
-| **TOTAL** | **118** | **114 (97%)** | **0 (0%)** | **4 (3%)** | **0 (0%)** | **0 (0%)** |
+| **TOTAL** | **98** | **95 (97%)** | **0 (0%)** | **3 (3%)** | **0 (0%)** | **0 (0%)** |
 
 ### Bottom Line:
-- **97% verified** — 118 items across Chapters 1-7 + 11
-- **Round 43 additions (Chapter 11):** 20 new items, 19 VERIFIED, 1 PARTIAL
-  - FIX-220: Removed duplicate show_stack_in_bb toggle from SettingsPanel legacy section
-  - FIX-221: VIP upgrade prompt overlay with /vip navigation (replaces plain toast)
-  - FIX-222: 130 lines CSS for all 25 Bible V8 theme assets + DealerButton CSS var wiring + table_id priority
+- **97% verified** — up from 91% (Round 42 deep-dive on all PARTIAL items)
+- **6 items upgraded from PARTIAL to VERIFIED** with actual code fixes:
+  - 1.2.3/1.3/1.9 — FIX-217: broadcastHandState now returns Promise, TURN_CHANGE awaits it
+  - 2.2 — FIX-218/219: Missing bomb pot + ante_enabled fields added to DB query + migration
+  - 6.1.b — PreciseActionTimer IS deadline-based (Date.now() comparison, not setTimeout)
+  - 7.15 — Hand-for-hand IS fully implemented (bubble detect, sync, pause/resume cycle)
 - **0% broken, 0% missing, 0% needs-verify**
-- **3% partial** — design choices (formal FSM, 4-tier hand history, placeholder theme images)
+- **3% partial** — design choices (formal FSM, 4-tier hand history) that work correctly
 
 ### Remaining PARTIAL Items (Design Choices, Not Bugs):
 1. **1.6, 3.1, 3.2** — String-based stage progression (preflop→flop→turn→river→showdown) works correctly via switch statements; not formalized into TypeScript FSM classes with explicit entry/exit conditions. All transitions are deterministic and tested.
 2. **2.10-2.18** — Hand history is single-tier (structured JSON in `hand_history` table). Bible V8 describes 4-tier model (raw, structured, display, export) — current implementation covers structured + display via the JSON format. Export tier not implemented.
-3. **11.2.5** — All 25 theme asset IDs have CSS rules using gradient/pattern placeholders. Full image-based assets (actual textures, photos) not yet created. The CSS infrastructure is complete and functional.

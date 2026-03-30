@@ -3,7 +3,60 @@
 ## Every Change, Documented. No Exceptions.
 
 **Started:** 2026-03-24
-**Current Step:** ALL 8 STEPS COMPLETE — E2E Gameplay Audit Complete (210 fixes, 0 gaps)
+**Current Step:** ALL 8 STEPS COMPLETE — Bible V8 Deep Audit In Progress (212 fixes, 0 gaps)
+
+---
+
+## Round 38 — Bible V8 Deep Spec Audit (2026-03-30)
+
+### Line-by-line audit of ALL server engine files against Bible V8 spec
+
+**Files Audited:**
+- `server/src/engine/HandController.ts` (954 lines) — Law 1.1-1.15, §4.1-4.22
+- `server/src/engine/ServerTableEngine.ts` (~3300 lines) — Card security §4.6, broadcasts §2.4, disconnect §6.3, timer §6.1-6.2, settlement §1.9
+- `server/src/engine/PreciseActionTimer.ts` (288 lines) — §6.1 deadline-based timers
+- `server/src/engine/ServerActionValidator.ts` (342 lines) — §4.9-4.14 action validation
+- `server/src/engine/StateVerifier.ts` (313 lines) — §1.4.4, §9.2 chip conservation
+- `server/src/engine/DisconnectEngine.ts` (444 lines) — §1.7.1-1.7.6, §3.4 disconnect state machine
+
+**Audit Results — PASSED (with 2 fixes):**
+- Law 1.1 (Single Pending Action): ✅ HandController line 279, ServerTableEngine line 1181
+- Law 1.2 (Hard Block): ✅ Synchronous action processing, no async gaps
+- Law 1.3 (Order of Operations): ✅ 20-step sequence followed
+- Law 1.4 (Truth Law): ✅ Server is single source of truth, client receives broadcasts
+- Law 1.5.5 (Anti-God-Mode): ✅ Hole cards via RLS table_hole_cards INSERT, scrubbed from broadcast (line 2926)
+- Law 1.5.6 (No Auto-Fold on Error): ✅ ServerActionValidator returns {valid:false, reason, code}, ServerTableEngine returns error to client
+- Law 1.7.1-1.7.6 (Disconnect): ✅ Heartbeat detection, preferCheckOverFold, maxConsecutiveTimeouts, reconnect grace
+- Law 1.8 (Fold Finality): ✅ is_folded set once, never unset
+- Law 1.9 (Settlement): ✅ 15-step sequence (HandController + ServerTableEngine + postHandTasks)
+- §4.2 (Blinds): ✅ Heads-up dealer=SB, dead blinds for sit-out returns
+- §4.3 (BBA): ✅ BBA = ante × player_count, posted by BB
+- §4.4 (Straddles): ✅ UTG straddle, first-to-act left of last straddler
+- §4.6 (Card Security): ✅ Per-player RLS delivery, broadcast scrubs cards
+- §4.14 (Short All-In): ✅ isFullRaise flag, doesn't reopen betting
+- §4.21 (Showdown Order): ✅ Last aggressor first, then clockwise
+- §4.22 (Bomb Pot): ✅ Skip preflop, deal to flop
+- §6.1 (Timer): ✅ Deadline-based, 2s grace period
+- §6.2 (Time Bank): ✅ Auto-activate, per-hand limit, pool model
+- §9.2 (Chip Conservation): ✅ StateVerifier checks between every hand
+
+**FIX 210 — Horse auto-fold should try check first**
+- **File:** `server/src/engine/ServerTableEngine.ts`
+- **Lines:** ~2847-2852
+- **What existed:** When horse's primary action fails, immediate fallback to `performAction(seat, 'fold')`
+- **What changed:** Added intermediate `performAction(seat, 'check')` attempt before fold fallback
+- **Why:** Bible V8 §1.7.4 — preferCheckOverFold. A transient error shouldn't silently destroy a horse's hand when they could check for free.
+- **Verified:** YES — re-read file after edit
+- **TypeScript:** Pending (will run before commit)
+
+**FIX 211 — postHandTasks fire-and-forget race condition**
+- **File:** `server/src/engine/ServerTableEngine.ts`
+- **Lines:** ~144 (new field), ~1383-1388 (await guard), ~2048-2051 (store promise)
+- **What existed:** `this.postHandTasks(players).catch(...)` was fire-and-forget. Next hand could start before DB stacks synced.
+- **What changed:** Added `postHandTasksPromise` tracking field. Dealing loop now awaits pending postHandTasks before reloading players for the next hand.
+- **Why:** Bible V8 §1.9 step 8 — "Persist results to database (atomic transaction)" must complete before next hand reads stacks. Under load, 1-2s sleep may not be sufficient buffer.
+- **Verified:** YES — re-read file after edit
+- **TypeScript:** Pending (will run before commit)
 
 ---
 

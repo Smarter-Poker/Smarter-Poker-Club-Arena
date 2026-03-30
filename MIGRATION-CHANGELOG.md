@@ -3,7 +3,63 @@
 ## Every Change, Documented. No Exceptions.
 
 **Started:** 2026-03-24
-**Current Step:** ALL 8 STEPS COMPLETE — E2E Gameplay Audit Complete (204 fixes, 0 gaps)
+**Current Step:** ALL 8 STEPS COMPLETE — E2E Gameplay Audit Complete (210 fixes, 0 gaps)
+
+---
+
+## Round 37 — Comprehensive RPC Overload Cleanup & Live Verification (2026-03-30)
+
+### 6 Critical Database Fixes — Zero Errors Achieved
+
+**FIX 207 — BBJ club_id NOT NULL constraint**
+- `bbj_contributions.club_id` was NOT NULL even after prior migration attempted to drop it
+- `bbj_record_contribution` had multiple overloads (8-param, 9-param, 10-param)
+- PostgREST couldn't resolve the correct function
+- FIX: Dropped ALL overloads, recreated single clean 10-param version with `p_club_id UUID DEFAULT NULL`
+- Applied via Supabase Management API from browser context
+
+**FIX 208 — atomic_table_cashout/rebuy "operator does not exist: text = uuid"**
+- PostgREST schema cache on Supabase cloud was stale despite `NOTIFY pgrst, 'reload schema'`
+- `atomic_table_cashout` had 2 overloads: (uuid,uuid,int) and (uuid,uuid) — from OBSOLETE migration that was applied
+- `atomic_seat_horse` had 3 overloads with different param orders
+- DB cleanup: Dropped all overloads, recreated single clean versions
+- Server fix: Replaced ALL `supabase.rpc('atomic_table_cashout')` and `supabase.rpc('atomic_table_rebuy')` calls with direct Supabase query builder operations
+- New exported `atomicCashout()` helper in supabase.ts for reuse across:
+  - `supabase.ts` (markSeatAsLeft, processLeavePending)
+  - `HorseLifecycleManager.ts` (cashOutHorse, cleanupStaleSeats)
+  - `index.ts` (startup cleanup)
+
+**FIX 208b — Startup cashout hanging (sequential → batch)**
+- `atomicCashout()` does 7 DB queries per seat — sequential processing of 500+ stale seats at startup caused server hang (4+ minutes at "Cleaning up stale data")
+- FIX: Batch approach — aggregate stacks per user, parallel wallet credits in batches of 10
+- Startup now completes in seconds
+
+**FIX 209 — BBJ pools hit_count/total_paid_out "not found in schema cache"**
+- `processBBJPayout` tried to update `hit_count` and `total_paid_out` columns
+- PostgREST schema cache didn't include these columns
+- FIX: Added `ALTER TABLE bbj_pools ADD COLUMN IF NOT EXISTS` for all 6 stat columns (idempotent)
+- Also sent `NOTIFY pgrst, 'reload schema'` and `pg_notify('pgrst', 'reload schema')`
+
+**Duplicate atomic_seat_horse overloads dropped**
+- Had 3 overloads with different param orders/types
+- Dropped via Supabase Management API, verified single clean version remains
+
+### Files Changed:
+- `server/src/services/supabase.ts` — FIX 208: New `atomicCashout()`, `autoRebuyHorse()`, `markSeatAsLeft()`, `processLeavePending()` — all use direct queries instead of RPCs
+- `server/src/services/HorseLifecycleManager.ts` — FIX 208: Import and use `atomicCashout()` instead of RPC calls
+- `server/src/index.ts` — FIX 208b: Batch startup cashout, import `atomicCashout()`
+- `supabase/migrations/20260330_fix_rpc_overloads_and_schema_cache.sql` — All DB fixes in one migration file
+
+### Live Server Stats (post-deploy):
+- 46 active tables, 10 tournaments, 2,439+ hands dealt
+- **ZERO errors in logs** — all `text = uuid`, `club_id`, and `hit_count` errors eliminated
+- BBJ accumulating correctly (350.40 observed on live table)
+- Horse lifecycle (seating, cashout, rebuy, disconnect) all working
+- Startup cleanup completes in seconds (was hanging 4+ minutes before FIX 208b)
+
+### Commits:
+- `223a09c6` — FIX 208: Replace atomic RPC calls with direct queries
+- `a2c6d665` — FIX 208b: Batch startup cashout to prevent hanging
 
 ---
 

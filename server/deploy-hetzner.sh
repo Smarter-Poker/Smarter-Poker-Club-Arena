@@ -7,7 +7,7 @@ HETZNER_IP="178.156.160.206"
 SSH_USER="root"
 REMOTE="$SSH_USER@$HETZNER_IP"
 CONTAINER="club-arena-engine"
-REPO_DIR="/root/club-arena"
+REPO_DIR="/opt/club-arena"
 
 echo "🚀 Deploying Club Arena to Hetzner ($HETZNER_IP)..."
 
@@ -29,7 +29,7 @@ ssh "$REMOTE" "docker run -d \
   --name $CONTAINER \
   --restart always \
   -p 8080:8080 \
-  --env-file /root/.env.club-arena \
+  --env-file /opt/club-arena/server/.env \
   $CONTAINER"
 
 # 5. Wait for health check

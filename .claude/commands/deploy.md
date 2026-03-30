@@ -40,7 +40,7 @@ If argument is "quick", skip TypeScript check but still verify git and health.
 
 4. **Execute the deploy** — pull, build, restart:
    ```bash
-   ssh root@178.156.160.206 "cd /root/club-arena && git pull origin main && cd server && docker build -t club-arena-engine . && docker stop club-arena-engine 2>/dev/null; docker rm club-arena-engine 2>/dev/null; docker run -d --name club-arena-engine --restart always -p 8080:8080 --env-file /root/.env.club-arena club-arena-engine"
+   ssh root@178.156.160.206 "cd /opt/club-arena && git pull origin main && cd server && docker build -t club-arena-engine . && docker stop club-arena-engine 2>/dev/null; docker rm club-arena-engine 2>/dev/null; docker run -d --name club-arena-engine --restart always -p 8080:8080 --env-file /opt/club-arena/server/.env club-arena-engine"
    ```
 
 5. **Wait and verify**:

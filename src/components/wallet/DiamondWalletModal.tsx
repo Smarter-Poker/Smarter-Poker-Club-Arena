@@ -13,6 +13,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { supabase } from '../../lib/supabase';
+import { DiamondService } from '../../services/DiamondService';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import './DiamondWalletModal.css';
 
@@ -144,14 +145,10 @@ export default function DiamondWalletModal({
     setLoading(true);
 
     try {
-      // Get balance
-      const { data: profileData } = await supabase
-        .from('profiles')
-        .select('diamonds')
-        .eq('id', user.id)
-        .maybeSingle();
+      // Get balance from Triple-Wallet Architecture source-of-truth
+      const diamondWallet = await DiamondService.getBalance(user.id);
 
-      if (isMounted.current) setBalance(Number(profileData?.diamonds) || 0);
+      if (isMounted.current) setBalance(diamondWallet.balance || 0);
 
       // Get transactions from wallet_transactions (diamond-related)
       const { data: txData } = await supabase

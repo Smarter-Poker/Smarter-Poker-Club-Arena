@@ -633,19 +633,31 @@ export function determineWinners(
   return winners;
 }
 
+/**
+ * FIX 169: Bible V8 §2.7 — Odd chip goes to the first player CLOCKWISE of the
+ * dealer button, not the lowest seat number. The dealerSeat param enables this.
+ * When dealerSeat is unknown (0), falls back to lowest-seat order.
+ */
 function distributePot(
   globalWinners: Winner[],
   roundWinners: { player: SeatPlayer; hand: EvaluatedHand; lowHand?: EvaluatedHand | null }[],
   amount: number,
   _type: 'High' | 'Low',
-  potIndex: number = 0
+  potIndex: number = 0,
+  dealerSeat: number = 0
 ): void {
   const totalCents = Math.trunc(amount * 100);
   const shareCents = Math.trunc(totalCents / roundWinners.length);
   const remainderCents = totalCents % roundWinners.length;
 
-  // Sort winners by seat position (lowest seat first = closest to left of dealer)
-  const sortedWinners = [...roundWinners].sort((a, b) => a.player.seat - b.player.seat);
+  // FIX 169: Sort by clockwise distance from dealer button for odd-chip allocation.
+  // The player closest clockwise to the dealer gets the first odd chip.
+  const maxSeat = Math.max(...roundWinners.map((w) => w.player.seat), dealerSeat) + 1;
+  const sortedWinners = [...roundWinners].sort((a, b) => {
+    const aDist = (a.player.seat - dealerSeat + maxSeat * 10) % maxSeat;
+    const bDist = (b.player.seat - dealerSeat + maxSeat * 10) % maxSeat;
+    return aDist - bDist;
+  });
 
   sortedWinners.forEach((pw, i) => {
     const existing = globalWinners.find((w) => w.userId === pw.player.user_id);

@@ -144,6 +144,10 @@ export class ServerTableEngine {
   // Bible V8 §1.1.4: Action serialization lock — prevents parallel action processing
   private actionLock: boolean = false;
 
+  // FIX 211: Bible V8 §1.9 — Track postHandTasks promise to prevent next hand
+  // starting before DB stacks are synced (was fire-and-forget, risked stale stacks)
+  private postHandTasksPromise: Promise<void> | null = null;
+
   // FIX 147: Bible V8 §6.3 — Periodic heartbeat checker to detect disconnects mid-hand
   // Without this, disconnects are only detected between hands in dealingLoop().
   // This interval runs every 10 seconds to catch disconnects during long hands.
@@ -1376,6 +1380,13 @@ export class ServerTableEngine {
   private async dealingLoop(): Promise<void> {
     while (this.running) {
       try {
+        // FIX 211: Await any pending postHandTasks before reloading players
+        // This ensures DB stacks are synced before the next hand starts
+        if (this.postHandTasksPromise) {
+          await this.postHandTasksPromise;
+          this.postHandTasksPromise = null;
+        }
+
         // Reload players + refresh blinds before each hand
         this.seatedPlayers = await loadSeatedPlayers(this.tableId);
         await this.refreshBlinds();
@@ -2045,8 +2056,9 @@ export class ServerTableEngine {
         // Step 7: Record telemetry for this hand
         this.engineTelemetry.recordPlayerCount(this.tableId, players.length);
 
-        // Async post-hand tasks (fire and forget)
-        this.postHandTasks(players).catch((err) =>
+        // FIX 211: Bible V8 §1.9 — Track postHandTasks promise so dealingLoop can await
+        // it before starting the next hand, preventing stale DB stacks from race conditions.
+        this.postHandTasksPromise = this.postHandTasks(players).catch((err) =>
           console.error(`[ServerTableEngine:${this.tableId}] Post-hand error:`, err)
         );
         this.currentHandWinnerIds = [];
@@ -2845,10 +2857,17 @@ export class ServerTableEngine {
       try {
         handControllerRef.performAction(seat, action as any, amount);
       } catch {
+        // FIX 210: Bible V8 §1.7.4 — preferCheckOverFold: try check before fold
+        // If horse's primary action fails, attempt check (free action) before folding.
+        // This prevents silently destroying a horse's hand on a transient error.
         try {
-          handControllerRef.performAction(seat, 'fold');
+          handControllerRef.performAction(seat, 'check');
         } catch {
-          /* Hand done */
+          try {
+            handControllerRef.performAction(seat, 'fold');
+          } catch {
+            /* Hand done */
+          }
         }
       }
     }, thinkTime);

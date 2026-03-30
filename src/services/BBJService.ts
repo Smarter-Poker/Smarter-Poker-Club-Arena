@@ -19,6 +19,7 @@ import { masterBus } from '../core/MasterBus';
 import type { EvaluatedHand } from '../engine/PokerEngine';
 import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -210,7 +211,7 @@ export const BBJService = {
     } else if (clubId) {
       query = query.eq('club_id', await resolveClubUUID(clubId));
     } else {
-      console.error('BBJService.getPool: Must provide unionId or clubId');
+      reportError('Must provide unionId or clubId', 'BBJService.getPool');
       return null;
     }
 
@@ -336,7 +337,7 @@ export const BBJService = {
     );
 
     if (error) {
-      console.error('BBJService.recordContribution error:', error);
+      reportError(error, 'BBJService.recordContribution');
       // P2-19: Raise CRITICAL alert — money was deducted from pot but never recorded in BBJ pool
       try {
         const { FinancialAlertService } = await import('./FinancialAlertService');
@@ -456,20 +457,20 @@ export const BBJService = {
       .maybeSingle();
 
     if (poolError || !pool) {
-      console.error('BBJService.executePayout: Pool not found:', poolError);
+      reportError(poolError, 'BBJService.executePayout.poolNotFound');
       return null;
     }
 
     if (params.dealtInPlayerIds.length === 0) {
-      console.error('BBJService.executePayout: No dealt-in players for table share');
+      reportError('No dealt-in players for table share', 'BBJService.executePayout.noPlayers');
       return null;
     }
 
     const totalAmount = Number(pool.main_balance) || 0;
     if (totalAmount <= 0) {
-      console.error(
-        'BBJService.executePayout: Pool main_balance is zero or invalid:',
-        pool.main_balance
+      reportError(
+        `Pool main_balance is zero or invalid: ${pool.main_balance}`,
+        'BBJService.executePayout.zeroBalance'
       );
       return null;
     }
@@ -507,7 +508,7 @@ export const BBJService = {
     );
 
     if (error) {
-      console.error('BBJService.executePayout error:', error);
+      reportError(error, 'BBJService.executePayout');
       return null;
     }
 
@@ -539,7 +540,7 @@ export const BBJService = {
       .limit(limit);
 
     if (error) {
-      console.error('BBJService.getPayoutHistory error:', error);
+      reportError(error, 'BBJService.getPayoutHistory');
       return [];
     }
 
@@ -558,7 +559,7 @@ export const BBJService = {
   }): Promise<boolean> {
     // Guard: no recipients = nothing to distribute
     if (params.recipientUserIds.length === 0) {
-      console.error('BBJService.executePromoPayout: No recipients — nothing to distribute');
+      reportError('No recipients for promo payout', 'BBJService.executePromoPayout.noRecipients');
       return true;
     }
 
@@ -578,7 +579,7 @@ export const BBJService = {
     );
 
     if (poolError) {
-      console.error('BBJService.executePromoPayout error: Failed to deduct from pool:', poolError);
+      reportError(poolError, 'BBJService.executePromoPayout.deductFailed');
       return false; // Stop before printing any money
     }
 
@@ -605,7 +606,7 @@ export const BBJService = {
         3
       );
       if (payoutError) {
-        console.error(`BBJService.executePromoPayout: Failed for ${userId}:`, payoutError);
+        reportError(payoutError, 'BBJService.executePromoPayout.playerPayout', { userId });
         lastError = payoutError;
       } else {
         // Log transaction for audit trail
@@ -624,7 +625,7 @@ export const BBJService = {
     const error = lastError;
 
     if (error) {
-      console.error('BBJService.executePromoPayout error:', error);
+      reportError(error, 'BBJService.executePromoPayout');
       return false;
     }
 

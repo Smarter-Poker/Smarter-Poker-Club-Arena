@@ -121,7 +121,8 @@ import { handPersistenceService } from '../services/HandPersistenceService';
 import { handHistoryService } from '../services/HandHistoryService';
 import { achievementTriggerService } from '../services/AchievementTriggerService';
 import SpectatorBadge from '../components/table/SpectatorBadge';
-import HandStrengthIndicator from '../components/table/HandStrengthIndicator';
+// FIX 194: HandStrengthIndicator REMOVED — not allowed for live online gameplay
+// import HandStrengthIndicator from '../components/table/HandStrengthIndicator';
 import SessionTimer from '../components/table/SessionTimer';
 import { horseBugReporter } from '../services/HorseBugReporter';
 import GameServerAPI, {
@@ -4469,23 +4470,7 @@ export default function TablePage({
                     </div>
                   )}
 
-                {/* Hand Strength Indicator - Shows during hero's turn (respects showHUD toggle) */}
-                {userSettings.showHUD &&
-                  tableState.isHandInProgress &&
-                  tableState.players[tableState.heroSeat - 1]?.holeCards &&
-                  tableState.players[tableState.heroSeat - 1]!.holeCards!.length >= 2 && (
-                    <div className="hand-strength-hud">
-                      <HandStrengthIndicator
-                        cards={tableState.players[tableState.heroSeat - 1]!.holeCards!.map(
-                          (c: Card) => `${c.rank}${c.suit}`
-                        )}
-                        communityCards={tableState.communityCards.map(
-                          (c: Card) => `${c.rank}${c.suit}`
-                        )}
-                        size="sm"
-                      />
-                    </div>
-                  )}
+                {/* FIX 194: HandStrengthIndicator REMOVED — not allowed for live online gameplay */}
 
                 {/* Connection Quality HUD */}
                 {tableId && userId !== 'guest' && (

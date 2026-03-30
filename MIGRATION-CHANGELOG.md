@@ -3,7 +3,54 @@
 ## Every Change, Documented. No Exceptions.
 
 **Started:** 2026-03-24
-**Current Step:** ALL 8 STEPS COMPLETE — Deep Bible V8 Verification Complete (190 fixes total)
+**Current Step:** ALL 8 STEPS COMPLETE — Deep Bible V8 Verification In Progress (194 fixes total)
+
+---
+
+## Round 31 — Deep Component Audit: BuyIn, HandStrength, Quick Amounts (2026-03-29)
+
+### FIX 191 — BuyInModal rebuyThreshold always 0 (BuyInModal.tsx)
+- **File:** `src/components/table/BuyInModal.tsx`
+- **Bug:** `rebuyThreshold` state initialized to `0` and never updated. Auto-rebuy info displayed "When your stack drops to **0%** of the initial buy-in" — meaningless.
+- **Fix:** Changed default from `0` to `50` (half the buy-in — standard auto-rebuy threshold)
+
+### FIX 192 — BuyInModal quick amount buttons have hardcoded BB labels (BuyInModal.tsx)
+- **File:** `src/components/table/BuyInModal.tsx`
+- **Bug:** Quick amount buttons were hardcoded as "20BB", "40BB", "100BB". The actual amounts are `minBuyIn × multiplier`, but if minBuyIn ≠ 20BB (e.g., 40BB-100BB table), labels would show wrong values.
+- **Fix:** Labels now computed dynamically: `Math.round(minBuyIn * multiplier / bigBlind)BB`
+
+### FIX 193 — HandStrengthIndicator missing flush/straight detection (HandStrengthIndicator.tsx)
+- **File:** `src/components/table/HandStrengthIndicator.tsx`
+- **Bug:** Post-flop evaluation only checked rank-based hands (pairs, trips, quads, full house). Missing flush, straight, straight flush, and royal flush detection. A player with a flush would see "One Pair" or "High Card". Violates Bible V8 §1.10 Visual Truth Law.
+- **Fix:** Added complete flush detection (5+ same suit), straight detection (5 consecutive ranks including wheel), straight flush, and royal flush. However — see FIX 194.
+
+### FIX 194 — HandStrengthIndicator REMOVED from live gameplay (TablePage.tsx)
+- **File:** `src/pages/TablePage.tsx`
+- **Bug:** HandStrengthIndicator was being rendered during live online gameplay, showing hand strength labels. This is NOT allowed for live online poker — it gives unfair advantage and is not standard in any poker app (PokerBros, GGPoker, etc.).
+- **Fix:** Removed import and JSX render of HandStrengthIndicator from TablePage.tsx. Component file still exists but is dead code (not imported or bundled).
+
+### Component Audit Results (Round 31):
+- **BuyInModal.tsx** — Fixed rebuyThreshold (FIX 191) + dynamic BB labels (FIX 192)
+- **CashierModal.tsx** — Clean. Excellent accessibility (focus trap, ARIA, keyboard nav) ✅
+- **ConnectionHUD.tsx** — Clean. Matches Bible V8 §3.4 disconnect state machine ✅
+- **BombPotOverlay.tsx** — Clean. Matches Bible V8 §4.22 ✅
+- **ChipAnimation.tsx** — Clean. Pure bezier animation, no game logic ✅
+- **ShareHand.tsx** — Clean. Social sharing feature, incomplete decode function is feature TODO ✅
+- **HandHistoryPanel.tsx** — Clean. Pure display/history component ✅
+- **AddOnModal.tsx** — Clean. Timer cleanup, race condition prevention, haptic.medium() ✅
+- **CardReveal.tsx** — Clean. CSS flip animation, 10→T normalization ✅
+- **EquityDisplay.tsx** — Clean. Animated bars, clamped values ✅
+- **TipDealer.tsx** — Clean. Balance validation, haptic.light() ✅
+- **SitOutToggle.tsx** — Clean. Server-authoritative via callback ✅
+- **LeaveTableConfirm.tsx** — Clean. ARIA accessible, Escape key handler ✅
+- **WaitListModal.tsx** — Clean. Timer cleanup, defensive avatar fallback ✅
+- **CardImage.tsx** — Clean. Defensive SUIT/RANK maps, fallback rendering ✅
+- **HandStrengthIndicator.tsx** — REMOVED from live gameplay (FIX 194)
+- **TableSettingsPanel.tsx** — Clean. All 13 toggles per Bible V8 §11.1.1 ✅
+- **useUserTableSettings.ts** — Clean. Supabase persistence, optimistic updates, rollback ✅
+- **TimerBar.tsx** — Clean. Server-authoritative props, color transitions ✅
+- **TimeBankDisplay.tsx** — Clean. VIP limits, buy extension ✅
+- **TableChat.tsx** — Clean. 300ms cooldown, maxLength 200, auto-scroll ✅
 
 ---
 

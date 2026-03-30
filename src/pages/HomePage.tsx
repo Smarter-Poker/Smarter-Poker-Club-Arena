@@ -240,10 +240,14 @@ function HomePageInner() {
 
   // Shark Club stats state
   const [sharkClubId, setSharkClubId] = useState<string | null>(null);
-  const [sharkClubStats, setSharkClubStats] = useState({
-    totalMembers: 0,
-    clubLevel: 1,
-    activePlayers: 0,
+  const [sharkClubStats, setSharkClubStats] = useState<{
+    totalMembers: number | null;
+    clubLevel: number | null;
+    activePlayers: number | null;
+  }>({
+    totalMembers: null,
+    clubLevel: null,
+    activePlayers: null,
   });
 
   // #15: Online/Offline detection
@@ -515,7 +519,7 @@ function HomePageInner() {
       if (cached) {
         const parsed = JSON.parse(cached);
         const age = parsed.cachedAt ? Date.now() - parsed.cachedAt : Infinity;
-        if (parsed.totalMembers > 0 && age < SWR_TTL_MS) setSharkClubStats(parsed);
+        if (parsed.totalMembers !== null && parsed.totalMembers > 0 && age < SWR_TTL_MS) setSharkClubStats(parsed);
       }
     } catch {
       /* */
@@ -655,7 +659,7 @@ function HomePageInner() {
       if (cached) {
         const parsed = JSON.parse(cached);
         const age = parsed.cachedAt ? Date.now() - parsed.cachedAt : Infinity;
-        if (parsed.totalMembers > 0 && age < SWR_TTL_MS) {
+        if (parsed.totalMembers !== null && parsed.totalMembers > 0 && age < SWR_TTL_MS) {
           skipInitialFetch = true;
         }
       }

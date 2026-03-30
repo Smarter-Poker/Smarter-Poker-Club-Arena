@@ -465,7 +465,7 @@ export default function SettingsPage() {
           .select('id, user_id, wallet_type, balance, currency, created_at')
           .eq('user_id', user.id),
         supabase
-          .from('user_achievements')
+          .from('training_user_achievements')
           .select('id, user_id, achievement_id, unlocked_at, progress')
           .eq('user_id', user.id),
         supabase

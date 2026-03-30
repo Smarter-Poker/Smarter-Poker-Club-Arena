@@ -60,7 +60,7 @@ export default function FriendActivityFeed({ friends }: { friends: any[] }) {
 
       // Fetch friends' recent achievements
       const { data: achievements } = await supabase
-        .from('user_achievements')
+        .from('training_user_achievements')
         .select('id, user_id, achievement_id, unlocked_at')
         .in('user_id', friendIds)
         .not('unlocked_at', 'is', null)

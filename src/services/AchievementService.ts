@@ -321,7 +321,7 @@ class AchievementServiceClass {
 
   async getUserAchievements(userId: string): Promise<UserAchievement[]> {
     const { data, error } = await supabase
-      .from('user_achievements')
+      .from('training_user_achievements')
       .select('id, achievement_id, user_id, progress, unlocked_at')
       .eq('user_id', userId)
       .limit(QUERY_LIMITS.MODERATE);
@@ -344,7 +344,7 @@ class AchievementServiceClass {
 
   async getProgress(userId: string, achievementId: string): Promise<number> {
     const { data } = await supabase
-      .from('user_achievements')
+      .from('training_user_achievements')
       .select('progress')
       .eq('user_id', userId)
       .eq('achievement_id', achievementId)
@@ -367,7 +367,7 @@ class AchievementServiceClass {
 
     // Get or create progress record
     const { data: existing } = await supabase
-      .from('user_achievements')
+      .from('training_user_achievements')
       .select('id, progress, unlocked_at')
       .eq('user_id', userId)
       .eq('achievement_id', achievementId)
@@ -385,7 +385,7 @@ class AchievementServiceClass {
     if (existing) {
       // Update existing
       const { error: progErr } = await supabase
-        .from('user_achievements')
+        .from('training_user_achievements')
         .update({
           progress: newProgress,
           unlocked_at: justUnlocked ? new Date().toISOString() : null,
@@ -397,7 +397,7 @@ class AchievementServiceClass {
       }
     } else {
       // Create new
-      const { error: insErr } = await supabase.from('user_achievements').insert({
+      const { error: insErr } = await supabase.from('training_user_achievements').insert({
         user_id: userId,
         achievement_id: achievementId,
         progress: newProgress,
@@ -424,7 +424,7 @@ class AchievementServiceClass {
     const clampedProgress = Math.min(progress, achievement.requirement);
     const unlocked = clampedProgress >= achievement.requirement;
 
-    const { error: upsertErr } = await supabase.from('user_achievements').upsert(
+    const { error: upsertErr } = await supabase.from('training_user_achievements').upsert(
       {
         user_id: userId,
         achievement_id: achievementId,

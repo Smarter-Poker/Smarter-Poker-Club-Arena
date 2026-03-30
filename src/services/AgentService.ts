@@ -638,7 +638,7 @@ class AgentServiceClass {
     const { data: currentUser } = await supabase.auth.getUser();
     const assignedBy = currentUser?.user?.id || 'system';
     await supabase
-      .from('audit_logs')
+      .from('club_arena_audit_logs')
       .insert({
         action: 'ASSIGN_PLAYER_TO_AGENT',
         performed_by: assignedBy,

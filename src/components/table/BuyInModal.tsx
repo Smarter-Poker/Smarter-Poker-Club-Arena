@@ -64,7 +64,8 @@ export function BuyInModal({
   // State
   const [buyInAmount, setBuyInAmount] = useState(defaultBuyIn || Math.min(minBuyIn * 2, maxBuyIn));
   const [autoRebuy, setAutoRebuy] = useState(false);
-  const [rebuyThreshold, setRebuyThreshold] = useState(0);
+  // FIX 191: rebuyThreshold was always 0 — default to 50% (half the buy-in)
+  const [rebuyThreshold, setRebuyThreshold] = useState(50);
   const [displayAmount, setDisplayAmount] = useState(
     defaultBuyIn || Math.min(minBuyIn * 2, maxBuyIn)
   );
@@ -229,16 +230,16 @@ export function BuyInModal({
           </div>
         </div>
 
-        {/* Quick Amounts */}
+        {/* Quick Amounts — FIX 192: labels computed dynamically from actual BB count */}
         <div className="buy-in-modal__quick-amounts">
           <button className="buy-in-modal__quick-btn" onClick={() => handleQuickAmount(1)}>
-            20BB
+            {Math.round(minBuyIn / bigBlind)}BB
           </button>
           <button className="buy-in-modal__quick-btn" onClick={() => handleQuickAmount(2)}>
-            40BB
+            {Math.round((minBuyIn * 2) / bigBlind)}BB
           </button>
           <button className="buy-in-modal__quick-btn" onClick={() => handleQuickAmount(5)}>
-            100BB
+            {Math.round(Math.min(minBuyIn * 5, maxBuyIn) / bigBlind)}BB
           </button>
           <button
             className="buy-in-modal__quick-btn buy-in-modal__quick-btn--max"

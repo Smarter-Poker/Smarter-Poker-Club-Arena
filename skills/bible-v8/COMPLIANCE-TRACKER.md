@@ -10,8 +10,8 @@
 - N/A = Not applicable to current scope
 
 **Last Updated:** 2026-03-30
-**Updated By:** Claude (Round 42 — deep-dive on all 9 PARTIAL items with code fixes)
-**Total Fixes:** 219
+**Updated By:** Claude (Round 43 — Bible V8 Chapter 11 deep-dive audit + FIX-220/221/222)
+**Total Fixes:** 222
 
 ---
 
@@ -168,6 +168,33 @@
 
 ---
 
+## CHAPTER 11: TABLE SETTINGS & THEME CUSTOMIZATION
+
+| ID | Requirement | Status | File(s) | Notes |
+|----|------------|--------|---------|-------|
+| 11.1 | Dual-location access (gear + hamburger) | VERIFIED | SettingsPanel.tsx:386, HamburgerMenu.tsx:888 | TableSettingsPanel rendered in both locations with same useUserTableSettings hook |
+| 11.1.1 | 12 required toggle settings | VERIFIED | useUserTableSettings.ts:28-43 | All 12 toggles match spec defaults exactly. +1 bonus (skip_animations from §10.3) = 13 total |
+| 11.1.1a | FIX-220: No duplicate toggles | VERIFIED | SettingsPanel.tsx:253 | Legacy showStackInBB removed — Bible V8 show_stack_in_bb via TableSettingsPanel is sole source |
+| 11.1.2 | Settings persist via Supabase upsert | VERIFIED | useUserTableSettings.ts:264-269 | Optimistic update + upsert({onConflict:'user_id'}) + rollback on error |
+| 11.1.2b | Cross-component sync | VERIFIED | useUserTableSettings.ts:209-228 | MasterBus SETTINGS_CHANGED events with localOriginRef de-dup |
+| 11.1.2c | localStorage cache for instant load | VERIFIED | useUserTableSettings.ts:131-139 | Cache on mount, update on toggle, fallback if Supabase fails |
+| 11.2.1 | 10 game types for themes | VERIFIED | ThemeSettingsModal.tsx:56 | ALL,NLH,FLH,6+,PLO,FLO,OFC,MIXED,MTT,SNG — exact match |
+| 11.2.2 | 5-tab theme layout | VERIFIED | ThemeSettingsModal.tsx:58-64 | Themes, Table, Button, Background, Cards |
+| 11.2.2a | Asset counts: 2 free + 3 VIP per tab | VERIFIED | ThemeSettingsModal.tsx:70-231 | All 5 tabs × 5 assets each = 25 total assets |
+| 11.2.2b | FIX-222: CSS rules for all theme IDs | VERIFIED | TablePage.css:430-560 | All 25 asset IDs have corresponding CSS custom property rules |
+| 11.2.2c | DealerButton theme-aware | VERIFIED | DealerButton.tsx:51-58 | FIX-222: Uses --dealer-btn-bg and --dealer-btn-color CSS tokens |
+| 11.2.3 | VIP gating (binary free/VIP) | VERIFIED | ThemeSettingsModal.tsx:250-253 | canAccessAsset(isVip, vipOnly) binary check |
+| 11.2.3a | FIX-221: VIP upgrade prompt | VERIFIED | ThemeSettingsModal.tsx:464-495 | Overlay prompt with "Upgrade to VIP" button → navigates to /vip |
+| 11.2.3b | VIP status from profiles.is_vip | VERIFIED | HamburgerMenu.tsx:212, SettingsPanel.tsx:52 | Both locations read is_vip from profiles table |
+| 11.2.4 | user_theme_settings persistence schema | VERIFIED | 20260326_user_table_settings.sql:67-88 | user_id, game_type, theme_id, table_id, button_id, background_id, cards_id + UNIQUE(user_id,game_type) |
+| 11.2.4a | ALL fallback for per-game-type | VERIFIED | ThemeSettingsModal.tsx:295-316, useUserThemeSettings.ts:95-111 | Falls back to 'ALL' if no per-game-type row |
+| 11.2.4b | Reset button | VERIFIED | ThemeSettingsModal.tsx:368-370 | Reverts to DEFAULT_SELECTION (free defaults) |
+| 11.2.4c | Confirm button saves and closes | VERIFIED | ThemeSettingsModal.tsx:341-366 | Upsert to Supabase + toast + onClose() |
+| 11.2.5 | Theme assets served from smarter.poker | PARTIAL | ThemeSettingsModal.tsx | CSS gradients as placeholders; full image assets not yet created |
+| 11.3 | Reusable TableSettingsPanel component | VERIFIED | TableSettingsPanel.tsx | mode='overlay'/'inline' prop, used in both gear + hamburger locations |
+
+---
+
 ## SUMMARY STATISTICS
 
 | Category | Total | VERIFIED | NEEDS-VERIFY | PARTIAL | MISSING | BROKEN |
@@ -179,18 +206,17 @@
 | Ch 5: UI/UX | 4 | 4 | 0 | 0 | 0 | 0 |
 | Ch 6: Timers | 12 | 12 | 0 | 0 | 0 | 0 |
 | Ch 7: Edge Cases | 20 | 20 | 0 | 0 | 0 | 0 |
-| **TOTAL** | **98** | **95 (97%)** | **0 (0%)** | **3 (3%)** | **0 (0%)** | **0 (0%)** |
+| Ch 11: Settings & Themes | 20 | 19 | 0 | 1 | 0 | 0 |
+| **TOTAL** | **118** | **114 (97%)** | **0 (0%)** | **4 (3%)** | **0 (0%)** | **0 (0%)** |
 
 ### Bottom Line:
-- **97% verified** — up from 91% (Round 42 deep-dive on all PARTIAL items)
-- **6 items upgraded from PARTIAL to VERIFIED** with actual code fixes:
-  - 1.2.3/1.3/1.9 — FIX-217: broadcastHandState now returns Promise, TURN_CHANGE awaits it
-  - 2.2 — FIX-218/219: Missing bomb pot + ante_enabled fields added to DB query + migration
-  - 6.1.b — PreciseActionTimer IS deadline-based (Date.now() comparison, not setTimeout)
-  - 7.15 — Hand-for-hand IS fully implemented (bubble detect, sync, pause/resume cycle)
+- **97% verified** across all 118 requirements (Ch 1-7 + Ch 11)
+- **Round 43: Chapter 11 deep-dive** — 20 new items audited, 19 VERIFIED, 1 PARTIAL
+- **3 fixes applied:** FIX-220 (duplicate toggle), FIX-221 (VIP upgrade prompt), FIX-222 (25 theme CSS rules + DealerButton wiring)
 - **0% broken, 0% missing, 0% needs-verify**
-- **3% partial** — design choices (formal FSM, 4-tier hand history) that work correctly
+- **3% partial** — design choices (formal FSM, 4-tier hand history) + pending theme image assets
 
-### Remaining PARTIAL Items (Design Choices, Not Bugs):
-1. **1.6, 3.1, 3.2** — String-based stage progression (preflop→flop→turn→river→showdown) works correctly via switch statements; not formalized into TypeScript FSM classes with explicit entry/exit conditions. All transitions are deterministic and tested.
-2. **2.10-2.18** — Hand history is single-tier (structured JSON in `hand_history` table). Bible V8 describes 4-tier model (raw, structured, display, export) — current implementation covers structured + display via the JSON format. Export tier not implemented.
+### Remaining PARTIAL Items (4 total):
+1. **1.6, 3.1, 3.2** — String-based stage progression works correctly via switch; not formal FSM
+2. **2.10-2.18** — Hand history single-tier; Bible V8 4-tier model not fully implemented
+3. **11.2.5** — Theme assets use CSS gradients as placeholders; full image assets (thumbnails + renders) not yet created per §11.2.5 asset requirements

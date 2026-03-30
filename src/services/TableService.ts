@@ -10,6 +10,7 @@ import { masterBus } from '../core/MasterBus';
 
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { QUERY_LIMITS } from '../lib/constants';
+import { reportError } from '../utils/errorReporter';
 
 class TableService {
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -34,7 +35,7 @@ class TableService {
       .limit(QUERY_LIMITS.LIST);
 
     if (error) {
-      console.error('[TableService] Error fetching club tables:', error);
+      reportError(error, 'TableService.getClubTables');
       return [];
     }
     return data || [];
@@ -56,7 +57,7 @@ class TableService {
       .limit(limit);
 
     if (error) {
-      console.error('[TableService] Error fetching active tables:', error);
+      reportError(error, 'TableService.getActiveTables');
       return [];
     }
     return data || [];
@@ -78,7 +79,7 @@ class TableService {
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.error('[TableService] Error fetching union tables:', error);
+      reportError(error, 'TableService.getUnionTables');
       return [];
     }
     return data || [];
@@ -97,7 +98,7 @@ class TableService {
       .maybeSingle();
 
     if (error) {
-      console.error('[TableService] Error fetching table:', error);
+      reportError(error, 'TableService.getTable');
       return null;
     }
     return data;
@@ -192,7 +193,7 @@ class TableService {
       .eq('id', tableId);
 
     if (error) {
-      console.error('[TableService] Error updating player count:', error);
+      reportError(error, 'TableService.updatePlayerCount');
     }
   }
 
@@ -207,7 +208,7 @@ class TableService {
     });
 
     if (error) {
-      console.error('[TableService] CRITICAL: force_close_table_and_refund RPC failed:', error);
+      reportError(error, 'TableService.forceCloseAndRefund');
 
       // CRITICAL: The RPC that atomically refunds chips AND closes the table failed.
       // Fallback: close the table to prevent new hands, but chips may be orphaned.
@@ -247,14 +248,14 @@ class TableService {
               .is('left_at', null);
             refundedCount++;
           } else {
-            console.error(`[TableService] Failed to refund player ${player.user_id}:`, refundErr);
+            reportError(refundErr, 'TableService.refundPlayer', { userId: player.user_id });
           }
         }
         console.warn(
           `[TableService] Emergency refund: ${refundedCount}/${(seatedPlayers || []).length} players refunded`
         );
       } catch (refundErr: unknown) {
-        console.error('[TableService] Emergency per-player refund failed entirely:', refundErr);
+        reportError(refundErr, 'TableService.emergencyRefund');
       }
 
       // Log critical financial alert for ops visibility
@@ -300,7 +301,7 @@ class TableService {
         .maybeSingle();
 
       if (seatError || !seat) {
-        console.error('[TableService] Seat not found:', seatError);
+        reportError(seatError, 'TableService.seatNotFound');
         return { success: false, chipsReturned: 0 };
       }
 
@@ -346,7 +347,7 @@ class TableService {
         if (cashoutError) {
           // RPC returned an error (e.g. seat not found) — check explicitly
           // since supabase.rpc does NOT throw on SQL errors
-          console.error('[TableService] atomic_table_cashout RPC error:', cashoutError.message);
+          reportError(cashoutError, 'TableService.atomicCashout');
           return { success: false, chipsReturned: 0 };
         }
 
@@ -409,7 +410,7 @@ class TableService {
         if (!countErr) {
           await this.updatePlayerCount(tableId, count ?? 0);
         } else {
-          console.error('[TableService] Recount after leave failed:', countErr);
+          reportError(countErr, 'TableService.recountAfterLeave');
         }
       }
 
@@ -463,7 +464,7 @@ class TableService {
 
       return { success: true, chipsReturned: chipsToReturn };
     } catch (err: unknown) {
-      console.error('[TableService] Error leaving table:', err);
+      reportError(err, 'TableService.leaveTable');
       return { success: false, chipsReturned: 0 };
     }
   }
@@ -543,7 +544,7 @@ class TableService {
       .maybeSingle();
 
     if (error) {
-      console.error('[TableService] Error pausing table:', error);
+      reportError(error, 'TableService.pauseTable');
       return false;
     }
     if (!updated) {
@@ -568,7 +569,7 @@ class TableService {
       .maybeSingle();
 
     if (error) {
-      console.error('[TableService] Error resuming table:', error);
+      reportError(error, 'TableService.resumeTable');
       return false;
     }
     if (!updated) {
@@ -588,7 +589,7 @@ class TableService {
     // Pre-check: get current status and verify ownership if userId provided
     const table = await this.getTable(tableId);
     if (!table) {
-      console.error('[TableService] Table not found for delete');
+      reportError('Table not found for delete', 'TableService.deleteTable.notFound');
       return false;
     }
 
@@ -606,19 +607,19 @@ class TableService {
         .maybeSingle();
 
       if (memberError || !clubMember) {
-        console.error('[TableService] User not a member of this club');
+        reportError('User not a member of this club', 'TableService.deleteTable.notMember');
         return false;
       }
 
       // Only owner or admin can delete tables
       if (!['owner', 'admin'].includes(clubMember.role)) {
-        console.error('[TableService] User lacks permission to delete tables');
+        reportError('User lacks permission', 'TableService.deleteTable.noPermission');
         return false;
       }
     }
 
     if (['running', 'active'].includes(table.status)) {
-      console.error('[TableService] Cannot delete running/active table — close first');
+      reportError('Cannot delete active table', 'TableService.deleteTable.active');
       return false;
     }
     if (table.status === 'deleted') {
@@ -635,7 +636,7 @@ class TableService {
       .maybeSingle();
 
     if (error) {
-      console.error('[TableService] Error deleting table:', error);
+      reportError(error, 'TableService.deleteTable');
       return false;
     }
     if (!updated) {
@@ -702,7 +703,7 @@ class TableService {
         p_related_entity_id: null,
       });
       if (walletErr) {
-        console.error('[TableService] Error crediting wallet on kick:', walletErr);
+        reportError(walletErr, 'TableService.kickWalletCredit');
         return false;
       }
 
@@ -718,7 +719,7 @@ class TableService {
       .is('left_at', null);
 
     if (error) {
-      console.error('[TableService] Error kicking player:', error);
+      reportError(error, 'TableService.kickPlayer');
       return false;
     }
 
@@ -735,7 +736,7 @@ class TableService {
         .update({ current_players: count ?? 0 })
         .eq('id', tableId);
     } else {
-      console.error('[TableService] Recount after kick failed:', countErr);
+      reportError(countErr, 'TableService.recountAfterKick');
     }
 
     return true;
@@ -766,7 +767,7 @@ class TableService {
       .order('seat_number', { ascending: true });
 
     if (error) {
-      console.error('[TableService] Error fetching seated players:', error);
+      reportError(error, 'TableService.getSeatedPlayers');
       return [];
     }
     return data || [];
@@ -787,7 +788,7 @@ class TableService {
     const { error } = await supabase.from('tables').update(settings).eq('id', tableId);
 
     if (error) {
-      console.error('[TableService] Error updating table settings:', error);
+      reportError(error, 'TableService.updateSettings');
       return false;
     }
     return true;

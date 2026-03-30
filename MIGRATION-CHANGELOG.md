@@ -3,7 +3,40 @@
 ## Every Change, Documented. No Exceptions.
 
 **Started:** 2026-03-24
-**Current Step:** ALL 8 STEPS COMPLETE — Deep Bible V8 Verification Complete (186 fixes total)
+**Current Step:** ALL 8 STEPS COMPLETE — Deep Bible V8 Verification Complete (190 fixes total)
+
+---
+
+## Round 30 — Game-Critical Component Audit: Insurance, RIT, Pot, Timer, Straddle (2026-03-29)
+
+### FIX 187 — Insurance accept haptic inconsistency (InsuranceModal.tsx)
+- **File:** `src/components/table/InsuranceModal.tsx`
+- **Bug:** `handleAccept` used `haptic.light()` but `handleEvCashout` used `haptic.medium()`. Both are financial decisions — should use same intensity.
+- **Fix:** Changed `handleAccept` to `haptic.medium()`
+
+### FIX 188 — RIT chooser UI never built (RunItTwice.tsx)
+- **File:** `src/components/table/RunItTwice.tsx`
+- **Bug:** FIX 96 added chooser props (`isChooser`, `onChooserDecide`, `chosenRuns`, `maxRuns`) but they were all prefixed with underscore and unused. The UI always showed generic "Run it Twice?" with no option for chooser to select 2 or 3 runs per Bible V8 §4.20.
+- **Fix:** Built the chooser phase UI: "Run Once" / "Run it Twice" / "Run it 3×" buttons for the chooser. Responder phase shows the chosen run count in the prompt text.
+
+### FIX 189 — StraddleToggle uses raw navigator.vibrate (StraddleToggle.tsx)
+- **File:** `src/components/table/StraddleToggle.tsx`
+- **Bug:** Used raw `navigator?.vibrate?.(10)` with try/catch instead of the imported `haptic.light()` service. Bypasses user haptic settings and is inconsistent with all other components.
+- **Fix:** Replaced with `haptic.light()`
+
+### FIX 190 — StraddleToggle amount not formatted (StraddleToggle.tsx)
+- **File:** `src/components/table/StraddleToggle.tsx`
+- **Bug:** Straddle amount displayed as raw number (`{amount}`) without `.toLocaleString()`. A 2000 straddle would show "2000" instead of "2,000".
+- **Fix:** Added `.toLocaleString()` to amount display
+
+### Component Audit Results:
+- **InsuranceModal.tsx** — Haptic fixed (FIX 187), coverage slider + premium + EV cashout all use `Math.trunc()` ✅
+- **RunItTwice.tsx** — Chooser UI built (FIX 188), 2-phase flow now complete per Bible V8 §4.20 ✅
+- **PotDisplay.tsx** — Pure display, receives pot from server, `Math.trunc()` arithmetic, no bugs ✅
+- **TimeBank.tsx** — Pure UI, delegates to server via callback, no bugs ✅
+- **CircularTimer.tsx** — Pure SVG, color transitions correct, no bugs ✅
+- **StraddleToggle.tsx** — Haptic + formatting fixed (FIX 189-190), server-authoritative via callback ✅
+- **src/engine/ imports** — Only type-only + admin-page imports, no Law 1.4 violations ✅
 
 ---
 

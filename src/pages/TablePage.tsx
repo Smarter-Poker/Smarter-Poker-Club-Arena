@@ -2646,16 +2646,18 @@ export default function TablePage({
             // Keep the first seat, remove the rest from DB
             const [keepSeat, ...extraSeats] = heroSeats;
             for (const extra of extraSeats) {
-              supabase
+              Promise.resolve(
+                supabase
                 .from('table_seats')
                 .update({ left_at: new Date().toISOString() })
                 .eq('table_id', table.id)
                 .eq('seat_number', extra.seat_number)
                 .eq('user_id', userId)
-                .then(({ error }) => {
+              ).then(({ error }) => {
                   if (error) console.error('[Seat] Failed to remove duplicate seat:', error);
                   else console.debug('[Seat] Removed duplicate seat', extra.seat_number);
-                });
+                })
+                .catch((e: unknown) => console.error('[Seat] Duplicate seat cleanup error:', e));
             }
             // Filter existingSeats to exclude duplicates for local state
             const cleanedSeats = existingSeats.filter(

@@ -930,7 +930,8 @@ export async function getLiveMemberCount(clubId: string): Promise<number> {
       .eq('id', resolvedId)
       .maybeSingle();
     return club?.member_count || 0;
-  } catch {
+  } catch (e) {
+    reportError(e, 'ClubsService');
     return 0;
   }
 }

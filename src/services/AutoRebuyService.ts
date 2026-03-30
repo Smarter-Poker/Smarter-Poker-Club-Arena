@@ -103,7 +103,8 @@ class AutoRebuyServiceCore {
           this.claimLeadership();
         }
       }, 5000);
-    } catch {
+    } catch (e) {
+      reportError(e, 'AutoRebuyService.setInterval');
       // BroadcastChannel not available — just become leader (single tab)
       this.isLeader = true;
       console.debug(`[AutoRebuy:${this.tabId}] BroadcastChannel unavailable — becoming leader by default`);

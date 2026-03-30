@@ -215,7 +215,8 @@ export default function ClubHomePage() {
         if (ucCheck?.union_id) {
           unionId = ucCheck.union_id;
         }
-      } catch {
+      } catch (e) {
+        reportError(e, 'ClubHomePage.setupRealtime');
         /* standalone club — no union_id */
       }
 
@@ -515,7 +516,8 @@ export default function ClubHomePage() {
                 setClub((prev) =>
                   prev ? { ...prev, member_count: totalMembers || prev.member_count || 0 } : prev
                 );
-              } catch {
+              } catch (e) {
+                reportError(e, 'ClubHomePage.setClub');
                 // Fall back to club-level counts
               }
             } else {
@@ -531,7 +533,8 @@ export default function ClubHomePage() {
             }
           }
         }
-      } catch {
+      } catch (e) {
+        reportError(e, 'ClubHomePage.setClub');
         // Query error — fail-open for standalone clubs
       }
 
@@ -551,7 +554,8 @@ export default function ClubHomePage() {
             // Also update clubData so the level calculation below uses the live count
             clubData.member_count = liveCount;
           }
-        } catch {
+        } catch (e) {
+          reportError(e, 'ClubHomePage.setClub');
           // Fall back to denormalized clubs.member_count
         }
       }
@@ -588,7 +592,8 @@ export default function ClubHomePage() {
               .eq('club_id', resolvedId)
               .limit(1)
               .maybeSingle();
-          } catch {
+          } catch (e) {
+            reportError(e, 'ClubHomePage.async');
             return { data: null, error: null };
           }
         })(),
@@ -680,7 +685,8 @@ export default function ClubHomePage() {
                 refreshedClub.hierarchy_threshold_next ?? clubData.hierarchy_threshold_next;
             }
           }
-        } catch {
+        } catch (e) {
+          reportError(e, 'ClubHomePage');
           // RPC not available — use default level
         }
       }
@@ -997,7 +1003,8 @@ export default function ClubHomePage() {
                       await navigator.clipboard.writeText(shareUrl);
                       toast.success('Club link copied!');
                     }
-                  } catch {
+                  } catch (e) {
+                    reportError(e, 'ClubHomePage.async');
                     /* user cancelled share */
                   }
                 }}

@@ -291,7 +291,8 @@ export default function CashierPage() {
       if (isMounted.current) {
         setPendingCashouts(data || []);
       }
-    } catch {
+    } catch (e) {
+      reportError(e, 'CashierPage.then');
       /* silent */
     }
   }, [clubId, user?.id]);
@@ -357,7 +358,8 @@ export default function CashierPage() {
         setIsInUnion(false);
         setIsUnionOwner(false);
       }
-    } catch {
+    } catch (e) {
+      reportError(e, 'CashierPage.then');
       // Keep defaults
     } finally {
       if (isMounted.current) setLoadingContext(false);
@@ -614,11 +616,13 @@ export default function CashierPage() {
               cachedAt: Date.now(),
             })
           );
-        } catch {
+        } catch (e) {
+          reportError(e, 'CashierPage.sort');
           /* storage full */
         }
       }
-    } catch {
+    } catch (e) {
+      reportError(e, 'CashierPage.sort');
       /* silent */
     } finally {
       txLoadingRef.current = false;
@@ -641,7 +645,8 @@ export default function CashierPage() {
               setTransactions(parsed.data);
             }
           }
-        } catch {
+        } catch (e) {
+          reportError(e, 'CashierPage.useEffect');
           /* */
         }
       }
@@ -952,7 +957,8 @@ export default function CashierPage() {
           if (isMounted.current) setIsProcessing(false);
           return;
         }
-      } catch {
+      } catch (e) {
+        reportError(e, 'CashierPage');
         // Non-blocking: if settlement check fails, allow the action to proceed
       }
     }
@@ -1646,7 +1652,8 @@ export default function CashierPage() {
                       if (isMounted.current) setIsProcessing(false);
                       return;
                     }
-                  } catch {
+                  } catch (e) {
+                    reportError(e, 'CashierPage');
                     // Non-blocking: if settlement check fails, allow the action to proceed
                   }
                 }

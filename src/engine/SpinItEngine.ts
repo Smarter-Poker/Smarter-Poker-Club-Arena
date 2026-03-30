@@ -392,7 +392,8 @@ class SpinItEngineClass {
         .eq('id', lobbyId)
         .maybeSingle(); // FIX 168
       return data?.club_id ?? null;
-    } catch {
+    } catch (e) {
+      reportError(e, 'SpinItEngine.getClubIdForLobby');
       return null;
     }
   }

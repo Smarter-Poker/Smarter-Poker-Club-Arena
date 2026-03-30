@@ -78,7 +78,8 @@ const BankrollTracker: React.FC<BankrollTrackerProps> = ({ userId, initialSessio
     try {
       const { data: userResp } = await getAuthUser();
       return userResp.user?.id || null;
-    } catch {
+    } catch (e) {
+      reportError(e, 'BankrollTracker.useCallback');
       return null;
     }
   }, [userId]);

@@ -262,7 +262,8 @@ export default function ClubSettingsPage() {
             if (membership?.role) {
               setUserRole(membership.role as 'owner' | 'admin' | 'agent' | 'member');
             }
-          } catch {
+          } catch (e) {
+            reportError(e, 'ClubSettingsPage');
             /* non-critical */
           }
         }

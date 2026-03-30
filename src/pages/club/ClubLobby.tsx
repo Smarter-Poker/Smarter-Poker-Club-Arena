@@ -153,7 +153,8 @@ export default function ClubLobby() {
 
         // Not in union — flag it
         setIsInUnion(false);
-      } catch {
+      } catch (e) {
+        reportError(e, 'ClubLobby.init');
         // Fail-open for standalone clubs
       }
 

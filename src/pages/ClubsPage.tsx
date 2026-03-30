@@ -171,7 +171,8 @@ export default function ClubsPage() {
             .in('union_id', unionIds);
           if (ucRows) ucRows.forEach((r) => unionClubIds.add(r.club_id));
           displayedClubs = memberships.filter((m) => !unionClubIds.has((m.club as any)?.id));
-        } catch {
+        } catch (e) {
+          reportError(e, 'ClubsPage.filter');
           /* fail-open: show all clubs if dedup fails */
         }
       }

@@ -25,6 +25,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { reportError } from '../utils/errorReporter';
 
 interface SessionCacheResult<T> {
   data: T | null;
@@ -96,7 +97,8 @@ export function useSessionCache<T>(
         setIsStale(false);
         writeCache(cacheKey, result.data);
       }
-    } catch {
+    } catch (e) {
+      reportError(e, 'useSessionCache.useCallback');
       /* silent — stale data is better than no data */
     } finally {
       if (mountedRef.current) setIsLoading(false);

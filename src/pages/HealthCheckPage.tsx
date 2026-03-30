@@ -13,6 +13,7 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { reportError } from '../utils/errorReporter';
 
 interface HealthStatus {
   status: 'ok' | 'degraded' | 'down';
@@ -38,7 +39,8 @@ export default function HealthCheckPage() {
           .select('id', { count: 'exact', head: true })
           .limit(1);
         if (!error) supabaseStatus = 'ok';
-      } catch {
+      } catch (e) {
+        reportError(e, 'HealthCheckPage.async');
         supabaseStatus = 'error';
       }
 

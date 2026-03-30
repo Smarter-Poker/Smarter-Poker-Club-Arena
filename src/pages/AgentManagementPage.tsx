@@ -175,7 +175,8 @@ export default function AgentManagementPage() {
         { maxRetries: 2, isMountedRef: isMounted }
       );
       if (isMounted.current) setRecentDistributions(data || []);
-    } catch {
+    } catch (e) {
+      reportError(e, 'AgentManagementPage.then');
       /* silent */
     }
   };
@@ -640,7 +641,8 @@ export default function AgentManagementPage() {
                     { key: 'weeklyRake', label: 'Weekly Rake' },
                   ]
                 );
-              } catch {
+              } catch (e) {
+                reportError(e, 'AgentManagementPage.map');
                 /* silent */
               }
             }}

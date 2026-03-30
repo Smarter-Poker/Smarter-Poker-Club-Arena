@@ -109,7 +109,8 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
       state._busUnsubscribers.forEach((unsub) => {
         try {
           unsub();
-        } catch {
+        } catch (e) {
+          reportError(e, 'useHeaderDataStore.forEach');
           /* silent */
         }
       });
@@ -208,7 +209,8 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
               .eq('user_id', userId)
               .eq('read', false);
             get().setNotificationCount(count || 0);
-          } catch {
+          } catch (e) {
+            reportError(e, 'useHeaderDataStore.async');
             /* silent */
           }
         }
@@ -229,7 +231,8 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
               .eq('receiver_id', userId)
               .eq('is_read', false);
             get().setUnreadMessages(count || 0);
-          } catch {
+          } catch (e) {
+            reportError(e, 'useHeaderDataStore.async');
             /* silent */
           }
         }
@@ -245,7 +248,8 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
               // Re-trigger loadOnce by resetting _loaded flag
               set({ _loaded: false, _channelKey: null });
               get().loadOnce(userId);
-            } catch {
+            } catch (e) {
+              reportError(e, 'useHeaderDataStore.setTimeout');
               /* silent */
             }
           }, 3000);
@@ -259,7 +263,8 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
               masterBus.removeRegisteredChannel(channelKey);
               set({ _loaded: false, _channelKey: null });
               get().loadOnce(userId);
-            } catch {
+            } catch (e) {
+              reportError(e, 'useHeaderDataStore.setTimeout');
               /* silent */
             }
           }, 3000);
@@ -299,7 +304,8 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
     state._busUnsubscribers.forEach((unsub) => {
       try {
         unsub();
-      } catch {
+      } catch (e) {
+        reportError(e, 'useHeaderDataStore.forEach');
         /* silent */
       }
     });

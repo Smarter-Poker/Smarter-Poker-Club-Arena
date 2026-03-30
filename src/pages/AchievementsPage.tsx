@@ -530,7 +530,8 @@ export default function AchievementsPage() {
       const audio = new Audio('/sounds/unlock-chime.mp3');
       audio.volume = 0.4;
       audio.play().catch(() => {});
-    } catch {
+    } catch (e) {
+      reportError(e, 'AchievementsPage.useEffect');
       /* no audio support */
     }
   }, [newUnlock]);

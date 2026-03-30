@@ -13,6 +13,7 @@ import { achievementService, ACHIEVEMENTS, type Achievement } from './Achievemen
 import { pushNotificationService } from './PushNotificationService';
 import { dailyChallengeService } from './DailyChallengeService';
 import { masterBus } from '../core/MasterBus';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -217,7 +218,8 @@ class AchievementTriggerServiceClass {
           result.triggeredAchievements.push(streakResult.achievement);
           result.chipsAwarded += streakResult.achievement.chipReward || 0;
         }
-      } catch {
+      } catch (e) {
+        reportError(e, 'AchievementTriggerService.onLogin');
         // Achievement not found or already unlocked — skip
       }
     }

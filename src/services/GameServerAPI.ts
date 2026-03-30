@@ -43,11 +43,59 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
         Authorization: `Bearer ${session.access_token}`,
       };
     }
-  } catch {
+  } catch (e) {
+    reportError(e, 'GameServerAPI.getAuthHeaders');
     // Silent — fall through to no-auth headers
   }
   return { 'Content-Type': 'application/json' };
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CIRCUIT BREAKER — Prevent error spam when game server is unreachable/CORS-blocked
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const circuitBreaker = {
+  /** Number of consecutive failures before tripping */
+  THRESHOLD: 3,
+  /** How long to stay tripped before retrying (ms) */
+  COOLDOWN_MS: 30_000,
+  /** Current consecutive failure count */
+  failures: 0,
+  /** Timestamp when the circuit tripped */
+  trippedAt: 0,
+  /** Last error reported timestamp — throttle reportError to 1 per 60s */
+  lastReportedAt: 0,
+
+  /** Check if circuit is currently open (blocking requests) */
+  isOpen(): boolean {
+    if (this.failures < this.THRESHOLD) return false;
+    if (Date.now() - this.trippedAt > this.COOLDOWN_MS) {
+      this.failures = 0;
+      return false;
+    }
+    return true;
+  },
+
+  /** Record a successful request — resets the circuit */
+  recordSuccess(): void {
+    this.failures = 0;
+    this.trippedAt = 0;
+  },
+
+  /** Record a failed request — increments toward tripping */
+  recordFailure(err: unknown, context: string): void {
+    this.failures++;
+    if (this.failures >= this.THRESHOLD) {
+      this.trippedAt = Date.now();
+    }
+    // Throttle error reporting to max 1 per 60s to prevent Sentry spam
+    const now = Date.now();
+    if (now - this.lastReportedAt > 60_000) {
+      this.lastReportedAt = now;
+      reportError(err, context, { consecutiveFailures: this.failures });
+    }
+  },
+};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -216,6 +264,10 @@ export async function getServerStatus(): Promise<ServerStatus | null> {
  * Must be called every 5 seconds while player is at the table.
  */
 export async function sendHeartbeat(tableId: string): Promise<ActionResult> {
+  // Circuit breaker: skip if game server is known-unreachable
+  if (circuitBreaker.isOpen()) {
+    return { success: false, error: 'Circuit breaker open — server unreachable' };
+  }
   try {
     const headers = await getAuthHeaders();
     const response = await fetch(`${GAME_SERVER_URL}/heartbeat`, {
@@ -223,10 +275,14 @@ export async function sendHeartbeat(tableId: string): Promise<ActionResult> {
       headers,
       body: JSON.stringify({ tableId }),
     });
-    if (!response.ok) return { success: false, error: `Server error (${response.status})` };
+    if (!response.ok) {
+      circuitBreaker.recordFailure(new Error(`HTTP ${response.status}`), 'GameServerAPI.heartbeat');
+      return { success: false, error: `Server error (${response.status})` };
+    }
+    circuitBreaker.recordSuccess();
     return (await response.json()) as ActionResult;
   } catch (err: unknown) {
-    reportError(err, 'GameServerAPI.heartbeat');
+    circuitBreaker.recordFailure(err, 'GameServerAPI.heartbeat');
     return { success: false, error: 'Server unreachable' };
   }
 }
@@ -241,6 +297,10 @@ export async function setPreAction(
   action: string,
   maxCallAmount?: number
 ): Promise<ActionResult> {
+  // Circuit breaker: skip if game server is known-unreachable
+  if (circuitBreaker.isOpen()) {
+    return { success: false, error: 'Circuit breaker open — server unreachable' };
+  }
   try {
     const headers = await getAuthHeaders();
     const response = await fetch(`${GAME_SERVER_URL}/preaction`, {
@@ -248,10 +308,14 @@ export async function setPreAction(
       headers,
       body: JSON.stringify({ tableId, action, maxCallAmount }),
     });
-    if (!response.ok) return { success: false, error: `Server error (${response.status})` };
+    if (!response.ok) {
+      circuitBreaker.recordFailure(new Error(`HTTP ${response.status}`), 'GameServerAPI.setPreAction');
+      return { success: false, error: `Server error (${response.status})` };
+    }
+    circuitBreaker.recordSuccess();
     return (await response.json()) as ActionResult;
   } catch (err: unknown) {
-    reportError(err, 'GameServerAPI.setPreAction');
+    circuitBreaker.recordFailure(err, 'GameServerAPI.setPreAction');
     return { success: false, error: 'Server unreachable' };
   }
 }

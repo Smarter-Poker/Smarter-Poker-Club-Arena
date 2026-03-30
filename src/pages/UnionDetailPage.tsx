@@ -296,7 +296,8 @@ export default function UnionDetailPage() {
                 cb.wireDirection === 'PAY_TO_UNION' ? ('pending' as const) : ('paid' as const),
             }))
           );
-        } catch {
+        } catch (e) {
+          reportError(e, 'UnionDetailPage.map');
           if (isMounted) {
             setFinancialSummary({
               totalRakeThisPeriod: 0,

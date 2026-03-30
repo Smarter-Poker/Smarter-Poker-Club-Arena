@@ -171,7 +171,8 @@ export default function FinancialAlertsPage() {
         `financial_alerts_${new Date().toISOString().split('T')[0]}.csv`
       );
       toast.success(`Exported ${rows.length} alert(s)`);
-    } catch {
+    } catch (e) {
+      reportError(e, 'FinancialAlertsPage.map');
       toast.error('Export failed');
     }
     setExporting(false);

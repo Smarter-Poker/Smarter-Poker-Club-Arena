@@ -509,7 +509,8 @@ export default function ClubMembersPage() {
               setLoading(false); // Show cached list instantly
             }
           }
-        } catch {
+        } catch (e) {
+          reportError(e, 'ClubMembersPage.async');
           /* corrupt cache */
         }
 
@@ -789,7 +790,8 @@ export default function ClubMembersPage() {
                   { key: 'joined_at', label: 'Joined' },
                   { key: 'user_id', label: 'User ID' },
                 ]);
-              } catch {
+              } catch (e) {
+                reportError(e, 'ClubMembersPage.filter');
                 /* silent */
               }
             }}

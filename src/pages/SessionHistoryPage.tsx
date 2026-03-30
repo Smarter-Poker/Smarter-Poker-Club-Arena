@@ -322,7 +322,8 @@ export default function SessionHistoryPage() {
                   { key: 'rebuys', label: 'Rebuys' },
                 ]);
                 toast.success('Sessions exported!');
-              } catch {
+              } catch (e) {
+                reportError(e, 'SessionHistoryPage');
                 toast.error('Failed to export sessions.');
               }
             }}

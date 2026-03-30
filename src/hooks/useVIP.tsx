@@ -162,7 +162,8 @@ export function useVIPStatus() {
         if (mounted) {
           setIsVIP(vip);
         }
-      } catch {
+      } catch (e) {
+        reportError(e, 'useVIP.check');
         if (mounted) setIsVIP(false);
       }
       if (mounted) setIsLoading(false);

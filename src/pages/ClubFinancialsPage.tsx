@@ -94,7 +94,8 @@ export default function ClubFinancialsPage() {
         if (data?.role && isMounted.current) {
           setUserRole(data.role as 'owner' | 'admin' | 'agent' | 'member');
         }
-      } catch {
+      } catch (e) {
+        reportError(e, 'ClubFinancialsPage.async');
         // Non-blocking — default to 'member'
       }
     })();
@@ -222,7 +223,8 @@ export default function ClubFinancialsPage() {
           if (c.transactions) setTransactions(c.transactions);
           setLoading(false);
         }
-      } catch {
+      } catch (e) {
+        reportError(e, 'ClubFinancialsPage.loadFinancials');
         /* corrupt cache */
       }
 
@@ -336,7 +338,8 @@ export default function ClubFinancialsPage() {
               transactions: mappedTx.slice(0, 20),
             })
           );
-        } catch {
+        } catch (e) {
+          reportError(e, 'ClubFinancialsPage.map');
           /* storage full */
         }
       }
@@ -411,7 +414,8 @@ export default function ClubFinancialsPage() {
                       ? new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
                       : undefined,
               });
-            } catch {
+            } catch (e) {
+              reportError(e, 'ClubFinancialsPage.async');
               reportError(new Error('CSV export failed'), 'ClubFinancialsPage.CSV_export_failed');
             }
             setExporting(false);

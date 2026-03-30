@@ -81,7 +81,8 @@ export default function TournamentPage() {
 
         if (!isMounted) return;
         setIsOwner(data?.role === 'owner' || data?.role === 'admin');
-      } catch {
+      } catch (e) {
+        reportError(e, 'TournamentPage.checkOwnership');
         if (isMounted) setIsOwner(false);
       }
     }
@@ -106,7 +107,8 @@ export default function TournamentPage() {
           .maybeSingle();
         if (!isMounted) return;
         if (!error && data) setIsInUnion(true);
-      } catch {
+      } catch (e) {
+        reportError(e, 'TournamentPage.async');
         // Query error — fail-open
       }
     })();
@@ -151,7 +153,8 @@ export default function TournamentPage() {
               setIsLoading(false);
             }
           }
-        } catch {
+        } catch (e) {
+          reportError(e, 'TournamentPage.loadTournaments');
           /* corrupt cache */
         }
 
@@ -270,7 +273,8 @@ export default function TournamentPage() {
           const data = await tournamentService.getTournaments(clubId);
           if (!isMounted) return;
           setTournaments(data);
-        } catch {
+        } catch (e) {
+          reportError(e, 'TournamentPage.async');
           /* silent */
         }
       },
@@ -285,7 +289,8 @@ export default function TournamentPage() {
           setTournaments(data);
           const updated = data.find((t) => t.id === selectedTournamentRef.current?.id);
           if (updated) setSelectedTournament(updated);
-        } catch {
+        } catch (e) {
+          reportError(e, 'TournamentPage.find');
           /* silent */
         }
       },

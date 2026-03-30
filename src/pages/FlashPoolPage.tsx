@@ -113,7 +113,8 @@ export default function FlashPoolPage() {
           .limit(1)
           .maybeSingle();
         if (data) setUserBalance(data.chip_balance || 0);
-      } catch {
+      } catch (e) {
+        reportError(e, 'FlashPoolPage.loadBalance');
         /* best effort */
       }
     };
@@ -134,7 +135,8 @@ export default function FlashPoolPage() {
             .limit(1)
             .maybeSingle();
           if (data) setUserBalance(data.chip_balance || 0);
-        } catch {
+        } catch (e) {
+          reportError(e, 'FlashPoolPage.async');
           /* best effort */
         }
       },

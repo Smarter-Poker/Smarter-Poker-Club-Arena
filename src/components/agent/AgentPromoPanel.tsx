@@ -206,7 +206,8 @@ export default function AgentPromoPanel({
         if (isMounted.current) setDistributing(false);
         return;
       }
-    } catch {
+    } catch (e) {
+      reportError(e, 'AgentPromoPanel');
       // Fail-open: allow distribution if settlement check fails
     }
 

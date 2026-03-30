@@ -108,7 +108,8 @@ export default function TournamentDetails() {
     try {
       const balance = await WalletService.getPlayerBalance(user.id);
       setWalletBalance(balance);
-    } catch {
+    } catch (e) {
+      reportError(e, 'TournamentDetails.loadWalletBalance');
       /* ignore */
     }
   };
@@ -476,7 +477,8 @@ export default function TournamentDetails() {
               .eq('id', (data as any).union_id)
               .maybeSingle();
             if (unionData?.name && (!getIsMounted || getIsMounted())) setUnionName(unionData.name);
-          } catch {
+          } catch (e) {
+            reportError(e, 'TournamentDetails');
             /* non-critical */
           }
         }

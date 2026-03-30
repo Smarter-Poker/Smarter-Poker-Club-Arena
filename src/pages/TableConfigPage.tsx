@@ -341,7 +341,8 @@ export default function TableConfigPage() {
           toast.error('Union clubs cannot create standalone tables.');
           navigate(`/clubs/${clubId}`);
         }
-      } catch {
+      } catch (e) {
+        reportError(e, 'TableConfigPage.async');
         /* fail-open */
       }
       if (isMounted) setCheckingUnion(false);

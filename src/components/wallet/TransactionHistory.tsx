@@ -12,6 +12,7 @@ import { useIsMounted } from '../../hooks/useIsMounted';
 import { useStaggerAnimation } from '../../hooks/useStaggerAnimation';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import './TransactionHistory.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface TransactionHistoryProps {
   walletId?: string;
@@ -179,7 +180,8 @@ function TransactionHistoryInner({ walletId, limit = 20 }: TransactionHistoryPro
         setLoadError(true);
         toast.error('Failed to load transactions');
       }
-    } catch {
+    } catch (e) {
+      reportError(e, 'TransactionHistory.map');
       if (isMounted.current) setLoadError(true);
       toast.error('Failed to load transactions');
     }

@@ -18,6 +18,7 @@ import styles from './XMTTPage.module.css';
 
 import { useIsMounted } from '../hooks/useIsMounted';
 import { fmt, fmtChips } from '../utils/format';
+import { reportError } from '../utils/errorReporter';
 
 const formatDate = (ts: string | null) => {
   if (!ts) return '';
@@ -263,7 +264,8 @@ export default function XMTTPage() {
         if (result) {
           setWaitlistPositions((prev) => ({ ...prev, [t.id]: result.position }));
         }
-      } catch {
+      } catch (e) {
+        reportError(e, 'XMTTPage.setWaitlistPositions');
         // Non-critical — position just won't show
       }
     });

@@ -290,7 +290,8 @@ export const useArenaStore = create<ArenaState>()(
                 leakSignals: new Map(parsed.state.leakSignals || []),
               },
             };
-          } catch {
+          } catch (e) {
+            reportError(e, 'useArenaStore');
             return null;
           }
         },

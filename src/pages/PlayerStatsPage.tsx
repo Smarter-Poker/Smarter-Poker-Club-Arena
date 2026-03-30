@@ -461,7 +461,8 @@ export default function PlayerStatsPage() {
         setStats(data);
         hasStatsRef.current = true;
       }
-    } catch {
+    } catch (e) {
+      reportError(e, 'PlayerStatsPage.then');
       /* silent — bus-triggered refresh */
     }
   };
@@ -741,7 +742,8 @@ export default function PlayerStatsPage() {
                         { key: 'profit', label: 'Profit' },
                         { key: 'cumulative', label: 'Cumulative P/L' },
                       ]);
-                    } catch {
+                    } catch (e) {
+                      reportError(e, 'PlayerStatsPage');
                       /* silent */
                     }
                   }}

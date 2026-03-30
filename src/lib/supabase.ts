@@ -347,7 +347,8 @@ if (typeof window !== 'undefined') {
           }
         });
       }
-    } catch {
+    } catch (e) {
+      reportError(e, 'supabase');
       // Silent — best effort
     }
   }, REFRESH_CHECK_INTERVAL);
@@ -377,7 +378,8 @@ if (typeof window !== 'undefined') {
             console.warn('[Supabase] Proactive refresh on tab focus failed:', e);
           });
         }
-      } catch {
+      } catch (e) {
+        reportError(e, 'supabase.addEventListener');
         // Silent
       }
     }

@@ -202,7 +202,8 @@ export function AgentCommissionDashboard() {
             if (profiles) {
               for (const p of profiles) subProfileMap[p.id] = p;
             }
-          } catch {
+          } catch (e) {
+            reportError(e, 'AgentCommissionDashboard.map');
             /* non-critical */
           }
         }

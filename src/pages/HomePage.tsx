@@ -567,7 +567,8 @@ function HomePageInner() {
             p_club_id: club.id,
           });
           activePlayers = Number(rpcCount) || 0;
-        } catch {
+        } catch (e) {
+          reportError(e, 'HomePage');
           // RPC not deployed yet — use legacy 2-query fallback
           if (tablesResult.status === 'fulfilled' && tablesResult.value.data?.length) {
             const tableIds = tablesResult.value.data.map((t: any) => t.id);
@@ -613,7 +614,8 @@ function HomePageInner() {
                   refreshed.hierarchy_threshold_next ?? club.hierarchy_threshold_next;
               }
             }
-          } catch {
+          } catch (e) {
+            reportError(e, 'HomePage');
             // RPC not available — use default level
           }
         }
@@ -664,7 +666,8 @@ function HomePageInner() {
           skipInitialFetch = true;
         }
       }
-    } catch {
+    } catch (e) {
+      reportError(e, 'HomePage.setTimeout');
       /* */
     }
     if (!skipInitialFetch) {
@@ -1089,7 +1092,8 @@ function HomePageInner() {
                 p_club_id: club.id,
               });
               activePlayers = Number(rpcCount) || 0;
-            } catch {
+            } catch (e) {
+              reportError(e, 'HomePage.map');
               // RPC not deployed — skip
             }
 
@@ -1125,7 +1129,8 @@ function HomePageInner() {
                       refreshed.hierarchy_threshold_next ?? club.hierarchy_threshold_next;
                   }
                 }
-              } catch {
+              } catch (e) {
+                reportError(e, 'HomePage');
                 // RPC not available
               }
             }

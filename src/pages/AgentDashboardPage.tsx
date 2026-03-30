@@ -291,7 +291,8 @@ export default function AgentDashboardPage() {
               cachedAt: Date.now(),
             })
           );
-        } catch {
+        } catch (e) {
+          reportError(e, 'AgentDashboardPage.map');
           /* storage full */
         }
       } catch (err: unknown) {
@@ -359,7 +360,8 @@ export default function AgentDashboardPage() {
           setLoading(false);
         }
       }
-    } catch {
+    } catch (e) {
+      reportError(e, 'AgentDashboardPage.useEffect');
       /* corrupt cache */
     }
   }, [user?.id, clubId]);
@@ -707,7 +709,8 @@ export default function AgentDashboardPage() {
                       { key: 'created_at', label: 'Date' },
                     ]);
                   }
-                } catch {
+                } catch (e) {
+                  reportError(e, 'AgentDashboardPage');
                   /* silent */
                 }
               }}

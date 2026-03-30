@@ -16,6 +16,7 @@ import { STORAGE_KEYS } from '../../lib/storage';
 import { SHARK_CLUB_ID } from '../../lib/constants';
 import styles from '../../pages/HomePage.module.css';
 import { PageErrorBoundary } from '../common/PageErrorBoundary';
+import { reportError } from '../../utils/errorReporter';
 
 // Lazy-load heavy component
 const ClubStatsPanel = lazy(() => import('../club/ClubStatsPanel'));
@@ -100,7 +101,8 @@ export default function CarouselSection({
       } else {
         setOrderedClubs(displayClubs);
       }
-    } catch {
+    } catch (e) {
+      reportError(e, 'CarouselSection.sort');
       setOrderedClubs(displayClubs);
     }
   }, [displayClubs, pinnedClubIds]);

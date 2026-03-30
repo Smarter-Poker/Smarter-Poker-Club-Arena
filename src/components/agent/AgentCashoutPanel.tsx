@@ -112,7 +112,8 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
         if (isMounted.current) setProcessing(null);
         return;
       }
-    } catch {
+    } catch (e) {
+      reportError(e, 'AgentCashoutPanel.handleApprove');
       // Fail-open
     }
 
@@ -143,7 +144,8 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
         if (isMounted.current) setProcessing(null);
         return;
       }
-    } catch {
+    } catch (e) {
+      reportError(e, 'AgentCashoutPanel.handleReject');
       // Fail-open
     }
 

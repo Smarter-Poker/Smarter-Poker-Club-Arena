@@ -37,6 +37,7 @@ import { WalletService } from '../services/WalletService';
 import { masterBus } from '../core/MasterBus';
 import { stateVerifier } from './StateVerifier';
 import { useUserStore } from '../stores/useUserStore';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -204,7 +205,8 @@ export class HeadlessTableEngine {
     if (this.stackSyncPromise) {
       try {
         await this.stackSyncPromise;
-      } catch {
+      } catch (e) {
+        reportError(e, 'HeadlessTableEngine.stop');
         // Sync may fail — we still need to clean up
       }
       this.stackSyncPromise = null;
@@ -1368,7 +1370,8 @@ export class HeadlessTableEngine {
           horseStyle,
           gameType as 'cash' | 'tournament'
         );
-      } catch {
+      } catch (e) {
+        reportError(e, 'HeadlessTableEngine.async');
         decision = HorseLogic.decide(enginePlayer, gameState as any, horseStyle);
       }
 
@@ -1432,11 +1435,13 @@ export class HeadlessTableEngine {
 
         try {
           handControllerRef.performAction(seat, action as any, amount);
-        } catch {
+        } catch (e) {
+          reportError(e, 'HeadlessTableEngine');
           // If action fails, try folding as fallback
           try {
             handControllerRef.performAction(seat, 'fold');
-          } catch {
+          } catch (e) {
+            reportError(e, 'HeadlessTableEngine');
             // Hand may have already completed
           }
         }
@@ -1448,7 +1453,8 @@ export class HeadlessTableEngine {
       if (this.handInvalidated || !handControllerRef) return;
       try {
         handControllerRef.performAction(seat, 'fold');
-      } catch {
+      } catch (e) {
+        reportError(e, 'HeadlessTableEngine');
         /* Hand may have completed */
       }
     });
@@ -1546,7 +1552,8 @@ export class HeadlessTableEngine {
           }
         }
       }
-    } catch {
+    } catch (e) {
+      reportError(e, 'HeadlessTableEngine.sort');
       // GTO enhancement is best-effort — never block decisions
     }
   }
@@ -1839,7 +1846,8 @@ export class HeadlessTableEngine {
         this._cachedUnionId = ucRow?.union_id || '__none__';
       }
       unionId = this._cachedUnionId === '__none__' ? undefined : this._cachedUnionId;
-    } catch {
+    } catch (e) {
+      reportError(e, 'HeadlessTableEngine');
       /* standalone club — no union */
     }
 

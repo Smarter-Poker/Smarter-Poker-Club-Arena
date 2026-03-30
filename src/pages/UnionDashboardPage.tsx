@@ -362,7 +362,8 @@ export default function UnionDashboardPage() {
             cachedAt: Date.now(),
           })
         );
-      } catch {
+      } catch (e) {
+        reportError(e, 'UnionDashboardPage');
         /* storage full */
       }
     }
@@ -387,7 +388,8 @@ export default function UnionDashboardPage() {
           setLoading(false); // Show cached data instantly
         }
       }
-    } catch {
+    } catch (e) {
+      reportError(e, 'UnionDashboardPage.useEffect');
       /* corrupt cache */
     }
     loadDashboard();

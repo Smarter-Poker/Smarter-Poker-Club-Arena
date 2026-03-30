@@ -576,6 +576,29 @@ export default function ProfilePage() {
       },
       500
     );
+    const unsubDiamond = masterBus.subscribeDebounced(
+      "DIAMOND_BALANCE_CHANGED",
+      () => {
+        invalidateProfileCache();
+        supabase.auth
+          .getUser()
+          .then(({ data: { user: authUser } }) => {
+            if (authUser && isMounted) {
+              supabase
+                .from("diamond_wallets")
+                .select("balance")
+                .eq("user_id", authUser.id)
+                .maybeSingle()
+                .then(({ data: dw }) => {
+                  if (dw && isMounted) setDiamonds(dw.balance || 0);
+                });
+            }
+          })
+          .catch((e) => console.warn("[Profile] Refreshing diamond balance failed:", e));
+      },
+      500
+    );
+
     // Gamification bus listeners: refresh balance when rewards earned on other pages
     const unsubDailyReward = masterBus.subscribeDebounced(
       'DAILY_REWARD_CLAIMED',
@@ -694,6 +717,7 @@ export default function ProfilePage() {
       unsubProfile();
       unsubHand();
       unsubBalance();
+      unsubDiamond();
       unsubDailyReward();
       unsubMissionClaim();
       unsubWheelSpin();

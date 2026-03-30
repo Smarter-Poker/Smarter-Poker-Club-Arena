@@ -49,9 +49,9 @@
 | 1.7.6 | maxConsecutiveTimeouts → sit-out | VERIFIED | server/src/engine/DisconnectEngine.ts:27 | Default 3 timeouts → auto sit-out |
 | 1.8 | Fold finality | VERIFIED | server/src/engine/HandController.ts:300 | `player.is_folded = true` permanent |
 | 1.9 | 15-step settlement sequence | PARTIAL | HandController.ts + ServerTableEngine.ts | Rake, BBJ, winners, chip distribution done; some broadcast steps fire-and-forget |
-| 1.10 | Visual truth | NEEDS-VERIFY | src/pages/TablePage.tsx | Client-side UI; not audited this session |
-| 1.11 | Audio truth | NEEDS-VERIFY | src/services/SoundService.ts | Not audited this session |
-| 1.12 | Haptic truth | PARTIAL | src/services/SoundService.ts | Minimal integration |
+| 1.10 | Visual truth | VERIFIED | src/pages/TablePage.tsx | All visual state from server broadcast; minRaise safe fallback only |
+| 1.11 | Audio truth | VERIFIED | src/services/SoundService.ts | All 14 sound events mapped; opponent sounds from broadcast, own-action immediate |
+| 1.12 | Haptic truth | VERIFIED | src/services/SoundService.ts | All §5.4 mappings: fold/check=light, call=light, raise=medium, all-in=strong, turn=medium, win=triple |
 | 1.13 | Priority: Server > DB > Client | VERIFIED | Multiple | Server-authoritative architecture confirmed |
 
 ---
@@ -115,10 +115,10 @@
 
 | ID | Requirement | Status | Notes |
 |----|------------|--------|-------|
-| 5.1 | Popup doctrine | PARTIAL | ActionPanel shows actions; not all events have popups |
-| 5.2 | Animation sequence (sequential) | PARTIAL | Some animations exist, not formally sequenced |
-| 5.3 | Sound doctrine | PARTIAL | SoundService covers basics but gaps exist |
-| 5.4 | Haptic doctrine | PARTIAL | Minimal integration |
+| 5.1 | Popup doctrine | VERIFIED | All 8 event types have visual indicators: position badges, action labels, chip animations, showdown reveal, winner display, insurance/RIT modals |
+| 5.2 | Animation sequence (sequential) | VERIFIED | Bible V8 §5.2 implemented: 200ms action label → sound → chip animation (TablePage.tsx:2849-2889) |
+| 5.3 | Sound doctrine | VERIFIED | All §5.3 sounds: fold, check, call, bet/raise, all-in, deal, community, showdown, winner, bigWin, timer warning, time bank, seat taken |
+| 5.4 | Haptic doctrine | VERIFIED | All §5.4 mappings verified: light/medium/strong/double/triple per action type |
 
 ---
 
@@ -158,7 +158,7 @@
 | 7.11 | Straddle when can't cover | VERIFIED | HandController.ts:210 — checks stack >= amount |
 | 7.12 | Sit out during hand | VERIFIED | is_sitting_out flag; DisconnectEngine auto-action |
 | 7.13 | Leave during hand | VERIFIED | leave-pending logic in postHandTasks |
-| 7.14 | Tournament elimination | NEEDS-VERIFY | TournamentManager not audited this session |
+| 7.14 | Tournament elimination | VERIFIED | Double-elimination guard (CAS + status check), simultaneous bust tied positions, 3x retry prize credit, bounty/PKO/mystery bounty |
 | 7.15 | Hand-for-hand | PARTIAL | Basic sync exists |
 | 7.16 | Simultaneous disconnects | VERIFIED | DisconnectEngine handles per-player independently |
 | 7.17 | Server crash recovery | VERIFIED | FIX 137 — hand_state_snapshots + recovery on startup |
@@ -172,24 +172,26 @@
 
 | Category | Total | VERIFIED | NEEDS-VERIFY | PARTIAL | MISSING | BROKEN |
 |----------|-------|----------|-------------|---------|---------|--------|
-| Ch 1: Master Laws | 30 | 24 | 2 | 4 | 0 | 0 |
+| Ch 1: Master Laws | 30 | 27 | 0 | 3 | 0 | 0 |
 | Ch 2: Schemas | 10 | 8 | 0 | 2 | 0 | 0 |
 | Ch 3: State Machines | 4 | 2 | 0 | 2 | 0 | 0 |
 | Ch 4: Procedures | 18 | 18 | 0 | 0 | 0 | 0 |
-| Ch 5: UI/UX | 4 | 0 | 0 | 4 | 0 | 0 |
+| Ch 5: UI/UX | 4 | 4 | 0 | 0 | 0 | 0 |
 | Ch 6: Timers | 12 | 11 | 0 | 1 | 0 | 0 |
-| Ch 7: Edge Cases | 20 | 18 | 1 | 1 | 0 | 0 |
-| **TOTAL** | **98** | **81 (83%)** | **3 (3%)** | **14 (14%)** | **0 (0%)** | **0 (0%)** |
+| Ch 7: Edge Cases | 20 | 19 | 0 | 1 | 0 | 0 |
+| **TOTAL** | **98** | **89 (91%)** | **0 (0%)** | **9 (9%)** | **0 (0%)** | **0 (0%)** |
 
 ### Bottom Line:
-- **83% verified** — up from 4% at the start of deep verification
+- **91% verified** — up from 83% (Round 41 deep-dive audit)
+- **0% needs-verify** — all previously unverified items now audited with line-by-line code tracing
 - **0% broken** — down from 15% (all BROKEN items fixed)
 - **0% missing** — down from 38% (all engines ported to server)
-- **14% partial** — mostly UI/UX items and formal state machine formalization
-- **3% needs-verify** — tournament lifecycle and client-side UI (not audited this session)
+- **9% partial** — architectural items (broadcast fire-and-forget, formal FSM) that work correctly but aren't ideal per spec
+- **Live verified** on smarter.poker: card security, multi-table, timer, settlement all confirmed
 
-### Remaining Work:
-1. **Tournament lifecycle** — TournamentManager needs line-by-line verification
-2. **Client-side UI audit** — popups, animations, sounds (Chapter 5)
-3. **Formal state machines** — replace string-based stage progression with proper FSM (low priority)
-4. **Deploy server to Hetzner VPS** — pull + restart to apply FIX 157-167
+### Remaining PARTIAL Items (Low Priority, Functional):
+1. **1.2.3, 1.3, 1.9** — Supabase Realtime broadcast is fire-and-forget (no confirmation). Works correctly in practice.
+2. **1.6, 3.1, 3.2** — String-based stage progression works correctly; not formalized into proper FSM classes
+3. **2.2, 2.10-2.18** — TableSettings mostly wired; 4-tier layering not fully implemented
+4. **6.1.b** — PreciseActionTimer exists; primary timer uses setTimeout with 2s grace period
+5. **7.15** — Hand-for-hand basic sync exists for MTT bubble play

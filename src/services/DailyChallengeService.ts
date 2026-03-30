@@ -250,8 +250,7 @@ class DailyChallengeServiceClass {
       .select('*')
       .eq('user_id', userId)
       .eq('assigned_date', today);
-    if (existErr)
-      console.warn('[DailyChallenge] getTodaysChallenges fetch error:', existErr.message);
+    if (existErr) reportError(existErr, 'DailyChallengeService.getTodaysChallenges_fetch_error');
 
     if (existing && existing.length > 0) {
       return existing.map(this.mapToUserChallenge);
@@ -310,7 +309,7 @@ class DailyChallengeServiceClass {
       .select('*')
       .eq('user_id', userId)
       .eq('assigned_date', weekKey);
-    if (wkErr) console.warn('[DailyChallenge] getWeeklyChallenges fetch error:', wkErr.message);
+    if (wkErr) reportError(wkErr, 'DailyChallengeService.getWeeklyChallenges_fetch_error');
 
     if (existing && existing.length > 0) {
       return existing.map((row) => ({ ...this.mapToUserChallenge(row), tier: 'weekly' as const }));
@@ -368,7 +367,7 @@ class DailyChallengeServiceClass {
       .select('*')
       .eq('user_id', userId)
       .eq('assigned_date', monthKey);
-    if (moErr) console.warn('[DailyChallenge] getMonthlyChallenges fetch error:', moErr.message);
+    if (moErr) reportError(moErr, 'DailyChallengeService.getMonthlyChallenges_fetch_error');
 
     if (existing && existing.length > 0) {
       return existing.map((row) => ({ ...this.mapToUserChallenge(row), tier: 'monthly' as const }));
@@ -438,7 +437,7 @@ class DailyChallengeServiceClass {
       .eq('user_id', userId)
       .in('assigned_date', [today, weekKey, monthKey])
       .eq('completed', false);
-    if (chErr) console.warn('[DailyChallenge] updateProgress fetch error:', chErr.message);
+    if (chErr) reportError(chErr, 'DailyChallengeService.updateProgress_fetch_error');
 
     if (!challenges) return { completed };
 
@@ -562,7 +561,7 @@ class DailyChallengeServiceClass {
       .eq('user_id', userId)
       .eq('completed', true)
       .limit(QUERY_LIMITS.MODERATE);
-    if (statErr) console.warn('[DailyChallenge] getStats error:', statErr.message);
+    if (statErr) reportError(statErr, 'DailyChallengeService.getStats_error');
 
     if (!data) {
       return {

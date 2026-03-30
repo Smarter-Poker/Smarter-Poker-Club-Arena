@@ -533,8 +533,7 @@ export const WalletService = {
           hand_id: handId || undefined,
         })
         .then(({ error: ledgerErr }) => {
-          if (ledgerErr)
-            console.warn('[WalletService] chip_ledger write failed:', ledgerErr.message);
+          if (ledgerErr) reportError(ledgerErr, 'WalletService.chip_ledger_write_failed');
         });
 
       if (error) {

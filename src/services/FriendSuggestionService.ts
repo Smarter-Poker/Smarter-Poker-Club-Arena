@@ -175,7 +175,7 @@ class FriendSuggestionServiceClass {
         .from('club_members')
         .select('club_id, clubs(name)')
         .eq('user_id', userId);
-      if (cErr) console.warn('[FriendSuggestions] getSharedClubUsers clubs error:', cErr.message);
+      if (cErr) reportError(cErr, 'FriendSuggestionService.getSharedClubUsers_clubs_error');
 
       if (!myClubs || myClubs.length === 0) return [];
 
@@ -192,7 +192,7 @@ class FriendSuggestionServiceClass {
         .in('club_id', clubIds)
         .neq('user_id', userId)
         .limit(100);
-      if (mErr) console.warn('[FriendSuggestions] getSharedClubUsers members error:', mErr.message);
+      if (mErr) reportError(mErr, 'FriendSuggestionService.getSharedClubUsers_members_error');
 
       // Batch-fetch profiles (no FK between club_members and profiles)
       const userIds = (members || []).map((m: any) => m.user_id);
@@ -248,7 +248,7 @@ class FriendSuggestionServiceClass {
         .eq('user_id', userId)
         .gte('created_at', sevenDaysAgo)
         .limit(QUERY_LIMITS.LIST);
-      if (hErr) console.warn('[FriendSuggestions] getRecentOpponents hands error:', hErr.message);
+      if (hErr) reportError(hErr, 'FriendSuggestionService.getRecentOpponents_hands_error');
 
       if (!myHands || myHands.length === 0) return [];
 
@@ -266,8 +266,7 @@ class FriendSuggestionServiceClass {
         .in('hand_id', handIds)
         .neq('user_id', userId)
         .limit(50);
-      if (oErr)
-        console.warn('[FriendSuggestions] getRecentOpponents opponents error:', oErr.message);
+      if (oErr) reportError(oErr, 'FriendSuggestionService.getRecentOpponents_opponents_error');
 
       // Dedupe by user_id
       const seen = new Set<string>();

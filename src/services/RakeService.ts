@@ -2,6 +2,7 @@ import { supabase } from '../lib/supabase';
 import { BBJService } from './BBJService';
 import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
+import { reportError } from '../utils/errorReporter';
 // [MIGRATION] rakebackEngine removed — server-authoritative (Step 6). Rakeback tracked via DB RPC.
 
 /**
@@ -382,7 +383,7 @@ export const RakeService = {
 
       // ABORT waterfall if pot drops failed — cannot attribute rake that was never collected
       if (!potDropSuccess) {
-        console.debug('[RakeService] Pot drops failed — aborting waterfall for hand:', handId);
+        reportError(new Error('Pot drops failed'), 'RakeService.potDrops', { handId });
         return {
           handId,
           tableId,
@@ -426,11 +427,10 @@ export const RakeService = {
             p_attributions: attrPayload,
           })
           .then(({ error: attrErr }) => {
-            if (attrErr)
-              console.warn('[RakeService] Rake attribution persist failed:', attrErr.message);
+            if (attrErr) reportError(attrErr, 'RakeService.Rake_attribution_persist');
           });
       } catch (rbErr) {
-        console.debug('[RakeService] RakebackEngine recording failed:', rbErr);
+        reportError(rbErr, 'RakeService.rakebackRecording');
       }
     }
 
@@ -481,7 +481,7 @@ export const RakeService = {
           );
         }
       } catch (e: unknown) {
-        console.debug(`[RakeService] BBJ contribution failed for hand ${handId}:`, e);
+        reportError(e, 'RakeService.bbjContribution', { handId });
       }
     }
 
@@ -512,14 +512,11 @@ export const RakeService = {
             .update({ total_rake: currentRake + calculation.cappedRake })
             .eq('id', unionId);
           if (fallbackErr) {
-            console.debug(
-              `[RakeService] Failed to update union total_rake for ${unionId}:`,
-              fallbackErr
-            );
+            reportError(fallbackErr, 'RakeService.unionTotalRake.fallback', { unionId });
           }
         }
       } catch (e: unknown) {
-        console.debug(`[RakeService] Failed to update union total_rake for ${unionId}:`, e);
+        reportError(e, 'RakeService.unionTotalRake', { unionId });
       }
     }
 
@@ -559,7 +556,7 @@ export const RakeService = {
     });
 
     if (error) {
-      console.debug('RakeService.executePotDrops error:', error);
+      reportError(error, 'RakeService.executePotDrops');
       return false;
     }
 
@@ -637,18 +634,11 @@ export const RakeService = {
               .eq('club_id', resolvedClubId)
               .eq('user_id', attr.userId);
             if (fallbackErr) {
-              console.debug(
-                `[RakeService] CRITICAL: All atomic patterns failed for total_rake_paid update. ` +
-                  `User: ${attr.userId.substring(0, 8)}, Amount: ${attr.rakeCredit}. ` +
-                  `Manual reconciliation may be needed.`
-              );
+              reportError(fallbackErr, 'RakeService.distributeHandRake.allFailed', { userId: attr.userId, rakeCredit: attr.rakeCredit });
             }
           }
         } catch (e: unknown) {
-          console.debug(
-            `[RakeService] Failed to update total_rake_paid for ${attr.userId.substring(0, 8)}:`,
-            e
-          );
+          reportError(e, 'RakeService.distributeHandRake', { userId: attr.userId });
         }
       }
     }
@@ -736,7 +726,7 @@ export const RakeService = {
               club_id: params.clubId || undefined,
             })
             .then(({ error: le }) => {
-              if (le) console.warn('[RakeService] chip_ledger write failed:', le.message);
+              if (le) reportError(le, 'RakeService.chipLedgerWrite');
             });
 
           // Fallback: read-modify-write for agent lifetime_rake_generated
@@ -753,22 +743,18 @@ export const RakeService = {
               .update({ lifetime_rake_generated: currentRake + rakeCredit })
               .eq('user_id', agentId);
             if (fallbackErr) {
-              console.debug(
-                `[RakeService] CRITICAL: All atomic patterns failed for agent rake. ` +
-                  `Agent: ${agentId.substring(0, 8)}, Amount: ${rakeCredit}. ` +
-                  `Manual reconciliation may be needed.`
-              );
+              reportError(fallbackErr, 'RakeService.agentRake.fallback', { agentId });
             }
           }
         } catch (e: unknown) {
           // Non-blocking: commission tracking should never break the hand pipeline
-          console.debug(`[RakeService] Failed to credit agent ${agentId.substring(0, 8)}:`, e);
+          reportError(e, 'RakeService.creditAgent');
         }
       }
 
       return true;
     } catch (err: unknown) {
-      console.debug('[RakeService] Commission queue error:', err);
+      reportError(err, 'RakeService.commissionQueue');
       return false;
     }
   },
@@ -869,7 +855,7 @@ export const RakeService = {
       );
 
       if (insertErr) {
-        console.debug('[RakeService] Failed to record tournament rake:', insertErr);
+        reportError(insertErr, 'RakeService.recordTournamentRake');
         return false;
       }
 
@@ -885,15 +871,15 @@ export const RakeService = {
         );
 
         if (rpcError) {
-          console.debug('[RakeService] increment_club_rake RPC failed (may not exist):', rpcError);
+          reportError(rpcError, 'RakeService.incrementClubRake');
         }
       } catch (err) {
-        console.debug('[RakeService] Error:', err);
+        reportError(err, 'RakeService.incrementClubRake.outer');
         /* RPC may not exist — non-blocking */
       }
       return true;
     } catch (err: unknown) {
-      console.debug('[RakeService] recordTournamentRake error:', err);
+      reportError(err, 'RakeService.recordTournamentRake.outer');
       return false;
     }
   },
@@ -924,8 +910,7 @@ export const RakeService = {
         created_at: new Date().toISOString(),
       });
     } catch (err) {
-      console.debug('[RakeService] Error:', err);
-      console.debug('[RakeService] rake_rate_audit insert failed (table may not exist)');
+      reportError(err, 'RakeService.logRateChange');
     }
   },
 };

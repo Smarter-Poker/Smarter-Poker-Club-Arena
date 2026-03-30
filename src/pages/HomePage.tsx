@@ -631,10 +631,12 @@ function HomePageInner() {
         });
 
         if (!isMounted) return;
+        // Safety clamp: active players can never exceed member count
+        const clampedActive = Math.min(activePlayers, memberCount);
         const stats = {
           totalMembers: memberCount,
           clubLevel: levelInfo.level,
-          activePlayers,
+          activePlayers: clampedActive,
         };
         setSharkClubStats(stats);
 
@@ -1147,10 +1149,11 @@ function HomePageInner() {
             });
 
             if (isMounted) {
+              // Safety clamp: active players can never exceed member count
               statsMap[club.id] = {
                 totalMembers: memberCount,
                 clubLevel: levelInfo.level,
-                activePlayers,
+                activePlayers: Math.min(activePlayers, memberCount),
               };
             }
           })
@@ -1171,6 +1174,44 @@ function HomePageInner() {
               .in('id', unionIds);
 
             if (unionRows && isMounted) {
+              // Fetch member clubs for each union to aggregate active players
+              const { data: unionClubRows } = await supabase
+                .from('union_clubs')
+                .select('union_id, club_id')
+                .in('union_id', unionIds);
+
+              // Aggregate active players from all member clubs per union
+              const unionActiveMap: Record<string, number> = {};
+              if (unionClubRows && unionClubRows.length > 0) {
+                // Get unique member club IDs across all unions
+                const memberClubIds = [...new Set(unionClubRows.map((r: any) => r.club_id))];
+                // Batch-fetch active counts for all member clubs
+                const activeResults = await Promise.allSettled(
+                  memberClubIds.map(async (clubId: string) => {
+                    try {
+                      const { data: count } = await supabase.rpc('fn_get_active_player_count', {
+                        p_club_id: clubId,
+                      });
+                      return { clubId, count: Number(count) || 0 };
+                    } catch {
+                      return { clubId, count: 0 };
+                    }
+                  })
+                );
+                // Build club → active count map
+                const clubActiveMap: Record<string, number> = {};
+                for (const r of activeResults) {
+                  if (r.status === 'fulfilled') {
+                    clubActiveMap[r.value.clubId] = r.value.count;
+                  }
+                }
+                // Sum active counts per union from its member clubs
+                for (const row of unionClubRows) {
+                  const uid = (row as any).union_id;
+                  unionActiveMap[uid] = (unionActiveMap[uid] || 0) + (clubActiveMap[(row as any).club_id] || 0);
+                }
+              }
+
               for (const u of unionRows) {
                 const totalMembers = u.total_players || u.member_count || 0;
                 const levelInfo = getClubLevel({
@@ -1182,10 +1223,12 @@ function HomePageInner() {
                   hierarchyThresholdCurrent: u.hierarchy_threshold_current || 0,
                   hierarchyThresholdNext: u.hierarchy_threshold_next || 0,
                 });
+                // Use aggregated active count from member clubs, clamped to totalMembers
+                const unionActive = unionActiveMap[u.id] || 0;
                 statsMap[u.id] = {
                   totalMembers,
                   clubLevel: levelInfo.level,
-                  activePlayers: statsMap[u.id]?.activePlayers || 0,
+                  activePlayers: Math.min(unionActive, totalMembers),
                 };
               }
             }

@@ -375,9 +375,7 @@ class FlashPoolEngineClass {
       if (engine) {
         engine
           .stop()
-          .catch((e) =>
-            console.warn(`[FlashPoolEngine] Failed to stop engine for table ${tableId}:`, e)
-          );
+          .catch((e) => reportError(e, 'FlashPoolEngine.Failed_to_stop'));
         this.dealingEngines.delete(tableId);
       }
     }
@@ -409,12 +407,7 @@ class FlashPoolEngineClass {
         if (engine) {
           engine
             .stop()
-            .catch((e) =>
-              console.warn(
-                `[FlashPoolEngine] Failed to stop pool engine for table ${table.tableId}:`,
-                e
-              )
-            );
+            .catch((e) => reportError(e, 'FlashPoolEngine.Failed_to_stop'));
           this.dealingEngines.delete(table.tableId);
         }
       }

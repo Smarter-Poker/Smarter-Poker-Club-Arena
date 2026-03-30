@@ -133,7 +133,7 @@ export class HeadlessTableEngine {
           .eq('table_id', this.tableId)
           .eq('user_id', payload.playerId);
       } catch (err) {
-        console.debug(`[HeadlessTableEngine:${this.tableId}] DB sync failed for Time Bank:`, err);
+        reportError(err, 'HeadlessTableEngine.start.timeBankSync', { tableId: this.tableId });
       }
     };
 
@@ -178,12 +178,12 @@ export class HeadlessTableEngine {
       // Clean up any orphaned hands from previous sessions before dealing
       this.persistence
         .cleanupOrphanedHands()
-        .catch((e) => console.warn('[HeadlessTableEngine] Failed to cleanup orphaned hands:', e));
+        .catch((e) => reportError(e, 'HeadlessTableEngine.Failed_to_cleanup'));
 
       // Start dealing loop
       this.startDealingLoop();
     } catch (err: unknown) {
-      console.debug(`[HeadlessTableEngine:${this.tableId}] Failed to start:`, err);
+      reportError(err, 'HeadlessTableEngine.start', { tableId: this.tableId });
       this.running = false;
     }
   }
@@ -370,7 +370,7 @@ export class HeadlessTableEngine {
       .order('seat_number', { ascending: true });
 
     if (error) {
-      console.debug(`[HeadlessTableEngine:${this.tableId}] Failed to load seats:`, error);
+      reportError(error, 'HeadlessTableEngine.loadSeatedPlayers', { tableId: this.tableId });
       this.seatedPlayers = [];
       return;
     }
@@ -387,7 +387,7 @@ export class HeadlessTableEngine {
       .in('id', userIds);
 
     if (profileError) {
-      console.debug(`[HeadlessTableEngine:${this.tableId}] Failed to load profiles:`, profileError);
+      reportError(profileError, 'HeadlessTableEngine.loadSeatedPlayers.profiles', { tableId: this.tableId });
       this.seatedPlayers = [];
       return;
     }
@@ -841,7 +841,7 @@ export class HeadlessTableEngine {
           })();
         }
       } catch (err: unknown) {
-        console.debug(`[HeadlessTableEngine:${this.tableId}] Failed to start hand:`, err);
+        reportError(err, 'HeadlessTableEngine.dealHand', { tableId: this.tableId });
         clearTimeout(handCompleteTimeout);
         this.handController = null;
         resolve();
@@ -1090,9 +1090,7 @@ export class HeadlessTableEngine {
         this.currentHandShowdownResults = event.results || [];
         // Check for Bad Beat Jackpot trigger (non-blocking)
         if (!this.isTournamentTable()) {
-          this.checkAndExecuteBBJTrigger(players).catch((err) =>
-            console.debug(`[HeadlessTableEngine:${this.tableId}] BBJ trigger check error:`, err)
-          );
+          this.checkAndExecuteBBJTrigger(players).catch((err) => reportError(err, 'HeadlessTableEngine.BBJ_trigger_check'));
         }
         // Broadcast showdown
         this.broadcastCurrentState();
@@ -1150,7 +1148,7 @@ export class HeadlessTableEngine {
           try {
             await this.syncStacksToDatabase(players);
           } catch (err: unknown) {
-            console.debug(`[HeadlessTableEngine:${this.tableId}] Failed to sync stacks:`, err);
+            reportError(err, 'HeadlessTableEngine.syncStacks', { tableId: this.tableId });
             // Retry once after brief delay
             try {
               await new Promise((r) => setTimeout(r, 500));
@@ -1206,7 +1204,7 @@ export class HeadlessTableEngine {
         // This can remain fire-and-forget since it doesn't affect seat state
         if (!this.isTournamentTable()) {
           this.executeRakeWaterfall(players).catch((err) =>
-            console.debug(`[HeadlessTableEngine:${this.tableId}] Rake waterfall error:`, err)
+            reportError(err, 'HeadlessTableEngine.rakeWaterfall', { tableId: this.tableId })
           );
         }
 
@@ -1377,9 +1375,7 @@ export class HeadlessTableEngine {
 
       // GTO overlay only when using HorseLogic fallback (brain has its own GTO integration)
       if (!HorseBrainAdapter.isBrainAvailable()) {
-        this.enhanceWithGTO(enginePlayer, state, decision, horseStyle).catch((e) =>
-          console.warn('[HeadlessTableEngine] Failed to enhance decision with GTO:', e)
-        );
+        this.enhanceWithGTO(enginePlayer, state, decision, horseStyle).catch((e) => reportError(e, 'HeadlessTableEngine.Failed_to_enhance'));
       }
 
       // Execute after think time (shortened for headless — 200-600ms)
@@ -2016,7 +2012,7 @@ export class HeadlessTableEngine {
         console.debug(`[HeadlessTableEngine:${this.tableId}] BBJ broadcast error:`, broadcastErr);
       }
     } catch (err: unknown) {
-      console.debug(`[HeadlessTableEngine:${this.tableId}] BBJ payout execution failed:`, err);
+      reportError(err, 'HeadlessTableEngine.bbjPayout', { tableId: this.tableId });
     }
   }
 

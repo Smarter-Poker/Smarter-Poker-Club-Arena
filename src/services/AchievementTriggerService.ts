@@ -92,7 +92,7 @@ class AchievementTriggerServiceClass {
     for (const ach of result.triggeredAchievements) {
       pushNotificationService
         .notifyAchievement(userId, ach.name)
-        .catch((err) => console.debug('[Achievements] Push notification failed:', err));
+        .catch((err) => reportError(err, 'AchievementTriggerService.Push_notification_failed'));
     }
 
     // 6. Update Daily Challenge progress (fire-and-forget, non-blocking)
@@ -305,7 +305,7 @@ class AchievementTriggerServiceClass {
           })
           .eq('user_id', userId);
 
-        if (updateErr) console.debug('[AchievementTrigger] Stats update failed:', updateErr);
+        if (updateErr) reportError(updateErr, 'AchievementTriggerService.Stats_update_failed');
       }
     } catch (err) {
       console.debug('[AchievementTrigger] Stats update unexpected error:', err);

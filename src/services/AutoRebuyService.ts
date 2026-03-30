@@ -192,7 +192,7 @@ class AutoRebuyServiceCore {
         .in('status', ['active', 'waiting', 'running']);
 
       if (tableError) {
-        console.debug('[AutoRebuy] Failed to fetch active tables:', tableError);
+        reportError(tableError, 'AutoRebuyService.checkAllTables.fetchTables');
         return;
       }
 
@@ -215,7 +215,7 @@ class AutoRebuyServiceCore {
         }
       });
     } catch (err: unknown) {
-      console.debug('[AutoRebuy] Fatal error in checkAllTables:', err);
+      reportError(err, 'AutoRebuyService.checkAllTables');
     }
   }
 
@@ -348,7 +348,7 @@ class AutoRebuyServiceCore {
       );
       return true;
     } catch (err: unknown) {
-      console.debug('[AutoRebuy] Error in rebuyHorse:', err);
+      reportError(err, 'AutoRebuyService.rebuyHorse');
       return false;
     } finally {
       this.rebuyInProgress.delete(rebuyKey);
@@ -424,7 +424,7 @@ class AutoRebuyServiceCore {
       console.debug('[AutoRebuy] Reseated horse ' + horseId + ' at table ' + tableId);
       return true;
     } catch (err: unknown) {
-      console.debug('[AutoRebuy] Error in reseatHorse:', err);
+      reportError(err, 'AutoRebuyService.reseatHorse');
       return false;
     } finally {
       const reseatKey = this.getHorseLockKey(horseId, tableId);
@@ -468,7 +468,7 @@ class AutoRebuyServiceCore {
         }
       }
     } catch (err: unknown) {
-      console.debug('[AutoRebuy] Error in ensureMinimumHorses:', err);
+      reportError(err, 'AutoRebuyService.ensureMinimumHorses');
     }
   }
 
@@ -486,7 +486,7 @@ class AutoRebuyServiceCore {
         .maybeSingle();
 
       if (walletError) {
-        console.debug('[AutoRebuy] Could not fetch wallet for horse ' + horseId + ':', walletError);
+        reportError(walletError, 'AutoRebuyService.topUpWallet.fetchWallet', { horseId });
         return false;
       }
 
@@ -556,7 +556,7 @@ class AutoRebuyServiceCore {
       );
       return true;
     } catch (err: unknown) {
-      console.debug('[AutoRebuy] Error in topUpWallet:', err);
+      reportError(err, 'AutoRebuyService.topUpWallet');
       return false;
     }
   }
@@ -576,7 +576,7 @@ class AutoRebuyServiceCore {
         stack: h.stack,
       }));
     } catch (err: unknown) {
-      console.debug('[AutoRebuy] Error in getTableHorseStacks:', err);
+      reportError(err, 'AutoRebuyService.getTableHorseStacks');
       return [];
     }
   }

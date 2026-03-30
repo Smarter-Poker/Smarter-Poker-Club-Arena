@@ -85,7 +85,7 @@ const circuitBreaker = {
   /** Record a failed request — increments toward tripping */
   recordFailure(err: unknown, context: string): void {
     this.failures++;
-    if (this.failures >= this.THRESHOLD) {
+    if (this.failures >= this.THRESHOLD && this.trippedAt === 0) {
       this.trippedAt = Date.now();
     }
     // Throttle error reporting to max 1 per 60s to prevent Sentry spam

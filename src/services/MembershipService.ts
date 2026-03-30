@@ -411,8 +411,7 @@ export const MembershipService = {
         .select('*', { count: 'exact', head: true })
         .eq('club_id', resolvedId);
 
-      if (totalErr)
-        console.warn('[MembershipService] getMemberCounts total error:', totalErr.message);
+      if (totalErr) reportError(totalErr, 'MembershipService.getMemberCounts_total_error');
 
       const { count: active, error: activeErr } = await supabase
         .from('club_members')
@@ -420,8 +419,7 @@ export const MembershipService = {
         .eq('club_id', resolvedId)
         .in('status', ['active', 'approved']);
 
-      if (activeErr)
-        console.warn('[MembershipService] getMemberCounts active error:', activeErr.message);
+      if (activeErr) reportError(activeErr, 'MembershipService.getMemberCounts_active_error');
 
       const { count: pending, error: pendingErr } = await supabase
         .from('club_members')
@@ -429,8 +427,7 @@ export const MembershipService = {
         .eq('club_id', resolvedId)
         .eq('status', 'pending');
 
-      if (pendingErr)
-        console.warn('[MembershipService] getMemberCounts pending error:', pendingErr.message);
+      if (pendingErr) reportError(pendingErr, 'MembershipService.getMemberCounts_pending_error');
 
       // Estimate online count — creating a channel just to check presenceState()
       // on an unsubscribed channel always returned 0 and caused side-effect churn.

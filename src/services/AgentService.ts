@@ -653,8 +653,7 @@ class AgentServiceClass {
         },
       })
       .then(({ error: logErr }) => {
-        if (logErr)
-          console.warn('[AgentService] Audit log failed (table may not exist):', logErr.message);
+        if (logErr) reportError(logErr, 'AgentService.Audit_log_failed');
       });
 
     masterBus.emit('CLUB_UPDATED', { clubId });

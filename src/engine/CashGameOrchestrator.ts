@@ -2,6 +2,7 @@ import { supabase } from '../lib/supabase';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { HeadlessTableEngine } from './HeadlessTableEngine';
 import { HydraService } from '../services/HydraService';
+import { reportError } from '../utils/errorReporter';
 
 /**
  * CASH GAME ORCHESTRATOR
@@ -80,12 +81,7 @@ export class CashGameOrchestrator {
                 const engine = this.activeEngines.get(tableId)!;
                 engine
                   .stop()
-                  .catch((e) =>
-                    console.warn(
-                      `[CashGameOrchestrator] Failed to stop closed table engine ${tableId}:`,
-                      e
-                    )
-                  );
+                  .catch((e) => reportError(e, 'CashGameOrchestrator.Failed_to_stop'));
                 this.activeEngines.delete(tableId);
               }
             } else if (eventType === 'DELETE') {
@@ -94,12 +90,7 @@ export class CashGameOrchestrator {
                 const engine = this.activeEngines.get(tableId)!;
                 engine
                   .stop()
-                  .catch((e) =>
-                    console.warn(
-                      `[CashGameOrchestrator] Failed to stop deleted table engine ${tableId}:`,
-                      e
-                    )
-                  );
+                  .catch((e) => reportError(e, 'CashGameOrchestrator.Failed_to_stop'));
                 this.activeEngines.delete(tableId);
               }
             }

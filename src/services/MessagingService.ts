@@ -1021,7 +1021,7 @@ class MessagingServiceClass {
       },
       { onConflict: 'message_id,user_id' }
     );
-    if (receiptErr) console.warn('[Messaging] Read receipt upsert failed:', receiptErr);
+    if (receiptErr) reportError(receiptErr, 'MessagingService.Read_receipt_upsert');
   }
 
   /** Get detailed read receipts for a message (for group conversations) */

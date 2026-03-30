@@ -243,7 +243,7 @@ export const HydraService = {
       .is('left_at', null);
 
     if (seatError || !seatData?.length) {
-      if (seatError) console.debug('HydraService.getActiveHorses seat query error:', seatError);
+      if (seatError) reportError(seatError, 'HydraService.HydraServicegetActiveHorses_seat_query');
       return [];
     }
 
@@ -303,8 +303,7 @@ export const HydraService = {
       .select('max_players')
       .eq('id', tableId)
       .maybeSingle();
-    if (tableInfoErr)
-      console.warn('[Hydra] getTableLiquidityStatus tableInfo error:', tableInfoErr.message);
+    if (tableInfoErr) reportError(tableInfoErr, 'HydraService.getTableLiquidityStatus_tableInfo_error');
     const maxPlayers = tableInfo?.max_players || 9;
 
     // Simple seat count query — only active seats
@@ -418,7 +417,7 @@ export const HydraService = {
       .eq('id', horseId)
       .eq('is_horse', true)
       .maybeSingle();
-    if (horseErr) console.warn('[Hydra] seatHorse profile error:', horseErr.message);
+    if (horseErr) reportError(horseErr, 'HydraService.seatHorse_profile_error');
 
     if (!horseData) return null;
 
@@ -444,7 +443,7 @@ export const HydraService = {
       .delete()
       .eq('table_id', tableId)
       .not('left_at', 'is', null);
-    if (cleanupErr) console.debug('[Hydra] seatHorse cleanup departed seats error:', cleanupErr.message);
+    if (cleanupErr) reportError(cleanupErr, 'HydraService.seatHorse_cleanup_departed');
 
     // Find an available seat at the table (only count active seats with left_at=null)
     const { data: existingSeats, error: seatsErr } = await supabase
@@ -452,7 +451,7 @@ export const HydraService = {
       .select('seat_number')
       .eq('table_id', tableId)
       .is('left_at', null);
-    if (seatsErr) console.warn('[Hydra] seatHorse seats error:', seatsErr.message);
+    if (seatsErr) reportError(seatsErr, 'HydraService.seatHorse_seats_error');
 
     // Merge DB-visible seats with locally tracked seats (to handle RLS-invisible horse seats)
     const takenSeats = new Set((existingSeats || []).map((s) => s.seat_number));
@@ -466,7 +465,7 @@ export const HydraService = {
       .select('max_players')
       .eq('id', tableId)
       .maybeSingle();
-    if (tableErr) console.warn('[Hydra] seatHorse table error:', tableErr.message);
+    if (tableErr) reportError(tableErr, 'HydraService.seatHorse_table_error');
 
     const maxSeats = tableData?.max_players || 9;
     let availableSeat = 0;
@@ -546,7 +545,7 @@ export const HydraService = {
       .from('profiles')
       .update({ horse_status: 'seated' })
       .eq('id', horseId);
-    if (statusErr1) console.warn('[Hydra] seatHorse status update error:', statusErr1.message);
+    if (statusErr1) reportError(statusErr1, 'HydraService.seatHorse_status_update');
 
     return {
       id: horseData.id,
@@ -586,8 +585,7 @@ export const HydraService = {
       .from('profiles')
       .update({ horse_status: 'leaving' })
       .eq('id', horseId);
-    if (leaveErr)
-      console.warn('[Hydra] scheduleHorseRemoval status update error:', leaveErr.message);
+    if (leaveErr) reportError(leaveErr, 'HydraService.scheduleHorseRemoval_status_update');
   },
 
   /**
@@ -690,7 +688,7 @@ export const HydraService = {
       .from('profiles')
       .update({ horse_status: 'available' })
       .eq('id', horseId);
-    if (statusErr2) console.warn('[Hydra] removeHorse status update error:', statusErr2.message);
+    if (statusErr2) reportError(statusErr2, 'HydraService.removeHorse_status_update');
 
     return true;
   },
@@ -730,9 +728,7 @@ export const HydraService = {
         randomInRange(this.config.entryDelayRange[0], this.config.entryDelayRange[1]) * 1000; // Convert seconds to milliseconds
 
       setTimeout(() => {
-        this.seedTable(tableId, bigBlind).catch((err) => {
-          console.debug(`[HydraService] Failed to reseed table ${tableId} after player left:`, err);
-        });
+        this.seedTable(tableId, bigBlind).catch((err) => reportError(err, 'HydraService.Failed_to_reseed'));
       }, delay);
     }
   },

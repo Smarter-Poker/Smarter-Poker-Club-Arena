@@ -537,9 +537,7 @@ class SpinItEngineClass {
     if (engine) {
       engine
         .stop()
-        .catch((e) =>
-          console.warn(`[SpinItEngine] Failed to stop dealing engine for lobby ${lobbyId}:`, e)
-        );
+        .catch((e) => reportError(e, 'SpinItEngine.Failed_to_stop'));
       this.dealingEngines.delete(lobbyId);
     }
   }

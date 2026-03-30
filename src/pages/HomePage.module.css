@@ -1028,12 +1028,13 @@
   display: flex;
   gap: 12px;
   z-index: 10;
-  padding: 16px 16px 20px 16px;
+  padding: 16px 20px 20px 20px;
   margin-top: 0;
   overflow: visible;
   width: 100%;
   justify-content: center;
   flex-wrap: nowrap;
+  box-sizing: border-box;
 }
 
 .tileCard {
@@ -1863,7 +1864,7 @@
 
   .bottomRow {
     gap: 6px;
-    padding: 10px 8px 14px;
+    padding: 10px 12px 14px;
   }
 }
 

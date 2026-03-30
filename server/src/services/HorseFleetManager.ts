@@ -32,6 +32,11 @@ interface TableConfig {
 // CASH GAME TABLE CONFIGS — Every Stake Level × Every Game Type
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// FIX 201: Tables spawn from the UNION, not individual clubs.
+// All cash tables belong to the Midway Union — visible across all member clubs.
+const MIDWAY_UNION_ID = 'fade0000-0000-0000-0000-000000000001';
+
+// Legacy club IDs kept only for rake routing fallback (seatHorse clubId param)
 const SHARK_CLUB_ID = 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
 const JAQK_CLUB_ID = 'a0000000-0000-0000-0000-000000000001';
 
@@ -392,21 +397,34 @@ export class HorseFleetManager {
 
     for (const config of DEFAULT_TABLES) {
       try {
-        // Check if table already exists by name
+        // FIX 201: Check for table by name in ANY status (not just waiting/running).
+        // If a closed table exists, reactivate it instead of creating a duplicate.
         const { data: existing } = await supabase
           .from('tables')
-          .select('id')
+          .select('id, status, union_id')
           .eq('name', config.name)
           .is('tournament_id', null)
-          .in('status', ['waiting', 'running'])
           .maybeSingle();
 
-        if (existing) continue; // Table exists
+        if (existing) {
+          // Table exists — ensure it's active and at Union level
+          const updates: Record<string, any> = {};
+          if (existing.status === 'closed') updates.status = 'waiting';
+          if (existing.union_id !== MIDWAY_UNION_ID) updates.union_id = MIDWAY_UNION_ID;
+          if (Object.keys(updates).length > 0) {
+            updates.current_players = 0;
+            await supabase.from('tables').update(updates).eq('id', existing.id);
+            console.log(`[HorseFleet] Reactivated table: ${config.name} (was ${existing.status})`);
+          }
+          continue;
+        }
 
-        // Create the table
+        // FIX 201: Tables belong to a club BUT are inside the Union.
+        // Set both club_id (for rake routing) AND union_id (for Union-level discovery).
         const clubId = this.getNextClubId();
         const { error } = await supabase.from('tables').insert({
           club_id: clubId,
+          union_id: MIDWAY_UNION_ID,
           name: config.name,
           game_type: 'cash',
           game_variant: config.gameVariant,
@@ -423,7 +441,7 @@ export class HorseFleetManager {
         if (error) {
           console.error(`[HorseFleet] Failed to create table "${config.name}":`, error.message);
         } else {
-          console.log(`[HorseFleet] Created table: ${config.name}`);
+          console.log(`[HorseFleet] Created table: ${config.name} (club: ${clubId}, union: ${MIDWAY_UNION_ID})`);
         }
       } catch (err: any) {
         console.error(`[HorseFleet] Error creating table "${config.name}":`, err.message);
@@ -530,13 +548,13 @@ export class HorseFleetManager {
             continue;
           }
 
-          // Get table's club_id
+          // Get table's club_id for rake routing
           const { data: tableData } = await supabase
             .from('tables')
             .select('club_id')
             .eq('id', table.id)
             .maybeSingle(); // FIX 168
-          const clubId = tableData?.club_id || SHARK_CLUB_ID;
+          const clubId = tableData?.club_id || JAQK_CLUB_ID;
 
           // Seat each horse at an ACTUAL empty seat
           let seated = 0;

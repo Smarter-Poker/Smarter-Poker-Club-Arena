@@ -3,7 +3,34 @@
 ## Every Change, Documented. No Exceptions.
 
 **Started:** 2026-03-24
-**Current Step:** ALL 8 STEPS COMPLETE — Deep Bible V8 Verification In Progress (199 fixes total)
+**Current Step:** ALL 8 STEPS COMPLETE — Deep Bible V8 Verification Complete (199 fixes total)
+
+---
+
+## Round 33 — Full Server + Client Deep Audit Against Bible V8 (2026-03-30)
+
+### HandStrengthIndicator fully deleted (FIX 199 completion)
+- **Deleted:** `src/components/table/HandStrengthIndicator.tsx` (263 lines)
+- **Deleted:** `src/components/table/HandStrengthIndicator.css` (126 lines)
+- **Removed:** `getHandStrengthLabel()` from `src/lib/utils.ts` (dead code, never imported)
+- **Cleaned:** `useTableSettings.ts` docstring removed "hand strength" mention
+
+### Server Engine Audit — ALL CLEAN (25+ files, ~8000 lines)
+- HandController.ts, DisconnectEngine.ts, TimeBankEngine.ts, InsuranceEngine.ts, RunItTwiceEngine.ts
+- StraddleEngine.ts, MixedGameEngine.ts, RakebackEngine.ts, AtomicStackService.ts, CryptoRandom.ts
+- PreActionEngine.ts, PokerEngine.ts, ServerTableEngine.ts (~3300 lines)
+- ChipRaceEngine.ts, TableBalancer.ts, TableBreakEngine.ts, HorseLogic.ts, EngineTelemetry.ts, MonteCarloEquity.ts
+
+### Server Services Audit — ALL CLEAN
+- supabase.ts, HorseFleetManager.ts, HorseLifecycleManager.ts, TournamentRecurringService.ts, AutoRebuyService.ts
+
+### Client Services + Hooks Audit — ALL CLEAN
+- GameServerAPI.ts, RakeService.ts, BBJService.ts, PayoutEngine.ts, SoundService.ts, TableWebSocket.ts
+- useTableKeyboard.ts, useTableTimer.ts, useActionSequencer.ts, useTableSettings.ts
+
+### Architecture Verification
+- TablePage imports ZERO client-side engine files — fully server-authoritative
+- Client engine files (src/engine/) used ONLY for admin dashboard, demo, type imports
 
 ---
 

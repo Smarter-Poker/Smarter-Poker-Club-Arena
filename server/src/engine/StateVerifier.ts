@@ -160,7 +160,11 @@ export class StateVerifier {
     const expectedTotal = context.initialChipTotal ?? this.chipTotals.get(context.tableId);
     if (expectedTotal === undefined) return; // No baseline to compare
 
-    const currentTotal = context.players.reduce((sum, p) => sum + (p.stack ?? 0) + (p.bet ?? 0), 0);
+    // FIX 204: Only sum stacks — NOT bets. At HAND_COMPLETE, bets are stale artifacts
+    // from the last street (not zeroed when hand ends by fold via advanceGame→completeHand
+    // instead of advanceStage→completeHand). Those bet chips are already in the pot
+    // and distributed to winners, so including them double-counts and causes false positives.
+    const currentTotal = context.players.reduce((sum, p) => sum + (p.stack ?? 0), 0);
 
     // Allow floating-point rounding tolerance (supports fractional chips)
     if (Math.abs(currentTotal - expectedTotal) > 0.001) {

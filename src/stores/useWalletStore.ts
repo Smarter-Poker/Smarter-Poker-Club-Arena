@@ -9,6 +9,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { supabase } from '../lib/supabase';
 import { WalletService } from '../services/WalletService';
+import { DiamondService } from '../services/DiamondService';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 📦 TYPES
@@ -149,18 +150,9 @@ export const useWalletStore = create<WalletState>()(
       loadDiamonds: async (userId: string) => {
         set({ isLoadingDiamonds: true });
         try {
-          // Load diamonds from user profile
-          const { data, error } = await supabase
-            .from('profiles')
-            .select('diamonds')
-            .eq('id', userId)
-            .maybeSingle();
-
-          if (!error && data) {
-            set({ diamonds: data.diamonds || 0 });
-          } else {
-            set({ diamonds: 0 });
-          }
+          // Load diamonds via centralized DiamondService (profiles.diamonds source-of-truth)
+          const wallet = await DiamondService.getBalance(userId);
+          set({ diamonds: wallet.balance || 0 });
         } catch (error) {
           console.error('[Store] Load diamonds failed:', error);
           set({ diamonds: 0 });

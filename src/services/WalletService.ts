@@ -16,6 +16,7 @@ import { supabase } from '../lib/supabase';
 import { retryAsync } from '../utils/retryAsync';
 import { masterBus } from '../core/MasterBus';
 import { FinancialAlertService } from './FinancialAlertService';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -427,10 +428,7 @@ export const WalletService = {
     });
 
     if (deductError) {
-      console.error(
-        '[WalletService] atomic_deduct_wallet_and_log RPC failed:',
-        deductError.message
-      );
+      reportError(deductError, 'WalletService.lockForBuyIn', { userId, tableId, amount });
       throw new Error(`Buy-in failed: ${deductError.message}`);
     }
 
@@ -472,10 +470,7 @@ export const WalletService = {
     });
 
     if (creditError) {
-      console.error(
-        '[WalletService] atomic_credit_wallet_and_log RPC failed:',
-        creditError.message
-      );
+      reportError(creditError, 'WalletService.unlockFromTable', { userId, tableId, amount });
       throw new Error(`Cash-out failed: ${creditError.message}`);
     }
 
@@ -543,7 +538,7 @@ export const WalletService = {
         });
 
       if (error) {
-        console.error('[WalletService] Transaction log RPC failed:', error.message);
+        reportError(error, 'WalletService.logTransaction', { userId, walletType, amount, type, category });
         // PARTIAL FAILURE RECOVERY: financial op succeeded but audit trail failed
         // Fire a critical alert so ops can manually reconcile
         // FIX: await the async logCritical call to prevent unhandled rejections
@@ -554,7 +549,7 @@ export const WalletService = {
         );
       }
     } catch (err: unknown) {
-      console.error('[WalletService] Transaction log error:', err);
+      reportError(err, 'WalletService.logTransaction.catch', { userId, walletType, amount, type, category });
       // FIX: await the async logCritical call to prevent unhandled rejections
       await FinancialAlertService.logCritical(
         'WalletService.logTransaction',

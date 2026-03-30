@@ -44,6 +44,7 @@ import { useFocusTrap } from '../hooks/useFocusTrap';
 import { STORAGE_KEYS } from '../lib/storage';
 import { SHARK_CLUB_ID } from '../lib/constants';
 import styles from './HomePage.module.css';
+import { reportError } from '../utils/errorReporter';
 
 // Lazy-load heavy components to reduce initial bundle
 const CreateClubModal = lazy(() => import('../components/modals/CreateClubModal'));
@@ -97,7 +98,7 @@ class HomePageErrorBoundary extends Component<{ children: ReactNode }, ErrorBoun
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error('[HomePage ErrorBoundary]', error, info);
+    reportError(info, 'HomePage.HomePage_ErrorBoundary');
   }
 
   render() {
@@ -372,7 +373,7 @@ function HomePageInner() {
           }
         }
       } catch (err) {
-        console.error('Error fetching user data:', err);
+        reportError(err, 'HomePage.Error_fetching_user_data');
         toast.error('Failed to load user data');
       } finally {
         clearTimeout(loadingTimeout);
@@ -421,7 +422,7 @@ function HomePageInner() {
         )
         .subscribe((status: string, err?: Error) => {
           if (status === 'CHANNEL_ERROR') {
-            console.error('[HomePage] ❌ Realtime channel error:', err?.message || err);
+            reportError(err?.message || err, 'HomePage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
             console.warn('[HomePage] ⏱️ Realtime channel timed out');
@@ -642,7 +643,7 @@ function HomePageInner() {
           /* */
         }
       } catch (err) {
-        console.error('[HomePage] Failed to fetch Shark Club stats:', err);
+        reportError(err, 'HomePage.Failed_to_fetch_Shark_Club_stats');
         // Single retry after 3s — only on initial mount, not on real-time refreshes
         if (retryOnFail && isMounted) {
           setTimeout(() => {
@@ -709,7 +710,7 @@ function HomePageInner() {
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[HomePage] ❌ Realtime channel error:', err?.message || err);
+          reportError(err?.message || err, 'HomePage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[HomePage] ⏱️ Realtime channel timed out');
@@ -766,7 +767,7 @@ function HomePageInner() {
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[HomePage] ❌ Realtime channel error:', err?.message || err);
+          reportError(err?.message || err, 'HomePage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[HomePage] ⏱️ Realtime channel timed out');
@@ -992,7 +993,7 @@ function HomePageInner() {
       setShowReferralPrompt(true);
     } catch (err) {
       if (!isMountedRef.current) return;
-      console.error('Error validating club code:', err);
+      reportError(err, 'HomePage.Error_validating_club_code');
       toast.error('Failed to validate club code');
     } finally {
       if (isMountedRef.current) setIsValidatingCode(false);
@@ -1205,7 +1206,7 @@ function HomePageInner() {
           }
         }
       } catch (err) {
-        console.error('[HomePage] Failed to fetch club stats:', err);
+        reportError(err, 'HomePage.Failed_to_fetch_club_stats');
       }
     }
 

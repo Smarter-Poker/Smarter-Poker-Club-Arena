@@ -25,6 +25,7 @@ import { getClubLevel } from '../utils/clubLevels';
 import styles from './ClubsPage.module.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { STORAGE_KEYS } from '../lib/storage';
+import { reportError } from '../utils/errorReporter';
 
 type Tab = 'discover' | 'my-clubs' | 'create';
 
@@ -189,7 +190,7 @@ export default function ClubsPage() {
         /* quota */
       }
     } catch (err) {
-      console.error('[CLUBS] Failed to load memberships:', err);
+      reportError(err, 'ClubsPage.Failed_to_load_memberships');
       toast.error('Failed to load your clubs');
       if (getIsMounted && !getIsMounted()) return;
       setMyClubs([]);
@@ -235,7 +236,7 @@ export default function ClubsPage() {
       })
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[ClubsPage] ❌ Realtime channel error:', err?.message || err);
+          reportError(err?.message || err, 'ClubsPage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[ClubsPage] ⏱️ Realtime channel timed out');
@@ -296,7 +297,7 @@ export default function ClubsPage() {
       setJoinClubId('');
       setActiveTab('my-clubs');
     } catch (err: any) {
-      console.error('[CLUBS] Join failed:', err);
+      reportError(err, 'ClubsPage.Join_failed');
       toast.error(err.message || 'Failed to join club');
       setJoinError(err.message || 'Failed to join club');
     } finally {
@@ -334,7 +335,7 @@ export default function ClubsPage() {
       // Navigate to the new club
       navigate(`/clubs/${club.id}`);
     } catch (err: any) {
-      console.error('[CLUBS] Create failed:', err);
+      reportError(err, 'ClubsPage.Create_failed');
       toast.error(err.message || 'Failed to create club');
       setCreateError(err.message || 'Failed to create club');
     } finally {

@@ -5,6 +5,8 @@
  * Provides tactile feedback on supported devices (mobile)
  */
 
+import { reportError } from '../utils/errorReporter';
+
 export type HapticType =
   | 'light'
   | 'medium'
@@ -57,7 +59,7 @@ export function triggerHaptic(type: HapticType = 'light'): boolean {
     navigator.vibrate(pattern);
     return true;
   } catch (error: unknown) {
-    console.error('Haptic feedback failed:', error);
+    reportError(error, 'HapticService.trigger');
     return false;
   }
 }

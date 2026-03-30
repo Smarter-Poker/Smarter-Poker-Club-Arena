@@ -9,6 +9,7 @@ import { useState, useEffect } from 'react';
 import { AgentService, type Agent } from '../../services/AgentService';
 import styles from './AgentTree.module.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
+import { reportError } from '../../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -241,7 +242,7 @@ export default function AgentTree({ clubId, onAgentClick, onTransferClick }: Age
       setTree(buildTree(agents));
     } catch (err) {
       setError('Failed to load agent hierarchy');
-      console.error(err);
+      reportError(err, 'AgentTree.error');
     }
     setLoading(false);
   };

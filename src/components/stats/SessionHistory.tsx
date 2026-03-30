@@ -13,6 +13,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase, getAuthUser } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import './SessionHistory.css';
+import { reportError } from '../../utils/errorReporter';
 
 // ── SWR cache ──
 const CACHE_KEY = 'sess_hist_v1_';
@@ -154,7 +155,7 @@ const SessionHistory: React.FC<SessionHistoryProps> = ({ userId, initialSessions
       if (!mountedRef.current) return;
 
       if (error) {
-        console.error('[SessionHistory] Query error:', error.message);
+        reportError(error, 'SessionHistory.Query_error');
         setLoaded(true);
         return;
       }
@@ -170,7 +171,7 @@ const SessionHistory: React.FC<SessionHistoryProps> = ({ userId, initialSessions
 
       setLoaded(true);
     } catch (err) {
-      console.error('[SessionHistory] Failed to load:', err);
+      reportError(err, 'SessionHistory.Failed_to_load');
       if (mountedRef.current) setLoaded(true);
     }
   }, [resolveUserId, initialSessions, loaded]);

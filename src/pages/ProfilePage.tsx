@@ -42,6 +42,7 @@ import styles from './ProfilePage.module.css';
 
 import { useIsMounted } from '../hooks/useIsMounted';
 import { generateDefaultAvatar } from '../utils/avatarGenerator';
+import { reportError } from '../utils/errorReporter';
 
 // #5: Lazy-load Recharts (387KB) — only imported when History tab is opened
 const LazyProfitChart = lazy(() => import('../components/profile/ProfitChart'));
@@ -458,7 +459,7 @@ export default function ProfilePage() {
           });
         }
       } catch (err: any) {
-        console.error('[PROFILE] Load failed:', err);
+        reportError(err, 'ProfilePage.Load_failed');
         if (isMounted) toast.error(err.message || 'Failed to load profile data');
       } finally {
         if (isMounted) setIsLoading(false);
@@ -795,14 +796,14 @@ export default function ProfilePage() {
           )
           .subscribe((status: string, err?: Error) => {
             if (status === 'CHANNEL_ERROR') {
-              console.error('[ProfilePage] ❌ Realtime channel error:', err?.message || err);
+              reportError(err?.message || err, 'ProfilePage._Realtime_channel_error');
             }
             if (status === 'TIMED_OUT') {
               console.warn('[ProfilePage] ⏱️ Realtime channel timed out');
             }
           });
       } catch (err) {
-        console.error('[PROFILE] Realtime subscription failed:', err);
+        reportError(err, 'ProfilePage.Realtime_subscription_failed');
       }
     }
 
@@ -1005,7 +1006,7 @@ export default function ProfilePage() {
               }
               toast.success('Mission reward claimed!');
             } catch (err: any) {
-              console.error('Failed to claim mission:', err);
+              reportError(err, 'ProfilePage.Failed_to_claim_mission');
               toast.error(err.message || 'Failed to claim mission reward');
             } finally {
               claimingMissionsRef.current.delete(missionId);

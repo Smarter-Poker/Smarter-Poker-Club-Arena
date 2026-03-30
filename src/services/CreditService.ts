@@ -26,6 +26,7 @@ import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { QUERY_LIMITS } from '../lib/constants';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -490,9 +491,11 @@ export const CreditService = {
               3
             );
             if (rollbackErr2) {
-              console.error(
-                `[CreditService] CRITICAL: Wallet rollback failed for agent ${invoiceResult.agent_id}: ${rollbackErr2.message}`
-              );
+              reportError(rollbackErr2, 'CreditService.processPayment.rollback', {
+                invoiceId,
+                agentId: invoiceResult.agent_id,
+                amount,
+              });
               FinancialAlertService.logCritical(
                 'CreditService',
                 'Wallet rollback failed after invoice update failure',
@@ -511,7 +514,7 @@ export const CreditService = {
             }
           }
         } catch (rollbackErr) {
-          console.error('[CreditService] Rollback failed:', rollbackErr);
+          reportError(rollbackErr, 'CreditService.processPayment.rollbackOuter', { invoiceId });
         }
       }
       throw new Error(`Invoice update failed: ${updateError.message}`);

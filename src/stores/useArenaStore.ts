@@ -21,6 +21,7 @@ import {
   MASTERY_THRESHOLD,
   MIN_QUESTIONS,
 } from '@/services/ArenaTrainingController';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 📦 STORE TYPES
@@ -165,7 +166,7 @@ export const useArenaStore = create<ArenaState>()(
             timeRemaining: levelConfig.timer_seconds,
           });
         } catch (error) {
-          console.error('[Store] Start training failed:', error);
+          reportError(error, 'useArenaStore.Start_training_failed');
           throw error;
         }
       },
@@ -238,7 +239,7 @@ export const useArenaStore = create<ArenaState>()(
           const level = await ArenaTrainingController.getUnlockedLevel(user.user.id);
           set({ unlockedLevel: level });
         } catch (error) {
-          console.error('[Store] Load unlocked level failed:', error);
+          reportError(error, 'useArenaStore.Load_unlocked_level_failed');
         }
       },
 

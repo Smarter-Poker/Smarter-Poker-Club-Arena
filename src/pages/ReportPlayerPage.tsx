@@ -8,6 +8,7 @@ import { supabase } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { sanitizeInput } from '../utils/sanitizeInput';
 import './ReportPlayerPage.css';
+import { reportError } from '../utils/errorReporter';
 
 const reportSectionAnimationStyle = (index: number) => ({
   opacity: 0,
@@ -61,7 +62,7 @@ export default function ReportPlayerPage() {
       if (submitError) throw submitError;
       setSubmitted(true);
     } catch (err: any) {
-      console.error('Failed to submit report:', err);
+      reportError(err, 'ReportPlayerPage.Failed_to_submit_report');
       setError(err.message || 'Failed to submit report');
     }
     setSubmitting(false);

@@ -8,6 +8,7 @@
 
 import { useState, useEffect, memo } from 'react';
 import styles from './LinkPreview.module.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface LinkPreviewProps {
   url: string;
@@ -57,7 +58,7 @@ function LinkPreviewInner({ url }: LinkPreviewProps) {
           });
         }
       } catch (err) {
-        console.error('[LinkPreview] Error:', err);
+        reportError(err, 'LinkPreview.Error');
         if (!cancelled) setError(true);
       }
       if (!cancelled) setLoading(false);

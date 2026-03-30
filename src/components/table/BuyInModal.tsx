@@ -13,6 +13,7 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { haptic } from '../../services/SoundService';
 import './BuyInModal.css';
+import { reportError } from '../../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -151,7 +152,7 @@ export function BuyInModal({
     try {
       await onConfirm(clampedBuyIn, autoRebuy);
     } catch (err) {
-      console.error('[BuyInModal] onConfirm threw:', err);
+      reportError(err, 'BuyInModal.onConfirm_threw');
     } finally {
       setIsProcessing(false);
     }

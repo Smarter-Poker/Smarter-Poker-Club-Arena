@@ -11,6 +11,7 @@
 import { supabase } from '../lib/supabase';
 import { blockService } from './BlockService';
 import { QUERY_LIMITS } from '../lib/constants';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -130,7 +131,7 @@ class FriendSuggestionServiceClass {
       results.sort((a, b) => b.score - a.score);
       return results.slice(0, limit);
     } catch (err: unknown) {
-      console.error('[FriendSuggestions] getSuggestions error:', err);
+      reportError(err, 'FriendSuggestionService.getSuggestions');
       return [];
     }
   }
@@ -345,7 +346,7 @@ class FriendSuggestionServiceClass {
         avatarUrl: p.avatar_url as string | undefined,
       }));
     } catch (err: unknown) {
-      console.error('[FriendSuggestions] getMutualFriends error:', err);
+      reportError(err, 'FriendSuggestionService.getMutualFriends');
       return [];
     }
   }

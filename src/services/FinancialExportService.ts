@@ -14,6 +14,7 @@
  */
 
 import { supabase } from '../lib/supabase';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -62,7 +63,7 @@ export const FinancialExportService = {
 
       return { success: true, filename, rowCount: rows.length };
     } catch (err: unknown) {
-      console.error('[FinancialExport] Export failed:', err);
+      reportError(err, 'FinancialExportService.exportData');
       return { success: false, error: err instanceof Error ? err.message : 'Export failed' };
     }
   },

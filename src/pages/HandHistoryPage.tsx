@@ -24,6 +24,7 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { retryFetch } from '../utils/retryFetch';
 import './HandHistoryPage.css';
+import { reportError } from '../utils/errorReporter';
 
 // ── SWR Cache ──
 const HH_CACHE_KEY = 'hh_cache_';
@@ -130,7 +131,7 @@ export default function HandHistoryPage() {
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[HandHistoryPage] ❌ Realtime channel error:', err?.message || err);
+          reportError(err?.message || err, 'HandHistoryPage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[HandHistoryPage] ⏱️ Realtime channel timed out');
@@ -213,7 +214,7 @@ export default function HandHistoryPage() {
         // Update SWR cache with latest data
         if (reset && user?.id) setCachedHands(user.id, filtered);
       } catch (error) {
-        console.error('Failed to load hands:', error);
+        reportError(error, 'HandHistoryPage.Failed_to_load_hands');
         if (!getIsMounted || getIsMounted()) toast.error('Failed to load hand history');
       }
       if (!getIsMounted || getIsMounted()) {
@@ -313,7 +314,7 @@ export default function HandHistoryPage() {
       window.open(url, '_blank');
       toast.info('Opening Jarvis analysis...');
     } catch (err) {
-      console.error('Failed to send hand to Jarvis:', err);
+      reportError(err, 'HandHistoryPage.Failed_to_send_hand_to_Jarvis');
       toast.error('Failed to analyze hand');
     }
   };

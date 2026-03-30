@@ -14,6 +14,7 @@ import { PlayerAvatar } from '../avatars/PlayerAvatar';
 import { haptic } from '../../services/HapticService';
 import type { VipTier, PresenceStatus } from '../avatars/PlayerAvatar';
 import styles from './FriendListPanel.module.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface Friend {
   id: string;
@@ -195,7 +196,7 @@ function FriendListPanelInner({
         });
       }
     } catch (err) {
-      console.error('Failed to load friends:', err);
+      reportError(err, 'FriendListPanel.Failed_to_load_friends');
     }
     if (isMounted.current) setLoading(false);
   };
@@ -282,7 +283,7 @@ function FriendListPanelInner({
       .eq('id', friendshipId)
       .or(`user_id.eq.${user.id},friend_id.eq.${user.id}`);
     if (error) {
-      console.error('Failed to remove friend:', error);
+      reportError(error, 'FriendListPanel.Failed_to_remove_friend');
       return;
     }
     setFriends((prev) => prev.filter((f) => f.id !== friendshipId));

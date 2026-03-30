@@ -20,6 +20,7 @@ import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import PageSkeleton from '../components/common/PageSkeleton';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -86,7 +87,7 @@ export default function FlashPoolPage() {
       if (!isMounted.current) return;
       setPools(poolList);
     } catch (err) {
-      console.error('[FlashPoolPage] Failed to load pools:', err);
+      reportError(err, 'FlashPoolPage.Failed_to_load_pools');
       if (!isMounted.current) return;
       toast.error('Failed to load pools');
       setPools([]);
@@ -193,7 +194,7 @@ export default function FlashPoolPage() {
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[FlashPoolPage] ❌ Realtime channel error:', err?.message || err);
+          reportError(err?.message || err, 'FlashPoolPage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[FlashPoolPage] ⏱️ Realtime channel timed out');
@@ -239,7 +240,7 @@ export default function FlashPoolPage() {
           buyIn,
         });
       } catch (err) {
-        console.error('[FlashPoolPage] Join failed:', err);
+        reportError(err, 'FlashPoolPage.Join_failed');
         toast.error('Failed to join pool');
       } finally {
         setJoiningPool(null);

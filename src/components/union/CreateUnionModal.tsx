@@ -8,6 +8,7 @@ import { unionService } from '../../services/UnionService';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import styles from './CreateUnionModal.module.css';
 import { useToast } from '../common/Toast';
+import { reportError } from '../../utils/errorReporter';
 
 interface CreateUnionModalProps {
   onClose: () => void;
@@ -37,7 +38,7 @@ export default function CreateUnionModal({ onClose, onSuccess }: CreateUnionModa
       toast.success('Union created successfully!');
       onSuccess();
     } catch (error) {
-      console.error('Failed to create union', error);
+      reportError(error, 'CreateUnionModal.Failed_to_create_union');
       toast.error('Failed to create union. Please try again.');
     } finally {
       setLoading(false);

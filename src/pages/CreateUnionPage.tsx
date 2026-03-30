@@ -13,6 +13,7 @@ import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import { masterBus } from '../core/MasterBus';
 import { sanitizeInput } from '../utils/sanitizeInput';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -83,7 +84,7 @@ export default function CreateUnionPage() {
 
         if (isMounted) setOwnsClub((count || 0) > 0);
       } catch (e) {
-        console.error('Failed to check club ownership:', e);
+        reportError(e, 'CreateUnionPage.Failed_to_check_club_ownership');
         if (isMounted) {
           toast.error('Failed to verify club ownership');
           setOwnsClub(false);
@@ -177,7 +178,7 @@ export default function CreateUnionPage() {
       masterBus.emit('UNION_UPDATED', { unionId: data.id });
       navigate(`/unions/${data.id}`);
     } catch (err: any) {
-      console.error('Failed to create union:', err);
+      reportError(err, 'CreateUnionPage.Failed_to_create_union');
       setError(err.message || 'Failed to create union');
     } finally {
       setCreating(false);

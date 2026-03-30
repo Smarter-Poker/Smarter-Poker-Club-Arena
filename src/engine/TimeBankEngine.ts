@@ -11,6 +11,7 @@
  */
 
 import { masterBus } from '../core/MasterBus';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -311,7 +312,7 @@ class TimeBankEngineClass {
 
       return true;
     } catch (err) {
-      console.error('[TimeBankEngine] Extension request failed:', err);
+      reportError(err, 'TimeBankEngine.Extension_request_failed');
       masterBus.emit('TIME_BANK_EXTENSION_DENIED', {
         tableId,
         playerId,

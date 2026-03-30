@@ -11,6 +11,7 @@ import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import styles from './TournamentStandings.module.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
+import { reportError } from '../../utils/errorReporter';
 
 interface StandingsPlayer {
   userId: string;
@@ -59,7 +60,7 @@ export default function TournamentStandings({
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[TournamentStandings] Realtime channel error:', err?.message || err);
+          reportError(err?.message || err, 'TournamentStandings.Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[TournamentStandings] Realtime channel timed out');
@@ -85,7 +86,7 @@ export default function TournamentStandings({
         .eq('tournament_id', tournamentId);
 
       if (error) {
-        console.error('[TournamentStandings] Failed to load players:', error.message);
+        reportError(error, 'TournamentStandings.Failed_to_load_players');
         setPlayers([]);
         if (isMounted.current) setLoading(false);
         return;
@@ -130,7 +131,7 @@ export default function TournamentStandings({
       );
       staggerTimersRef.current.push(...elimTimers);
     } catch (error) {
-      console.error('Failed to load standings:', error);
+      reportError(error, 'TournamentStandings.Failed_to_load_standings');
     }
     if (isMounted.current) setLoading(false);
   };

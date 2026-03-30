@@ -13,6 +13,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { masterBus } from '../../core/MasterBus';
 import './CashierModal.css';
+import { reportError } from '../../utils/errorReporter';
 
 export interface Transaction {
   id: string;
@@ -146,7 +147,7 @@ export function CashierModal({
       // Emit bus event so other components (DynamicWallet, CashierPage) refresh balances
       masterBus.emit('BALANCE_UPDATED', { source: activeTab, amount: val });
     } catch (err) {
-      console.error('Cashier action failed', err);
+      reportError(err, 'CashierModal.Cashier_action_failed');
     } finally {
       setLoading(false);
     }

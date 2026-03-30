@@ -16,6 +16,7 @@ import { supabase } from '../../lib/supabase';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { masterBus } from '../../core/MasterBus';
 import styles from './ClubAnnouncementBanner.module.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface Announcement {
   id: string;
@@ -64,7 +65,7 @@ export default function ClubAnnouncementBanner({
       try {
         setDismissed(new Set(JSON.parse(stored)));
       } catch (err) {
-        console.error('[ClubAnnouncementBanner] Error:', err);
+        reportError(err, 'ClubAnnouncementBanner.Error');
         localStorage.removeItem(`dismissed_announcements_${clubId}`);
       }
     }
@@ -124,7 +125,7 @@ export default function ClubAnnouncementBanner({
         setAnnouncements(mapped);
       }
     } catch (error) {
-      console.error('Failed to load announcements:', error);
+      reportError(error, 'ClubAnnouncementBanner.Failed_to_load_announcements');
     }
     if (isMounted.current) setLoading(false);
   };

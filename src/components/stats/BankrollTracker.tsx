@@ -22,6 +22,7 @@ import {
 import { supabase, getAuthUser } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import './BankrollTracker.css';
+import { reportError } from '../../utils/errorReporter';
 
 // ── SWR cache ──
 const CACHE_KEY = 'bankroll_v1_';
@@ -138,7 +139,7 @@ const BankrollTracker: React.FC<BankrollTrackerProps> = ({ userId, initialSessio
       if (!mountedRef.current) return;
 
       if (error) {
-        console.error('[BankrollTracker] Query error:', error.message);
+        reportError(error, 'BankrollTracker.Query_error');
         setLoaded(true);
         return;
       }
@@ -152,7 +153,7 @@ const BankrollTracker: React.FC<BankrollTrackerProps> = ({ userId, initialSessio
 
       setLoaded(true);
     } catch (err) {
-      console.error('[BankrollTracker] Failed to load:', err);
+      reportError(err, 'BankrollTracker.Failed_to_load');
       if (mountedRef.current) setLoaded(true);
     }
   }, [resolveUserId, initialSessions, loaded]);

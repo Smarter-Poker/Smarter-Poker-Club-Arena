@@ -7,6 +7,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import './PlayerProfileCard.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface PlayerProfileCardProps {
   userId: string;
@@ -83,7 +84,7 @@ export function PlayerProfileCard({
         });
       }
     } catch (error) {
-      console.error('Failed to load profile:', error);
+      reportError(error, 'PlayerProfileCard.Failed_to_load_profile');
     }
     setLoading(false);
   };

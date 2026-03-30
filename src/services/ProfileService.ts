@@ -8,6 +8,7 @@
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { QUERY_LIMITS } from '../lib/constants';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -82,7 +83,7 @@ class ProfileServiceClass {
 
       return this.mapProfile(data);
     } catch (err: unknown) {
-      console.error('[Profile] getProfile error:', err);
+      reportError(err, 'ProfileService.getProfile', { userId });
       return null;
     }
   }
@@ -104,7 +105,7 @@ class ProfileServiceClass {
 
       return this.mapProfile(data);
     } catch (err: unknown) {
-      console.error('[Profile] getProfileByUsername error:', err);
+      reportError(err, 'ProfileService.getProfileByUsername', { username });
       return null;
     }
   }
@@ -131,7 +132,7 @@ class ProfileServiceClass {
       if (error || !data) return null;
       return this.mapProfile(data);
     } catch (err: unknown) {
-      console.error('[Profile] getPublicProfile error:', err);
+      reportError(err, 'ProfileService.getPublicProfile', { userId });
       return null;
     }
   }
@@ -188,7 +189,7 @@ class ProfileServiceClass {
       .eq('id', userId);
 
     if (vipErr) {
-      console.error('[Profile] VIP points update failed:', vipErr);
+      reportError(vipErr, 'ProfileService.addVIPPoints', { userId, points });
       throw new Error('Failed to update VIP points');
     }
 
@@ -237,7 +238,7 @@ class ProfileServiceClass {
         .eq('id', userId);
 
       if (streakErr) {
-        console.error('[Profile] Streak update failed:', streakErr);
+        reportError(streakErr, 'ProfileService.updateStreak', { userId });
       }
 
       masterBus.emit('PROFILE_UPDATED', {
@@ -333,7 +334,7 @@ class ProfileServiceClass {
       const prefs = data.preferences as Record<string, unknown> | null;
       return !!prefs?.club_arena_tos_accepted; // FIX: was returning true in both branches
     } catch (err: unknown) {
-      console.error('[Profile] hasTOSAccepted error:', err);
+      reportError(err, 'ProfileService.hasTOSAccepted', { userId });
       return true; // Default to accepted to avoid blocking
     }
   }
@@ -362,7 +363,7 @@ class ProfileServiceClass {
       .eq('id', userId);
 
     if (error) {
-      console.error('[TOS] Failed to accept TOS:', error);
+      reportError(error, 'ProfileService.acceptTOS', { userId });
       return false;
     }
 

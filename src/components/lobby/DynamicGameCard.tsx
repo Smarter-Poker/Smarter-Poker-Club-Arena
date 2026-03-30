@@ -8,6 +8,7 @@
 
 import { Link } from 'react-router-dom';
 import './DynamicGameCard.css';
+import { reportError } from '../../utils/errorReporter';
 
 // ─── Types ──────────────────────────────────────────────────────────────
 
@@ -104,7 +105,7 @@ function parseSettings(settings: TableSettings | string | undefined): TableSetti
     try {
       return JSON.parse(settings);
     } catch (err) {
-      console.error('[DynamicGameCard] Error:', err);
+      reportError(err, 'DynamicGameCard.Error');
       return {};
     }
   }

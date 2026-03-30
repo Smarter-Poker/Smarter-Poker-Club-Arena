@@ -9,6 +9,7 @@ import { useAuthUser } from '../hooks/useAuthUser';
 import { masterBus } from '../core/MasterBus';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import './TableCreationPage.css';
+import { reportError } from '../utils/errorReporter';
 
 const sectionAnimationStyle = (index: number) => ({
   opacity: 0,
@@ -141,7 +142,7 @@ export default function TableCreationPage() {
 
       navigate(`/table/${data.id}`);
     } catch (err: any) {
-      console.error('Failed to create table:', err);
+      reportError(err, 'TableCreationPage.Failed_to_create_table');
       setError(err.message || 'Failed to create table');
     }
     setCreating(false);

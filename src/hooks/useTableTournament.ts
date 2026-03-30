@@ -9,6 +9,7 @@
  */
 
 import { useState, useRef, useEffect } from 'react';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -120,7 +121,7 @@ export function useTableTournament(): UseTableTournamentReturn {
         try {
           breakChannelRef.current.unsubscribe?.();
         } catch (err) {
-          console.error('[useTableTournament] Failed to unsubscribe from break channel:', err);
+          reportError(err, 'useTableTournament.Failed_to_unsubscribe_from_break_channel');
         }
       }
 
@@ -129,7 +130,7 @@ export function useTableTournament(): UseTableTournamentReturn {
         try {
           addOnChannelRef.current.unsubscribe?.();
         } catch (err) {
-          console.error('[useTableTournament] Failed to unsubscribe from add-on channel:', err);
+          reportError(err, 'useTableTournament.Failed_to_unsubscribe_from_addon_channel');
         }
       }
 
@@ -138,7 +139,7 @@ export function useTableTournament(): UseTableTournamentReturn {
         try {
           bountyChannelRef.current.unsubscribe?.();
         } catch (err) {
-          console.error('[useTableTournament] Failed to unsubscribe from bounty channel:', err);
+          reportError(err, 'useTableTournament.Failed_to_unsubscribe_from_bounty_channe');
         }
       }
     };

@@ -25,6 +25,7 @@ import DiamondWalletModal from '../components/wallet/DiamondWalletModal';
 import './VIPPage.css';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
+import { reportError } from '../utils/errorReporter';
 
 export default function VIPPage() {
   const { user } = useAuthUser();
@@ -96,7 +97,7 @@ export default function VIPPage() {
         )
         .subscribe((status: string, err?: Error) => {
           if (status === 'CHANNEL_ERROR') {
-            console.error('[VIPPage] ❌ Realtime channel error:', err?.message || err);
+            reportError(err?.message || err, 'VIPPage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
             console.warn('[VIPPage] ⏱️ Realtime channel timed out');

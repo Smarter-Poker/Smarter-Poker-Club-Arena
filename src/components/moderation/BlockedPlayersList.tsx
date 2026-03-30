@@ -4,6 +4,7 @@ import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
 import './BlockedPlayersList.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
+import { reportError } from '../../utils/errorReporter';
 
 interface BlockedPlayer {
   id: string;
@@ -80,7 +81,7 @@ export const BlockedPlayersList: React.FC<BlockedPlayersListProps> = ({ onUnbloc
         })) || []
       );
     } catch (error) {
-      console.error('Failed to load blocked players:', error);
+      reportError(error, 'BlockedPlayersList.Failed_to_load_blocked_players');
     } finally {
       setLoading(false);
     }

@@ -9,6 +9,7 @@ import { supabase } from '../lib/supabase';
 import { notificationService } from './NotificationService';
 import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -57,7 +58,7 @@ class WaitlistServiceClass {
     );
 
     if (error) {
-      console.error('[Waitlist] Failed to join:', error);
+      reportError(error, 'WaitlistService.Failed_to_join');
       return null;
     }
 
@@ -93,7 +94,7 @@ class WaitlistServiceClass {
       .eq('status', 'waiting');
 
     if (error) {
-      console.error('[Waitlist] Failed to leave:', error);
+      reportError(error, 'WaitlistService.Failed_to_leave');
       return false;
     }
 
@@ -166,7 +167,7 @@ class WaitlistServiceClass {
       .order('joined_at', { ascending: true });
 
     if (error) {
-      console.error('[Waitlist] Failed to get user waitlists:', error);
+      reportError(error, 'WaitlistService.Failed_to_get_user_waitlists');
       return [];
     }
 
@@ -245,7 +246,7 @@ class WaitlistServiceClass {
       .in('status', ['waiting', 'notified']);
 
     if (error) {
-      console.error('[Waitlist] Failed to mark seated:', error);
+      reportError(error, 'WaitlistService.Failed_to_mark_seated');
       return false;
     }
 
@@ -272,7 +273,7 @@ class WaitlistServiceClass {
       .select();
 
     if (error) {
-      console.error('[Waitlist] Failed to expire notifications:', error);
+      reportError(error, 'WaitlistService.Failed_to_expire_notifications');
       return 0;
     }
 

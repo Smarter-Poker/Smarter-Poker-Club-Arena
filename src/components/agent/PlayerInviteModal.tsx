@@ -10,6 +10,7 @@ import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import styles from './PlayerInviteModal.module.css';
+import { reportError } from '../../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -108,7 +109,7 @@ export default function PlayerInviteModal({
           }))
       );
     } catch (err) {
-      console.error('Search failed:', err);
+      reportError(err, 'PlayerInviteModal.Search_failed');
       if (isMounted.current) setMessage({ type: 'error', text: 'Search failed' });
     }
     setSearching(false);
@@ -153,7 +154,7 @@ export default function PlayerInviteModal({
       setSearchResults((prev) => prev.filter((p) => p.id !== player.id));
       onPlayerAdded?.();
     } catch (err) {
-      console.error('Failed to add player:', err);
+      reportError(err, 'PlayerInviteModal.Failed_to_add_player');
       if (isMounted.current) setMessage({ type: 'error', text: 'Failed to add player' });
     }
     setAdding(null);
@@ -182,7 +183,7 @@ export default function PlayerInviteModal({
       setInviteCode(code);
       if (isMounted.current) setMessage({ type: 'success', text: 'Invite code generated!' });
     } catch (err) {
-      console.error('Failed to generate invite:', err);
+      reportError(err, 'PlayerInviteModal.Failed_to_generate_invite');
       if (isMounted.current) setMessage({ type: 'error', text: 'Failed to generate invite code' });
     }
     setInviting(false);

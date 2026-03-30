@@ -17,6 +17,7 @@ import { retryFetch } from '../utils/retryFetch';
 import { exportToCSV } from '../lib/export';
 
 import { useIsMounted } from '../hooks/useIsMounted';
+import { reportError } from '../utils/errorReporter';
 
 interface AgentCredit {
   id: string;
@@ -123,7 +124,7 @@ export default function CreditAdminPanel() {
         );
       }
     } catch (err) {
-      console.error('[CreditAdmin] Load failed:', err);
+      reportError(err, 'CreditAdminPanel.Load_failed');
       if (isMounted.current) toast.error('Failed to load agents');
     } finally {
       loadingRef.current = false;
@@ -181,7 +182,7 @@ export default function CreditAdminPanel() {
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[CreditAdminPanel] ❌ Realtime channel error:', err?.message || err);
+          reportError(err?.message || err, 'CreditAdminPanel._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[CreditAdminPanel] ⏱️ Realtime channel timed out');

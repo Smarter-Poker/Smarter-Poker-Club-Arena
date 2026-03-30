@@ -13,6 +13,7 @@ import haptic from '../../services/HapticService';
 import styles from './FindPlayerModal.module.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 import { sanitizeInput } from '../../utils/sanitizeInput';
+import { reportError } from '../../utils/errorReporter';
 
 interface FindPlayerModalProps {
   isOpen: boolean;
@@ -165,7 +166,7 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
       }
     } catch (err) {
       if (!isMountedRef.current) return;
-      console.error('Search error:', err);
+      reportError(err, 'FindPlayerModal.Search_error');
       setError('Search failed. Please try again.');
     } finally {
       if (isMountedRef.current) {

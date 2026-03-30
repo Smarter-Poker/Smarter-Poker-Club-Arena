@@ -44,6 +44,7 @@ import DynamicWallet from '../components/wallet/DynamicWallet';
 import styles from './CashierPage.module.css';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { retryFetch } from '../utils/retryFetch';
+import { reportError } from '../utils/errorReporter';
 
 type CashierAction = 'send' | 'distribute' | 'buyin' | 'cashout' | 'mint' | 'history';
 
@@ -527,7 +528,7 @@ export default function CashierPage() {
         recipientsCacheRef.current = { data: list, ts: Date.now(), clubId };
       }
     } catch (err: unknown) {
-      console.error('Failed to load recipients:', err);
+      reportError(err, 'CashierPage.Failed_to_load_recipients');
       toast.error(err instanceof Error ? err.message : 'Failed to load eligible recipients');
     }
     if (isMounted.current) setLoadingRecipients(false);
@@ -821,7 +822,7 @@ export default function CashierPage() {
           if (isMounted.current) setRealtimeStatus('connected');
         }
         if (status === 'CHANNEL_ERROR') {
-          console.error('[CashierPage] ❌ Realtime channel error:', err?.message || err);
+          reportError(err?.message || err, 'CashierPage._Realtime_channel_error');
           if (isMounted.current) setRealtimeStatus('error');
         }
         if (status === 'TIMED_OUT') {
@@ -891,7 +892,7 @@ export default function CashierPage() {
         amount: chipAmount,
       });
     } catch (e) {
-      console.error('Failed to notify of wallet change:', e);
+      reportError(e, 'CashierPage.Failed_to_notify_of_wallet_change');
     }
   };
 

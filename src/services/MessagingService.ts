@@ -11,6 +11,7 @@ import { clubMessagingPermissions } from './ClubMessagingPermissions';
 import { masterBus } from '../core/MasterBus';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { STORAGE_KEYS } from '../lib/storage';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -98,10 +99,7 @@ class MessagingServiceClass {
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error(
-            `[MessagingService] ❌ Channel error on messages:${userId}:`,
-            err?.message || err
-          );
+          reportError(err?.message || err, 'MessagingService._Channel_error_on_messages');
         }
         if (status === 'TIMED_OUT') {
           console.warn(`[MessagingService] ⏱️ Channel messages:${userId} timed out`);
@@ -136,7 +134,7 @@ class MessagingServiceClass {
       .limit(100);
 
     if (error) {
-      console.error('[Messaging] Failed to get conversations:', error);
+      reportError(error, 'MessagingService.Failed_to_get_conversations');
       return [];
     }
 
@@ -200,7 +198,7 @@ class MessagingServiceClass {
       .limit(limit);
 
     if (error) {
-      console.error('[Messaging] Failed to get messages:', error);
+      reportError(error, 'MessagingService.Failed_to_get_messages');
       return [];
     }
 
@@ -241,7 +239,7 @@ class MessagingServiceClass {
       .maybeSingle();
 
     if (error || !data) {
-      console.error('[Messaging] Failed to send:', error);
+      reportError(error, 'MessagingService.Failed_to_send');
       return null;
     }
 
@@ -286,7 +284,7 @@ class MessagingServiceClass {
       .maybeSingle();
 
     if (error) {
-      console.error('[Messaging] Failed to create conversation:', error);
+      reportError(error, 'MessagingService.Failed_to_create_conversation');
       return null;
     }
 
@@ -314,14 +312,14 @@ class MessagingServiceClass {
       .maybeSingle();
 
     if (membershipError || !userMembership) {
-      console.error('[Messaging] User is not a member of this club');
+      reportError(new Error('[Messaging] User is not a member of this club'), 'MessagingService.User_is_not_a_member_of_this_club');
       throw new Error('You must be a member of the club to start conversations');
     }
 
     // Check messaging permission based on roles
     const permission = await clubMessagingPermissions.canMessage(userId, otherUserId, clubId);
     if (!permission.allowed) {
-      console.error('[Messaging] Permission denied:', permission.reason);
+      reportError(permission.reason, 'MessagingService.Permission_denied');
       throw new Error(permission.reason || 'Not allowed to message this user');
     }
 
@@ -351,7 +349,7 @@ class MessagingServiceClass {
       .maybeSingle();
 
     if (error) {
-      console.error('[Messaging] Failed to create club conversation:', error);
+      reportError(error, 'MessagingService.Failed_to_create_club_conversation');
       return null;
     }
 
@@ -369,7 +367,7 @@ class MessagingServiceClass {
         .eq('is_read', false);
 
       if (error) {
-        console.error('[Messaging] Failed to mark as read:', error);
+        reportError(error, 'MessagingService.Failed_to_mark_as_read');
         return false;
       }
       // Re-count unread messages so header badge updates instantly
@@ -381,7 +379,7 @@ class MessagingServiceClass {
       masterBus.emit('UNREAD_DM_COUNT_CHANGED', { userId, count: remaining || 0 });
       return true;
     } catch (err: unknown) {
-      console.error('[Messaging] markAsRead error:', err);
+      reportError(err, 'MessagingService.markAsRead_error');
       return false;
     }
   }
@@ -398,12 +396,12 @@ class MessagingServiceClass {
         .eq('is_read', false);
 
       if (error) {
-        console.error('[Messaging] Failed to get unread count:', error);
+        reportError(error, 'MessagingService.Failed_to_get_unread_count');
         return 0;
       }
       return count || 0;
     } catch (err: unknown) {
-      console.error('[Messaging] getUnreadCount error:', err);
+      reportError(err, 'MessagingService.getUnreadCount_error');
       return 0;
     }
   }
@@ -434,7 +432,7 @@ class MessagingServiceClass {
   async toggleReaction(messageId: string, reaction: string): Promise<boolean> {
     const userId = (await getAuthUser()).data?.user?.id;
     if (!userId) {
-      console.error('[Messaging] No user ID available for reaction');
+      reportError(new Error('[Messaging] No user ID available for reaction'), 'MessagingService.No_user_ID_available_for_reaction');
       return false;
     }
 
@@ -445,7 +443,7 @@ class MessagingServiceClass {
     });
 
     if (error) {
-      console.error('[Messaging] Failed to toggle reaction:', error);
+      reportError(error, 'MessagingService.Failed_to_toggle_reaction');
       return false;
     }
 
@@ -462,9 +460,7 @@ class MessagingServiceClass {
       });
 
       if (error) {
-        console.error(
-          '[Messaging] get_message_reactions RPC not available - returning empty array'
-        );
+        reportError(new Error('[Messaging] get_message_reactions RPC not available - returning empty array'), 'MessagingService.get_message_reactions_RPC_not_available_');
         return [];
       }
 
@@ -474,7 +470,7 @@ class MessagingServiceClass {
         userReacted: r.user_reacted,
       }));
     } catch (err: unknown) {
-      console.error('[Messaging] Failed to get reactions:', err);
+      reportError(err, 'MessagingService.Failed_to_get_reactions');
       return [];
     }
   }
@@ -494,7 +490,7 @@ class MessagingServiceClass {
       if (error.code === '23505') {
         return true; // Already reacted
       }
-      console.error('[Messaging] Failed to add reaction:', error);
+      reportError(error, 'MessagingService.Failed_to_add_reaction');
       return false;
     }
 
@@ -543,7 +539,7 @@ class MessagingServiceClass {
       .limit(limit);
 
     if (error) {
-      console.error('[Messaging] Search failed:', error);
+      reportError(error, 'MessagingService.Search_failed');
       return [];
     }
 
@@ -573,11 +569,11 @@ class MessagingServiceClass {
   ): Promise<Conversation | null> {
     // INPUT VALIDATION: Prevent abuse via oversized inputs
     if (!name || name.trim().length === 0 || name.trim().length > 100) {
-      console.error('[Messaging] Invalid group name: must be 1-100 characters');
+      reportError(new Error('[Messaging] Invalid group name: must be 1-100 characters'), 'MessagingService.Invalid_group_name');
       return null;
     }
     if (participantIds.length > 100) {
-      console.error('[Messaging] Too many participants: maximum 100');
+      reportError(new Error('[Messaging] Too many participants: maximum 100'), 'MessagingService.Too_many_participants');
       return null;
     }
 
@@ -597,7 +593,7 @@ class MessagingServiceClass {
       .maybeSingle();
 
     if (error) {
-      console.error('[Messaging] Failed to create group:', error);
+      reportError(error, 'MessagingService.Failed_to_create_group');
       return null;
     }
 
@@ -612,10 +608,7 @@ class MessagingServiceClass {
       .from('social_conversation_participants')
       .insert(participantInserts);
     if (participantErr) {
-      console.error(
-        '[Messaging] Failed to insert group participants, cleaning up:',
-        participantErr
-      );
+      reportError(participantErr, 'MessagingService.Failed_to_insert_group_participants_clea');
       await supabase.from('conversations').delete().eq('id', data.id);
       return null;
     }
@@ -659,11 +652,11 @@ class MessagingServiceClass {
         user_id: userId,
         role: 'member',
       });
-      if (partErr) console.error('[Messaging] Failed to insert participant entry:', partErr);
+      if (partErr) reportError(partErr, 'MessagingService.Failed_to_insert_participant_entry');
 
       return true;
     } catch (err) {
-      console.error('[MessagingService] Error:', err);
+      reportError(err, 'MessagingService.Error');
       return false;
     }
   }
@@ -698,7 +691,7 @@ class MessagingServiceClass {
 
       return true;
     } catch (err) {
-      console.error('[MessagingService] Error:', err);
+      reportError(err, 'MessagingService.Error');
       return false;
     }
   }
@@ -764,7 +757,7 @@ class MessagingServiceClass {
         .eq('id', originalMsg.conversation_id)
         .maybeSingle();
       if (sourceConv && !(sourceConv.participant_ids as string[]).includes(senderId)) {
-        console.error('[Messaging] Sender is not a participant in the source conversation');
+        reportError(new Error('[Messaging] Sender is not a participant in the source conversation'), 'MessagingService.Sender_is_not_a_participant_in_the_sourc');
         return null;
       }
     }
@@ -777,7 +770,7 @@ class MessagingServiceClass {
       .maybeSingle();
 
     if (!original) {
-      console.error('[Messaging] Original message not found for forward');
+      reportError(new Error('[Messaging] Original message not found for forward'), 'MessagingService.Original_message_not_found_for_forward');
       return null;
     }
 
@@ -806,7 +799,7 @@ class MessagingServiceClass {
       .maybeSingle();
 
     if (error || !data) {
-      console.error('[Messaging] Forward failed:', error);
+      reportError(error, 'MessagingService.Forward_failed');
       return null;
     }
 
@@ -850,7 +843,7 @@ class MessagingServiceClass {
       .maybeSingle();
 
     if (error) {
-      console.error('[Messaging] Schedule failed:', error);
+      reportError(error, 'MessagingService.Schedule_failed');
       return null;
     }
 
@@ -885,7 +878,7 @@ class MessagingServiceClass {
   async cancelScheduledMessage(messageId: string, senderId?: string): Promise<boolean> {
     // SECURITY FIX: senderId is mandatory — prevent unauthorized cancellation
     if (!senderId) {
-      console.error('[Messaging] senderId required for cancelScheduledMessage');
+      reportError(new Error('[Messaging] senderId required for cancelScheduledMessage'), 'MessagingService.senderId_required_for_cancelScheduledMes');
       return false;
     }
     const { error } = await supabase
@@ -918,7 +911,7 @@ class MessagingServiceClass {
             system: true,
           };
     } catch (err) {
-      console.error('[MessagingService] Error:', err);
+      reportError(err, 'MessagingService.Error');
       return { messages: true, games: true, social: true, achievements: true, system: true };
     }
   }
@@ -1055,7 +1048,7 @@ class MessagingServiceClass {
   async pinMessage(messageId: string, conversationId: string, userId?: string): Promise<boolean> {
     // SECURITY FIX: userId is now mandatory for auth — reject if not provided
     if (!userId) {
-      console.error('[Messaging] userId required for pinMessage authorization');
+      reportError(new Error('[Messaging] userId required for pinMessage authorization'), 'MessagingService.userId_required_for_pinMessage_authoriza');
       return false;
     }
     // Get the conversation and message to verify access
@@ -1067,7 +1060,7 @@ class MessagingServiceClass {
 
     // Verify user is a participant (mandatory check)
     if (!conv || !(conv.participant_ids as string[]).includes(userId)) {
-      console.error('[Messaging] User not a participant of this conversation');
+      reportError(new Error('[Messaging] User not a participant of this conversation'), 'MessagingService.User_not_a_participant_of_this_conversat');
       return false;
     }
 
@@ -1087,7 +1080,7 @@ class MessagingServiceClass {
   ): Promise<boolean> {
     // SECURITY FIX: Require both conversationId and userId for authorization
     if (!conversationId || !userId) {
-      console.error('[Messaging] conversationId and userId required for unpinMessage');
+      reportError(new Error('[Messaging] conversationId and userId required for unpinMessage'), 'MessagingService.conversationId_and_userId_required_for_u');
       return false;
     }
     {
@@ -1098,7 +1091,7 @@ class MessagingServiceClass {
         .maybeSingle();
 
       if (!conv || !(conv.participant_ids as string[]).includes(userId)) {
-        console.error('[Messaging] User not a participant of this conversation');
+        reportError(new Error('[Messaging] User not a participant of this conversation'), 'MessagingService.User_not_a_participant_of_this_conversat');
         return false;
       }
     }
@@ -1158,9 +1151,7 @@ class MessagingServiceClass {
       .eq('id', conversationId)
       .maybeSingle();
     if (!conv || conv.category !== 'club_announcement') {
-      console.error(
-        '[Messaging] postAnnouncement: Invalid conversation or not an announcement channel'
-      );
+      reportError(new Error('[Messaging] postAnnouncement: Invalid conversation or not an announcement channel'), 'MessagingService.postAnnouncement');
       return false;
     }
     // Verify admin is a club owner/admin
@@ -1172,7 +1163,7 @@ class MessagingServiceClass {
         .eq('user_id', adminId)
         .maybeSingle();
       if (!membership || !['owner', 'admin'].includes(membership.role)) {
-        console.error('[Messaging] postAnnouncement: User is not a club admin');
+        reportError(new Error('[Messaging] postAnnouncement: User is not a club admin'), 'MessagingService.postAnnouncement');
         return false;
       }
     }
@@ -1308,7 +1299,7 @@ class MessagingServiceClass {
 
     channel.subscribe((status: string, err?: Error) => {
       if (status === 'CHANNEL_ERROR') {
-        console.error(`[MessagingService] ❌ Typing channel error:`, err?.message || err);
+        reportError(err?.message || err, 'MessagingService._Typing_channel_error');
       }
       if (status === 'TIMED_OUT') {
         console.warn(`[MessagingService] ⏱️ Typing channel timed out`);
@@ -1347,7 +1338,7 @@ class MessagingServiceClass {
             system: 'default',
           };
     } catch (err) {
-      console.error('[MessagingService] Error:', err);
+      reportError(err, 'MessagingService.Error');
       return {
         messages: 'default',
         games: 'default',

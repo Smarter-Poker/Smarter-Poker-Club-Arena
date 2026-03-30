@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import './PresenceIndicator.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface PresenceState {
   status: 'online' | 'away' | 'playing' | 'offline';
@@ -44,7 +45,7 @@ export const PresenceIndicator: React.FC<PresenceIndicatorProps> = ({
       })
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[PresenceIndicator] ❌ Realtime channel error:', err?.message || err);
+          reportError(err?.message || err, 'PresenceIndicator._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[PresenceIndicator] ⏱️ Realtime channel timed out');

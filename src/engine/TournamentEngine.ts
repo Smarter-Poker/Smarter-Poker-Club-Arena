@@ -27,6 +27,7 @@ import {
 import { WalletService } from '../services/WalletService';
 import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -212,7 +213,7 @@ export class TournamentEngine {
       try {
         await this.resumeRunning();
       } catch (err: unknown) {
-        console.error(`[TournamentEngine:${this.tournamentId.slice(0, 8)}] Failed to resume:`, err);
+        reportError(err, 'TournamentEngine.Failed_to_resume');
         this.running = false;
       }
       return;
@@ -354,10 +355,7 @@ export class TournamentEngine {
         try {
           await table.engine.start();
         } catch (err: unknown) {
-          console.error(
-            `[TournamentEngine:${this.tournamentId.slice(0, 8)}] Failed to start table engine ${table.tableId.slice(0, 8)}:`,
-            err
-          );
+          reportError(err, 'TournamentEngine.Failed_to_start_table_engine_tabletableI');
         }
       }
 
@@ -367,7 +365,7 @@ export class TournamentEngine {
       // Step 8: Start elimination checker
       this.startEliminationChecker();
     } catch (err: unknown) {
-      console.error(`[TournamentEngine:${this.tournamentId.slice(0, 8)}] Failed to start:`, err);
+      reportError(err, 'TournamentEngine.Failed_to_start');
       this.running = false;
       throw err;
     }
@@ -487,10 +485,7 @@ export class TournamentEngine {
       try {
         await table.engine.start();
       } catch (err: unknown) {
-        console.error(
-          `[TournamentEngine:${this.tournamentId.slice(0, 8)}] Failed to start table engine ${table.tableId.slice(0, 8)}:`,
-          err
-        );
+        reportError(err, 'TournamentEngine.Failed_to_start_table_engine_tabletableI');
       }
     }
 
@@ -622,9 +617,7 @@ export class TournamentEngine {
 
     if (error || !registrations || registrations.length === 0) {
       // No registrations — mark tournament as COMPLETED and bail
-      console.error(
-        `[TournamentEngine:${this.tournamentId.slice(0, 8)}] No registrations found — marking COMPLETED`
-      );
+      reportError(new Error(`[TournamentEngine:${this.tournamentId.slice(0, 8)}] No registrations found — marking COMPLETED`), 'TournamentEngine.No_registrations_found__marking_COMPLETE');
       await this.supabase
         .from('tournaments')
         .update({ status: 'COMPLETED', current_players: 0 })
@@ -634,9 +627,7 @@ export class TournamentEngine {
 
     // Need at least 2 players for a tournament
     if (registrations.length < 2) {
-      console.error(
-        `[TournamentEngine:${this.tournamentId.slice(0, 8)}] Only ${registrations.length} registration — marking COMPLETED`
-      );
+      reportError(new Error(`[TournamentEngine:${this.tournamentId.slice(0, 8)}] Only ${registrations.length} registration — marking COMPLETED`), 'TournamentEngine.Only_registrationslength_registration__m');
       await this.supabase
         .from('tournaments')
         .update({ status: 'COMPLETED', current_players: registrations.length })
@@ -653,7 +644,7 @@ export class TournamentEngine {
       .eq('status', 'registered');
 
     if (updateError) {
-      console.error(`[TournamentEngine] Player activation error:`, updateError.message);
+      reportError(updateError, 'TournamentEngine.Player_activation_error');
       throw new Error(`Failed to activate players: ${updateError.message}`);
     }
 
@@ -755,7 +746,7 @@ export class TournamentEngine {
         .maybeSingle();
 
       if (error || !data) {
-        console.error(`[TournamentEngine] Failed to create table ${i + 1}:`, error?.message);
+        reportError(error, 'TournamentEngine.Failed_to_create_table_i__1');
         continue;
       }
 
@@ -778,9 +769,7 @@ export class TournamentEngine {
 
     const activePlayers = Array.from(this.players.values()).filter((p) => p.status === 'playing');
     if (activePlayers.length === 0) {
-      console.error(
-        `[TournamentEngine:${this.tournamentId.slice(0, 8)}] No active players to seat!`
-      );
+      reportError(new Error(`[TournamentEngine:${this.tournamentId.slice(0, 8)}] No active players to seat!`), 'TournamentEngine.No_active_players_to_seat');
       return;
     }
 
@@ -792,9 +781,7 @@ export class TournamentEngine {
 
     // Distribute round-robin across tables
     if (this.tables.length === 0) {
-      console.error(
-        `[TournamentEngine:${this.tournamentId}] No tables created — cannot seat players`
-      );
+      reportError(new Error(`[TournamentEngine:${this.tournamentId}] No tables created — cannot seat players`), 'TournamentEngine.No_tables_created__cannot_seat_players');
       return;
     }
     const seatInserts: Array<Record<string, unknown>> = [];
@@ -822,7 +809,7 @@ export class TournamentEngine {
     const { error } = await this.supabase.from('table_seats').insert(seatInserts);
 
     if (error) {
-      console.error(`[TournamentEngine] Failed to seat players:`, error.message);
+      reportError(error, 'TournamentEngine.Failed_to_seat_players');
       throw new Error(`Seating failed: ${error.message}`);
     }
 
@@ -864,7 +851,7 @@ export class TournamentEngine {
       .eq('id', this.tournamentId);
 
     if (error) {
-      console.error(`[TournamentEngine] Failed to update tournament status:`, error.message);
+      reportError(error, 'TournamentEngine.Failed_to_update_tournament_status');
     }
 
     // Update all tournament_players to 'playing'
@@ -1019,10 +1006,7 @@ export class TournamentEngine {
         .eq('id', table.tableId);
 
       if (error) {
-        console.error(
-          `[TournamentEngine] Failed to update blinds for table ${table.tableId.slice(0, 8)}:`,
-          error.message
-        );
+        reportError(error, 'TournamentEngine.Failed_to_update_blinds_for_table_tablet');
       }
     }
 
@@ -1062,10 +1046,7 @@ export class TournamentEngine {
         },
       });
     } catch (e: unknown) {
-      console.error(
-        `[TournamentEngine:${this.tournamentId.slice(0, 8)}] Failed to broadcast addon period:`,
-        e
-      );
+      reportError(e, 'TournamentEngine.Failed_to_broadcast_addon_period');
     }
 
     // Also broadcast on the addon-specific channel for direct table pickup
@@ -1073,7 +1054,7 @@ export class TournamentEngine {
       const chan = this.supabase.channel(`t-addon-${this.tournamentId}`);
       await chan.subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error(`[TournamentEngine] ❌ Addon channel error:`, err?.message || err);
+          reportError(err?.message || err, 'TournamentEngine._Addon_channel_error');
         }
       });
       await chan.send({
@@ -1135,10 +1116,7 @@ export class TournamentEngine {
       await tournamentService.finalizePrizePool(this.tournamentId);
       if (this.tournamentInfo) this.tournamentInfo.prize_pool_finalized = true;
     } catch (e: unknown) {
-      console.error(
-        `[TournamentEngine:${this.tournamentId.slice(0, 8)}] Failed to finalize after addon:`,
-        e
-      );
+      reportError(e, 'TournamentEngine.Failed_to_finalize_after_addon');
     }
 
     // Broadcast ADDON_PERIOD_END
@@ -1199,10 +1177,7 @@ export class TournamentEngine {
               await tournamentService.finalizePrizePool(this.tournamentId);
               this.tournamentInfo.prize_pool_finalized = true;
             } catch (e: unknown) {
-              console.error(
-                `[TournamentEngine:${this.tournamentId.slice(0, 8)}] Failed to finalize prize pool:`,
-                e
-              );
+              reportError(e, 'TournamentEngine.Failed_to_finalize_prize_pool');
             }
           }
         }
@@ -1390,9 +1365,7 @@ export class TournamentEngine {
           .select('id');
 
         if (claimErr || !claimedRows || claimedRows.length === 0) {
-          console.error(
-            `[TournamentEngine:${this.tournamentId.slice(0, 8)}] Alternate ${player.username} unregister race condition prevented. Skipping seating.`
-          );
+          reportError(new Error(`[TournamentEngine:${this.tournamentId.slice(0, 8)}] Alternate ${player.username} unregister race condition prevented. Skipping seating.`), 'TournamentEngine.Alternate_playerusername_unregister_race');
           continue;
         }
         // 2. Safely Insert seat now that we own the state transition
@@ -1404,10 +1377,7 @@ export class TournamentEngine {
         });
 
         if (seatErr) {
-          console.error(
-            `[TournamentEngine] Failed to insert seat for alternate ${player.username}:`,
-            seatErr
-          );
+          reportError(seatErr, 'TournamentEngine.Failed_to_insert_seat_for_alternate_play');
 
           // Rollback claim if physical seat insert failed
           await this.supabase
@@ -1434,7 +1404,7 @@ export class TournamentEngine {
             .eq('id', openTable.tableId);
         }
       } catch (err: unknown) {
-        console.error(`[TournamentEngine] Failed to seat alternate ${player.user_id}:`, err);
+        reportError(err, 'TournamentEngine.Failed_to_seat_alternate_playeruser_id');
       }
     }
   }
@@ -1476,9 +1446,7 @@ export class TournamentEngine {
       );
 
       if (error) {
-        console.error(
-          `[TournamentEngine:${this.tournamentId.slice(0, 8)}] Bulk chip sync failed: ${error.message}`
-        );
+        reportError(new Error(`[TournamentEngine:${this.tournamentId.slice(0, 8)}] Bulk chip sync failed: ${error.message}`), 'TournamentEngine.Bulk_chip_sync_failed');
       }
     }
 
@@ -1516,10 +1484,7 @@ export class TournamentEngine {
       .eq('tournament_id', this.tournamentId)
       .eq('user_id', userId);
     if (elimErr)
-      console.error(
-        `[TournamentEngine:${this.tournamentId.slice(0, 8)}] Failed to mark player ${userId.slice(0, 8)} as eliminated:`,
-        elimErr
-      );
+      reportError(elimErr, 'TournamentEngine.Failed_to_mark_player_userIdslice0_8_as_');
 
     // Remove from table_seats
     const { error: seatErr } = await this.supabase
@@ -1529,10 +1494,7 @@ export class TournamentEngine {
       .eq('user_id', userId)
       .is('left_at', null);
     if (seatErr)
-      console.error(
-        `[TournamentEngine:${this.tournamentId.slice(0, 8)}] Failed to vacate seat for ${userId.slice(0, 8)}:`,
-        seatErr
-      );
+      reportError(seatErr, 'TournamentEngine.Failed_to_vacate_seat_for_userIdslice0_8');
 
     // Decrement tables.current_players and local playerCount
     const table = this.tables.find((t) => t.tableId === tableId);
@@ -1543,10 +1505,7 @@ export class TournamentEngine {
         .update({ current_players: table.playerCount })
         .eq('id', tableId);
       if (countErr)
-        console.error(
-          `[TournamentEngine:${this.tournamentId.slice(0, 8)}] Failed to update table player count:`,
-          countErr
-        );
+        reportError(countErr, 'TournamentEngine.Failed_to_update_table_player_count');
     }
 
     // Credit prize to player wallet (if any)
@@ -1610,21 +1569,15 @@ export class TournamentEngine {
                 .eq('user_id', knockerId);
 
               if (updateErr) {
-                console.error(
-                  `[TournamentEngine] Failed to update bounty stats for ${knockerId.slice(0, 8)}:`,
-                  updateErr
-                );
+                reportError(updateErr, 'TournamentEngine.Failed_to_update_bounty_stats_for_knocke');
               }
             }
           } catch (statsErr) {
-            console.error(`[TournamentEngine] Bounty stats update failed:`, statsErr);
+            reportError(statsErr, 'TournamentEngine.Bounty_stats_update_failed');
           }
         }
       } catch (err: unknown) {
-        console.error(
-          `[TournamentEngine:${this.tournamentId.slice(0, 8)}] Bounty collection failed:`,
-          err
-        );
+        reportError(err, 'TournamentEngine.Bounty_collection_failed');
       }
     }
   }
@@ -1659,9 +1612,7 @@ export class TournamentEngine {
       userId.length < 8 ||
       userId.replace(/0/g, '').replace(/-/g, '').length === 0
     ) {
-      console.error(
-        `[TournamentEngine:${this.tournamentId.slice(0, 8)}] Skipping prize credit — invalid userId: ${userId}`
-      );
+      reportError(new Error(`[TournamentEngine:${this.tournamentId.slice(0, 8)}] Skipping prize credit — invalid userId: ${userId}`), 'TournamentEngine.Skipping_prize_credit__invalid_userId');
       return;
     }
 
@@ -1683,10 +1634,7 @@ export class TournamentEngine {
     );
 
     if (creditError) {
-      console.error(
-        `[TournamentEngine:${this.tournamentId.slice(0, 8)}] Failed to atomically credit Player Wallet for ${userId.slice(0, 8)} — prize ${amount.toFixed(2)}:`,
-        creditError
-      );
+      reportError(creditError, 'TournamentEngine.Failed_to_atomically_credit_Player_Walle');
       return;
     }
     // Log in chip_transactions for club accounting
@@ -1699,10 +1647,7 @@ export class TournamentEngine {
       notes: `Tournament prize: ${this.tournamentInfo.name}`,
     });
     if (auditErr)
-      console.error(
-        `[TournamentEngine:${this.tournamentId.slice(0, 8)}] chip_transactions audit log failed:`,
-        auditErr
-      );
+      reportError(auditErr, 'TournamentEngine.chip_transactions_audit_log_failed');
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1845,10 +1790,7 @@ export class TournamentEngine {
       });
 
       if (insertErr) {
-        console.error(
-          `[TournamentEngine:${this.tournamentId.slice(0, 8)}] Failed to insert merged seat for ${move.playerId.slice(0, 8)}:`,
-          insertErr.message
-        );
+        reportError(insertErr, 'TournamentEngine.Failed_to_insert_merged_seat_for_movepla');
         continue;
       }
 
@@ -1968,10 +1910,7 @@ export class TournamentEngine {
             p_amount: 1, // 1 ticket
           });
         } catch (e: unknown) {
-          console.error(
-            `[TournamentEngine] Failed to credit satellite ticket to ${player.user_id}:`,
-            e
-          );
+          reportError(e, 'TournamentEngine.Failed_to_credit_satellite_ticket_to_pla');
         }
 
         ticketWinnerIds.push(player.user_id);

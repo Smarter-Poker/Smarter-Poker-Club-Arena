@@ -19,6 +19,7 @@ import MessageThread from '../components/messaging/MessageThread';
 import './ClubMessagesPage.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import PageSkeleton from '../components/common/PageSkeleton';
+import { reportError } from '../utils/errorReporter';
 
 interface ClubConversation {
   id: string;
@@ -130,7 +131,7 @@ export default function ClubMessagesPage() {
 
         if (getIsMounted && !getIsMounted()) return;
         if (convError || !clubConvs) {
-          console.error('Failed to load club conversations:', convError);
+          reportError(convError, 'ClubMessagesPage.Failed_to_load_club_conversations');
           return;
         }
 
@@ -174,7 +175,7 @@ export default function ClubMessagesPage() {
           /* storage full */
         }
       } catch (error) {
-        console.error('Failed to load club conversations:', error);
+        reportError(error, 'ClubMessagesPage.Failed_to_load_club_conversations');
         setLoadError(true);
         if (!getIsMounted || getIsMounted()) toast.error('Failed to load club conversations');
       } finally {

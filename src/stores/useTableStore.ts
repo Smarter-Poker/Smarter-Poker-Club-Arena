@@ -7,6 +7,7 @@ import { create } from 'zustand';
 import { tableService } from '../services/TableService';
 import { masterBus } from '../core/MasterBus';
 import type { PokerTable, HandState, SeatPlayer, ActionType, Card } from '../types/database.types';
+import { reportError } from '../utils/errorReporter';
 
 // WebSocket send function type
 type SendActionFn = (action: string, data: Record<string, unknown>) => Promise<boolean>;
@@ -140,7 +141,7 @@ export const useTableStore = create<TableState>((set, get) => ({
     try {
       await tableService.updatePlayerCount(tableId, newSeats.filter(Boolean).length);
     } catch (err) {
-      console.error('[TableStore] Failed to update player count after join:', err);
+      reportError(err, 'useTableStore.Failed_to_update_player_count_after_join');
     }
   },
 
@@ -155,7 +156,7 @@ export const useTableStore = create<TableState>((set, get) => ({
     tableService
       .updatePlayerCount(currentTable.id, newSeats.filter(Boolean).length)
       .catch((err: unknown) => {
-        console.error('[TableStore] Failed to update player count after leave:', err);
+        reportError(err, 'useTableStore.Failed_to_update_player_count_after_leav');
       });
 
     set({

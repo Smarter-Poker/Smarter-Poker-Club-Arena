@@ -40,6 +40,7 @@
 // HAPTIC SERVICE — Mobile vibration patterns
 // ═══════════════════════════════════════════════════════════════════════════════
 
+import { reportError } from '../utils/errorReporter';
 export const haptic = {
   /** Check if vibrations are enabled (reads from localStorage) */
   _isEnabled() {
@@ -94,7 +95,7 @@ class SoundService {
         this.masterGain.connect(this.ctx.destination);
       }
     } catch (e: unknown) {
-      console.error('[SoundService] Web Audio API not supported');
+      console.warn('[SoundService] Web Audio API not supported');
     }
   }
 

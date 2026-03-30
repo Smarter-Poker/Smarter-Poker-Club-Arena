@@ -7,6 +7,7 @@
 
 import { supabase } from '../lib/supabase';
 import type { RealtimeChannel } from '@supabase/supabase-js';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -108,7 +109,7 @@ class PresenceServiceClass {
             lastSeen: new Date().toISOString(),
           });
         } catch (e: unknown) {
-          console.error('[PresenceService] Track failed:', e);
+          reportError(e, 'PresenceService.track');
         }
       } else if (status === 'CHANNEL_ERROR') {
         console.debug(`[PresenceService] ❌ Channel error on ${channelName}:`, err?.message || err);
@@ -294,7 +295,7 @@ class PresenceServiceClass {
           lastSeen: new Date().toISOString(),
         });
       } catch (err: unknown) {
-        console.error(`[PresenceService] Heartbeat track failed for ${channelName}:`, err);
+        reportError(err, 'PresenceService.heartbeat', { channelName });
         // Don't stop heartbeat on transient errors — it will retry next interval.
         // But if the channel is gone from our map, stop to prevent memory leak.
         if (!this.channels.has(channelName)) {

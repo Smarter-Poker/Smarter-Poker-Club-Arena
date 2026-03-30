@@ -9,6 +9,7 @@ import { supabase } from '../../lib/supabase';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import './AuditLog.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface AuditEntry {
   id: string;
@@ -131,7 +132,7 @@ export const AuditLog: React.FC<AuditLogProps> = ({ clubId }) => {
         }, i * 15)
       );
     } catch (error) {
-      console.error('Failed to load audit log:', error);
+      reportError(error, 'AuditLog.Failed_to_load_audit_log');
     } finally {
       if (isMounted.current) setLoading(false);
     }

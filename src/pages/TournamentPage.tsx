@@ -25,6 +25,7 @@ import { resolveClubUUID } from '../utils/clubIdResolver';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import ClubBottomNav from '../components/club/ClubBottomNav';
 import MysteryBountyReveal from '../components/tournament/MysteryBountyReveal';
+import { reportError } from '../utils/errorReporter';
 
 type TournFilter = 'all' | 'freeroll' | 'micro' | 'highroller';
 
@@ -170,7 +171,7 @@ export default function TournamentPage() {
           if (tourn) setSelectedTournament(tourn);
         }
       } catch (error) {
-        console.error('Failed to load tournaments:', error);
+        reportError(error, 'TournamentPage.Failed_to_load_tournaments');
       } finally {
         loadingRef.current = false;
         if (isMounted) setIsLoading(false);
@@ -235,14 +236,14 @@ export default function TournamentPage() {
                 const updated = data.find((t) => t.id === selectedTournamentRef.current?.id);
                 if (updated) setSelectedTournament(updated);
               } catch (error) {
-                console.error('Failed to refresh tournaments:', error);
+                reportError(error, 'TournamentPage.Failed_to_refresh_tournaments');
               }
             })();
           }
         )
         .subscribe((status: string, err?: Error) => {
           if (status === 'CHANNEL_ERROR') {
-            console.error('[TournamentPage] ❌ Realtime channel error:', err?.message || err);
+            reportError(err?.message || err, 'TournamentPage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
             console.warn('[TournamentPage] ⏱️ Realtime channel timed out');
@@ -317,7 +318,7 @@ export default function TournamentPage() {
           .maybeSingle();
         if (isMounted) setIsRegistered(!!data);
       } catch (e) {
-        console.error('[TournamentPage] Registration sync error:', e);
+        reportError(e, 'TournamentPage.Registration_sync_error');
       }
     })();
     return () => {
@@ -336,7 +337,7 @@ export default function TournamentPage() {
         timestamp: Date.now(),
       });
     } catch (e) {
-      console.error('Failed to notify of wallet change:', e);
+      reportError(e, 'TournamentPage.Failed_to_notify_of_wallet_change');
     }
   };
 
@@ -441,7 +442,7 @@ export default function TournamentPage() {
         );
       }
     } catch (e) {
-      console.error(e);
+      reportError(e, 'TournamentPage.error');
       toast.error('Failed to join tournament table');
     }
   };
@@ -541,7 +542,7 @@ export default function TournamentPage() {
                 const updated = await tournamentService.getTournament(selectedTournament.id);
                 if (updated) setSelectedTournament(updated);
               } catch (error) {
-                console.error('Failed to refresh tournament on level_up:', error);
+                reportError(error, 'TournamentPage.Failed_to_refresh_tournament_on_level_up');
               }
             })();
             break;
@@ -553,7 +554,7 @@ export default function TournamentPage() {
                 const updated = await tournamentService.getTournament(selectedTournament.id);
                 if (updated) setSelectedTournament(updated);
               } catch (error) {
-                console.error('Failed to refresh tournament on player_eliminated:', error);
+                reportError(error, 'TournamentPage.Failed_to_refresh_tournament_on_player_e');
               }
             })();
             if (data?.playerName) {
@@ -585,7 +586,7 @@ export default function TournamentPage() {
                 const updated = await tournamentService.getTournament(selectedTournament.id);
                 if (updated) setSelectedTournament(updated);
               } catch (error) {
-                console.error('Failed to refresh tournament on late_reg_closed:', error);
+                reportError(error, 'TournamentPage.Failed_to_refresh_tournament_on_late_reg');
               }
             })();
             break;
@@ -607,7 +608,7 @@ export default function TournamentPage() {
                 const updated = await tournamentService.getTournament(selectedTournament.id);
                 if (updated) setSelectedTournament(updated);
               } catch (error) {
-                console.error('Failed to refresh tournament on table_rebalance:', error);
+                reportError(error, 'TournamentPage.Failed_to_refresh_tournament_on_table_re');
               }
             })();
             break;
@@ -615,7 +616,7 @@ export default function TournamentPage() {
       })
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[TournamentPage] ❌ Realtime channel error:', err?.message || err);
+          reportError(err?.message || err, 'TournamentPage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[TournamentPage] ⏱️ Realtime channel timed out');

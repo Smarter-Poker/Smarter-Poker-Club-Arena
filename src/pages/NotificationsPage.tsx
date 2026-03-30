@@ -18,6 +18,7 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import NotificationSettingsPanel from '../components/social/NotificationSettingsPanel';
 import { timeAgo } from '../utils/format';
 import './NotificationsPage.css';
+import { reportError } from '../utils/errorReporter';
 
 type NotifCategory = 'all' | 'games' | 'social' | 'achievements' | 'system';
 
@@ -166,7 +167,7 @@ export default function NotificationsPage() {
         )
         .subscribe((status: string, err?: Error) => {
           if (status === 'CHANNEL_ERROR') {
-            console.error('[NotificationsPage] ❌ Realtime channel error:', err?.message || err);
+            reportError(err?.message || err, 'NotificationsPage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
             console.warn('[NotificationsPage] ⏱️ Realtime channel timed out');
@@ -235,7 +236,7 @@ export default function NotificationsPage() {
         setCachedNotifs(user?.id || '', data);
       }
     } catch (error) {
-      console.error('Failed to load notifications:', error);
+      reportError(error, 'NotificationsPage.Failed_to_load_notifications');
       if (isMounted.current) toast.error('Failed to load notifications');
     } finally {
       loadingRef.current = false;
@@ -257,7 +258,7 @@ export default function NotificationsPage() {
       setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
       masterBus.emit('NOTIFICATION_READ', { notifId: id, allRead: false });
     } catch (err) {
-      console.error('[Notifications] markAsRead error:', err);
+      reportError(err, 'NotificationsPage.markAsRead_error');
       toast.error('Failed to mark as read');
     }
   };
@@ -273,7 +274,7 @@ export default function NotificationsPage() {
       setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
       masterBus.emit('NOTIFICATION_READ', { notifId: null, allRead: true });
     } catch (err) {
-      console.error('[Notifications] markAllRead error:', err);
+      reportError(err, 'NotificationsPage.markAllRead_error');
       toast.error('Failed to mark notifications as read');
     }
   };
@@ -288,7 +289,7 @@ export default function NotificationsPage() {
       if (error) throw error;
       setNotifications((prev) => prev.filter((n) => n.id !== id));
     } catch (err) {
-      console.error('[Notifications] delete error:', err);
+      reportError(err, 'NotificationsPage.delete_error');
       toast.error('Failed to delete notification');
     }
   };

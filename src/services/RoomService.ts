@@ -6,6 +6,7 @@
 import { supabase } from '../lib/supabase';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import type { SeatPlayer, Card, ActionType, HandStage } from '../types/database.types';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -171,7 +172,7 @@ class RoomService {
   async broadcast(tableId: string, message: Omit<RoomMessage, 'timestamp'>): Promise<void> {
     const channel = this.channels.get(tableId);
     if (!channel) {
-      console.error('Not connected to room:', tableId);
+      reportError(new Error('Not connected to room'), 'RoomService.send', { tableId });
       return;
     }
 
@@ -272,7 +273,7 @@ class RoomService {
       try {
         handler(message);
       } catch (error: unknown) {
-        console.error('Handler error:', error);
+        reportError(error, 'RoomService.handler');
       }
     }
   }

@@ -30,6 +30,7 @@ import { initSentry } from './core/SentryInit';
 import { initWebVitals } from './core/WebVitals';
 import SystemOffline from './core/SystemOffline';
 import { ErrorBoundary } from './components/common';
+import { reportError } from './utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  GLOBAL SAFETY NET — Catch unhandled promise rejections from service throws
@@ -39,7 +40,7 @@ import { ErrorBoundary } from './components/common';
 // This prevents those from silently crashing the app or causing undefined state.
 window.addEventListener('unhandledrejection', (event) => {
   // Log but don't crash — the page's error state should handle degraded display
-  console.error('[GLOBAL] Unhandled promise rejection caught:', event.reason);
+  reportError(event.reason, 'main.Unhandled_promise_rejection_caught');
   // Prevent the default browser behavior (console error + potential crash)
   event.preventDefault();
 });
@@ -68,7 +69,7 @@ if (bootStatus.antigravityOk) {
   // The async getSession() part continues in the background.
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const identityPromise = initIdentityDNA().catch((err) => {
-    console.error('[BOOT] IdentityDNA init error (app already rendered):', err);
+    reportError(err, 'main.IdentityDNA_init_error_app_already_rende');
   });
 
   // RENDER IMMEDIATELY — don't wait for IdentityDNA's async getSession().
@@ -84,6 +85,6 @@ if (bootStatus.antigravityOk) {
   );
 } else {
   // ONLY show SystemOffline for missing env vars (build/deploy misconfiguration)
-  console.error('[BOOT] Missing environment variables — rendering diagnostic screen');
+  reportError(new Error('[BOOT] Missing environment variables — rendering diagnostic screen'), 'main.Missing_environment_variables__rendering');
   root.render(<SystemOffline status={bootStatus} />);
 }

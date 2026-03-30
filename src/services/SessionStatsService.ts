@@ -13,6 +13,7 @@
 
 import { masterBus } from '../core/MasterBus';
 import { supabase } from '../lib/supabase';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -91,7 +92,7 @@ class SessionStatsServiceClass {
         localStorage.removeItem(this.STORAGE_PREFIX + tableId);
       }
     } catch (err) {
-      console.error('[SessionStatsService] Error:', err);
+      reportError(err, 'SessionStatsService.Error');
       /* localStorage may be unavailable */
     }
 
@@ -119,7 +120,7 @@ class SessionStatsServiceClass {
       try {
         localStorage.setItem(this.STORAGE_PREFIX + tableId, JSON.stringify(session));
       } catch (err) {
-        console.error('[SessionStatsService] Error:', err);
+        reportError(err, 'SessionStatsService.Error');
         /* localStorage may be full or unavailable */
       }
     }, 500);
@@ -240,7 +241,7 @@ class SessionStatsServiceClass {
         .insert(insertPayload)
         .then(({ error }) => {
           if (error) {
-            console.error('[SessionStats] Failed to persist session:', error.message);
+            reportError(error, 'SessionStatsService.Failed_to_persist_session');
             this.queueOfflineSession(insertPayload);
           }
         });
@@ -250,7 +251,7 @@ class SessionStatsServiceClass {
     try {
       localStorage.removeItem(this.STORAGE_PREFIX + tableId);
     } catch (err) {
-      console.error('[SessionStatsService] Error:', err);
+      reportError(err, 'SessionStatsService.Error');
       /* no-op */
     }
 
@@ -265,9 +266,7 @@ class SessionStatsServiceClass {
     try {
       const retryCount = (payload.retry_count as number) || 0;
       if (retryCount >= 3) {
-        console.error(
-          `[SessionStats] Offline session dropped after ${retryCount} failures to prevent poison pill loop.`
-        );
+        reportError(new Error(`[SessionStats] Offline session dropped after ${retryCount} failures to prevent poison pill loop.`), 'SessionStatsService.Offline_session_dropped_after_retryCount');
         return;
       }
 
@@ -276,7 +275,7 @@ class SessionStatsServiceClass {
       queue.push({ ...payload, queued_at: new Date().toISOString(), retry_count: retryCount + 1 });
       localStorage.setItem(this.OFFLINE_QUEUE_KEY, JSON.stringify(queue.slice(-20))); // Max 20 queued
     } catch (err) {
-      console.error('[SessionStatsService] Error:', err);
+      reportError(err, 'SessionStatsService.Error');
       /* localStorage may be full — intentional no-op */
     }
   }
@@ -302,14 +301,14 @@ class SessionStatsServiceClass {
           .insert(insertData)
           .then(({ error }) => {
             if (error) {
-              console.error('[SessionStats] Offline flush failed:', error.message);
+              reportError(error, 'SessionStatsService.Offline_flush_failed');
               // Re-queue if still failing (tracks retry_count natively)
               this.queueOfflineSession(payload);
             }
           });
       });
     } catch (err) {
-      console.error('[SessionStatsService] Error:', err);
+      reportError(err, 'SessionStatsService.Error');
       /* localStorage may be unavailable — intentional no-op */
     }
   }

@@ -22,6 +22,7 @@ import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -123,7 +124,7 @@ export const CommissionService = {
         .maybeSingle();
       oldRate = existing?.rate ?? 0;
     } catch (err) {
-      console.error('[CommissionService] Error:', err);
+      reportError(err, 'CommissionService.setRate.readOldRate', { clubId, agentId, targetRole });
       /* first time set — oldRate stays 0 */
     }
 
@@ -159,7 +160,7 @@ export const CommissionService = {
           clubId,
         });
       } catch (err) {
-        console.error('[CommissionService] Error:', err);
+        reportError(err, 'CommissionService.setRate.logRateChange', { agentId, oldRate, rate });
         /* non-blocking */
       }
     }

@@ -25,6 +25,7 @@ import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { WalletService } from '../services/WalletService';
 import { useIsMounted } from '../hooks/useIsMounted';
+import { reportError } from '../utils/errorReporter';
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    TYPES
@@ -585,7 +586,7 @@ export default function ClubMembersPage() {
           }
         }
       } catch (error) {
-        console.error('Failed to load members:', error);
+        reportError(error, 'ClubMembersPage.Failed_to_load_members');
         toast.error('Failed to load members');
       } finally {
         loadingRef.current = false;
@@ -682,7 +683,7 @@ export default function ClubMembersPage() {
         if (status === 'SUBSCRIBED') {
           await channel.track({ user_id: user.id, club_id: clubId });
         } else if (status === 'CHANNEL_ERROR') {
-          console.error('[ClubMembersPage] ❌ Presence channel error:', err?.message || err);
+          reportError(err?.message || err, 'ClubMembersPage._Presence_channel_error');
         } else if (status === 'TIMED_OUT') {
           console.warn('[ClubMembersPage] ⏱️ Presence channel timed out');
         }

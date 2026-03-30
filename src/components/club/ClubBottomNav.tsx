@@ -11,6 +11,7 @@ import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import styles from './ClubBottomNav.module.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface ClubBottomNavProps {
   clubId: string;
@@ -98,7 +99,7 @@ export default function ClubBottomNav({
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[ClubBottomNav] ❌ Realtime channel error:', err?.message || err);
+          reportError(err?.message || err, 'ClubBottomNav._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[ClubBottomNav] ⏱️ Realtime channel timed out');

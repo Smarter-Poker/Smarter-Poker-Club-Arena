@@ -10,6 +10,7 @@
 import { supabase } from '../lib/supabase';
 import { masterBus, type BusEventType } from '../core/MasterBus';
 import { useUserStore } from '../stores/useUserStore';
+import { reportError } from '../utils/errorReporter';
 
 interface LogEntry {
   event_type: string;
@@ -76,12 +77,12 @@ class BusEventLoggerService {
       const { error } = await supabase.from('bus_event_log').insert(toFlush);
 
       if (error) {
-        console.error('[BusEventLogger] Flush failed:', error.message);
+        reportError(error, 'BusEventLogger.flush');
         // Re-queue failed entries (up to limit)
         this.batch = [...toFlush.slice(-10), ...this.batch].slice(0, MAX_BATCH_SIZE);
       }
     } catch (e: unknown) {
-      console.error('[BusEventLogger] Flush error:', e);
+      reportError(e, 'BusEventLogger.flush.catch');
     }
   }
 

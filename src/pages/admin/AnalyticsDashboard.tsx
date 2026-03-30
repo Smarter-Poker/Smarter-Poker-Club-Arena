@@ -5,6 +5,7 @@ import { useToast } from '../../components/common/Toast';
 import './AnalyticsDashboard.css';
 
 import { useIsMounted } from '../../hooks/useIsMounted';
+import { reportError } from '../../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -145,7 +146,7 @@ export default function AnalyticsDashboard() {
         setPositionStats(Array.from(byPosition.values()));
       }
     } catch (err) {
-      console.error('[AnalyticsDashboard] Error loading position stats:', err);
+      reportError(err, 'AnalyticsDashboard.Error_loading_position_stats');
       toast.error('Failed to load position stats');
     }
   }, [timeRange]);
@@ -169,7 +170,7 @@ export default function AnalyticsDashboard() {
         setVipLedger(data);
       }
     } catch (err) {
-      console.error('[AnalyticsDashboard] Error loading VIP ledger:', err);
+      reportError(err, 'AnalyticsDashboard.Error_loading_VIP_ledger');
       toast.error('Failed to load VIP ledger');
     }
   }, [timeRange]);
@@ -221,7 +222,7 @@ export default function AnalyticsDashboard() {
         });
       }
     } catch (err) {
-      console.error('[AnalyticsDashboard] Error loading aggregates:', err);
+      reportError(err, 'AnalyticsDashboard.Error_loading_aggregates');
       toast.error('Failed to load analytics data');
     }
   }, [timeRange]);

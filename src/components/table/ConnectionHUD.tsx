@@ -13,6 +13,7 @@ import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { haptic, soundService } from '../../services/SoundService';
 import { useToast } from '../common/Toast';
 import './ConnectionHUD.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface ConnectionHUDProps {
   tableId: string;
@@ -168,7 +169,7 @@ export const ConnectionHUD: React.FC<ConnectionHUDProps> = ({ tableId, userId })
           throw new Error('Still disconnected');
         }
       } catch (err) {
-        console.error('[ConnectionHUD] Error:', err);
+        reportError(err, 'ConnectionHUD.Error');
         if (cancelled) return; // Don't schedule if cleaned up during await
         // Exponential backoff: 1s, 2s, 4s, 8s, max 16s
         const delay = Math.min(1000 * Math.pow(2, attempt), 16_000);

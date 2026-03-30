@@ -10,6 +10,7 @@ import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useToast } from '../common/Toast';
 import './FriendChallengeModal.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface FriendChallengeModalProps {
   isOpen: boolean;
@@ -101,7 +102,7 @@ export default function FriendChallengeModal({
       toast.success(`Challenge sent to ${challengeeName}!`);
       onClose();
     } catch (err: any) {
-      console.error('[FriendChallenge] send error:', err);
+      reportError(err, 'FriendChallengeModal.send_error');
       if (isMounted.current) toast.error(err.message || 'Failed to send challenge');
     }
     if (isMounted.current) setSending(false);

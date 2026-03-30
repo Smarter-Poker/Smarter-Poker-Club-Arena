@@ -12,6 +12,7 @@ import { masterBus } from '../../core/MasterBus';
 import { checkSettlementLock } from '../../utils/settlementLock';
 import { formatRelativeShort as formatTime } from '@/lib/date';
 import './CashoutRequestModal.css';
+import { reportError } from '../../utils/errorReporter';
 
 // Haptic feedback for mobile-first financial interactions
 const triggerHaptic = (pattern: number | number[] = 10) => {
@@ -20,7 +21,7 @@ const triggerHaptic = (pattern: number | number[] = 10) => {
       navigator.vibrate(pattern);
     }
   } catch (err) {
-    console.error('[CashoutRequestModal] Error:', err);
+    reportError(err, 'CashoutRequestModal.Error');
     /* silent */
   }
 };
@@ -242,7 +243,7 @@ export default function CashoutRequestModal({
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[CashoutRequestModal] ❌ Realtime channel error:', err?.message || err);
+          reportError(err?.message || err, 'CashoutRequestModal._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[CashoutRequestModal] ⏱️ Realtime channel timed out');
@@ -270,7 +271,7 @@ export default function CashoutRequestModal({
       const cashouts = await cashoutService.getPlayerCashouts(playerId, clubId);
       if (isMounted.current) setPendingCashouts(cashouts.filter((c) => c.status === 'pending'));
     } catch (err) {
-      console.error('Failed to load pending cashouts:', err);
+      reportError(err, 'CashoutRequestModal.Failed_to_load_pending_cashouts');
     }
     if (isMounted.current) setLoadingPending(false);
   };

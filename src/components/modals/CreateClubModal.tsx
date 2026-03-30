@@ -19,6 +19,7 @@ import { sanitizeInput } from '../../utils/sanitizeInput';
 import { masterBus } from '../../core/MasterBus';
 import haptic from '../../services/HapticService';
 import styles from './CreateClubModal.module.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface CreateClubModalProps {
   isOpen: boolean;
@@ -126,7 +127,7 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
         return;
       }
     } catch (err) {
-      console.error('[CreateClubModal] Error:', err);
+      reportError(err, 'CreateClubModal.Error');
       // Non-blocking
     }
 
@@ -276,10 +277,7 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
       });
 
       if (memberError) {
-        console.error(
-          '[CreateClubModal] Owner membership failed, cleaning up orphaned club:',
-          memberError
-        );
+        reportError(memberError, 'CreateClubModal.Owner_membership_failed_cleaning_up_orph');
         await supabase.from('clubs').delete().eq('id', clubData.id);
         throw new Error('Failed to set up club ownership. Please try again.');
       }
@@ -298,7 +296,7 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
       masterBus.emit('CLUB_JOINED', { clubId: clubData.id, action: 'club_created' });
       window.location.reload();
     } catch (err: any) {
-      console.error('Failed to create club:', err);
+      reportError(err, 'CreateClubModal.Failed_to_create_club');
       if (isMounted.current) toast.error(err.message || 'Failed to create club');
     } finally {
       if (isMounted.current) setIsCreating(false);
@@ -540,7 +538,7 @@ function LogoGeneratorModal({ onSelect, onClose, clubName = '' }: LogoGeneratorM
         if (isMounted.current) setError(result.error || 'Failed to generate logo');
       }
     } catch (err) {
-      console.error('Failed to generate logo:', err);
+      reportError(err, 'CreateClubModal.Failed_to_generate_logo');
       if (isMounted.current) setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
       if (isMounted.current) setIsGenerating(false);

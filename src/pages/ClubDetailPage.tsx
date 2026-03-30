@@ -32,6 +32,7 @@ import { resolveClubIdFilter, resolveClubUUID } from '../utils/clubIdResolver';
 import GlobalUXIndicators from '../components/common/GlobalUXIndicators';
 import { retryFetch } from '../utils/retryFetch';
 import { sanitizeInput } from '../utils/sanitizeInput';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -306,7 +307,7 @@ class CardErrorBoundary extends Component<
     return { hasError: true };
   }
   componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error(`[CardErrorBoundary:${this.props.label || 'unknown'}]`, error, info);
+    reportError(info, 'ClubDetailPage.CardErrorBoundarythispropslabel__unknown');
   }
   render() {
     if (this.state.hasError) {
@@ -538,7 +539,7 @@ export default function ClubDetailPage() {
         .then((data) => {
           if (isMounted) setAgents(data);
         })
-        .catch((err) => console.error('Failed to load agents:', err))
+        .catch((err) => reportError(err, 'ClubDetailPage.Failed_to_load_agents'))
         .finally(() => {
           if (isMounted) setAgentsLoading(false);
         });
@@ -569,7 +570,7 @@ export default function ClubDetailPage() {
         // Set initial count
         setOnlineCount(presenceService.getClubOnlineCount(clubId));
       } catch (e) {
-        console.error('[ClubDetailPage] setupPresence error:', e);
+        reportError(e, 'ClubDetailPage.setupPresence_error');
       }
     };
 
@@ -632,7 +633,7 @@ export default function ClubDetailPage() {
         .subscribe((status: string, err?: Error) => {
           setWsConnected(status === 'SUBSCRIBED');
           if (status === 'CHANNEL_ERROR') {
-            console.error('[ClubDetailPage] ❌ Club detail RT channel error:', err?.message || err);
+            reportError(err?.message || err, 'ClubDetailPage._Club_detail_RT_channel_error');
           } else if (status === 'TIMED_OUT') {
             console.warn('[ClubDetailPage] ⏱️ Club detail RT channel timed out');
           }
@@ -703,7 +704,7 @@ export default function ClubDetailPage() {
         .maybeSingle();
 
       if (clubError || !clubData) {
-        console.error('[ClubDetailPage] Failed to load club:', clubError);
+        reportError(clubError, 'ClubDetailPage.Failed_to_load_club');
         if (!getIsMounted || getIsMounted()) {
           setLoading(false);
           setLastRefreshed(new Date());
@@ -852,7 +853,7 @@ export default function ClubDetailPage() {
         }
       }
     } catch (error) {
-      console.error('[ClubDetailPage] Error loading data:', error);
+      reportError(error, 'ClubDetailPage.Error_loading_data');
       // Clear stale session cache on error to prevent ghost data on next visit
       try {
         sessionStorage.removeItem(`club_detail_cache_${clubId}`);
@@ -898,7 +899,7 @@ export default function ClubDetailPage() {
       masterBus.emit('CLUB_SETTINGS_UPDATED', { clubId });
       loadClubData(); // Reload to get fresh data
     } catch (error) {
-      console.error('Failed to save settings:', error);
+      reportError(error, 'ClubDetailPage.Failed_to_save_settings');
       toast.error('Failed to save settings');
     } finally {
       setSavingSettings(false);
@@ -1841,7 +1842,7 @@ export default function ClubDetailPage() {
               toast.success('Table deleted');
             } catch (err) {
               // Rollback: re-add the table to the list
-              console.error('Failed to delete table:', err);
+              reportError(err, 'ClubDetailPage.Failed_to_delete_table');
               toast.error('Failed to delete table');
               // Force reload to restore accurate state
               if (clubId) {

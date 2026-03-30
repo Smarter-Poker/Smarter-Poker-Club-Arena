@@ -15,6 +15,7 @@
 
 import { SupabaseClient } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
+import { reportError } from '../utils/errorReporter';
 
 export interface BootStatus {
   antigravityOk: boolean;
@@ -84,7 +85,7 @@ export function initAntiGravity(): BootStatus {
 
   // Log errors if any
   if (errors.length > 0) {
-    console.error('[ANTIGRAVITY] Boot Errors:', errors);
+    reportError(errors, 'AntiGravityBoot.Boot_Errors');
   }
 
   return bootStatus;

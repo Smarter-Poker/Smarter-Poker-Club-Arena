@@ -12,6 +12,7 @@ import { WalletService } from './WalletService';
 import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
 import { QUERY_LIMITS } from '../lib/constants';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -272,7 +273,7 @@ class DailyChallengeServiceClass {
       onConflict: 'user_id,challenge_id,assigned_date',
       ignoreDuplicates: true,
     });
-    if (insertErr) console.error('[DailyChallenge] Failed to assign daily challenges:', insertErr);
+    if (insertErr) reportError(insertErr, 'DailyChallengeService.Failed_to_assign_daily_challenges');
 
     // Always re-fetch from DB to get canonical rows (handles race condition correctly)
     const { data: canonical } = await supabase
@@ -329,7 +330,7 @@ class DailyChallengeServiceClass {
       onConflict: 'user_id,challenge_id,assigned_date',
       ignoreDuplicates: true,
     });
-    if (insertErr) console.error('[DailyChallenge] Failed to assign weekly challenges:', insertErr);
+    if (insertErr) reportError(insertErr, 'DailyChallengeService.Failed_to_assign_weekly_challenges');
 
     // Re-fetch canonical rows from DB
     const { data: canonical } = await supabase
@@ -388,7 +389,7 @@ class DailyChallengeServiceClass {
       ignoreDuplicates: true,
     });
     if (insertErr)
-      console.error('[DailyChallenge] Failed to assign monthly challenges:', insertErr);
+      reportError(insertErr, 'DailyChallengeService.Failed_to_assign_monthly_challenges');
 
     // Re-fetch canonical rows from DB
     const { data: canonical } = await supabase
@@ -484,7 +485,7 @@ class DailyChallengeServiceClass {
           })
           .eq('id', uc.id);
         if (progErr) {
-          console.error('[DailyChallenge] Progress update failed:', progErr);
+          reportError(progErr, 'DailyChallengeService.Progress_update_failed');
           continue;
         }
       }
@@ -523,7 +524,7 @@ class DailyChallengeServiceClass {
         p_reward_amount: rewardAmount,
       });
       if (result.error) {
-        console.error('[DailyChallenge] RPC claim error:', result.error);
+        reportError(result.error, 'DailyChallengeService.RPC_claim_error');
         throw new Error(result.error.message);
       }
       return result;

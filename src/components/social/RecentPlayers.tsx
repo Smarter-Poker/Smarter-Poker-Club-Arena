@@ -9,6 +9,7 @@ import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { formatRelativeShort as formatTime } from '@/lib/date';
 import './RecentPlayers.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
+import { reportError } from '../../utils/errorReporter';
 
 interface RecentPlayer {
   id: string;
@@ -81,7 +82,7 @@ export const RecentPlayers: React.FC<RecentPlayersProps> = ({
       const livePlayers: RecentPlayer[] = [];
       setPlayers(livePlayers);
     } catch (error) {
-      console.error('Failed to load recent players:', error);
+      reportError(error, 'RecentPlayers.Failed_to_load_recent_players');
     } finally {
       setLoading(false);
     }

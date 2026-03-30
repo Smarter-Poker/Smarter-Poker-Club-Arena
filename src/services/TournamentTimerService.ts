@@ -15,6 +15,7 @@ import { supabase } from '../lib/supabase';
 import { tournamentService } from './TournamentService';
 import { masterBus } from '../core/MasterBus';
 import type { Tournament } from '../types/database.types';
+import { reportError } from '../utils/errorReporter';
 
 interface TournamentTimerState {
   tournamentId: string;
@@ -51,7 +52,7 @@ class TournamentTimerServiceClass {
    */
   startTimer(tournamentId: string): void {
     if (this.activeTimers.has(tournamentId)) {
-      console.error(`[TournamentTimer] Timer already running for ${tournamentId}`);
+      reportError(new Error(`[TournamentTimer] Timer already running for ${tournamentId}`), 'TournamentTimerService.Timer_already_running_for_tournamentId');
       return;
     }
 
@@ -149,7 +150,7 @@ class TournamentTimerServiceClass {
 
       timer.lastTick = Date.now();
     } catch (error: unknown) {
-      console.error(`[TournamentTimer] Error in tick for ${tournamentId}:`, error);
+      reportError(error, 'TournamentTimerService.Error_in_tick_for_tournamentId');
     } finally {
       // Always release the lock, even on error
       const t = this.activeTimers.get(tournamentId);
@@ -294,7 +295,7 @@ class TournamentTimerServiceClass {
         }
       }
     } catch (err: unknown) {
-      console.error('[TournamentTimer] checkTableSize error:', err);
+      reportError(err, 'TournamentTimerService.checkTableSize_error');
     }
   }
 
@@ -369,7 +370,7 @@ class TournamentTimerServiceClass {
         },
       });
     } catch (error: unknown) {
-      console.error(`[TournamentTimer] Broadcast error:`, error);
+      reportError(error, 'TournamentTimerService.Broadcast_error');
     }
   }
 

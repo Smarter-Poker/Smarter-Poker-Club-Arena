@@ -9,6 +9,7 @@ import { CardImage } from '../table/CardImage';
 import type { Card as CardImageCard } from '../table/CardImage';
 import './HandReplay.css';
 import { useToast } from '../common/Toast';
+import { reportError } from '../../utils/errorReporter';
 
 interface PlayerAction {
   player_id: string;
@@ -193,7 +194,7 @@ export default function HandReplay({
         setHandData(getFallbackHandData());
       }
     } catch (error) {
-      console.error('Failed to load hand:', error);
+      reportError(error, 'HandReplay.Failed_to_load_hand');
       setHandData(getFallbackHandData());
     }
     setIsLoading(false);
@@ -244,7 +245,7 @@ export default function HandReplay({
           url: shareUrl,
         });
       } catch (err) {
-        console.error('[HandReplay] Error:', err);
+        reportError(err, 'HandReplay.Error');
         copyToClipboard(shareUrl);
       }
     } else {

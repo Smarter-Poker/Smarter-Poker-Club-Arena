@@ -18,6 +18,7 @@ import DisputeSubmitModal from '../components/wallet/DisputeSubmitModal';
 
 import TransactionLedgerView from '../components/common/TransactionLedgerView';
 import './PlayerWalletPage.css';
+import { reportError } from '../utils/errorReporter';
 
 type WalletTab = 'overview' | 'transfer' | 'history';
 type WalletType = 'BUSINESS' | 'PLAYER' | 'PROMO';
@@ -256,7 +257,7 @@ export default function PlayerWalletPage() {
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[PlayerWalletPage] ❌ Realtime channel error:', err?.message || err);
+          reportError(err?.message || err, 'PlayerWalletPage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[PlayerWalletPage] ⏱️ Realtime channel timed out');

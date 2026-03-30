@@ -19,6 +19,7 @@ import { masterBus } from '../../core/MasterBus';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import styles from './FriendSuggestions.module.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
+import { reportError } from '../../utils/errorReporter';
 
 export default function FriendSuggestions() {
   const navigate = useNavigate();
@@ -92,7 +93,7 @@ export default function FriendSuggestions() {
       // Emit bus event so other components react too
       masterBus.emit('FRIEND_REQUEST_SENT', { fromUserId: user.id, toUserId: userId });
     } catch (err) {
-      console.error('[FriendSuggestions] Error:', err);
+      reportError(err, 'FriendSuggestions.Error');
       if (isMounted.current) toast.error('Failed to send request');
     }
     if (isMounted.current) setSendingRequest(null);

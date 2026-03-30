@@ -22,6 +22,7 @@ import PageSkeleton from '../components/common/PageSkeleton';
 import TransactionLedgerView from '../components/common/TransactionLedgerView';
 
 import { useIsMounted } from '../hooks/useIsMounted';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -266,7 +267,7 @@ export default function SettlementDashboardPage() {
         }
       }
     } catch (err) {
-      console.error('[Settlement] Load failed:', err);
+      reportError(err, 'SettlementDashboardPage.Load_failed');
       if (isMounted.current) {
         setLoadError((err as Error).message || 'Failed to load settlement data');
         toast.error('Failed to load settlement data');
@@ -334,10 +335,7 @@ export default function SettlementDashboardPage() {
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error(
-            '[SettlementDashboardPage] ❌ Realtime channel error:',
-            err?.message || err
-          );
+          reportError(err?.message || err, 'SettlementDashboardPage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[SettlementDashboardPage] ⏱️ Realtime channel timed out');
@@ -385,7 +383,7 @@ export default function SettlementDashboardPage() {
     } catch (err) {
       if (!isMounted.current) return;
       toast.error('Canary check failed to execute');
-      console.error('[Settlement] Canary check error:', err);
+      reportError(err, 'SettlementDashboardPage.Canary_check_error');
     }
     if (isMounted.current) setRunningCanary(false);
   };
@@ -406,7 +404,7 @@ export default function SettlementDashboardPage() {
     } catch (err) {
       if (!isMounted.current) return;
       toast.error('Settlement execution failed');
-      console.error('[Settlement] Execution error:', err);
+      reportError(err, 'SettlementDashboardPage.Execution_error');
     }
     if (isMounted.current) setRunningSettlement(false);
   };

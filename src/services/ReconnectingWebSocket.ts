@@ -13,6 +13,7 @@
  */
 
 import { masterBus } from '../core/MasterBus';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -95,7 +96,7 @@ export class ReconnectingWebSocket {
       console.debug(`[ReconnectingWS] Queued message (${this.pendingMessages.length} pending)`);
       return true;
     }
-    console.error('[ReconnectingWS] Pending queue full — dropping message');
+    reportError(new Error('[ReconnectingWS] Pending queue full — dropping message'), 'ReconnectingWebSocket.Pending_queue_full__dropping_message');
     return false;
   }
 
@@ -146,7 +147,7 @@ export class ReconnectingWebSocket {
             });
           } catch (err) {
 
-            console.error("[ReconnectingWebSocket] Error:", err);
+            reportError(err, 'ReconnectingWebSocket.Error');
             /* non-fatal */
           }
           this.reconnectStartTime = 0;
@@ -183,13 +184,13 @@ export class ReconnectingWebSocket {
             try {
               handler(msg);
             } catch (err: unknown) {
-              console.error('[ReconnectingWS] Handler error:', err);
+              reportError(err, 'ReconnectingWebSocket.Handler_error');
             }
           }
         } catch (err) {
 
-          console.error("[ReconnectingWebSocket] Error:", err);
-          console.error('[ReconnectingWS] Non-JSON message received');
+          reportError(err, 'ReconnectingWebSocket.Error');
+          reportError(new Error('[ReconnectingWS] Non-JSON message received'), 'ReconnectingWebSocket.NonJSON_message_received');
         }
       };
 
@@ -203,11 +204,11 @@ export class ReconnectingWebSocket {
       };
 
       this.ws.onerror = (error) => {
-        console.error('[ReconnectingWS] Error:', error);
+        reportError(error, 'ReconnectingWebSocket.Error');
         // onclose will fire after onerror — reconnect handled there
       };
     } catch (err: unknown) {
-      console.error('[ReconnectingWS] Failed to create WebSocket:', err);
+      reportError(err, 'ReconnectingWebSocket.Failed_to_create_WebSocket');
       if (!this.intentionalClose) {
         this.attemptReconnect();
       }
@@ -216,9 +217,7 @@ export class ReconnectingWebSocket {
 
   private attemptReconnect(): void {
     if (this.retryCount >= this.options.maxRetries) {
-      console.error(
-        `[ReconnectingWS] Max retries (${this.options.maxRetries}) reached — giving up`
-      );
+      reportError(new Error(`[ReconnectingWS] Max retries (${this.options.maxRetries}) reached — giving up`), 'ReconnectingWebSocket.Max_retries_thisoptionsmaxRetries_reache');
       this.setStatus('failed');
       masterBus.emit('WS_CONNECTION_FAILED', { url: this.url, retries: this.retryCount });
       return;
@@ -272,7 +271,7 @@ export class ReconnectingWebSocket {
       try {
         handler(status);
       } catch (err: unknown) {
-        console.error('[ReconnectingWS] Status handler error:', err);
+        reportError(err, 'ReconnectingWebSocket.Status_handler_error');
       }
     }
 

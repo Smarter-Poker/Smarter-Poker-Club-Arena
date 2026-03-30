@@ -12,6 +12,7 @@ import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import haptic from '../../utils/haptic';
+import { reportError } from '../../utils/errorReporter';
 
 interface TableRow {
   id: string;
@@ -72,10 +73,10 @@ export default function AdminTableHeatmap({
           )
           .eq('club_id', clubId)
           .eq('is_deleted', false);
-        if (heatmapErr) console.error('[AdminTableHeatmap] Load failed:', heatmapErr.message);
+        if (heatmapErr) reportError(heatmapErr, 'AdminTableHeatmap.Load_failed');
         if (isMounted.current && data) setFetchedTables(data);
       } catch (err) {
-        console.error('[AdminTableHeatmap] Error:', err);
+        reportError(err, 'AdminTableHeatmap.Error');
         /* silent */
       }
     };
@@ -100,7 +101,7 @@ export default function AdminTableHeatmap({
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[AdminTableHeatmap] ❌ Realtime channel error:', err?.message || err);
+          reportError(err?.message || err, 'AdminTableHeatmap._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[AdminTableHeatmap] ⏱️ Realtime channel timed out');

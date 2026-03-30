@@ -14,6 +14,7 @@ import {
 import { masterBus } from '../../core/MasterBus';
 import { useToast } from '../common/Toast';
 import './PromotionDetail.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface PromotionDetailProps {
   promotion: Promotion;
@@ -56,7 +57,7 @@ export default function PromotionDetail({
       const entries = await promotionService.getLeaderboard(promoId, 10);
       if (isMounted.current) setLeaderboard(entries);
     } catch (err) {
-      console.error('[PromotionDetail] leaderboard error:', err);
+      reportError(err, 'PromotionDetail.leaderboard_error');
     }
     if (isMounted.current) setLoadingLb(false);
   }, []);
@@ -76,7 +77,7 @@ export default function PromotionDetail({
       toast.success('Promotion claimed!');
       onClaimed();
     } catch (err: any) {
-      console.error('[PromotionDetail] claim error:', err);
+      reportError(err, 'PromotionDetail.claim_error');
       if (isMounted.current) toast.error(err.message || 'Failed to claim promotion');
     }
     if (isMounted.current) setClaiming(false);

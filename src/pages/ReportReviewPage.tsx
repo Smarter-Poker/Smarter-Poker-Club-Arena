@@ -12,6 +12,7 @@ import { sanitizeInput } from '../utils/sanitizeInput';
 import PageSkeleton from '../components/common/PageSkeleton';
 import ClubBottomNav from '../components/club/ClubBottomNav';
 import './ReportReviewPage.css';
+import { reportError } from '../utils/errorReporter';
 
 const reportCardAnimationStyle = (index: number) => ({
   opacity: 0,
@@ -81,7 +82,7 @@ export default function ReportReviewPage() {
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[ReportReviewPage] ❌ Realtime channel error:', err?.message || err);
+          reportError(err?.message || err, 'ReportReviewPage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[ReportReviewPage] ⏱️ Realtime channel timed out');
@@ -121,7 +122,7 @@ export default function ReportReviewPage() {
       setReports(data || []);
     } catch (error) {
       if (getIsMounted && !getIsMounted()) return;
-      console.error('Failed to load reports:', error);
+      reportError(error, 'ReportReviewPage.Failed_to_load_reports');
       toast.error('Failed to load reports');
     }
     if (getIsMounted && !getIsMounted()) return;

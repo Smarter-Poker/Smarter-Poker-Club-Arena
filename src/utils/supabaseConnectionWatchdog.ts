@@ -18,6 +18,7 @@
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { OfflineQueueService } from '../services/OfflineQueueService';
+import { reportError } from './errorReporter';
 
 const HEARTBEAT_INTERVAL = 30_000; // 30 seconds (was 45s — more frequent now)
 const PING_TIMEOUT = 8_000; // 8 seconds max for health check
@@ -191,7 +192,7 @@ class SupabaseConnectionWatchdog {
             try {
               channel.subscribe((status: string, err?: Error) => {
                 if (status === 'CHANNEL_ERROR') {
-                  console.error('[Watchdog] ❌ Channel re-subscribe error:', err?.message || err);
+                  reportError(err?.message || err, 'supabaseConnectionWatchdog._Channel_resubscribe_error');
                 }
                 if (status === 'TIMED_OUT') {
                   console.warn('[Watchdog] ⏱️ Channel re-subscribe timed out');
@@ -204,7 +205,7 @@ class SupabaseConnectionWatchdog {
         });
       }
     } catch (err) {
-      console.error('[Watchdog] Failed to reconnect channels:', err);
+      reportError(err, 'supabaseConnectionWatchdog.Failed_to_reconnect_channels');
     }
   }
 

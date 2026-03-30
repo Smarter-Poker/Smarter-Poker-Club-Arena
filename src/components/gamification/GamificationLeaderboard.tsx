@@ -3,6 +3,7 @@ import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { supabase } from '../../lib/supabase';
 import './GamificationLeaderboard.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
+import { reportError } from '../../utils/errorReporter';
 
 interface LeaderboardEntry {
   id: string;
@@ -85,7 +86,7 @@ export default function GamificationLeaderboard() {
         );
       }
     } catch (err) {
-      console.error('[Leaderboard] Failed to fetch:', err);
+      reportError(err, 'GamificationLeaderboard.Failed_to_fetch');
     } finally {
       setLoading(false);
     }

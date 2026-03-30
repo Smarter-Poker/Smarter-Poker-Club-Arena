@@ -3,6 +3,7 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 import { masterBus } from '../core/MasterBus';
 import { TournamentEngine } from './TournamentEngine';
 import { tableBalancer, type BalancerTable } from './TableBalancer';
+import { reportError } from '../utils/errorReporter';
 
 /**
  * TOURNAMENT ORCHESTRATOR
@@ -69,19 +70,13 @@ export class TournamentOrchestrator {
               ) {
                 if (status === 'RUNNING') {
                   this.spinUpTournament(tournamentId).catch((err) => {
-                    console.error(
-                      `[TournamentOrchestrator] Realtime spinUp failed for ${tournamentId}:`,
-                      err
-                    );
+                    reportError(err, 'TournamentOrchestrator.Realtime_spinUp_failed_for_tournamentId');
                   });
                 } else if (newRow?.started_at) {
                   const startTime = new Date(newRow.started_at).getTime();
                   if (Date.now() >= startTime - 60_000) {
                     this.spinUpTournament(tournamentId).catch((err) => {
-                      console.error(
-                        `[TournamentOrchestrator] Realtime spinUp failed for ${tournamentId}:`,
-                        err
-                      );
+                      reportError(err, 'TournamentOrchestrator.Realtime_spinUp_failed_for_tournamentId');
                     });
                   }
                 }
@@ -102,20 +97,14 @@ export class TournamentOrchestrator {
         )
         .subscribe((status: string, err?: Error) => {
           if (status === 'CHANNEL_ERROR') {
-            console.error(
-              '[TournamentOrchestrator] ❌ Realtime channel error:',
-              err?.message || err
-            );
+            reportError(err?.message || err, 'TournamentOrchestrator._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
             console.warn('[TournamentOrchestrator] ⏱️ Realtime channel timed out');
           }
         });
     } catch (err: unknown) {
-      console.error(
-        '[TournamentOrchestrator] Realtime subscription failed, relying on polling:',
-        err
-      );
+      reportError(err, 'TournamentOrchestrator.Realtime_subscription_failed_relying_on_');
     }
 
     // 3. Keep 60s polling as fallback
@@ -204,20 +193,14 @@ export class TournamentOrchestrator {
               // If it's within 1 minute of starting, or already past, boot it up
               if (now >= startTime - 60_000) {
                 this.spinUpTournament(tournamentId).catch((err) => {
-                  console.error(
-                    `[TournamentOrchestrator] Sync spinUp failed for ${tournamentId}:`,
-                    err
-                  );
+                  reportError(err, 'TournamentOrchestrator.Sync_spinUp_failed_for_tournamentId');
                 });
               }
             }
           } else if (tInfo.status === 'RUNNING') {
             // Always re-hydrate running tournaments (crash recovery)
             this.spinUpTournament(tournamentId).catch((err) => {
-              console.error(
-                `[TournamentOrchestrator] Sync spinUp failed for ${tournamentId}:`,
-                err
-              );
+              reportError(err, 'TournamentOrchestrator.Sync_spinUp_failed_for_tournamentId');
             });
           }
         }
@@ -235,7 +218,7 @@ export class TournamentOrchestrator {
       // 3. Check for upcoming tournament notification windows (24h / 1h)
       await this.checkNotificationHooks();
     } catch (err: unknown) {
-      console.error('[TournamentOrchestrator] Error syncing active tournaments:', err);
+      reportError(err, 'TournamentOrchestrator.Error_syncing_active_tournaments');
     }
   }
 
@@ -254,7 +237,7 @@ export class TournamentOrchestrator {
       // Await the start to ensure engine is actually ready before marking complete
       await engine.start();
     } catch (err) {
-      console.error(`[TournamentOrchestrator] Engine failed to start for ${tournamentId}:`, err);
+      reportError(err, 'TournamentOrchestrator.Engine_failed_to_start_for_tournamentId');
       this.activeEngines.delete(tournamentId);
       throw err; // Re-throw for caller to handle
     } finally {
@@ -273,7 +256,7 @@ export class TournamentOrchestrator {
   async handleMultiDayFlight(tournamentId: string): Promise<void> {
     const engine = this.activeEngines.get(tournamentId);
     if (!engine) {
-      console.error(`[TournamentOrchestrator] No active engine for ${tournamentId}`);
+      reportError(new Error(`[TournamentOrchestrator] No active engine for ${tournamentId}`), 'TournamentOrchestrator.No_active_engine_for_tournamentId');
       return;
     }
 
@@ -288,7 +271,7 @@ export class TournamentOrchestrator {
       if (error) throw error;
 
       if (!players || players.length === 0) {
-        console.error(`[TournamentOrchestrator] No active players to bag for ${tournamentId}`);
+        reportError(new Error(`[TournamentOrchestrator] No active players to bag for ${tournamentId}`), 'TournamentOrchestrator.No_active_players_to_bag_for_tournamentI');
         return;
       }
 
@@ -307,7 +290,7 @@ export class TournamentOrchestrator {
         .upsert(flightRecords, { onConflict: 'tournament_id,user_id' });
 
       if (insertError) {
-        console.error(`[TournamentOrchestrator] Failed to bag flights:`, insertError);
+        reportError(insertError, 'TournamentOrchestrator.Failed_to_bag_flights');
         return;
       }
 
@@ -335,7 +318,7 @@ export class TournamentOrchestrator {
         /* best effort */
       }
     } catch (err: unknown) {
-      console.error(`[TournamentOrchestrator] Error bagging flight ${tournamentId}:`, err);
+      reportError(err, 'TournamentOrchestrator.Error_bagging_flight_tournamentId');
     }
   }
 
@@ -353,7 +336,7 @@ export class TournamentOrchestrator {
 
       if (error) throw error;
       if (!flights || flights.length === 0) {
-        console.error(`[TournamentOrchestrator] No bagged players for ${tournamentId}`);
+        reportError(new Error(`[TournamentOrchestrator] No bagged players for ${tournamentId}`), 'TournamentOrchestrator.No_bagged_players_for_tournamentId');
         return;
       }
 
@@ -372,9 +355,7 @@ export class TournamentOrchestrator {
         (r) => r.status === 'rejected' || (r.status === 'fulfilled' && r.value?.error)
       );
       if (restoreFailures.length > 0) {
-        console.error(
-          `[TournamentOrchestrator] CRITICAL: ${restoreFailures.length}/${flights.length} chip restores failed — aborting Day 2 start to prevent players playing with stale chips`
-        );
+        reportError(new Error(`[TournamentOrchestrator] CRITICAL: ${restoreFailures.length}/${flights.length} chip restores failed — aborting Day 2 start to prevent players playing with stale chips`), 'TournamentOrchestrator.CRITICAL');
         return; // Bail out — flights stay "bagged" so a retry is safe
       }
 
@@ -404,7 +385,7 @@ export class TournamentOrchestrator {
         /* best effort */
       }
     } catch (err: unknown) {
-      console.error(`[TournamentOrchestrator] Error starting Day 2 for ${tournamentId}:`, err);
+      reportError(err, 'TournamentOrchestrator.Error_starting_Day_2_for_tournamentId');
     }
   }
 
@@ -467,7 +448,7 @@ export class TournamentOrchestrator {
         }
       }
     } catch (err: unknown) {
-      console.error('[TournamentOrchestrator] Error checking notification hooks:', err);
+      reportError(err, 'TournamentOrchestrator.Error_checking_notification_hooks');
     }
   }
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -541,10 +522,7 @@ export class TournamentOrchestrator {
           });
 
           if (insertErr) {
-            console.error(
-              `[TournamentOrchestrator] Seat insert failed for ${move.playerId} at ${move.toTableId} — rolling back:`,
-              insertErr
-            );
+            reportError(insertErr, 'TournamentOrchestrator.Seat_insert_failed_for_moveplayerId_at_m');
             // Rollback: re-seat player at their original table
             await supabase.from('table_seats').insert({
               table_id: move.fromTableId,
@@ -566,14 +544,11 @@ export class TournamentOrchestrator {
             });
           }
         } catch (moveErr: unknown) {
-          console.error(
-            `[TournamentOrchestrator] Failed to move ${move.playerId}: ${move.fromTableId} → ${move.toTableId}`,
-            moveErr
-          );
+          reportError(moveErr, 'TournamentOrchestrator.Failed_to_move_moveplayerId');
         }
       }
     } catch (err: unknown) {
-      console.error(`[TournamentOrchestrator] Rebalance error for ${tournamentId}:`, err);
+      reportError(err, 'TournamentOrchestrator.Rebalance_error_for_tournamentId');
     }
   }
 }

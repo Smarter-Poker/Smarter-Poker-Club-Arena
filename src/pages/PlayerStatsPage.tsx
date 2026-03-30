@@ -39,6 +39,7 @@ import PageSkeleton from '../components/common/PageSkeleton';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { useSwipeTabs } from '../hooks/useSwipeTabs';
 import './PlayerStatsPage.css';
+import { reportError } from '../utils/errorReporter';
 
 // ── SWR Cache helpers (localStorage for cross-session persistence) ──
 const STATS_CACHE_KEY = 'ps_stats_v2_';
@@ -282,7 +283,7 @@ export default function PlayerStatsPage() {
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[PlayerStatsPage] ❌ Realtime channel error:', err?.message || err);
+          reportError(err?.message || err, 'PlayerStatsPage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[PlayerStatsPage] ⏱️ Realtime channel timed out');
@@ -431,7 +432,7 @@ export default function PlayerStatsPage() {
         });
       }
     } catch (error) {
-      console.error('Failed to load stats:', error);
+      reportError(error, 'PlayerStatsPage.Failed_to_load_stats');
       if (isMounted.current) toast.error('Failed to load player stats');
     } finally {
       if (isMounted.current) setLoading(false);

@@ -37,6 +37,7 @@ import { resolveClubIdFilter, resolveClubUUID } from '../utils/clubIdResolver';
 import { useIsMounted } from '../hooks/useIsMounted';
 import GlobalUXIndicators from '../components/common/GlobalUXIndicators';
 import DynamicWallet from '../components/wallet/DynamicWallet';
+import { reportError } from '../utils/errorReporter';
 
 // SWR cache helpers for instant club data display
 function getClubHomeCache(clubId: string) {
@@ -287,7 +288,7 @@ export default function ClubHomePage() {
         .subscribe((status: string, err?: Error) => {
           setWsConnected(status === 'SUBSCRIBED');
           if (status === 'CHANNEL_ERROR') {
-            console.error('[ClubHomePage] ❌ Tables RT channel error:', err?.message || err);
+            reportError(err?.message || err, 'ClubHomePage._Tables_RT_channel_error');
           } else if (status === 'TIMED_OUT') {
             console.warn('[ClubHomePage] ⏱️ Tables RT channel timed out');
           }
@@ -431,7 +432,7 @@ export default function ClubHomePage() {
       );
 
       if (clubError || !clubData) {
-        console.error('Failed to load club:', clubError);
+        reportError(clubError, 'ClubHomePage.Failed_to_load_club');
         toast.error('Failed to load club details');
         if (!getIsMounted || getIsMounted()) setLoading(false);
         return;
@@ -707,7 +708,7 @@ export default function ClubHomePage() {
         return levelInfo;
       });
     } catch (error: any) {
-      console.error('Error loading club data:', error);
+      reportError(error, 'ClubHomePage.Error_loading_club_data');
       toast.error(error.message || 'Failed to load club data');
     } finally {
       loadingRef.current = false;
@@ -1257,7 +1258,7 @@ export default function ClubHomePage() {
               setTables((prev) => prev.filter((t) => t.id !== id));
               toast.success('Table deleted');
             } catch (err) {
-              console.error('Failed to delete table:', err);
+              reportError(err, 'ClubHomePage.Failed_to_delete_table');
               toast.error('Failed to delete table');
             } finally {
               setDeletingTableId(null);

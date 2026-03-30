@@ -26,6 +26,7 @@ import {
   type PlayerStyleResult,
 } from '../../services/PlayerStyleClassifier';
 import './PlayerStyleRadar.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface PlayerStyleRadarProps {
   userId: string;
@@ -44,7 +45,7 @@ function getCached(userId: string): RadarAxis[] | null {
     const raw = sessionStorage.getItem(CACHE_PREFIX + userId);
     return raw ? JSON.parse(raw) : null;
   } catch (err: unknown) {
-    console.error('[PlayerStyleRadar] Error:', err instanceof Error ? err.message : String(err));
+    reportError(err instanceof Error ? err.message : String(err), 'PlayerStyleRadar.Error');
     return null;
   }
 }
@@ -52,7 +53,7 @@ function setCache(userId: string, data: RadarAxis[]) {
   try {
     sessionStorage.setItem(CACHE_PREFIX + userId, JSON.stringify(data));
   } catch (err: unknown) {
-    console.error('[PlayerStyleRadar] Error:', err instanceof Error ? err.message : String(err));
+    reportError(err instanceof Error ? err.message : String(err), 'PlayerStyleRadar.Error');
     /* quota exceeded — ignore */
   }
 }
@@ -194,7 +195,7 @@ export default function PlayerStyleRadar({ userId }: PlayerStyleRadarProps) {
         );
       }
     } catch (err: unknown) {
-      console.error('[PlayerStyleRadar] Error:', err instanceof Error ? err.message : String(err));
+      reportError(err instanceof Error ? err.message : String(err), 'PlayerStyleRadar.Error');
       if (isMounted.current) setAxes([]);
     } finally {
       if (isMounted.current) setLoading(false);
@@ -230,7 +231,7 @@ export default function PlayerStyleRadar({ userId }: PlayerStyleRadarProps) {
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[PlayerStyleRadar] ❌ Realtime channel error:', err?.message || err);
+          reportError(err?.message || err, 'PlayerStyleRadar._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[PlayerStyleRadar] ⏱️ Realtime channel timed out');

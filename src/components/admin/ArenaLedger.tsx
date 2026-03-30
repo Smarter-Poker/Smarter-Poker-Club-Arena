@@ -17,6 +17,7 @@ import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { formatDateTime } from '../../lib/date';
 import './ArenaLedger.css';
+import { reportError } from '../../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -114,7 +115,7 @@ export default function ArenaLedger({ clubId, maxEntries = 200 }: ArenaLedgerPro
 
       if (isMounted.current) setEntries(combined.slice(0, maxEntries));
     } catch (err) {
-      console.error('[ArenaLedger] Fetch error:', err);
+      reportError(err, 'ArenaLedger.Fetch_error');
     } finally {
       if (isMounted.current) setLoading(false);
     }
@@ -177,7 +178,7 @@ export default function ArenaLedger({ clubId, maxEntries = 200 }: ArenaLedgerPro
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[ArenaLedger] ❌ Realtime channel error:', err?.message || err);
+          reportError(err?.message || err, 'ArenaLedger._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[ArenaLedger] ⏱️ Realtime channel timed out');

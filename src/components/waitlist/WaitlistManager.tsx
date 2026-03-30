@@ -5,6 +5,7 @@ import { masterBus } from '../../core/MasterBus';
 import { useToast } from '../common/Toast';
 import './WaitlistManager.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
+import { reportError } from '../../utils/errorReporter';
 
 interface VisibleItemsState {
   [key: string]: Set<number>;
@@ -77,7 +78,7 @@ export const WaitlistManager: React.FC<WaitlistManagerProps> = ({
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[WaitlistManager] ❌ Realtime channel error:', err?.message || err);
+          reportError(err?.message || err, 'WaitlistManager._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[WaitlistManager] ⏱️ Realtime channel timed out');
@@ -96,7 +97,7 @@ export const WaitlistManager: React.FC<WaitlistManagerProps> = ({
         .select('id, user_id, position, created_at')
         .eq('table_id', tableId)
         .order('position', { ascending: true });
-      if (error) console.error('[WaitlistManager] Load failed:', error.message);
+      if (error) reportError(error, 'WaitlistManager.Load_failed');
 
       if (data && data.length > 0) {
         // Fetch profiles separately
@@ -128,7 +129,7 @@ export const WaitlistManager: React.FC<WaitlistManagerProps> = ({
         );
       }
     } catch (error) {
-      console.error('Failed to load waitlist:', error);
+      reportError(error, 'WaitlistManager.Failed_to_load_waitlist');
     } finally {
       if (isMounted.current) setLoading(false);
     }

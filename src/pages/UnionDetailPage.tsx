@@ -26,6 +26,7 @@ import ConfirmModal from '../components/common/ConfirmModal';
 import CreateTournamentModal from '../components/club/CreateTournamentModal';
 import { ensureMidwayUnionSetup } from '../services/HorseOrchestrator';
 import { getUnionLevel, getClubLevel } from '../utils/clubLevels';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -306,7 +307,7 @@ export default function UnionDetailPage() {
           }
         }
       } catch (err) {
-        console.error('[UnionDetailPage] Error loading data:', err);
+        reportError(err, 'UnionDetailPage.Error_loading_data');
         toast.error('Failed to load union data');
       } finally {
         loadingRef.current = false;
@@ -482,7 +483,7 @@ export default function UnionDetailPage() {
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[UnionDetailPage] ❌ Realtime channel error:', err?.message || err);
+          reportError(err?.message || err, 'UnionDetailPage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[UnionDetailPage] ⏱️ Realtime channel timed out');
@@ -548,7 +549,7 @@ export default function UnionDetailPage() {
         setShowClubSelector(true);
       }
     } catch (error) {
-      console.error(error);
+      reportError(error, 'UnionDetailPage.error');
       toast.error('Failed to load your clubs.');
     }
   };
@@ -563,7 +564,7 @@ export default function UnionDetailPage() {
         setShowClubSelector(false);
       }
     } catch (error) {
-      console.error(error);
+      reportError(error, 'UnionDetailPage.error');
       toast.error('Failed to send application.');
     } finally {
       setApplying(false);

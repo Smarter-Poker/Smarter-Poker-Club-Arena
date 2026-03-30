@@ -7,6 +7,7 @@ import {
 } from '../../services/TournamentService';
 import styles from './CreateTournamentModal.module.css';
 import { useToast } from '../common/Toast';
+import { reportError } from '../../utils/errorReporter';
 
 interface Props {
   clubId: string;
@@ -313,7 +314,7 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
       toast.success('Tournament created');
       onSuccess();
     } catch (error: any) {
-      console.error('Failed to create tournament:', error);
+      reportError(error, 'CreateTournamentModal.Failed_to_create_tournament');
       toast.error(error?.message || 'Failed to create tournament');
     } finally {
       setIsSubmitting(false);

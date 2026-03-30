@@ -155,6 +155,7 @@ function LoadingSpinner() {
 
 // Imported from centralized storage keys
 import { STORAGE_KEYS } from './lib/storage';
+import { reportError } from './utils/errorReporter';
 
 export default function App() {
   // Check if intro video has been shown this session
@@ -253,7 +254,7 @@ export default function App() {
 
     // Boot all engine services
     bootServices().catch((err) => {
-      console.error('[App] Service bootstrap failed:', err);
+      reportError(err, 'App.Service_bootstrap_failed');
     });
 
     // Preload critical page chunks during idle time so they're cached

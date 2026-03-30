@@ -20,6 +20,7 @@ import { horseBugReporter } from './HorseBugReporter';
 import { WalletService } from './WalletService';
 import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -519,7 +520,8 @@ class AutoRebuyServiceCore {
       );
 
       if (creditError) {
-        console.error(
+        reportError(creditError, 'AutoRebuyService.executeRebuy');
+        console.debug(
           '[AutoRebuy] Wallet topup failed for horse ' + horseId + ':',
           creditError.message
         );

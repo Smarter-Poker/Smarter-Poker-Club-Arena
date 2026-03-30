@@ -14,6 +14,7 @@ import { vipService, FEATURE_PRICING, VIPFeature } from '../../services/VIPServi
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
 import './TableSettings.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface TableSettingsProps {
   isOpen: boolean;
@@ -93,7 +94,7 @@ export function TableSettings({
         setIsVIP(vip);
       } catch (err) {
 
-        console.error("[TableSettings] Error:", err);
+        reportError(err, 'TableSettings.Error');
         setIsVIP(false);
       }
       setLoading(false);

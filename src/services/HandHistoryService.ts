@@ -8,6 +8,7 @@
 
 import { supabase } from '../lib/supabase';
 import type { Card } from '../types/database.types';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -428,10 +429,7 @@ class HandHistoryServiceClass {
         map.set(p.id, { username: p.username, avatar_url: p.avatar_url });
       }
     } catch (err: unknown) {
-      console.error(
-        '[HandHistoryService] Error:',
-        err instanceof Error ? err.message : String(err)
-      );
+      reportError(err, 'HandHistoryService.fetchProfileMap');
       // Non-critical — names will fall back to truncated user_id
     }
 
@@ -537,7 +535,7 @@ class HandHistoryServiceClass {
       console.debug(`[HandHistory] Saved hand #${handData.handNumber} to Supabase (id: ${handId})`);
     } catch (err: unknown) {
       // Non-critical — localStorage is the primary store
-      console.error('[HandHistory] Supabase save failed (non-critical):', err);
+      reportError(err, 'HandHistoryService.saveHandToSupabase');
     }
   }
 

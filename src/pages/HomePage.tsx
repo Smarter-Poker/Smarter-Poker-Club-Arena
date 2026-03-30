@@ -310,10 +310,32 @@ function HomePageInner() {
                   ...m.club,
                   is_owner: m.role === 'owner',
                   member_count: m.club?.member_count || 0,
-                  // Detect unions by name (e.g. "Midway Union")
-                  entity_type: /union/i.test(m.club?.name || '') ? 'union' : 'club',
+                  entity_type: 'club' as const, // Default — resolved below via unions table
                 }) as UserClub
             ) || [];
+
+          // Resolve union entities from DB (not name regex) — a club is a union
+          // if its ID also exists as a row in the `unions` table
+          if (clubs.length > 0) {
+            try {
+              const clubIds = clubs.map((c) => c.id);
+              const { data: unionMatches } = await supabase
+                .from('unions')
+                .select('id')
+                .in('id', clubIds);
+              if (unionMatches && unionMatches.length > 0) {
+                const unionIdSet = new Set(unionMatches.map((u: any) => u.id));
+                for (const c of clubs) {
+                  if (unionIdSet.has(c.id)) c.entity_type = 'union';
+                }
+              }
+            } catch {
+              // Fallback: use name regex if unions table query fails
+              for (const c of clubs) {
+                if (/union/i.test(c.name || '')) c.entity_type = 'union';
+              }
+            }
+          }
           if (getIsMounted && !getIsMounted()) return;
           setUserClubs(clubs);
           // Enhancement #9: Update SWR cache

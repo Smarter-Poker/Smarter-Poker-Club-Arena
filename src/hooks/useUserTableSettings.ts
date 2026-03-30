@@ -37,6 +37,8 @@ export interface UserTableSettings {
   voice_message: boolean;
   text_message: boolean;
   emoji_enabled: boolean;
+  /** FIX 173: Bible V8 §10.3 — Skip animations option for speed players */
+  skip_animations: boolean;
 }
 
 export const DEFAULT_USER_TABLE_SETTINGS: UserTableSettings = {
@@ -52,6 +54,7 @@ export const DEFAULT_USER_TABLE_SETTINGS: UserTableSettings = {
   voice_message: true,
   text_message: true,
   emoji_enabled: true,
+  skip_animations: false,
 };
 
 // Metadata for rendering toggles
@@ -110,6 +113,11 @@ export const TABLE_SETTINGS_META: SettingMeta[] = [
   { key: 'voice_message', label: 'Voice Message', description: 'Enable voice chat at table' },
   { key: 'text_message', label: 'Text Message', description: 'Enable text chat at table' },
   { key: 'emoji_enabled', label: 'Emoji', description: 'Enable emoji reactions/throwables' },
+  {
+    key: 'skip_animations',
+    label: 'Skip Animations',
+    description: 'Disable deal/action animations for faster play (Bible V8 §10.3)',
+  },
 ];
 
 const LOCAL_CACHE_KEY = 'user_table_settings_cache';
@@ -172,6 +180,7 @@ export function useUserTableSettings(userId: string | null | undefined) {
             voice_message: data.voice_message ?? DEFAULT_USER_TABLE_SETTINGS.voice_message,
             text_message: data.text_message ?? DEFAULT_USER_TABLE_SETTINGS.text_message,
             emoji_enabled: data.emoji_enabled ?? DEFAULT_USER_TABLE_SETTINGS.emoji_enabled,
+            skip_animations: data.skip_animations ?? DEFAULT_USER_TABLE_SETTINGS.skip_animations,
           };
           setSettings(loaded);
           // Cache locally for instant loads

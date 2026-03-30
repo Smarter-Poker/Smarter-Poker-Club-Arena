@@ -10,7 +10,7 @@ import {
   type ConnectionState,
 } from '../../services/DisconnectProtectionService';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
-import { haptic } from '../../services/SoundService';
+import { haptic, soundService } from '../../services/SoundService';
 import { useToast } from '../common/Toast';
 import './ConnectionHUD.css';
 
@@ -85,6 +85,8 @@ export const ConnectionHUD: React.FC<ConnectionHUDProps> = ({ tableId, userId })
       setAutoActionText(null); // Reset action text
       setShowDisconnectWarning(true);
       wasDisconnectedRef.current = true;
+      // FIX 172: Play disconnect sound (Bible V8 §5.3)
+      if (soundService.isEnabled()) soundService.playDisconnect();
       haptic.double(); // Haptic: disconnect warning
     }
   });
@@ -95,6 +97,8 @@ export const ConnectionHUD: React.FC<ConnectionHUDProps> = ({ tableId, userId })
       hasTimedOutRef.current = false; // Reset on reconnect
       setAutoActionText(null); // Reset action text
       setShowDisconnectWarning(false);
+      // FIX 172: Play reconnect sound (Bible V8 §5.3)
+      if (soundService.isEnabled()) soundService.playReconnect();
       haptic.medium(); // Haptic: reconnected confirmation
 
       // Show reconnect toast and stale data banner

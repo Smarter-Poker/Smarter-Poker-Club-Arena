@@ -4323,10 +4323,11 @@ export default function TablePage({
   return (
     <div
       className={`table-page${isAllInMode ? ' table-page--allin-mode' : ''}${tableState.currentPlayerSeat === tableState.heroSeat && tableState.isHandInProgress ? ' table-page--hero-turn' : ''}${winnerInfo.playerIds.length > 0 ? ' table-page--winner-flash' : ''}`}
-      data-felt-theme={v8Theme.theme_id || userSettings.theme || 'black'}
+      data-felt-theme={v8Theme.table_id || v8Theme.theme_id || userSettings.theme || 'black'}
       data-background-theme={v8Theme.background_id || 'diamond-pattern'}
       data-button-theme={v8Theme.button_id || 'red-d-gear'}
       data-cards-theme={v8Theme.cards_id || 'standard-red'}
+      data-theme-preset={v8Theme.theme_id || 'default-dark'}
     >
       <style>{`
                 @keyframes boardSlideIn { from { opacity: 0; transform: scale(0.98); } to { opacity: 1; transform: scale(1); } }

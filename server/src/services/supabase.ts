@@ -8,6 +8,7 @@
  */
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { reportError } from './errorReporter.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONFIGURATION
@@ -18,7 +19,7 @@ const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || '';
 
 if (!SUPABASE_SERVICE_ROLE_KEY) {
-  console.error('[Supabase] FATAL: SUPABASE_SERVICE_ROLE_KEY is not set!');
+  reportError(new Error('[Supabase] FATAL: SUPABASE_SERVICE_ROLE_KEY is not set!'), 'Supabase.FATAL');
   process.exit(1);
 }
 
@@ -174,9 +175,7 @@ export async function syncStacks(
   );
   const failures = results.filter((r) => r.status === 'rejected');
   if (failures.length > 0) {
-    console.error(
-      `[DB] ${failures.length}/${players.length} stack syncs failed for table ${tableId}`
-    );
+    reportError(new Error(`[DB] ${failures.length}/${players.length} stack syncs failed for table ${tableId}`), 'DB.failureslengthplayerslength_st');
   }
 }
 
@@ -254,7 +253,7 @@ export async function autoRebuyHorse(
       .eq('wallet_type', 'PLAYER');
 
     if (deductErr) {
-      console.error(`[DB] Rebuy wallet deduct failed for ${userId}:`, deductErr.message);
+      reportError(deductErr, 'DB.Rebuy_wallet_deduct_failed_for');
       return false;
     }
 
@@ -281,7 +280,7 @@ export async function autoRebuyHorse(
     return true;
   } catch (err: any) {
     if (!err.message?.includes('Insufficient balance') && !err.message?.includes('Active seat not found')) {
-      console.error(`[DB] Unexpected atomic auto-rebuy failure for ${userId}:`, err.message);
+      reportError(err, 'DB.Unexpected_atomic_autorebuy_fa');
     }
     return false;
   }
@@ -583,9 +582,7 @@ export async function logRakeCollection(
       });
 
       if (rakeCredErr) {
-        console.error(
-          `[logRakeCollection] Rake credit failed for ${rakeRecipientId}: ${rakeCredErr.message}`
-        );
+        reportError(new Error(`[logRakeCollection] Rake credit failed for ${rakeRecipientId}: ${rakeCredErr.message}`), 'logRakeCollection.Rake_credit_failed_for_rakeRec');
       } else {
         // Log wallet transaction only on successful credit
         const { error: txErr } = await supabase.rpc('log_wallet_transaction', {
@@ -599,7 +596,7 @@ export async function logRakeCollection(
           p_hand_id: null,
           p_related_entity_id: clubId,
         });
-        if (txErr) console.error(`[logRakeCollection] Rake tx log failed: ${txErr.message}`);
+        if (txErr) reportError(new Error(`[logRakeCollection] Rake tx log failed: ${txErr.message}`), 'logRakeCollection.Rake_tx_log_failed');
       }
     }
   } catch (e) {
@@ -747,10 +744,7 @@ export async function logInsuranceSettlement(params: {
     });
 
     if (error) {
-      console.error(
-        `[logInsuranceSettlement] RPC failed for player ${params.playerId} hand #${params.handNumber}:`,
-        error.message
-      );
+      reportError(error, 'logInsuranceSettlement.RPC_failed_for_player_paramspl');
     }
   } catch (e) {
     console.warn(`[logInsuranceSettlement] Failed for hand #${params.handNumber}:`, e);
@@ -829,7 +823,7 @@ export async function ensureHorseWallet(
     });
 
     if (refillErr) {
-      console.error(`[refillHorseWallet] Credit failed for horse ${horseId}: ${refillErr.message}`);
+      reportError(new Error(`[refillHorseWallet] Credit failed for horse ${horseId}: ${refillErr.message}`), 'refillHorseWallet.Credit_failed_for_horse_horseI');
       return;
     }
 
@@ -941,7 +935,7 @@ export async function processBBJPayout(params: {
       .eq('id', pool.id);
 
     if (poolErr) {
-      console.error(`[processBBJPayout] Pool update failed:`, poolErr.message);
+      reportError(poolErr, 'processBBJPayout.Pool_update_failed');
       return null;
     }
 
@@ -970,7 +964,7 @@ export async function processBBJPayout(params: {
       .maybeSingle();
 
     if (payoutErr) {
-      console.error(`[processBBJPayout] Payout record failed:`, payoutErr.message);
+      reportError(payoutErr, 'processBBJPayout.Payout_record_failed');
     }
 
     // 6. Record individual table share recipients
@@ -1014,7 +1008,7 @@ export async function processBBJPayout(params: {
       poolId: pool.id,
     };
   } catch (e) {
-    console.error(`[processBBJPayout] Fatal error:`, e);
+    reportError(e, 'processBBJPayout.Fatal_error');
     return null;
   }
 }

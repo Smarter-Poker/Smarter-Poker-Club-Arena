@@ -20,6 +20,7 @@ import {
   type OFCCard,
   type OFCRow,
 } from './OFCPineappleEngine.js';
+import { reportError } from '../services/errorReporter.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -336,7 +337,7 @@ export class OFCDealingOrchestrator {
 
   private emitEvent(event: OFCEvent): void {
     if (this.onEvent) {
-      try { this.onEvent(event); } catch (err) { console.error('[OFCDealingOrchestrator] Event handler error:', err); }
+      try { this.onEvent(event); } catch (err) { reportError(err, 'OFCDealingOrchestrator.eventHandler'); }
     }
   }
 }

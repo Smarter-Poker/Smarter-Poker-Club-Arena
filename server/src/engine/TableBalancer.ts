@@ -1,3 +1,5 @@
+import { reportError } from '../services/errorReporter.js';
+
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  TABLE BALANCER — MTT Table Balancing Optimizer
@@ -246,7 +248,7 @@ export class TableBalancer {
 
   private emitEvent(event: TableBalancerEvent): void {
     if (this.onEvent) {
-      try { this.onEvent(event); } catch (err) { console.error('[TableBalancer] Event handler error:', err); }
+      try { this.onEvent(event); } catch (err) { reportError(err, 'TableBalancer.eventHandler'); }
     }
   }
 }

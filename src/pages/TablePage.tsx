@@ -125,6 +125,8 @@ import SpectatorBadge from '../components/table/SpectatorBadge';
 // import HandStrengthIndicator from '../components/table/HandStrengthIndicator';
 import SessionTimer from '../components/table/SessionTimer';
 import { horseBugReporter } from '../services/HorseBugReporter';
+import { useUserTableSettings } from '../hooks/useUserTableSettings';
+import { useUserThemeSettings } from '../hooks/useUserThemeSettings';
 import GameServerAPI, {
   submitAction,
   respondToRIT,
@@ -226,6 +228,15 @@ const ENGINE_SUIT_MAP: Record<string, 'h' | 'd' | 'c' | 's'> = {
   clubs: 'c',
   spades: 's',
 };
+
+// Bible V8 §11.1: cards_pre_sort — sort hole cards by rank (high → low)
+const RANK_ORDER: Record<string, number> = {
+  '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8,
+  '9': 9, '10': 10, T: 10, J: 11, Q: 12, K: 13, A: 14,
+};
+function sortCardsByRank(cards: Card[]): Card[] {
+  return [...cards].sort((a, b) => (RANK_ORDER[b.rank] ?? 0) - (RANK_ORDER[a.rank] ?? 0));
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // GAME VARIANT LABEL HELPER
@@ -1443,6 +1454,33 @@ export default function TablePage({
     userSettingsRef.current = userSettings;
   }, [userSettings]);
 
+  // Bible V8 §11.1: Supabase-backed user table preferences (12 toggles)
+  const {
+    settings: v8Settings,
+    loading: v8SettingsLoading,
+  } = useUserTableSettings(userId !== 'guest' ? userId : null);
+
+  // Bible V8 §11.2: Per-game-type theme from Supabase
+  const { theme: v8Theme } = useUserThemeSettings(
+    userId !== 'guest' ? userId : null,
+    tableState.gameType,
+    tableState.isTournament,
+    undefined // tournamentType resolved internally from gameType
+  );
+
+  // Bible V8 §11.1 + §10.3: skip_animations → override animation speed to instant (0)
+  useEffect(() => {
+    if (v8Settings.skip_animations) {
+      document.documentElement.style.setProperty('--animation-speed', '0');
+    }
+    // Cleanup: restore normal animation speed if user toggles it off
+    return () => {
+      if (v8Settings.skip_animations) {
+        document.documentElement.style.removeProperty('--animation-speed');
+      }
+    };
+  }, [v8Settings.skip_animations]);
+
   // Sync sound volume from persisted settings on mount (and when slider changes)
   useEffect(() => {
     soundService.setMasterVolume(userSettings.soundVolume / 100);
@@ -1733,10 +1771,12 @@ export default function TablePage({
               rawCards = row.cards as any;
             }
 
-            const formattedCards = (rawCards || []).map((c: any) => ({
+            let formattedCards = (rawCards || []).map((c: any) => ({
               rank: c.rank,
               suit: ENGINE_SUIT_MAP[c.suit] || (c.suit as 'h' | 'd' | 'c' | 's'),
             }));
+            // Bible V8 §11.1: cards_pre_sort — sort by rank high→low
+            if (v8Settings.cards_pre_sort) formattedCards = sortCardsByRank(formattedCards);
 
             updatedPlayers[heroIdx] = {
               ...updatedPlayers[heroIdx]!,
@@ -1791,12 +1831,15 @@ export default function TablePage({
             } catch (e) {
               rawCards = data.cards as any;
             }
+            let parsedCards = (rawCards || []).map((c: any) => ({
+              rank: c.rank,
+              suit: ENGINE_SUIT_MAP[c.suit] || (c.suit as any),
+            }));
+            // Bible V8 §11.1: cards_pre_sort — sort by rank high→low
+            if (v8Settings.cards_pre_sort) parsedCards = sortCardsByRank(parsedCards);
             updatedPlayers[heroIdx] = {
               ...updatedPlayers[heroIdx]!,
-              holeCards: (rawCards || []).map((c: any) => ({
-                rank: c.rank,
-                suit: ENGINE_SUIT_MAP[c.suit] || (c.suit as any),
-              })),
+              holeCards: parsedCards,
               showCards: true,
             };
           }
@@ -4276,7 +4319,10 @@ export default function TablePage({
   return (
     <div
       className={`table-page${isAllInMode ? ' table-page--allin-mode' : ''}${tableState.currentPlayerSeat === tableState.heroSeat && tableState.isHandInProgress ? ' table-page--hero-turn' : ''}${winnerInfo.playerIds.length > 0 ? ' table-page--winner-flash' : ''}`}
-      data-felt-theme={userSettings.theme || 'black'}
+      data-felt-theme={v8Theme.theme_id || userSettings.theme || 'black'}
+      data-background-theme={v8Theme.background_id || 'diamond-pattern'}
+      data-button-theme={v8Theme.button_id || 'red-d-gear'}
+      data-cards-theme={v8Theme.cards_id || 'standard-red'}
     >
       <style>{`
                 @keyframes boardSlideIn { from { opacity: 0; transform: scale(0.98); } to { opacity: 1; transform: scale(1); } }
@@ -4574,7 +4620,7 @@ export default function TablePage({
                   seatNumber={seatNumber}
                   player={player || null}
                   position={tableState.positions[idx] || null}
-                  isActive={seatNumber === tableState.currentPlayerSeat}
+                  isActive={seatNumber === tableState.currentPlayerSeat && v8Settings.highlight_active_players}
                   lastAction={tableState.lastActions[idx] || null}
                   lastBetAmount={tableState.lastBetAmounts[idx] || 0}
                   timerProgress={
@@ -4601,6 +4647,8 @@ export default function TablePage({
                   deckStyle={userSettings.fourColorDeck ? '4color' : '2color'}
                   cardBack={userSettings.cardBack}
                   showStackInBB={userSettings.showStackInBB}
+                  showAvatar={v8Settings.show_avatars}
+                  showBadges={v8Settings.show_badges}
                   playerStyle={
                     userSettings.showHUD && player && !player.isHero
                       ? (() => {

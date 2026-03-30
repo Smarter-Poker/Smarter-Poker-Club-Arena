@@ -17,6 +17,7 @@
  */
 
 import type { ActionType } from '../types.js';
+import { reportError } from '../services/errorReporter.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -315,7 +316,7 @@ export class ServerActionValidator {
       try {
         this.onRejection(event);
       } catch (err) {
-        console.error('[ServerActionValidator] Rejection handler error:', err);
+        reportError(err, 'ServerActionValidator.Rejection_handler_error');
       }
     }
 

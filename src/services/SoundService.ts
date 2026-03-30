@@ -447,7 +447,8 @@ class SoundService {
       osc.stop(startTime + 0.5);
     });
 
-    haptic.medium();
+    // FIX 180: Bible V8 §5.4 — "you win: heavy celebration haptic" (was medium)
+    haptic.strong();
   }
 
   /**

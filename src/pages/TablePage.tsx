@@ -1543,69 +1543,10 @@ export default function TablePage({
   const [currentRake, setCurrentRake] = useState<RakeCalculation | null>(null);
   const [sessionRake, setSessionRake] = useState(0);
 
-  // Handle hand complete - calculate rake, execute waterfall, and record BBJ contribution
-  const handleHandComplete = async (
-    handId: string,
-    potSize: number,
-    wentToFlop: boolean,
-    players: Array<{ userId: string; clubId: string; agentId?: string }>
-  ) => {
-    // Parse blinds from string (e.g., "0.25/0.50" -> sb=0.25, bb=0.50)
-    // Use ref for fresh blinds (this function is called from event handler closures)
-    const currentBlinds = tableStateRef.current.blinds || '?/?';
-    const blindParts = currentBlinds.split('/');
-    const smallBlind = parseFloat(blindParts[0]) || 1;
-    const bigBlind = parseFloat(blindParts[1]) || 2;
-
-    // Calculate rake using official stake-based chart
-    const rakeCalc = RakeService.calculateRake(potSize, bigBlind, wentToFlop, smallBlind);
-    setCurrentRake(rakeCalc);
-    setSessionRake((prev) => prev + rakeCalc.cappedRake);
-
-    // Execute waterfall (distribute rake to all parties)
-    if (tableId && players.length > 0) {
-      const clubId = actualClubIdRef.current || players[0]?.clubId || tableId;
-      try {
-        // Resolve unionId from club → union_clubs join table
-        let unionId: string | undefined;
-        try {
-          const { data: ucRow } = await supabase
-            .from('union_clubs')
-            .select('union_id')
-            .eq('club_id', await resolveClubUUID(clubId))
-            .limit(1)
-            .maybeSingle();
-          if (ucRow) unionId = ucRow.union_id;
-        } catch {
-          /* club may not be in a union — standalone club */
-        }
-
-        const waterfallResult = await RakeService.executeWaterfall({
-          handId,
-          tableId,
-          clubId,
-          unionId,
-          smallBlind,
-          potSize,
-          bigBlind,
-          wentToFlop,
-          players: players.map((p) => ({
-            ...p,
-            isSittingOut: false,
-            hasCards: true,
-            wentToFlop,
-          })),
-        });
-
-        // Update local BBJ display from waterfall result
-        if (waterfallResult.bbjContributed && wentToFlop) {
-          setBbjAmount((prev) => prev + BBJService.calculateContribution(bigBlind));
-        }
-      } catch (rakeErr) {
-        console.error('[Rake] Waterfall failed:', rakeErr);
-      }
-    }
-  };
+  // [MIGRATION] handleHandComplete REMOVED — FIX 181
+  // Rake calculation and waterfall execution are server-authoritative (Bible V8 Law 1.4).
+  // The server's PokerEngine.ts calculates rake and supabase.ts distributes it.
+  // This client-side duplicate was dead code (never called after HandController removal).
 
   // Leave-table notification state (replaces blocking alert())
   const [leaveNotice, setLeaveNotice] = useState<string | null>(null);

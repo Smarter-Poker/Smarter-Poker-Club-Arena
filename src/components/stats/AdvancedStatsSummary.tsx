@@ -116,7 +116,8 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ userId, ini
     try {
       const { data: userResp } = await getAuthUser();
       return userResp.user?.id || null;
-    } catch {
+    } catch (e) {
+      reportError(e, 'AdvancedStatsSummary.useCallback');
       return null;
     }
   }, [userId]);

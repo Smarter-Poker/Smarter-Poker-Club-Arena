@@ -180,7 +180,8 @@ export default function InvitePage() {
       toast.success('Invite link copied!');
       clearTimeout(copiedTimerRef.current);
       copiedTimerRef.current = setTimeout(() => setCopied(false), 2000);
-    } catch {
+    } catch (e) {
+      reportError(e, 'InvitePage.setTimeout');
       toast.error('Failed to copy link');
     }
   };

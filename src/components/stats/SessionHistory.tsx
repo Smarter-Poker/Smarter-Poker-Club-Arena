@@ -79,7 +79,8 @@ const SessionHistory: React.FC<SessionHistoryProps> = ({ userId, initialSessions
     try {
       const { data: userResp } = await getAuthUser();
       return userResp.user?.id || null;
-    } catch {
+    } catch (e) {
+      reportError(e, 'SessionHistory.useCallback');
       return null;
     }
   }, [userId]);

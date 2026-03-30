@@ -260,7 +260,8 @@ export default function FriendsPage() {
             for (const p of profiles)
               profileMap[p.id] = { username: p.username, avatar_url: p.avatar_url };
           }
-        } catch {
+        } catch (e) {
+          reportError(e, 'FriendsPage.pendingUserIds');
           /* non-critical */
         }
       }
@@ -527,7 +528,8 @@ export default function FriendsPage() {
                       { key: 'user_id', label: 'User ID' },
                     ]);
                     toast.success('Friends exported!');
-                  } catch {
+                  } catch (e) {
+                    reportError(e, 'FriendsPage');
                     toast.error('Export failed');
                   }
                 }}

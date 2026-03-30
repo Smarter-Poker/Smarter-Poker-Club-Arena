@@ -80,7 +80,8 @@ export default function TournamentLobbyPage() {
           .limit(1)
           .maybeSingle();
         if (isMounted.current && data) setIsInUnion(true);
-      } catch {
+      } catch (e) {
+        reportError(e, 'TournamentLobbyPage.async');
         /* fail-open */
       }
     })();
@@ -384,7 +385,8 @@ export default function TournamentLobbyPage() {
               filterClubIds = allUcRows.map((r) => r.club_id);
             }
           }
-        } catch {
+        } catch (e) {
+          reportError(e, 'TournamentLobbyPage.map');
           // Fail-open: just use the single clubId
         }
       }

@@ -26,6 +26,7 @@
 import { supabase } from '../lib/supabase';
 import { WalletService } from './WalletService';
 import { masterBus } from '../core/MasterBus';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -537,7 +538,7 @@ export const HydraService = {
       })
       .then(({ error }) => {
         if (error)
-          console.debug('[Hydra] log_wallet_transaction (buy_in) note:', error.message);
+          reportError(error, 'HydraService.seatHorse.logTransaction', { horseId, tableId, stack });
       });
 
     // Update horse status to seated
@@ -680,7 +681,7 @@ export const HydraService = {
         })
         .then(({ error }) => {
           if (error)
-            console.debug('[Hydra] log_wallet_transaction (cashout) note:', error.message);
+            reportError(error, 'HydraService.removeHorse.logTransaction', { horseId, tableId, returnedChips });
         });
     }
 

@@ -171,7 +171,8 @@ export default function FinancialAdminHub() {
               .select('*', { count: 'exact', head: true })
               .in('status', ['open', 'under_review', 'escalated']);
             return r.count || 0;
-          } catch {
+          } catch (e) {
+            reportError(e, 'FinancialAdminHub.async');
             return 0;
           }
         })(),
@@ -181,7 +182,8 @@ export default function FinancialAdminHub() {
               .from('commission_rate_audit')
               .select('*', { count: 'exact', head: true });
             return r.count || 0;
-          } catch {
+          } catch (e) {
+            reportError(e, 'FinancialAdminHub.async');
             return 0;
           }
         })(),
@@ -191,7 +193,8 @@ export default function FinancialAdminHub() {
               .from('rake_rate_audit')
               .select('*', { count: 'exact', head: true });
             return r.count || 0;
-          } catch {
+          } catch (e) {
+            reportError(e, 'FinancialAdminHub.async');
             return 0;
           }
         })(),
@@ -201,7 +204,8 @@ export default function FinancialAdminHub() {
               .from('financial_health_checks')
               .select('*', { count: 'exact', head: true });
             return r.count || 0;
-          } catch {
+          } catch (e) {
+            reportError(e, 'FinancialAdminHub.async');
             return 0;
           }
         })(),
@@ -212,7 +216,8 @@ export default function FinancialAdminHub() {
               .select('*', { count: 'exact', head: true })
               .eq('resolved', false);
             return r.count || 0;
-          } catch {
+          } catch (e) {
+            reportError(e, 'FinancialAdminHub.async');
             return 0;
           }
         })(),
@@ -225,7 +230,8 @@ export default function FinancialAdminHub() {
               .limit(1)
               .maybeSingle();
             return r.data;
-          } catch {
+          } catch (e) {
+            reportError(e, 'FinancialAdminHub.async');
             return null;
           }
         })(),
@@ -238,7 +244,8 @@ export default function FinancialAdminHub() {
               .order('created_at', { ascending: true })
               .limit(5000);
             return r.data;
-          } catch {
+          } catch (e) {
+            reportError(e, 'FinancialAdminHub.async');
             return null;
           }
         })(),

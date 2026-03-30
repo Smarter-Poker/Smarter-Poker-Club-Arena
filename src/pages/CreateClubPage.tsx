@@ -500,7 +500,8 @@ export default function CreateClubPage() {
         }
         return;
       }
-    } catch {
+    } catch (e) {
+      reportError(e, 'CreateClubPage');
       // Non-blocking — proceed even if check fails
     }
 
@@ -519,7 +520,8 @@ export default function CreateClubPage() {
         }
         return;
       }
-    } catch {
+    } catch (e) {
+      reportError(e, 'CreateClubPage');
       // Non-blocking — proceed even if check fails
     }
 

@@ -300,7 +300,8 @@ export default function CashoutRequestModal({
         if (isMounted.current) setIsSubmitting(false);
         return;
       }
-    } catch {
+    } catch (e) {
+      reportError(e, 'CashoutRequestModal.handleSubmit');
       // Fail-open: allow cashout if settlement check fails
     }
 

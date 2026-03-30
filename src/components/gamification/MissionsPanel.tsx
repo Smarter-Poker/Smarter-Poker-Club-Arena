@@ -9,6 +9,7 @@ import { useState, useMemo, useRef, useEffect } from 'react';
 import { triggerHaptic } from '../../services/HapticService';
 import { masterBus } from '../../core/MasterBus';
 import './MissionsPanel.css';
+import { reportError } from '../../utils/errorReporter';
 
 type MissionTier = 'daily' | 'weekly' | 'monthly';
 
@@ -157,7 +158,8 @@ export default function MissionsPanel({ missions, onClaim }: MissionsPanelProps)
                             rewardType: mission.rewardType,
                             rewardAmount: mission.rewardAmount,
                           });
-                        } catch {
+                        } catch (e) {
+                          reportError(e, 'MissionsPanel.setCelebratingIds');
                           // Claim failed — no celebration, ProfilePage shows error toast
                         }
                       }}

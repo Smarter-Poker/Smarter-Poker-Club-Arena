@@ -221,7 +221,8 @@ class AgentServiceClass {
           parentAgentName = parentProfile?.display_name;
         }
       }
-    } catch {
+    } catch (e) {
+      reportError(e, 'AgentService');
       /* non-critical */
     }
 
@@ -800,7 +801,8 @@ class AgentServiceClass {
       if (profiles) {
         for (const p of profiles) profileMap[p.id] = p;
       }
-    } catch {
+    } catch (e) {
+      reportError(e, 'AgentService.map');
       /* non-critical */
     }
 

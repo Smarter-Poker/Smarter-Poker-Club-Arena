@@ -663,7 +663,8 @@ export const SettlementService = {
             affectedClubs: clubs.length,
           }
         );
-      } catch {
+      } catch (e) {
+        reportError(e, 'SettlementService');
         /* best effort */
       }
 
@@ -735,7 +736,8 @@ export const SettlementService = {
                 error: errMsg,
               }
             );
-          } catch {
+          } catch (e) {
+            reportError(e, 'SettlementService');
             /* best effort — already logged to console */
           }
 

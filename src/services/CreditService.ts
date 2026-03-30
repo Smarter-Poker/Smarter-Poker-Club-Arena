@@ -125,7 +125,8 @@ export const CreditService = {
           .maybeSingle();
         agentName = profile?.display_name || 'Unknown';
       }
-    } catch {
+    } catch (e) {
+      reportError(e, 'CreditService.getCreditAccount');
       /* non-critical */
     }
 
@@ -338,39 +339,57 @@ export const CreditService = {
     const periodStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const dueDate = new Date(now.getTime() + 48 * 60 * 60 * 1000); // 48 hour grace
 
-    const { data, error } = await supabase
-      .from('credit_invoices')
-      .insert({
-        agent_id: agentId,
-        period_start: periodStart.toISOString(),
-        period_end: periodEnd.toISOString(),
-        debt_owed: debt.debtOwed,
-        amount_paid: 0,
-        amount_remaining: debt.debtOwed,
-        status: 'pending',
-        due_date: dueDate.toISOString(),
-      })
-      .select()
-      .maybeSingle();
+    try {
+      const { data, error } = await supabase
+        .from('credit_invoices')
+        .insert({
+          agent_id: agentId,
+          period_start: periodStart.toISOString(),
+          period_end: periodEnd.toISOString(),
+          debt_owed: debt.debtOwed,
+          amount_paid: 0,
+          amount_remaining: debt.debtOwed,
+          status: 'pending',
+          due_date: dueDate.toISOString(),
+        })
+        .select()
+        .maybeSingle();
 
-    if (error) throw error;
-    return this.mapInvoice(data, account.agentName);
+      if (error) {
+        reportError(error, 'CreditService.generateSundayInvoice', { agentId, debtOwed: debt.debtOwed });
+        return null;
+      }
+      return this.mapInvoice(data, account.agentName);
+    } catch (e) {
+      reportError(e, 'CreditService.generateSundayInvoice.tableAccess', { agentId });
+      return null;
+    }
   },
 
   /**
    * Get invoices for an agent
    */
   async getAgentInvoices(agentId: string): Promise<CreditInvoice[]> {
-    const { data, error } = await supabase
-      .from('credit_invoices')
-      .select(
-        'id, agent_id, period_start, period_end, debt_owed, amount_paid, amount_remaining, status, due_date, created_at, paid_at'
-      )
-      .eq('agent_id', agentId)
-      .order('created_at', { ascending: false })
-      .limit(QUERY_LIMITS.LIST);
+    let data: any[] | null = null;
+    try {
+      const result = await supabase
+        .from('credit_invoices')
+        .select(
+          'id, agent_id, period_start, period_end, debt_owed, amount_paid, amount_remaining, status, due_date, created_at, paid_at'
+        )
+        .eq('agent_id', agentId)
+        .order('created_at', { ascending: false })
+        .limit(QUERY_LIMITS.LIST);
 
-    if (error) throw error;
+      if (result.error) {
+        reportError(result.error, 'CreditService.getAgentInvoices', { agentId });
+        return [];
+      }
+      data = result.data;
+    } catch (e) {
+      reportError(e, 'CreditService.getAgentInvoices.tableAccess', { agentId });
+      return [];
+    }
 
     // Fetch agent display name separately (safe — no FK hint needed)
     let agentName = 'Unknown';
@@ -388,7 +407,8 @@ export const CreditService = {
           .maybeSingle();
         agentName = profile?.display_name || 'Unknown';
       }
-    } catch {
+    } catch (e) {
+      reportError(e, 'CreditService.getAgentInvoices');
       /* non-critical */
     }
 
@@ -458,13 +478,20 @@ export const CreditService = {
     }
 
     // STEP 2: Atomically update invoice amounts using ALREADY-FETCHED invoice data (no re-fetch TOCTOU)
-    const { error: updateError } = await supabase
-      .from('credit_invoices')
-      .update({
-        amount_remaining: Math.max(0, invoiceResult.amount_remaining - amount),
-        status: invoiceResult.amount_remaining - amount <= 0 ? 'paid' : 'pending',
-      })
-      .eq('id', invoiceId);
+    let updateError: any = null;
+    try {
+      const { error: _updateErr } = await supabase
+        .from('credit_invoices')
+        .update({
+          amount_remaining: Math.max(0, invoiceResult.amount_remaining - amount),
+          status: invoiceResult.amount_remaining - amount <= 0 ? 'paid' : 'pending',
+        })
+        .eq('id', invoiceId);
+      updateError = _updateErr;
+    } catch (e) {
+      reportError(e, 'CreditService.processPayment.invoiceUpdate', { invoiceId });
+      updateError = e;
+    }
 
     if (updateError) {
       // Rollback wallet deduction if invoice update failed — MUST BE LOGGED atomically

@@ -23,6 +23,7 @@ import {
   LeaveTableIcon,
 } from './TableMenuIcons';
 import './TableMenu.css';
+import { reportError } from '../../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -198,7 +199,8 @@ export function TableMenu({
           osc.stop(ctx.currentTime + 0.06);
           // Close AudioContext after playback to prevent resource leak
           setTimeout(() => ctx.close().catch(() => {}), 100);
-        } catch {
+        } catch (e) {
+          reportError(e, 'TableMenu.setTimeout');
           /* audio unavailable */
         }
       }

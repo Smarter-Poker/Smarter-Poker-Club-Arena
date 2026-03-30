@@ -206,7 +206,8 @@ class FriendSuggestionServiceClass {
           if (profiles) {
             for (const p of profiles) profileMap[p.id] = p as ProfileRow;
           }
-        } catch {
+        } catch (e) {
+          reportError(e, 'FriendSuggestionService.userIds');
           /* non-critical */
         }
       }

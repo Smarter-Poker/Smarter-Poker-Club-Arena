@@ -164,7 +164,8 @@ export default function ClubAnnouncementsPage() {
             setLoading(false);
           }
         }
-      } catch {
+      } catch (e) {
+        reportError(e, 'ClubAnnouncementsPage.loadAnnouncements');
         /* corrupt cache */
       }
 
@@ -188,7 +189,8 @@ export default function ClubAnnouncementsPage() {
               .select('id, username')
               .in('id', authorIds);
             if (profs) for (const p of profs) authorMap[p.id] = p.username || 'Admin';
-          } catch {
+          } catch (e) {
+            reportError(e, 'ClubAnnouncementsPage.Set');
             /* non-critical */
           }
         }

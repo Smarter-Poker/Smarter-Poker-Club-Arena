@@ -82,7 +82,8 @@ export default function ClubMessagesPage() {
         if (!cancelled && data?.role) {
           setUserRole(data.role as 'owner' | 'admin' | 'agent' | 'member');
         }
-      } catch {
+      } catch (e) {
+        reportError(e, 'ClubMessagesPage.async');
         /* non-critical */
       }
     })();
@@ -111,7 +112,8 @@ export default function ClubMessagesPage() {
               setLoading(false);
             }
           }
-        } catch {
+        } catch (e) {
+          reportError(e, 'ClubMessagesPage.async');
           /* corrupt cache */
         }
 

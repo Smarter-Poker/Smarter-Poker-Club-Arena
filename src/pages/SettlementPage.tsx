@@ -324,7 +324,8 @@ export default function SettlementPage() {
             setAutoSettlement(!!clubData.auto_settlement);
           }
         }
-      } catch {
+      } catch (e) {
+        reportError(e, 'SettlementPage');
         // Non-critical: default to false if query fails
       }
 

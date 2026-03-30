@@ -123,7 +123,8 @@ export const MembershipService = {
       if (profiles) {
         for (const p of profiles) profileMap[p.id] = p;
       }
-    } catch {
+    } catch (e) {
+      reportError(e, 'MembershipService.map');
       /* non-critical */
     }
 
@@ -288,7 +289,8 @@ export const MembershipService = {
       if (profiles) {
         for (const p of profiles) profileMap[p.id] = p;
       }
-    } catch {
+    } catch (e) {
+      reportError(e, 'MembershipService.map');
       /* non-critical */
     }
 

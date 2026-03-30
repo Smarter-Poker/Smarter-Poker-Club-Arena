@@ -126,7 +126,8 @@ function FriendListPanelInner({
           if (profiles) {
             for (const p of profiles) profileMap[p.id] = p;
           }
-        } catch {
+        } catch (e) {
+          reportError(e, 'FriendListPanel.inboundIds');
           /* non-critical */
         }
       }

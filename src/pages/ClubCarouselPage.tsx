@@ -253,7 +253,8 @@ export default function ClubCarouselPage() {
                 if (n.club_id) badges[n.club_id] = (badges[n.club_id] || 0) + 1;
               }
               setClubBadges(badges);
-            } catch {
+            } catch (e) {
+              reportError(e, 'ClubCarouselPage.async');
               /* non-critical */
             }
           })();
@@ -383,7 +384,8 @@ export default function ClubCarouselPage() {
           if (n.club_id) badges[n.club_id] = (badges[n.club_id] || 0) + 1;
         }
         setClubBadges(badges);
-      } catch {
+      } catch (e) {
+        reportError(e, 'ClubCarouselPage.async');
         /* non-critical */
       }
     })();
@@ -409,7 +411,8 @@ export default function ClubCarouselPage() {
           });
           setWallet((prev) => ({ ...prev, diamonds: profileData.diamonds || 0 }));
         }
-      } catch {
+      } catch (e) {
+        reportError(e, 'ClubCarouselPage.setWallet');
         /* non-critical */
       }
     },
@@ -462,7 +465,8 @@ export default function ClubCarouselPage() {
             return !loadedUnionIds.has(parentUnionId);
           });
         }
-      } catch {
+      } catch (e) {
+        reportError(e, 'ClubCarouselPage.filter');
         /* fail-open */
       }
       return clubList;

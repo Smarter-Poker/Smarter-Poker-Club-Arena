@@ -216,7 +216,8 @@ export default function AntiCheatPage() {
                 for (const p of profiles)
                   playerNames[p.id] = p.display_name || p.id.substring(0, 8);
               }
-            } catch {
+            } catch (e) {
+              reportError(e, 'AntiCheatPage.Set');
               /* non-critical */
             }
           }
@@ -274,7 +275,8 @@ export default function AntiCheatPage() {
             if (profiles) {
               for (const p of profiles) playerNames[p.id] = p.display_name || p.id.substring(0, 8);
             }
-          } catch {
+          } catch (e) {
+            reportError(e, 'AntiCheatPage.Set');
             /* non-critical */
           }
         }
@@ -649,7 +651,8 @@ export default function AntiCheatPage() {
                 } else {
                   toast.info?.('No data to export from this tab');
                 }
-              } catch {
+              } catch (e) {
+                reportError(e, 'AntiCheatPage');
                 /* silent */
               }
             }}

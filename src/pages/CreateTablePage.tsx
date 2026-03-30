@@ -17,6 +17,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import './CreateTablePage.css';
+import { reportError } from '../utils/errorReporter';
 
 const gameTypeCardAnimationStyle = (index: number) => ({
   opacity: 0,
@@ -127,7 +128,8 @@ export default function CreateTablePage() {
           .limit(1)
           .maybeSingle();
         if (data) navigate(`/clubs/${clubId}`, { replace: true });
-      } catch {
+      } catch (e) {
+        reportError(e, 'CreateTablePage.async');
         /* fail-open */
       }
     })();

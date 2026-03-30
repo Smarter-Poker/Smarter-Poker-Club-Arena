@@ -448,7 +448,7 @@ class AchievementServiceClass {
       { onConflict: 'user_id,achievement_id' }
     );
     if (upsertErr) {
-      console.debug('[AchievementService] setProgress upsert:', upsertErr?.message);
+      reportError(upsertErr, 'AchievementService.setProgress', { userId, achievementId });
       return;
     }
 

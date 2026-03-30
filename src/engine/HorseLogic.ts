@@ -17,6 +17,7 @@
 
 import type { Card, ActionType, SeatPlayer, HandStage } from '../types/database.types';
 import { evaluateHand, evaluateOmahaHand } from './PokerEngine';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -562,7 +563,8 @@ export class HorseLogic {
     try {
       const evaluator = gameVariant.startsWith('plo') ? evaluateOmahaHand : evaluateHand;
       myHand = evaluator(holeCards, communityCards);
-    } catch {
+    } catch (e) {
+      reportError(e, 'HorseLogic');
       // Graceful fallback if hand evaluation fails (e.g., card count mismatch)
       return 0.3;
     }

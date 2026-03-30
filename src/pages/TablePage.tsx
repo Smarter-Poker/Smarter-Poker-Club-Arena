@@ -650,7 +650,8 @@ export default function TablePage({
         channel.close();
         timeBankChannelRef.current = null;
       };
-    } catch {
+    } catch (e) {
+      reportError(e, 'TablePage.return');
       // BroadcastChannel not supported in this browser — multi-table relay disabled
       return;
     }
@@ -1701,7 +1702,8 @@ export default function TablePage({
       masterBus.emit('TABLE_LEFT', { tableId, seat: tableState.heroSeat });
       masterBus.emit('SESSION_ENDED', { tableId, userId });
       playerStatusService.clearPlayingAt(userId);
-    } catch {
+    } catch (e) {
+      reportError(e, 'TablePage.handleForceLeaveTable');
       // Fallback: forcefully close tab to prevent freeze
       masterBus.emit('TABLE_LEFT', { tableId, seat: tableState.heroSeat });
     }
@@ -1963,7 +1965,8 @@ export default function TablePage({
               showBuyMore,
               timedOutAction,
             });
-          } catch {
+          } catch (e) {
+            reportError(e, 'TablePage');
             /* BroadcastChannel not supported or closed */
           }
         }
@@ -1990,7 +1993,8 @@ export default function TablePage({
           // FIX 126: Relay to other open table tabs
           try {
             timeBankChannelRef.current?.postMessage({ type: 'time_bank_low', usesLeft });
-          } catch {
+          } catch (e) {
+            reportError(e, 'TablePage');
             /* BroadcastChannel not supported or closed */
           }
         }

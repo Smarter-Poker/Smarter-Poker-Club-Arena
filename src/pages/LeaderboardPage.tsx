@@ -504,7 +504,8 @@ export default function LeaderboardPage() {
                   { key: 'userId', label: 'User ID' },
                 ]);
                 toast.success('Leaderboard exported!');
-              } catch {
+              } catch (e) {
+                reportError(e, 'LeaderboardPage.find');
                 toast.error('Export failed');
               }
             }}

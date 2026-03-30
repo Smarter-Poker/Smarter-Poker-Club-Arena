@@ -196,7 +196,8 @@ export default function SettlementDashboardPage() {
             status: period.status,
           });
         }
-      } catch {
+      } catch (e) {
+        reportError(e, 'SettlementDashboardPage.useCallback');
         /* period may not exist */
       }
 
@@ -228,7 +229,8 @@ export default function SettlementDashboardPage() {
             }))
           );
         }
-      } catch {
+      } catch (e) {
+        reportError(e, 'SettlementDashboardPage.map');
         /* table may not exist */
       }
 
@@ -248,7 +250,8 @@ export default function SettlementDashboardPage() {
             }))
           );
         }
-      } catch {
+      } catch (e) {
+        reportError(e, 'SettlementDashboardPage.map');
         /* service method may not return expected shape */
       }
 
@@ -262,7 +265,8 @@ export default function SettlementDashboardPage() {
               cachedAt: Date.now(),
             })
           );
-        } catch {
+        } catch (e) {
+          reportError(e, 'SettlementDashboardPage.map');
           /* storage full */
         }
       }
@@ -293,7 +297,8 @@ export default function SettlementDashboardPage() {
           setCurrentPeriod(parsed.currentPeriod);
         }
       }
-    } catch {
+    } catch (e) {
+      reportError(e, 'SettlementDashboardPage.useEffect');
       /* corrupt */
     }
     loadData();

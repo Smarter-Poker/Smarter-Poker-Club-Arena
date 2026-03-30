@@ -235,7 +235,8 @@ function TournamentLobbyCardInner({ tournament, onRegister }: TournamentLobbyCar
         if (Array.isArray(structure) && structure.length > 0) {
           blindDuration = structure[0].durationMinutes || structure[0].duration_minutes;
         }
-      } catch {
+      } catch (e) {
+        reportError(e, 'TournamentLobbyCard.getSpeedTier');
         // If parsing fails, return no badge (non-critical)
         return null;
       }

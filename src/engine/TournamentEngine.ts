@@ -1072,7 +1072,8 @@ export class TournamentEngine {
         try {
           await chan.unsubscribe();
           this.supabase.removeChannel(chan);
-        } catch {
+        } catch (e) {
+          reportError(e, 'TournamentEngine.setTimeout');
           /* best effort */
         }
       }, 3000);
@@ -1522,7 +1523,8 @@ export class TournamentEngine {
         prize,
         username: player.username,
       });
-    } catch {
+    } catch (e) {
+      reportError(e, 'TournamentEngine.find');
       /* bus not initialized yet */
     }
 

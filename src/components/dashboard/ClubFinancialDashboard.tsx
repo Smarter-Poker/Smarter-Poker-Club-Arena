@@ -230,7 +230,8 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
         .eq('club_id', resolvedId)
         .eq('status', 'active');
       if (!error && count !== null) setActiveTableCount(count);
-    } catch {
+    } catch (e) {
+      reportError(e, 'ClubFinancialDashboard.fetchActiveTableCount');
       // Non-critical — keep existing count
     }
   };

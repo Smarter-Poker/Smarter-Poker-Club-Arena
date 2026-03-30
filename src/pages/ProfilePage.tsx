@@ -312,7 +312,8 @@ export default function ProfilePage() {
             if (cp.dailyStreak != null) setDailyStreak(cp.dailyStreak);
             setIsLoading(false); // Show cached UI instantly
           }
-        } catch {
+        } catch (e) {
+          reportError(e, 'ProfilePage.loadProfile');
           /* corrupt cache */
         }
 
@@ -369,7 +370,8 @@ export default function ProfilePage() {
                 dailyStreak: profile.login_streak || 0,
               })
             );
-          } catch {
+          } catch (e) {
+            reportError(e, 'ProfilePage');
             /* storage full */
           }
         }

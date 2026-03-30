@@ -460,7 +460,8 @@ export default function ClubDetailPage() {
             initialLoadDone.current = true;
           }
         }
-      } catch {
+      } catch (e) {
+        reportError(e, 'ClubDetailPage.useEffect');
         /* corrupt cache */
       }
     }
@@ -486,7 +487,8 @@ export default function ClubDetailPage() {
           .maybeSingle();
         if (!isMounted) return;
         if (data) setIsInUnion(true);
-      } catch {
+      } catch (e) {
+        reportError(e, 'ClubDetailPage.async');
         /* fail-open */
       }
     })();
@@ -795,7 +797,8 @@ export default function ClubDetailPage() {
               prev ? { ...prev, memberCount: Number(counts[0].member_count) } : null
             );
           }
-        } catch {
+        } catch (e) {
+          reportError(e, 'ClubDetailPage.setClub');
           // Fall back to denormalized member_count from initial club query
         }
 

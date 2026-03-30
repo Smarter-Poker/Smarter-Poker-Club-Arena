@@ -314,7 +314,8 @@ export class TournamentOrchestrator {
             players.reduce((sum, p) => sum + (p.chips || 0), 0) / players.length
           ),
         });
-      } catch {
+      } catch (e) {
+        reportError(e, 'TournamentOrchestrator.reduce');
         /* best effort */
       }
     } catch (err: unknown) {
@@ -381,7 +382,8 @@ export class TournamentOrchestrator {
           tournamentId,
           playersResumed: flights.length,
         });
-      } catch {
+      } catch (e) {
+        reportError(e, 'TournamentOrchestrator');
         /* best effort */
       }
     } catch (err: unknown) {

@@ -79,7 +79,8 @@ export default function TableCreationPage() {
           .limit(1)
           .maybeSingle();
         if (data) navigate(`/clubs/${clubId}`, { replace: true });
-      } catch {
+      } catch (e) {
+        reportError(e, 'TableCreationPage.async');
         /* fail-open */
       }
     })();

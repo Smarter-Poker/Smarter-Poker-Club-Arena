@@ -150,7 +150,8 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
         }
         return;
       }
-    } catch {
+    } catch (e) {
+      reportError(e, 'CreateClubModal');
       // Non-blocking
     }
 
@@ -175,7 +176,8 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
         } else {
           console.warn('[CreateClubModal] Logo upload failed, using data URL fallback');
         }
-      } catch {
+      } catch (e) {
+        reportError(e, 'CreateClubModal.then');
         console.warn('[CreateClubModal] Logo upload failed, continuing without stored logo');
       }
 

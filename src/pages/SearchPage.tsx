@@ -56,7 +56,8 @@ export default function SearchPage() {
       setFriendAdded((prev) => new Set(prev).add(playerId));
       masterBus.emit('FRIEND_REQUEST_SENT', { fromUserId: user.id, toUserId: playerId });
       toast.success('Friend request sent!');
-    } catch {
+    } catch (e) {
+      reportError(e, 'SearchPage.setFriendAdded');
       toast.error('Failed to send request');
     }
   };

@@ -266,7 +266,8 @@ class TableService {
           `force_close_table_and_refund RPC failed — emergency fallback used. Manual chip reconciliation may be required.`,
           { tableId, rpcError: error.message }
         );
-      } catch {
+      } catch (e) {
+        reportError(e, 'TableService');
         /* best effort — already logged to console */
       }
     } else {

@@ -988,7 +988,8 @@ export default function PlayerSessionsPage() {
                         { key: 'volume24h', label: 'Volume (24h)' },
                         { key: 'lastActive', label: 'Last Active' },
                       ]);
-                    } catch {
+                    } catch (e) {
+                      reportError(e, 'PlayerSessionsPage');
                       /* silent */
                     }
                   }}

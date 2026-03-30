@@ -3,54 +3,7 @@
 ## Every Change, Documented. No Exceptions.
 
 **Started:** 2026-03-24
-**Current Step:** ALL 8 STEPS COMPLETE — Bible V8 Deep Audit (222 fixes, 97% verified across 118 items)
-
----
-
-## Round 43 — Bible V8 Chapter 11 Deep-Dive Audit (2026-03-30)
-
-### Scope: Table Settings & Theme Customization (§11.1-11.3)
-
-**Files Audited (line-by-line):**
-- `src/components/table/TableSettingsPanel.tsx` — 135 lines
-- `src/hooks/useUserTableSettings.ts` — 293 lines
-- `src/components/table/ThemeSettingsModal.tsx` — 500+ lines
-- `src/hooks/useUserThemeSettings.ts` — 125 lines
-- `src/components/table/SettingsPanel.tsx` — 425 lines (integration point)
-- `src/components/navigation/HamburgerMenu.tsx` — 1216 lines (integration point)
-- `src/components/table/DealerButton.tsx` — 71 lines
-- `src/pages/TablePage.tsx` — lines 1460-1483, 4323-4330 (theme data attributes)
-- `src/pages/TablePage.css` — lines 389-427 (legacy themes)
-- `supabase/migrations/20260326_user_table_settings.sql` — 127 lines
-- `supabase/migrations/20260330_user_table_settings_skip_animations.sql` — 4 lines
-
-### Issues Found & Fixed:
-
-**FIX-220: Duplicate showStackInBB toggle**
-- **Bug:** SettingsPanel.tsx had TWO "Show Stack in BB" toggles — one in legacy Gameplay section (line 253, `settings.showStackInBB` from localStorage) and one in Bible V8 Table Preferences section (via TableSettingsPanel, `show_stack_in_bb` from Supabase). Different state sources = conflict.
-- **Fix:** Removed legacy toggle. Bible V8 `show_stack_in_bb` in TableSettingsPanel is now the sole source. Backward compat sync to localStorage key (`SHOW_STACK_BB`) already implemented in useUserTableSettings.ts:254.
-
-**FIX-221: VIP upgrade prompt for locked theme items**
-- **Bug:** ThemeSettingsModal showed plain toast ("This item requires VIP membership") when tapping VIP-locked items. Bible V8 §11.2.3 specifies "tapping shows VIP upgrade prompt."
-- **Fix:** Added VIP upgrade overlay prompt with "Upgrade to VIP" CTA button that navigates to /vip page, plus "Maybe Later" dismiss. Added full CSS styling (ThemeSettingsModal.css).
-
-**FIX-222: Missing CSS rules for Bible V8 theme system**
-- **Bug:** ThemeSettingsModal saves theme selections to Supabase and applies as `data-*` attributes on `.table-page`, but ZERO CSS rules existed for the Bible V8 theme IDs. Only legacy color names (green, blue, black, etc.) had CSS. All 25 Bible V8 theme assets were visually dead.
-- **Fix:** Added CSS rules for ALL 25 theme asset IDs across 5 categories:
-  - Tab 1 (Themes): default-dark, classic-brown, neon-blue, rustic-wood, casino-green → --felt-gradient + --bg-gradient
-  - Tab 2 (Table): dark-felt, brown-felt, neon-blue-felt, red-leather, green-casino → --felt-gradient
-  - Tab 3 (Button): red-d-gear, gray-d-gear, blue-crystal, gold-star, sports-themed → --dealer-btn-bg + --dealer-btn-color
-  - Tab 4 (Background): diamond-pattern, stone-concrete, galaxy-nebula, hardwood-floor, teal-tile → background
-  - Tab 5 (Cards): standard-red, standard-blue, premium-gold, premium-black, premium-platinum → --card-accent + --card-back-gradient
-- **Also fixed:** `data-felt-theme` now prioritizes `table_id` over `theme_id` (specific > preset). DealerButton.tsx wired to `--dealer-btn-bg`/`--dealer-btn-color` tokens (was hardcoded white).
-- **Cross-check:** All 25 asset IDs from ThemeSettingsModal.tsx verified to have matching CSS rules via grep comparison.
-
-### Verification Summary (20 items):
-- **19 VERIFIED** — all toggle settings, dual-location access, persistence, VIP gating, game types, 5-tab layout, asset counts, reset/confirm, theme hook, ALL fallback
-- **1 PARTIAL** (11.2.5) — theme assets use CSS gradients as visual placeholders; full image assets (thumbnails + full renders) not yet created
-
-### TypeScript: `npx tsc --noEmit` → CLEAN (zero errors)
-### Build: `npm run build` → SUCCESS (12.24s, 635 output files)
+**Current Step:** ALL 8 STEPS COMPLETE — Bible V8 Deep Audit (219 fixes, 97% verified, 3% design-choice PARTIAL)
 
 ---
 

@@ -22,10 +22,10 @@ The engine runs at `engine.smarter.poker` and serves all real-time poker game lo
 |-----------|--------|
 | VPS IP | `178.156.160.206` |
 | SSH User | `root` |
-| Repo on VPS | `/root/club-arena` |
+| Repo on VPS | `/opt/club-arena` |
 | Container | `club-arena-engine` |
 | Port | `8080` (mapped through Docker) |
-| Env file | `/root/.env.club-arena` |
+| Env file | `/opt/club-arena/server/.env` |
 | Health URL | `https://engine.smarter.poker/health` |
 | Docker | Container auto-restarts (`--restart always`) |
 
@@ -43,12 +43,12 @@ The deploy uses SSH to execute commands on the VPS. Here's the exact sequence:
 
 ### Step 1: Pull latest code
 ```bash
-ssh root@178.156.160.206 "cd /root/club-arena && git pull origin main"
+ssh root@178.156.160.206 "cd /opt/club-arena && git pull origin main"
 ```
 
 ### Step 2: Rebuild Docker image
 ```bash
-ssh root@178.156.160.206 "cd /root/club-arena/server && docker build -t club-arena-engine ."
+ssh root@178.156.160.206 "cd /opt/club-arena/server && docker build -t club-arena-engine ."
 ```
 This takes 30-90 seconds depending on cache hits.
 
@@ -60,7 +60,7 @@ Brief downtime starts here (typically 2-5 seconds).
 
 ### Step 4: Start new container
 ```bash
-ssh root@178.156.160.206 "docker run -d --name club-arena-engine --restart always -p 8080:8080 --env-file /root/.env.club-arena club-arena-engine"
+ssh root@178.156.160.206 "docker run -d --name club-arena-engine --restart always -p 8080:8080 --env-file /opt/club-arena/server/.env club-arena-engine"
 ```
 
 ### Step 5: Health check (wait 3 seconds for startup)
@@ -80,7 +80,7 @@ ssh root@178.156.160.206 "docker image prune -f"
 If all pre-checks pass, the entire deploy can be run as a single SSH command:
 
 ```bash
-ssh root@178.156.160.206 "cd /root/club-arena && git pull origin main && cd server && docker build -t club-arena-engine . && docker stop club-arena-engine 2>/dev/null; docker rm club-arena-engine 2>/dev/null; docker run -d --name club-arena-engine --restart always -p 8080:8080 --env-file /root/.env.club-arena club-arena-engine && sleep 3 && curl -sf http://localhost:8080/health"
+ssh root@178.156.160.206 "cd /opt/club-arena && git pull origin main && cd server && docker build -t club-arena-engine . && docker stop club-arena-engine 2>/dev/null; docker rm club-arena-engine 2>/dev/null; docker run -d --name club-arena-engine --restart always -p 8080:8080 --env-file /opt/club-arena/server/.env club-arena-engine && sleep 3 && curl -sf http://localhost:8080/health"
 ```
 
 ## Rollback
@@ -90,9 +90,9 @@ If the health check fails after deploy:
 1. Check container logs: `ssh root@178.156.160.206 "docker logs --tail 50 club-arena-engine"`
 2. If the new code is broken, revert to previous commit:
    ```bash
-   ssh root@178.156.160.206 "cd /root/club-arena && git log --oneline -5"
+   ssh root@178.156.160.206 "cd /opt/club-arena && git log --oneline -5"
    # Identify the last good commit, then:
-   ssh root@178.156.160.206 "cd /root/club-arena && git checkout <good-commit-hash>"
+   ssh root@178.156.160.206 "cd /opt/club-arena && git checkout <good-commit-hash>"
    ```
 3. Rebuild and restart using Steps 2-5 above.
 

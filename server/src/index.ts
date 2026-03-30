@@ -61,39 +61,47 @@ class GameServer {
 
   async start(): Promise<void> {
     this.running = true;
+    const maintenanceMode = process.env.MAINTENANCE_MODE === 'true';
+
     console.log('═══════════════════════════════════════════════════════════════');
     console.log(' SMARTER POKER GAME SERVER — Starting...');
-    console.log(' All game logic runs HERE — no browser needed');
+    console.log(maintenanceMode
+      ? ' ⚠️  MAINTENANCE MODE — No tables, tournaments, or horses will be created'
+      : ' All game logic runs HERE — no browser needed');
     console.log('═══════════════════════════════════════════════════════════════');
 
     // Step 1: Clean up stale data from previous runs
     await this.cleanupStaleData();
 
-    // Step 2: Start horse fleet manager (creates tables, seats horses)
-    await this.horseFleet.start();
+    if (!maintenanceMode) {
+      // Step 2: Start horse fleet manager (creates tables, seats horses)
+      await this.horseFleet.start();
 
-    // Step 3: Start tournament recurring service (creates MTTs, SNGs, Spins)
-    this.tournamentRecurring.start();
+      // Step 3: Start tournament recurring service (creates MTTs, SNGs, Spins)
+      this.tournamentRecurring.start();
 
-    // Step 4: Start lifecycle manager (stuck horse detection, cleanup)
-    this.lifecycle.start();
+      // Step 4: Start lifecycle manager (stuck horse detection, cleanup)
+      this.lifecycle.start();
 
-    // Step 5: Start server-side auto-rebuy wallet funder
-    this.autoRebuy.start();
+      // Step 5: Start server-side auto-rebuy wallet funder
+      this.autoRebuy.start();
 
-    // Step 6: Start discovery loops (finds tables with players, starts engines)
-    // These are infinite while-loops — fire-and-forget with error handling
-    this.discoverCashTables().catch((err) =>
-      console.error('[GameServer] Cash table discovery fatal error:', err)
-    );
-    this.discoverTournaments().catch((err) =>
-      console.error('[GameServer] Tournament discovery fatal error:', err)
-    );
+      // Step 6: Start discovery loops (finds tables with players, starts engines)
+      // These are infinite while-loops — fire-and-forget with error handling
+      this.discoverCashTables().catch((err) =>
+        console.error('[GameServer] Cash table discovery fatal error:', err)
+      );
+      this.discoverTournaments().catch((err) =>
+        console.error('[GameServer] Tournament discovery fatal error:', err)
+      );
 
-    // Step 7: Start synchronized break timer (top of every hour, 5 min duration)
-    this.scheduleSynchronizedBreaks();
+      // Step 7: Start synchronized break timer (top of every hour, 5 min duration)
+      this.scheduleSynchronizedBreaks();
 
-    console.log('[GameServer] Running. All services started.');
+      console.log('[GameServer] Running. All services started.');
+    } else {
+      console.log('[GameServer] Running in MAINTENANCE MODE — only /health and /action endpoints active.');
+    }
   }
 
   async stop(): Promise<void> {

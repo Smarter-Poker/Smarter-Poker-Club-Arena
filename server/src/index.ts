@@ -2765,10 +2765,20 @@ async function authenticateRequest(
   }
 }
 
+// FIX 175: Body size limit to prevent memory exhaustion from malicious clients
+const MAX_BODY_SIZE = 16 * 1024; // 16KB — more than enough for any action payload
+
 function readBody(req: import('http').IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     let body = '';
+    let size = 0;
     req.on('data', (chunk: Buffer) => {
+      size += chunk.length;
+      if (size > MAX_BODY_SIZE) {
+        req.destroy();
+        reject(new Error('Request body too large'));
+        return;
+      }
       body += chunk.toString();
     });
     req.on('end', () => resolve(body));

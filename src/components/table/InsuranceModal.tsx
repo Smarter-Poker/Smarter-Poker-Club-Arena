@@ -110,8 +110,9 @@ export function InsuranceModal({
   );
   const evRakeAmount = useMemo(() => evRaw - evCashoutAmount, [evRaw, evCashoutAmount]);
 
+  // FIX 187: Insurance accept is a financial decision — use medium haptic (matches EV cashout)
   const handleAccept = useCallback(() => {
-    haptic.light();
+    haptic.medium();
     onAccept(coverageAmount);
   }, [coverageAmount, onAccept]);
 

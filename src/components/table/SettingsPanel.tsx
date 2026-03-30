@@ -250,12 +250,10 @@ export function SettingsPanel({
               onChange={() => handleToggle('fourColorDeck')}
             />
 
-            <SettingToggle
-              label="Show stack in BBs"
-              description="Display chip counts as big blinds"
-              checked={settings.showStackInBB}
-              onChange={() => handleToggle('showStackInBB')}
-            />
+            {/* FIX 220: Legacy showStackInBB toggle REMOVED — Bible V8 §11.1
+                show_stack_in_bb is now handled by TableSettingsPanel (line ~388)
+                which persists to Supabase user_table_settings. Keeping both
+                created a duplicate toggle with competing state sources. */}
 
             <SettingToggle
               label="Bet size presets"

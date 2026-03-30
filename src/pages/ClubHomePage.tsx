@@ -60,6 +60,7 @@ interface ClubData {
   name: string;
   description: string;
   avatar_url: string;
+  logo_url?: string;
   member_count: number;
   online_count: number;
   owner_id: string;
@@ -391,7 +392,7 @@ export default function ClubHomePage() {
           supabase
             .from('clubs')
             .select(
-              'id, club_id, name, description, avatar_url, member_count, online_count, owner_id, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next, created_at'
+              'id, club_id, name, description, avatar_url, logo_url, member_count, online_count, owner_id, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next, created_at'
             )
             .eq(clubCol, clubVal)
             .maybeSingle()
@@ -933,8 +934,8 @@ export default function ClubHomePage() {
       <div className="club-home__club-section">
         <div className="club-home__club-card">
           <div className="club-card__avatar">
-            {club.avatar_url ? (
-              <img src={club.avatar_url} alt={club.name} loading="lazy" />
+            {(club.logo_url || club.avatar_url) ? (
+              <img src={club.logo_url || club.avatar_url} alt={club.name} loading="lazy" />
             ) : (
               <span className="club-card__avatar-placeholder">&#9824;</span>
             )}
@@ -975,30 +976,10 @@ export default function ClubHomePage() {
                 }}
               >
                 <span className="icon-link"></span>
-              </button>
-            </div>
-            {clubLevel && (
-              <div className="club-card__level">
-                <div className="club-level-badge" style={{ background: clubLevel.gradient }}>
-                  <span className="club-level-badge__number">Lv.{clubLevel.level}</span>
-                  <span className="club-level-badge__tier">{clubLevel.tierLabel}</span>
-                </div>
-                <div className="club-level-progress">
-                  <div className="club-level-progress__bar">
-                    <div
-                      className="club-level-progress__fill"
-                      style={{
-                        width: `${clubLevel.progressPercent}%`,
-                        background: clubLevel.gradient,
-                      }}
-                    />
-                  </div>
-                  <span className="club-level-progress__text">{clubLevel.progressPercent}%</span>
-                </div>
+                </button>
               </div>
-            )}
+            </div>
           </div>
-        </div>
 
         {/* ── Wallet — upper-right, always rendered ── */}
         {currentUserId && resolvedClubId && (

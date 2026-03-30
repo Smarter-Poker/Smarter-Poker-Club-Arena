@@ -583,7 +583,8 @@ export default function TablePage({
 
   const [raiseAmount, setRaiseAmount] = useState(20);
   const [showRaiseSlider, setShowRaiseSlider] = useState(false);
-  const [preAction, setPreAction] = useState<'fold' | 'check' | 'callAny' | null>(null);
+  /** FIX 185: Bible V8 §4.15 — Added 'call' (auto_call) distinct from 'callAny' (auto_call_any) */
+  const [preAction, setPreAction] = useState<'fold' | 'check' | 'call' | 'callAny' | null>(null);
 
   // Time Bank State
   const [showTimeBank, setShowTimeBank] = useState(false);
@@ -651,7 +652,9 @@ export default function TablePage({
             ? 'auto_fold'
             : preAction === 'check'
               ? 'auto_check'
-              : 'auto_call_any';
+              : preAction === 'call'
+                ? 'auto_call'  // FIX 185: Bible V8 §4.15 — auto_call (current bet only)
+                : 'auto_call_any';
         // Tell server about pre-action so it can auto-execute on player's turn
         serverSetPreAction(tableId, serverAction).catch((e) =>
           console.error('[PreAction] Failed to set:', e)
@@ -4096,6 +4099,29 @@ export default function TablePage({
                 reason: 'bet_placed',
               });
             }
+          } else if (preAction === 'call') {
+            // FIX 185: Bible V8 §4.15 auto_call — call current bet only
+            // If bet changed since pre-action was set, invalidate
+            const heroBetForAutoCall = tableState.lastBetAmounts?.[tableState.heroSeat - 1] || 0;
+            const toCallForAutoCall = Math.max(0, (tableState.currentBet || 0) - heroBetForAutoCall);
+            if (toCallForAutoCall > 0) {
+              await handleCall();
+              masterBus.emit('PRE_ACTION_EXECUTED', {
+                tableId: tableId!,
+                playerId: userId!,
+                action: 'call',
+                amount: toCallForAutoCall,
+              });
+            } else {
+              // No bet to call — check instead
+              await handleCheck();
+              masterBus.emit('PRE_ACTION_EXECUTED', {
+                tableId: tableId!,
+                playerId: userId!,
+                action: 'check',
+                amount: 0,
+              });
+            }
           } else if (preAction === 'callAny') {
             // "Call Any" = stay in hand: if nothing to call, check instead
             // Bible V8: Derive call amount from server's currentBet vs hero's bet
@@ -4769,6 +4795,11 @@ export default function TablePage({
                   isMyTurn={false}
                   preAction={preAction}
                   onPreActionChange={setPreAction}
+                  currentBet={Math.max(
+                    0,
+                    (tableState.currentBet || 0) -
+                      (tableState.lastBetAmounts?.[tableState.heroSeat - 1] || 0)
+                  )}
                 />
               )}
           </>

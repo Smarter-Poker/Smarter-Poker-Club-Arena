@@ -23,6 +23,7 @@ import { masterBus } from '../core/MasterBus';
 import { FinancialAlertService } from './FinancialAlertService';
 import { retryAsync } from '../utils/retryAsync';
 import { QUERY_LIMITS } from '../lib/constants';
+import { reportError } from '../utils/errorReporter';
 
 // Exact cent precision — never round
 const exact = (v: number): number => Math.trunc(v * 100) / 100;
@@ -52,7 +53,7 @@ async function logToLedger(entry: {
   try {
     const { error } = await supabase.from('chip_ledger').insert(entry);
     if (error) {
-      console.error('[ChipFlow] Ledger log failed:', error.message);
+      reportError(error, 'ChipFlowService.logToLedger', { category: entry.category });
       // Don't throw — ledger failure shouldn't block the transaction
       // But DO report it as a critical alert
       FinancialAlertService.logCritical(
@@ -62,7 +63,7 @@ async function logToLedger(entry: {
       );
     }
   } catch (e) {
-    console.error('[ChipFlow] Ledger exception:', e);
+    reportError(e, 'ChipFlowService.logToLedger.exception');
   }
 }
 
@@ -133,7 +134,7 @@ export const ChipFlowService = {
     );
 
     if (transferErr) {
-      console.error(`[ChipFlowService] Transfer failed:`, transferErr.message);
+      reportError(transferErr, 'ChipFlowService.transfer', { fromUserId, toUserId, amount: amt });
       throw new Error(`Transfer failed: ${transferErr.message}`);
     }
 
@@ -411,7 +412,7 @@ export const ChipFlowService = {
       );
 
       if (deductErr) {
-        console.error('[ChipFlowService] resetBalance atomic deduct failed:', deductErr.message);
+        reportError(deductErr, 'ChipFlowService.resetBalance', { userId, currentBalance });
         throw new Error(`Balance reset failed: ${deductErr.message}`);
       }
 

@@ -483,8 +483,9 @@ export async function logBBJCollection(
 
     // Use bbj_record_contribution RPC — atomically updates pool balances + logs contribution
     // hand_id is nullable (migration 20260325) since server uses hand_history not hands table
-    // FIX 205: Pass club_id to avoid NOT NULL constraint violation
-    const { error } = await supabase.rpc('bbj_record_contribution', {
+    // FIX 205: Try with club_id first (requires migration), fall back to without
+    let rpcError: any = null;
+    const { error: errWithClub } = await supabase.rpc('bbj_record_contribution', {
       p_pool_id: pool.id,
       p_hand_id: null,
       p_table_id: tableId,
@@ -497,11 +498,33 @@ export async function logBBJCollection(
       p_club_id: clubId,
     });
 
-    if (error) {
-      console.error(
-        `[logBBJCollection] BBJ contribution RPC failed for hand #${handNumber}:`,
-        error.message
-      );
+    if (errWithClub && errWithClub.code === 'PGRST202') {
+      // Migration not yet applied — fall back to old signature without club_id
+      const { error: errNoClub } = await supabase.rpc('bbj_record_contribution', {
+        p_pool_id: pool.id,
+        p_hand_id: null,
+        p_table_id: tableId,
+        p_amount: bbjAmount,
+        p_main_portion: mainPortion,
+        p_backup_portion: backupPortion,
+        p_promo_portion: promoPortion,
+        p_big_blind: bigBlind,
+        p_hand_number: handNumber,
+      });
+      rpcError = errNoClub;
+    } else {
+      rpcError = errWithClub;
+    }
+
+    if (rpcError) {
+      // Non-critical: BBJ fee already deducted from pot, this is just the ledger entry
+      // Only log once per 100 hands to reduce noise
+      if (handNumber % 100 === 1) {
+        console.warn(
+          `[logBBJCollection] BBJ contribution skipped for hand #${handNumber}:`,
+          rpcError.message
+        );
+      }
     }
   } catch (e) {
     console.warn(`[logBBJCollection] BBJ logging failed for hand #${handNumber}:`, e);

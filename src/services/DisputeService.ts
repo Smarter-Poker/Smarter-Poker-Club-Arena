@@ -17,6 +17,7 @@ import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { QUERY_LIMITS } from '../lib/constants';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -113,7 +114,7 @@ export const DisputeService = {
         });
       }
     } catch (e: unknown) {
-      console.error('[DisputeService] Notification failed:', e);
+        reportError(e, 'DisputeService.notification');
     }
 
     return this.mapDispute(data);
@@ -292,7 +293,7 @@ export const DisputeService = {
           url: '/wallet',
         });
       } catch (e: unknown) {
-        console.error('[DisputeService] Notification failed:', e);
+          reportError(e, 'DisputeService.notification');
       }
     }
 

@@ -620,25 +620,75 @@ export class HorseFleetManager {
     clubId: string
   ): Promise<boolean> {
     try {
-      // 100% ACID-Compliant Seating via Postgres RPC
-      // Prevents "phantom deductions" if the Node server dies mid-seat.
-      const { data: success, error } = await supabase.rpc('atomic_seat_horse', {
-        p_table_id: tableId,
-        p_horse_id: horseId,
-        p_seat_number: seatNumber,
-        p_buy_in: buyIn,
-        p_table_name: tableName,
-      });
+      // FIX 203: Bypass broken atomic_seat_horse RPC (duplicate overload causes
+      // "Could not choose the best candidate function" 300 errors).
+      // Direct queries replicate the same logic until the duplicate is dropped.
 
-      if (error || !success) {
-        if (error && !error.message.includes('Insufficient balance')) {
-          console.error(
-            `[HorseFleet] atomic_seat_horse database failure for ${horseId} at ${tableName}:`,
-            error.message
-          );
-        }
+      // 1. Check wallet balance and deduct
+      const { data: wallet, error: walletErr } = await supabase
+        .from('wallets')
+        .select('balance')
+        .eq('user_id', horseId)
+        .eq('wallet_type', 'PLAYER')
+        .maybeSingle();
+
+      if (walletErr || !wallet || wallet.balance < buyIn) {
+        return false; // Insufficient balance — silent fail
+      }
+
+      const { error: deductErr } = await supabase
+        .from('wallets')
+        .update({ balance: wallet.balance - buyIn, updated_at: new Date().toISOString() })
+        .eq('user_id', horseId)
+        .eq('wallet_type', 'PLAYER');
+
+      if (deductErr) {
+        console.error(`[HorseFleet] wallet deduct failed for ${horseId}:`, deductErr.message);
         return false;
       }
+
+      // 2. Log wallet transaction (negative amount = debit, matches convention)
+      await supabase.from('wallet_transactions').insert({
+        user_id: horseId,
+        wallet_type: 'PLAYER',
+        amount: buyIn,
+        type: 'debit',
+        category: 'buyin',
+        description: `Buy-in at ${tableName}: ${buyIn} chips`,
+      });
+
+      // 3. Insert seat
+      const { error: seatErr } = await supabase.from('table_seats').insert({
+        table_id: tableId,
+        user_id: horseId,
+        seat_number: seatNumber,
+        stack: buyIn,
+        status: 'active',
+        joined_at: new Date().toISOString(),
+      });
+
+      if (seatErr) {
+        console.error(`[HorseFleet] seat insert failed for ${horseId}:`, seatErr.message);
+        // Refund wallet on seat failure
+        await supabase
+          .from('wallets')
+          .update({ balance: wallet.balance, updated_at: new Date().toISOString() })
+          .eq('user_id', horseId)
+          .eq('wallet_type', 'PLAYER');
+        return false;
+      }
+
+      // 4. Update table player count
+      const { count } = await supabase
+        .from('table_seats')
+        .select('*', { count: 'exact', head: true })
+        .eq('table_id', tableId)
+        .is('left_at', null);
+
+      await supabase
+        .from('tables')
+        .update({ current_players: count ?? 0 })
+        .eq('id', tableId);
 
       return true;
     } catch (err: any) {

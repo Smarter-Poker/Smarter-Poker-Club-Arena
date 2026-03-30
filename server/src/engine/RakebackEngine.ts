@@ -106,8 +106,9 @@ export class RakebackEngine {
     const config = this.configs.get(clubId) || this.DEFAULT_CONFIG;
     if (!config.enabled || totalRake <= 0) return;
 
-    // FIX 144: Count dealt-in players (anyone in the contributions map with any investment)
-    const dealtInPlayers = [...contributions.entries()].filter(([, invested]) => invested >= 0);
+    // FIX 170: Count dealt-in players — must have invested > 0 (not >= 0).
+    // Players with 0 contribution were not dealt in and should not receive rakeback credit.
+    const dealtInPlayers = [...contributions.entries()].filter(([, invested]) => invested > 0);
     const playerCount = dealtInPlayers.length;
     if (playerCount === 0) return;
 

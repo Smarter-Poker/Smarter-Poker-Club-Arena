@@ -259,18 +259,51 @@ class GameServer {
 
       // 2. SAFE CLEANUP: Cash out ALL active seats before deleting
       //    This prevents chip loss when the server restarts while players are seated
+      //    FIX 208b: Batch approach — aggregate per user, single wallet update per user
       const { data: activeSeats } = await supabase
         .from('table_seats')
         .select('user_id, table_id, seat_number, stack')
         .is('left_at', null);
 
-      // FIX 208: Use direct atomicCashout instead of RPC to avoid PostgREST cache issues
       if (activeSeats && activeSeats.length > 0) {
-        let cashedOut = 0;
+        // Aggregate total stack per user
+        const userTotals = new Map<string, number>();
         for (const seat of activeSeats) {
-          await atomicCashout(seat.user_id, seat.table_id, seat.seat_number);
-          if (seat.stack > 0) cashedOut++;
+          const prev = userTotals.get(seat.user_id) ?? 0;
+          userTotals.set(seat.user_id, prev + (seat.stack ?? 0));
         }
+
+        // Credit each user's wallet in parallel (batch of 10)
+        let cashedOut = 0;
+        const entries = Array.from(userTotals.entries()).filter(([_, total]) => total > 0);
+        for (let i = 0; i < entries.length; i += 10) {
+          const batch = entries.slice(i, i + 10);
+          await Promise.all(batch.map(async ([userId, totalStack]) => {
+            try {
+              const { data: wallet } = await supabase
+                .from('wallets')
+                .select('balance')
+                .eq('user_id', userId)
+                .eq('wallet_type', 'PLAYER')
+                .maybeSingle();
+
+              const currentBalance = wallet?.balance ?? 0;
+              await supabase
+                .from('wallets')
+                .upsert({
+                  user_id: userId,
+                  wallet_type: 'PLAYER',
+                  balance: currentBalance + totalStack,
+                  updated_at: new Date().toISOString(),
+                }, { onConflict: 'user_id,wallet_type' });
+
+              cashedOut++;
+            } catch (err: any) {
+              console.warn(`[GameServer] Cashout failed for ${userId}: ${err.message}`);
+            }
+          }));
+        }
+
         if (cashedOut > 0) {
           console.log(`[GameServer] Safely cashed out ${cashedOut} seated players before cleanup`);
         }

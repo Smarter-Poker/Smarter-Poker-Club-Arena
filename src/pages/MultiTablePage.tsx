@@ -370,10 +370,14 @@ export default function MultiTablePage() {
     );
   }
 
-  const containerTransform =
-    swipeOffset !== 0
-      ? `translateX(calc(${-activeIndex * 100}% + ${swipeOffset}px))`
-      : `translateX(${-activeIndex * 100}%)`;
+  // FIX-214: CSS transforms create a new containing block for position:fixed
+  // descendants, which breaks TablePage's fixed positioning (HUD, menus, overlays).
+  // Only use translateX during active swipe gestures (brief/transient).
+  // At rest, hide inactive slots with display:none instead.
+  const isActivelySwiping = swipeOffset !== 0;
+  const containerTransform = isActivelySwiping
+    ? `translateX(calc(${-activeIndex * 100}% + ${swipeOffset}px))`
+    : 'none';
 
   return (
     <div className="multi-table-page">
@@ -502,10 +506,18 @@ export default function MultiTablePage() {
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
         >
-          {tables.map((table, idx) => (
+          {tables.map((table, idx) => {
+            // FIX-214: When not swiping, only render the active slot.
+            // During swipe, render adjacent slots for the swipe animation.
+            const isActive = idx === activeIndex;
+            const isAdjacent = Math.abs(idx - activeIndex) <= 1;
+            const shouldRender = isActivelySwiping ? isAdjacent : isActive;
+
+            return (
             <div
               key={table.id}
-              className={`multi-table-page__table-slot ${idx === activeIndex ? 'multi-table-page__table-slot--active' : ''}`}
+              className={`multi-table-page__table-slot ${isActive ? 'multi-table-page__table-slot--active' : ''}`}
+              style={shouldRender ? undefined : { display: 'none' }}
             >
               <Suspense
                 fallback={
@@ -529,7 +541,8 @@ export default function MultiTablePage() {
                 />
               </Suspense>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

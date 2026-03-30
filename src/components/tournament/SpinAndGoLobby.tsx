@@ -13,6 +13,7 @@ import { useToast } from '../common/Toast';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import './SpinAndGoLobby.css';
 import { retryAsync } from '../../utils/retryAsync';
+import { reportError } from '../../utils/errorReporter';
 
 interface SpinAndGoLobbyProps {
   clubId: string;
@@ -88,7 +89,7 @@ export function SpinAndGoLobby({ clubId, onRegister }: SpinAndGoLobbyProps) {
         )
         .subscribe((status: string, err?: Error) => {
           if (status === 'CHANNEL_ERROR') {
-            console.error('[SpinAndGoLobby] ❌ Realtime channel error:', err?.message || err);
+            reportError(err?.message || err, 'SpinAndGoLobby._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
             console.warn('[SpinAndGoLobby] ⏱️ Realtime channel timed out');

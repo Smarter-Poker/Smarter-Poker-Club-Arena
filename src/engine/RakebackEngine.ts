@@ -12,6 +12,7 @@
 
 import { masterBus } from '../core/MasterBus';
 import { supabase } from '../lib/supabase';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -224,14 +225,14 @@ class RakebackEngineClass {
           .insert(rows);
 
         if (error) {
-          console.error('[RakebackEngine] Failed to persist rakeback periods:', error.message);
+          reportError(error, 'RakebackEngine.Failed_to_persist_rakeback_periods');
         } else {
           console.debug(
             `[RakebackEngine] Persisted ${rows.length} rakeback periods for club ${clubId.substring(0, 8)}...`
           );
         }
       } catch (err) {
-        console.error('[RakebackEngine] Exception persisting rakeback periods:', err);
+        reportError(err, 'RakebackEngine.Exception_persisting_rakeback_periods');
       }
     }
 

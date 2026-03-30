@@ -12,6 +12,7 @@
  */
 
 import { masterBus } from '../core/MasterBus';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -204,7 +205,7 @@ class PreciseActionTimerClass {
             try {
               dl.onExpiry();
             } catch (err: unknown) {
-              console.error(`[PreciseActionTimer] Expiry callback error:`, err);
+              reportError(err, 'PreciseActionTimer.Expiry_callback_error');
             }
           }
         }

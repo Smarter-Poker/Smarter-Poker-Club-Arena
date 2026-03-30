@@ -15,6 +15,7 @@ import { resolveClubIdFilter } from '../utils/clubIdResolver';
 import PageSkeleton from '../components/common/PageSkeleton';
 import ClubBottomNav from '../components/club/ClubBottomNav';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
+import { reportError } from '../utils/errorReporter';
 
 const inviteStepAnimationStyle = {
   opacity: 0,
@@ -124,7 +125,7 @@ export default function InvitePage() {
         setAlreadyMember(!!membership);
       }
     } catch (err) {
-      console.error('Failed to load club:', err);
+      reportError(err, 'InvitePage.Failed_to_load_club');
       if (!getIsMounted || getIsMounted()) {
         toast.error('Failed to load club information');
         setError('Failed to load club information');
@@ -208,7 +209,7 @@ export default function InvitePage() {
         3
       );
       if (countErr) {
-        console.error('[InvitePage] increment_member_count failed:', countErr.message);
+        reportError(countErr, 'InvitePage.increment_member_count_failed');
         toast.error('Joined successfully, but member count may be temporarily off.');
       }
 
@@ -217,7 +218,7 @@ export default function InvitePage() {
       toast.success(`Welcome to ${club.name}!`);
       navigate(`/clubs/${club.id}`);
     } catch (err: any) {
-      console.error('Failed to join:', err);
+      reportError(err, 'InvitePage.Failed_to_join');
       toast.error(err.message || 'Failed to join club');
       setError(err.message || 'Failed to join club');
     }

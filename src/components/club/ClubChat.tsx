@@ -12,6 +12,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
+import { reportError } from '../../utils/errorReporter';
 
 const FB = {
   bg: '#1c1c1e',
@@ -84,7 +85,7 @@ export default function ClubChat({ clubId, userId, userName }: ClubChatProps) {
         setUnread(0);
       }
     } catch (err) {
-      console.error('[ClubChat] Failed to load messages:', err);
+      reportError(err, 'ClubChat.Failed_to_load_messages');
     }
   }, [clubId]);
 
@@ -130,14 +131,14 @@ export default function ClubChat({ clubId, userId, userName }: ClubChatProps) {
               message: newMsg.message,
             });
           } catch (err) {
-            console.error('[ClubChat] Error:', err);
+            reportError(err, 'ClubChat.Error');
             /* silent */
           }
         }
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[ClubChat] ❌ Realtime channel error:', err?.message || err);
+          reportError(err?.message || err, 'ClubChat._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[ClubChat] ⏱️ Realtime channel timed out');
@@ -190,7 +191,7 @@ export default function ClubChat({ clubId, userId, userName }: ClubChatProps) {
         message_type: 'message',
       });
       if (error) {
-        console.error('[ClubChat] Send error:', error);
+        reportError(error, 'ClubChat.Send_error');
         // Mark message as failed instead of silently removing
         setMessages((prev) =>
           prev.map((m) => (m.id === tempId ? { ...m, message_type: 'failed' } : m))
@@ -202,7 +203,7 @@ export default function ClubChat({ clubId, userId, userName }: ClubChatProps) {
         failedTimersRef.current.push(tid);
       }
     } catch (err) {
-      console.error('[ClubChat] Error:', err);
+      reportError(err, 'ClubChat.Error');
       // Mark as failed on any exception
       setMessages((prev) =>
         prev.map((m) => (m.id === tempId ? { ...m, message_type: 'failed' } : m))

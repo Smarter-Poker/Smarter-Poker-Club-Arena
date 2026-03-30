@@ -15,6 +15,7 @@ import { useAuthUser } from '../hooks/useAuthUser';
 import ClubPromotionRulesModal from '../components/modals/ClubPromotionRulesModal';
 import { masterBus } from '../core/MasterBus';
 import { sanitizeInput } from '../utils/sanitizeInput';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES & CONSTANTS
@@ -594,10 +595,7 @@ export default function CreateClubPage() {
       });
 
       if (memberError) {
-        console.error(
-          '[CreateClub] Owner membership failed, cleaning up orphaned club:',
-          memberError
-        );
+        reportError(memberError, 'CreateClubPage.Owner_membership_failed_cleaning_up_orph');
         await supabase.from('clubs').delete().eq('id', data.id);
         throw new Error('Failed to set up club ownership. Please try again.');
       }
@@ -616,7 +614,7 @@ export default function CreateClubPage() {
             });
 
           if (uploadError) {
-            console.error('[CreateClub] Logo upload failed (non-fatal):', uploadError);
+            reportError(uploadError, 'CreateClubPage.Logo_upload_failed_nonfatal');
           } else if (uploadData) {
             const { data: urlData } = supabase.storage
               .from('club-assets')
@@ -632,7 +630,7 @@ export default function CreateClubPage() {
           }
         } catch (uploadErr) {
           // Non-fatal — club is created, logo can be re-uploaded later
-          console.error('[CreateClub] Logo upload error (non-fatal):', uploadErr);
+          reportError(uploadErr, 'CreateClubPage.Logo_upload_error_nonfatal');
         }
       }
 
@@ -642,7 +640,7 @@ export default function CreateClubPage() {
 
       navigate(`/clubs/${data.id}`);
     } catch (err: any) {
-      console.error('Failed to create club:', err);
+      reportError(err, 'CreateClubPage.Failed_to_create_club');
       if (isMounted.current) setError(err.message || 'Failed to create club');
     } finally {
       if (isMounted.current) setCreating(false);

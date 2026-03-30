@@ -28,6 +28,7 @@ import './LeaderboardPage.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { retryFetch } from '../utils/retryFetch';
+import { reportError } from '../utils/errorReporter';
 
 // ── SWR Cache helpers ──
 const LB_CACHE_KEY = 'lb_cache_';
@@ -294,7 +295,7 @@ export default function LeaderboardPage() {
         setSelectedClubId(clubs[0].id as string);
       }
     } catch (error) {
-      console.error('Failed to load clubs:', error);
+      reportError(error, 'LeaderboardPage.Failed_to_load_clubs');
       toast.error('Failed to load clubs');
     }
     if (getIsMounted && !getIsMounted()) return;
@@ -338,7 +339,7 @@ export default function LeaderboardPage() {
         setUserRank(rank);
       }
     } catch (error) {
-      console.error('Failed to load leaderboard:', error);
+      reportError(error, 'LeaderboardPage.Failed_to_load_leaderboard');
       if (!silent) toast.error('Failed to load leaderboard');
     } finally {
       loadingRef.current = false;
@@ -361,7 +362,7 @@ export default function LeaderboardPage() {
       setTournamentStats(data);
       setLastUpdated(new Date());
     } catch (error) {
-      console.error('Failed to load tournament stats:', error);
+      reportError(error, 'LeaderboardPage.Failed_to_load_tournament_stats');
       toast.error('Failed to load tournament stats');
     } finally {
       if (!getIsMounted || getIsMounted()) setTournamentsLoading(false);

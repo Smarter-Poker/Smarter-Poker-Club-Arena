@@ -12,6 +12,7 @@
  */
 
 import { masterBus } from '../core/MasterBus';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -182,7 +183,7 @@ class RunItTwiceEngineClass {
     const runs = state.maxRuns || 2;
     const cardsNeeded = 5 - existingBoard.length;
     if (remainingDeck.length < cardsNeeded * runs) {
-      console.error(`[RITEngine] Not enough cards for ${runs} runouts at ${tableId}`);
+      reportError(new Error(`[RITEngine] Not enough cards for ${runs} runouts at ${tableId}`), 'RunItTwiceEngine.Not_enough_cards_for_runs_runouts_at_tab');
       return null;
     }
 

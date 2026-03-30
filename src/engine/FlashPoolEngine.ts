@@ -19,6 +19,7 @@
 import { masterBus } from '../core/MasterBus';
 import { HeadlessTableEngine } from './HeadlessTableEngine';
 import { supabase } from '../lib/supabase';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -101,7 +102,7 @@ class FlashPoolEngineClass {
       const engine = new HeadlessTableEngine(tableId, supabase);
       this.dealingEngines.set(tableId, engine);
       engine.start().catch((err) => {
-        console.error(`[FlashPoolEngine] Engine start failed for ${tableId}:`, err);
+        reportError(err, 'FlashPoolEngine.Engine_start_failed_for_tableId');
       });
     }
 
@@ -184,7 +185,7 @@ class FlashPoolEngineClass {
       const engine = new HeadlessTableEngine(tableId, supabase);
       this.dealingEngines.set(tableId, engine);
       engine.start().catch((err) => {
-        console.error(`[FlashPoolEngine] Engine start failed for ${tableId}:`, err);
+        reportError(err, 'FlashPoolEngine.Engine_start_failed_for_tableId');
       });
     }
 

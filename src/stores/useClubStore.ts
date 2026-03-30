@@ -9,6 +9,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Club, ClubWithDistance, ClubMember, ClubLocation } from '@/types/club.types';
 import { ClubsService } from '@/services/ClubsService';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 📦 STORE TYPES
@@ -89,7 +90,7 @@ export const useClubStore = create<ClubState>()(
           const clubs = await ClubsService.discoverNearby(userLocation, radiusKm);
           set({ nearbyClubs: clubs });
         } catch (error) {
-          console.error('[Store] Discovery failed:', error);
+          reportError(error, 'useClubStore.Discovery_failed');
         } finally {
           set({ isDiscovering: false });
         }
@@ -106,7 +107,7 @@ export const useClubStore = create<ClubState>()(
           const results = await ClubsService.search(query);
           set({ searchResults: results });
         } catch (error) {
-          console.error('[Store] Search failed:', error);
+          reportError(error, 'useClubStore.Search_failed');
         } finally {
           set({ isSearching: false });
         }
@@ -118,7 +119,7 @@ export const useClubStore = create<ClubState>()(
           const memberships = await ClubsService.getUserMemberships();
           set({ memberships });
         } catch (error) {
-          console.error('[Store] Load memberships failed:', error);
+          reportError(error, 'useClubStore.Load_memberships_failed');
         } finally {
           set({ isLoadingMemberships: false });
         }
@@ -130,7 +131,7 @@ export const useClubStore = create<ClubState>()(
           const club = await ClubsService.get(identifier);
           set({ activeClub: club });
         } catch (error) {
-          console.error('[Store] Load club failed:', error);
+          reportError(error, 'useClubStore.Load_club_failed');
         } finally {
           set({ isLoadingClub: false });
         }
@@ -141,7 +142,7 @@ export const useClubStore = create<ClubState>()(
           const members = await ClubsService.getMembers(clubId);
           set({ activeClubMembers: members });
         } catch (error) {
-          console.error('[Store] Load members failed:', error);
+          reportError(error, 'useClubStore.Load_members_failed');
         }
       },
 
@@ -151,7 +152,7 @@ export const useClubStore = create<ClubState>()(
           // Refresh memberships
           await get().loadMemberships();
         } catch (error) {
-          console.error('[Store] Join failed:', error);
+          reportError(error, 'useClubStore.Join_failed');
           throw error;
         }
       },
@@ -162,7 +163,7 @@ export const useClubStore = create<ClubState>()(
           // Refresh memberships
           await get().loadMemberships();
         } catch (error) {
-          console.error('[Store] Leave failed:', error);
+          reportError(error, 'useClubStore.Leave_failed');
           throw error;
         }
       },
@@ -174,7 +175,7 @@ export const useClubStore = create<ClubState>()(
           await get().loadMemberships();
           return club;
         } catch (error) {
-          console.error('[Store] Create failed:', error);
+          reportError(error, 'useClubStore.Create_failed');
           throw error;
         }
       },

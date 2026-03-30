@@ -10,6 +10,7 @@
  */
 
 // Logo generation via server-side API route (keeps xAI key server-side)
+import { reportError } from '../utils/errorReporter';
 const LOGO_API_URL = '/api/club-arena/generate-logo';
 
 // Logo generation settings
@@ -47,7 +48,7 @@ export async function generateClubLogo(
     const data = await response.json();
 
     if (!response.ok || !data.success) {
-      console.error('[LogoGenerator] API error:', data.error);
+      reportError(data.error, 'LogoGeneratorService.generate.api');
       return {
         success: false,
         error: data.error || `API error: ${response.status}`,
@@ -62,7 +63,7 @@ export async function generateClubLogo(
       logoUrl: resizedDataUrl,
     };
   } catch (error: unknown) {
-    console.error('[LogoGenerator] Logo generation failed:', error);
+    reportError(error, 'LogoGeneratorService.generate');
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error occurred',

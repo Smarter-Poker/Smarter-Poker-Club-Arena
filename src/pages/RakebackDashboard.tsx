@@ -15,6 +15,7 @@ import { useToast } from '../components/common/Toast';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { AreaChart, Area, XAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { useIsMounted } from '../hooks/useIsMounted';
+import { reportError } from '../utils/errorReporter';
 
 interface RakebackStats {
   totalRakeContributed: number;
@@ -102,7 +103,7 @@ export default function RakebackDashboard() {
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[RakebackDashboard] ❌ Realtime channel error:', err?.message || err);
+          reportError(err?.message || err, 'RakebackDashboard._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[RakebackDashboard] ⏱️ Realtime channel timed out');
@@ -189,7 +190,7 @@ export default function RakebackDashboard() {
       });
     } catch (err) {
       if (!isMounted.current) return;
-      console.error('[RakebackDashboard] Load failed:', err);
+      reportError(err, 'RakebackDashboard.Load_failed');
       toast.error('Failed to load rakeback data');
     } finally {
       loadingRef.current = false;

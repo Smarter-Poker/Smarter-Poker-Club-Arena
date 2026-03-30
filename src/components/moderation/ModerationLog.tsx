@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { formatRelativeShort as formatTime } from '@/lib/date';
 import './ModerationLog.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface LogEntry {
   id: string;
@@ -64,7 +65,7 @@ export const ModerationLog: React.FC<ModerationLogProps> = ({ clubId, tableId, l
       const liveLogs: LogEntry[] = [];
       setLogs(liveLogs);
     } catch (error) {
-      console.error('Failed to load moderation logs:', error);
+      reportError(error, 'ModerationLog.Failed_to_load_moderation_logs');
     } finally {
       setLoading(false);
     }

@@ -19,6 +19,7 @@ import { masterBus } from '../core/MasterBus';
 import { useToast } from '../components/common/Toast';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import './TableConfigPage.css';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -370,7 +371,7 @@ export default function TableConfigPage() {
         if (error) throw error;
         setTemplates(data || []);
       } catch (err) {
-        if (isMounted) console.error('Failed to fetch templates:', err);
+        if (isMounted) reportError(isMounted, 'TableConfigPage.Failed_to_fetch_templates');
       }
     };
     fetchTemplates();
@@ -413,7 +414,7 @@ export default function TableConfigPage() {
         )
         .subscribe((status: string, err?: Error) => {
           if (status === 'CHANNEL_ERROR') {
-            console.error('[TableConfigPage] ❌ Realtime channel error:', err?.message || err);
+            reportError(err?.message || err, 'TableConfigPage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
             console.warn('[TableConfigPage] ⏱️ Realtime channel timed out');
@@ -496,7 +497,7 @@ export default function TableConfigPage() {
       setTemplates((prev) => [data, ...prev]);
       toast.success('Template saved! You can now duplicate this table easily.');
     } catch (err) {
-      console.error('Failed to save template:', err);
+      reportError(err, 'TableConfigPage.Failed_to_save_template');
       toast.error('Failed to save template');
     } finally {
       setSavingTemplate(false);
@@ -527,7 +528,7 @@ export default function TableConfigPage() {
       setShowDeleteConfirm(false);
       navigate(`/clubs/${clubId}`);
     } catch (err) {
-      console.error('Failed to delete table:', err);
+      reportError(err, 'TableConfigPage.Failed_to_delete_table');
       toast.error('Failed to delete table');
     } finally {
       setDeleting(false);
@@ -701,7 +702,7 @@ export default function TableConfigPage() {
       toast.success('Table template saved!');
       navigate(`/clubs/${clubId}`);
     } catch (error) {
-      console.error('Failed to save table:', error);
+      reportError(error, 'TableConfigPage.Failed_to_save_table');
       toast.error('Failed to save table');
     } finally {
       setSaving(false);
@@ -763,7 +764,7 @@ export default function TableConfigPage() {
       toast.success('Table created and started!');
       navigate(`/table/${data.id}`);
     } catch (error) {
-      console.error('Failed to start table:', error);
+      reportError(error, 'TableConfigPage.Failed_to_start_table');
       toast.error('Failed to start table');
     } finally {
       setStarting(false);

@@ -3,6 +3,7 @@ import { WalletService } from '../../services/WalletService';
 import { CommissionService } from '../../services/CommissionService';
 import { RakeService } from '../../services/RakeService';
 import { retryAsync } from '../../utils/retryAsync';
+import { reportError } from '../../utils/errorReporter';
 
 export interface HandContext {
   tableId: string;
@@ -88,7 +89,7 @@ export class RakeWaterfallEngine {
     );
 
     if (error) {
-      console.error('[RakeWaterfall] CRITICAL pot deduction failure:', error);
+      reportError(error, 'RakeWaterfallEngine.CRITICAL_pot_deduction_failure');
       throw new Error(`Failed to execute pot drops for hand ${ctx.handId}: ${error.message}`);
     }
 

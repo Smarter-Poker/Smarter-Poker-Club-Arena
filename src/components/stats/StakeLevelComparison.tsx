@@ -21,6 +21,7 @@ import { masterBus } from '../../core/MasterBus';
 import { retryFetch } from '../../utils/retryFetch';
 import StatsExportButton from './StatsExportButton';
 import './StakeLevelComparison.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface StakeLevelComparisonProps {
   userId: string;
@@ -57,7 +58,7 @@ function getCached(userId: string): SessionRecord[] | null {
     const raw = sessionStorage.getItem(CACHE_PREFIX + userId);
     return raw ? JSON.parse(raw) : null;
   } catch (err) {
-    console.error('[StakeLevelComparison] Error:', err);
+    reportError(err, 'StakeLevelComparison.Error');
     return null;
   }
 }
@@ -65,7 +66,7 @@ function setCache(userId: string, data: SessionRecord[]) {
   try {
     sessionStorage.setItem(CACHE_PREFIX + userId, JSON.stringify(data));
   } catch (err) {
-    console.error('[StakeLevelComparison] Error:', err);
+    reportError(err, 'StakeLevelComparison.Error');
     /* quota exceeded */
   }
 }
@@ -118,7 +119,7 @@ export default function StakeLevelComparison({ userId }: StakeLevelComparisonPro
         }
       }
     } catch (err) {
-      console.error('[StakeLevelComparison] Error:', err);
+      reportError(err, 'StakeLevelComparison.Error');
       if (isMounted.current) setRecords([]);
     } finally {
       if (isMounted.current) setLoading(false);
@@ -154,7 +155,7 @@ export default function StakeLevelComparison({ userId }: StakeLevelComparisonPro
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[StakeLevelComparison] ❌ Realtime channel error:', err?.message || err);
+          reportError(err?.message || err, 'StakeLevelComparison._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[StakeLevelComparison] ⏱️ Realtime channel timed out');

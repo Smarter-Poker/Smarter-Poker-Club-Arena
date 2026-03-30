@@ -29,6 +29,7 @@ import PageSkeleton from '../components/common/PageSkeleton';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 
 import { useIsMounted } from '../hooks/useIsMounted';
+import { reportError } from '../utils/errorReporter';
 
 type FilterTab = 'all' | 'open' | 'under_review' | 'resolved' | 'escalated';
 
@@ -81,7 +82,7 @@ export default function DisputeManagementPage() {
         if (isMounted.current) setDisputes(data);
       }
     } catch (err) {
-      console.error('[Disputes] Load failed:', err);
+      reportError(err, 'DisputeManagementPage.Load_failed');
       if (isMounted.current) toast.error('Failed to load disputes');
     } finally {
       loadingRef.current = false;
@@ -114,10 +115,7 @@ export default function DisputeManagementPage() {
         )
         .subscribe((status: string, err?: Error) => {
           if (status === 'CHANNEL_ERROR') {
-            console.error(
-              '[DisputeManagementPage] ❌ Realtime channel error:',
-              err?.message || err
-            );
+            reportError(err?.message || err, 'DisputeManagementPage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
             console.warn('[DisputeManagementPage] ⏱️ Realtime channel timed out');

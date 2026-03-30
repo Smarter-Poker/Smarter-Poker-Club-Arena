@@ -30,6 +30,7 @@ import { initSentry } from './core/SentryInit';
 import { initWebVitals } from './core/WebVitals';
 import SystemOffline from './core/SystemOffline';
 import { ErrorBoundary } from './components/common';
+import { reportError } from './utils/errorReporter';
 
 // Prevent double-init when React strict mode re-runs effects
 let booted = false;
@@ -44,7 +45,7 @@ function runBootOnce(): { ok: boolean; status: any } {
 
   // Global safety net (same as main.tsx)
   window.addEventListener('unhandledrejection', (event) => {
-    console.error('[GLOBAL] Unhandled promise rejection caught:', event.reason);
+    reportError(event.reason, 'ClubArenaRoot.Unhandled_promise_rejection_caught');
     event.preventDefault();
   });
 
@@ -64,7 +65,7 @@ function runBootOnce(): { ok: boolean; status: any } {
 
   // Phase 3: IdentityDNA (async, non-blocking — fire and forget)
   initIdentityDNA().catch((err) => {
-    console.error('[ClubArenaRoot] IdentityDNA init error:', err);
+    reportError(err, 'ClubArenaRoot.IdentityDNA_init_error');
   });
 
   booted = true;

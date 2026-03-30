@@ -15,6 +15,7 @@
 
 import type { SeatPlayer, GameVariant } from '../types/database.types';
 import { HorseLogic, type HorseStyle, type HorseDecision, type TablePosition } from './HorseLogic';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // BRAIN INTERFACES (matching HorsePokerBrain.js spec)
@@ -218,10 +219,7 @@ class HorseBrainAdapterClass {
 
         this.brainAvailable = true;
       } catch (initErr) {
-        console.error(
-          '[HorseBrainAdapter] Brain initialization failed (GTO warmup, horse IDs, etc.):',
-          initErr
-        );
+        reportError(initErr, 'HorseBrainAdapter.Brain_initialization_failed_GTO_warmup_h');
         this.brainAvailable = false;
         this.brain = null;
         // Fall through to HorseLogic fallback
@@ -295,10 +293,7 @@ class HorseBrainAdapterClass {
           thinkTime: brainDecision.delayMs || 500,
         };
       } catch (err: unknown) {
-        console.error(
-          `[HorseBrainAdapter] Brain decision failed for ${horseId}, falling back to HorseLogic:`,
-          err
-        );
+        reportError(err, 'HorseBrainAdapter.Brain_decision_failed_for_horseId_fallin');
       }
     }
 
@@ -367,7 +362,7 @@ class HorseBrainAdapterClass {
       await this.brain.processHandResult(handData, bigBlind);
     } catch (err: unknown) {
       // Non-blocking — never fail the hand pipeline
-      console.error('[HorseBrainAdapter] processHandResult error:', err);
+      reportError(err, 'HorseBrainAdapter.processHandResult_error');
     }
   }
 
@@ -379,7 +374,7 @@ class HorseBrainAdapterClass {
     try {
       await this.brain.evaluateSessions(gameController, tableManager);
     } catch (err: unknown) {
-      console.error('[HorseBrainAdapter] evaluateSessions error:', err);
+      reportError(err, 'HorseBrainAdapter.evaluateSessions_error');
     }
   }
 

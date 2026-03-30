@@ -25,6 +25,7 @@ import { useUserStore } from '../stores/useUserStore';
 import { realtimeChannelService } from '../services/RealtimeChannelService';
 import { supabase } from '../lib/supabase';
 import type { RealtimeChannel } from '@supabase/supabase-js';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // EVENT TYPES
@@ -1113,49 +1114,49 @@ class MasterBusCore {
       const arenaState = useArenaStore.getState();
       stores.arena = arenaState !== undefined;
     } catch (e) {
-      console.error(' ├─ ArenaStore:  (Error)', e);
+      reportError(e, 'MasterBus._ArenaStore_Error');
     }
 
     try {
       const clubState = useClubStore.getState();
       stores.club = clubState !== undefined;
     } catch (e) {
-      console.error(' ├─ ClubStore:  (Error)', e);
+      reportError(e, 'MasterBus._ClubStore_Error');
     }
 
     try {
       const tableState = useTableStore.getState();
       stores.table = tableState !== undefined;
     } catch (e) {
-      console.error(' ├─ TableStore:  (Error)', e);
+      reportError(e, 'MasterBus._TableStore_Error');
     }
 
     try {
       const unionState = useUnionStore.getState();
       stores.union = unionState !== undefined;
     } catch (e) {
-      console.error(' ├─ UnionStore:  (Error)', e);
+      reportError(e, 'MasterBus._UnionStore_Error');
     }
 
     try {
       const walletState = useWalletStore.getState();
       stores.wallet = walletState !== undefined;
     } catch (e) {
-      console.error(' ├─ WalletStore:  (Error)', e);
+      reportError(e, 'MasterBus._WalletStore_Error');
     }
 
     try {
       const settingsState = useSettingsStore.getState();
       stores.settings = settingsState !== undefined;
     } catch (e) {
-      console.error(' ├─ SettingsStore:  (Error)', e);
+      reportError(e, 'MasterBus._SettingsStore_Error');
     }
 
     try {
       const userState = useUserStore.getState();
       stores.user = userState !== undefined;
     } catch (e) {
-      console.error(' └─ UserStore:  (Error)', e);
+      reportError(e, 'MasterBus._UserStore_Error');
     }
 
     // Determine overall status
@@ -1321,11 +1322,11 @@ class MasterBusCore {
           const result = handler(event as BusEvent) as any;
           if (result instanceof Promise) {
             result.catch((e: any) => {
-              console.error(`[BUS ASYNC ERROR] Handler failed for ${type}:`, e);
+              reportError(e, 'MasterBus.Handler_failed_for_type');
             });
           }
         } catch (e) {
-          console.error(`[BUS ERROR] Handler failed for ${type}:`, e);
+          reportError(e, 'MasterBus.Handler_failed_for_type');
         }
       });
     }
@@ -1637,7 +1638,7 @@ class MasterBusCore {
             // Emit REALTIME_CONNECTED after successful recovery
             this.emit('REALTIME_CONNECTED', { channelName: key });
           } catch (e) {
-            console.error(`[BUS HEALTH] Recovery failed for "${key}":`, e);
+            reportError(e, 'MasterBus.Recovery_failed_for_key');
           }
         } else {
           console.warn(`[BUS HEALTH] No factory for "${key}" -- removed only`);

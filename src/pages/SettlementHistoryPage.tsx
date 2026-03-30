@@ -15,6 +15,7 @@ import { useToast } from '../components/common/Toast';
 import PageSkeleton from '../components/common/PageSkeleton';
 
 import { useIsMounted } from '../hooks/useIsMounted';
+import { reportError } from '../utils/errorReporter';
 
 interface SettlementCycle {
   id: string;
@@ -74,7 +75,7 @@ export default function SettlementHistoryPage() {
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[SettlementHistoryPage] ❌ Realtime channel error:', err?.message || err);
+          reportError(err?.message || err, 'SettlementHistoryPage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[SettlementHistoryPage] ⏱️ Realtime channel timed out');
@@ -127,7 +128,7 @@ export default function SettlementHistoryPage() {
       }
     } catch (err) {
       if (!isMounted.current) return;
-      console.error('[SettlementHistory] Load failed:', err);
+      reportError(err, 'SettlementHistoryPage.Load_failed');
       toast.error('Failed to load settlement history');
     } finally {
       loadingRef.current = false;

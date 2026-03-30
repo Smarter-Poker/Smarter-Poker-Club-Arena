@@ -17,6 +17,7 @@ import { masterBus } from '../../core/MasterBus';
 import { triggerHaptic } from '../../services/HapticService';
 import { resolveAvatarDisplay } from '../../utils/avatarUtils';
 import { checkSettlementLock } from '../../utils/settlementLock';
+import { reportError } from '../../utils/errorReporter';
 
 const FB = {
   bg: '#18191A',
@@ -120,7 +121,7 @@ export default function AgentPromoPanel({
       }));
       if (isMounted.current) setDownline(downlineData as DownlinePlayer[]);
     } catch (e) {
-      console.error('[AgentPromoPanel] Load error:', e);
+      reportError(e, 'AgentPromoPanel.Load_error');
     } finally {
       if (isMounted.current) setLoading(false);
     }
@@ -160,7 +161,7 @@ export default function AgentPromoPanel({
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[AgentPromoPanel] ❌ Realtime channel error:', err?.message || err);
+          reportError(err?.message || err, 'AgentPromoPanel._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[AgentPromoPanel] ⏱️ Realtime channel timed out');

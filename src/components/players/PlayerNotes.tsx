@@ -11,6 +11,7 @@ import { useAuthUser } from '../../hooks/useAuthUser';
 import { NOTE_COLORS, PLAYER_TAGS } from '../../services/PlayerNotesService';
 import { useToast } from '../common/Toast';
 import './PlayerNotes.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface PlayerNote {
   id: string;
@@ -87,7 +88,7 @@ export const PlayerNotes: React.FC<PlayerNotesProps> = ({ playerId, onClose, mod
         }))
       );
     } catch (error) {
-      console.error('Failed to load notes:', error);
+      reportError(error, 'PlayerNotes.Failed_to_load_notes');
     } finally {
       if (isMounted.current) setLoading(false);
     }
@@ -116,7 +117,7 @@ export const PlayerNotes: React.FC<PlayerNotesProps> = ({ playerId, onClose, mod
       setEditingNote('');
       setSelectedTags([]);
     } catch (error) {
-      console.error('Failed to save note:', error);
+      reportError(error, 'PlayerNotes.Failed_to_save_note');
       toast.error('Failed to save note');
     }
   };
@@ -135,7 +136,7 @@ export const PlayerNotes: React.FC<PlayerNotesProps> = ({ playerId, onClose, mod
       toast.success('Note deleted');
       loadNotes();
     } catch (error) {
-      console.error('Failed to delete note:', error);
+      reportError(error, 'PlayerNotes.Failed_to_delete_note');
       toast.error('Failed to delete note');
     }
   };

@@ -41,6 +41,7 @@ import { useIsMounted } from '../../hooks/useIsMounted';
 import PageSkeleton from '../../components/common/PageSkeleton';
 import { FavoriteTablesWidget } from '../../components/quickactions';
 import './ClubLobby.css';
+import { reportError } from '../../utils/errorReporter';
 
 // Animation utilities
 const cardAnimationStyle = (index: number) => ({
@@ -376,7 +377,7 @@ export default function ClubLobby() {
         }
       }
     } catch (err) {
-      console.error('[ClubLobby] Failed to load club data:', err);
+      reportError(err, 'ClubLobby.Failed_to_load_club_data');
     } finally {
       loadingRef.current = false;
       if (isMountedRef.current) setIsLoading(false);

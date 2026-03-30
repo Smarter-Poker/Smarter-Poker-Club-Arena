@@ -24,6 +24,7 @@
  */
 
 import { STORAGE_KEYS } from '../lib/storage';
+import { reportError } from '../utils/errorReporter';
 
 // Musical note frequencies (Hz) — equal temperament tuning
 const NOTE = {
@@ -61,7 +62,7 @@ function getCtx(): AudioContext | null {
     }
     return _ctx;
   } catch (err) {
-    console.error('[PremiumSFX] Error:', err);
+    reportError(err, 'PremiumSFX.init');
     return null; // Web Audio API not supported
   }
 }
@@ -71,7 +72,7 @@ function isEnabled(): boolean {
   try {
     return localStorage.getItem(STORAGE_KEYS.SOUNDS) !== 'false';
   } catch (err) {
-    console.error('[PremiumSFX] Error:', err);
+    reportError(err, 'PremiumSFX.play');
     return true;
   }
 }

@@ -214,7 +214,7 @@ export const DiamondService = {
 
         return { success: false, error: intentData?.error || 'Payment failed' };
       } catch (stripeErr) {
-        console.error('[DiamondService] Stripe flow unavailable, falling back to RPC:', stripeErr);
+        reportError(stripeErr, 'DiamondService.purchase.stripeFallback');
         // Fall through to legacy RPC
       }
     }

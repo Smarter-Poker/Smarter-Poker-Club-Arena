@@ -19,6 +19,7 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import ClubBottomNav from '../components/club/ClubBottomNav';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import './SuperAgentDashboard.css';
+import { reportError } from '../utils/errorReporter';
 
 type DashboardTab = 'overview' | 'agents' | 'players' | 'commissions' | 'transfers';
 
@@ -107,10 +108,7 @@ export default function SuperAgentDashboard() {
           )
           .subscribe((status: string, err?: Error) => {
             if (status === 'CHANNEL_ERROR') {
-              console.error(
-                '[SuperAgentDashboard] ❌ Realtime channel error:',
-                err?.message || err
-              );
+              reportError(err?.message || err, 'SuperAgentDashboard._Realtime_channel_error');
             }
             if (status === 'TIMED_OUT') {
               console.warn('[SuperAgentDashboard] ⏱️ Realtime channel timed out');
@@ -220,7 +218,7 @@ export default function SuperAgentDashboard() {
         setSpread(commSpread);
       }
     } catch (error) {
-      console.error('Failed to load dashboard:', error);
+      reportError(error, 'SuperAgentDashboard.Failed_to_load_dashboard');
       if (isMounted.current) toast.error('Failed to load dashboard data');
     } finally {
       loadingRef.current = false;
@@ -242,7 +240,7 @@ export default function SuperAgentDashboard() {
         toast.success(`Transferred ${amount.toLocaleString()} chips successfully`);
       loadDashboardData();
     } catch (error) {
-      console.error('Transfer failed:', error);
+      reportError(error, 'SuperAgentDashboard.Transfer_failed');
       if (isMounted.current) toast.error('Transfer failed');
     }
     if (isMounted.current) setIsTransferring(false);

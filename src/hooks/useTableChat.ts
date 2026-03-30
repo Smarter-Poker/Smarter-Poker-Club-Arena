@@ -13,6 +13,7 @@ import { supabase } from '../lib/supabase';
 import { triggerHaptic } from '../services/HapticService';
 import { masterBus } from '../core/MasterBus';
 import type { ChatMessage } from '../components/table/TableChat';
+import { reportError } from '../utils/errorReporter';
 
 // Reaction event type (shared with TableReactions)
 export interface ReactionEvent {
@@ -389,7 +390,7 @@ export function useTableChat(
         });
 
         if (error) {
-          console.error('Failed to send chat:', error);
+          reportError(error, 'useTableChat.Failed_to_send_chat');
           setChatMessages((prev) => prev.filter((m) => m.id !== tempId));
         }
       } catch (err) {

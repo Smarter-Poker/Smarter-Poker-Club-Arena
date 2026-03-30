@@ -15,6 +15,7 @@ import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import PageSkeleton from '../components/common/PageSkeleton';
+import { reportError } from '../utils/errorReporter';
 
 interface RateChange {
   id: string;
@@ -75,7 +76,7 @@ export default function RateAuditPage() {
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[RateAuditPage] ❌ Realtime channel error:', err?.message || err);
+          reportError(err?.message || err, 'RateAuditPage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[RateAuditPage] ⏱️ Realtime channel timed out');
@@ -160,7 +161,7 @@ export default function RateAuditPage() {
 
       setChanges(allChanges);
     } catch (err) {
-      console.error('[RateAuditPage] Load failed:', err);
+      reportError(err, 'RateAuditPage.Load_failed');
       if (isMounted.current) toast.error('Failed to load rate audit data');
     }
     if (isMounted.current) setLoading(false);

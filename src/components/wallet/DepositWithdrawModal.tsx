@@ -11,6 +11,7 @@ import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useToast } from '../common/Toast';
 import styles from './DepositWithdrawModal.module.css';
+import { reportError } from '../../utils/errorReporter';
 
 // Haptic feedback utility for mobile-first financial interactions
 const triggerHaptic = (pattern: number | number[] = 10) => {
@@ -19,7 +20,7 @@ const triggerHaptic = (pattern: number | number[] = 10) => {
       navigator.vibrate(pattern);
     }
   } catch (err) {
-    console.error('[DepositWithdrawModal] Error:', err);
+    reportError(err, 'DepositWithdrawModal.Error');
     /* silent — not all devices support vibration */
   }
 };
@@ -416,7 +417,7 @@ export default function DepositWithdrawModal({
       // Emit bus event so DynamicWallet and other components refresh balances
       masterBus.emit('BALANCE_UPDATED', { source: mode, amount: numericAmount });
     } catch (err) {
-      console.error(`${mode} failed:`, err);
+      reportError(err, 'DepositWithdrawModal.mode_failed');
       if (isMounted.current) {
         toast.error(`Failed to process ${mode}. Please try again.`);
         setError(`Failed to process ${mode}. Please try again.`);

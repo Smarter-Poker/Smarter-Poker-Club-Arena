@@ -19,6 +19,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { STORAGE_KEYS } from '../lib/storage';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES — matches Bible V8 §11.1.1 exactly
@@ -269,7 +270,7 @@ export function useUserTableSettings(userId: string | null | undefined) {
         );
 
         if (error) {
-          console.error('[useUserTableSettings] Save failed:', error.message);
+          reportError(error, 'useUserTableSettings.Save_failed');
           // Rollback on failure
           setSettings((prev) => {
             const reverted = { ...prev, [key]: !newValue };
@@ -282,7 +283,7 @@ export function useUserTableSettings(userId: string | null | undefined) {
           });
         }
       } catch (err) {
-        console.error('[useUserTableSettings] Unexpected save error:', err);
+        reportError(err, 'useUserTableSettings.Unexpected_save_error');
       }
     },
     [userId]

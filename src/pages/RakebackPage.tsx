@@ -15,6 +15,7 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { retryAsync } from '../utils/retryAsync';
 import { formatDateShort as formatDate } from '../utils/format';
+import { reportError } from '../utils/errorReporter';
 
 interface RakebackPeriod {
   id: string;
@@ -81,7 +82,7 @@ export default function RakebackPage() {
         }
       }
     } catch (error) {
-      console.error('Failed to load rakeback:', error);
+      reportError(error, 'RakebackPage.Failed_to_load_rakeback');
       if (!getIsMounted || getIsMounted()) toast.error('Failed to load rakeback data.');
     } finally {
       loadingRef.current = false;
@@ -273,16 +274,13 @@ export default function RakebackPage() {
 
       if (rpcError) {
         // Rollback: restore periods to 'pending' since credit failed
-        console.error('[Rakeback] Credit failed, rolling back period status:', rpcError);
+        reportError(rpcError, 'RakebackPage.Credit_failed_rolling_back_period_status');
         const { error: rollbackErr } = await supabase
           .from('rakeback_periods')
           .update({ status: 'pending' })
           .in('id', verifiedIds);
         if (rollbackErr) {
-          console.error(
-            '[Rakeback] CRITICAL: Rollback ALSO failed — periods stuck as paid without credit:',
-            rollbackErr
-          );
+          reportError(rollbackErr, 'RakebackPage.CRITICAL');
           throw new Error('Claim failed and rollback failed. Please contact support immediately.');
         }
         throw new Error(rpcError.message);

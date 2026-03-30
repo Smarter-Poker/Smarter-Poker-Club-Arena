@@ -23,6 +23,7 @@ import PageErrorBoundary from '../../components/common/PageErrorBoundary';
 import { TournamentClock } from '../../components/tournament/TournamentClock';
 import { HandForHandBanner } from '../../components/tournament/HandForHandBanner';
 import { FinalTableOverlay } from '../../components/tournament/FinalTableOverlay';
+import { reportError } from '../../utils/errorReporter';
 
 type TabId =
   | 'detail'
@@ -272,7 +273,7 @@ export default function TournamentDetails() {
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[TournamentDetails] ❌ Realtime channel error:', err?.message || err);
+          reportError(err?.message || err, 'TournamentDetails._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[TournamentDetails] ⏱️ Realtime channel timed out');
@@ -481,7 +482,7 @@ export default function TournamentDetails() {
         }
       }
     } catch (error) {
-      console.error('Failed to load tournament:', error);
+      reportError(error, 'TournamentDetails.Failed_to_load_tournament');
       if (!getIsMounted || getIsMounted()) toast.error('Failed to load tournament details');
     }
     if (!getIsMounted || getIsMounted()) setIsLoading(false);
@@ -560,7 +561,7 @@ export default function TournamentDetails() {
       // Defer reload so the UI updates instantly (fixes INP)
       setTimeout(() => loadTournament(), 50);
     } catch (error) {
-      console.error('Registration failed:', error);
+      reportError(error, 'TournamentDetails.Registration_failed');
       const msg = (error as Error).message || 'Unknown error';
       toast.error(`Registration failed: ${msg}`);
     } finally {
@@ -583,7 +584,7 @@ export default function TournamentDetails() {
       // Defer reload so the UI updates instantly (fixes INP)
       setTimeout(() => loadTournament(), 50);
     } catch (error) {
-      console.error('Unregistration failed:', error);
+      reportError(error, 'TournamentDetails.Unregistration_failed');
       const msg = (error as Error).message || 'Unknown error';
       toast.error(`Unregister failed: ${msg}`);
     } finally {

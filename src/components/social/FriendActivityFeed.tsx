@@ -12,6 +12,7 @@ import { useAuthUser } from '../../hooks/useAuthUser';
 import { supabase } from '../../lib/supabase';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import './FriendActivityFeed.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface ActivityItem {
   id: string;
@@ -124,7 +125,7 @@ export default function FriendActivityFeed({ friends }: { friends: any[] }) {
         setLoading(false);
       }
     } catch (err) {
-      console.error('[FriendActivityFeed] load error:', err);
+      reportError(err, 'FriendActivityFeed.load_error');
       if (isMounted.current) setLoading(false);
     }
   }, [friends, user?.id]);

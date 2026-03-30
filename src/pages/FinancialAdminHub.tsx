@@ -16,6 +16,7 @@ import PageSkeleton from '../components/common/PageSkeleton';
 import { useToast } from '../components/common/Toast';
 import { ResponsiveContainer, AreaChart, Area, XAxis, Tooltip } from 'recharts';
 import { useIsMounted } from '../hooks/useIsMounted';
+import { reportError } from '../utils/errorReporter';
 
 interface HubStats {
   totalAlerts: number;
@@ -273,7 +274,7 @@ export default function FinancialAdminHub() {
         if (isMounted.current) setRevenueData([]);
       }
     } catch (err) {
-      console.error('[FinancialAdminHub] Stats load failed:', err);
+      reportError(err, 'FinancialAdminHub.Stats_load_failed');
       if (isMounted.current) toast.error('Failed to load financial stats');
     } finally {
       loadingRef.current = false;
@@ -307,7 +308,7 @@ export default function FinancialAdminHub() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'disputes' }, loadStats)
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[FinancialAdminHub] ❌ Realtime channel error:', err?.message || err);
+          reportError(err?.message || err, 'FinancialAdminHub._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[FinancialAdminHub] ⏱️ Realtime channel timed out');

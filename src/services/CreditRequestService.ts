@@ -12,6 +12,7 @@ import { pushNotificationService } from './PushNotificationService';
 import { retryAsync } from '../utils/retryAsync';
 import { masterBus } from '../core/MasterBus';
 import { QUERY_LIMITS } from '../lib/constants';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -82,7 +83,7 @@ class CreditRequestServiceClass {
         request.requestedAmount
       );
     } catch (e: unknown) {
-      console.error('[CreditRequest] Notification failed:', e);
+      reportError(e, 'CreditRequestService.submitRequest.notify', { approverId: request.approverId });
     }
 
     return this.mapRequest(data);
@@ -200,7 +201,7 @@ class CreditRequestServiceClass {
         url: '/wallet',
       });
     } catch (e: unknown) {
-      console.error('[CreditRequest] Notification failed:', e);
+      reportError(e, 'CreditRequestService.approveRequest.notify', { requesterId: request.requester_id });
     }
 
     return this.mapRequest(data);
@@ -243,7 +244,7 @@ class CreditRequestServiceClass {
         category: 'wallet_credit',
       });
     } catch (e: unknown) {
-      console.error('[CreditRequest] Notification failed:', e);
+      reportError(e, 'CreditRequestService.denyRequest.notify', { requesterId: request.requester_id });
     }
 
     return this.mapRequest(data);
@@ -286,7 +287,7 @@ class CreditRequestServiceClass {
     );
 
     if (error) {
-      console.error('[CreditRequest] Transfer failed:', error);
+      reportError(error, 'CreditRequestService.executeCreditTransfer', { fromUserId, toUserId, amount });
       throw new Error('Credit transfer failed');
     }
 

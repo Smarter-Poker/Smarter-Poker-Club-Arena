@@ -10,6 +10,7 @@ import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { supabase } from '../../lib/supabase';
 import './OnlineFriendsPill.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
+import { reportError } from '../../utils/errorReporter';
 
 interface OnlineFriend {
   id: string;
@@ -76,7 +77,7 @@ export default function OnlineFriendsPill({ userId, onFriendClick }: OnlineFrien
 
       if (isMounted.current) setFriends(online);
     } catch (err) {
-      console.error('[OnlineFriendsPill] error:', err);
+      reportError(err, 'OnlineFriendsPill.error');
     }
   };
 

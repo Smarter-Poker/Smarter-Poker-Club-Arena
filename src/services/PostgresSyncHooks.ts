@@ -1,6 +1,7 @@
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import type { RealtimeChannel } from '@supabase/supabase-js';
+import { reportError } from '../utils/errorReporter';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -220,7 +221,7 @@ class PostgresSyncHooksService {
             this.scheduleReconnect(userId);
             break;
           case 'TIMED_OUT':
-            console.error(`[PostgresSync] ⏱️ Channel timed out — scheduling reconnect.`);
+            console.warn(`[PostgresSync] ⏱️ Channel timed out — scheduling reconnect.`);
             masterBus.emit('REALTIME_DISCONNECTED', {
               channelName,
               reason: 'Connection timed out',

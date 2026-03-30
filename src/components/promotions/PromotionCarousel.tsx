@@ -9,6 +9,7 @@ import { useIsMounted } from '../../hooks/useIsMounted';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { promotionService, type Promotion } from '../../services/PromotionService';
 import './PromotionCarousel.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface PromotionCarouselProps {
   clubId?: string;
@@ -52,7 +53,7 @@ export default function PromotionCarousel({ clubId, onPromoClick }: PromotionCar
         const data = await promotionService.getPromotions(clubId, 'active');
         if (isMounted.current) setPromos(data);
       } catch (err) {
-        console.error('[PromotionCarousel] load error:', err);
+        reportError(err, 'PromotionCarousel.load_error');
       }
       if (isMounted.current) setLoading(false);
     };

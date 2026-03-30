@@ -11,6 +11,7 @@
 
 import { supabase } from '../lib/supabase';
 import { retryAsync } from '../utils/retryAsync';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -348,7 +349,7 @@ class VIPServiceClass {
             ignoreDuplicates: false,
           }
         );
-        if (upsertErr) console.error('[VIPService] VIP quota upsert fallback failed:', upsertErr);
+        if (upsertErr) reportError(upsertErr, 'VIPService.upsertQuota');
       }
     } catch (err) {
       console.warn('[VIPService] consumeVIPQuota unexpected error:', err);

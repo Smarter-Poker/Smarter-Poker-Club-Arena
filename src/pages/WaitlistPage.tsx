@@ -13,6 +13,7 @@ import { haptic } from '../services/HapticService';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import './WaitlistPage.css';
 import PageSkeleton from '../components/common/PageSkeleton';
+import { reportError } from '../utils/errorReporter';
 
 const waitlistCardAnimationStyle = (index: number) => ({
   opacity: 0,
@@ -66,7 +67,7 @@ export default function WaitlistPage() {
         )
         .subscribe((status: string, err?: Error) => {
           if (status === 'CHANNEL_ERROR') {
-            console.error('[WaitlistPage] ❌ Realtime channel error:', err?.message || err);
+            reportError(err?.message || err, 'WaitlistPage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
             console.warn('[WaitlistPage] ⏱️ Realtime channel timed out');
@@ -143,7 +144,7 @@ export default function WaitlistPage() {
         }))
       );
     } catch (error) {
-      console.error('Failed to load waitlist:', error);
+      reportError(error, 'WaitlistPage.Failed_to_load_waitlist');
     } finally {
       loadingRef.current = false;
       if (!getIsMounted || getIsMounted()) setLoading(false);
@@ -159,7 +160,7 @@ export default function WaitlistPage() {
         setEntries((prev) => prev.filter((e) => e.id !== entryId));
       }
     } catch (error) {
-      console.error('Failed to leave waitlist:', error);
+      reportError(error, 'WaitlistPage.Failed_to_leave_waitlist');
     }
     setLeavingId(null);
   };

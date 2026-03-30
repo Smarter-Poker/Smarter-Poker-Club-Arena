@@ -4,6 +4,7 @@ import { masterBus } from '../../core/MasterBus';
 import { PresenceIndicator } from './PresenceIndicator';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import './OnlinePlayersList.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface OnlinePlayer {
   id: string;
@@ -59,7 +60,7 @@ export const OnlinePlayersList: React.FC<OnlinePlayersListProps> = ({
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[OnlinePlayersList] ❌ Realtime channel error:', err?.message || err);
+          reportError(err?.message || err, 'OnlinePlayersList._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[OnlinePlayersList] ⏱️ Realtime channel timed out');
@@ -153,7 +154,7 @@ export const OnlinePlayersList: React.FC<OnlinePlayersListProps> = ({
         setOnlineCount(count || mapped.length);
       }
     } catch (error) {
-      console.error('Failed to load online players:', error);
+      reportError(error, 'OnlinePlayersList.Failed_to_load_online_players');
     } finally {
       setLoading(false);
     }

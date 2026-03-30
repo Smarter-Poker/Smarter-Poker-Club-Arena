@@ -6,6 +6,7 @@ import { WalletService } from '../../services/WalletService';
 import { useToast } from '../common/Toast';
 import { FinancialChart } from '../charts/FinancialChart';
 import { masterBus } from '../../core/MasterBus';
+import { reportError } from '../../utils/errorReporter';
 
 interface AgentPortalProps {
   agentId: string;
@@ -89,7 +90,7 @@ export const AgentFinancialPortal: React.FC<AgentPortalProps> = ({ agentId }) =>
         );
       }
     } catch (err) {
-      console.error('Failed to load commission history:', err);
+      reportError(err, 'AgentFinancialPortal.Failed_to_load_commission_history');
     }
   };
 
@@ -102,7 +103,7 @@ export const AgentFinancialPortal: React.FC<AgentPortalProps> = ({ agentId }) =>
         .maybeSingle();
 
       if (error || !data) {
-        console.error('Error loading agent wallet', error);
+        reportError(error, 'AgentFinancialPortal.Error_loading_agent_wallet');
         return;
       }
 
@@ -117,7 +118,7 @@ export const AgentFinancialPortal: React.FC<AgentPortalProps> = ({ agentId }) =>
         debt: calculatedDebt.debtOwed,
       });
     } catch (err) {
-      console.error('[AgentPortal] fetchWalletData error:', err);
+      reportError(err, 'AgentFinancialPortal.fetchWalletData_error');
     }
   };
 
@@ -135,7 +136,7 @@ export const AgentFinancialPortal: React.FC<AgentPortalProps> = ({ agentId }) =>
         toast.error('Transfer failed. Please check your balance.');
       }
     } catch (err) {
-      console.error('Transfer error:', err);
+      reportError(err, 'AgentFinancialPortal.Transfer_error');
       toast.error('Transfer failed: ' + (err as Error).message);
     } finally {
       setIsTransferring(false);

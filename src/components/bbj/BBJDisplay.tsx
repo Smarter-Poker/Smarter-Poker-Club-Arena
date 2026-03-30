@@ -16,6 +16,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
+import { reportError } from '../../utils/errorReporter';
 
 const FB = {
   bg: '#18191A',
@@ -688,7 +689,7 @@ export function useBBJ(clubId: string | null) {
         });
       }
     } catch (err) {
-      console.error('[BBJ] Fetch error:', err);
+      reportError(err, 'BBJDisplay.Fetch_error');
     } finally {
       if (isMounted.current) setLoading(false);
     }
@@ -731,7 +732,7 @@ export function useBBJ(clubId: string | null) {
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[BBJDisplay] ❌ Realtime channel error:', err?.message || err);
+          reportError(err?.message || err, 'BBJDisplay._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[BBJDisplay] ⏱️ Realtime channel timed out');

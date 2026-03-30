@@ -11,6 +11,7 @@
 
 import React, { useMemo, useEffect, useCallback, useState } from 'react';
 import './HandNotation.css';
+import { reportError } from '../../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -205,7 +206,7 @@ export function HandNotation({ hand, onClose, currency = '' }: HandNotationProps
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (error) {
-      console.error('Copy failed:', error);
+      reportError(error, 'HandNotation.Copy_failed');
     }
   }, [notation]);
 

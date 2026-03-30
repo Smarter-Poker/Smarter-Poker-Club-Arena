@@ -10,6 +10,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import styles from './TournamentLobbyCard.module.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface Tournament {
   id: string;
@@ -96,7 +97,7 @@ function TournamentLobbyCardInner({ tournament, onRegister }: TournamentLobbyCar
       .eq('tournament_id', tournament.id)
       .eq('user_id', user.id)
       .maybeSingle();
-    if (error) console.error('[TournamentLobbyCard] Registration check failed:', error.message);
+    if (error) reportError(error, 'TournamentLobbyCard.Registration_check_failed');
     setIsRegistered(!!data);
   };
 
@@ -153,7 +154,7 @@ function TournamentLobbyCardInner({ tournament, onRegister }: TournamentLobbyCar
       }
       setIsRegistered(true);
     } catch (error) {
-      console.error('Failed to register:', error);
+      reportError(error, 'TournamentLobbyCard.Failed_to_register');
     }
     setRegistering(false);
   };

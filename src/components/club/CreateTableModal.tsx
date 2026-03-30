@@ -7,6 +7,7 @@ import { useState, useEffect } from 'react';
 import { tableService } from '../../services/TableService';
 import type { GameVariant, TableSettings } from '../../types/database.types';
 import styles from './CreateTableModal.module.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface CreateTableModalProps {
   clubId: string;
@@ -144,7 +145,7 @@ export default function CreateTableModal({ clubId, onClose, onSuccess }: CreateT
       );
       onSuccess();
     } catch (err) {
-      console.error('Failed to create table:', err);
+      reportError(err, 'CreateTableModal.Failed_to_create_table');
       setError((err as Error).message || 'Failed to create table. Please try again.');
     } finally {
       setLoading(false);

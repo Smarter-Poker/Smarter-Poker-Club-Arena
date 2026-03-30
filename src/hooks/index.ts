@@ -12,6 +12,7 @@ import { useWalletStore } from '@/stores/useWalletStore';
 import { useAuthUser } from './useAuthUser';
 import { MembershipService } from '@/services/MembershipService';
 import type { ClubMembership, MemberRole } from '@/services/MembershipService';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CLUB HOOKS
@@ -45,7 +46,7 @@ export function useClubRole(clubId: string): {
     setIsLoading(true);
     MembershipService.getMembership(clubId, user.id)
       .then(setMembership)
-      .catch(console.error)
+      .catch((e) => reportError(e, 'catch'))
       .finally(() => setIsLoading(false));
   }, [clubId, user?.id]);
 
@@ -84,7 +85,7 @@ export function useClubMembers(clubId: string) {
       setMembers(memberList);
       setCounts(memberCounts);
     } catch (error) {
-      console.error('Failed to load members:', error);
+      reportError(error, 'index.Failed_to_load_members');
     } finally {
       setIsLoading(false);
     }

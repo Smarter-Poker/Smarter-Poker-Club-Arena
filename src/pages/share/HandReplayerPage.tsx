@@ -11,6 +11,7 @@ import { PositionAnalysis, OddsDisplay, ShareableHighlight } from '../../compone
 import { CardImage } from '../../components/table/CardImage';
 import type { Card } from '../../components/table/CardImage';
 import './HandReplayerPage.css';
+import { reportError } from '../../utils/errorReporter';
 
 const playerSeatAnimationStyle = (index: number) => ({
   opacity: 0,
@@ -121,7 +122,7 @@ export default function HandReplayerPage() {
       setHand(mapped);
     } catch (error) {
       if (getIsMounted && !getIsMounted()) return;
-      console.error('Failed to load hand:', error);
+      reportError(error, 'HandReplayerPage.Failed_to_load_hand');
     }
     if (getIsMounted && !getIsMounted()) return;
     setLoading(false);

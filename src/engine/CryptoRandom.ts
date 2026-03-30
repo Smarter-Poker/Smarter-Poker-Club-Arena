@@ -19,6 +19,8 @@
  * Generate a cryptographically secure random integer in range [0, exclusiveMax).
  * Uses rejection sampling to avoid modulo bias.
  */
+import { reportError } from '../utils/errorReporter';
+
 export function secureRandomInt(exclusiveMax: number): number {
   if (exclusiveMax <= 0) return 0;
   if (exclusiveMax === 1) return 0;
@@ -47,7 +49,7 @@ export function secureRandomInt(exclusiveMax: number): number {
   // Fallback: Math.random() (non-crypto, log warning once)
   if (!_warnedFallback) {
     _warnedFallback = true;
-    console.error('[CryptoRandom] No crypto API available — falling back to Math.random()');
+    reportError(new Error('[CryptoRandom] No crypto API available — falling back to Math.random()'), 'CryptoRandom.No_crypto_API_available__falling_back_to');
   }
   return Math.floor(Math.random() * exclusiveMax);
 }

@@ -16,6 +16,7 @@ import { supabase } from '../../lib/supabase';
 import { DiamondService } from '../../services/DiamondService';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import './DiamondWalletModal.css';
+import { reportError } from '../../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -200,7 +201,7 @@ export default function DiamondWalletModal({
 
       if (isMounted.current) setTransactions(combined);
     } catch (err) {
-      console.error('[DiamondWalletModal] Fetch error:', err);
+      reportError(err, 'DiamondWalletModal.Fetch_error');
     } finally {
       if (isMounted.current) setLoading(false);
     }

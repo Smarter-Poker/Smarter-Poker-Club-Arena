@@ -387,7 +387,7 @@ export const WalletService = {
         await this.distributePromo(agentId, dist.playerId, dist.amount);
         success++;
       } catch (err) {
-        console.error(`[WalletService] distributePromo failed for player ${dist.playerId}:`, err);
+        reportError(err, 'WalletService.bulkDistributePromo', { playerId: dist.playerId });
         failed++;
       }
     }
@@ -670,7 +670,7 @@ export const WalletService = {
     );
 
     if (rpcError) {
-      console.error('[WalletService] deduct_table_chip_lock RPC failed:', rpcError.message);
+      reportError(rpcError, 'WalletService.processDealerTip', { userId, tableId, amount });
       throw new Error(`Failed to deduct dealer tip: ${rpcError.message}`);
     }
 
@@ -711,7 +711,7 @@ export const WalletService = {
     );
 
     if (error) {
-      console.error('[WalletService] deduct_table_chip_lock RPC failed:', error.message);
+      reportError(error, 'WalletService.processInsurance', { userId, tableId, handId, premium });
       throw new Error(`Failed to deduct insurance premium: ${error.message}`);
     }
 
@@ -748,7 +748,7 @@ export const WalletService = {
       .eq('wallet_type', walletType)
       .maybeSingle();
     if (error) {
-      console.error(`[WalletService] Failed to get ${walletType} wallet for ${userId}:`, error);
+      reportError(error, 'WalletService.getWallet', { userId, walletType });
       return null;
     }
     return data;
@@ -765,7 +765,7 @@ export const WalletService = {
       .select('wallet_type, balance, locked_balance')
       .eq('user_id', userId);
     if (error) {
-      console.error(`[WalletService] Failed to get wallets for ${userId}:`, error);
+      reportError(error, 'WalletService.getWallets', { userId });
       return [];
     }
     return data || [];
@@ -806,10 +806,7 @@ export const WalletService = {
         { onConflict: 'user_id,wallet_type', ignoreDuplicates: true }
       );
       if (error) {
-        console.error(
-          `[WalletService] Failed to ensure ${walletType} wallet for ${userId}:`,
-          error
-        );
+        reportError(error, 'WalletService.ensureWalletsExist', { userId, walletType });
       }
     }
   },

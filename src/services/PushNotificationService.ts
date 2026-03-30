@@ -13,6 +13,7 @@
  */
 
 import { supabase } from '../lib/supabase';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -121,7 +122,7 @@ class PushNotificationServiceClass {
       }
       return false;
     } catch (error: unknown) {
-      console.error('[PushService] Permission request failed:', error);
+      reportError(error, 'PushNotificationService.Permission_request_failed');
       return false;
     }
   }
@@ -138,7 +139,7 @@ class PushNotificationServiceClass {
       }
       return false;
     } catch (err) {
-      console.error('[PushNotificationService] Error:', err);
+      reportError(err, 'PushNotificationService.Error');
       return false;
     }
   }
@@ -214,7 +215,7 @@ class PushNotificationServiceClass {
       if (!data || data.length === 0) return userIds;
       return data.map((d) => d.user_id);
     } catch (err) {
-      console.error('[PushNotificationService] Error:', err);
+      reportError(err, 'PushNotificationService.Error');
       return userIds; // On error, send to all
     }
   }

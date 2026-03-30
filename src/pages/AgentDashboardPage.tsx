@@ -26,6 +26,7 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { retryFetch } from '../utils/retryFetch';
 import { fmt, fmtChips, timeAgo } from '../utils/format';
+import { reportError } from '../utils/errorReporter';
 
 type AgentTab =
   | 'overview'
@@ -433,7 +434,7 @@ export default function AgentDashboardPage() {
         )
         .subscribe((status: string, err?: Error) => {
           if (status === 'CHANNEL_ERROR') {
-            console.error('[AgentDashboardPage] ❌ Realtime channel error:', err?.message || err);
+            reportError(err?.message || err, 'AgentDashboardPage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
             console.warn('[AgentDashboardPage] ⏱️ Realtime channel timed out');

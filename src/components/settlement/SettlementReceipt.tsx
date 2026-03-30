@@ -11,6 +11,7 @@ import { useIsMounted } from '../../hooks/useIsMounted';
 import { triggerHaptic } from '../../services/HapticService';
 import { masterBus } from '../../core/MasterBus';
 import './SettlementReceipt.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface SettlementReceiptProps {
   receiptId: string;
@@ -60,7 +61,7 @@ export default function SettlementReceipt({
       }, 2000);
     } catch (err) {
 
-      console.error("[SettlementReceipt] Error:", err);
+      reportError(err, 'SettlementReceipt.Error');
       // Fallback: select text
     }
   }, [receiptId]);

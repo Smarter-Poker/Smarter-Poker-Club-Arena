@@ -22,6 +22,7 @@ import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { QUERY_LIMITS } from '../lib/constants';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -441,7 +442,7 @@ export const MembershipService = {
         online,
       };
     } catch (err: any) {
-      console.error('[MembershipService] getMemberCounts crashed:', err.message);
+      reportError(err, 'MembershipService.getMemberCounts');
       return { total: 0, active: 0, pending: 0, online: 0 };
     }
   },

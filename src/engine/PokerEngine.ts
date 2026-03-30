@@ -14,6 +14,7 @@ import type {
   GameVariant,
 } from '../types/database.types';
 import { secureShuffle } from './CryptoRandom';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONSTANTS
@@ -433,9 +434,7 @@ export function evaluateOmahaHand(holeCards: Card[], communityCards: Card[]): Ev
   if (holeCards.length < 4) {
     // Graceful fallback: if fewer than 4 hole cards (edge case from mid-hand join
     // or card dealing glitch), use standard evaluator with available cards
-    console.error(
-      `[PokerEngine] evaluateOmahaHand called with ${holeCards.length} hole cards — using fallback`
-    );
+    reportError(new Error(`[PokerEngine] evaluateOmahaHand called with ${holeCards.length} hole cards — using fallback`), 'PokerEngine.evaluateOmahaHand_called_with_holeCardsl');
     if (holeCards.length >= 2 && communityCards.length >= 3) {
       return evaluateHand(holeCards.slice(0, 2), communityCards.slice(0, 5));
     }
@@ -483,9 +482,7 @@ export function evaluateOmahaLowHand(
   communityCards: Card[]
 ): EvaluatedHand | null {
   if (holeCards.length < 4) {
-    console.error(
-      `[PokerEngine] evaluateOmahaLowHand called with ${holeCards.length} hole cards — skipping`
-    );
+    reportError(new Error(`[PokerEngine] evaluateOmahaLowHand called with ${holeCards.length} hole cards — skipping`), 'PokerEngine.evaluateOmahaLowHand_called_with_holeCar');
     return null;
   }
 

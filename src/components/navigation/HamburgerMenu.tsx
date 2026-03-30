@@ -25,6 +25,7 @@ import { TableSettingsPanel } from '../table/TableSettingsPanel';
 import { ThemeSettingsModal } from '../table/ThemeSettingsModal';
 import { getClubLevel, ClubLevelInfo } from '../../utils/clubLevels';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
+import { reportError } from '../../utils/errorReporter';
 
 interface HamburgerMenuProps {
   isOpen: boolean;
@@ -63,7 +64,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     try {
       return localStorage.getItem(STORAGE_KEYS.CARD_COLOR) || 'default';
     } catch (err) {
-      console.error('[HamburgerMenu] Error:', err);
+      reportError(err, 'HamburgerMenu.Error');
       return 'default';
     }
   });
@@ -254,7 +255,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     try {
       localStorage.setItem(localKey, String(value));
     } catch (err) {
-      console.error('[HamburgerMenu] Error:', err);
+      reportError(err, 'HamburgerMenu.Error');
     }
     if (user?.id) {
       try {
@@ -263,7 +264,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           .update({ [dbKey]: value })
           .eq('id', user.id);
         if (updateErr) {
-          console.error('[HamburgerMenu] Setting save failed:', updateErr);
+          reportError(updateErr, 'HamburgerMenu.Setting_save_failed');
           toast.error('Setting could not be saved. Please try again.');
           rollback();
           try {
@@ -273,7 +274,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           }
         }
       } catch (error) {
-        console.error('Error updating setting:', error);
+        reportError(error, 'HamburgerMenu.Error_updating_setting');
         toast.error('Setting could not be saved. Please try again.');
         rollback();
         try {
@@ -321,9 +322,9 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           .from('profiles')
           .update({ tutorial_completed: false })
           .eq('id', user.id);
-        if (resetErr) console.error('[HamburgerMenu] Tutorial reset save failed:', resetErr);
+        if (resetErr) reportError(resetErr, 'HamburgerMenu.Tutorial_reset_save_failed');
       } catch (error) {
-        console.error('Error resetting tutorial:', error);
+        reportError(error, 'HamburgerMenu.Error_resetting_tutorial');
       }
     }
     toast.info('Tutorial reset! Refresh the page to see the intro again.');
@@ -340,7 +341,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
       onClose();
       // AuthGuard handles the redirect to /auth — no manual navigate needed
     } catch (error) {
-      console.error('Error logging out:', error);
+      reportError(error, 'HamburgerMenu.Error_logging_out');
       // Clear store as fallback — AuthGuard will detect and redirect to /auth
       const { useUserStore } = await import('../../stores/useUserStore');
       useUserStore.getState().logout();
@@ -963,7 +964,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                   try {
                     masterBus.emit('CARD_COLOR_CHANGED', { preset: preset.id });
                   } catch (err) {
-                    console.error('[HamburgerMenu] Error:', err);
+                    reportError(err, 'HamburgerMenu.Error');
                     /* */
                   }
                   if (user?.id) {
@@ -979,11 +980,11 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                         .update({ preferences: { ...prefs, card_color_preset: preset.id } })
                         .eq('id', user.id);
                       if (saveErr) {
-                        console.error('[HamburgerMenu] Card color save failed:', saveErr);
+                        reportError(saveErr, 'HamburgerMenu.Card_color_save_failed');
                         toast.error('Card color could not be saved. Please try again.');
                       }
                     } catch (err) {
-                      console.error('[HamburgerMenu] Error:', err);
+                      reportError(err, 'HamburgerMenu.Error');
                       toast.error('Card color could not be saved. Please try again.');
                     }
                   }

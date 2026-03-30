@@ -8,6 +8,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import styles from './CommissionHistoryModal.module.css';
+import { reportError } from '../../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -151,7 +152,7 @@ export default function CommissionHistoryModal({
         });
       }
     } catch (err) {
-      console.error('Failed to load commissions:', err);
+      reportError(err, 'CommissionHistoryModal.Failed_to_load_commissions');
     }
     setLoading(false);
   };

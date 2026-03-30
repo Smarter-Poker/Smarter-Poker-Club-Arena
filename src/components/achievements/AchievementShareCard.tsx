@@ -8,6 +8,7 @@
 import React, { useRef, useCallback, useState } from 'react';
 import { haptic } from '../../services/HapticService';
 import './AchievementShareCard.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface AchievementShareCardProps {
   icon: string;
@@ -178,7 +179,7 @@ export const AchievementShareCard: React.FC<AchievementShareCardProps> = ({
       link.click();
     } catch (err) {
       if ((err as Error).name !== 'AbortError') {
-        console.error('Share failed:', err);
+        reportError(err, 'AchievementShareCard.Share_failed');
       }
     }
 

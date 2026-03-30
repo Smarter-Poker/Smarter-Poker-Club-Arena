@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { masterBus } from './MasterBus';
 import { useUserStore } from '../stores/useUserStore';
 import { WalletService } from '../services/WalletService';
+import { reportError } from '../utils/errorReporter';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -26,7 +27,7 @@ export function useGlobalBalanceSync() {
         const balance = await WalletService.getPlayerBalance(user.id);
         useUserStore.getState().updateTotalChips(Number(balance));
       } catch (err) {
-        console.error('[GlobalBalanceSync] Failed to fetch atomic ledger balance:', err);
+        reportError(err, 'useGlobalBalanceSync.Failed_to_fetch_atomic_ledger_balance');
       }
     };
 

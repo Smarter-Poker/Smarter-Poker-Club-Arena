@@ -13,6 +13,7 @@
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
+import { reportError } from '../utils/errorReporter';
 
 export type AlertSeverity = 'critical' | 'warning' | 'info';
 
@@ -80,19 +81,11 @@ export const FinancialAlertService = {
         created_at: alert.createdAt,
       });
       if (insertErr) {
-        console.error(
-          `[FinancialAlert] DB insert failed — ${severity.toUpperCase()}: ${source}: ${message}`,
-          context,
-          insertErr
-        );
+        reportError(insertErr, 'FinancialAlertService._log.insert', { severity, source, message });
       }
     } catch (err: unknown) {
       // If the table doesn't exist yet, log to console as fallback
-      console.error(
-        `[FinancialAlert] DB insert failed — ${severity.toUpperCase()}: ${source}: ${message}`,
-        context,
-        err
-      );
+      reportError(err, 'FinancialAlertService._log.catch', { severity, source, message });
     }
 
     // 2. Emit bus event for real-time dashboard
@@ -157,7 +150,7 @@ export const FinancialAlertService = {
     );
 
     if (error) {
-      console.error('[FinancialAlert] Failed to resolve alert:', alertId, error);
+      reportError(error, 'FinancialAlertService.resolve', { alertId });
       throw error;
     }
   },

@@ -10,6 +10,7 @@ import { persist } from 'zustand/middleware';
 import { supabase } from '../lib/supabase';
 import { WalletService } from '../services/WalletService';
 import { DiamondService } from '../services/DiamondService';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 📦 TYPES
@@ -141,7 +142,7 @@ export const useWalletStore = create<WalletState>()(
 
           set({ balances });
         } catch (error) {
-          console.error('[Store] Load balances failed:', error);
+          reportError(error, 'useWalletStore.Load_balances_failed');
         } finally {
           set({ isLoadingWallet: false });
         }
@@ -154,7 +155,7 @@ export const useWalletStore = create<WalletState>()(
           const wallet = await DiamondService.getBalance(userId);
           set({ diamonds: wallet.balance || 0 });
         } catch (error) {
-          console.error('[Store] Load diamonds failed:', error);
+          reportError(error, 'useWalletStore.Load_diamonds_failed');
           set({ diamonds: 0 });
         } finally {
           set({ isLoadingDiamonds: false });
@@ -177,7 +178,7 @@ export const useWalletStore = create<WalletState>()(
           }));
           set({ transactions });
         } catch (error) {
-          console.error('[Store] Load transactions failed:', error);
+          reportError(error, 'useWalletStore.Load_transactions_failed');
         } finally {
           set({ isLoadingTransactions: false });
         }
@@ -200,7 +201,7 @@ export const useWalletStore = create<WalletState>()(
 
         const { balances } = get();
         if (balances.PLAYER.available < amount) {
-          console.error('[Store] Insufficient balance for buy-in');
+          reportError(new Error('[Store] Insufficient balance for buy-in'), 'useWalletStore.Insufficient_balance_for_buyin');
           return false;
         }
 
@@ -234,7 +235,7 @@ export const useWalletStore = create<WalletState>()(
             pendingTableId: null,
             balances: previousBalances,
           });
-          console.error('[Store] Lock for buy-in failed:', error);
+          reportError(error, 'useWalletStore.Lock_for_buyin_failed');
           return false;
         }
       },
@@ -275,7 +276,7 @@ export const useWalletStore = create<WalletState>()(
         } catch (error) {
           // Revert optimistic update on failure + release mutex
           set({ _operationInFlight: false, balances: previousBalances, pendingBuyIn: null, pendingTableId: null });
-          console.error('[Store] Unlock from table failed:', error);
+          reportError(error, 'useWalletStore.Unlock_from_table_failed');
           return false;
         }
       },
@@ -294,7 +295,7 @@ export const useWalletStore = create<WalletState>()(
 
         const { balances } = get();
         if (balances[fromWallet].available < amount) {
-          console.error('[Store] Insufficient balance for transfer');
+          reportError(new Error('[Store] Insufficient balance for transfer'), 'useWalletStore.Insufficient_balance_for_transfer');
           return false;
         }
 
@@ -328,7 +329,7 @@ export const useWalletStore = create<WalletState>()(
         } catch (error) {
           // Revert on failure + release mutex
           set({ _operationInFlight: false, balances: previousBalances });
-          console.error('[Store] Internal transfer failed:', error);
+          reportError(error, 'useWalletStore.Internal_transfer_failed');
           return false;
         }
       },
@@ -342,7 +343,7 @@ export const useWalletStore = create<WalletState>()(
           }
           return { chips: 0, success: false };
         } catch (error) {
-          console.error('[Store] Mint chips failed:', error);
+          reportError(error, 'useWalletStore.Mint_chips_failed');
           return { chips: 0, success: false };
         }
       },

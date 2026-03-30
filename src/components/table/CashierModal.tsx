@@ -13,6 +13,7 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { haptic } from '../../services/SoundService';
 import './CashierModal.css';
+import { reportError } from '../../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -147,7 +148,7 @@ export function CashierModal({
       setAmount(0);
       onClose();
     } catch (error) {
-      console.error('Cashier error:', error);
+      reportError(error, 'CashierModal.Cashier_error');
     }
   }, [amount, activeTab, isProcessing, onAddChips, onWithdrawChips, onClose]);
 

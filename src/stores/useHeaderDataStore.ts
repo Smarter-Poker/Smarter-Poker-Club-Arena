@@ -26,6 +26,7 @@
 import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
+import { reportError } from '../utils/errorReporter';
 
 interface HeaderDataState {
   // Data
@@ -147,7 +148,7 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
         masterBus.emit('NOTIFICATION_COUNT_CHANGED', { count: notifCount });
         masterBus.emit('UNREAD_DM_COUNT_CHANGED', { userId, count: msgCount });
       } catch (e) {
-        console.error('[HeaderDataStore] Initial load failed:', e);
+        reportError(e, 'useHeaderDataStore.Initial_load_failed');
         // Retry once after 2s — transient network failures are common on mobile
         setTimeout(async () => {
           if (get()._userId !== userId) return; // User switched — abort retry
@@ -174,7 +175,7 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
             persistCount('ca-notif-count', nR.count || 0);
             persistCount('ca-msg-count', mR.count || 0);
           } catch (retryErr) {
-            console.error('[HeaderDataStore] Retry also failed:', retryErr);
+            reportError(retryErr, 'useHeaderDataStore.Retry_also_failed');
             masterBus.emit('SHOW_TOAST', {
               severity: 'warning',
               message: 'Could not load notifications — pull to refresh',

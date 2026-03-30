@@ -10,6 +10,7 @@ import { WalletService } from './WalletService';
 import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -102,7 +103,7 @@ class PromotionServiceClass {
     const { data, error } = await query.limit(50);
 
     if (error) {
-      console.error('[PromotionService] Error fetching promotions:', error);
+      reportError(error, 'PromotionService.Error_fetching_promotions');
       return [];
     }
 
@@ -241,7 +242,7 @@ class PromotionServiceClass {
         2
       );
     } catch (countErr: any) {
-      console.error('[PromotionService] Failed to increment claim count:', countErr.message);
+      reportError(countErr, 'PromotionService.Failed_to_increment_claim_count');
       // Non-blocking: claim was successful even if counter increment failed
     }
 
@@ -281,7 +282,7 @@ class PromotionServiceClass {
         .eq('id', claimId);
 
       if (error) {
-        console.error('[PromotionService] Failed to update wager progress:', error);
+        reportError(error, 'PromotionService.Failed_to_update_wager_progress');
       }
     }
   }
@@ -339,7 +340,7 @@ class PromotionServiceClass {
     );
 
     if (upsertErr) {
-      console.error('[PromotionService] Leaderboard upsert failed:', upsertErr.message);
+      reportError(upsertErr, 'PromotionService.Leaderboard_upsert_failed');
       return;
     }
 
@@ -352,7 +353,7 @@ class PromotionServiceClass {
       3
     );
     if (rankErr)
-      console.error('[PromotionService] Leaderboard rank recalc failed:', rankErr.message);
+      reportError(rankErr, 'PromotionService.Leaderboard_rank_recalc_failed');
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -399,7 +400,7 @@ class PromotionServiceClass {
       3
     );
     if (bonusErr) {
-      console.error('[PromotionService] Deposit bonus credit failed:', bonusErr.message);
+      reportError(bonusErr, 'PromotionService.Deposit_bonus_credit_failed');
       return 0;
     }
 
@@ -414,7 +415,7 @@ class PromotionServiceClass {
         `Deposit bonus: ${promo.title}`
       );
     } catch (logErr) {
-      console.error('[PromotionService] Deposit bonus audit log failed:', logErr);
+      reportError(logErr, 'PromotionService.Deposit_bonus_audit_log_failed');
     }
     masterBus.emit('BALANCE_UPDATED', { source: 'promotion_deposit_bonus', userId });
 
@@ -461,7 +462,7 @@ class PromotionServiceClass {
       3
     );
     if (refErr) {
-      console.error('[PromotionService] Referral bonus credit failed:', refErr.message);
+      reportError(refErr, 'PromotionService.Referral_bonus_credit_failed');
       return;
     }
 
@@ -476,7 +477,7 @@ class PromotionServiceClass {
         'Referral bonus reward'
       );
     } catch (logErr) {
-      console.error('[PromotionService] Referral audit log failed:', logErr);
+      reportError(logErr, 'PromotionService.Referral_audit_log_failed');
     }
     masterBus.emit('BALANCE_UPDATED', { source: 'promotion_referral_bonus', userId: referrer.id });
 
@@ -488,7 +489,7 @@ class PromotionServiceClass {
       bonus_amount: promo.prizePool || 10,
     });
     if (refInsertErr) {
-      console.error('[PromotionService] Referral record insert failed:', refInsertErr.message);
+      reportError(refInsertErr, 'PromotionService.Referral_record_insert_failed');
     }
   }
 

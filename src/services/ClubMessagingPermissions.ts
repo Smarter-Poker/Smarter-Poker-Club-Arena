@@ -14,6 +14,7 @@
 
 import { supabase } from '../lib/supabase';
 import { resolveClubUUID } from '../utils/clubIdResolver';
+import { reportError } from '../utils/errorReporter';
 
 // Role hierarchy for messaging
 export type ClubRole =
@@ -64,7 +65,7 @@ class ClubMessagingPermissionsClass {
       // Check based on sender's role
       return this.checkPermission(senderRole, recipientRole);
     } catch (error: unknown) {
-      console.error('[ClubMessagingPermissions] Error checking permissions:', error);
+      reportError(error, 'ClubMessagingPermissions.checkPermissions');
       return { allowed: false, reason: 'Failed to verify permissions' };
     }
   }

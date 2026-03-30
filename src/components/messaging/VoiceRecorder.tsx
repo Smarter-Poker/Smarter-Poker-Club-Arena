@@ -8,6 +8,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { haptic } from '../../services/HapticService';
 import './VoiceRecorder.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface VoiceRecorderProps {
   onSend: (audioBlob: Blob, durationMs: number) => void;
@@ -106,7 +107,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onSend, onCancel }
       };
       drawWaveform();
     } catch (err) {
-      console.error('Mic access denied:', err);
+      reportError(err, 'VoiceRecorder.Mic_access_denied');
       haptic.error();
       onCancel();
     }

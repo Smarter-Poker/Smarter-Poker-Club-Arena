@@ -14,6 +14,7 @@ import { checkSettlementLock } from '../../utils/settlementLock';
 import { formatRelativeShort as formatTime } from '@/lib/date';
 import './AgentCashoutPanel.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
+import { reportError } from '../../utils/errorReporter';
 
 interface AgentCashoutPanelProps {
   clubId?: string;
@@ -46,7 +47,7 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
         setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 60)
       );
     } catch (err) {
-      console.error('Failed to load cashouts:', err);
+      reportError(err, 'AgentCashoutPanel.Failed_to_load_cashouts');
     }
     if (isMounted.current) setLoading(false);
   }, [user?.id, clubId]);
@@ -81,7 +82,7 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
       })
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[AgentCashoutPanel] ❌ Realtime channel error:', err?.message || err);
+          reportError(err?.message || err, 'AgentCashoutPanel._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[AgentCashoutPanel] ⏱️ Realtime channel timed out');

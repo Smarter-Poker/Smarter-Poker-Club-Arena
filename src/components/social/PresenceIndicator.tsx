@@ -9,6 +9,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import styles from './PresenceIndicator.module.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface PresenceIndicatorProps {
   userId: string;
@@ -64,7 +65,7 @@ export default function PresenceIndicator({
             }
           }
         } catch (err) {
-          console.error('[PresenceIndicator] Error:', err);
+          reportError(err, 'PresenceIndicator.Error');
           // no-op
         }
       }
@@ -98,7 +99,7 @@ export default function PresenceIndicator({
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[PresenceIndicator] ❌ Realtime channel error:', err?.message || err);
+          reportError(err?.message || err, 'PresenceIndicator._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[PresenceIndicator] ⏱️ Realtime channel timed out');
@@ -146,7 +147,7 @@ export function usePresence(userId: string): PresenceStatus {
         .select('is_online')
         .eq('id', userId)
         .maybeSingle();
-      if (error) console.error('[PresenceIndicator] Fetch failed:', error.message);
+      if (error) reportError(error, 'PresenceIndicator.Fetch_failed');
 
       if (data) {
         setStatus(data.is_online ? 'online' : 'offline');

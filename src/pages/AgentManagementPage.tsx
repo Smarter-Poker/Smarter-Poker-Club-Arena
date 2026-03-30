@@ -39,6 +39,7 @@ import { retryFetch } from '../utils/retryFetch';
 import { useSwipeTabs } from '../hooks/useSwipeTabs';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { useIsMounted } from '../hooks/useIsMounted';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENT
@@ -205,7 +206,7 @@ export default function AgentManagementPage() {
         if (isMounted.current) setAvailableMembers(members);
       })
       .catch((err) => {
-        console.error('Failed to load eligible members:', err);
+        reportError(err, 'AgentManagementPage.Failed_to_load_eligible_members');
         toast.error('Failed to load eligible members');
         if (isMounted.current) setAvailableMembers([]);
       })
@@ -227,7 +228,7 @@ export default function AgentManagementPage() {
         setError(null);
       } catch (err) {
         if (!isMounted.current) return;
-        console.error('Failed to reload agents:', err);
+        reportError(err, 'AgentManagementPage.Failed_to_reload_agents');
         toast.error('Failed to load agents');
         setError(err instanceof Error ? err.message : 'Failed to reload agents');
       } finally {
@@ -271,7 +272,7 @@ export default function AgentManagementPage() {
         )
         .subscribe((status: string, err?: Error) => {
           if (status === 'CHANNEL_ERROR') {
-            console.error('[AgentManagementPage] ❌ Realtime channel error:', err?.message || err);
+            reportError(err?.message || err, 'AgentManagementPage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
             console.warn('[AgentManagementPage] ⏱️ Realtime channel timed out');

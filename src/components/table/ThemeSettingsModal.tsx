@@ -17,6 +17,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useToast } from '../common/Toast';
 import './ThemeSettingsModal.css';
+import { reportError } from '../../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -352,14 +353,14 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
 
       if (error) {
         toast.error('Failed to save theme settings.');
-        console.error('[ThemeSettings] Save failed:', error.message);
+        reportError(error, 'ThemeSettingsModal.Save_failed');
       } else {
         toast.success('Theme saved!');
         onClose();
       }
     } catch (err) {
       toast.error('Failed to save theme settings.');
-      console.error('[ThemeSettings] Unexpected save error:', err);
+      reportError(err, 'ThemeSettingsModal.Unexpected_save_error');
     }
     setSaving(false);
   }, [userId, gameType, selection, toast, onClose]);

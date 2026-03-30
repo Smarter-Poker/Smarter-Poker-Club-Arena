@@ -173,6 +173,7 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import { TableHUD } from '../components/table/TableHUD';
 import { MiniStatsCard } from '../components/table/MiniStatsCard';
 import { PreviousHandCard } from '../components/table/PreviousHandCard';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // RAKE CONFIG HELPER — Derives rake config from official chart
@@ -657,9 +658,7 @@ export default function TablePage({
                 ? 'auto_call'  // FIX 185: Bible V8 §4.15 — auto_call (current bet only)
                 : 'auto_call_any';
         // Tell server about pre-action so it can auto-execute on player's turn
-        serverSetPreAction(tableId, serverAction).catch((e) =>
-          console.error('[PreAction] Failed to set:', e)
-        );
+        serverSetPreAction(tableId, serverAction).catch((e) => reportError(e, 'TablePage.Failed_to_set'));
         // Also emit to MasterBus for local telemetry
         masterBus.emit('PRE_ACTION_SET', {
           tableId,
@@ -668,9 +667,7 @@ export default function TablePage({
         });
       } else {
         // Clear pre-action on server
-        serverSetPreAction(tableId, 'clear').catch((e) =>
-          console.error('[PreAction] Failed to clear:', e)
-        );
+        serverSetPreAction(tableId, 'clear').catch((e) => reportError(e, 'TablePage.Failed_to_clear'));
       }
     }
   }, [preAction, tableId, userId]);
@@ -682,7 +679,7 @@ export default function TablePage({
     // Send initial heartbeat immediately
     sendHeartbeat(tableId).catch(() => {});
     const heartbeatInterval = setInterval(() => {
-      sendHeartbeat(tableId).catch((e) => console.error('[Heartbeat] Failed:', e));
+      sendHeartbeat(tableId).catch((e) => reportError(e, 'TablePage.Failed'));
     }, 5000);
     return () => clearInterval(heartbeatInterval);
   }, [tableId, userId]);
@@ -1043,7 +1040,7 @@ export default function TablePage({
           : 100;
       const result = await respondToInsurance(tableId, 'accept', coveragePct);
       if (!result.success) {
-        console.error('[Insurance] Accept failed:', result.error);
+        reportError(result.error, 'TablePage.Accept_failed');
       }
     }
   };
@@ -1054,7 +1051,7 @@ export default function TablePage({
     if (tableId) {
       const result = await respondToInsurance(tableId, 'decline', 100, false);
       if (!result.success) {
-        console.error('[Insurance] Decline failed:', result.error);
+        reportError(result.error, 'TablePage.Decline_failed');
       }
     }
     // After insurance decision, show RIT prompt if set up
@@ -1071,7 +1068,7 @@ export default function TablePage({
     if (tableId) {
       const result = await respondToInsurance(tableId, 'decline', 100, true);
       if (!result.success) {
-        console.error('[Insurance] Decline for hand failed:', result.error);
+        reportError(result.error, 'TablePage.Decline_for_hand_failed');
       }
     }
     if (ritOpponent !== 'Opponent') {
@@ -1112,7 +1109,7 @@ export default function TablePage({
     if (tableId) {
       const result = await respondToRIT(tableId, { runs });
       if (!result.success) {
-        console.error('[RIT] Chooser decide failed:', result.error);
+        reportError(result.error, 'TablePage.Chooser_decide_failed');
       }
     }
   };
@@ -1122,7 +1119,7 @@ export default function TablePage({
     if (tableId) {
       const result = await respondToRIT(tableId, { response: 'accept' });
       if (!result.success) {
-        console.error('[RIT] Accept failed:', result.error);
+        reportError(result.error, 'TablePage.Accept_failed');
       }
     }
   };
@@ -1132,7 +1129,7 @@ export default function TablePage({
     if (tableId) {
       const result = await respondToRIT(tableId, { response: 'decline' });
       if (!result.success) {
-        console.error('[RIT] Decline failed:', result.error);
+        reportError(result.error, 'TablePage.Decline_failed');
       }
     }
   };
@@ -1170,9 +1167,7 @@ export default function TablePage({
       return;
     }
     if (tableId) {
-      serverToggleStraddle(tableId, isStraddleEnabled).catch((e) =>
-        console.error('[Straddle] Toggle failed:', e)
-      );
+      serverToggleStraddle(tableId, isStraddleEnabled).catch((e) => reportError(e, 'TablePage.Toggle_failed'));
     }
   }, [isStraddleEnabled, tableId]);
 
@@ -1182,7 +1177,7 @@ export default function TablePage({
       try {
         await WalletService.processDealerTip(userId, tableId, amount);
       } catch (error) {
-        console.error('Tip processing failed:', error);
+        reportError(error, 'TablePage.Tip_processing_failed');
       }
     }
     setShowTipDealer(false);
@@ -1197,7 +1192,7 @@ export default function TablePage({
   // Handle cashier add chips (deducts from wallet, adds to table stack)
   const handleAddChips = async (amount: number) => {
     if (!userId || userId === 'guest' || !tableId) {
-      console.error('Cannot add chips: not authenticated');
+      reportError(new Error('Cannot add chips: not authenticated'), 'TablePage.Cannot_add_chips_not_authenticated');
       return;
     }
     try {
@@ -1245,7 +1240,7 @@ export default function TablePage({
       const estimatedNewStack = (tableState.players[tableState.heroSeat - 1]?.stack || 0) + amount;
       masterBus.emit('CHIPS_ADDED', { tableId, userId, amount, newStack: estimatedNewStack });
     } catch (error) {
-      console.error('Failed to add chips:', error);
+      reportError(error, 'TablePage.Failed_to_add_chips');
       // Surface error to user — alert as fallback since toast not always available
       const msg = error instanceof Error ? error.message : 'Failed to add chips';
       if (typeof window !== 'undefined') toast.error(msg);
@@ -1255,7 +1250,7 @@ export default function TablePage({
   // Handle cashier withdraw
   const handleWithdrawChips = async (amount: number) => {
     if (!userId || userId === 'guest' || !tableId) {
-      console.error('Cannot withdraw: not authenticated');
+      reportError(new Error('Cannot withdraw: not authenticated'), 'TablePage.Cannot_withdraw_not_authenticated');
       return;
     }
     try {
@@ -1298,7 +1293,7 @@ export default function TablePage({
       // Emit bus event so other pages know about the chip change
       masterBus.emit('CHIPS_WITHDRAWN', { tableId, userId, amount, newStack: newStack });
     } catch (error) {
-      console.error('Failed to withdraw chips:', error);
+      reportError(error, 'TablePage.Failed_to_withdraw_chips');
     }
   };
 
@@ -1556,7 +1551,7 @@ export default function TablePage({
       );
       setGtoSolution(solution);
     } catch (error) {
-      console.error('Error fetching GTO advice:', error);
+      reportError(error, 'TablePage.Error_fetching_GTO_advice');
     }
     setIsGtoLoading(false);
   };
@@ -1642,13 +1637,13 @@ export default function TablePage({
         sessionPLRef.current = (result.chipsReturned || 0) - totalBuyInRef.current;
         setShowSessionSummary(true);
       } else {
-        console.error('[Leave] Failed to leave table');
+        reportError(new Error('[Leave] Failed to leave table'), 'TablePage.Failed_to_leave_table');
         setLeaveNotice(
           'Unable to leave right now. You may be in an active hand — you will leave after it completes.'
         );
       }
     } catch (error) {
-      console.error('[Leave] Exception:', error);
+      reportError(error, 'TablePage.Exception');
       setLeaveNotice('Error leaving table. Please try again.');
     }
   };
@@ -2493,7 +2488,7 @@ export default function TablePage({
                       timeRemaining: 60,
                     });
                   } catch (e) {
-                    console.error('[TablePage] Addon period wallet fetch error:', e);
+                    reportError(e, 'TablePage.Addon_period_wallet_fetch_error');
                   }
                 })();
               } else if (data?.type === 'ADDON_PERIOD_END') {
@@ -2603,7 +2598,7 @@ export default function TablePage({
                       setTableState((prev) => ({ ...prev, refreshTrigger: Date.now() }));
                     }
                   } catch (err) {
-                    console.error('[TablePage] Error checking player table during rebalance:', err);
+                    reportError(err, 'TablePage.Error_checking_player_table_during_rebal');
                     // Fallback: just refresh seats
                     setTableState((prev) => ({ ...prev, refreshTrigger: Date.now() }));
                   }
@@ -2693,11 +2688,7 @@ export default function TablePage({
           // CRITICAL: Detect and clean up duplicate seats for the same user
           const heroSeats = existingSeats.filter((s) => s.user_id === userId);
           if (heroSeats.length > 1) {
-            console.error(
-              '[Seat] DUPLICATE SEATS DETECTED for user',
-              userId,
-              '— cleaning up extras'
-            );
+            reportError('— cleaning up extras', 'TablePage.DUPLICATE_SEATS_DETECTED_for_user');
             // Keep the first seat, remove the rest from DB
             const [keepSeat, ...extraSeats] = heroSeats;
             for (const extra of extraSeats) {
@@ -2709,10 +2700,10 @@ export default function TablePage({
                 .eq('seat_number', extra.seat_number)
                 .eq('user_id', userId)
               ).then(({ error }) => {
-                  if (error) console.error('[Seat] Failed to remove duplicate seat:', error);
+                  if (error) reportError(error, 'TablePage.Failed_to_remove_duplicate_seat');
                   else console.debug('[Seat] Removed duplicate seat', extra.seat_number);
                 })
-                .catch((e: unknown) => console.error('[Seat] Duplicate seat cleanup error:', e));
+                .catch((e) => reportError(e, 'TablePage.Duplicate_seat_cleanup_error'));
             }
             // Filter existingSeats to exclude duplicates for local state
             const cleanedSeats = existingSeats.filter(
@@ -2902,7 +2893,7 @@ export default function TablePage({
       if (payload.balance !== undefined) {
         setAccountBalance(payload.balance);
       } else {
-        WalletService.getPlayerBalance(userId).then(setAccountBalance).catch(console.error);
+        WalletService.getPlayerBalance(userId).then(setAccountBalance).catch((e) => reportError(e, 'TablePage.balanceSync'));
       }
     }
   });
@@ -2949,10 +2940,7 @@ export default function TablePage({
 
   useMasterBusSubscription('STATE_INTEGRITY_VIOLATION', (payload: any) => {
     if (payload.tableId !== tableId) return;
-    console.error(
-      `[StateVerifier] ⚠️ INTEGRITY VIOLATION hand #${payload.handNumber}:`,
-      payload.violations
-    );
+    reportError(payload.violations, 'TablePage._INTEGRITY_VIOLATION_hand_payloadhandNum');
   });
 
   useMasterBusSubscription('SESSION_STATS_UPDATE', (payload: any) => {
@@ -3019,7 +3007,7 @@ export default function TablePage({
           .eq('table_id', tableId)
           .eq('user_id', userId);
       } catch (err) {
-        console.error('[TablePage] Failed to persist time bank state:', err);
+        reportError(err, 'TablePage.Failed_to_persist_time_bank_state');
       }
     },
     [tableId, userId]
@@ -3192,7 +3180,7 @@ export default function TablePage({
           populateHorsePlayers(horses);
         }
       } catch (err) {
-        console.error('[Horses] Failed to load horses:', err);
+        reportError(err, 'TablePage.Failed_to_load_horses');
         horsesLoadedRef.current = false; // Allow retry on error
         if (tableId) _horsesLoadedForTable[tableId] = false;
       }
@@ -3689,7 +3677,7 @@ export default function TablePage({
           console.warn('[Table] Server auto-fold failed:', e)
         );
     } catch (err) {
-      console.error('[AutoFold] Error during auto-fold:', err);
+      reportError(err, 'TablePage.Error_during_autofold');
     }
   }, [tableState.heroSeat, tableId, userId]);
 
@@ -3724,7 +3712,7 @@ export default function TablePage({
     // Server-authoritative: just send the request; server manages countdown
     setTimeBankActive(true);
     soundService.playChips();
-    GameServerAPI.activateTimeBank(tableId, userId).catch(console.error);
+    GameServerAPI.activateTimeBank(tableId, userId).catch((e) => reportError(e, 'TablePage.activateTimeBank'));
   }, [tableId, userId, timeBanksRemaining]);
 
   // Handle buying a time bank extension (VIP quota or diamond purchase)
@@ -4129,7 +4117,7 @@ export default function TablePage({
         }))
       );
     } catch (error) {
-      console.error('Failed to load waitlist:', error);
+      reportError(error, 'TablePage.Failed_to_load_waitlist');
     }
   }, [tableId]);
 
@@ -4222,7 +4210,7 @@ export default function TablePage({
           // Clear the pre-action after executing
           setPreAction(null);
         } catch (err) {
-          console.error('[PreAction] Error executing pre-action:', err);
+          reportError(err, 'TablePage.Error_executing_preaction');
           setPreAction(null);
         }
       }, 100);
@@ -4822,7 +4810,7 @@ export default function TablePage({
                   onClick={async () => {
                     const result = await serverShowHand(tableId);
                     if (!result.success) {
-                      console.error('[ShowHand] Failed:', result.error);
+                      reportError(result.error, 'TablePage.Failed');
                     }
                   }}
                   style={{
@@ -5156,7 +5144,7 @@ export default function TablePage({
           setSitOutNextHand(false);
           // Bible V8 §7.12: Tell server player is sitting back in
           if (tableId) {
-            setSitOut(tableId, false).catch((e) => console.error('[SitOut] Return failed:', e));
+            setSitOut(tableId, false).catch((e) => reportError(e, 'TablePage.Return_failed'));
           }
         }}
         onLeaveTable={() => navigate('/')}
@@ -5424,14 +5412,14 @@ export default function TablePage({
                 });
 
                 if (rpcErr) {
-                  console.error('[BuyIn] atomic_table_buyin FAILED:', rpcErr);
+                  reportError(rpcErr, 'TablePage.atomic_table_buyin_FAILED');
                   throw new Error('Failed to buy-in: ' + rpcErr.message);
                 }
 
                 // Validate RPC return data — the function returns {success, amount}
                 const rpcResult = typeof rpcData === 'string' ? JSON.parse(rpcData) : rpcData;
                 if (rpcResult && rpcResult.success === false) {
-                  console.error('[BuyIn] atomic_table_buyin returned failure:', rpcResult);
+                  reportError(rpcResult, 'TablePage.atomic_table_buyin_returned_failure');
                   throw new Error(
                     'Buy-in rejected: ' + (rpcResult.error || 'Unknown server error')
                   );
@@ -5485,21 +5473,21 @@ export default function TablePage({
 
                 // Player seated successfully
               } catch (error) {
-                console.error('[BuyIn] Buy-in FAILED:', error);
+                reportError(error, 'TablePage.Buyin_FAILED');
                 toast.error('Buy-in failed. Please try again or check your balance.');
               }
             } else {
-              console.error('[BuyIn] FELL THROUGH - no branch matched:', {
+              reportError({
                 userId,
                 isGuest: userId === 'guest',
                 tableId,
                 selectedSeat,
-              });
+              }, 'TablePage.FELL_THROUGH__no_branch_matched');
               toast.error('Unable to complete buy-in. Please try again.');
             }
             setShowBuyInModal(false);
           } catch (outerErr) {
-            console.error('[BuyIn] UNHANDLED error in onConfirm:', outerErr);
+            reportError(outerErr, 'TablePage.UNHANDLED_error_in_onConfirm');
             toast.error('An unexpected error occurred. Please try again.');
             setShowBuyInModal(false);
           } finally {
@@ -5623,9 +5611,7 @@ export default function TablePage({
             setSitOutNextHand(settingsUpdate.sitOutNextHand);
             // Bible V8 §7.12: Notify server of sit-out status change
             if (tableId) {
-              setSitOut(tableId, settingsUpdate.sitOutNextHand).catch((e) =>
-                console.error('[SitOut] Failed:', e)
-              );
+              setSitOut(tableId, settingsUpdate.sitOutNextHand).catch((e) => reportError(e, 'TablePage.Failed'));
             }
           }
           if (settingsUpdate.autoMuckWinners !== undefined) {

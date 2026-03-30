@@ -14,6 +14,7 @@ import { unionService, type Union } from '../services/UnionService';
 import { getUnionLevel } from '../utils/clubLevels';
 import { masterBus } from '../core/MasterBus';
 import { useToast } from '../components/common/Toast';
+import { reportError } from '../utils/errorReporter';
 
 const unionCardAnimationStyle = (index: number) => ({
   opacity: 0,
@@ -165,7 +166,7 @@ export default function UnionsPage() {
         setLoading(false);
       })
       .catch((err: any) => {
-        console.error('[UnionsPage] Failed to load unions:', err);
+        reportError(err, 'UnionsPage.Failed_to_load_unions');
         toast.error(err.message || 'Failed to load unions');
         setLoading(false);
       });

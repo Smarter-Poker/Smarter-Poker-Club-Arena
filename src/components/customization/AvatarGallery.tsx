@@ -17,6 +17,7 @@ import { masterBus } from '../../core/MasterBus';
 import { haptic } from '../../services/SoundService';
 import './AvatarGallery.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
+import { reportError } from '../../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -112,7 +113,7 @@ export function AvatarGallery({
         });
       }
     } catch (err) {
-      console.error('Failed to save avatar:', err);
+      reportError(err, 'AvatarGallery.Failed_to_save_avatar');
     } finally {
       setSaving(false);
       onClose();

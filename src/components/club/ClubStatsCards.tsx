@@ -11,6 +11,7 @@ import { supabase } from '../../lib/supabase';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { masterBus } from '../../core/MasterBus';
 import styles from './ClubStatsCards.module.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface ClubStats {
   totalMembers: number;
@@ -133,7 +134,7 @@ export default function ClubStatsCards({ clubId }: ClubStatsCardsProps) {
         weeklyGrowth: newMembers || 0,
       });
     } catch (error) {
-      console.error('Failed to load club stats:', error);
+      reportError(error, 'ClubStatsCards.Failed_to_load_club_stats');
     }
     if (isMounted.current) setLoading(false);
   };

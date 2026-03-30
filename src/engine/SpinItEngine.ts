@@ -27,6 +27,7 @@ import {
   SPIN_POOL_CONTRIBUTION_MULTIPLIER,
   SPIN_POOL_MAX_NEGATIVE,
 } from '../services/TournamentService';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -262,7 +263,7 @@ class SpinItEngineClass {
     const engine = new HeadlessTableEngine(lobbyId, supabase);
     this.dealingEngines.set(lobbyId, engine);
     engine.start().catch((err) => {
-      console.error(`[SpinItEngine] HeadlessTableEngine failed to start for ${lobbyId}:`, err);
+      reportError(err, 'SpinItEngine.HeadlessTableEngine_failed_to_start_for_');
     });
   }
 
@@ -341,9 +342,7 @@ class SpinItEngineClass {
     const prizePool = state.prizePool;
 
     if (prizePool <= 0) {
-      console.error(
-        `[SpinItEngine] Invalid prize pool for ${lobbyId}. Awarding 0.`
-      );
+      reportError(new Error(`[SpinItEngine] Invalid prize pool for ${lobbyId}. Awarding 0.`), 'SpinItEngine.Invalid_prize_pool_for_lobbyId_Awarding_');
       state.payouts.set(winnerId, 0);
     } else {
       const multiplier = state.multiplier ?? 2;
@@ -418,7 +417,7 @@ class SpinItEngineClass {
         await this.directPoolDeposit(clubId, amount);
       }
     } catch (e) {
-      console.error('[SpinItEngine] Pool deposit failed:', e);
+      reportError(e, 'SpinItEngine.Pool_deposit_failed');
     }
   }
 
@@ -435,7 +434,7 @@ class SpinItEngineClass {
       // Use direct draw with negative balance support (RPC may not support negative yet)
       return await this.directPoolDraw(clubId, requestedAmount);
     } catch (e) {
-      console.error('[SpinItEngine] Pool draw failed:', e);
+      reportError(e, 'SpinItEngine.Pool_draw_failed');
       return 0;
     }
   }

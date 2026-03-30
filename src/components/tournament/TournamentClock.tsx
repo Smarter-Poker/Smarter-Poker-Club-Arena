@@ -18,6 +18,7 @@ import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { tournamentTimerService } from '../../services/TournamentTimerService';
 import { tournamentService } from '../../services/TournamentService';
 import './TournamentClock.css';
+import { reportError } from '../../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -115,7 +116,7 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
         breakStartTime: undefined,
       });
     } catch (err) {
-      console.error('[TournamentClock] Refresh error:', err);
+      reportError(err, 'TournamentClock.Refresh_error');
     }
   }, [tournamentId]);
 

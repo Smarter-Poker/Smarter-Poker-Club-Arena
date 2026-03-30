@@ -10,6 +10,7 @@ import { retryAsync } from '../utils/retryAsync';
 import { sanitizeInput } from '../utils/sanitizeInput';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { QUERY_LIMITS } from '../lib/constants';
+import { reportError } from '../utils/errorReporter';
 import type {
   Club,
   ClubWithDistance,
@@ -44,7 +45,7 @@ export async function discoverNearbyClubs(
   );
 
   if (error) {
-    console.error('[ClubsService] Club discovery failed:', error);
+    reportError(error, 'ClubsService.Club_discovery_failed');
     throw new Error('Failed to discover nearby clubs');
   }
 
@@ -66,7 +67,7 @@ export async function searchClubs(query: string): Promise<Club[]> {
     .limit(20);
 
   if (error) {
-    console.error('[ClubsService] Club search failed:', error);
+    reportError(error, 'ClubsService.Club_search_failed');
     throw new Error('Failed to search clubs');
   }
 
@@ -90,7 +91,7 @@ export async function getClub(identifier: string): Promise<Club | null> {
 
   if (error) {
     if (error.code === 'PGRST116') return null; // Not found
-    console.error('[ClubsService] Get club failed:', error);
+    reportError(error, 'ClubsService.Get_club_failed');
     throw new Error('Failed to get club');
   }
 
@@ -127,7 +128,7 @@ export async function createClub(clubData: {
     .in('status', ['active', 'approved']);
 
   if (countError) {
-    console.error('⚠ Failed to check club membership count:', countError);
+    reportError(countError, 'ClubsService._Failed_to_check_club_membership_count');
   } else if (count && count >= 4) {
     throw new Error('You can only be a member of up to 4 clubs. Leave a club to create a new one.');
   }
@@ -207,7 +208,7 @@ export async function createClub(clubData: {
   }
 
   if (!data) {
-    console.error('[ClubsService] Club creation failed:', lastError);
+    reportError(lastError, 'ClubsService.Club_creation_failed');
     throw new Error('Failed to create club');
   }
 
@@ -239,7 +240,7 @@ export async function joinClub(clubId: string, role: MemberRole = 'member'): Pro
       .in('status', ['active', 'approved']);
 
     if (countError) {
-      console.error('⚠ Failed to check club membership count:', countError);
+      reportError(countError, 'ClubsService._Failed_to_check_club_membership_count');
     } else if (count && count >= 4) {
       throw new Error('You can only be a member of up to 4 clubs. Leave a club to join a new one.');
     }
@@ -266,7 +267,7 @@ export async function joinClub(clubId: string, role: MemberRole = 'member'): Pro
     .maybeSingle();
 
   if (error) {
-    console.error('[ClubsService] Join club failed:', error);
+    reportError(error, 'ClubsService.Join_club_failed');
     throw new Error('Failed to join club');
   }
 
@@ -359,7 +360,7 @@ export async function leaveClub(clubId: string): Promise<void> {
       );
     } catch (err: any) {
       // CRITICAL: Fail fast — do NOT delete membership if refund fails
-      console.error('[ClubsService] Failed to refund chips on leave:', err.message);
+      reportError(err, 'ClubsService.Failed_to_refund_chips_on_leave');
       throw new Error(`Cannot leave club: chip refund failed. ${err.message}`);
     }
   }
@@ -385,7 +386,7 @@ export async function leaveClub(clubId: string): Promise<void> {
     .eq('user_id', userId);
 
   if (error) {
-    console.error('[ClubsService] Leave club failed:', error);
+    reportError(error, 'ClubsService.Leave_club_failed');
     throw new Error('Failed to leave club');
   }
 
@@ -430,7 +431,7 @@ export async function getUserMemberships(
     .eq('user_id', userId);
 
   if (error) {
-    console.error('[ClubsService] Get memberships failed:', error);
+    reportError(error, 'ClubsService.Get_memberships_failed');
     throw new Error('Failed to get memberships');
   }
 
@@ -483,7 +484,7 @@ export async function getClubMembers(clubId: string): Promise<ClubMember[]> {
     .limit(QUERY_LIMITS.MODERATE);
 
   if (error) {
-    console.error('[ClubsService] Get club members failed:', error);
+    reportError(error, 'ClubsService.Get_club_members_failed');
     throw new Error('Failed to get club members');
   }
 
@@ -530,7 +531,7 @@ export async function getClubChallenges(clubId: string): Promise<ClubChallenge[]
     .order('ends_at', { ascending: true });
 
   if (error) {
-    console.error('[ClubsService] Get challenges failed:', error);
+    reportError(error, 'ClubsService.Get_challenges_failed');
     throw new Error('Failed to get challenges');
   }
 
@@ -559,7 +560,7 @@ export async function getClubLeaderboard(
     .limit(50);
 
   if (error) {
-    console.error('[ClubsService] Get leaderboard failed:', error);
+    reportError(error, 'ClubsService.Get_leaderboard_failed');
     throw new Error('Failed to get leaderboard');
   }
 
@@ -619,7 +620,7 @@ export async function deleteClub(clubId: string): Promise<void> {
     .delete()
     .eq('club_id', resolvedId);
   if (memberErr) {
-    console.error('[ClubsService] Failed to remove members before club delete:', memberErr);
+    reportError(memberErr, 'ClubsService.Failed_to_remove_members_before_club_del');
     throw new Error('Failed to remove club members');
   }
 
@@ -627,7 +628,7 @@ export async function deleteClub(clubId: string): Promise<void> {
   const { error } = await supabase.from('clubs').delete().eq('id', resolvedId);
 
   if (error) {
-    console.error('[ClubsService] Delete club failed:', error);
+    reportError(error, 'ClubsService.Delete_club_failed');
     throw new Error('Failed to delete club');
   }
 
@@ -669,9 +670,7 @@ export async function updateClub(clubId: string, updates: Record<string, any>): 
   }
 
   if (club.owner_id !== user.user.id) {
-    console.error(
-      `[ClubsService] Unauthorized updateClub attempt by ${user.user.id} on club ${clubId}`
-    );
+    reportError(new Error(`[ClubsService] Unauthorized updateClub attempt by ${user.user.id} on club ${clubId}`), 'ClubsService.Unauthorized_updateClub_attempt_by_useru');
     throw new Error('Only the club owner can update club settings');
   }
 
@@ -718,7 +717,7 @@ export async function updateClub(clubId: string, updates: Record<string, any>): 
     .maybeSingle();
 
   if (error) {
-    console.error('[ClubsService] Update club failed:', error);
+    reportError(error, 'ClubsService.Update_club_failed');
     throw new Error('Failed to update club');
   }
 
@@ -762,7 +761,7 @@ export async function uploadClubLogo(clubId: string, file: File): Promise<string
   });
 
   if (error) {
-    console.error('[ClubsService] Logo upload failed:', error);
+    reportError(error, 'ClubsService.Logo_upload_failed');
     throw new Error('Failed to upload logo');
   }
 
@@ -778,7 +777,7 @@ export async function uploadClubLogo(clubId: string, file: File): Promise<string
     .update({ avatar_url: logoUrl })
     .eq('id', resolvedId);
   if (updateErr) {
-    console.error('[ClubsService] Logo uploaded but failed to save URL to club record:', updateErr);
+    reportError(updateErr, 'ClubsService.Logo_uploaded_but_failed_to_save_URL_to_');
     throw new Error('Logo uploaded but failed to save — please try again');
   }
 
@@ -815,7 +814,7 @@ export async function uploadClubBanner(clubId: string, file: File): Promise<stri
   });
 
   if (error) {
-    console.error('[ClubsService] Banner upload failed:', error);
+    reportError(error, 'ClubsService.Banner_upload_failed');
     throw new Error('Failed to upload banner');
   }
 
@@ -831,10 +830,7 @@ export async function uploadClubBanner(clubId: string, file: File): Promise<stri
     .update({ banner_url: bannerUrl })
     .eq('id', resolvedId);
   if (updateErr) {
-    console.error(
-      '[ClubsService] Banner uploaded but failed to save URL to club record:',
-      updateErr
-    );
+    reportError(updateErr, 'ClubsService.Banner_uploaded_but_failed_to_save_URL_t');
     throw new Error('Banner uploaded but failed to save — please try again');
   }
 
@@ -866,7 +862,7 @@ export async function canJoinMoreClubs(): Promise<{
     .in('status', ['active', 'approved']);
 
   if (error) {
-    console.error('⚠ Failed to check club membership count:', error);
+    reportError(error, 'ClubsService._Failed_to_check_club_membership_count');
     return { canJoin: true, currentCount: 0, maxClubs: MAX_CLUBS }; // Allow on error
   }
 

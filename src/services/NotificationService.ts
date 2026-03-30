@@ -9,6 +9,7 @@ import { supabase } from '../lib/supabase';
 import type { RealtimeChannel, RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 import { masterBus } from '../core/MasterBus';
 import { STORAGE_KEYS } from '../lib/storage';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -111,10 +112,7 @@ class NotificationServiceClass {
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error(
-            `[NotificationService] ❌ Channel error on notifications:${userId}:`,
-            err?.message || err
-          );
+          reportError(err?.message || err, 'NotificationService._Channel_error_on_notifications');
         }
         if (status === 'TIMED_OUT') {
           console.warn(`[NotificationService] ⏱️ Channel notifications:${userId} timed out`);
@@ -155,7 +153,7 @@ class NotificationServiceClass {
     const { data, error } = await query;
 
     if (error) {
-      console.error('[Notifications] Failed to fetch:', error);
+      reportError(error, 'NotificationService.Failed_to_fetch');
       return [];
     }
 
@@ -173,7 +171,7 @@ class NotificationServiceClass {
       .eq('read', false);
 
     if (error) {
-      console.error('[Notifications] Failed to get count:', error);
+      reportError(error, 'NotificationService.Failed_to_get_count');
       return 0;
     }
 
@@ -197,7 +195,7 @@ class NotificationServiceClass {
       .eq('id', notificationId);
 
     if (error) {
-      console.error('[Notifications] Failed to mark as read:', error);
+      reportError(error, 'NotificationService.Failed_to_mark_as_read');
       return false;
     }
 
@@ -228,7 +226,7 @@ class NotificationServiceClass {
       .eq('read', false);
 
     if (error) {
-      console.error('[Notifications] Failed to mark all as read:', error);
+      reportError(error, 'NotificationService.Failed_to_mark_all_as_read');
       return false;
     }
 
@@ -265,7 +263,7 @@ class NotificationServiceClass {
       .maybeSingle();
 
     if (error) {
-      console.error('[Notifications] Failed to create:', error);
+      reportError(error, 'NotificationService.Failed_to_create');
       return null;
     }
 
@@ -306,13 +304,13 @@ class NotificationServiceClass {
         .maybeSingle();
 
       if (cashoutError || !cashout) {
-        console.error('[NotificationService] Cashout request not found');
+        reportError(new Error('[NotificationService] Cashout request not found'), 'NotificationService.Cashout_request_not_found');
         return;
       }
 
       // Verify the requesting user is the one making the cashout (not an arbitrary user)
       if (cashout.user_id !== requestingUserId) {
-        console.error('[NotificationService] User attempting to trigger cashout for another user');
+        reportError(new Error('[NotificationService] User attempting to trigger cashout for another user'), 'NotificationService.User_attempting_to_trigger_cashout_for_a');
         return;
       }
     }
@@ -486,7 +484,7 @@ class NotificationServiceClass {
       const { messagingService } = await import('./MessagingService');
       if (messagingService.isNotificationTypeMuted(notification.type)) return;
     } catch (err) {
-      console.error('[NotificationService] Error:', err);
+      reportError(err, 'NotificationService.Error');
       /* service not loaded — allow notification */
     }
 

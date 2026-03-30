@@ -8,6 +8,7 @@
 import { supabase } from '../lib/supabase';
 import { retryAsync } from '../utils/retryAsync';
 import { QUERY_LIMITS } from '../lib/constants';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -327,7 +328,7 @@ class AchievementServiceClass {
       .limit(QUERY_LIMITS.MODERATE);
 
     if (error) {
-      console.error('[AchievementService] Error fetching achievements:', error);
+      reportError(error, 'AchievementService.getUserAchievements', { userId });
       return [];
     }
 
@@ -392,7 +393,7 @@ class AchievementServiceClass {
         })
         .eq('id', existing.id);
       if (progErr) {
-        console.error('[AchievementService] Progress update failed:', progErr);
+        reportError(progErr, 'AchievementService.incrementProgress.update', { userId, achievementId });
         return { unlocked: false };
       }
     } else {
@@ -404,7 +405,7 @@ class AchievementServiceClass {
         unlocked_at: justUnlocked ? new Date().toISOString() : null,
       });
       if (insErr) {
-        console.error('[AchievementService] Achievement insert failed:', insErr);
+        reportError(insErr, 'AchievementService.incrementProgress.insert', { userId, achievementId });
         return { unlocked: false };
       }
     }
@@ -460,9 +461,7 @@ class AchievementServiceClass {
         3
       );
       if (rewardErr)
-        console.error(
-          `[AchievementService] Reward failed for ${userId.slice(0, 8)}: ${rewardErr.message}`
-        );
+        reportError(rewardErr, 'AchievementService.awardRewards', { userId: userId.slice(0, 8), achievementName: achievement.name });
     }
 
     // Create notification

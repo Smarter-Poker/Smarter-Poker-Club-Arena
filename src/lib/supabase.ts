@@ -11,6 +11,7 @@ import {
   getTokenExpiry,
   AUTH_STORAGE_KEY,
 } from './authUtils';
+import { reportError } from '../utils/errorReporter';
 
 // Environment validation - follows VITE_ prefix law
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
@@ -18,10 +19,8 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undef
 
 // SECURITY: No hardcoded fallback credentials — env vars are required
 if (!supabaseUrl || !supabaseAnonKey) {
-  console.error(
-    '[Supabase] VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY must be set in environment variables. ' +
-      'Check your .env file.'
-  );
+  reportError(new Error('[Supabase] VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY must be set in environment variables. ' +
+      'Check your .env file.'), 'supabase.Supabase_VITE_SUPABASE_URL_and_VITE_SUPA');
 }
 
 // Create the Supabase client with realtime enabled for live traffic
@@ -287,7 +286,7 @@ if (typeof window !== 'undefined') {
       localStorage.setItem(MIGRATION_FLAG, new Date().toISOString());
     }
   } catch (e) {
-    console.error('[SSO] Migration error:', e);
+    reportError(e, 'supabase.Migration_error');
   }
 
   // Session status logged by AntiGravityBoot — no duplicate getSession() here
@@ -335,13 +334,13 @@ if (typeof window !== 'undefined') {
         // Token already expired — try to refresh anyway
         console.warn('[Supabase] Token expired — attempting emergency refresh');
         supabase.auth.refreshSession().catch((err) => {
-          console.error('[Supabase] Emergency refresh failed:', err);
+          reportError(err, 'supabase.Emergency_refresh_failed');
           // If refresh token is dead, force signOut to prevent zombie session
           if (
             String(err).includes('Invalid Refresh Token') ||
             String(err).includes('invalid_grant')
           ) {
-            console.error('[Supabase] Refresh token is dead — forcing sign out');
+            reportError(new Error('[Supabase] Refresh token is dead — forcing sign out'), 'supabase.Refresh_token_is_dead__forcing_sign_out');
             supabase.auth
               .signOut()
               .catch((e) => console.warn('[Supabase] Failed to force sign out:', e));

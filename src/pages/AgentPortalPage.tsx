@@ -19,6 +19,7 @@ import PageSkeleton from '../components/common/PageSkeleton';
 
 import { useIsMounted } from '../hooks/useIsMounted';
 import TransactionLedgerView from '../components/common/TransactionLedgerView';
+import { reportError } from '../utils/errorReporter';
 
 interface AgentWallet {
   agentBal: number;
@@ -106,7 +107,7 @@ export default function AgentPortalPage() {
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[AgentPortalPage] ❌ Realtime channel error:', err?.message || err);
+          reportError(err?.message || err, 'AgentPortalPage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[AgentPortalPage] ⏱️ Realtime channel timed out');
@@ -170,7 +171,7 @@ export default function AgentPortalPage() {
       });
       return data.id;
     } catch (err) {
-      console.error('[AgentPortal] loadWallet error:', err);
+      reportError(err, 'AgentPortalPage.loadWallet_error');
       return null;
     }
   };
@@ -189,7 +190,7 @@ export default function AgentPortalPage() {
         .gte('created_at', new Date(Date.now() - 7 * 86400000).toISOString())
         .order('created_at', { ascending: true })
         .limit(5000);
-      if (error) console.error('[AgentPortal] Commission history load failed:', error.message);
+      if (error) reportError(error, 'AgentPortalPage.Commission_history_load_failed');
 
       if (data && data.length > 0) {
         const grouped: Record<string, number> = {};
@@ -203,7 +204,7 @@ export default function AgentPortalPage() {
         if (isMounted.current) setCommissionData(days.map((d) => ({ name: d, commissions: 0 })));
       }
     } catch (err) {
-      console.error('[AgentPortal] Commission history error:', err);
+      reportError(err, 'AgentPortalPage.Commission_history_error');
     }
   };
 

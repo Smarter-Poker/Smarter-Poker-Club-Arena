@@ -17,6 +17,7 @@ import {
 } from '../../services/PromotionService';
 import PromotionDetail from './PromotionDetail';
 import './PromotionsList.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface PromotionsListProps {
   userId: string;
@@ -57,7 +58,7 @@ export default function PromotionsList({ userId, clubId }: PromotionsListProps) 
         setClaims(userClaims);
       }
     } catch (err) {
-      console.error('[PromotionsList] load error:', err);
+      reportError(err, 'PromotionsList.load_error');
       if (isMounted.current) setError(true);
     }
     if (isMounted.current) setLoading(false);

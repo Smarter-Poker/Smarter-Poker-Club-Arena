@@ -16,6 +16,7 @@ import { InAppAlerts, useAlerts } from './notifications/InAppAlerts';
 import { useClubTheme } from '../utils/clubThemeEngine';
 import { scheduleStaleCacheReaper } from '../utils/staleCacheReaper';
 import './Shell.css';
+import { reportError } from '../utils/errorReporter';
 
 // VIP Badge Component
 function VIPBadge() {
@@ -98,7 +99,7 @@ function ShellContent() {
           },
         });
       } catch (err) {
-        console.error('[Shell] Notification setup failed:', err);
+        reportError(err, 'Shell.Notification_setup_failed');
       }
     };
 

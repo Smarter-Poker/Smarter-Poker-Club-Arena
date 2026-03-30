@@ -16,6 +16,7 @@ import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import './AgentAnalyticsDashboard.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface AgentAnalyticsDashboardProps {
   userId: string;
@@ -76,7 +77,7 @@ export default function AgentAnalyticsDashboard({ userId, clubId }: AgentAnalyti
         setClawbackLogs(logs || []);
       }
     } catch (err) {
-      console.error('[AgentAnalytics] Error:', err);
+      reportError(err, 'AgentAnalyticsDashboard.Error');
     } finally {
       if (isMounted.current) setLoading(false);
     }

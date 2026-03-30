@@ -12,6 +12,7 @@ import { promotionService, LeaderboardEntry } from '../../services/PromotionServ
 import { useAuthUser } from '../../hooks/useAuthUser';
 import styles from './LeaderboardCard.module.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
+import { reportError } from '../../utils/errorReporter';
 
 interface LeaderboardCardProps {
   promotionId: string;
@@ -62,7 +63,7 @@ function LeaderboardCardInner({
         }
       }
     } catch (error) {
-      console.error('Failed to load leaderboard:', error);
+      reportError(error, 'LeaderboardCard.Failed_to_load_leaderboard');
     }
     if (isMounted.current) setLoading(false);
   }, [promotionId, limit, showCurrentUser, user?.id]);

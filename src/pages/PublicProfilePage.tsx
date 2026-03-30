@@ -26,6 +26,7 @@ import PlayerBlockModal from '../components/social/PlayerBlockModal';
 import './PublicProfilePage.css';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { generateDefaultAvatar } from '../utils/avatarGenerator';
+import { reportError } from '../utils/errorReporter';
 
 // VIP tier colors
 const VIP_COLORS: Record<string, string> = {
@@ -98,7 +99,7 @@ export default function PublicProfilePage() {
       setFriendStatus(friendship);
       setPlayerStatus(status);
     } catch (err) {
-      console.error('[PublicProfile] Load error:', err);
+      reportError(err, 'PublicProfilePage.Load_error');
       if (isMounted.current) toast.error('Failed to load profile');
     } finally {
       loadingRef.current = false;
@@ -185,7 +186,7 @@ export default function PublicProfilePage() {
         `and(user_id.eq.${myId},friend_id.eq.${theirId}),and(user_id.eq.${theirId},friend_id.eq.${myId})`
       )
       .maybeSingle();
-    if (error) console.error('[PublicProfile] Friendship check failed:', error.message);
+    if (error) reportError(error, 'PublicProfilePage.Friendship_check_failed');
 
     if (!data) return 'none';
     if (data.status === 'accepted') return 'friends';
@@ -211,7 +212,7 @@ export default function PublicProfilePage() {
       masterBus.emit('FRIEND_REQUEST_SENT', { fromUserId: user.id, toUserId: userId });
       if (isMounted.current) toast.success('Friend request sent!');
     } catch (err) {
-      console.error('[PublicProfile] Add friend error:', err);
+      reportError(err, 'PublicProfilePage.Add_friend_error');
       if (isMounted.current) toast.error('Failed to send friend request');
     }
     if (isMounted.current) setActionLoading(false);
@@ -233,7 +234,7 @@ export default function PublicProfilePage() {
       masterBus.emit('FRIEND_REQUEST_ACCEPTED', { userId: user.id, friendId: userId });
       if (isMounted.current) toast.success('Friend request accepted!');
     } catch (err) {
-      console.error('[PublicProfile] Accept friend error:', err);
+      reportError(err, 'PublicProfilePage.Accept_friend_error');
       if (isMounted.current) toast.error('Failed to accept request');
     }
     if (isMounted.current) setActionLoading(false);
@@ -252,7 +253,7 @@ export default function PublicProfilePage() {
         if (isMounted.current) toast.error('Failed to start conversation');
       }
     } catch (err) {
-      console.error('[PublicProfile] Message error:', err);
+      reportError(err, 'PublicProfilePage.Message_error');
       if (isMounted.current) toast.error('Failed to start conversation');
     }
     if (isMounted.current) setActionLoading(false);

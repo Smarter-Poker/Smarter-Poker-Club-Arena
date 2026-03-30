@@ -7,6 +7,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase, getAuthUser } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import './PositionWinRates.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface PositionStats {
   position: string;
@@ -156,7 +157,7 @@ const PositionWinRates: React.FC<PositionWinRatesProps> = ({ userId }) => {
         setStatsData(updatedStats);
       }
     } catch (err) {
-      console.error('[PositionWinRates] Failed to load:', err);
+      reportError(err, 'PositionWinRates.Failed_to_load');
     }
   }, [resolveUserId]);
 

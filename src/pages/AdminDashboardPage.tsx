@@ -22,6 +22,7 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { retryFetch } from '../utils/retryFetch';
 import { fmt, fmtChips } from '../utils/format';
+import { reportError } from '../utils/errorReporter';
 
 // ── Helpers ─────────────────────────────────────────────────
 const formatDate = (ts: string | null | undefined) => {
@@ -464,7 +465,7 @@ function DashboardTab({ clubId }: { clubId: string }) {
         )
         .subscribe((status: string, err?: Error) => {
           if (status === 'CHANNEL_ERROR') {
-            console.error('[AdminDashboardPage] ❌ Realtime channel error:', err?.message || err);
+            reportError(err?.message || err, 'AdminDashboardPage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
             console.warn('[AdminDashboardPage] ⏱️ Realtime channel timed out');
@@ -970,7 +971,7 @@ function AuditLogTab({ clubId }: { clubId: string }) {
         )
         .subscribe((status: string, err?: Error) => {
           if (status === 'CHANNEL_ERROR') {
-            console.error('[AuditLogTab] ❌ Realtime channel error:', err?.message || err);
+            reportError(err?.message || err, 'AdminDashboardPage._Realtime_channel_error');
           }
         });
     };
@@ -1040,10 +1041,7 @@ function AuditLogTab({ clubId }: { clubId: string }) {
                 a.click();
                 URL.revokeObjectURL(url);
               } catch (e: unknown) {
-                console.error(
-                  '[AuditLog] CSV export failed:',
-                  e instanceof Error ? e.message : String(e)
-                );
+                reportError(e instanceof Error ? e.message : String(e), 'AdminDashboardPage.CSV_export_failed');
               }
             }}
             className="admin-btn admin-btn-ghost admin-btn-sm"

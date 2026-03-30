@@ -9,6 +9,7 @@ import { supabase } from '../lib/supabase';
 import { WalletService } from './WalletService';
 import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -139,7 +140,7 @@ class BonusServiceClass {
     );
 
     if (error) {
-      console.error('[Bonus] Failed to claim:', error);
+      reportError(error, 'BonusService.Failed_to_claim');
       throw new Error('Failed to claim bonus');
     }
 
@@ -172,7 +173,7 @@ class BonusServiceClass {
       .maybeSingle();
 
     if (error && error.code !== 'PGRST116') {
-      console.error('[Bonus] Failed to check spin status:', error);
+      reportError(error, 'BonusService.Failed_to_check_spin_status');
       return false; // Fail safe
     }
 
@@ -243,7 +244,7 @@ class BonusServiceClass {
     );
 
     if (error) {
-      console.error('[Bonus] Failed to spin lucky wheel:', error);
+      reportError(error, 'BonusService.Failed_to_spin_lucky_wheel');
       if (error.message.includes('Already spun today')) {
         throw new Error('You have already spun the wheel today!');
       }
@@ -317,13 +318,13 @@ class BonusServiceClass {
       );
 
       if (error) {
-        console.error('[Bonus] increment_bonus_progress RPC not available - returning silently');
+        reportError(new Error('[Bonus] increment_bonus_progress RPC not available - returning silently'), 'BonusService.increment_bonus_progress_RPC_not_availab');
         return 0;
       }
 
       return data ?? 0;
     } catch (err: unknown) {
-      console.error('[Bonus] Failed to update progress (non-critical):', err);
+      reportError(err, 'BonusService.Failed_to_update_progress_noncritical');
       return 0;
     }
   }
@@ -365,12 +366,12 @@ class BonusServiceClass {
         }
         break;
       default:
-        console.error(`[Bonus] Unknown reward type: ${type}`);
+        reportError(new Error(`[Bonus] Unknown reward type: ${type}`), 'BonusService.Unknown_reward_type');
         return;
     }
 
     if (error) {
-      console.error(`[Bonus] Failed to award ${type} reward:`, error);
+      reportError(error, 'BonusService.Failed_to_award_type_reward');
       throw new Error(`Failed to award ${type} reward`);
     }
   }

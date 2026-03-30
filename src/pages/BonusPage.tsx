@@ -15,6 +15,7 @@ import { retryAsync } from '../utils/retryAsync';
 import { retryFetch } from '../utils/retryFetch';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
+import { reportError } from '../utils/errorReporter';
 
 interface DailyBonus {
   day: number;
@@ -80,7 +81,7 @@ export default function BonusPage() {
         )
         .subscribe((status: string, err?: Error) => {
           if (status === 'CHANNEL_ERROR') {
-            console.error('[BonusPage] ❌ Realtime channel error:', err?.message || err);
+            reportError(err?.message || err, 'BonusPage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
             console.warn('[BonusPage] ⏱️ Realtime channel timed out');
@@ -179,7 +180,7 @@ export default function BonusPage() {
         );
       }
     } catch (error) {
-      console.error('Failed to load bonuses:', error);
+      reportError(error, 'BonusPage.Failed_to_load_bonuses');
       if (!getIsMounted || getIsMounted()) toast.error('Failed to load bonuses');
     } finally {
       loadingRef.current = false;
@@ -197,7 +198,7 @@ export default function BonusPage() {
         3
       );
       if (claimErr) {
-        console.error('[BonusPage] claim_daily_bonus failed:', claimErr.message);
+        reportError(claimErr, 'BonusPage.claim_daily_bonus_failed');
         toast.error('Failed to claim bonus');
         setClaiming(false);
         return;
@@ -213,7 +214,7 @@ export default function BonusPage() {
       setTimeout(() => setShowConfetti(false), 2500);
       loadBonuses();
     } catch (error) {
-      console.error('Failed to claim bonus:', error);
+      reportError(error, 'BonusPage.Failed_to_claim_bonus');
       toast.error('Failed to claim bonus');
     }
     setClaiming(false);
@@ -233,7 +234,7 @@ export default function BonusPage() {
       masterBus.emit('BALANCE_UPDATED', { source: 'special_bonus', userId: user.id });
       loadBonuses();
     } catch (error) {
-      console.error('Failed to claim special bonus:', error);
+      reportError(error, 'BonusPage.Failed_to_claim_special_bonus');
       toast.error('Failed to claim special bonus');
     }
   };

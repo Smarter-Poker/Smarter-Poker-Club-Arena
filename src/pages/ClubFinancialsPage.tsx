@@ -22,6 +22,7 @@ import { resolveClubUUID } from '../utils/clubIdResolver';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { retryFetch } from '../utils/retryFetch';
 import { formatDateShort as formatDate } from '../utils/format';
+import { reportError } from '../utils/errorReporter';
 
 interface FinancialSummary {
   period: string;
@@ -154,7 +155,7 @@ export default function ClubFinancialsPage() {
         )
         .subscribe((status: string, err?: Error) => {
           if (status === 'CHANNEL_ERROR') {
-            console.error('[ClubFinancialsPage] ❌ Realtime channel error:', err?.message || err);
+            reportError(err?.message || err, 'ClubFinancialsPage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
             console.warn('[ClubFinancialsPage] ⏱️ Realtime channel timed out');
@@ -341,7 +342,7 @@ export default function ClubFinancialsPage() {
       }
     } catch (error) {
       if (!isMounted.current) return;
-      console.error('Failed to load financials:', error);
+      reportError(error, 'ClubFinancialsPage.Failed_to_load_financials');
       toast.error('Failed to load financial data');
     } finally {
       loadingRef.current = false;
@@ -411,7 +412,7 @@ export default function ClubFinancialsPage() {
                       : undefined,
               });
             } catch {
-              console.error('CSV export failed');
+              reportError(new Error('CSV export failed'), 'ClubFinancialsPage.CSV_export_failed');
             }
             setExporting(false);
           }}

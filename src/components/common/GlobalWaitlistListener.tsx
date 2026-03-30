@@ -19,6 +19,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { masterBus } from '../../core/MasterBus';
 import { useToast } from './Toast';
+import { reportError } from '../../utils/errorReporter';
 
 const WAITLIST_CHANNEL_KEY = 'global-waitlist-auto-seat';
 const MAX_RETRIES = 5;
@@ -59,7 +60,7 @@ export default function GlobalWaitlistListener() {
             .eq('user_id', user.id)
             .eq('table_id', vacatedTableId)
             .maybeSingle();
-          if (waitlistErr) console.error('[GlobalWaitlist] Query failed:', waitlistErr.message);
+          if (waitlistErr) reportError(waitlistErr, 'GlobalWaitlistListener.Query_failed');
 
           if (data && data.position === 1) {
             const tableName = (data.poker_tables as any)?.name || 'the table';
@@ -79,7 +80,7 @@ export default function GlobalWaitlistListener() {
             });
           }
         } catch (err) {
-          console.error('[GlobalWaitlistListener] Error checking waitlist position:', err);
+          reportError(err, 'GlobalWaitlistListener.Error_checking_waitlist_position');
         }
       }
     );

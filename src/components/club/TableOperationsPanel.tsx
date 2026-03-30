@@ -18,6 +18,7 @@ import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { tableService } from '../../services/TableService';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
+import { reportError } from '../../utils/errorReporter';
 
 interface TableInfo {
   id: string;
@@ -402,7 +403,7 @@ export default function TableOperationsPanel({ clubId }: Props) {
       })
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[TableOperationsPanel] ❌ Realtime channel error:', err?.message || err);
+          reportError(err?.message || err, 'TableOperationsPanel._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[TableOperationsPanel] ⏱️ Realtime channel timed out');
@@ -461,7 +462,7 @@ export default function TableOperationsPanel({ clubId }: Props) {
       await loadSeatedPlayers(confirmAction.tableId);
       await loadTables();
     } catch (err) {
-      console.error('[TableOperationsPanel] Failed to kick player:', err);
+      reportError(err, 'TableOperationsPanel.Failed_to_kick_player');
     } finally {
       if (isMounted.current) setConfirmAction(null);
       setActionLoading(null);
@@ -475,7 +476,7 @@ export default function TableOperationsPanel({ clubId }: Props) {
       await tableService.closeTable(confirmAction.tableId);
       await loadTables();
     } catch (err) {
-      console.error('[TableOperationsPanel] Failed to close table:', err);
+      reportError(err, 'TableOperationsPanel.Failed_to_close_table');
     } finally {
       if (isMounted.current) setConfirmAction(null);
       setActionLoading(null);

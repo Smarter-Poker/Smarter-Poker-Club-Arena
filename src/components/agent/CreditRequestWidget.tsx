@@ -8,6 +8,7 @@ import { creditRequestService, type CreditRequest } from '../../services/CreditR
 import { useToast } from '../common/Toast';
 import { masterBus } from '../../core/MasterBus';
 import './CreditRequestWidget.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface CreditRequestWidgetProps {
   agentId: string;
@@ -85,7 +86,7 @@ export default function CreditRequestWidget({
         .map((_, i) => setTimeout(() => setVisibleHistory((prev) => new Set(prev).add(i)), i * 60));
       staggerTimersRef.current.push(...histTimers);
     } catch (error) {
-      console.error('Failed to load credit requests:', error);
+      reportError(error, 'CreditRequestWidget.Failed_to_load_credit_requests');
       if (isMounted.current) toast.error('Failed to load credit requests');
     }
     if (isMounted.current) setLoading(false);

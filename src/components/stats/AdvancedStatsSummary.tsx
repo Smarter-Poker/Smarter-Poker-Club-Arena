@@ -12,6 +12,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase, getAuthUser } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import './AdvancedStatsSummary.css';
+import { reportError } from '../../utils/errorReporter';
 
 // ── Average player benchmarks (based on typical 1/2 NL Hold'em) ──
 const BENCHMARKS: Record<string, { avg: number; good: number; label: string }> = {
@@ -160,7 +161,7 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ userId, ini
       setCache(uid, data);
       buildStats(data);
     } catch (err) {
-      console.error('[AdvancedStatsSummary] Failed to load:', err);
+      reportError(err, 'AdvancedStatsSummary.Failed_to_load');
       if (mountedRef.current) buildStats(null);
     }
   }, [resolveUserId, initialData, loaded]);

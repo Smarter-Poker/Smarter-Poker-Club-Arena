@@ -7,6 +7,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { STORAGE_KEYS } from '../../lib/storage';
 import './QuickActionsPanel.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface QuickAction {
   id: string;
@@ -119,7 +120,7 @@ export const QuickActionsPanel: React.FC = () => {
       try {
         setRecentlyUsed(JSON.parse(saved));
       } catch (err) {
-        console.error('[QuickActionsPanel] Error:', err);
+        reportError(err, 'QuickActionsPanel.Error');
         localStorage.removeItem(STORAGE_KEYS.QUICK_ACTIONS_RECENT);
       }
     }

@@ -5,6 +5,8 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
+import { reportError } from '../utils/errorReporter';
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -91,14 +93,14 @@ export const POYService = {
 
       if (!response.ok) {
         const error = await response.text();
-        console.error('POYService: Tournament submit failed:', error);
+        reportError(error, 'POYService.POYService_Tournament_submit_failed');
         return { success: false };
       }
 
       const result = await response.json();
       return { success: true, points_awarded: result.points_awarded };
     } catch (error: unknown) {
-      console.error('POYService: Tournament submit error:', error);
+      reportError(error, 'POYService.POYService_Tournament_submit_error');
       return { success: false };
     }
   },
@@ -122,14 +124,14 @@ export const POYService = {
 
       if (!response.ok) {
         const error = await response.text();
-        console.error('POYService: Cash session submit failed:', error);
+        reportError(error, 'POYService.POYService_Cash_session_submit_failed');
         return { success: false };
       }
 
       const result = await response.json();
       return { success: true, points_awarded: result.points_awarded };
     } catch (error: unknown) {
-      console.error('POYService: Cash session submit error:', error);
+      reportError(error, 'POYService.POYService_Cash_session_submit_error');
       return { success: false };
     }
   },
@@ -217,7 +219,7 @@ export const POYService = {
       const data = await response.json();
       return data.leaderboard || [];
     } catch (error: unknown) {
-      console.error('POYService: Leaderboard fetch error:', error);
+      reportError(error, 'POYService.POYService_Leaderboard_fetch_error');
       return [];
     }
   },
@@ -237,7 +239,7 @@ export const POYService = {
       const data = await response.json();
       return data.player_ranking || null;
     } catch (error: unknown) {
-      console.error('POYService: Player ranking fetch error:', error);
+      reportError(error, 'POYService.POYService_Player_ranking_fetch_error');
       return null;
     }
   },

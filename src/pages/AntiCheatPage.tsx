@@ -20,6 +20,7 @@ import { retryFetch } from '../utils/retryFetch';
 import { exportToCSV } from '../lib/export';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { fmt, fmtChips, timeAgo } from '../utils/format';
+import { reportError } from '../utils/errorReporter';
 
 type Severity = 'critical' | 'high' | 'medium' | 'low';
 
@@ -496,7 +497,7 @@ export default function AntiCheatPage() {
         )
         .subscribe((status: string, err?: Error) => {
           if (status === 'CHANNEL_ERROR') {
-            console.error('[AntiCheatPage] ❌ Realtime channel error:', err?.message || err);
+            reportError(err?.message || err, 'AntiCheatPage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
             console.warn('[AntiCheatPage] ⏱️ Realtime channel timed out');

@@ -25,6 +25,7 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import haptic from '../services/HapticService';
 import { STORAGE_KEYS } from '../lib/storage';
 import { getClubLevel, getUnionLevel } from '../utils/clubLevels';
+import { reportError } from '../utils/errorReporter';
 
 const SWIPE_THRESHOLD = 50; // px minimum for a horizontal swipe
 
@@ -181,7 +182,7 @@ export default function ClubCarouselPage() {
         // #9: Track WS connection health
         setWsConnected(status === 'SUBSCRIBED');
         if (status === 'CHANNEL_ERROR') {
-          console.error('[ClubCarouselPage] ❌ Realtime channel error:', err?.message || err);
+          reportError(err?.message || err, 'ClubCarouselPage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[ClubCarouselPage] ⏱️ Realtime channel timed out');
@@ -581,7 +582,7 @@ export default function ClubCarouselPage() {
       }
     } catch (error) {
       if (!isMounted.current) return;
-      console.error('Error loading user data:', error);
+      reportError(error, 'ClubCarouselPage.Error_loading_user_data');
       toast.error('Failed to load club data');
       // Clear SWR cache on error so stale data isn't shown on next visit
       try {

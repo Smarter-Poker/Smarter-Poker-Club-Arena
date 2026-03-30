@@ -12,6 +12,7 @@
 
 import { masterBus } from '../core/MasterBus';
 import type { GameVariant } from '../types/database.types';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -87,7 +88,7 @@ class MixedGameEngineClass {
   ): void {
     const variants = MIXED_GAME_PRESETS[presetName];
     if (!variants) {
-      console.error(`[MixedGameEngine] Unknown preset: ${presetName}`);
+      reportError(new Error(`[MixedGameEngine] Unknown preset: ${presetName}`), 'MixedGameEngine.Unknown_preset');
       return;
     }
 

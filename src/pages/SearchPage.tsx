@@ -12,6 +12,7 @@ import { useToast } from '../components/common/Toast';
 import { useAuthUser } from '../hooks/useAuthUser';
 import './SearchPage.css';
 import PageSkeleton from '../components/common/PageSkeleton';
+import { reportError } from '../utils/errorReporter';
 
 type SearchCategory = 'all' | 'clubs' | 'players' | 'tables' | 'tournaments';
 
@@ -186,7 +187,7 @@ export default function SearchPage() {
           });
         }
       } catch (error) {
-        console.error('Search failed:', error);
+        reportError(error, 'SearchPage.Search_failed');
         toast.error('Search failed. Please try again.');
       }
       if (!getIsMounted || getIsMounted()) setLoading(false);

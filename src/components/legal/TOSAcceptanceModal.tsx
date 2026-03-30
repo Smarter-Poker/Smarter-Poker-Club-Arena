@@ -7,6 +7,7 @@
 
 import { useState, useEffect } from 'react';
 import './TOSAcceptanceModal.css';
+import { reportError } from '../../utils/errorReporter';
 
 interface TOSAcceptanceModalProps {
   onAccept: () => Promise<void>;
@@ -32,7 +33,7 @@ export default function TOSAcceptanceModal({ onAccept }: TOSAcceptanceModalProps
     try {
       await onAccept();
     } catch (err) {
-      console.error('[TOSModal] onAccept error:', err);
+      reportError(err, 'TOSAcceptanceModal.onAccept_error');
     } finally {
       setIsAccepting(false);
     }

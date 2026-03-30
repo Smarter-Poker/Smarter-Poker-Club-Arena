@@ -14,6 +14,7 @@ import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { referralService } from '../services/ReferralService';
 import styles from './AuthPage.module.css';
+import { reportError } from '../utils/errorReporter';
 
 type AuthMode = 'login' | 'signup' | 'reset';
 
@@ -69,7 +70,7 @@ export default function AuthPage() {
         navigate('/');
       }
     } catch (err: any) {
-      console.error('🔐 [AUTH] Login failed:', err);
+      reportError(err, 'AuthPage.Login_failed');
       // SECURITY: Generic message to prevent user enumeration
       if (isMounted.current) setError('Invalid email or password. Please try again.');
     } finally {
@@ -195,7 +196,7 @@ export default function AuthPage() {
           { onConflict: 'id' }
         );
         if (usersErr) {
-          console.error('[AUTH] public.users upsert FAILED:', usersErr.message);
+          reportError(usersErr, 'AuthPage.publicusers_upsert_FAILED');
           // Don't throw — DB trigger may handle this. But log as error, not warn.
         }
 
@@ -221,7 +222,7 @@ export default function AuthPage() {
         }
       }
     } catch (err: any) {
-      console.error('🔐 [AUTH] Signup failed:', err);
+      reportError(err, 'AuthPage.Signup_failed');
       if (isMounted.current) setError(err.message || 'Signup failed. Please try again.');
     } finally {
       if (isMounted.current) setIsLoading(false);
@@ -242,7 +243,7 @@ export default function AuthPage() {
       // This prevents user enumeration attacks
       setSuccess('If an account exists with this email, you will receive a password reset link.');
     } catch (err: any) {
-      console.error('🔐 [AUTH] Password reset failed:', err);
+      reportError(err, 'AuthPage.Password_reset_failed');
       if (isMounted.current) setError(err.message || 'Failed to send reset email.');
     } finally {
       if (isMounted.current) setIsLoading(false);

@@ -22,6 +22,7 @@ import SettlementReceipt from '../components/settlement/SettlementReceipt';
 import SettlementTimeline from '../components/settlement/SettlementTimeline';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useIsMounted } from '../hooks/useIsMounted';
+import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MONDAY 4AM COUNTDOWN — Live payout timer widget
@@ -367,7 +368,7 @@ export default function SettlementPage() {
         }
       }
     } catch (error) {
-      console.error('[SettlementPage] Failed to load data:', error);
+      reportError(error, 'SettlementPage.Failed_to_load_data');
       if (isMounted.current) toast.error('Failed to load settlement data');
     } finally {
       loadingRef.current = false;
@@ -487,7 +488,7 @@ export default function SettlementPage() {
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
-          console.error('[SettlementPage] ❌ Realtime channel error:', err?.message || err);
+          reportError(err?.message || err, 'SettlementPage._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
           console.warn('[SettlementPage] ⏱️ Realtime channel timed out');
@@ -600,7 +601,7 @@ export default function SettlementPage() {
         });
       }
     } catch (error) {
-      console.error('[SettlementPage] Payout failed:', error);
+      reportError(error, 'SettlementPage.Payout_failed');
       toast.error('Payout execution failed: ' + (error as Error).message);
     } finally {
       setIsProcessing(false);

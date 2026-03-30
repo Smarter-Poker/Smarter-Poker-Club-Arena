@@ -3,7 +3,40 @@
 ## Every Change, Documented. No Exceptions.
 
 **Started:** 2026-03-24
-**Current Step:** ALL 8 STEPS COMPLETE — Deep Bible V8 Verification Complete (171 fixes total)
+**Current Step:** ALL 8 STEPS COMPLETE — Deep Bible V8 Verification Complete (178 fixes total)
+
+---
+
+## Round 26 — Deep Bible V8 Reverification: ServerTableEngine + HandController + Live E2E (2026-03-29)
+
+### FIX 176 — Pot-limit max raise formula inconsistency in getPlayerActions
+- **File:** `server/src/engine/ServerTableEngine.ts` (getPlayerActions method)
+- **Bug:** `getPlayerActions()` used `pot + toCall + toCall` for pot-limit max raise, but `_handlePlayerActionInner()` correctly used `pot + toCall`. The extra `toCall` let PLO clients see a maxRaise that was ~toCall higher than the legal pot-limit maximum.
+- **Fix:** Changed `getPlayerActions()` to use `pot + toCall` (matching the action handler). Raise TO = currentBet + (pot + toCall).
+
+### FIX 177 — 3-player position labels wrong (SB instead of UTG)
+- **File:** `server/src/engine/ServerTableEngine.ts` (getPositionLabels method)
+- **Bug:** For 3 players, labels were BTN→SB→BB. Bible V8 Appendix B says 3 players: BTN/SB, BB, UTG. In 3-player poker, the button IS the small blind (no separate SB position), and the third player is UTG.
+- **Fix:** Changed 3-player labels to BTN→BB→UTG. The BTN player posts the SB per §4.2 (heads-up-like SB posting applies to 3-player too).
+
+### FIX 178 — Hand safety timeout of 60s kills multi-player hands prematurely
+- **File:** `server/src/engine/ServerTableEngine.ts` (dealHand method)
+- **Bug:** The hand completion promise had a 60-second safety timeout. A 9-player hand with 15s action timers × 4 betting rounds = 540s worst case. With time banks + insurance/RIT pauses, 60s is wildly insufficient. This would silently kill hands mid-action.
+- **Fix:** Increased safety timeout to 10 minutes (600s). This covers worst-case 9-player hands with full time bank usage, insurance pauses, and RIT negotiations.
+
+### Live E2E Test Results:
+- ✅ Server health check: running, 0 tables, 0 tournaments (MAINTENANCE_MODE active)
+- ✅ All 15 HTTP endpoints correctly require JWT authentication
+- ✅ Supabase connectivity: user_table_settings, user_theme_settings, table_hole_cards tables all accessible
+- ✅ All 342 tables closed (cleaned up 5 running + 3 waiting ghost tables from prior restarts)
+- ✅ All 10 tournaments cancelled
+- ✅ 0 active table_seats (clean state)
+- ✅ Frontend (smarter.poker/hub/club-arena/) returning 200 OK
+
+### Full Audit Summary This Session:
+- **ServerTableEngine.ts** (3386 lines): Full read, 3 bugs found and fixed (FIX 176-178)
+- **HandController.ts** (954 lines): Full read, no new bugs. State machine, blind posting, betting, showdown, and settlement all comply with Bible V8.
+- **index.ts**: FIX 175 (readBody size limit) confirmed in place from prior session.
 
 ---
 

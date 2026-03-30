@@ -3,7 +3,64 @@
 ## Every Change, Documented. No Exceptions.
 
 **Started:** 2026-03-24
-**Current Step:** ALL 8 STEPS COMPLETE — Deep Bible V8 Verification In Progress (167 fixes total)
+**Current Step:** ALL 8 STEPS COMPLETE — Deep Bible V8 Verification Complete (171 fixes total)
+
+---
+
+## Round 25 — Deep Bible V8 Verification: Final Engine Sweep + Deploy Infrastructure (2026-03-29)
+
+### FIX 169 — PokerEngine.distributePot odd-chip goes to wrong player
+- **File:** `server/src/engine/PokerEngine.ts` (distributePot function)
+- **Bug:** Odd chip was awarded to lowest seat number (`a.player.seat - b.player.seat`). Bible V8 §2.7 requires odd chip goes to first player clockwise from dealer button.
+- **Fix:** Added `dealerSeat` parameter (default 0 for backward compat). Sort winners by `(seat - dealerSeat + maxSeat*10) % maxSeat` — clockwise distance from button. First player clockwise gets the remainder cent.
+
+### FIX 170 — RakebackEngine includes non-dealt-in players in equal share
+- **File:** `server/src/engine/RakebackEngine.ts` (recordHandRake)
+- **Bug:** Filter used `invested >= 0`, which includes players with $0 contribution (not dealt in, posted no blind). These ghost players diluted the equal rakeback share for actual participants.
+- **Fix:** Changed to `invested > 0` — only players who actually put money in the pot get rakeback credit.
+
+### FIX 171 — RunItTwiceEngine ignores chooser's chosen run count
+- **File:** `server/src/engine/RunItTwiceEngine.ts` (dealDualBoards + resolve)
+- **Bug:** FIX 96 added a chooser mechanism where the all-in player picks 1/2/3 runs, stored in `state.chosenRuns`. But both `dealDualBoards()` and `resolve()` still read `state.maxRuns` — the table config max, not the chooser's pick. If chooser picked 2 but table allowed 3, it would deal 3 boards.
+- **Fix:** Both methods now use `state.chosenRuns || state.maxRuns || 2` — chooser's pick takes priority.
+
+### Deploy Infrastructure Established:
+- **SSH access from Cowork VM to Hetzner VPS**: Generated ed25519 keypair, added to VPS authorized_keys — permanent access
+- **Deploy skill created**: `.claude/skills/deploy-hetzner/SKILL.md` — full infrastructure reference, one-liner deploy, rollback procedures
+- **Deploy command created**: `.claude/commands/deploy.md` — `/deploy` slash command with 3-phase pipeline
+- **Deploy script fixed**: `server/deploy-hetzner.sh` — corrected paths from `/root/club-arena` to `/opt/club-arena`
+- **All fixes deployed**: FIX 157-171 live on `engine.smarter.poker` (Hetzner VPS), health check confirmed
+
+### All 26 Server Engine Files Verified Against Bible V8:
+- **PokerEngine.ts** ✅ — Deck, evaluateHand, evaluateOmahaHand, calculatePots, validateAction, calculateRake, determineWinners, distributePot (FIX 169)
+- **HandController.ts** ✅ — (previously verified, FIX 165)
+- **ServerTableEngine.ts** ✅ — (previously verified, FIX 159/166)
+- **ServerActionValidator.ts** ✅ — Turn order, player state, duplicate suppression, timing, action-specific validation
+- **PreciseActionTimer.ts** ✅ — Deadline-based timers, 100ms polling, pause/resume/extend
+- **DisconnectEngine.ts** ✅ — Heartbeat staleness, reconnect grace (§6.3), auto-fold/check, consecutive timeout sit-out
+- **TimeBankEngine.ts** ✅ — 15s per use (§6.2), max 2 per hand, use-it-or-lose-it, orbit refill
+- **StraddleEngine.ts** ✅ — UTG only (FIX 114), no Mississippi, auto-straddle enrollment
+- **StateVerifier.ts** ✅ — Chip conservation (0.001 tolerance), negative stack/pot/duplicate card checks
+- **PreActionEngine.ts** ✅ — auto_fold, auto_check_fold, auto_check, auto_call, auto_call_any, invalidation on bet
+- **MixedGameEngine.ts** ✅ — HORSE preset (FIX 160), orbit rotation, variant schedule
+- **AtomicStackService.ts** ✅ — Versioned optimistic locking, atomic debit/credit/settle
+- **ChipRaceEngine.ts** ✅ — Single-player round-up (FIX 161), crypto-secure lottery
+- **TableBalancer.ts** ✅ — Gap > 1 trigger, smallest-stack-first moves
+- **TableBreakEngine.ts** ✅ — Countdown warning, round-robin redistribution, crypto-secure seat lottery (FIX 163)
+- **MonteCarloEquity.ts** ✅ — Short Deck (FIX 139), crypto-secure shuffle, tie handling
+- **EngineTelemetry.ts** ✅ — Per-table metrics, 60s auto-emit, timer utilization
+- **InsuranceEngine.ts** ✅ — 20% house edge, partial coverage, TIES=PUSH (FIX 118), Short Deck (FIX 139)
+- **RunItTwiceEngine.ts** ✅ — Dual/triple board, chooser mechanism (FIX 171), pot splitting
+- **RakebackEngine.ts** ✅ — Equal share (FIX 170), tier system, Supabase persistence
+- **CryptoRandom.ts** ✅ — Rejection sampling, Fisher-Yates, Node.js fallback chain
+- **HorseLogic.ts** ✅ — 5 AI styles, preflop/postflop decisions
+- **OFCPineappleEngine.ts** ✅ — Dealing, placement, foul detection, royalties, Fantasyland (FIX 162)
+- **OFCDealingOrchestrator.ts** ✅ — Dealing loop, pineapple rounds, timer management
+- **RakeConfig.ts** ✅ — (previously verified, FIX 166)
+- **SidePotCalculator.ts** ✅ — Multi-way all-in, side pot creation
+
+### Cumulative Fix Count: 171
+### Next Phase: Client-side UI audit (Bible V8 Chapter 5 — popups, animations, sounds, haptics)
 
 ---
 

@@ -26,6 +26,8 @@ import {
   SpinCard,
 } from '../components/lobby/DynamicGameCard';
 import { getClubLevel, ClubLevelInfo } from '../utils/clubLevels';
+import { BusToastBridge } from '../components/common/BusToastBridge';
+import { DiamondService } from '../services/DiamondService';
 import { useToast } from '../components/common/Toast';
 import ConfirmModal from '../components/common/ConfirmModal';
 import { retryFetch } from '../utils/retryFetch';
@@ -215,6 +217,8 @@ export default function ClubHomePage() {
       } catch {
         /* standalone club — no union_id */
       }
+
+      if (!isMounted) return;
 
       const channelKey = `club-tables-${clubId}`;
       let channel = masterBus.getOrCreateChannel(channelKey);
@@ -449,25 +453,21 @@ export default function ClubHomePage() {
         setIsOwner(clubData.owner_id === authUser.id);
 
         // ── Batch: member data + diamond wallet in parallel ──
-        const [memberResult, diamondResult] = await Promise.all([
+        const [memberResult, diamondWallet] = await Promise.all([
           supabase
             .from('club_members')
             .select('chip_balance, role')
             .eq('club_id', resolvedId)
             .eq('user_id', authUser.id)
             .maybeSingle(),
-          supabase
-            .from('profiles')
-            .select('diamonds')
-            .eq('id', authUser.id)
-            .maybeSingle(),
+          DiamondService.getBalance(authUser.id),
         ]);
 
         if (memberResult.data) {
           if (getIsMounted && !getIsMounted()) return;
           setWallet({
             gold: memberResult.data.chip_balance || 0,
-            diamonds: diamondResult.data?.diamonds || 0,
+            diamonds: diamondWallet.balance || 0,
           });
           setUserRole(memberResult.data.role || 'member');
         }

@@ -17,6 +17,7 @@ import FriendListPanel from '../components/social/FriendListPanel';
 import { VIPStatusCard } from '../components/vip/VIPStatusCard';
 import { VIPProgressRing } from '../components/vip/VIPProgressRing';
 import { profileService } from '../services/ProfileService';
+import { DiamondService } from '../services/DiamondService';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { bonusService } from '../services/BonusService';
 import { masterBus } from '../core/MasterBus';
@@ -562,14 +563,9 @@ export default function ProfilePage() {
           .getUser()
           .then(({ data: { user: authUser } }) => {
             if (authUser && isMounted) {
-              supabase
-                .from('diamond_wallets')
-                .select('balance')
-                .eq('user_id', authUser.id)
-                .maybeSingle()
-                .then(({ data: dw }) => {
-                  if (dw && isMounted) setDiamonds(dw.balance || 0);
-                });
+              DiamondService.getBalance(authUser.id).then((dw) => {
+                if (dw && isMounted) setDiamonds(dw.balance || 0);
+              });
             }
           })
           .catch((e) => console.warn('[Profile] Refreshing diamond balance failed:', e));
@@ -584,14 +580,9 @@ export default function ProfilePage() {
           .getUser()
           .then(({ data: { user: authUser } }) => {
             if (authUser && isMounted) {
-              supabase
-                .from("diamond_wallets")
-                .select("balance")
-                .eq("user_id", authUser.id)
-                .maybeSingle()
-                .then(({ data: dw }) => {
-                  if (dw && isMounted) setDiamonds(dw.balance || 0);
-                });
+              DiamondService.getBalance(authUser.id).then((dw) => {
+                if (dw && isMounted) setDiamonds(dw.balance || 0);
+              });
             }
           })
           .catch((e) => console.warn("[Profile] Refreshing diamond balance failed:", e));

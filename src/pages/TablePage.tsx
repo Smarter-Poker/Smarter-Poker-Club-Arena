@@ -2252,6 +2252,7 @@ export default function TablePage({
 
   // Load table info from Supabase on mount
   useEffect(() => {
+    let isMounted = true;
     async function loadTableInfo() {
       if (!tableId) return;
 
@@ -2360,6 +2361,7 @@ export default function TablePage({
             // Subscribe to real-time bounty updates (store in ref for cleanup)
             const bountyChannelKey = `bounty-${table.tournament_id}`;
 
+            if (!isMounted) return;
             const bountyChannel = masterBus.getOrCreateChannel(bountyChannelKey);
             bountyChannel
               .on(
@@ -2404,6 +2406,7 @@ export default function TablePage({
         if (table.tournament_id) {
           const breakChanKey = `t-break-${table.tournament_id}`;
 
+          if (!isMounted) return;
           const breakChan = masterBus.getOrCreateChannel(breakChanKey);
           breakChan
             .on('broadcast', { event: 'tournament_event' }, (payload: any) => {
@@ -2712,6 +2715,10 @@ export default function TablePage({
       }
     }
     loadTableInfo();
+
+    return () => {
+      isMounted = false;
+    };
   }, [tableId, userId]);
 
   // Join/leave multiplayer room
@@ -2831,6 +2838,17 @@ export default function TablePage({
       }
     };
   }, [tableId, userId, tableState.heroSeat]);
+
+  // ── Bus Listener: cross-tab live balance sync (Triple-Wallet sync) ──
+  useMasterBusSubscription('BALANCE_UPDATED', (payload: any) => {
+    if (!payload.userId || payload.userId === userId) {
+      if (payload.balance !== undefined) {
+        setAccountBalance(payload.balance);
+      } else {
+        WalletService.getPlayerBalance(userId).then(setAccountBalance).catch(console.error);
+      }
+    }
+  });
 
   // ── Bus Listener: live settings sync (theme, sound, deck changes) ──
   useMasterBusSubscription('SETTINGS_UPDATED', (payload: any) => {

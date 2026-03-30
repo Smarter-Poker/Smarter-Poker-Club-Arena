@@ -14,6 +14,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useToast } from '../common/Toast';
 import './ThemeSettingsModal.css';
@@ -258,6 +259,8 @@ function canAccessAsset(isVip: boolean, vipOnly: boolean): boolean {
 
 export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSettingsModalProps) {
   const toast = useToast();
+  const navigate = useNavigate();
+  const [showVipPrompt, setShowVipPrompt] = useState(false);
   const [activeTab, setActiveTab] = useState<ThemeTab>('themes');
   const [gameType, setGameType] = useState<string>('ALL');
   const [selection, setSelection] = useState<ThemeSelection>({ ...DEFAULT_SELECTION });
@@ -329,13 +332,14 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
   const handleAssetSelect = useCallback(
     (tab: ThemeTab, assetId: string, vipOnly: boolean) => {
       if (!canAccessAsset(isVip, vipOnly)) {
-        toast.info('This item requires VIP membership.');
+        // FIX 221: Bible V8 §11.2.3 — show VIP upgrade prompt (not just a toast)
+        setShowVipPrompt(true);
         return;
       }
       const field = TAB_TO_FIELD[tab];
       setSelection((prev) => ({ ...prev, [field]: assetId }));
     },
-    [isVip, toast]
+    [isVip]
   );
 
   const handleSave = useCallback(async () => {
@@ -455,6 +459,37 @@ export function ThemeSettingsModal({ isOpen, onClose, userId, isVip }: ThemeSett
             {saving ? 'Saving...' : 'Confirm'}
           </button>
         </div>
+
+        {/* FIX 221: VIP Upgrade Prompt — Bible V8 §11.2.3 */}
+        {showVipPrompt && (
+          <div className="theme-vip-prompt-overlay" onClick={() => setShowVipPrompt(false)}>
+            <div className="theme-vip-prompt" onClick={(e) => e.stopPropagation()}>
+              <div className="theme-vip-prompt__icon">VIP</div>
+              <h4 className="theme-vip-prompt__title">VIP Theme Unlocked</h4>
+              <p className="theme-vip-prompt__text">
+                This theme is exclusive to VIP members. Upgrade to unlock premium themes, tables, and more.
+              </p>
+              <div className="theme-vip-prompt__actions">
+                <button
+                  className="theme-vip-prompt__btn theme-vip-prompt__btn--upgrade"
+                  onClick={() => {
+                    setShowVipPrompt(false);
+                    onClose();
+                    navigate('/vip');
+                  }}
+                >
+                  Upgrade to VIP
+                </button>
+                <button
+                  className="theme-vip-prompt__btn theme-vip-prompt__btn--cancel"
+                  onClick={() => setShowVipPrompt(false)}
+                >
+                  Maybe Later
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

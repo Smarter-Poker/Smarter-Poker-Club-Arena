@@ -264,3 +264,96 @@
   opacity: 0.6;
   cursor: not-allowed;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+ * FIX 221: VIP Upgrade Prompt — Bible V8 §11.2.3
+ * ═══════════════════════════════════════════════════════════════════════════════ */
+
+.theme-vip-prompt-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 16px;
+  z-index: 10;
+  backdrop-filter: blur(4px);
+}
+
+.theme-vip-prompt {
+  background: var(--dark-surface, #242526);
+  border-radius: 14px;
+  padding: 28px 24px;
+  max-width: 320px;
+  text-align: center;
+  border: 1px solid rgba(251, 191, 36, 0.2);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.theme-vip-prompt__icon {
+  font-size: 20px;
+  font-weight: 800;
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.12);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  margin-bottom: 12px;
+  letter-spacing: 0.05em;
+}
+
+.theme-vip-prompt__title {
+  margin: 0 0 8px;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--off-white, #e4e6eb);
+}
+
+.theme-vip-prompt__text {
+  margin: 0 0 20px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--soft-white, #b0b3b8);
+}
+
+.theme-vip-prompt__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.theme-vip-prompt__btn {
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+
+.theme-vip-prompt__btn:active {
+  transform: scale(0.97);
+}
+
+.theme-vip-prompt__btn--upgrade {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: #1a1a1e;
+}
+
+.theme-vip-prompt__btn--upgrade:hover {
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+}
+
+.theme-vip-prompt__btn--cancel {
+  background: var(--card-surface, #3a3b3c);
+  color: var(--soft-white, #b0b3b8);
+}
+
+.theme-vip-prompt__btn--cancel:hover {
+  background: rgba(255, 255, 255, 0.12);
+}

@@ -3,7 +3,85 @@
 ## Every Change, Documented. No Exceptions.
 
 **Started:** 2026-03-24
-**Current Step:** ALL 8 STEPS COMPLETE — Bible V8 Deep Audit In Progress (212 fixes, 0 gaps)
+**Current Step:** ALL 8 STEPS COMPLETE — Bible V8 Deep Audit COMPLETE (213 fixes, 0 gaps)
+
+---
+
+## Round 39 — Complete Bible V8 Server Audit: ALL Remaining Files (2026-03-30)
+
+### Deep line-by-line audit of ALL remaining server engine files, services, and infrastructure
+
+**Files Audited (this round):**
+- `server/src/index.ts` — authenticateRequest(), checkRateLimit(), readBody(), cleanupStaleData(), discoverCashTables(), discoverTournaments(), GameServer class, TournamentManager class (ALL ~2750 lines)
+- `server/src/config/RakeConfig.ts` (640 lines) — Rake schedule, BBJ qualifying hands, BBJ detection, player-count caps
+- `server/src/services/supabase.ts` (~800 lines) — broadcastHandState, loadTable, loadSeatedPlayers, syncStacks, autoRebuyHorse, markSeatAsLeft, atomicCashout, processLeavePending, logRakeCollection, logBBJCollection, logInsuranceSettlement, logHandHistory
+- `server/src/engine/StraddleEngine.ts` (239 lines) — UTG straddle processing
+- `server/src/engine/RunItTwiceEngine.ts` (379 lines) — Dual/triple board dealing and settlement
+- `server/src/engine/InsuranceEngine.ts` (531 lines) — Equity-based all-in insurance
+- `server/src/engine/AtomicStackService.ts` (265 lines) — Versioned optimistic locking
+- `server/src/engine/ChipRaceEngine.ts` (158 lines) — Tournament denomination removal
+- `server/src/engine/TableBalancer.ts` (252 lines) — MTT table rebalancing
+- `server/src/engine/MixedGameEngine.ts` (214 lines) — HORSE/mixed game rotation
+- `server/src/engine/RakebackEngine.ts` (291 lines) — Per-player rakeback tracking
+
+**Audit Results — ALL PASSED (with 1 fix):**
+
+HTTP Layer:
+- authenticateRequest(): ✅ JWT via supabase.auth.getUser(), null on failure
+- checkRateLimit(): ✅ 100ms minimum per player (§9.3), memory cleanup at 1000 entries
+- readBody(): ✅ 16KB limit prevents memory exhaustion (FIX 175)
+- CORS handling: ✅ Preflight + response headers
+
+GameServer:
+- cleanupStaleData(): ✅ Safe cashout of all seats, per-user aggregation, horse reset, tournament cleanup
+- discoverCashTables(): ✅ 5-second poll, 2+ player threshold, engine lifecycle management
+- discoverTournaments(): ✅ SNG/Spin full-only start, MTT time-based start, auto-cancel after 30min, refunds, RUNNING resume, COMPLETING recovery
+- Synchronized breaks: ✅ Top-of-hour, 5-minute duration, pause/resume blind timer
+
+TournamentManager:
+- start(): ✅ Min 3 players, spin multiplier (standard + hyper), prize pool calculation, payout normalization, table creation + round-robin seating
+- blind timer: ✅ Per-level durations, auto-escalation when structure exhausted, chip race on denomination change (FIX 151)
+- elimination: ✅ Stack sync, simultaneous bust handling (tied positions), double-processing guard, retry prize credit (3x with backoff)
+- hand-for-hand: ✅ Bubble mode for MTTs, pause-all/sync/resume cycle
+- bounties: ✅ Fixed KO, Progressive KO (50/50 split), Mystery Bounty (weighted tiers), duplicate guard
+- finishTournament(): ✅ Atomic RUNNING→COMPLETING guard, winner prize, tournament rake settlement, union/club routing
+- late reg: ✅ Level-based close, prize recalculation for early eliminations
+- add-on: ✅ Level-based trigger and end, deferred during break
+
+RakeConfig.ts:
+- §2.9 Rake Config: ✅ 10% across all stakes, fixed dollar caps per level
+- §7.19 Player-count caps: ✅ HU 50%, 3-handed 67%, 4+ full (FIX 166)
+- BBJ qualifying hands: ✅ NLH AAAJJ, PLO4/PLO8 KKKK, PLO5 87654 SF, PLO6/Short Deck ineligible
+- BBJ detection: ✅ Full hand evaluation, hole card validation, min pot/player checks
+- BBJ rules: ✅ Min 10BB pot, 3+ dealt in (FIX 145), no double board, first runout only
+
+supabase.ts:
+- broadcastHandState(): ✅ Channel caching, Realtime broadcast
+- loadTable(): ✅ maybeSingle(), comprehensive field selection including all table settings
+- syncStacks(): ✅ Promise.allSettled for resilience
+- atomicCashout(): ✅ Stack → wallet credit → soft-delete → count update, fallback on error
+- logRakeCollection(): ✅ Union owner routing (FIX 127), maybeSingle safety
+- logBBJCollection(): ✅ Pivot-based allocation (FIX 140): Standard 50/25/25, Pivot 30/40/30
+- logInsuranceSettlement(): ✅ RPC with proper error handling
+- logHandHistory(): ✅ Full hand record persistence
+
+Engine Files:
+- StraddleEngine: ✅ §4.4 — UTG only (FIX 114), 2× BB, first-to-act adjustment
+- RunItTwiceEngine: ✅ §8.2 — Chooser decides runs (FIX 96), dual/triple boards, Math.trunc arithmetic
+- InsuranceEngine: ✅ §8.3 — 20% house margin (FIX 78), partial coverage, per-street recalc, ties=push (FIX 118)
+- AtomicStackService: ✅ Versioned optimistic locking, race detection, batch settlement
+- ChipRaceEngine: ✅ Fair lottery (weighted by fractions + crypto random), minimum 1 chip guarantee
+- TableBalancer: ✅ Gap-1 trigger, optimal moves (smallest stacks first), table break support
+- MixedGameEngine: ✅ §7.20 — HORSE preset (FIX 160), per-orbit rotation
+- RakebackEngine: ✅ Equal share method (FIX 144), volume-based tiers, Supabase persistence
+
+**FIX 212 — BBJ Pool Allocation Constant Mismatch**
+- **File:** `server/src/config/RakeConfig.ts`
+- **Lines:** 121-129
+- **What existed:** `BBJ_POOL_ALLOCATION` exported as `{ mainBBJ: 0.4, backUpBBJ: 0.3, promotional: 0.3 }` (40/30/30). This is returned to clients via `getFullRakeConfig()`, but the actual allocation logic in `logBBJCollection` uses FIX 140 pivot-based: Standard 50/25/25, Pivot 30/40/30.
+- **What changed:** Updated constant to `{ mainBBJ: 0.5, backUpBBJ: 0.25, promotional: 0.25 }` (50/25/25) matching the STANDARD allocation. Added comments documenting the pivot behavior.
+- **Why:** Clients display this constant to users. Showing 40/30/30 when the actual allocation is 50/25/25 misleads users about where their BBJ fees go.
+- **Verified:** YES — re-read file after edit
 
 ---
 

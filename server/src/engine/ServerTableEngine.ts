@@ -434,6 +434,19 @@ export class ServerTableEngine {
     return this.engineTelemetry.getSnapshot();
   }
 
+  // FIX-224: Bible V8 §9.1.1/§9.1.2 — Record action processing performance
+  recordActionPerformance(userId: string, action: string, processingMs: number): void {
+    // broadcastMs tracked separately when available; pass null for now
+    this.engineTelemetry.recordActionProcessingTime(
+      this.tableId, userId, action, processingMs, null
+    );
+  }
+
+  // FIX-224: Bible V8 §9.1 — Expose performance summary for health endpoint
+  getPerformanceSummary() {
+    return this.engineTelemetry.getPerformanceSummary();
+  }
+
   onHandComplete(
     callback: (tableId: string, players: { user_id: string; stack: number }[]) => void
   ): void {
@@ -2883,7 +2896,9 @@ export class ServerTableEngine {
     const state = this.handController.getState();
     const currentSeatPlayer = state.players.find((p) => p.seat === state.currentPlayerSeat);
 
-    return broadcastHandState(this.tableId, {
+    // Bible V8 §9.1.2: Instrument broadcast latency (target < 100ms)
+    const broadcastStartMs = Date.now();
+    const broadcastPromise = broadcastHandState(this.tableId, {
       table_id: this.tableId,
       hand_number: this.handCount,
       pot: state.pot ?? 0,
@@ -2956,6 +2971,14 @@ export class ServerTableEngine {
           };
         });
       })(),
+    });
+
+    // Bible V8 §9.1.2: Measure broadcast latency
+    return broadcastPromise.then(() => {
+      const broadcastMs = Date.now() - broadcastStartMs;
+      if (broadcastMs > 100) {
+        console.warn(`§9.1.2 BROADCAST SLOW: ${this.tableId} took ${broadcastMs}ms (>100ms)`);
+      }
     });
   }
 

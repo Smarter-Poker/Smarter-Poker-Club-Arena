@@ -60,6 +60,20 @@ interface HandTiming {
   timestamp: number;
 }
 
+// Bible V8 §9.1 Performance Thresholds
+const ACTION_PROCESSING_THRESHOLD_MS = 50;   // §9.1.1: < 50ms server-side
+const BROADCAST_LATENCY_THRESHOLD_MS = 100;  // §9.1.2: < 100ms to all clients
+
+interface ActionTiming {
+  tableId: string;
+  userId: string;
+  action: string;
+  processingMs: number;
+  broadcastMs: number | null; // null if not measured
+  timestamp: number;
+  exceededThreshold: boolean;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // ENGINE TELEMETRY CLASS
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -76,6 +90,10 @@ export class EngineTelemetry {
   // Global cache stats
   private cacheHits: number = 0;
   private cacheMisses: number = 0;
+  // Bible V8 §9.1 action-level performance tracking
+  private actionTimings: ActionTiming[] = [];
+  private actionThresholdViolations: number = 0;
+  private broadcastThresholdViolations: number = 0;
   // Periodic emit interval
   private emitInterval: ReturnType<typeof setInterval> | null = null;
   private onEvent?: (event: TelemetryEvent) => void;
@@ -140,6 +158,106 @@ export class EngineTelemetry {
   }
   recordCacheMiss(): void {
     this.cacheMisses++;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // BIBLE V8 §9.1 — Action Performance Instrumentation
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Record action processing time (Bible V8 §9.1.1: < 50ms).
+   * Called after every player action is processed.
+   */
+  recordActionProcessingTime(
+    tableId: string,
+    userId: string,
+    action: string,
+    processingMs: number,
+    broadcastMs: number | null = null
+  ): void {
+    const exceeded =
+      processingMs > ACTION_PROCESSING_THRESHOLD_MS ||
+      (broadcastMs !== null && broadcastMs > BROADCAST_LATENCY_THRESHOLD_MS);
+
+    if (exceeded) {
+      this.actionThresholdViolations++;
+      // Log warning for threshold violations
+      const parts = [`§9.1 PERF WARNING: ${action} on ${tableId}`];
+      if (processingMs > ACTION_PROCESSING_THRESHOLD_MS) {
+        parts.push(`processing=${processingMs}ms (>${ACTION_PROCESSING_THRESHOLD_MS}ms)`);
+      }
+      if (broadcastMs !== null && broadcastMs > BROADCAST_LATENCY_THRESHOLD_MS) {
+        parts.push(`broadcast=${broadcastMs}ms (>${BROADCAST_LATENCY_THRESHOLD_MS}ms)`);
+        this.broadcastThresholdViolations++;
+      }
+      console.warn(parts.join(' | '));
+    }
+
+    this.actionTimings.push({
+      tableId,
+      userId,
+      action,
+      processingMs,
+      broadcastMs,
+      timestamp: Date.now(),
+      exceededThreshold: exceeded,
+    });
+
+    // Keep last 500 action timings
+    if (this.actionTimings.length > 500) {
+      this.actionTimings.splice(0, this.actionTimings.length - 500);
+    }
+  }
+
+  /**
+   * Get §9.1 performance summary: avg processing time, avg broadcast time,
+   * threshold violation counts.
+   */
+  getPerformanceSummary(): {
+    avgProcessingMs: number;
+    avgBroadcastMs: number;
+    p95ProcessingMs: number;
+    p95BroadcastMs: number;
+    actionCount: number;
+    processingViolations: number;
+    broadcastViolations: number;
+  } {
+    const timings = this.actionTimings;
+    if (timings.length === 0) {
+      return {
+        avgProcessingMs: 0,
+        avgBroadcastMs: 0,
+        p95ProcessingMs: 0,
+        p95BroadcastMs: 0,
+        actionCount: 0,
+        processingViolations: this.actionThresholdViolations,
+        broadcastViolations: this.broadcastThresholdViolations,
+      };
+    }
+
+    const processingTimes = timings.map((t) => t.processingMs).sort((a, b) => a - b);
+    const broadcastTimes = timings
+      .filter((t) => t.broadcastMs !== null)
+      .map((t) => t.broadcastMs as number)
+      .sort((a, b) => a - b);
+
+    const p95Index = Math.floor(processingTimes.length * 0.95);
+    const bP95Index = Math.floor(broadcastTimes.length * 0.95);
+
+    return {
+      avgProcessingMs: Math.round(
+        processingTimes.reduce((s, v) => s + v, 0) / processingTimes.length
+      ),
+      avgBroadcastMs:
+        broadcastTimes.length > 0
+          ? Math.round(broadcastTimes.reduce((s, v) => s + v, 0) / broadcastTimes.length)
+          : 0,
+      p95ProcessingMs: processingTimes[p95Index] ?? 0,
+      p95BroadcastMs: broadcastTimes[bP95Index] ?? 0,
+      actionCount: timings.length,
+      processingViolations: this.actionThresholdViolations,
+      broadcastViolations: this.broadcastThresholdViolations,
+    };
   }
 
   /**
@@ -226,13 +344,21 @@ export class EngineTelemetry {
    */
   private emitSnapshot(): void {
     const snapshot = this.getSnapshot();
-    if (snapshot.global.activeTables > 0) {
+    const perf = this.getPerformanceSummary();
+    if (snapshot.global.activeTables > 0 || perf.actionCount > 0) {
       this.emitEvent({
         type: 'ENGINE_TELEMETRY',
         activeTables: snapshot.global.activeTables,
         totalHandsDealt: snapshot.global.totalHandsDealt,
         avgHandsPerHour: snapshot.global.avgHandsPerHour,
         cacheHitRatio: snapshot.global.cacheHitRatio,
+        // Bible V8 §9.1 Performance Metrics
+        avgActionProcessingMs: perf.avgProcessingMs,
+        p95ActionProcessingMs: perf.p95ProcessingMs,
+        avgBroadcastMs: perf.avgBroadcastMs,
+        p95BroadcastMs: perf.p95BroadcastMs,
+        actionProcessingViolations: perf.processingViolations,
+        broadcastViolations: perf.broadcastViolations,
       });
     }
   }
@@ -252,6 +378,9 @@ export class EngineTelemetry {
     this.timerActed.clear();
     this.cacheHits = 0;
     this.cacheMisses = 0;
+    this.actionTimings = [];
+    this.actionThresholdViolations = 0;
+    this.broadcastThresholdViolations = 0;
   }
 
   private emitEvent(event: TelemetryEvent): void {

@@ -12,15 +12,15 @@
 }
 
 .chip-animation.bet {
-    animation: chipMove 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    animation: chipMove calc(0.6s * var(--animation-speed, 1)) cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
 
 .chip-animation.win {
-    animation: chipMoveReverse 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    animation: chipMoveReverse calc(0.6s * var(--animation-speed, 1)) cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
 
 .chip-animation.push {
-    animation: chipPush 0.4s ease-out forwards;
+    animation: chipPush calc(0.4s * var(--animation-speed, 1)) ease-out forwards;
 }
 
 @keyframes chipMove {
@@ -71,7 +71,7 @@
 .animated-chip {
     width: 28px;
     height: 28px;
-    animation: chipFly 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    animation: chipFly calc(0.6s * var(--animation-speed, 1)) cubic-bezier(0.4, 0, 0.2, 1) forwards;
     animation-fill-mode: both;
 }
 
@@ -120,7 +120,7 @@
     font-weight: var(--fw-bold);
     color: var(--accent-gold);
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
-    animation: amountPop 0.4s ease-out 0.3s both;
+    animation: amountPop calc(0.4s * var(--animation-speed, 1)) ease-out calc(0.3s * var(--animation-speed, 1)) both;
 }
 
 @keyframes amountPop {
@@ -190,7 +190,7 @@
 
 /* Win animation for chip pile */
 .chip-pile.winning {
-    animation: winPulse 0.5s ease-out;
+    animation: winPulse calc(0.5s * var(--animation-speed, 1)) ease-out;
 }
 
 @keyframes winPulse {

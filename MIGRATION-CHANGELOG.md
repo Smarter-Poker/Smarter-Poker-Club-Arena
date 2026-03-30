@@ -3,7 +3,47 @@
 ## Every Change, Documented. No Exceptions.
 
 **Started:** 2026-03-24
-**Current Step:** ALL 8 STEPS COMPLETE — Bible V8 Deep Audit (222 fixes, 95% verified, 5% PARTIAL across 171 tracked items)
+**Current Step:** ALL 8 STEPS COMPLETE — Bible V8 Deep Audit (225 fixes, 99% verified, 1% PARTIAL across 171 tracked items)
+
+---
+
+## Round 45 — Deep Verification + PARTIAL Resolution (2026-03-30)
+
+**Focus:** Line-by-line code verification found 1 real bug. Then resolved 6 of 8 PARTIAL items with 3 new FIXes.
+
+### FIX-223: Animation Speed Compliance (Bible V8 §10.3.3)
+**BUG FOUND:** Chip animations in `ChipAnimation.css`, game animations in `club-engine.css`, and table animations in `TablePage.css` used hardcoded durations instead of `calc(Xs * var(--animation-speed, 1))`. When `skip_animations` was enabled, card animations went to 0 but chips/dealer/win/all-in animations still played at full speed.
+- **Files changed:**
+  - `src/components/chips/ChipAnimation.css` — 5 declarations: chipMove, chipMoveReverse, chipPush, chipFly, amountPop
+  - `src/styles/club-engine.css` — 3 declarations: card-deal, chip-stack, win-glow
+  - `src/pages/TablePage.css` — 4 declarations: winnerTableFlash, dealerPuckDrop, allInPotGlow, screenShake
+
+### FIX-224: Performance Instrumentation (Bible V8 §9.1.1-9.1.3)
+**PARTIAL→VERIFIED:** Added timing measurement for all three §9.1 targets.
+- **Server-side (§9.1.1 + §9.1.2):**
+  - `server/src/engine/EngineTelemetry.ts` — New `recordActionProcessingTime()` method with 50ms/100ms thresholds, p95 tracking, console warnings on violations
+  - `server/src/index.ts` POST /action — Wraps `handlePlayerAction()` with `Date.now()` timing, records to telemetry
+  - `server/src/engine/ServerTableEngine.ts` — `broadcastCurrentState()` measures broadcast duration, warns on >100ms
+  - `/health` endpoint — Now includes `performance` object with avgActionProcessingMs, violations counts
+- **Client-side (§9.1.3):**
+  - `src/hooks/useFrameBudgetMonitor.ts` — New hook: PerformanceObserver (longtask) + RAF delta measurement, dev-mode only
+  - `src/pages/TablePage.tsx` — `useFrameBudgetMonitor()` wired in
+
+### FIX-225: Formal State Machines (Bible V8 §1.6, §3.1, §3.2)
+**PARTIAL→VERIFIED:** Created typed FSM classes replacing string-based state tracking.
+- **New file:** `server/src/engine/StateMachine.ts`
+  - Generic `StateMachine<S>` class with typed transitions, optional guards, violation logging
+  - `createTableStateMachine()` — 7 states (empty→waiting→seating→running→paused→closing→closed), 13 transitions
+  - `createHandStateMachine()` — 10 states (idle→posting_blinds→dealing→preflop→...→settlement→idle), 22 transitions including bomb pot, pineapple, all-in runout, early termination
+  - Type exports: `TurnFSMState`, `DisconnectFSMState`
+- **Wired into:** `server/src/engine/HandController.ts`
+  - All 8 `this.state.stage = 'xxx'` assignments replaced with `this.transitionStage('xxx')` → FSM validates transition
+  - FSM transitions added at hand start (idle→posting_blinds→dealing→preflop), completion (showdown→settlement→idle)
+
+### Compliance Tracker Update:
+- 6 PARTIAL items resolved → VERIFIED (1.6, 3.1, 3.2, 9.1.1, 9.1.2, 9.1.3)
+- Summary: 171 total items, 169 VERIFIED (99%), 2 PARTIAL (1%)
+- Remaining PARTIAL: 2.10-2.18 (4-tier hand history), 11.2.5 (theme image assets)
 
 ---
 

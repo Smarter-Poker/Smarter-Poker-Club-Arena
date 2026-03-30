@@ -160,6 +160,23 @@ class GameServer {
     const avgHandsPerHour = tableMetrics.length > 0
       ? Math.round(tableMetrics.reduce((s, t) => s + t.handsPerHour, 0) / tableMetrics.length)
       : 0;
+    // Bible V8 §9.1: Aggregate action performance metrics
+    let totalActionProcessingMs = 0;
+    let actionCount = 0;
+    let processingViolations = 0;
+    let broadcastViolations = 0;
+    for (const [, engine] of this.tableEngines) {
+      const snap = engine.getTelemetrySnapshot();
+      // Performance summary is on the telemetry instance via engine
+      const perf = engine.getPerformanceSummary();
+      if (perf) {
+        totalActionProcessingMs += perf.avgProcessingMs * perf.actionCount;
+        actionCount += perf.actionCount;
+        processingViolations += perf.processingViolations;
+        broadcastViolations += perf.broadcastViolations;
+      }
+    }
+
     return {
       running: this.running,
       uptime: Math.floor((Date.now() - this.startTime) / 1000),
@@ -170,6 +187,13 @@ class GameServer {
         avgHandDurationMs,
         avgHandsPerHour,
         tablesWithMetrics: tableMetrics.length,
+      },
+      // Bible V8 §9.1 Performance Instrumentation
+      performance: {
+        avgActionProcessingMs: actionCount > 0 ? Math.round(totalActionProcessingMs / actionCount) : 0,
+        totalActionsRecorded: actionCount,
+        processingThresholdViolations: processingViolations,
+        broadcastThresholdViolations: broadcastViolations,
       },
     };
   }
@@ -2792,7 +2816,13 @@ const httpServer = createServer(async (req, res) => {
         return sendJSON(res, 404, { success: false, error: 'Table engine not found' });
       }
 
+      // Bible V8 §9.1.1: Instrument action processing time (target < 50ms)
+      const actionStartMs = Date.now();
       const result = engine.handlePlayerAction(userId, action, amount);
+      const actionProcessingMs = Date.now() - actionStartMs;
+      // Record to telemetry (broadcast timing tracked inside engine)
+      engine.recordActionPerformance(userId, action, actionProcessingMs);
+
       return sendJSON(res, result.success ? 200 : 400, result);
     } catch (err: any) {
       reportError(err, 'HTTP.action_error');

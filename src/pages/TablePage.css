@@ -107,7 +107,7 @@
 
 /* ─── Winner Celebration — golden flash on table ─── */
 .table-page--winner-flash .table-surface {
-  animation: winnerTableFlash 1.5s ease-out;
+  animation: winnerTableFlash calc(1.5s * var(--animation-speed, 1)) ease-out;
 }
 
 @keyframes winnerTableFlash {
@@ -698,7 +698,7 @@
   transition:
     transform 0.3s var(--ease-spring),
     box-shadow 0.3s ease;
-  animation: dealerPuckDrop 0.5s var(--ease-spring);
+  animation: dealerPuckDrop calc(0.5s * var(--animation-speed, 1)) var(--ease-spring);
 }
 
 @keyframes dealerPuckDrop {
@@ -1289,7 +1289,7 @@
 
 /* Pot display glows during all-in */
 .table-page--allin-mode .pot-display {
-  animation: allInPotGlow 1.5s ease-in-out infinite;
+  animation: allInPotGlow calc(1.5s * var(--animation-speed, 1)) ease-in-out infinite;
 }
 
 @keyframes allInPotGlow {
@@ -1323,7 +1323,7 @@
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .table-page--shake {
-  animation: screenShake 0.4s ease-out;
+  animation: screenShake calc(0.4s * var(--animation-speed, 1)) ease-out;
 }
 
 @keyframes screenShake {

@@ -171,6 +171,7 @@ import { StreakBadge } from '../components/table/StreakBadge';
 import { SpinItWheel } from '../components/table/SpinItWheel';
 
 import { useIsMounted } from '../hooks/useIsMounted';
+import { useFrameBudgetMonitor } from '../hooks/useFrameBudgetMonitor';
 // Bible V8 §11: 4-Corner Table HUD Components
 import { TableHUD } from '../components/table/TableHUD';
 import { MiniStatsCard } from '../components/table/MiniStatsCard';
@@ -1468,6 +1469,9 @@ export default function TablePage({
     tableState.isTournament,
     undefined // tournamentType resolved internally from gameType
   );
+
+  // Bible V8 §9.1.3: Frame budget monitoring (dev mode only — warns on >16ms frames)
+  useFrameBudgetMonitor();
 
   // Bible V8 §11.1 + §10.3: skip_animations → override animation speed to instant (0)
   useEffect(() => {

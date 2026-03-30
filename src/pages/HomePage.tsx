@@ -310,32 +310,16 @@ function HomePageInner() {
                   ...m.club,
                   is_owner: m.role === 'owner',
                   member_count: m.club?.member_count || 0,
-                  entity_type: 'club' as const, // Default — resolved below via unions table
+                  // Detect union entities via union_id FK + name heuristic.
+                  // A club row with union_id set AND "union" in the name is the union's
+                  // display stub. Regular member clubs also have union_id but don't
+                  // have "union" in their name.
+                  entity_type:
+                    (m.club as any)?.union_id && /union/i.test(m.club?.name || '')
+                      ? 'union'
+                      : 'club',
                 }) as UserClub
             ) || [];
-
-          // Resolve union entities from DB (not name regex) — a club is a union
-          // if its ID also exists as a row in the `unions` table
-          if (clubs.length > 0) {
-            try {
-              const clubIds = clubs.map((c) => c.id);
-              const { data: unionMatches } = await supabase
-                .from('unions')
-                .select('id')
-                .in('id', clubIds);
-              if (unionMatches && unionMatches.length > 0) {
-                const unionIdSet = new Set(unionMatches.map((u: any) => u.id));
-                for (const c of clubs) {
-                  if (unionIdSet.has(c.id)) c.entity_type = 'union';
-                }
-              }
-            } catch {
-              // Fallback: use name regex if unions table query fails
-              for (const c of clubs) {
-                if (/union/i.test(c.name || '')) c.entity_type = 'union';
-              }
-            }
-          }
           if (getIsMounted && !getIsMounted()) return;
           setUserClubs(clubs);
           // Enhancement #9: Update SWR cache
@@ -1196,23 +1180,36 @@ function HomePageInner() {
         // ── Union stats overlay: fetch from `unions` table for union-type clubs ──
         // The `clubs` table row for unions has stale/minimal data (level=1, member_count=1).
         // The real aggregated stats (level=26, total_players=622) live in the `unions` table.
+        // IMPORTANT: clubs.id ≠ unions.id — we use clubs.union_id (FK) to bridge.
         const unionTypeClubs = displayClubs.filter((c) => c.entity_type === 'union');
         if (unionTypeClubs.length > 0 && isMounted) {
           try {
-            const unionIds = unionTypeClubs.map((c) => c.id);
+            // Build mapping: union UUID (from clubs.union_id FK) → club.id (for statsMap key)
+            const unionIdToClubId: Record<string, string> = {};
+            const realUnionIds: string[] = [];
+            for (const c of unionTypeClubs) {
+              const uid = (c as any).union_id as string | undefined;
+              if (uid) {
+                unionIdToClubId[uid] = c.id;
+                realUnionIds.push(uid);
+              }
+            }
+
+            if (realUnionIds.length === 0) throw new Error('No union_id FK found on union clubs');
+
             const { data: unionRows } = await supabase
               .from('unions')
               .select(
                 'id, level, total_players, member_count, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
               )
-              .in('id', unionIds);
+              .in('id', realUnionIds);
 
             if (unionRows && isMounted) {
               // Fetch member clubs for each union to aggregate active players
               const { data: unionClubRows } = await supabase
                 .from('union_clubs')
                 .select('union_id, club_id')
-                .in('union_id', unionIds);
+                .in('union_id', realUnionIds);
 
               // Aggregate active players from all member clubs per union
               const unionActiveMap: Record<string, number> = {};
@@ -1242,11 +1239,14 @@ function HomePageInner() {
                 // Sum active counts per union from its member clubs
                 for (const row of unionClubRows) {
                   const uid = (row as any).union_id;
-                  unionActiveMap[uid] = (unionActiveMap[uid] || 0) + (clubActiveMap[(row as any).club_id] || 0);
+                  unionActiveMap[uid] =
+                    (unionActiveMap[uid] || 0) + (clubActiveMap[(row as any).club_id] || 0);
                 }
               }
 
               for (const u of unionRows) {
+                const clubId = unionIdToClubId[u.id]; // Map back to clubs.id for statsMap
+                if (!clubId) continue;
                 const totalMembers = u.total_players || u.member_count || 0;
                 const levelInfo = getClubLevel({
                   level: u.level || 1,
@@ -1259,7 +1259,7 @@ function HomePageInner() {
                 });
                 // Use aggregated active count from member clubs, clamped to totalMembers
                 const unionActive = unionActiveMap[u.id] || 0;
-                statsMap[u.id] = {
+                statsMap[clubId] = {
                   totalMembers,
                   clubLevel: levelInfo.level,
                   activePlayers: Math.min(unionActive, totalMembers),

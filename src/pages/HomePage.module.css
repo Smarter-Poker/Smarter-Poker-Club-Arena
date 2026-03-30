@@ -1026,12 +1026,18 @@
 
 .bottomRow {
   display: flex;
-  gap: 12px;
+  gap: 10px;
   z-index: 10;
-  padding: 16px 20px 20px 20px;
+  padding: 16px 6px 20px 6px;
   margin-top: 0;
   overflow: visible;
-  width: 100%;
+  /* Use max-width + auto margin so the row doesn't stretch edge-to-edge
+     inside mainContent, preventing the first/last tile frames from
+     being clipped by mainContent's overflow-x: hidden */
+  width: calc(100% - 16px);
+  max-width: 900px;
+  margin-left: auto;
+  margin-right: auto;
   justify-content: center;
   flex-wrap: nowrap;
   box-sizing: border-box;
@@ -1863,8 +1869,9 @@
   }
 
   .bottomRow {
-    gap: 6px;
-    padding: 10px 12px 14px;
+    gap: 4px;
+    padding: 10px 2px 14px;
+    width: calc(100% - 8px);
   }
 }
 

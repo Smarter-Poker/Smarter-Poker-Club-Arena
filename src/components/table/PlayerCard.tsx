@@ -219,10 +219,10 @@ export function HoleCards({
         />
       ))}
 
-      {/* PLO Additional Cards (3-4) */}
+      {/* FIX 195: PLO Additional Cards (3-6) — supports PLO4, PLO5, PLO6 per Bible V8 §4.5 */}
       {cards.length > 2 && (
         <div className="hole-cards__extra">
-          {cards.slice(2, 4).map((card, index) => (
+          {cards.slice(2).map((card, index) => (
             <PlayerCard
               key={index + 2}
               card={card}

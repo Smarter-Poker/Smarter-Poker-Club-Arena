@@ -200,8 +200,8 @@ export default function ClubHomePage() {
       const resolvedId = await resolveClubUUID(clubId);
       if (!isMounted) return;
 
-      // Check if this club is in a union — if so, listen on union_id for tables
-      let tableFilter = `club_id=eq.${resolvedId}`;
+      // Check if this club is in a union — if so, listen on union_id in addition to club_id
+      let unionId: string | null = null;
       try {
         const { data: ucCheck } = await supabase
           .from('union_clubs')
@@ -210,55 +210,76 @@ export default function ClubHomePage() {
           .limit(1)
           .maybeSingle();
         if (ucCheck?.union_id) {
-          tableFilter = `union_id=eq.${ucCheck.union_id}`;
+          unionId = ucCheck.union_id;
         }
       } catch {
-        /* standalone club — use club_id filter */
+        /* standalone club — no union_id */
       }
 
       const channelKey = `club-tables-${clubId}`;
-      const channel = masterBus.getOrCreateChannel(channelKey);
+      let channel = masterBus.getOrCreateChannel(channelKey);
+
+      const handleTableChange = (payload: any) => {
+        if (!isMounted) return;
+        if (payload.eventType === 'UPDATE' && payload.new) {
+          setTables((prev) =>
+            prev.map((t) => (t.id === payload.new.id ? { ...t, ...payload.new } : t))
+          );
+        } else if (payload.eventType === 'INSERT' && payload.new) {
+          setTables((prev) => {
+            if (prev.some((t) => t.id === payload.new.id)) return prev;
+            return [payload.new as any, ...prev];
+          });
+        } else if (payload.eventType === 'DELETE' && payload.old) {
+          setTables((prev) => prev.filter((t) => t.id !== (payload.old as any).id));
+        }
+      };
+
+      const handleTournamentChange = (payload: any) => {
+        if (!isMounted) return;
+        if (payload.eventType === 'UPDATE' && payload.new) {
+          setTournaments((prev) =>
+            prev.map((t) => (t.id === payload.new.id ? { ...t, ...payload.new } : t))
+          );
+        } else if (payload.eventType === 'INSERT' && payload.new) {
+          setTournaments((prev) => {
+            if (prev.some((t) => t.id === payload.new.id)) return prev;
+            return [payload.new as any, ...prev];
+          });
+        } else if (payload.eventType === 'DELETE' && payload.old) {
+          setTournaments((prev) => prev.filter((t) => t.id !== (payload.old as any).id));
+        }
+      };
+
+      // 1. Subscribe to Club Tables
+      channel = channel.on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'tables', filter: `club_id=eq.${resolvedId}` },
+        handleTableChange
+      );
+
+      // 2. Subscribe to Club Tournaments
+      channel = channel.on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'tournaments', filter: `club_id=eq.${resolvedId}` },
+        handleTournamentChange
+      );
+
+      // 3. Dual-Channel: Subscribe to Union Tables and Tournaments if applicable
+      if (unionId) {
+        channel = channel.on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'tables', filter: `union_id=eq.${unionId}` },
+          handleTableChange
+        );
+        channel = channel.on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'tournaments', filter: `union_id=eq.${unionId}` },
+          handleTournamentChange
+        );
+      }
+
       channel
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'tables',
-            filter: tableFilter,
-          },
-          (payload) => {
-            if (payload.eventType === 'UPDATE' && payload.new) {
-              setTables((prev) =>
-                prev.map((t) => (t.id === payload.new.id ? { ...t, ...payload.new } : t))
-              );
-            } else if (payload.eventType === 'INSERT' && payload.new) {
-              setTables((prev) => [payload.new as any, ...prev]);
-            } else if (payload.eventType === 'DELETE' && payload.old) {
-              setTables((prev) => prev.filter((t) => t.id !== (payload.old as any).id));
-            }
-          }
-        )
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'tournaments',
-            filter: `club_id=eq.${resolvedId}`,
-          },
-          (payload) => {
-            if (payload.eventType === 'UPDATE' && payload.new) {
-              setTournaments((prev) =>
-                prev.map((t) => (t.id === payload.new.id ? { ...t, ...payload.new } : t))
-              );
-            } else if (payload.eventType === 'INSERT' && payload.new) {
-              setTournaments((prev) => [payload.new as any, ...prev]);
-            } else if (payload.eventType === 'DELETE' && payload.old) {
-              setTournaments((prev) => prev.filter((t) => t.id !== (payload.old as any).id));
-            }
-          }
-        )
         .subscribe((status: string, err?: Error) => {
           setWsConnected(status === 'SUBSCRIBED');
           if (status === 'CHANNEL_ERROR') {
@@ -316,6 +337,7 @@ export default function ClubHomePage() {
       masterBus.subscribeDebounced('TABLE_SEATED', reload, 300),
       masterBus.subscribeDebounced('TABLE_LEFT', reload, 300),
       masterBus.subscribeDebounced('BALANCE_UPDATED', reload, 300),
+      masterBus.subscribeDebounced('DIAMOND_BALANCE_CHANGED', reload, 300),
       masterBus.subscribeDebounced('ANNOUNCEMENT_CHANGED', reload, 300),
       // Phase 11: Only reload for OUR club's updates (not every club in the platform)
       masterBus.subscribeDebounced(

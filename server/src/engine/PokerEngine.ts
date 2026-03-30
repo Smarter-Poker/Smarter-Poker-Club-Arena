@@ -601,7 +601,9 @@ export function determineWinners(
 
     const qualifyingLowPlayers = eligible.filter((ph) => ph.lowHand !== null);
     if (isHiLo && qualifyingLowPlayers.length > 0) {
-      const potCents = Math.trunc(pot.amount * 100);
+      // FIX 179: Use Math.round to avoid IEEE 754 floating-point truncation errors
+      // e.g. Math.trunc(0.51 * 100) = 50 (wrong), Math.round(0.51 * 100) = 51 (correct)
+      const potCents = Math.round(pot.amount * 100);
       const loCents = Math.trunc(potCents / 2);
       loPotAmount = loCents / 100;
       hiPotAmount = (potCents - loCents) / 100;
@@ -646,7 +648,8 @@ function distributePot(
   potIndex: number = 0,
   dealerSeat: number = 0
 ): void {
-  const totalCents = Math.trunc(amount * 100);
+  // FIX 179: Math.round prevents IEEE 754 truncation (e.g. 0.51*100 = 50.999... → 51)
+  const totalCents = Math.round(amount * 100);
   const shareCents = Math.trunc(totalCents / roundWinners.length);
   const remainderCents = totalCents % roundWinners.length;
 

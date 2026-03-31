@@ -11,10 +11,15 @@ coverage
 # Supabase
 supabase/.temp
 
-# Environment
+# Environment — NEVER track any .env file with real secrets
 .env
+.env.*
+!.env.example
 .env.local
 .env.*.local
+.env.check
+.env.vercel
+.env.prod.check
 
 # IDE
 .idea
@@ -24,6 +29,3 @@ supabase/.temp
 .DS_Store
 # Generated PioSolver trees (regeneratable)
 scripts/trees/
-.env*.local
-.env.prod.check
-.env.vercel

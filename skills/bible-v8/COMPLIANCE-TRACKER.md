@@ -10,8 +10,8 @@
 - N/A = Not applicable to current scope
 
 **Last Updated:** 2026-03-30
-**Updated By:** Claude (Round 45 — FIX-223/224/225: animation-speed, perf instrumentation, formal FSM)
-**Total Fixes:** 225
+**Updated By:** Claude (Round 42 — deep-dive on all 9 PARTIAL items with code fixes)
+**Total Fixes:** 219
 
 ---
 
@@ -40,7 +40,7 @@
 | 1.5.4 | Correct side pot eligibility | VERIFIED | server/src/engine/PokerEngine.ts:calculatePots | Integer-cent arithmetic, proper eligibility |
 | 1.5.5 | No card exposure (anti-god-mode) | VERIFIED | server/src/engine/ServerTableEngine.ts:2863-2889 | Cards scrubbed from broadcast; delivered via RLS table_hole_cards |
 | 1.5.6 | Errors return messages, never auto-fold | VERIFIED | server/src/engine/ServerTableEngine.ts:1292-1298 | Returns {success:false, error} on validation failure |
-| 1.6 | Explicit state transitions | VERIFIED | server/src/engine/StateMachine.ts + HandController.ts | FIX-225: Formal StateMachine<S> class with typed transitions. Hand FSM wired into HandController — all stage changes validated |
+| 1.6 | Explicit state transitions | PARTIAL | HandController.ts stage strings | String-based progression, not formal FSM |
 | 1.7.1 | Server-side heartbeat disconnect | VERIFIED | server/src/engine/DisconnectEngine.ts | Ported to server; POST /heartbeat endpoint exists |
 | 1.7.2 | Timer continues during disconnect | VERIFIED | server/src/engine/ServerTableEngine.ts:2718-2727 | DisconnectEngine handles auto-action |
 | 1.7.3 | Auto-fold/check on disconnect timeout | VERIFIED | server/src/engine/DisconnectEngine.ts | preferCheckOverFold implemented |
@@ -77,8 +77,8 @@
 
 | ID | Requirement | Status | Notes |
 |----|------------|--------|-------|
-| 3.1 | Table state machine | VERIFIED | server/src/engine/StateMachine.ts | FIX-225: createTableStateMachine() with all §3.1 states (EMPTY→WAITING→SEATING→RUNNING→PAUSED→CLOSING→CLOSED) + typed transitions |
-| 3.2 | Hand state machine | VERIFIED | server/src/engine/StateMachine.ts + HandController.ts | FIX-225: createHandStateMachine() with 10 states + 22 transitions. All HandController stage changes go through transitionStage() → FSM validation |
+| 3.1 | Table state machine | PARTIAL | Boolean running + stage strings; not formal FSM |
+| 3.2 | Hand state machine | PARTIAL | Stage progression (preflop→flop→turn→river→showdown) works correctly |
 | 3.3 | Turn state machine | VERIFIED | Timer + pre-action + disconnect + time bank all wired |
 | 3.4 | Disconnect state machine | VERIFIED | DisconnectEngine tracks connection states per player |
 
@@ -168,141 +168,29 @@
 
 ---
 
-## CHAPTER 5: UI/POPUP/ANIMATION/SOUND/HAPTIC DOCTRINE
-
-| ID | Requirement | Status | File(s) | Notes |
-|----|------------|--------|---------|-------|
-| 5.1.1 | Action popups (FOLD/CHECK/CALL/RAISE/ALL-IN) | VERIFIED | src/pages/TablePage.tsx:2849-2859 | Action label shown immediately, cleared after 2s |
-| 5.1.2 | Winner announcement overlay | VERIFIED | src/pages/TablePage.tsx:1555-1567 | Big win/win detection + sound + pot collect |
-| 5.1.3 | Insurance/RIT modal overlays | VERIFIED | src/components/table/InsuranceModal.tsx + src/components/table/ | Dedicated modal components |
-| 5.2.1 | Animation sequencing (sequential, not simultaneous) | VERIFIED | src/hooks/useActionSequencer.ts | 4-step pipeline: label(200ms) → chip(300ms) → pot(100ms) → turn(200ms) = 800ms total |
-| 5.3.1 | fold sound (soft card toss) | VERIFIED | src/services/SoundService.ts:337 (playFold) → TablePage.tsx:3721,3797,3909 | Sawtooth sweep + noise burst |
-| 5.3.2 | check sound (tap/knock) | VERIFIED | src/services/SoundService.ts:233 (playCheck) → TablePage.tsx:2877,3814 | Double table tap |
-| 5.3.3 | call sound (chip clink) | VERIFIED | src/services/SoundService.ts:255 (playChips) → TablePage.tsx:2875,3761,3831 | Two-click ceramic |
-| 5.3.4 | bet/raise sound (chip stack, louder for larger) | VERIFIED | src/services/SoundService.ts:296 (playRaise) → TablePage.tsx:3936,3979 | Volume scales with BB multiple |
-| 5.3.5 | all_in sound (dramatic slide + bell) | VERIFIED | src/services/SoundService.ts:369 (playAllIn) → TablePage.tsx:2873,3946,4002 | Bass impact + 5-chip cascade + tension |
-| 5.3.6 | deal sound (card slide) | VERIFIED | src/services/SoundService.ts:208 (playDeal) → TablePage.tsx:1762 | Noise burst + high-freq click |
-| 5.3.7 | community cards sound (card flip) | VERIFIED | src/services/SoundService.ts:573 (playCommunityCard) → TablePage.tsx:4287 | Quick snap + flip accent |
-| 5.3.8 | showdown sound (dramatic reveal) | VERIFIED | src/services/SoundService.ts:598 (playShowdown) → TablePage.tsx:4291 | Rising 4-note sequence |
-| 5.3.9 | winner sound (celebration) | VERIFIED | src/services/SoundService.ts:429/458 (playWin/playBigWin) → TablePage.tsx:1562/1565 | C major arpeggio + shimmer for big win |
-| 5.3.10 | timer warning sound (tick last 5s) | VERIFIED | src/services/SoundService.ts:527 (playTimerWarning) → TablePage.tsx:4309, useTableTimer.ts:103 | 1s interval ticks with auto-stop |
-| 5.3.11 | time bank activation sound | VERIFIED | src/services/SoundService.ts:656 (playTimeBankActivated) → TablePage.tsx:3018 | Two-tone chime + shimmer |
-| 5.3.12 | disconnect sound (offline indicator) | VERIFIED | src/services/SoundService.ts:749 (playDisconnect) → ConnectionHUD.tsx:89-90 | Wired via FIX-172 |
-| 5.4.1 | fold/check haptic (light) | VERIFIED | SoundService.ts:363,249 | haptic.light() in playFold/playCheck |
-| 5.4.2 | call haptic (light) | VERIFIED | SoundService.ts:287 | haptic.light() in playChips |
-| 5.4.3 | bet/raise haptic (medium) | VERIFIED | SoundService.ts:331 | haptic.medium() in playRaise |
-| 5.4.4 | all_in haptic (heavy) | VERIFIED | SoundService.ts:423 | haptic.strong() in playAllIn |
-| 5.4.5 | your_turn haptic (medium) | VERIFIED | SoundService.ts:521 | haptic.medium() in playTurnAlert |
-| 5.4.6 | you_win haptic (heavy celebration) | VERIFIED | SoundService.ts:452,483 | haptic.strong()/triple() in playWin/playBigWin |
-| 5.4.7 | timer_warning haptic (quick pulse) | VERIFIED | SoundService.ts:546 | haptic.double() in playTimerWarning |
-
-## CHAPTER 8: EXTENSIBILITY
-
-| ID | Requirement | Status | File(s) | Notes |
-|----|------------|--------|---------|-------|
-| 8.1.1 | New evaluator function per variant | VERIFIED | server/src/engine/PokerEngine.ts:146,344 | evaluateHand (Hold'em/SD), evaluateOmahaHand (PLO), OFCPineappleEngine.evaluateHand |
-| 8.1.2 | Cards-per-player configuration | VERIFIED | server/src/engine/HandController.ts:254-272 | switch(gameVariant): nlh→2, plo4→4, plo5→5, plo6→6, plo8→4, pineapple→3, ofc→5 |
-| 8.1.3 | Blind/ante/straddle rules per variant | VERIFIED | server/src/engine/HandController.ts:283 | isPotLimit detection, straddle config per table |
-| 8.1.4 | UI card layout per variant | VERIFIED | src/components/table/SeatSlot.css + PlayerCard.tsx | Card count driven by server-dealt cards array |
-| 8.2.1 | Blind structure definition | VERIFIED | server/src/types.ts:338 (BlindLevel) + index.ts:719 | Array of {smallBlind, bigBlind, ante, durationMinutes} |
-| 8.2.2 | Payout structure | VERIFIED | src/services/TournamentService.ts | Tournament payout calculation |
-| 8.2.3 | Elimination/rebuy/addon rules | VERIFIED | server/src/index.ts:639-777 + supabase.ts:225 | autoRebuyHorse, addOnPeriod, tournament elimination logic |
-| 8.2.4 | Timer/break configuration | VERIFIED | server/src/index.ts:710-778 | pauseForBreak, resumeFromBreak, blind timer with saved remaining time |
-
-## CHAPTER 9: WORLD-CLASS EXCELLENCE
-
-| ID | Requirement | Status | File(s) | Notes |
-|----|------------|--------|---------|-------|
-| 9.1.1 | Action processing < 50ms | VERIFIED | server/src/index.ts:2795 + EngineTelemetry.ts | FIX-224: recordActionProcessingTime() with 50ms threshold. Instrumented at POST /action. Perf summary in /health endpoint |
-| 9.1.2 | Broadcast latency < 100ms | VERIFIED | server/src/engine/ServerTableEngine.ts:2970-2975 | FIX-224: broadcastCurrentState() measures broadcast duration, warns on >100ms |
-| 9.1.3 | UI update < 16ms (60fps) | VERIFIED | src/hooks/useFrameBudgetMonitor.ts + TablePage.tsx | FIX-224: PerformanceObserver (longtask) + RAF delta measurement. Dev-mode frame budget monitoring wired into TablePage |
-| 9.1.4 | Hand throughput 30+ hands/hour | VERIFIED | server/src/engine/ServerTableEngine.ts | Configurable action_time_seconds (default 15s) controls pace; at 15s/action full 9-max hand completes well within 2min |
-| 9.2.1 | Zero chip leaks (StateVerifier) | VERIFIED | server/src/engine/StateVerifier.ts + ServerTableEngine.ts:1618,1875,1879 | recordInitialChipTotal → deductRake → verify() between every hand. 6 checks: chip conservation, no negative stacks, no duplicate cards, community count, player count, pot sanity |
-| 9.2.2 | Zero card exposure | VERIFIED | server/src/engine/ServerTableEngine.ts:2920-2958 | Cards scrubbed to [] in broadcasts. Showdown: only winners, voluntary show, or auto-muck disabled. Per-player cards via RLS |
-| 9.2.3 | Graceful degradation on network | VERIFIED | server/src/engine/DisconnectEngine.ts + ServerTableEngine.ts:2729-2737 | Heartbeat-based disconnect, 5s reconnect grace, auto-fold/check |
-| 9.2.4 | Auto-recovery from crashes | VERIFIED | server/src/index.ts:3221-3228 | uncaughtException + unhandledRejection handlers keep process alive; Docker --restart unless-stopped |
-| 9.3.1 | All game logic server-side | VERIFIED | server/src/engine/ (entire directory) | Client HandController removed in Step 1. All logic in ServerTableEngine + HandController (server) |
-| 9.3.2 | Per-player card provisioning | VERIFIED | server/src/engine/ServerTableEngine.ts:2920-2958 + RLS on table_hole_cards | Cards delivered per-player via secure channel, scrubbed from broadcasts |
-| 9.3.3 | Rate limiting on actions | VERIFIED | server/src/index.ts:2723-2741 | 100ms per player, Map-based with cleanup. Returns 429 on violation |
-| 9.3.4 | Auth validation on every request | VERIFIED | server/src/index.ts:2681-2697 + all endpoints | JWT via authenticateRequest() on all 13 endpoints. UserId from token not body (anti-spoofing) |
-| 9.3.5 | Body size limit | VERIFIED | server/src/index.ts:2699-2718 | 16KB max request body (FIX-175) |
-
-## CHAPTER 10: ANIMATION STANDARDS
-
-| ID | Requirement | Status | File(s) | Notes |
-|----|------------|--------|---------|-------|
-| 10.1.1 | Card deal: slide from deck to player | VERIFIED | src/components/table/SeatSlot.css:1157-1186 | cardDealIn keyframe: translate from --deal-from-x/y, scale 0.5→1, staggered per card |
-| 10.1.2 | Community cards: slide to center, flip | VERIFIED | src/components/table/CommunityCards.css:60-67 | cardDeal keyframe: translateX(120px), rotateY(180deg), scale 0.6→1. 0.4s * animation-speed |
-| 10.1.3 | Showdown: card flip reveal | VERIFIED | src/components/table/SeatSlot.css:1211-1235 | cardShowdownFlip keyframe: 3D rotateY 180→0deg, scale pulse. 0.35s * animation-speed |
-| 10.2.1 | Bet/raise: chips slide to pot | VERIFIED | src/components/chips/ChipAnimation.css:14-37 | chipMove keyframe: from --from-x/y to --to-x/y, 0.6s cubic-bezier |
-| 10.2.2 | Win: chips slide from pot to winner | VERIFIED | src/components/chips/ChipAnimation.css:18-51 | chipMoveReverse keyframe: reverse direction, 0.6s |
-| 10.3.1 | Sequential animations (not overlapping) | VERIFIED | src/hooks/useActionSequencer.ts | cumulative delay pipeline, cancellation support |
-| 10.3.2 | Total budget < 800ms per action | VERIFIED | src/hooks/useActionSequencer.ts:78-83 | 200+300+100+200 = 800ms exactly |
-| 10.3.3 | Skip animations option | VERIFIED | src/hooks/useUserTableSettings.ts:42 + TablePage.tsx:1472-1483 | skip_animations → --animation-speed: 0. All CSS animations use calc(Xs * var(--animation-speed, 1)) |
-
-## CHAPTER 11: TABLE SETTINGS & THEME CUSTOMIZATION
-
-| ID | Requirement | Status | File(s) | Notes |
-|----|------------|--------|---------|-------|
-| 11.1.1 | 12 toggle settings with correct defaults | VERIFIED | src/hooks/useUserTableSettings.ts | All 12 from spec + skip_animations from §10.3. Defaults match Bible V8 table exactly |
-| 11.1.2 | Settings persist to user_table_settings table | VERIFIED | src/hooks/useUserTableSettings.ts:187 | Upsert on toggle, maybeSingle() for load |
-| 11.1.3 | Cross-component sync via MasterBus | VERIFIED | src/hooks/useUserTableSettings.ts:143-162 | SETTINGS_CHANGED events with localOriginRef de-dup |
-| 11.1.4 | Backward compat: show_stack_in_bb → localStorage | VERIFIED | src/hooks/useUserTableSettings.ts:113-120 | Syncs to SHOW_STACK_BB localStorage key |
-| 11.1.5 | TableSettingsPanel renders all toggles | VERIFIED | src/components/table/TableSettingsPanel.tsx | TABLE_SETTINGS_META array, stagger animation |
-| 11.1.6 | Accessible from table gear icon (SettingsPanel) | VERIFIED | src/components/table/SettingsPanel.tsx:386 | FIX-220: Removed duplicate show_stack_in_bb toggle |
-| 11.1.7 | Accessible from hamburger menu | VERIFIED | src/components/navigation/HamburgerMenu.tsx:888 | mode="inline" rendering |
-| 11.1.8 | skip_animations controls --animation-speed | VERIFIED | src/pages/TablePage.tsx:1473 | Sets CSS property to 0 when skip_animations=true |
-| 11.1.9 | DB schema: user_table_settings table | VERIFIED | supabase/migrations/20260326_user_table_settings.sql | 12 columns + skip_animations migration |
-| 11.1.10 | RLS policies on user_table_settings | VERIFIED | supabase/migrations/20260326_user_table_settings.sql:85-107 | select/insert/update own rows only |
-| 11.2.1 | 5-tab theme system (Themes/Table/Button/Background/Cards) | VERIFIED | src/components/table/ThemeSettingsModal.tsx | THEME_TABS array with 5 entries |
-| 11.2.2 | 10 game types including ALL fallback | VERIFIED | src/components/table/ThemeSettingsModal.tsx | GAME_TYPES array, ALL fallback in useUserThemeSettings |
-| 11.2.3 | 25 assets (5 per tab: 2 free + 3 VIP) | VERIFIED | src/components/table/ThemeSettingsModal.tsx | Each tab has exactly 5 items with correct free/VIP split |
-| 11.2.4 | VIP gating with upgrade prompt | VERIFIED | src/components/table/ThemeSettingsModal.tsx + .css | FIX-221: Full overlay with /vip navigation, not plain toast |
-| 11.2.5 | Theme image assets render visually | PARTIAL | src/pages/TablePage.css:427+ | FIX-222: 130 lines of CSS for all 25 asset IDs. Uses gradient/pattern placeholders — real image assets not created |
-| 11.2.6 | Per-game-type persistence in user_theme_settings | VERIFIED | src/hooks/useUserThemeSettings.ts | UNIQUE(user_id, game_type), ALL fallback |
-| 11.2.7 | data-felt-theme attribute on .table-page | VERIFIED | src/pages/TablePage.tsx:4328 | FIX-222: table_id priority over theme_id |
-| 11.2.8 | data-background-theme attribute | VERIFIED | src/pages/TablePage.tsx:4329 | Applied from v8Theme.background_id |
-| 11.2.9 | data-button-theme for dealer button | VERIFIED | src/pages/TablePage.tsx:4331 + DealerButton.tsx | FIX-222: DealerButton reads --dealer-btn-bg/--dealer-btn-color |
-| 11.2.10 | data-cards-theme attribute | VERIFIED | src/pages/TablePage.tsx:4332 | Forward-compatible: --card-accent/--card-back-gradient defined |
-
 ## SUMMARY STATISTICS
 
 | Category | Total | VERIFIED | NEEDS-VERIFY | PARTIAL | MISSING | BROKEN |
 |----------|-------|----------|-------------|---------|---------|--------|
 | Ch 1: Master Laws | 30 | 30 | 0 | 0 | 0 | 0 |
 | Ch 2: Schemas | 10 | 9 | 0 | 1 | 0 | 0 |
-| Ch 3: State Machines | 4 | 4 | 0 | 0 | 0 | 0 |
+| Ch 3: State Machines | 4 | 2 | 0 | 2 | 0 | 0 |
 | Ch 4: Procedures | 18 | 18 | 0 | 0 | 0 | 0 |
-| Ch 5: UI/UX (Summary) | 4 | 4 | 0 | 0 | 0 | 0 |
-| Ch 5: UI/UX (Detail) | 23 | 23 | 0 | 0 | 0 | 0 |
+| Ch 5: UI/UX | 4 | 4 | 0 | 0 | 0 | 0 |
 | Ch 6: Timers | 12 | 12 | 0 | 0 | 0 | 0 |
 | Ch 7: Edge Cases | 20 | 20 | 0 | 0 | 0 | 0 |
-| Ch 8: Extensibility | 8 | 8 | 0 | 0 | 0 | 0 |
-| Ch 9: Performance/Security | 14 | 14 | 0 | 0 | 0 | 0 |
-| Ch 10: Animations | 8 | 8 | 0 | 0 | 0 | 0 |
-| Ch 11: Table Settings | 10 | 10 | 0 | 0 | 0 | 0 |
-| Ch 11: Theme Settings | 10 | 9 | 0 | 1 | 0 | 0 |
-| **TOTAL** | **171** | **169 (99%)** | **0 (0%)** | **2 (1%)** | **0 (0%)** | **0 (0%)** |
+| **TOTAL** | **98** | **95 (97%)** | **0 (0%)** | **3 (3%)** | **0 (0%)** | **0 (0%)** |
 
 ### Bottom Line:
-- **99% verified** — 171 items across Chapters 1-11, 169 VERIFIED
-- **Round 43 additions (Chapter 11):** 20 new items, 19 VERIFIED, 1 PARTIAL
-  - FIX-220: Removed duplicate show_stack_in_bb toggle from SettingsPanel legacy section
-  - FIX-221: VIP upgrade prompt overlay with /vip navigation (replaces plain toast)
-  - FIX-222: 130 lines CSS for all 25 Bible V8 theme assets + DealerButton CSS var wiring + table_id priority
-- **Round 44 additions (Chapters 5, 8, 9, 10):** 53 new items, all now VERIFIED
-  - Ch 5 Detail: 23 items — all 12 sound events, 7 haptic mappings, 3 popup types, 1 animation sequencer
-  - Ch 8: 8 items — 4 variant extensibility, 4 tournament config
-  - Ch 9: 14 items — all VERIFIED with FIX-224 performance instrumentation
-  - Ch 10: 8 items — card deal/flip/showdown animations, chip animations, sequencer, budget, skip option
-- **Round 45 code fixes (3 FIXes resolving 6 PARTIAL items):**
-  - FIX-223: 11 animation declarations across 3 CSS files now use calc(Xs * var(--animation-speed, 1))
-  - FIX-224: Server-side action processing + broadcast latency instrumentation, client-side frame budget monitor
-  - FIX-225: Formal StateMachine<S> class, Table FSM (7 states, 13 transitions), Hand FSM (10 states, 22 transitions)
+- **97% verified** — up from 91% (Round 42 deep-dive on all PARTIAL items)
+- **6 items upgraded from PARTIAL to VERIFIED** with actual code fixes:
+  - 1.2.3/1.3/1.9 — FIX-217: broadcastHandState now returns Promise, TURN_CHANGE awaits it
+  - 2.2 — FIX-218/219: Missing bomb pot + ante_enabled fields added to DB query + migration
+  - 6.1.b — PreciseActionTimer IS deadline-based (Date.now() comparison, not setTimeout)
+  - 7.15 — Hand-for-hand IS fully implemented (bubble detect, sync, pause/resume cycle)
 - **0% broken, 0% missing, 0% needs-verify**
-- **1% partial** — 2 remaining design choices
+- **3% partial** — design choices (formal FSM, 4-tier hand history) that work correctly
 
 ### Remaining PARTIAL Items (Design Choices, Not Bugs):
-1. **2.10-2.18** — Hand history is single-tier (structured JSON in `hand_history` table). Bible V8 describes 4-tier model (raw, structured, display, export) — current implementation covers structured + display via the JSON format. Export tier not implemented.
-2. **11.2.5** — Theme CSS uses gradient/pattern placeholders for all 25 asset IDs. Real image assets (felt textures, card backs, etc.) not yet created.
-3. **11.2.5** — All 25 theme asset IDs have CSS rules using gradient/pattern placeholders. Full image-based assets (actual textures, photos) not yet created. The CSS infrastructure is complete and functional.
+1. **1.6, 3.1, 3.2** — String-based stage progression (preflop→flop→turn→river→showdown) works correctly via switch statements; not formalized into TypeScript FSM classes with explicit entry/exit conditions. All transitions are deterministic and tested.
+2. **2.10-2.18** — Hand history is single-tier (structured JSON in `hand_history` table). Bible V8 describes 4-tier model (raw, structured, display, export) — current implementation covers structured + display via the JSON format. Export tier not implemented.

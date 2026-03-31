@@ -24,7 +24,7 @@
 - [004] Hetzner VPS: SSH root@178.156.160.206, path /opt/club-arena, container club-arena-engine, port 8080, health https://engine.smarter.poker/health
 - [005] Vercel: hub-vanguard project prj_op66GkZyZcygXQKm76iyycfVFAQx, token vcp_8kIgZkEiE0YNlrmUvjdaXfNZxrzPZsdTksANXVsyAhbnjEg1Hl3q470C
 - [006] Supabase: kuklfnapbkmacvwxktbh.supabase.co, service role key in server/.env
-- [007] GitHub PAT: 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
+- [007] GitHub PAT: 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
 
 ## Problems Solved
 - [001] FIX 143 — Sit-out during active hand caused auto-fold

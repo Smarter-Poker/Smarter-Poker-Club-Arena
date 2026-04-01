@@ -168,9 +168,7 @@ export async function syncStacks(
 ): Promise<void> {
   const results = await Promise.allSettled(
     players.map((player) => {
-      // FIX-231: Round stack to cents to prevent floating-point drift accumulation.
-      // Without this, stacks like 898.6540618452912 get saved instead of 898.65.
-      const updatePayload: any = { stack: Math.round(player.stack * 100) / 100 };
+      const updatePayload: any = { stack: player.stack };
       if (player.time_bank_uses_remaining !== undefined) {
         updatePayload.time_bank_uses_remaining = player.time_bank_uses_remaining;
       }

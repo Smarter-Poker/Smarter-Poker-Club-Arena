@@ -242,8 +242,9 @@
 
 .seat__position-chip {
   position: absolute;
-  bottom: -2px;
-  right: -4px;
+  bottom: -10px;
+  left: 50%;
+  transform: translateX(-50%);
   width: 22px;
   height: 22px;
   border-radius: 50%;
@@ -260,7 +261,6 @@
   border: 1px solid rgba(255, 255, 255, 0.2);
   animation: dealerButtonAppear 0.4s var(--ease-spring) forwards;
   transition:
-    transform 0.2s var(--ease-spring),
     box-shadow 0.2s ease;
 }
 
@@ -690,6 +690,30 @@
   z-index: 1;
 }
 
+/* Deal animation for opponent card backs */
+.seat__cards--opponent .seat__card--back {
+  animation: opponentCardDeal 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) backwards;
+}
+
+.seat__cards--opponent .seat__card--back:nth-child(2) {
+  animation-delay: 0.12s;
+}
+
+@keyframes opponentCardDeal {
+  0% {
+    opacity: 0;
+    transform: rotate(var(--card-rotation, 0deg)) translateY(-30px) translateX(20px) scale(0.5);
+  }
+  60% {
+    opacity: 1;
+    transform: rotate(var(--card-rotation, 0deg)) translateY(2px) scale(1.05);
+  }
+  100% {
+    opacity: 1;
+    transform: rotate(var(--card-rotation, 0deg)) translateY(0) scale(1);
+  }
+}
+
 /* When opponent cards are revealed at showdown, they pop out larger */
 .seat__cards--revealed {
   left: calc(100% - 8px);
@@ -821,31 +845,54 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
+   BET CHIPS — Positioned in front of the player toward the center
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.seat__bet-chips {
+  position: absolute;
+  bottom: -24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 15;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  pointer-events: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
    ACTION BADGE — Floating above the seat (like PokerBros "Fold" text)
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .seat__action {
   position: absolute;
-  top: -16px;
+  top: -20px;
   left: 50%;
   transform: translateX(-50%);
-  padding: 2px 10px;
-  border-radius: 4px;
-  font-size: 0.6875rem;
-  font-weight: 700;
+  padding: 3px 12px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 800;
   white-space: nowrap;
   z-index: 30;
-  animation: actionFadeIn 0.3s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  animation: actionPopIn 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
-@keyframes actionFadeIn {
+@keyframes actionPopIn {
   0% {
     opacity: 0;
-    transform: translateX(-50%) translateY(4px);
+    transform: translateX(-50%) translateY(8px) scale(0.6);
+  }
+  60% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(-4px) scale(1.1);
   }
   100% {
     opacity: 1;
-    transform: translateX(-50%) translateY(0);
+    transform: translateX(-50%) translateY(0) scale(1);
   }
 }
 

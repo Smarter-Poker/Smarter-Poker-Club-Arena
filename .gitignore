@@ -29,6 +29,3 @@ supabase/.temp
 .DS_Store
 # Generated PioSolver trees (regeneratable)
 scripts/trees/
-
-# Claude / AI agent session memory — CONTAINS CREDENTIALS, NEVER TRACK
-.memory/

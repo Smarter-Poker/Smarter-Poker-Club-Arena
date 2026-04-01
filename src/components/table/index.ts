@@ -229,3 +229,7 @@ export type { MiniStatsCardProps, MiniStatsObserver } from './MiniStatsCard';
 // Previous Hand Card — Bottom-Left HUD Widget
 export { PreviousHandCard } from './PreviousHandCard';
 export type { PreviousHandCardProps } from './PreviousHandCard';
+
+// Deal Animation — Card dealing visual on new hand
+export { DealAnimation } from './DealAnimation';
+export type { DealAnimationProps } from './DealAnimation';

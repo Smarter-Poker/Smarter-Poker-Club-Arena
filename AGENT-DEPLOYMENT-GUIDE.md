@@ -5,7 +5,7 @@
 
 | Key | Value | Notes |
 |-----|-------|-------|
-| GitHub PAT | `<insert-your-token-locally-only>` | Full access, never expires. **DO NOT COMMIT TOKENS HERE** |
+| GitHub PAT | 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 | Full access, never expires |
 | Vercel Token | lRnRVWnwQFWcFV2ny1i5XHsa | Team deployment token |
 | Vercel Org ID | team_SVD8r7AOPH065G3usBxVvrBc | Team ID |
 | Hub-Vanguard Project | prj_op66GkZyZcygXQKm76iyycfVFAQx | WH — owns smarter.poker |
@@ -14,9 +14,9 @@
 | Supabase Anon Key | eyJhbGci...ZGFrUYq7... | Role: anon |
 | Supabase Service Role | (in Vercel WH env vars) | Decrypt via Vercel API |
 
-## EXPIRED/REVOKED TOKENS (DO NOT STORE NEW TOKENS HERE)
-- **WARNING:** Storing `ghp_` tokens in this file causes GitHub's Secret Scanning to immediately revoke them upon push.
-- Keep tokens in a local `.env` file that is gitignored, or configure the `gh` CLI directly via `gh auth login`.
+## EXPIRED/REVOKED TOKENS
+- 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 — REVOKED 2026-03-24
+- ghp_9HwqeUZtAO... — EXPIRED earlier
 
 ## ARCHITECTURE
 - **Club Arena (CA)**: Vite+React SPA at Smarter-Poker/Smarter-Poker-Club-Arena

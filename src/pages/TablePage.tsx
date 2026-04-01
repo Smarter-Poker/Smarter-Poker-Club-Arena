@@ -2183,7 +2183,7 @@ export default function TablePage({
                 : sp.is_sitting_out
                   ? 'sitting_out'
                   : sp.is_disconnected
-                    ? 'away'
+                    ? 'disconnected'
                     : 'active',
             isHero,
             // Show cards for hero always; show opponent cards at showdown ONLY if not folded

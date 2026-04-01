@@ -2867,22 +2867,27 @@ const httpServer = createServer(async (req, res) => {
   // ─────────────────────────────────────────────────────────────────────────
   const actionsMatch = url.match(/^\/actions\/([^/]+)\/([^/]+)$/);
   if (method === 'GET' && actionsMatch) {
-    const auth = await authenticateRequest(req);
-    if (!auth) {
-      return sendJSON(res, 401, { canAct: false, error: 'Authentication required' });
+    try {
+      const auth = await authenticateRequest(req);
+      if (!auth) {
+        return sendJSON(res, 401, { canAct: false, error: 'Authentication required' });
+      }
+
+      const tableId = actionsMatch[1];
+      // Use authenticated userId, ignore URL param to prevent info leakage
+      const userId = auth.userId;
+
+      const engine = gameServer.getTableEngine(tableId);
+      if (!engine) {
+        return sendJSON(res, 404, { canAct: false, error: 'Table engine not found' });
+      }
+
+      const actions = engine.getPlayerActions(userId);
+      return sendJSON(res, 200, actions);
+    } catch (err: any) {
+      reportError(err, 'HTTP.actions_error');
+      return sendJSON(res, 500, { canAct: false, error: 'Server error' });
     }
-
-    const tableId = actionsMatch[1];
-    // Use authenticated userId, ignore URL param to prevent info leakage
-    const userId = auth.userId;
-
-    const engine = gameServer.getTableEngine(tableId);
-    if (!engine) {
-      return sendJSON(res, 404, { canAct: false, error: 'Table engine not found' });
-    }
-
-    const actions = engine.getPlayerActions(userId);
-    return sendJSON(res, 200, actions);
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -3024,23 +3029,28 @@ const httpServer = createServer(async (req, res) => {
   // ─────────────────────────────────────────────────────────────────────────
   const stateMatch = url.match(/^\/state\/([^/]+)$/);
   if (method === 'GET' && stateMatch) {
-    const auth = await authenticateRequest(req);
-    if (!auth) {
-      return sendJSON(res, 401, { success: false, error: 'Authentication required' });
-    }
+    try {
+      const auth = await authenticateRequest(req);
+      if (!auth) {
+        return sendJSON(res, 401, { success: false, error: 'Authentication required' });
+      }
 
-    const tableId = stateMatch[1];
-    const engine = gameServer.getTableEngine(tableId);
-    if (!engine) {
-      return sendJSON(res, 404, { success: false, error: 'Table engine not found' });
-    }
+      const tableId = stateMatch[1];
+      const engine = gameServer.getTableEngine(tableId);
+      if (!engine) {
+        return sendJSON(res, 404, { success: false, error: 'Table engine not found' });
+      }
 
-    const state = engine.getTableState(auth.userId);
-    if (!state) {
-      return sendJSON(res, 200, { table_id: tableId, stage: 'idle', players: [] });
-    }
+      const state = engine.getTableState(auth.userId);
+      if (!state) {
+        return sendJSON(res, 200, { table_id: tableId, stage: 'idle', players: [] });
+      }
 
-    return sendJSON(res, 200, state);
+      return sendJSON(res, 200, state);
+    } catch (err: any) {
+      reportError(err, 'HTTP.state_error');
+      return sendJSON(res, 500, { success: false, error: 'Server error' });
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────────────

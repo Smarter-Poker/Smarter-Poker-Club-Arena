@@ -25,13 +25,13 @@ interface ChipDenom {
 }
 
 const DENOMINATIONS: ChipDenom[] = [
-  { value: 1, color: '#e0e0e0', accent: '#ababab', label: '1' },
-  { value: 5, color: '#ef4444', accent: '#b91c1c', label: '5' },
-  { value: 25, color: '#22c55e', accent: '#15803d', label: '25' },
-  { value: 100, color: '#3b82f6', accent: '#1d4ed8', label: '100' },
-  { value: 500, color: '#1a1a2e', accent: '#374151', label: '500' },
-  { value: 1000, color: '#f59e0b', accent: '#d97706', label: '1K' },
-  { value: 5000, color: '#a855f7', accent: '#7c3aed', label: '5K' },
+  { value: 1, color: '#e0e0e0', accent: '#ababab', label: '1' },     // White
+  { value: 5, color: '#ef4444', accent: '#b91c1c', label: '5' },     // Red
+  { value: 25, color: '#22c55e', accent: '#15803d', label: '25' },   // Green
+  { value: 100, color: '#1a1a2e', accent: '#374151', label: '100' }, // Black
+  { value: 500, color: '#7c3aed', accent: '#5b21b6', label: '500' }, // Violet
+  { value: 1000, color: '#f97316', accent: '#ea580c', label: '1K' }, // Orange
+  { value: 5000, color: '#a855f7', accent: '#7c3aed', label: '5K' }, // Purple
 ];
 
 function getChipBreakdown(amount: number): { denom: ChipDenom; count: number }[] {

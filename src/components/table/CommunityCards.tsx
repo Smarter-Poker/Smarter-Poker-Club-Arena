@@ -62,7 +62,7 @@ interface CardFaceProps {
   card: Card;
   index: number;
   isHighlighted: boolean;
-  isDealing: boolean;
+  isNewlyDealt: boolean;
   stage: BoardStage;
   deckStyle?: '4color' | '2color';
 }
@@ -71,20 +71,21 @@ function CardFace({
   card,
   index,
   isHighlighted,
-  isDealing,
+  isNewlyDealt,
   stage,
   deckStyle = '4color',
 }: CardFaceProps) {
-  // Apply turn/river emphasis animations to the newly dealt card
-  const isTurnCard = stage === 'turn' && index === 3;
-  const isRiverCard = (stage === 'river' || stage === 'showdown') && index === 4;
+  // Only apply animation classes to NEWLY DEALT cards — existing cards stay still
+  const isTurnCard = isNewlyDealt && stage === 'turn' && index === 3;
+  const isRiverCard = isNewlyDealt && (stage === 'river' || stage === 'showdown') && index === 4;
+  const isFlopDeal = isNewlyDealt && stage === 'flop' && index < 3;
 
   return (
     <div
       className={[
         'community-cards__card',
         isHighlighted ? 'community-cards__card--highlighted' : '',
-        isDealing ? 'community-cards__card--dealing' : '',
+        isFlopDeal ? 'community-cards__card--flop-deal' : '',
         isTurnCard ? 'community-cards__card--turn' : '',
         isRiverCard ? 'community-cards__card--river' : '',
       ]
@@ -126,8 +127,10 @@ function CommunityCardsComponent({
   const visibleCount = useMemo(() => getVisibleCardCount(stage), [stage]);
   const prevStageRef = useRef(stage);
   const prevCardCountRef = useRef(cards.length);
+  const prevVisibleCountRef = useRef(visibleCount);
   const [showdownMode, setShowdownMode] = useState(false);
   const [highlightPop, setHighlightPop] = useState(false);
+  const [newlyDealtIndices, setNewlyDealtIndices] = useState<Set<number>>(new Set());
   const [showParticles, setShowParticles] = useState(false);
   const [particleOrigin, setParticleOrigin] = useState<{ x: number; y: number } | undefined>();
   const prevHighlightRef = useRef<number[]>([]);
@@ -139,6 +142,36 @@ function CommunityCardsComponent({
   useEffect(() => {
     prevCardCountRef.current = cards.length;
   }, [cards.length]);
+
+  // Track newly dealt cards — only new cards get deal animation, existing cards stay still
+  useEffect(() => {
+    const prevCount = prevVisibleCountRef.current;
+    if (visibleCount > prevCount) {
+      // New cards appeared — mark them as newly dealt
+      const newIndices = new Set<number>();
+      for (let i = prevCount; i < visibleCount; i++) {
+        newIndices.add(i);
+      }
+      setNewlyDealtIndices(newIndices);
+      const timer = setTimeout(() => setNewlyDealtIndices(new Set()), 700);
+      prevVisibleCountRef.current = visibleCount;
+      return () => clearTimeout(timer);
+    }
+    if (visibleCount < prevCount) {
+      // New hand started — all visible cards are new
+      prevVisibleCountRef.current = visibleCount;
+      if (visibleCount > 0) {
+        const newIndices = new Set<number>();
+        for (let i = 0; i < visibleCount; i++) {
+          newIndices.add(i);
+        }
+        setNewlyDealtIndices(newIndices);
+        const timer = setTimeout(() => setNewlyDealtIndices(new Set()), 700);
+        return () => clearTimeout(timer);
+      }
+    }
+    prevVisibleCountRef.current = visibleCount;
+  }, [visibleCount]);
 
   // Haptic feedback on stage transitions
   useEffect(() => {
@@ -192,11 +225,12 @@ function CommunityCardsComponent({
           type: 'card' as const,
           card: cards[i],
           isHighlighted: highlightedIndices.includes(i),
+          isNewlyDealt: newlyDealtIndices.has(i),
         };
       }
-      return { type: 'placeholder' as const };
+      return { type: 'placeholder' as const, isNewlyDealt: false };
     });
-  }, [cards, visibleCount, highlightedIndices]);
+  }, [cards, visibleCount, highlightedIndices, newlyDealtIndices]);
 
   return (
     <div
@@ -214,7 +248,7 @@ function CommunityCardsComponent({
               card={slot.card}
               index={i}
               isHighlighted={slot.isHighlighted}
-              isDealing={isDealing && i === visibleCount - 1}
+              isNewlyDealt={slot.isNewlyDealt}
               stage={stage}
               deckStyle={deckStyle}
             />

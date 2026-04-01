@@ -190,19 +190,12 @@ function HoleCard({
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function PositionChip({ position }: { position: PositionBadge }) {
-  if (!position) return null;
-
-  const config: Record<string, { bg: string; color: string }> = {
-    D: { bg: '#FFFFFF', color: '#111' },
-    SB: { bg: '#3B82F6', color: '#FFF' },
-    BB: { bg: '#EAB308', color: '#111' },
-  };
-
-  const { bg, color } = config[position] || config.D;
+  // Only show the Dealer button — SB/BB are shown via blind posting, not badges
+  if (position !== 'D') return null;
 
   return (
-    <div className="seat__position-chip" style={{ backgroundColor: bg, color }}>
-      {position}
+    <div className="seat__position-chip" style={{ backgroundColor: '#FFFFFF', color: '#111' }}>
+      D
     </div>
   );
 }
@@ -383,40 +376,36 @@ export const SeatSlot = memo(
           </div>
         ) : null}
 
-        {/* Hole Cards — opponents: beside avatar at showdown */}
-        {player.holeCards && player.holeCards.length > 0 && !player.isHero && (
+        {/* Hole Cards — opponents: show card backs for active/all-in players, reveal at showdown */}
+        {!player.isHero && (player.status === 'active' || player.status === 'all_in') && (
           <div
-            className={`seat__cards seat__cards--opponent${player.showCards ? ' seat__cards--revealed' : ''}`}
+            className={`seat__cards seat__cards--opponent${player.showCards && player.holeCards?.length ? ' seat__cards--revealed' : ''}`}
           >
-            {player.holeCards.map((card, i) => (
-              <HoleCard
-                key={i}
-                card={card}
-                hidden={!player.showCards}
-                index={i}
-                isWinner={isWinner}
-                deckStyle={deckStyle}
-                cardBack={cardBack}
-              />
-            ))}
+            {player.holeCards && player.holeCards.length > 0 ? (
+              player.holeCards.map((card, i) => (
+                <HoleCard
+                  key={i}
+                  card={card}
+                  hidden={!player.showCards}
+                  index={i}
+                  isWinner={isWinner}
+                  deckStyle={deckStyle}
+                  cardBack={cardBack}
+                />
+              ))
+            ) : (
+              <>
+                <HoleCard key={0} hidden={true} index={0} deckStyle={deckStyle} cardBack={cardBack} />
+                <HoleCard key={1} hidden={true} index={1} deckStyle={deckStyle} cardBack={cardBack} />
+              </>
+            )}
           </div>
         )}
 
         {/* Avatar Circle — large, sits on top of info box */}
         {/* Bible V8 §11.1: show_avatars toggle */}
         <div className="seat__avatar-wrap" style={showAvatar ? undefined : { visibility: 'hidden' }}>
-          {/* Circular Timer Arc — PokerBros-style ring around avatar */}
-          {isActive && timerProgress !== undefined && (
-            <div className="seat__circular-timer">
-              <CircularTimer
-                progress={timerProgress}
-                size={64}
-                strokeWidth={3}
-                showCountdown={true}
-                secondsLeft={secondsLeft}
-              />
-            </div>
-          )}
+          {/* Timer is shown via smooth conic-gradient border on the info box below */}
           <div
             className="seat__avatar"
             onClick={(e) => {

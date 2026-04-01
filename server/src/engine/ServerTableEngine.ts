@@ -2746,61 +2746,82 @@ export class ServerTableEngine {
     const enginePlayer = state.players.find((p) => p.seat === seat);
     if (!enginePlayer) return;
 
-    // Only horses get auto-played — real players get an authoritative timer and wait for WebSocket/HTTP actions
-    if (!player.is_horse) {
-      const actionTime = this.tableInfo?.action_time_seconds || 15;
-      this.timeBankActivatedThisTurn = false; // Reset anti-spam lock for this NEW turn
+    // ═══════════════════════════════════════════════════════════════════════════
+    // UNIFIED TURN HANDLING — Horses and real players follow the EXACT same flow.
+    // Bible V8: Horses MUST be indistinguishable from real players.
+    // Same timer, same broadcast, same action path. NO EXCEPTIONS.
+    // ═══════════════════════════════════════════════════════════════════════════
 
-      // Step 5: Check for queued pre-action before starting timer
-      const toCallForPreAction = Math.max(0, state.currentBet - enginePlayer.bet);
-      const canCheckForPreAction = toCallForPreAction === 0;
-      const preResult = this.preActionEngine.executePreAction(
-        this.tableId,
-        player.user_id,
-        canCheckForPreAction,
-        toCallForPreAction,
-        enginePlayer.stack
-      );
-      if (preResult.executed && preResult.action) {
-        try {
-          this.handController!.performAction(seat, preResult.action as any, preResult.amount);
-          console.log(
-            `[ServerTableEngine:${this.tableId}] Pre-action executed: ${player.user_id} → ${preResult.action}${preResult.amount ? ` ${preResult.amount}` : ''}`
-          );
-          return; // Pre-action handled the turn — no timer needed
-        } catch (err) {
-          console.warn(
-            `[ServerTableEngine:${this.tableId}] Pre-action failed, falling through to timer:`,
-            err
-          );
-        }
-      }
+    const actionTime = this.tableInfo?.action_time_seconds || 15;
+    this.timeBankActivatedThisTurn = false; // Reset anti-spam lock for this NEW turn
 
-      // Step 5: Check disconnect state before starting timer
-      const playerCanAct = this.disconnectEngine.onPlayerTurn(
-        this.tableId,
-        player.user_id,
-        canCheckForPreAction
-      );
-      if (!playerCanAct) {
-        // Player is disconnected or sitting out — DisconnectEngine will handle auto-action via callback
-        return;
-      }
-
-      // FIX 148: Bible V8 §6.3 — If player recently reconnected, grant extra grace time
-      // so they aren't immediately timed out after network recovery.
-      const reconnectGrace = this.disconnectEngine.isInReconnectGrace(this.tableId, player.user_id);
-      const effectiveActionTime = reconnectGrace ? actionTime + 5 : actionTime;
-      if (reconnectGrace) {
+    // Step 1: Check for queued pre-action before starting timer (applies to ALL players)
+    const toCallForPreAction = Math.max(0, state.currentBet - enginePlayer.bet);
+    const canCheckForPreAction = toCallForPreAction === 0;
+    const preResult = this.preActionEngine.executePreAction(
+      this.tableId,
+      player.user_id,
+      canCheckForPreAction,
+      toCallForPreAction,
+      enginePlayer.stack
+    );
+    if (preResult.executed && preResult.action) {
+      try {
+        this.handController!.performAction(seat, preResult.action as any, preResult.amount);
         console.log(
-          `[ServerTableEngine:${this.tableId}] Player ${player.user_id} in reconnect grace — extending timer by 5s (${effectiveActionTime}s total)`
+          `[ServerTableEngine:${this.tableId}] Pre-action executed: ${player.user_id} → ${preResult.action}${preResult.amount ? ` ${preResult.amount}` : ''}`
+        );
+        return; // Pre-action handled the turn — no timer needed
+      } catch (err) {
+        console.warn(
+          `[ServerTableEngine:${this.tableId}] Pre-action failed, falling through to timer:`,
+          err
         );
       }
+    }
 
-      this.startTurnTimer(player.user_id, seat, effectiveActionTime);
+    // Step 2: Check disconnect state before starting timer (applies to ALL players)
+    const playerCanAct = this.disconnectEngine.onPlayerTurn(
+      this.tableId,
+      player.user_id,
+      canCheckForPreAction
+    );
+    if (!playerCanAct) {
+      // Player is disconnected or sitting out — DisconnectEngine will handle auto-action via callback
       return;
     }
 
+    // Step 3: Reconnect grace (applies to ALL players)
+    const reconnectGrace = this.disconnectEngine.isInReconnectGrace(this.tableId, player.user_id);
+    const effectiveActionTime = reconnectGrace ? actionTime + 5 : actionTime;
+    if (reconnectGrace) {
+      console.log(
+        `[ServerTableEngine:${this.tableId}] Player ${player.user_id} in reconnect grace — extending timer by 5s (${effectiveActionTime}s total)`
+      );
+    }
+
+    // Step 4: Start the authoritative turn timer — SAME for horses and real players
+    this.startTurnTimer(player.user_id, seat, effectiveActionTime);
+
+    // Step 5: If this is a horse, schedule their action after a realistic think time
+    // The horse uses the SAME timer as a real player — the action fires within that timer window.
+    // Think times: 2-8 seconds (varies by decision complexity to simulate real play)
+    if (player.is_horse) {
+      this.scheduleHorseAction(player, seat, enginePlayer, state);
+    }
+  }
+
+  /**
+   * Schedule a horse's action with realistic think time.
+   * The horse's turn timer is ALREADY running (same as real players).
+   * The horse submits its action within that timer window, just like a human would.
+   */
+  private scheduleHorseAction(
+    player: SeatedPlayer,
+    seat: number,
+    enginePlayer: { bet: number; stack: number; seat: number },
+    state: { currentBet: number; minRaise: number; pot: number; communityCards: any[]; players: any[]; stage: string }
+  ): void {
     const toCall = Math.max(0, state.currentBet - enginePlayer.bet);
 
     const styleMap: Record<string, HorseStyle> = {
@@ -2827,15 +2848,24 @@ export class ServerTableEngine {
       bigBlind: this.tableInfo?.big_blind || 2,
     };
 
-    // Get decision — SYNCHRONOUS, instant
+    // Get decision — SYNCHRONOUS
     const decision = HorseLogic.decide(enginePlayer, gameState as any, horseStyle);
 
-    // Apply think time delay (50-300ms server-side — fast!)
-    const thinkTime = Math.min(decision.thinkTime, 200);
+    // Realistic think time: 2-8 seconds (simulates human decision-making)
+    // Simple decisions (check, fold) = 2-3s; complex (raise, all-in) = 4-8s
+    const baseThinkMs = decision.action === 'check' || decision.action === 'fold'
+      ? 2000 + Math.random() * 1500   // 2.0 - 3.5s for simple actions
+      : 3000 + Math.random() * 5000;  // 3.0 - 8.0s for complex actions
+    const thinkTimeMs = Math.round(baseThinkMs);
+
     const handControllerRef = this.handController;
 
     setTimeout(() => {
       if (!handControllerRef || !this.running) return;
+
+      // Verify it's still this player's turn (timer might have expired)
+      const currentState = handControllerRef.getState();
+      if (currentState.currentPlayerSeat !== seat) return;
 
       let action = decision.action as string;
       let amount = decision.amount;
@@ -2870,8 +2900,6 @@ export class ServerTableEngine {
         handControllerRef.performAction(seat, action as any, amount);
       } catch {
         // FIX 210: Bible V8 §1.7.4 — preferCheckOverFold: try check before fold
-        // If horse's primary action fails, attempt check (free action) before folding.
-        // This prevents silently destroying a horse's hand on a transient error.
         try {
           handControllerRef.performAction(seat, 'check');
         } catch {
@@ -2882,7 +2910,7 @@ export class ServerTableEngine {
           }
         }
       }
-    }, thinkTime);
+    }, thinkTimeMs);
   }
 
   /**

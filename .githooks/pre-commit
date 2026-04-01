@@ -1,0 +1,40 @@
+#!/bin/bash
+# Pre-commit hook: Block commits containing GitHub PATs, Vercel tokens, or other secrets.
+# This prevents GitHub Secret Scanning from revoking tokens.
+
+echo "🔒 Secret scan: checking staged files..."
+
+# Patterns that should NEVER appear in committed code
+PATTERNS=(
+  'ghp_[A-Za-z0-9]{36}'           # GitHub PAT (classic)
+  'github_pat_[A-Za-z0-9_]{82}'   # GitHub PAT (fine-grained)
+  'gho_[A-Za-z0-9]{36}'           # GitHub OAuth token
+  'ghs_[A-Za-z0-9]{36}'           # GitHub server-to-server token
+  'vcp_[A-Za-z0-9]{60,}'          # Vercel API token
+  'sk_live_[A-Za-z0-9]{24,}'      # Stripe secret key
+  'eyJhbGciOi[A-Za-z0-9+/=]{100,}' # Supabase service role key (JWT)
+)
+
+FOUND=0
+
+for pattern in "${PATTERNS[@]}"; do
+  # Only scan staged (to-be-committed) content, not the working tree
+  MATCHES=$(git diff --cached --diff-filter=ACM -U0 | grep -E "$pattern" 2>/dev/null)
+  if [ -n "$MATCHES" ]; then
+    echo ""
+    echo "❌ BLOCKED: Secret detected matching pattern: $pattern"
+    echo "   Matched content (redacted):"
+    echo "$MATCHES" | sed -E 's/(ghp_|github_pat_|gho_|ghs_|vcp_|sk_live_|eyJhbGciOi)[A-Za-z0-9+/=_]{4}[A-Za-z0-9+/=_]*/\1****REDACTED****/g'
+    echo ""
+    FOUND=1
+  fi
+done
+
+if [ "$FOUND" -eq 1 ]; then
+  echo "🚫 Commit ABORTED. Remove secrets from staged files before committing."
+  echo "   Tip: Store secrets in .env files (already in .gitignore)."
+  exit 1
+fi
+
+echo "✅ No secrets found in staged files."
+exit 0

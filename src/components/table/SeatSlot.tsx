@@ -23,6 +23,7 @@ import { CardImage, CardBack } from './CardImage';
 import MiniHUD, { type MiniHUDStats } from './MiniHUD';
 import type { PlayerStyleResult } from '../../services/PlayerStyleClassifier';
 import { ChipPhysics } from './ChipPhysics';
+import { getAvatarWithFallback } from '../../utils/avatarGenerator';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -341,8 +342,8 @@ export const SeatSlot = memo(
     }
 
     // ─── OCCUPIED SEAT ─────────────────────────────────────────────────────
-    // Use custom avatar library default — NOT generic DiceBear icons
-    const avatarUrl = player.avatar || '/avatars/default-player.png';
+    // Use deterministic SVG avatar (colorful, unique per player) when no real image exists
+    const avatarUrl = getAvatarWithFallback(player.avatar || null, player.id, player.name);
 
     // Timer progress as CSS custom prop for conic-gradient border
     const timerStyle =

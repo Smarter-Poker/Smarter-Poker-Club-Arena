@@ -83,8 +83,8 @@ export function TableSettingsPanel({
 
       {/* Toggle List */}
       <div className="tsp-list">
-        {TABLE_SETTINGS_META.map((meta, idx) => {
-          const isEnabled = settings[meta.key];
+        {TABLE_SETTINGS_META.filter((m) => typeof settings[m.key] === 'boolean').map((meta, idx) => {
+          const isEnabled = !!settings[meta.key];
           const isVisible = visibleItems.has(idx);
 
           return (
@@ -105,7 +105,7 @@ export function TableSettingsPanel({
               <button
                 className={`tsp-toggle ${isEnabled ? 'tsp-toggle--on' : 'tsp-toggle--off'}`}
                 role="switch"
-                aria-checked={isEnabled}
+                aria-checked={isEnabled ? 'true' : 'false'}
                 aria-label={`${meta.label}: ${isEnabled ? 'on' : 'off'}`}
                 onClick={(e) => {
                   e.stopPropagation();

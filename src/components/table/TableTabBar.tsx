@@ -111,6 +111,16 @@ export function TableTabBar({
             tableId: activeTabId,
             action: 'LEAVE_TABLE',
           }),
+        onChangeAvatar: () =>
+          masterBus.emit('TABLE_MENU_ACTION', {
+            tableId: activeTabId,
+            action: 'CHANGE_AVATAR',
+          }),
+        onToggleAlias: () =>
+          masterBus.emit('TABLE_MENU_ACTION', {
+            tableId: activeTabId,
+            action: 'TOGGLE_ALIAS',
+          }),
       }),
     [activeTabId]
   );

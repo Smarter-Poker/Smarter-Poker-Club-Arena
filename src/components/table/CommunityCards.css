@@ -41,8 +41,13 @@
     transform 0.3s ease,
     box-shadow 0.3s ease;
   cursor: default;
-  animation: cardDeal calc(0.4s * var(--animation-speed, 1)) ease-out forwards;
+  /* No base animation — cards stay still once dealt. Animation applied via stage-specific classes */
   transform-origin: center center;
+}
+
+/* Flop deal animation — only applied to newly dealt flop cards */
+.community-cards__card--flop-deal {
+  animation: cardDeal calc(0.4s * var(--animation-speed, 1)) ease-out forwards;
 }
 
 .community-cards__card .card-image {

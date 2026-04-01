@@ -55,16 +55,15 @@ function formatBB(amount: number, bigBlind: number): string {
   return `${bbs.toFixed(1)} BB`;
 }
 
-// Chip denomination colors
+// Standard poker chip denomination colors
 const CHIP_COLORS = [
-  { threshold: 10000, color: '#8B4513', label: '10K' }, // Brown
-  { threshold: 5000, color: '#1E90FF', label: '5K' }, // Blue
-  { threshold: 1000, color: '#1C1C1C', label: '1K' }, // Black
-  { threshold: 500, color: '#800080', label: '500' }, // Purple
-  { threshold: 100, color: '#228B22', label: '100' }, // Green
-  { threshold: 25, color: '#DC143C', label: '25' }, // Red
-  { threshold: 5, color: '#4169E1', label: '5' }, // Blue
-  { threshold: 1, color: '#F5F5F5', label: '1' }, // White
+  { threshold: 5000, color: '#a855f7', label: '5K' },   // Purple
+  { threshold: 1000, color: '#f97316', label: '1K' },   // Orange
+  { threshold: 500, color: '#7c3aed', label: '500' },   // Violet
+  { threshold: 100, color: '#1a1a2e', label: '100' },   // Black
+  { threshold: 25, color: '#22c55e', label: '25' },     // Green
+  { threshold: 5, color: '#ef4444', label: '5' },       // Red
+  { threshold: 1, color: '#e0e0e0', label: '1' },       // White
 ];
 
 function getChipBreakdown(amount: number): { color: string; count: number; label: string }[] {

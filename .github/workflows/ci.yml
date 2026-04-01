@@ -335,12 +335,12 @@ jobs:
           fi
 
   # ─────────────────────────────────────────────────────────────────────────────
-  # STEP 5: AUTO-REVERT on failure — broken commits are automatically reverted
+  # STEP 5: AUTO-REVERT — DISABLED (was causing revert loops during migration)
   # ─────────────────────────────────────────────────────────────────────────────
   auto-revert:
-    name: Auto-Revert Broken Commit
+    name: Auto-Revert Broken Commit (DISABLED)
     needs: [typecheck, build]
-    if: failure() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: false  # DISABLED — was auto-reverting valid commits during active migration
     runs-on: ubuntu-latest
     permissions:
       contents: write

@@ -2221,6 +2221,10 @@ export default function TablePage({
             return c;
           }),
           boardStage: stage as BoardStage,
+          // Clear action labels on street change so they don't persist across streets
+          lastActions: stage !== prev.boardStage
+            ? Array(prev.lastActions.length).fill(null)
+            : prev.lastActions,
           currentPlayerSeat,
           dealerSeat,
           isHandInProgress: stage !== 'preflop' || pot > 0,
@@ -2852,7 +2856,7 @@ export default function TablePage({
           const actionAmount = (actionPayload?.amount as number) || 0;
           const seatIdx = actionSeat - 1;
 
-          // Step 1: Show action label immediately (200ms display)
+          // Step 1: Show action label immediately — persists until next action or new street
           if (seatIdx >= 0) {
             setTableState((prev) => {
               const newActions = [...prev.lastActions];
@@ -2861,15 +2865,8 @@ export default function TablePage({
               if (actionAmount > 0) newBets[seatIdx] = actionAmount;
               return { ...prev, lastActions: newActions, lastBetAmounts: newBets };
             });
-
-            // Clear action label after 2 seconds
-            setTimeout(() => {
-              setTableState((prev) => {
-                const newActions = [...prev.lastActions];
-                newActions[seatIdx] = null;
-                return { ...prev, lastActions: newActions };
-              });
-            }, 2000);
+            // NO timeout — action label stays visible until replaced by next action
+            // or cleared on new street/hand (handled in STAGE_CHANGE/NEW_HAND events)
           }
 
           // Step 2: Sound + chip animation after 200ms delay (Bible §5.2 sequence)

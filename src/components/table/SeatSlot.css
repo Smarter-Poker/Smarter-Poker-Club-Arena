@@ -842,8 +842,10 @@
 .seat__action--all_in {
   background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
   color: #fff;
+  font-size: 0.875rem;
+  padding: 4px 14px;
   animation:
-    actionFadeIn 0.3s ease,
+    actionPopIn 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275),
     allInPulse 1.5s ease-in-out infinite;
 }
 

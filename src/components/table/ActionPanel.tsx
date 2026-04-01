@@ -33,6 +33,20 @@ function formatChips(amount: number): string {
   return amount.toFixed(2);
 }
 
+/**
+ * Round bet amount to proper chip increments — no fractional bets like 5.208.
+ * Uses smallest chip = smallBlind (e.g. $1 for 1/2 game).
+ * Ensures result is always >= min and <= max.
+ */
+function roundToChip(amount: number, smallestChip: number, min: number, max: number): number {
+  if (smallestChip <= 0) smallestChip = 1;
+  // Round to nearest smallest chip
+  const rounded = Math.round(amount / smallestChip) * smallestChip;
+  // Clean up floating point: round to 2 decimal places
+  const clean = Math.round(rounded * 100) / 100;
+  return Math.max(min, Math.min(max, clean));
+}
+
 export default function ActionPanel({
   canFold,
   canCheck,
@@ -40,8 +54,8 @@ export default function ActionPanel({
   canRaise,
   canAllIn,
   callAmount,
-  minRaise,
-  maxRaise,
+  minRaise: rawMinRaise,
+  maxRaise: rawMaxRaise,
   pot,
   bigBlind,
   onAction,
@@ -50,6 +64,10 @@ export default function ActionPanel({
   confirmAllIn = true,
   showBetSizePresets = true,
 }: ActionPanelProps) {
+  // Round min/max to proper chip increments (smallest chip = smallBlind = bigBlind/2)
+  const smallestChip = Math.max(bigBlind / 2, 0.01);
+  const minRaise = roundToChip(rawMinRaise, smallestChip, rawMinRaise, rawMaxRaise);
+  const maxRaise = rawMaxRaise; // Max is always the player's full stack — don't round down
   const [isRaiseMode, setIsRaiseMode] = useState(false);
   const [pendingAllIn, setPendingAllIn] = useState(false);
   const [raiseAmount, setRaiseAmount] = useState(minRaise);
@@ -94,15 +112,15 @@ export default function ActionPanel({
 
   const isDesktop = windowWidth >= 768;
 
-  // Smart presets — adapt to street context
+  // Smart presets — adapt to street context, rounded to chip increments
   const presets = useMemo(
     () => [
-      { label: '⅓ Pot', value: Math.round(pot * 0.33) },
-      { label: '½ Pot', value: Math.round(pot * 0.5) },
-      { label: '¾ Pot', value: Math.round(pot * 0.75) },
-      { label: 'Pot', value: pot },
+      { label: '⅓ Pot', value: roundToChip(pot * 0.33, smallestChip, minRaise, maxRaise) },
+      { label: '½ Pot', value: roundToChip(pot * 0.5, smallestChip, minRaise, maxRaise) },
+      { label: '¾ Pot', value: roundToChip(pot * 0.75, smallestChip, minRaise, maxRaise) },
+      { label: 'Pot', value: roundToChip(pot, smallestChip, minRaise, maxRaise) },
     ],
-    [pot]
+    [pot, smallestChip, minRaise, maxRaise]
   );
 
   // Track last slider value for haptic snap feedback
@@ -143,23 +161,24 @@ export default function ActionPanel({
   const adjustRaise = useCallback(
     (delta: number) => {
       haptic.light();
-      setRaiseAmount((prev) => Math.max(minRaise, Math.min(maxRaise, prev + delta)));
+      setRaiseAmount((prev) => roundToChip(prev + delta, smallestChip, minRaise, maxRaise));
     },
-    [minRaise, maxRaise]
+    [minRaise, maxRaise, smallestChip]
   );
 
   const setPreset = useCallback(
     (value: number) => {
       haptic.medium();
-      setRaiseAmount(Math.max(minRaise, Math.min(maxRaise, value)));
+      setRaiseAmount(roundToChip(value, smallestChip, minRaise, maxRaise));
     },
-    [minRaise, maxRaise]
+    [minRaise, maxRaise, smallestChip]
   );
 
   // Slider change with snap-to-preset haptic feedback
   const handleSliderChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
-      const val = Number(e.target.value);
+      const raw = Number(e.target.value);
+      const val = roundToChip(raw, smallestChip, minRaise, maxRaise);
       setRaiseAmount(val);
 
       // Snap feedback — trigger haptic when crossing a BB boundary

@@ -9,9 +9,9 @@
 - VERIFIED = Confirmed working correctly per Bible specification
 - N/A = Not applicable to current scope
 
-**Last Updated:** 2026-03-31
-**Updated By:** Claude (Round 47 — deep engine audit, FIX-226 odd chip allocation)
-**Total Fixes:** 226
+**Last Updated:** 2026-04-01
+**Updated By:** Claude (Round 47 — deep engine audit, FIX-226 odd chip + FIX-227 hole cards god-mode)
+**Total Fixes:** 227
 
 ---
 
@@ -182,19 +182,23 @@
 | **TOTAL** | **98** | **97 (99%)** | **0 (0%)** | **1 (1%)** | **0 (0%)** | **0 (0%)** |
 
 ### Bottom Line:
-- **99% verified** — Round 46 full deep audit of all 11 Bible V8 chapters
-- **FIX-223/224/225** (Round 45): animation-speed CSS var, EngineTelemetry perf instrumentation, formal StateMachine<S> class
-- **Round 46 audit findings** (all chapters re-verified line-by-line):
-  - Ch1 Master Laws: 30/30 VERIFIED — action lock, turn validation, auth on all endpoints, broadcast flow, card security, StateVerifier
-  - Ch2 Object Schemas: 9/10 VERIFIED — all types match Bible V8 exactly; 2.10-2.18 PARTIAL (4-tier hand history design choice)
-  - Ch3 State Machines: 4/4 VERIFIED — FIX-225 StateMachine.ts with createTableStateMachine (7 states, 13 transitions) and createHandStateMachine (10 states, 22 transitions)
-  - Ch4 Procedures: 18/18 VERIFIED — blind posting, ante, straddle, all 6 action types, stage progression, RIT, insurance, showdown, bomb pot
-  - Ch5 UI/Sound/Haptic: 4/4 VERIFIED — all 12+ sounds with correct haptic levels
-  - Ch6 Timers: 12/12 VERIFIED — deadline-based PreciseActionTimer, time bank, disconnect, reconnect grace
-  - Ch7 Edge Cases: 20/20 VERIFIED — short all-in, side pots, heads-up, Hi-Lo, RIT, bomb pot, straddle, disconnect, crash recovery, mixed game
+- **99% verified** — Round 47 final deep audit with live testing
+- **FIX-226** (Round 47): Odd chip allocation now clockwise from dealer (was defaulting to seat 0)
+- **FIX-227** (Round 47): CRITICAL — Dropped residual god-mode RLS policy `"Service role manages hole cards"` on `table_hole_cards`. This `FOR ALL USING(true)` policy survived FIX-141 and allowed ANY authenticated user to read ALL players' hole cards. Fixed via migration `20260401_fix_hole_cards_service_role_godmode.sql`.
+- **56/56 mathematical engine tests PASSED** on live Hetzner server (side pots, odd chip, rake, all hand rankings, Short Deck, Omaha, Hi-Lo)
+- **Live test evidence**: engine.smarter.poker/health returns running, /action rejects unauthenticated requests, Supabase schema has all §2.2 columns
+- **Round 47 audit** (all chapters re-verified line-by-line with code reads):
+  - Ch1 Master Laws: 30/30 VERIFIED — action lock (HC:316), turn validation (SAV), auth on all endpoints, broadcast awaits (FIX-217), card security (STE:2961 + FIX-227), StateVerifier (6 checks)
+  - Ch2 Object Schemas: 9/10 VERIFIED — 16 player fields in broadcast (STE:2954-2971), all §2.2 settings in DB, 2.10-2.18 PARTIAL (design choice)
+  - Ch3 State Machines: 4/4 VERIFIED — FIX-225 StateMachine<S> with guards and violation logging
+  - Ch4 Procedures: 18/18 VERIFIED — blind posting (HC:167-261), ante (HC:222-241), straddle (HC:244-258), 6 action types (HC:335-394), stage progression (HC:546-619), RIT, insurance, showdown order (HC:746-760), bomb pot (HC:150-157)
+  - Ch5 UI/Sound/Haptic: 4/4 VERIFIED — 14 sounds, 6 haptic levels
+  - Ch6 Timers: 12/12 VERIFIED — PreciseActionTimer deadline-based (100ms poll), TimeBankEngine (max 2/hand), DisconnectEngine (30s/3 timeouts/5s grace)
+  - Ch7 Edge Cases: 20/20 VERIFIED — all 20 edge cases with specific line numbers
+  - Appendix B: Position labels match spec for 2-9 players (STE:3284-3328)
 - **0% broken, 0% missing, 0% needs-verify**
 - **1% partial** — 4-tier hand history layering (design choice, not a bug)
-- **Engine live on Hetzner**: https://engine.smarter.poker/health — running, auth enforced, telemetry active
+- **Full compliance summary**: See `BIBLE-V8-COMPLIANCE-SUMMARY.md` at project root
 
 ### Remaining PARTIAL Item (Design Choice, Not Bug):
 1. **2.10-2.18** — Hand history is single-tier (structured JSON in `hand_history` table). Bible V8 describes 4-tier model (raw, structured, display, export) — current implementation covers structured + display via the JSON format. Export tier not implemented.

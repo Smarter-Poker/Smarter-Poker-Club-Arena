@@ -335,25 +335,27 @@ interface TableState {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // Seat positions — PokerBros-style tight oval hugging the felt edge
+// Players positioned at the EDGE of the table — avatars/info sit OFF the felt
+// Only action (chips, community cards, pot) on the actual table surface
 const SEAT_POSITIONS_6MAX = [
-  { x: 50, y: 93 }, // Seat 1 (Hero — bottom center)
-  { x: 10, y: 72 }, // Seat 2 (bottom left)
-  { x: 10, y: 32 }, // Seat 3 (top left)
-  { x: 50, y: 7 }, // Seat 4 (top center)
-  { x: 90, y: 32 }, // Seat 5 (top right)
-  { x: 90, y: 72 }, // Seat 6 (bottom right)
+  { x: 50, y: 100 }, // Seat 1 (Hero — bottom center, off felt)
+  { x: 2, y: 78 },   // Seat 2 (bottom left, off felt)
+  { x: 2, y: 25 },   // Seat 3 (top left, off felt)
+  { x: 50, y: -2 },  // Seat 4 (top center, off felt)
+  { x: 98, y: 25 },  // Seat 5 (top right, off felt)
+  { x: 98, y: 78 },  // Seat 6 (bottom right, off felt)
 ];
 
 const SEAT_POSITIONS_9MAX = [
-  { x: 50, y: 95 }, // Seat 1 (Hero — bottom center)
-  { x: 17, y: 87 }, // Seat 2 (bottom left)
-  { x: 10, y: 64 }, // Seat 3 (left middle) — shifted inward to prevent label clipping
-  { x: 10, y: 38 }, // Seat 4 (left upper) — shifted inward to prevent label clipping
-  { x: 22, y: 12 }, // Seat 5 (top left)
-  { x: 50, y: 5 }, // Seat 6 (top center)
-  { x: 78, y: 12 }, // Seat 7 (top right)
-  { x: 90, y: 38 }, // Seat 8 (right upper) — shifted inward to prevent label clipping
-  { x: 90, y: 64 }, // Seat 9 (right middle) — shifted inward to prevent label clipping
+  { x: 50, y: 102 },  // Seat 1 (Hero — bottom center, off felt)
+  { x: 14, y: 95 },   // Seat 2 (bottom left)
+  { x: 0, y: 68 },    // Seat 3 (left middle)
+  { x: 0, y: 35 },    // Seat 4 (left upper)
+  { x: 18, y: 2 },    // Seat 5 (top left)
+  { x: 50, y: -3 },   // Seat 6 (top center, off felt)
+  { x: 82, y: 2 },    // Seat 7 (top right)
+  { x: 100, y: 35 },  // Seat 8 (right upper)
+  { x: 100, y: 68 },  // Seat 9 (right middle)
 ];
 
 // HORSE AVATARS — Assign custom avatars to horse players using DiceBear API

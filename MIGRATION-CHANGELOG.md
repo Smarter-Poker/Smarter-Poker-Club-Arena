@@ -3,24 +3,7 @@
 ## Every Change, Documented. No Exceptions.
 
 **Started:** 2026-03-24
-**Current Step:** ALL 8 STEPS COMPLETE — Bible V8 Deep Audit (227 fixes, 99% verified)
-
----
-
-## Round 47b — Final Deep Audit + FIX-227 God-Mode RLS Fix (2026-04-01)
-
-### FIX-227: CRITICAL — Drop residual god-mode RLS policy on table_hole_cards
-- **Bug:** `20260329_create_table_hole_cards.sql` created `"Service role manages hole cards"` with `FOR ALL USING(true) WITH CHECK(true)`. FIX-141 dropped `"hole_cards_all"` but left this equivalent policy in place. Since PostgreSQL OR's permissive policies, ANY authenticated user could SELECT ALL players' hole cards — complete god-mode.
-- **Fix:** New migration `supabase/migrations/20260401_fix_hole_cards_service_role_godmode.sql` drops the policy. Also updated original migration file with comment explaining removal.
-- **Files:** `supabase/migrations/20260401_fix_hole_cards_service_role_godmode.sql`, `supabase/migrations/20260329_create_table_hole_cards.sql` (comment update)
-- **Impact:** Card security fully restored. Only `auth.uid() = user_id` SELECT policy remains.
-- **Note:** `service_role` in Supabase bypasses RLS entirely, so no explicit policy is needed for server-side card insertion.
-
-### Formal Compliance Summary Written
-- Created `BIBLE-V8-COMPLIANCE-SUMMARY.md` at project root with chapter-by-chapter evidence
-- Every requirement cross-referenced with actual line numbers in engine code
-- Live test evidence: engine.smarter.poker health check, auth enforcement, Supabase schema query
-- 56/56 mathematical tests confirmed passing
+**Current Step:** ALL 8 STEPS COMPLETE — Bible V8 Deep Audit (226 fixes, 99% verified)
 
 ---
 

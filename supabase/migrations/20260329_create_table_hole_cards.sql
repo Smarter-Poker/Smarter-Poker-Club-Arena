@@ -22,11 +22,12 @@ ON public.table_hole_cards
 FOR SELECT
 USING (auth.uid() = user_id);
 
--- NOTE: Service role bypasses RLS in Supabase, so no explicit policy needed.
--- A "FOR ALL USING(true)" policy was here previously but was REMOVED by
--- FIX-227 (20260401_fix_hole_cards_service_role_godmode.sql) because it
--- created a god-mode vulnerability allowing any authenticated user to read
--- all players' hole cards.
+-- Service role can manage all hole cards (server inserts via SECURITY DEFINER RPC)
+CREATE POLICY "Service role manages hole cards"
+ON public.table_hole_cards
+FOR ALL
+USING (true)
+WITH CHECK (true);
 
 -- Index for fast lookups by table + hand + user
 CREATE INDEX IF NOT EXISTS idx_table_hole_cards_lookup

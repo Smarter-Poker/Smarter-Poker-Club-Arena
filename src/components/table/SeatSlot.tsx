@@ -19,9 +19,7 @@
 
 import React, { useMemo, useState, useEffect, memo } from 'react';
 import './SeatSlot.css';
-import './CircularTimer.css';
 import { CardImage, CardBack } from './CardImage';
-import { CircularTimer } from './CircularTimer';
 import MiniHUD, { type MiniHUDStats } from './MiniHUD';
 import type { PlayerStyleResult } from '../../services/PlayerStyleClassifier';
 import { ChipPhysics } from './ChipPhysics';

@@ -606,7 +606,7 @@ export default function TablePage({
   const [preAction, setPreAction] = useState<'fold' | 'check' | 'call' | 'callAny' | null>(null);
 
   // Deal Animation State — triggers card dealing visual at start of new hand
-  const [showDealAnimation, setShowDealAnimation] = useState(false);
+  const [dealAnimationKey, setDealAnimationKey] = useState(0);
   const prevHandNumberForDealRef = useRef(0);
 
   // Time Bank State
@@ -2152,23 +2152,21 @@ export default function TablePage({
       const serverActionHistory = (handState.action_history as any[]) || [];
       const handNumber = (handState.hand_number as number) || 0;
 
-      // FIX 172: Play new-hand sound + deal animation when hand number increases (Bible V8 §5.1)
+      // FIX 172: Play new-hand sound when hand number increases (Bible V8 §5.1)
       if (handNumber > 0 && soundService.isEnabled()) {
-        setTableState((prevCheck) => {
-          if (handNumber > (prevCheck.handNumber || 0)) {
-            soundService.playNewHand();
-          }
-          return prevCheck; // Don't modify state — just peeking
-        });
+        if (handNumber > (tableStateRef.current.handNumber || 0)) {
+          soundService.playNewHand();
+        }
       }
-      // Trigger deal animation on new hand
+      // Trigger deal animation on new hand — increment key to force re-trigger even if prev animation still playing
       if (handNumber > 0 && handNumber > prevHandNumberForDealRef.current) {
         prevHandNumberForDealRef.current = handNumber;
-        setShowDealAnimation(true);
+        setDealAnimationKey((k) => k + 1);
       }
 
       setTableState((prev) => {
         const updatedPlayers = [...prev.players];
+        const isNewHand = handNumber > 0 && handNumber !== prev.handNumber;
 
         // Merge server player data with existing UI state
         for (const sp of serverPlayers) {
@@ -2178,16 +2176,26 @@ export default function TablePage({
           const existing = updatedPlayers[seatIdx];
           const isHero = sp.user_id === userId;
 
+          // Card security: server scrubs hole cards in broadcast (sends []) except at showdown.
+          // Hero gets cards via RLS-protected table_hole_cards channel.
+          // At showdown, server sends actual cards for all players → use sp.cards.
+          // FIX: On new hand, clear stale hero cards (they'll arrive fresh via secure channel).
+          let resolvedCards: any[] = [];
+          if (sp.cards && sp.cards.length > 0) {
+            resolvedCards = sp.cards; // Server sent cards (showdown or initial deal for opponents)
+          } else if (isNewHand) {
+            resolvedCards = []; // New hand — clear stale cards, hero will get fresh ones via RLS
+          } else {
+            resolvedCards = existing?.holeCards || []; // Same hand — preserve existing cards
+          }
+
           updatedPlayers[seatIdx] = {
             ...(existing || {}),
             id: sp.user_id,
             name: sp.username || existing?.name || `Seat ${sp.seat}`,
             stack: sp.stack,
             bet: sp.bet || 0,
-            // Card security: server scrubs hole cards in broadcast (sends []) except at showdown.
-            // Hero gets cards via RLS-protected table_hole_cards channel.
-            // At showdown, server sends actual cards for all players → use sp.cards.
-            holeCards: sp.cards && sp.cards.length > 0 ? sp.cards : existing?.holeCards || [],
+            holeCards: resolvedCards,
             status: sp.is_folded
               ? 'folded'
               : sp.is_all_in
@@ -4654,15 +4662,18 @@ export default function TablePage({
           />
 
           {/* Deal Animation — card backs flying from dealer to players on new hand */}
-          <DealAnimation
-            active={showDealAnimation}
-            activeSeats={tableState.players
-              .map((p, i) => (p && p.status !== 'folded' && p.status !== 'sitting_out' ? i : -1))
-              .filter((i) => i >= 0)}
-            dealerSeatIndex={Math.max(0, tableState.dealerSeat - 1)}
-            seatPositions={seatPositions}
-            onComplete={() => setShowDealAnimation(false)}
-          />
+          {dealAnimationKey > 0 && (
+            <DealAnimation
+              key={dealAnimationKey}
+              active={true}
+              activeSeats={tableState.players
+                .map((p, i) => (p && p.status !== 'folded' && p.status !== 'sitting_out' ? i : -1))
+                .filter((i) => i >= 0)}
+              dealerSeatIndex={Math.max(0, tableState.dealerSeat - 1)}
+              seatPositions={seatPositions}
+              onComplete={() => setDealAnimationKey(0)}
+            />
+          )}
 
           {/* Player Seats */}
           {seatPositions.map((pos, idx) => {

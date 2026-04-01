@@ -40,6 +40,10 @@ export interface UserTableSettings {
   emoji_enabled: boolean;
   /** FIX 173: Bible V8 §10.3 — Skip animations option for speed players */
   skip_animations: boolean;
+  /** Use club alias instead of smarter.poker display name */
+  use_alias: boolean;
+  /** Custom club alias text — shown at table when use_alias is true */
+  table_alias: string;
 }
 
 export const DEFAULT_USER_TABLE_SETTINGS: UserTableSettings = {
@@ -56,6 +60,8 @@ export const DEFAULT_USER_TABLE_SETTINGS: UserTableSettings = {
   text_message: true,
   emoji_enabled: true,
   skip_animations: false,
+  use_alias: false,
+  table_alias: '',
 };
 
 // Metadata for rendering toggles
@@ -118,6 +124,11 @@ export const TABLE_SETTINGS_META: SettingMeta[] = [
     key: 'skip_animations',
     label: 'Skip Animations',
     description: 'Disable deal/action animations for faster play (Bible V8 §10.3)',
+  },
+  {
+    key: 'use_alias',
+    label: 'Use Club Alias',
+    description: 'Display your club alias instead of your smarter.poker name at the table',
   },
 ];
 
@@ -182,6 +193,8 @@ export function useUserTableSettings(userId: string | null | undefined) {
             text_message: data.text_message ?? DEFAULT_USER_TABLE_SETTINGS.text_message,
             emoji_enabled: data.emoji_enabled ?? DEFAULT_USER_TABLE_SETTINGS.emoji_enabled,
             skip_animations: data.skip_animations ?? DEFAULT_USER_TABLE_SETTINGS.skip_animations,
+            use_alias: data.use_alias ?? DEFAULT_USER_TABLE_SETTINGS.use_alias,
+            table_alias: data.table_alias ?? DEFAULT_USER_TABLE_SETTINGS.table_alias,
           };
           setSettings(loaded);
           // Cache locally for instant loads
@@ -289,5 +302,45 @@ export function useUserTableSettings(userId: string | null | undefined) {
     [userId]
   );
 
-  return { settings, loading, toggleSetting };
+  // ── Set a string setting (for table_alias) ──
+  const setAlias = useCallback(
+    async (alias: string) => {
+      if (!userId) return;
+
+      // Optimistic update
+      setSettings((prev) => {
+        const updated = { ...prev, table_alias: alias };
+        try {
+          localStorage.setItem(LOCAL_CACHE_KEY, JSON.stringify(updated));
+        } catch {
+          /* */
+        }
+        return updated;
+      });
+
+      // Broadcast for cross-component sync
+      localOriginRef.current = true;
+      masterBus.emit('SETTINGS_CHANGED', { setting: 'table_alias', value: alias });
+
+      // Persist to Supabase
+      try {
+        const { error } = await supabase.from('user_table_settings').upsert(
+          {
+            user_id: userId,
+            table_alias: alias,
+          },
+          { onConflict: 'user_id' }
+        );
+
+        if (error) {
+          reportError(error, 'useUserTableSettings.Alias_save_failed');
+        }
+      } catch (err) {
+        reportError(err, 'useUserTableSettings.Alias_save_error');
+      }
+    },
+    [userId]
+  );
+
+  return { settings, loading, toggleSetting, setAlias };
 }

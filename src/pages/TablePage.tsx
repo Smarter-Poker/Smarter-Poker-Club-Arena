@@ -341,46 +341,29 @@ interface TableState {
 // Seat positions — pushed OUTSIDE the felt edge so avatars/info boxes
 // are off the table. Only chips and action labels on the felt surface.
 const SEAT_POSITIONS_6MAX = [
-  { x: 50, y: 105 },  // Seat 1 (Hero — bottom center, clearly off felt)
-  { x: -2, y: 80 },   // Seat 2 (bottom left, off felt)
-  { x: -2, y: 22 },   // Seat 3 (top left, off felt)
-  { x: 50, y: -5 },   // Seat 4 (top center, off felt)
-  { x: 102, y: 22 },  // Seat 5 (top right, off felt)
-  { x: 102, y: 80 },  // Seat 6 (bottom right, off felt)
+  { x: 50, y: 108 },  // Seat 1 (Hero — bottom center, off felt)
+  { x: -4, y: 78 },   // Seat 2 (bottom left, off felt)
+  { x: -4, y: 24 },   // Seat 3 (top left, off felt)
+  { x: 50, y: -2 },   // Seat 4 (top center, off felt)
+  { x: 104, y: 24 },  // Seat 5 (top right, off felt)
+  { x: 104, y: 78 },  // Seat 6 (bottom right, off felt)
 ];
 
 const SEAT_POSITIONS_9MAX = [
-  { x: 50, y: 107 },  // Seat 1 (Hero — bottom center, off felt)
-  { x: 12, y: 100 },  // Seat 2 (bottom left, off felt)
+  { x: 50, y: 110 },  // Seat 1 (Hero — bottom center, off felt)
+  { x: 12, y: 102 },  // Seat 2 (bottom left, off felt)
   { x: -4, y: 70 },   // Seat 3 (left middle, off felt)
-  { x: -4, y: 33 },   // Seat 4 (left upper, off felt)
-  { x: 16, y: -2 },   // Seat 5 (top left, off felt)
-  { x: 50, y: -5 },   // Seat 6 (top center, off felt)
-  { x: 84, y: -2 },   // Seat 7 (top right, off felt)
-  { x: 104, y: 33 },  // Seat 8 (right upper, off felt)
+  { x: -4, y: 34 },   // Seat 4 (left upper, off felt)
+  { x: 16, y: 0 },    // Seat 5 (top left, off felt)
+  { x: 50, y: -3 },   // Seat 6 (top center, off felt)
+  { x: 84, y: 0 },    // Seat 7 (top right, off felt)
+  { x: 104, y: 34 },  // Seat 8 (right upper, off felt)
   { x: 104, y: 70 },  // Seat 9 (right middle, off felt)
 ];
 
-// HORSE AVATARS — Assign custom avatars to horse players using DiceBear API
-const HORSE_AVATARS: Record<string, string> = {
-  'Solver Steve':
-    'https://api.dicebear.com/7.x/bottts-neutral/svg?seed=SolverSteve&backgroundColor=b6e3f4',
-  SmallBlind:
-    'https://api.dicebear.com/7.x/bottts-neutral/svg?seed=SmallBlind&backgroundColor=c0aede',
-  'SlowRoll Sid':
-    'https://api.dicebear.com/7.x/bottts-neutral/svg?seed=SlowRollSid&backgroundColor=d1d4f9',
-  KingFish: 'https://api.dicebear.com/7.x/bottts-neutral/svg?seed=KingFish&backgroundColor=ffd5dc',
-  'TAG Tyler':
-    'https://api.dicebear.com/7.x/bottts-neutral/svg?seed=TAGTyler&backgroundColor=ffdfbf',
-  'Maniac Mike':
-    'https://api.dicebear.com/7.x/bottts-neutral/svg?seed=ManiacMike&backgroundColor=ff9999',
-  NitNat: 'https://api.dicebear.com/7.x/bottts-neutral/svg?seed=NitNat&backgroundColor=c1f0c1',
-  'Bluff Queen':
-    'https://api.dicebear.com/7.x/bottts-neutral/svg?seed=BluffQueen&backgroundColor=e8c1f0',
-  AceHigh: 'https://api.dicebear.com/7.x/bottts-neutral/svg?seed=AceHigh&backgroundColor=f0e6c1',
-  TiltMaster:
-    'https://api.dicebear.com/7.x/bottts-neutral/svg?seed=TiltMaster&backgroundColor=f0c1c1',
-};
+// HORSE AVATARS — Use deterministic SVG generator (no external DiceBear dependency)
+// Each horse gets a unique colorful avatar derived from their name
+import { generateAvatarSvg } from '../utils/avatarGenerator';
 
 // Create empty player slots for a table
 const createEmptySeats = (count: 6 | 9): (SeatPlayer | null)[] => {
@@ -831,6 +814,14 @@ export default function TablePage({
         break;
       case 'FORCE_LEAVE_TABLE':
         handleForceLeaveTable();
+        break;
+      case 'CHANGE_AVATAR':
+        // Open the Hub avatar selector in a new window
+        avatarService.openAvatarSelector();
+        break;
+      case 'TOGGLE_ALIAS':
+        // Toggle alias display — handled by user table settings
+        masterBus.emit('SETTINGS_CHANGED', { setting: 'use_alias', value: true });
         break;
     }
   });
@@ -3301,8 +3292,7 @@ export default function TablePage({
               name: horse.name || `Player ${horse.playerNumber || seatIdx + 1}`,
               avatar:
                 horse.avatar ||
-                HORSE_AVATARS[horse.name] ||
-                `https://api.dicebear.com/7.x/bottts-neutral/svg?seed=${encodeURIComponent(horse.name || 'default')}&backgroundColor=b6e3f4`,
+                generateAvatarSvg(horse.id || horse.name || 'horse', horse.name || 'Horse'),
               stack,
               status: 'active' as const,
               isHero: false,

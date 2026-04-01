@@ -25,6 +25,22 @@ import {
 import './TableMenu.css';
 import { reportError } from '../../utils/errorReporter';
 
+// ─── SVG Icons for Identity section ─── */
+const AvatarIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+    <circle cx="10" cy="7" r="4" stroke="currentColor" strokeWidth="1.5" fill="none" />
+    <path d="M2 18c0-3.3 3.6-6 8-6s8 2.7 8 6" stroke="currentColor" strokeWidth="1.5" fill="none" />
+  </svg>
+);
+
+const NameTagIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+    <rect x="2" y="4" width="16" height="12" rx="2" stroke="currentColor" strokeWidth="1.5" />
+    <line x1="5" y1="10" x2="15" y2="10" stroke="currentColor" strokeWidth="1.5" />
+    <line x1="5" y1="13" x2="11" y2="13" stroke="currentColor" strokeWidth="1" opacity="0.5" />
+  </svg>
+);
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -83,8 +99,28 @@ export function createDefaultMenuSections(handlers: {
   onLeaderboard?: () => void;
   onHelp?: () => void;
   onLeaveTable?: () => void;
+  onChangeAvatar?: () => void;
+  onToggleAlias?: () => void;
+  aliasLabel?: string;
 }): MenuSection[] {
   return [
+    {
+      title: 'Identity',
+      actions: [
+        {
+          id: 'avatar',
+          label: 'Change Avatar',
+          icon: <AvatarIcon />,
+          onClick: handlers.onChangeAvatar || (() => {}),
+        },
+        {
+          id: 'display-name',
+          label: handlers.aliasLabel || 'Display Name',
+          icon: <NameTagIcon />,
+          onClick: handlers.onToggleAlias || (() => {}),
+        },
+      ],
+    },
     {
       title: 'Quick Actions',
       actions: [

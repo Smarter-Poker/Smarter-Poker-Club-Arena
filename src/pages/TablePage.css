@@ -345,18 +345,21 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 8px 8px 4px;
+  padding: 12px 8px 8px;
   overflow: visible;
+  /* Cap height so table never overflows — leaves room for header + action panel */
+  max-height: calc(100dvh - 130px);
 }
 
 /* Table Wrapper - Scales uniformly via CSS transform */
 .table-scaler {
   width: 100%;
   max-width: min(100%, 420px);
-  aspect-ratio: 1 / 1.4;
-  /* Vertical orientation */
+  aspect-ratio: 1 / 1.2;
+  /* Shorter oval — prevents clipping at top/bottom */
   position: relative;
   transform-origin: center center;
+  max-height: 100%;
 }
 
 /* Table Felt (Vertical Oval) */

@@ -961,7 +961,9 @@ export interface BusPayloadMap {
       | 'HAND_HISTORY'
       | 'HELP'
       | 'LEAVE_TABLE'
-      | 'FORCE_LEAVE_TABLE';
+      | 'FORCE_LEAVE_TABLE'
+      | 'CHANGE_AVATAR'
+      | 'TOGGLE_ALIAS';
   };
   // Table settings open
   TABLE_SETTINGS_OPEN: { tableId: string };

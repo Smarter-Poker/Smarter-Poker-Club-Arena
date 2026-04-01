@@ -168,10 +168,7 @@ export async function syncStacks(
 ): Promise<void> {
   const results = await Promise.allSettled(
     players.map((player) => {
-      // FIX-231c: Round stack to 2 decimal places before writing to DB.
-      // IEEE 754 float arithmetic causes drift (e.g., 898.6540618452912).
-      // This is the THIRD application — CI auto-revert bot keeps removing it.
-      const updatePayload: any = { stack: Math.round(player.stack * 100) / 100 };
+      const updatePayload: any = { stack: player.stack };
       if (player.time_bank_uses_remaining !== undefined) {
         updatePayload.time_bank_uses_remaining = player.time_bank_uses_remaining;
       }
@@ -271,7 +268,7 @@ export async function autoRebuyHorse(
     const currentStack = seat.stack ?? 0;
     await supabase
       .from('table_seats')
-      .update({ stack: Math.round((currentStack + rebuyAmount) * 100) / 100 })
+      .update({ stack: currentStack + rebuyAmount })
       .eq('table_id', tableId)
       .eq('user_id', userId)
       .is('left_at', null);

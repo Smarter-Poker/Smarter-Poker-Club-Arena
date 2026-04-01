@@ -2819,8 +2819,8 @@ export class ServerTableEngine {
   private scheduleHorseAction(
     player: SeatedPlayer,
     seat: number,
-    enginePlayer: { bet: number; stack: number; seat: number },
-    state: { currentBet: number; minRaise: number; pot: number; communityCards: any[]; players: any[]; stage: string }
+    enginePlayer: any,
+    state: any
   ): void {
     const toCall = Math.max(0, state.currentBet - enginePlayer.bet);
 

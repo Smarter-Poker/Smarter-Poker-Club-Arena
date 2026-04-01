@@ -15,7 +15,7 @@
 
 import { useState, useEffect, useCallback, useRef, startTransition, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { SeatSlot, PotDisplay, CommunityCards, DealerButton } from '../components/table';
+import { SeatSlot, PotDisplay, CommunityCards, DealerButton, DealAnimation } from '../components/table';
 import type { SeatPlayer, Card, LastAction, PositionBadge } from '../components/table/SeatSlot';
 import type { SidePot } from '../components/table/PotDisplay';
 import type { BoardStage } from '../components/table/CommunityCards';
@@ -326,6 +326,7 @@ interface TableState {
     stage: string;
   }[];
   handNumber?: number;
+  clubName?: string;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -337,25 +338,27 @@ interface TableState {
 // Seat positions — PokerBros-style tight oval hugging the felt edge
 // Players positioned at the EDGE of the table — avatars/info sit OFF the felt
 // Only action (chips, community cards, pot) on the actual table surface
+// Seat positions — pushed OUTSIDE the felt edge so avatars/info boxes
+// are off the table. Only chips and action labels on the felt surface.
 const SEAT_POSITIONS_6MAX = [
-  { x: 50, y: 100 }, // Seat 1 (Hero — bottom center, off felt)
-  { x: 2, y: 78 },   // Seat 2 (bottom left, off felt)
-  { x: 2, y: 25 },   // Seat 3 (top left, off felt)
-  { x: 50, y: -2 },  // Seat 4 (top center, off felt)
-  { x: 98, y: 25 },  // Seat 5 (top right, off felt)
-  { x: 98, y: 78 },  // Seat 6 (bottom right, off felt)
+  { x: 50, y: 105 },  // Seat 1 (Hero — bottom center, clearly off felt)
+  { x: -2, y: 80 },   // Seat 2 (bottom left, off felt)
+  { x: -2, y: 22 },   // Seat 3 (top left, off felt)
+  { x: 50, y: -5 },   // Seat 4 (top center, off felt)
+  { x: 102, y: 22 },  // Seat 5 (top right, off felt)
+  { x: 102, y: 80 },  // Seat 6 (bottom right, off felt)
 ];
 
 const SEAT_POSITIONS_9MAX = [
-  { x: 50, y: 102 },  // Seat 1 (Hero — bottom center, off felt)
-  { x: 14, y: 95 },   // Seat 2 (bottom left)
-  { x: 0, y: 68 },    // Seat 3 (left middle)
-  { x: 0, y: 35 },    // Seat 4 (left upper)
-  { x: 18, y: 2 },    // Seat 5 (top left)
-  { x: 50, y: -3 },   // Seat 6 (top center, off felt)
-  { x: 82, y: 2 },    // Seat 7 (top right)
-  { x: 100, y: 35 },  // Seat 8 (right upper)
-  { x: 100, y: 68 },  // Seat 9 (right middle)
+  { x: 50, y: 107 },  // Seat 1 (Hero — bottom center, off felt)
+  { x: 12, y: 100 },  // Seat 2 (bottom left, off felt)
+  { x: -4, y: 70 },   // Seat 3 (left middle, off felt)
+  { x: -4, y: 33 },   // Seat 4 (left upper, off felt)
+  { x: 16, y: -2 },   // Seat 5 (top left, off felt)
+  { x: 50, y: -5 },   // Seat 6 (top center, off felt)
+  { x: 84, y: -2 },   // Seat 7 (top right, off felt)
+  { x: 104, y: 33 },  // Seat 8 (right upper, off felt)
+  { x: 104, y: 70 },  // Seat 9 (right middle, off felt)
 ];
 
 // HORSE AVATARS — Assign custom avatars to horse players using DiceBear API
@@ -601,6 +604,10 @@ export default function TablePage({
   const [showRaiseSlider, setShowRaiseSlider] = useState(false);
   /** FIX 185: Bible V8 §4.15 — Added 'call' (auto_call) distinct from 'callAny' (auto_call_any) */
   const [preAction, setPreAction] = useState<'fold' | 'check' | 'call' | 'callAny' | null>(null);
+
+  // Deal Animation State — triggers card dealing visual at start of new hand
+  const [showDealAnimation, setShowDealAnimation] = useState(false);
+  const prevHandNumberForDealRef = useRef(0);
 
   // Time Bank State
   const [showTimeBank, setShowTimeBank] = useState(false);
@@ -2145,7 +2152,7 @@ export default function TablePage({
       const serverActionHistory = (handState.action_history as any[]) || [];
       const handNumber = (handState.hand_number as number) || 0;
 
-      // FIX 172: Play new-hand sound when hand number increases (Bible V8 §5.1)
+      // FIX 172: Play new-hand sound + deal animation when hand number increases (Bible V8 §5.1)
       if (handNumber > 0 && soundService.isEnabled()) {
         setTableState((prevCheck) => {
           if (handNumber > (prevCheck.handNumber || 0)) {
@@ -2153,6 +2160,11 @@ export default function TablePage({
           }
           return prevCheck; // Don't modify state — just peeking
         });
+      }
+      // Trigger deal animation on new hand
+      if (handNumber > 0 && handNumber > prevHandNumberForDealRef.current) {
+        prevHandNumberForDealRef.current = handNumber;
+        setShowDealAnimation(true);
       }
 
       setTableState((prev) => {
@@ -2398,6 +2410,20 @@ export default function TablePage({
         actualClubIdRef.current = table.club_id || '';
         setActualClubIdLoaded(true); // Signal observer chat permission check
         setActionTimeSeconds(table.action_time_seconds || 15);
+
+        // Fetch club name for table header display
+        if (table.club_id) {
+          supabase
+            .from('clubs')
+            .select('name')
+            .eq('id', table.club_id)
+            .maybeSingle()
+            .then(({ data: clubData }) => {
+              if (clubData?.name) {
+                setTableState((prev) => ({ ...prev, clubName: clubData.name }));
+              }
+            });
+        }
 
         // ─── Load bounty data for KO/PKO tournaments ───
         if (table.tournament_id) {
@@ -4385,11 +4411,22 @@ export default function TablePage({
           </button>
         </div>
         <div className="header-center">
-          {tableState.tableName && (
-            <span className="header-table-name">{tableState.tableName}</span>
-          )}
-          <span className="header-game-type">{tableState.gameType}</span>
-          <span className="header-blinds">{tableState.blinds}</span>
+          <div className="header-center__top-row">
+            {tableState.tableName && (
+              <span className="header-table-name">{tableState.tableName}</span>
+            )}
+            <span className="header-game-type">{tableState.gameType}</span>
+            <span className="header-blinds">{tableState.blinds}</span>
+          </div>
+          <div className="header-center__bottom-row">
+            <span className="header-brand">smarter.poker</span>
+            {tableState.clubName && (
+              <span className="header-club-name">{tableState.clubName}</span>
+            )}
+            {tableState.handNumber != null && tableState.handNumber > 0 && (
+              <span className="header-hand-number">#{tableState.handNumber}</span>
+            )}
+          </div>
         </div>
         {/* Header-right cleared — buttons moved to 4-corner HUD layout */}
         <div className="header-right" />
@@ -4614,6 +4651,17 @@ export default function TablePage({
             dealerVisualIndex={dealerVisualIndex}
             seatPositions={seatPositions}
             isVisible={tableState.isHandInProgress && dealerVisualIndex >= 0}
+          />
+
+          {/* Deal Animation — card backs flying from dealer to players on new hand */}
+          <DealAnimation
+            active={showDealAnimation}
+            activeSeats={tableState.players
+              .map((p, i) => (p && p.status !== 'folded' && p.status !== 'sitting_out' ? i : -1))
+              .filter((i) => i >= 0)}
+            dealerSeatIndex={Math.max(0, tableState.dealerSeat - 1)}
+            seatPositions={seatPositions}
+            onComplete={() => setShowDealAnimation(false)}
           />
 
           {/* Player Seats */}

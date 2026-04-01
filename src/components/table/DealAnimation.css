@@ -1,0 +1,89 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  DEAL ANIMATION — Card backs flying from dealer to players
+ * ═══════════════════════════════════════════════════════════════════════════════
+ */
+
+.deal-animation {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 100;
+  overflow: hidden;
+}
+
+.deal-animation__card {
+  position: absolute;
+  width: 28px;
+  height: 40px;
+  border-radius: 4px;
+  background: linear-gradient(135deg, #1a237e 0%, #0d47a1 50%, #1565c0 100%);
+  border: 1.5px solid rgba(255, 255, 255, 0.2);
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  /* Start at dealer position */
+  left: var(--origin-x, 50%);
+  top: var(--origin-y, 50%);
+  transform: translate(-50%, -50%) scale(0.5) rotate(0deg);
+  opacity: 0;
+  animation: dealCardFly 0.35s ease-out forwards;
+  animation-delay: var(--delay, 0ms);
+}
+
+/* Card back pattern — simple cross pattern */
+.deal-animation__card::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border-radius: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background:
+    repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 3px,
+      rgba(255, 255, 255, 0.04) 3px,
+      rgba(255, 255, 255, 0.04) 4px
+    );
+}
+
+@keyframes dealCardFly {
+  0% {
+    left: var(--origin-x, 50%);
+    top: var(--origin-y, 50%);
+    transform: translate(-50%, -50%) scale(0.4) rotate(-10deg);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(0.7) rotate(-5deg);
+  }
+  80% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1) rotate(3deg);
+  }
+  100% {
+    left: var(--target-x, 50%);
+    top: var(--target-y, 50%);
+    transform: translate(-50%, -50%) scale(0.8) rotate(0deg);
+    opacity: 0;
+  }
+}
+
+/* Responsive — smaller cards on mobile */
+@media (max-width: 640px) {
+  .deal-animation__card {
+    width: 22px;
+    height: 32px;
+    border-radius: 3px;
+  }
+}
+
+@media (max-width: 380px) {
+  .deal-animation__card {
+    width: 18px;
+    height: 26px;
+    border-radius: 2px;
+  }
+}

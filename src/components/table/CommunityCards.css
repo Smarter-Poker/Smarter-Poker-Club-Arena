@@ -41,7 +41,7 @@
     transform 0.3s ease,
     box-shadow 0.3s ease;
   cursor: default;
-  /* No base animation — cards stay still once dealt */
+  animation: cardDeal calc(0.4s * var(--animation-speed, 1)) ease-out forwards;
   transform-origin: center center;
 }
 
@@ -86,11 +86,6 @@
     transform: translateX(0) translateY(0) rotateY(0deg) scale(1);
     filter: brightness(1);
   }
-}
-
-/* Flop deal animation — only applied to cards when first dealt on flop */
-.community-cards__card--flop-deal {
-  animation: cardDeal calc(0.4s * var(--animation-speed, 1)) ease-out forwards;
 }
 
 .community-cards__card--dealing {

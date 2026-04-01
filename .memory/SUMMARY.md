@@ -2,9 +2,9 @@
 
 ## Active Migration: Server-Authoritative (Bible V8)
 
-**Current Phase:** ALL 8 STEPS COMPLETE — Bible V8 Deep Audit (219 fixes, 97% verified)
-**Last Verified:** Round 42 — Deep-dive on all 9 PARTIAL items with code fixes
-**Last FIX Numbers:** FIX 217, 218, 219 (committed + deployed to all 3 services)
+**Current Phase:** ALL 8 STEPS COMPLETE — Bible V8 Deep Audit (225 fixes, 99% verified)
+**Last Verified:** Round 45 — FIX-223/224/225 (animation-speed, perf instrumentation, formal FSM)
+**Last FIX Numbers:** FIX 223, 224, 225 (committed + deployed to Hetzner + World Hub pushed)
 
 ## Key Decisions
 - [001] Rake is EQUAL SHARE, never weighted (FIX 144)
@@ -24,7 +24,7 @@
 - [004] Hetzner VPS: SSH root@178.156.160.206, path /opt/club-arena, container club-arena-engine, port 8080, health https://engine.smarter.poker/health
 - [005] Vercel: hub-vanguard project prj_op66GkZyZcygXQKm76iyycfVFAQx, token vcp_8kIgZkEiE0YNlrmUvjdaXfNZxrzPZsdTksANXVsyAhbnjEg1Hl3q470C
 - [006] Supabase: kuklfnapbkmacvwxktbh.supabase.co, service role key in server/.env
-- [007] GitHub PAT: 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
+- [007] GitHub PAT: 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 (Antigravity-Fleet-v4, never expires)
 
 ## Problems Solved
 - [001] FIX 143 — Sit-out during active hand caused auto-fold

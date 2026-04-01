@@ -341,15 +341,27 @@ class GameServer {
       await supabase.from('table_seats').delete().neq('id', '00000000-0000-0000-0000-000000000000');
       console.log('[GameServer] Deleted all table seats (after safe cashout)');
 
-      // 3. FIX 202: Reset ALL cash tables to waiting (including 'closed').
-      // Previously only reset waiting/running — closed tables stayed closed forever,
-      // causing HorseFleetManager to create duplicates on every restart.
-      await supabase
-        .from('tables')
-        .update({ current_players: 0, status: 'waiting' })
-        .is('tournament_id', null)
-        .in('status', ['waiting', 'running', 'closed']);
-      console.log('[GameServer] Reset all cash table player counts and statuses to waiting');
+      // 3. FIX 202: Reset cash tables based on horse fleet mode
+      const disableHorsesOnCleanup = process.env.DISABLE_HORSE_FLEET === 'true';
+      if (disableHorsesOnCleanup) {
+        // When horse fleet is disabled, CLOSE all old running/waiting tables
+        // (they were horse-populated and shouldn't be resurrected).
+        // Only manually-created tables with the right status will be picked up by discovery.
+        await supabase
+          .from('tables')
+          .update({ current_players: 0, status: 'closed' })
+          .is('tournament_id', null)
+          .in('status', ['running']);
+        console.log('[GameServer] Closed all running cash tables (horse fleet disabled)');
+      } else {
+        // Normal mode: reset to waiting so HorseFleetManager can re-populate
+        await supabase
+          .from('tables')
+          .update({ current_players: 0, status: 'waiting' })
+          .is('tournament_id', null)
+          .in('status', ['waiting', 'running', 'closed']);
+        console.log('[GameServer] Reset all cash table player counts and statuses to waiting');
+      }
 
       // 4. Cancel stale REGISTERING/ANNOUNCED tournaments older than 1 hour
       const oneHourAgo = new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString();

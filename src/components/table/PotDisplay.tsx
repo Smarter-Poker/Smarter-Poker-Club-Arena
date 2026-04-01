@@ -78,7 +78,7 @@ function getChipBreakdown(amount: number): { color: string; count: number; label
     }
   }
 
-  return chips.slice(0, 4); // Max 4 denomination stacks visible
+  return chips.slice(0, 3); // Max 3 denomination stacks visible
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -94,18 +94,18 @@ interface ChipStackProps {
 function ChipStack({ color, count, offsetX }: ChipStackProps) {
   return (
     <div className="pot-display__chip-stack" style={{ transform: `translateX(${offsetX}px)` }}>
-      {Array.from({ length: Math.min(count, 8) }).map((_, i) => (
+      {Array.from({ length: Math.min(count, 5) }).map((_, i) => (
         <div
           key={i}
           className="pot-display__chip"
           style={{
-            backgroundColor: color,
-            transform: `translateY(${-i * 3}px)`,
+            '--chip-color': color,
+            transform: `translateY(${-i * 2}px)`,
             zIndex: count - i,
             animationDelay: `${i * 50}ms`,
-          }}
+          } as React.CSSProperties}
         >
-          <div className="pot-display__chip-inner" />
+          <div className="pot-display__chip-face" />
         </div>
       ))}
     </div>

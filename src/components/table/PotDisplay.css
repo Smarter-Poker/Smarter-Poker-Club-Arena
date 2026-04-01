@@ -26,12 +26,15 @@
    CHIP STACKS
    ───────────────────────────────────────────────────────────────────────────── */
 
+/* ─── CHIP STACKS: Circular top-down view (like dealer button but smaller) ─── */
+
 .pot-display__chips {
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  height: 50px;
+  height: 44px;
   margin-bottom: 4px;
+  gap: 2px;
 }
 
 .pot-display__chip-stack {
@@ -39,61 +42,68 @@
   display: flex;
   flex-direction: column-reverse;
   align-items: center;
+  width: 18px;
+  height: 44px;
 }
 
 .pot-display__chip {
-  width: 30px;
-  height: 10px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   position: absolute;
   bottom: 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.25);
-  border-bottom: 2px solid rgba(0, 0, 0, 0.4);
+  background: var(--chip-color, #e0e0e0);
+  border: 1.5px solid rgba(255, 255, 255, 0.35);
   box-shadow:
-    0 2px 6px rgba(0, 0, 0, 0.5),
-    0 1px 2px rgba(0, 0, 0, 0.3),
-    inset 0 -2px 4px rgba(0, 0, 0, 0.3),
-    inset 0 2px 6px rgba(255, 255, 255, 0.15);
-  animation: chipDrop 0.4s ease-out forwards;
+    0 1px 3px rgba(0, 0, 0, 0.5),
+    0 0 1px rgba(0, 0, 0, 0.3),
+    inset 0 1px 2px rgba(255, 255, 255, 0.25),
+    inset 0 -1px 2px rgba(0, 0, 0, 0.2);
+  animation: chipDrop 0.35s ease-out forwards;
   opacity: 0;
+}
+
+/* Inner ring — casino chip face pattern */
+.pot-display__chip-face {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.15) 0%, transparent 70%);
+}
+
+/* Edge notches — 4 white marks at N/S/E/W like real casino chips */
+.pot-display__chip::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 50%;
+  transform: translateX(-50%);
+  width: 4px;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.4);
+  border-radius: 0 0 1px 1px;
+  box-shadow:
+    0 16px 0 rgba(255, 255, 255, 0.4),
+    -8px 8px 0 rgba(255, 255, 255, 0.35),
+    8px 8px 0 rgba(255, 255, 255, 0.35);
 }
 
 @keyframes chipDrop {
   0% {
     opacity: 0;
-    transform: translateY(-20px);
+    transform: translateY(-15px) scale(0.6);
   }
-
-  50% {
+  60% {
     opacity: 1;
   }
-
   100% {
     opacity: 1;
-    transform: translateY(var(--chip-offset, 0));
+    transform: translateY(var(--chip-offset, 0)) scale(1);
   }
-}
-
-.pot-display__chip-inner {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 18px;
-  height: 18px;
-  border: 2px solid rgba(255, 255, 255, 0.25);
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.1) 0%, transparent 60%);
-}
-
-/* Edge markings — alternating white dashes like real casino chips */
-.pot-display__chip::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  border: 1.5px dashed rgba(255, 255, 255, 0.18);
-  pointer-events: none;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -338,13 +348,22 @@
   }
 
   .pot-display__chips {
-    height: 45px;
-    margin-bottom: 6px;
+    height: 40px;
+    margin-bottom: 4px;
   }
 
   .pot-display__chip {
-    width: 24px;
-    height: 7px;
+    width: 16px;
+    height: 16px;
+  }
+
+  .pot-display__chip-face {
+    width: 8px;
+    height: 8px;
+  }
+
+  .pot-display__chip-stack {
+    width: 16px;
   }
 
   .pot-display__side-pots {
@@ -392,12 +411,16 @@
   }
 
   .pot-display__chips {
-    height: 42px;
+    height: 38px;
   }
 
   .pot-display__chip {
-    width: 22px;
-    height: 6px;
+    width: 15px;
+    height: 15px;
+  }
+
+  .pot-display__chip-stack {
+    width: 15px;
   }
 }
 
@@ -424,13 +447,17 @@
   }
 
   .pot-display__chips {
-    height: 38px;
+    height: 36px;
     margin-bottom: 4px;
   }
 
   .pot-display__chip {
-    width: 20px;
-    height: 5px;
+    width: 14px;
+    height: 14px;
+  }
+
+  .pot-display__chip-stack {
+    width: 14px;
   }
 
   .pot-display__increase {
@@ -465,12 +492,16 @@
   }
 
   .pot-display__chips {
-    height: 35px;
+    height: 34px;
   }
 
   .pot-display__chip {
-    width: 18px;
-    height: 5px;
+    width: 13px;
+    height: 13px;
+  }
+
+  .pot-display__chip-stack {
+    width: 13px;
   }
 
   .pot-display__side-pots {

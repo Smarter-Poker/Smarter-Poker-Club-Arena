@@ -7,7 +7,7 @@
  * at the start of a new hand. Two cards per player, staggered timing.
  */
 
-import React, { useEffect, useState, memo } from 'react';
+import React, { useEffect, useState, useRef, useCallback, memo } from 'react';
 import './DealAnimation.css';
 
 export interface DealAnimationProps {
@@ -41,47 +41,65 @@ function DealAnimationComponent({
 }: DealAnimationProps) {
   const [cards, setCards] = useState<FlyingCard[]>([]);
   const [visible, setVisible] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onCompleteRef = useRef(onComplete);
+  onCompleteRef.current = onComplete;
+
+  // Only trigger on `active` transitioning to true — ignore array ref changes
+  const prevActiveRef = useRef(false);
 
   useEffect(() => {
-    if (!active || activeSeats.length === 0) {
-      setCards([]);
-      setVisible(false);
-      return;
-    }
+    // Only fire when active transitions from false → true
+    if (active && !prevActiveRef.current) {
+      prevActiveRef.current = true;
 
-    const dealerPos = seatPositions[dealerSeatIndex] || { x: 50, y: 50 };
-    const newCards: FlyingCard[] = [];
+      if (activeSeats.length === 0) return;
 
-    // Deal order: starting from seat after dealer, going around
-    // Two rounds (two cards per player)
-    for (let round = 0; round < 2; round++) {
-      activeSeats.forEach((seatIdx, orderIdx) => {
-        const pos = seatPositions[seatIdx];
-        if (!pos) return;
-        newCards.push({
-          id: `deal-${round}-${seatIdx}`,
-          targetX: pos.x,
-          targetY: pos.y,
-          originX: dealerPos.x,
-          originY: dealerPos.y,
-          delay: (round * activeSeats.length + orderIdx) * 80, // 80ms between each card
+      const dealerPos = seatPositions[dealerSeatIndex] || { x: 50, y: 50 };
+      const newCards: FlyingCard[] = [];
+
+      // Two rounds (two cards per player)
+      for (let round = 0; round < 2; round++) {
+        activeSeats.forEach((seatIdx, orderIdx) => {
+          const pos = seatPositions[seatIdx];
+          if (!pos) return;
+          newCards.push({
+            id: `deal-${round}-${seatIdx}`,
+            targetX: pos.x,
+            targetY: pos.y,
+            originX: dealerPos.x,
+            originY: dealerPos.y,
+            delay: (round * activeSeats.length + orderIdx) * 80,
+          });
         });
-      });
+      }
+
+      setCards(newCards);
+      setVisible(true);
+
+      // Animation duration: last card delay + fly time + settle time
+      const totalDuration = newCards.length * 80 + 400;
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(() => {
+        setVisible(false);
+        setCards([]);
+        onCompleteRef.current?.();
+        timerRef.current = null;
+      }, totalDuration);
     }
 
-    setCards(newCards);
-    setVisible(true);
+    if (!active && prevActiveRef.current) {
+      prevActiveRef.current = false;
+    }
 
-    // Animation duration: last card delay + fly time + settle time
-    const totalDuration = newCards.length * 80 + 400;
-    const timer = setTimeout(() => {
-      setVisible(false);
-      setCards([]);
-      onComplete?.();
-    }, totalDuration);
-
-    return () => clearTimeout(timer);
-  }, [active, activeSeats, dealerSeatIndex, seatPositions, onComplete]);
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, [active]); // eslint-disable-line react-hooks/exhaustive-deps
+  // ↑ Intentionally only depends on `active` — other props read via refs/current values
 
   if (!visible || cards.length === 0) return null;
 

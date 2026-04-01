@@ -2153,6 +2153,19 @@ export default function TablePage({
         });
       }
 
+      // FIX-232: Clear all-in equity overlay and all-in mode when a new hand starts.
+      // Previously this only lived in the dead lastEvent HAND_COMPLETE handler (game_event
+      // channel the server never broadcasts on). Clear on hand_number increase.
+      if (handNumber > 0) {
+        setTableState((prevCheck) => {
+          if (handNumber > (prevCheck.handNumber || 0)) {
+            setAllInEquities([]);
+            setIsAllInMode(false);
+          }
+          return prevCheck; // Don't modify state — just peeking
+        });
+      }
+
       setTableState((prev) => {
         const updatedPlayers = [...prev.players];
 

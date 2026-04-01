@@ -62,7 +62,7 @@ interface CardFaceProps {
   card: Card;
   index: number;
   isHighlighted: boolean;
-  isNewlyDealt: boolean;
+  isDealing: boolean;
   stage: BoardStage;
   deckStyle?: '4color' | '2color';
 }
@@ -71,21 +71,20 @@ function CardFace({
   card,
   index,
   isHighlighted,
-  isNewlyDealt,
+  isDealing,
   stage,
   deckStyle = '4color',
 }: CardFaceProps) {
-  // Only animate NEWLY dealt cards — cards already on board stay still
-  const isTurnCard = isNewlyDealt && stage === 'turn' && index === 3;
-  const isRiverCard = isNewlyDealt && (stage === 'river' || stage === 'showdown') && index === 4;
-  const isFlopDeal = isNewlyDealt && stage === 'flop' && index < 3;
+  // Apply turn/river emphasis animations to the newly dealt card
+  const isTurnCard = stage === 'turn' && index === 3;
+  const isRiverCard = (stage === 'river' || stage === 'showdown') && index === 4;
 
   return (
     <div
       className={[
         'community-cards__card',
         isHighlighted ? 'community-cards__card--highlighted' : '',
-        isFlopDeal ? 'community-cards__card--flop-deal' : '',
+        isDealing ? 'community-cards__card--dealing' : '',
         isTurnCard ? 'community-cards__card--turn' : '',
         isRiverCard ? 'community-cards__card--river' : '',
       ]
@@ -126,7 +125,7 @@ function CommunityCardsComponent({
 }: CommunityCardsProps) {
   const visibleCount = useMemo(() => getVisibleCardCount(stage), [stage]);
   const prevStageRef = useRef(stage);
-  const prevVisibleCountRef = useRef(0);
+  const prevCardCountRef = useRef(cards.length);
   const [showdownMode, setShowdownMode] = useState(false);
   const [highlightPop, setHighlightPop] = useState(false);
   const [showParticles, setShowParticles] = useState(false);
@@ -134,38 +133,12 @@ function CommunityCardsComponent({
   const prevHighlightRef = useRef<number[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Track which card indices are newly dealt this render (for animation)
-  const [newlyDealtIndices, setNewlyDealtIndices] = useState<Set<number>>(new Set());
-
+  // FIX 184: Removed duplicate haptic here — stage transition useEffect below already
+  // fires haptic on flop/turn/river. Having both caused double-haptic on every deal.
+  // Track card count for reference only (no haptic).
   useEffect(() => {
-    const prevCount = prevVisibleCountRef.current;
-    if (visibleCount > prevCount) {
-      // New cards appeared — mark them as newly dealt
-      const newIndices = new Set<number>();
-      for (let i = prevCount; i < visibleCount; i++) {
-        newIndices.add(i);
-      }
-      setNewlyDealtIndices(newIndices);
-      // Clear the "newly dealt" flag after animation completes (700ms)
-      const timer = setTimeout(() => setNewlyDealtIndices(new Set()), 700);
-      prevVisibleCountRef.current = visibleCount;
-      return () => clearTimeout(timer);
-    }
-    // If count decreased (new hand), reset
-    if (visibleCount < prevCount) {
-      prevVisibleCountRef.current = visibleCount;
-      if (visibleCount > 0) {
-        const newIndices = new Set<number>();
-        for (let i = 0; i < visibleCount; i++) {
-          newIndices.add(i);
-        }
-        setNewlyDealtIndices(newIndices);
-        const timer = setTimeout(() => setNewlyDealtIndices(new Set()), 700);
-        return () => clearTimeout(timer);
-      }
-    }
-    prevVisibleCountRef.current = visibleCount;
-  }, [visibleCount]);
+    prevCardCountRef.current = cards.length;
+  }, [cards.length]);
 
   // Haptic feedback on stage transitions
   useEffect(() => {
@@ -219,12 +192,11 @@ function CommunityCardsComponent({
           type: 'card' as const,
           card: cards[i],
           isHighlighted: highlightedIndices.includes(i),
-          isNewlyDealt: newlyDealtIndices.has(i),
         };
       }
       return { type: 'placeholder' as const };
     });
-  }, [cards, visibleCount, highlightedIndices, newlyDealtIndices]);
+  }, [cards, visibleCount, highlightedIndices]);
 
   return (
     <div
@@ -242,7 +214,7 @@ function CommunityCardsComponent({
               card={slot.card}
               index={i}
               isHighlighted={slot.isHighlighted}
-              isNewlyDealt={slot.isNewlyDealt}
+              isDealing={isDealing && i === visibleCount - 1}
               stage={stage}
               deckStyle={deckStyle}
             />

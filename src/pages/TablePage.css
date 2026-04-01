@@ -307,7 +307,7 @@
   align-items: center;
   justify-content: center;
   padding: 8px 8px 4px;
-  overflow: visible;
+  overflow: hidden;
 }
 
 /* Table Wrapper - Scales uniformly via CSS transform */
@@ -326,7 +326,6 @@
   height: 100%;
   position: absolute;
   inset: 0;
-  overflow: visible;
 }
 
 .table-rail {

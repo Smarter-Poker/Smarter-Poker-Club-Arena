@@ -11,6 +11,7 @@ import { masterBus } from '../core/MasterBus';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { QUERY_LIMITS } from '../lib/constants';
 import { reportError } from '../utils/errorReporter';
+import { notifyServerLeave } from './GameServerAPI';
 
 class TableService {
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -291,6 +292,16 @@ class TableService {
     userId: string
   ): Promise<{ success: boolean; chipsReturned: number }> {
     try {
+      // Step 1: Notify the game server engine — it will auto-fold if mid-hand
+      // This is critical: without this, the engine keeps the player in-memory
+      // and the game freezes waiting for their action
+      try {
+        await notifyServerLeave(tableId);
+      } catch (serverErr) {
+        // Non-fatal — continue with client-side cleanup
+        console.warn('[TableService] Server leave notification failed:', serverErr);
+      }
+
       // Get the player's current seat data
       const { data: seat, error: seatError } = await supabase
         .from('table_seats')
@@ -306,9 +317,9 @@ class TableService {
         return { success: false, chipsReturned: 0 };
       }
 
-      // Check if player is in active hand
+      // Check if player is in active hand (server already folded them, but seat may still be 'playing')
       if (seat.status === 'playing') {
-        // Mark as sitting out instead of leaving immediately
+        // Mark as leave_pending — server's processLeavePending will handle cashout at end of hand
         await supabase
           .from('table_seats')
           .update({ status: 'sitting_out', leave_pending: true })

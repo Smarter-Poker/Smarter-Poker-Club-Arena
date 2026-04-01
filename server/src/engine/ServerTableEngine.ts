@@ -52,6 +52,7 @@ import {
   updateTableStatus,
   autoRebuyHorse,
   markSeatAsLeft,
+  atomicCashout,
   processLeavePending,
   logRakeCollection,
   logBBJCollection,
@@ -906,6 +907,73 @@ export class ServerTableEngine {
     const willFoldNextHand = sitOut && this.handController !== null;
 
     return { success: true, willFoldNextHand };
+  }
+
+  /**
+   * POST /leave — Player leaves the table. If mid-hand, auto-fold then mark leave_pending.
+   * If between hands, mark seat as left immediately.
+   */
+  public leaveTable(
+    userId: string
+  ): { success: boolean; error?: string; immediate: boolean } {
+    const player = this.seatedPlayers.find((p) => p.user_id === userId);
+    if (!player) {
+      return { success: false, error: 'Player not found at this table', immediate: false };
+    }
+
+    if (this.handController !== null) {
+      // Mid-hand: fold the player immediately if it's their turn or they're still in
+      const state = this.handController.getState();
+      const enginePlayer = state.players.find((p) => p.user_id === userId);
+
+      if (enginePlayer && !enginePlayer.is_folded && !enginePlayer.is_all_in) {
+        try {
+          this.handController.performAction(enginePlayer.seat, 'fold');
+          console.log(
+            `[ServerTableEngine:${this.tableId}] Player ${userId} auto-folded on leave`
+          );
+        } catch (err) {
+          // Player might not be the current actor — that's fine, they'll be skipped
+          console.warn(
+            `[ServerTableEngine:${this.tableId}] Auto-fold on leave failed (not their turn): ${err}`
+          );
+        }
+      }
+
+      // Mark as leave_pending — processLeavePending will handle cashout at end of hand
+      supabase
+        .from('table_seats')
+        .update({ leave_pending: true, status: 'sitting_out' })
+        .eq('table_id', this.tableId)
+        .eq('user_id', userId)
+        .is('left_at', null)
+        .then(({ error }) => {
+          if (error) console.warn(`[ServerTableEngine] leave_pending update failed:`, error.message);
+        });
+
+      // Also mark in disconnect engine so they don't get dealt next hand
+      this.disconnectEngine.sitOut(this.tableId, userId, 'voluntary');
+
+      return { success: true, immediate: false };
+    } else {
+      // Between hands: remove immediately via atomic cashout
+      atomicCashout(userId, this.tableId, player.seat_number)
+        .then(() => {
+          console.log(
+            `[ServerTableEngine:${this.tableId}] Player ${userId} left table immediately (between hands)`
+          );
+        })
+        .catch((err) => {
+          console.warn(
+            `[ServerTableEngine:${this.tableId}] atomicCashout on leave failed:`,
+            err
+          );
+          // Fallback: mark seat as left directly
+          markSeatAsLeft(this.tableId, userId, player.seat_number);
+        });
+
+      return { success: true, immediate: true };
+    }
   }
 
   /**

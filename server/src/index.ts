@@ -2962,6 +2962,40 @@ const httpServer = createServer(async (req, res) => {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
+  // POST /leave — Player leaves the table (auto-fold if mid-hand, cashout)
+  // Body: { tableId }
+  // ─────────────────────────────────────────────────────────────────────────
+  if (method === 'POST' && url === '/leave') {
+    try {
+      const auth = await authenticateRequest(req);
+      if (!auth) {
+        return sendJSON(res, 401, { success: false, error: 'Authentication required' });
+      }
+
+      const body = JSON.parse(await readBody(req));
+      const { tableId } = body;
+      const userId = auth.userId;
+
+      if (!tableId) {
+        return sendJSON(res, 400, { success: false, error: 'Missing tableId' });
+      }
+
+      const engine = gameServer.getTableEngine(tableId);
+      if (!engine) {
+        // Engine not running — do direct DB cleanup
+        console.warn(`[HTTP /leave] No engine for table ${tableId} — direct DB cleanup`);
+        return sendJSON(res, 200, { success: true, immediate: true, note: 'No engine running, client handles DB cleanup' });
+      }
+
+      const result = engine.leaveTable(userId);
+      return sendJSON(res, result.success ? 200 : 400, result);
+    } catch (err: any) {
+      reportError(err, 'HTTP.leave_error');
+      return sendJSON(res, 500, { success: false, error: 'Failed to leave table' });
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
   // POST /sitout — Bible V8 §7.12: Player sit out / sit back in
   // Body: { tableId, sitOut: boolean }
   // ─────────────────────────────────────────────────────────────────────────

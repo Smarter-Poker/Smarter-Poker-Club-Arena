@@ -506,6 +506,27 @@ export async function submitDiscard(tableId: string, cardIndex: number): Promise
   }
 }
 
+/**
+ * POST /leave — Notify the game server that a player is leaving the table.
+ * The server will auto-fold if mid-hand, then mark leave_pending for cashout.
+ */
+export async function notifyServerLeave(tableId: string): Promise<ActionResult> {
+  try {
+    const headers = await getAuthHeaders();
+    const resp = await fetch(`${GAME_SERVER_URL}/leave`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ tableId }),
+    });
+    if (!resp.ok) return { success: false, error: `Server error (${resp.status})` };
+    return (await resp.json()) as ActionResult;
+  } catch (err: unknown) {
+    // Non-fatal — client-side leave still works via Supabase
+    console.warn('[GameServerAPI] notifyServerLeave failed:', err);
+    return { success: false, error: 'Server unreachable' };
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // WEBSOCKET CONNECTIVITY — Real-time table state sync
 // ═══════════════════════════════════════════════════════════════════════════════

@@ -191,9 +191,7 @@ function evaluate5Cards(cards: Card[], shortDeck: boolean = false): EvaluatedHan
   const counts = [...rankCounts.values()].sort((a, b) => b - a);
 
   // FIX 119: Short Deck hand rankings — flush > full house (Bible V8 Appendix D)
-  const FLUSH_RANK = shortDeck ? HAND_RANKINGS.FULL_HOUSE + 0.5 : HAND_RANKINGS.FLUSH;
-  // In Short Deck, flush (6.5) > full house (7) won't work with static ints.
-  // Instead, we swap: flush gets ranking 7, full house gets ranking 6.
+  // In Short Deck, flush beats full house. We swap rankings: flush=7, full house=6.
   const flushRanking = shortDeck ? 7 : HAND_RANKINGS.FLUSH; // 7 in short deck, 6 normally
   const fullHouseRanking = shortDeck ? 6 : HAND_RANKINGS.FULL_HOUSE; // 6 in short deck, 7 normally
 
@@ -566,7 +564,8 @@ export function determineWinners(
   players: SeatPlayer[],
   communityCards: Card[],
   pots: Pot[],
-  gameVariant: string = 'nlh'
+  gameVariant: string = 'nlh',
+  dealerSeat: number = 0
 ): Winner[] {
   const winners: Winner[] = [];
   const activePlayers = players.filter((p) => !p.is_folded);
@@ -619,7 +618,8 @@ export function determineWinners(
         JSON.stringify(ph.hand.kickers) === JSON.stringify(bestHiKickers)
     );
     // Bible V8 §2.7: Pass potIndex so Winner objects know which pot they won from
-    distributePot(winners, hiWinners, hiPotAmount, 'High', potIdx);
+    // FIX 226: Pass dealerSeat so odd chip goes clockwise from dealer (not seat 0)
+    distributePot(winners, hiWinners, hiPotAmount, 'High', potIdx, dealerSeat);
 
     // Low half
     if (loPotAmount > 0) {
@@ -628,7 +628,7 @@ export function determineWinners(
       const loWinners = qualifyingLowPlayers.filter(
         (ph) => JSON.stringify(ph.lowHand!.kickers) === JSON.stringify(bestLoKickers)
       );
-      distributePot(winners, loWinners, loPotAmount, 'Low', potIdx);
+      distributePot(winners, loWinners, loPotAmount, 'Low', potIdx, dealerSeat);
     }
   }
 

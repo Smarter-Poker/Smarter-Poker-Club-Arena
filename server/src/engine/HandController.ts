@@ -762,11 +762,13 @@ export class HandController {
       this.emit({ type: 'SHOWDOWN', results: showdownResults });
     }
 
+    // FIX 226: Pass dealerSeat so odd chip allocation is clockwise from dealer
     let winners = determineWinners(
       this.state.players,
       this.state.communityCards,
       pots,
-      this.config.gameVariant
+      this.config.gameVariant,
+      this.state.dealerSeat
     );
 
     // Bible V8 §1.9 — No-winners guard: if determineWinners returns empty

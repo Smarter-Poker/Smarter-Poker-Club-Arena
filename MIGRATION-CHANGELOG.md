@@ -3,7 +3,31 @@
 ## Every Change, Documented. No Exceptions.
 
 **Started:** 2026-03-24
-**Current Step:** ALL 8 STEPS COMPLETE — Bible V8 Deep Audit (219 fixes, 97% verified, 3% design-choice PARTIAL)
+**Current Step:** ALL 8 STEPS COMPLETE — Bible V8 Deep Audit (226 fixes, 99% verified)
+
+---
+
+## Round 47 — Deep Engine Audit + FIX-226 Odd Chip Allocation (2026-03-31)
+
+### FIX-226: Wire dealerSeat through to distributePot for correct odd chip allocation
+- **Bug:** `distributePot()` had `dealerSeat` parameter (added in FIX-169) but `determineWinners()` never passed it through. Odd chips always went to lowest seat number instead of clockwise from dealer.
+- **Fix:** Added `dealerSeat` param to `determineWinners()`, passed from `HandController.completeHand()` using `this.state.dealerSeat`. Both Hi and Lo distributePot calls now receive correct dealer seat.
+- **Files:** `server/src/engine/PokerEngine.ts`, `server/src/engine/HandController.ts`
+- **Also:** Removed dead `FLUSH_RANK` variable in `evaluate5Cards()`
+
+### Deep Audit Findings (all verified correct):
+- Side pot calculation (`calculatePots`): correct tier-based splitting, pot merging
+- Showdown ordering: last aggressor first, clockwise, non-contiguous seat fix (FIX-165)
+- Hand evaluation: NLH + Short Deck + Omaha + Omaha Hi-Lo all correct
+- Rake calculation: integer-cent precision, no-flop-no-drop, player-count caps
+- Insurance Engine: 20% house edge, partial coverage, per-street recalc, chop=push
+- RunItTwiceEngine: dual/triple boards, chooser/responder, integer-cents pot split
+- DisconnectEngine: heartbeat, preferCheckOverFold, 5s grace, maxConsecutiveTimeouts=3
+- PreActionEngine: 5 types, maxCallAmount guard, onBetPlaced invalidation
+- TimeBankEngine: max 2/hand, 15s/use, orbit refill, per-hand reset
+- PreciseActionTimer: deadline-based, 100ms polling, drift-immune
+- Blind posting: heads-up, dead blinds, BBA, straddles — all correct
+- Bomb pot: anteMultiplier × BB, currentBet=0, skip to flop
 
 ---
 

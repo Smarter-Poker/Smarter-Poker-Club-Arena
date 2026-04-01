@@ -78,22 +78,35 @@ class GameServer {
     await this.cleanupStaleData();
 
     if (!maintenanceMode) {
-      // Step 2: Start horse fleet manager (creates tables, seats horses)
-      await this.horseFleet.start();
+      const disableHorses = process.env.DISABLE_HORSE_FLEET === 'true';
+      const disableTournaments = process.env.DISABLE_TOURNAMENTS === 'true';
 
-      // Step 3: Start tournament recurring service (creates MTTs, SNGs, Spins)
-      this.tournamentRecurring.start();
+      if (!disableHorses) {
+        // Step 2: Start horse fleet manager (creates tables, seats horses)
+        await this.horseFleet.start();
 
-      // Step 4: Start lifecycle manager (stuck horse detection, cleanup)
-      this.lifecycle.start();
+        // Step 4: Start lifecycle manager (stuck horse detection, cleanup)
+        this.lifecycle.start();
 
-      // Step 5: Start server-side auto-rebuy wallet funder
-      this.autoRebuy.start();
+        // Step 5: Start server-side auto-rebuy wallet funder
+        this.autoRebuy.start();
+      } else {
+        console.log('[GameServer] Horse fleet DISABLED — no bot tables will be created');
+      }
+
+      if (!disableTournaments) {
+        // Step 3: Start tournament recurring service (creates MTTs, SNGs, Spins)
+        this.tournamentRecurring.start();
+      } else {
+        console.log('[GameServer] Tournaments DISABLED — no recurring tournaments');
+      }
 
       // Step 6: Start discovery loops (finds tables with players, starts engines)
       // These are infinite while-loops — fire-and-forget with error handling
       this.discoverCashTables().catch((err) => reportError(err, 'GameServer.Cash_table_discovery_fatal_err'));
-      this.discoverTournaments().catch((err) => reportError(err, 'GameServer.Tournament_discovery_fatal_err'));
+      if (!disableTournaments) {
+        this.discoverTournaments().catch((err) => reportError(err, 'GameServer.Tournament_discovery_fatal_err'));
+      }
 
       // Step 7: Start synchronized break timer (top of every hour, 5 min duration)
       this.scheduleSynchronizedBreaks();

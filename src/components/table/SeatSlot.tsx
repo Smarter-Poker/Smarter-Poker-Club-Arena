@@ -449,10 +449,13 @@ export const SeatSlot = memo(
             player.status !== 'all_in' && (
               <span className={`seat__status-dot seat__status-dot--${player.status}`} />
             )}
-          {/* FIX 186: Disconnected overlay — shows wifi-off icon */}
+          {/* FIX 186: Disconnected overlay — shows DISCONNECTED label + countdown */}
           {player.status === 'disconnected' && (
             <div className="seat__disconnect-overlay" title="Player disconnected">
-              ⚡
+              <span className="seat__disconnect-label">DISCONNECTED</span>
+              {secondsLeft != null && secondsLeft > 0 && (
+                <span className="seat__disconnect-timer">{secondsLeft}s</span>
+              )}
             </div>
           )}
 

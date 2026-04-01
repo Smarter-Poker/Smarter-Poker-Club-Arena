@@ -2887,7 +2887,7 @@ export class ServerTableEngine {
   private scheduleHorseAction(
     player: SeatedPlayer,
     seat: number,
-    enginePlayer: { bet: number; stack: number; seat: number },
+    enginePlayer: any,
     state: { currentBet: number; minRaise: number; pot: number; communityCards: any[]; players: any[]; stage: string }
   ): void {
     const toCall = Math.max(0, state.currentBet - enginePlayer.bet);
@@ -2917,7 +2917,7 @@ export class ServerTableEngine {
     };
 
     // Get decision — SYNCHRONOUS
-    const decision = HorseLogic.decide(enginePlayer, gameState as any, horseStyle);
+    const decision = HorseLogic.decide(enginePlayer as any, gameState as any, horseStyle);
 
     // Realistic think time: 2-8 seconds (simulates human decision-making)
     // Simple decisions (check, fold) = 2-3s; complex (raise, all-in) = 4-8s

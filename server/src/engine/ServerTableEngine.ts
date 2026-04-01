@@ -1642,14 +1642,6 @@ export class ServerTableEngine {
       this.disconnectEngine.registerPlayer(this.tableId, p.user_id);
     }
 
-    // Horses are always "connected" — send synthetic heartbeats to prevent disconnect detection.
-    // This ensures horses are treated identically to connected human players.
-    for (const p of players) {
-      if (p.is_horse) {
-        this.disconnectEngine.heartbeat(this.tableId, p.user_id);
-      }
-    }
-
     // Step 5: Wire disconnect auto-action callback into HandController
     this.disconnectEngine.onAutoAction(this.tableId, (disconnectAction) => {
       if (!this.handController) return;
@@ -2811,12 +2803,10 @@ export class ServerTableEngine {
     // Step 4: Start the authoritative turn timer — SAME for horses and real players
     this.startTurnTimer(player.user_id, seat, effectiveActionTime);
 
-    // Step 5: If this is a horse, keep heartbeat fresh and schedule their action
+    // Step 5: If this is a horse, schedule their action after a realistic think time
     // The horse uses the SAME timer as a real player — the action fires within that timer window.
     // Think times: 2-8 seconds (varies by decision complexity to simulate real play)
     if (player.is_horse) {
-      // Keep horse "connected" — synthetic heartbeat prevents disconnect detection
-      this.disconnectEngine.heartbeat(this.tableId, player.user_id);
       this.scheduleHorseAction(player, seat, enginePlayer, state);
     }
   }

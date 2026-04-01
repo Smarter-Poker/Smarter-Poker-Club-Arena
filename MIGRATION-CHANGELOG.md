@@ -7,6 +7,31 @@
 
 ---
 
+## Round 49 — 4-Pass Maximum Rigor Audit (2026-04-01)
+
+### FIX-231b: Re-apply floating-point stack drift prevention
+- **Bug:** CI auto-revert bot removed FIX-231 (`Math.round(player.stack * 100) / 100` in `syncStacks()`). Raw floats were being written to DB again (e.g., `898.6540618452912`).
+- **Fix:** Re-applied rounding at sync boundary in `server/src/services/supabase.ts` line 171.
+- **Files:** `server/src/services/supabase.ts`
+
+### FIX-232: All-in equity overlay persists between hands (stale UI)
+- **Bug:** `setAllInEquities([])` and `setIsAllInMode(false)` only existed in the dead `lastEvent` HAND_COMPLETE handler (lines 3531-3532 of TablePage.tsx). The server never broadcasts `game_event` on the `table:{tableId}` channel — it uses `broadcastHandState()` on `hand-state:{tableId}` instead. This dead code path meant the all-in equity overlay and CSS class `table-page--allin-mode` persisted across hands indefinitely.
+- **Fix:** Added cleanup in the live `subscribeToHandState` handler, triggered on `handNumber` increase.
+- **Files:** `src/pages/TablePage.tsx`
+
+### 4-Pass Audit Summary:
+**Pass 1 — Wiring:** All 12 server→client broadcast events mapped and verified bidirectional. Card delivery via RLS-protected `table_hole_cards` confirmed. All subscriptions have proper cleanup. Dead code identified: `game_event` handler in TableWebSocket and `lastEvent` handler in TablePage (server never sends `game_event`).
+
+**Pass 2 — Real-Time:** 5 scenarios traced end-to-end: (1) Player action submission, (2) Hand deal + card delivery, (3) Time bank activation, (4) Insurance offer flow, (5) Run It Twice flow. All complete and correct.
+
+**Pass 3 — Adversarial:** Card security verified (scrubbed to `[]` in broadcast, RLS on hole_cards). Action spoofing prevented (userId from JWT, not body). Rate limiting (100ms). Body size limit (16KB). No service role key in client code. CORS `*` noted for hardening (not a vulnerability due to JWT in localStorage).
+
+**Pass 4 — Edge Cases:** Float precision verified (integer-cents throughout). Reconnect card fallback safe. PostHand→next hand race prevented via awaited promise. Disconnect grace period (5s). Hand timeout (10min). No-winners guard. Rake+BBJ overflow guard.
+
+**Deployed:** Hetzner VPS (engine server) + GitHub push. Frontend build ready for World Hub sync.
+
+---
+
 ## Round 47 — Deep Engine Audit + FIX-226 Odd Chip Allocation (2026-03-31)
 
 ### FIX-226: Wire dealerSeat through to distributePot for correct odd chip allocation

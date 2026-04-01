@@ -190,19 +190,13 @@ function HoleCard({
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function PositionChip({ position }: { position: PositionBadge }) {
-  if (!position) return null;
-
-  const config: Record<string, { bg: string; color: string }> = {
-    D: { bg: '#FFFFFF', color: '#111' },
-    SB: { bg: '#3B82F6', color: '#FFF' },
-    BB: { bg: '#EAB308', color: '#111' },
-  };
-
-  const { bg, color } = config[position] || config.D;
+  // Only show the Dealer (D) button — no SB/BB/position labels
+  // Everyone knows SB and BB are after the button
+  if (position !== 'D') return null;
 
   return (
-    <div className="seat__position-chip" style={{ backgroundColor: bg, color }}>
-      {position}
+    <div className="seat__position-chip" style={{ backgroundColor: '#FFFFFF', color: '#111' }}>
+      D
     </div>
   );
 }
@@ -383,22 +377,30 @@ export const SeatSlot = memo(
           </div>
         ) : null}
 
-        {/* Hole Cards — opponents: beside avatar at showdown */}
-        {player.holeCards && player.holeCards.length > 0 && !player.isHero && (
+        {/* Hole Cards — opponents: show card backs during hand, face-up at showdown */}
+        {!player.isHero && (player.status === 'active' || player.status === 'all_in') && (
           <div
-            className={`seat__cards seat__cards--opponent${player.showCards ? ' seat__cards--revealed' : ''}`}
+            className={`seat__cards seat__cards--opponent${player.showCards && player.holeCards?.length ? ' seat__cards--revealed' : ''}`}
           >
-            {player.holeCards.map((card, i) => (
-              <HoleCard
-                key={i}
-                card={card}
-                hidden={!player.showCards}
-                index={i}
-                isWinner={isWinner}
-                deckStyle={deckStyle}
-                cardBack={cardBack}
-              />
-            ))}
+            {player.holeCards && player.holeCards.length > 0 ? (
+              player.holeCards.map((card, i) => (
+                <HoleCard
+                  key={i}
+                  card={card}
+                  hidden={!player.showCards}
+                  index={i}
+                  isWinner={isWinner}
+                  deckStyle={deckStyle}
+                  cardBack={cardBack}
+                />
+              ))
+            ) : (
+              /* Card backs for active opponents — always show 2 card backs */
+              <>
+                <HoleCard key={0} hidden={true} index={0} deckStyle={deckStyle} cardBack={cardBack} />
+                <HoleCard key={1} hidden={true} index={1} deckStyle={deckStyle} cardBack={cardBack} />
+              </>
+            )}
           </div>
         )}
 

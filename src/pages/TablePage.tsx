@@ -4386,11 +4386,16 @@ export default function TablePage({
           </button>
         </div>
         <div className="header-center">
+          <span className="header-brand">smarter.poker</span>
           {tableState.tableName && (
             <span className="header-table-name">{tableState.tableName}</span>
           )}
-          <span className="header-game-type">{tableState.gameType}</span>
-          <span className="header-blinds">{tableState.blinds}</span>
+          <span className="header-game-info">
+            {tableState.gameType} {tableState.blinds}
+          </span>
+          {displayHandNumber != null && (
+            <span className="header-hand-number">Hand #{displayHandNumber}</span>
+          )}
         </div>
         {/* Header-right cleared — buttons moved to 4-corner HUD layout */}
         <div className="header-right" />
@@ -4610,12 +4615,7 @@ export default function TablePage({
             </div>
           </div>
 
-          {/* Dealer Button — Animated "D" chip */}
-          <DealerButton
-            dealerVisualIndex={dealerVisualIndex}
-            seatPositions={seatPositions}
-            isVisible={tableState.isHandInProgress && dealerVisualIndex >= 0}
-          />
+          {/* Dealer Button — now handled by PositionChip inside SeatSlot (single D button) */}
 
           {/* Player Seats */}
           {seatPositions.map((pos, idx) => {

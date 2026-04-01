@@ -81,9 +81,19 @@
   transform: translate(-50%, -50%);
   width: 18px;
   height: 18px;
-  border: 2px solid rgba(255, 255, 255, 0.2);
+  border: 2px solid rgba(255, 255, 255, 0.25);
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.08) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.1) 0%, transparent 60%);
+}
+
+/* Edge markings — alternating white dashes like real casino chips */
+.pot-display__chip::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1.5px dashed rgba(255, 255, 255, 0.18);
+  pointer-events: none;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────

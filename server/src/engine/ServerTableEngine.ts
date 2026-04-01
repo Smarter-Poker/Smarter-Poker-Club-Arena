@@ -1795,13 +1795,9 @@ export class ServerTableEngine {
       case 'COMMUNITY_CARDS':
         if (event.stage === 'flop') this.currentHandWentToFlop = true;
         if (event.cards) {
-          // FIX-230: Append community cards instead of overwriting.
-          // Previously used `=` which discarded flop cards when turn was dealt,
-          // causing hand_history to only store the last street's cards.
-          const newCards = event.cards.map((c: any) =>
+          this.currentHandCommunityCards = event.cards.map((c: any) =>
             typeof c === 'string' ? c : `${c.rank}${c.suit}`
           );
-          this.currentHandCommunityCards.push(...newCards);
         }
         this.broadcastCurrentState();
         break;

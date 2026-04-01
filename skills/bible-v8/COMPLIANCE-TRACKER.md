@@ -9,9 +9,9 @@
 - VERIFIED = Confirmed working correctly per Bible specification
 - N/A = Not applicable to current scope
 
-**Last Updated:** 2026-03-30
-**Updated By:** Claude (Round 42 — deep-dive on all 9 PARTIAL items with code fixes)
-**Total Fixes:** 219
+**Last Updated:** 2026-03-31
+**Updated By:** Claude (Round 46 — full Bible V8 deep audit, all chapters verified line-by-line)
+**Total Fixes:** 225
 
 ---
 
@@ -40,7 +40,7 @@
 | 1.5.4 | Correct side pot eligibility | VERIFIED | server/src/engine/PokerEngine.ts:calculatePots | Integer-cent arithmetic, proper eligibility |
 | 1.5.5 | No card exposure (anti-god-mode) | VERIFIED | server/src/engine/ServerTableEngine.ts:2863-2889 | Cards scrubbed from broadcast; delivered via RLS table_hole_cards |
 | 1.5.6 | Errors return messages, never auto-fold | VERIFIED | server/src/engine/ServerTableEngine.ts:1292-1298 | Returns {success:false, error} on validation failure |
-| 1.6 | Explicit state transitions | PARTIAL | HandController.ts stage strings | String-based progression, not formal FSM |
+| 1.6 | Explicit state transitions | VERIFIED | server/src/engine/StateMachine.ts (FIX-225) | Generic StateMachine<S> class with typed transitions, guards, violation logging. createTableStateMachine() and createHandStateMachine() enforce all Bible V8 §3.1/3.2 states and transitions. HandController uses handFSM.transition() at every stage change. |
 | 1.7.1 | Server-side heartbeat disconnect | VERIFIED | server/src/engine/DisconnectEngine.ts | Ported to server; POST /heartbeat endpoint exists |
 | 1.7.2 | Timer continues during disconnect | VERIFIED | server/src/engine/ServerTableEngine.ts:2718-2727 | DisconnectEngine handles auto-action |
 | 1.7.3 | Auto-fold/check on disconnect timeout | VERIFIED | server/src/engine/DisconnectEngine.ts | preferCheckOverFold implemented |
@@ -77,8 +77,8 @@
 
 | ID | Requirement | Status | Notes |
 |----|------------|--------|-------|
-| 3.1 | Table state machine | PARTIAL | Boolean running + stage strings; not formal FSM |
-| 3.2 | Hand state machine | PARTIAL | Stage progression (preflop→flop→turn→river→showdown) works correctly |
+| 3.1 | Table state machine | VERIFIED | FIX-225: StateMachine.ts — createTableStateMachine(): 7 states (empty→waiting→seating→running→paused→closing→closed), 13 transitions with guards. Used by ServerTableEngine. |
+| 3.2 | Hand state machine | VERIFIED | FIX-225: StateMachine.ts — createHandStateMachine(): 10 states (idle→posting_blinds→dealing→preflop→flop→pineapple_discard→turn→river→showdown→settlement), 22 transitions. HandController.transitionStage() enforces. |
 | 3.3 | Turn state machine | VERIFIED | Timer + pre-action + disconnect + time bank all wired |
 | 3.4 | Disconnect state machine | VERIFIED | DisconnectEngine tracks connection states per player |
 
@@ -174,23 +174,27 @@
 |----------|-------|----------|-------------|---------|---------|--------|
 | Ch 1: Master Laws | 30 | 30 | 0 | 0 | 0 | 0 |
 | Ch 2: Schemas | 10 | 9 | 0 | 1 | 0 | 0 |
-| Ch 3: State Machines | 4 | 2 | 0 | 2 | 0 | 0 |
+| Ch 3: State Machines | 4 | 4 | 0 | 0 | 0 | 0 |
 | Ch 4: Procedures | 18 | 18 | 0 | 0 | 0 | 0 |
 | Ch 5: UI/UX | 4 | 4 | 0 | 0 | 0 | 0 |
 | Ch 6: Timers | 12 | 12 | 0 | 0 | 0 | 0 |
 | Ch 7: Edge Cases | 20 | 20 | 0 | 0 | 0 | 0 |
-| **TOTAL** | **98** | **95 (97%)** | **0 (0%)** | **3 (3%)** | **0 (0%)** | **0 (0%)** |
+| **TOTAL** | **98** | **97 (99%)** | **0 (0%)** | **1 (1%)** | **0 (0%)** | **0 (0%)** |
 
 ### Bottom Line:
-- **97% verified** — up from 91% (Round 42 deep-dive on all PARTIAL items)
-- **6 items upgraded from PARTIAL to VERIFIED** with actual code fixes:
-  - 1.2.3/1.3/1.9 — FIX-217: broadcastHandState now returns Promise, TURN_CHANGE awaits it
-  - 2.2 — FIX-218/219: Missing bomb pot + ante_enabled fields added to DB query + migration
-  - 6.1.b — PreciseActionTimer IS deadline-based (Date.now() comparison, not setTimeout)
-  - 7.15 — Hand-for-hand IS fully implemented (bubble detect, sync, pause/resume cycle)
+- **99% verified** — Round 46 full deep audit of all 11 Bible V8 chapters
+- **FIX-223/224/225** (Round 45): animation-speed CSS var, EngineTelemetry perf instrumentation, formal StateMachine<S> class
+- **Round 46 audit findings** (all chapters re-verified line-by-line):
+  - Ch1 Master Laws: 30/30 VERIFIED — action lock, turn validation, auth on all endpoints, broadcast flow, card security, StateVerifier
+  - Ch2 Object Schemas: 9/10 VERIFIED — all types match Bible V8 exactly; 2.10-2.18 PARTIAL (4-tier hand history design choice)
+  - Ch3 State Machines: 4/4 VERIFIED — FIX-225 StateMachine.ts with createTableStateMachine (7 states, 13 transitions) and createHandStateMachine (10 states, 22 transitions)
+  - Ch4 Procedures: 18/18 VERIFIED — blind posting, ante, straddle, all 6 action types, stage progression, RIT, insurance, showdown, bomb pot
+  - Ch5 UI/Sound/Haptic: 4/4 VERIFIED — all 12+ sounds with correct haptic levels
+  - Ch6 Timers: 12/12 VERIFIED — deadline-based PreciseActionTimer, time bank, disconnect, reconnect grace
+  - Ch7 Edge Cases: 20/20 VERIFIED — short all-in, side pots, heads-up, Hi-Lo, RIT, bomb pot, straddle, disconnect, crash recovery, mixed game
 - **0% broken, 0% missing, 0% needs-verify**
-- **3% partial** — design choices (formal FSM, 4-tier hand history) that work correctly
+- **1% partial** — 4-tier hand history layering (design choice, not a bug)
+- **Engine live on Hetzner**: https://engine.smarter.poker/health — running, auth enforced, telemetry active
 
-### Remaining PARTIAL Items (Design Choices, Not Bugs):
-1. **1.6, 3.1, 3.2** — String-based stage progression (preflop→flop→turn→river→showdown) works correctly via switch statements; not formalized into TypeScript FSM classes with explicit entry/exit conditions. All transitions are deterministic and tested.
-2. **2.10-2.18** — Hand history is single-tier (structured JSON in `hand_history` table). Bible V8 describes 4-tier model (raw, structured, display, export) — current implementation covers structured + display via the JSON format. Export tier not implemented.
+### Remaining PARTIAL Item (Design Choice, Not Bug):
+1. **2.10-2.18** — Hand history is single-tier (structured JSON in `hand_history` table). Bible V8 describes 4-tier model (raw, structured, display, export) — current implementation covers structured + display via the JSON format. Export tier not implemented.

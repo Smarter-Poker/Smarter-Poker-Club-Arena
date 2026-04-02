@@ -887,13 +887,17 @@
   }
 }
 
-/* ─── BET CHIPS — positioned below seat ─────────────────────────────── */
+/* ─── BET CHIPS — positioned IN FRONT of player toward felt center ──── */
 
 .seat__bet-chips {
   position: absolute;
-  bottom: -28px;
   left: 50%;
-  transform: translateX(-50%);
+  top: 50%;
+  /* Use CSS custom properties set by seat-wrapper to push chips toward table center */
+  transform: translate(
+    calc(-50% + var(--bet-offset-x, 0px)),
+    calc(-50% + var(--bet-offset-y, 0px))
+  );
   z-index: 5;
   display: flex;
   flex-direction: column;

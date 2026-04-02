@@ -41,11 +41,12 @@ export interface PotDisplayProps {
 
 // Smart precision — whole dollars for clean amounts, decimals only when fractional (all-in splits)
 function formatAmount(amount: number, currency: string = ''): string {
-  // If the amount is a whole number (or within half-cent), show no decimals
-  if (Math.abs(amount - Math.round(amount)) < 0.005) {
-    return Math.round(amount).toLocaleString('en-US');
+  // Round amounts that are very close to whole numbers (floating-point artifacts from rake/splits)
+  const rounded = Math.round(amount);
+  if (Math.abs(amount - rounded) < 0.1) {
+    return rounded.toLocaleString('en-US');
   }
-  // Fractional amount (all-in odd splits) — show 2 decimals
+  // Genuine fractional amount (micro-stakes like 0.25/0.50) — show 2 decimals
   return amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 

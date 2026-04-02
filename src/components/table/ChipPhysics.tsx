@@ -93,11 +93,41 @@ export function ChipPhysics({
 
   if (amount <= 0) return null;
 
+  // In compact mode (bet chips next to player), show single chip icon + amount
+  // to avoid misleading chip counts that don't match the bet value
+  if (compact) {
+    const topDenom = breakdown.length > 0 ? breakdown[0].denom : DENOMINATIONS[0];
+    return (
+      <div
+        className={`chip-physics cp--compact ${isVisible ? 'cp--visible' : ''} cp--${animate} ${className}`}
+      >
+        <div className="cp-stacks">
+          <div className="cp-stack" style={{ '--group-idx': 0 } as React.CSSProperties}>
+            <div
+              className="cp-chip"
+              style={
+                {
+                  '--chip-color': topDenom.color,
+                  '--chip-accent': topDenom.accent,
+                  '--chip-idx': 0,
+                  '--total-chips': 1,
+                } as React.CSSProperties
+              }
+            >
+              <div className="cp-chip__face" />
+            </div>
+          </div>
+        </div>
+        {showAmount && <span className="cp-amount">{formatChipAmount(amount)}</span>}
+      </div>
+    );
+  }
+
   return (
     <div
-      className={`chip-physics ${compact ? 'cp--compact' : ''} ${isVisible ? 'cp--visible' : ''} cp--${animate} ${className}`}
+      className={`chip-physics ${isVisible ? 'cp--visible' : ''} cp--${animate} ${className}`}
     >
-      {/* Chip stacks */}
+      {/* Full chip stacks — only used for pot display, not per-player bets */}
       <div className="cp-stacks">
         {breakdown.map(({ denom, count }, groupIdx) => (
           <div
@@ -136,7 +166,10 @@ export function ChipPhysics({
 function formatChipAmount(amount: number): string {
   if (amount >= 1000000) return `${(amount / 1000000).toFixed(1)}M`;
   if (amount >= 10000) return `${(amount / 1000).toFixed(1)}K`;
-  return amount.toLocaleString();
+  // Display whole numbers when amount is close to integer (avoids floating-point artifacts like 4.558)
+  if (Math.abs(amount - Math.round(amount)) < 0.01) return Math.round(amount).toLocaleString();
+  // For genuine fractional amounts (e.g. 0.25/0.50 games), show max 2 decimals
+  return amount % 1 === 0 ? amount.toLocaleString() : amount.toFixed(2);
 }
 
 export default ChipPhysics;

@@ -4650,6 +4650,18 @@ export default function TablePage({
                   />
                 </div>
 
+                {/* Game Info Strip — PokerBros-style variant + blinds label below community cards */}
+                <div className="table-game-info">
+                  <span className="table-game-info__variant">
+                    {tableState.gameType === "No Limit Hold'em" ? 'NLH' :
+                     tableState.gameType === "Pot Limit Omaha" ? 'PLO' :
+                     tableState.gameType === "Fixed Limit Hold'em" ? 'FLH' :
+                     tableState.gameType || 'NLH'}
+                  </span>
+                  <span className="table-game-info__name">{tableState.tableName || ''}</span>
+                  <span className="table-game-info__blinds">Blinds: {tableState.blinds || '1/2'}</span>
+                </div>
+
                 {/* Spectator Badge + Overlay REMOVED from table surface.
                     Observer count belongs inside the chat panel, not on the felt.
                     SpectatorBadge and SpectatorOverlay components still exist for

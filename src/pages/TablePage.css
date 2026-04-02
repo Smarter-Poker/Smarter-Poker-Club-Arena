@@ -694,8 +694,39 @@
   transform: translate(-50%, -50%);
 }
 
-/* Game Info — Removed from center of table for clean PokerBros look */
-/* Game type and blinds are now shown in the header bar */
+/* Game Info Strip — PokerBros-style variant + blinds below community cards */
+.table-game-info {
+  position: absolute;
+  top: 58%;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  z-index: 10;
+  pointer-events: none;
+}
+.table-game-info__variant {
+  font-size: 0.85rem;
+  font-weight: 900;
+  color: rgba(255, 255, 255, 0.9);
+  letter-spacing: 0.1em;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}
+.table-game-info__name {
+  font-size: 0.55rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.5);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.table-game-info__blinds {
+  font-size: 0.55rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.5);
+  letter-spacing: 0.03em;
+}
 
 /* Spectator badge — bottom edge of felt */
 .spectator-area {
@@ -1672,3 +1703,99 @@
   font-size: 12px;
   color: #fff;
 }
+
+/* ══════════════════════════════════════════════════════════════
+   PHASE 3: UI REFINEMENTS (Hiding old header, side-chat, floating actions)
+   ══════════════════════════════════════════════════════════════ */
+
+.table-header {
+  display: none !important;
+}
+
+.hud-ul-column {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+}
+
+.add-chips-icon-btn {
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: #fff;
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.5);
+  backdrop-filter: blur(4px);
+  transition: background 0.2s, transform 0.1s;
+}
+.add-chips-icon-btn:active {
+  transform: scale(0.95);
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.floating-im-back, .floating-post-blind {
+  background: linear-gradient(180deg, #10b981 0%, #059669 100%);
+  border: 1px solid #34d399;
+  color: white;
+  font-weight: 700;
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-size: 14px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  cursor: pointer;
+  text-transform: uppercase;
+}
+
+.floating-action-br {
+  position: absolute;
+  bottom: 80px;
+  right: 20px;
+  z-index: 100;
+}
+
+.floating-action-bl {
+  position: absolute;
+  bottom: 80px;
+  left: 20px;
+  z-index: 100;
+}
+
+/* Modifying chat mail toggle to look like the screenshot */
+.chat-mail-toggle-btn {
+  background: rgba(40, 44, 52, 0.8) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  color: #9ca3af !important;
+  border-radius: 6px !important;
+  width: 50px !important;
+  height: 50px !important;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.4) !important;
+}
+
+/* Slide out chat exactly like the attachment */
+.table-chat {
+  right: 0 !important;
+  left: auto !important;
+  top: 0 !important;
+  bottom: 0 !important;
+  width: 350px !important;
+  height: 100% !important;
+  background: rgba(15, 23, 42, 0.85) !important;
+  backdrop-filter: blur(8px) !important;
+  border-left: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 0 !important;
+  max-height: 100% !important;
+  transform: translateX(100%);
+  animation: slideInChat 0.3s forwards;
+}
+
+@keyframes slideInChat {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+

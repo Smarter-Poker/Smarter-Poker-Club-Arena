@@ -291,7 +291,15 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
       }
     });
 
-    set({ _busUnsubscribers: [unsubNotifRead, unsubDmCount] });
+    // ── Sync avatar changes from AvatarGallery (instant, no realtime delay) ──
+    const unsubProfileLoaded = masterBus.subscribe('USER_PROFILE_LOADED', (event) => {
+      const avatarUrl = event.payload?.avatarUrl;
+      if (avatarUrl && typeof avatarUrl === 'string') {
+        get().setAvatarUrl(avatarUrl);
+      }
+    });
+
+    set({ _busUnsubscribers: [unsubNotifRead, unsubDmCount, unsubProfileLoaded] });
   },
 
   teardown: () => {

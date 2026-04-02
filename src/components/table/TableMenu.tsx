@@ -22,8 +22,13 @@ import {
   HelpIcon,
   LeaveTableIcon,
 } from './TableMenuIcons';
-import './TableMenu.css';
 import { reportError } from '../../utils/errorReporter';
+import { STORAGE_KEYS } from '../../lib/storage';
+import { supabase } from '../../lib/supabase';
+import { masterBus } from '../../core/MasterBus';
+import { useAuthUser } from '../../hooks/useAuthUser';
+import { AvatarGallery } from '../customization/AvatarGallery';
+import { useHeaderDataStore } from '../../stores/useHeaderDataStore';
 
 // ─── SVG Icons for Identity section ─── */
 const AvatarIcon = () => (
@@ -204,16 +209,75 @@ export function TableMenu({
   isOpen,
   onClose,
   onToggle,
-  sections,
+  sections: propSections,
   position = 'top-right',
   tableName,
-  connectionStatus,
-  badgeCount,
+  connectionStatus = 'connected',
+  badgeCount = 0,
   handNumber,
   sessionDuration,
   observers = [],
 }: TableMenuProps) {
+  const [activeSection, setActiveSection] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [showAvatarGallery, setShowAvatarGallery] = useState(false);
+  const [useRealName, setUseRealName] = useState(false);
+  const { user } = useAuthUser();
+  const avatarUrl = useHeaderDataStore((s) => s.avatarUrl);
   const prevOpenRef = useRef(false);
+
+  useEffect(() => {
+    const useReal = localStorage.getItem(STORAGE_KEYS.USE_REAL_NAME);
+    if (useReal !== null) setUseRealName(useReal === 'true');
+  }, []);
+
+  const handleUseRealNameToggle = () => {
+    const newValue = !useRealName;
+    setUseRealName(newValue);
+    
+    // Optimistic local storage update
+    localStorage.setItem(STORAGE_KEYS.USE_REAL_NAME, String(newValue));
+    masterBus.emit('SETTINGS_CHANGED', { setting: 'useRealName', value: newValue });
+
+    if (user?.id) {
+      const updateRealName = async () => {
+        try {
+          const { error } = await supabase
+            .from('profiles')
+            .update({ use_real_name: newValue } as any)
+            .eq('id', user.id);
+          if (error) throw error;
+        } catch (err: any) {
+          reportError(err, 'TableMenu.Error_updating_use_real_name');
+          localStorage.setItem(STORAGE_KEYS.USE_REAL_NAME, String(!newValue));
+          setUseRealName(!newValue);
+        }
+      };
+      updateRealName();
+    }
+  };
+
+  // Inject Identity section dynamically into the passed sections
+  const sections: MenuSection[] = [
+    {
+      title: 'Identity Component',
+      actions: [
+        {
+          id: 'avatar',
+          label: 'Change Avatar',
+          icon: <AvatarIcon />,
+          onClick: () => setShowAvatarGallery(true),
+        },
+        {
+          id: 'alias-toggle',
+          label: useRealName ? 'Using Real Name' : 'Using Alias',
+          icon: <NameTagIcon />,
+          onClick: handleUseRealNameToggle,
+        }
+      ] as MenuAction[]
+    },
+    ...propSections
+  ];
 
   // Sound cue on menu open
   useEffect(() => {
@@ -257,7 +321,6 @@ export function TableMenu({
     );
     return () => timeouts.forEach((t) => clearTimeout(t));
   }, [isOpen, sections.length]);
-  const menuRef = useRef<HTMLDivElement>(null);
 
   // Close on click outside
   useEffect(() => {
@@ -412,6 +475,17 @@ export function TableMenu({
             </div>
           )}
         </div>
+      )}
+      
+      {/* Avatar Gallery Modal */}
+      {user && (
+        <AvatarGallery
+          isOpen={showAvatarGallery}
+          onClose={() => setShowAvatarGallery(false)}
+          userId={user.id}
+          currentAvatarUrl={avatarUrl || ''}
+          isVip={false}
+        />
       )}
     </div>
   );

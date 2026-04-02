@@ -2386,12 +2386,36 @@ export default function TablePage({
     return () => unsubscribe();
   }, [tableId, userId]);
 
-  // Component visibility states
   const [showSettings, setShowSettings] = useState(false);
   const [showShareHand, setShowShareHand] = useState(false);
   const [showTableMenu, setShowTableMenu] = useState(false);
   const [showSessionStats, setShowSessionStats] = useState(false);
   const [sharedHandData, setSharedHandData] = useState<any>(null);
+  
+  // Real Name vs Alias
+  const [useRealName, setUseRealName] = useState(() => {
+    return localStorage.getItem(STORAGE_KEYS.USE_REAL_NAME) === 'true';
+  });
+  const [heroProfile, setHeroProfile] = useState<{username: string, display_name: string} | null>(null);
+
+  // Sync settings when changed from other components (like TableMenu)
+  useMasterBusSubscription('SETTINGS_CHANGED', (event: any) => {
+    if (event.setting === 'useRealName') {
+      setUseRealName(event.value);
+    }
+  });
+
+  // Fetch Hero profile just once if needed
+  useEffect(() => {
+    if (userId && userId !== 'guest') {
+      supabase.from('profiles').select('username, display_name').eq('id', userId).maybeSingle()
+        .then(({data}) => {
+          if (data) {
+             setHeroProfile({ username: data.username || '', display_name: data.display_name || ''});
+          }
+        });
+    }
+  }, [userId]);
 
   // Load table info from Supabase on mount
   useEffect(() => {
@@ -4731,11 +4755,19 @@ export default function TablePage({
             const player = getPlayerAtSeat(seatNumber);
             
             // FIX: Apply use_alias and table_alias from settings directly to the hero's rendered name
+            let derivedHeroName = player?.name;
+            if (player?.isHero) {
+              if (useRealName && heroProfile?.display_name) {
+                derivedHeroName = heroProfile.display_name;
+              } else if (!useRealName && heroProfile?.username) {
+                derivedHeroName = heroProfile.username;
+              } else if (v8Settings.use_alias && v8Settings.table_alias) {
+                derivedHeroName = v8Settings.table_alias;
+              }
+            }
             const displayPlayer = player ? {
               ...player,
-              name: player.isHero && v8Settings.use_alias && v8Settings.table_alias 
-                  ? v8Settings.table_alias 
-                  : player.name
+              name: derivedHeroName!
             } : null;
 
             return (

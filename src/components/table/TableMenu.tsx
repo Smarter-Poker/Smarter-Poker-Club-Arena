@@ -222,6 +222,7 @@ export function TableMenu({
   const menuRef = useRef<HTMLDivElement>(null);
   const [showAvatarGallery, setShowAvatarGallery] = useState(false);
   const [useRealName, setUseRealName] = useState(false);
+  const [isVip, setIsVip] = useState(false);
   const { user } = useAuthUser();
   const avatarUrl = useHeaderDataStore((s) => s.avatarUrl);
   const prevOpenRef = useRef(false);
@@ -229,7 +230,14 @@ export function TableMenu({
   useEffect(() => {
     const useReal = localStorage.getItem(STORAGE_KEYS.USE_REAL_NAME);
     if (useReal !== null) setUseRealName(useReal === 'true');
-  }, []);
+    // Fetch VIP status once
+    if (user?.id) {
+      supabase.from('profiles').select('is_vip, tier').eq('id', user.id).maybeSingle()
+        .then(({ data }) => {
+          if (data) setIsVip(data.is_vip || data.tier === 'vip' || false);
+        });
+    }
+  }, [user?.id]);
 
   const handleUseRealNameToggle = () => {
     const newValue = !useRealName;
@@ -484,7 +492,7 @@ export function TableMenu({
           onClose={() => setShowAvatarGallery(false)}
           userId={user.id}
           currentAvatarUrl={avatarUrl || ''}
-          isVip={false}
+          isVip={isVip}
         />
       )}
     </div>

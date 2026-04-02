@@ -2253,68 +2253,76 @@ class TournamentManager {
         .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
 
       if (club) {
-        let rakeRecipientId: string | null = null;
-        let rakeDescription = '';
+        const rakeDescription = `Tournament rake: ${tournament.name || 'tournament'} (${totalEntries} entries x ${rakePerEntry})`;
 
         if (club.union_id) {
-          // Club is in a union — rake goes to union owner (held until weekly settlement)
-          const { data: union } = await supabase
-            .from('unions')
-            .select('owner_id, name')
-            .eq('id', club.union_id)
-            .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
+          // Club is in a union — ALL rake held by union wallet
+          const { data: uw } = await supabase
+            .from('union_wallets')
+            .select('chip_balance')
+            .eq('union_id', club.union_id)
+            .maybeSingle();
 
-          if (union?.owner_id) {
-            rakeRecipientId = union.owner_id;
-            rakeDescription = `Tournament rake held by ${union.name || 'Union'}: ${tournament.name || 'tournament'} (${totalEntries} entries x ${rakePerEntry}) — ${club.name || 'club'}`;
-          } else {
-            reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: Union ${club.union_id} has no owner_id — ${totalRake} rake LOST`), 'TournamentthistournamentIdslic.CRITICAL');
-          }
-        } else {
-          // Standalone club — rake goes directly to club owner
-          if (club.owner_id) {
-            rakeRecipientId = club.owner_id;
-            rakeDescription = `Tournament rake: ${tournament.name || 'tournament'} (${totalEntries} entries x ${rakePerEntry})`;
-          } else {
-            reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: Club ${tournament.club_id} has no owner_id — ${totalRake} rake LOST`), 'TournamentthistournamentIdslic.CRITICAL');
-          }
-        }
-
-        if (rakeRecipientId) {
-          // Retry rake credit up to 3 times
-          let rakeSuccess = false;
-          for (let attempt = 1; attempt <= 3; attempt++) {
-            const { error: rakeErr } = await supabase.rpc('credit_player_wallet', {
-              p_user_id: rakeRecipientId,
-              p_amount: totalRake,
-            });
-            if (!rakeErr) {
-              rakeSuccess = true;
-              break;
+          if (uw) {
+            const { error: uwErr } = await supabase
+              .from('union_wallets')
+              .update({ chip_balance: (uw.chip_balance || 0) + totalRake, updated_at: new Date().toISOString() })
+              .eq('union_id', club.union_id);
+            if (uwErr) {
+              reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] Union wallet rake credit failed: ${uwErr.message}`), 'Tournament.Union_wallet_rake_credit_failed');
+            } else {
+              console.log(`[Tournament:${this.tournamentId.slice(0, 8)}] Rake settled: ${totalRake} to union wallet ${club.union_id.slice(0, 8)}`);
             }
-            reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] Rake credit attempt ${attempt}/3 failed: ${rakeErr.message}`), 'TournamentthistournamentIdslic.Rake_credit_attempt_attempt3_f');
-            if (attempt < 3) await new Promise((r) => setTimeout(r, attempt * 1000));
+          } else {
+            // Create union wallet if it doesn't exist
+            const { error: insertErr } = await supabase
+              .from('union_wallets')
+              .insert({ union_id: club.union_id, chip_balance: totalRake });
+            if (insertErr) {
+              reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] Union wallet creation failed: ${insertErr.message}`), 'Tournament.Union_wallet_creation_failed');
+            }
           }
 
-          if (rakeSuccess) {
-            const { error: txErr } = await supabase.rpc('log_wallet_transaction', {
-              p_user_id: rakeRecipientId,
-              p_wallet_type: 'PLAYER',
-              p_amount: totalRake,
-              p_type: 'credit',
-              p_category: 'rake',
-              p_description: rakeDescription,
-              p_table_id: null,
-              p_hand_id: null,
-              p_related_entity_id: this.tournamentId,
-            });
-            if (txErr)
-              reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] Rake transaction log failed: ${txErr.message}`), 'TournamentthistournamentIdslic.Rake_transaction_log_failed');
-            console.log(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Rake settled: ${totalRake} to ${club.union_id ? 'union' : 'club'} owner ${rakeRecipientId.slice(0, 8)}`
-            );
+          // Log union transaction for audit
+          await supabase.from('union_transactions').insert({
+            union_id: club.union_id,
+            club_id: tournament.club_id,
+            amount: totalRake,
+            tx_type: 'rake',
+            wallet: 'chip',
+            direction: 'credit',
+            notes: `${rakeDescription} — ${club.name || 'club'}`,
+            created_at: new Date().toISOString(),
+          }).catch(() => {});
+
+        } else {
+          // Standalone club — rake goes to CLUB wallet (not owner's personal wallet)
+          const { data: cw } = await supabase
+            .from('club_wallets')
+            .select('chip_balance')
+            .eq('club_id', tournament.club_id)
+            .maybeSingle();
+
+          if (cw) {
+            const { error: cwErr } = await supabase
+              .from('club_wallets')
+              .update({ chip_balance: (cw.chip_balance || 0) + totalRake })
+              .eq('club_id', tournament.club_id);
+            if (cwErr) {
+              reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] Club wallet rake credit failed: ${cwErr.message}`), 'Tournament.Club_wallet_rake_credit_failed');
+            } else {
+              console.log(`[Tournament:${this.tournamentId.slice(0, 8)}] Rake settled: ${totalRake} to club wallet ${tournament.club_id.slice(0, 8)}`);
+            }
           } else {
-            reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: Rake credit FAILED after 3 retries — ${totalRake} chips LOST for recipient ${rakeRecipientId.slice(0, 8)}`), 'TournamentthistournamentIdslic.CRITICAL');
+            // Fallback: update clubs.chip_pool
+            const { data: clubData } = await supabase.from('clubs').select('chip_pool').eq('id', tournament.club_id).maybeSingle();
+            const { error: cpErr } = await supabase
+              .from('clubs')
+              .update({ chip_pool: ((clubData?.chip_pool as number) || 0) + totalRake })
+              .eq('id', tournament.club_id);
+            if (cpErr) {
+              reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] Club chip_pool credit failed: ${cpErr.message}`), 'Tournament.Club_chip_pool_credit_failed');
+            }
           }
         }
       }

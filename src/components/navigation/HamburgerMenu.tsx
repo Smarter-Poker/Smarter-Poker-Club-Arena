@@ -914,7 +914,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
 
         {/* Use Real Name Toggle */}
         <div style={{ ...menuItemStyle, justifyContent: 'space-between' }}>
-          <span style={{ fontSize: 15, fontWeight: 500, color: colors.text }}>Use Real Name</span>
+          <span style={{ fontSize: 15, fontWeight: 500, color: colors.text }}>Use Real Name (vs Alias)</span>
           <button
             onClick={handleUseRealNameToggle}
             aria-checked={useRealName}

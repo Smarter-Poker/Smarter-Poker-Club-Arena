@@ -17,6 +17,7 @@ import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 
 export interface UserProfileData {
   id: string;
+  username: string;
   displayName: string;
   avatarUrl: string;
   bio: string;
@@ -66,6 +67,7 @@ export function UserProfileEdit({ isOpen, onClose, initialData, onSave }: UserPr
     e.preventDefault();
     onSave({
       ...formData,
+      username: sanitizeInput(formData.username),
       displayName: sanitizeInput(formData.displayName),
       bio: sanitizeInput(formData.bio),
     });
@@ -141,12 +143,21 @@ export function UserProfileEdit({ isOpen, onClose, initialData, onSave }: UserPr
 
           <form onSubmit={handleSave} className="profile-form">
             <div className="form-group">
-              <label>Display Name</label>
+              <label>Poker Alias</label>
               <input
-                value={formData.displayName}
-                onChange={(e) => setFormData({ ...formData, displayName: e.target.value })}
-                maxLength={12}
+                value={formData.username || ''}
+                onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                maxLength={16}
                 required
+              />
+            </div>
+            
+            <div className="form-group">
+              <label>Real Name (Optional)</label>
+              <input
+                value={formData.displayName || ''}
+                onChange={(e) => setFormData({ ...formData, displayName: e.target.value })}
+                maxLength={24}
               />
             </div>
 

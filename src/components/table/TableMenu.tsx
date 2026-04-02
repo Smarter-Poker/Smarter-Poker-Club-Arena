@@ -278,7 +278,7 @@ export function TableMenu({
         },
         {
           id: 'alias-toggle',
-          label: useRealName ? 'Using Real Name' : 'Using Alias',
+          label: useRealName ? 'Using Real Name (vs Alias)' : 'Using Alias (vs Real Name)',
           icon: <NameTagIcon />,
           onClick: handleUseRealNameToggle,
         }

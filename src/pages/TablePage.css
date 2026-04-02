@@ -552,6 +552,10 @@
    Dealer button color tokens — consumed by .dealer-button component
    ═══════════════════════════════════════════════════════════════════════════════ */
 
+.table-page[data-button-theme='classic-white'] {
+  --dealer-btn-bg: linear-gradient(145deg, #ffffff 0%, #e8e8e8 50%, #d0d0d0 100%);
+  --dealer-btn-color: #111;
+}
 .table-page[data-button-theme='red-d-gear'] {
   --dealer-btn-bg: linear-gradient(135deg, #c62828, #e53935);
   --dealer-btn-color: #fff;

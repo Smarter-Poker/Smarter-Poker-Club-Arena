@@ -53,6 +53,7 @@ import StraddleToggle from '../components/table/StraddleToggle';
 import TimeBank from '../components/table/TimeBank';
 import CashierModal from '../components/table/CashierModal';
 import BuyInModal from '../components/table/BuyInModal';
+import IdentityModal from '../components/table/IdentityModal';
 import { BBJService } from '../services/BBJService';
 import RabbitHunt from '../components/table/RabbitHunt';
 import LeaderboardPanel from '../components/table/LeaderboardPanel';
@@ -412,7 +413,7 @@ export default function TablePage({
   onTableInfoUpdate,
   isMultiTable = false,
 }: TablePageProps = {}) {
-  const { tableId: routeTableId } = useParams<{ tableId: string }>();
+  const { tableId: routeTableId } = useParams<{ tableId: string; }>();
   const tableId = embeddedTableId || routeTableId;
   const navigate = useNavigate();
   const toast = useToast();
@@ -700,6 +701,7 @@ export default function TablePage({
   const [showHandReplay, setShowHandReplay] = useState(false);
   const [lastHandId, setLastHandId] = useState<string | null>(null);
   const [showGameRules, setShowGameRules] = useState(false);
+  const [showIdentityModal, setShowIdentityModal] = useState(false);
 
   // Hand Reveal (show/muck after winning without showdown)
   const [showHandRevealModal, setShowHandRevealModal] = useState(false);
@@ -820,8 +822,8 @@ export default function TablePage({
         avatarService.openAvatarSelector();
         break;
       case 'TOGGLE_ALIAS':
-        // Toggle alias display — handled by user table settings
-        masterBus.emit('SETTINGS_CHANGED', { setting: 'use_alias', value: true });
+        // Instead of hard-toggling, open the new Identity Settings Modal
+        setShowIdentityModal(true);
         break;
     }
   });
@@ -2760,7 +2762,7 @@ export default function TablePage({
           const userIds = existingSeats.map((s) => s.user_id).filter(Boolean);
           const { data: profiles } = await supabase
             .from('profiles')
-            .select('id, username, avatar_url, is_horse')
+            .select('id, username, display_name, avatar_url, is_horse, horse_profile')
             .in('id', userIds);
 
           const profileMap = new Map((profiles || []).map((p) => [p.id, p]));
@@ -2809,7 +2811,7 @@ export default function TablePage({
 
               updatedPlayers[seatIdx] = {
                 id: seat.user_id,
-                name: profile?.username || `Player ${seat.seat_number}`,
+                name: profile?.display_name || profile?.username || `Player ${seat.seat_number}`,
                 avatar: profile?.avatar_url || '',
                 stack: seat.stack || 0,
                 status: seat.is_sitting_out ? ('sitting_out' as const) : ('active' as const),
@@ -4669,6 +4671,14 @@ export default function TablePage({
           {seatPositions.map((pos, idx) => {
             const seatNumber = idx + 1;
             const player = getPlayerAtSeat(seatNumber);
+            
+            // FIX: Apply use_alias and table_alias from settings directly to the hero's rendered name
+            const displayPlayer = player ? {
+              ...player,
+              name: player.isHero && v8Settings.use_alias && v8Settings.table_alias 
+                  ? v8Settings.table_alias 
+                  : player.name
+            } : null;
 
             return (
               <div
@@ -4681,7 +4691,7 @@ export default function TablePage({
               >
                 <SeatSlot
                   seatNumber={seatNumber}
-                  player={player || null}
+                  player={displayPlayer}
                   position={tableState.positions[idx] || null}
                   isActive={seatNumber === tableState.currentPlayerSeat && v8Settings.highlight_active_players}
                   lastAction={tableState.lastActions[idx] || null}

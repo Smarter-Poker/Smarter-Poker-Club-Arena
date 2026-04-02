@@ -912,6 +912,42 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           </button>
         </div>
 
+        {/* Use Real Name Toggle */}
+        <div style={{ ...menuItemStyle, justifyContent: 'space-between' }}>
+          <span style={{ fontSize: 15, fontWeight: 500, color: colors.text }}>Use Real Name</span>
+          <button
+            onClick={handleUseRealNameToggle}
+            aria-checked={useRealName}
+            role="switch"
+            style={{
+              width: 52,
+              height: 28,
+              borderRadius: 14,
+              border: useRealName ? '2px solid #4ade80' : '2px solid #6b7280',
+              padding: 2,
+              cursor: 'pointer',
+              backgroundColor: useRealName ? '#22c55e' : '#374151',
+              transition: 'all 0.25s ease',
+              display: 'flex',
+              alignItems: 'center',
+              position: 'relative' as const,
+              flexShrink: 0,
+            }}
+          >
+            <span
+              style={{
+                width: 20,
+                height: 20,
+                borderRadius: '50%',
+                backgroundColor: 'white',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
+                transform: useRealName ? 'translateX(24px)' : 'translateX(0)',
+                transition: 'transform 0.25s ease',
+              }}
+            />
+          </button>
+        </div>
+
         {/* Bible V8 §11.1: Table Settings — 12 toggles (expandable) */}
         <div
           style={{
@@ -1252,6 +1288,17 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           Club Arena v1.12
         </div>
       </div>
+
+      {/* Avatar Gallery Modal */}
+      {user && (
+        <AvatarGallery
+          isOpen={showAvatarGallery}
+          onClose={() => setShowAvatarGallery(false)}
+          userId={user.id}
+          currentAvatarUrl={avatarUrl || generateDefaultAvatar()}
+          isVip={isVIP}
+        />
+      )}
 
       {/* Bible V8 §11.2: Theme Settings Modal */}
       <ThemeSettingsModal

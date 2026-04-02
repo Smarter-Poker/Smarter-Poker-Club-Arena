@@ -694,7 +694,7 @@
   transform: translate(-50%, -50%);
 }
 
-/* Game Info Strip — PokerBros-style variant + blinds below community cards */
+/* Game Info Strip — Capitalized stakes + variant below community cards: "1/2 NLH" */
 .table-game-info {
   position: absolute;
   top: 58%;
@@ -703,29 +703,24 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 1px;
+  gap: 2px;
   z-index: 10;
   pointer-events: none;
 }
-.table-game-info__variant {
-  font-size: 0.85rem;
+.table-game-info__stakes {
+  font-size: 0.9rem;
   font-weight: 900;
-  color: rgba(255, 255, 255, 0.9);
-  letter-spacing: 0.1em;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
-}
-.table-game-info__name {
-  font-size: 0.55rem;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.5);
-  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.92);
+  letter-spacing: 0.12em;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
   text-transform: uppercase;
 }
-.table-game-info__blinds {
-  font-size: 0.55rem;
+.table-game-info__name {
+  font-size: 0.5rem;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.5);
-  letter-spacing: 0.03em;
+  color: rgba(255, 255, 255, 0.45);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 /* Spectator badge — bottom edge of felt */

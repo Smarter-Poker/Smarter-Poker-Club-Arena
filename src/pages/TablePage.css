@@ -345,10 +345,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 40px 12px 60px; /* Ample top and bottom padding for HUD */
+  padding: 64px 12px 50px; /* Extra top room for hamburger + HUD above table */
   overflow: visible;
   /* Cap height so table never overflows — leaves room for header + action panel */
-  max-height: calc(100dvh - 220px);
+  max-height: calc(100dvh - 180px);
 }
 
 /* Table Wrapper - Scales uniformly via CSS transform */
@@ -796,26 +796,7 @@
   padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
 }
 
-/* ─── SPECTATOR MODE ─── */
-.spectator-mode {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  padding: 14px 24px;
-  background: rgba(0, 0, 0, 0.6);
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.5);
-  font-size: 0.875rem;
-}
-
-.spectator-mode__icon {
-  font-size: 1.1rem;
-}
-
-.spectator-mode__text {
-  font-weight: 500;
-}
+/* ─── SPECTATOR MODE — REMOVED (seats already show "+ SIT") ─── */
 
 /* ─── CONTROL STRIP — Clean icon row above action buttons ─── */
 .control-strip {
@@ -1075,25 +1056,7 @@
    OBSERVING INDICATOR
    ═══════════════════════════════════════════════════════════════════════════════ */
 
-.observing-indicator {
-  position: fixed;
-  bottom: 100px;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 24px;
-  background: rgba(0, 0, 0, 0.8);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 20px;
-  color: #b0b3b8;
-  font-size: 0.875rem;
-}
-
-.eye-icon {
-  font-size: 1.125rem;
-}
+/* .observing-indicator REMOVED — no observer UI displayed */
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    HUD Game Info (Center-Top in 4-corner HUD)
@@ -1645,59 +1608,8 @@
   filter: drop-shadow(0 0 2px rgba(255,255,255,0.5));
 }
 
-/* Bottom Center Spectator Join Bar */
-.spectator-join-bar {
-  position: absolute;
-  bottom: 60px;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: linear-gradient(to bottom, #1f2937, #111827);
-  border: 1px solid rgba(255,255,255,0.1);
-  padding: 6px 16px;
-  border-radius: 20px;
-  color: white;
-  font-size: 14px;
-  text-transform: lowercase;
-  cursor: pointer;
-  z-index: 95;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
-  transition: background 0.2s ease;
-}
-.spectator-join-bar:hover {
-  background: linear-gradient(to bottom, #374151, #1f2937);
-}
-
-/* Chat/Mail Envelope Button */
-.chat-mail-toggle-btn {
-  position: absolute;
-  bottom: 20px;
-  right: 20px;
-  background: #1d4ed8; /* Sapphire Blue */
-  border: none;
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
-  color: white;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  z-index: 100;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.2);
-  transition: transform 0.1s ease, box-shadow 0.1s ease;
-}
-.chat-mail-toggle-btn:hover {
-  transform: scale(1.05);
-  box-shadow: 0 6px 16px rgba(29, 78, 216, 0.6);
-}
-
-.eye-icon-circle {
-  font-size: 12px;
-  color: #fff;
-}
+/* spectator-join-bar REMOVED — no observer join bar */
+/* chat-mail-toggle-btn REMOVED — TableChat handles its own collapsed icon */
 
 /* ══════════════════════════════════════════════════════════════
    PHASE 3: UI REFINEMENTS (Hiding old header, side-chat, floating actions)
@@ -1761,16 +1673,7 @@
   z-index: 100;
 }
 
-/* Modifying chat mail toggle to look like the screenshot */
-.chat-mail-toggle-btn {
-  background: rgba(40, 44, 52, 0.8) !important;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
-  color: #9ca3af !important;
-  border-radius: 6px !important;
-  width: 50px !important;
-  height: 50px !important;
-  box-shadow: 0 4px 8px rgba(0,0,0,0.4) !important;
-}
+/* chat-mail-toggle-btn duplicate override REMOVED */
 
 /* Slide out chat exactly like the attachment */
 .table-chat {

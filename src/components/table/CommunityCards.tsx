@@ -131,6 +131,7 @@ function CommunityCardsComponent({
   const [showdownMode, setShowdownMode] = useState(false);
   const [highlightPop, setHighlightPop] = useState(false);
   const [newlyDealtIndices, setNewlyDealtIndices] = useState<Set<number>>(new Set());
+  const [stageLabel, setStageLabel] = useState<string | null>(null);
   const [showParticles, setShowParticles] = useState(false);
   const [particleOrigin, setParticleOrigin] = useState<{ x: number; y: number } | undefined>();
   const prevHighlightRef = useRef<number[]>([]);
@@ -173,9 +174,18 @@ function CommunityCardsComponent({
     prevVisibleCountRef.current = visibleCount;
   }, [visibleCount]);
 
-  // Haptic feedback on stage transitions
+  // Bible V8 §5.1: Stage label + haptic feedback on stage transitions
   useEffect(() => {
     if (stage !== prevStageRef.current) {
+      // Show stage label briefly when new community cards are dealt
+      let labelTimer: ReturnType<typeof setTimeout> | undefined;
+      if (stage === 'flop' || stage === 'turn' || stage === 'river') {
+        setStageLabel(stage.toUpperCase());
+        labelTimer = setTimeout(() => setStageLabel(null), 1500);
+      } else {
+        setStageLabel(null);
+      }
+
       if (stage === 'flop') {
         haptic.medium();
       } else if (stage === 'turn') {
@@ -201,6 +211,7 @@ function CommunityCardsComponent({
         setTimeout(() => setShowParticles(false), 2500);
       }
       prevStageRef.current = stage;
+      return () => { if (labelTimer) clearTimeout(labelTimer); };
     }
   }, [stage]);
 
@@ -237,7 +248,10 @@ function CommunityCardsComponent({
       ref={containerRef}
       className={`community-cards ${showdownMode ? 'community-cards--showdown' : ''}`}
     >
-      {/* Card Container — no stage label clutter */}
+      {/* Bible V8 §5.1: Stage label (FLOP/TURN/RIVER) — fades in briefly when cards are dealt */}
+      {stageLabel && (
+        <div className="community-cards__stage-label">{stageLabel}</div>
+      )}
       <div
         className={`community-cards__container ${highlightPop ? 'community-cards__container--highlight-pop' : ''}`}
       >

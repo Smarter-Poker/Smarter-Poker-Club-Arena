@@ -268,23 +268,25 @@
   bottom: -10px;
   left: 50%;
   transform: translateX(-50%);
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
+  min-width: 22px;
+  height: 20px;
+  padding: 0 4px;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.5625rem;
+  font-size: 0.5rem;
   font-weight: 800;
-  background-color: #FFFFFF !important;
-  color: #111 !important;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  /* Colors set via inline style per position — no !important override */
   box-shadow:
     0 2px 4px rgba(0, 0, 0, 0.5),
     0 0 6px rgba(255, 255, 255, 0.3),
     inset 0 1px 1px rgba(255, 255, 255, 0.4),
     inset 0 -1px 2px rgba(0, 0, 0, 0.15);
   z-index: 4;
-  border: 2px solid rgba(200, 200, 200, 0.6);
+  border: 1.5px solid rgba(255, 255, 255, 0.3);
   animation: dealerButtonAppear 0.4s var(--ease-spring) forwards;
   transition:
     transform 0.2s var(--ease-spring),
@@ -1357,9 +1359,10 @@
   }
 
   .seat__position-chip {
-    width: 20px;
-    height: 20px;
-    font-size: 0.5rem;
+    min-width: 18px;
+    height: 18px;
+    font-size: 0.45rem;
+    padding: 0 3px;
   }
   .seat--empty {
     width: 54px;
@@ -1427,9 +1430,10 @@
   }
 
   .seat__position-chip {
-    width: 18px;
-    height: 18px;
-    font-size: 0.45rem;
+    min-width: 16px;
+    height: 16px;
+    font-size: 0.4rem;
+    padding: 0 2px;
   }
   .seat__action {
     font-size: 0.5625rem;
@@ -1493,9 +1497,10 @@
   }
 
   .seat__position-chip {
-    width: 16px;
-    height: 16px;
-    font-size: 0.4rem;
+    min-width: 14px;
+    height: 14px;
+    font-size: 0.35rem;
+    padding: 0 2px;
   }
   .seat--empty {
     width: 48px;

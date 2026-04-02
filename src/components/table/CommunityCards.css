@@ -392,6 +392,38 @@
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
+   STAGE LABEL — Bible V8 §5.1: FLOP / TURN / RIVER announcement
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.community-cards__stage-label {
+  position: absolute;
+  top: -28px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 2px 14px;
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.15em;
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+  white-space: nowrap;
+  pointer-events: none;
+  animation: stageLabelFade 1.5s ease-out forwards;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 5;
+}
+
+@keyframes stageLabelFade {
+  0% { opacity: 0; transform: translateX(-50%) translateY(4px); }
+  15% { opacity: 1; transform: translateX(-50%) translateY(0); }
+  70% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
    WINNING HAND NAME — PokerBros "Straight" label below board
    ───────────────────────────────────────────────────────────────────────────── */
 

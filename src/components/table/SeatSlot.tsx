@@ -189,12 +189,28 @@ function HoleCard({
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function PositionChip({ position }: { position: PositionBadge }) {
-  // Only show the Dealer button — SB/BB are shown via blind posting, not badges
-  if (position !== 'D') return null;
+  if (!position) return null;
+
+  // Bible V8 §5.1 — Position badges appear on hand start for ALL positions
+  const positionStyles: Record<string, { bg: string; fg: string; label: string }> = {
+    D:       { bg: '#FFFFFF', fg: '#111', label: 'D' },
+    BTN:     { bg: '#FFFFFF', fg: '#111', label: 'D' },
+    SB:      { bg: '#4A90D9', fg: '#FFF', label: 'SB' },
+    BB:      { bg: '#D9534F', fg: '#FFF', label: 'BB' },
+    UTG:     { bg: '#5CB85C', fg: '#FFF', label: 'UTG' },
+    'UTG+1': { bg: '#5CB85C', fg: '#FFF', label: 'UTG1' },
+    'UTG+2': { bg: '#5CB85C', fg: '#FFF', label: 'UTG2' },
+    MP:      { bg: '#F0AD4E', fg: '#111', label: 'MP' },
+    'MP+1':  { bg: '#F0AD4E', fg: '#111', label: 'MP1' },
+    HJ:      { bg: '#9B59B6', fg: '#FFF', label: 'HJ' },
+    CO:      { bg: '#E67E22', fg: '#FFF', label: 'CO' },
+  };
+
+  const style = positionStyles[position] || { bg: '#666', fg: '#FFF', label: position };
 
   return (
-    <div className="seat__position-chip" style={{ backgroundColor: '#FFFFFF', color: '#111' }}>
-      D
+    <div className="seat__position-chip" style={{ backgroundColor: style.bg, color: style.fg }}>
+      {style.label}
     </div>
   );
 }

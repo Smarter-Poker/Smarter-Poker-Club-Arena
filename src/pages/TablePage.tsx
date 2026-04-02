@@ -138,6 +138,7 @@ import GameServerAPI, {
   showHand as serverShowHand,
   toggleStraddle as serverToggleStraddle,
 } from '../services/GameServerAPI';
+import DiamondWalletModal from '../components/wallet/DiamondWalletModal';
 import { retryAsync } from '../utils/retryAsync';
 //monteCarloEquity import removed — server-authoritative
 import './TablePage.css';
@@ -1200,6 +1201,7 @@ export default function TablePage({
 
   // Cashier state
   const [showCashier, setShowCashier] = useState(false);
+  const [showDiamondWallet, setShowDiamondWallet] = useState(false);
   const [accountBalance, setAccountBalance] = useState(0); // Player Wallet balance from wallets table
   // FIX 136: 2-hour re-entry restriction — minimum buy-in from recent cashout
   const [cashoutMinBuyIn, setCashoutMinBuyIn] = useState(0);
@@ -2330,6 +2332,27 @@ export default function TablePage({
           cardIndices: [], // Server can provide highlighted community card indices in future
           amounts: {},
         });
+
+        // Bible V8 §5.1 + §10.2: Pot-to-winner chip animation
+        // Fire chips from pot center to each winner's seat
+        const potCenter = { x: window.innerWidth * 0.5, y: window.innerHeight * 0.45 };
+        const winnerShare = pot / Math.max(serverWinnerIds.length, 1);
+        for (const winnerId of serverWinnerIds) {
+          const winnerSeatIdx = serverPlayers.findIndex((sp: any) => sp.user_id === winnerId);
+          if (winnerSeatIdx >= 0) {
+            const seatNum = winnerSeatIdx + 1;
+            const seatPos = seatPositions[seatNum];
+            if (seatPos) {
+              const winnerPixelPos = {
+                x: (seatPos.x / 100) * window.innerWidth,
+                y: (seatPos.y / 100) * window.innerHeight,
+              };
+              const events = createPotToWinnerEvent(potCenter, winnerPixelPos, winnerShare);
+              setChipAnimations((prev) => [...prev, ...events]);
+            }
+          }
+        }
+
         // Clear winner highlighting after 4 seconds so it doesn't persist into next hand
         setTimeout(() => {
           setWinnerInfo({ playerIds: [], handName: '', cardIndices: [], amounts: {} });
@@ -4428,8 +4451,18 @@ export default function TablePage({
             )}
           </div>
         </div>
-        {/* Header-right cleared — buttons moved to 4-corner HUD layout */}
-        <div className="header-right" />
+        {/* Header-right — Diamond Wallet */}
+        <div className="header-right">
+          <button 
+            className="store-btn-hud diamond-purple-btn"
+            onClick={() => {
+              soundService.playButtonClick();
+              setShowDiamondWallet(true);
+            }}
+          >
+            <span className="diamond-ico">💎</span> Get Diamonds
+          </button>
+        </div>
       </div>
 
       {/* ═══════════════════════════════════════════════════════════════════════
@@ -5170,10 +5203,27 @@ export default function TablePage({
 
       {/* Observing Mode Indicator (when not seated) */}
       {!tableState.players.some((p) => p?.isHero) && (
-        <div className="observing-indicator">
-          <span className="eye-icon">◉</span>
-          <span>Observing</span>
-        </div>
+        <>
+          <div className="observing-indicator">
+            <span className="eye-icon-circle">◉</span>
+            <span>Observing</span>
+          </div>
+
+          <div className="spectator-join-bar" onClick={() => {
+            soundService.playButtonClick();
+            setShowBuyInModal(true);
+          }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+            <span>join</span>
+          </div>
+        </>
+      )}
+
+      {/* Floating Chat/Mail Toggle Button (Bottom-Right) */}
+      {isChatCollapsed && (
+         <button className="chat-mail-toggle-btn" onClick={() => setIsChatCollapsed(false)}>
+           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
+         </button>
       )}
 
       {/* Table Chat */}
@@ -5461,6 +5511,12 @@ export default function TablePage({
           </button>
         </div>
       )}
+
+      {/* Diamond Wallet Modal */}
+      <DiamondWalletModal
+        isOpen={showDiamondWallet}
+        onClose={() => setShowDiamondWallet(false)}
+      />
 
       {/* Cashier Modal */}
       <CashierModal

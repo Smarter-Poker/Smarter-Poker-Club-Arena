@@ -43,18 +43,18 @@
 
 .table-menu__trigger {
   position: relative;
-  width: 52px;
-  height: 52px;
+  width: 60px;
+  height: 60px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.7);
+  background: rgba(0, 0, 0, 0.85);
   backdrop-filter: blur(8px);
-  border: 1.5px solid rgba(255, 255, 255, 0.2);
-  border-radius: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-radius: 16px;
   cursor: pointer;
   transition: all 0.2s ease;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.5);
 }
 
 .table-menu__trigger:hover {
@@ -71,15 +71,15 @@
 .table-menu__hamburger {
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  width: 22px;
+  gap: 6px;
+  width: 26px;
 }
 
 .table-menu__hamburger span {
   display: block;
-  height: 2px;
-  background: #e4e6eb;
-  border-radius: 1px;
+  height: 3px;
+  background: #ffffff;
+  border-radius: 2px;
   transition: all 0.2s ease;
 }
 

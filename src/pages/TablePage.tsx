@@ -1811,10 +1811,12 @@ export default function TablePage({
   });
 
   // Fallback: Check active hand if page reloads mid-hand and misses the INSERT event
+  // Also retries after 2s in case table state hasn't loaded yet on first attempt
   useEffect(() => {
     if (!tableId || !userId) return;
     const fetchExistingHand = async () => {
-      if (!tableStateRef.current.isHandInProgress) return;
+      // Always attempt to fetch — don't skip based on isHandInProgress
+      // because the state might not be loaded yet on page mount
       const { data } = await supabase
         .from('table_hole_cards')
         .select('cards')
@@ -1858,6 +1860,9 @@ export default function TablePage({
       }
     };
     fetchExistingHand();
+    // Retry after 2s in case hero seat wasn't resolved on first attempt
+    const retryTimer = setTimeout(fetchExistingHand, 2000);
+    return () => clearTimeout(retryTimer);
   }, [tableId, userId]);
 
   // Subscribe to server-side hand state broadcast (ServerTableEngine deals on the server)
@@ -3639,18 +3644,22 @@ export default function TablePage({
         break;
       }
       case 'HAND_COMPLETE':
-        // Reset for next hand
-        setTableState((prev) => ({
-          ...prev,
-          communityCards: [],
-          boardStage: 'preflop',
-          pot: 0,
-          sidePots: [],
-        }));
-        setIsAllInMode(false);
-        setAllInEquities([]); // Clear equity display on new hand
-        // Clear winner highlighting (may already be cleared by 4s timeout, but ensure clean slate)
-        setWinnerInfo({ playerIds: [], handName: '', cardIndices: [], amounts: {} });
+        // Reset table state for next hand — but delay clearing community cards + winner info
+        // so players can see the winning hand for 3 seconds before the next deal.
+        // Bible V8 §5.1: Winner display persists 2.5-3s before table resets.
+        setTimeout(() => {
+          setTableState((prev) => ({
+            ...prev,
+            communityCards: [],
+            boardStage: 'preflop',
+            pot: 0,
+            sidePots: [],
+          }));
+          setIsAllInMode(false);
+          setAllInEquities([]); // Clear equity display on new hand
+          // Clear winner highlighting
+          setWinnerInfo({ playerIds: [], handName: '', cardIndices: [], amounts: {} });
+        }, 3000);
         break;
     }
   }, [lastEvent]);
@@ -4799,18 +4808,34 @@ export default function TablePage({
             // FIX: Apply use_alias and table_alias from settings directly to the hero's rendered name
             let derivedHeroName = player?.name;
             if (player?.isHero) {
-              if (useRealName && heroProfile?.display_name) {
-                derivedHeroName = heroProfile.display_name;
-              } else if (!useRealName && heroProfile?.username) {
-                derivedHeroName = heroProfile.username;
-              } else if (v8Settings.use_alias && v8Settings.table_alias) {
+              if (v8Settings.use_alias && v8Settings.table_alias) {
+                // User explicitly set an alias — always use it
                 derivedHeroName = v8Settings.table_alias;
+              } else if (useRealName && heroProfile?.display_name) {
+                derivedHeroName = heroProfile.display_name;
+              } else if (heroProfile?.username) {
+                derivedHeroName = heroProfile.username;
+              } else if (heroProfile?.display_name) {
+                // Fallback: use display_name even if useRealName is off
+                derivedHeroName = heroProfile.display_name;
+              }
+              // If still "Player X" pattern and we have ANY profile info, use it
+              if (derivedHeroName?.startsWith('Player ') && heroProfile) {
+                derivedHeroName = heroProfile.display_name || heroProfile.username || derivedHeroName;
               }
             }
             const displayPlayer = player ? {
               ...player,
               name: derivedHeroName!
             } : null;
+
+            // Compute bet-chip offset direction toward table center (50%, 50%)
+            const dx = 50 - pos.x;
+            const dy = 50 - pos.y;
+            const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+            // Normalize and scale: chips appear ~40px toward center from the seat
+            const betOffsetX = Math.round((dx / dist) * 40);
+            const betOffsetY = Math.round((dy / dist) * 40);
 
             return (
               <div
@@ -4819,7 +4844,9 @@ export default function TablePage({
                 style={{
                   left: `${pos.x}%`,
                   top: `${pos.y}%`,
-                }}
+                  '--bet-offset-x': `${betOffsetX}px`,
+                  '--bet-offset-y': `${betOffsetY}px`,
+                } as React.CSSProperties}
               >
                 <SeatSlot
                   seatNumber={seatNumber}
@@ -4928,11 +4955,9 @@ export default function TablePage({
           <>{/* No spectator banner — empty seats already invite players to sit */}</>
         ) : (
           <>
-            {/* ─── CONTROL STRIP — Clean icon row above action buttons ─── */}
-            {tableState.isHandInProgress && (
-              <div className="control-strip">
-                {/* Straddle Toggle rendered in footer area (line ~5162), not duplicated here */}
-
+            {/* ─── CONTROL STRIP — Minimal: Time Bank + Timer during hand, Rabbit Hunt after hand ─── */}
+            {tableState.isHandInProgress && tableState.currentPlayerSeat === tableState.heroSeat && (
+              <div className="control-strip control-strip--transparent">
                 {/* Time Bank */}
                 <button
                   className="control-strip__btn"
@@ -4945,59 +4970,29 @@ export default function TablePage({
                 </button>
 
                 {/* Timer Display */}
-                {tableState.currentPlayerSeat === tableState.heroSeat && (
-                  <div className="control-strip__timer">
-                    <span className="control-strip__timer-val">{actionTimeRemaining || 0}s</span>
-                  </div>
-                )}
+                <div className="control-strip__timer">
+                  <span className="control-strip__timer-val">{actionTimeRemaining || 0}s</span>
+                </div>
+              </div>
+            )}
 
-                {/* Spacer */}
-                <div className="control-strip__spacer" />
-
-                {/* Rabbit Hunt */}
+            {/* Rabbit Hunt — shows AFTER hand completes, not during */}
+            {!tableState.isHandInProgress && isRabbitAvailable && (
+              <div className="control-strip control-strip--transparent">
                 <button
                   className="control-strip__btn"
-                  title="Rabbit Hunt"
-                  onClick={() => {
-                    if (isRabbitAvailable) handleRabbitReveal();
-                  }}
-                  disabled={!isRabbitAvailable}
+                  title="Rabbit Hunt — reveal remaining cards"
+                  onClick={handleRabbitReveal}
                 >
                   <span className="control-strip__icon">🐰</span>
-                </button>
-
-                {/* Chat Toggle */}
-                <button
-                  className={`control-strip__btn ${isChatMuted ? 'control-strip__btn--muted' : ''}`}
-                  title="Chat"
-                  onClick={() => setIsChatCollapsed(!isChatCollapsed)}
-                >
-                  <span className="control-strip__icon">💬</span>
+                  <span className="control-strip__label">Rabbit Hunt</span>
                 </button>
               </div>
             )}
 
             {/* ─── ACTION PANEL — PokerBros 3-button layout ─── */}
-            {/* Quick Actions Bar — always available when seated */}
-            <QuickActionsBar
-              isSoundEnabled={isSoundEnabled}
-              isChatVisible={!isChatCollapsed}
-              isStatsVisible={userSettings.showHUD}
-              isAutoRebuyEnabled={isAutoRebuyEnabled}
-              onToggleSound={() => setIsSoundEnabled((prev) => !prev)}
-              onToggleChat={() => setIsChatCollapsed((prev) => !prev)}
-              onToggleStats={() => updateSetting('showHUD', !userSettings.showHUD)}
-              onToggleAutoRebuy={() => {
-                const next = !isAutoRebuyEnabled;
-                setIsAutoRebuyEnabled(next);
-                try {
-                  localStorage.setItem('ca_auto_rebuy', String(next));
-                } catch {
-                  /* localStorage unavailable */
-                }
-              }}
-              onOpenSettings={() => setShowSettings(true)}
-            />
+            {/* QuickActionsBar REMOVED — Auto-Rebuy is a hamburger menu setting,
+                Chat and Stats have their own dedicated locations */}
 
             {tableState.currentPlayerSeat === tableState.heroSeat && tableState.isHandInProgress
               ? (() => {

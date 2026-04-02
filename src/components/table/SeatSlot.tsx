@@ -100,8 +100,11 @@ function formatStack(amount: number): string {
   if (amount >= 1000000) return `${(amount / 1000000).toFixed(1)}M`;
   if (amount >= 100000) return `${(amount / 1000).toFixed(0)}K`;
   if (amount >= 10000) return `${(amount / 1000).toFixed(1)}K`;
-  if (amount === Math.floor(amount)) return amount.toLocaleString();
-  return amount.toFixed(2);
+  // Round amounts that are very close to whole numbers (floating-point artifacts from rake/splits)
+  const rounded = Math.round(amount);
+  if (Math.abs(amount - rounded) < 0.1) return rounded.toLocaleString();
+  // Genuine fractional amount (micro-stakes like 0.25/0.50) — show 2 decimals
+  return amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function formatStackAsBB(stack: number, bigBlind: number): string {
@@ -480,8 +483,8 @@ export const SeatSlot = memo(
             </div>
           )}
 
-          {/* Position Chip — bottom-right of avatar */}
-          <PositionChip position={position} />
+          {/* Position Chip — REMOVED: Bible V8 dealer button is rendered separately via DealerButton component.
+             SB/BB/UTG/CO/etc. badges are NOT shown on the table per design decision. */}
         </div>
 
         {/* Info Box — name + stack, with neon timer border when active */}

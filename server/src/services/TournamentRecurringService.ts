@@ -1218,7 +1218,7 @@ export class TournamentRecurringService {
     try {
       const { data: horses } = await supabase
         .from('profiles')
-        .select('id, display_name, username')
+        .select('id, display_name, username, use_real_name')
         .eq('is_horse', true)
         .eq('horse_status', 'available')
         .limit(count);
@@ -1230,7 +1230,9 @@ export class TournamentRecurringService {
         const { error: regError } = await supabase.from('tournament_players').insert({
           tournament_id: tournamentId,
           user_id: horse.id,
-          username: horse.username || horse.display_name,
+          username: horse.use_real_name 
+            ? (horse.display_name || horse.username || 'Horse')
+            : (horse.username || horse.display_name || 'Horse'),
           status: 'registered',
           chips: 0,
         });

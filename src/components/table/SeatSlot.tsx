@@ -189,37 +189,6 @@ function HoleCard({
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// POSITION CHIP — D / SB / BB badge
-// ═══════════════════════════════════════════════════════════════════════════════
-
-function PositionChip({ position }: { position: PositionBadge }) {
-  if (!position) return null;
-
-  // Bible V8 §5.1 — Position badges appear on hand start for ALL positions
-  const positionStyles: Record<string, { bg: string; fg: string; label: string }> = {
-    D:       { bg: '#FFFFFF', fg: '#111', label: 'D' },
-    BTN:     { bg: '#FFFFFF', fg: '#111', label: 'D' },
-    SB:      { bg: '#4A90D9', fg: '#FFF', label: 'SB' },
-    BB:      { bg: '#D9534F', fg: '#FFF', label: 'BB' },
-    UTG:     { bg: '#5CB85C', fg: '#FFF', label: 'UTG' },
-    'UTG+1': { bg: '#5CB85C', fg: '#FFF', label: 'UTG1' },
-    'UTG+2': { bg: '#5CB85C', fg: '#FFF', label: 'UTG2' },
-    MP:      { bg: '#F0AD4E', fg: '#111', label: 'MP' },
-    'MP+1':  { bg: '#F0AD4E', fg: '#111', label: 'MP1' },
-    HJ:      { bg: '#9B59B6', fg: '#FFF', label: 'HJ' },
-    CO:      { bg: '#E67E22', fg: '#FFF', label: 'CO' },
-  };
-
-  const style = positionStyles[position] || { bg: '#666', fg: '#FFF', label: position };
-
-  return (
-    <div className="seat__position-chip" style={{ backgroundColor: style.bg, color: style.fg }}>
-      {style.label}
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
 // NEON TIMER BORDER — PokerBros-style disappearing border
 // ═══════════════════════════════════════════════════════════════════════════════
 //
@@ -603,6 +572,10 @@ export const SeatSlot = memo(
     const nextStyle = next.playerStyle?.style || 'unknown';
     if (prevStyle !== nextStyle) return false;
     if (prev.deckStyle !== next.deckStyle) return false;
+    if (prev.cardBack !== next.cardBack) return false;
+    if (prev.secondsLeft !== next.secondsLeft) return false;
+    if (prev.showAvatar !== next.showAvatar) return false;
+    if (prev.showBadges !== next.showBadges) return false;
 
     const pp = prev.player;
     const np = next.player;
@@ -629,7 +602,7 @@ export const SeatSlot = memo(
     } else if (!ph || !nh || ph.length !== nh.length) return false;
     else {
       for (let i = 0; i < ph.length; i++) {
-        if (ph[i] !== nh[i]) return false;
+        if (ph[i].rank !== nh[i].rank || ph[i].suit !== nh[i].suit) return false;
       }
     }
 

@@ -121,7 +121,7 @@ export class ServerTableEngine {
     timestamp: number;
     stage: string;
   }[] = [];
-  private currentHandWinners: { userId: string; amount: number }[] = [];
+  private currentHandWinners: { userId: string; amount: number; potIndex?: number; hand?: { name: string; ranking: number } }[] = [];
   private currentHandContributions: Map<string, number> = new Map(); // userId → totalInvested
   private currentHandInsuranceSettlements: InsuranceSettlement[] = [];
   private currentHandBBJHit: BBJDetectionResult | null = null;
@@ -1911,9 +1911,12 @@ export class ServerTableEngine {
         this.currentHandWinnerIds = (event.winners || []).map(
           (w: any) => w.userId || w.user_id || ''
         );
+        // Bible V8 §2.7: Winner Object — userId, amount, potIndex, hand (evaluated hand description)
         this.currentHandWinners = (event.winners || []).map((w: any) => ({
           userId: w.userId || w.user_id || '',
           amount: w.amount || 0,
+          potIndex: w.potIndex ?? 0,
+          hand: w.hand ? { name: w.hand.name || '', ranking: w.hand.ranking ?? 0 } : undefined,
         }));
         if (this.handController) {
           const state = this.handController.getState();
@@ -3074,6 +3077,10 @@ export class ServerTableEngine {
             position: positionLabels.get(p.seat) ?? '', // Bible V8 §2.3, Appendix B
             avatar_url: p.avatar_url ?? '', // Bible V8 §2.3
             is_horse: p.is_horse ?? false, // Bible V8 §2.3
+            // Bible V8 §5.1 + §2.7: Hand name at showdown for winner label display
+            hand_name: showCards
+              ? (this.currentHandShowdownResults.find((r) => r.userId === p.user_id)?.handName ?? '')
+              : '',
           };
         });
       })(),

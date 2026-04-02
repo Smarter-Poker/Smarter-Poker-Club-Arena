@@ -891,10 +891,14 @@
 
 .seat__bet-chips {
   position: absolute;
-  bottom: -24px;
+  bottom: -28px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
 }
 
 /* ─── OPPONENT CARD BACKS — Deal-in animation ────────────────────────── */
@@ -912,6 +916,29 @@
     opacity: 1;
     transform: rotate(var(--card-rotation, 0deg)) scale(1) translateY(0);
   }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   IN-HAND STATE — Subtle yellow glow on all players still in the hand
+   Reference: PokerBros-style highlighting of non-folded players
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.seat--in-hand .seat__avatar {
+  border-color: rgba(255, 215, 0, 0.6);
+  box-shadow:
+    0 0 10px rgba(255, 215, 0, 0.3),
+    0 0 20px rgba(255, 215, 0, 0.12),
+    0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+.seat--in-hand .seat__info {
+  border-color: rgba(255, 215, 0, 0.2);
+  box-shadow: 0 0 8px rgba(255, 215, 0, 0.1);
+}
+
+/* The active player (whose turn it is) gets the stronger glow — override in-hand */
+.seat--active.seat--in-hand .seat__avatar {
+  /* Active player styles already defined above — no duplication needed */
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════

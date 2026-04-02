@@ -333,6 +333,10 @@ export const SeatSlot = memo(
           cls.push('seat--winner-glow');
           if (winnerPop) cls.push('seat--winner-pop');
         }
+        // Bible V8 §5.1: Yellow glow on all players still in the hand (not folded)
+        if (player.status === 'active' || player.status === 'all_in') {
+          cls.push('seat--in-hand');
+        }
         if (lastAction === 'fold') cls.push('seat--folded');
         if (allinShake) cls.push('seat--allin-shake');
         if (stackGlow) cls.push('seat--stack-glow');

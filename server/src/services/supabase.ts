@@ -170,7 +170,8 @@ export async function syncStacks(
 ): Promise<void> {
   const results = await Promise.allSettled(
     players.map((player) => {
-      const updatePayload: any = { stack: player.stack };
+      // FIX-231d: Round to 2 decimal places to prevent float-point drift (e.g. 5799.700000000001)
+      const updatePayload: any = { stack: Math.round(player.stack * 100) / 100 };
       if (player.time_bank_uses_remaining !== undefined) {
         updatePayload.time_bank_uses_remaining = player.time_bank_uses_remaining;
       }

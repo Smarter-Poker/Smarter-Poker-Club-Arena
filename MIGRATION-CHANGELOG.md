@@ -57,6 +57,48 @@ timer rewrite (requestAnimationFrame), pot display animation removal, hole card 
 - Fix needed: Supabase RPC function for atomic `chip_balance = chip_balance + $amount`
 - File: `server/src/services/supabase.ts`
 
+### Extended Full-Codebase Audit (55 files, 40+ commits):
+
+**Bug #9 (Medium): syncStacks missing float rounding (FIX-231d)**
+- `syncStacks()` writes `player.stack` to DB without rounding. Float drift (e.g. 5799.700000000001) persists to `table_seats.stack`.
+- Previous FIX-231 was reverted by CI bot. This re-applies it correctly.
+- Fix: `Math.round(player.stack * 100) / 100` before write
+- File: `server/src/services/supabase.ts` line 173
+
+**Bug #10 (Low): Read-then-write race in cleanupStaleData cashout**
+- Server startup cashout does `SELECT balance → upsert(balance + stack)`. Could lose chips if concurrent access.
+- Risk: LOW (only runs on server startup, single instance)
+- File: `server/src/index.ts` lines 309-332
+
+**Bug #11 (Low): MasterBus event key mismatch for useRealName**
+- HamburgerMenu emits `setting: 'useRealName'` (camelCase) but useUserTableSettings expects snake_case keys from `DEFAULT_USER_TABLE_SETTINGS`. The bus event won't match the settings hook subscriber.
+- Not a functional bug since `use_real_name` is stored in `profiles` table, not `user_table_settings`.
+- Files: `src/components/navigation/HamburgerMenu.tsx` line 346, `src/components/table/TableMenu.tsx` line 248
+
+**Bug #12 (High): CI deploys Club Arena directly via Vercel CLI — violates deploy pipeline**
+- `.github/workflows/ci.yml` Step 3 runs `vercel --prod` in the Club Arena directory.
+- CLAUDE.md explicitly states: "NEVER run `vercel deploy` or `vercel --prod` in the Club Arena directory"
+- Club Arena must deploy through the World Hub pipeline (build → sync → push World Hub → Vercel auto-deploys)
+- If CI secrets are configured, this creates a conflicting deployment separate from smarter.poker
+- File: `.github/workflows/ci.yml` lines 232-244
+
+**Verified Clean (no issues found):**
+- GameServerAPI.ts: Circuit breaker, JWT auth, leave endpoint — all correct
+- DealAnimation.tsx: Edge-transition pattern, cleanup, memo — all correct
+- ActionPanel.tsx: Bet rounding, slider haptics, chip increment logic — all correct
+- CompleteProfileModal.tsx: Input validation, sanitization, unique constraint handling — all correct
+- IdentityModal.tsx: Alias save, modal overlay — all correct
+- useUserTableSettings.ts: Optimistic updates, rollback, MasterBus sync, localStorage cache — all correct
+- useTableTimer.ts: RAF countdown, throttle, timeout prevention — all correct
+- CommunityCards.tsx: Stage transitions, newly dealt tracking, haptics — all correct
+- BBJCelebration.tsx: Particle system, canvas lifecycle — correct
+- SQL migrations: Unique index, atomic buyin function — both correct
+- PremiumPot.tsx: Smart formatting, animated counter — correct
+- use_real_name: Correctly wired through server (supabase.ts, AutoRebuyService, TournamentRecurringService)
+- Duplicate seat prevention: 4-layer defense (DB unique index + client dedup + broadcast dedup + buy-in guard)
+- Rake routing: Union vs standalone club wallet routing — correct
+- Hole card security: RLS-protected channel, userId check, polling fallback — correct
+
 ### Pass Summaries:
 - **Pass 1 (Wiring):** 5 bugs fixed, 3 noted. All component props, memo comparators, subscriptions, and query wiring verified correct.
 - **Pass 2 (Real-Time):** 5 scenarios traced end-to-end (new hand, player action, showdown, reconnect, BBJ/Insurance/RIT). All data flows correct.
@@ -66,6 +108,8 @@ timer rewrite (requestAnimationFrame), pot display animation removal, hole card 
 ### Files Modified:
 - `src/components/table/PotDisplay.tsx` — Removed dead JSX, unused previousPot prop and memo entry
 - `src/components/table/SeatSlot.tsx` — Removed dead PositionChip function, fixed holeCards memo to value equality, added 4 missing props to memo
+- `server/src/services/supabase.ts` — FIX-231d: Added float rounding in syncStacks
+- `MIGRATION-CHANGELOG.md` — Round 48 full audit entry
 
 ---
 

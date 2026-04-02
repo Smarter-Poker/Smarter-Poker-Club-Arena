@@ -1810,13 +1810,11 @@ export default function TablePage({
     enabled: !!tableId && !!userId,
   });
 
-  // Fallback: Check active hand if page reloads mid-hand and misses the INSERT event
-  // Also retries after 2s in case table state hasn't loaded yet on first attempt
+  // Fallback: Check active hand if page reloads mid-hand and misses the INSERT event.
+  // Polls every 5s while hand is active and hero has no cards.
   useEffect(() => {
     if (!tableId || !userId) return;
     const fetchExistingHand = async () => {
-      // Always attempt to fetch — don't skip based on isHandInProgress
-      // because the state might not be loaded yet on page mount
       const { data } = await supabase
         .from('table_hole_cards')
         .select('cards')
@@ -1847,7 +1845,6 @@ export default function TablePage({
               rank: c.rank,
               suit: ENGINE_SUIT_MAP[c.suit] || (c.suit as any),
             }));
-            // Bible V8 §11.1: cards_pre_sort — sort by rank high→low
             if (v8Settings.cards_pre_sort) parsedCards = sortCardsByRank(parsedCards);
             updatedPlayers[heroIdx] = {
               ...updatedPlayers[heroIdx]!,
@@ -1859,10 +1856,14 @@ export default function TablePage({
         });
       }
     };
+    // Initial fetch + retries at 2s, then poll every 5s
     fetchExistingHand();
-    // Retry after 2s in case hero seat wasn't resolved on first attempt
     const retryTimer = setTimeout(fetchExistingHand, 2000);
-    return () => clearTimeout(retryTimer);
+    const pollTimer = setInterval(fetchExistingHand, 5000);
+    return () => {
+      clearTimeout(retryTimer);
+      clearInterval(pollTimer);
+    };
   }, [tableId, userId]);
 
   // Subscribe to server-side hand state broadcast (ServerTableEngine deals on the server)
@@ -4457,7 +4458,7 @@ export default function TablePage({
       className={`table-page${isAllInMode ? ' table-page--allin-mode' : ''}${tableState.currentPlayerSeat === tableState.heroSeat && tableState.isHandInProgress ? ' table-page--hero-turn' : ''}${winnerInfo.playerIds.length > 0 ? ' table-page--winner-flash' : ''}`}
       data-felt-theme={v8Theme.table_id || v8Theme.theme_id || userSettings.theme || 'black'}
       data-background-theme={v8Theme.background_id || 'diamond-pattern'}
-      data-button-theme={v8Theme.button_id || 'red-d-gear'}
+      data-button-theme={v8Theme.button_id || 'classic-white'}
       data-cards-theme={v8Theme.cards_id || 'standard-red'}
       data-theme-preset={v8Theme.theme_id || 'default-dark'}
     >
@@ -4848,9 +4849,9 @@ export default function TablePage({
             const dx = 50 - pos.x;
             const dy = 50 - pos.y;
             const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-            // Normalize and scale: chips appear ~40px toward center from the seat
-            const betOffsetX = Math.round((dx / dist) * 40);
-            const betOffsetY = Math.round((dy / dist) * 40);
+            // Normalize and scale: chips appear ~70px toward center from the seat
+            const betOffsetX = Math.round((dx / dist) * 70);
+            const betOffsetY = Math.round((dy / dist) * 70);
 
             return (
               <div
@@ -4986,7 +4987,7 @@ export default function TablePage({
 
                 {/* Timer Display */}
                 <div className="control-strip__timer">
-                  <span className="control-strip__timer-val">{actionTimeRemaining || 0}s</span>
+                  <span className="control-strip__timer-val">{Math.ceil(actionTimeRemaining) || 0}s</span>
                 </div>
               </div>
             )}

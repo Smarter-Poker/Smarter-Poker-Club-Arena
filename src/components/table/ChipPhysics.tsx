@@ -166,10 +166,10 @@ export function ChipPhysics({
 function formatChipAmount(amount: number): string {
   if (amount >= 1000000) return `${(amount / 1000000).toFixed(1)}M`;
   if (amount >= 10000) return `${(amount / 1000).toFixed(1)}K`;
-  // Display whole numbers when amount is close to integer (avoids floating-point artifacts like 4.558)
-  if (Math.abs(amount - Math.round(amount)) < 0.01) return Math.round(amount).toLocaleString();
-  // For genuine fractional amounts (e.g. 0.25/0.50 games), show max 2 decimals
-  return amount % 1 === 0 ? amount.toLocaleString() : amount.toFixed(2);
+  // Always show whole numbers for amounts >= 1. Sub-dollar shows 2 decimals.
+  if (amount >= 1) return Math.round(amount).toLocaleString();
+  if (amount > 0) return amount.toFixed(2);
+  return '0';
 }
 
 export default ChipPhysics;

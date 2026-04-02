@@ -100,11 +100,12 @@ function formatStack(amount: number): string {
   if (amount >= 1000000) return `${(amount / 1000000).toFixed(1)}M`;
   if (amount >= 100000) return `${(amount / 1000).toFixed(0)}K`;
   if (amount >= 10000) return `${(amount / 1000).toFixed(1)}K`;
-  // Round amounts that are very close to whole numbers (floating-point artifacts from rake/splits)
-  const rounded = Math.round(amount);
-  if (Math.abs(amount - rounded) < 0.1) return rounded.toLocaleString();
-  // Genuine fractional amount (micro-stakes like 0.25/0.50) — show 2 decimals
-  return amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  // For any amount >= 1, always show as a rounded whole number.
+  // Fractional cents on big stacks are rake/split artifacts that look ugly.
+  if (amount >= 1) return Math.round(amount).toLocaleString();
+  // Sub-dollar amounts (micro-stakes like 0.25/0.50) — show 2 decimals
+  if (amount > 0) return amount.toFixed(2);
+  return '0';
 }
 
 function formatStackAsBB(stack: number, bigBlind: number): string {
@@ -478,7 +479,7 @@ export const SeatSlot = memo(
             <div className="seat__disconnect-overlay" title="Player disconnected">
               <span className="seat__disconnect-label">DISCONNECTED</span>
               {secondsLeft != null && secondsLeft > 0 && (
-                <span className="seat__disconnect-timer">{secondsLeft}s</span>
+                <span className="seat__disconnect-timer">{Math.ceil(secondsLeft)}s</span>
               )}
             </div>
           )}

@@ -9,7 +9,7 @@
  * - Chip stack animations on pot updates
  */
 
-import React, { useMemo, useEffect, useState, memo } from 'react';
+import React, { useMemo, memo } from 'react';
 import './PotDisplay.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -39,15 +39,11 @@ export interface PotDisplayProps {
 // UTILITIES
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// Smart precision — whole dollars for clean amounts, decimals only when fractional (all-in splits)
+// Always show whole numbers for amounts >= 1. Sub-dollar amounts show 2 decimals.
 function formatAmount(amount: number, currency: string = ''): string {
-  // Round amounts that are very close to whole numbers (floating-point artifacts from rake/splits)
-  const rounded = Math.round(amount);
-  if (Math.abs(amount - rounded) < 0.1) {
-    return rounded.toLocaleString('en-US');
-  }
-  // Genuine fractional amount (micro-stakes like 0.25/0.50) — show 2 decimals
-  return amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (amount >= 1) return Math.round(amount).toLocaleString('en-US');
+  if (amount > 0) return amount.toFixed(2);
+  return '0';
 }
 
 // Format amount in Big Blinds
@@ -155,54 +151,9 @@ function PotDisplayComponent({
   displayMode = 'chips',
   onToggleDisplayMode,
 }: PotDisplayProps) {
-  const [displayPot, setDisplayPot] = useState(mainPot);
-  const [isAnimating, setIsAnimating] = useState(false);
-  const [isPotBump, setIsPotBump] = useState(false);
-  const prevPotRef = React.useRef(mainPot);
-
-  // Animated number counting — when mainPot changes, count up from old value to new value over 400ms
-  useEffect(() => {
-    setIsAnimating(true);
-
-    // Animate number counting up from current display value
-    const startValue = displayPot;
-    const diff = mainPot - startValue;
-    if (diff === 0) {
-      setIsAnimating(false);
-      return;
-    }
-
-    const startTime = Date.now();
-    const duration = 400;
-
-    const animate = () => {
-      const elapsed = Date.now() - startTime;
-      if (elapsed >= duration) {
-        setDisplayPot(mainPot);
-        setIsAnimating(false);
-      } else {
-        const progress = elapsed / duration;
-        const currentValue = startValue + diff * progress;
-        setDisplayPot(Math.trunc(currentValue * 100) / 100);
-        requestAnimationFrame(animate);
-      }
-    };
-
-    const frameId = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(frameId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mainPot]);
-
-  // Pot bump animation — when pot increases by >2x previous
-  useEffect(() => {
-    if (mainPot > prevPotRef.current * 2 && prevPotRef.current > 0) {
-      setIsPotBump(true);
-      const timer = setTimeout(() => setIsPotBump(false), 500);
-      prevPotRef.current = mainPot;
-      return () => clearTimeout(timer);
-    }
-    prevPotRef.current = mainPot;
-  }, [mainPot]);
+  // Pot updates instantly — no count-up animation, no bump/shake. Just the number.
+  const displayPot = mainPot;
+  const isAnimating = false;
 
   // Calculate chip visualization
   const chipBreakdown = useMemo(() => getChipBreakdown(mainPot), [mainPot]);
@@ -217,7 +168,7 @@ function PotDisplayComponent({
   }
 
   return (
-    <div className={`pot-display ${isPotBump ? 'pot-display--bump' : ''}`}>
+    <div className="pot-display">
       {/* Chip Stacks Visualization */}
       {showChipAnimation && mainPot > 0 && (
         <div className="pot-display__chips">
@@ -234,7 +185,7 @@ function PotDisplayComponent({
 
       {/* Main Pot Amount — click to toggle chips/BB display */}
       <div
-        className={`pot-display__main ${isAnimating ? 'pot-display__main--animating' : ''} ${onToggleDisplayMode ? 'pot-display__main--clickable' : ''} ${isPotBump ? 'pot-display__main--pulse' : ''}`}
+        className={`pot-display__main ${onToggleDisplayMode ? 'pot-display__main--clickable' : ''}`}
         onClick={onToggleDisplayMode}
         title={onToggleDisplayMode ? 'Click to toggle Chips/BB display' : undefined}
       >

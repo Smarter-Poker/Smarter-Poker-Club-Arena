@@ -39,9 +39,14 @@ export interface PotDisplayProps {
 // UTILITIES
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// EXACT precision — no abbreviations, no rounding
+// Smart precision — whole dollars for clean amounts, decimals only when fractional (all-in splits)
 function formatAmount(amount: number, currency: string = ''): string {
-  return `${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  // If the amount is a whole number (or within half-cent), show no decimals
+  if (Math.abs(amount - Math.round(amount)) < 0.005) {
+    return Math.round(amount).toLocaleString('en-US');
+  }
+  // Fractional amount (all-in odd splits) — show 2 decimals
+  return amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 // Format amount in Big Blinds

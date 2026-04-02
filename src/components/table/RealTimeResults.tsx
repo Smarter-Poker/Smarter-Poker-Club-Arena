@@ -76,10 +76,12 @@ function formatDateTime(date: Date): string {
 }
 
 function formatAmount(amount: number, currency: string = ''): string {
-  const formatted = amount.toLocaleString('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
+  let formatted: string;
+  if (Math.abs(amount - Math.round(amount)) < 0.005) {
+    formatted = Math.round(amount).toLocaleString('en-US');
+  } else {
+    formatted = amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
   return `${currency}${formatted}`;
 }
 

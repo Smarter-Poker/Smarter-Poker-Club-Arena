@@ -48,9 +48,14 @@ export interface LeaderboardPanelProps {
 // UTILITIES
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// EXACT precision — no abbreviations, no rounding
+// Smart precision — whole dollars for clean amounts, decimals only when fractional
 function formatAmount(amount: number, currency: string = ''): string {
-  return `${amount < 0 ? '-' : ''}${Math.abs(amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const abs = Math.abs(amount);
+  const sign = amount < 0 ? '-' : '';
+  if (Math.abs(abs - Math.round(abs)) < 0.005) {
+    return `${sign}${Math.round(abs).toLocaleString('en-US')}`;
+  }
+  return `${sign}${abs.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

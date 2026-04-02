@@ -539,9 +539,11 @@ export async function logRakeCollection(
   });
   if (rakeErr) console.warn(`[DB] Failed to log rake for hand #${handNumber}:`, rakeErr.message);
 
-  // Credit rake to the correct wallet: union owner or standalone club owner
+  // Credit rake to the correct entity wallet:
+  // - Club NOT in a union → credit to CLUB wallet (club_wallets or clubs.chip_pool)
+  // - Club IN a union → credit to UNION wallet (union_wallets.chip_balance)
+  // NEVER goes to a player's personal wallet.
   try {
-    // FIX 127: Use .maybeSingle() — club may not exist (deleted/invalid ID)
     const { data: club, error: clubErr } = await supabase
       .from('clubs')
       .select('owner_id, union_id, name')
@@ -554,58 +556,78 @@ export async function logRakeCollection(
     }
     if (!club) return;
 
-    let rakeRecipientId: string | null = null;
-    let rakeDesc = '';
-
     if (club.union_id) {
-      // Club is in a union — rake held by union owner until weekly settlement
-      // FIX 127: Use .maybeSingle() — union may not exist (deleted/invalid ID)
-      const { data: union, error: unionErr } = await supabase
-        .from('unions')
-        .select('owner_id, name')
-        .eq('id', club.union_id)
+      // Club is in a union — ALL rake held by union wallet until weekly settlement
+      // Read current balance then increment (Supabase REST doesn't support atomic increment)
+      const { data: uw } = await supabase
+        .from('union_wallets')
+        .select('chip_balance')
+        .eq('union_id', club.union_id)
         .maybeSingle();
 
-      if (unionErr) {
-        console.warn(
-          `[DB] Failed to look up union ${club.union_id} for rake credit:`,
-          unionErr.message
-        );
-      }
-
-      if (union?.owner_id) {
-        rakeRecipientId = union.owner_id;
-        rakeDesc = `Cash game rake held by ${union.name || 'Union'}: hand #${handNumber} (${club.name || 'club'})`;
-      }
-    } else {
-      // Standalone club — rake goes directly to club owner
-      rakeRecipientId = club.owner_id;
-      rakeDesc = `Cash game rake: hand #${handNumber}`;
-    }
-
-    if (rakeRecipientId) {
-      // Credit to recipient's PLAYER wallet
-      const { error: rakeCredErr } = await supabase.rpc('credit_player_wallet', {
-        p_user_id: rakeRecipientId,
-        p_amount: rakeAmount,
-      });
-
-      if (rakeCredErr) {
-        reportError(new Error(`[logRakeCollection] Rake credit failed for ${rakeRecipientId}: ${rakeCredErr.message}`), 'logRakeCollection.Rake_credit_failed_for_rakeRec');
+      if (uw) {
+        const newBalance = (uw.chip_balance || 0) + rakeAmount;
+        const { error: uwErr } = await supabase
+          .from('union_wallets')
+          .update({ chip_balance: newBalance, updated_at: new Date().toISOString() })
+          .eq('union_id', club.union_id);
+        if (uwErr) {
+          reportError(new Error(`[logRakeCollection] Union wallet credit failed: ${uwErr.message}`), 'logRakeCollection.Union_wallet_credit_failed');
+        }
       } else {
-        // Log wallet transaction only on successful credit
-        const { error: txErr } = await supabase.rpc('log_wallet_transaction', {
-          p_user_id: rakeRecipientId,
-          p_wallet_type: 'PLAYER',
-          p_amount: rakeAmount,
-          p_type: 'credit',
-          p_category: 'rake',
-          p_description: rakeDesc,
-          p_table_id: tableId,
-          p_hand_id: null,
-          p_related_entity_id: clubId,
-        });
-        if (txErr) reportError(new Error(`[logRakeCollection] Rake tx log failed: ${txErr.message}`), 'logRakeCollection.Rake_tx_log_failed');
+        // No union wallet exists — create one
+        const { error: insertErr } = await supabase
+          .from('union_wallets')
+          .insert({ union_id: club.union_id, chip_balance: rakeAmount });
+        if (insertErr) {
+          reportError(new Error(`[logRakeCollection] Union wallet insert failed: ${insertErr.message}`), 'logRakeCollection.Union_wallet_insert_failed');
+        }
+      }
+
+      // Log union transaction for audit trail
+      await supabase.from('union_transactions').insert({
+        union_id: club.union_id,
+        club_id: clubId,
+        amount: rakeAmount,
+        tx_type: 'rake',
+        wallet: 'chip',
+        direction: 'credit',
+        notes: `Cash game rake: hand #${handNumber} (${club.name || 'club'})`,
+        created_at: new Date().toISOString(),
+      }).catch(() => {});
+
+    } else {
+      // Standalone club — rake goes to CLUB wallet (not owner's player wallet)
+      // Try club_wallets table first, then clubs.chip_pool as fallback
+      const { data: cw } = await supabase
+        .from('club_wallets')
+        .select('chip_balance')
+        .eq('club_id', clubId)
+        .maybeSingle();
+
+      if (cw) {
+        const { error: cwErr } = await supabase
+          .from('club_wallets')
+          .update({ chip_balance: (cw.chip_balance || 0) + rakeAmount })
+          .eq('club_id', clubId);
+        if (cwErr) {
+          reportError(new Error(`[logRakeCollection] Club wallet credit failed: ${cwErr.message}`), 'logRakeCollection.Club_wallet_credit_failed');
+        }
+      } else {
+        // Fallback: update clubs.chip_pool directly
+        const { data: clubData } = await supabase
+          .from('clubs')
+          .select('chip_pool')
+          .eq('id', clubId)
+          .maybeSingle();
+
+        const { error: cpErr } = await supabase
+          .from('clubs')
+          .update({ chip_pool: ((clubData?.chip_pool as number) || 0) + rakeAmount })
+          .eq('id', clubId);
+        if (cpErr) {
+          reportError(new Error(`[logRakeCollection] Club chip_pool credit failed: ${cpErr.message}`), 'logRakeCollection.Club_chip_pool_credit_failed');
+        }
       }
     }
   } catch (e) {

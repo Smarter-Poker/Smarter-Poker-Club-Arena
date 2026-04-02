@@ -4630,12 +4630,7 @@ export default function TablePage({
             </button>
           </div>
         }
-        centerTop={
-          <div className="hud-game-info">
-            <span className="hud-game-info__type">{tableState.gameType}</span>
-            <span className="hud-game-info__blinds">{tableState.blinds}</span>
-          </div>
-        }
+        centerTop={null /* Game info moved to on-felt strip below community cards */}
       />
 
       {/* ═══════════════════════════════════════════════════════════════════════
@@ -4881,14 +4876,9 @@ export default function TablePage({
           BOTTOM CONTROLS + ACTION PANEL
           ═══════════════════════════════════════════════════════════════════════ */}
       <div className="action-panel-wrapper">
-        {/* Spectator Mode - Show when user is not seated */}
+        {/* Spectator Mode - hidden (seats already show "+ SIT") */}
         {!tableState.players[tableState.heroSeat - 1] ? (
-          <div className="spectator-mode">
-            <span className="spectator-mode__icon">👁</span>
-            <span className="spectator-mode__text">
-              {tableState.isTournament ? 'Observing tournament' : 'Click a seat to join'}
-            </span>
-          </div>
+          <>{/* No spectator banner — empty seats already invite players to sit */}</>
         ) : (
           <>
             {/* ─── CONTROL STRIP — Clean icon row above action buttons ─── */}
@@ -5258,23 +5248,7 @@ export default function TablePage({
         </>
       )}
 
-      {/* Observing Mode Indicator (when not seated) */}
-      {!tableState.players.some((p) => p?.isHero) && (
-        <>
-          <div className="observing-indicator">
-            <span className="eye-icon-circle">◉</span>
-            <span>Observing</span>
-          </div>
-
-          <div className="spectator-join-bar" onClick={() => {
-            soundService.playButtonClick();
-            setShowBuyInModal(true);
-          }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
-            <span>join</span>
-          </div>
-        </>
-      )}
+      {/* Observing / Join indicators REMOVED — empty seats already show "+ SIT" */}
 
       {/* Floating Chat/Mail Toggle Button (Bottom-Right) & I'm Back */}
       <div className="floating-action-br" style={{ display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center' }}>
@@ -5289,11 +5263,7 @@ export default function TablePage({
             I'm Back
           </button>
         )}
-        {isChatCollapsed && (
-          <button className="chat-mail-toggle-btn" onClick={() => setIsChatCollapsed(false)}>
-             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
-          </button>
-        )}
+        {/* Duplicate chat toggle REMOVED — TableChat renders its own collapsed icon */}
       </div>
 
       {/* Table Chat */}

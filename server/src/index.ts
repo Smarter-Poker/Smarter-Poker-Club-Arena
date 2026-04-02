@@ -2293,7 +2293,7 @@ class TournamentManager {
             direction: 'credit',
             notes: `${rakeDescription} — ${club.name || 'club'}`,
             created_at: new Date().toISOString(),
-          }).catch(() => {});
+          });
 
         } else {
           // Standalone club — rake goes to CLUB wallet (not owner's personal wallet)

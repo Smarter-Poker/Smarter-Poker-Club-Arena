@@ -594,7 +594,7 @@ export async function logRakeCollection(
         direction: 'credit',
         notes: `Cash game rake: hand #${handNumber} (${club.name || 'club'})`,
         created_at: new Date().toISOString(),
-      }).catch(() => {});
+      });
 
     } else {
       // Standalone club — rake goes to CLUB wallet (not owner's player wallet)

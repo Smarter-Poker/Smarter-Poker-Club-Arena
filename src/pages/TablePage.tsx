@@ -2340,8 +2340,8 @@ export default function TablePage({
         for (const winnerId of serverWinnerIds) {
           const winnerSeatIdx = serverPlayers.findIndex((sp: any) => sp.user_id === winnerId);
           if (winnerSeatIdx >= 0) {
-            const seatNum = winnerSeatIdx + 1;
-            const seatPos = seatPositions[seatNum];
+            // seatPositions is 0-indexed array — use winnerSeatIdx directly
+            const seatPos = seatPositions[winnerSeatIdx];
             if (seatPos) {
               const winnerPixelPos = {
                 x: (seatPos.x / 100) * window.innerWidth,
@@ -4661,16 +4661,18 @@ export default function TablePage({
                   />
                 </div>
 
-                {/* Game Info Strip — PokerBros-style variant + blinds label below community cards */}
+                {/* Game Info Strip — PokerBros-style: "1/2 NLH" capitalized, table name below */}
                 <div className="table-game-info">
-                  <span className="table-game-info__variant">
-                    {tableState.gameType === "No Limit Hold'em" ? 'NLH' :
-                     tableState.gameType === "Pot Limit Omaha" ? 'PLO' :
-                     tableState.gameType === "Fixed Limit Hold'em" ? 'FLH' :
-                     tableState.gameType || 'NLH'}
+                  <span className="table-game-info__stakes">
+                    {(tableState.blinds || '1/2').toUpperCase()}{' '}
+                    {(tableState.gameType === "No Limit Hold'em" ? 'NLH' :
+                      tableState.gameType === "Pot Limit Omaha" ? 'PLO' :
+                      tableState.gameType === "Fixed Limit Hold'em" ? 'FLH' :
+                      tableState.gameType || 'NLH').toUpperCase()}
                   </span>
-                  <span className="table-game-info__name">{tableState.tableName || ''}</span>
-                  <span className="table-game-info__blinds">Blinds: {tableState.blinds || '1/2'}</span>
+                  {tableState.tableName && (
+                    <span className="table-game-info__name">{tableState.tableName.toUpperCase()}</span>
+                  )}
                 </div>
 
                 {/* Spectator Badge + Overlay REMOVED from table surface.

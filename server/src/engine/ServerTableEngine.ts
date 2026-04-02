@@ -368,8 +368,15 @@ export class ServerTableEngine {
 
       // FIX 147: Start periodic heartbeat checker (every 10 seconds)
       // This detects disconnects mid-hand, not just between hands.
+      // FIX: Horses are server-side bots — send simulated heartbeats so they don't time out.
       this.heartbeatCheckInterval = setInterval(() => {
         if (!this.running) return;
+        // Keep horses alive — they don't have real clients sending heartbeats
+        for (const p of this.seatedPlayers) {
+          if (p.is_horse) {
+            this.disconnectEngine.heartbeat(this.tableId, p.user_id);
+          }
+        }
         this.disconnectEngine.checkStaleHeartbeats(this.tableId);
       }, 10_000);
 
@@ -2051,8 +2058,11 @@ export class ServerTableEngine {
 
         // ═══════════════════════════════════════════════════════════════════════
         // BBJ HIT DETECTION — Check if showdown qualifies as a Bad Beat Jackpot
+        // FIX: Respect table-level bbj_percent — if 0, BBJ is disabled for this table
         // ═══════════════════════════════════════════════════════════════════════
+        const tableBbjPercent = (this.tableInfo as any)?.bbj_percent ?? 0;
         if (
+          tableBbjPercent > 0 &&
           this.currentHandShowdownResults.length >= 2 &&
           this.currentHandWinnerIds.length > 0 &&
           this.tableInfo

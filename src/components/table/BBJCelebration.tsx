@@ -92,6 +92,9 @@ export function BBJCelebration({
   const animFrameRef = useRef<number>(0);
   const startTimeRef = useRef<number>(0);
   const [displayAmount, setDisplayAmount] = useState(0);
+  // FIX: Stabilize onComplete ref to prevent useEffect re-triggering on every parent render
+  const onCompleteRef = useRef(onComplete);
+  onCompleteRef.current = onComplete;
   const [phase, setPhase] = useState<'explode' | 'reveal' | 'breakdown' | 'fadeout'>('explode');
   const [opacity, setOpacity] = useState(0);
 
@@ -114,7 +117,7 @@ export function BBJCelebration({
     const t3 = setTimeout(() => setPhase('fadeout'), FADE_START);
     const t4 = setTimeout(() => {
       setOpacity(0);
-      setTimeout(() => onComplete?.(), 500);
+      setTimeout(() => onCompleteRef.current?.(), 500);
     }, CELEBRATION_DURATION);
 
     // Rolling counter animation
@@ -136,7 +139,8 @@ export function BBJCelebration({
       clearTimeout(t4);
       clearInterval(counterInterval);
     };
-  }, [visible, totalPayout, onComplete]);
+  }, [visible, totalPayout]); // eslint-disable-line react-hooks/exhaustive-deps
+  // ↑ onComplete accessed via onCompleteRef to prevent timer reset on parent re-render
 
   // ── Spawn particles ──
   const spawnExplosion = useCallback(
@@ -309,7 +313,11 @@ export function BBJCelebration({
   if (!visible) return null;
 
   return (
-    <div className="bbj-celebration-overlay" style={{ opacity, transition: 'opacity 0.5s ease' }}>
+    <div
+      className="bbj-celebration-overlay"
+      style={{ opacity, transition: 'opacity 0.5s ease', cursor: 'pointer' }}
+      onClick={() => { setOpacity(0); setTimeout(() => onCompleteRef.current?.(), 300); }}
+    >
       {/* Canvas layer for particles */}
       <canvas ref={canvasRef} className="bbj-canvas" />
 

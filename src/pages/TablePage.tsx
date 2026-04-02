@@ -4451,18 +4451,7 @@ export default function TablePage({
             )}
           </div>
         </div>
-        {/* Header-right — Diamond Wallet */}
-        <div className="header-right">
-          <button 
-            className="store-btn-hud diamond-purple-btn"
-            onClick={() => {
-              soundService.playButtonClick();
-              setShowDiamondWallet(true);
-            }}
-          >
-            <span className="diamond-ico">💎</span> Get Diamonds
-          </button>
-        </div>
+        <div className="header-right" />
       </div>
 
       {/* ═══════════════════════════════════════════════════════════════════════
@@ -4472,7 +4461,8 @@ export default function TablePage({
           ═══════════════════════════════════════════════════════════════════════ */}
       <TableHUD
         upperLeft={
-          <TableMenu
+          <div className="hud-ul-column">
+            <TableMenu
             isOpen={showTableMenu}
             onClose={() => setShowTableMenu(false)}
             onToggle={() => setShowTableMenu((prev) => !prev)}
@@ -4572,6 +4562,21 @@ export default function TablePage({
             tableName={tableState.tableName}
             connectionStatus={isConnected ? 'connected' : 'disconnected'}
           />
+          <button 
+            className="add-chips-icon-btn" 
+            style={{ marginTop: 12 }}
+            onClick={() => {
+              soundService.playButtonClick();
+              if (tableState.players[tableState.heroSeat - 1]) setShowBuyInModal(true);
+            }}
+            title="Add Chips"
+          >
+            <svg width="24" height="24" viewBox="0 0 18 18" fill="none">
+              <circle cx="9" cy="9" r="7" stroke="currentColor" strokeWidth="1.5" />
+              <path d="M9 6v6M6 9h6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+          </button>
+        </div>
         }
         upperRight={
           <MiniStatsCard
@@ -4585,15 +4590,21 @@ export default function TablePage({
           />
         }
         bottomLeft={
-          <PreviousHandCard
-            handNumber={prevHandResult?.handNumber ?? null}
-            result={prevHandResult?.result ?? 0}
-            didWin={prevHandResult?.didWin ?? false}
-            didFold={prevHandResult?.didFold ?? false}
-            handDescription={prevHandResult?.handDescription}
-            onTap={() => setShowHandReplay(true)}
-            onShareHand={() => setShowShareHand(true)}
-          />
+          <div className="hud-ul-column" style={{ alignItems: 'flex-start' }}>
+            <PreviousHandCard
+              handNumber={prevHandResult?.handNumber ?? null}
+              result={prevHandResult?.result ?? 0}
+              didWin={prevHandResult?.didWin ?? false}
+              didFold={prevHandResult?.didFold ?? false}
+              handDescription={prevHandResult?.handDescription}
+              onTap={() => setShowHandReplay(true)}
+              onShareHand={() => setShowShareHand(true)}
+            />
+            {/* Visual representation of Needs Post Blind button */}
+            <button className="floating-post-blind" style={{ display: 'none' }}>
+              Post Blind
+            </button>
+          </div>
         }
         centerTop={
           <div className="hud-game-info">
@@ -5231,12 +5242,25 @@ export default function TablePage({
         </>
       )}
 
-      {/* Floating Chat/Mail Toggle Button (Bottom-Right) */}
-      {isChatCollapsed && (
-         <button className="chat-mail-toggle-btn" onClick={() => setIsChatCollapsed(false)}>
-           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
-         </button>
-      )}
+      {/* Floating Chat/Mail Toggle Button (Bottom-Right) & I'm Back */}
+      <div className="floating-action-br" style={{ display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center' }}>
+        {tableState.players[tableState.heroSeat - 1]?.status === 'sitting_out' && (
+          <button 
+            className="floating-im-back" 
+            onClick={() => {
+               soundService.playButtonClick();
+               if (tableId) setSitOut(tableId, false).catch(e => console.error(e));
+            }}
+          >
+            I'm Back
+          </button>
+        )}
+        {isChatCollapsed && (
+          <button className="chat-mail-toggle-btn" onClick={() => setIsChatCollapsed(false)}>
+             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
+          </button>
+        )}
+      </div>
 
       {/* Table Chat */}
       <TableChat

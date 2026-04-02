@@ -53,7 +53,7 @@ export class AutoRebuyService {
       // Get all horse profiles along with their wallets
       const { data: horses, error: horseErr } = await supabase
         .from('profiles')
-        .select('id, display_name, username')
+        .select('id, display_name, username, use_real_name')
         .eq('is_horse', true);
 
       if (horseErr || !horses || horses.length === 0) return;
@@ -77,7 +77,9 @@ export class AutoRebuyService {
 
           const horseNameMatch = horses.find((h) => h.id === wallet.user_id);
           const horseName = horseNameMatch
-            ? horseNameMatch.display_name || horseNameMatch.username
+            ? (horseNameMatch.use_real_name 
+                ? (horseNameMatch.display_name || horseNameMatch.username)
+                : (horseNameMatch.username || horseNameMatch.display_name))
             : wallet.user_id;
 
           // Execute ATOMIC wallet refill

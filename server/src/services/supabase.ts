@@ -136,7 +136,7 @@ export async function loadSeatedPlayers(tableId: string) {
   const userIds = seats.map((d) => d.user_id);
   const { data: profiles } = await supabase
     .from('profiles')
-    .select('id, display_name, username, is_horse, horse_profile, avatar_url')
+    .select('id, display_name, username, is_horse, horse_profile, avatar_url, use_real_name')
     .in('id', userIds);
 
   const profileMap = new Map(profiles?.map((p) => [p.id, p]) || []);
@@ -147,7 +147,9 @@ export async function loadSeatedPlayers(tableId: string) {
       const profile = profileMap.get(seat.user_id)!;
       return {
         user_id: seat.user_id,
-        username: profile.display_name || profile.username || 'Player',
+        username: profile.use_real_name 
+          ? (profile.display_name || profile.username || 'Player')
+          : (profile.username || profile.display_name || 'Player'),
         stack: seat.stack,
         seat_number: seat.seat_number || 1,
         is_horse: profile.is_horse || false,

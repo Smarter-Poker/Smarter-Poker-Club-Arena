@@ -27,7 +27,6 @@ export type PotDisplayMode = 'chips' | 'bb';
 export interface PotDisplayProps {
   mainPot: number;
   sidePots?: SidePot[];
-  previousPot?: number;
   showChipAnimation?: boolean;
   currency?: string;
   bigBlind?: number;
@@ -144,17 +143,12 @@ function SidePotBadge({
 function PotDisplayComponent({
   mainPot,
   sidePots = [],
-  previousPot = 0,
   showChipAnimation = true,
   currency = '',
   bigBlind = 0,
   displayMode = 'chips',
   onToggleDisplayMode,
 }: PotDisplayProps) {
-  // Pot updates instantly — no count-up animation, no bump/shake. Just the number.
-  const displayPot = mainPot;
-  const isAnimating = false;
-
   // Calculate chip visualization
   const chipBreakdown = useMemo(() => getChipBreakdown(mainPot), [mainPot]);
 
@@ -192,8 +186,8 @@ function PotDisplayComponent({
         <span className="pot-display__label">POT</span>
         <span className="pot-display__amount">
           {displayMode === 'bb' && bigBlind > 0
-            ? formatBB(displayPot, bigBlind)
-            : formatAmount(displayPot, currency)}
+            ? formatBB(mainPot, bigBlind)
+            : formatAmount(mainPot, currency)}
         </span>
       </div>
 
@@ -224,15 +218,6 @@ function PotDisplayComponent({
         </div>
       )}
 
-      {/* Pot Increase Indicator */}
-      {isAnimating && mainPot > previousPot && (
-        <div className="pot-display__increase">
-          +
-          {displayMode === 'bb' && bigBlind > 0
-            ? formatBB(mainPot - previousPot, bigBlind)
-            : formatAmount(mainPot - previousPot, currency)}
-        </div>
-      )}
     </div>
   );
 }
@@ -240,7 +225,6 @@ function PotDisplayComponent({
 export const PotDisplay = memo(PotDisplayComponent, (prev, next) => {
   // Return true if props are equal (skip re-render)
   if (prev.mainPot !== next.mainPot) return false;
-  if (prev.previousPot !== next.previousPot) return false;
   if (prev.showChipAnimation !== next.showChipAnimation) return false;
   if (prev.currency !== next.currency) return false;
   if (prev.bigBlind !== next.bigBlind) return false;

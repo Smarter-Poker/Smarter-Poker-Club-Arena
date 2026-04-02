@@ -345,17 +345,17 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 12px 8px 8px;
+  padding: 40px 12px 60px; /* Ample top and bottom padding for HUD */
   overflow: visible;
   /* Cap height so table never overflows — leaves room for header + action panel */
-  max-height: calc(100dvh - 130px);
+  max-height: calc(100dvh - 220px);
 }
 
 /* Table Wrapper - Scales uniformly via CSS transform */
 .table-scaler {
   width: 100%;
-  max-width: min(100%, 420px);
-  aspect-ratio: 1 / 1.2;
+  max-width: min(100%, 390px);
+  aspect-ratio: 1 / 1.15;
   /* Shorter oval — prevents clipping at top/bottom */
   position: relative;
   transform-origin: center center;

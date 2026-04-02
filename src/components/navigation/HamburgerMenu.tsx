@@ -26,6 +26,7 @@ import { ThemeSettingsModal } from '../table/ThemeSettingsModal';
 import { getClubLevel, ClubLevelInfo } from '../../utils/clubLevels';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { reportError } from '../../utils/errorReporter';
+import { AvatarGallery } from '../customization/AvatarGallery';
 
 interface HamburgerMenuProps {
   isOpen: boolean;
@@ -58,6 +59,8 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   // Avatar from persistent header store (avoids duplicate Supabase query)
   const avatarUrl = useHeaderDataStore((s) => s.avatarUrl);
   const [userName, setUserName] = useState<string>('');
+  const [useRealName, setUseRealName] = useState(false);
+  const [showAvatarGallery, setShowAvatarGallery] = useState(false);
   const [isVIP, setIsVIP] = useState(false);
   const { diamonds: diamondBalance } = useWalletStore();
   const [selectedCardColor, setSelectedCardColor] = useState(() => {
@@ -173,9 +176,11 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     const sounds = localStorage.getItem(STORAGE_KEYS.SOUNDS);
     const vibrations = localStorage.getItem(STORAGE_KEYS.VIBRATIONS);
     const showBB = localStorage.getItem(STORAGE_KEYS.SHOW_STACK_BB);
+    const useReal = localStorage.getItem(STORAGE_KEYS.USE_REAL_NAME);
     if (sounds !== null) setSoundsEnabled(sounds === 'true');
     if (vibrations !== null) setVibrationsEnabled(vibrations === 'true');
     if (showBB !== null) setShowBBEnabled(showBB === 'true');
+    if (useReal !== null) setUseRealName(useReal === 'true');
 
     if (user?.id) {
       supabase
@@ -195,7 +200,8 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           }
           if (data) {
             // Avatar is consumed from useHeaderDataStore — no need to set locally
-            setUserName(data.username || data.display_name || 'Player');
+            const prefUseRealName = localStorage.getItem(STORAGE_KEYS.USE_REAL_NAME) === 'true';
+            setUserName(prefUseRealName ? (data.display_name || data.username || 'Player') : (data.username || data.display_name || 'Player'));
             // These columns may not exist on profiles — use optional chaining with defaults
             if (data.sounds_enabled !== undefined && data.sounds_enabled !== null) {
               setSoundsEnabled(data.sounds_enabled);
@@ -329,6 +335,25 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     }
     toast.info('Tutorial reset! Refresh the page to see the intro again.');
     onClose();
+  };
+
+  const handleUseRealNameToggle = () => {
+    const newValue = !useRealName;
+    setUseRealName(newValue);
+    updateSetting(STORAGE_KEYS.USE_REAL_NAME, 'use_real_name', newValue, () =>
+      setUseRealName(!newValue)
+    );
+    masterBus.emit('SETTINGS_CHANGED', { setting: 'useRealName', value: newValue });
+    
+    // Switch the local preview
+    if (user?.id) {
+      supabase.from('profiles').select('username, display_name').eq('id', user.id).maybeSingle()
+        .then(({data}) => {
+          if (data) {
+             setUserName(newValue ? (data.display_name || data.username || 'Player') : (data.username || data.display_name || 'Player'));
+          }
+        });
+    }
   };
 
   const handleLogOut = async () => {
@@ -744,6 +769,30 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             <span style={{ color: colors.textSecondary }}>›</span>
           </div>
         ))}
+        
+        {/* Avatar Customization Trigger */}
+        <div
+            onClick={() => setShowAvatarGallery(true)}
+            style={{
+              ...menuItemStyle,
+              animation: isOpen
+                ? `slideInLeft 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) ${(12 + 17) * 30}ms both`
+                : 'none',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = colors.bgHover;
+              e.currentTarget.style.transform = 'translateX(4px)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'transparent';
+              e.currentTarget.style.transform = 'translateX(0)';
+            }}
+          >
+            <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: colors.text }}>
+              Change Avatar
+            </span>
+            <span style={{ color: colors.textSecondary }}>›</span>
+        </div>
 
         <div style={dividerStyle} />
 

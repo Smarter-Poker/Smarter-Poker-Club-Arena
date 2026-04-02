@@ -18,6 +18,7 @@ import ClubAnnouncementBanner from '../club/ClubAnnouncementBanner';
 import GlobalHeader from '../navigation/GlobalHeader';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { masterBus } from '../../core/MasterBus';
+import CompleteProfileModal, { useCompleteProfile } from '../modals/CompleteProfileModal';
 
 export default function AppLayout() {
   const location = useLocation();
@@ -43,6 +44,7 @@ export default function AppLayout() {
   // User store for conditional rendering
   const { user } = useAuthUser();
   const { showWelcome, isReady, acceptWelcome } = useClubArenaWelcome();
+  const { showProfileModal, isReady: profileReady, finishProfile } = useCompleteProfile(user);
 
   // Hide global header on table and tournament play pages
   const isTablePage =
@@ -54,6 +56,9 @@ export default function AppLayout() {
     <div className={styles.layout}>
       {/* First-time Welcome Modal */}
       {isReady && <ClubArenaWelcomeModal isOpen={showWelcome} onAccept={acceptWelcome} />}
+
+      {/* Force Poker Alias Selection for Google Auth users */}
+      {profileReady && <CompleteProfileModal isOpen={showProfileModal} onComplete={finishProfile} />}
 
       {/* Global Header — Always visible except on active table pages */}
       {/* Lobby (/) = pageDepth 1 (HUB button), Sub-pages = pageDepth 2 (Back button) */}

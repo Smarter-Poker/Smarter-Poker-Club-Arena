@@ -16,6 +16,7 @@ import DailyBonusWheel from '../components/bonus/DailyBonusWheel';
 import FriendListPanel from '../components/social/FriendListPanel';
 import { VIPStatusCard } from '../components/vip/VIPStatusCard';
 import { VIPProgressRing } from '../components/vip/VIPProgressRing';
+import UserProfileEdit, { UserProfileData } from '../components/social/UserProfileEdit';
 import { profileService } from '../services/ProfileService';
 import { DiamondService } from '../services/DiamondService';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
@@ -219,6 +220,7 @@ export default function ProfilePage() {
   const toast = useToast();
   // Double-claim guard: prevents duplicate RPC calls on rapid button clicks
   const claimingMissionsRef = useRef<Set<string>>(new Set());
+  const [showProfileEdit, setShowProfileEdit] = useState(false);
   const { user: storeUser } = useAuthUser();
   useVisibilityRefresh(async () => {
     const {
@@ -902,9 +904,9 @@ export default function ProfilePage() {
           >
             Change Avatar
           </button>
-          <button className={styles.editButton} onClick={() => navigate('/settings')}>
-            Edit Profile
-          </button>
+            <button className={styles.editButton} onClick={() => setShowProfileEdit(true)}>
+              Edit Profile
+            </button>
           <button
             className={styles.editButton}
             onClick={() => navigate('/vip')}
@@ -1444,6 +1446,51 @@ export default function ProfilePage() {
 
       {/* Diamond Rain Gamification Effect */}
       <DiamondRainEffect active={showDiamondRain} onComplete={() => setShowDiamondRain(false)} />
+
+      {showProfileEdit && user && (
+        <UserProfileEdit
+          isOpen={showProfileEdit}
+          onClose={() => setShowProfileEdit(false)}
+          initialData={{
+            id: user.id || '',
+            username: user.username || '',
+            displayName: user.displayName || '',
+            avatarUrl: user.avatarUrl || '',
+            bio: (user as any).bio || '',
+            tags: [],
+          }}
+          onSave={async (data: UserProfileData) => {
+            try {
+              const { error } = await supabase
+                .from('profiles')
+                .update({
+                  username: data.username,
+                  display_name: data.displayName,
+                  bio: data.bio
+                })
+                .eq('id', user.id);
+                
+              if (error) throw error;
+              
+              const { error: userError } = await supabase
+                .from('users')
+                .update({ username: data.username })
+                .eq('id', user.id);
+                
+              if (userError) throw userError;
+              
+              setUser({
+                ...user,
+                username: data.username,
+                displayName: data.displayName
+              });
+              setShowProfileEdit(false);
+            } catch (err) {
+              console.error('Failed to update profile:', err);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

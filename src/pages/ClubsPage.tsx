@@ -273,7 +273,7 @@ export default function ClubsPage() {
 
   // Join club by ID
   const handleJoinClub = async () => {
-    if (joinClubId.length < 6) return;
+    if (joinClubId.length < 5) return;
 
     setIsJoining(true);
     setJoinError(null);
@@ -399,27 +399,27 @@ export default function ClubsPage() {
             <div className={styles.discoverTab}>
               <section className={styles.joinSection}>
                 <h3>JOIN A CLUB</h3>
-                <p>Enter a 6-digit Club ID to join an existing club.</p>
+                <p>Enter a 5-digit Club Code to join an existing club.</p>
 
                 {joinError && <div className={styles.errorText}>{joinError}</div>}
 
                 <div className={styles.formGroup}>
-                  <label className={styles.label}>ENTER CLUB ID:</label>
+                  <label className={styles.label}>ENTER CLUB CODE:</label>
                   <input
                     className={styles.joinInput}
-                    placeholder="123456"
+                    placeholder="25450"
                     value={joinClubId}
                     onChange={(e) => {
                       setJoinClubId(e.target.value.replace(/\D/g, ''));
                       setJoinError(null);
                     }}
-                    maxLength={6}
+                    maxLength={5}
                   />
                 </div>
 
                 <button
                   className={styles.btnPrimary}
-                  disabled={joinClubId.length < 6 || isJoining}
+                  disabled={joinClubId.length < 5 || isJoining}
                   onClick={() => {
                     haptic.medium();
                     handleJoinClub();

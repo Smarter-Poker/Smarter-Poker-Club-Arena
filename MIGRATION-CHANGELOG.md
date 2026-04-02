@@ -7,6 +7,68 @@
 
 ---
 
+## Round 48 — 4-Pass Maximum Rigor Audit of UI Fixes (2026-04-02)
+
+### Context:
+Full 4-pass audit (Wiring → Real-Time → Adversarial → Edge Cases) of all UI fixes deployed today:
+dealer button theme, fractional stack rounding, bet chip offset, community card distortion fix,
+timer rewrite (requestAnimationFrame), pot display animation removal, hole card polling fallback.
+
+### Bugs Found & Fixed:
+
+**Bug #1 (Low): Dead JSX block in PotDisplay.tsx**
+- `isAnimating` was removed but JSX block at lines 227-234 still referenced it (`{isAnimating && ...}`)
+- Fix: Removed dead JSX block entirely
+- File: `src/components/table/PotDisplay.tsx`
+
+**Bug #2 (Low): Unused `previousPot` prop in PotDisplay.tsx**
+- `previousPot` prop remained in interface, destructuring, and memo comparator after animation removal
+- Fix: Removed from `PotDisplayProps`, function params, and memo comparison
+- File: `src/components/table/PotDisplay.tsx`
+
+**Bug #3 (Low): Dead `PositionChip` function in SeatSlot.tsx**
+- 26-line function component defined but never called anywhere in codebase
+- Fix: Removed dead function entirely
+- File: `src/components/table/SeatSlot.tsx`
+
+**Bug #4 (Low): HoleCards memo uses reference equality**
+- Memo comparator used `ph[i] !== nh[i]` (ref equality). Cards reconstructed from JSON on each Realtime broadcast would always fail equality, causing unnecessary re-renders.
+- Fix: Changed to compare `rank` + `suit` values: `ph[i].rank !== nh[i].rank || ph[i].suit !== nh[i].suit`
+- File: `src/components/table/SeatSlot.tsx`
+
+**Bug #5 (Medium): Missing props in SeatSlot memo comparator**
+- `secondsLeft`, `cardBack`, `showAvatar`, `showBadges` all used in render but NOT in memo comparison
+- Impact: Changes to card back style, avatar toggle, badge toggle, and disconnect countdown would be silently ignored until another prop triggered re-render
+- Fix: Added all 4 props to memo comparator
+- File: `src/components/table/SeatSlot.tsx`
+
+### Noted (Not Fixed — Require Architectural Changes):
+
+**Bug #6 (Low): Stale closure on `v8Settings.cards_pre_sort`**
+- Hole card polling and callback have stale closure on this setting. Toggling pre-sort mid-hand won't re-sort until next deal.
+- File: `src/pages/TablePage.tsx`
+
+**Bug #7 (Low): Hole card polling runs forever**
+- 5s interval keeps firing even after cards received. Guard inside makes it a no-op, but unnecessary network traffic.
+- File: `src/pages/TablePage.tsx`
+
+**Bug #8 (Medium): Read-then-write race in rake wallet credits**
+- `logRakeCollection` does read-then-write on `union_wallets.chip_balance` and `club_wallets.chip_balance`. Two tables for same club finishing simultaneously could lose a rake increment.
+- Fix needed: Supabase RPC function for atomic `chip_balance = chip_balance + $amount`
+- File: `server/src/services/supabase.ts`
+
+### Pass Summaries:
+- **Pass 1 (Wiring):** 5 bugs fixed, 3 noted. All component props, memo comparators, subscriptions, and query wiring verified correct.
+- **Pass 2 (Real-Time):** 5 scenarios traced end-to-end (new hand, player action, showdown, reconnect, BBJ/Insurance/RIT). All data flows correct.
+- **Pass 3 (Adversarial):** No security issues. Card RLS intact. All subscriptions clean up on unmount. No memory leaks. BroadcastChannel properly closed.
+- **Pass 4 (Edge Cases):** Null/zero/NaN handling correct in all formatters. Timer double-fire prevented. BB=0 fallback works. Empty community cards handled.
+
+### Files Modified:
+- `src/components/table/PotDisplay.tsx` — Removed dead JSX, unused previousPot prop and memo entry
+- `src/components/table/SeatSlot.tsx` — Removed dead PositionChip function, fixed holeCards memo to value equality, added 4 missing props to memo
+
+---
+
 ## Round 47 — Deep Engine Audit + FIX-226 Odd Chip Allocation (2026-03-31)
 
 ### FIX-226: Wire dealerSeat through to distributePot for correct odd chip allocation

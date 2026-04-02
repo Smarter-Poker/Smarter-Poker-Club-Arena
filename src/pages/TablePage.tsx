@@ -2163,10 +2163,32 @@ export default function TablePage({
         const updatedPlayers = [...prev.players];
         const isNewHand = handNumber > 0 && handNumber !== prev.handNumber;
 
+        // FIX: ONE-SEAT-PER-USER — deduplicate server players BEFORE merging.
+        // If the same user_id appears in multiple seats (engine bug or stale state),
+        // only keep the FIRST occurrence. This prevents ghost multi-seat rendering.
+        const seenUserIds = new Set<string>();
+        const dedupedServerPlayers = serverPlayers.filter((sp: any) => {
+          if (seenUserIds.has(sp.user_id)) {
+            console.warn('[Broadcast] DUPLICATE user_id in broadcast — ignoring extra seat', sp.seat, 'for', sp.user_id);
+            return false;
+          }
+          seenUserIds.add(sp.user_id);
+          return true;
+        });
+
         // Merge server player data with existing UI state
-        for (const sp of serverPlayers) {
+        for (const sp of dedupedServerPlayers) {
           const seatIdx = (sp.seat as number) - 1;
           if (seatIdx < 0 || seatIdx >= updatedPlayers.length) continue;
+
+          // FIX: Before placing this user, remove them from any OTHER seat they occupy
+          // (prevents same user appearing in multiple seats if seat changed)
+          for (let j = 0; j < updatedPlayers.length; j++) {
+            if (j !== seatIdx && updatedPlayers[j]?.id === sp.user_id) {
+              console.debug('[Broadcast] Clearing stale seat', j + 1, 'for user', sp.user_id, '(now at seat', sp.seat, ')');
+              updatedPlayers[j] = null as any;
+            }
+          }
 
           const existing = updatedPlayers[seatIdx];
           const isHero = sp.user_id === userId;
@@ -2206,8 +2228,8 @@ export default function TablePage({
           } as any;
         }
 
-        // Clear seats that have no server player
-        const serverSeatNums = new Set(serverPlayers.map((sp: any) => sp.seat));
+        // Clear seats that have no server player (engine is authoritative during active hands)
+        const serverSeatNums = new Set(dedupedServerPlayers.map((sp: any) => sp.seat));
         for (let i = 0; i < updatedPlayers.length; i++) {
           if (updatedPlayers[i] && !serverSeatNums.has(i + 1)) {
             // Keep seat occupied from DB — don't clear non-playing spectator seats
@@ -2845,9 +2867,15 @@ export default function TablePage({
           }
 
           setTableState((prev) => {
-            const updatedPlayers = [...prev.players];
-            let resolvedHeroSeat = prev.heroSeat;
+            // FIX: Start from CLEAN slate — DB is the source of truth for seated players.
+            // This prevents ghost players from stale engine broadcasts or failed buy-ins.
+            const updatedPlayers: (typeof prev.players[0] | null)[] = Array(prev.players.length).fill(null) as any;
+            let resolvedHeroSeat = 0; // Reset — only set if hero is in DB
             let heroAlreadyAssigned = false;
+
+            // Build a set of DB seat numbers for validation
+            const dbSeatNums = new Set(existingSeats.map((s) => s.seat_number));
+
             for (const seat of existingSeats) {
               const seatIdx = seat.seat_number - 1;
               if (seatIdx < 0 || seatIdx >= updatedPlayers.length) continue;
@@ -2873,11 +2901,21 @@ export default function TablePage({
                 resolvedHeroSeat = seat.seat_number;
               }
             }
+
+            // Log any ghost seats that were cleared
+            for (let i = 0; i < prev.players.length; i++) {
+              if (prev.players[i] && !dbSeatNums.has(i + 1)) {
+                console.debug('[Seat] Cleared ghost player from seat', i + 1, '— not in DB:', prev.players[i]?.id);
+              }
+            }
+
             // FIX 132: Set heroSeatRef immediately so duplicate-seat guard works
             if (resolvedHeroSeat > 0) {
               heroSeatRef.current = resolvedHeroSeat;
+            } else {
+              heroSeatRef.current = 0; // Hero not seated — ensure ref is clean
             }
-            return { ...prev, players: updatedPlayers, heroSeat: resolvedHeroSeat };
+            return { ...prev, players: updatedPlayers as typeof prev.players, heroSeat: resolvedHeroSeat };
           });
           // heroSeat already set inside the setTableState callback above (L1796)
           // No second setTableState needed — avoids unnecessary re-render
@@ -3408,6 +3446,15 @@ export default function TablePage({
             if (prev.players[seatIdx]) return prev; // Seat already occupied in state
 
             const updatedPlayers = [...prev.players];
+
+            // FIX: ONE-SEAT-PER-USER — if this user is already in another seat, remove them first
+            for (let j = 0; j < updatedPlayers.length; j++) {
+              if (updatedPlayers[j]?.id === newSeat.user_id) {
+                console.debug('[RealtimeSeats] Removing user', newSeat.user_id, 'from stale seat', j + 1, '(moving to', newSeat.seat_number, ')');
+                updatedPlayers[j] = null as any;
+              }
+            }
+
             updatedPlayers[seatIdx] = {
               id: newSeat.user_id,
               name: profile?.display_name || profile?.username || `Player ${newSeat.seat_number}`,
@@ -5664,6 +5711,13 @@ export default function TablePage({
                 // concurrent WebSocket updates during the async RPC call)
                 setTableState((prev) => {
                   const updatedPlayers = [...prev.players];
+                  // FIX: ONE-SEAT-PER-USER — clear any stale hero entries in other seats
+                  for (let j = 0; j < updatedPlayers.length; j++) {
+                    if (updatedPlayers[j]?.id === userId && j !== selectedSeat - 1) {
+                      console.debug('[BuyIn] Clearing stale hero from seat', j + 1);
+                      updatedPlayers[j] = null as any;
+                    }
+                  }
                   updatedPlayers[selectedSeat - 1] = {
                     id: userId,
                     name: username || 'Player',

@@ -4580,6 +4580,21 @@ export default function TablePage({
                           onClick: () => setShowCashier(true),
                         },
                       ]),
+                  // Auto-Rebuy toggle (moved from QuickActionsBar to hamburger menu)
+                  ...(!tableState.isTournament
+                    ? [
+                        {
+                          id: 'auto-rebuy',
+                          label: isAutoRebuyEnabled ? 'Auto-Rebuy: ON' : 'Auto-Rebuy: OFF',
+                          icon: <RebuyIcon />,
+                          onClick: () => {
+                            const next = !isAutoRebuyEnabled;
+                            setIsAutoRebuyEnabled(next);
+                            try { localStorage.setItem('ca_auto_rebuy', String(next)); } catch { /* */ }
+                          },
+                        },
+                      ]
+                    : []),
                 ],
               },
               {

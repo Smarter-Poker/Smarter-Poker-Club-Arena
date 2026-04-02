@@ -43,18 +43,20 @@
 
 .table-menu__trigger {
   position: relative;
-  width: 60px;
-  height: 60px;
+  width: 64px;
+  height: 64px;
+  min-width: 64px;
+  min-height: 64px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.85);
+  background: rgba(0, 0, 0, 0.9);
   backdrop-filter: blur(8px);
-  border: 2px solid rgba(255, 255, 255, 0.35);
+  border: 2.5px solid rgba(255, 255, 255, 0.5);
   border-radius: 16px;
   cursor: pointer;
   transition: all 0.2s ease;
-  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.6), 0 0 8px rgba(255, 255, 255, 0.1);
 }
 
 .table-menu__trigger:hover {
@@ -71,16 +73,17 @@
 .table-menu__hamburger {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  width: 26px;
+  gap: 7px;
+  width: 28px;
 }
 
 .table-menu__hamburger span {
   display: block;
-  height: 3px;
+  height: 3.5px;
   background: #ffffff;
   border-radius: 2px;
   transition: all 0.2s ease;
+  box-shadow: 0 0 4px rgba(255, 255, 255, 0.3);
 }
 
 .table-menu__trigger--active .table-menu__hamburger span:nth-child(1) {

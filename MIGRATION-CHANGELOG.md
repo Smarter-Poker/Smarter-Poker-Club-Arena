@@ -7,6 +7,41 @@
 
 ---
 
+## Round 49 — FIX-232: Atomic Wallet Increments + Hole Card Polling Fixes (2026-04-02)
+
+### Context:
+Fixes for the 5 "noted but unfixed" bugs from Round 48 audit that required architectural changes.
+
+### Bugs Fixed:
+
+**Bug #8 (Medium) — FIXED: Atomic wallet balance in logRakeCollection**
+- Problem: Read-then-write race on `union_wallets.chip_balance`, `club_wallets.chip_balance`, and `clubs.chip_pool`. Two concurrent hands could read same balance and lose one increment.
+- Fix: Created 4 Supabase RPC functions (`increment_union_wallet`, `increment_club_wallet`, `increment_club_chip_pool`, `increment_player_wallet`) that use SQL `SET balance = balance + $amount` — atomic in a single UPDATE, no race possible. Updated `logRakeCollection` to call RPCs instead of read-then-write.
+- Files: `server/src/services/supabase.ts`, `sql/atomic_wallet_increment.sql`
+
+**Bug #10 (Low) — FIXED: Atomic cashout in cleanupStaleData and atomicCashout**
+- Problem: `atomicCashout()` and `cleanupStaleData()` both did `SELECT balance → upsert(balance + stack)` for player wallets.
+- Fix: Both now call `increment_player_wallet` RPC for atomic increment.
+- Files: `server/src/services/supabase.ts`, `server/src/index.ts`
+
+**Bug #6 (Low) — FIXED: Stale closure on v8Settings.cards_pre_sort**
+- Problem: `handleHoleCardPayload` callback had `[userId]` deps but used `v8Settings.cards_pre_sort` directly, creating a stale closure. Toggling pre-sort mid-hand wouldn't take effect.
+- Fix: Added `cardsPreSortRef` (useRef) that tracks latest `v8Settings.cards_pre_sort`. Both the Realtime callback and the polling effect now read from the ref.
+- File: `src/pages/TablePage.tsx`
+
+**Bug #7 (Low) — FIXED: Hole card polling runs forever**
+- Problem: 5s `setInterval` for hole card polling continued indefinitely even after cards were received.
+- Fix: After successfully receiving cards, `clearTimeout(retryTimer)` and `clearInterval(pollTimer)` are called to stop all polling.
+- File: `src/pages/TablePage.tsx`
+
+**Bug #11 (Low) — FALSE POSITIVE: MasterBus event key mismatch**
+- Audit noted that HamburgerMenu emits `setting: 'useRealName'` (camelCase) while `useUserTableSettings` uses snake_case. Upon deeper analysis: `use_real_name` is a profiles column, NOT a `user_table_settings` key. The MasterBus event is consumed by `TablePage.tsx` (line 2453) which correctly checks `event.setting === 'useRealName'`. All emitters and consumers are consistent. No fix needed.
+
+### SQL Migration Required:
+Run `sql/atomic_wallet_increment.sql` in Supabase SQL Editor before deploying server changes.
+
+---
+
 ## Round 48 — 4-Pass Maximum Rigor Audit of UI Fixes (2026-04-02)
 
 ### Context:

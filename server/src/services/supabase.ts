@@ -421,24 +421,15 @@ export async function atomicCashout(
 
     const stack = seat.stack ?? 0;
 
-    // 2. Credit wallet
+    // 2. Credit wallet — FIX-232: Atomic increment via RPC (eliminates race condition)
     if (stack > 0) {
-      const { data: wallet } = await supabase
-        .from('wallets')
-        .select('balance')
-        .eq('user_id', userId)
-        .eq('wallet_type', 'PLAYER')
-        .maybeSingle();
-
-      const currentBalance = wallet?.balance ?? 0;
-      await supabase
-        .from('wallets')
-        .upsert({
-          user_id: userId,
-          wallet_type: 'PLAYER',
-          balance: currentBalance + stack,
-          updated_at: new Date().toISOString(),
-        }, { onConflict: 'user_id,wallet_type' });
+      const { error: walletErr } = await supabase.rpc('credit_player_wallet', {
+        p_user_id: userId,
+        p_amount: stack,
+      });
+      if (walletErr) {
+        console.warn(`[atomicCashout] Wallet credit failed for ${userId}:`, walletErr.message);
+      }
 
       await supabase.from('wallet_transactions').insert({
         user_id: userId,
@@ -559,30 +550,13 @@ export async function logRakeCollection(
 
     if (club.union_id) {
       // Club is in a union — ALL rake held by union wallet until weekly settlement
-      // Read current balance then increment (Supabase REST doesn't support atomic increment)
-      const { data: uw } = await supabase
-        .from('union_wallets')
-        .select('chip_balance')
-        .eq('union_id', club.union_id)
-        .maybeSingle();
-
-      if (uw) {
-        const newBalance = (uw.chip_balance || 0) + rakeAmount;
-        const { error: uwErr } = await supabase
-          .from('union_wallets')
-          .update({ chip_balance: newBalance, updated_at: new Date().toISOString() })
-          .eq('union_id', club.union_id);
-        if (uwErr) {
-          reportError(new Error(`[logRakeCollection] Union wallet credit failed: ${uwErr.message}`), 'logRakeCollection.Union_wallet_credit_failed');
-        }
-      } else {
-        // No union wallet exists — create one
-        const { error: insertErr } = await supabase
-          .from('union_wallets')
-          .insert({ union_id: club.union_id, chip_balance: rakeAmount });
-        if (insertErr) {
-          reportError(new Error(`[logRakeCollection] Union wallet insert failed: ${insertErr.message}`), 'logRakeCollection.Union_wallet_insert_failed');
-        }
+      // FIX-232: Atomic increment via RPC — eliminates read-then-write race condition
+      const { error: uwErr } = await supabase.rpc('increment_union_wallet', {
+        p_union_id: club.union_id,
+        p_amount: rakeAmount,
+      });
+      if (uwErr) {
+        reportError(new Error(`[logRakeCollection] Union wallet credit failed: ${uwErr.message}`), 'logRakeCollection.Union_wallet_credit_failed');
       }
 
       // Log union transaction for audit trail
@@ -599,33 +573,28 @@ export async function logRakeCollection(
 
     } else {
       // Standalone club — rake goes to CLUB wallet (not owner's player wallet)
-      // Try club_wallets table first, then clubs.chip_pool as fallback
+      // FIX-232: Atomic increment via RPC — eliminates read-then-write race condition
+      // Try club_wallets first, then clubs.chip_pool as fallback
       const { data: cw } = await supabase
         .from('club_wallets')
-        .select('chip_balance')
+        .select('club_id')
         .eq('club_id', clubId)
         .maybeSingle();
 
       if (cw) {
-        const { error: cwErr } = await supabase
-          .from('club_wallets')
-          .update({ chip_balance: (cw.chip_balance || 0) + rakeAmount })
-          .eq('club_id', clubId);
+        const { error: cwErr } = await supabase.rpc('increment_club_wallet', {
+          p_club_id: clubId,
+          p_amount: rakeAmount,
+        });
         if (cwErr) {
           reportError(new Error(`[logRakeCollection] Club wallet credit failed: ${cwErr.message}`), 'logRakeCollection.Club_wallet_credit_failed');
         }
       } else {
         // Fallback: update clubs.chip_pool directly
-        const { data: clubData } = await supabase
-          .from('clubs')
-          .select('chip_pool')
-          .eq('id', clubId)
-          .maybeSingle();
-
-        const { error: cpErr } = await supabase
-          .from('clubs')
-          .update({ chip_pool: ((clubData?.chip_pool as number) || 0) + rakeAmount })
-          .eq('id', clubId);
+        const { error: cpErr } = await supabase.rpc('increment_club_chip_pool', {
+          p_club_id: clubId,
+          p_amount: rakeAmount,
+        });
         if (cpErr) {
           reportError(new Error(`[logRakeCollection] Club chip_pool credit failed: ${cpErr.message}`), 'logRakeCollection.Club_chip_pool_credit_failed');
         }

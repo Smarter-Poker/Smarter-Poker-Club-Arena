@@ -973,7 +973,7 @@ export default function ClubHomePage() {
           <div className="club-card__avatar">
             {(club.logo_url || club.avatar_url) ? (
               <img src={club.logo_url || club.avatar_url} alt={club.name} loading="lazy" />
-            ) : club.club_id === SHARK_CLUB_ID ? (
+            ) : Number(club.club_id) === SHARK_CLUB_ID ? (
               <img src={SHARK_CLUB_FALLBACK_LOGO} alt="Shark Club" loading="lazy" />
             ) : (
               <span className="club-card__avatar-placeholder">&#9824;</span>

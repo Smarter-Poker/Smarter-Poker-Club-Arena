@@ -195,7 +195,7 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  overflow-x: hidden;
+  overflow-x: clip;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
   /* Enhancement #6: Content stays flat in parallax context */
@@ -1028,13 +1028,11 @@
   display: flex;
   gap: 10px;
   z-index: 10;
-  padding: 16px 6px 20px 6px;
+  padding: 16px 16px 20px 16px;
   margin-top: 0;
   overflow: visible;
-  /* Use max-width + auto margin so the row doesn't stretch edge-to-edge
-     inside mainContent, preventing the first/last tile frames from
-     being clipped by mainContent's overflow-x: hidden */
-  width: calc(100% - 16px);
+  /* Full width with internal padding keeps tiles centered and un-clipped */
+  width: 100%;
   max-width: 900px;
   margin-left: auto;
   margin-right: auto;
@@ -1794,7 +1792,7 @@
 
   .bottomRow {
     gap: 8px;
-    padding: 12px 10px 16px;
+    padding: 12px 12px 16px;
   }
 
   .modalContent {
@@ -1870,8 +1868,8 @@
 
   .bottomRow {
     gap: 4px;
-    padding: 10px 2px 14px;
-    width: calc(100% - 8px);
+    padding: 10px 8px 14px;
+    width: 100%;
   }
 }
 

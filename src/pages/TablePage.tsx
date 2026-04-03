@@ -1466,6 +1466,10 @@ export default function TablePage({
     loading: v8SettingsLoading,
   } = useUserTableSettings(userId !== 'guest' ? userId : null);
 
+  // FIX-232: Ref for cards_pre_sort to avoid stale closure in hole card callbacks
+  const cardsPreSortRef = useRef(v8Settings.cards_pre_sort);
+  cardsPreSortRef.current = v8Settings.cards_pre_sort;
+
   // Bible V8 §11.2: Per-game-type theme from Supabase
   const { theme: v8Theme } = useUserThemeSettings(
     userId !== 'guest' ? userId : null,
@@ -1786,7 +1790,8 @@ export default function TablePage({
               suit: ENGINE_SUIT_MAP[c.suit] || (c.suit as 'h' | 'd' | 'c' | 's'),
             }));
             // Bible V8 §11.1: cards_pre_sort — sort by rank high→low
-            if (v8Settings.cards_pre_sort) formattedCards = sortCardsByRank(formattedCards);
+            // FIX-232: Use ref to avoid stale closure (callback deps are [userId] only)
+            if (cardsPreSortRef.current) formattedCards = sortCardsByRank(formattedCards);
 
             updatedPlayers[heroIdx] = {
               ...updatedPlayers[heroIdx]!,
@@ -1811,10 +1816,16 @@ export default function TablePage({
   });
 
   // Fallback: Check active hand if page reloads mid-hand and misses the INSERT event.
-  // Polls every 5s while hand is active and hero has no cards.
+  // FIX-232: Polls at 0s/2s/5s intervals but STOPS once cards are received (Bug #7).
+  // FIX-232: Uses cardsPreSortRef to avoid stale closure (Bug #6).
   useEffect(() => {
     if (!tableId || !userId) return;
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+
     const fetchExistingHand = async () => {
+      if (cancelled) return;
       const { data } = await supabase
         .from('table_hole_cards')
         .select('cards')
@@ -1824,7 +1835,10 @@ export default function TablePage({
         .limit(1)
         .maybeSingle();
 
+      if (cancelled) return;
+
       if (data && data.cards) {
+        let cardsApplied = false;
         setTableState((prev) => {
           const updatedPlayers = [...prev.players];
           const heroIdx = updatedPlayers.findIndex((p) => p && p.id === userId);
@@ -1845,24 +1859,32 @@ export default function TablePage({
               rank: c.rank,
               suit: ENGINE_SUIT_MAP[c.suit] || (c.suit as any),
             }));
-            if (v8Settings.cards_pre_sort) parsedCards = sortCardsByRank(parsedCards);
+            if (cardsPreSortRef.current) parsedCards = sortCardsByRank(parsedCards);
             updatedPlayers[heroIdx] = {
               ...updatedPlayers[heroIdx]!,
               holeCards: parsedCards,
               showCards: true,
             };
+            cardsApplied = true;
           }
-          return { ...prev, players: updatedPlayers };
+          return cardsApplied ? { ...prev, players: updatedPlayers } : prev;
         });
+
+        // Bug #7 fix: Stop polling once cards are successfully received
+        if (cardsApplied || data.cards) {
+          if (retryTimer) clearTimeout(retryTimer);
+          if (pollTimer) clearInterval(pollTimer);
+        }
       }
     };
-    // Initial fetch + retries at 2s, then poll every 5s
+    // Initial fetch + retry at 2s, then poll every 5s
     fetchExistingHand();
-    const retryTimer = setTimeout(fetchExistingHand, 2000);
-    const pollTimer = setInterval(fetchExistingHand, 5000);
+    retryTimer = setTimeout(fetchExistingHand, 2000);
+    pollTimer = setInterval(fetchExistingHand, 5000);
     return () => {
-      clearTimeout(retryTimer);
-      clearInterval(pollTimer);
+      cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
+      if (pollTimer) clearInterval(pollTimer);
     };
   }, [tableId, userId]);
 

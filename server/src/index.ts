@@ -302,28 +302,20 @@ class GameServer {
         }
 
         // Credit each user's wallet in parallel (batch of 10)
+        // FIX-232: Use atomic RPC increment — eliminates read-then-write race condition
         let cashedOut = 0;
         const entries = Array.from(userTotals.entries()).filter(([_, total]) => total > 0);
         for (let i = 0; i < entries.length; i += 10) {
           const batch = entries.slice(i, i + 10);
           await Promise.all(batch.map(async ([userId, totalStack]) => {
             try {
-              const { data: wallet } = await supabase
-                .from('wallets')
-                .select('balance')
-                .eq('user_id', userId)
-                .eq('wallet_type', 'PLAYER')
-                .maybeSingle();
-
-              const currentBalance = wallet?.balance ?? 0;
-              await supabase
-                .from('wallets')
-                .upsert({
-                  user_id: userId,
-                  wallet_type: 'PLAYER',
-                  balance: currentBalance + totalStack,
-                  updated_at: new Date().toISOString(),
-                }, { onConflict: 'user_id,wallet_type' });
+              const { error: walletErr } = await supabase.rpc('credit_player_wallet', {
+                p_user_id: userId,
+                p_amount: totalStack,
+              });
+              if (walletErr) {
+                console.warn(`[GameServer] Cashout wallet credit failed for ${userId}: ${walletErr.message}`);
+              }
 
               cashedOut++;
             } catch (err: any) {

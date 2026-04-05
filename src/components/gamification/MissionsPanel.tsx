@@ -2,7 +2,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  *  MISSIONS PANEL — Tiered daily/weekly/monthly mission cards
  * ═══════════════════════════════════════════════════════════════════════════════
- * Progress bars, XP + diamond reward badges, completion animation.
+ * Progress bars, diamond reward badges, completion animation.
  */
 
 import { useState, useMemo, useRef, useEffect } from 'react';
@@ -22,7 +22,7 @@ interface Mission {
   current: number;
   target: number;
   rewardAmount: number;
-  rewardType: 'xp' | 'diamonds' | 'chips';
+  rewardType: 'diamonds' | 'chips';
   completed: boolean;
   claimed: boolean;
 }
@@ -39,7 +39,6 @@ const TIER_CONFIG: Record<MissionTier, { label: string; icon: string; color: str
 };
 
 const REWARD_ICONS: Record<string, string> = {
-  xp: '⭐',
   diamonds: '💎',
   chips: '🪙',
 };

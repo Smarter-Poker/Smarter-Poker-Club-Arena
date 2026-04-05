@@ -19,7 +19,7 @@ const CATEGORIES = [
   { key: 'messages', label: 'Messages', icon: '✉️', desc: 'DMs and group chats' },
   { key: 'games', label: 'Games', icon: '🎰', desc: 'Table invites, waitlist, hands' },
   { key: 'social', label: 'Social', icon: '👥', desc: 'Friend requests, club invites' },
-  { key: 'achievements', label: 'Achievements', icon: '🏆', desc: 'Badges, streaks, XP' },
+  { key: 'achievements', label: 'Achievements', icon: '🏆', desc: 'Badges, streaks, diamonds' },
   { key: 'system', label: 'System', icon: '⚙️', desc: 'Updates, maintenance, security' },
 ];
 

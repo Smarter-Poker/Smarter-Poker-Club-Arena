@@ -207,7 +207,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
                 if (/table|hand|game|seat|tournament|tourney|mtt|sng|waitlist|blind/.test(cStr))
                   cat = 'games';
                 else if (/friend|message|chat|club|invite|joined|member/.test(cStr)) cat = 'social';
-                else if (/achievement|badge|unlock|level|xp|streak|bonus|reward|diamond/.test(cStr))
+                else if (/achievement|badge|unlock|level|streak|bonus|reward|diamond/.test(cStr))
                   cat = 'achievements';
 
                 return {

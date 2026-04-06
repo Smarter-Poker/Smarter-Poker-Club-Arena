@@ -330,7 +330,6 @@ export default function PublicProfilePage() {
             showPresence={false}
             showLevelBadge={true}
             level={profile.level}
-            showXpRing={false}
             showVipRing={true}
             vipTier={profile.vipTier}
           />

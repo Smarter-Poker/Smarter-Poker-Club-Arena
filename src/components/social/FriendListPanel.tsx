@@ -121,7 +121,7 @@ function FriendListPanelInner({
         try {
           const { data: profiles } = await supabase
             .from('profiles')
-            .select('id, username, display_name, avatar_url, level, tier, xp')
+            .select('id, username, display_name, avatar_url, level, tier')
             .in('id', allFriendIds);
           if (profiles) {
             for (const p of profiles) profileMap[p.id] = p;
@@ -146,7 +146,6 @@ function FriendListPanelInner({
           tableName: undefined,
           level: p?.level || 1,
           vipTier: (p?.tier as VipTier) || 'bronze',
-          xpProgress: Math.min(100, (p?.xp || 0) % 100),
         };
       });
 
@@ -164,7 +163,6 @@ function FriendListPanelInner({
           tableName: undefined,
           level: p?.level || 1,
           vipTier: (p?.tier as VipTier) || 'bronze',
-          xpProgress: Math.min(100, (p?.xp || 0) % 100),
         };
       });
 
@@ -375,12 +373,10 @@ function FriendListPanelInner({
                 size="md"
                 vipTier={friend.vipTier}
                 level={friend.level}
-                xpProgress={friend.xpProgress}
                 presenceStatus={friend.status}
                 isPlaying={friend.status === 'playing'}
                 showPresence={true}
                 showLevelBadge={true}
-                showXpRing={true}
                 showVipRing={true}
                 onClick={() => {
                   haptic.selection();

@@ -647,10 +647,8 @@ export default function LeaderboardPage() {
                     size="lg"
                     vipTier={(top3[1].vipTier as VipTier) || 'silver'}
                     level={top3[1].level || 1}
-                    xpProgress={50}
                     showPresence={false}
                     showLevelBadge={true}
-                    showXpRing={true}
                     showVipRing={true}
                   />
                   {top3[1].isVIP && <span className="vip-badge">VIP</span>}
@@ -679,10 +677,8 @@ export default function LeaderboardPage() {
                     size="xl"
                     vipTier={(top3[0].vipTier as VipTier) || 'gold'}
                     level={top3[0].level || 1}
-                    xpProgress={75}
                     showPresence={false}
                     showLevelBadge={true}
-                    showXpRing={true}
                     showVipRing={true}
                   />
                   {top3[0].isVIP && <span className="vip-badge">VIP</span>}
@@ -710,10 +706,8 @@ export default function LeaderboardPage() {
                     size="lg"
                     vipTier={(top3[2].vipTier as VipTier) || 'bronze'}
                     level={top3[2].level || 1}
-                    xpProgress={30}
                     showPresence={false}
                     showLevelBadge={true}
-                    showXpRing={true}
                     showVipRing={true}
                   />
                   {top3[2].isVIP && <span className="vip-badge">VIP</span>}

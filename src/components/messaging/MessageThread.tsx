@@ -633,7 +633,6 @@ export default function MessageThread({ conversationId, onBack }: MessageThreadP
               presenceStatus={otherParticipant.isOnline ? 'online' : 'offline'}
               showPresence={true}
               showLevelBadge={false}
-              showXpRing={false}
               showVipRing={false}
             />
             <div className={styles.headerInfo}>

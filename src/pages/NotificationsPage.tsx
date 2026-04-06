@@ -38,7 +38,7 @@ function categorizeNotification(notif: Notification): NotifCategory {
   if (/table|hand|game|seat|tournament|tourney|mtt|sng|waitlist|blind/.test(combined))
     return 'games';
   if (/friend|message|chat|club|invite|joined|member/.test(combined)) return 'social';
-  if (/achievement|badge|unlock|level|xp|streak|bonus|reward|diamond/.test(combined))
+  if (/achievement|badge|unlock|level|streak|bonus|reward|diamond/.test(combined))
     return 'achievements';
   return 'system';
 }

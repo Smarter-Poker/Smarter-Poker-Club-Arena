@@ -36,48 +36,7 @@
   height: 84px;
 }
 
-/* ── XP Progress Ring (SVG) ─────────────────────────────────────────────────── */
-.xp-ring-svg {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  transform: rotate(-90deg); /* Start from top */
-  z-index: 2;
-  pointer-events: none;
-}
 
-.xp-ring-track {
-  fill: none;
-  stroke: rgba(255, 255, 255, 0.08);
-  transition: stroke 0.3s ease;
-}
-
-.xp-ring-progress {
-  fill: none;
-  stroke-linecap: round;
-  transition:
-    stroke-dashoffset 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94),
-    stroke 0.3s ease;
-  filter: drop-shadow(0 0 3px currentColor);
-}
-
-/* XP ring color by VIP tier */
-.xp-ring-progress.tier-bronze {
-  stroke: #cd7f32;
-}
-.xp-ring-progress.tier-silver {
-  stroke: #c0c0c0;
-}
-.xp-ring-progress.tier-gold {
-  stroke: #ffd700;
-}
-.xp-ring-progress.tier-platinum {
-  stroke: #e5e4e2;
-}
-.xp-ring-progress.tier-diamond {
-  stroke: #b9f2ff;
-}
 
 /* ── VIP Status Ring (outer glow border) ───────────────────────────────────── */
 .vip-status-ring {

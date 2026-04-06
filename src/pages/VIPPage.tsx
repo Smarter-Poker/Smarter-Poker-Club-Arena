@@ -86,13 +86,8 @@ export default function VIPPage() {
             if (newData.diamonds !== undefined) {
               setDiamonds(newData.diamonds);
             }
-            if (newData.xp !== undefined) {
-              setVipPoints((prev) => ({
-                ...prev,
-                current: newData.xp,
-                lifetime: Math.max(prev.lifetime, newData.xp),
-              }));
-            }
+            // xp has been removed
+
           }
         )
         .subscribe((status: string, err?: Error) => {
@@ -166,14 +161,14 @@ export default function VIPPage() {
 
       const { data: profData } = await supabase
         .from('profiles')
-        .select('diamonds, xp, created_at')
+        .select('diamonds, created_at')
         .eq('id', user.id)
         .maybeSingle();
 
       if (getIsMounted && !getIsMounted()) return;
       setDiamonds(profData?.diamonds || 0);
 
-      const currentPts = profData?.xp || 0;
+      const currentPts = 0;
       setVipPoints((prev) => ({
         ...prev,
         current: currentPts,

@@ -74,7 +74,7 @@ class ProfileServiceClass {
       const { data, error } = await supabase
         .from('profiles')
         .select(
-          'id, username, display_name, avatar_url, bio, level, tier, xp, login_streak, streak_days, last_login_date, total_hands_played, diamonds, created_at, updated_at'
+          'id, username, display_name, avatar_url, bio, level, tier, login_streak, streak_days, last_login_date, total_hands_played, diamonds, created_at, updated_at'
         )
         .eq('id', userId)
         .maybeSingle();
@@ -96,7 +96,7 @@ class ProfileServiceClass {
       const { data, error } = await supabase
         .from('profiles')
         .select(
-          'id, username, display_name, avatar_url, bio, level, tier, xp, login_streak, streak_days, last_login_date, total_hands_played, diamonds, created_at, updated_at'
+          'id, username, display_name, avatar_url, bio, level, tier, login_streak, streak_days, last_login_date, total_hands_played, diamonds, created_at, updated_at'
         )
         .eq('username', username)
         .maybeSingle();
@@ -120,7 +120,7 @@ class ProfileServiceClass {
         .select(
           `
           id, username, display_name, avatar_url, bio,
-          level, tier, xp,
+          level, tier,
           login_streak, streak_days,
           total_hands_played, diamonds,
           created_at, updated_at
@@ -309,7 +309,7 @@ class ProfileServiceClass {
     const { data } = await supabase
       .from('profiles')
       .select(
-        'id, username, display_name, avatar_url, level, tier, xp, total_hands_played, diamonds, created_at, updated_at'
+        'id, username, display_name, avatar_url, level, tier, total_hands_played, diamonds, created_at, updated_at'
       )
       .order(orderColumn, { ascending: false })
       .limit(limit);
@@ -389,7 +389,7 @@ class ProfileServiceClass {
       bio: data.bio as string | undefined,
       level,
       vipTier: (data.tier as UserProfile['vipTier']) || 'bronze', // DB column is `tier`
-      vipPoints: (data.xp as number) || 0, // No vip_points column; use xp as proxy
+      vipPoints: 0, // No xp column anymore
       currentStreak: (data.login_streak as number) || 0, // DB column is `login_streak`
       longestStreak: (data.streak_days as number) || 0, // DB column is `streak_days`
       lastLoginDate: data.last_login_date as string | undefined,

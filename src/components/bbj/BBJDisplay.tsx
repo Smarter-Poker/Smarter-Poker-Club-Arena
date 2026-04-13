@@ -9,7 +9,7 @@
  *    2. Table page: Top-center ticker (compact mode)
  *
  *  Tabs: Winner | Basic | Qualifying Hands
- *  Modeled after PokerBros BBJ display
+ *  Modeled after premium BBJ display
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';

@@ -1,6 +1,6 @@
 /**
  * ♠ CLUB ARENA — Tournament Details Page
- * PokerBros-style tournament registration (PLAY CHIPS ONLY)
+ * premium-style tournament registration (PLAY CHIPS ONLY)
  */
 
 import { useState, useEffect, useRef } from 'react';

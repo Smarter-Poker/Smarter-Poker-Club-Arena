@@ -2,7 +2,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CLUB ENGINE — Type Definitions
  * ═══════════════════════════════════════════════════════════════════════════════
- * PokerBros Clone — Better
+ * Smarter Poker Platform
  * Complete type system for clubs, tables, games, and players
  */
 

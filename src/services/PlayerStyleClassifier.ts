@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  PLAYER STYLE CLASSIFIER — PokerBros-Style Auto-Labeling
+ *  PLAYER STYLE CLASSIFIER — Premium-Style Auto-Labeling
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Automatically classifies players into archetypes based on live VPIP/PFR/AF:
@@ -137,7 +137,7 @@ class PlayerStyleClassifierClass {
 
   /**
    * Classify a player based on their stats.
-   * Uses a decision-tree approach matching PokerBros archetypes.
+   * Uses a decision-tree approach matching player archetypes.
    */
   classify(input: ClassifyInput): PlayerStyleResult {
     const { handsPlayed, vpipCount, pfrCount, aggressiveActions = 0, passiveActions = 0 } = input;

@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- * CLUB & UNION LEVELS SYSTEM (1-50 PokerBros Style)
+ * CLUB & UNION LEVELS SYSTEM (1-50 Club Arena Style)
  * ═══════════════════════════════════════════════════════════════════════════════
  * Two independent axes drive club level:
  *   - Player Count  → player_level      (30 * 1.125^(L-1))

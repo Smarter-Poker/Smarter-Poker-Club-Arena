@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  DYNAMIC WALLET — Compact PokerBros-Style Inline Display
+ *  DYNAMIC WALLET — Compact Premium-Style Inline Display
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Compact wallet display positioned below the club card.

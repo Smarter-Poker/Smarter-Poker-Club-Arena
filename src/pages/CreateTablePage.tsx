@@ -2,7 +2,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  * CREATE TABLE PAGE — Game Type Selector
  * ═══════════════════════════════════════════════════════════════════════════════
- * PokerBros-style game type selection with 7 game options:
+ * premium-style game type selection with 7 game options:
  * - NLH (No Limit Hold'em)
  * - FLH (Fixed Limit Hold'em)
  * - 6+ (Short Deck Hold'em)

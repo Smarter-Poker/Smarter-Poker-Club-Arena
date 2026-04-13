@@ -3,7 +3,7 @@
  * ♠ THROWABLE REACTION — Q3 Social Upgrade (Phase 2: Social Richness)
  *
  * Animated SVG reactions that fly across the screen from sender to target.
- * Inspired by PokerBros throwable emojis and ClubGG's 3D animated reactions.
+ * Inspired by premium throwable emojis and ClubGG's 3D animated reactions.
  * Uses CSS @keyframes for performant GPU-accelerated flight animations.
  * ═══════════════════════════════════════════════════════════════════════════════
  */

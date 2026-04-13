@@ -1,7 +1,7 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * ♠ CLUB ARENA — Club Bottom Navigation Bar
- * PokerBros-style fixed bottom navigation for club management
+ * premium-style fixed bottom navigation for club management
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 

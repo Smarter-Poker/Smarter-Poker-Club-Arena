@@ -1,6 +1,6 @@
 /**
  * ♠ CLUB ARENA — Hand Replayer Page
- * PokerBros-style shareable hand replay with social meta tags
+ * premium-style shareable hand replay with social meta tags
  * URL: /share/hand/:handId
  */
 

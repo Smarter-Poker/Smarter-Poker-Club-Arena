@@ -434,7 +434,9 @@ export const HydraService = {
       return null;
     }
 
-    const stack = getStackForProfile(horseData.horse_profile as HorseProfile, bigBlind);
+    // Guard: bigBlind must be at least 1 to prevent zero-stack (violates chip_ledger CHECK amount > 0)
+    const safeBigBlind = Math.max(1, bigBlind);
+    const stack = getStackForProfile(horseData.horse_profile as HorseProfile, safeBigBlind);
 
     // Clean up departed (left_at NOT NULL) seat rows first — these block INSERTs
     // due to unique constraint on (table_id, seat_number).

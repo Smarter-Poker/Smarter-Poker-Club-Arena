@@ -282,7 +282,7 @@ function CommunityCardsComponent({
         </>
       )}
 
-      {/* Winning Hand Name — PokerBros-style "Straight" label below community cards */}
+      {/* Winning Hand Name — premium-style "Straight" label below community cards */}
       {winningHandName && <div className="community-cards__hand-name">{winningHandName}</div>}
 
       {/* Gold Spark Burst on Showdown */}

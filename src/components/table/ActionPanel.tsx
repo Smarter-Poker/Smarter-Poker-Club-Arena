@@ -1,6 +1,6 @@
 /**
  * ♠ CLUB ARENA — Action Panel Component
- * PokerBros-style action buttons: Fold (red), Check/Call (green), Raise (amber)
+ * premium-style action buttons: Fold (red), Check/Call (green), Raise (amber)
  * Professional 3-button horizontal layout with raise mode sub-panel
  */
 

@@ -1,6 +1,6 @@
 /**
  * ♠ CLUB ARENA — Hand Replay Viewer
- * PokerBros-style hand history replay with timeline scrubbing
+ * premium-style hand history replay with timeline scrubbing
  */
 
 import { useState, useEffect, useRef } from 'react';

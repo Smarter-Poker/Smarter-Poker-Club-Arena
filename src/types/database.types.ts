@@ -182,7 +182,7 @@ export interface UnionSettings {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Agent System (PokerBros-style chip distribution)
+// Agent System (premium-style chip distribution)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export interface Agent {

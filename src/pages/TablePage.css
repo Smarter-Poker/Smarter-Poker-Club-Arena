@@ -345,10 +345,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 64px 12px 50px; /* Extra top room for hamburger + HUD above table */
+  padding: 64px 12px 100px; /* Extra top room for hamburger; 100px bottom clears action panel for hero seat + hole cards */
   overflow: visible;
   /* Cap height so table never overflows — leaves room for header + action panel */
-  max-height: calc(100dvh - 180px);
+  max-height: calc(100dvh - 220px);
 }
 
 /* Table Wrapper - Scales uniformly via CSS transform */

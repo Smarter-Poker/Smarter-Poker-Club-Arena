@@ -30,29 +30,29 @@ interface StyleParams {
 
 const STYLE_PARAMS: Record<HorseStyle, StyleParams> = {
     tag: {
-        vpipThreshold: 0.35, pfrThreshold: 0.45, threeBetThreshold: 0.75,
+        vpipThreshold: 0.20, pfrThreshold: 0.35, threeBetThreshold: 0.75,
         cbetFreq: 0.70, bluffFreq: 0.12, slowplayFreq: 0.10, checkRaiseFreq: 0.08,
-        sizingMultiplier: 1.0, thinkRange: [100, 300],
+        sizingMultiplier: 1.0, thinkRange: [600, 2500],
     },
     lag: {
-        vpipThreshold: 0.25, pfrThreshold: 0.35, threeBetThreshold: 0.60,
+        vpipThreshold: 0.15, pfrThreshold: 0.28, threeBetThreshold: 0.60,
         cbetFreq: 0.75, bluffFreq: 0.22, slowplayFreq: 0.15, checkRaiseFreq: 0.12,
-        sizingMultiplier: 1.15, thinkRange: [80, 250],
+        sizingMultiplier: 1.15, thinkRange: [400, 2000],
     },
     balanced: {
-        vpipThreshold: 0.30, pfrThreshold: 0.40, threeBetThreshold: 0.70,
+        vpipThreshold: 0.18, pfrThreshold: 0.32, threeBetThreshold: 0.70,
         cbetFreq: 0.65, bluffFreq: 0.18, slowplayFreq: 0.20, checkRaiseFreq: 0.15,
-        sizingMultiplier: 1.0, thinkRange: [100, 280],
+        sizingMultiplier: 1.0, thinkRange: [700, 2800],
     },
     tricky: {
-        vpipThreshold: 0.28, pfrThreshold: 0.42, threeBetThreshold: 0.65,
+        vpipThreshold: 0.18, pfrThreshold: 0.34, threeBetThreshold: 0.65,
         cbetFreq: 0.55, bluffFreq: 0.20, slowplayFreq: 0.35, checkRaiseFreq: 0.25,
-        sizingMultiplier: 0.9, thinkRange: [120, 350],
+        sizingMultiplier: 0.9, thinkRange: [800, 3000],
     },
     grinder: {
-        vpipThreshold: 0.32, pfrThreshold: 0.43, threeBetThreshold: 0.72,
+        vpipThreshold: 0.22, pfrThreshold: 0.36, threeBetThreshold: 0.72,
         cbetFreq: 0.60, bluffFreq: 0.10, slowplayFreq: 0.12, checkRaiseFreq: 0.10,
-        sizingMultiplier: 0.85, thinkRange: [90, 260],
+        sizingMultiplier: 0.85, thinkRange: [500, 2200],
     },
 };
 
@@ -84,7 +84,7 @@ export class HorseLogic {
         let thinkTime = minThink + Math.random() * (maxThink - minThink);
         if (gameState.players.filter(p => !p.is_folded).length === 2) thinkTime *= 0.7;
         if (stage === 'river' && toCall > pot * 0.5) thinkTime *= 1.3;
-        decision.thinkTime = Math.round(Math.min(thinkTime, 300));
+        decision.thinkTime = Math.round(Math.min(thinkTime, 3000));
 
         return decision;
     }
@@ -146,6 +146,8 @@ export class HorseLogic {
         }
 
         if (toCall === 0) return { action: 'check', thinkTime: 0 };
+        // Always call if it costs just the big blind (never fold to a limp)
+        if (toCall <= bigBlind * 1.5) return { action: 'call', amount: toCall, thinkTime: 0 };
         return { action: 'fold', thinkTime: 0 };
     }
 

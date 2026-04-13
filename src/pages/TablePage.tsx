@@ -343,21 +343,21 @@ interface TableState {
 // Seat positions — pushed OUTSIDE the felt edge so avatars/info boxes
 // are off the table. Only chips and action labels on the felt surface.
 const SEAT_POSITIONS_6MAX = [
-  { x: 50, y: 100 },  // Seat 1 (Hero — bottom center)
+  { x: 50, y: 97 },   // Seat 1 (Hero — bottom center, pulled up slightly for card clearance)
   { x: 5,  y: 75 },   // Seat 2 (lower left)
   { x: 5,  y: 25 },   // Seat 3 (upper left)
-  { x: 50, y: 0 },    // Seat 4 (top center)
+  { x: 50, y: 3 },    // Seat 4 (top center)
   { x: 95, y: 25 },   // Seat 5 (upper right)
   { x: 95, y: 75 },   // Seat 6 (lower right)
 ];
 
 const SEAT_POSITIONS_9MAX = [
-  { x: 50, y: 100 },  // Seat 1 (Hero — bottom center)
-  { x: 15, y: 92 },   // Seat 2 (bottom left)
+  { x: 50, y: 97 },   // Seat 1 (Hero — bottom center, pulled up slightly for card clearance)
+  { x: 15, y: 90 },   // Seat 2 (bottom left)
   { x: 2,  y: 68 },   // Seat 3 (left middle-low)
   { x: 2,  y: 35 },   // Seat 4 (left middle-high)
   { x: 20, y: 5 },    // Seat 5 (top left)
-  { x: 50, y: -2 },   // Seat 6 (top center)
+  { x: 50, y: 0 },    // Seat 6 (top center)
   { x: 80, y: 5 },    // Seat 7 (top right)
   { x: 98, y: 35 },   // Seat 8 (right middle-high)
   { x: 98, y: 68 },   // Seat 9 (right middle-low)
@@ -520,6 +520,7 @@ export default function TablePage({
   // Get current user
   const [userId, setUserId] = useState<string>('guest');
   const [username, setUsername] = useState<string>('Player');
+  const [heroAvatarUrl, setHeroAvatarUrl] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
   const [boardStageKey, setBoardStageKey] = useState(0); // Trigger board transitions
 
@@ -535,10 +536,13 @@ export default function TablePage({
         if (isMounted.current) setUserId(user.id);
         const { data: profile } = await supabase
           .from('profiles')
-          .select('display_name, username')
+          .select('display_name, username, avatar_url')
           .eq('id', user.id)
           .maybeSingle();
-        if (isMounted.current) setUsername(profile?.display_name || profile?.username || 'Player');
+        if (isMounted.current) {
+          setUsername(profile?.display_name || profile?.username || 'Player');
+          setHeroAvatarUrl(profile?.avatar_url || '');
+        }
       }
       if (isMounted.current) setIsLoading(false);
     }
@@ -3753,7 +3757,8 @@ export default function TablePage({
               updatedPlayers[seatIdx] = {
                 id: p.userId,
                 name: p.username,
-                avatar: p.avatar || '',
+                // FIX: Preserve existing avatar from DB — don't overwrite with empty presence avatar
+                avatar: p.avatar || existing?.avatar || (p.userId === userId ? heroAvatarUrl : '') || '',
                 stack: existing?.stack ?? 0,
                 status: existing?.status ?? 'active',
                 isHero: p.userId === userId,
@@ -5754,7 +5759,7 @@ export default function TablePage({
                   updatedPlayers[selectedSeat - 1] = {
                     id: userId,
                     name: username || 'Player',
-                    avatar: '',
+                    avatar: heroAvatarUrl || '',
                     stack: amount,
                     status: 'active',
                     isHero: true,

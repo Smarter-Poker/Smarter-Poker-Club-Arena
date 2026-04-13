@@ -11,6 +11,7 @@
  */
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
+import './TableMenu.css';
 import { haptic } from '../../services/SoundService';
 import {
   SitOutIcon,

@@ -343,24 +343,24 @@ interface TableState {
 // Seat positions — pushed OUTSIDE the felt edge so avatars/info boxes
 // are off the table. Only chips and action labels on the felt surface.
 const SEAT_POSITIONS_6MAX = [
-  { x: 50, y: 108 },  // Seat 1 (Hero — bottom center, off felt)
-  { x: -4, y: 78 },   // Seat 2 (bottom left, off felt)
-  { x: -4, y: 24 },   // Seat 3 (top left, off felt)
-  { x: 50, y: -2 },   // Seat 4 (top center, off felt)
-  { x: 104, y: 24 },  // Seat 5 (top right, off felt)
-  { x: 104, y: 78 },  // Seat 6 (bottom right, off felt)
+  { x: 50, y: 100 },  // Seat 1 (Hero — bottom center)
+  { x: 5,  y: 75 },   // Seat 2 (lower left)
+  { x: 5,  y: 25 },   // Seat 3 (upper left)
+  { x: 50, y: 0 },    // Seat 4 (top center)
+  { x: 95, y: 25 },   // Seat 5 (upper right)
+  { x: 95, y: 75 },   // Seat 6 (lower right)
 ];
 
 const SEAT_POSITIONS_9MAX = [
-  { x: 50, y: 110 },  // Seat 1 (Hero — bottom center, off felt)
-  { x: 12, y: 102 },  // Seat 2 (bottom left, off felt)
-  { x: -4, y: 70 },   // Seat 3 (left middle, off felt)
-  { x: -4, y: 34 },   // Seat 4 (left upper, off felt)
-  { x: 16, y: 0 },    // Seat 5 (top left, off felt)
-  { x: 50, y: -3 },   // Seat 6 (top center, off felt)
-  { x: 84, y: 0 },    // Seat 7 (top right, off felt)
-  { x: 104, y: 34 },  // Seat 8 (right upper, off felt)
-  { x: 104, y: 70 },  // Seat 9 (right middle, off felt)
+  { x: 50, y: 100 },  // Seat 1 (Hero — bottom center)
+  { x: 15, y: 92 },   // Seat 2 (bottom left)
+  { x: 2,  y: 68 },   // Seat 3 (left middle-low)
+  { x: 2,  y: 35 },   // Seat 4 (left middle-high)
+  { x: 20, y: 5 },    // Seat 5 (top left)
+  { x: 50, y: -2 },   // Seat 6 (top center)
+  { x: 80, y: 5 },    // Seat 7 (top right)
+  { x: 98, y: 35 },   // Seat 8 (right middle-high)
+  { x: 98, y: 68 },   // Seat 9 (right middle-low)
 ];
 
 // HORSE AVATARS — Use deterministic SVG generator (no external DiceBear dependency)

@@ -115,7 +115,7 @@ export type {
   NotationAction,
 } from './HandNotation';
 
-// Share Hand (PokerBros-style sharing)
+// Share Hand (premium-style sharing)
 export { ShareHand, encodeHand, decodeHandFromUrl } from './ShareHand';
 export type {
   ShareHandProps,

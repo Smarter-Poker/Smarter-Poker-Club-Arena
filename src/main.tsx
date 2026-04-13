@@ -2,7 +2,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CLUB ENGINE — Main Entry Point (ANTI-GRAVITY PROTECTED)
  * ═══════════════════════════════════════════════════════════════════════════════
- * PokerBros Clone — Better
+ * Smarter Poker Platform
  *
  *  ANTI-GRAVITY INSTANT RENDER:
  * React renders IMMEDIATELY after synchronous env-var validation.

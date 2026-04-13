@@ -1,7 +1,7 @@
 /**
  * ♠ CLUB ARENA — Seat Slot Component
  * ═══════════════════════════════════════════════════════════════════════════════
- * EXACT PokerBros seat layout:
+ * Premium seat layout:
  *
  *   [Fold badge above]
  *        ┌──────┐
@@ -167,7 +167,7 @@ function HoleCard({
   deckStyle?: '4color' | '2color';
   cardBack?: string;
 }) {
-  // PokerBros-style: hero cards have wider fan tilt, opponents tighter
+  // premium-style: hero cards have wider fan tilt, opponents tighter
   const rotation = isHero ? (index === 0 ? -12 : 12) : index === 0 ? -8 : 8;
   const size = isHero ? 'md' : 'sm';
 
@@ -189,7 +189,7 @@ function HoleCard({
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// NEON TIMER BORDER — PokerBros-style disappearing border
+// NEON TIMER BORDER — premium-style disappearing border
 // ═══════════════════════════════════════════════════════════════════════════════
 //
 // The info box border glows neon yellow and the border progressively disappears
@@ -346,7 +346,7 @@ export const SeatSlot = memo(
 
     return (
       <div className={containerClasses} onClick={onAction}>
-        {/* Last Action Badge — floats ABOVE the seat like PokerBros */}
+        {/* Last Action Badge — floats ABOVE the seat (premium style) */}
         {lastAction && (
           <div className={`seat__action seat__action--${lastAction}`}>
             {getActionLabel(lastAction, lastBetAmount)}
@@ -498,7 +498,7 @@ export const SeatSlot = memo(
           </div>
         )}
 
-        {/* Hero Hole Cards — large, PokerBros style beside avatar */}
+        {/* Hero Hole Cards — large, premium style beside avatar */}
         {player.holeCards && player.holeCards.length > 0 && player.isHero && (
           <div className="seat__cards seat__cards--hero">
             {player.holeCards.map((card, i) => (
@@ -516,7 +516,7 @@ export const SeatSlot = memo(
           </div>
         )}
 
-        {/* Winning Hand Name — floats below cards like PokerBros "Straight" label */}
+        {/* Winning Hand Name — floats below cards (premium style) "Straight" label */}
         {isWinner && winningHandName && <div className="seat__hand-name">{winningHandName}</div>}
 
         {/* All-In Badge */}

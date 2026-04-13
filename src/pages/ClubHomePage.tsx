@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- * CLUB HOME PAGE — PokerBros-Style Club Dashboard
+ * CLUB HOME PAGE — Premium-Style Club Dashboard
  * ═══════════════════════════════════════════════════════════════════════════════
  * Main page after entering a club. Shows:
  * - Modified Club Arena header (No Search, Settings = Club Settings)
@@ -1185,7 +1185,7 @@ export default function ClubHomePage() {
           </Link>
         )}
 
-        {/* EXISTING TABLES — Dynamic PokerBros-style cards */}
+        {/* EXISTING TABLES — Dynamic premium-style cards */}
         {filteredTables.map((table, idx) => (
           <div
             key={table.id}
@@ -1203,7 +1203,7 @@ export default function ClubHomePage() {
           </div>
         ))}
 
-        {/* TOURNAMENT CARDS — Dynamic PokerBros-style cards */}
+        {/* TOURNAMENT CARDS — Dynamic premium-style cards */}
         {filteredTournaments.map((tournament, idx) => {
           const tName = (tournament.name || '').toLowerCase();
           const isSNG = tName.includes('sng') || tournament.max_players <= 10;

@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  TABLE TAB BAR — PokerBros-Style Multi-Table Navigation
+ *  TABLE TAB BAR — Premium-Style Multi-Table Navigation
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Top tab strip for switching between up to 4 concurrent tables.

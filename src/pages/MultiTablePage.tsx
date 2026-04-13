@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  MULTI-TABLE PAGE — PokerBros-Style Multi-Table Container
+ *  MULTI-TABLE PAGE — Premium-Style Multi-Table Container
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Wraps up to 4 concurrent TablePage instances with:

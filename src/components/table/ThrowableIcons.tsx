@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  THROWABLE ICONS — Custom SVG Graphics (PokerBros Style)
+ *  THROWABLE ICONS — Custom SVG Graphics (Club Arena Style)
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Custom cartoon-style SVG graphics for throwables.

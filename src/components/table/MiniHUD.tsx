@@ -3,7 +3,7 @@
  *  CLUB ARENA — Smart Mini-HUD (Pro Upgrade)
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * ClubGG/PokerBros-style opponent statistics overlay with:
+ * ClubGG/premium-style opponent statistics overlay with:
  * - VPIP/PFR progress bars with color coding
  * - Player type label (Nit, TAG, LAG, Whale, etc.)
  * - Heat indicator with animated glow

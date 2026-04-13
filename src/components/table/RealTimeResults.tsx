@@ -3,7 +3,7 @@
  *  REAL-TIME RESULTS — Session Stats Panel
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * PokerBros-style real-time results panel showing:
+ * premium-style real-time results panel showing:
  * - Session duration
  * - Table info
  * - Buy-in and winnings

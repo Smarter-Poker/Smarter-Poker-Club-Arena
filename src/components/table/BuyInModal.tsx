@@ -3,7 +3,7 @@
  *  BUY-IN MODAL — Table Buy-In Interface
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * PokerBros-style buy-in modal with:
+ * premium-style buy-in modal with:
  * - Min/Max slider
  * - Quick amount buttons
  * - Auto rebuy toggle

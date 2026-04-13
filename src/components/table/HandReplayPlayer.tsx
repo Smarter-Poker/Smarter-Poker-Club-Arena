@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- * 🎬 HAND REPLAY PLAYER — Visual Hand Replay (PokerBros-Style)
+ * 🎬 HAND REPLAY PLAYER — Visual Hand Replay (Premium-Style)
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Full visual hand replay with:

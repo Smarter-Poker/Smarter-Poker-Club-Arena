@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  SHARE HAND — PokerBros-Style Shareable Hand Replay
+ *  SHARE HAND — Premium-Style Shareable Hand Replay
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Complete shareable hand replay system:

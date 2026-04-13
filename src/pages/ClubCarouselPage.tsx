@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- * CLUB CAROUSEL PAGE — PokerBros-Style Club Selection
+ * CLUB CAROUSEL PAGE — Premium-Style Club Selection
  * ═══════════════════════════════════════════════════════════════════════════════
  * Shows user's clubs in a swipeable carousel format:
  * - Header with player info, VIP, gold/diamond balances

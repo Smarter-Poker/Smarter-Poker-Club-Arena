@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- * DYNAMIC GAME CARD — PokerBros-Style Lobby Cards
+ * DYNAMIC GAME CARD — Premium-Style Lobby Cards
  * ═══════════════════════════════════════════════════════════════════════════════
  * Renders color-coded cards for cash games, MTTs, SNGs, and Spins
  * with dynamic badges, feature icons, and animated elements.

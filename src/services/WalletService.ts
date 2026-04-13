@@ -516,25 +516,29 @@ export const WalletService = {
         3
       );
       // Also write to chip_ledger (immutable append-only audit trail)
-      supabase
-        .from('chip_ledger')
-        .insert({
-          performed_by: userId,
-          from_type:
-            type === 'debit' ? 'player_wallet' : relatedEntityId ? 'player_wallet' : 'system_mint',
-          from_entity_id: type === 'debit' ? userId : relatedEntityId,
-          to_type:
-            type === 'credit' ? 'player_wallet' : relatedEntityId ? 'player_wallet' : 'system_burn',
-          to_entity_id: type === 'credit' ? userId : relatedEntityId,
-          amount: Math.abs(amount),
-          category,
-          description,
-          table_id: tableId || undefined,
-          hand_id: handId || undefined,
-        })
-        .then(({ error: ledgerErr }) => {
-          if (ledgerErr) reportError(ledgerErr, 'WalletService.chip_ledger_write_failed');
-        });
+      // Guard: chip_ledger has amount > 0 CHECK constraint — skip zero-amount entries
+      const ledgerAmount = Math.abs(amount);
+      if (ledgerAmount > 0) {
+        supabase
+          .from('chip_ledger')
+          .insert({
+            performed_by: userId,
+            from_type:
+              type === 'debit' ? 'player_wallet' : relatedEntityId ? 'player_wallet' : 'system_mint',
+            from_entity_id: type === 'debit' ? userId : relatedEntityId,
+            to_type:
+              type === 'credit' ? 'player_wallet' : relatedEntityId ? 'player_wallet' : 'system_burn',
+            to_entity_id: type === 'credit' ? userId : relatedEntityId,
+            amount: ledgerAmount,
+            category,
+            description,
+            table_id: tableId || undefined,
+            hand_id: handId || undefined,
+          })
+          .then(({ error: ledgerErr }) => {
+            if (ledgerErr) reportError(ledgerErr, 'WalletService.chip_ledger_write_failed');
+          });
+      }
 
       if (error) {
         reportError(error, 'WalletService.logTransaction', { userId, walletType, amount, type, category });

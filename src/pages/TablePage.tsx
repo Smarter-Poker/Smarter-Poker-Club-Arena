@@ -3,7 +3,7 @@
  *  CLUB ARENA — Premium Poker Table Page
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * PokerBros-style table interface with Facebook color scheme
+ * premium-style table interface with Facebook color scheme
  * Features:
  * - Oval table with premium rail
  * - 6-max or 9-max seating
@@ -337,7 +337,7 @@ interface TableState {
 // SEAT POSITIONS — Fixed percentages for vertical table layout (never move)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// Seat positions — PokerBros-style tight oval hugging the felt edge
+// Seat positions — premium-style tight oval hugging the felt edge
 // Players positioned at the EDGE of the table — avatars/info sit OFF the felt
 // Only action (chips, community cards, pot) on the actual table surface
 // Seat positions — pushed OUTSIDE the felt edge so avatars/info boxes
@@ -4491,7 +4491,7 @@ export default function TablePage({
                 .board-transition { animation: boardSlideIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1); }
             `}</style>
       {/* ═══════════════════════════════════════════════════════════════════════
-          HEADER BAR — Compact PokerBros-style with game info
+          HEADER BAR — Compact premium-style with game info
           ═══════════════════════════════════════════════════════════════════════ */}
       <div className="table-header">
         <div className="header-left">
@@ -4774,7 +4774,7 @@ export default function TablePage({
                   />
                 </div>
 
-                {/* Game Info Strip — PokerBros-style: "1/2 NLH" capitalized, table name below */}
+                {/* Game Info Strip — premium-style: "1/2 NLH" capitalized, table name below */}
                 <div className="table-game-info">
                   <span className="table-game-info__stakes">
                     {(tableState.blinds || '1/2').toUpperCase()}{' '}
@@ -5028,7 +5028,7 @@ export default function TablePage({
               </div>
             )}
 
-            {/* ─── ACTION PANEL — PokerBros 3-button layout ─── */}
+            {/* ─── ACTION PANEL — Premium 3-button layout ─── */}
             {/* QuickActionsBar REMOVED — Auto-Rebuy is a hamburger menu setting,
                 Chat and Stats have their own dedicated locations */}
 

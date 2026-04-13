@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- * TABLE CONFIGURATION PAGE — Full PokerBros-Style Form
+ * TABLE CONFIGURATION PAGE — Full Premium-Style Form
  * ═══════════════════════════════════════════════════════════════════════════════
  * Comprehensive table configuration with 40+ options:
  * - Game mode tabs (Regular/SNG/MTT)

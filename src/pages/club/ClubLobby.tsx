@@ -1,6 +1,6 @@
 /**
  * ♠ CLUB ARENA — Club Lobby Page
- * PokerBros-style club interface with tournaments, tables, and navigation
+ * premium-style club interface with tournaments, tables, and navigation
  *
  * Fixes applied:
  *  1. Show BOTH tables and tournaments (not either/or)

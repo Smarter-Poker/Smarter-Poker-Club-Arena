@@ -266,7 +266,11 @@ function CommunityCardsComponent({
               stage={stage}
               deckStyle={deckStyle}
             />
-          ) : (
+          ) : // Phase 2 T1-07 — per POKERBROS_CLONE_SPEC.md line 485:
+          //   "Preflop: cards exist but are hidden/not displayed"
+          // Suppress placeholder card backs during preflop. Post-flop we
+          // still show placeholders for not-yet-dealt slots (turn/river).
+          stage === 'preflop' ? null : (
             <PlaceholderCard key={`placeholder-${i}`} index={i} />
           )
         )}

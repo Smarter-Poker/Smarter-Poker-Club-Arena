@@ -168,6 +168,30 @@
 
 ---
 
+## CHAPTER 11: TABLE SETTINGS & THEME CUSTOMIZATION
+
+| ID | Requirement | Status | File(s) | Notes |
+|----|------------|--------|---------|-------|
+| 11.1.1 | All 12 required toggles present | VERIFIED | src/hooks/useUserTableSettings.ts + src/components/table/TableSettingsPanel.tsx | All spec toggles present plus skip_animations + use_alias extensions. TABLE_SETTINGS_META drives the rendering loop. |
+| 11.1.1 — highlight_active_players | VERIFIED | TablePage / SeatSlot render path | Controls active-seat highlight ring |
+| 11.1.1 — show_avatars | VERIFIED | SeatSlot showAvatar prop wired from v8Settings | |
+| 11.1.1 — show_badges | VERIFIED | SeatSlot showBadges prop wired from v8Settings | |
+| 11.1.1 — cards_pre_sort | VERIFIED | cardsPreSortRef used in hole-card callbacks | FIX-232 avoids stale closure |
+| 11.1.1 — gestures_enabled | NEEDS-VERIFY | (no consumers found) | Component renders toggle; swipe/drag action dispatch not yet wired |
+| 11.1.1 — card_slide | NEEDS-VERIFY | (no consumers found) | Toggle stored but peek-reveal animation not yet implemented |
+| 11.1.1 — show_stack_in_bb | VERIFIED | SeatSlot showStackInBB prop | Via legacy bridge (useUserSettings reads STORAGE_KEYS.SHOW_STACK_BB which useUserTableSettings mirrors). Works end-to-end. |
+| 11.1.1 — auto_time_bank | VERIFIED | TablePage onTimeout | STEP-8 wiring: suppresses TimeBank modal when toggle on (silent grant) |
+| 11.1.1 — enhanced_view | VERIFIED | TablePage useEffect | STEP-8 wiring: sets document.documentElement[data-enhanced-view="1"] so themes/CSS can branch |
+| 11.1.1 — voice_message | VERIFIED | TablePage TableChat props | STEP-8 wiring: OR'd into TableChat isMuted |
+| 11.1.1 — text_message | VERIFIED | TablePage conditional render | STEP-8 wiring: gates TableChat rendering |
+| 11.1.1 — emoji_enabled | VERIFIED | TablePage conditional render | STEP-8 wiring: gates TableReactions + ThrowableSelector |
+| 11.1.1 — skip_animations | VERIFIED | TablePage useEffect | Sets --animation-speed CSS var to 0; Bible V8 §10.3 compliant |
+| 11.1.2 | Supabase persistence | VERIFIED | useUserTableSettings.ts | user_table_settings table, upsert on toggle, localStorage cache for instant reload |
+| 11.1 — dual-location rendering | VERIFIED | TableSettingsPanel is reused | Rendered in both HamburgerMenu (inline) and SettingsPanel embed (overlay from table gear). Same hook, same row, same events. |
+| 11.2.1-11.2.5 | Theme Settings (5 tabs) | VERIFIED | ThemeSettingsModal.tsx + useUserThemeSettings.ts | All 5 tabs (Themes/Table/Button/Background/Cards), per-game-type persistence, VIP gating, Reset/Confirm buttons |
+
+---
+
 ## SUMMARY STATISTICS
 
 | Category | Total | VERIFIED | NEEDS-VERIFY | PARTIAL | MISSING | BROKEN |
@@ -179,7 +203,8 @@
 | Ch 5: UI/UX | 4 | 4 | 0 | 0 | 0 | 0 |
 | Ch 6: Timers | 12 | 12 | 0 | 0 | 0 | 0 |
 | Ch 7: Edge Cases | 20 | 20 | 0 | 0 | 0 | 0 |
-| **TOTAL** | **98** | **97 (99%)** | **0 (0%)** | **1 (1%)** | **0 (0%)** | **0 (0%)** |
+| Ch 11: Settings & Themes | 17 | 15 | 2 | 0 | 0 | 0 |
+| **TOTAL** | **115** | **112 (97%)** | **2 (2%)** | **1 (1%)** | **0 (0%)** | **0 (0%)** |
 
 ### Bottom Line:
 - **99% verified** — Round 46 full deep audit of all 11 Bible V8 chapters

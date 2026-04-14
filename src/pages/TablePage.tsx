@@ -15,12 +15,18 @@
 
 import { useState, useEffect, useCallback, useRef, startTransition, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { SeatSlot, PotDisplay, CommunityCards, DealerButton, DealAnimation } from '../components/table';
+import {
+  SeatSlot,
+  PotDisplay,
+  CommunityCards,
+  DealerButton,
+  DealAnimation,
+} from '../components/table';
 import type { SeatPlayer, Card, LastAction, PositionBadge } from '../components/table/SeatSlot';
 import type { SidePot } from '../components/table/PotDisplay';
 import type { BoardStage } from '../components/table/CommunityCards';
 import { useTableWebSocket } from '../services/TableWebSocket';
-import { supabase, subscribeToHandState, getAuthUser } from '../lib/supabase';
+import { supabase, getAuthUser } from '../lib/supabase';
 // Phase 1.1 PR-3: authoritative engine WS state. Mounted always; becomes the
 // source of truth for game-state fields when VITE_USE_ENGINE_WS=1. The old
 // Supabase Realtime game-state path stays wired in parallel until PR-5 deletes
@@ -187,6 +193,7 @@ import { TableHUD } from '../components/table/TableHUD';
 import { MiniStatsCard } from '../components/table/MiniStatsCard';
 import { PreviousHandCard } from '../components/table/PreviousHandCard';
 import { reportError } from '../utils/errorReporter';
+import { ActionErrorToast, ActionErrorData } from '../components/table/ActionErrorToast';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // RAKE CONFIG HELPER — Derives rake config from official chart
@@ -242,8 +249,20 @@ const ENGINE_SUIT_MAP: Record<string, 'h' | 'd' | 'c' | 's'> = {
 
 // Bible V8 §11.1: cards_pre_sort — sort hole cards by rank (high → low)
 const RANK_ORDER: Record<string, number> = {
-  '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8,
-  '9': 9, '10': 10, T: 10, J: 11, Q: 12, K: 13, A: 14,
+  '2': 2,
+  '3': 3,
+  '4': 4,
+  '5': 5,
+  '6': 6,
+  '7': 7,
+  '8': 8,
+  '9': 9,
+  '10': 10,
+  T: 10,
+  J: 11,
+  Q: 12,
+  K: 13,
+  A: 14,
 };
 function sortCardsByRank(cards: Card[]): Card[] {
   return [...cards].sort((a, b) => (RANK_ORDER[b.rank] ?? 0) - (RANK_ORDER[a.rank] ?? 0));
@@ -355,24 +374,24 @@ interface TableState {
 // Seat positions — pushed OUTSIDE the felt edge so avatars/info boxes
 // are off the table. Only chips and action labels on the felt surface.
 const SEAT_POSITIONS_6MAX = [
-  { x: 50, y: 97 },   // Seat 1 (Hero — bottom center, pulled up slightly for card clearance)
-  { x: 5,  y: 75 },   // Seat 2 (lower left)
-  { x: 5,  y: 25 },   // Seat 3 (upper left)
-  { x: 50, y: 3 },    // Seat 4 (top center)
-  { x: 95, y: 25 },   // Seat 5 (upper right)
-  { x: 95, y: 75 },   // Seat 6 (lower right)
+  { x: 50, y: 97 }, // Seat 1 (Hero — bottom center, pulled up slightly for card clearance)
+  { x: 5, y: 75 }, // Seat 2 (lower left)
+  { x: 5, y: 25 }, // Seat 3 (upper left)
+  { x: 50, y: 3 }, // Seat 4 (top center)
+  { x: 95, y: 25 }, // Seat 5 (upper right)
+  { x: 95, y: 75 }, // Seat 6 (lower right)
 ];
 
 const SEAT_POSITIONS_9MAX = [
-  { x: 50, y: 97 },   // Seat 1 (Hero — bottom center, pulled up slightly for card clearance)
-  { x: 15, y: 90 },   // Seat 2 (bottom left)
-  { x: 2,  y: 68 },   // Seat 3 (left middle-low)
-  { x: 2,  y: 35 },   // Seat 4 (left middle-high)
-  { x: 20, y: 5 },    // Seat 5 (top left)
-  { x: 50, y: 0 },    // Seat 6 (top center)
-  { x: 80, y: 5 },    // Seat 7 (top right)
-  { x: 98, y: 35 },   // Seat 8 (right middle-high)
-  { x: 98, y: 68 },   // Seat 9 (right middle-low)
+  { x: 50, y: 97 }, // Seat 1 (Hero — bottom center, pulled up slightly for card clearance)
+  { x: 15, y: 90 }, // Seat 2 (bottom left)
+  { x: 2, y: 68 }, // Seat 3 (left middle-low)
+  { x: 2, y: 35 }, // Seat 4 (left middle-high)
+  { x: 20, y: 5 }, // Seat 5 (top left)
+  { x: 50, y: 0 }, // Seat 6 (top center)
+  { x: 80, y: 5 }, // Seat 7 (top right)
+  { x: 98, y: 35 }, // Seat 8 (right middle-high)
+  { x: 98, y: 68 }, // Seat 9 (right middle-low)
 ];
 
 // HORSE AVATARS — Use deterministic SVG generator (no external DiceBear dependency)
@@ -426,7 +445,7 @@ export default function TablePage({
   onTableInfoUpdate,
   isMultiTable = false,
 }: TablePageProps = {}) {
-  const { tableId: routeTableId } = useParams<{ tableId: string; }>();
+  const { tableId: routeTableId } = useParams<{ tableId: string }>();
   const tableId = embeddedTableId || routeTableId;
   const navigate = useNavigate();
   const toast = useToast();
@@ -587,13 +606,14 @@ export default function TablePage({
   // Phase 1.1 PR-3: authoritative engine WS. Always mounted so the WS
   // connection is warm; the snapshot is only APPLIED to tableState when the
   // feature flag is on. That isolates any behavior change to the flag flip.
-  const USE_ENGINE_WS = (
-    import.meta as unknown as { env: Record<string, string | undefined> }
-  ).env?.VITE_USE_ENGINE_WS === '1';
-  const { snapshot: engineSnapshot, status: engineWsStatus } = useEngineTableState(
-    tableId || undefined,
-    { enabled: USE_ENGINE_WS }
-  );
+  const USE_ENGINE_WS =
+    (import.meta as unknown as { env: Record<string, string | undefined> }).env
+      ?.VITE_USE_ENGINE_WS === '1';
+  const {
+    snapshot: engineSnapshot,
+    status: engineWsStatus,
+    lastEvent: engineLastEvent,
+  } = useEngineTableState(tableId || undefined, { enabled: USE_ENGINE_WS });
   // Phase 1.2 PR-F: disconnect FSM states per userId, surfaced by the
   // engine WS payload. Drives DisconnectToast below.
   const [disconnectStates, setDisconnectStates] = useState<
@@ -690,6 +710,7 @@ export default function TablePage({
 
   const [raiseAmount, setRaiseAmount] = useState(20);
   const [showRaiseSlider, setShowRaiseSlider] = useState(false);
+  const [actionError, setActionError] = useState<ActionErrorData | null>(null);
   /** FIX 185: Bible V8 §4.15 — Added 'call' (auto_call) distinct from 'callAny' (auto_call_any) */
   const [preAction, setPreAction] = useState<'fold' | 'check' | 'call' | 'callAny' | null>(null);
 
@@ -765,10 +786,12 @@ export default function TablePage({
             : preAction === 'check'
               ? 'auto_check'
               : preAction === 'call'
-                ? 'auto_call'  // FIX 185: Bible V8 §4.15 — auto_call (current bet only)
+                ? 'auto_call' // FIX 185: Bible V8 §4.15 — auto_call (current bet only)
                 : 'auto_call_any';
         // Tell server about pre-action so it can auto-execute on player's turn
-        serverSetPreAction(tableId, serverAction).catch((e) => reportError(e, 'TablePage.Failed_to_set'));
+        serverSetPreAction(tableId, serverAction).catch((e) =>
+          reportError(e, 'TablePage.Failed_to_set')
+        );
         // Also emit to MasterBus for local telemetry
         masterBus.emit('PRE_ACTION_SET', {
           tableId,
@@ -777,7 +800,9 @@ export default function TablePage({
         });
       } else {
         // Clear pre-action on server
-        serverSetPreAction(tableId, 'clear').catch((e) => reportError(e, 'TablePage.Failed_to_clear'));
+        serverSetPreAction(tableId, 'clear').catch((e) =>
+          reportError(e, 'TablePage.Failed_to_clear')
+        );
       }
     }
   }, [preAction, tableId, userId]);
@@ -1286,7 +1311,9 @@ export default function TablePage({
       return;
     }
     if (tableId) {
-      serverToggleStraddle(tableId, isStraddleEnabled).catch((e) => reportError(e, 'TablePage.Toggle_failed'));
+      serverToggleStraddle(tableId, isStraddleEnabled).catch((e) =>
+        reportError(e, 'TablePage.Toggle_failed')
+      );
     }
   }, [isStraddleEnabled, tableId]);
 
@@ -1312,7 +1339,10 @@ export default function TablePage({
   // Handle cashier add chips (deducts from wallet, adds to table stack)
   const handleAddChips = async (amount: number) => {
     if (!userId || userId === 'guest' || !tableId) {
-      reportError(new Error('Cannot add chips: not authenticated'), 'TablePage.Cannot_add_chips_not_authenticated');
+      reportError(
+        new Error('Cannot add chips: not authenticated'),
+        'TablePage.Cannot_add_chips_not_authenticated'
+      );
       return;
     }
     try {
@@ -1327,7 +1357,7 @@ export default function TablePage({
       const res = await GameServerAPI.addChips(tableId, amount);
       if (!res.success) {
         console.error('[Cashier] GameServerAPI.addChips failed:', res.error);
-        // We do not revert Wallet lock here since RPC deduct is locked. 
+        // We do not revert Wallet lock here since RPC deduct is locked.
         // This is a rare edge case: money left wallet but table engine failed to ingest.
         // Needs a manual intervention/audit log.
       }
@@ -1350,7 +1380,10 @@ export default function TablePage({
   // Handle cashier withdraw
   const handleWithdrawChips = async (amount: number) => {
     if (!userId || userId === 'guest' || !tableId) {
-      reportError(new Error('Cannot withdraw: not authenticated'), 'TablePage.Cannot_withdraw_not_authenticated');
+      reportError(
+        new Error('Cannot withdraw: not authenticated'),
+        'TablePage.Cannot_withdraw_not_authenticated'
+      );
       return;
     }
     try {
@@ -1451,7 +1484,7 @@ export default function TablePage({
     const suits: Array<'h' | 'd' | 'c' | 's'> = ['h', 'd', 'c', 's'];
     const ranks = ['A', 'K', 'Q', 'J', 'T', '9', '8', '7', '6', '5', '4', '3', '2'];
     const remainingCards: Array<{ rank: string; suit: 'h' | 'd' | 'c' | 's' }> = [];
-    const usedCards = new Set(currentBoard.map(c => `${c.rank}${c.suit}`));
+    const usedCards = new Set(currentBoard.map((c) => `${c.rank}${c.suit}`));
     for (let i = 0; i < cardsNeeded; i++) {
       let card: { rank: string; suit: 'h' | 'd' | 'c' | 's' };
       do {
@@ -1544,10 +1577,9 @@ export default function TablePage({
   }, [userSettings]);
 
   // Bible V8 §11.1: Supabase-backed user table preferences (12 toggles)
-  const {
-    settings: v8Settings,
-    loading: v8SettingsLoading,
-  } = useUserTableSettings(userId !== 'guest' ? userId : null);
+  const { settings: v8Settings, loading: v8SettingsLoading } = useUserTableSettings(
+    userId !== 'guest' ? userId : null
+  );
 
   // FIX-232: Ref for cards_pre_sort to avoid stale closure in hole card callbacks
   const cardsPreSortRef = useRef(v8Settings.cards_pre_sort);
@@ -1971,12 +2003,19 @@ export default function TablePage({
     };
   }, [tableId, userId]);
 
-  // Subscribe to server-side hand state broadcast (ServerTableEngine deals on the server)
+  // Phase 1.1 PR-5 (NO-GO-2): Migrated from subscribeToHandState (deleted)
+  // to the engine WebSocket EVENT channel. Regular hand-state updates now
+  // flow through mapEngineSnapshot + setTableState above. This effect
+  // handles only the transient EVENT payloads: insurance_offers, rit_*,
+  // time_bank_*, bbj_*, all_in_equity, rabbit_hunt_available.
   useEffect(() => {
     if (!tableId) return;
-    const unsubscribe = subscribeToHandState(tableId, (handState: Record<string, unknown>) => {
-      if (!handState) return;
-
+    const handState = engineLastEvent;
+    if (!handState) return;
+    // IIFE so the existing event-type early-return pattern still works
+    // without the enclosing useEffect continuing to regular-state code
+    // (that code has been deleted — mapEngineSnapshot owns game state).
+    (() => {
       // ═══════════════════════════════════════════════════════════════════════
       // FIX 89: Dispatch server Realtime event types.
       // The server sends different event types on the same hand-state channel:
@@ -2227,12 +2266,18 @@ export default function TablePage({
 
       // Rabbit Hunt: Server sends remaining deck cards after hand completes
       if (eventType === 'rabbit_hunt_available') {
-        const rabbitCards = handState.rabbit_cards as any[] || [];
+        const rabbitCards = (handState.rabbit_cards as any[]) || [];
         if (rabbitCards.length > 0 && heroFoldedInCurrentHandRef.current) {
           // Convert server card format (hearts/diamonds/clubs/spades) to client shorthand (h/d/c/s)
           const suitMap: Record<string, 'h' | 'd' | 'c' | 's'> = {
-            hearts: 'h', diamonds: 'd', clubs: 'c', spades: 's',
-            h: 'h', d: 'd', c: 'c', s: 's',
+            hearts: 'h',
+            diamonds: 'd',
+            clubs: 'c',
+            spades: 's',
+            h: 'h',
+            d: 'd',
+            c: 'c',
+            s: 's',
           };
           const converted = rabbitCards.map((c: any) => ({
             rank: String(c.rank),
@@ -2244,292 +2289,27 @@ export default function TablePage({
         return;
       }
 
-      const serverPlayers = (handState.players as any[]) || [];
-      const stage = (handState.stage as string) || 'preflop';
-      const communityCards = (handState.community_cards as any[]) || [];
-      const pot = (handState.pot as number) || 0;
-      const currentBet = (handState.current_bet as number) || 0;
-      const currentPlayer = handState.current_player as string | null;
-      const dealerSeat = (handState.dealer_seat as number) || 0;
-      // Bible V8 §2.4: Extract betting state fields from server broadcast
-      const serverMinRaise = (handState.min_raise as number) || 0;
-      const serverLastRaise = (handState.last_raise as number) || 0;
-      const serverPots = (handState.pots as any[]) || [];
-      const serverActionHistory = (handState.action_history as any[]) || [];
-      const handNumber = (handState.hand_number as number) || 0;
-
-      // FIX 172: Play new-hand sound when hand number increases (Bible V8 §5.1)
-      if (handNumber > 0 && soundService.isEnabled()) {
-        if (handNumber > (tableStateRef.current.handNumber || 0)) {
-          soundService.playNewHand();
-        }
-      }
-      // Trigger deal animation on new hand — increment key to force re-trigger even if prev animation still playing
-      if (handNumber > 0 && handNumber > prevHandNumberForDealRef.current) {
-        prevHandNumberForDealRef.current = handNumber;
-        setDealAnimationKey((k) => k + 1);
-      }
-
-      setTableState((prev) => {
-        const updatedPlayers = [...prev.players];
-        const isNewHand = handNumber > 0 && handNumber !== prev.handNumber;
-
-        // FIX: ONE-SEAT-PER-USER — deduplicate server players BEFORE merging.
-        // If the same user_id appears in multiple seats (engine bug or stale state),
-        // only keep the FIRST occurrence. This prevents ghost multi-seat rendering.
-        const seenUserIds = new Set<string>();
-        const dedupedServerPlayers = serverPlayers.filter((sp: any) => {
-          if (seenUserIds.has(sp.user_id)) {
-            console.warn('[Broadcast] DUPLICATE user_id in broadcast — ignoring extra seat', sp.seat, 'for', sp.user_id);
-            return false;
-          }
-          seenUserIds.add(sp.user_id);
-          return true;
-        });
-
-        // Merge server player data with existing UI state
-        for (const sp of dedupedServerPlayers) {
-          const seatIdx = (sp.seat as number) - 1;
-          if (seatIdx < 0 || seatIdx >= updatedPlayers.length) continue;
-
-          // FIX: Before placing this user, remove them from any OTHER seat they occupy
-          // (prevents same user appearing in multiple seats if seat changed)
-          for (let j = 0; j < updatedPlayers.length; j++) {
-            if (j !== seatIdx && updatedPlayers[j]?.id === sp.user_id) {
-              console.debug('[Broadcast] Clearing stale seat', j + 1, 'for user', sp.user_id, '(now at seat', sp.seat, ')');
-              updatedPlayers[j] = null as any;
-            }
-          }
-
-          const existing = updatedPlayers[seatIdx];
-          const isHero = sp.user_id === userId;
-
-          // Card security: server scrubs hole cards in broadcast (sends []) except at showdown.
-          // Hero gets cards via RLS-protected table_hole_cards channel.
-          // At showdown, server sends actual cards for all players → use sp.cards.
-          // FIX: On new hand, clear stale hero cards (they'll arrive fresh via secure channel).
-          let resolvedCards: any[] = [];
-          if (sp.cards && sp.cards.length > 0) {
-            resolvedCards = sp.cards; // Server sent cards (showdown or initial deal for opponents)
-          } else if (isNewHand) {
-            resolvedCards = []; // New hand — clear stale cards, hero will get fresh ones via RLS
-          } else {
-            resolvedCards = existing?.holeCards || []; // Same hand — preserve existing cards
-          }
-
-          updatedPlayers[seatIdx] = {
-            ...(existing || {}),
-            id: sp.user_id,
-            name: sp.username || existing?.name || `Seat ${sp.seat}`,
-            stack: sp.stack,
-            bet: sp.bet || 0,
-            holeCards: resolvedCards,
-            status: sp.is_folded
-              ? 'folded'
-              : sp.is_all_in
-                ? 'all_in'
-                : sp.is_sitting_out
-                  ? 'sitting_out'
-                  : sp.is_disconnected
-                    ? 'disconnected'
-                    : 'active',
-            isHero,
-            // Show cards for hero always; show opponent cards at showdown ONLY if not folded
-            showCards: isHero || (sp.cards && sp.cards.length > 0 && !sp.is_folded),
-          } as any;
-        }
-
-        // Clear seats that have no server player (engine is authoritative during active hands)
-        const serverSeatNums = new Set(dedupedServerPlayers.map((sp: any) => sp.seat));
-        for (let i = 0; i < updatedPlayers.length; i++) {
-          if (updatedPlayers[i] && !serverSeatNums.has(i + 1)) {
-            // Keep seat occupied from DB — don't clear non-playing spectator seats
-          }
-        }
-
-        // Determine current player's seat index
-        let currentPlayerSeat = 0;
-        if (currentPlayer) {
-          const cpSeat = serverPlayers.find((sp: any) => sp.user_id === currentPlayer);
-          if (cpSeat) currentPlayerSeat = cpSeat.seat;
-        }
-
-        return {
-          ...prev,
-          players: updatedPlayers,
-          pot,
-          communityCards: communityCards.map((c: any) => {
-            if (typeof c === 'string') {
-              try {
-                return JSON.parse(c);
-              } catch {
-                return c;
-              }
-            }
-            return c;
-          }),
-          boardStage: stage as BoardStage,
-          // Clear action labels on street change so they don't persist across streets
-          lastActions: stage !== prev.boardStage
-            ? Array(prev.lastActions.length).fill(null)
-            : prev.lastActions,
-          currentPlayerSeat,
-          dealerSeat,
-          isHandInProgress: stage !== 'preflop' || pot > 0,
-          // Bible V8 §2.4: Server-authoritative betting state
-          minRaise: serverMinRaise,
-          lastRaise: serverLastRaise,
-          currentBet,
-          sidePots: serverPots,
-          actionHistory: serverActionHistory,
-          handNumber,
-          // Sync lastBetAmounts from server broadcast player bets
-          lastBetAmounts: (() => {
-            const bets = [...prev.lastBetAmounts];
-            for (const sp of serverPlayers) {
-              const idx = (sp.seat as number) - 1;
-              if (idx >= 0 && idx < bets.length) {
-                bets[idx] = (sp.bet as number) || 0;
-              }
-            }
-            return bets;
-          })(),
-          // Bible V8 §2.3: Sync position labels from server broadcast
-          positions: (() => {
-            const pos = [...prev.positions];
-            for (const sp of serverPlayers) {
-              const idx = (sp.seat as number) - 1;
-              if (idx >= 0 && idx < pos.length) {
-                const label = (sp.position as string) || '';
-                // Map server BTN → D for dealer chip display
-                if (label === 'BTN') pos[idx] = 'D';
-                else if (
-                  label === 'SB' ||
-                  label === 'BB' ||
-                  label === 'UTG' ||
-                  label === 'MP' ||
-                  label === 'CO' ||
-                  label === 'HJ' ||
-                  label.startsWith('UTG+') ||
-                  label.startsWith('MP+')
-                )
-                  pos[idx] = label as any;
-                else if (label) pos[idx] = label as any;
-                else pos[idx] = null;
-              }
-            }
-            return pos;
-          })(),
-        };
-      });
-
-      // ═══════════════════════════════════════════════════════════════════════
-      // Rabbit Hunt: Track community cards for board state
-      // ═══════════════════════════════════════════════════════════════════════
-      if (communityCards.length > 0) {
-        const suitMap: Record<string, 'h' | 'd' | 'c' | 's'> = {
-          hearts: 'h', diamonds: 'd', clubs: 'c', spades: 's',
-          h: 'h', d: 'd', c: 'c', s: 's',
-        };
-        const boardForRabbit = communityCards.map((c: any) => {
-          if (typeof c === 'string') {
-            // Parse string format like "Ah" or "Td"
-            return { rank: c.slice(0, -1), suit: (c.slice(-1) as 'h' | 'd' | 'c' | 's') };
-          }
-          return { rank: String(c.rank), suit: suitMap[c.suit] || c.suit };
-        });
-        setCurrentBoard(boardForRabbit);
-      }
-
-      // ═══════════════════════════════════════════════════════════════════════
-      // Bible V8 §5.1 + §5.3: Winner detection — play win sound + set winner highlighting
-      // Server broadcasts winner_ids[] when WINNERS event fires (stage = showdown).
-      // ═══════════════════════════════════════════════════════════════════════
-      const serverWinnerIds = (handState.winner_ids as string[]) || [];
-      if (serverWinnerIds.length > 0) {
-        // Check if hero won — play appropriate sound
-        const heroWon = serverWinnerIds.includes(userId);
-        if (heroWon) {
-          playWinSound(pot);
-        }
-        // Set winner info for UI highlighting (community card indices, hand name)
-        // Winner hand name comes from the evaluated hand at showdown
-        const winnerPlayers = serverPlayers.filter((sp: any) =>
-          serverWinnerIds.includes(sp.user_id)
-        );
-        const handName =
-          winnerPlayers.length > 0 ? (winnerPlayers[0].hand_name as string) || '' : '';
-        setWinnerInfo({
-          playerIds: serverWinnerIds,
-          handName,
-          cardIndices: [], // Server can provide highlighted community card indices in future
-          amounts: {},
-        });
-
-        // Bible V8 §5.1 + §10.2: Pot-to-winner chip animation
-        // Fire chips from pot center to each winner's seat
-        const potCenter = { x: window.innerWidth * 0.5, y: window.innerHeight * 0.45 };
-        const winnerShare = pot / Math.max(serverWinnerIds.length, 1);
-        for (const winnerId of serverWinnerIds) {
-          const winnerSeatIdx = serverPlayers.findIndex((sp: any) => sp.user_id === winnerId);
-          if (winnerSeatIdx >= 0) {
-            // seatPositions is 0-indexed array — use winnerSeatIdx directly
-            const seatPos = seatPositions[winnerSeatIdx];
-            if (seatPos) {
-              const winnerPixelPos = {
-                x: (seatPos.x / 100) * window.innerWidth,
-                y: (seatPos.y / 100) * window.innerHeight,
-              };
-              const events = createPotToWinnerEvent(potCenter, winnerPixelPos, winnerShare);
-              setChipAnimations((prev) => [...prev, ...events]);
-            }
-          }
-        }
-
-        // Clear winner highlighting after 4 seconds so it doesn't persist into next hand
-        setTimeout(() => {
-          setWinnerInfo({ playerIds: [], handName: '', cardIndices: [], amounts: {} });
-        }, 4000);
-      }
-
-      // Detect all-in runout: if all non-folded players are all-in, enable dramatic mode
-      const nonFolded = serverPlayers.filter((sp: any) => !sp.is_folded);
-      const allInCount = nonFolded.filter((sp: any) => sp.is_all_in).length;
-      if (nonFolded.length >= 2 && allInCount >= nonFolded.length - 1) {
-        setIsAllInMode(true);
-      }
-
-      // --- NEW LOGIC: Hydrate the exact remaining time from the server payload ---
-      const serverTurnStart = handState.turn_start_time_ms as number | undefined;
-      const serverTurnDuration = handState.turn_duration_ms as number | undefined;
-      const cpId = handState.current_player as string | null;
-
-      if (cpId) {
-        if (serverTurnStart && serverTurnDuration) {
-          const elapsed = Date.now() - serverTurnStart;
-          const remainingSeconds = Math.max(0, Math.ceil((serverTurnDuration - elapsed) / 1000));
-          resetTimer(remainingSeconds);
-        } else {
-          // Fallback if the server didn't send precise timing
-          resetTimer(actionTimeSeconds);
-        }
-      }
-    });
-
-    return () => unsubscribe();
-  }, [tableId, userId]);
+      // Phase 1.1 PR-5: the 270-line "regular hand state" block that used to
+      // live here was the OLD Supabase Realtime path that duplicated what
+      // mapEngineSnapshot (above, useEffect on engineSnapshot) now does via
+      // the engine native WebSocket. Rule 12c: deleted in same PR as the
+      // subscribeToHandState switch-flip.
+    })();
+  }, [engineLastEvent, tableId, userId]);
 
   const [showSettings, setShowSettings] = useState(false);
   const [showShareHand, setShowShareHand] = useState(false);
   const [showTableMenu, setShowTableMenu] = useState(false);
   const [showSessionStats, setShowSessionStats] = useState(false);
   const [sharedHandData, setSharedHandData] = useState<any>(null);
-  
+
   // Real Name vs Alias
   const [useRealName, setUseRealName] = useState(() => {
     return localStorage.getItem(STORAGE_KEYS.USE_REAL_NAME) === 'true';
   });
-  const [heroProfile, setHeroProfile] = useState<{username: string, display_name: string} | null>(null);
+  const [heroProfile, setHeroProfile] = useState<{ username: string; display_name: string } | null>(
+    null
+  );
 
   // Sync settings when changed from other components (like TableMenu)
   useMasterBusSubscription('SETTINGS_CHANGED', (event: any) => {
@@ -2541,10 +2321,17 @@ export default function TablePage({
   // Fetch Hero profile just once if needed
   useEffect(() => {
     if (userId && userId !== 'guest') {
-      supabase.from('profiles').select('username, display_name').eq('id', userId).maybeSingle()
-        .then(({data}) => {
+      supabase
+        .from('profiles')
+        .select('username, display_name')
+        .eq('id', userId)
+        .maybeSingle()
+        .then(({ data }) => {
           if (data) {
-             setHeroProfile({ username: data.username || '', display_name: data.display_name || ''});
+            setHeroProfile({
+              username: data.username || '',
+              display_name: data.display_name || '',
+            });
           }
         });
     }
@@ -2958,12 +2745,13 @@ export default function TablePage({
             for (const extra of extraSeats) {
               Promise.resolve(
                 supabase
-                .from('table_seats')
-                .update({ left_at: new Date().toISOString() })
-                .eq('table_id', table.id)
-                .eq('seat_number', extra.seat_number)
-                .eq('user_id', userId)
-              ).then(({ error }) => {
+                  .from('table_seats')
+                  .update({ left_at: new Date().toISOString() })
+                  .eq('table_id', table.id)
+                  .eq('seat_number', extra.seat_number)
+                  .eq('user_id', userId)
+              )
+                .then(({ error }) => {
                   if (error) reportError(error, 'TablePage.Failed_to_remove_duplicate_seat');
                   else console.debug('[Seat] Removed duplicate seat', extra.seat_number);
                 })
@@ -2980,7 +2768,9 @@ export default function TablePage({
           setTableState((prev) => {
             // FIX: Start from CLEAN slate — DB is the source of truth for seated players.
             // This prevents ghost players from stale engine broadcasts or failed buy-ins.
-            const updatedPlayers: (typeof prev.players[0] | null)[] = Array(prev.players.length).fill(null) as any;
+            const updatedPlayers: ((typeof prev.players)[0] | null)[] = Array(
+              prev.players.length
+            ).fill(null) as any;
             let resolvedHeroSeat = 0; // Reset — only set if hero is in DB
             let heroAlreadyAssigned = false;
 
@@ -3016,7 +2806,12 @@ export default function TablePage({
             // Log any ghost seats that were cleared
             for (let i = 0; i < prev.players.length; i++) {
               if (prev.players[i] && !dbSeatNums.has(i + 1)) {
-                console.debug('[Seat] Cleared ghost player from seat', i + 1, '— not in DB:', prev.players[i]?.id);
+                console.debug(
+                  '[Seat] Cleared ghost player from seat',
+                  i + 1,
+                  '— not in DB:',
+                  prev.players[i]?.id
+                );
               }
             }
 
@@ -3026,7 +2821,11 @@ export default function TablePage({
             } else {
               heroSeatRef.current = 0; // Hero not seated — ensure ref is clean
             }
-            return { ...prev, players: updatedPlayers as typeof prev.players, heroSeat: resolvedHeroSeat };
+            return {
+              ...prev,
+              players: updatedPlayers as typeof prev.players,
+              heroSeat: resolvedHeroSeat,
+            };
           });
           // heroSeat already set inside the setTableState callback above (L1796)
           // No second setTableState needed — avoids unnecessary re-render
@@ -3166,7 +2965,9 @@ export default function TablePage({
       if (payload.balance !== undefined) {
         setAccountBalance(payload.balance);
       } else {
-        WalletService.getPlayerBalance(userId).then(setAccountBalance).catch((e) => reportError(e, 'TablePage.balanceSync'));
+        WalletService.getPlayerBalance(userId)
+          .then(setAccountBalance)
+          .catch((e) => reportError(e, 'TablePage.balanceSync'));
       }
     }
   });
@@ -3561,7 +3362,15 @@ export default function TablePage({
             // FIX: ONE-SEAT-PER-USER — if this user is already in another seat, remove them first
             for (let j = 0; j < updatedPlayers.length; j++) {
               if (updatedPlayers[j]?.id === newSeat.user_id) {
-                console.debug('[RealtimeSeats] Removing user', newSeat.user_id, 'from stale seat', j + 1, '(moving to', newSeat.seat_number, ')');
+                console.debug(
+                  '[RealtimeSeats] Removing user',
+                  newSeat.user_id,
+                  'from stale seat',
+                  j + 1,
+                  '(moving to',
+                  newSeat.seat_number,
+                  ')'
+                );
                 updatedPlayers[j] = null as any;
               }
             }
@@ -3726,11 +3535,11 @@ export default function TablePage({
         // Fast UI recovery via GameServerAPI.getTableState() full snapshot
         const syncData = lastEvent.data as any;
         if (!syncData) break;
-        
+
         setTableState((prev) => {
           const updatedPlayers = [...prev.players];
           const serverPlayers = syncData.players || [];
-          
+
           serverPlayers.forEach((sp: any) => {
             const seatIdx = sp.seat - 1;
             if (seatIdx >= 0 && seatIdx < updatedPlayers.length) {
@@ -3741,16 +3550,23 @@ export default function TablePage({
                 name: sp.username || existing?.name || `Seat ${sp.seat}`,
                 stack: sp.stack,
                 bet: sp.bet || 0,
-                holeCards: sp.user_id === userId || (sp.cards && sp.cards.length > 0 && !sp.is_folded) 
-                  ? sp.cards || existing?.holeCards || [] 
-                  : [],
-                status: sp.is_folded ? 'folded' : (sp.is_all_in ? 'all_in' : (sp.is_sitting_out ? 'sitting_out' : 'active')),
+                holeCards:
+                  sp.user_id === userId || (sp.cards && sp.cards.length > 0 && !sp.is_folded)
+                    ? sp.cards || existing?.holeCards || []
+                    : [],
+                status: sp.is_folded
+                  ? 'folded'
+                  : sp.is_all_in
+                    ? 'all_in'
+                    : sp.is_sitting_out
+                      ? 'sitting_out'
+                      : 'active',
                 isHero: sp.user_id === userId,
                 showCards: sp.cards && sp.cards.length > 0 && !sp.is_folded,
               } as any;
             }
           });
-          
+
           return {
             ...prev,
             handNumber: syncData.hand_number,
@@ -3878,7 +3694,8 @@ export default function TablePage({
                 id: p.userId,
                 name: p.username,
                 // FIX: Preserve existing avatar from DB — don't overwrite with empty presence avatar
-                avatar: p.avatar || existing?.avatar || (p.userId === userId ? heroAvatarUrl : '') || '',
+                avatar:
+                  p.avatar || existing?.avatar || (p.userId === userId ? heroAvatarUrl : '') || '',
                 stack: existing?.stack ?? 0,
                 status: existing?.status ?? 'active',
                 isHero: p.userId === userId,
@@ -4039,7 +3856,9 @@ export default function TablePage({
     // Server-authoritative: just send the request; server manages countdown
     setTimeBankActive(true);
     soundService.playChips();
-    GameServerAPI.activateTimeBank(tableId, userId).catch((e) => reportError(e, 'TablePage.activateTimeBank'));
+    GameServerAPI.activateTimeBank(tableId, userId).catch((e) =>
+      reportError(e, 'TablePage.activateTimeBank')
+    );
   }, [tableId, userId, timeBanksRemaining]);
 
   // Handle buying a time bank extension (VIP quota or diamond purchase)
@@ -4498,7 +4317,10 @@ export default function TablePage({
             // FIX 185: Bible V8 §4.15 auto_call — call current bet only
             // If bet changed since pre-action was set, invalidate
             const heroBetForAutoCall = tableState.lastBetAmounts?.[tableState.heroSeat - 1] || 0;
-            const toCallForAutoCall = Math.max(0, (tableState.currentBet || 0) - heroBetForAutoCall);
+            const toCallForAutoCall = Math.max(
+              0,
+              (tableState.currentBet || 0) - heroBetForAutoCall
+            );
             if (toCallForAutoCall > 0) {
               await handleCall();
               masterBus.emit('PRE_ACTION_EXECUTED', {
@@ -4674,9 +4496,7 @@ export default function TablePage({
           </div>
           <div className="header-center__bottom-row">
             <span className="header-brand">smarter.poker</span>
-            {tableState.clubName && (
-              <span className="header-club-name">{tableState.clubName}</span>
-            )}
+            {tableState.clubName && <span className="header-club-name">{tableState.clubName}</span>}
             {tableState.handNumber != null && tableState.handNumber > 0 && (
               <span className="header-hand-number">#{tableState.handNumber}</span>
             )}
@@ -4694,135 +4514,144 @@ export default function TablePage({
         upperLeft={
           <div className="hud-ul-column">
             <TableMenu
-            isOpen={showTableMenu}
-            onClose={() => setShowTableMenu(false)}
-            onToggle={() => setShowTableMenu((prev) => !prev)}
-            position="top-left"
-            sections={[
-              {
-                title: 'Quick Actions',
-                actions: [
-                  {
-                    id: 'sitout',
-                    label: 'Sit Out',
-                    icon: <SitOutIcon />,
-                    onClick: () => setShowSitOut(true),
-                  },
-                  ...(tableState.isTournament
-                    ? [
-                        {
-                          id: 'rebuy',
-                          label: 'Rebuy',
-                          icon: <RebuyIcon />,
-                          onClick: handleTournamentRebuy,
-                        },
-                        {
-                          id: 'addon',
-                          label: 'Add-On',
-                          icon: <AddOnIcon />,
-                          onClick: handleTournamentAddOn,
-                        },
-                      ]
-                    : [
-                        {
-                          id: 'rebuy',
-                          label: 'Add Chips',
-                          icon: <RebuyIcon />,
-                          onClick: () => setShowCashier(true),
-                        },
-                      ]),
-                  // Auto-Rebuy toggle (moved from QuickActionsBar to hamburger menu)
-                  ...(!tableState.isTournament
-                    ? [
-                        {
-                          id: 'auto-rebuy',
-                          label: isAutoRebuyEnabled ? 'Auto-Rebuy: ON' : 'Auto-Rebuy: OFF',
-                          icon: <RebuyIcon />,
-                          onClick: () => {
-                            const next = !isAutoRebuyEnabled;
-                            setIsAutoRebuyEnabled(next);
-                            try { localStorage.setItem('ca_auto_rebuy', String(next)); } catch { /* */ }
+              isOpen={showTableMenu}
+              onClose={() => setShowTableMenu(false)}
+              onToggle={() => setShowTableMenu((prev) => !prev)}
+              position="top-left"
+              sections={[
+                {
+                  title: 'Quick Actions',
+                  actions: [
+                    {
+                      id: 'sitout',
+                      label: 'Sit Out',
+                      icon: <SitOutIcon />,
+                      onClick: () => setShowSitOut(true),
+                    },
+                    ...(tableState.isTournament
+                      ? [
+                          {
+                            id: 'rebuy',
+                            label: 'Rebuy',
+                            icon: <RebuyIcon />,
+                            onClick: handleTournamentRebuy,
                           },
-                        },
-                      ]
-                    : []),
-                ],
-              },
-              {
-                title: 'Table Info',
-                actions: [
-                  {
-                    id: 'history',
-                    label: 'Hand History',
-                    icon: <HandHistoryIcon />,
-                    onClick: () => setShowHandReplay(true),
-                  },
-                  {
-                    id: 'leaderboard',
-                    label: 'Leaderboard',
-                    icon: <LeaderboardIcon />,
-                    onClick: () => setShowLeaderboard(true),
-                  },
-                  ...(!tableState.isTournament
-                    ? [
-                        {
-                          id: 'session-stats',
-                          label: 'Session Stats',
-                          icon: <SessionStatsIcon />,
-                          onClick: () => setShowSessionStats(true),
-                        },
-                      ]
-                    : []),
-                  // Bible V8 §11.1 — Settings accessible from BOTH table HUD menu AND hamburger menu
-                  {
-                    id: 'settings',
-                    label: 'Table Settings',
-                    icon: <HelpIcon />,
-                    onClick: () => setShowSettings(true),
-                  },
-                ],
-              },
-              {
-                title: 'Support',
-                actions: [
-                  {
-                    id: 'help',
-                    label: 'Help & Rules',
-                    icon: <HelpIcon />,
-                    onClick: () => setShowGameRules(true),
-                  },
-                ],
-              },
-              {
-                actions: [
-                  {
-                    id: 'leave',
-                    label: 'Leave Table',
-                    icon: <LeaveTableIcon />,
-                    onClick: () => setShowLeaveConfirm(true),
-                    danger: true,
-                  },
-                ],
-              },
-            ]}
-            tableName={tableState.tableName}
-            connectionStatus={isConnected ? 'connected' : 'disconnected'}
-          />
-          <button 
-            className="add-chips-icon-btn" 
-            style={{ marginTop: 12 }}
-            onClick={() => {
-              soundService.playButtonClick();
-              if (tableState.players[tableState.heroSeat - 1]) setShowBuyInModal(true);
-            }}
-            title="Add Chips"
-          >
-            <svg width="24" height="24" viewBox="0 0 18 18" fill="none">
-              <circle cx="9" cy="9" r="7" stroke="currentColor" strokeWidth="1.5" />
-              <path d="M9 6v6M6 9h6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
-          </button>
-        </div>
+                          {
+                            id: 'addon',
+                            label: 'Add-On',
+                            icon: <AddOnIcon />,
+                            onClick: handleTournamentAddOn,
+                          },
+                        ]
+                      : [
+                          {
+                            id: 'rebuy',
+                            label: 'Add Chips',
+                            icon: <RebuyIcon />,
+                            onClick: () => setShowCashier(true),
+                          },
+                        ]),
+                    // Auto-Rebuy toggle (moved from QuickActionsBar to hamburger menu)
+                    ...(!tableState.isTournament
+                      ? [
+                          {
+                            id: 'auto-rebuy',
+                            label: isAutoRebuyEnabled ? 'Auto-Rebuy: ON' : 'Auto-Rebuy: OFF',
+                            icon: <RebuyIcon />,
+                            onClick: () => {
+                              const next = !isAutoRebuyEnabled;
+                              setIsAutoRebuyEnabled(next);
+                              try {
+                                localStorage.setItem('ca_auto_rebuy', String(next));
+                              } catch {
+                                /* */
+                              }
+                            },
+                          },
+                        ]
+                      : []),
+                  ],
+                },
+                {
+                  title: 'Table Info',
+                  actions: [
+                    {
+                      id: 'history',
+                      label: 'Hand History',
+                      icon: <HandHistoryIcon />,
+                      onClick: () => setShowHandReplay(true),
+                    },
+                    {
+                      id: 'leaderboard',
+                      label: 'Leaderboard',
+                      icon: <LeaderboardIcon />,
+                      onClick: () => setShowLeaderboard(true),
+                    },
+                    ...(!tableState.isTournament
+                      ? [
+                          {
+                            id: 'session-stats',
+                            label: 'Session Stats',
+                            icon: <SessionStatsIcon />,
+                            onClick: () => setShowSessionStats(true),
+                          },
+                        ]
+                      : []),
+                    // Bible V8 §11.1 — Settings accessible from BOTH table HUD menu AND hamburger menu
+                    {
+                      id: 'settings',
+                      label: 'Table Settings',
+                      icon: <HelpIcon />,
+                      onClick: () => setShowSettings(true),
+                    },
+                  ],
+                },
+                {
+                  title: 'Support',
+                  actions: [
+                    {
+                      id: 'help',
+                      label: 'Help & Rules',
+                      icon: <HelpIcon />,
+                      onClick: () => setShowGameRules(true),
+                    },
+                  ],
+                },
+                {
+                  actions: [
+                    {
+                      id: 'leave',
+                      label: 'Leave Table',
+                      icon: <LeaveTableIcon />,
+                      onClick: () => setShowLeaveConfirm(true),
+                      danger: true,
+                    },
+                  ],
+                },
+              ]}
+              tableName={tableState.tableName}
+              connectionStatus={isConnected ? 'connected' : 'disconnected'}
+            />
+            <button
+              className="add-chips-icon-btn"
+              style={{ marginTop: 12 }}
+              onClick={() => {
+                soundService.playButtonClick();
+                if (tableState.players[tableState.heroSeat - 1]) setShowBuyInModal(true);
+              }}
+              title="Add Chips"
+            >
+              <svg width="24" height="24" viewBox="0 0 18 18" fill="none">
+                <circle cx="9" cy="9" r="7" stroke="currentColor" strokeWidth="1.5" />
+                <path
+                  d="M9 6v6M6 9h6"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </button>
+          </div>
         }
         upperRight={
           <MiniStatsCard
@@ -4919,13 +4748,19 @@ export default function TablePage({
                 <div className="table-game-info">
                   <span className="table-game-info__stakes">
                     {(tableState.blinds || '1/2').toUpperCase()}{' '}
-                    {(tableState.gameType === "No Limit Hold'em" ? 'NLH' :
-                      tableState.gameType === "Pot Limit Omaha" ? 'PLO' :
-                      tableState.gameType === "Fixed Limit Hold'em" ? 'FLH' :
-                      tableState.gameType || 'NLH').toUpperCase()}
+                    {(tableState.gameType === "No Limit Hold'em"
+                      ? 'NLH'
+                      : tableState.gameType === 'Pot Limit Omaha'
+                        ? 'PLO'
+                        : tableState.gameType === "Fixed Limit Hold'em"
+                          ? 'FLH'
+                          : tableState.gameType || 'NLH'
+                    ).toUpperCase()}
                   </span>
                   {tableState.tableName && (
-                    <span className="table-game-info__name">{tableState.tableName.toUpperCase()}</span>
+                    <span className="table-game-info__name">
+                      {tableState.tableName.toUpperCase()}
+                    </span>
                   )}
                 </div>
 
@@ -4983,7 +4818,7 @@ export default function TablePage({
           {seatPositions.map((pos, idx) => {
             const seatNumber = idx + 1;
             const player = getPlayerAtSeat(seatNumber);
-            
+
             // FIX: Apply use_alias and table_alias from settings directly to the hero's rendered name
             let derivedHeroName = player?.name;
             if (player?.isHero) {
@@ -5000,13 +4835,16 @@ export default function TablePage({
               }
               // If still "Player X" pattern and we have ANY profile info, use it
               if (derivedHeroName?.startsWith('Player ') && heroProfile) {
-                derivedHeroName = heroProfile.display_name || heroProfile.username || derivedHeroName;
+                derivedHeroName =
+                  heroProfile.display_name || heroProfile.username || derivedHeroName;
               }
             }
-            const displayPlayer = player ? {
-              ...player,
-              name: derivedHeroName!
-            } : null;
+            const displayPlayer = player
+              ? {
+                  ...player,
+                  name: derivedHeroName!,
+                }
+              : null;
 
             // Compute bet-chip offset direction toward table center (50%, 50%)
             const dx = 50 - pos.x;
@@ -5020,18 +4858,23 @@ export default function TablePage({
               <div
                 key={seatNumber}
                 className="seat-wrapper"
-                style={{
-                  left: `${pos.x}%`,
-                  top: `${pos.y}%`,
-                  '--bet-offset-x': `${betOffsetX}px`,
-                  '--bet-offset-y': `${betOffsetY}px`,
-                } as React.CSSProperties}
+                style={
+                  {
+                    left: `${pos.x}%`,
+                    top: `${pos.y}%`,
+                    '--bet-offset-x': `${betOffsetX}px`,
+                    '--bet-offset-y': `${betOffsetY}px`,
+                  } as React.CSSProperties
+                }
               >
                 <SeatSlot
                   seatNumber={seatNumber}
                   player={displayPlayer}
                   position={tableState.positions[idx] || null}
-                  isActive={seatNumber === tableState.currentPlayerSeat && v8Settings.highlight_active_players}
+                  isActive={
+                    seatNumber === tableState.currentPlayerSeat &&
+                    v8Settings.highlight_active_players
+                  }
                   lastAction={tableState.lastActions[idx] || null}
                   lastBetAmount={tableState.lastBetAmounts[idx] || 0}
                   timerProgress={
@@ -5142,25 +4985,28 @@ export default function TablePage({
         ) : (
           <>
             {/* ─── CONTROL STRIP — Minimal: Time Bank + Timer during hand, Rabbit Hunt after hand ─── */}
-            {tableState.isHandInProgress && tableState.currentPlayerSeat === tableState.heroSeat && (
-              <div className="control-strip control-strip--transparent">
-                {/* Time Bank */}
-                <button
-                  className="control-strip__btn"
-                  title="Time Bank"
-                  onClick={handleActivateTimeBank}
-                  disabled={timeBanksRemaining <= 0 || timeBankActive}
-                >
-                  <span className="control-strip__icon">⏱</span>
-                  <span className="control-strip__count">{timeBanksRemaining}</span>
-                </button>
+            {tableState.isHandInProgress &&
+              tableState.currentPlayerSeat === tableState.heroSeat && (
+                <div className="control-strip control-strip--transparent">
+                  {/* Time Bank */}
+                  <button
+                    className="control-strip__btn"
+                    title="Time Bank"
+                    onClick={handleActivateTimeBank}
+                    disabled={timeBanksRemaining <= 0 || timeBankActive}
+                  >
+                    <span className="control-strip__icon">⏱</span>
+                    <span className="control-strip__count">{timeBanksRemaining}</span>
+                  </button>
 
-                {/* Timer Display */}
-                <div className="control-strip__timer">
-                  <span className="control-strip__timer-val">{Math.ceil(actionTimeRemaining) || 0}s</span>
+                  {/* Timer Display */}
+                  <div className="control-strip__timer">
+                    <span className="control-strip__timer-val">
+                      {Math.ceil(actionTimeRemaining) || 0}s
+                    </span>
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
             {/* Rabbit Hunt — shows AFTER hand completes, not during */}
             {!tableState.isHandInProgress && isRabbitAvailable && (
@@ -5480,13 +5326,16 @@ export default function TablePage({
       {/* Observing / Join indicators REMOVED — empty seats already show "+ SIT" */}
 
       {/* Floating Chat/Mail Toggle Button (Bottom-Right) & I'm Back */}
-      <div className="floating-action-br" style={{ display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center' }}>
+      <div
+        className="floating-action-br"
+        style={{ display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center' }}
+      >
         {tableState.players[tableState.heroSeat - 1]?.status === 'sitting_out' && (
-          <button 
-            className="floating-im-back" 
+          <button
+            className="floating-im-back"
             onClick={() => {
-               soundService.playButtonClick();
-               if (tableId) setSitOut(tableId, false).catch(e => console.error(e));
+              soundService.playButtonClick();
+              if (tableId) setSitOut(tableId, false).catch((e) => console.error(e));
             }}
           >
             I'm Back
@@ -5782,10 +5631,7 @@ export default function TablePage({
       )}
 
       {/* Diamond Wallet Modal */}
-      <DiamondWalletModal
-        isOpen={showDiamondWallet}
-        onClose={() => setShowDiamondWallet(false)}
-      />
+      <DiamondWalletModal isOpen={showDiamondWallet} onClose={() => setShowDiamondWallet(false)} />
 
       {/* Cashier Modal */}
       <CashierModal
@@ -5942,12 +5788,15 @@ export default function TablePage({
                 toast.error('Buy-in failed. Please try again or check your balance.');
               }
             } else {
-              reportError({
-                userId,
-                isGuest: userId === 'guest',
-                tableId,
-                selectedSeat,
-              }, 'TablePage.FELL_THROUGH__no_branch_matched');
+              reportError(
+                {
+                  userId,
+                  isGuest: userId === 'guest',
+                  tableId,
+                  selectedSeat,
+                },
+                'TablePage.FELL_THROUGH__no_branch_matched'
+              );
               toast.error('Unable to complete buy-in. Please try again.');
             }
             setShowBuyInModal(false);
@@ -6076,7 +5925,9 @@ export default function TablePage({
             setSitOutNextHand(settingsUpdate.sitOutNextHand);
             // Bible V8 §7.12: Notify server of sit-out status change
             if (tableId) {
-              setSitOut(tableId, settingsUpdate.sitOutNextHand).catch((e) => reportError(e, 'TablePage.Failed'));
+              setSitOut(tableId, settingsUpdate.sitOutNextHand).catch((e) =>
+                reportError(e, 'TablePage.Failed')
+              );
             }
           }
           if (settingsUpdate.autoMuckWinners !== undefined) {

@@ -39,7 +39,22 @@ export interface ServerPingMessage {
   type: 'PING';
   ts: number;
 }
-export type ServerMessage = ServerSnapshotMessage | ServerDeltaMessage | ServerPingMessage;
+/**
+ * Phase 1.1 PR-5: transient EVENT messages for insurance_offers, rit_*,
+ * time_bank_*, bbj_*, all_in_equity, rabbit_hunt_available, etc. Emitted
+ * by TableStateHub.emitEvent from the server. Payload shape matches the
+ * old Supabase broadcast payload (drop-in for existing TablePage handlers).
+ */
+export interface ServerEventMessage {
+  type: 'EVENT';
+  tableId: string;
+  payload: Record<string, unknown>;
+}
+export type ServerMessage =
+  | ServerSnapshotMessage
+  | ServerDeltaMessage
+  | ServerPingMessage
+  | ServerEventMessage;
 
 // WS close codes the server emits (mirrors CLOSE_* constants on server).
 export const CLOSE_AUTH_FAILED = 4401;
@@ -68,6 +83,11 @@ export interface EngineStateClientOptions {
   onStatus?: (status: EngineConnectionStatus) => void;
   /** Called on non-recoverable errors (invalid token, server close with 4500). */
   onError?: (err: { code?: number; reason?: string }) => void;
+  /**
+   * Called when a transient EVENT message arrives (insurance_offers,
+   * rit_*, time_bank_*, bbj_*, etc). Payload is forwarded verbatim.
+   */
+  onEvent?: (payload: Record<string, unknown>) => void;
   /** Maximum reconnect attempts. Default: 10. */
   maxRetries?: number;
   /** Initial backoff ms. Default: 1000. */
@@ -92,6 +112,7 @@ export class EngineStateClient {
   constructor(opts: EngineStateClientOptions) {
     this.opts = {
       onStatus: () => undefined,
+      onEvent: () => undefined,
       onError: () => undefined,
       maxRetries: 10,
       initialDelay: 1000,
@@ -249,6 +270,12 @@ export class EngineStateClient {
         } catch {
           /* onclose will reconnect */
         }
+        return;
+      }
+      case 'EVENT': {
+        // Forward the transient event payload to the owning hook so the UI
+        // can dispatch by payload.type (insurance_offers, rit_offer, etc).
+        this.opts.onEvent(msg.payload);
         return;
       }
     }

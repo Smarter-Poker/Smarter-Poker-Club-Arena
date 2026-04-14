@@ -25,6 +25,8 @@ interface ActionPanelProps {
   showPotOdds?: boolean;
   confirmAllIn?: boolean;
   showBetSizePresets?: boolean;
+  /** Phase 2 T1-02 hint — drives preflop 2X/3X/4X presets vs postflop fraction presets. */
+  isPreflop?: boolean;
 }
 
 function formatChips(amount: number): string {

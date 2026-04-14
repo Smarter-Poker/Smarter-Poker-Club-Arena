@@ -55,13 +55,7 @@ export interface ValidationResult {
   sanitizedAmount?: number;
   reason?: string;
   code?: ValidationErrorCode;
-  /** Phase 1.3: Hints for the client to auto-correct the action (snap slider, swap action). */
-  hint?: {
-    suggestedAction?: ActionType;
-    suggestedAmount?: number;
-    minLegal?: number;
-    maxLegal?: number;
-  };
+  hint?: Record<string, unknown>; // Hint data for UI auto-correction
 }
 
 export type ValidationErrorCode =
@@ -232,8 +226,6 @@ export class ServerActionValidator {
         hint: {
           suggestedAction: 'bet',
           suggestedAmount: context.bigBlind,
-          minLegal: context.bigBlind,
-          maxLegal: context.playerStack,
         },
       };
     }
@@ -277,16 +269,13 @@ export class ServerActionValidator {
 
     // Must raise at least the minimum
     if (raiseIncrement < context.minRaise) {
-      const minRaiseTo = context.currentBet + context.minRaise;
       return {
         valid: false,
-        reason: `Minimum raise is ${context.minRaise} (raise to at least ${minRaiseTo})`,
+        reason: `Minimum raise is ${context.minRaise} (raise to at least ${context.currentBet + context.minRaise})`,
         code: 'BELOW_MIN_RAISE',
         hint: {
           suggestedAction: 'raise',
-          suggestedAmount: minRaiseTo,
-          minLegal: minRaiseTo,
-          maxLegal: maxRaiseTo,
+          suggestedAmount: context.currentBet + context.minRaise,
         },
       };
     }

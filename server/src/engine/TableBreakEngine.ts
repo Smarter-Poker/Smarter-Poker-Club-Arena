@@ -18,6 +18,7 @@
 // FIX 163: Use crypto-secure random for seat lottery fairness
 import { secureRandomInt } from './CryptoRandom.js';
 import { reportError } from '../services/errorReporter.js';
+import { deadlineScheduler, type DeadlineScheduler } from './DeadlineScheduler.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -79,9 +80,26 @@ export class TableBreakEngine {
     balanceThreshold: 2,
   };
   private onEvent?: (event: TableBreakEvent) => void;
+  /**
+   * Phase 1.2 PR-G-real: central scheduler used for the warning countdown.
+   * Replaces the bare setTimeout in initiateBreak. The countdown deadline
+   * persists with the scheduler so it survives a restart (rehydration is
+   * trivial — fire any past-due deadlines on the next tick).
+   */
+  private scheduler: DeadlineScheduler;
 
-  constructor(onEvent?: (event: TableBreakEvent) => void) {
+  constructor(
+    onEvent?: (event: TableBreakEvent) => void,
+    scheduler: DeadlineScheduler = deadlineScheduler
+  ) {
     this.onEvent = onEvent;
+    this.scheduler = scheduler;
+    this.scheduler.start();
+  }
+
+  /** Phase 1.2 PR-G-real: stable key for this engine's scheduler entries. */
+  private breakCountdownEventId(): string {
+    return 'table_break_countdown';
   }
 
   /**
@@ -118,9 +136,17 @@ export class TableBreakEngine {
       playerCount: brokenTable.playerCount,
     });
 
-    // Wait for countdown
+    // Phase 1.2 PR-G-real: countdown via DeadlineScheduler instead of setTimeout.
+    // The scheduler fires the resolve callback on the next tick after the
+    // deadline lands (≤100ms drift), keyed by the broken table's id so a
+    // simultaneous break of another table doesn't collide.
     await new Promise<void>((resolve) => {
-      setTimeout(resolve, this.config.warningSeconds * 1000);
+      this.scheduler.schedule({
+        tableId: brokenTable.tableId,
+        eventId: this.breakCountdownEventId(),
+        deadlineMs: Date.now() + this.config.warningSeconds * 1000,
+        callback: resolve,
+      });
     });
 
     // Phase 2: Execute break

@@ -40,26 +40,56 @@
 .pre-action-btn {
   flex: 1;
   display: flex;
+  /* Phase 2 T1-08: spec §5.3 — toggle dot ABOVE the label.
+     Was row+gap; now column with the dot rendered first. */
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  min-height: 40px;
-  padding: 8px 14px;
+  gap: 4px;
+  min-height: 52px;
+  padding: 6px 14px;
   font-size: 0.8125rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   border: 2px solid rgba(255, 255, 255, 0.12);
-  border-radius: 24px;
+  border-radius: 18px;
   background: rgba(255, 255, 255, 0.03);
   color: rgba(255, 255, 255, 0.55);
   cursor: pointer;
   transition: all 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-  touch-action: manipulation;
+  /* Allow pointer events to reach the parent .pre-action-bar swipe handler
+     while still letting clicks fire on the button itself. pan-y blocks
+     vertical scroll-jacking on mobile while leaving horizontal pan free. */
+  touch-action: pan-y;
   -webkit-tap-highlight-color: transparent;
   user-select: none;
   position: relative;
   overflow: hidden;
+}
+
+/* Phase 2 T1-08: circular dot ABOVE label per spec §5.3.
+   Off = empty hollow circle; On = filled with the per-action accent color
+   (drives off the parent .active class via the per-action overrides below). */
+.pre-action-btn__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  background: transparent;
+  flex-shrink: 0;
+  transition: all 0.18s ease;
+}
+
+.pre-action-btn__dot--on {
+  background: #fff;
+  border-color: #fff;
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.4);
+}
+
+.pre-action-btn__label {
+  display: block;
+  line-height: 1;
 }
 
 /* Glass overlay */
@@ -79,21 +109,11 @@
   transform: scale(0.96);
 }
 
-/* Checkmark indicator */
-.pre-action-btn__check {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  font-size: 11px;
-  font-weight: 900;
-  border: 2px solid rgba(255, 255, 255, 0.2);
-  background: transparent;
-  transition: all 0.2s ease;
-  flex-shrink: 0;
-}
+/* Phase 2 T1-08: legacy .pre-action-btn__check removed — dot now lives on
+   .pre-action-btn__dot above. Selectors targeting .pre-action-btn__check
+   inside .active states are kept for backward-compat in case downstream
+   styling references them, but are no-ops since the markup no longer
+   produces this element. */
 
 /* ═══════════════════════════════════════════════════════════════
    FOLD — Red tint
@@ -122,6 +142,12 @@
   background: #ef4444;
   border-color: #ef4444;
   color: #fff;
+}
+
+.pre-action-btn.fold.active .pre-action-btn__dot--on {
+  background: #ef4444;
+  border-color: #ef4444;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.55);
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -153,6 +179,12 @@
   color: #fff;
 }
 
+.pre-action-btn.check.active .pre-action-btn__dot--on {
+  background: #22c55e;
+  border-color: #22c55e;
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.55);
+}
+
 /* ═══════════════════════════════════════════════════════════════
    CALL — Amber tint
    ═══════════════════════════════════════════════════════════════ */
@@ -182,6 +214,12 @@
   color: #fff;
 }
 
+.pre-action-btn.call.active .pre-action-btn__dot--on {
+  background: #f59e0b;
+  border-color: #f59e0b;
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.55);
+}
+
 /* ═══════════════════════════════════════════════════════════════
    CALL ANY — Same amber but slightly different shade (FIX 185)
    ═══════════════════════════════════════════════════════════════ */
@@ -209,6 +247,12 @@
   background: #f59e0b;
   border-color: #f59e0b;
   color: #fff;
+}
+
+.pre-action-btn.call-any.active .pre-action-btn__dot--on {
+  background: #f59e0b;
+  border-color: #f59e0b;
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.55);
 }
 
 /* ═══════════════════════════════════════════════════════════════

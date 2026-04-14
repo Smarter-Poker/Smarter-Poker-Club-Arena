@@ -27,6 +27,14 @@ interface ActionPanelProps {
   showBetSizePresets?: boolean;
   /** Phase 2 T1-02 hint — drives preflop 2X/3X/4X presets vs postflop fraction presets. */
   isPreflop?: boolean;
+  /**
+   * Phase 2 T1-02: render the slider vertically on the right side per spec §5.2
+   * "Vertical or angled slider on the RIGHT side of the screen". When false,
+   * the legacy horizontal slider sits between amount-row and preset-row.
+   * Defaults to true (this is the spec-compliant behavior); explicit prop lets
+   * the parent fall back to horizontal during the visual rollout if needed.
+   */
+  verticalSlider?: boolean;
 }
 
 function formatChips(amount: number): string {
@@ -64,6 +72,8 @@ export default function ActionPanel({
   showPotOdds = false,
   confirmAllIn = true,
   showBetSizePresets = true,
+  isPreflop = false,
+  verticalSlider = true,
 }: ActionPanelProps) {
   const smallestChip = Math.max(bigBlind / 2, 0.01);
   const minRaise = roundToChip(rawMinRaise, smallestChip, rawMinRaise, rawMaxRaise);
@@ -72,6 +82,14 @@ export default function ActionPanel({
   const [pendingAllIn, setPendingAllIn] = useState(false);
   const [raiseAmount, setRaiseAmount] = useState(minRaise);
   const [turnPulse, setTurnPulse] = useState(false);
+  // Phase 2 T1-03: spec §5.2 — tapping the amount opens a numeric keyboard.
+  // amountTyping toggles the inline input; amountDraft holds the raw text
+  // while the user types so we don't fight their cursor mid-edit. Commit on
+  // Enter / blur — parse, clamp to [minRaise, maxRaise], over-stack snaps
+  // to all-in (= maxRaise per spec).
+  const [amountTyping, setAmountTyping] = useState(false);
+  const [amountDraft, setAmountDraft] = useState<string>('');
+  const amountInputRef = useRef<HTMLInputElement | null>(null);
   const [windowWidth, setWindowWidth] = useState(
     typeof window !== 'undefined' ? window.innerWidth : 1024
   );
@@ -108,15 +126,23 @@ export default function ActionPanel({
 
   const isDesktop = windowWidth >= 768;
 
-  const presets = useMemo(
-    () => [
-      { label: '1/3 Pot', value: roundToChip(pot * 0.33, smallestChip, minRaise, maxRaise) },
-      { label: '1/2 Pot', value: roundToChip(pot * 0.5, smallestChip, minRaise, maxRaise) },
-      { label: '2/3 Pot', value: roundToChip(pot * 0.75, smallestChip, minRaise, maxRaise) },
-      { label: 'Pot', value: roundToChip(pot, smallestChip, minRaise, maxRaise) },
-    ],
-    [pot, smallestChip, minRaise, maxRaise]
-  );
+  // Phase 2 T1-02: PokerBros §5.2 — preflop presets are BB multipliers (2X/3X/4X),
+  // postflop presets are pot fractions. Switching is driven by isPreflop prop
+  // which is set by TablePage from the engine snapshot's board state.
+  const presets = useMemo(() => {
+    if (isPreflop && bigBlind > 0) {
+      return [
+        { label: '2X', value: roundToChip(bigBlind * 2, smallestChip, minRaise, maxRaise) },
+        { label: '3X', value: roundToChip(bigBlind * 3, smallestChip, minRaise, maxRaise) },
+        { label: '4X', value: roundToChip(bigBlind * 4, smallestChip, minRaise, maxRaise) },
+      ];
+    }
+    return [
+      { label: '1/2 POT', value: roundToChip(pot * 0.5, smallestChip, minRaise, maxRaise) },
+      { label: '2/3 POT', value: roundToChip(pot * 0.67, smallestChip, minRaise, maxRaise) },
+      { label: 'POT', value: roundToChip(pot, smallestChip, minRaise, maxRaise) },
+    ];
+  }, [isPreflop, bigBlind, pot, smallestChip, minRaise, maxRaise]);
 
   // Track last slider value for haptic snap feedback
   const lastSnapRef = useRef<number>(minRaise);
@@ -168,6 +194,40 @@ export default function ActionPanel({
     },
     [minRaise, maxRaise, smallestChip]
   );
+
+  // Phase 2 T1-03: tap-the-amount → numeric keyboard.
+  const beginEditAmount = useCallback(() => {
+    haptic.light();
+    setAmountDraft(String(Math.round(raiseAmount * 100) / 100));
+    setAmountTyping(true);
+    // Focus on next paint so the inputMode="numeric" keyboard pops on iOS/Android.
+    requestAnimationFrame(() => {
+      amountInputRef.current?.focus();
+      amountInputRef.current?.select();
+    });
+  }, [raiseAmount]);
+
+  const commitAmountEdit = useCallback(() => {
+    setAmountTyping(false);
+    if (!amountDraft) return; // empty input — keep prior amount
+    // Allow comma decimals (some EU locales) and strip $ / spaces.
+    const cleaned = amountDraft.replace(/[,\s$]/g, '');
+    const parsed = Number(cleaned);
+    if (!Number.isFinite(parsed) || parsed <= 0) return; // garbage — keep prior
+    // Spec §5.2:
+    //   - exceeds stack → AUTO-CAPS to all-in (= maxRaise)
+    //   - below minimum → snaps to min legal
+    // roundToChip already clamps into [minRaise, maxRaise]; the all-in cap is
+    // therefore implicit (maxRaise IS the all-in amount per the engine).
+    const next = roundToChip(parsed, smallestChip, minRaise, maxRaise);
+    setRaiseAmount(next);
+    haptic.medium();
+  }, [amountDraft, smallestChip, minRaise, maxRaise]);
+
+  const cancelAmountEdit = useCallback(() => {
+    setAmountTyping(false);
+    setAmountDraft('');
+  }, []);
 
   // Slider change with snap-to-preset haptic feedback
   const handleSliderChange = useCallback(
@@ -234,57 +294,110 @@ export default function ActionPanel({
 
   // ─── RAISE MODE ──────────────────────────────────────────────
   if (isRaiseMode) {
-    return (
-      <div className="action-panel action-panel--raise">
-        {/* Amount Display with +/- */}
-        <div className="raise-header">
-          <button
-            className="raise-adjust raise-adjust--minus"
-            onClick={() => adjustRaise(-bigBlind)}
-            disabled={raiseAmount <= minRaise}
-          >
-            −
-          </button>
-          <div className="raise-value">
-            <span className="raise-value__amount">{formatChips(raiseAmount)}</span>
-            {bigBlind > 0 && (
-              <span className="raise-value__bb">{(raiseAmount / bigBlind).toFixed(1)} BB</span>
-            )}
-          </div>
-          <button
-            className="raise-adjust raise-adjust--plus"
-            onClick={() => adjustRaise(bigBlind)}
-            disabled={raiseAmount >= maxRaise}
-          >
-            +
-          </button>
-        </div>
+    // Phase 2 T1-02: shared slider markup so the vertical and horizontal
+    // variants stay in lockstep for accessibility (same min/max/step/aria-*).
+    const sliderEl = (
+      <input
+        type="range"
+        className="raise-slider"
+        min={minRaise}
+        max={maxRaise}
+        step={bigBlind || 1}
+        value={raiseAmount}
+        onChange={handleSliderChange}
+        style={{ '--slider-progress': `${sliderProgress}%` } as React.CSSProperties}
+        aria-label="Raise amount"
+        aria-valuemin={minRaise}
+        aria-valuemax={maxRaise}
+        aria-valuenow={raiseAmount}
+        aria-valuetext={`Raise to ${formatChips(raiseAmount)}`}
+        // Firefox-specific: native vertical orientation.
+        // WebKit/Blink rotate the horizontal slider via CSS in the
+        // .raise-slider--vertical wrapper.
+        {...(verticalSlider ? { orient: 'vertical' as const } : {})}
+      />
+    );
 
-        {/* Slider with tick marks at 25%, 50%, 75%, 100% */}
-        <div className="raise-slider-wrap">
-          <input
-            type="range"
-            className="raise-slider"
-            min={minRaise}
-            max={maxRaise}
-            step={bigBlind || 1}
-            value={raiseAmount}
-            onChange={handleSliderChange}
-            style={{ '--slider-progress': `${sliderProgress}%` } as React.CSSProperties}
-            aria-label="Raise amount"
-            aria-valuemin={minRaise}
-            aria-valuemax={maxRaise}
-            aria-valuenow={raiseAmount}
-            aria-valuetext={`Raise to ${formatChips(raiseAmount)}`}
-          />
-          {/* Tick marks */}
-          <div className="raise-slider-ticks">
-            <div className="raise-slider-tick" style={{ left: '25%' }} />
-            <div className="raise-slider-tick" style={{ left: '50%' }} />
-            <div className="raise-slider-tick" style={{ left: '75%' }} />
-            <div className="raise-slider-tick" style={{ left: '100%' }} />
-          </div>
-        </div>
+    return (
+      <div
+        className={`action-panel action-panel--raise${verticalSlider ? ' action-panel--raise-vertical' : ''}`}
+      >
+        {/* Phase 2 T1-02: vertical layout splits the panel — main column on
+            the left holds amount + presets + confirm; slider sits on the right
+            edge per spec §5.2. Horizontal fallback retains the legacy stack. */}
+        <div className="raise-layout">
+          <div className="raise-main">
+            {/* Amount Display with +/- */}
+            <div className="raise-header">
+              <button
+                className="raise-adjust raise-adjust--minus"
+                onClick={() => adjustRaise(-bigBlind)}
+                disabled={raiseAmount <= minRaise}
+              >
+                −
+              </button>
+              <div className="raise-value">
+                {amountTyping ? (
+                  <input
+                    ref={amountInputRef}
+                    type="text"
+                    /* iOS shows the digits-only keypad; Android still gets a
+                       numeric keyboard with the spec-required decimal point. */
+                    inputMode="decimal"
+                    pattern="[0-9]*[.,]?[0-9]*"
+                    className="raise-value__input"
+                    value={amountDraft}
+                    onChange={(e) => setAmountDraft(e.target.value)}
+                    onBlur={commitAmountEdit}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        commitAmountEdit();
+                      } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        cancelAmountEdit();
+                      }
+                    }}
+                    aria-label="Type exact bet amount"
+                    aria-valuemin={minRaise}
+                    aria-valuemax={maxRaise}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    className="raise-value__amount"
+                    onClick={beginEditAmount}
+                    aria-label={`Edit bet amount ${formatChips(raiseAmount)} — opens numeric keyboard`}
+                    title="Tap to type exact amount"
+                  >
+                    {formatChips(raiseAmount)}
+                  </button>
+                )}
+                {bigBlind > 0 && !amountTyping && (
+                  <span className="raise-value__bb">{(raiseAmount / bigBlind).toFixed(1)} BB</span>
+                )}
+              </div>
+              <button
+                className="raise-adjust raise-adjust--plus"
+                onClick={() => adjustRaise(bigBlind)}
+                disabled={raiseAmount >= maxRaise}
+              >
+                +
+              </button>
+            </div>
+
+            {/* Horizontal slider — only rendered in legacy mode. */}
+            {!verticalSlider && (
+              <div className="raise-slider-wrap">
+                {sliderEl}
+                <div className="raise-slider-ticks">
+                  <div className="raise-slider-tick" style={{ left: '25%' }} />
+                  <div className="raise-slider-tick" style={{ left: '50%' }} />
+                  <div className="raise-slider-tick" style={{ left: '75%' }} />
+                  <div className="raise-slider-tick" style={{ left: '100%' }} />
+                </div>
+              </div>
+            )}
 
         {/* Preset Row */}
         {showBetSizePresets && (
@@ -309,18 +422,50 @@ export default function ActionPanel({
             </button>
           </div>
         )}
-        {/* Confirm / Cancel Row */}
-        <div className="raise-actions">
-          <button className="raise-cancel" onClick={() => setIsRaiseMode(false)} aria-label="Back">
-            Back
-          </button>
-          <button
-            className="raise-confirm"
-            onClick={handleConfirmRaise}
-            aria-label={`Raise ${formatChips(raiseAmount)}`}
-          >
-            Raise {formatChips(raiseAmount)}
-          </button>
+            {/* Confirm / Cancel Row */}
+            <div className="raise-actions">
+              <button
+                className="raise-cancel"
+                onClick={() => setIsRaiseMode(false)}
+                aria-label="Back"
+              >
+                Back
+              </button>
+              <button
+                className="raise-confirm"
+                onClick={handleConfirmRaise}
+                aria-label={`Raise ${formatChips(raiseAmount)}`}
+              >
+                Raise {formatChips(raiseAmount)}
+              </button>
+            </div>
+          </div>
+
+          {/* Phase 2 T1-02: vertical slider rail on the right per spec §5.2.
+              Uses a CSS-rotated <input type="range"> wrapped in a fixed-height
+              column. Tick marks correspond to 25/50/75/100% of the legal range.
+              Hidden when verticalSlider is false. */}
+          {verticalSlider && (
+            <div className="raise-slider-vertical">
+              <div className="raise-slider-vertical__rail">
+                {sliderEl}
+                <div className="raise-slider-vertical__ticks" aria-hidden="true">
+                  <div className="raise-slider-vertical__tick" style={{ bottom: '100%' }} />
+                  <div className="raise-slider-vertical__tick" style={{ bottom: '75%' }} />
+                  <div className="raise-slider-vertical__tick" style={{ bottom: '50%' }} />
+                  <div className="raise-slider-vertical__tick" style={{ bottom: '25%' }} />
+                </div>
+              </div>
+              <div className="raise-slider-vertical__caps" aria-hidden="true">
+                <span className="raise-slider-vertical__cap raise-slider-vertical__cap--max">
+                  {formatChips(maxRaise)}
+                </span>
+                <span className="raise-slider-vertical__cap raise-slider-vertical__cap--min">
+                  {formatChips(minRaise)}
+                </span>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );

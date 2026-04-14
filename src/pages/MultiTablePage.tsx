@@ -17,6 +17,7 @@ import React, { useState, useCallback, useRef, useEffect, useMemo, lazy, Suspens
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { TableTabBar, type TabInfo } from '../components/table/TableTabBar';
 import { useMasterBusSubscription } from '../hooks/useMasterBusSubscription';
+import { useAuthUser } from '../hooks/useAuthUser';
 import './MultiTablePage.css';
 
 // Lazy-load TablePage for code splitting
@@ -42,22 +43,19 @@ const MAX_TABLES = 4;
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export default function MultiTablePage() {
+  const { user } = useAuthUser();
   const { tableId: routeTableId } = useParams<{ tableId: string }>();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
   // ─── State ───────────────────────────────────────────────────────────
+  // FIX: sessionStorage persistence removed — it caused "zombie" tabs to resurrect
+  // on every page refresh, compounding the rogue-table problem. Tables are now
+  // initialized exclusively from the URL param; they are rebuilt naturally when
+  // a user sits down (TABLE_SEATED) or follows a /table/:id link.
   const [tables, setTables] = useState<TableInstance[]>(() => {
-    // Try to restore from session storage first (survive page refresh)
-    const savedSession = sessionStorage.getItem('multi_table_session');
-    if (savedSession) {
-      try {
-        const parsed = JSON.parse(savedSession) as TableInstance[];
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      } catch {
-        /* fall through */
-      }
-    }
+    // Clean up any leftover zombie session so old data never re-hydrates
+    sessionStorage.removeItem('multi_table_session');
     // Initialize with the table from URL
     if (routeTableId) {
       return [
@@ -72,15 +70,6 @@ export default function MultiTablePage() {
     }
     return [];
   });
-
-  // Persist tables to sessionStorage on change
-  useEffect(() => {
-    if (tables.length > 0) {
-      sessionStorage.setItem('multi_table_session', JSON.stringify(tables));
-    } else {
-      sessionStorage.removeItem('multi_table_session');
-    }
-  }, [tables]);
 
   const [activeIndex, setActiveIndex] = useState(0);
   const [swipeOffset, setSwipeOffset] = useState(0);
@@ -108,12 +97,13 @@ export default function MultiTablePage() {
     }
   }, [tables.length, tabEntranceComplete]);
 
-  // Listen for table seating events from other pages
+  // Listen for table seating events from this user only
   // Type-safe bus handler types (extended beyond base BusPayloadMap)
   interface SeatedPayload {
     tableId: string;
     tableName?: string;
     seat?: number;
+    userId?: string; // FIX: added so we can filter to own events only
   }
   interface LeftPayload {
     tableId: string;
@@ -127,6 +117,12 @@ export default function MultiTablePage() {
   useMasterBusSubscription('TABLE_SEATED', (payload: SeatedPayload) => {
     const e = payload;
     if (!e.tableId) return;
+
+    // FIX: Only open a new tab if THIS user is the one being seated.
+    // Without this guard, any other player joining any table on the platform
+    // would spawn a rogue tab on the current user's screen.
+    if (e.userId && user?.id && e.userId !== user.id) return;
+
     // Functional updater handles dedup check via prev.find — no closure dep needed
     setTables((prev) => {
       if (prev.length >= MAX_TABLES || prev.find((t) => t.id === e.tableId)) return prev;

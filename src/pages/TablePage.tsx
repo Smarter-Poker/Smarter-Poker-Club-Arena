@@ -68,6 +68,8 @@ import BuyInModal from '../components/table/BuyInModal';
 import IdentityModal from '../components/table/IdentityModal';
 // Phase 1.2 PR-F: top-level disconnect FSM toast
 import DisconnectToast from '../components/table/DisconnectToast';
+// Phase 1.3 PR-C+D: server-rejection toast + auto-snap hint imported below
+// at the existing ActionErrorToast import line — do not duplicate here.
 import { BBJService } from '../services/BBJService';
 import RabbitHunt from '../components/table/RabbitHunt';
 import LeaderboardPanel from '../components/table/LeaderboardPanel';
@@ -619,6 +621,11 @@ export default function TablePage({
   const [disconnectStates, setDisconnectStates] = useState<
     Record<string, import('../utils/mapEngineSnapshot').DisconnectFsmEntry>
   >({});
+
+  // Phase 1.3 PR-C+D: server-side action rejection surfaced as a toast.
+  // Set whenever submitAction resolves with success === false. Auto-cleared
+  // by the toast component after 4s, or by the user (X button / Snap-to hint).
+  const [actionErrorData, setActionErrorData] = useState<ActionErrorData | null>(null);
 
   // State - initialize with empty data (no demo data!)
   const [tableState, setTableState] = useState<TableState>({
@@ -2990,7 +2997,11 @@ export default function TablePage({
   useMasterBusSubscription('ACTION_REJECTED', (payload: any) => {
     if (payload.tableId !== tableId) return;
     if (payload.playerId === userId) {
-      toast?.warning?.(`Action rejected: ${payload.reason || 'Invalid action'}`);
+      setActionErrorData({
+        error: payload.reason || 'Invalid action',
+        code: payload.code,
+        hint: payload.hint,
+      });
     }
   });
 
@@ -3598,11 +3609,42 @@ export default function TablePage({
         }
         break;
       case 'POT_WIN': {
-        // Bible V8 §5.1: Winner event — play sound + trigger chip-to-winner animation
+        // Bible V8 §5.1 + Phase 2 T1-05 (spec §6 Pot Shipping Animation):
+        // - Play winner sound
+        // - Fire 6-8 staggered chips on a quadratic-bezier arc from the pot
+        //   center to each winner's seat position over 400-600ms.
         const winnerIds = (lastEvent.data.winner_ids as string[]) || [];
         const potAmount = (lastEvent.data.pot as number) || 0;
         if (winnerIds.length > 0 && winnerIds.includes(userId)) {
           playWinSound(potAmount);
+        }
+        if (winnerIds.length > 0 && potAmount > 0) {
+          // Pot center in screen px (mirrors the constant 50,45 used by
+          // chip-to-pot animations elsewhere).
+          const potPos = {
+            x: (50 / 100) * window.innerWidth,
+            y: (45 / 100) * window.innerHeight,
+          };
+          // Resolve each winner's seat from the current player list (rotated
+          // positions already account for hero-at-bottom view).
+          const sharePerWinner = potAmount / winnerIds.length;
+          const events: ChipAnimationEvent[] = [];
+          for (const wid of winnerIds) {
+            // SeatPlayer.id is the userId — players[] index = seatNumber - 1.
+            const seatIdx = tableStateRef.current.players.findIndex((p) => p?.id === wid);
+            if (seatIdx < 0) continue;
+            const seatPct = seatPositions[seatIdx + 1] || { x: 50, y: 50 };
+            const winnerPos = {
+              x: (seatPct.x / 100) * window.innerWidth,
+              y: (seatPct.y / 100) * window.innerHeight,
+            };
+            // createPotToWinnerEvent already returns a fan of 3-8 chips with
+            // bezier arc, staggered 40ms each, 600ms duration — spec match.
+            events.push(...createPotToWinnerEvent(potPos, winnerPos, sharePerWinner));
+          }
+          if (events.length > 0) {
+            setChipAnimations((prev) => [...prev, ...events]);
+          }
         }
         break;
       }
@@ -3811,15 +3853,48 @@ export default function TablePage({
   const isHeroTurnContext =
     tableState.currentPlayerSeat === tableState.heroSeat && tableState.isHandInProgress;
 
+  /**
+   * Phase 1.3 PR-C+D: thin wrapper around submitAction that routes server-side
+   * rejections into the ActionErrorToast. submitAction never throws — it always
+   * resolves with `{success, error?, code?, hint?}` — so the old
+   * `.catch(console.warn)` pattern silently swallowed every rejection. This
+   * wrapper inspects the result and, on `success === false`, fills
+   * actionErrorData so the toast renders. Network-level throws still hit the
+   * fallback catch and surface as a generic 'Server unreachable' toast.
+   */
+  const submitActionWithToast = useCallback(
+    async (
+      tid: string,
+      uid: string,
+      action: string,
+      amount?: number,
+      callsite?: string
+    ): Promise<void> => {
+      try {
+        const res = await submitAction(tid, uid, action, amount);
+        if (!res.success) {
+          setActionErrorData({
+            error: res.error || 'Action rejected',
+            code: res.code,
+            hint: res.hint as ActionErrorData['hint'],
+          });
+          if (callsite) console.warn(`[Table] Server ${action} rejected (${callsite}):`, res);
+        }
+      } catch (err) {
+        setActionErrorData({ error: 'Server unreachable' });
+        if (callsite) console.warn(`[Table] Server ${action} threw (${callsite}):`, err);
+      }
+    },
+    []
+  );
+
   const handleTimerAutoFold = useCallback(() => {
     if (actionLockRef.current) return; // Prevent race with manual fold
     // Bible V8 §1.4: Server is authoritative — only send HTTP action, no Realtime broadcast
     try {
       soundService.playFold();
       if (tableId)
-        submitAction(tableId, userId || 'guest', 'fold').catch((e) =>
-          console.warn('[Table] Server auto-fold failed:', e)
-        );
+        submitActionWithToast(tableId, userId || 'guest', 'fold', undefined, 'auto-fold');
     } catch (err) {
       reportError(err, 'TablePage.Error_during_autofold');
     }
@@ -3895,9 +3970,7 @@ export default function TablePage({
     //Local engine call removed — server is authoritative
     soundService.playFold(); // SoundService handles haptic (light) per Bible V8 §5.4
     if (tableId)
-      await submitAction(tableId, userId, 'fold').catch((e) =>
-        console.warn('[Table] Server fold failed:', e)
-      );
+      await submitActionWithToast(tableId, userId, 'fold', undefined, 'handleFold');
   };
 
   const handleCheck = async () => {
@@ -3912,9 +3985,7 @@ export default function TablePage({
     //Local engine call removed — server is authoritative
     soundService.playCheck(); // SoundService handles haptic (light) per Bible V8 §5.4
     if (tableId)
-      await submitAction(tableId, userId, 'check').catch((e) =>
-        console.warn('[Table] Server check failed:', e)
-      );
+      await submitActionWithToast(tableId, userId, 'check', undefined, 'handleCheck');
   };
 
   const handleCall = async () => {
@@ -3929,9 +4000,7 @@ export default function TablePage({
     //Local engine call removed — server is authoritative
     soundService.playChips(); // SoundService handles haptic (light) per Bible V8 §5.4
     if (tableId)
-      await submitAction(tableId, userId, 'call').catch((e) =>
-        console.warn('[Table] Server call failed:', e)
-      );
+      await submitActionWithToast(tableId, userId, 'call', undefined, 'handleCall');
   };
 
   const handleBet = () => {
@@ -4007,25 +4076,19 @@ export default function TablePage({
           if (!validateAndExecuteAction('fold')) return;
           soundService.playFold(); // SoundService handles haptic per Bible V8 §5.4
           if (tableId)
-            await submitAction(tableId, userId, 'fold').catch((e) =>
-              console.warn('[Table] Server fold failed:', e)
-            );
+            await submitActionWithToast(tableId, userId, 'fold', undefined, 'panel-fold');
           break;
         case 'check':
           if (!validateAndExecuteAction('check')) return;
           soundService.playCheck();
           if (tableId)
-            await submitAction(tableId, userId, 'check').catch((e) =>
-              console.warn('[Table] Server check failed:', e)
-            );
+            await submitActionWithToast(tableId, userId, 'check', undefined, 'panel-check');
           break;
         case 'call':
           if (!validateAndExecuteAction('call')) return;
           soundService.playChips();
           if (tableId)
-            await submitAction(tableId, userId, 'call').catch((e) =>
-              console.warn('[Table] Server call failed:', e)
-            );
+            await submitActionWithToast(tableId, userId, 'call', undefined, 'panel-call');
           break;
         case 'raise':
           if (amount) {
@@ -4034,9 +4097,7 @@ export default function TablePage({
             if (!validateAndExecuteAction('raise', clamped)) return;
             soundService.playRaise(); // SoundService handles haptic (medium) per Bible V8 §5.4
             if (tableId)
-              await submitAction(tableId, userId, 'raise', clamped).catch((e) =>
-                console.warn('[Table] Server raise failed:', e)
-              );
+              await submitActionWithToast(tableId, userId, 'raise', clamped, 'panel-raise');
           }
           break;
         case 'allin':
@@ -4045,13 +4106,11 @@ export default function TablePage({
           soundService.playAllIn(); // SoundService handles haptic (strong) per Bible V8 §5.4
           setIsAllInMode(true);
           if (tableId)
-            await submitAction(tableId, userId, 'allin', heroStack).catch((e) =>
-              console.warn('[Table] Server allin failed:', e)
-            );
+            await submitActionWithToast(tableId, userId, 'allin', heroStack, 'panel-allin');
           break;
       }
     },
-    [tableState.heroSeat, tableId, userId]
+    [tableState.heroSeat, tableId, userId, submitActionWithToast]
   );
 
   const handleConfirmRaise = async () => {
@@ -4077,9 +4136,7 @@ export default function TablePage({
       //Local engine call removed — server is authoritative
       soundService.playRaise(); // SoundService handles haptic (medium) per Bible V8 §5.4
       if (tableId)
-        await submitAction(tableId, userId, 'raise', clampedRaise).catch((e) =>
-          console.warn('[Table] Server raise failed:', e)
-        );
+        await submitActionWithToast(tableId, userId, 'raise', clampedRaise, 'confirmRaise');
     } catch (err) {
       console.warn('[TablePage] Raise error:', err);
     }
@@ -4101,9 +4158,7 @@ export default function TablePage({
       soundService.playAllIn(); // SoundService handles haptic (strong) per Bible V8 §5.4
       setIsAllInMode(true);
       if (tableId)
-        await submitAction(tableId, userId, 'allin', heroStack).catch((e) =>
-          console.warn('[Table] Server allin failed:', e)
-        );
+        await submitActionWithToast(tableId, userId, 'allin', heroStack, 'handleAllIn');
     } catch (err) {
       console.warn('[TablePage] All-in error:', err);
     }
@@ -4440,6 +4495,26 @@ export default function TablePage({
       {/* Phase 1.2 PR-F: hero disconnect banner. Only renders when the
           engine FSM reports MISSING or DISCONNECTED for this user. */}
       <DisconnectToast heroUserId={userId} disconnectStates={disconnectStates} />
+      {/*
+        Phase 1.3 PR-C+D: server-rejection toast.
+        Auto-clears after 4s (component-internal). The Snap-to-hint button
+        routes back through the unified action handler so server-suggested
+        amounts are clamped/validated client-side just like a manual click.
+      */}
+      <ActionErrorToast
+        errorData={actionErrorData}
+        onClear={() => setActionErrorData(null)}
+        onApplyHint={(action, amount) => {
+          // Map server hint actions to handleActionPanelAction's signature.
+          if (action === 'fold' || action === 'check' || action === 'call') {
+            handleActionPanelAction(action);
+          } else if (action === 'raise' || action === 'bet') {
+            handleActionPanelAction('raise', amount);
+          } else if (action === 'allin' || action === 'all-in' || action === 'all_in') {
+            handleActionPanelAction('allin');
+          }
+        }}
+      />
       {/* ═══════════════════════════════════════════════════════════════════════
           HEADER BAR — Compact premium-style with game info
           ═══════════════════════════════════════════════════════════════════════ */}
@@ -5776,10 +5851,12 @@ export default function TablePage({
                 roomService.joinRoom(tableId, userId, username || 'Player', selectedSeat, amount);
 
                 // Notify all consumers (MultiTablePage tabs, WaitlistPage, ClubLobby, DailyChallenges, etc.)
+                // userId is included so MultiTablePage only opens a tab for the current user's OWN seating event.
                 masterBus.emit('TABLE_SEATED', {
                   tableId,
                   seat: selectedSeat,
                   tableName: tableState.tableName,
+                  userId,
                 });
 
                 // Player seated successfully

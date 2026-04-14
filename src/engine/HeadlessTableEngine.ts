@@ -15,7 +15,7 @@
  * Multiple tables can deal simultaneously.
  */
 
-import { supabase, broadcastHandState, cleanupBroadcastChannel } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
 import { HandController, type HandConfig, type HandEvent } from './HandController';
 import { evaluateHand, evaluateOmahaHand, cardToString, determineWinners } from './PokerEngine';
 import { straddleEngine } from './StraddleEngine';
@@ -234,8 +234,7 @@ export class HeadlessTableEngine {
     HorseBrainAdapter.clearTableSessions(this.tableId);
     // Clean up per-table persistence
 
-    // Clean up broadcast channel to prevent resource leak
-    cleanupBroadcastChannel(this.tableId);
+    // Phase 1.1 PR-5: broadcast channel deleted — no cleanup needed.
     this.persistence.dispose();
 
     // Clean up straddle and RIT engine state for this table (prevents stale enrollments/offers)
@@ -850,43 +849,20 @@ export class HeadlessTableEngine {
   }
 
   /**
-   * Broadcast the current hand state to all TablePage subscribers via Realtime.
-   * Called after every hand event so the UI stays in sync.
+   * Phase 1.1 PR-5 (NO-GO-2): no-op.
+   * HeadlessTableEngine was the client-side dual-engine from the pre-
+   * server-authoritative era. Its attempts to broadcast game state via
+   * Supabase Realtime were the second half of the dual-broadcast pattern
+   * that rule 12c forbids. The engine WS at
+   * wss://engine.smarter.poker/ws/table/:id is the sole authoritative
+   * transport, consumed by src/hooks/useEngineTableState.ts. Existing
+   * HeadlessTableEngine callers still invoke this method after each hand
+   * event; keeping it as a no-op prevents cascading deletes into
+   * FlashPool / Tournament / CashGame / SpinIt orchestrators. Deleting
+   * HeadlessTableEngine outright is its own atomic unit, separate scope.
    */
   private broadcastCurrentState(): void {
-    if (!this.handController || !this.tableInfo) return;
-
-    const state = this.handController.getState();
-
-    // Resolve current player seat number to user_id
-    const currentSeatPlayer = state.players.find(
-      (p: { seat: number }) => p.seat === state.currentPlayerSeat
-    );
-
-    broadcastHandState(this.tableId, {
-      table_id: this.tableId,
-      hand_number: this.handCount,
-      pot: state.pot ?? 0,
-      community_cards: state.communityCards ?? [],
-      current_bet: state.currentBet ?? 0,
-      current_player: currentSeatPlayer?.user_id ?? null,
-      dealer_seat: state.dealerSeat ?? this.currentHandDealerSeat,
-      stage: state.stage ?? 'preflop',
-      players: (state.players ?? []).map((p) => ({
-        seat: p.seat,
-        user_id: p.user_id,
-        username: p.username,
-        stack: p.stack,
-        bet: p.bet ?? 0,
-        // 🔒 SECURE HOLE CARD SCRUBBER 🔒
-        // Never transmit private cards during active betting rounds.
-        // At showdown, only reveal non-folded players' cards.
-        cards: state.stage === 'showdown' && !p.is_folded ? (p.cards ?? null) : null,
-        is_folded: p.is_folded ?? false,
-        is_all_in: p.is_all_in ?? false,
-        is_sitting_out: p.is_sitting_out ?? false,
-      })),
-    });
+    // no-op — see method comment above
   }
 
   private handleHandEvent(event: HandEvent, players: SeatedPlayer[]): void {

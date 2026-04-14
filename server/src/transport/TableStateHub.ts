@@ -55,7 +55,13 @@ export interface DeltaMessage {
   patch: JsonPatchOperation[];
 }
 
-export type HubMessage = SnapshotMessage | DeltaMessage;
+export interface EventMessage {
+  type: 'EVENT';
+  tableId: string;
+  payload: Record<string, unknown>;
+}
+
+export type HubMessage = SnapshotMessage | DeltaMessage | EventMessage;
 
 /**
  * Minimal interface a subscriber must satisfy.
@@ -151,6 +157,15 @@ export class TableStateHub {
    */
   unsubscribeAll(sub: HubSubscriber): void {
     for (const room of this.rooms.values()) room.subscribers.delete(sub);
+  }
+
+  /**
+   * Emit a transient event (e.g. time bank timeout, insurance offer) to all subscribers.
+   */
+  emitEvent(tableId: string, payload: Record<string, unknown>): void {
+    const room = this.rooms.get(tableId);
+    if (!room) return;
+    this.broadcast(room, { type: 'EVENT', tableId, payload });
   }
 
   /**

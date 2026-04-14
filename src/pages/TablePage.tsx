@@ -21,6 +21,12 @@ import type { SidePot } from '../components/table/PotDisplay';
 import type { BoardStage } from '../components/table/CommunityCards';
 import { useTableWebSocket } from '../services/TableWebSocket';
 import { supabase, subscribeToHandState, getAuthUser } from '../lib/supabase';
+// Phase 1.1 PR-3: authoritative engine WS state. Mounted always; becomes the
+// source of truth for game-state fields when VITE_USE_ENGINE_WS=1. The old
+// Supabase Realtime game-state path stays wired in parallel until PR-5 deletes
+// it, so flipping the flag is a pure rollout switch.
+import { useEngineTableState } from '../hooks/useEngineTableState';
+import { mapEngineSnapshot } from '../utils/mapEngineSnapshot';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { masterBus } from '../core/MasterBus';
 import {
@@ -563,11 +569,24 @@ export default function TablePage({
   const safeBB = (blindsStr?: string | null, fallback = 2): number =>
     parseFloat((blindsStr || '?/?').split('/')[1] || String(fallback)) || fallback;
 
-  // WebSocket connection for real-time game state
+  // WebSocket connection for real-time game state (legacy Supabase Realtime
+  // path — still used for presence, chat, and game-state when the feature
+  // flag below is off).
   const { isConnected, presence, lastEvent, sendAction, sendChat, updateSeat } = useTableWebSocket(
     tableId || '',
     userId,
     username
+  );
+
+  // Phase 1.1 PR-3: authoritative engine WS. Always mounted so the WS
+  // connection is warm; the snapshot is only APPLIED to tableState when the
+  // feature flag is on. That isolates any behavior change to the flag flip.
+  const USE_ENGINE_WS = (
+    import.meta as unknown as { env: Record<string, string | undefined> }
+  ).env?.VITE_USE_ENGINE_WS === '1';
+  const { snapshot: engineSnapshot, status: engineWsStatus } = useEngineTableState(
+    tableId || undefined,
+    { enabled: USE_ENGINE_WS }
   );
 
   // State - initialize with empty data (no demo data!)
@@ -594,6 +613,52 @@ export default function TablePage({
     bountyMap: {},
     isBountyTournament: false,
   });
+
+  // Phase 1.1 PR-3: apply authoritative engine snapshot to tableState when
+  // the feature flag is on. This one effect replaces the entire Supabase-
+  // Realtime-as-game-state path (which PR-5 deletes). The mapping is pure
+  // and idempotent; same snapshot → same patch, so React dedupes renders.
+  useEffect(() => {
+    if (!USE_ENGINE_WS) return;
+    if (!engineSnapshot) return;
+    const mapped = mapEngineSnapshot(engineSnapshot, userId, tableState.maxPlayers);
+    setTableState((prev) => {
+      // Merge per-seat players carefully: engine provides the full authoritative
+      // roster. The SeatPlayer shape the UI wants matches mapped.players[i].
+      const nextPlayers: (SeatPlayer | null)[] = mapped.players.map((p) =>
+        p ? (p as unknown as SeatPlayer) : null
+      );
+      return {
+        ...prev,
+        pot: mapped.pot,
+        communityCards: mapped.communityCards as Card[],
+        boardStage: mapped.boardStage as BoardStage,
+        dealerSeat: mapped.dealerSeat,
+        currentPlayerSeat: mapped.currentPlayerSeat,
+        players: nextPlayers,
+        positions: mapped.positions as PositionBadge[],
+        lastActions: mapped.lastActions as LastAction[],
+        lastBetAmounts: mapped.lastBetAmounts,
+        currentBet: mapped.currentBet,
+        minRaise: mapped.minRaise,
+        lastRaise: mapped.lastRaise,
+        sidePots: mapped.sidePots.map((sp, i) => ({
+          id: `sp_${i}`,
+          amount: sp.amount,
+          // PotDisplay's SidePot uses eligiblePlayers (player-name strings).
+          // Engine gives eligible seat numbers — resolve to names via prev.players.
+          eligiblePlayers: sp.eligibleSeats
+            .map((seat) => prev.players[seat - 1]?.name)
+            .filter((n): n is string => typeof n === 'string'),
+        })) as SidePot[],
+        actionTimerDeadline: mapped.actionTimerDeadline,
+        actionTimerPlayerId: mapped.actionTimerPlayerId,
+        isHandInProgress:
+          mapped.boardStage !== 'waiting' &&
+          (mapped.handNumber > 0 || mapped.players.some((p) => p !== null)),
+      };
+    });
+  }, [engineSnapshot, USE_ENGINE_WS, userId, tableState.maxPlayers]);
 
   const [raiseAmount, setRaiseAmount] = useState(20);
   const [showRaiseSlider, setShowRaiseSlider] = useState(false);

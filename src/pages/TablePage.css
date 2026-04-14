@@ -694,6 +694,58 @@
   z-index: 20;
 }
 
+/*
+ * Phase 2 T1-04 — PokerBros hand-strength label at pot center on showdown.
+ * Pops in, holds ~1s, fades out. Per POKERBROS_CLONE_SPEC.md §6 line 548:
+ *   "Hand strength label displayed at pot center temporarily (1 second)"
+ * Total duration 1.4s (150ms in + 850ms hold + 400ms out) so the label is
+ * readable without being in the way of the next hand.
+ */
+.pot-hand-strength {
+  position: absolute;
+  top: -32px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 16px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(20, 20, 24, 0.95), rgba(32, 32, 40, 0.95));
+  border: 1.5px solid rgba(255, 222, 92, 0.5);
+  color: #ffde5c;
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  z-index: 25;
+  pointer-events: none;
+  box-shadow:
+    0 6px 18px rgba(0, 0, 0, 0.55),
+    0 0 16px rgba(255, 222, 92, 0.25);
+  animation: pot-hand-strength-show 1400ms cubic-bezier(0.2, 0.8, 0.4, 1) forwards;
+}
+
+@keyframes pot-hand-strength-show {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(6px) scale(0.85);
+  }
+  15% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1.1);
+  }
+  25% {
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+  70% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(-2px) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-8px) scale(0.97);
+  }
+}
+
 /* Community Cards Area */
 .community-area {
   position: absolute;

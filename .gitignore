@@ -29,3 +29,4 @@ supabase/.temp
 .DS_Store
 # Generated PioSolver trees (regeneratable)
 scripts/trees/
+server/vitest.config.ts.timestamp-*.mjs

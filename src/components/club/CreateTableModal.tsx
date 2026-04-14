@@ -3,7 +3,7 @@
  * Full-featured cash game creation with ALL settings required before going live
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { tableService } from '../../services/TableService';
 import type { GameVariant, TableSettings } from '../../types/database.types';
 import styles from './CreateTableModal.module.css';
@@ -46,14 +46,19 @@ export default function CreateTableModal({ clubId, onClose, onSuccess }: CreateT
   const [bigBlind, setBigBlind] = useState('2');
   const [maxPlayers, setMaxPlayers] = useState('9');
   const [loading, setLoading] = useState(false);
+  const isMounted = useRef(true);
   const [error, setError] = useState<string | null>(null);
   const [useCustomStakes, setUseCustomStakes] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
 
   useEffect(() => {
+    isMounted.current = true;
     setModalVisible(false);
     const timer = setTimeout(() => setModalVisible(true), 30);
-    return () => clearTimeout(timer);
+    return () => {
+      isMounted.current = false;
+      clearTimeout(timer);
+    };
   }, []);
 
   // ── Buy-in Range ──
@@ -143,12 +148,18 @@ export default function CreateTableModal({ clubId, onClose, onSuccess }: CreateT
         Number(maxPlayers),
         fullSettings
       );
-      onSuccess();
+      if (isMounted.current) {
+        onSuccess();
+      }
     } catch (err) {
       reportError(err, 'CreateTableModal.Failed_to_create_table');
-      setError((err as Error).message || 'Failed to create table. Please try again.');
+      if (isMounted.current) {
+        setError((err as Error).message || 'Failed to create table. Please try again.');
+      }
     } finally {
-      setLoading(false);
+      if (isMounted.current) {
+        setLoading(false);
+      }
     }
   };
 

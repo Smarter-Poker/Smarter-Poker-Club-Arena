@@ -331,7 +331,7 @@ export async function setPreAction(
 export async function addChips(tableId: string, amount: number): Promise<ActionResult> {
   try {
     const headers = await getAuthHeaders();
-    const res = await fetch(`${SERVER_URL}/addchips`, {
+    const res = await fetch(`${GAME_SERVER_URL}/addchips`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ tableId, amount }),
@@ -638,6 +638,7 @@ export default {
   setPreAction,
   setSitOut,
   toggleStraddle,
+  addChips,
   getTableState,
   respondToRIT,
   respondToInsurance,

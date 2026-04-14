@@ -31,6 +31,8 @@ export interface UseEngineTableStateResult {
   seq: number;
   status: EngineConnectionStatus;
   lastError: { code?: number; reason?: string } | null;
+  /** Last transient EVENT payload from the engine (insurance, RIT, timebank, BBJ, etc). */
+  lastEvent: Record<string, unknown> | null;
 }
 
 export function useEngineTableState(
@@ -42,6 +44,7 @@ export function useEngineTableState(
   const [seq, setSeq] = useState<number>(0);
   const [status, setStatus] = useState<EngineConnectionStatus>('idle');
   const [lastError, setLastError] = useState<{ code?: number; reason?: string } | null>(null);
+  const [lastEvent, setLastEvent] = useState<Record<string, unknown> | null>(null);
 
   // Keep the client in a ref so effect cleanup can close it without re-render.
   const clientRef = useRef<EngineStateClient | null>(null);
@@ -64,6 +67,7 @@ export function useEngineTableState(
       },
       onStatus: (s) => setStatus(s),
       onError: (e) => setLastError(e),
+      onEvent: (payload) => setLastEvent(payload),
     });
 
     clientRef.current = client;
@@ -76,10 +80,11 @@ export function useEngineTableState(
       setSeq(0);
       setStatus('idle');
       setLastError(null);
+      setLastEvent(null);
     };
   }, [tableId, enabled]);
 
-  return { snapshot, seq, status, lastError };
+  return { snapshot, seq, status, lastError, lastEvent };
 }
 
 export default useEngineTableState;

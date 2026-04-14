@@ -159,6 +159,12 @@ export class TableWebSocket {
       // Subscribe to channel - returns the channel, callback receives status
       await new Promise<void>((resolve, reject) => {
         this.channel!.subscribe(async (status) => {
+          // Prevent zombie subscriptions if disconnect() was called during subscribe
+          if (!this.channel) {
+            resolve();
+            return;
+          }
+
           if (status === 'SUBSCRIBED') {
             this.isConnected = true;
             this.reconnectAttempt = 0;
@@ -202,6 +208,10 @@ export class TableWebSocket {
       await this.supabase.removeChannel(this.channel);
       this.channel = null;
     }
+
+    // Clear pending events queue to prevent data bleed into subsequent game connections
+    this.pendingEvents = [];
+    this.lastSequence = -1;
 
     this.isConnected = false;
     this.notifyConnection(false);

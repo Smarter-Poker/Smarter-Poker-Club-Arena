@@ -125,12 +125,18 @@ export class EngineWebSocketServer {
 
       const tableId = parseTableIdFromPath(url.pathname);
       if (!tableId) {
+        // Always write a proper HTTP status before destroying so the client
+        // sees 400 instead of Caddy's 502 upstream-down response.
+        socket.write('HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n');
         socket.destroy();
         return;
       }
 
       const token = extractBearerToken(req.headers['sec-websocket-protocol']);
       if (!token) {
+        socket.write(
+          'HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
+        );
         socket.destroy();
         return;
       }
@@ -139,15 +145,20 @@ export class EngineWebSocketServer {
       this.verifyToken(token)
         .then((auth) => {
           if (!auth) {
-            // RFC says we cannot send a custom close code pre-handshake.
-            // Return 401 by destroying — browsers surface this as a handshake
-            // error; client wrapper retries after refreshing the token.
-            socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+            // Pre-handshake failure — cannot use WS close codes yet.
+            // Return 401 by writing a short HTTP/1.1 response. Browsers
+            // surface this as a handshake error; client wrapper retries
+            // after refreshing the token.
+            socket.write(
+              'HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
+            );
             socket.destroy();
             return;
           }
           if (!this.tableExists(tableId)) {
-            socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
+            socket.write(
+              'HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
+            );
             socket.destroy();
             return;
           }
@@ -157,7 +168,9 @@ export class EngineWebSocketServer {
           });
         })
         .catch(() => {
-          socket.write('HTTP/1.1 500 Internal Server Error\r\n\r\n');
+          socket.write(
+            'HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
+          );
           socket.destroy();
         });
     });

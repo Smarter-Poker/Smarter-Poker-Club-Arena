@@ -1,4 +1,5 @@
 import { reportError } from '../services/errorReporter.js';
+import { deadlineScheduler, type DeadlineScheduler } from './DeadlineScheduler.js';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -51,7 +52,8 @@ export interface RITState {
   board1Winner?: string;
   board2Winner?: string;
   board3Winner?: string;
-  timeoutTimer?: ReturnType<typeof setTimeout>;
+  // Phase 1.2 PR-G-real: timeouts routed through DeadlineScheduler keyed by
+  // eventId = 'rit_offer' on the state's tableId. Raw setTimeout handle deleted.
 }
 
 export interface RITResult {
@@ -82,9 +84,22 @@ export class RunItTwiceEngine {
   private activeOffers: Map<string, RITState> = new Map();
   private tableConfigs: Map<string, RITConfig> = new Map();
   private onEvent?: (event: RITEvent) => void;
+  /**
+   * Phase 1.2 PR-G-real: central scheduler used for offer expiry. Replaces
+   * the per-state setTimeout handle. One DeadlineScheduler tick per process
+   * fires every expiring RIT offer across every table.
+   */
+  private scheduler: DeadlineScheduler;
 
-  constructor(onEvent?: (event: RITEvent) => void) {
+  private static readonly OFFER_EVENT_ID = 'rit_offer';
+
+  constructor(
+    onEvent?: (event: RITEvent) => void,
+    scheduler: DeadlineScheduler = deadlineScheduler
+  ) {
     this.onEvent = onEvent;
+    this.scheduler = scheduler;
+    this.scheduler.start();
   }
 
   configure(tableId: string, config: RITConfig): void {
@@ -134,14 +149,17 @@ export class RunItTwiceEngine {
       board3: [],
     };
 
-    state.timeoutTimer = setTimeout(
-      () => {
+    // Phase 1.2 PR-G-real: replace setTimeout with DeadlineScheduler entry.
+    this.scheduler.schedule({
+      tableId,
+      eventId: RunItTwiceEngine.OFFER_EVENT_ID,
+      deadlineMs: Date.now() + (config.autoDeclineTimeout || 10) * 1000,
+      callback: () => {
         if (state.status === 'offered') {
           this.decline(tableId, primaryOfferedTo);
         }
       },
-      (config.autoDeclineTimeout || 10) * 1000
-    );
+    });
 
     this.activeOffers.set(tableId, state);
 
@@ -164,7 +182,8 @@ export class RunItTwiceEngine {
 
     if (state.acceptedBy.has(state.offeredBy) && state.acceptedBy.has(state.offeredTo)) {
       state.status = 'accepted';
-      if (state.timeoutTimer) clearTimeout(state.timeoutTimer);
+      // Phase 1.2 PR-G-real: cancel pending expiry deadline.
+      this.scheduler.cancel(tableId, RunItTwiceEngine.OFFER_EVENT_ID);
 
       this.emitEvent({
         type: 'RIT_ACCEPTED',
@@ -182,7 +201,8 @@ export class RunItTwiceEngine {
     if (!state || state.status !== 'offered') return;
 
     state.status = 'declined';
-    if (state.timeoutTimer) clearTimeout(state.timeoutTimer);
+    // Phase 1.2 PR-G-real: cancel pending expiry deadline.
+    this.scheduler.cancel(tableId, RunItTwiceEngine.OFFER_EVENT_ID);
 
     this.emitEvent({
       type: 'RIT_DECLINED',
@@ -347,13 +367,16 @@ export class RunItTwiceEngine {
     state.chosenRuns = runs;
     if (runs === 1) {
       state.status = 'declined';
-      if (state.timeoutTimer) clearTimeout(state.timeoutTimer);
+      // Phase 1.2 PR-G-real: cancel pending expiry deadline.
+      this.scheduler.cancel(tableId, RunItTwiceEngine.OFFER_EVENT_ID);
     }
   }
 
   private clearOffer(tableId: string): void {
-    const state = this.activeOffers.get(tableId);
-    if (state?.timeoutTimer) clearTimeout(state.timeoutTimer);
+    // Phase 1.2 PR-G-real: cancel any pending expiry deadline for this table.
+    if (this.activeOffers.has(tableId)) {
+      this.scheduler.cancel(tableId, RunItTwiceEngine.OFFER_EVENT_ID);
+    }
     this.activeOffers.delete(tableId);
   }
 

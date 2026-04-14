@@ -23,6 +23,7 @@
 import { monteCarloEquity } from './MonteCarloEquity.js';
 import type { Card } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
+import { deadlineScheduler, type DeadlineScheduler } from './DeadlineScheduler.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -59,7 +60,10 @@ export interface InsuranceOffer {
   status: 'offered' | 'accepted' | 'declined' | 'settled';
   /** If true, player declined for the entire hand (won't be re-offered on later streets) */
   declinedForHand: boolean;
-  timeoutTimer?: ReturnType<typeof setTimeout>;
+  // Phase 1.2 PR-G-real: timeouts routed through DeadlineScheduler singleton via
+  // the engine's private `scheduler` ref, keyed by
+  // eventId = `insurance_offer:${playerId}` on the offer's tableId. The raw
+  // setTimeout handle was deleted — nothing else to store on the offer.
 }
 
 export interface InsuranceSettlement {
@@ -92,6 +96,13 @@ export class InsuranceEngine {
   private tableConfigs: Map<string, InsuranceConfig> = new Map();
   private activeOffers: Map<string, InsuranceOffer[]> = new Map();
   private onEvent?: (event: InsuranceEvent) => void;
+  /**
+   * Phase 1.2 PR-G-real: central scheduler used for offer expiry. Replaces
+   * per-offer setTimeout handles. The scheduler is the single source of
+   * truth for deadlines — it survives rehydration after server restart and
+   * one tick loop fires every expiring offer across all tables.
+   */
+  private scheduler: DeadlineScheduler;
 
   private readonly DEFAULT_CONFIG: InsuranceConfig = {
     enabled: false,
@@ -102,8 +113,20 @@ export class InsuranceEngine {
     equityIterations: 5000,
   };
 
-  constructor(onEvent?: (event: InsuranceEvent) => void) {
+  constructor(
+    onEvent?: (event: InsuranceEvent) => void,
+    scheduler: DeadlineScheduler = deadlineScheduler
+  ) {
     this.onEvent = onEvent;
+    this.scheduler = scheduler;
+    // Idempotent: singleton already running in production, but tests may
+    // construct their own scheduler and need it started here.
+    this.scheduler.start();
+  }
+
+  /** Phase 1.2 PR-G-real: stable key for this engine's scheduler entries. */
+  private offerEventId(playerId: string): string {
+    return `insurance_offer:${playerId}`;
   }
 
   configure(tableId: string, config: Partial<InsuranceConfig>): void {
@@ -175,11 +198,17 @@ export class InsuranceEngine {
         declinedForHand: false,
       };
 
-      offer.timeoutTimer = setTimeout(() => {
-        if (offer.status === 'offered') {
-          this.decline(tableId, player.playerId);
-        }
-      }, config.offerTimeoutSeconds * 1000);
+      // Phase 1.2 PR-G-real: replace setTimeout with DeadlineScheduler entry.
+      this.scheduler.schedule({
+        tableId,
+        eventId: this.offerEventId(player.playerId),
+        deadlineMs: Date.now() + config.offerTimeoutSeconds * 1000,
+        callback: () => {
+          if (offer.status === 'offered') {
+            this.decline(tableId, player.playerId);
+          }
+        },
+      });
 
       offers.push(offer);
 
@@ -230,7 +259,8 @@ export class InsuranceEngine {
     offer.insuredAmount = Math.round(offer.fullInsuredAmount * coverageMultiplier * 100) / 100;
     offer.premium = Math.round(offer.fullPremium * coverageMultiplier * 100) / 100;
     offer.status = 'accepted';
-    if (offer.timeoutTimer) clearTimeout(offer.timeoutTimer);
+    // Phase 1.2 PR-G-real: cancel the pending expiry deadline.
+    this.scheduler.cancel(tableId, this.offerEventId(playerId));
 
     this.emitEvent({
       type: 'INSURANCE_ACCEPTED',
@@ -259,7 +289,8 @@ export class InsuranceEngine {
 
     offer.status = 'declined';
     offer.declinedForHand = forHand;
-    if (offer.timeoutTimer) clearTimeout(offer.timeoutTimer);
+    // Phase 1.2 PR-G-real: cancel the pending expiry deadline.
+    this.scheduler.cancel(tableId, this.offerEventId(playerId));
 
     this.emitEvent({
       type: 'INSURANCE_DECLINED',
@@ -330,12 +361,17 @@ export class InsuranceEngine {
         offer.insuredAmount = newFullInsured;
         offer.premium = newFullPremium;
 
-        // Set a new timeout for the re-offer
-        offer.timeoutTimer = setTimeout(() => {
-          if (offer.status === 'offered') {
-            this.decline(tableId, offer.playerId);
-          }
-        }, config.offerTimeoutSeconds * 1000);
+        // Phase 1.2 PR-G-real: re-arm the expiry deadline via DeadlineScheduler.
+        this.scheduler.schedule({
+          tableId,
+          eventId: this.offerEventId(offer.playerId),
+          deadlineMs: Date.now() + config.offerTimeoutSeconds * 1000,
+          callback: () => {
+            if (offer.status === 'offered') {
+              this.decline(tableId, offer.playerId);
+            }
+          },
+        });
 
         this.emitEvent({
           type: 'INSURANCE_OFFERED',
@@ -468,6 +504,13 @@ export class InsuranceEngine {
       });
     }
 
+    // Phase 1.2 PR-G-real: drop any lingering expiry entries for this table.
+    // Accepted/declined offers already cancelled theirs at transition time;
+    // this belt-and-suspenders covers any edge-case where settle runs while
+    // an offer is still notionally 'offered' (chopped tie with no response).
+    for (const offer of this.activeOffers.get(tableId) ?? []) {
+      this.scheduler.cancel(tableId, this.offerEventId(offer.playerId));
+    }
     this.activeOffers.delete(tableId);
     return settlements;
   }
@@ -505,8 +548,9 @@ export class InsuranceEngine {
   dispose(tableId: string): void {
     const offers = this.activeOffers.get(tableId);
     if (offers) {
+      // Phase 1.2 PR-G-real: cancel every expiry deadline we own for this table.
       for (const offer of offers) {
-        if (offer.timeoutTimer) clearTimeout(offer.timeoutTimer);
+        this.scheduler.cancel(tableId, this.offerEventId(offer.playerId));
       }
     }
     this.activeOffers.delete(tableId);

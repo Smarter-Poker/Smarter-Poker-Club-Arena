@@ -134,8 +134,8 @@ export const useTableStore = create<TableState>((set, get) => ({
       seats: newSeats,
     });
 
-    // Notify Master Bus
-    masterBus.emit('TABLE_SEATED', { tableId, seat });
+    // Notify Master Bus — include userId so MultiTablePage can filter to own events only
+    masterBus.emit('TABLE_SEATED', { tableId, seat, userId });
 
     // Update table player count (non-blocking — seat is already visually taken)
     try {

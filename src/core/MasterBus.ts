@@ -1004,6 +1004,7 @@ export interface TableEventPayload {
   tableId: string;
   seat?: number;
   tableName?: string;
+  userId?: string;
 }
 
 export interface BalancePayload {

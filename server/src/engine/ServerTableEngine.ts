@@ -160,10 +160,15 @@ export class ServerTableEngine {
   // starting before DB stacks are synced (was fire-and-forget, risked stale stacks)
   private postHandTasksPromise: Promise<void> | null = null;
 
-  // FIX 147: Bible V8 §6.3 — Periodic heartbeat checker to detect disconnects mid-hand
+  // FIX 147: Bible V8 §6.3 — Periodic heartbeat check to detect disconnects mid-hand
   // Without this, disconnects are only detected between hands in dealingLoop().
-  // This interval runs every 10 seconds to catch disconnects during long hands.
-  private heartbeatCheckInterval: NodeJS.Timeout | null = null;
+  // Phase 1.2 PR-G-real: rescheduled every 10s through DeadlineScheduler instead
+  // of setInterval. The eventId is a constant per table; the callback re-arms
+  // itself for the next tick. `heartbeatActive` lets stop() short-circuit any
+  // in-flight callback that fires after cancel().
+  private static readonly HEARTBEAT_EVENT_ID = 'heartbeat_check';
+  private static readonly HEARTBEAT_INTERVAL_MS = 10_000;
+  private heartbeatActive: boolean = false;
 
   // Real Player Turn Management
   // Phase 1.2: playerTurnTimer deleted — DeadlineScheduler via PreciseActionTimer is sole timer authority.
@@ -387,19 +392,12 @@ export class ServerTableEngine {
         await this.sleep(5000);
       }
 
-      // FIX 147: Start periodic heartbeat checker (every 10 seconds)
-      // This detects disconnects mid-hand, not just between hands.
+      // FIX 147 + Phase 1.2 PR-G-real: heartbeat check via DeadlineScheduler.
+      // Recurring schedule pattern — the callback re-arms itself so a single
+      // process-global tick loop drives every table's heartbeat check.
       // FIX: Horses are server-side bots — send simulated heartbeats so they don't time out.
-      this.heartbeatCheckInterval = setInterval(() => {
-        if (!this.running) return;
-        // Keep horses alive — they don't have real clients sending heartbeats
-        for (const p of this.seatedPlayers) {
-          if (p.is_horse) {
-            this.disconnectEngine.heartbeat(this.tableId, p.user_id);
-          }
-        }
-        this.disconnectEngine.checkStaleHeartbeats(this.tableId);
-      }, 10_000);
+      this.heartbeatActive = true;
+      this.scheduleHeartbeatCheck();
 
       // Start dealing loop
       this.dealingLoop();
@@ -418,11 +416,11 @@ export class ServerTableEngine {
     this.clearTurnTimer();
     this.handController = null;
 
-    // FIX 147: Clear periodic heartbeat checker
-    if (this.heartbeatCheckInterval) {
-      clearInterval(this.heartbeatCheckInterval);
-      this.heartbeatCheckInterval = null;
-    }
+    // FIX 147 + Phase 1.2 PR-G-real: tear down heartbeat scheduler entry.
+    // Set the flag first so any callback already mid-flight bails before
+    // re-arming, then cancel the pending entry.
+    this.heartbeatActive = false;
+    deadlineScheduler.cancel(this.tableId, ServerTableEngine.HEARTBEAT_EVENT_ID);
 
     // Step 4: Dispose ported core modules
     this.preciseTimer.dispose();
@@ -451,6 +449,44 @@ export class ServerTableEngine {
     // only game-state transport. TableStateHub.dropTable is called by the
     // discovery / tournament-break paths elsewhere.
     console.log(`[ServerTableEngine:${this.tableId}] Stopped. Dealt ${this.handCount} hands.`);
+  }
+
+  /**
+   * FIX 147 + Phase 1.2 PR-G-real: heartbeat check loop, scheduled through
+   * DeadlineScheduler instead of setInterval. The callback re-arms itself
+   * for the next tick so a single process-global tick loop drives every
+   * table's heartbeat. heartbeatActive guards against races: stop() flips
+   * it to false and cancels the pending entry; any callback that fires
+   * between flag flip and cancel sees `running === false || heartbeatActive === false`
+   * and bails without re-arming.
+   *
+   * IMPORTANT: horses are server-side bots without real WS clients sending
+   * heartbeats, so the loop synthesises one for every seated horse before
+   * sweeping for stale heartbeats. Removing this would cause every horse
+   * at the table to time out every 10s and fold their hand. (Dan flagged
+   * this explicitly during the PR-G-real refactor.)
+   */
+  private scheduleHeartbeatCheck(): void {
+    deadlineScheduler.schedule({
+      tableId: this.tableId,
+      eventId: ServerTableEngine.HEARTBEAT_EVENT_ID,
+      deadlineMs: Date.now() + ServerTableEngine.HEARTBEAT_INTERVAL_MS,
+      callback: () => {
+        if (!this.running || !this.heartbeatActive) return;
+        // Keep horses alive — server-side bots have no real client to heartbeat.
+        for (const p of this.seatedPlayers) {
+          if (p.is_horse) {
+            this.disconnectEngine.heartbeat(this.tableId, p.user_id);
+          }
+        }
+        this.disconnectEngine.checkStaleHeartbeats(this.tableId);
+        // Re-arm for the next interval. cancel() in stop() will purge any
+        // entry queued here if a stop happens between scheduling and tick.
+        if (this.running && this.heartbeatActive) {
+          this.scheduleHeartbeatCheck();
+        }
+      },
+    });
   }
 
   isRunning(): boolean {

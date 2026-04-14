@@ -106,6 +106,8 @@ const circuitBreaker = {
 export interface ActionResult {
   success: boolean;
   error?: string;
+  code?: string;
+  hint?: Record<string, unknown>;
 }
 
 export interface PlayerActions {
@@ -311,7 +313,10 @@ export async function setPreAction(
       body: JSON.stringify({ tableId, action, maxCallAmount }),
     });
     if (!response.ok) {
-      circuitBreaker.recordFailure(new Error(`HTTP ${response.status}`), 'GameServerAPI.setPreAction');
+      circuitBreaker.recordFailure(
+        new Error(`HTTP ${response.status}`),
+        'GameServerAPI.setPreAction'
+      );
       return { success: false, error: `Server error (${response.status})` };
     }
     circuitBreaker.recordSuccess();

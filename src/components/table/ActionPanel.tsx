@@ -126,9 +126,11 @@ export default function ActionPanel({
 
   const isDesktop = windowWidth >= 768;
 
-  // Phase 2 T1-02: PokerBros §5.2 — preflop presets are BB multipliers (2X/3X/4X),
-  // postflop presets are pot fractions. Switching is driven by isPreflop prop
-  // which is set by TablePage from the engine snapshot's board state.
+  // Phase 2 T1-02 + T1-09: PokerBros §5.2 + §5.5 ("MUST IMPROVE").
+  //   Preflop:  BB multipliers (2X / 3X / 4X) per §5.2 OBSERVED.
+  //   Postflop: 33% / 50% / 75% / POT GTO Wizard quartet per §5.5 — replaces
+  //             the 1/2 / 2/3 / POT trio with 4 presets so users get
+  //             smaller-bet flexibility on the bottom end and 100% pot at top.
   const presets = useMemo(() => {
     if (isPreflop && bigBlind > 0) {
       return [
@@ -138,8 +140,9 @@ export default function ActionPanel({
       ];
     }
     return [
-      { label: '1/2 POT', value: roundToChip(pot * 0.5, smallestChip, minRaise, maxRaise) },
-      { label: '2/3 POT', value: roundToChip(pot * 0.67, smallestChip, minRaise, maxRaise) },
+      { label: '33%', value: roundToChip(pot * 0.33, smallestChip, minRaise, maxRaise) },
+      { label: '50%', value: roundToChip(pot * 0.5, smallestChip, minRaise, maxRaise) },
+      { label: '75%', value: roundToChip(pot * 0.75, smallestChip, minRaise, maxRaise) },
       { label: 'POT', value: roundToChip(pot, smallestChip, minRaise, maxRaise) },
     ];
   }, [isPreflop, bigBlind, pot, smallestChip, minRaise, maxRaise]);
@@ -485,7 +488,7 @@ export default function ActionPanel({
             onAction('fold');
           }}
           disabled={!canFold}
-          title={isDesktop ? 'F' : undefined}
+          title={isDesktop ? 'Fold (F or Q)' : undefined}
           aria-label="Fold"
         >
           <span className="action-btn__label">Fold</span>
@@ -500,7 +503,7 @@ export default function ActionPanel({
               haptic.light(); // FIX 183: Bible V8 §5.4 — check = light haptic (was medium)
               onAction('check');
             }}
-            title={isDesktop ? 'C' : undefined}
+            title={isDesktop ? 'Check/Call (C or W)' : undefined}
             aria-label="Check"
           >
             <span className="action-btn__label">Check</span>
@@ -513,7 +516,7 @@ export default function ActionPanel({
               haptic.light(); // FIX 183: Bible V8 §5.4 — call = light haptic (was medium)
               onAction('call');
             }}
-            title={isDesktop ? 'C' : undefined}
+            title={isDesktop ? 'Check/Call (C or W)' : undefined}
             aria-label={`Call ${formatChips(callAmount)}`}
           >
             <span className="action-btn__label">Call</span>
@@ -539,7 +542,7 @@ export default function ActionPanel({
           <button
             className="action-btn action-btn--allin"
             onClick={handleAllIn}
-            title={isDesktop ? 'R' : undefined}
+            title={isDesktop ? 'Raise/Bet (R or E)' : undefined}
             aria-label="All in"
           >
             <span className="action-btn__label">All In</span>
@@ -551,7 +554,7 @@ export default function ActionPanel({
             className="action-btn action-btn--raise"
             onClick={handleRaiseClick}
             disabled={!canRaise}
-            title={isDesktop ? 'R' : undefined}
+            title={isDesktop ? 'Raise/Bet (R or E)' : undefined}
             aria-label="Open raise panel"
           >
             <span className="action-btn__label">Raise</span>

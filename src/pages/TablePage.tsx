@@ -4065,24 +4065,25 @@ export default function TablePage({
   };
 
   // ── Keyboard Shortcuts for Table Actions ──
-  // F = Fold | C = Check/Call | R = Raise/Bet | A = All-in
-  // Only active when it's hero's turn, not typing in an input
+  // Two key sets coexist (Phase 2 T1-10 / spec §5.5 "MUST IMPROVE"):
+  //   F / C / R / A — original mnemonic (Fold / Check-Call / Raise / All-in)
+  //   Q / W / E      — PokerBros-style left-hand row (Q=Fold, W=Check-Call, E=Raise)
+  // Both reach the same handlers; downstream behavior is identical.
+  // Active only when it's hero's turn and the user isn't typing in an input.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      // Don't trigger if user is typing in an input/textarea
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       if (!isHeroTurnContext) return;
       if (actionLockRef.current) return;
 
       const key = e.key.toLowerCase();
-      if (key === 'f') {
+      if (key === 'f' || key === 'q') {
         e.preventDefault();
         handleFold();
-      } else if (key === 'c') {
+      } else if (key === 'c' || key === 'w') {
         e.preventDefault();
-        // Determine if check is legal (no outstanding bet to match); otherwise call
-        // Bible V8: Check is legal when currentBet <= hero's current bet
+        // Bible V8 + spec §5.5: Check is legal when currentBet <= hero's current bet.
         const canCheck =
           (tableState.currentBet || 0) <=
           (tableState.lastBetAmounts?.[tableState.heroSeat - 1] || 0);
@@ -4091,7 +4092,7 @@ export default function TablePage({
         } else {
           handleCall();
         }
-      } else if (key === 'r') {
+      } else if (key === 'r' || key === 'e') {
         e.preventDefault();
         handleRaise();
       }

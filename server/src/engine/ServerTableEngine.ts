@@ -77,6 +77,7 @@ import type {
   RakeConfig,
 } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
+import type { TableStateHub } from '../transport/TableStateHub.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SERVER TABLE ENGINE
@@ -87,6 +88,13 @@ export class ServerTableEngine {
   private running: boolean = false;
   private handCount: number = 0;
   private handController: HandController | null = null;
+  /**
+   * Phase 1.1 PR-2: Authoritative state hub for native-WS delivery to clients.
+   * When set, every broadcastCurrentState() publishes to the hub in parallel
+   * with the legacy Supabase Realtime broadcast. Injected by the GameServer
+   * at engine construction. null in unit tests / until PR-2 wiring lands.
+   */
+  private hub: TableStateHub | null = null;
   private tableInfo: TableInfo | null = null;
   private seatedPlayers: SeatedPlayer[] = [];
   private dealerSeatIndex: number = 0;
@@ -262,6 +270,17 @@ export class ServerTableEngine {
     });
 
     console.log(`[ServerTableEngine] Created for table ${tableId}`);
+  }
+
+  /**
+   * Phase 1.1 PR-2: Inject the authoritative state hub. Call this right after
+   * construction (before start). Once set, every broadcastCurrentState() also
+   * publishes to the hub so connected WebSocket clients receive the payload
+   * directly, in addition to the legacy Supabase Realtime broadcast. The
+   * Supabase path is removed in PR-5 once WS is verified in production.
+   */
+  public setHub(hub: TableStateHub): void {
+    this.hub = hub;
   }
 
   /**
@@ -3050,9 +3069,10 @@ export class ServerTableEngine {
     const state = this.handController.getState();
     const currentSeatPlayer = state.players.find((p) => p.seat === state.currentPlayerSeat);
 
-    // Bible V8 §9.1.2: Instrument broadcast latency (target < 100ms)
-    const broadcastStartMs = Date.now();
-    const broadcastPromise = broadcastHandState(this.tableId, {
+    // Phase 1.1 PR-2: Build the payload once, publish to both the authoritative
+    // WebSocket hub (direct to browser) AND the legacy Supabase Realtime
+    // channel. PR-5 removes the Supabase leg once WS is verified in prod.
+    const payload = {
       table_id: this.tableId,
       hand_number: this.handCount,
       pot: state.pot ?? 0,
@@ -3129,9 +3149,20 @@ export class ServerTableEngine {
           };
         });
       })(),
-    });
+    };
 
-    // Bible V8 §9.1.2: Measure broadcast latency
+    // Phase 1.1 PR-2: Publish to the authoritative WebSocket hub synchronously
+    // so every currently-connected client sees the new state within milliseconds.
+    // The hub never throws; failures here are swallowed internally.
+    if (this.hub) {
+      this.hub.publish(this.tableId, payload);
+    }
+
+    // Bible V8 §9.1.2: Instrument broadcast latency (target < 100ms) for the
+    // legacy Supabase path. Kept in parallel until PR-5 deletes it.
+    const broadcastStartMs = Date.now();
+    const broadcastPromise = broadcastHandState(this.tableId, payload);
+
     return broadcastPromise.then(() => {
       const broadcastMs = Date.now() - broadcastStartMs;
       if (broadcastMs > 100) {

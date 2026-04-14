@@ -1101,4 +1101,102 @@ export async function getActiveHandSnapshot(tableId: string): Promise<{
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// Phase 1.2 PR-D: persistence of pending deadlines + disconnect FSM states.
+// The columns live on the SAME row as the active hand snapshot (keyed by
+// table_id + hand_number). They're optional — the legacy save/load path still
+// works; these helpers write and read the two new jsonb columns directly.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export interface PendingDeadline {
+  eventId: string;
+  deadlineMs: number;
+}
+
+export type DisconnectFsmState = 'CONNECTED' | 'MISSING' | 'DISCONNECTED' | 'SAT_OUT';
+
+export interface DisconnectStateEntry {
+  state: DisconnectFsmState;
+  sinceMs: number;
+  graceDeadlineMs: number | null;
+}
+
+/**
+ * Save pending deadlines + disconnect states onto the active (incomplete)
+ * snapshot row for a table. Called by ServerTableEngine on each
+ * broadcastCurrentState so the latest deadlines live in the DB.
+ * A no-op + warning if no active snapshot exists yet.
+ */
+export async function saveHandSnapshotExtras(params: {
+  tableId: string;
+  handNumber: number;
+  pendingDeadlines: PendingDeadline[];
+  disconnectStates: Record<string, DisconnectStateEntry>;
+}): Promise<void> {
+  try {
+    const { error } = await supabase
+      .from('hand_state_snapshots')
+      .update({
+        pending_deadlines: params.pendingDeadlines,
+        disconnect_states: params.disconnectStates,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('table_id', params.tableId)
+      .eq('hand_number', params.handNumber)
+      .eq('is_complete', false);
+    if (error) {
+      console.warn(`[saveHandSnapshotExtras] Error:`, error.message);
+    }
+  } catch (e) {
+    console.warn(`[saveHandSnapshotExtras] Exception:`, e);
+  }
+}
+
+/**
+ * Get the active snapshot with pending_deadlines + disconnect_states.
+ * Used by ServerTableEngine.start() to rehydrate the deadline scheduler
+ * and disconnect FSM after a crash or restart. Returns null if no active
+ * hand snapshot exists.
+ */
+export async function getActiveHandSnapshotFull(tableId: string): Promise<{
+  handNumber: number;
+  stateJson: Record<string, unknown>;
+  configJson: Record<string, unknown>;
+  dealerSeat: number;
+  playersJson: Record<string, unknown>[];
+  stage: string;
+  updatedAt: string;
+  pendingDeadlines: PendingDeadline[];
+  disconnectStates: Record<string, DisconnectStateEntry>;
+} | null> {
+  try {
+    const { data, error } = await supabase
+      .from('hand_state_snapshots')
+      .select(
+        'hand_number, state_json, config_json, dealer_seat, players_json, stage, updated_at, pending_deadlines, disconnect_states'
+      )
+      .eq('table_id', tableId)
+      .eq('is_complete', false)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error || !data) return null;
+    return {
+      handNumber: data.hand_number,
+      stateJson: data.state_json,
+      configJson: data.config_json,
+      dealerSeat: data.dealer_seat,
+      playersJson: data.players_json,
+      stage: data.stage,
+      updatedAt: data.updated_at,
+      pendingDeadlines: (data.pending_deadlines as PendingDeadline[]) ?? [],
+      disconnectStates:
+        (data.disconnect_states as Record<string, DisconnectStateEntry>) ?? {},
+    };
+  } catch (e) {
+    console.warn(`[getActiveHandSnapshotFull] Exception:`, e);
+    return null;
+  }
+}
+
 export default supabase;

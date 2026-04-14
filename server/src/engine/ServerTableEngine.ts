@@ -63,8 +63,12 @@ import {
   saveHandStateSnapshot,
   completeHandSnapshot,
   getActiveHandSnapshot,
+  // Phase 1.2 PR-D
+  saveHandSnapshotExtras,
+  getActiveHandSnapshotFull,
   supabase,
 } from '../services/supabase.js';
+import { deadlineScheduler } from './DeadlineScheduler.js';
 import type {
   SeatPlayer,
   GameVariant,
@@ -3624,6 +3628,19 @@ export class ServerTableEngine {
       })),
       stage: state.stage,
     });
+
+    // Phase 1.2 PR-D: also persist pending deadlines on the same snapshot
+    // row so restart can rehydrate the scheduler. Disconnect FSM states land
+    // here once PR-E lands — for now just the scheduler's queue.
+    const pendingDeadlines = deadlineScheduler.persistPending(this.tableId);
+    if (pendingDeadlines.length > 0) {
+      await saveHandSnapshotExtras({
+        tableId: this.tableId,
+        handNumber: this.handCount,
+        pendingDeadlines,
+        disconnectStates: {},
+      });
+    }
   }
 
   /**
@@ -3632,18 +3649,25 @@ export class ServerTableEngine {
    * from serialized state, which is a future enhancement.
    */
   async checkCrashRecovery(): Promise<boolean> {
-    const snapshot = await getActiveHandSnapshot(this.tableId);
+    // Phase 1.2 PR-D: use the extended snapshot reader so pending deadlines
+    // and disconnect states come back with the hand state. Full HandController
+    // reconstruction still waits for a later PR; for now we log visibility
+    // into what would rehydrate + mark the orphaned hand complete.
+    const snapshot = await getActiveHandSnapshotFull(this.tableId);
     if (!snapshot) return false;
 
     console.warn(
       `[ServerTableEngine:${this.tableId}] CRASH RECOVERY: Found incomplete hand #${snapshot.handNumber} ` +
         `(stage: ${snapshot.stage}, last updated: ${snapshot.updatedAt}). ` +
-        `Marking as complete and starting fresh — players retain their last-known stacks.`
+        `${snapshot.pendingDeadlines.length} pending deadlines, ` +
+        `${Object.keys(snapshot.disconnectStates).length} disconnect-FSM entries. ` +
+        `Marking hand complete and starting fresh — players retain their last-known stacks.`
     );
 
     // For now: mark the orphaned hand as complete so we don't get stuck.
-    // Full state reconstruction (rebuilding HandController from snapshot) is a future enhancement.
-    // The snapshot data IS preserved in the DB for manual recovery/auditing if needed.
+    // Full state reconstruction (rebuilding HandController from snapshot) is
+    // tracked in Phase 1.2 PR-E. The snapshot data IS preserved in the DB
+    // for manual recovery/auditing if needed.
     await completeHandSnapshot(this.tableId, snapshot.handNumber);
 
     // Set handCount to continue from where we left off

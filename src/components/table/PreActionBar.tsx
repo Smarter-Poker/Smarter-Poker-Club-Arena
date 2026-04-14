@@ -30,29 +30,14 @@ export default function PreActionBar({
   onPreActionChange,
   currentBet = 0,
 }: PreActionBarProps) {
-  // Don't render when it's the player's turn (they should use main action buttons)
-  if (isMyTurn) {
-    return null;
-  }
-
-  const handleToggle = (action: PreActionType) => {
-    // If clicking the same action, deselect it
-    if (preAction === action) {
-      onPreActionChange(null);
-    } else {
-      onPreActionChange(action);
-    }
-  };
-
-  // Bible V8 §4.15: auto_check_fold — "check if possible, otherwise fold"
-  const foldLabel = canCheck ? 'Check/Fold' : 'Fold';
+  // ── Hooks MUST be called unconditionally (React rules-of-hooks) ──────────
+  const swipeStartX = useRef<number | null>(null);
 
   // Phase 2 T1-08: spec §5.3 — "You can also SLIDE between them (swipe gesture
   // to switch selection)". The active button list is computed dynamically
   // because the middle slot swaps between Check / Call <amount> based on
   // whether a bet is pending. Swipe distance >= 40px steps to the adjacent
   // toggle in the rendered order; left = next, right = previous.
-  const swipeStartX = useRef<number | null>(null);
   const visibleOrder: PreActionType[] = canCheck
     ? ['fold', 'check', 'callAny']
     : currentBet > 0
@@ -87,6 +72,23 @@ export default function PreActionBar({
     },
     [preAction, visibleOrder, onPreActionChange]
   );
+
+  // Don't render when it's the player's turn (they should use main action buttons)
+  if (isMyTurn) {
+    return null;
+  }
+
+  const handleToggle = (action: PreActionType) => {
+    // If clicking the same action, deselect it
+    if (preAction === action) {
+      onPreActionChange(null);
+    } else {
+      onPreActionChange(action);
+    }
+  };
+
+  // Bible V8 §4.15: auto_check_fold — "check if possible, otherwise fold"
+  const foldLabel = canCheck ? 'Check/Fold' : 'Fold';
 
   return (
     <div

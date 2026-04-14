@@ -30,7 +30,11 @@
  *     Hub is already the public-scrubbed shape from ServerTableEngine.
  */
 
-import { compare, type Operation as JsonPatchOperation } from 'fast-json-patch';
+// fast-json-patch ships as CommonJS; Node-ESM can only import it as a
+// default import, so destructure `compare` from the default export.
+import jsonPatch from 'fast-json-patch';
+import type { Operation as JsonPatchOperation } from 'fast-json-patch';
+const { compare } = jsonPatch;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

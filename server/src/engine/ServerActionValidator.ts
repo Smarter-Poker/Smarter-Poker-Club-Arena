@@ -33,20 +33,20 @@ export interface ActionRequest {
 }
 
 export interface ValidationContext {
-  currentPlayerId: string;        // Whose turn it is
-  stage: string;                  // preflop | flop | turn | river
-  currentBet: number;             // Current highest bet
-  playerBet: number;              // Player's current bet this street
-  playerStack: number;            // Player's remaining stack
+  currentPlayerId: string; // Whose turn it is
+  stage: string; // preflop | flop | turn | river
+  currentBet: number; // Current highest bet
+  playerBet: number; // Player's current bet this street
+  playerStack: number; // Player's remaining stack
   bigBlind: number;
-  minRaise: number;               // Minimum legal raise amount
+  minRaise: number; // Minimum legal raise amount
   pot: number;
-  canCheck: boolean;              // Is check a legal action?
-  actionDeadline: number;         // Timestamp (ms) when timer expires
-  playerActedThisRound: boolean;  // Has this player already taken action?
-  isAllIn: boolean;               // Is the player already all-in?
-  isFolded: boolean;              // Has the player already folded?
-  numActivePlayers: number;       // Non-folded, non-all-in players
+  canCheck: boolean; // Is check a legal action?
+  actionDeadline: number; // Timestamp (ms) when timer expires
+  playerActedThisRound: boolean; // Has this player already taken action?
+  isAllIn: boolean; // Is the player already all-in?
+  isFolded: boolean; // Has the player already folded?
+  numActivePlayers: number; // Non-folded, non-all-in players
 }
 
 export interface ValidationResult {
@@ -55,6 +55,13 @@ export interface ValidationResult {
   sanitizedAmount?: number;
   reason?: string;
   code?: ValidationErrorCode;
+  /** Phase 1.3: Hints for the client to auto-correct the action (snap slider, swap action). */
+  hint?: {
+    suggestedAction?: ActionType;
+    suggestedAmount?: number;
+    minLegal?: number;
+    maxLegal?: number;
+  };
 }
 
 export type ValidationErrorCode =
@@ -176,6 +183,10 @@ export class ServerActionValidator {
         valid: false,
         reason: 'Cannot check when there is a bet to call',
         code: 'CANNOT_CHECK',
+        hint: {
+          suggestedAction: 'call',
+          suggestedAmount: context.currentBet - context.playerBet,
+        },
       };
     }
     return { valid: true, sanitizedAction: 'check' };
@@ -218,6 +229,12 @@ export class ServerActionValidator {
         valid: false,
         reason: `Minimum bet is ${context.bigBlind}`,
         code: 'BELOW_MIN_RAISE',
+        hint: {
+          suggestedAction: 'bet',
+          suggestedAmount: context.bigBlind,
+          minLegal: context.bigBlind,
+          maxLegal: context.playerStack,
+        },
       };
     }
 
@@ -260,10 +277,17 @@ export class ServerActionValidator {
 
     // Must raise at least the minimum
     if (raiseIncrement < context.minRaise) {
+      const minRaiseTo = context.currentBet + context.minRaise;
       return {
         valid: false,
-        reason: `Minimum raise is ${context.minRaise} (raise to at least ${context.currentBet + context.minRaise})`,
+        reason: `Minimum raise is ${context.minRaise} (raise to at least ${minRaiseTo})`,
         code: 'BELOW_MIN_RAISE',
+        hint: {
+          suggestedAction: 'raise',
+          suggestedAmount: minRaiseTo,
+          minLegal: minRaiseTo,
+          maxLegal: maxRaiseTo,
+        },
       };
     }
 
@@ -310,7 +334,9 @@ export class ServerActionValidator {
       timestamp: Date.now(),
     };
 
-    console.warn(`[ServerActionValidator] Rejected ${code}: ${reason} (table=${tableId}, player=${playerId})`);
+    console.warn(
+      `[ServerActionValidator] Rejected ${code}: ${reason} (table=${tableId}, player=${playerId})`
+    );
 
     if (this.onRejection) {
       try {

@@ -111,6 +111,7 @@ export default function LeaderboardPage() {
   const [userRank, setUserRank] = useState<{ rank: number; total: number } | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const isMountedRef = useRef(true);
 
   // Club selection
   const [userClubs, setUserClubs] = useState<UserClub[]>([]);
@@ -129,11 +130,16 @@ export default function LeaderboardPage() {
 
   // Safety timeout: prevent infinite skeleton if auth/Supabase hangs
   useEffect(() => {
+    isMountedRef.current = true;
     const timeout = setTimeout(() => {
+      if (!isMountedRef.current) return;
       setLoading(false);
       setClubsLoading(false);
     }, 5000);
-    return () => clearTimeout(timeout);
+    return () => {
+      isMountedRef.current = false;
+      clearTimeout(timeout);
+    };
   }, []);
 
   // Load user's clubs on mount
@@ -205,7 +211,7 @@ export default function LeaderboardPage() {
 
   // Callback for leaderboard updates
   const handleLeaderboardUpdate = useCallback(() => {
-    if (activeTabRef.current === 'rankings') loadLeaderboardRef.current(true, () => true);
+    if (activeTabRef.current === 'rankings') loadLeaderboardRef.current(true, () => isMountedRef.current);
   }, []);
 
   useMasterBusChannel({
@@ -219,7 +225,7 @@ export default function LeaderboardPage() {
 
   // Callback for tournament updates
   const handleTournamentLeaderboardUpdate = useCallback(() => {
-    if (activeTabRef.current === 'tournaments') loadTournamentStatsRef.current(() => true);
+    if (activeTabRef.current === 'tournaments') loadTournamentStatsRef.current(() => isMountedRef.current);
   }, []);
 
   useMasterBusChannel({
@@ -235,9 +241,9 @@ export default function LeaderboardPage() {
   useEffect(() => {
     refreshTimerRef.current = setInterval(() => {
       if (activeTabRef.current === 'rankings') {
-        loadLeaderboardRef.current(true, () => true);
+        loadLeaderboardRef.current(true, () => isMountedRef.current);
       } else {
-        loadTournamentStatsRef.current(() => true);
+        loadTournamentStatsRef.current(() => isMountedRef.current);
       }
     }, 30000);
 

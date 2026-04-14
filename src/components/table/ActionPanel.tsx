@@ -1,7 +1,8 @@
 /**
- * ♠ CLUB ARENA — Action Panel Component
- * premium-style action buttons: Fold (red), Check/Call (green), Raise (amber)
- * Professional 3-button horizontal layout with raise mode sub-panel
+ * CLUB ARENA — Action Panel Component (Premium PokerBros-Style)
+ * Large action buttons: Fold (red), Check/Call (green), Raise (amber/gold)
+ * Professional layout with raise mode sub-panel, slider, and presets
+ * PokerBros specs: 70-80px buttons, 16px radius, premium polish with glows and gradients
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -40,9 +41,7 @@ function formatChips(amount: number): string {
  */
 function roundToChip(amount: number, smallestChip: number, min: number, max: number): number {
   if (smallestChip <= 0) smallestChip = 1;
-  // Round to nearest smallest chip
   const rounded = Math.round(amount / smallestChip) * smallestChip;
-  // Clean up floating point: round to 2 decimal places
   const clean = Math.round(rounded * 100) / 100;
   return Math.max(min, Math.min(max, clean));
 }
@@ -64,10 +63,9 @@ export default function ActionPanel({
   confirmAllIn = true,
   showBetSizePresets = true,
 }: ActionPanelProps) {
-  // Round min/max to proper chip increments (smallest chip = smallBlind = bigBlind/2)
   const smallestChip = Math.max(bigBlind / 2, 0.01);
   const minRaise = roundToChip(rawMinRaise, smallestChip, rawMinRaise, rawMaxRaise);
-  const maxRaise = rawMaxRaise; // Max is always the player's full stack — don't round down
+  const maxRaise = rawMaxRaise;
   const [isRaiseMode, setIsRaiseMode] = useState(false);
   const [pendingAllIn, setPendingAllIn] = useState(false);
   const [raiseAmount, setRaiseAmount] = useState(minRaise);
@@ -77,12 +75,10 @@ export default function ActionPanel({
   );
   const prevTurnRef = useRef(isMyTurn);
 
-  // Reset raise amount when minRaise changes (new street/hand)
   useEffect(() => {
     setRaiseAmount(minRaise);
   }, [minRaise]);
 
-  // Close raise mode and pending confirmations when turn ends
   useEffect(() => {
     if (!isMyTurn) {
       setIsRaiseMode(false);
@@ -90,7 +86,6 @@ export default function ActionPanel({
     }
   }, [isMyTurn]);
 
-  // Attention pulse when isMyTurn becomes true
   useEffect(() => {
     if (isMyTurn && !prevTurnRef.current) {
       setTurnPulse(true);
@@ -101,7 +96,6 @@ export default function ActionPanel({
     prevTurnRef.current = isMyTurn;
   }, [isMyTurn]);
 
-  // Track window width for desktop keyboard shortcut hints
   useEffect(() => {
     const handleResize = () => {
       setWindowWidth(window.innerWidth);
@@ -112,12 +106,11 @@ export default function ActionPanel({
 
   const isDesktop = windowWidth >= 768;
 
-  // Smart presets — adapt to street context, rounded to chip increments
   const presets = useMemo(
     () => [
-      { label: '⅓ Pot', value: roundToChip(pot * 0.33, smallestChip, minRaise, maxRaise) },
-      { label: '½ Pot', value: roundToChip(pot * 0.5, smallestChip, minRaise, maxRaise) },
-      { label: '¾ Pot', value: roundToChip(pot * 0.75, smallestChip, minRaise, maxRaise) },
+      { label: '1/3 Pot', value: roundToChip(pot * 0.33, smallestChip, minRaise, maxRaise) },
+      { label: '1/2 Pot', value: roundToChip(pot * 0.5, smallestChip, minRaise, maxRaise) },
+      { label: '2/3 Pot', value: roundToChip(pot * 0.75, smallestChip, minRaise, maxRaise) },
       { label: 'Pot', value: roundToChip(pot, smallestChip, minRaise, maxRaise) },
     ],
     [pot, smallestChip, minRaise, maxRaise]

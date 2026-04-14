@@ -309,7 +309,7 @@ export function PlayerStats({
         {!isCurrentUser && onReport && (
           <div className="player-stats__actions">
             <button className="player-stats__report" onClick={() => onReport(playerId)}>
-              🚩 Report Player
+              Report Player
             </button>
           </div>
         )}

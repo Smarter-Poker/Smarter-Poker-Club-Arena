@@ -429,6 +429,7 @@ export default function TablePage({
 
   // ─── MOBILE VIEWPORT LOCK — Prevent accidental pinch-zoom during poker play ───
   useEffect(() => {
+    let newMeta: HTMLMetaElement | null = null;
     const meta = document.querySelector('meta[name="viewport"]');
     const originalContent = meta?.getAttribute('content') || '';
     const pokerViewport =
@@ -437,7 +438,7 @@ export default function TablePage({
     if (meta) {
       meta.setAttribute('content', pokerViewport);
     } else {
-      const newMeta = document.createElement('meta');
+      newMeta = document.createElement('meta');
       newMeta.name = 'viewport';
       newMeta.content = pokerViewport;
       document.head.appendChild(newMeta);
@@ -452,12 +453,16 @@ export default function TablePage({
 
     return () => {
       // Restore original viewport when leaving the table
-      const restoreMeta = document.querySelector('meta[name="viewport"]');
-      if (restoreMeta) {
-        restoreMeta.setAttribute(
-          'content',
-          originalContent || 'width=device-width, initial-scale=1'
-        );
+      if (newMeta) {
+        document.head.removeChild(newMeta);
+      } else {
+        const restoreMeta = document.querySelector('meta[name="viewport"]');
+        if (restoreMeta) {
+          restoreMeta.setAttribute(
+            'content',
+            originalContent || 'width=device-width, initial-scale=1'
+          );
+        }
       }
       try {
         screen.orientation?.unlock?.();
@@ -474,6 +479,7 @@ export default function TablePage({
     const requestWakeLock = async () => {
       try {
         if ('wakeLock' in navigator) {
+          if (wakeLock) await wakeLock.release().catch(() => {});
           wakeLock = await navigator.wakeLock.request('screen');
         }
       } catch {
@@ -1224,39 +1230,19 @@ export default function TablePage({
       // Update peak stack if rebuy pushes hero above previous peak
       const newPeakCandidate = (tableState.players[tableState.heroSeat - 1]?.stack || 0) + amount;
       if (newPeakCandidate > peakStackRef.current) peakStackRef.current = newPeakCandidate;
-      // Update hero's table stack in local state AND sync to DB
-      setTableState((prev) => {
-        const updatedPlayers = [...prev.players];
-        const heroIdx = prev.heroSeat - 1;
-        if (heroIdx >= 0 && updatedPlayers[heroIdx]) {
-          updatedPlayers[heroIdx] = {
-            ...updatedPlayers[heroIdx]!,
-            stack: updatedPlayers[heroIdx]!.stack + amount,
-          };
-        }
-        return { ...prev, players: updatedPlayers };
-      });
-      // Sync stack increment to Supabase table_seats (fire-and-forget with retry)
-      // Wallet debit already handled by WalletService.lockForBuyIn above.
-      // Use DB-side stack + amount to avoid stale-closure on tableState.players.
-      retryAsync(
-        async () =>
-          await supabase
-            .from('table_seats')
-            .update({ stack: (tableState.players[tableState.heroSeat - 1]?.stack || 0) + amount })
-            .eq('table_id', tableId)
-            .eq('user_id', userId)
-            .is('left_at', null),
-        2,
-        500
-      )
-        .then((result: any) => {
-          if (result?.error)
-            console.warn('[Cashier] Add chips DB sync failed:', result.error.message);
-        })
-        .catch((err: unknown) => {
-          console.warn('[Cashier] Add chips sync exhausted all retries:', err);
-        });
+      // Send to authoritative engine memory (which also syncs back to DB safely)
+      const res = await GameServerAPI.addChips(tableId, amount);
+      if (!res.success) {
+        console.error('[Cashier] GameServerAPI.addChips failed:', res.error);
+        // We do not revert Wallet lock here since RPC deduct is locked. 
+        // This is a rare edge case: money left wallet but table engine failed to ingest.
+        // Needs a manual intervention/audit log.
+      }
+
+      // We do NOT optimistic update tableState anymore. The next WebSocket broadcast
+      // from the engine (either immediately or at start of next hand) will give
+      // us the authoritative stack size.
+
       // Emit bus event so other pages (Dashboard, Profile) know about the chip change
       const estimatedNewStack = (tableState.players[tableState.heroSeat - 1]?.stack || 0) + amount;
       masterBus.emit('CHIPS_ADDED', { tableId, userId, amount, newStack: estimatedNewStack });
@@ -3643,6 +3629,47 @@ export default function TablePage({
     if (!lastEvent) return;
 
     switch (lastEvent.type) {
+      case 'GAME_START': {
+        // Fast UI recovery via GameServerAPI.getTableState() full snapshot
+        const syncData = lastEvent.data as any;
+        if (!syncData) break;
+        
+        setTableState((prev) => {
+          const updatedPlayers = [...prev.players];
+          const serverPlayers = syncData.players || [];
+          
+          serverPlayers.forEach((sp: any) => {
+            const seatIdx = sp.seat - 1;
+            if (seatIdx >= 0 && seatIdx < updatedPlayers.length) {
+              const existing = updatedPlayers[seatIdx];
+              updatedPlayers[seatIdx] = {
+                ...(existing || {}),
+                id: sp.user_id,
+                name: sp.username || existing?.name || `Seat ${sp.seat}`,
+                stack: sp.stack,
+                bet: sp.bet || 0,
+                holeCards: sp.user_id === userId || (sp.cards && sp.cards.length > 0 && !sp.is_folded) 
+                  ? sp.cards || existing?.holeCards || [] 
+                  : [],
+                status: sp.is_folded ? 'folded' : (sp.is_all_in ? 'all_in' : (sp.is_sitting_out ? 'sitting_out' : 'active')),
+                isHero: sp.user_id === userId,
+                showCards: sp.cards && sp.cards.length > 0 && !sp.is_folded,
+              } as any;
+            }
+          });
+          
+          return {
+            ...prev,
+            handNumber: syncData.hand_number,
+            pot: syncData.pot || 0,
+            communityCards: syncData.community_cards || [],
+            stage: syncData.stage || 'idle',
+            dealerSeat: syncData.dealer_seat || 0,
+            players: updatedPlayers,
+          };
+        });
+        break;
+      }
       case 'DEAL_CARDS':
         // Update community cards
         if (lastEvent.data.communityCards) {

@@ -22,7 +22,7 @@ export interface UserThemeSelection {
 const DEFAULT_THEME: UserThemeSelection = {
   theme_id: 'default-dark',
   table_id: 'dark-felt',
-  button_id: 'red-d-gear',
+  button_id: 'classic-white',
   background_id: 'diamond-pattern',
   cards_id: 'standard-red',
 };

@@ -23,6 +23,8 @@ import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import './styles/club-engine.css';
 import './styles/animations.css';
+import './styles/ChipAnimations.css';
+import './components/table/CardAnimations.css';
 import { initAntiGravity } from './core/AntiGravityBoot';
 import { initMasterBus } from './core/MasterBus';
 import { initIdentityDNA } from './core/IdentityDNA';

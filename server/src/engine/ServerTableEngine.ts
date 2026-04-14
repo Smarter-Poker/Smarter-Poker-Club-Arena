@@ -882,6 +882,51 @@ export class ServerTableEngine {
   }
 
   /**
+   * POST /addchips — Player bought chips (added to their stack directly).
+   * Fixes race condition where postHandTasks overwrote table_seats db buy-ins.
+   */
+  public addChips(userId: string, amount: number): { success: boolean; error?: string } {
+    const player = this.seatedPlayers.find((p) => p.user_id === userId);
+    if (!player) return { success: false, error: 'Player not seated' };
+
+    // Update Engine Memory
+    player.stack += amount;
+    if (this.handController) {
+      const hcState = this.handController.getState();
+      const hcPlayer = hcState.players.find((p) => p.user_id === userId);
+      if (hcPlayer) hcPlayer.stack += amount;
+    }
+
+    // Update Database directly as well (for safety against server crash before hand completes).
+    // The engine's single threaded nature makes it safe to read/write here without an RPC.
+    const { supabase } = require('../services/supabase.js');
+    supabase
+      .from('table_seats')
+      .select('stack')
+      .eq('table_id', this.tableId)
+      .eq('user_id', userId)
+      .is('left_at', null)
+      .maybeSingle()
+      .then(({ data }: { data: any }) => {
+        if (data && data.stack !== undefined) {
+          supabase
+            .from('table_seats')
+            .update({ stack: data.stack + amount })
+            .eq('table_id', this.tableId)
+            .eq('user_id', userId)
+            .is('left_at', null)
+            .then(({ error }: { error: any }) => {
+              if (error) console.error(`[ServerTableEngine] addChips db update failed:`, error);
+            });
+        }
+      });
+
+    // Broadcast update so the player sees the chip increase immediately
+    this.broadcastCurrentState();
+    return { success: true };
+  }
+
+  /**
    * POST /sitout — Bible V8 §7.12: Player sits out or back in
    */
   public sitOut(

@@ -14,6 +14,7 @@
 import { RealtimeChannel, RealtimePresenceState } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { reportError } from '../utils/errorReporter';
+import GameServerAPI from './GameServerAPI';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -197,7 +198,8 @@ export class TableWebSocket {
     }
 
     if (this.channel) {
-      await this.channel.unsubscribe();
+      // Use removeChannel instead of unsubscribe to prevent zombie channels if disconnected while connecting
+      await this.supabase.removeChannel(this.channel);
       this.channel = null;
     }
 
@@ -404,19 +406,11 @@ export class TableWebSocket {
     }
 
     try {
-      // Call Supabase RPC to get current game state
-      const { data, error } = await retryAsync(
-        () =>
-          this.supabase.rpc('get_table_state', {
-            p_table_id: this.tableId,
-          }),
+      // FIX: Call authoritative Node.js Engine to get live state instead of static DB
+      const data = await retryAsync(
+        () => GameServerAPI.getTableState(this.tableId),
         3
       );
-
-      if (error) {
-        reportError(error, 'TableWS.resync.rpcError');
-        return;
-      }
 
       if (data) {
         // Broadcast the synced state to all handlers
@@ -426,7 +420,7 @@ export class TableWebSocket {
           tableId: this.tableId,
           data: data,
           timestamp: Date.now(),
-          sequence: data.sequence || this.lastSequence + 1,
+          sequence: (data.sequence as number) || this.lastSequence + 1,
         };
         // Dispatch directly (skip sequence ordering — resync IS the truth)
         this.dispatchEvent(syncEvent);

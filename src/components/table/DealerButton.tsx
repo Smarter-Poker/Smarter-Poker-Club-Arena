@@ -33,7 +33,8 @@ export function DealerButton({ dealerVisualIndex, seatPositions, isVisible }: De
   // so it doesn't overlap the player avatar
   const centerX = 50;
   const centerY = 50;
-  const offsetFactor = 0.15;
+  // Larger offset to prevent overlapping player avatars
+  const offsetFactor = 0.28;
   const btnX = pos.x + (centerX - pos.x) * offsetFactor;
   const btnY = pos.y + (centerY - pos.y) * offsetFactor;
 

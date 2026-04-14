@@ -374,7 +374,7 @@
 .table-rail {
   width: 100%;
   height: 100%;
-  padding: 6px;
+  padding: 10px;
   /* Premium dark wood rail with subtle grain highlights */
   background: var(
     --rail-gradient,
@@ -388,7 +388,7 @@
       #3a2a1e 100%
     )
   );
-  border-radius: 45% / 35%;
+  border-radius: 50% / 42%;
   box-shadow:
         /* Outer double ring */
     0 0 0 2px rgba(0, 0, 0, 0.8),
@@ -407,7 +407,7 @@
   content: '';
   position: absolute;
   inset: 0;
-  border-radius: 45% / 35%;
+  border-radius: 50% / 42%;
   background: repeating-linear-gradient(
     85deg,
     transparent 0px,
@@ -424,7 +424,7 @@
   content: '';
   position: absolute;
   inset: 4px;
-  border-radius: 44% / 34%;
+  border-radius: 49% / 41%;
   border: 1px dashed rgba(255, 255, 255, 0.06);
   pointer-events: none;
   z-index: 2;
@@ -439,9 +439,10 @@
   --felt-gradient: radial-gradient(ellipse at 50% 40%, #1a7a4a 0%, #0f5132 50%, #0a3d24 100%);
 }
 
-/* Default: Midnight Black (fallback when no theme set) */
+/* Default: Casino Green (PokerBros-style classic green felt) */
 .table-page:not([data-felt-theme]) {
-  --felt-gradient: radial-gradient(ellipse at 50% 40%, #2a2a2e 0%, #1a1a1e 50%, #0e0e12 100%);
+  --felt-gradient: radial-gradient(ellipse at 50% 40%, #1a7a4a 0%, #0f5132 50%, #0a3d24 100%);
+  --rail-gradient: linear-gradient(180deg, #5a4232 0%, #4a3728 20%, #3a2a1e 50%, #4a3728 80%, #5a4232 100%);
 }
 
 /* Blue Royale */
@@ -616,7 +617,7 @@
     repeating-conic-gradient(rgba(0, 0, 0, 0.02) 0% 25%, transparent 0% 50%) 1px 1px / 4px 4px,
     /* Main radial felt gradient — uses theme tokens */
     var(--felt-gradient, radial-gradient(ellipse at 50% 40%, #2a2a2e 0%, #1a1a1e 50%, #0e0e12 100%));
-  border-radius: 44% / 34%;
+  border-radius: 50% / 42%;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -630,7 +631,10 @@
     /* Ambient inner shadow */ inset 0 0 80px rgba(0, 0, 0, 0.12),
     /* Outer glow */ 0 4px 24px rgba(0, 0, 0, 0.5),
     0 0 0 3px rgba(255, 255, 255, 0.05);
-  border: var(--table-border, 1.5px solid rgba(255, 255, 255, 0.04));
+  border: 2px solid rgba(255, 215, 0, 0.15);
+  /* Gold trim line between felt and rail */
+  outline: 1px solid rgba(255, 215, 0, 0.08);
+  outline-offset: 2px;
 }
 
 /* Hand Number Display — positioned top-left of the table felt */
@@ -650,16 +654,16 @@
   user-select: none;
 }
 
-/* Center spotlight — subtle light pooling effect */
+/* Center spotlight — premium light pooling effect like overhead casino light */
 .table-surface::after {
   content: '';
   position: absolute;
-  top: 30%;
+  top: 25%;
   left: 50%;
-  width: 60%;
-  height: 40%;
+  width: 70%;
+  height: 50%;
   transform: translateX(-50%);
-  background: radial-gradient(ellipse at 50% 50%, rgba(255, 255, 255, 0.035) 0%, transparent 70%);
+  background: radial-gradient(ellipse at 50% 40%, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0.02) 40%, transparent 70%);
   pointer-events: none;
   z-index: 0;
 }

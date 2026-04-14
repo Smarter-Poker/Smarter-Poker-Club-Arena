@@ -1,19 +1,28 @@
 import { reportError } from '../services/errorReporter.js';
+import { deadlineScheduler, type DeadlineScheduler } from './DeadlineScheduler.js';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  PRECISE ACTION TIMER — Server-Side Deadline Tracking
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * Replaces unreliable setTimeout-based timers with deadline-based timers:
- * - Records an absolute deadline (Date.now() + duration)
- * - All expiry checks compare against the real clock, not timer callbacks
- * - Immune to timer drift under high CPU load
- * - 100ms precision polling for expiry callbacks
- * - Integrates with TimeBankEngine for extension
+ * Records per-player absolute turn deadlines and fires an onExpiry callback
+ * when the deadline is reached. Extension, pause, and resume semantics are
+ * preserved for existing callers (TimeBankEngine, insurance/RIT flows).
  *
- * Ported from client: src/engine/PreciseActionTimer.ts
- * Server adaptation: No masterBus — uses console logging + optional event callback.
+ * Phase 1.2 PR-B: the internal polling interval is gone — a single
+ * process-global DeadlineScheduler handles every timer across every table.
+ * This class is now a thin stateful wrapper that registers/un-registers
+ * schedule entries and keeps the Map of ActionDeadline for getRemainingMs,
+ * pause state, and event dispatch.
+ *
+ * Why the indirection: DeadlineScheduler gives us
+ *   - drift-free 100ms tick granularity across all tables
+ *   - maxFirePerTick backpressure so a burst of expirations can't stall
+ *     the event loop
+ *   - persistPending/rehydrate for restart resilience (PR-D)
+ *   - throw isolation between callbacks
+ * Callers of PreciseActionTimer get those benefits with zero API change.
  */
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -55,29 +64,50 @@ export interface TimerEvent {
 
 export class PreciseActionTimer {
   private deadlines: Map<string, ActionDeadline> = new Map();
-  private pollInterval: ReturnType<typeof setInterval> | null = null;
-  private pollMs: number = 100; // 100ms precision
   private onEvent?: (event: TimerEvent) => void;
+  /**
+   * The scheduler that does the actual ticking + expiry firing. Can be
+   * overridden in tests. In production this is the singleton from
+   * DeadlineScheduler.ts.
+   */
+  private scheduler: DeadlineScheduler;
+  /**
+   * Current-time function. Must use the same clock as the scheduler so
+   * deadlines stored in the Map match the scheduler's ordering. Defaults
+   * to Date.now; tests inject a mock clock shared with the scheduler.
+   */
+  private now: () => number;
 
-  constructor(onEvent?: (event: TimerEvent) => void) {
+  constructor(
+    onEvent?: (event: TimerEvent) => void,
+    scheduler: DeadlineScheduler = deadlineScheduler,
+    now: () => number = Date.now
+  ) {
     this.onEvent = onEvent;
-    this.startPolling();
+    this.scheduler = scheduler;
+    this.now = now;
+    // Ensure the shared scheduler is running. start() is idempotent.
+    this.scheduler.start();
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // PUBLIC API
+  // PUBLIC API — unchanged surface; internals delegate to DeadlineScheduler.
   // ═══════════════════════════════════════════════════════════════════════════
 
   /**
    * Start a new action timer for a player.
-   * Records the absolute deadline and sets up expiry callback.
+   * Records the absolute deadline and registers it with the scheduler.
    */
   startTimer(tableId: string, playerId: string, durationMs: number, onExpiry?: () => void): void {
     const key = this.key(tableId, playerId);
-    const now = Date.now();
+    const now = this.now();
 
-    // Cancel any existing timer for this player
-    this.cancelTimer(tableId, playerId);
+    // Cancel any existing timer for this player — idempotent re-schedule
+    // is handled by DeadlineScheduler.schedule(), but we also need to clear
+    // our own Map entry and emit the CANCELLED event for observers.
+    if (this.deadlines.has(key)) {
+      this.cancelTimer(tableId, playerId);
+    }
 
     const deadline: ActionDeadline = {
       tableId,
@@ -89,8 +119,14 @@ export class PreciseActionTimer {
       pausedRemainingMs: 0,
       onExpiry: onExpiry || null,
     };
-
     this.deadlines.set(key, deadline);
+
+    this.scheduler.schedule({
+      tableId,
+      eventId: this.eventId(playerId),
+      deadlineMs: deadline.deadline,
+      callback: () => this.onExpired(tableId, playerId),
+    });
 
     this.emitEvent({
       type: 'TIMER_STARTED',
@@ -108,10 +144,8 @@ export class PreciseActionTimer {
   getRemainingMs(tableId: string, playerId: string): number {
     const dl = this.deadlines.get(this.key(tableId, playerId));
     if (!dl) return 0;
-
     if (dl.isPaused) return dl.pausedRemainingMs;
-
-    const remaining = dl.deadline - Date.now();
+    const remaining = dl.deadline - this.now();
     return Math.max(0, remaining);
   }
 
@@ -130,7 +164,7 @@ export class PreciseActionTimer {
     const dl = this.deadlines.get(this.key(tableId, playerId));
     if (!dl) return true; // No timer = expired
     if (dl.isPaused) return false;
-    return Date.now() >= dl.deadline;
+    return this.now() >= dl.deadline;
   }
 
   /**
@@ -151,6 +185,14 @@ export class PreciseActionTimer {
       dl.pausedRemainingMs += additionalMs;
     } else {
       dl.deadline += additionalMs;
+      // Re-schedule with the new deadline. schedule() is idempotent on the
+      // eventId so this replaces the prior entry without us having to cancel.
+      this.scheduler.schedule({
+        tableId,
+        eventId: this.eventId(playerId),
+        deadlineMs: dl.deadline,
+        callback: () => this.onExpired(tableId, playerId),
+      });
     }
 
     this.emitEvent({
@@ -170,7 +212,9 @@ export class PreciseActionTimer {
     if (!dl || dl.isPaused) return;
 
     dl.isPaused = true;
-    dl.pausedRemainingMs = Math.max(0, dl.deadline - Date.now());
+    dl.pausedRemainingMs = Math.max(0, dl.deadline - this.now());
+    // While paused, the scheduler shouldn't fire — pull the entry out.
+    this.scheduler.cancel(tableId, this.eventId(playerId));
 
     this.emitEvent({ type: 'TIMER_PAUSED', tableId, playerId });
   }
@@ -183,8 +227,15 @@ export class PreciseActionTimer {
     if (!dl || !dl.isPaused) return;
 
     dl.isPaused = false;
-    dl.deadline = Date.now() + dl.pausedRemainingMs;
+    dl.deadline = this.now() + dl.pausedRemainingMs;
     dl.pausedRemainingMs = 0;
+    // Re-register with the scheduler at the new deadline.
+    this.scheduler.schedule({
+      tableId,
+      eventId: this.eventId(playerId),
+      deadlineMs: dl.deadline,
+      callback: () => this.onExpired(tableId, playerId),
+    });
 
     this.emitEvent({
       type: 'TIMER_RESUMED',
@@ -201,6 +252,7 @@ export class PreciseActionTimer {
     const key = this.key(tableId, playerId);
     if (this.deadlines.has(key)) {
       this.deadlines.delete(key);
+      this.scheduler.cancel(tableId, this.eventId(playerId));
       this.emitEvent({ type: 'TIMER_CANCELLED', tableId, playerId });
     }
   }
@@ -214,6 +266,8 @@ export class PreciseActionTimer {
         this.deadlines.delete(key);
       }
     }
+    // One sweep in the scheduler to match.
+    this.scheduler.cancelAll(tableId);
   }
 
   /**
@@ -224,46 +278,41 @@ export class PreciseActionTimer {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // PRIVATE: POLLING
+  // PRIVATE
   // ═══════════════════════════════════════════════════════════════════════════
 
-  private startPolling(): void {
-    if (this.pollInterval) return;
+  /** Called by the scheduler when a deadline fires. */
+  private onExpired(tableId: string, playerId: string): void {
+    const key = this.key(tableId, playerId);
+    const dl = this.deadlines.get(key);
+    if (!dl) return; // Already cancelled between scheduling and tick.
+    if (dl.isPaused) return; // Paused between schedule and tick — scheduler cancelled, but safety check.
 
-    this.pollInterval = setInterval(() => {
-      const now = Date.now();
+    this.deadlines.delete(key);
 
-      for (const [key, dl] of this.deadlines) {
-        if (dl.isPaused) continue;
-        if (now >= dl.deadline) {
-          // Timer expired — fire callback and remove
-          this.deadlines.delete(key);
+    this.emitEvent({
+      type: 'TIMER_EXPIRED',
+      tableId,
+      playerId,
+      driftMs: this.now() - dl.deadline,
+    });
 
-          this.emitEvent({
-            type: 'TIMER_EXPIRED',
-            tableId: dl.tableId,
-            playerId: dl.playerId,
-            driftMs: now - dl.deadline,
-          });
-
-          if (dl.onExpiry) {
-            try {
-              dl.onExpiry();
-            } catch (err: unknown) {
-              reportError(err, 'PreciseActionTimer.Expiry_callback_error_for_dlta');
-            }
-          }
-        }
+    if (dl.onExpiry) {
+      try {
+        dl.onExpiry();
+      } catch (err: unknown) {
+        reportError(err, 'PreciseActionTimer.Expiry_callback_error_for_dlta');
       }
-    }, this.pollMs);
+    }
   }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // PRIVATE: HELPERS
-  // ═══════════════════════════════════════════════════════════════════════════
 
   private key(tableId: string, playerId: string): string {
     return `${tableId}:${playerId}`;
+  }
+
+  /** Scheduler eventId for this player's turn. Prefix isolates from other engines. */
+  private eventId(playerId: string): string {
+    return `turn:${playerId}`;
   }
 
   private emitEvent(event: TimerEvent): void {
@@ -277,13 +326,15 @@ export class PreciseActionTimer {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // CLEANUP
+  // CLEANUP — called when the engine for a table shuts down.
+  // Kept for backward compat; now a cancel-all wrapper.
   // ═══════════════════════════════════════════════════════════════════════════
 
   dispose(): void {
-    if (this.pollInterval) {
-      clearInterval(this.pollInterval);
-      this.pollInterval = null;
+    // Cancel every entry. We don't stop the shared scheduler because other
+    // table engines may still be using it.
+    for (const [key, dl] of this.deadlines) {
+      this.scheduler.cancel(dl.tableId, this.eventId(dl.playerId));
     }
     this.deadlines.clear();
   }

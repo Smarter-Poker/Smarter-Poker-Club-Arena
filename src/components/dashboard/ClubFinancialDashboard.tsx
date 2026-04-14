@@ -7,6 +7,7 @@ import { masterBus } from '../../core/MasterBus';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
+import { useVisibilityRefresh } from '../../hooks/useVisibilityRefresh';
 import {
   AreaChart,
   Area,
@@ -140,6 +141,13 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
       masterBus.removeRegisteredChannel(channelKey);
     };
   }, [clubId]);
+
+  // Hook to handle visibility state changes (prevents zombie subscriptions)
+  useVisibilityRefresh(() => {
+    fetchDiamondBalance();
+    fetchRevenueData();
+    fetchActiveTableCount();
+  });
 
   const fetchDiamondBalance = async () => {
     try {

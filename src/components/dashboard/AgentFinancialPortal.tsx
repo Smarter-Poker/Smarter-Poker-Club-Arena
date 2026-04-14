@@ -7,6 +7,7 @@ import { useToast } from '../common/Toast';
 import { FinancialChart } from '../charts/FinancialChart';
 import { masterBus } from '../../core/MasterBus';
 import { reportError } from '../../utils/errorReporter';
+import { useVisibilityRefresh } from '../../hooks/useVisibilityRefresh';
 
 interface AgentPortalProps {
   agentId: string;
@@ -40,6 +41,12 @@ export const AgentFinancialPortal: React.FC<AgentPortalProps> = ({ agentId }) =>
     fetchWalletData();
     fetchCommissionHistory();
   }, [agentId]);
+
+  // Hook to handle visibility state changes (prevents zombie subscriptions)
+  useVisibilityRefresh(() => {
+    fetchWalletData();
+    fetchCommissionHistory();
+  });
 
   // Live-sync: refresh wallet data when balances change anywhere in the app
   useEffect(() => {

@@ -70,6 +70,10 @@ import IdentityModal from '../components/table/IdentityModal';
 import DisconnectToast from '../components/table/DisconnectToast';
 // Phase 1.3 PR-C+D: server-rejection toast + auto-snap hint imported below
 // at the existing ActionErrorToast import line — do not duplicate here.
+// Phase 2 T2-01 (spec §5.6): Fold Protection Dialog.
+import FoldProtectionDialog from '../components/table/FoldProtectionDialog';
+// Phase 2 T2-02 (spec §5.7): Always-visible timebank counter (bottom-left).
+import TimebankCounter from '../components/table/TimebankCounter';
 import { BBJService } from '../services/BBJService';
 import RabbitHunt from '../components/table/RabbitHunt';
 import LeaderboardPanel from '../components/table/LeaderboardPanel';
@@ -626,6 +630,12 @@ export default function TablePage({
   // Set whenever submitAction resolves with success === false. Auto-cleared
   // by the toast component after 4s, or by the user (X button / Snap-to hint).
   const [actionErrorData, setActionErrorData] = useState<ActionErrorData | null>(null);
+
+  // Phase 2 T2-01 (spec §5.6): Fold Protection Dialog. When the player taps
+  // Fold while Check is free, we defer the fold and show a confirmation. This
+  // state is ONLY the dialog's open flag — the fold itself is committed inside
+  // the modal's onFold callback so we don't race two submitActions.
+  const [foldProtectOpen, setFoldProtectOpen] = useState(false);
 
   // State - initialize with empty data (no demo data!)
   const [tableState, setTableState] = useState<TableState>({
@@ -1615,6 +1625,20 @@ export default function TablePage({
       }
     };
   }, [v8Settings.skip_animations]);
+
+  // Bible V8 §11.1: enhanced_view → document-level flag so themes and
+  // component CSS can branch on body[data-enhanced-view="1"]. Single source
+  // so future visual effects can opt in without plumbing the prop through.
+  useEffect(() => {
+    if (v8Settings.enhanced_view) {
+      document.documentElement.setAttribute('data-enhanced-view', '1');
+    } else {
+      document.documentElement.removeAttribute('data-enhanced-view');
+    }
+    return () => {
+      document.documentElement.removeAttribute('data-enhanced-view');
+    };
+  }, [v8Settings.enhanced_view]);
 
   // Sync sound volume from persisted settings on mount (and when slider changes)
   useEffect(() => {
@@ -3910,10 +3934,16 @@ export default function TablePage({
     isHeroTurn: isHeroTurnContext && !timeBankActive,
     isSoundEnabled,
     onTimeout: () => {
-      // Server-authoritative: when client timer expires, try to activate time bank
+      // Server-authoritative: when client timer expires, try to activate time bank.
+      // Bible V8 §11.1 auto_time_bank toggle — when ON, silently activate without
+      // popping the modal (treat it as a silent grant). When OFF, the modal still
+      // opens so the user can see the countdown tick and decide whether to spend
+      // another bank if one expires.
       if (tableId && userId && timeBanksRemaining > 0) {
         setTimeBankActive(true);
-        setShowTimeBank(true);
+        if (!v8Settings.auto_time_bank) {
+          setShowTimeBank(true);
+        }
         GameServerAPI.activateTimeBank(tableId, userId).catch(() => {
           // Server rejected — fall back to auto-fold
           handleTimerAutoFold();
@@ -3958,19 +3988,42 @@ export default function TablePage({
     return true;
   };
 
-  const handleFold = async () => {
+  /**
+   * Phase 2 T2-01 (spec §5.6): "Check or Fold?" protection.
+   * Returns true when checking is legal for hero right now. When true and the
+   * player taps Fold, we defer and show FoldProtectionDialog instead of
+   * executing the fold. The keyboard shortcut ('F') also routes through here.
+   */
+  const canCheckRightNow = useCallback(() => {
+    return (
+      (tableState.currentBet || 0) <=
+      (tableState.lastBetAmounts?.[tableState.heroSeat - 1] || 0)
+    );
+  }, [tableState.currentBet, tableState.lastBetAmounts, tableState.heroSeat]);
+
+  /** Commit a fold that has already cleared any dialog / confirmation gates. */
+  const commitFold = useCallback(async () => {
     if (actionLockRef.current) return;
     if (!validateAndExecuteAction('fold')) return;
     actionLockRef.current = true;
     setTimeout(() => {
       actionLockRef.current = false;
     }, 300);
-    const heroSeat = tableState.heroSeat;
     setShowRaiseSlider(false);
-    //Local engine call removed — server is authoritative
-    soundService.playFold(); // SoundService handles haptic (light) per Bible V8 §5.4
+    soundService.playFold(); // Bible V8 §5.4 — fold = light haptic
     if (tableId)
-      await submitActionWithToast(tableId, userId, 'fold', undefined, 'handleFold');
+      await submitActionWithToast(tableId, userId, 'fold', undefined, 'commitFold');
+  }, [tableId, userId, submitActionWithToast]);
+
+  const handleFold = async () => {
+    if (actionLockRef.current) return;
+    // Spec §5.6: when checking is free, defer the fold behind a confirmation
+    // dialog. The dialog lives in JSX below and calls commitFold() on confirm.
+    if (canCheckRightNow()) {
+      setFoldProtectOpen(true);
+      return;
+    }
+    await commitFold();
   };
 
   const handleCheck = async () => {
@@ -4073,6 +4126,13 @@ export default function TablePage({
       //All local engine calls removed — server is authoritative
       switch (action) {
         case 'fold':
+          // Spec §5.6: when Check is free, route through the protection dialog
+          // instead of folding immediately. commitFold runs validate +
+          // submitAction; the dialog calls commitFold on user confirmation.
+          if (canCheckRightNow()) {
+            setFoldProtectOpen(true);
+            break;
+          }
           if (!validateAndExecuteAction('fold')) return;
           soundService.playFold(); // SoundService handles haptic per Bible V8 §5.4
           if (tableId)
@@ -4110,7 +4170,7 @@ export default function TablePage({
           break;
       }
     },
-    [tableState.heroSeat, tableId, userId, submitActionWithToast]
+    [tableState.heroSeat, tableId, userId, submitActionWithToast, canCheckRightNow]
   );
 
   const handleConfirmRaise = async () => {
@@ -4495,6 +4555,33 @@ export default function TablePage({
       {/* Phase 1.2 PR-F: hero disconnect banner. Only renders when the
           engine FSM reports MISSING or DISCONNECTED for this user. */}
       <DisconnectToast heroUserId={userId} disconnectStates={disconnectStates} />
+      {/* Phase 2 T2-01 (spec §5.6): Fold Protection Dialog.
+          handleFold / panel-fold defer to this when canCheckRightNow() is
+          true. onCheck dismisses + executes the free check; onFold dismisses
+          + commits the fold the player already intended. */}
+      <FoldProtectionDialog
+        open={foldProtectOpen}
+        onDismiss={() => setFoldProtectOpen(false)}
+        onCheck={() => {
+          setFoldProtectOpen(false);
+          handleCheck();
+        }}
+        onFold={() => {
+          setFoldProtectOpen(false);
+          void commitFold();
+        }}
+      />
+      {/* Phase 2 T2-02 (spec §5.7): always-visible timebank counter in the
+          bottom-left. Only renders during an active hand so it doesn't clutter
+          observer/idle views. Tapping it opens the existing TimeBank modal so
+          the player can buy more charges. `low` state pulses when <= 1. */}
+      {tableState.isHandInProgress && tableState.heroSeat > 0 && (
+        <TimebankCounter
+          count={timeBanksRemaining}
+          low={timeBanksRemaining <= 1}
+          onClick={() => setShowTimeBank(true)}
+        />
+      )}
       {/*
         Phase 1.3 PR-C+D: server-rejection toast.
         Auto-clears after 4s (component-internal). The Snap-to-hint button
@@ -5419,29 +5506,38 @@ export default function TablePage({
         {/* Duplicate chat toggle REMOVED — TableChat renders its own collapsed icon */}
       </div>
 
-      {/* Table Chat */}
-      <TableChat
-        messages={chatMessages}
-        onSendMessage={handleSendChatMessage}
-        myPlayerId={userId}
-        tableId={tableId}
-        isCollapsed={isChatCollapsed}
-        onToggleCollapse={() => setIsChatCollapsed(!isChatCollapsed)}
-        placeholder={canChatAsObserver ? 'Say something...' : 'Observers cannot chat'}
-        isMuted={isChatMuted}
-        isDisabled={!canChatAsObserver}
-        unreadCount={unreadCount}
-      />
+      {/*
+        Bible V8 §11.1: text_message toggle — hide chat entirely when off.
+        The underlying messages keep streaming into chatMessages so when the
+        user re-enables, their history isn't lost. voice_message is not yet
+        implemented; when that arrives it will live here too.
+      */}
+      {v8Settings.text_message && (
+        <TableChat
+          messages={chatMessages}
+          onSendMessage={handleSendChatMessage}
+          myPlayerId={userId}
+          tableId={tableId}
+          isCollapsed={isChatCollapsed}
+          onToggleCollapse={() => setIsChatCollapsed(!isChatCollapsed)}
+          placeholder={canChatAsObserver ? 'Say something...' : 'Observers cannot chat'}
+          isMuted={isChatMuted || !v8Settings.voice_message}
+          isDisabled={!canChatAsObserver}
+          unreadCount={unreadCount}
+        />
+      )}
 
-      {/* Table Reactions — floating emoji picker + active reactions */}
-      <TableReactions
-        tableId={tableId}
-        userId={userId}
-        heroSeat={tableState.heroSeat}
-        isOpen={isReactionPickerOpen}
-        onClose={() => setIsReactionPickerOpen(false)}
-        activeReactions={activeReactions}
-      />
+      {/* Bible V8 §11.1: emoji_enabled gate — skips reactions overlay entirely. */}
+      {v8Settings.emoji_enabled && (
+        <TableReactions
+          tableId={tableId}
+          userId={userId}
+          heroSeat={tableState.heroSeat}
+          isOpen={isReactionPickerOpen}
+          onClose={() => setIsReactionPickerOpen(false)}
+          activeReactions={activeReactions}
+        />
+      )}
 
       {/* Performance Monitor — dev-only */}
       <TablePerfMonitor />
@@ -5629,8 +5725,8 @@ export default function TablePage({
 
       {/* Quick Chat Presets removed per user request */}
 
-      {/* Throwable Selector */}
-      {showThrowableSelector && userId && (
+      {/* Throwable Selector — Bible V8 §11.1: emoji_enabled gate. */}
+      {showThrowableSelector && userId && v8Settings.emoji_enabled && (
         <div className="throwable-selector-overlay" onClick={() => setShowThrowableSelector(false)}>
           <ThrowableSelector
             userId={userId}

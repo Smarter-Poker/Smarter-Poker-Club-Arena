@@ -1,0 +1,79 @@
+/**
+ * Timebank Counter — spec §5.7 visual design.
+ * Bottom-left anchored, small clock + diamond badge + count.
+ */
+
+.tbc-widget {
+  position: fixed;
+  left: 12px;
+  bottom: calc(96px + env(safe-area-inset-bottom, 0));
+  z-index: 1400;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: 14px;
+  background: rgba(14, 17, 24, 0.82);
+  backdrop-filter: blur(10px) saturate(1.2);
+  -webkit-backdrop-filter: blur(10px) saturate(1.2);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.15s ease, background 0.2s ease, border-color 0.2s ease;
+}
+
+.tbc-widget:hover {
+  background: rgba(28, 34, 48, 0.92);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.tbc-widget:active {
+  transform: scale(0.96);
+}
+
+.tbc-clock {
+  display: inline-flex;
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.tbc-count {
+  min-width: 14px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Diamond is hot-pink per spec ("pink diamond icon"). */
+.tbc-diamond {
+  display: inline-flex;
+  color: #ff6bb6;
+  filter: drop-shadow(0 0 3px rgba(255, 107, 182, 0.55));
+}
+
+/* Low state — 1 or 0 timebanks remaining. Pulsing halo draws the eye. */
+.tbc-widget--low {
+  border-color: rgba(255, 107, 182, 0.5);
+  animation: tbcPulse 1.6s ease-in-out infinite;
+}
+
+@keyframes tbcPulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(255, 107, 182, 0.25);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(255, 107, 182, 0);
+  }
+}
+
+/* Mobile: pull the widget up further so it clears the larger action panel. */
+@media (max-width: 767px) {
+  .tbc-widget {
+    bottom: calc(124px + env(safe-area-inset-bottom, 0));
+    left: 8px;
+  }
+}

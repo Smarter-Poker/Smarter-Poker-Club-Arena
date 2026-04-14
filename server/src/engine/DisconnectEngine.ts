@@ -43,6 +43,26 @@ export interface PlayerConnectionState {
   disconnectedAt?: number;
   /** Timestamp when player reconnected (for grace period tracking — Bible V8 §6.3) */
   reconnectedAt?: number;
+  /**
+   * Phase 1.2 PR-E: formal FSM state for persistence + client UX.
+   *   CONNECTED    — WS alive, heartbeat fresh
+   *   MISSING      — WS dropped, still within grace window
+   *   DISCONNECTED — grace exhausted, no turn clock
+   *   SAT_OUT      — explicit sit-out
+   * Derived from isConnected + isSittingOut + disconnectedAt at read time
+   * (see getFsmState / getFsmStatesForTable). We do NOT add a standalone
+   * field because every existing code path already sets the booleans; the
+   * FSM is just a named projection.
+   */
+}
+
+/** Phase 1.2 PR-E: FSM state label. Mirrors supabase DisconnectFsmState. */
+export type DisconnectFsmState = 'CONNECTED' | 'MISSING' | 'DISCONNECTED' | 'SAT_OUT';
+
+export interface DisconnectFsmEntry {
+  state: DisconnectFsmState;
+  sinceMs: number;
+  graceDeadlineMs: number | null;
 }
 
 export interface DisconnectAction {
@@ -356,6 +376,56 @@ export class DisconnectEngine {
     this.playerStates.clear();
     this.tableConfigs.clear();
     this.actionCallbacks.clear();
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Phase 1.2 PR-E: FSM state projection for snapshot persistence + UI
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Derive the FSM state for a single player.
+   * Rules:
+   *   isSittingOut                       -> SAT_OUT
+   *   isConnected                        -> CONNECTED
+   *   !isConnected, within grace         -> MISSING
+   *   !isConnected, grace exhausted      -> DISCONNECTED
+   *
+   * Grace window = disconnectTimeoutSeconds from disconnectedAt (same window
+   * used by the auto-fold countdown).
+   */
+  getFsmState(tableId: string, playerId: string): DisconnectFsmEntry | null {
+    const key = `${tableId}:${playerId}`;
+    const s = this.playerStates.get(key);
+    if (!s) return null;
+    const config = this.tableConfigs.get(tableId) || this.DEFAULT_CONFIG;
+
+    if (s.isSittingOut) {
+      return { state: 'SAT_OUT', sinceMs: s.lastHeartbeat, graceDeadlineMs: null };
+    }
+    if (s.isConnected) {
+      return { state: 'CONNECTED', sinceMs: s.lastHeartbeat, graceDeadlineMs: null };
+    }
+    const dAt = s.disconnectedAt ?? s.lastHeartbeat;
+    const graceDeadlineMs = dAt + config.disconnectTimeoutSeconds * 1000;
+    if (Date.now() < graceDeadlineMs) {
+      return { state: 'MISSING', sinceMs: dAt, graceDeadlineMs };
+    }
+    return { state: 'DISCONNECTED', sinceMs: dAt, graceDeadlineMs };
+  }
+
+  /**
+   * Get the full per-user FSM map for a table in the shape
+   * hand_state_snapshots.disconnect_states expects. Used by
+   * ServerTableEngine to persist alongside pending_deadlines.
+   */
+  getFsmStatesForTable(tableId: string): Record<string, DisconnectFsmEntry> {
+    const out: Record<string, DisconnectFsmEntry> = {};
+    for (const [key, s] of this.playerStates) {
+      if (!key.startsWith(`${tableId}:`)) continue;
+      const fsm = this.getFsmState(tableId, s.playerId);
+      if (fsm) out[s.playerId] = fsm;
+    }
+    return out;
   }
 
   // ═══════════════════════════════════════════════════════════════════════════

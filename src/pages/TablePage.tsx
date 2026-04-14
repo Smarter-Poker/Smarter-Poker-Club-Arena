@@ -313,6 +313,10 @@ interface TableState {
   lateRegOpen?: boolean;
   currentLevel?: number;
   refreshTrigger?: number;
+  // Phase 2 T1-01: winners from the authoritative engine snapshot, with
+  // net profit precomputed (winnings - totalInvested). Drives the +N
+  // yellow floating text above each winner's seat.
+  engineWinners?: Array<{ userId: string; seat: number; amount: number; netAmount: number }>;
   // Phase 8: Action timer state
   actionTimerDeadline?: number;
   actionTimerPlayerId?: string;
@@ -678,6 +682,8 @@ export default function TablePage({
         isHandInProgress:
           mapped.boardStage !== 'waiting' &&
           (mapped.handNumber > 0 || mapped.players.some((p) => p !== null)),
+        // Phase 2 T1-01: winners map for +N floating text.
+        engineWinners: mapped.winners,
       };
     });
   }, [engineSnapshot, USE_ENGINE_WS, userId, tableState.maxPlayers]);
@@ -5032,6 +5038,13 @@ export default function TablePage({
                   winningHandName={
                     player && winnerInfo.playerIds.includes(player.id)
                       ? winnerInfo.handName
+                      : undefined
+                  }
+                  // Phase 2 T1-01: net-profit +N floating text. Look up this
+                  // seat's winner record (if any) from the engine snapshot.
+                  netWinAmount={
+                    player
+                      ? tableState.engineWinners?.find((w) => w.userId === player.id)?.netAmount
                       : undefined
                   }
                   hudStats={player && !player.isHero ? getPlayerHUDStats(player.id) : null}

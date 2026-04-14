@@ -4889,6 +4889,19 @@ export default function TablePage({
                     }))}
                     compact
                   />
+                  {/* Phase 2 T1-04 — PokerBros signature: hand strength label
+                   *  floats at pot center for ~1s at showdown. Keyed on hand
+                   *  number + hand name so every new hand re-triggers the
+                   *  animation. Per POKERBROS_CLONE_SPEC.md §6 line 548. */}
+                  {winnerInfo.handName && tableState.boardStage === 'showdown' && (
+                    <div
+                      className="pot-hand-strength"
+                      key={`hand-${displayHandNumber ?? 0}-${winnerInfo.handName}`}
+                      role="status"
+                    >
+                      {winnerInfo.handName}
+                    </div>
+                  )}
                 </div>
 
                 {/* Community Cards */}

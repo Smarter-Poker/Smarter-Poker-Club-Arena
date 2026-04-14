@@ -99,6 +99,19 @@
   transform-style: preserve-3d;
 }
 
+/*
+ * Phase 2 T1-06 — PokerBros community card deal stagger.
+ * Per POKERBROS_CLONE_SPEC.md deal section:
+ *   Flop (3 cards): slide in from left to right, one per 200ms
+ *     Each card: 3D flip + slide, 300ms duration
+ *     Stagger: 100ms between each card
+ * We stagger the --dealing animation by 100ms across the three flop cards.
+ * Turn and river fire alone so no stagger is applied to them.
+ */
+.community-cards__card--dealing:nth-of-type(1) { animation-delay: 0ms; }
+.community-cards__card--dealing:nth-of-type(2) { animation-delay: 100ms; }
+.community-cards__card--dealing:nth-of-type(3) { animation-delay: 200ms; }
+
 @keyframes cardFlip3D {
   0% {
     transform: rotateY(180deg) translateY(-70px) scale(0.5);

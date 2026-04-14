@@ -60,6 +60,8 @@ import TimeBank from '../components/table/TimeBank';
 import CashierModal from '../components/table/CashierModal';
 import BuyInModal from '../components/table/BuyInModal';
 import IdentityModal from '../components/table/IdentityModal';
+// Phase 1.2 PR-F: top-level disconnect FSM toast
+import DisconnectToast from '../components/table/DisconnectToast';
 import { BBJService } from '../services/BBJService';
 import RabbitHunt from '../components/table/RabbitHunt';
 import LeaderboardPanel from '../components/table/LeaderboardPanel';
@@ -588,6 +590,11 @@ export default function TablePage({
     tableId || undefined,
     { enabled: USE_ENGINE_WS }
   );
+  // Phase 1.2 PR-F: disconnect FSM states per userId, surfaced by the
+  // engine WS payload. Drives DisconnectToast below.
+  const [disconnectStates, setDisconnectStates] = useState<
+    Record<string, import('../utils/mapEngineSnapshot').DisconnectFsmEntry>
+  >({});
 
   // State - initialize with empty data (no demo data!)
   const [tableState, setTableState] = useState<TableState>({
@@ -622,12 +629,27 @@ export default function TablePage({
     if (!USE_ENGINE_WS) return;
     if (!engineSnapshot) return;
     const mapped = mapEngineSnapshot(engineSnapshot, userId, tableState.maxPlayers);
+    // Phase 1.2 PR-F: stash disconnect map for the top-level toast
+    setDisconnectStates(mapped.disconnectStates);
     setTableState((prev) => {
       // Merge per-seat players carefully: engine provides the full authoritative
       // roster. The SeatPlayer shape the UI wants matches mapped.players[i].
-      const nextPlayers: (SeatPlayer | null)[] = mapped.players.map((p) =>
-        p ? (p as unknown as SeatPlayer) : null
-      );
+      //
+      // CRITICAL (Dan's UX rule, 2026-04-14): when the hero folds, the server
+      // scrubs their hole cards from the public broadcast (returns cards=[]).
+      // Preserve the hero's previously-delivered cards in local state so the
+      // UI can dim them rather than erase them.
+      const nextPlayers: (SeatPlayer | null)[] = mapped.players.map((p, i) => {
+        if (!p) return null;
+        const sp = p as unknown as SeatPlayer;
+        if (sp.isHero && (!sp.holeCards || sp.holeCards.length === 0)) {
+          const prevHero = prev.players[i];
+          if (prevHero && prevHero.isHero && prevHero.holeCards && prevHero.holeCards.length > 0) {
+            return { ...sp, holeCards: prevHero.holeCards };
+          }
+        }
+        return sp;
+      });
       return {
         ...prev,
         pot: mapped.pot,
@@ -4587,6 +4609,9 @@ export default function TablePage({
                 .community-area { animation: boardFade 0.4s ease-out; }
                 .board-transition { animation: boardSlideIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1); }
             `}</style>
+      {/* Phase 1.2 PR-F: hero disconnect banner. Only renders when the
+          engine FSM reports MISSING or DISCONNECTED for this user. */}
+      <DisconnectToast heroUserId={userId} disconnectStates={disconnectStates} />
       {/* ═══════════════════════════════════════════════════════════════════════
           HEADER BAR — Compact premium-style with game info
           ═══════════════════════════════════════════════════════════════════════ */}
@@ -5170,6 +5195,7 @@ export default function TablePage({
                         bigBlind={bb}
                         onAction={handleActionPanelAction}
                         isMyTurn={true}
+                        isPreflop={tableState.boardStage === 'preflop'}
                         showPotOdds={userSettings.showPotOdds}
                         confirmAllIn={userSettings.confirmAllIn}
                       />

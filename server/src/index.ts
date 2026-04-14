@@ -30,6 +30,9 @@ import { ChipRaceEngine } from './engine/ChipRaceEngine.js';
 // FIX 154: Import TableBalancer for proper tournament table rebalancing
 import { TableBalancer, type BalancerTable, type MoveInstruction } from './engine/TableBalancer.js';
 import { reportError, initSentry, flushSentry, setServerContext } from './services/errorReporter.js';
+// Phase 1.1 PR-2: native WebSocket transport for authoritative state
+import { tableStateHub } from './transport/TableStateHub.js';
+import { EngineWebSocketServer } from './transport/EngineWebSocketServer.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONFIGURATION
@@ -451,10 +454,12 @@ class GameServer {
               `[GameServer] Starting engine for cash table ${table.id} (${count} players)`
             );
             const engine = new ServerTableEngine(table.id);
+            engine.setHub(tableStateHub); // Phase 1.1 PR-2: authoritative WS publisher
             this.tableEngines.set(table.id, engine);
             engine.start().catch((err) => {
               reportError(err, 'GameServer.Engine_start_failed_for_tablei');
               this.tableEngines.delete(table.id);
+              tableStateHub.dropTable(table.id);
             });
           }
         }
@@ -463,6 +468,7 @@ class GameServer {
         for (const [id, engine] of this.tableEngines) {
           if (!engine.isRunning()) {
             this.tableEngines.delete(id);
+            tableStateHub.dropTable(id); // Phase 1.1 PR-2: release hub room
           }
         }
       } catch (err) {
@@ -1092,6 +1098,7 @@ class TournamentManager {
 
       for (const table of tables || []) {
         const engine = new ServerTableEngine(table.id);
+        engine.setHub(tableStateHub); // Phase 1.1 PR-2
         this.tableEngines.set(table.id, engine);
         this.gameServer.registerTableEngine(table.id, engine);
         engine
@@ -1202,6 +1209,7 @@ class TournamentManager {
       }
 
       const engine = new ServerTableEngine(table.id);
+      engine.setHub(tableStateHub); // Phase 1.1 PR-2
       this.tableEngines.set(table.id, engine);
     }
 
@@ -2408,6 +2416,7 @@ class TournamentManager {
             await engine.stop();
           }
           this.tableEngines.delete(bt.tableId);
+          tableStateHub.dropTable(bt.tableId); // Phase 1.1 PR-2: release hub room
           await supabase.from('tables').update({ status: 'closed' }).eq('id', bt.tableId);
 
           await this.broadcast('table_rebalance', {
@@ -2633,6 +2642,7 @@ class TournamentManager {
 
       // Create engine + register with game server
       const engine = new ServerTableEngine(newTable.id);
+      engine.setHub(tableStateHub); // Phase 1.1 PR-2
       this.tableEngines.set(newTable.id, engine);
       this.gameServer.registerTableEngine(newTable.id, engine);
       engine.start().catch((err) => reportError(err, 'TournamentthistournamentIdslic.Expansion_table_engine_error'));
@@ -2792,6 +2802,17 @@ const httpServer = createServer(async (req, res) => {
   // ─────────────────────────────────────────────────────────────────────────
   if (url === '/health' || url === '/') {
     return sendJSON(res, 200, gameServer.getStatus());
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // GET /ws-metrics — Phase 1.1 PR-2: Observability for the authoritative
+  // WebSocket transport. Public (no auth) — exposes counts only, no payloads.
+  // ─────────────────────────────────────────────────────────────────────────
+  if (url === '/ws-metrics' && method === 'GET') {
+    return sendJSON(res, 200, {
+      totalSubscribers: tableStateHub.totalSubscribers(),
+      activeConnections: engineWs.connectionCount(),
+    });
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -3305,8 +3326,17 @@ const httpServer = createServer(async (req, res) => {
 // STARTUP
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// Phase 1.1 PR-2: Attach native WebSocket server at /ws/table/:tableId.
+// Uses the HTTP server's 'upgrade' event. Non-/ws paths are unaffected.
+const engineWs = new EngineWebSocketServer({
+  hub: tableStateHub,
+  tableExists: (tableId) => gameServer.getTableEngine(tableId) !== undefined,
+});
+engineWs.attach(httpServer);
+
 httpServer.listen(PORT, () => {
   console.log(`[HTTP] Health check server listening on port ${PORT}`);
+  console.log(`[WS] Engine WebSocket server attached at /ws/table/:tableId`);
   gameServer.start().catch((err) => {
     reportError(err, 'GameServer.Fatal_error');
     process.exit(1);

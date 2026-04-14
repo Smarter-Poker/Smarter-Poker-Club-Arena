@@ -11,7 +11,8 @@
 .bbj-widget {
   position: absolute;
   top: 10px;
-  right: 80px;
+  left: 50%;
+  transform: translateX(-50%);
   background: linear-gradient(135deg, #2d1b4e 0%, #1a102e 100%);
   border: 1px solid rgba(255, 215, 0, 0.4);
   border-radius: 10px;
@@ -47,7 +48,7 @@
 }
 
 .bbj-widget:hover {
-  transform: translateY(-2px);
+  transform: translateX(-50%) translateY(-2px);
   box-shadow:
     0 0 20px rgba(163, 113, 247, 0.3),
     inset 0 1px 0 rgba(255, 255, 255, 0.08);

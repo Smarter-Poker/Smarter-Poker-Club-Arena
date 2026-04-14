@@ -576,6 +576,58 @@
 
 /* ─── HERO ────────────────────────────────────────────────────────────── */
 
+/* PokerBros-style avatar timer ring — conic gradient around avatar circle */
+.seat--active .seat__avatar-wrap::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    var(--timer-color, #ffd700) 0%,
+    var(--timer-color, #ffd700) var(--timer-progress, 100%),
+    transparent var(--timer-progress, 100%),
+    transparent 100%
+  );
+  z-index: 1;
+  filter: drop-shadow(0 0 4px var(--timer-glow, rgba(255, 215, 0, 0.5)));
+  transition: opacity 0.3s ease;
+  will-change: background;
+}
+
+/* Inner mask for avatar timer ring */
+.seat--active .seat__avatar-wrap::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: 50%;
+  background: var(--bg-primary, #0a0e17);
+  z-index: 1;
+}
+
+/* Timer urgency on avatar ring */
+.seat--timer-urgent .seat__avatar-wrap::before {
+  background: conic-gradient(
+    from 0deg,
+    #ff6b35 0%,
+    #ff6b35 var(--timer-progress, 100%),
+    transparent var(--timer-progress, 100%),
+    transparent 100%
+  ) !important;
+  filter: drop-shadow(0 0 6px rgba(255, 107, 53, 0.6)) !important;
+}
+
+.seat--timer-critical .seat__avatar-wrap::before {
+  background: conic-gradient(
+    from 0deg,
+    #ef4444 0%,
+    #ef4444 var(--timer-progress, 100%),
+    transparent var(--timer-progress, 100%),
+    transparent 100%
+  ) !important;
+  filter: drop-shadow(0 0 8px rgba(239, 68, 68, 0.7)) !important;
+}
+
 .seat--hero .seat__avatar {
   border-color: #ffd700;
   box-shadow:

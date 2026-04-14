@@ -171,7 +171,7 @@ function PotDisplayComponent({
               key={i}
               color={chip.color}
               count={chip.count}
-              offsetX={i * 22 - chipBreakdown.length * 11}
+              offsetX={i * 8 - chipBreakdown.length * 4}
             />
           ))}
         </div>

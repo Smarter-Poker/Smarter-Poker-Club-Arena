@@ -2962,6 +2962,38 @@ const httpServer = createServer(async (req, res) => {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
+  // POST /addchips — Player bought chips (added to their stack directly)
+  // Body: { tableId, amount }
+  // ─────────────────────────────────────────────────────────────────────────
+  if (method === 'POST' && url === '/addchips') {
+    try {
+      const auth = await authenticateRequest(req);
+      if (!auth) {
+        return sendJSON(res, 401, { success: false, error: 'Authentication required' });
+      }
+
+      const body = JSON.parse(await readBody(req));
+      const { tableId, amount } = body;
+      const userId = auth.userId;
+
+      if (!tableId || !amount || amount <= 0) {
+        return sendJSON(res, 400, { success: false, error: 'Missing tableId or invalid amount' });
+      }
+
+      const engine = gameServer.getTableEngine(tableId);
+      if (!engine) {
+        return sendJSON(res, 404, { success: false, error: 'Table engine not found' });
+      }
+
+      const result = engine.addChips(userId, amount);
+      return sendJSON(res, result.success ? 200 : 400, result);
+    } catch (err: any) {
+      reportError(err, 'HTTP.addchips_error');
+      return sendJSON(res, 500, { success: false, error: 'Failed to add chips' });
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
   // POST /leave — Player leaves the table (auto-fold if mid-hand, cashout)
   // Body: { tableId }
   // ─────────────────────────────────────────────────────────────────────────

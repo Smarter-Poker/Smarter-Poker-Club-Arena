@@ -526,22 +526,6 @@ export const HydraService = {
     );
     masterBus.emit('BALANCE_UPDATED', { source: 'hydra_seat_horse', userId: horseId });
 
-    // Log horse buy-in via RPC (bypasses RLS, SECURITY DEFINER)
-    supabase
-      .rpc('log_wallet_transaction', {
-        p_user_id: horseId,
-        p_wallet_type: 'PLAYER',
-        p_amount: stack,
-        p_type: 'debit',
-        p_category: 'buy_in',
-        p_description: `Horse buy-in ${stack} chips at table ${tableId}`,
-        p_table_id: tableId,
-      })
-      .then(({ error }) => {
-        if (error)
-          reportError(error, 'HydraService.seatHorse.logTransaction', { horseId, tableId, stack });
-      });
-
     // Update horse status to seated
     const { error: statusErr1 } = await supabase
       .from('profiles')
@@ -667,22 +651,6 @@ export const HydraService = {
         tableId
       );
       masterBus.emit('BALANCE_UPDATED', { source: 'hydra_remove_horse', userId: horseId });
-
-      // Log horse cashout via RPC (bypasses RLS, SECURITY DEFINER)
-      supabase
-        .rpc('log_wallet_transaction', {
-          p_user_id: horseId,
-          p_wallet_type: 'PLAYER',
-          p_amount: returnedChips,
-          p_type: 'credit',
-          p_category: 'cashout',
-          p_description: `Horse cash-out ${returnedChips} chips from table ${tableId}`,
-          p_table_id: tableId,
-        })
-        .then(({ error }) => {
-          if (error)
-            reportError(error, 'HydraService.removeHorse.logTransaction', { horseId, tableId, returnedChips });
-        });
     }
 
     // 4. Set horse back to available

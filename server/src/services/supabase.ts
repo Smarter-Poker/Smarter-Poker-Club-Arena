@@ -39,65 +39,10 @@ export const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_SERV
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // Channel cache to avoid creating new channels for every broadcast
-const channelCache = new Map<string, ReturnType<SupabaseClient['channel']>>();
-
-/**
- * Broadcast hand state to all table viewers via Supabase Realtime.
- * Uses the same channel naming as the client: `hand-state:{tableId}`
- *
- * FIX-217: Returns a Promise so critical paths (TURN_CHANGE, settlement)
- * can await broadcast delivery to Supabase before proceeding.
- * Bible V8 §1.2.3: "Broadcast must confirm before next turn begins"
- */
-export function broadcastHandState(tableId: string, handState: Record<string, unknown>): Promise<void> {
-  const channelName = `hand-state:${tableId}`;
-
-  let channel = channelCache.get(channelName);
-  if (!channel) {
-    channel = supabase.channel(channelName);
-    channel.subscribe((status) => {
-      if (status === 'SUBSCRIBED') {
-        // Channel ready for broadcasting
-      }
-    });
-    channelCache.set(channelName, channel);
-  }
-
-  return channel
-    .send({
-      type: 'broadcast',
-      event: 'hand_state',
-      payload: handState,
-    })
-    .then(() => {
-      // Broadcast accepted by Supabase server
-    })
-    .catch((err: unknown) => {
-      console.warn(`[Broadcast] Failed to send hand state for ${tableId}:`, err);
-    });
-}
-
-/**
- * Clean up a channel when a table is no longer active
- */
-export function cleanupChannel(tableId: string): void {
-  const channelName = `hand-state:${tableId}`;
-  const channel = channelCache.get(channelName);
-  if (channel) {
-    supabase.removeChannel(channel);
-    channelCache.delete(channelName);
-  }
-}
-
-/**
- * Clean up all channels on shutdown
- */
-export function cleanupAllChannels(): void {
-  for (const [name, channel] of channelCache) {
-    supabase.removeChannel(channel);
-  }
-  channelCache.clear();
-}
+// Phase 1.1 PR-5 (NO-GO-2): broadcastHandState + channelCache + cleanup*
+// deleted. The Supabase Realtime `hand-state:{tableId}` channel is no longer
+// the game-state transport — engine WebSocket at /ws/table/:tableId is the
+// sole path, served by TableStateHub in server/src/transport/.
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // DATABASE HELPERS — Common queries used by the engine

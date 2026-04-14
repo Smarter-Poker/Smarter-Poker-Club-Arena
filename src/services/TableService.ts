@@ -3,7 +3,7 @@
  * Manages poker tables and game sessions
  */
 
-import { supabase, subscribeToTable, subscribeToHandState } from '../lib/supabase';
+import { supabase, subscribeToTable } from '../lib/supabase';
 import type { PokerTable, TableSettings, GameVariant, HandState } from '../types/database.types';
 import { WalletService } from './WalletService';
 import { masterBus } from '../core/MasterBus';
@@ -496,14 +496,11 @@ class TableService {
   }
 
   /**
-   * Subscribe to hand state updates via Realtime Broadcast
-   * (No database table needed — HeadlessTableEngine broadcasts directly)
+   * Phase 1.1 PR-5 (NO-GO-2): subscribeToHand DELETED.
+   * Game state is consumed directly by TablePage via
+   * src/hooks/useEngineTableState.ts (engine WebSocket, not Supabase
+   * Realtime). Callers must migrate off this helper.
    */
-  subscribeToHand(tableId: string, callback: (hand: HandState) => void): () => void {
-    return subscribeToHandState(tableId, (payload) => {
-      callback(payload as unknown as HandState);
-    });
-  }
 
   // ═══════════════════════════════════════════════════════════════════════════════
   // Statistics

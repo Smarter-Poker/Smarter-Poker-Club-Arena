@@ -20,7 +20,7 @@
 
 import { createServer } from 'http';
 import { ServerTableEngine } from './engine/ServerTableEngine.js';
-import { supabase, cleanupAllChannels, atomicCashout } from './services/supabase.js';
+import { supabase, atomicCashout } from './services/supabase.js';
 import { HorseFleetManager } from './services/HorseFleetManager.js';
 import { TournamentRecurringService } from './services/TournamentRecurringService.js';
 import { HorseLifecycleManager } from './services/HorseLifecycleManager.js';
@@ -137,8 +137,9 @@ class GameServer {
     }
     this.tournamentEngines.clear();
 
-    // Clean up Realtime channels
-    cleanupAllChannels();
+    // Phase 1.1 PR-5: no Supabase Realtime channels to clean up — engine
+    // WebSocket server (EngineWebSocketServer.close()) handles its own
+    // shutdown; TableStateHub has no channels to close.
 
     // Flush pending Sentry events before exit
     await flushSentry();

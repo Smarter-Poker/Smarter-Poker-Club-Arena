@@ -44,7 +44,6 @@ import {
 } from '../config/RakeConfig.js';
 import type { ValidationContext } from './ServerActionValidator.js';
 import {
-  broadcastHandState,
   loadTable,
   loadSeatedPlayers,
   syncStacks,
@@ -59,7 +58,6 @@ import {
   logInsuranceSettlement,
   logHandHistory,
   processBBJPayout,
-  cleanupChannel,
   saveHandStateSnapshot,
   completeHandSnapshot,
   getActiveHandSnapshot,
@@ -168,7 +166,7 @@ export class ServerTableEngine {
   private heartbeatCheckInterval: NodeJS.Timeout | null = null;
 
   // Real Player Turn Management
-  private playerTurnTimer: NodeJS.Timeout | null = null;
+  // Phase 1.2: playerTurnTimer deleted — DeadlineScheduler via PreciseActionTimer is sole timer authority.
   private playerTurnStartTime: number = 0;
   private playerTurnDuration: number = 0;
   private timeBankActivatedThisTurn: boolean = false;
@@ -449,7 +447,9 @@ export class ServerTableEngine {
     this.engineTelemetry.dispose();
     // Note: chipRaceEngine, tableBalancer, tableBreakEngine are stateless per-call — no dispose needed
 
-    cleanupChannel(this.tableId);
+    // Phase 1.1 PR-5: no Supabase channel to clean up — engine WS is now the
+    // only game-state transport. TableStateHub.dropTable is called by the
+    // discovery / tournament-break paths elsewhere.
     console.log(`[ServerTableEngine:${this.tableId}] Stopped. Dealt ${this.handCount} hands.`);
   }
 
@@ -512,12 +512,10 @@ export class ServerTableEngine {
   // ═════════════════════════════════════════════════════════════════════════════
 
   private clearTurnTimer(): void {
-    if (this.playerTurnTimer) {
-      clearTimeout(this.playerTurnTimer);
-      this.playerTurnTimer = null;
-    }
-    // Also cancel precise timer for the current player (if any)
-    // Note: preciseTimer.clearTable is used in HAND_COMPLETE; individual cancel here
+    // Phase 1.2: Cancel the PreciseActionTimer for the current player.
+    // The old setTimeout-based playerTurnTimer has been deleted.
+    // PreciseActionTimer.cancelTimer is called per-player in handleTurnChange,
+    // and clearTable is used for full hand cleanup.
   }
 
   private startTurnTimer(userId: string, seat: number, durationSeconds: number): void {
@@ -531,191 +529,135 @@ export class ServerTableEngine {
     // Safety fallback: if no duration, default to 15s to prevent infinite loops
     const safeDurationSeconds = this.playerTurnDuration > 0 ? this.playerTurnDuration : 15;
 
-    // Step 4: Register with PreciseActionTimer for deadline tracking (used by ServerActionValidator)
-    this.preciseTimer.startTimer(this.tableId, userId, safeDurationSeconds * 1000);
-
-    // FIX 138: Bible V8 §6.1 — 2-second grace period for network latency.
-    // The ServerActionValidator already accepts actions until deadline + 2000ms,
-    // so the auto-fold/check must also wait that long to avoid racing with late actions.
+    // Phase 1.2: Register with PreciseActionTimer — this is now the SOLE timer.
+    // The auto-fold/check logic runs as the onExpiry callback via DeadlineScheduler.
+    // Bible V8 §6.1: 2-second grace period for network latency is baked into the
+    // timer duration so the scheduler fires after the grace window.
     const GRACE_PERIOD_MS = 2000;
+    const totalDurationMs = safeDurationSeconds * 1000 + GRACE_PERIOD_MS;
 
-    this.playerTurnTimer = setTimeout(
-      () => {
-        this.playerTurnTimer = null;
-        if (!this.running || !this.handController) return;
+    this.preciseTimer.startTimer(this.tableId, userId, totalDurationMs, () => {
+      // === onExpiry callback — fires when DeadlineScheduler tick reaches deadline ===
+      if (!this.running || !this.handController) return;
 
-        const state = this.handController.getState();
-        if (state.currentPlayerSeat === seat) {
-          // Bible V8 §6.2: Auto-activate time bank when primary timer expires
-          // Check BEFORE auto-fold/check — give player extra time if they have time bank remaining
-          if (!this.timeBankActivatedThisTurn) {
-            const autoActivated = this.timeBankEngine.onPrimaryTimerExpired(
-              this.tableId,
-              userId,
-              () => {
-                // This callback fires when the TIME BANK itself expires
-                if (!this.running || !this.handController) return;
-                const tbState = this.handController.getState();
-                if (tbState.currentPlayerSeat !== seat) return;
+      const state = this.handController.getState();
+      if (state.currentPlayerSeat !== seat) return;
 
-                const tbPlayer = tbState.players.find((p) => p.seat === seat);
-                const tbToCall = tbPlayer
-                  ? Math.max(0, tbState.currentBet - (tbPlayer.bet ?? 0))
-                  : 0;
-                const tbCanCheck = tbToCall === 0;
+      // Bible V8 §6.2: Auto-activate time bank when primary timer expires
+      if (!this.timeBankActivatedThisTurn) {
+        const autoActivated = this.timeBankEngine.onPrimaryTimerExpired(
+          this.tableId,
+          userId,
+          () => {
+            // Time bank itself expired — auto-fold/check
+            if (!this.running || !this.handController) return;
+            const tbState = this.handController.getState();
+            if (tbState.currentPlayerSeat !== seat) return;
 
-                if (tbCanCheck) {
-                  console.warn(
-                    `[ServerTableEngine:${this.tableId}] Player ${userId} time bank expired. Auto-checking.`
-                  );
-                  try {
-                    this.handController!.performAction(seat, 'check');
-                  } catch {
-                    try {
-                      this.handController!.performAction(seat, 'fold');
-                    } catch {
-                      /* done */
-                    }
-                  }
-                } else {
-                  console.warn(
-                    `[ServerTableEngine:${this.tableId}] Player ${userId} time bank expired. Auto-folding.`
-                  );
-                  try {
-                    this.handController!.performAction(seat, 'fold');
-                  } catch {
-                    /* done */
-                  }
-                }
+            const tbPlayer = tbState.players.find((p) => p.seat === seat);
+            const tbToCall = tbPlayer ? Math.max(0, tbState.currentBet - (tbPlayer.bet ?? 0)) : 0;
+            const tbCanCheck = tbToCall === 0;
 
-                // FIX 149: Wire telemetry — time bank also expired
-                this.engineTelemetry.recordTimerExpired(this.tableId);
-
-                // FIX 124b: Time bank expired → also broadcast timeout event
-                // Without this, players who used a time bank and STILL timed out
-                // would not see the "buy more" popup.
-                const tbUsesLeft = this.timeBankEngine.getUsesRemaining(this.tableId, userId);
-                try {
-                  broadcastHandState(this.tableId, {
-                    type: 'time_bank_timeout',
-                    table_id: this.tableId,
-                    player_id: userId,
-                    uses_remaining: tbUsesLeft,
-                    timed_out_action: tbCanCheck ? 'check' : 'fold',
-                    show_buy_more: tbUsesLeft <= 0,
-                  });
-                } catch {
-                  /* broadcast failure is non-fatal */
-                }
-              }
-            );
-
-            if (autoActivated) {
-              this.timeBankActivatedThisTurn = true;
-              const bankSeconds = this.timeBankEngine.getRemainingSeconds(this.tableId, userId);
-              const usesAfterActivation = this.timeBankEngine.getUsesRemaining(
-                this.tableId,
-                userId
-              );
-              console.log(
-                `[ServerTableEngine:${this.tableId}] Auto-activated time bank for ${userId} (${bankSeconds}s remaining, ${usesAfterActivation} uses left)`
-              );
-              // Restart turn timer with time bank duration
-              this.startTurnTimer(userId, seat, bankSeconds);
-
-              // Broadcast time bank activation to other players
-              try {
-                supabase
-                  .channel(`table:${this.tableId}`)
-                  .send({
-                    type: 'broadcast',
-                    event: 'time_bank_activated',
-                    payload: {
-                      player_id: userId,
-                      table_id: this.tableId,
-                      additional_seconds: bankSeconds,
-                      auto_activated: true,
-                      uses_remaining: usesAfterActivation,
-                    },
-                  })
-                  .catch(() => {});
-              } catch {
-                /* broadcast failure is non-fatal */
-              }
-
-              // FIX 125: Warn player when down to last 5 time banks (includes 0 = last one just used)
-              if (usesAfterActivation >= 0 && usesAfterActivation <= 5) {
-                try {
-                  broadcastHandState(this.tableId, {
-                    type: 'time_bank_low',
-                    table_id: this.tableId,
-                    player_id: userId,
-                    uses_remaining: usesAfterActivation,
-                  });
-                } catch {
-                  /* broadcast failure is non-fatal */
-                }
-              }
-
-              return; // Time bank activated — don't auto-fold/check yet
+            if (tbCanCheck) {
+              console.warn(`[ServerTableEngine:${this.tableId}] Player ${userId} time bank expired. Auto-checking.`);
+              try { this.handController!.performAction(seat, 'check'); }
+              catch { try { this.handController!.performAction(seat, 'fold'); } catch { /* done */ } }
+            } else {
+              console.warn(`[ServerTableEngine:${this.tableId}] Player ${userId} time bank expired. Auto-folding.`);
+              try { this.handController!.performAction(seat, 'fold'); } catch { /* done */ }
             }
-          }
 
-          const player = state.players.find((p) => p.seat === seat);
-          const amountToCall = player ? Math.max(0, state.currentBet - (player.bet ?? 0)) : 0;
-          const canCheck = amountToCall === 0;
-
-          if (canCheck) {
-            // No bet outstanding → auto-check (standard poker behavior)
-            console.warn(
-              `[ServerTableEngine:${this.tableId}] Player ${userId} timed out. Auto-checking (no bet to call).`
-            );
+            this.engineTelemetry.recordTimerExpired(this.tableId);
+            const tbUsesLeft = this.timeBankEngine.getUsesRemaining(this.tableId, userId);
             try {
-              this.handController.performAction(seat, 'check');
-            } catch (err) {
-              reportError(err, 'ServerTableEnginethistableId.Autocheck_failed');
-              // Fallback to fold if check somehow fails
-              try {
-                this.handController.performAction(seat, 'fold');
-              } catch (foldErr) {
-                reportError(foldErr, 'ServerTableEnginethistableId.Autofold_fallback_also_failed');
-              }
-            }
-          } else {
-            // Bet outstanding → auto-fold
-            console.warn(
-              `[ServerTableEngine:${this.tableId}] Player ${userId} timed out. Auto-folding (${amountToCall} to call).`
-            );
-            try {
-              this.handController.performAction(seat, 'fold');
-            } catch (err) {
-              reportError(err, 'ServerTableEnginethistableId.Autofold_failed');
-            }
+              this.hub?.emitEvent(this.tableId, {
+                type: 'time_bank_timeout',
+                table_id: this.tableId,
+                player_id: userId,
+                uses_remaining: tbUsesLeft,
+                timed_out_action: tbCanCheck ? 'check' : 'fold',
+                show_buy_more: tbUsesLeft <= 0,
+              });
+            } catch { /* broadcast failure is non-fatal */ }
           }
+        );
 
-          // FIX 149: Wire telemetry — record that timer expired (player timed out)
-          this.engineTelemetry.recordTimerExpired(this.tableId);
+        if (autoActivated) {
+          this.timeBankActivatedThisTurn = true;
+          const bankSeconds = this.timeBankEngine.getRemainingSeconds(this.tableId, userId);
+          const usesAfterActivation = this.timeBankEngine.getUsesRemaining(this.tableId, userId);
+          console.log(
+            `[ServerTableEngine:${this.tableId}] Auto-activated time bank for ${userId} (${bankSeconds}s remaining, ${usesAfterActivation} uses left)`
+          );
+          // Restart turn timer with time bank duration
+          this.startTurnTimer(userId, seat, bankSeconds);
 
-          // FIX 124: After timeout → broadcast event so client shows "Buy More Time Banks" popup
-          // This fires when player times out WITHOUT time bank auto-extending (disabled or depleted)
-          const usesLeft = this.timeBankEngine.getUsesRemaining(this.tableId, userId);
+          // Broadcast time bank activation to other players
           try {
-            broadcastHandState(this.tableId, {
-              type: 'time_bank_timeout',
-              table_id: this.tableId,
-              player_id: userId,
-              uses_remaining: usesLeft,
-              timed_out_action: canCheck ? 'check' : 'fold',
-              // FIX 124: If zero uses remaining, client should show buy-more popup
-              show_buy_more: usesLeft <= 0,
-            });
-          } catch {
-            /* broadcast failure is non-fatal */
+            supabase
+              .channel(`table:${this.tableId}`)
+              .send({
+                type: 'broadcast',
+                event: 'time_bank_activated',
+                payload: {
+                  player_id: userId,
+                  table_id: this.tableId,
+                  additional_seconds: bankSeconds,
+                  auto_activated: true,
+                  uses_remaining: usesAfterActivation,
+                },
+              })
+              .catch(() => {});
+          } catch { /* broadcast failure is non-fatal */ }
+
+          // FIX 125: Warn player when down to last 5 time banks
+          if (usesAfterActivation >= 0 && usesAfterActivation <= 5) {
+            try {
+              this.hub?.emitEvent(this.tableId, {
+                type: 'time_bank_low',
+                table_id: this.tableId,
+                player_id: userId,
+                uses_remaining: usesAfterActivation,
+              });
+            } catch { /* broadcast failure is non-fatal */ }
           }
+
+          return; // Time bank activated — don't auto-fold/check yet
         }
-      },
-      safeDurationSeconds * 1000 + GRACE_PERIOD_MS
-    );
+      }
+
+      // No time bank available — auto-fold or auto-check
+      const player = state.players.find((p) => p.seat === seat);
+      const amountToCall = player ? Math.max(0, state.currentBet - (player.bet ?? 0)) : 0;
+      const canCheck = amountToCall === 0;
+
+      if (canCheck) {
+        console.warn(`[ServerTableEngine:${this.tableId}] Player ${userId} timed out. Auto-checking (no bet to call).`);
+        try { this.handController.performAction(seat, 'check'); }
+        catch (err) {
+          reportError(err, 'ServerTableEnginethistableId.Autocheck_failed');
+          try { this.handController.performAction(seat, 'fold'); }
+          catch (foldErr) { reportError(foldErr, 'ServerTableEnginethistableId.Autofold_fallback_also_failed'); }
+        }
+      } else {
+        console.warn(`[ServerTableEngine:${this.tableId}] Player ${userId} timed out. Auto-folding (${amountToCall} to call).`);
+        try { this.handController.performAction(seat, 'fold'); }
+        catch (err) { reportError(err, 'ServerTableEnginethistableId.Autofold_failed'); }
+      }
+
+      this.engineTelemetry.recordTimerExpired(this.tableId);
+      const usesLeft = this.timeBankEngine.getUsesRemaining(this.tableId, userId);
+      try {
+        this.hub?.emitEvent(this.tableId, {
+          type: 'time_bank_timeout',
+          table_id: this.tableId,
+          player_id: userId,
+          uses_remaining: usesLeft,
+          timed_out_action: canCheck ? 'check' : 'fold',
+          show_buy_more: usesLeft <= 0,
+        });
+      } catch { /* broadcast failure is non-fatal */ }
+    });
   }
 
   /**
@@ -778,7 +720,7 @@ export class ServerTableEngine {
       // FIX 124c: Manual time bank expired → broadcast timeout event (same as FIX 124b for auto path)
       const tbUsesLeft = this.timeBankEngine.getUsesRemaining(this.tableId, userId);
       try {
-        broadcastHandState(this.tableId, {
+        this.hub?.emitEvent(this.tableId, {
           type: 'time_bank_timeout',
           table_id: this.tableId,
           player_id: userId,
@@ -835,7 +777,7 @@ export class ServerTableEngine {
     const manualUsesLeft = bank?.usesRemaining ?? 0;
     if (manualUsesLeft >= 0 && manualUsesLeft <= 5) {
       try {
-        broadcastHandState(this.tableId, {
+        this.hub?.emitEvent(this.tableId, {
           type: 'time_bank_low',
           table_id: this.tableId,
           player_id: userId,
@@ -1170,7 +1112,7 @@ export class ServerTableEngine {
         return { success: true, status: 'declined_by_chooser' };
       }
       // Broadcast chooser's decision to all clients so others can accept/decline
-      broadcastHandState(this.tableId, {
+      this.hub?.emitEvent(this.tableId, {
         type: 'rit_chooser_decided',
         table_id: this.tableId,
         chooserPlayerId: userId,
@@ -1303,7 +1245,7 @@ export class ServerTableEngine {
     userId: string,
     action: string,
     amount?: number
-  ): { success: boolean; error?: string } {
+  ): { success: boolean; error?: string; code?: string; hint?: Record<string, unknown> } {
     // Bible V8 §1.1.4: Serialize all actions — no parallel processing
     if (this.actionLock) {
       return { success: false, error: 'Action already being processed — try again' };
@@ -1320,7 +1262,7 @@ export class ServerTableEngine {
     userId: string,
     action: string,
     amount?: number
-  ): { success: boolean; error?: string } {
+  ): { success: boolean; error?: string; code?: string; hint?: Record<string, unknown> } {
     if (!this.handController) {
       return { success: false, error: 'No active hand' };
     }
@@ -1420,7 +1362,12 @@ export class ServerTableEngine {
     );
 
     if (!validation.valid) {
-      return { success: false, error: validation.reason || 'Action validation failed' };
+      return {
+        success: false,
+        error: validation.reason || 'Action validation failed',
+        code: validation.code,
+        hint: validation.hint as Record<string, unknown> | undefined,
+      };
     }
 
     // Use sanitized action/amount from validator if provided
@@ -2168,7 +2115,7 @@ export class ServerTableEngine {
             // The actual pool amounts are fetched from Supabase and paid from union/club bank
             // For now, broadcast the BBJ_HIT event with payout percentages.
             // The actual payout amounts will be calculated in postHandTasks() using the pool balance.
-            broadcastHandState(this.tableId, {
+            this.hub?.emitEvent(this.tableId, {
               type: 'bbj_hit',
               table_id: this.tableId,
               hand_number: this.handCount,
@@ -2229,7 +2176,7 @@ export class ServerTableEngine {
         // Rabbit Hunt: Broadcast captured remaining deck as a separate event
         // so clients can offer Rabbit Hunt reveal with real cards
         if (this.currentHandRabbitCards.length > 0) {
-          broadcastHandState(this.tableId, {
+          this.hub?.emitEvent(this.tableId, {
             type: 'rabbit_hunt_available',
             table_id: this.tableId,
             hand_number: this.handCount,
@@ -2386,7 +2333,7 @@ export class ServerTableEngine {
         );
 
         // Broadcast RIT offer to ALL clients
-        broadcastHandState(this.tableId, {
+        this.hub?.emitEvent(this.tableId, {
           type: 'rit_offer',
           table_id: this.tableId,
           hand_number: this.handCount,
@@ -2577,7 +2524,7 @@ export class ServerTableEngine {
     }
 
     // Broadcast RIT results
-    broadcastHandState(this.tableId, {
+    this.hub?.emitEvent(this.tableId, {
       type: 'rit_result',
       table_id: this.tableId,
       hand_number: this.handCount,
@@ -2644,7 +2591,7 @@ export class ServerTableEngine {
     }
 
     // Broadcast to all clients — this is public information during all-in
-    broadcastHandState(this.tableId, {
+    this.hub?.emitEvent(this.tableId, {
       type: 'all_in_equity',
       table_id: this.tableId,
       hand_number: this.handCount,
@@ -2826,7 +2773,7 @@ export class ServerTableEngine {
     pot: number,
     timeoutSeconds: number
   ): void {
-    broadcastHandState(this.tableId, {
+    this.hub?.emitEvent(this.tableId, {
       type: 'insurance_offers',
       table_id: this.tableId,
       hand_number: this.handCount,
@@ -3165,24 +3112,15 @@ export class ServerTableEngine {
       })(),
     };
 
-    // Phase 1.1 PR-2: Publish to the authoritative WebSocket hub synchronously
-    // so every currently-connected client sees the new state within milliseconds.
-    // The hub never throws; failures here are swallowed internally.
+    // Phase 1.1 PR-5: Publish ONLY to the authoritative WebSocket hub.
+    // The legacy Supabase Realtime broadcast path has been deleted.
+    // All game-state delivery now flows through the native WS hub.
     if (this.hub) {
       this.hub.publish(this.tableId, payload);
+    } else {
+      console.warn(`[ServerTableEngine:${this.tableId}] No hub attached — state not delivered to clients`);
     }
-
-    // Bible V8 §9.1.2: Instrument broadcast latency (target < 100ms) for the
-    // legacy Supabase path. Kept in parallel until PR-5 deletes it.
-    const broadcastStartMs = Date.now();
-    const broadcastPromise = broadcastHandState(this.tableId, payload);
-
-    return broadcastPromise.then(() => {
-      const broadcastMs = Date.now() - broadcastStartMs;
-      if (broadcastMs > 100) {
-        console.warn(`§9.1.2 BROADCAST SLOW: ${this.tableId} took ${broadcastMs}ms (>100ms)`);
-      }
-    });
+    return Promise.resolve();
   }
 
   // ═════════════════════════════════════════════════════════════════════════════
@@ -3353,7 +3291,7 @@ export class ServerTableEngine {
         );
 
         // Broadcast updated stacks + BBJ payout details so clients show the celebration
-        broadcastHandState(this.tableId, {
+        this.hub?.emitEvent(this.tableId, {
           type: 'bbj_payout_complete',
           table_id: this.tableId,
           hand_number: this.handCount,

@@ -120,6 +120,13 @@ export interface MappedTableStatePatch {
   sidePots: Array<{ amount: number; eligibleSeats: number[] }>;
   /** Phase 1.2 PR-F: per-user disconnect FSM map for client toasts. */
   disconnectStates: Record<string, DisconnectFsmEntry>;
+  /**
+   * Phase 2 T1-01: winners of the current hand with net profit (winnings
+   * minus their own contribution). Empty until stage === 'showdown' OR
+   * end-of-hand broadcast. Drives the signature PokerBros +N yellow
+   * floating text above each winner.
+   */
+  winners: Array<{ userId: string; seat: number; amount: number; netAmount: number }>;
 }
 
 // ─── Mapping ──────────────────────────────────────────────────────────────────
@@ -236,5 +243,18 @@ export function mapEngineSnapshot(
     handNumber: s.hand_number ?? 0,
     sidePots,
     disconnectStates: s.disconnect_states ?? {},
+    // Phase 2 T1-01: winners with net amount. Server emits winners[] with
+    // total pot received per winner. We look up the player's totalInvested
+    // to compute net profit (what the client wants to show as "+N").
+    winners: (s.winners ?? []).map((w) => {
+      const p = s.players.find((pp) => pp.user_id === w.user_id);
+      const invested = p?.totalInvested ?? 0;
+      return {
+        userId: w.user_id,
+        seat: p?.seat ?? 0,
+        amount: w.amount,
+        netAmount: Math.max(0, w.amount - invested),
+      };
+    }),
   };
 }

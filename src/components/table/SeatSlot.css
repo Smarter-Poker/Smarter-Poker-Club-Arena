@@ -679,6 +679,69 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
+/*
+ * Hero hole cards after fold. Keep them visible — the player still wants
+ * to see what they mucked — but desaturate + dim to match the avatar.
+ * Dan's UX rule, 2026-04-14.
+ */
+.seat__cards--folded {
+  opacity: 0.45;
+  filter: grayscale(55%) brightness(0.85);
+  pointer-events: none;
+  transition: opacity 250ms ease, filter 250ms ease;
+}
+
+/*
+ * Phase 2 T1-01 — PokerBros signature net-profit "+N" yellow floating text
+ * above the winning seat. Pops in, floats up, fades out over 2.5s. Per
+ * POKERBROS_CLONE_SPEC.md §6 line 544-547:
+ *   "+N" in YELLOW, bold, above hero avatar
+ *   floats upward from hero's chip area
+ *   Duration: 600ms, fades out at end
+ * We use 2.5s so the amount is readable — 600ms is too brief in practice.
+ */
+.seat__net-win {
+  position: absolute;
+  top: -56px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 12px;
+  border-radius: 10px;
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #ffde5c;
+  text-shadow:
+    0 1px 0 rgba(0, 0, 0, 0.65),
+    0 0 12px rgba(255, 222, 92, 0.55);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  z-index: 40;
+  pointer-events: none;
+  animation: seat-net-win-float 2500ms cubic-bezier(0.2, 0.7, 0.4, 1) forwards;
+}
+
+@keyframes seat-net-win-float {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 8px) scale(0.8);
+  }
+  15% {
+    opacity: 1;
+    transform: translate(-50%, -4px) scale(1.1);
+  }
+  30% {
+    transform: translate(-50%, -6px) scale(1);
+  }
+  80% {
+    opacity: 1;
+    transform: translate(-50%, -28px) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -44px) scale(0.95);
+  }
+}
+
 /* ─── AWAY / SITTING OUT ──────────────────────────────────────────────── */
 
 .seat--away,
@@ -742,11 +805,19 @@
 
 /* Hero cards — large, PokerBros-style to the right of avatar, fanned with overlap */
 .seat__cards--hero {
+  /* PokerBros hero hole cards — anchor to the avatar's top edge and fan
+   * slightly outward to the right. Per spec §1 (Hero Cards): two playing
+   * cards, slightly fanned horizontally, ~50-70px wide, directly above
+   * hero avatar or to the sides, both face-up. We render to the right
+   * of the avatar at top alignment, lifted slightly so the badge clears.
+   * Dan's UX rule 2026-04-14. */
   position: absolute;
-  right: -28px;
-  top: 4px;
+  right: -38px;
+  top: -8px;
   display: flex;
+  align-items: flex-end;
   z-index: 20;
+  gap: 0;
 }
 
 /* Base card size (opponents) */
@@ -777,31 +848,41 @@
   box-shadow: 0 3px 12px rgba(0, 0, 0, 0.6);
 }
 
-/* Hero gets LARGE cards — PokerBros signature style, overlapping fan */
+/* Hero cards — PokerBros signature: large, white-bordered, slight horizontal
+ * fan. Per POKERBROS_CLONE_SPEC.md §1: 50-70px wide, slightly fanned,
+ * rank/suit clearly displayed. Two cards rotate in opposite directions
+ * for the fan effect; first card tilts -6deg, second +6deg. */
 .seat__cards--hero .seat__card {
-  width: 48px;
-  height: 68px;
-  border-radius: 6px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
-  margin-left: -10px; /* overlap — second card laps over first */
+  width: 56px;
+  height: 78px;
+  border-radius: 7px;
+  background: #fff;
+  margin-left: -16px;
   animation: heroCardPeek 0.6s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) backwards;
   transform-style: preserve-3d;
+  transform-origin: bottom center;
+  box-shadow:
+    0 6px 18px rgba(0, 0, 0, 0.5),
+    0 1px 2px rgba(0, 0, 0, 0.4);
 }
 
 .seat__cards--hero .seat__card:first-child {
   margin-left: 0;
+  transform: rotate(-6deg);
   animation-delay: 0.1s;
 }
 
 .seat__cards--hero .seat__card:nth-child(2) {
+  transform: rotate(6deg);
   animation-delay: 0.25s;
 }
 
 .seat__cards--hero .seat__card--face {
-  border: 1.5px solid rgba(255, 215, 0, 0.3);
+  border: 2px solid #ffffff;
+  background: #fff;
   box-shadow:
-    0 4px 16px rgba(0, 0, 0, 0.6),
-    0 0 8px rgba(255, 215, 0, 0.08);
+    0 6px 18px rgba(0, 0, 0, 0.55),
+    0 1px 2px rgba(0, 0, 0, 0.45);
   transition:
     transform 0.25s var(--ease-spring, ease),
     box-shadow 0.25s ease;
@@ -868,19 +949,27 @@
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .seat__action {
+  /* PokerBros: action tag floats clearly ABOVE the avatar, never overlapping.
+   * Seat is ~80px wide, avatar is 56px with some vertical padding. Pushing
+   * the badge 42px above the seat's top ensures a clear gap over the
+   * avatar crown and a comfortable visual spacing from the name box below.
+   * Dan's UX rule 2026-04-14. */
   position: absolute;
-  top: -20px;
+  top: -42px;
   left: 50%;
   transform: translateX(-50%);
-  padding: 3px 12px;
-  border-radius: 6px;
-  font-size: 0.75rem;
+  padding: 4px 12px;
+  border-radius: 14px;
+  font-size: 0.72rem;
   font-weight: 800;
   white-space: nowrap;
   z-index: 30;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
+  line-height: 1.05;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
   animation: actionPopIn 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  pointer-events: none;
 }
 
 @keyframes actionPopIn {

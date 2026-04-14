@@ -76,6 +76,13 @@ export interface SeatSlotProps {
   bountyValue?: number;
   isWinner?: boolean;
   winningHandName?: string; // e.g. "Straight", "Full House"
+  /**
+   * Phase 2 T1-01 — net profit for this winner (winnings minus hero's
+   * own contribution to the pot). When > 0 and isWinner true, renders
+   * the signature PokerBros "+N" yellow floating text above the seat.
+   * Animation auto-fades after 2.5s.
+   */
+  netWinAmount?: number;
   hudStats?: MiniHUDStats | null; // Opponent VPIP/PFR stats
   showHUD?: boolean; // Whether to show the HUD overlay
   playerStyle?: PlayerStyleResult | null; // Auto-classified player archetype
@@ -215,6 +222,7 @@ export const SeatSlot = memo(
       isTournament = false,
       bountyValue,
       isWinner = false,
+      netWinAmount,
       winningHandName,
       hudStats,
       showHUD = false,
@@ -498,9 +506,19 @@ export const SeatSlot = memo(
           </div>
         )}
 
-        {/* Hero Hole Cards — large, premium style beside avatar */}
+        {/* Hero Hole Cards — large, premium style beside avatar.
+         *  After the hero folds, keep the cards visible but dim them so the
+         *  player can still see what they mucked (matches how the avatar
+         *  dims on fold). Dan's UX rule, 2026-04-14. */}
         {player.holeCards && player.holeCards.length > 0 && player.isHero && (
-          <div className="seat__cards seat__cards--hero">
+          <div
+            className={
+              'seat__cards seat__cards--hero' +
+              (lastAction === 'fold' || player.status === 'folded'
+                ? ' seat__cards--folded'
+                : '')
+            }
+          >
             {player.holeCards.map((card, i) => (
               <HoleCard
                 key={i}
@@ -518,6 +536,15 @@ export const SeatSlot = memo(
 
         {/* Winning Hand Name — floats below cards (premium style) "Straight" label */}
         {isWinner && winningHandName && <div className="seat__hand-name">{winningHandName}</div>}
+
+        {/* Phase 2 T1-01 — PokerBros net-profit "+N" yellow floating text.
+         *  Shows only when isWinner=true AND netWinAmount>0. Keyed on the
+         *  amount so each new win re-triggers the float animation. */}
+        {isWinner && typeof netWinAmount === 'number' && netWinAmount > 0 && (
+          <div className="seat__net-win" key={netWinAmount}>
+            +{formatStack(netWinAmount)}
+          </div>
+        )}
 
         {/* All-In Badge */}
         {player.status === 'all_in' && !isWinner && <div className="seat__allin-badge">ALL IN</div>}
@@ -548,6 +575,7 @@ export const SeatSlot = memo(
     if (prev.bountyValue !== next.bountyValue) return false;
     if (prev.isWinner !== next.isWinner) return false;
     if (prev.winningHandName !== next.winningHandName) return false;
+    if (prev.netWinAmount !== next.netWinAmount) return false;
     if (prev.lastAction !== next.lastAction) return false;
     if (prev.lastBetAmount !== next.lastBetAmount) return false;
     if (prev.showHUD !== next.showHUD) return false;

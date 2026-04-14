@@ -2,9 +2,10 @@
 
 ## Active Migration: Server-Authoritative (Bible V8)
 
-**Current Phase:** ALL 8 STEPS COMPLETE — Bible V8 Deep Audit (225 fixes, 99% verified)
-**Last Verified:** Round 45 — FIX-223/224/225 (animation-speed, perf instrumentation, formal FSM)
-**Last FIX Numbers:** FIX 223, 224, 225 (committed + deployed to Hetzner + World Hub pushed)
+**Current Phase:** REALIGN complete (K1/K2/K3/K6/K10 all GREEN) + STEP 8 V8§11.1 toggle wiring shipped + Phase 2 Batch A+B+C live
+**Last Verified:** 2026-04-14 — CA HEAD 3f60fa3a, live bundle index-DrxiOYA3.js, Hetzner 18 tables serving, Supabase user_table_settings schema patched (use_alias + table_alias)
+**V8 Compliance:** 115 items, 112 VERIFIED (97%), 2 NEEDS-VERIFY (gestures_enabled, card_slide), 1 PARTIAL, 0 MISSING/BROKEN
+**Last Major Ship:** `.memory/context/2026-04-14-migration-batch-ship.md`
 
 ## Key Decisions
 - [001] Rake is EQUAL SHARE, never weighted (FIX 144)
@@ -22,7 +23,7 @@
 - [002] Git hooks bypassed: `core.hooksPath /dev/null`
 - [003] Migration phase order is SACRED — cannot skip steps
 - [004] Hetzner VPS: SSH root@178.156.160.206, path /opt/club-arena, container club-arena-engine, port 8080, health https://engine.smarter.poker/health
-- [005] Vercel: hub-vanguard project prj_op66GkZyZcygXQKm76iyycfVFAQx, token vcp_8kIgZkEiE0YNlrmUvjdaXfNZxrzPZsdTksANXVsyAhbnjEg1Hl3q470C
+- [005] Vercel: hub-vanguard project prj_op66GkZyZcygXQKm76iyycfVFAQx, token stored at /Users/smarter.poker/Library/Application Support/com.vercel.cli/auth.json (never commit the literal value — GitHub push protection blocks it)
 - [006] Supabase: kuklfnapbkmacvwxktbh.supabase.co, service role key in server/.env
 - [007] GitHub PAT: REDACTED-USE-LOCAL-ENV-OR-GH-CLI (Antigravity-Fleet-v4, never expires)
 

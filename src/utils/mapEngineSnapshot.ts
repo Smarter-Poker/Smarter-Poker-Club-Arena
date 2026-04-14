@@ -50,6 +50,14 @@ export interface EngineActionRecord {
   stage: string;
 }
 
+export type DisconnectFsmState = 'CONNECTED' | 'MISSING' | 'DISCONNECTED' | 'SAT_OUT';
+
+export interface DisconnectFsmEntry {
+  state: DisconnectFsmState;
+  sinceMs: number;
+  graceDeadlineMs: number | null;
+}
+
 export interface EnginePublishedState {
   table_id: string;
   hand_number: number;
@@ -65,6 +73,10 @@ export interface EnginePublishedState {
   last_raise: number;
   turn_start_time_ms?: number;
   turn_duration_ms?: number;
+  /** Phase 1.2 PR-F: absolute wall-clock deadline for the current turn. */
+  turn_deadline_ms?: number;
+  /** Phase 1.2 PR-F: per-user disconnect FSM map for client UI. */
+  disconnect_states?: Record<string, DisconnectFsmEntry>;
   pots: Array<{ amount: number; eligible: number[] }>;
   action_history: EngineActionRecord[];
   players: EnginePublicPlayer[];
@@ -106,6 +118,8 @@ export interface MappedTableStatePatch {
   handNumber: number;
   /** side pots */
   sidePots: Array<{ amount: number; eligibleSeats: number[] }>;
+  /** Phase 1.2 PR-F: per-user disconnect FSM map for client toasts. */
+  disconnectStates: Record<string, DisconnectFsmEntry>;
 }
 
 // ─── Mapping ──────────────────────────────────────────────────────────────────
@@ -192,9 +206,15 @@ export function mapEngineSnapshot(
     eligibleSeats: p.eligible ?? [],
   }));
 
-  // Action timer deadline: engine sends turn_start_time_ms + turn_duration_ms.
+  // Action timer deadline.
+  // Phase 1.2 PR-F: prefer the authoritative turn_deadline_ms from the
+  // engine. Fall back to start+duration for backward compat with older
+  // server builds (will be removed in PR-G once the engine is fully
+  // upgraded and Phase 1.1 soak completes).
   let actionTimerDeadline: number | undefined;
-  if (s.turn_start_time_ms && s.turn_duration_ms) {
+  if (s.turn_deadline_ms && s.turn_deadline_ms > 0) {
+    actionTimerDeadline = s.turn_deadline_ms;
+  } else if (s.turn_start_time_ms && s.turn_duration_ms) {
     actionTimerDeadline = s.turn_start_time_ms + s.turn_duration_ms;
   }
 
@@ -215,5 +235,6 @@ export function mapEngineSnapshot(
     actionTimerPlayerId: s.current_player ?? undefined,
     handNumber: s.hand_number ?? 0,
     sidePots,
+    disconnectStates: s.disconnect_states ?? {},
   };
 }

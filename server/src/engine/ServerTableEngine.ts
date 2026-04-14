@@ -3094,6 +3094,16 @@ export class ServerTableEngine {
       last_raise: state.lastRaise ?? 0,
       turn_start_time_ms: this.playerTurnStartTime,
       turn_duration_ms: this.playerTurnDuration * 1000, // Convert seconds → milliseconds
+      // Phase 1.2 PR-F: absolute wall-clock deadline. Client reads this
+      // directly rather than computing start+duration locally, eliminating
+      // client/server clock skew for the countdown.
+      turn_deadline_ms:
+        this.playerTurnStartTime > 0
+          ? this.playerTurnStartTime + this.playerTurnDuration * 1000
+          : 0,
+      // Phase 1.2 PR-F: per-user disconnect FSM map for client UI toasts
+      // (MISSING / DISCONNECTED). Same shape the DB stores.
+      disconnect_states: this.disconnectEngine.getFsmStatesForTable(this.tableId),
       // Bible V8 §2.4: Side pot information for multi-way all-ins
       pots: (state.pots ?? []).map((p) => ({
         amount: p.amount,

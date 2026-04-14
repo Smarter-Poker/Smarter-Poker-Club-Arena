@@ -3629,16 +3629,21 @@ export class ServerTableEngine {
       stage: state.stage,
     });
 
-    // Phase 1.2 PR-D: also persist pending deadlines on the same snapshot
-    // row so restart can rehydrate the scheduler. Disconnect FSM states land
-    // here once PR-E lands — for now just the scheduler's queue.
+    // Phase 1.2 PR-D: pending deadlines.
+    // Phase 1.2 PR-E: disconnect FSM states.
+    // Both live on the same snapshot row. Skip the UPDATE if there's
+    // nothing to write — saves an unnecessary round-trip for idle tables.
     const pendingDeadlines = deadlineScheduler.persistPending(this.tableId);
-    if (pendingDeadlines.length > 0) {
+    const disconnectStates = this.disconnectEngine.getFsmStatesForTable(this.tableId);
+    if (
+      pendingDeadlines.length > 0 ||
+      Object.keys(disconnectStates).length > 0
+    ) {
       await saveHandSnapshotExtras({
         tableId: this.tableId,
         handNumber: this.handCount,
         pendingDeadlines,
-        disconnectStates: {},
+        disconnectStates,
       });
     }
   }

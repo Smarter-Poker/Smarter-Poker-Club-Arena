@@ -504,45 +504,38 @@ export async function logRakeCollection(
         reportError(new Error(`[logRakeCollection] Union wallet credit failed: ${uwErr.message}`), 'logRakeCollection.Union_wallet_credit_failed');
       }
 
-      // Log union transaction for audit trail
-      await supabase.from('union_transactions').insert({
-        union_id: club.union_id,
-        club_id: clubId,
-        amount: rakeAmount,
-        tx_type: 'rake',
-        wallet: 'chip',
-        direction: 'credit',
-        notes: `Cash game rake: hand #${handNumber} (${club.name || 'club'})`,
-        created_at: new Date().toISOString(),
-      });
+      // Log union transaction for audit trail (BUG 013 FIX — was union_transactions, that
+      // table doesn't exist; actual audit table is union_wallet_transactions with required
+      // fields amount + wallet + direction + tx_type + balance_after)
+      {
+        const { data: wallet } = await supabase
+          .from('union_wallets')
+          .select('chip_balance')
+          .eq('union_id', club.union_id)
+          .maybeSingle();
+        await supabase.from('union_wallet_transactions').insert({
+          union_id: club.union_id,
+          club_id: clubId,
+          amount: rakeAmount,
+          tx_type: 'rake',
+          wallet: 'main',
+          direction: 'credit',
+          balance_after: wallet?.chip_balance ?? null,
+          notes: `Cash game rake: hand #${handNumber} (${club.name || 'club'})`,
+        });
+      }
 
     } else {
-      // Standalone club — rake goes to CLUB wallet (not owner's player wallet)
-      // FIX-232: Atomic increment via RPC — eliminates read-then-write race condition
-      // Try club_wallets first, then clubs.chip_pool as fallback
-      const { data: cw } = await supabase
-        .from('club_wallets')
-        .select('club_id')
-        .eq('club_id', clubId)
-        .maybeSingle();
-
-      if (cw) {
-        const { error: cwErr } = await supabase.rpc('increment_club_wallet', {
-          p_club_id: clubId,
-          p_amount: rakeAmount,
-        });
-        if (cwErr) {
-          reportError(new Error(`[logRakeCollection] Club wallet credit failed: ${cwErr.message}`), 'logRakeCollection.Club_wallet_credit_failed');
-        }
-      } else {
-        // Fallback: update clubs.chip_pool directly
-        const { error: cpErr } = await supabase.rpc('increment_club_chip_pool', {
-          p_club_id: clubId,
-          p_amount: rakeAmount,
-        });
-        if (cpErr) {
-          reportError(new Error(`[logRakeCollection] Club chip_pool credit failed: ${cpErr.message}`), 'logRakeCollection.Club_chip_pool_credit_failed');
-        }
+      // Standalone club — rake goes to CLUB wallet (clubs.chip_pool).
+      // FIX-232 / BUG 016 (2026-04-15): club_wallets table doesn't exist in the schema.
+      // Removed the dead probe + dead increment_club_wallet branch; credit clubs.chip_pool
+      // directly via increment_club_chip_pool RPC. One less round trip per hand.
+      const { error: cpErr } = await supabase.rpc('increment_club_chip_pool', {
+        p_club_id: clubId,
+        p_amount: rakeAmount,
+      });
+      if (cpErr) {
+        reportError(new Error(`[logRakeCollection] Club chip_pool credit failed: ${cpErr.message}`), 'logRakeCollection.Club_chip_pool_credit_failed');
       }
     }
   } catch (e) {

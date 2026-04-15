@@ -344,6 +344,9 @@ interface TableState {
   engineWinners?: Array<{ userId: string; seat: number; amount: number; netAmount: number }>;
   // Phase 8: Action timer state
   actionTimerDeadline?: number;
+  /** Wall-clock turn start (server-authoritative). Drives the CSS ring
+   * animation via SeatSlot turnStartTimeMs/turnDeadlineMs props. */
+  actionTimerStartTime?: number;
   actionTimerPlayerId?: string;
   // Phase 8: Session stats
   sessionPL?: number;
@@ -715,6 +718,7 @@ export default function TablePage({
             .filter((n): n is string => typeof n === 'string'),
         })) as SidePot[],
         actionTimerDeadline: mapped.actionTimerDeadline,
+        actionTimerStartTime: mapped.actionTimerStartTime,
         actionTimerPlayerId: mapped.actionTimerPlayerId,
         isHandInProgress:
           mapped.boardStage !== 'waiting' &&
@@ -838,6 +842,12 @@ export default function TablePage({
 
   const [isSideMenuOpen, setIsSideMenuOpen] = useState(false);
   const [showBuyInModal, setShowBuyInModal] = useState(false);
+  // 2026-04-14 per Dan: when the hero busts to 0 chips they used to be
+  // booted from the table. Instead, check their wallet and prompt a rebuy.
+  const [bustRebuyOpen, setBustRebuyOpen] = useState(false);
+  const [bustWalletBalance, setBustWalletBalance] = useState<number | null>(null);
+  const [bustRebuyProcessing, setBustRebuyProcessing] = useState(false);
+  const bustPromptFiredRef = useRef(false);
   const [selectedSeat, setSelectedSeat] = useState<number | null>(null);
   const [showPlayerNotes, setShowPlayerNotes] = useState(false);
   const [selectedPlayerForNotes, setSelectedPlayerForNotes] = useState<{
@@ -1313,6 +1323,27 @@ export default function TablePage({
 
   // Tip Dealer state
   const [showTipDealer, setShowTipDealer] = useState(false);
+
+  // ─────────────────────────────────────────────────────────────────
+  // Bible V8 §1.16 Real-Time Law — chip-to-pot collection animation.
+  // When the engine emits COMMUNITY_CARDS_DEALT or HAND_COMPLETE, every
+  // seat with a non-zero bet enters a ~450ms "collecting" state during
+  // which ChipPhysics plays cpCollect (scale → 0, translate toward pot,
+  // fade out). After the animation completes we clear lastBetAmounts.
+  // Using a separate state (not tableState) keeps snapshot sync clean.
+  // ─────────────────────────────────────────────────────────────────
+  const [collectingChipSeats, setCollectingChipSeats] = useState<boolean[]>(
+    () => Array(9).fill(false)
+  );
+  const collectSeatsTimerRef = useRef<number | null>(null);
+  // Cancel the pending chip-collect timer if the component unmounts so we
+  // don't invoke setState after unmount (React warning + stale clear).
+  useEffect(() => () => {
+    if (collectSeatsTimerRef.current) {
+      window.clearTimeout(collectSeatsTimerRef.current);
+      collectSeatsTimerRef.current = null;
+    }
+  }, []);
 
   // Straddle state
   const [isStraddleEnabled, setIsStraddleEnabled] = useState(false);
@@ -1808,6 +1839,93 @@ export default function TablePage({
   };
 
   // Handle leave table - cleans up and returns chips (non-blocking)
+  // 2026-04-14 Dan feedback — "when a player busts or gets felted, it needs
+  // to check if the player has enough chips in his wallet to rebuy. I was
+  // straight booted from the table when I lost all my chips."
+  //
+  // Watch for the hero's stack to drop to 0 AND the hand to complete; at
+  // that moment, look up the wallet balance and pop the BuyInModal (reused
+  // in rebuy mode). The existing `atomic_table_rebuy` RPC tops up the seat.
+  useEffect(() => {
+    if (!tableId || !userId || tableState.heroSeat <= 0) return;
+    if (tableState.isTournament) return; // Tournaments have their own rebuy flow
+    const heroPlayer = tableState.players[tableState.heroSeat - 1];
+    if (!heroPlayer) return;
+    const stack = heroPlayer.stack ?? 0;
+    // Only prompt when the hand is NOT in progress to avoid popping mid-hand.
+    // Also only once per bust — bustPromptFiredRef guards against repeat.
+    if (stack > 0) {
+      bustPromptFiredRef.current = false;
+      return;
+    }
+    if (tableState.isHandInProgress) return;
+    if (bustPromptFiredRef.current) return;
+    if (bustRebuyOpen || showBuyInModal) return;
+    bustPromptFiredRef.current = true;
+
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from('wallets')
+          .select('balance')
+          .eq('user_id', userId)
+          .eq('wallet_type', 'PLAYER')
+          .maybeSingle();
+        setBustWalletBalance(Number(data?.balance ?? 0));
+      } catch {
+        setBustWalletBalance(0);
+      }
+      setBustRebuyOpen(true);
+    })();
+  }, [
+    tableId,
+    userId,
+    tableState.heroSeat,
+    tableState.players,
+    tableState.isHandInProgress,
+    tableState.isTournament,
+    bustRebuyOpen,
+    showBuyInModal,
+  ]);
+
+  const confirmBustRebuy = useCallback(
+    async (amount: number) => {
+      if (!tableId || !userId) return;
+      setBustRebuyProcessing(true);
+      try {
+        const { error } = await supabase.rpc('atomic_table_rebuy', {
+          p_user_id: userId,
+          p_table_id: tableId,
+          p_amount: amount,
+        });
+        if (error) {
+          toast?.error(error.message || 'Rebuy failed');
+          setBustRebuyProcessing(false);
+          return;
+        }
+        toast?.success(`Rebought for ${amount.toLocaleString()}`);
+        setBustRebuyOpen(false);
+        // Guard so a zero-stack state immediately after the RPC succeeds
+        // doesn't re-trigger another prompt before the snapshot updates.
+        bustPromptFiredRef.current = true;
+      } catch (err) {
+        toast?.error((err as Error).message || 'Rebuy failed');
+      } finally {
+        setBustRebuyProcessing(false);
+      }
+    },
+    [tableId, userId, toast]
+  );
+
+  // Forward-ref so cancelBustRebuy() (declared above) can invoke the real
+  // handleLeaveTable (declared below) without a circular definition.
+  const handleLeaveTableRef = useRef<(() => void) | null>(null);
+  const cancelBustRebuy = useCallback(() => {
+    setBustRebuyOpen(false);
+    // User chose to leave — trigger a real leave so their seat is cleared.
+    handleLeaveTableRef.current?.();
+  }, []);
+
   const handleLeaveTable = async () => {
     if (!tableId || !userId) return;
     setLeaveNotice(null);
@@ -1844,6 +1962,12 @@ export default function TablePage({
       setLeaveNotice('Error leaving table. Please try again.');
     }
   };
+
+  // Bind the forward-ref used by cancelBustRebuy so the Decline button on
+  // the bust prompt invokes the real leave flow.
+  useEffect(() => {
+    handleLeaveTableRef.current = handleLeaveTable;
+  });
 
   // Handle force leave (triggered by closing tab 'X' button or when already cashed out)
   const handleForceLeaveTable = async () => {
@@ -2828,9 +2952,43 @@ export default function TablePage({
                 horseProfile: undefined,
               } as any;
 
-              // Restore hero seat if this is the current user
+              // Restore hero seat if this is the current user — UNLESS they're
+              // a stuck-bust row (stack=0, still marked active, never got left_at
+              // stamped). BUG 017 FIX 2026-04-15: treating stack=0 seats as
+              // "seated" causes handleSeatClick to silently bail on the `already
+              // seated` guard forever — user can never sit again until the DB is
+              // manually cleaned. Fix-forward: mark the stuck row as left right
+              // now, exclude it from the local tableState, AND leave heroSeat=0
+              // so the user sees empty seats and can re-buy-in fresh.
               if (isHero) {
-                resolvedHeroSeat = seat.seat_number;
+                const heroStack = Number(seat.stack || 0);
+                if (heroStack <= 0) {
+                  console.warn(
+                    '[Seat] BUG 017 FIX — detected stuck-bust row for hero at seat',
+                    seat.seat_number,
+                    '(stack=0, left_at=null); marking as left and releasing so user can sit fresh'
+                  );
+                  // Fire-and-forget — don't block mount
+                  Promise.resolve(
+                    supabase
+                      .from('table_seats')
+                      .update({ left_at: new Date().toISOString(), status: 'left' })
+                      .eq('table_id', table.id)
+                      .eq('user_id', userId)
+                      .eq('seat_number', seat.seat_number)
+                      .is('left_at', null)
+                  )
+                    .then(({ error }) => {
+                      if (error) reportError(error, 'TablePage.Stuck_bust_cleanup_failed');
+                    })
+                    .catch((e) => reportError(e, 'TablePage.Stuck_bust_cleanup_error'));
+                  // Remove from local rendering and DON'T set resolvedHeroSeat
+                  updatedPlayers[seatIdx] = null;
+                  heroAlreadyAssigned = false; // allow re-assignment in unlikely dup case
+                  // continue without setting resolvedHeroSeat
+                } else {
+                  resolvedHeroSeat = seat.seat_number;
+                }
               }
             }
 
@@ -3565,10 +3723,23 @@ export default function TablePage({
   useEffect(() => {
     if (!lastEvent) return;
 
-    switch (lastEvent.type) {
+    // 2026-04-14 normalization: the engine WS emits flat lowercase events
+    // (e.g. {type:'pot_win', winner_ids, pot}) while the legacy switch was
+    // written for the old Supabase Realtime nested-uppercase shape
+    // ({type:'POT_WIN', data:{...}}). Normalize both into the same surface
+    // so every existing case keeps reading lastEvent.data.X.
+    const rawType = (lastEvent as { type?: string }).type || '';
+    const normalizedType = rawType.toUpperCase();
+    const normalizedData =
+      (lastEvent as { data?: Record<string, unknown> }).data ||
+      (lastEvent as unknown as Record<string, unknown>);
+    const evt = { type: normalizedType, data: normalizedData };
+    void lastEvent; // keep dependency tracking via the original ref
+
+    switch (evt.type) {
       case 'GAME_START': {
         // Fast UI recovery via GameServerAPI.getTableState() full snapshot
-        const syncData = lastEvent.data as any;
+        const syncData = evt.data as any;
         if (!syncData) break;
 
         setTableState((prev) => {
@@ -3616,29 +3787,204 @@ export default function TablePage({
       }
       case 'DEAL_CARDS':
         // Update community cards
-        if (lastEvent.data.communityCards) {
+        if ((evt.data as any).communityCards) {
           setTableState((prev) => ({
             ...prev,
-            communityCards: lastEvent.data.communityCards as Card[],
+            communityCards: (evt.data as any).communityCards as Card[],
           }));
         }
         break;
-      case 'PLAYER_ACTION':
-        // Update pot, player stacks, etc.
-        if (lastEvent.data.pot !== undefined) {
-          setTableState((prev) => ({
+      case 'PLAYER_ACTION': {
+        // 2026-04-14 USER FEEDBACK FIX: full Bible V8 §5.1/§5.2 visual sequence.
+        // Was previously only updating pot; the comprehensive handler that
+        // showed the action label, fired chip-to-pot animation, and played
+        // the sound was wired to roomService.onMessage which is the dead
+        // Supabase Realtime path post-NO-GO-2. Migrated here so it runs off
+        // the live engine WS player_action event.
+        const data = evt.data as any;
+        const action = (data.action || '').toLowerCase() as string;
+        const actionSeat = (data.seat as number) || 0;
+        const actionAmount = (data.amount as number) || 0;
+        const seatIdx = actionSeat - 1;
+
+        // Step 1: Action label (immediate, persists until next action / new street)
+        if (seatIdx >= 0) {
+          setTableState((prev) => {
+            const newActions = [...prev.lastActions];
+            newActions[seatIdx] = action as any;
+            const newBets = [...prev.lastBetAmounts];
+            if (actionAmount > 0) newBets[seatIdx] = actionAmount;
+            // Pot from snapshot is more accurate than locally summing — pot
+            // updates arrive in the next snapshot. If client already has it,
+            // keep prev.pot; otherwise leave untouched.
+            return { ...prev, lastActions: newActions, lastBetAmounts: newBets };
+          });
+        }
+
+        // Step 2: Sound + chip animation per Bible V8 §5.2.
+        // 2026-04-14 fix: build the chip ChipAnimationEvent INLINE here (no
+        // ref + no setTimeout). The ref-based path was firing a no-op
+        // because triggerChipAnimationRef.current was sometimes null at the
+        // time the setTimeout closure ran (ref binding race in the React
+        // commit phase). Direct inline + immediate setChipAnimations is
+        // the surest path to the chips landing in the pot in real-time.
+        if (soundService.isEnabled()) {
+          if (action === 'all_in' || action === 'allin') soundService.playAllIn();
+          else if (action === 'bet' || action === 'raise' || action === 'call') soundService.playChips();
+          else if (action === 'check') soundService.playCheck();
+          else if (action === 'fold') soundService.playFold();
+        }
+        if (
+          (action === 'bet' || action === 'raise' || action === 'call' || action === 'all_in' || action === 'allin') &&
+          actionSeat > 0 &&
+          actionAmount > 0
+        ) {
+          // Translate seat percentage → screen px using the rotated layout.
+          const seatPct = seatPositions[seatIdx] || { x: 50, y: 90 };
+          const fromPos = {
+            x: (seatPct.x / 100) * window.innerWidth,
+            y: (seatPct.y / 100) * window.innerHeight,
+          };
+          const potPos = {
+            x: (50 / 100) * window.innerWidth,
+            y: (45 / 100) * window.innerHeight,
+          };
+          const id = `pa_${Date.now()}_${seatIdx}_${Math.random().toString(36).slice(2, 6)}`;
+          setChipAnimations((prev) => [
             ...prev,
-            pot: lastEvent.data.pot as number,
-          }));
+            {
+              id,
+              from: fromPos,
+              to: potPos,
+              amount: actionAmount,
+            },
+          ]);
         }
         break;
+      }
+
+      // Bible V8 §1.16 Real-Time Law: discrete WS events trigger every UX
+      // change. The four events below were added with this fix; client must
+      // act on them directly, never wait for snapshot diff.
+      case 'HAND_STARTED': {
+        // Reset visual state instantly so the new hand starts crisp.
+        setTableState((prev) => ({
+          ...prev,
+          lastActions: prev.lastActions.map(() => null),
+          lastBetAmounts: prev.lastBetAmounts.map(() => 0),
+          communityCards: [],
+          boardStage: 'preflop',
+        }));
+        // Trigger deal animation (legacy DealAnimation already wired to
+        // dealAnimationKey; bump it so the cards fly from the dealer).
+        setDealAnimationKey((k) => k + 1);
+        break;
+      }
+      case 'BLINDS_POSTED': {
+        // Animate SB + BB chips from each blind seat into the pot. The seat
+        // index is 1-based on the engine; map to 0-based for the chip helper.
+        const postings = ((evt.data as any).postings as Array<{ seat: number; type: string; amount: number }>) || [];
+        for (const p of postings) {
+          if (p.seat > 0 && p.amount > 0) {
+            triggerChipAnimationRef.current?.(p.seat - 1, true, p.amount);
+          }
+        }
+        break;
+      }
+      case 'TURN_CHANGE': {
+        // Discrete-event update of currentPlayerSeat — beats waiting for
+        // the snapshot to arrive. The snapshot still self-corrects later.
+        const newSeat = (evt.data as any).seat as number;
+        if (typeof newSeat === 'number' && newSeat > 0) {
+          setTableState((prev) =>
+            prev.currentPlayerSeat === newSeat
+              ? prev
+              : { ...prev, currentPlayerSeat: newSeat }
+          );
+        }
+        break;
+      }
+      case 'COMMUNITY_CARDS_DEALT': {
+        // Slide the new community cards onto the board the millisecond the
+        // engine flips them. The full board is also sent for safety.
+        const board = ((evt.data as any).board as Card[]) || [];
+        const stage = ((evt.data as any).stage as string) || 'preflop';
+
+        // Bible V8 §1.16 — chip-to-pot collection animation. Before updating
+        // the board, sweep every non-zero bet off the felt into the pot with
+        // the cpCollect keyframe (~450ms). After the animation, clear the
+        // per-seat bet amounts so the next street starts with empty felt.
+        const currentBets = tableStateRef.current.lastBetAmounts || [];
+        const collectMask = currentBets.map((amt) => (amt || 0) > 0);
+        const anyToCollect = collectMask.some(Boolean);
+
+        if (anyToCollect) {
+          setCollectingChipSeats(collectMask);
+          if (collectSeatsTimerRef.current) {
+            window.clearTimeout(collectSeatsTimerRef.current);
+          }
+          collectSeatsTimerRef.current = window.setTimeout(() => {
+            setCollectingChipSeats(Array(collectMask.length).fill(false));
+            setTableState((prev) => ({
+              ...prev,
+              lastBetAmounts: prev.lastBetAmounts.map(() => 0),
+            }));
+          }, 450);
+        }
+
+        setTableState((prev) => ({
+          ...prev,
+          communityCards: board,
+          boardStage: stage as BoardStage,
+        }));
+        // Audio cue
+        if (soundService.isEnabled()) soundService.playDeal?.();
+        break;
+      }
+      case 'HAND_COMPLETE_EVENT':
+      case 'HAND_COMPLETE': {
+        // Bible V8 §1.16 — final river bets still on felt must sweep into
+        // pot BEFORE the pot-to-winner animation fires (POT_WIN case).
+        const finalBets = tableStateRef.current.lastBetAmounts || [];
+        const finalMask = finalBets.map((amt) => (amt || 0) > 0);
+        if (finalMask.some(Boolean)) {
+          setCollectingChipSeats(finalMask);
+          if (collectSeatsTimerRef.current) {
+            window.clearTimeout(collectSeatsTimerRef.current);
+          }
+          collectSeatsTimerRef.current = window.setTimeout(() => {
+            setCollectingChipSeats(Array(finalMask.length).fill(false));
+            setTableState((prev) => ({
+              ...prev,
+              lastBetAmounts: prev.lastBetAmounts.map(() => 0),
+            }));
+          }, 450);
+        }
+        // Bible V8 §5.1 — winner display persists 2.5–3s before the table
+        // resets to idle. Clear community board, pot, side pots and the
+        // winner highlight after that delay so the next hand starts crisp.
+        window.setTimeout(() => {
+          setTableState((prev) => ({
+            ...prev,
+            communityCards: [],
+            boardStage: 'preflop',
+            pot: 0,
+            sidePots: [],
+          }));
+          setIsAllInMode(false);
+          setAllInEquities([]);
+          setWinnerInfo({ playerIds: [], handName: '', cardIndices: [], amounts: {} });
+        }, 3000);
+        break;
+      }
+
       case 'POT_WIN': {
         // Bible V8 §5.1 + Phase 2 T1-05 (spec §6 Pot Shipping Animation):
         // - Play winner sound
         // - Fire 6-8 staggered chips on a quadratic-bezier arc from the pot
         //   center to each winner's seat position over 400-600ms.
-        const winnerIds = (lastEvent.data.winner_ids as string[]) || [];
-        const potAmount = (lastEvent.data.pot as number) || 0;
+        const winnerIds = ((evt.data as any).winner_ids as string[]) || [];
+        const potAmount = ((evt.data as any).pot as number) || 0;
         if (winnerIds.length > 0 && winnerIds.includes(userId)) {
           playWinSound(potAmount);
         }
@@ -3672,24 +4018,8 @@ export default function TablePage({
         }
         break;
       }
-      case 'HAND_COMPLETE':
-        // Reset table state for next hand — but delay clearing community cards + winner info
-        // so players can see the winning hand for 3 seconds before the next deal.
-        // Bible V8 §5.1: Winner display persists 2.5-3s before table resets.
-        setTimeout(() => {
-          setTableState((prev) => ({
-            ...prev,
-            communityCards: [],
-            boardStage: 'preflop',
-            pot: 0,
-            sidePots: [],
-          }));
-          setIsAllInMode(false);
-          setAllInEquities([]); // Clear equity display on new hand
-          // Clear winner highlighting
-          setWinnerInfo({ playerIds: [], handName: '', cardIndices: [], amounts: {} });
-        }, 3000);
-        break;
+      // HAND_COMPLETE case is handled above with chip-collect + reset in
+      // one place (Bible V8 §1.16). Duplicate case removed 2026-04-14.
     }
   }, [lastEvent]);
 
@@ -3737,6 +4067,12 @@ export default function TablePage({
       setIsRabbitAvailable(false);
       serverRabbitCardsRef.current = [];
       setCurrentBoard([]);
+      // Phase 2 T1-08-deal (2026-04-14 BUG-H fix): trigger the deal animation
+      // so cards visibly fly from the dealer toward each active seat at the
+      // start of the new hand. The DealAnimation component is mounted but
+      // remained at key=0 forever — Dan reported "no deal animation" during
+      // E2E. Bumping the key remounts + replays the animation.
+      setDealAnimationKey((k) => k + 1);
     }
   }, [tableState.handNumber, tableState.heroSeat, tableState.players]);
 
@@ -3873,9 +4209,19 @@ export default function TablePage({
 
   //broadcastLocalHandState removed — server broadcasts state authoritatively
 
-  // Unified Table Timer Logic (Phase M) - Moved out of the way of all earlier references
+  // Unified Table Timer Logic (Phase M) - Moved out of the way of all earlier references.
+  // 2026-04-14 CRITICAL FIX (Dan E2E bug "engine skipped my turn"):
+  //   The previous gate was `currentPlayerSeat === heroSeat && isHandInProgress`.
+  //   Both fields default to 0 between hands / during snapshot races, so
+  //   `0 === 0` returned true for a microsecond on every snapshot churn,
+  //   causing ActionPanel to mount/unmount in flicker bursts. Hero saw the
+  //   action buttons flash on then off and could not click. Adding the
+  //   explicit `> 0` guards eliminates the false-trigger.
   const isHeroTurnContext =
-    tableState.currentPlayerSeat === tableState.heroSeat && tableState.isHandInProgress;
+    tableState.heroSeat > 0 &&
+    tableState.currentPlayerSeat > 0 &&
+    tableState.currentPlayerSeat === tableState.heroSeat &&
+    tableState.isHandInProgress;
 
   /**
    * Phase 1.3 PR-C+D: thin wrapper around submitAction that routes server-side
@@ -3933,6 +4279,12 @@ export default function TablePage({
     isActiveTurn: tableState.currentPlayerSeat > 0 && tableState.isHandInProgress,
     isHeroTurn: isHeroTurnContext && !timeBankActive,
     isSoundEnabled,
+    // Bible V8 §6.1: deadline-driven, server-authoritative. Reset whenever
+    // the active seat changes OR the server pushes a new deadline. Without
+    // these props the local countdown ticks to zero on turn #1 and then
+    // freezes for the rest of the session (no visible ring on any seat).
+    turnDeadlineMs: tableState.actionTimerDeadline,
+    activeSeatKey: tableState.currentPlayerSeat,
     onTimeout: () => {
       // Server-authoritative: when client timer expires, try to activate time bank.
       // Bible V8 §11.1 auto_time_bank toggle — when ON, silently activate without
@@ -5016,6 +5368,10 @@ export default function TablePage({
             // Normalize and scale: chips appear ~70px toward center from the seat
             const betOffsetX = Math.round((dx / dist) * 70);
             const betOffsetY = Math.round((dy / dist) * 70);
+            // Bible V8 §1.16 — on collect, bet chips fly from their resting
+            // spot the rest of the way toward the pot (~2x current offset).
+            const collectDx = betOffsetX * 2;
+            const collectDy = betOffsetY * 2;
 
             return (
               <div
@@ -5027,6 +5383,8 @@ export default function TablePage({
                     top: `${pos.y}%`,
                     '--bet-offset-x': `${betOffsetX}px`,
                     '--bet-offset-y': `${betOffsetY}px`,
+                    '--collect-dx': `${collectDx}px`,
+                    '--collect-dy': `${collectDy}px`,
                   } as React.CSSProperties
                 }
               >
@@ -5040,6 +5398,17 @@ export default function TablePage({
                   }
                   lastAction={tableState.lastActions[idx] || null}
                   lastBetAmount={tableState.lastBetAmounts[idx] || 0}
+                  isCollectingChips={collectingChipSeats[idx] || false}
+                  turnDeadlineMs={
+                    seatNumber === tableState.currentPlayerSeat
+                      ? tableState.actionTimerDeadline
+                      : undefined
+                  }
+                  turnStartTimeMs={
+                    seatNumber === tableState.currentPlayerSeat
+                      ? tableState.actionTimerStartTime
+                      : undefined
+                  }
                   timerProgress={
                     seatNumber === tableState.currentPlayerSeat ? actionTimerProgress : undefined
                   }
@@ -5189,7 +5558,12 @@ export default function TablePage({
             {/* QuickActionsBar REMOVED — Auto-Rebuy is a hamburger menu setting,
                 Chat and Stats have their own dedicated locations */}
 
-            {tableState.currentPlayerSeat === tableState.heroSeat && tableState.isHandInProgress
+            {/* 2026-04-14 CRITICAL FIX: require both seats > 0 so the
+                 between-hands 0===0 case doesn't briefly mount ActionPanel. */}
+            {tableState.heroSeat > 0 &&
+            tableState.currentPlayerSeat > 0 &&
+            tableState.currentPlayerSeat === tableState.heroSeat &&
+            tableState.isHandInProgress
               ? (() => {
                   // Bible V8 §1.4: Use SERVER-AUTHORITATIVE values, not local calculations
                   const heroPlayer = getPlayerAtSeat(tableState.heroSeat);
@@ -5271,8 +5645,14 @@ export default function TablePage({
                 </button>
               )}
 
-            {/* ─── PRE-ACTION BAR — Show when not hero's turn ─── */}
+            {/* ─── PRE-ACTION BAR — Show when hero is seated AND not their turn.
+                 2026-04-14 fix: also require heroSeat > 0 so observers (heroSeat=0)
+                 don't see the pre-action bar; and require currentPlayerSeat to be
+                 a real player — if 0 (transient between hands), hide the bar so
+                 it doesn't flicker against the ActionPanel during the same window. */}
             {tableState.isHandInProgress &&
+              tableState.heroSeat > 0 &&
+              tableState.currentPlayerSeat > 0 &&
               tableState.currentPlayerSeat !== tableState.heroSeat && (
                 <PreActionBar
                   canCheck={
@@ -5827,6 +6207,22 @@ export default function TablePage({
         })()}
       />
 
+      {/* Bust Rebuy Modal — shown when hero stack hits 0 between hands.
+          Reuses BuyInModal; onConfirm calls atomic_table_rebuy RPC. */}
+      <BuyInModal
+        isOpen={bustRebuyOpen}
+        onClose={cancelBustRebuy}
+        onConfirm={async (amount) => {
+          await confirmBustRebuy(amount);
+        }}
+        tableName={tableState.tableName}
+        minBuyIn={safeBB(tableState.blinds) * 40}
+        maxBuyIn={safeBB(tableState.blinds) * 100}
+        accountBalance={bustWalletBalance ?? 0}
+        bigBlind={safeBB(tableState.blinds)}
+        countdown={undefined}
+      />
+
       {/* Buy-In Modal */}
       <BuyInModal
         isOpen={showBuyInModal}
@@ -5999,12 +6395,21 @@ export default function TablePage({
         cashoutRestriction={cashoutMinBuyIn > 0 ? cashoutMinBuyIn : undefined}
       />
 
-      {/* Rabbit Hunt (post-hand card reveal) */}
-      <RabbitHunt
-        isAvailable={isRabbitAvailable}
-        onReveal={handleRabbitReveal}
-        currentBoard={currentBoard}
-      />
+      {/*
+        Rabbit Hunt (post-hand card reveal).
+        2026-04-14 fix: only mount when the hand is FINISHED AND the engine
+        flagged unrevealed streets remaining (isRabbitAvailable). Tester saw
+        the orange "Rabbit Hunt FREE" button during active hands because the
+        component was always mounted and only no-op'd on isAvailable=false —
+        but a stale isRabbitAvailable=true between hands kept it rendered.
+      */}
+      {!tableState.isHandInProgress && isRabbitAvailable && (
+        <RabbitHunt
+          isAvailable={isRabbitAvailable}
+          onReveal={handleRabbitReveal}
+          currentBoard={currentBoard}
+        />
+      )}
 
       {/* Leaderboard Panel */}
       <LeaderboardPanel

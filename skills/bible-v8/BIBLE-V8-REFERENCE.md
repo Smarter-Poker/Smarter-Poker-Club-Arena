@@ -140,6 +140,76 @@ This Bible covers: Cash games, Sit-and-Go, Multi-Table Tournaments, Spin & Go, a
 
 Rules that differ between cash and tournament (rebuys, blind increases, elimination) are explicitly branched. Rules that differ between variants (cards dealt, hand evaluation, hi-lo) are explicitly branched.
 
+### Law 1.16 — REAL-TIME DELIVERY LAW (Dan decree, 2026-04-14)
+
+EVERY visible aspect, feature, sound, animation, badge, countdown, and
+detail in Club Arena MUST be delivered to the client through a discrete,
+named, real-time WebSocket event the millisecond it occurs on the
+server. NO snapshot diffing. NO polling. NO setInterval clock-watch. NO
+"wait for the next state broadcast and figure out what changed".
+
+#### Mechanism
+
+- The engine WebSocket (`wss://engine.smarter.poker/ws/table/:id`) is
+  the SOLE real-time channel. Persistent per-table connection. The
+  server PUSHES events as they occur.
+- Every event has a NAMED type (`player_action`, `pot_win`,
+  `community_cards_dealt`, `blinds_posted`, `hand_started`, `showdown_reveal`,
+  `time_bank_low`, `rit_offer`, `insurance_offers`, `rabbit_hunt_available`,
+  `straddle_posted`, `pot_distributed`, `seat_taken`, `seat_left`,
+  `chat_message`, `stage_change`, `hole_cards_dealt`, etc.) and a flat
+  top-level payload — never nested under `.data`, never inside a giant
+  snapshot blob.
+- `broadcastCurrentState()` snapshots exist ONLY as a SAFETY NET for:
+  1. New WS clients connecting mid-hand (need a starting state)
+  2. Reconnect resync after network drop
+  3. Idempotent reconciliation if a discrete event was lost in transit
+
+  Snapshots MUST NOT be the trigger for any animation, sound, label,
+  countdown, or other UX cue.
+
+#### Forbidden patterns
+
+- Diffing previous-vs-current snapshot fields to decide whether to play
+  an animation or sound — react to the discrete event instead.
+- Subscribing to `broadcastCurrentState` to detect a stage change —
+  emit `community_cards_dealt` (flop/turn/river) and react to that.
+- `setInterval` to refresh chat / chip stack / timer / online count —
+  every change comes as an event.
+- Polling Supabase tables for "what's new" — the engine emits the
+  authoritative event the same instant it changes its own state.
+
+#### Required pattern
+
+For every visible aspect / feature / detail in the UI:
+1. The engine emits a named discrete event the moment that aspect
+   changes, with a flat payload containing only the fields the client
+   needs to render the change.
+2. The client receives the event over the WS hub and updates the UI
+   directly from the event payload.
+3. The next snapshot is sent for reconciliation only — the UI MUST
+   already be up-to-date from the discrete event before the snapshot
+   arrives.
+
+#### Audit obligation
+
+Any agent shipping work that touches a visible UX aspect MUST:
+- Verify the trigger is a discrete event, not a snapshot diff or
+  polling interval.
+- If a snapshot-driven UX path exists, list it in `MIGRATION-CHANGELOG.md`
+  as a known violation with a remediation plan and convert it.
+
+#### Verification clause for commit messages
+
+Every PR adding or touching visible UX MUST include in its commit
+message a one-line confirmation:
+> Real-time law: triggered by `<event_name>` discrete WS event, no
+> snapshot diff.
+
+This law overrides any prior latency targets, snapshot intervals, or
+polling fallbacks. There is no negotiation. See also
+`MIGRATION-LAW.md` LAW 11.
+
 ---
 
 ## CHAPTER 2: OBJECT SCHEMAS

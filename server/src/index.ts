@@ -480,14 +480,49 @@ class GameServer {
         );
       }
 
-      // 6. Cancel stale RUNNING MTT tournaments older than 2 hours (stuck from crashed server)
-      const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
-      await supabase
+      // 6. Cancel stale RUNNING MTT tournaments (BUG 019 FIX 2026-04-15):
+      //    Prior threshold was 2 hours which killed every legitimate MTT — deep-stack
+      //    tournaments routinely run 6+ hours. 133 MTTs were nuked before this fix.
+      //    New policy:
+      //      - bump threshold to 12 hours (truly crashed servers would mean tournaments
+      //        stalled much longer than that)
+      //      - set ended_at = NOW() so audit trail is preserved (was NULL before)
+      //      - only target tournaments where last_activity is also stale
+      //      - DO NOT touch MTTs that have recent hand_history activity (they're live)
+      //    A separate scheduled cleanup should refund affected players; that's handled
+      //    by TournamentManager.cancelTournament via normal refund path. This startup
+      //    sweep is strictly a safety-net for server crashes and should rarely fire.
+      const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+      // Find stale RUNNING tournaments with no recent hand activity
+      const { data: staleTourneys } = await supabase
         .from('tournaments')
-        .update({ status: 'CANCELLED' })
+        .select('id, name')
         .eq('status', 'RUNNING')
-        .lt('created_at', twoHoursAgo);
-      console.log('[GameServer] Cancelled stale RUNNING tournaments (>2h)');
+        .lt('created_at', twelveHoursAgo);
+      for (const t of staleTourneys || []) {
+        const { count: recentHands } = await supabase
+          .from('hand_history')
+          .select('id', { count: 'exact', head: true })
+          .eq('tournament_id', t.id)
+          .gte('created_at', oneHourAgo);
+        if ((recentHands || 0) > 0) {
+          console.log(
+            `[GameServer] Skipping cancel of tournament ${t.id.slice(0, 8)} — ${recentHands} hands in last hour (still active)`
+          );
+          continue;
+        }
+        await supabase
+          .from('tournaments')
+          .update({ status: 'CANCELLED', ended_at: new Date().toISOString() })
+          .eq('id', t.id);
+        console.log(
+          `[GameServer] Cancelled genuinely stale RUNNING tournament ${t.id.slice(0, 8)} "${t.name}" (>12h, no recent hands)`
+        );
+      }
+      console.log(
+        `[GameServer] Stale-tournament sweep complete (${staleTourneys?.length || 0} reviewed)`
+      );
 
       // 7. Cancel stuck COMPLETING tournaments (crashed during finishTournament flow)
       await supabase

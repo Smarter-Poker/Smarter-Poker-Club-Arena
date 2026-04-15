@@ -12,6 +12,11 @@
 import type { Card, ActionType, SeatPlayer, HandStage, HorseStyle, HorseDecision, HorseGameState } from '../types.js';
 import { evaluateHand, evaluateOmahaHand, RANK_VALUES } from './PokerEngine.js';
 
+// BUG 020 FIX (2026-04-15) — round chip amounts to whole cents so horse decisions
+// don't pollute hand_history.actions with 15-digit floats like 5.007319350536557.
+// Bible V8 §2.6 mandates integer-cent arithmetic for all chip amounts.
+const toCents = (n: number): number => Math.round(n * 100) / 100;
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // STYLE PARAMETERS — All styles are winning; they differ in HOW they win
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -103,15 +108,15 @@ export class HorseLogic {
         if (strength > 0.85) {
             if (facingThreeBet) {
                 if (strength > 0.93 || Math.random() < 0.5) {
-                    return { action: 'raise', amount: Math.min(stack, currentBet * 2.5), thinkTime: 0 };
+                    return { action: 'raise', amount: toCents(Math.min(stack, currentBet * 2.5)), thinkTime: 0 };
                 }
                 return { action: 'call', amount: toCall, thinkTime: 0 };
             }
             if (facingRaise) {
-                return { action: 'raise', amount: Math.min(stack, currentBet * 3), thinkTime: 0 };
+                return { action: 'raise', amount: toCents(Math.min(stack, currentBet * 3)), thinkTime: 0 };
             }
             const openSize = bigBlind * (2.5 + Math.random() * 0.5);
-            return { action: 'raise', amount: Math.min(stack, openSize), thinkTime: 0 };
+            return { action: 'raise', amount: toCents(Math.min(stack, openSize)), thinkTime: 0 };
         }
 
         if (strength > params.pfrThreshold) {
@@ -121,13 +126,13 @@ export class HorseLogic {
             }
             if (facingRaise) {
                 if (strength > params.threeBetThreshold) {
-                    return { action: 'raise', amount: Math.min(stack, currentBet * 3), thinkTime: 0 };
+                    return { action: 'raise', amount: toCents(Math.min(stack, currentBet * 3)), thinkTime: 0 };
                 }
                 if (toCall <= bigBlind * 8) return { action: 'call', amount: toCall, thinkTime: 0 };
                 return { action: 'fold', thinkTime: 0 };
             }
             const openSize = bigBlind * (2.5 + Math.random() * 0.5);
-            return { action: 'raise', amount: Math.min(stack, openSize), thinkTime: 0 };
+            return { action: 'raise', amount: toCents(Math.min(stack, openSize)), thinkTime: 0 };
         }
 
         if (strength > params.vpipThreshold) {
@@ -138,7 +143,7 @@ export class HorseLogic {
             }
             if (Math.random() < 0.6) {
                 const openSize = bigBlind * (2.2 + Math.random() * 0.3);
-                return { action: 'raise', amount: Math.min(stack, openSize), thinkTime: 0 };
+                return { action: 'raise', amount: toCents(Math.min(stack, openSize)), thinkTime: 0 };
             }
             if (toCall === 0) return { action: 'check', thinkTime: 0 };
             if (toCall <= bigBlind) return { action: 'call', amount: toCall, thinkTime: 0 };
@@ -167,14 +172,14 @@ export class HorseLogic {
             if (!facingBet) {
                 if (Math.random() < params.slowplayFreq) return { action: 'check', thinkTime: 0 };
                 const betSize = Math.trunc(pot * (0.60 + Math.random() * 0.20) * sizeMult);
-                return { action: 'bet', amount: Math.min(stack, Math.max(betSize, gs.minRaise)), thinkTime: 0 };
+                return { action: 'bet', amount: toCents(Math.min(stack, Math.max(betSize, gs.minRaise))), thinkTime: 0 };
             }
             if (Math.random() < params.checkRaiseFreq * 1.5) {
-                const raiseSize = Math.trunc(Math.min(stack, toCall + (pot + toCall) * (0.8 + Math.random() * 0.4) * sizeMult) * 100) / 100;
+                const raiseSize = toCents(Math.min(stack, toCall + (pot + toCall) * (0.8 + Math.random() * 0.4) * sizeMult));
                 return { action: 'raise', amount: raiseSize, thinkTime: 0 };
             }
             if (strength > 0.90) {
-                const raiseSize = Math.trunc(Math.min(stack, currentBet * (2.5 + Math.random() * 0.5)) * 100) / 100;
+                const raiseSize = toCents(Math.min(stack, currentBet * (2.5 + Math.random() * 0.5)));
                 return { action: 'raise', amount: raiseSize, thinkTime: 0 };
             }
             return { action: 'call', amount: toCall, thinkTime: 0 };
@@ -184,11 +189,11 @@ export class HorseLogic {
         if (strength > 0.55) {
             if (!facingBet) {
                 const betSize = Math.trunc(pot * (0.45 + Math.random() * 0.20) * sizeMult);
-                return { action: 'bet', amount: Math.min(stack, Math.max(betSize, gs.minRaise)), thinkTime: 0 };
+                return { action: 'bet', amount: toCents(Math.min(stack, Math.max(betSize, gs.minRaise))), thinkTime: 0 };
             }
             const betToCallRatio = toCall / pot;
             if (strength > 0.70 && Math.random() < 0.35) {
-                return { action: 'raise', amount: Math.trunc(Math.min(stack, currentBet * (2.2 + Math.random() * 0.6)) * 100) / 100, thinkTime: 0 };
+                return { action: 'raise', amount: toCents(Math.min(stack, currentBet * (2.2 + Math.random() * 0.6))), thinkTime: 0 };
             }
             if (betToCallRatio < 0.8) return { action: 'call', amount: toCall, thinkTime: 0 };
             if (strength > 0.65) return { action: 'call', amount: toCall, thinkTime: 0 };
@@ -200,14 +205,14 @@ export class HorseLogic {
             if (!facingBet) {
                 if (strength > 0.45 && Math.random() < params.cbetFreq * 0.6) {
                     const betSize = Math.trunc(pot * (0.30 + Math.random() * 0.15) * sizeMult);
-                    return { action: 'bet', amount: Math.min(stack, Math.max(betSize, gs.minRaise)), thinkTime: 0 };
+                    return { action: 'bet', amount: toCents(Math.min(stack, Math.max(betSize, gs.minRaise))), thinkTime: 0 };
                 }
                 return { action: 'check', thinkTime: 0 };
             }
             const betToCallRatio = toCall / (pot + toCall);
             if (strength > betToCallRatio + 0.05) return { action: 'call', amount: toCall, thinkTime: 0 };
             if (strength > 0.45 && Math.random() < params.bluffFreq * 0.5) {
-                return { action: 'raise', amount: Math.trunc(Math.min(stack, currentBet * 2.5 * sizeMult) * 100) / 100, thinkTime: 0 };
+                return { action: 'raise', amount: toCents(Math.min(stack, currentBet * 2.5 * sizeMult)), thinkTime: 0 };
             }
             return { action: 'fold', thinkTime: 0 };
         }
@@ -216,7 +221,7 @@ export class HorseLogic {
         if (!facingBet) {
             if (Math.random() < params.bluffFreq) {
                 const betSize = Math.trunc(pot * (0.50 + Math.random() * 0.25) * params.sizingMultiplier);
-                return { action: 'bet', amount: Math.min(stack, Math.max(betSize, gs.minRaise)), thinkTime: 0 };
+                return { action: 'bet', amount: toCents(Math.min(stack, Math.max(betSize, gs.minRaise))), thinkTime: 0 };
             }
             return { action: 'check', thinkTime: 0 };
         }

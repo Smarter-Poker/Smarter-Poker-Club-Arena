@@ -66,7 +66,10 @@ export const AgentFinancialPortal: React.FC<AgentPortalProps> = ({ agentId }) =>
 
   const fetchCommissionHistory = async () => {
     // Fetch last 7 days of commission data
-    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const days: string[] = [];
+    for (let i = 6; i >= 0; i--) {
+      days.push(new Date(Date.now() - i * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { weekday: 'short' }));
+    }
     try {
       const { data, error } = await supabase
         .from('commission_ledger')
@@ -217,7 +220,7 @@ export const AgentFinancialPortal: React.FC<AgentPortalProps> = ({ agentId }) =>
           <div
             className="bg-red-500 h-4 transition-all duration-500"
             style={{
-              width: `${wallet.creditLimit > 0 ? Math.min(((wallet.creditLimit - wallet.agentBal) / wallet.creditLimit) * 100, 100) : 0}%`,
+              width: `${wallet.creditLimit > 0 ? Math.max(0, Math.min(((wallet.creditLimit - wallet.agentBal) / wallet.creditLimit) * 100, 100)) : 0}%`,
             }}
           />
         </div>

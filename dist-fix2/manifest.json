@@ -1,0 +1,21 @@
+{
+  "name": "Club Arena",
+  "short_name": "Club Arena",
+  "description": "Premium Online Poker Platform",
+  "theme_color": "#0a0a1a",
+  "background_color": "#0a0a1a",
+  "display": "standalone",
+  "orientation": "portrait",
+  "start_url": "/",
+  "scope": "/",
+  "icons": [
+    {
+      "src": "/hub/club-arena/poker-chip-logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["games", "entertainment"],
+  "lang": "en-US"
+}

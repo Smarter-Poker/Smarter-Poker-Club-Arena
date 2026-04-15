@@ -646,8 +646,11 @@ export class ServerTableEngine {
               .catch(() => {});
           } catch { /* broadcast failure is non-fatal */ }
 
-          // FIX 125: Warn player when down to last 5 time banks
-          if (usesAfterActivation >= 0 && usesAfterActivation <= 5) {
+          // FIX 125 + 2026-04-14 spam fix: warn ONLY at the last 1 remaining
+          // and at 0 (the very last one was just used). Was firing at <=5
+          // which on a 4-max-uses table means every single use triggered the
+          // warning. Tester reported "after every card" spam.
+          if (usesAfterActivation >= 0 && usesAfterActivation <= 1) {
             try {
               this.hub?.emitEvent(this.tableId, {
                 type: 'time_bank_low',
@@ -809,9 +812,10 @@ export class ServerTableEngine {
         .catch(() => {});
     } catch (e) {}
 
-    // FIX 125: Warn player when down to last 5 time banks (manual path, includes 0 = last one just used)
+    // FIX 125 + 2026-04-14 spam fix: warn ONLY at the last 1 remaining (or 0
+    // = just used last one). Previous <=5 condition spammed on 4-max tables.
     const manualUsesLeft = bank?.usesRemaining ?? 0;
-    if (manualUsesLeft >= 0 && manualUsesLeft <= 5) {
+    if (manualUsesLeft >= 0 && manualUsesLeft <= 1) {
       try {
         this.hub?.emitEvent(this.tableId, {
           type: 'time_bank_low',
@@ -1850,8 +1854,37 @@ export class ServerTableEngine {
   private async handleHandEvent(event: HandEvent, players: SeatedPlayer[]): Promise<void> {
     switch (event.type) {
       case 'HAND_START':
+        // Bible V8 §1.16 (Real-Time Law): emit a discrete hand_started event
+        // so the client can immediately reset visual state (clear last action
+        // badges, clear community cards, trigger the deal animation) without
+        // waiting for the snapshot to arrive and diff-detect.
+        this.hub?.emitEvent(this.tableId, {
+          type: 'hand_started',
+          table_id: this.tableId,
+          hand_number: this.handCount,
+          dealer_seat: this.handController?.getState().dealerSeat ?? 0,
+          timestamp: Date.now(),
+        });
         this.broadcastCurrentState();
         break;
+
+      case 'BLINDS_POSTED' as any: {
+        // Bible V8 §1.16: discrete blinds_posted event so the client animates
+        // SB/BB chips flying from each blind seat into the pot, instead of
+        // letting the chips just appear in the pot via snapshot.
+        const postings = (event as any).postings as Array<{ seat: number; type: string; amount: number }> | undefined;
+        if (postings && postings.length > 0) {
+          this.hub?.emitEvent(this.tableId, {
+            type: 'blinds_posted',
+            table_id: this.tableId,
+            hand_number: this.handCount,
+            postings,
+            timestamp: Date.now(),
+          });
+        }
+        // No broadcast here — TURN_CHANGE will follow shortly with full snapshot.
+        break;
+      }
 
       case 'CARDS_DEALT':
         // Write hole cards to RLS-protected table for secure per-player delivery.
@@ -1886,12 +1919,62 @@ export class ServerTableEngine {
         // Do NOT broadcast state here — cards are delivered securely via table_hole_cards
         break;
 
-      case 'TURN_CHANGE':
-        // FIX-217 + Bible V8 §1.2.3/§1.2.4: Await broadcast delivery BEFORE starting timer.
-        // "Broadcast must confirm before next turn begins" + "Timer starts only AFTER broadcast confirms"
+      case 'TURN_CHANGE': {
+        // ROOT-CAUSE FIX 2026-04-14 (Dan: "I timed out and the engine moved
+        // on without giving me a chance to act"). Prior flow broadcast the
+        // snapshot and the discrete turn_change event while
+        // playerTurnStartTime / playerTurnDuration still held the PREVIOUS
+        // turn's values. Snapshots therefore carried a deadline_ms /
+        // turn_deadline_ms in the past (or 0 on hand #1), so the client's
+        // countdown was already at zero the moment the hero's panel
+        // rendered — the hero looked timed out before their turn began.
+        //
+        // Fix respects Bible V8 §1.2.3 (broadcast confirms before next turn)
+        // AND §6.1 (deadline-based, server-authoritative). We compute the
+        // intended deadline up front, stamp it onto playerTurnStartTime /
+        // playerTurnDuration so broadcasts have the right deadline, emit
+        // the real-time event and snapshot, THEN arm the enforcement timer.
+        // The timer call below skips re-stamping when the deadline already
+        // matches, so there is no drift.
+        const tcSeatedPlayer = players.find((p) => p.seat_number === event.seat);
+
+        const baseActionTime = this.tableInfo?.action_time_seconds || 15;
+        const inReconnectGrace = tcSeatedPlayer?.user_id
+          ? this.disconnectEngine.isInReconnectGrace(this.tableId, tcSeatedPlayer.user_id)
+          : false;
+        const effectiveActionSec = inReconnectGrace ? baseActionTime + 5 : baseActionTime;
+
+        // Stamp the intended deadline NOW so the broadcast carries the
+        // current turn's real deadline (start + duration * 1000). The
+        // actual DeadlineScheduler registration happens in startTurnTimer
+        // below; it reads the same fields so the client + server agree.
+        this.playerTurnStartTime = Date.now();
+        this.playerTurnDuration = effectiveActionSec;
+        this.timeBankActivatedThisTurn = false;
+
+        // FIX-217 + Bible V8 §1.2.3/§1.2.4: Await broadcast delivery BEFORE
+        // arming the enforcement timer. Broadcast confirms before next turn.
         await this.broadcastCurrentState();
+
+        // Bible V8 §1.16 (Real-Time Law): discrete turn_change event. Now
+        // carries the correct absolute deadline for the CURRENT player.
+        this.hub?.emitEvent(this.tableId, {
+          type: 'turn_change',
+          table_id: this.tableId,
+          hand_number: this.handCount,
+          seat: event.seat,
+          user_id: tcSeatedPlayer?.user_id ?? '',
+          deadline_ms: this.playerTurnStartTime + this.playerTurnDuration * 1000,
+          timestamp: Date.now(),
+        });
+
+        // Finally: arm the enforcement timer + run pre-action / horse logic.
+        // handleTurnChange will call startTurnTimer which refreshes the
+        // fields; because we set them moments ago the deadline drifts only
+        // by the broadcast RTT (a few ms), well within §6.1 tolerances.
         this.handleTurnChange(event, players);
         break;
+      }
 
       case 'PLAYER_ACTION':
         // Track action for hand history
@@ -1914,19 +1997,56 @@ export class ServerTableEngine {
             const actingPlayer = this.seatedPlayers.find((p) => p.seat_number === event.seat);
             this.preActionEngine.onBetPlaced(this.tableId, actingPlayer?.user_id || '');
           }
+
+          // 2026-04-14 USER FEEDBACK FIX: emit a discrete player_action event so
+          // the client can fire Bible V8 §5.1/§5.2 visual sequence
+          // (action label \u2192 chip-to-pot animation \u2192 sound \u2192 turn indicator).
+          // Previously the only signal was the full state snapshot, which the
+          // client used to update pot only \u2014 chip animations + action labels
+          // never fired because their handler was on the deleted Supabase
+          // Realtime channel. The full state broadcast still follows below.
+          this.hub?.emitEvent(this.tableId, {
+            type: 'player_action',
+            table_id: this.tableId,
+            hand_number: this.handCount,
+            seat: event.seat,
+            user_id: actingPlayer?.user_id ?? '',
+            action: event.action,
+            amount: event.amount ?? 0,
+            stage,
+            timestamp: Date.now(),
+          });
         }
         this.broadcastCurrentState();
         break;
 
-      case 'COMMUNITY_CARDS':
+      case 'COMMUNITY_CARDS': {
         if (event.stage === 'flop') this.currentHandWentToFlop = true;
         if (event.cards) {
           this.currentHandCommunityCards = event.cards.map((c: any) =>
             typeof c === 'string' ? c : `${c.rank}${c.suit}`
           );
         }
+        // Bible V8 §1.16 (Real-Time Law): emit discrete community_cards_dealt
+        // so the client slides the flop/turn/river cards onto the board with
+        // the spec animation (\u00a76 community cards dealing) the millisecond the
+        // engine flips them \u2014 not whenever the next snapshot arrives.
+        this.hub?.emitEvent(this.tableId, {
+          type: 'community_cards_dealt',
+          table_id: this.tableId,
+          hand_number: this.handCount,
+          stage: event.stage,
+          // Send only the NEW cards for this stage so the client can animate
+          // just the additions (3 for flop, 1 each for turn/river).
+          new_cards: event.cards ?? [],
+          // Full board too, for clients that want to render the complete
+          // state without diffing.
+          board: this.currentHandCommunityCards,
+          timestamp: Date.now(),
+        });
         this.broadcastCurrentState();
         break;
+      }
 
       case 'PINEAPPLE_DISCARD_REQUIRED':
         // FIX 120: Crazy Pineapple — broadcast discard requirement to all players
@@ -1986,9 +2106,41 @@ export class ServerTableEngine {
           }
         }
         this.broadcastCurrentState();
+        // Phase 2 T1-05 (spec §6 Pot Shipping Animation): emit a discrete
+        // pot_win event so the client can fire its curved-arc chip fan to
+        // each winner. Fires for BOTH contested showdowns AND uncontested
+        // fold-around wins (HandController emits WINNERS in both cases).
+        // The TablePage POT_WIN handler resolves seats from winner_ids and
+        // splits the pot across them via createPotToWinnerEvent.
+        if (this.currentHandWinnerIds.length > 0) {
+          this.hub?.emitEvent(this.tableId, {
+            type: 'pot_win',
+            table_id: this.tableId,
+            hand_number: this.handCount,
+            winner_ids: this.currentHandWinnerIds,
+            pot: this.currentHandPotSize,
+            // Per-winner amounts for accurate sub-pot ship animations on chops
+            winners: this.currentHandWinners.map((w) => ({
+              user_id: w.userId,
+              amount: w.amount,
+              hand_name: w.hand?.name,
+            })),
+          });
+        }
         break;
 
       case 'HAND_COMPLETE':
+        // Bible V8 §1.16: discrete hand_complete event so the client can
+        // start its post-hand cleanup (winner highlight fade, board clear
+        // countdown, prep for next deal animation) without waiting for the
+        // snapshot to diff and infer "hand ended".
+        this.hub?.emitEvent(this.tableId, {
+          type: 'hand_complete',
+          table_id: this.tableId,
+          hand_number: this.handCount,
+          winner_ids: this.currentHandWinnerIds,
+          timestamp: Date.now(),
+        });
         // Rabbit Hunt: Capture remaining deck cards BEFORE handController is nulled
         if (this.handController) {
           try {
@@ -3209,6 +3361,32 @@ export class ServerTableEngine {
           this.currentHandContributions,
           0 // totalPotContributions no longer used for weighting (FIX 144)
         );
+
+        // 2b-DURABILITY: Also persist per-hand contributions to rake_records so
+        // RakebackSettlerService can derive equal-share credit even after engine
+        // restart. (BUG 008 — settleRakeback in-memory accumulator never flushes;
+        // rake_records is the durable per-hand audit trail the settler reads from.)
+        try {
+          const contribsObj: Record<string, number> = {};
+          for (const [uid, amt] of this.currentHandContributions.entries()) {
+            contribsObj[uid] = amt;
+          }
+          await supabase.from('rake_records').insert({
+            table_id: this.tableId,
+            club_id: this.tableInfo.club_id,
+            rake_amount: this.currentHandRake,
+            bbj_contribution: this.currentHandBBJFee,
+            pot_size: this.currentHandPotSize,
+            num_players: dealtInCount,
+            player_contributions: contribsObj,
+            is_tournament: false,
+            tournament_id: this.tableInfo.tournament_id || null,
+            source: 'ServerTableEngine.handEnd',
+            metadata: { handCount: this.handCount },
+          });
+        } catch (rrErr) {
+          console.warn('[Engine] rake_records durable write failed (non-fatal):', rrErr);
+        }
       }
     }
 

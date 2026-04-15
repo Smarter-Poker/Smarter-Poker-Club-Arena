@@ -151,6 +151,161 @@ There is NO deadline more important than getting this right.
 
 ---
 
+## LAW 11: REAL-TIME IS LAW (added 2026-04-14, Dan decree)
+
+**EVERY aspect, feature, and detail visible in Club Arena MUST be delivered
+to the client via a discrete, named, real-time event the millisecond it
+happens on the server. NO snapshot diffing. NO polling. NO setInterval
+clock-watch. NO "wait for the next state broadcast and figure out what
+changed".**
+
+### Architecture
+
+- **Engine WebSocket** (`wss://engine.smarter.poker/ws/table/:id`) is the
+  ONLY real-time channel. Persistent per-table connection. The server
+  PUSHES events as they occur.
+- Each event has a **named type** (`player_action`, `pot_win`,
+  `community_cards_dealt`, `blinds_posted`, `hand_started`, `showdown_reveal`,
+  `time_bank_low`, `rit_offer`, `insurance_offers`, `rabbit_hunt_available`,
+  `straddle_posted`, `pot_distributed`, `seat_taken`, `seat_left`, etc.) and
+  a flat top-level payload — never nested under `.data`, never inside a
+  giant snapshot blob.
+- Snapshots (`broadcastCurrentState`) exist ONLY as a SAFETY NET for:
+    1. New WebSocket clients connecting mid-hand (need a starting state)
+    2. Reconnect resync after network drop
+    3. Idempotent reconciliation if a discrete event was lost in transit
+
+  Snapshots MUST NOT be the trigger for any animation, sound, label,
+  countdown, or other UX cue. UX is event-driven; snapshots are
+  consistency-checks.
+
+### What this prohibits
+
+- Diffing previous-vs-current snapshot fields to decide "did the pot
+  change so animate chips?" — animate chips when the `player_action`
+  event arrives.
+- Subscribing to `broadcastCurrentState` to detect a stage change —
+  emit `community_cards_dealt` (flop/turn/river) and react to it
+  directly.
+- `setInterval` to refresh chat / chip stack / timer / online count —
+  every change comes as an event.
+- Polling Supabase tables for "what's new" — the engine emits the
+  authoritative event the same instant it changes its own state.
+
+### What this requires
+
+For every visible aspect / feature / detail in the UI, the engine MUST:
+1. Emit a named discrete event the moment that aspect changes.
+2. The client MUST receive that event over the WS hub and update the UI
+   directly from the event payload.
+3. The next snapshot is sent for reconciliation only — the UI MUST
+   already be up-to-date from the discrete event before the snapshot
+   arrives.
+
+### Audit obligation
+
+Any agent shipping work in Club Arena MUST audit their changes against
+this law:
+- Did you add a UX feature whose trigger is "the snapshot updated"?
+  → REWRITE it to fire from a discrete event.
+- Did you read state from a polling interval?
+  → REWRITE it to subscribe to the event instead.
+- Did you observe the engine NOT emitting a discrete event for a visible
+  detail (a fold animation, a stack change, a chat message, a sound,
+  a countdown tick)?
+  → ADD the discrete event emit on the server AND wire the client
+    handler.
+
+### Verification
+
+Every PR that adds or touches a visible UX feature MUST include in its
+commit message a one-line confirmation:
+> "Real-time law: triggered by `<event_name>` discrete WS event, no
+> snapshot diff."
+
+If a snapshot-driven UX path exists in code, the migration changelog
+must list it as a known violation with a remediation plan.
+
+This law overrides all prior latency targets, snapshot intervals, and
+polling fallbacks. There is no negotiation.
+
+---
+
+## LAW 11: DEPLOYMENT IS NOT FINISHED UNTIL LIVE-VERIFIED
+
+**Added:** 2026-04-15 (Dan, post the duplicate-Vercel-project cascade)
+
+Every code ship MUST follow this exact deployment contract. No exceptions. No
+"I think it deployed." No "should be live in a few minutes."
+
+### 11.1 ONLY ONE VERCEL PROJECT SERVES PRODUCTION
+
+- `hub-vanguard` (project id `prj_op66GkZyZcygXQKm76iyycfVFAQx`) — THE REAL ONE.
+  Aliased to `smarter.poker`. Every push to `Smarter-Poker-World-Hub/main` must
+  flow through this project.
+- `smarter-poker` (project id `prj_FNUaJmcjRnwCSh1JzblIUYuOXDGK`) — a DUPLICATE
+  that was created in Feb 2026 and wired to the same repo. GitHub auto-deploy
+  has been DISABLED on this project. Do NOT re-enable it. Do NOT trigger
+  deploys via its deploy hooks. If you see deployment cancellations in the
+  `hub-vanguard` history and the only explanation is a parallel `smarter-poker`
+  build, somebody resurrected the duplicate — put it back to sleep before
+  continuing any other work.
+
+### 11.2 PUSH → WATCH → VERIFY. IN THAT ORDER. NEVER SKIP.
+
+After ANY push to `Smarter-Poker-World-Hub/main` (or the Club Arena source
+repo if you're shipping a CA bundle via the WH repo copy path):
+
+1. **PUSH** — via the GitHub Contents API pattern or `git-safe-push.sh`. Log
+   the commit SHA you pushed.
+2. **WATCH** — poll `hub-vanguard`'s latest deployment (via Vercel MCP
+   `get_deployment` or `list_deployments`) until `state === 'READY'`. Do NOT
+   claim success on `QUEUED`, `BUILDING`, or `CANCELED`. If CANCELED because a
+   later push superseded yours, confirm the LATER deploy carries your commit
+   SHA as an ancestor; if not, re-push on top of the latest HEAD.
+3. **VERIFY** — fetch the live URL (e.g., `https://smarter.poker/hub/club-arena/index.html`)
+   and confirm the served HTML references the new content-hashed bundle name
+   that matches your build output. For Club Arena: grep for the `index-*-v6.js`
+   filename in the served HTML and confirm it's the hash your Vite build
+   produced.
+4. **COLD-LOAD TEST** (for any functional change, not just CSS) — open a
+   fresh browser tab (no SPA state carryover), navigate to the affected page,
+   and confirm the fixed behavior actually works end-to-end. For Chrome MCP:
+   use `tabs_create_mcp` + `navigate` with a fresh URL, confirm the new bundle
+   hash is loaded via a JS eval, then perform the user action.
+
+Only after all four steps pass may you mark the work complete.
+
+### 11.3 DEPLOYMENT WATCH TIMEOUTS
+
+- Vercel QUEUED → BUILDING typically takes 0–120s. If still QUEUED after 5 min,
+  check for a newer push that superseded yours, or fire the deploy hook:
+  `curl -X POST https://api.vercel.com/v1/integrations/deploy/prj_op66GkZyZcygXQKm76iyycfVFAQx/Tw4O1eDeVc`
+- BUILDING → READY typically takes 90–180s for a Next.js build on this repo.
+- If ERROR or CANCELED persists for more than 10 min after the push, INVESTIGATE
+  before trying again (could be a build failure, a rate limit, or the duplicate
+  project resurrecting).
+
+### 11.4 HOW TO KNOW WHICH PROJECT YOUR COMMIT WENT TO
+
+Use Vercel MCP `list_deployments` with `projectId: prj_op66GkZyZcygXQKm76iyycfVFAQx`
+(hub-vanguard) and `since: <your push timestamp>`. You MUST see a deployment
+whose `githubCommitSha` matches your push (or has your push as an ancestor).
+If it only shows up under `smarter-poker` (project id `prj_FNUaJmcj...`), the
+duplicate is back — stop and fix the duplicate before any further deploys.
+
+### 11.5 LIVE-VERIFY LANGUAGE (the only sentence you may use)
+
+A commit is "deployed" only when you have personally observed:
+> "Production `<url>` served `<expected-bundle-hash>` at `<UTC timestamp>` and
+>  the fixed behavior was confirmed via cold-load test at that timestamp."
+
+Any other wording — "should be live," "deploy triggered," "Vercel will pick
+it up in a few minutes," "my push went through" — is NOT acceptable and does
+NOT satisfy this law.
+
+---
+
 ## ENFORCEMENT
 
 These laws are checked at every step by:
@@ -159,5 +314,6 @@ These laws are checked at every step by:
 3. TypeScript compilation after every change
 4. Migration changelog entries for every edit
 5. Dan's review at each phase boundary
+6. **Law 11 deployment contract** — explicit READY + served-bundle + cold-load proof before claiming success
 
 **If any law is violated, all work stops until the violation is corrected.**

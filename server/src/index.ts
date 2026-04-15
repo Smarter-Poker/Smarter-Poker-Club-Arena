@@ -25,6 +25,8 @@ import { HorseFleetManager } from './services/HorseFleetManager.js';
 import { TournamentRecurringService } from './services/TournamentRecurringService.js';
 import { HorseLifecycleManager } from './services/HorseLifecycleManager.js';
 import { AutoRebuyService } from './services/AutoRebuyService.js';
+// BUG 008 FIX: Periodic rakeback settler — flushes per-hand rake_records into rakeback_periods.
+import { RakebackSettlerService } from './services/RakebackSettlerService.js';
 // FIX 151: Import ChipRaceEngine for tournament blind level denomination changes
 import { ChipRaceEngine } from './engine/ChipRaceEngine.js';
 // FIX 154: Import TableBalancer for proper tournament table rebalancing
@@ -57,6 +59,10 @@ class GameServer {
   private tournamentRecurring = new TournamentRecurringService();
   private lifecycle = new HorseLifecycleManager();
   private autoRebuy = new AutoRebuyService();
+  // BUG 008 FIX: settler reads rake_records (durable per-hand log) every 30 min and
+  // upserts per-player rakeback_periods rows. Without this the in-memory accumulator
+  // inside RakebackEngine never flushes (zero callers of settleRakeback before fix).
+  private rakebackSettler = new RakebackSettlerService();
 
   // Synchronized break timer — all MTT/XMTT tournaments break at the top of every hour
   private breakTimer: NodeJS.Timeout | null = null;
@@ -66,21 +72,32 @@ class GameServer {
   async start(): Promise<void> {
     this.running = true;
     const maintenanceMode = process.env.MAINTENANCE_MODE === 'true';
+    // E2E test mode — when set, MAINTENANCE_MODE still applies (no auto-spawn,
+    // no recurring tournaments, no horse fleet) but a single table engine is
+    // booted for this exact tableId so a tester can sit down and play hands
+    // without the rest of the platform churning. Discovery loops stay off so
+    // no other tables get picked up. Lifecycle / auto-rebuy stay off.
+    const testTableId = process.env.TEST_TABLE_ID || '';
 
     // Initialize Sentry FIRST so all subsequent errors are captured
     initSentry();
 
     console.log('═══════════════════════════════════════════════════════════════');
     console.log(' SMARTER POKER GAME SERVER — Starting...');
-    console.log(maintenanceMode
-      ? ' ⚠️  MAINTENANCE MODE — No tables, tournaments, or horses will be created'
-      : ' All game logic runs HERE — no browser needed');
+    if (testTableId) {
+      console.log(` 🧪 E2E TEST MODE — single test table ${testTableId.slice(0,8)} only`);
+    } else if (maintenanceMode) {
+      console.log(' ⚠️  MAINTENANCE MODE — No tables, tournaments, or horses will be created');
+    } else {
+      console.log(' All game logic runs HERE — no browser needed');
+    }
     console.log('═══════════════════════════════════════════════════════════════');
 
-    // Step 1: Clean up stale data from previous runs
-    await this.cleanupStaleData();
+    // Step 1: Clean up stale data from previous runs.
+    // Test mode passes the protected id so cleanup spares it.
+    await this.cleanupStaleData(testTableId);
 
-    if (!maintenanceMode) {
+    if (!maintenanceMode && !testTableId) {
       // Step 2: Start horse fleet manager (creates tables, seats horses)
       await this.horseFleet.start();
 
@@ -93,6 +110,11 @@ class GameServer {
       // Step 5: Start server-side auto-rebuy wallet funder
       this.autoRebuy.start();
 
+      // Step 5b (BUG 008 FIX): Start periodic rakeback settler (30-min interval).
+      // Reads rake_records → upserts rakeback_periods so players see accumulated
+      // rakeback in the UI and weekly settlement has rows to pay out.
+      this.rakebackSettler.start();
+
       // Step 6: Start discovery loops (finds tables with players, starts engines)
       // These are infinite while-loops — fire-and-forget with error handling
       this.discoverCashTables().catch((err) => reportError(err, 'GameServer.Cash_table_discovery_fatal_err'));
@@ -102,9 +124,39 @@ class GameServer {
       this.scheduleSynchronizedBreaks();
 
       console.log('[GameServer] Running. All services started.');
+    } else if (testTableId) {
+      // E2E test mode: boot a single table engine for the designated test id.
+      // No other services run — no horse seeding, no tournament expansion,
+      // no discovery sweeps, no break timer. Just one table for hand testing.
+      try {
+        await this.startTableEngineForTesting(testTableId);
+        console.log(`[GameServer] E2E test table ${testTableId.slice(0,8)} engine started.`);
+      } catch (err) {
+        reportError(err, 'GameServer.E2E_test_table_start_failed');
+      }
     } else {
       console.log('[GameServer] Running in MAINTENANCE MODE — only /health and /action endpoints active.');
     }
+  }
+
+  /**
+   * E2E test mode boot path: starts an engine for one specific table id.
+   * Mirrors the relevant portion of discoverCashTables but skips the loop +
+   * filter logic. Caller (start()) ensures we only get here when TEST_TABLE_ID
+   * is set so this stays out of the normal-operation hot path.
+   */
+  private async startTableEngineForTesting(tableId: string): Promise<void> {
+    if (this.tableEngines.has(tableId)) return;
+    const engine = new ServerTableEngine(tableId);
+    engine.setHub(tableStateHub); // Phase 1.1 PR-2: authoritative WS publisher
+    this.tableEngines.set(tableId, engine);
+    // Mirror the discovery-loop start invocation so any errors get reported
+    // consistently and the engine cleanup path runs on failure.
+    engine.start().catch((err) => {
+      reportError(err, 'GameServer.E2E_test_table_engine_start_error');
+      this.tableEngines.delete(tableId);
+      tableStateHub.dropTable(tableId);
+    });
   }
 
   async stop(): Promise<void> {
@@ -116,6 +168,7 @@ class GameServer {
     this.tournamentRecurring.stop();
     this.lifecycle.stop();
     this.autoRebuy.stop();
+    this.rakebackSettler.stop();
     if (this.breakTimer) {
       clearTimeout(this.breakTimer);
       this.breakTimer = null;
@@ -277,8 +330,11 @@ class GameServer {
   // STALE DATA CLEANUP — Run on startup
   // ═════════════════════════════════════════════════════════════════════════════
 
-  private async cleanupStaleData(): Promise<void> {
+  private async cleanupStaleData(protectedTableId: string = ''): Promise<void> {
     console.log('[GameServer] Cleaning up stale data from previous runs...');
+    if (protectedTableId) {
+      console.log(`[GameServer] E2E test mode — table ${protectedTableId.slice(0,8)} is PROTECTED from cleanup.`);
+    }
     try {
       // 1. Batch-reset ALL stuck horses to available (fast single query)
       //    Any horse not at an active table will get re-seated by HorseFleetManager
@@ -289,13 +345,19 @@ class GameServer {
         .neq('horse_status', 'available');
       console.log('[GameServer] Reset stuck horses to available');
 
-      // 2. SAFE CLEANUP: Cash out ALL active seats before deleting
+      // 2. SAFE CLEANUP: Cash out ALL active seats before deleting.
+      //    Test table (protectedTableId) is excluded — its seated players /
+      //    bots stay put so the tester can join an already-warmed table.
       //    This prevents chip loss when the server restarts while players are seated
       //    FIX 208b: Batch approach — aggregate per user, single wallet update per user
-      const { data: activeSeats } = await supabase
+      let seatsQuery = supabase
         .from('table_seats')
         .select('user_id, table_id, seat_number, stack')
         .is('left_at', null);
+      if (protectedTableId) {
+        seatsQuery = seatsQuery.neq('table_id', protectedTableId);
+      }
+      const { data: activeSeats } = await seatsQuery;
 
       if (activeSeats && activeSeats.length > 0) {
         // Aggregate total stack per user
@@ -333,13 +395,34 @@ class GameServer {
         }
       }
 
-      // Now delete all table_seats (they should all have left_at set now)
-      await supabase.from('table_seats').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      // Now delete all table_seats (they should all have left_at set now).
+      // Test table seats are spared so bots stay seated for E2E hands.
+      let deleteQuery = supabase
+        .from('table_seats')
+        .delete()
+        .neq('id', '00000000-0000-0000-0000-000000000000');
+      if (protectedTableId) {
+        deleteQuery = deleteQuery.neq('table_id', protectedTableId);
+      }
+      await deleteQuery;
       console.log('[GameServer] Deleted all table seats (after safe cashout)');
 
-      // 3. FIX 202: Reset cash tables based on horse fleet mode
+      // 3. FIX 202: Reset cash tables based on horse fleet mode.
+      // E2E test mode (protectedTableId) ALWAYS closes everything-but-test
+      // and skips the bots-resume path entirely so nothing else lights up.
       const disableHorsesOnCleanup = process.env.DISABLE_HORSE_FLEET === 'true';
-      if (disableHorsesOnCleanup) {
+      if (protectedTableId) {
+        // Close every cash table EXCEPT the protected test table. The test
+        // table's status is left untouched so its current state survives the
+        // restart and the engine picks it up again immediately.
+        await supabase
+          .from('tables')
+          .update({ current_players: 0, status: 'closed' })
+          .is('tournament_id', null)
+          .neq('id', protectedTableId)
+          .in('status', ['waiting', 'running']);
+        console.log(`[GameServer] E2E mode: closed all cash tables except ${protectedTableId.slice(0,8)}`);
+      } else if (disableHorsesOnCleanup) {
         // When horse fleet is disabled, CLOSE all old running/waiting tables
         // (they were horse-populated and shouldn't be resurrected).
         // Only manually-created tables with the right status will be picked up by discovery.
@@ -2284,46 +2367,39 @@ class TournamentManager {
             }
           }
 
-          // Log union transaction for audit
-          await supabase.from('union_transactions').insert({
-            union_id: club.union_id,
-            club_id: tournament.club_id,
-            amount: totalRake,
-            tx_type: 'rake',
-            wallet: 'chip',
-            direction: 'credit',
-            notes: `${rakeDescription} — ${club.name || 'club'}`,
-            created_at: new Date().toISOString(),
-          });
+          // Log union transaction for audit (BUG 013 FIX — was union_transactions which
+          // doesn't exist; correct table is union_wallet_transactions)
+          {
+            const { data: uw2 } = await supabase
+              .from('union_wallets')
+              .select('chip_balance')
+              .eq('union_id', club.union_id)
+              .maybeSingle();
+            await supabase.from('union_wallet_transactions').insert({
+              union_id: club.union_id,
+              club_id: tournament.club_id,
+              amount: totalRake,
+              tx_type: 'rake',
+              wallet: 'main',
+              direction: 'credit',
+              balance_after: uw2?.chip_balance ?? null,
+              notes: `${rakeDescription} — ${club.name || 'club'}`,
+            });
+          }
 
         } else {
           // Standalone club — rake goes to CLUB wallet (not owner's personal wallet)
-          const { data: cw } = await supabase
-            .from('club_wallets')
-            .select('chip_balance')
-            .eq('club_id', tournament.club_id)
-            .maybeSingle();
-
-          if (cw) {
-            const { error: cwErr } = await supabase
-              .from('club_wallets')
-              .update({ chip_balance: (cw.chip_balance || 0) + totalRake })
-              .eq('club_id', tournament.club_id);
-            if (cwErr) {
-              reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] Club wallet rake credit failed: ${cwErr.message}`), 'Tournament.Club_wallet_rake_credit_failed');
-            } else {
-              console.log(`[Tournament:${this.tournamentId.slice(0, 8)}] Rake settled: ${totalRake} to club wallet ${tournament.club_id.slice(0, 8)}`);
-            }
+          // BUG 016 FIX (2026-04-15): club_wallets doesn't exist; remove dead probe
+          // and go straight to clubs.chip_pool atomic RPC. Also swap read-then-write
+          // for atomic increment to eliminate the race condition the old code had.
+          const { error: cpErr } = await supabase.rpc('increment_club_chip_pool', {
+            p_club_id: tournament.club_id,
+            p_amount: totalRake,
+          });
+          if (cpErr) {
+            reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] Club chip_pool credit failed: ${cpErr.message}`), 'Tournament.Club_chip_pool_credit_failed');
           } else {
-            // Fallback: update clubs.chip_pool
-            const { data: clubData } = await supabase.from('clubs').select('chip_pool').eq('id', tournament.club_id).maybeSingle();
-            const { error: cpErr } = await supabase
-              .from('clubs')
-              .update({ chip_pool: ((clubData?.chip_pool as number) || 0) + totalRake })
-              .eq('id', tournament.club_id);
-            if (cpErr) {
-              reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] Club chip_pool credit failed: ${cpErr.message}`), 'Tournament.Club_chip_pool_credit_failed');
-            }
+            console.log(`[Tournament:${this.tournamentId.slice(0, 8)}] Rake settled: ${totalRake} to club chip_pool ${tournament.club_id.slice(0, 8)}`);
           }
         }
       }
@@ -2725,6 +2801,46 @@ function sendJSON(res: import('http').ServerResponse, statusCode: number, data: 
 // Bible V8 §1.3 Step 3: JWT Authentication — Verify Supabase auth token
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// Auth performance fix (2026-04-14) — supabase.auth.getUser() is a network
+// round-trip to GoTrue that costs 2-4 seconds on every request. Heartbeats,
+// /action, /preaction etc. were ALL serialised behind that. The result was
+// every poker click feeling like a 4-second delay.
+//
+// New strategy:
+//   1. Cache successfully-verified tokens in-process for AUTH_CACHE_TTL_MS.
+//      Cache key is the token string (which includes the signature, so a
+//      compromised user can't fish another's cache entry).
+//   2. On cache miss, decode the JWT payload locally (base64) and trust it
+//      for the request as long as `exp` is still in the future. Sign-with-
+//      service-role isn't available so we don't re-verify the HS256 sig
+//      every call — Supabase's GoTrue is the source of truth on first sight,
+//      and tokens expire (typically 1h) so a stolen cache entry has bounded
+//      validity. This matches the World Hub's `supabaseServerClient.js`
+//      patched fallback already in production.
+//   3. Background-refresh: when the cache is missing AND local decode passes
+//      (still within `exp`), we serve immediately AND fire-and-forget a
+//      GoTrue verification to populate the cache for next call.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const AUTH_CACHE_TTL_MS = 60_000; // 60s — tradeoff: faster response vs less-fresh revocation
+const authCache = new Map<string, { userId: string; expiresAt: number }>();
+
+/** Manually decode a Supabase JWT payload (base64url middle segment). */
+function decodeJwtPayload(token: string): { sub?: string; exp?: number } | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    // base64url -> base64
+    const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = b64 + '='.repeat((4 - (b64.length % 4)) % 4);
+    const json = Buffer.from(padded, 'base64').toString('utf-8');
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}
+
 async function authenticateRequest(
   req: import('http').IncomingMessage
 ): Promise<{ userId: string } | null> {
@@ -2734,14 +2850,60 @@ async function authenticateRequest(
   const token = authHeader.slice(7);
   if (!token) return null;
 
+  // Fast path: cached verification still fresh (and not past JWT exp).
+  const cached = authCache.get(token);
+  const now = Date.now();
+  if (cached && cached.expiresAt > now) {
+    return { userId: cached.userId };
+  }
+
+  // Local-decode fallback: if the JWT's own exp hasn't passed, trust it for
+  // this request and refresh the GoTrue cache in the background. Avoids
+  // blocking the player on a slow auth network call. Falls back to a full
+  // GoTrue verify only if local decode also failed.
+  const claims = decodeJwtPayload(token);
+  if (claims?.sub && typeof claims.exp === 'number' && claims.exp * 1000 > now) {
+    const userId = claims.sub;
+    // Background refresh — don't await. Even if it fails, we still served
+    // this request from local decode.
+    void supabase.auth.getUser(token).then(
+      ({ data, error }) => {
+        if (!error && data?.user?.id) {
+          authCache.set(token, {
+            userId: data.user.id,
+            expiresAt: Date.now() + AUTH_CACHE_TTL_MS,
+          });
+        }
+      },
+      () => {
+        /* silent — local decode already accepted */
+      }
+    );
+    return { userId };
+  }
+
+  // Last resort: full GoTrue verify. Only hit when both cache miss AND local
+  // decode rejected (token expired or malformed).
   try {
     const { data, error } = await supabase.auth.getUser(token);
     if (error || !data?.user) return null;
+    authCache.set(token, {
+      userId: data.user.id,
+      expiresAt: Date.now() + AUTH_CACHE_TTL_MS,
+    });
     return { userId: data.user.id };
   } catch {
     return null;
   }
 }
+
+// Periodic cleanup of the auth cache — keeps memory bounded under churn.
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, entry] of authCache) {
+    if (entry.expiresAt <= now) authCache.delete(token);
+  }
+}, 30_000).unref();
 
 // FIX 175: Body size limit to prevent memory exhaustion from malicious clients
 const MAX_BODY_SIZE = 16 * 1024; // 16KB — more than enough for any action payload

@@ -1,0 +1,1 @@
+const t={light:[10],medium:[30],heavy:[50],success:[15,50,15],error:[30,30,30],double:[20,40,20],allIn:[50,30,80],tap:[8]};function i(a="light"){if(!(typeof navigator>"u"||!navigator.vibrate))try{navigator.vibrate(t[a]||t.light)}catch{}}export{i as h};

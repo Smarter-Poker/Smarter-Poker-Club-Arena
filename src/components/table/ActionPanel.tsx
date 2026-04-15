@@ -557,10 +557,13 @@ export default function ActionPanel({
             title={isDesktop ? 'Raise/Bet (R or E)' : undefined}
             aria-label="Open raise panel"
           >
-            <span className="action-btn__label">Raise</span>
-            {minRaise > 0 && bigBlind > 0 && (
-              <span className="action-btn__amount">{(minRaise / bigBlind).toFixed(0)} BB</span>
-            )}
+            {/* Per PokerBros spec §5.1: the Raise button itself shows ONLY
+                the word "Raise" (or "Bet" when no current bet). The actual
+                sizing — including 2X/3X/4X preflop presets and 33/50/75/POT
+                postflop presets — lives in the bet-sizing panel that opens
+                when this button is tapped. We removed the prior "{N} BB"
+                sub-label which the user explicitly flagged as wrong. */}
+            <span className="action-btn__label">{callAmount > 0 ? 'Raise' : 'Bet'}</span>
             {isDesktop && <span className="action-btn__shortcut">R</span>}
           </button>
         )}

@@ -67,6 +67,14 @@ export default defineConfig({
     sourcemap: false, // Disabled to fit in CI disk constraints; re-enable for Sentry in production CI
     rollupOptions: {
       output: {
+        // 2026-04-15 cache-bust: append a build-time tag to every emitted
+        // file's name so that v5-broken immutable caches on users' browsers
+        // are bypassed. Vite's default content hash alone can't help here
+        // because vendor chunks' content is unchanged — the tag forces a
+        // brand-new URL even when content hash would otherwise match.
+        entryFileNames: 'assets/[name]-[hash]-v6.js',
+        chunkFileNames: 'assets/[name]-[hash]-v6.js',
+        assetFileNames: 'assets/[name]-[hash]-v6[extname]',
         manualChunks(id: string) {
           // ── Vendor Splits (safe — no circular dependencies) ──
           if (id.includes('node_modules/react-dom')) return 'vendor-react';

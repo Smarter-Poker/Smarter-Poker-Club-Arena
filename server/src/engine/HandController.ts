@@ -258,6 +258,23 @@ export class HandController {
     }
 
     this.emit({ type: 'POT_UPDATE', pot: this.state.pot, pots: this.state.pots });
+
+    // Bible V8 §1.16 (Real-Time Law) — emit a BLINDS_POSTED event so the
+    // ServerTableEngine can re-emit it to the WS hub for the chip-to-pot
+    // animation. The client must NOT need to diff the snapshot to discover
+    // the SB/BB went into the pot.
+    const blindsPostings: Array<{ seat: number; type: string; amount: number }> = [];
+    if (sbPlayer) {
+      const sbAmount = Math.min(smallBlind, sbPlayer.bet); // bet has been set to actual paid
+      if (sbAmount > 0) blindsPostings.push({ seat: sbSeat, type: 'small_blind', amount: sbAmount });
+    }
+    if (bbPlayer) {
+      const bbAmount = Math.min(bigBlind, bbPlayer.bet);
+      if (bbAmount > 0) blindsPostings.push({ seat: bbSeat, type: 'big_blind', amount: bbAmount });
+    }
+    if (blindsPostings.length > 0) {
+      this.emit({ type: 'BLINDS_POSTED', postings: blindsPostings } as any);
+    }
   }
 
   private postBombPotAntes(): void {

@@ -1,10 +1,43 @@
 # Claude Instructions for Club Arena
 
+## 🚨 ABSOLUTE LAW 11: DEPLOYMENT CONTRACT (read this FIRST, every session)
+
+**Added 2026-04-15 after the duplicate-Vercel-project queue cascade.** Enforced on every agent, every push, zero exceptions.
+
+### Correct Vercel project
+
+- **`hub-vanguard`** (`prj_op66GkZyZcygXQKm76iyycfVFAQx`) — THE REAL ONE. Aliased to `smarter.poker`. Every push to `Smarter-Poker-World-Hub/main` must flow through this project.
+- **`smarter-poker`** (`prj_FNUaJmcjRnwCSh1JzblIUYuOXDGK`) — DUPLICATE. GitHub auto-deploy DISABLED. Do NOT re-enable. Do NOT fire its deploy hooks. If you see it deploying again, somebody resurrected it; put it back to sleep before continuing.
+
+### Push → Watch → Verify → Cold-load. In that order. Never skip.
+
+1. **PUSH** — record the commit SHA.
+2. **WATCH** — poll `hub-vanguard`'s latest deployment via Vercel MCP `get_deployment` / `list_deployments` until `state === 'READY'`. Do NOT claim success on QUEUED, BUILDING, or CANCELED. If CANCELED because a later push superseded yours, confirm the later deploy carries your SHA as an ancestor; if not, re-push on top of the new HEAD.
+3. **VERIFY SERVED** — fetch the live URL and confirm the served HTML references the NEW content-hashed bundle that matches your build. For Club Arena: `grep 'index-.*-v6.js' <served index.html>` and check the hash.
+4. **COLD-LOAD TEST** (for any functional change) — fresh browser tab, navigate to the affected page, confirm the bundle hash loaded via `document.querySelectorAll('script[src*="index-"]')`, perform the user action, confirm the fixed behavior end-to-end.
+
+Only after all 4 steps pass may you say "deployed" or "shipped."
+
+### Forbidden phrases (using these without satisfying Law 11.5 is a violation)
+
+- "should be live in a few minutes"
+- "deploy triggered"
+- "Vercel will pick it up"
+- "my push went through" (without READY + served + cold-load confirmation)
+
+### Required language when claiming success
+
+> "Production `<url>` served `<expected-bundle-hash>` at `<UTC timestamp>` and the fixed behavior was confirmed via cold-load test at that timestamp."
+
+Full spec: `MIGRATION-LAW.md` Law 11. Re-read before every deploy.
+
+---
+
 ## ACTIVE MIGRATION IN PROGRESS — READ BEFORE DOING ANYTHING
 
 **There is an active server-authoritative migration happening. Before ANY code work, you MUST read these files:**
 
-1. `MIGRATION-LAW.md` — 10 laws governing all migration work (ZERO exceptions)
+1. `MIGRATION-LAW.md` — 11 laws governing all migration work (ZERO exceptions; Law 11 = deployment contract)
 2. `MASTER-MIGRATION-DOCUMENT.md` — Section 8 for current phase order
 3. `STEP1-REMOVAL-CATALOG.md` — Exact removal targets with line numbers
 4. `MIGRATION-CHANGELOG.md` — What's been done, where to resume

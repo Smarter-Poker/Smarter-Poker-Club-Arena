@@ -97,6 +97,22 @@ export interface SeatSlotProps {
   showAvatar?: boolean;
   /** Bible V8 §11.1: Show/hide VIP/achievement badges */
   showBadges?: boolean;
+  /**
+   * Bible V8 §1.16 Real-Time Law — when true, the seat's bet chips play the
+   * "collect-to-pot" animation (cpCollect keyframe). Controlled by the table
+   * parent on COMMUNITY_CARDS_DEALT / HAND_COMPLETE events.
+   */
+  isCollectingChips?: boolean;
+  /**
+   * 2026-04-15 Bible V8 §6.1 — server-authoritative absolute wall-clock
+   * deadline for the CURRENT active seat (ms since epoch). Combined with
+   * `turnStartTimeMs` this drives a pure-CSS `@property` animation on the
+   * `.seat__info` element so the gold ring shrinks for BOTH hero and
+   * opponents, reliably, even when the tab is hidden (rAF suspended).
+   */
+  turnDeadlineMs?: number;
+  /** Wall-clock time the current turn started (server-authoritative). */
+  turnStartTimeMs?: number;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -236,6 +252,9 @@ export const SeatSlot = memo(
       onAvatarClick,
       showAvatar = true,
       showBadges = false,
+      isCollectingChips = false,
+      turnDeadlineMs,
+      turnStartTimeMs,
     } = props;
 
     // Animated stack change — flash green/red when stack changes
@@ -306,7 +325,17 @@ export const SeatSlot = memo(
       if (!player) {
         cls.push('seat--empty');
       } else {
-        cls.push(`seat--${player.status}`);
+        // 2026-04-15 ROOT-CAUSE FIX (Dan: opponent rings glued at 100%):
+        // player.status can be 'active' meaning "seated and in the hand",
+        // which would push `seat--active` — colliding with the CSS class
+        // used for "it is currently this seat's turn to act" (line below).
+        // Result: every seated player visually glowed as if it were their
+        // turn. Guard: only emit seat--${status} for non-'active' statuses
+        // (folded / all_in / sitting_out / away / disconnected). The
+        // canonical "in a hand" indicator is `seat--in-hand` added below.
+        if (player.status !== 'active') {
+          cls.push(`seat--${player.status}`);
+        }
         if (player.isHero) cls.push('seat--hero');
         if (isActive) cls.push('seat--active');
         if (isWinner) {
@@ -346,11 +375,34 @@ export const SeatSlot = memo(
     // Use deterministic SVG avatar (colorful, unique per player) when no real image exists
     const avatarUrl = getAvatarWithFallback(player.avatar || null, player.id, player.name);
 
-    // Timer progress as CSS custom prop for conic-gradient border
-    const timerStyle =
-      isActive && timerProgress !== undefined
-        ? ({ '--timer-progress': `${timerProgress}%` } as React.CSSProperties)
-        : undefined;
+    // 2026-04-15 Bible V8 §6.1 — pure-CSS ring countdown. Set animation
+    // duration + a negative animation-delay so the ring animates from the
+    // CURRENT elapsed position to 0% over the remaining seconds. Works on
+    // hidden tabs; applies identically to hero and opponent active seats.
+    // Falls back to the legacy --timer-progress var when server timing is
+    // unavailable so the prior JS-driven visual still shows.
+    let timerStyle: React.CSSProperties | undefined;
+    let timerKey: number | string = 'no-turn';
+    if (isActive && turnDeadlineMs && turnDeadlineMs > 0) {
+      const durationMs = turnStartTimeMs
+        ? Math.max(1000, turnDeadlineMs - turnStartTimeMs)
+        : 15_000;
+      const elapsedMs = turnStartTimeMs
+        ? Math.max(0, Date.now() - turnStartTimeMs)
+        : 0;
+      timerStyle = {
+        '--sp-timer-duration': `${(durationMs / 1000).toFixed(3)}s`,
+        '--sp-timer-delay': `-${(elapsedMs / 1000).toFixed(3)}s`,
+      } as React.CSSProperties;
+      // React key so the .seat__info remounts (animation restarts) each
+      // new turn — identified by the authoritative wall-clock deadline.
+      timerKey = turnDeadlineMs;
+    } else if (isActive && timerProgress !== undefined) {
+      // Legacy JS-hook fallback (visible tabs only).
+      timerStyle = {
+        '--timer-progress': `${timerProgress}%`,
+      } as React.CSSProperties;
+    }
 
     return (
       <div className={containerClasses} onClick={onAction}>
@@ -361,13 +413,18 @@ export const SeatSlot = memo(
           </div>
         )}
 
-        {/* Player Bet Chips on Felt */}
+        {/* Player Bet Chips on Felt — Bible V8 §1.16 Real-Time Law:
+            when the parent flips `isCollectingChips` (on COMMUNITY_CARDS_DEALT
+            or HAND_COMPLETE), these chips animate into the pot before being
+            cleared. Otherwise the chip stack slides in on fresh bets/raises. */}
         {lastBetAmount && lastBetAmount > 0 ? (
           <div className="seat__bet-chips">
             <ChipPhysics
               amount={lastBetAmount}
               animate={
-                lastAction === 'bet' || lastAction === 'raise' || lastAction === 'all_in'
+                isCollectingChips
+                  ? 'collect'
+                  : lastAction === 'bet' || lastAction === 'raise' || lastAction === 'all_in'
                   ? 'slide-in'
                   : 'none'
               }
@@ -465,8 +522,10 @@ export const SeatSlot = memo(
              SB/BB/UTG/CO/etc. badges are NOT shown on the table per design decision. */}
         </div>
 
-        {/* Info Box — name + stack, with neon timer border when active */}
-        <div className="seat__info" style={timerStyle}>
+        {/* Info Box — name + stack, with neon timer border when active.
+            The React `key` forces a fresh mount per turn so the CSS
+            @property animation restarts from 100%. */}
+        <div className="seat__info" style={timerStyle} key={`info-${timerKey}`}>
           {/* Neon border overlay (rendered via CSS ::before when --active) */}
           <span className="seat__name">{player.name}</span>
           <span
@@ -604,6 +663,9 @@ export const SeatSlot = memo(
     if (prev.secondsLeft !== next.secondsLeft) return false;
     if (prev.showAvatar !== next.showAvatar) return false;
     if (prev.showBadges !== next.showBadges) return false;
+    // 2026-04-15 §6.1: re-render on new turn so CSS ring restarts.
+    if (prev.turnDeadlineMs !== next.turnDeadlineMs) return false;
+    if (prev.turnStartTimeMs !== next.turnStartTimeMs) return false;
 
     const pp = prev.player;
     const np = next.player;

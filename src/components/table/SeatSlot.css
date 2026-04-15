@@ -482,8 +482,45 @@
    - A nested ::after masks the inside to reveal only the border ring
 */
 
+/* 2026-04-15 Bible V8 §6.1 — the countdown ring is driven by a CSS
+   @property animation, not a JS hook. This works identically for hero AND
+   opponent turns, and continues running even on hidden / background tabs
+   where rAF is suspended. Prior JS-hook implementation sometimes left the
+   ring stuck at 100% for opponent active seats; the pure-CSS version makes
+   that impossible. Component sets --sp-timer-duration (seconds until
+   deadline) + --sp-timer-delay (negative offset for already-elapsed time
+   on first paint). Re-mounting the info element via React `key` restarts
+   the animation on every new turn. */
+@property --timer-progress {
+  syntax: '<percentage>';
+  inherits: true;
+  initial-value: 100%;
+}
+/* Dan 2026-04-15: yellow for the first 80% of the 15s turn, then snap to red
+ * on the final 3 seconds (last 20%). Drives a second --timer-color variable
+ * animated in parallel with --timer-progress. */
+@property --timer-color {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #ffd700;
+}
+@keyframes spTimerRingShrink {
+  from { --timer-progress: 100%; }
+  to { --timer-progress: 0%; }
+}
+@keyframes spTimerColorShift {
+  0%   { --timer-color: #ffd700; } /* Yellow from 15s → 3s remaining */
+  80%  { --timer-color: #ffd700; }
+  80.01% { --timer-color: #ef4444; } /* Red snap at 3s remaining */
+  100% { --timer-color: #ef4444; }
+}
+
 .seat--active .seat__info {
   border-color: transparent;
+  /* Shrink + color-shift share the same duration/delay so they stay in sync */
+  animation:
+    spTimerRingShrink var(--sp-timer-duration, 15s) linear var(--sp-timer-delay, 0s) forwards,
+    spTimerColorShift var(--sp-timer-duration, 15s) linear var(--sp-timer-delay, 0s) forwards;
 }
 
 /* Outer glow container */
@@ -494,15 +531,15 @@
   border-radius: 10px;
   background: conic-gradient(
     from 0deg,
-    #ffd700 0%,
-    #ffd700 var(--timer-progress, 100%),
+    var(--timer-color, #ffd700) 0%,
+    var(--timer-color, #ffd700) var(--timer-progress, 100%),
     transparent var(--timer-progress, 100%),
     transparent 100%
   );
   z-index: -2;
-  /* Neon glow */
-  filter: drop-shadow(0 0 6px rgba(255, 215, 0, 0.6)) drop-shadow(0 0 12px rgba(255, 215, 0, 0.3));
-  transition: opacity 0.3s ease;
+  /* Neon glow — color matches ring; drop-shadow tracks --timer-color implicitly */
+  filter: drop-shadow(0 0 6px rgba(255, 215, 0, 0.55)) drop-shadow(0 0 10px rgba(255, 107, 53, 0.25));
+  transition: filter 0.3s ease;
   will-change: background;
 }
 
@@ -803,21 +840,30 @@
   z-index: 10;
 }
 
-/* Hero cards — large, PokerBros-style to the right of avatar, fanned with overlap */
+/* Hero cards — PokerBros signature: cards sit to the RIGHT of the avatar,
+ * NOT above. This matches PokerBros's actual table layout where the hero's
+ * avatar + name panel live on the left and the two hole cards hang to the
+ * right, roughly aligned with the avatar's vertical center.
+ * 2026-04-14 fix per Dan: prior rule stacked cards ABOVE the seat plate
+ * (top: -86px, left: 50%, translateX(-50%)) which covered the community
+ * board on the hero row. Rewritten to anchor at the right edge. */
 .seat__cards--hero {
-  /* PokerBros hero hole cards — anchor to the avatar's top edge and fan
-   * slightly outward to the right. Per spec §1 (Hero Cards): two playing
-   * cards, slightly fanned horizontally, ~50-70px wide, directly above
-   * hero avatar or to the sides, both face-up. We render to the right
-   * of the avatar at top alignment, lifted slightly so the badge clears.
-   * Dan's UX rule 2026-04-14. */
   position: absolute;
-  right: -38px;
-  top: -8px;
+  /* 2026-04-14 Dan +4px: pushed from calc(100% + 6px) → 10px so the fan
+     clears the avatar + name pill with a bit more breathing room. */
+  left: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%);
   display: flex;
-  align-items: flex-end;
+  align-items: center;
+  justify-content: flex-start;
   z-index: 20;
   gap: 0;
+  pointer-events: none; /* don't block clicks on the avatar/seat below */
+}
+
+.seat__cards--hero > * {
+  pointer-events: auto;
 }
 
 /* Base card size (opponents) */
@@ -866,14 +912,17 @@
     0 1px 2px rgba(0, 0, 0, 0.4);
 }
 
+/* PokerBros wider fan + slight overlap. Tilted symmetrically so the pair
+ * looks like a real fanned hand rather than two stacked cards. */
 .seat__cards--hero .seat__card:first-child {
   margin-left: 0;
-  transform: rotate(-6deg);
+  margin-right: -10px;
+  transform: rotate(-12deg) translateY(2px);
   animation-delay: 0.1s;
 }
 
 .seat__cards--hero .seat__card:nth-child(2) {
-  transform: rotate(6deg);
+  transform: rotate(12deg) translateY(2px);
   animation-delay: 0.25s;
 }
 
@@ -1526,8 +1575,11 @@
     height: 58px;
   }
   .seat__cards--hero {
-    right: -24px;
-    top: 2px;
+    /* tablet — right-of-avatar anchor, scaled gap (+4px per Dan) */
+    left: calc(100% + 8px);
+    top: 50%;
+    right: auto;
+    transform: translateY(-50%);
   }
 
   .seat__position-chip {
@@ -1597,8 +1649,11 @@
     height: 50px;
   }
   .seat__cards--hero {
-    right: -20px;
-    top: 2px;
+    /* phone — right-of-avatar, scaled gap (+4px per Dan) */
+    left: calc(100% + 7px);
+    top: 50%;
+    right: auto;
+    transform: translateY(-50%);
   }
 
   .seat__position-chip {
@@ -1664,8 +1719,11 @@
     height: 44px;
   }
   .seat__cards--hero {
-    right: -14px;
-    top: 2px;
+    /* small phone — right-of-avatar, scaled gap (+4px per Dan) */
+    left: calc(100% + 6px);
+    top: 50%;
+    right: auto;
+    transform: translateY(-50%);
   }
 
   .seat__position-chip {

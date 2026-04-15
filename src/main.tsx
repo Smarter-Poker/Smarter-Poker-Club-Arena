@@ -17,6 +17,12 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
+// Cache-bust token 2026-04-15-v6 — v5 push's drop-orphans broke prod;
+// this literal string forces content-hashed chunk names to regenerate so
+// browsers with the poisoned immutable cache request new URLs.
+const __CACHE_BUST_V6__ = '2026-04-15-v6';
+void __CACHE_BUST_V6__;
+
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';

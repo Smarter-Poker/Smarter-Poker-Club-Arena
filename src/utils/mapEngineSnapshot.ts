@@ -113,6 +113,8 @@ export interface MappedTableStatePatch {
   lastRaise: number;
   /** For action timer. */
   actionTimerDeadline?: number;
+  /** Server-authoritative turn start wall-clock (for CSS ring animation). */
+  actionTimerStartTime?: number;
   actionTimerPlayerId?: string;
   /** hand number */
   handNumber: number;
@@ -239,6 +241,7 @@ export function mapEngineSnapshot(
     minRaise: s.min_raise ?? 0,
     lastRaise: s.last_raise ?? 0,
     actionTimerDeadline,
+    actionTimerStartTime: s.turn_start_time_ms,
     actionTimerPlayerId: s.current_player ?? undefined,
     handNumber: s.hand_number ?? 0,
     sidePots,

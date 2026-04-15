@@ -503,45 +503,58 @@
   position: relative;
 }
 
+/* PokerBros premium slider — 2026-04-14 polish.
+ * Track: 14px chunky rail with inner-shadow depth + dark-base + gold fill.
+ * Thumb: 48px metallic gold disc with rim, 3D shadow stack, subtle glow halo.
+ * Active state: thumb pulses with stronger glow so the player feels their drag. */
 .raise-slider {
   width: 100%;
-  height: 8px;
-  border-radius: 4px;
+  height: 14px;
+  border-radius: 8px;
   outline: none;
   -webkit-appearance: none;
   appearance: none;
   background: linear-gradient(
     90deg,
-    var(--color-raise, #f59e0b) 0%,
-    var(--color-raise, #f59e0b) var(--slider-progress, 50%),
-    rgba(255, 255, 255, 0.08) var(--slider-progress, 50%),
-    rgba(255, 255, 255, 0.08) 100%
+    #ffe082 0%,
+    var(--color-raise, #f59e0b) calc(var(--slider-progress, 50%) - 12%),
+    var(--color-raise-dark, #d97706) var(--slider-progress, 50%),
+    rgba(0, 0, 0, 0.45) var(--slider-progress, 50%),
+    rgba(0, 0, 0, 0.55) 100%
   );
   cursor: pointer;
   position: relative;
+  box-shadow:
+    inset 0 2px 4px rgba(0, 0, 0, 0.55),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .raise-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 40px;
-  height: 40px;
-  background: linear-gradient(
-    135deg,
-    #ffd54f 0%,
-    var(--color-raise, #f59e0b) 50%,
-    var(--color-raise-dark, #d97706) 100%
-  );
+  width: 48px;
+  height: 48px;
+  background:
+    radial-gradient(circle at 30% 30%, #fff7d6 0%, #ffd54f 30%, #f59e0b 65%, #c47f08 100%);
   border-radius: 50%;
-  cursor: pointer;
+  cursor: grab;
+  /* Stacked shadow gives a real 3D coin look — outer glow, drop shadow,
+     inner-rim highlight, base shadow for depth. */
   box-shadow:
-    0 2px 8px rgba(0, 0, 0, 0.5),
-    0 0 0 3px rgba(255, 255, 255, 0.15),
-    0 0 16px var(--color-raise-glow, rgba(245, 158, 11, 0.4));
+    0 6px 16px rgba(0, 0, 0, 0.6),
+    0 2px 4px rgba(0, 0, 0, 0.5),
+    0 0 0 2px rgba(255, 255, 255, 0.18),
+    0 0 22px var(--color-raise-glow, rgba(245, 158, 11, 0.55)),
+    inset 0 2px 3px rgba(255, 255, 255, 0.4),
+    inset 0 -3px 6px rgba(140, 80, 0, 0.45);
   transition:
-    transform 0.12s var(--ease-spring),
-    box-shadow 0.12s ease;
-  border: 2px solid rgba(255, 255, 255, 0.25);
+    transform 0.1s var(--ease-spring),
+    box-shadow 0.15s ease;
+  border: 2px solid #d4870c;
+}
+
+.raise-slider:active {
+  cursor: grabbing;
 }
 
 .raise-slider::-webkit-slider-thumb:hover {
@@ -561,33 +574,32 @@
 }
 
 .raise-slider::-moz-range-thumb {
-  width: 40px;
-  height: 40px;
-  background: linear-gradient(
-    135deg,
-    #ffd54f 0%,
-    var(--color-raise, #f59e0b) 50%,
-    var(--color-raise-dark, #d97706) 100%
-  );
+  width: 48px;
+  height: 48px;
+  background:
+    radial-gradient(circle at 30% 30%, #fff7d6 0%, #ffd54f 30%, #f59e0b 65%, #c47f08 100%);
   border-radius: 50%;
-  cursor: pointer;
-  border: 2px solid rgba(255, 255, 255, 0.25);
+  cursor: grab;
+  border: 2px solid #d4870c;
   box-shadow:
-    0 2px 8px rgba(0, 0, 0, 0.5),
-    0 0 16px var(--color-raise-glow, rgba(245, 158, 11, 0.4));
+    0 6px 16px rgba(0, 0, 0, 0.6),
+    0 0 22px var(--color-raise-glow, rgba(245, 158, 11, 0.55)),
+    inset 0 2px 3px rgba(255, 255, 255, 0.4),
+    inset 0 -3px 6px rgba(140, 80, 0, 0.45);
 }
 
 .raise-slider::-moz-range-track {
-  height: 8px;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.08);
+  height: 14px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.5);
   border: none;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.55);
 }
 
 .raise-slider::-moz-range-progress {
-  height: 8px;
-  border-radius: 4px;
-  background: var(--color-raise, #f59e0b);
+  height: 14px;
+  border-radius: 8px;
+  background: linear-gradient(90deg, #ffe082 0%, var(--color-raise, #f59e0b) 60%, var(--color-raise-dark, #d97706) 100%);
 }
 
 .raise-slider::-moz-range-thumb:hover {

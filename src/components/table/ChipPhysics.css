@@ -134,17 +134,24 @@
   }
 }
 
-/* ── Animation: Collect (to pot) ── */
+/* ── Animation: Collect (to pot) ──
+   Bible V8 §1.16 — chips fly toward the pot center. Each seat's parent sets
+   --collect-dx / --collect-dy (px offset to pot) so chips move in the right
+   direction instead of always drifting up. Falls back to a soft upward drift
+   when the variables are absent so it still looks alive on legacy callers. */
 .cp--collect .cp-stacks {
-  animation: cpCollect 0.5s ease forwards;
+  animation: cpCollect 0.45s cubic-bezier(0.55, 0, 0.3, 1) forwards;
 }
 @keyframes cpCollect {
   0% {
-    transform: scale(1);
+    transform: translate(0, 0) scale(1);
+    opacity: 1;
+  }
+  60% {
     opacity: 1;
   }
   100% {
-    transform: scale(0.3) translateY(-30px);
+    transform: translate(var(--collect-dx, 0px), var(--collect-dy, -30px)) scale(0.25);
     opacity: 0;
   }
 }

@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon"
+    href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>♠</text></svg>" />
+  <link rel="manifest" href="/hub/club-arena/manifest.json" />
+  <link rel="apple-touch-icon" href="/hub/club-arena/poker-chip-logo.png" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="description"
+    content="Club Arena — Private online poker clubs with real-time gameplay, tournaments, hand histories, player stats, leaderboards, and club management on Smarter.Poker." />
+  <meta name="robots" content="noindex, nofollow" />
+  <meta name="theme-color" content="#0a0a1a" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Club Arena" />
+
+  <!-- Open Graph / Social Sharing -->
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Smarter.Poker" />
+  <meta property="og:title" content="Club Arena — Private Online Poker Clubs | Smarter.Poker" />
+  <meta property="og:description"
+    content="Create and join private poker clubs. Real-time gameplay, tournaments, hand histories, player stats, and club management." />
+  <meta property="og:image" content="https://smarter.poker/images/og-default.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:url" content="https://smarter.poker/hub/club-arena" />
+  <meta property="og:locale" content="en_US" />
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:site" content="@SmarterPoker" />
+  <meta name="twitter:title" content="Club Arena — Private Online Poker Clubs | Smarter.Poker" />
+  <meta name="twitter:description"
+    content="Create and join private poker clubs. Real-time gameplay, tournaments, and club management." />
+  <meta name="twitter:image" content="https://smarter.poker/images/og-default.png" />
+
+  <title>♠ Club Arena | Smarter.Poker</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&family=Orbitron:wght@400;500;600;700&display=swap"
+    rel="stylesheet">
+  <!-- Preload critical stylesheets -->
+  <!-- Preload club card frame template (used by carousel) -->
+  <link rel="preload" href="/hub/club-arena/images/club-card-frame-template.webp" as="image" type="image/webp">
+
+  <!-- OneSignal Push Notifications SDK -->
+  <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
+  <script>window.OneSignalDeferred = window.OneSignalDeferred || [];</script>
+  <script type="module" crossorigin src="/hub/club-arena/assets/index-Cp2MWvWe-v6.js"></script>
+  <link rel="modulepreload" crossorigin href="/hub/club-arena/assets/vendor-react-ChGGaEAk-v6.js">
+  <link rel="modulepreload" crossorigin href="/hub/club-arena/assets/vendor-supabase-BLlQ2fJ4-v6.js">
+  <link rel="stylesheet" crossorigin href="/hub/club-arena/assets/index-B1kuQKf3-v6.css">
+</head>
+
+<body>
+  <div id="root"></div>
+
+
+  <!-- SELF-HEALING: Detect Next.js soft-navigation black screen and auto-recover.
+       When the World Hub navigates here via client-side routing, type="module" scripts
+       don't re-execute, leaving #root empty. This inline script detects that condition
+       and forces a full page reload to properly boot the SPA. -->
+  <script>
+    (function() {
+      var CHECK_DELAY = 2500;
+      var MAX_RETRIES = 3;
+      var RETRY_KEY = '__club_arena_recovery';
+      var retryCount = 0;
+      try { retryCount = parseInt(sessionStorage.getItem(RETRY_KEY) || '0', 10); } catch(e) {}
+
+      setTimeout(function() {
+        var root = document.getElementById('root');
+        if (root && root.childNodes.length === 0 && retryCount < MAX_RETRIES) {
+          try { sessionStorage.setItem(RETRY_KEY, String(retryCount + 1)); } catch(e) {}
+
+          // On first retry, nuke stale service worker caches that may be causing blank pages
+          if (retryCount === 0 && 'caches' in window) {
+            caches.keys().then(function(keys) {
+              keys.forEach(function(key) { caches.delete(key); });
+            }).catch(function() {});
+          }
+
+          // On second retry, also unregister the service worker entirely
+          if (retryCount >= 1 && 'serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(function(regs) {
+              regs.forEach(function(reg) { reg.unregister(); });
+            }).catch(function() {});
+          }
+
+          // Small delay to let cache/SW cleanup finish before reload
+          setTimeout(function() { window.location.reload(); }, retryCount > 0 ? 500 : 100);
+        } else if (retryCount >= MAX_RETRIES) {
+          try { sessionStorage.removeItem(RETRY_KEY); } catch(e) {}
+          // Last resort: show a visible error so the page isn't just blank
+          if (root && root.childNodes.length === 0) {
+            root.innerHTML = '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0a0a1a;color:#fff;font-family:Inter,system-ui,sans-serif;text-align:center;padding:2rem"><div><h1 style="font-size:1.5rem;margin-bottom:1rem">Loading failed</h1><p style="color:rgba(255,255,255,0.6);margin-bottom:1.5rem">Please clear your browser cache and reload.</p><button onclick="caches.keys().then(function(k){k.forEach(function(n){caches.delete(n)})});location.reload()" style="padding:10px 24px;border:none;border-radius:8px;background:#3b82f6;color:#fff;font-size:1rem;cursor:pointer">Clear Cache & Reload</button></div></div>';
+          }
+        }
+      }, CHECK_DELAY);
+
+      // Clear retry counter on successful mount
+      var observer = new MutationObserver(function(mutations, obs) {
+        var root = document.getElementById('root');
+        if (root && root.childNodes.length > 0) {
+          try { sessionStorage.removeItem(RETRY_KEY); } catch(e) {}
+          obs.disconnect();
+        }
+      });
+      var rootEl = document.getElementById('root');
+      if (rootEl) { observer.observe(rootEl, { childList: true }); }
+    })();
+  </script>
+</body>
+
+</html>

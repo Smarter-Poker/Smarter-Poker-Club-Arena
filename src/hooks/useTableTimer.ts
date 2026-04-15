@@ -19,6 +19,21 @@ export interface UseTableTimerProps {
   onTimeout: () => void;
   initialTime?: number;
   urgencyThreshold?: number;
+  /**
+   * 2026-04-14 Bible V8 §6.1 — server-authoritative absolute deadline (ms
+   * since epoch). When this changes, the hook resets its countdown so the
+   * gold ring around the active seat shrinks from 100% → 0% on every turn,
+   * not just the first one. The prior implementation used the local
+   * initialTime once and never reset, so after the first expiry the ring
+   * was permanently at 0% for the rest of the session.
+   */
+  turnDeadlineMs?: number;
+  /**
+   * When a new turn opens (currentPlayerSeat changes to a non-zero value)
+   * the hook recomputes timeRemaining from this prop so every active seat
+   * — horse or human — gets a visible disappearing ring.
+   */
+  activeSeatKey?: number | string;
 }
 
 export interface UseTableTimerReturn {
@@ -40,6 +55,8 @@ export function useTableTimer({
   onTimeout,
   initialTime = DEFAULT_INITIAL_TIME,
   urgencyThreshold = DEFAULT_URGENCY_THRESHOLD,
+  turnDeadlineMs,
+  activeSeatKey,
 }: UseTableTimerProps): UseTableTimerReturn {
   const [timeRemaining, setTimeRemaining] = useState(initialTime);
   const [totalTime, setTotalTime] = useState(initialTime);
@@ -48,6 +65,27 @@ export function useTableTimer({
   const lastFrameRef = useRef<number | null>(null);
   const lastStateUpdateRef = useRef(0);
   onTimeoutRef.current = onTimeout;
+
+  // Bible V8 §6.1 deadline-driven reset. Whenever the server emits a new
+  // turn_change (which bumps turnDeadlineMs and activeSeatKey), reseed the
+  // countdown so the ring starts full again.
+  // 2026-04-14 BUG-2b: removed `isActiveTurn` from the dep array. Snapshots
+  // arrive every ~150ms and briefly flap `isActiveTurn` false→true, which
+  // was tearing down the RAF (see tick effect below) before the first frame
+  // could decrement timeRef. Net effect: ring stuck at ~14.98s forever. We
+  // now reseed only when the AUTHORITATIVE turn changes.
+  useEffect(() => {
+    let seconds = initialTime;
+    if (turnDeadlineMs && turnDeadlineMs > 0) {
+      seconds = Math.max(0, (turnDeadlineMs - Date.now()) / 1000);
+      if (seconds <= 0) seconds = initialTime;
+    }
+    setTotalTime(seconds);
+    setTimeRemaining(seconds);
+    timeRef.current = seconds;
+    lastFrameRef.current = null;
+    lastStateUpdateRef.current = 0;
+  }, [turnDeadlineMs, activeSeatKey, initialTime]);
 
   const isUrgent = isHeroTurn && timeRemaining <= urgencyThreshold && timeRemaining > 0;
 
@@ -75,18 +113,33 @@ export function useTableTimer({
     });
   }, []);
 
-  // Smooth countdown via requestAnimationFrame, state updates throttled to ~10fps
-  useEffect(() => {
-    if (!isActiveTurn) {
-      lastFrameRef.current = null;
-      return;
-    }
+  // 2026-04-14 BUG-2b: Smooth RAF countdown that subscribes ONCE for the
+  // lifetime of the hook. Prior version had `isActiveTurn` + `isHeroTurn` in
+  // the dep array, which re-mounted the effect every time those bools
+  // flapped (every ~150ms on snapshot broadcasts). Each remount re-seeded
+  // `lastFrameRef=null` which made the first tick bail (it just caches
+  // `now`), and the effect tore down again before the second tick could
+  // run. Result: timer stuck at initialTime − one frame (~14.98s).
+  //
+  // New behavior: RAF runs forever. The reset effect above reseeds
+  // timeRef whenever the server publishes a new turn deadline. When the
+  // timer hits zero and we're the hero, the timeout callback fires ONCE
+  // per turn — we gate the firing via a ref to avoid double-trigger.
+  const heroFiredRef = useRef<number | null>(null);
+  const isHeroTurnRef = useRef(isHeroTurn);
+  isHeroTurnRef.current = isHeroTurn;
 
+  useEffect(() => {
+    // Reset the hero-timeout-fired guard when the deadline changes (new turn).
+    heroFiredRef.current = null;
+  }, [turnDeadlineMs, activeSeatKey]);
+
+  useEffect(() => {
     let rafId: number;
-    let timedOut = false;
+    let cancelled = false;
 
     const tick = (now: number) => {
-      if (timedOut) return;
+      if (cancelled) return;
 
       if (lastFrameRef.current === null) {
         lastFrameRef.current = now;
@@ -100,15 +153,17 @@ export function useTableTimer({
       timeRef.current = Math.max(0, timeRef.current - delta);
 
       if (timeRef.current <= 0) {
-        timedOut = true;
-        setTimeRemaining(0);
-        if (isHeroTurn) {
+        if (isHeroTurnRef.current && heroFiredRef.current !== turnDeadlineMs) {
+          heroFiredRef.current = turnDeadlineMs ?? 0;
           onTimeoutRef.current();
         }
+        // Hold at zero until the next reset — do NOT tear down the loop,
+        // so the very next deadline change re-starts the countdown.
+        setTimeRemaining(0);
+        rafId = requestAnimationFrame(tick);
         return;
       }
 
-      // Throttle React state updates to every ~33ms (~30fps) for smooth visual
       if (now - lastStateUpdateRef.current > 33) {
         lastStateUpdateRef.current = now;
         setTimeRemaining(timeRef.current);
@@ -119,10 +174,10 @@ export function useTableTimer({
 
     rafId = requestAnimationFrame(tick);
     return () => {
+      cancelled = true;
       cancelAnimationFrame(rafId);
-      timedOut = true;
     };
-  }, [isActiveTurn, isHeroTurn]);
+  }, []); // Subscribe once for the hook's lifetime.
 
   // Timer warning sound
   useEffect(() => {

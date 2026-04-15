@@ -201,9 +201,10 @@ export async function autoRebuyHorse(
 
     if (!wallet || wallet.balance < rebuyAmount) return false;
 
+    const newBalance = wallet.balance - rebuyAmount;
     const { error: deductErr } = await supabase
       .from('wallets')
-      .update({ balance: wallet.balance - rebuyAmount, updated_at: new Date().toISOString() })
+      .update({ balance: newBalance, updated_at: new Date().toISOString() })
       .eq('user_id', userId)
       .eq('wallet_type', 'PLAYER');
 
@@ -221,7 +222,7 @@ export async function autoRebuyHorse(
       .eq('user_id', userId)
       .is('left_at', null);
 
-    // 4. Log transaction
+    // 4. Log transaction (BUG 018 FIX: balance_after now populated for audit reconciliation)
     await supabase.from('wallet_transactions').insert({
       user_id: userId,
       wallet_type: 'PLAYER',
@@ -230,6 +231,7 @@ export async function autoRebuyHorse(
       category: 'rebuy',
       description: 'Auto-rebuy topup at table',
       table_id: tableId,
+      balance_after: newBalance,
     });
 
     return true;
@@ -284,16 +286,17 @@ export async function markSeatAsLeft(
         .maybeSingle();
 
       const currentBalance = wallet?.balance ?? 0;
+      const newBalance = currentBalance + stack;
       await supabase
         .from('wallets')
         .upsert({
           user_id: userId,
           wallet_type: 'PLAYER',
-          balance: currentBalance + stack,
+          balance: newBalance,
           updated_at: new Date().toISOString(),
         }, { onConflict: 'user_id,wallet_type' });
 
-      // Log transaction
+      // Log transaction (BUG 018 FIX: balance_after now populated)
       await supabase.from('wallet_transactions').insert({
         user_id: userId,
         wallet_type: 'PLAYER',
@@ -302,6 +305,7 @@ export async function markSeatAsLeft(
         category: 'cashout',
         description: 'Cash-out from table',
         table_id: tableId,
+        balance_after: newBalance,
       });
     }
 
@@ -376,6 +380,14 @@ export async function atomicCashout(
         console.warn(`[atomicCashout] Wallet credit failed for ${userId}:`, walletErr.message);
       }
 
+      // BUG 018 FIX: read new balance for balance_after audit field
+      const { data: postWallet } = await supabase
+        .from('wallets')
+        .select('balance')
+        .eq('user_id', userId)
+        .eq('wallet_type', 'PLAYER')
+        .maybeSingle();
+
       await supabase.from('wallet_transactions').insert({
         user_id: userId,
         wallet_type: 'PLAYER',
@@ -384,6 +396,7 @@ export async function atomicCashout(
         category: 'cashout',
         description: 'Cash-out from table',
         table_id: tableId,
+        balance_after: postWallet?.balance ?? null,
       });
     }
 
@@ -766,6 +779,8 @@ export async function ensureHorseWallet(
       return;
     }
 
+    // BUG 018 FIX: compute balance_after from the known prior balance + topup
+    const newBalance = Number(wallet.balance ?? 0) + topUp;
     const { error: refillTxErr } = await supabase.from('wallet_transactions').insert({
       user_id: horseId,
       wallet_type: 'PLAYER',
@@ -773,6 +788,7 @@ export async function ensureHorseWallet(
       type: 'credit',
       category: 'horse_refill',
       description: `Horse wallet refill: ${topUp} chips (balance was ${wallet.balance})`,
+      balance_after: newBalance,
     });
     if (refillTxErr)
       console.warn(

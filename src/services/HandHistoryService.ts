@@ -148,12 +148,17 @@ class HandHistoryServiceClass {
    * by players JSONB containing the requested userId, then map JSONB → HandRecord inline.
    */
   async getPlayerHands(userId: string, limit = 50): Promise<HandRecord[]> {
+    // BUG 021 Layer D (2026-04-16): Supabase JS `.contains('column', [{key: val}])` serializes
+    // the object literal with unquoted keys, producing invalid JSON in PostgREST. Symptom:
+    //   {"code":"22P02","details":"Expected string or '}', but found '['","message":"invalid input syntax for type json"}
+    // Fix: pass a pre-stringified JSON string, which Supabase JS URL-encodes verbatim.
+    const containmentJson = JSON.stringify([{ userId }]);
     const { data, error } = await supabase
       .from('hand_history')
       .select(
         'id, created_at, table_id, hand_number, pot_size, community_cards, players, actions, winners, game_variant, small_blind, big_blind, rake_amount'
       )
-      .contains('players', [{ userId }])
+      .contains('players', containmentJson)
       .order('created_at', { ascending: false })
       .limit(limit);
 

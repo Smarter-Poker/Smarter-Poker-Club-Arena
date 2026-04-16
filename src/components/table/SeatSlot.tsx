@@ -106,6 +106,11 @@ export interface SeatSlotProps {
    */
   isCollectingChips?: boolean;
   /**
+   * Bible V8 §10.1 — true during deal animation (HAND_STARTED). When set,
+   * applies `seat__cards--dealing` class for card slide-in animation at each seat.
+   */
+  isDealing?: boolean;
+  /**
    * 2026-04-15 Bible V8 §6.1 — server-authoritative absolute wall-clock
    * deadline for the CURRENT active seat (ms since epoch). Combined with
    * `turnStartTimeMs` this drives a pure-CSS `@property` animation on the
@@ -256,6 +261,7 @@ export const SeatSlot = memo(
       showBadges = false,
       gesturesEnabled = true,
       isCollectingChips = false,
+      isDealing = false,
       turnDeadlineMs,
       turnStartTimeMs,
     } = props;
@@ -296,6 +302,8 @@ export const SeatSlot = memo(
 
     // All-in shake animation — brief shake when lastAction changes to 'all_in'
     const [allinShake, setAllinShake] = useState(false);
+    // Fold card fly-out animation — brief "cards to muck" before dimming
+    const [isFolding, setIsFolding] = useState(false);
     const prevActionRef = React.useRef<LastAction>(null);
     useEffect(() => {
       if (lastAction === 'all_in' && prevActionRef.current !== 'all_in') {
@@ -304,8 +312,30 @@ export const SeatSlot = memo(
         prevActionRef.current = lastAction;
         return () => clearTimeout(timer);
       }
+      // Bible V8 §10.1: card fold animation — cards fly to center/muck
+      if (lastAction === 'fold' && prevActionRef.current !== 'fold') {
+        setIsFolding(true);
+        const timer = setTimeout(() => setIsFolding(false), 350);
+        prevActionRef.current = lastAction;
+        return () => clearTimeout(timer);
+      }
       prevActionRef.current = lastAction;
     }, [lastAction]);
+
+    // Showdown card flip animation — 3D flip when opponent cards are revealed
+    const [isShowdownFlip, setIsShowdownFlip] = useState(false);
+    const prevShowCardsRef = React.useRef<boolean>(player?.showCards ?? false);
+    useEffect(() => {
+      if (!player) return;
+      // Trigger 3D flip when showCards transitions false → true
+      if (player.showCards && !prevShowCardsRef.current) {
+        setIsShowdownFlip(true);
+        const timer = setTimeout(() => setIsShowdownFlip(false), 400);
+        prevShowCardsRef.current = player.showCards;
+        return () => clearTimeout(timer);
+      }
+      prevShowCardsRef.current = player.showCards ?? false;
+    }, [player?.showCards]);
 
     // Stack glow pulse — when stack changes by >20%
     const [stackGlow, setStackGlow] = useState(false);
@@ -438,10 +468,11 @@ export const SeatSlot = memo(
           </div>
         ) : null}
 
-        {/* Hole Cards — opponents: show card backs for active/all-in players, reveal at showdown */}
-        {!player.isHero && (player.status === 'active' || player.status === 'all_in') && (
+        {/* Hole Cards — opponents: show card backs for active/all-in players, reveal at showdown.
+            Also render during isFolding so the fly-out animation can play before unmount. */}
+        {!player.isHero && (player.status === 'active' || player.status === 'all_in' || isFolding) && (
           <div
-            className={`seat__cards seat__cards--opponent${player.showCards && player.holeCards?.length ? ' seat__cards--revealed' : ''}`}
+            className={`seat__cards seat__cards--opponent${player.showCards && player.holeCards?.length ? ' seat__cards--revealed' : ''}${isFolding ? ' seat__cards--folding' : ''}${isShowdownFlip ? ' seat__cards--showdown' : ''}${isDealing ? ' seat__cards--dealing' : ''}`}
           >
             {player.holeCards && player.holeCards.length > 0 ? (
               player.holeCards.map((card, i) => (
@@ -523,8 +554,14 @@ export const SeatSlot = memo(
             </div>
           )}
 
-          {/* Position Chip — REMOVED: Bible V8 dealer button is rendered separately via DealerButton component.
-             SB/BB/UTG/CO/etc. badges are NOT shown on the table per design decision. */}
+          {/* Position Badge — PokerBros parity: SB/BB/UTG/CO/BTN shown
+             on each seat. Dealer "D" button rendered separately via DealerButton
+             component, so skip 'D' and 'BTN' here to avoid double-badging. */}
+          {position && position !== 'D' && position !== 'BTN' && (
+            <div className={`seat__position-badge seat__position-badge--${position.toLowerCase().replace('+', 'p')}`}>
+              {position}
+            </div>
+          )}
         </div>
 
         {/* Info Box — name + stack, with neon timer border when active.
@@ -578,6 +615,8 @@ export const SeatSlot = memo(
           <div
             className={
               'seat__cards seat__cards--hero' +
+              (isDealing ? ' seat__cards--dealing' : '') +
+              (isFolding ? ' seat__cards--folding' : '') +
               (lastAction === 'fold' || player.status === 'folded'
                 ? ' seat__cards--folded'
                 : '') +
@@ -674,6 +713,7 @@ export const SeatSlot = memo(
     if (prev.secondsLeft !== next.secondsLeft) return false;
     if (prev.showAvatar !== next.showAvatar) return false;
     if (prev.showBadges !== next.showBadges) return false;
+    if (prev.isDealing !== next.isDealing) return false;
     // 2026-04-15 §6.1: re-render on new turn so CSS ring restarts.
     if (prev.turnDeadlineMs !== next.turnDeadlineMs) return false;
     if (prev.turnStartTimeMs !== next.turnStartTimeMs) return false;

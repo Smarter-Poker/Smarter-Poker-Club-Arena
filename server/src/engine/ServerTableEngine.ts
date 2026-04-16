@@ -2076,6 +2076,20 @@ export class ServerTableEngine {
           ),
         }));
         this.broadcastCurrentState();
+        // 2026-04-16 fix: Emit discrete showdown event so the client can
+        // trigger showdown sound + card reveal animations (Bible V8 §4.6).
+        // Previously only broadcastCurrentState was called, which sends a
+        // state snapshot but NOT a discrete event the client handler matches.
+        this.hub?.emitEvent(this.tableId, {
+          type: 'showdown',
+          table_id: this.tableId,
+          hand_number: this.handCount,
+          results: this.currentHandShowdownResults.map((r) => ({
+            user_id: r.userId,
+            hand_name: r.handName,
+            hand_ranking: r.handRanking,
+          })),
+        });
         break;
 
       case 'WINNERS':

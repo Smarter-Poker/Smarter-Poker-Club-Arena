@@ -402,29 +402,29 @@ export default function ActionPanel({
               </div>
             )}
 
-        {/* Preset Row */}
-        {showBetSizePresets && (
-          <div className="raise-presets">
-            {presets.map((p) => (
-              <button
-                key={p.label}
-                className="raise-preset"
-                onClick={() => setPreset(p.value)}
-                disabled={p.value > maxRaise || p.value < minRaise}
-                aria-label={`Bet ${p.label}`}
-              >
-                {p.label}
-              </button>
-            ))}
-            <button
-              className="raise-preset raise-preset--allin"
-              onClick={handleAllIn}
-              aria-label="Bet all in"
-            >
-              ALL IN
-            </button>
-          </div>
-        )}
+            {/* Preset Row */}
+            {showBetSizePresets && (
+              <div className="raise-presets">
+                {presets.map((p) => (
+                  <button
+                    key={p.label}
+                    className="raise-preset"
+                    onClick={() => setPreset(p.value)}
+                    disabled={p.value > maxRaise || p.value < minRaise}
+                    aria-label={`Bet ${p.label}`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+                <button
+                  className="raise-preset raise-preset--allin"
+                  onClick={handleAllIn}
+                  aria-label="Bet all in"
+                >
+                  ALL IN
+                </button>
+              </div>
+            )}
             {/* Confirm / Cancel Row */}
             <div className="raise-actions">
               <button
@@ -453,10 +453,22 @@ export default function ActionPanel({
               <div className="raise-slider-vertical__rail">
                 {sliderEl}
                 <div className="raise-slider-vertical__ticks" aria-hidden="true">
-                  <div className="raise-slider-vertical__tick" style={{ bottom: '100%' }} />
-                  <div className="raise-slider-vertical__tick" style={{ bottom: '75%' }} />
-                  <div className="raise-slider-vertical__tick" style={{ bottom: '50%' }} />
-                  <div className="raise-slider-vertical__tick" style={{ bottom: '25%' }} />
+                  {/* BB labels at 25/50/75/100% of the raise range */}
+                  {[100, 75, 50, 25].map((pct) => {
+                    const val = minRaise + (maxRaise - minRaise) * (pct / 100);
+                    const bbLabel = bigBlind > 0 ? `${Math.round(val / bigBlind)}` : '';
+                    return (
+                      <div
+                        key={pct}
+                        className="raise-slider-vertical__tick"
+                        style={{ bottom: `${pct}%` }}
+                      >
+                        {bigBlind > 0 && (
+                          <span className="raise-slider-vertical__tick-label">{bbLabel}BB</span>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
               <div className="raise-slider-vertical__caps" aria-hidden="true">

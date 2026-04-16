@@ -9,7 +9,8 @@
  * - Chip stack animations on pot updates
  */
 
-import React, { useMemo, memo } from 'react';
+import React, { useMemo, memo, useState, useEffect, useRef } from 'react';
+import { AnimatedNumber } from '../common/AnimatedNumber';
 import './PotDisplay.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -58,13 +59,13 @@ function formatBB(amount: number, bigBlind: number): string {
 
 // Standard poker chip denomination colors
 const CHIP_COLORS = [
-  { threshold: 5000, color: '#a855f7', label: '5K' },   // Purple
-  { threshold: 1000, color: '#f97316', label: '1K' },   // Orange
-  { threshold: 500, color: '#7c3aed', label: '500' },   // Violet
-  { threshold: 100, color: '#1a1a2e', label: '100' },   // Black
-  { threshold: 25, color: '#22c55e', label: '25' },     // Green
-  { threshold: 5, color: '#ef4444', label: '5' },       // Red
-  { threshold: 1, color: '#e0e0e0', label: '1' },       // White
+  { threshold: 5000, color: '#a855f7', label: '5K' }, // Purple
+  { threshold: 1000, color: '#f97316', label: '1K' }, // Orange
+  { threshold: 500, color: '#7c3aed', label: '500' }, // Violet
+  { threshold: 100, color: '#1a1a2e', label: '100' }, // Black
+  { threshold: 25, color: '#22c55e', label: '25' }, // Green
+  { threshold: 5, color: '#ef4444', label: '5' }, // Red
+  { threshold: 1, color: '#e0e0e0', label: '1' }, // White
 ];
 
 function getChipBreakdown(amount: number): { color: string; count: number; label: string }[] {
@@ -99,12 +100,14 @@ function ChipStack({ color, count, offsetX }: ChipStackProps) {
         <div
           key={i}
           className="pot-display__chip"
-          style={{
-            '--chip-color': color,
-            transform: `translateY(${-i * 2}px)`,
-            zIndex: count - i,
-            animationDelay: `${i * 50}ms`,
-          } as React.CSSProperties}
+          style={
+            {
+              '--chip-color': color,
+              transform: `translateY(${-i * 2}px)`,
+              zIndex: count - i,
+              animationDelay: `${i * 50}ms`,
+            } as React.CSSProperties
+          }
         >
           <div className="pot-display__chip-face" />
         </div>
@@ -149,6 +152,19 @@ function PotDisplayComponent({
   displayMode = 'chips',
   onToggleDisplayMode,
 }: PotDisplayProps) {
+  // Pot update pulse animation — triggers CSS class briefly on change
+  const [isPotUpdated, setIsPotUpdated] = useState(false);
+  const prevPotRef = useRef(mainPot);
+  useEffect(() => {
+    if (mainPot !== prevPotRef.current && mainPot > prevPotRef.current) {
+      setIsPotUpdated(true);
+      const timer = setTimeout(() => setIsPotUpdated(false), 500);
+      prevPotRef.current = mainPot;
+      return () => clearTimeout(timer);
+    }
+    prevPotRef.current = mainPot;
+  }, [mainPot]);
+
   // Calculate chip visualization
   const chipBreakdown = useMemo(() => getChipBreakdown(mainPot), [mainPot]);
 
@@ -162,7 +178,7 @@ function PotDisplayComponent({
   }
 
   return (
-    <div className="pot-display">
+    <div className={`pot-display${isPotUpdated ? ' pot-display--updated' : ''}`}>
       {/* Chip Stacks Visualization */}
       {showChipAnimation && mainPot > 0 && (
         <div className="pot-display__chips">
@@ -185,9 +201,15 @@ function PotDisplayComponent({
       >
         <span className="pot-display__label">POT</span>
         <span className="pot-display__amount">
-          {displayMode === 'bb' && bigBlind > 0
-            ? formatBB(mainPot, bigBlind)
-            : formatAmount(mainPot, currency)}
+          {displayMode === 'bb' && bigBlind > 0 ? (
+            <AnimatedNumber value={mainPot} duration={350} format={(n) => formatBB(n, bigBlind)} />
+          ) : (
+            <AnimatedNumber
+              value={mainPot}
+              duration={350}
+              format={(n) => formatAmount(n, currency)}
+            />
+          )}
         </span>
       </div>
 
@@ -211,13 +233,22 @@ function PotDisplayComponent({
         <div className="pot-display__total">
           <span className="pot-display__total-label">TOTAL</span>
           <span className="pot-display__total-amount">
-            {displayMode === 'bb' && bigBlind > 0
-              ? formatBB(totalPot, bigBlind)
-              : formatAmount(totalPot, currency)}
+            {displayMode === 'bb' && bigBlind > 0 ? (
+              <AnimatedNumber
+                value={totalPot}
+                duration={350}
+                format={(n) => formatBB(n, bigBlind)}
+              />
+            ) : (
+              <AnimatedNumber
+                value={totalPot}
+                duration={350}
+                format={(n) => formatAmount(n, currency)}
+              />
+            )}
           </span>
         </div>
       )}
-
     </div>
   );
 }

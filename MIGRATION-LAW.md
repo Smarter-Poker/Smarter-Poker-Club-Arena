@@ -279,8 +279,10 @@ Only after all four steps pass may you mark the work complete.
 ### 11.3 DEPLOYMENT WATCH TIMEOUTS
 
 - Vercel QUEUED → BUILDING typically takes 0–120s. If still QUEUED after 5 min,
-  check for a newer push that superseded yours, or fire the deploy hook:
-  `curl -X POST https://api.vercel.com/v1/integrations/deploy/prj_op66GkZyZcygXQKm76iyycfVFAQx/Tw4O1eDeVc`
+  check for a newer push that superseded yours.
+  NOTE: The deploy hook (Tw4O1eDeVc) was RETIRED on 2026-04-16 because it was
+  causing duplicate deployments. DO NOT call it. The git integration handles
+  auto-deploy on every push to main.
 - BUILDING → READY typically takes 90–180s for a Next.js build on this repo.
 - If ERROR or CANCELED persists for more than 10 min after the push, INVESTIGATE
   before trying again (could be a build failure, a rate limit, or the duplicate

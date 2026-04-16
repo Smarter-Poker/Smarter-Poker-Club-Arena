@@ -1343,18 +1343,21 @@ export default function TablePage({
   // fade out). After the animation completes we clear lastBetAmounts.
   // Using a separate state (not tableState) keeps snapshot sync clean.
   // ─────────────────────────────────────────────────────────────────
-  const [collectingChipSeats, setCollectingChipSeats] = useState<boolean[]>(
-    () => Array(9).fill(false)
+  const [collectingChipSeats, setCollectingChipSeats] = useState<boolean[]>(() =>
+    Array(9).fill(false)
   );
   const collectSeatsTimerRef = useRef<number | null>(null);
   // Cancel the pending chip-collect timer if the component unmounts so we
   // don't invoke setState after unmount (React warning + stale clear).
-  useEffect(() => () => {
-    if (collectSeatsTimerRef.current) {
-      window.clearTimeout(collectSeatsTimerRef.current);
-      collectSeatsTimerRef.current = null;
-    }
-  }, []);
+  useEffect(
+    () => () => {
+      if (collectSeatsTimerRef.current) {
+        window.clearTimeout(collectSeatsTimerRef.current);
+        collectSeatsTimerRef.current = null;
+      }
+    },
+    []
+  );
 
   // Straddle state
   const [isStraddleEnabled, setIsStraddleEnabled] = useState(false);
@@ -1636,9 +1639,11 @@ export default function TablePage({
   }, [userSettings]);
 
   // Bible V8 §11.1: Supabase-backed user table preferences (12 toggles)
-  const { settings: v8Settings, loading: v8SettingsLoading, toggleSetting: toggleV8Setting } = useUserTableSettings(
-    userId !== 'guest' ? userId : null
-  );
+  const {
+    settings: v8Settings,
+    loading: v8SettingsLoading,
+    toggleSetting: toggleV8Setting,
+  } = useUserTableSettings(userId !== 'guest' ? userId : null);
 
   // FIX-232: Ref for cards_pre_sort to avoid stale closure in hole card callbacks
   const cardsPreSortRef = useRef(v8Settings.cards_pre_sort);
@@ -3817,12 +3822,22 @@ export default function TablePage({
         // the surest path to the chips landing in the pot in real-time.
         if (soundService.isEnabled()) {
           if (action === 'all_in' || action === 'allin') soundService.playAllIn();
-          else if (action === 'bet' || action === 'raise' || action === 'call') soundService.playChips();
+          else if (action === 'bet' || action === 'raise' || action === 'call')
+            soundService.playChips();
           else if (action === 'check') soundService.playCheck();
           else if (action === 'fold') soundService.playFold();
         }
+        // Bible V8 §5.2: All-in dramatic mode activates on ANY player all-in
+        // (not just hero). Vignette + slow board + pot glow kick in immediately.
+        if (action === 'all_in' || action === 'allin') {
+          setIsAllInMode(true);
+        }
         if (
-          (action === 'bet' || action === 'raise' || action === 'call' || action === 'all_in' || action === 'allin') &&
+          (action === 'bet' ||
+            action === 'raise' ||
+            action === 'call' ||
+            action === 'all_in' ||
+            action === 'allin') &&
           actionSeat > 0 &&
           actionAmount > 0
         ) {
@@ -3877,7 +3892,9 @@ export default function TablePage({
         // 2026-04-16 fix: Use direct setChipAnimations instead of the
         // ref-based triggerChipAnimationRef which was sometimes null
         // (same race condition fixed for player_action on 2026-04-14).
-        const postings = ((evt.data as any).postings as Array<{ seat: number; type: string; amount: number }>) || [];
+        const postings =
+          ((evt.data as any).postings as Array<{ seat: number; type: string; amount: number }>) ||
+          [];
         const potPos = {
           x: (50 / 100) * window.innerWidth,
           y: (45 / 100) * window.innerHeight,
@@ -3909,9 +3926,7 @@ export default function TablePage({
         const newSeat = (evt.data as any).seat as number;
         if (typeof newSeat === 'number' && newSeat > 0) {
           setTableState((prev) =>
-            prev.currentPlayerSeat === newSeat
-              ? prev
-              : { ...prev, currentPlayerSeat: newSeat }
+            prev.currentPlayerSeat === newSeat ? prev : { ...prev, currentPlayerSeat: newSeat }
           );
           // Bible V8 §5.4: medium haptic when it's hero's turn
           const heroSeat = tableStateRef.current.heroSeat;
@@ -4019,13 +4034,21 @@ export default function TablePage({
         // 2026-04-16 fix: Server sends hand_name INSIDE the per-winner
         // `winners[]` array, not at the top level. Extract from winners[0]
         // as fallback when top-level hand_name is empty.
-        const winnersArray = ((evt.data as any).winners as Array<{ user_id: string; amount: number; hand_name?: string }>) || [];
+        const winnersArray =
+          ((evt.data as any).winners as Array<{
+            user_id: string;
+            amount: number;
+            hand_name?: string;
+          }>) || [];
         const winHandName =
           ((evt.data as any).hand_name as string) ||
           ((evt.data as any).winning_hand as string) ||
           winnersArray[0]?.hand_name ||
           '';
-        const winCardIndices = ((evt.data as any).card_indices as number[]) || ((evt.data as any).winning_card_indices as number[]) || [];
+        const winCardIndices =
+          ((evt.data as any).card_indices as number[]) ||
+          ((evt.data as any).winning_card_indices as number[]) ||
+          [];
 
         // Bible V8 §5.1: Set winner info for seat highlight + hand name display
         if (winnerIds.length > 0) {
@@ -4043,9 +4066,24 @@ export default function TablePage({
             cardIndices: winCardIndices,
             amounts,
           });
-          // Bible V8 §5.1: Confetti for hero win
+          // Bible V8 §5.1: Tiered celebration per POKERBROS_UPGRADE_PLAN §3.7
+          // < 10 BB = gold glow only (default), 10-50 BB = confetti,
+          // 50+ BB = confetti + screen shake + bigWin sound
           if (winnerIds.includes(userId)) {
-            setShowConfetti(true);
+            const bb = safeBB(tableStateRef.current.blinds, 1);
+            const winBB = (amounts[userId] || potAmount) / bb;
+            if (winBB >= 10) {
+              setShowConfetti(true);
+            }
+            if (winBB >= 50) {
+              // Screen shake for massive win
+              const tableEl = document.querySelector('.table-page');
+              if (tableEl) {
+                tableEl.classList.add('table-page--shake');
+                setTimeout(() => tableEl.classList.remove('table-page--shake'), 600);
+              }
+              soundService.playBigWin();
+            }
           }
           // Bible V8 §5.1: Particle burst from first winner's seat position
           const firstWinnerIdx = tableStateRef.current.players.findIndex(
@@ -4459,8 +4497,7 @@ export default function TablePage({
    */
   const canCheckRightNow = useCallback(() => {
     return (
-      (tableState.currentBet || 0) <=
-      (tableState.lastBetAmounts?.[tableState.heroSeat - 1] || 0)
+      (tableState.currentBet || 0) <= (tableState.lastBetAmounts?.[tableState.heroSeat - 1] || 0)
     );
   }, [tableState.currentBet, tableState.lastBetAmounts, tableState.heroSeat]);
 
@@ -4474,8 +4511,7 @@ export default function TablePage({
     }, 300);
     setShowRaiseSlider(false);
     soundService.playFold(); // Bible V8 §5.4 — fold = light haptic
-    if (tableId)
-      await submitActionWithToast(tableId, userId, 'fold', undefined, 'commitFold');
+    if (tableId) await submitActionWithToast(tableId, userId, 'fold', undefined, 'commitFold');
   }, [tableId, userId, submitActionWithToast]);
 
   const handleFold = async () => {
@@ -4500,8 +4536,7 @@ export default function TablePage({
     setShowRaiseSlider(false);
     //Local engine call removed — server is authoritative
     soundService.playCheck(); // SoundService handles haptic (light) per Bible V8 §5.4
-    if (tableId)
-      await submitActionWithToast(tableId, userId, 'check', undefined, 'handleCheck');
+    if (tableId) await submitActionWithToast(tableId, userId, 'check', undefined, 'handleCheck');
   };
 
   const handleCall = async () => {
@@ -4515,8 +4550,7 @@ export default function TablePage({
     setShowRaiseSlider(false);
     //Local engine call removed — server is authoritative
     soundService.playChips(); // SoundService handles haptic (light) per Bible V8 §5.4
-    if (tableId)
-      await submitActionWithToast(tableId, userId, 'call', undefined, 'handleCall');
+    if (tableId) await submitActionWithToast(tableId, userId, 'call', undefined, 'handleCall');
   };
 
   const handleBet = () => {
@@ -4681,8 +4715,7 @@ export default function TablePage({
       //Local engine call removed — server is authoritative
       soundService.playAllIn(); // SoundService handles haptic (strong) per Bible V8 §5.4
       setIsAllInMode(true);
-      if (tableId)
-        await submitActionWithToast(tableId, userId, 'allin', heroStack, 'handleAllIn');
+      if (tableId) await submitActionWithToast(tableId, userId, 'allin', heroStack, 'handleAllIn');
     } catch (err) {
       console.warn('[TablePage] All-in error:', err);
     }
@@ -6259,9 +6292,13 @@ export default function TablePage({
         onEventComplete={handleThrowComplete}
       />
 
-      {/* Win Confetti — disabled (cheesy and annoying on repeated wins) */}
-      {/* Bible V8 §5.1: Winner confetti celebration */}
-      <ConfettiCanvas active={showConfetti} duration={3500} count={55} onComplete={() => setShowConfetti(false)} />
+      {/* Bible V8 §5.1: Tiered winner celebration — confetti fires on wins >= 10BB */}
+      <ConfettiCanvas
+        active={showConfetti}
+        duration={3500}
+        count={55}
+        onComplete={() => setShowConfetti(false)}
+      />
       {/* Bible V8 §5.1: Gold spark burst from winner's seat */}
       <ParticleSystem
         active={winnerParticle.active}

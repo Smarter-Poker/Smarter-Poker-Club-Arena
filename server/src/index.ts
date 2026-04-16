@@ -493,7 +493,7 @@ class GameServer {
       //    by TournamentManager.cancelTournament via normal refund path. This startup
       //    sweep is strictly a safety-net for server crashes and should rarely fire.
       const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
-      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+      const oneHourAgoMtt = new Date(Date.now() - 60 * 60 * 1000).toISOString();
       // Find stale RUNNING tournaments with no recent hand activity
       const { data: staleTourneys } = await supabase
         .from('tournaments')
@@ -505,7 +505,7 @@ class GameServer {
           .from('hand_history')
           .select('id', { count: 'exact', head: true })
           .eq('tournament_id', t.id)
-          .gte('created_at', oneHourAgo);
+          .gte('created_at', oneHourAgoMtt);
         if ((recentHands || 0) > 0) {
           console.log(
             `[GameServer] Skipping cancel of tournament ${t.id.slice(0, 8)} — ${recentHands} hands in last hour (still active)`

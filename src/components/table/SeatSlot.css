@@ -1299,6 +1299,62 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
+   POSITION BADGE — PokerBros parity: SB/BB/UTG/CO/MP/HJ shown per seat
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.seat__position-badge {
+  position: absolute;
+  top: -6px;
+  right: -4px;
+  padding: 1px 5px;
+  background: rgba(15, 15, 20, 0.85);
+  color: #a0a8b8;
+  border-radius: 4px;
+  font-size: 0.5rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  z-index: 6;
+  white-space: nowrap;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  line-height: 1.3;
+}
+
+/* SB — gold tint */
+.seat__position-badge--sb {
+  color: #fbbf24;
+  border-color: rgba(251, 191, 36, 0.3);
+}
+
+/* BB — blue tint */
+.seat__position-badge--bb {
+  color: #60a5fa;
+  border-color: rgba(96, 165, 250, 0.3);
+}
+
+/* UTG / UTG+1 / UTG+2 — red tint (early position = danger zone) */
+.seat__position-badge--utg,
+.seat__position-badge--utgp1,
+.seat__position-badge--utgp2 {
+  color: #f87171;
+  border-color: rgba(248, 113, 113, 0.2);
+}
+
+/* CO / HJ — green tint (late position = strong) */
+.seat__position-badge--co,
+.seat__position-badge--hj {
+  color: #4ade80;
+  border-color: rgba(74, 222, 128, 0.2);
+}
+
+/* MP / MP+1 — neutral */
+.seat__position-badge--mp,
+.seat__position-badge--mpp1 {
+  color: #94a3b8;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
    ALL-IN BADGE
    ═══════════════════════════════════════════════════════════════════════════════ */
 

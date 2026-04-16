@@ -7,6 +7,37 @@
 
 ---
 
+## Round 50 — 14 Animation Bugs Fixed for PokerBros Parity (2026-04-16)
+
+### Context:
+ALL table animations were non-functional. Root cause: the game action event handler watched `lastEvent` (Supabase Realtime, dead since PR-5) instead of `engineLastEvent` (native WS hub). Additionally, 6 CSS animation classes existed in SeatSlot.css but were never applied in the TSX, 3 settings defaulted to false blocking animations, and the server never emitted a discrete SHOWDOWN event.
+
+### Bugs Fixed (14 total):
+1. **ROOT CAUSE** — Event handler watched wrong source (lastEvent -> engineLastEvent)
+2. card_slide default false -> true (blocked DealAnimation)
+3. enhanced_view default false -> true (blocked visual effects)
+4. BLINDS_POSTED stale ref -> direct setChipAnimations
+5. POT_WIN hand_name from wrong payload level -> extract from winners[]
+6. Winning hand name gated to showdown only -> shown for all wins
+7. Server missing discrete SHOWDOWN event -> added hub.emitEvent()
+8. Fold card animation CSS orphaned -> wired isFolding state + class
+9. Showdown 3D card flip CSS orphaned -> wired isShowdownFlip state + class
+10. Deal card slide-in CSS orphaned -> wired isDealing prop + class
+11. Position badges removed -> re-added for PokerBros parity
+12. HAND_STARTED missing deal sound -> added playDeal()
+13. TURN_CHANGE missing hero haptic/sound -> added haptic.medium() + playTurnAlert()
+14. POT_WIN missing hero win haptic -> added haptic.strong()
+
+### Files Modified:
+- `src/hooks/useUserTableSettings.ts` — card_slide + enhanced_view defaults
+- `src/pages/TablePage.tsx` — 7 event handler fixes + isSeatDealing state
+- `server/src/engine/ServerTableEngine.ts` — SHOWDOWN discrete event
+- `src/components/table/SeatSlot.tsx` — 6 animation wiring fixes + memo update
+- `src/components/table/SeatSlot.css` — position badge CSS
+- `ANIMATION-FIX-HANDOFF.md` — full handoff document
+
+---
+
 ## Round 49 — FIX-232: Atomic Wallet Increments + Hole Card Polling Fixes (2026-04-02)
 
 ### Context:

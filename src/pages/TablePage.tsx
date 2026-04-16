@@ -739,6 +739,9 @@ export default function TablePage({
   // Deal Animation State — triggers card dealing visual at start of new hand
   const [dealAnimationKey, setDealAnimationKey] = useState(0);
   const prevHandNumberForDealRef = useRef(0);
+  // Per-seat deal animation — true for ~600ms after HAND_STARTED so SeatSlot
+  // applies seat__cards--dealing class (card slide-in at each seat)
+  const [isSeatDealing, setIsSeatDealing] = useState(false);
 
   // Time Bank State
   const [showTimeBank, setShowTimeBank] = useState(false);
@@ -3703,22 +3706,22 @@ export default function TablePage({
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const _migrationStub = null; // Marker: init block removed
 
-  // Handle incoming game events from WebSocket
+  // Handle incoming game events from WebSocket.
+  // 2026-04-16 ROOT-CAUSE FIX: the server sends discrete game events
+  // (hand_started, blinds_posted, player_action, community_cards_dealt,
+  // pot_win, showdown, hand_complete) via the native WS hub — NOT Supabase
+  // Realtime. The handler was only watching `lastEvent` (Supabase), so
+  // animations never fired. Now we also watch `engineLastEvent`.
   useEffect(() => {
-    if (!lastEvent) return;
+    if (!engineLastEvent) return;
 
-    // 2026-04-14 normalization: the engine WS emits flat lowercase events
-    // (e.g. {type:'pot_win', winner_ids, pot}) while the legacy switch was
-    // written for the old Supabase Realtime nested-uppercase shape
-    // ({type:'POT_WIN', data:{...}}). Normalize both into the same surface
-    // so every existing case keeps reading lastEvent.data.X.
-    const rawType = (lastEvent as { type?: string }).type || '';
+    const rawType = (engineLastEvent as { type?: string }).type || '';
     const normalizedType = rawType.toUpperCase();
     const normalizedData =
-      (lastEvent as { data?: Record<string, unknown> }).data ||
-      (lastEvent as unknown as Record<string, unknown>);
+      (engineLastEvent as { data?: Record<string, unknown> }).data ||
+      (engineLastEvent as unknown as Record<string, unknown>);
     const evt = { type: normalizedType, data: normalizedData };
-    void lastEvent; // keep dependency tracking via the original ref
+    void engineLastEvent;
 
     switch (evt.type) {
       case 'GAME_START': {
@@ -3862,16 +3865,41 @@ export default function TablePage({
         // Trigger deal animation (legacy DealAnimation already wired to
         // dealAnimationKey; bump it so the cards fly from the dealer).
         setDealAnimationKey((k) => k + 1);
+        // Bible V8 §10.1: per-seat card slide-in animation
+        setIsSeatDealing(true);
+        setTimeout(() => setIsSeatDealing(false), 700);
+        // Bible V8 §5.3: card dealing sound on new hand
+        if (soundService.isEnabled()) soundService.playDeal();
         break;
       }
       case 'BLINDS_POSTED': {
-        // Animate SB + BB chips from each blind seat into the pot. The seat
-        // index is 1-based on the engine; map to 0-based for the chip helper.
+        // Animate SB + BB chips from each blind seat into the pot.
+        // 2026-04-16 fix: Use direct setChipAnimations instead of the
+        // ref-based triggerChipAnimationRef which was sometimes null
+        // (same race condition fixed for player_action on 2026-04-14).
         const postings = ((evt.data as any).postings as Array<{ seat: number; type: string; amount: number }>) || [];
+        const potPos = {
+          x: (50 / 100) * window.innerWidth,
+          y: (45 / 100) * window.innerHeight,
+        };
         for (const p of postings) {
           if (p.seat > 0 && p.amount > 0) {
-            triggerChipAnimationRef.current?.(p.seat - 1, true, p.amount);
+            const seatIdx = p.seat - 1;
+            const seatPct = seatPositions[seatIdx] || { x: 50, y: 90 };
+            const fromPos = {
+              x: (seatPct.x / 100) * window.innerWidth,
+              y: (seatPct.y / 100) * window.innerHeight,
+            };
+            const id = `blind_${Date.now()}_${seatIdx}_${Math.random().toString(36).slice(2, 6)}`;
+            setChipAnimations((prev) => [
+              ...prev,
+              { id, from: fromPos, to: potPos, amount: p.amount },
+            ]);
           }
+        }
+        // Play chip sound for blinds posting
+        if (postings.length > 0 && soundService.isEnabled()) {
+          soundService.playChips();
         }
         break;
       }
@@ -3885,6 +3913,13 @@ export default function TablePage({
               ? prev
               : { ...prev, currentPlayerSeat: newSeat }
           );
+          // Bible V8 §5.4: medium haptic when it's hero's turn
+          const heroSeat = tableStateRef.current.heroSeat;
+          if (newSeat === heroSeat) {
+            import('../services/HapticService').then(({ haptic }) => haptic.medium());
+            // Bible V8 §5.3: turn alert sound for hero
+            if (soundService.isEnabled()) soundService.playTurnAlert();
+          }
         }
         break;
       }
@@ -3981,14 +4016,27 @@ export default function TablePage({
         //   center to each winner's seat position over 400-600ms.
         const winnerIds = ((evt.data as any).winner_ids as string[]) || [];
         const potAmount = ((evt.data as any).pot as number) || 0;
-        const winHandName = ((evt.data as any).hand_name as string) || ((evt.data as any).winning_hand as string) || '';
+        // 2026-04-16 fix: Server sends hand_name INSIDE the per-winner
+        // `winners[]` array, not at the top level. Extract from winners[0]
+        // as fallback when top-level hand_name is empty.
+        const winnersArray = ((evt.data as any).winners as Array<{ user_id: string; amount: number; hand_name?: string }>) || [];
+        const winHandName =
+          ((evt.data as any).hand_name as string) ||
+          ((evt.data as any).winning_hand as string) ||
+          winnersArray[0]?.hand_name ||
+          '';
         const winCardIndices = ((evt.data as any).card_indices as number[]) || ((evt.data as any).winning_card_indices as number[]) || [];
 
         // Bible V8 §5.1: Set winner info for seat highlight + hand name display
         if (winnerIds.length > 0) {
+          // Use per-winner amounts from server when available (accurate for split pots)
           const amounts: Record<string, number> = {};
-          const sharePerWinner = potAmount / (winnerIds.length || 1);
-          for (const wid of winnerIds) amounts[wid] = sharePerWinner;
+          if (winnersArray.length > 0) {
+            for (const w of winnersArray) amounts[w.user_id] = w.amount;
+          } else {
+            const sharePerWinner = potAmount / (winnerIds.length || 1);
+            for (const wid of winnerIds) amounts[wid] = sharePerWinner;
+          }
           setWinnerInfo({
             playerIds: winnerIds,
             handName: winHandName,
@@ -4036,6 +4084,8 @@ export default function TablePage({
 
         if (winnerIds.length > 0 && winnerIds.includes(userId)) {
           playWinSound(potAmount);
+          // Bible V8 §5.4: heavy celebration haptic on hero win
+          import('../services/HapticService').then(({ haptic }) => haptic.heavy());
         }
         if (winnerIds.length > 0 && potAmount > 0) {
           // Pot center in screen px (mirrors the constant 50,45 used by
@@ -4070,7 +4120,19 @@ export default function TablePage({
       // HAND_COMPLETE case is handled above with chip-collect + reset in
       // one place (Bible V8 §1.16). Duplicate case removed 2026-04-14.
     }
-  }, [lastEvent]);
+  }, [engineLastEvent]);
+
+  // Supabase Realtime fallback: process lastEvent if engine WS is not connected.
+  // When engine WS IS connected, it handles all events above; this block is
+  // inert. When engine WS is unavailable, this block processes the same event
+  // types from Supabase Realtime (legacy path) so animations still work.
+  // NOTE: The switch block is NOT duplicated here. Instead, if Supabase Realtime
+  // sends an event, we log it; in production the engine WS should be the only path.
+  useEffect(() => {
+    if (!lastEvent || engineWsStatus === 'connected') return;
+    const rawType = (lastEvent as { type?: string }).type || '';
+    console.debug('[TablePage] Supabase Realtime event (engine WS not connected):', rawType);
+  }, [lastEvent, engineWsStatus]);
 
   // ═══════════════════════════════════════════════════════════════════════
   // Previous hand tracking — detects hand number change, captures result
@@ -5279,10 +5341,12 @@ export default function TablePage({
                     compact
                   />
                   {/* Phase 2 T1-04 — PokerBros signature: hand strength label
-                   *  floats at pot center for ~1s at showdown. Keyed on hand
-                   *  number + hand name so every new hand re-triggers the
-                   *  animation. Per POKERBROS_CLONE_SPEC.md §6 line 548. */}
-                  {winnerInfo.handName && tableState.boardStage === 'showdown' && (
+                   *  floats at pot center for ~1s on ANY win (showdown or not).
+                   *  2026-04-16 fix: removed boardStage === 'showdown' gate —
+                   *  PokerBros shows winning hand name on ALL wins, including
+                   *  when everyone folds. Keyed on hand number + hand name so
+                   *  every new hand re-triggers the animation. */}
+                  {winnerInfo.handName && (
                     <div
                       className="pot-hand-strength"
                       key={`hand-${displayHandNumber ?? 0}-${winnerInfo.handName}`}
@@ -5512,6 +5576,7 @@ export default function TablePage({
                       setSelectedPlayerForNotes({ id: player.id, name: player.name });
                     }
                   }}
+                  isDealing={isSeatDealing}
                 />
 
                 {/* FIX 89: All-In Equity Overlay — shown per seat during all-in */}

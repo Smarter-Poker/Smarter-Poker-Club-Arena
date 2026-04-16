@@ -69,7 +69,7 @@ export const WaitlistManager: React.FC<WaitlistManagerProps> = ({
         {
           event: '*',
           schema: 'public',
-          table: 'table_waitlists',
+          table: 'table_waitlist',
           filter: `table_id=eq.${tableId}`,
         },
         () => {
@@ -93,7 +93,7 @@ export const WaitlistManager: React.FC<WaitlistManagerProps> = ({
   const loadWaitlist = async () => {
     try {
       const { data, error } = await supabase
-        .from('table_waitlists')
+        .from('table_waitlist')
         .select('id, user_id, position, created_at')
         .eq('table_id', tableId)
         .order('position', { ascending: true });
@@ -139,7 +139,7 @@ export const WaitlistManager: React.FC<WaitlistManagerProps> = ({
     if (!currentUserId) return;
     setJoining(true);
     try {
-      const { error } = await supabase.from('table_waitlists').insert({
+      const { error } = await supabase.from('table_waitlist').insert({
         table_id: tableId,
         user_id: currentUserId,
         position: waitlist.length + 1,
@@ -158,7 +158,7 @@ export const WaitlistManager: React.FC<WaitlistManagerProps> = ({
     if (!currentUserId) return;
     try {
       const { error } = await supabase
-        .from('table_waitlists')
+        .from('table_waitlist')
         .delete()
         .eq('table_id', tableId)
         .eq('user_id', currentUserId);
@@ -175,7 +175,7 @@ export const WaitlistManager: React.FC<WaitlistManagerProps> = ({
     // This would be handled by the table service
     showToast(`Seating ${entry.displayName}...`, 'info');
     // After seating, remove from waitlist
-    const { error } = await supabase.from('table_waitlists').delete().eq('id', entry.id);
+    const { error } = await supabase.from('table_waitlist').delete().eq('id', entry.id);
 
     if (error) {
       showToast('Failed to remove from waitlist after seating', 'error');
@@ -183,7 +183,7 @@ export const WaitlistManager: React.FC<WaitlistManagerProps> = ({
   };
 
   const handleRemove = async (entry: WaitlistEntry) => {
-    const { error } = await supabase.from('table_waitlists').delete().eq('id', entry.id);
+    const { error } = await supabase.from('table_waitlist').delete().eq('id', entry.id);
 
     if (error) {
       showToast('Failed to remove player', 'error');

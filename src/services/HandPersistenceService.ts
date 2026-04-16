@@ -475,15 +475,26 @@ class HandPersistenceServiceClass extends HandPersistence {
   }
 
   /**
-   * Load hand history for a player
+   * Load hand history for a player.
+   *
+   * BUG 021 Layer D pattern fix (2026-04-16): Supabase JS `.contains()` with an
+   * object literal containing a dynamic key (`{ [playerId]: {} }`) serializes the
+   * key unquoted, producing `{abc-123:{}}` which PostgREST rejects as invalid
+   * JSON ("22P02 — Expected string or '}', but found '['"). Pre-stringify the
+   * JSONB containment value so Supabase sends valid JSON.
+   *
+   * Also: the `hands` table doesn't exist — `hand_history` is the canonical
+   * schema. Matching HandHistoryService's containment pattern on `players`
+   * (array of {userId} objects).
    */
   async getPlayerHandHistory(playerId: string, limit = 50): Promise<HandRecord[]> {
+    const containmentJson = JSON.stringify([{ userId: playerId }]);
     const { data, error } = await supabase
-      .from('hands')
+      .from('hand_history')
       .select(
-        'id, table_id, club_id, hand_number, game_variant, stakes, pot, rake, community_cards, board, winner_ids, players, actions, street, status, dealer_position, started_at, ended_at, created_at'
+        'id, table_id, club_id, hand_number, variant, stakes, pot, rake, community_cards, board, winner_ids, players, actions, street, status, dealer_position, started_at, ended_at, created_at'
       )
-      .contains('players', { [playerId]: {} })
+      .contains('players', containmentJson)
       .order('ended_at', { ascending: false })
       .limit(limit);
 
@@ -491,7 +502,7 @@ class HandPersistenceServiceClass extends HandPersistence {
       reportError(error, 'HandPersistence.getPlayerHandHistory');
       return [];
     }
-    return data || [];
+    return (data || []) as unknown as HandRecord[];
   }
 }
 

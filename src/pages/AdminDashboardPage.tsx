@@ -2267,6 +2267,7 @@ function AnalyticsTab({ clubId }: { clubId: string }) {
 // TAB 12: MINT CHIPS
 // ═══════════════════════════════════════════════════════════════════════════════
 function MintChipsTab({ clubId }: { clubId: string }) {
+  const { user } = useAuthUser();
   const [amount, setAmount] = useState('');
   const [notes, setNotes] = useState('');
   const [processing, setProcessing] = useState(false);
@@ -2277,7 +2278,7 @@ function MintChipsTab({ clubId }: { clubId: string }) {
     <div className="admin-tab-content">
       <div className="admin-card">
         <div style={{ fontSize: '16px', fontWeight: 700, marginBottom: '4px' }}>
-          🏦 Mint Chips to Treasury
+          Mint Chips to Treasury
         </div>
         <div className="admin-text-secondary" style={{ marginBottom: '16px', lineHeight: 1.5 }}>
           Create new chips and add them to the club treasury. Subject to daily limits.
@@ -2329,10 +2330,13 @@ function MintChipsTab({ clubId }: { clubId: string }) {
                   setProcessing(false);
                   return;
                 }
+                // BUG 025 FIX (2026-04-16): old RPC was silent-success stub; unified signature
+                // now requires p_minted_by for authorization check.
                 const { error } = await supabase.rpc('mint_club_chips', {
                   p_club_id: uuid,
                   p_amount: mintAmount,
-                  p_notes: notes || undefined,
+                  p_minted_by: user?.id || null,
+                  p_notes: notes || null,
                 });
                 if (error) throw error;
                 setMsg(`Minted ${fmtChips(mintAmount)} chips to treasury!`);

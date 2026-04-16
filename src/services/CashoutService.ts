@@ -91,11 +91,14 @@ class CashoutServiceClass {
       );
     }
 
+    // BUG 025 FIX (2026-04-16): old fn_request_cashout was a silent-success stub that
+    // returned a fabricated UUID without inserting cashout_requests or debiting chips.
+    // Real implementation now returns the actual new cashout_requests.id (uuid).
     const { data, error } = await retryAsync(
       () =>
         supabase.rpc('fn_request_cashout', {
           p_player_id: playerId,
-          p_club_id: clubId,
+          p_club_id: resolvedClubId,
           p_amount: amount,
           p_note: note || null,
         }),
@@ -107,8 +110,13 @@ class CashoutServiceClass {
       throw new Error(error.message || 'Failed to request cashout');
     }
 
-    // Get the created cashout
-    const cashout = await this.getCashout(data);
+    // RPC returns the new cashout uuid directly (BUG 025 fix)
+    const newCashoutId = typeof data === 'string' ? data : (data as any)?.request_id;
+    if (!newCashoutId) {
+      reportError(new Error('fn_request_cashout returned no id'), 'CashoutService.requestCashout');
+      throw new Error('Failed to request cashout: no id returned');
+    }
+    const cashout = await this.getCashout(newCashoutId);
 
     // 🔔 Notify agent of the new cash-out request (graceful failure)
     if (cashout?.agentId) {

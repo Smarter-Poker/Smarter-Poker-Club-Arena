@@ -47,7 +47,7 @@ export function LoadingSpinner({
       {variant === 'chips' && (
         <div className="loading-chips">
           <span className="chip chip-1"></span>
-          <span className="chip chip-2">🔵</span>
+          <span className="chip chip-2"></span>
           <span className="chip chip-3"></span>
         </div>
       )}

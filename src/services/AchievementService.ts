@@ -202,7 +202,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     id: 'tourney_top3_10',
     name: 'Consistent',
     description: 'Finish top 3 in 10 tournaments',
-    icon: '🎖️',
+    icon: '',
     category: 'tournament',
     rarity: 'rare',
     requirement: 10,
@@ -234,7 +234,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     id: 'straight_flush',
     name: 'Straight Flush',
     description: 'Hit a Straight Flush',
-    icon: '🌊',
+    icon: '',
     category: 'special',
     rarity: 'epic',
     requirement: 1,
@@ -244,7 +244,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     id: 'quads',
     name: 'Four of a Kind',
     description: 'Hit Quads',
-    icon: '4️⃣',
+    icon: '4',
     category: 'special',
     rarity: 'rare',
     requirement: 1,
@@ -254,7 +254,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     id: 'bad_beat',
     name: 'Bad Beat Survivor',
     description: 'Lose with quads or better',
-    icon: '💔',
+    icon: '',
     category: 'special',
     rarity: 'epic',
     requirement: 1,
@@ -267,7 +267,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     id: 'streak_7',
     name: 'Weekly Warrior',
     description: 'Log in 7 days in a row',
-    icon: '🔥',
+    icon: '',
     category: 'special',
     rarity: 'common',
     requirement: 7,
@@ -400,7 +400,10 @@ class AchievementServiceClass {
         })
         .eq('id', existing.id);
       if (progErr) {
-        reportError(progErr, 'AchievementService.incrementProgress.update', { userId, achievementId });
+        reportError(progErr, 'AchievementService.incrementProgress.update', {
+          userId,
+          achievementId,
+        });
         return { unlocked: false };
       }
     } else {
@@ -415,9 +418,14 @@ class AchievementServiceClass {
         this._dbWriteFailures++;
         if (this._dbWriteFailures >= 3) {
           this._dbWriteDisabled = true;
-          console.debug('[AchievementService] DB writes disabled — training_user_achievements table unavailable');
+          console.debug(
+            '[AchievementService] DB writes disabled — training_user_achievements table unavailable'
+          );
         }
-        reportError(insErr, 'AchievementService.incrementProgress.insert', { userId, achievementId });
+        reportError(insErr, 'AchievementService.incrementProgress.insert', {
+          userId,
+          achievementId,
+        });
         return { unlocked: false };
       }
     }
@@ -474,7 +482,10 @@ class AchievementServiceClass {
         3
       );
       if (rewardErr)
-        reportError(rewardErr, 'AchievementService.awardRewards', { userId: userId.slice(0, 8), achievementName: achievement.name });
+        reportError(rewardErr, 'AchievementService.awardRewards', {
+          userId: userId.slice(0, 8),
+          achievementName: achievement.name,
+        });
     }
 
     // Create notification

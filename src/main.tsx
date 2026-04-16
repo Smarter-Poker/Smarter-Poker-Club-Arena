@@ -17,11 +17,9 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-// Cache-bust token 2026-04-15-v6 — v5 push's drop-orphans broke prod;
-// this literal string forces content-hashed chunk names to regenerate so
-// browsers with the poisoned immutable cache request new URLs.
-const __CACHE_BUST_V6__ = '2026-04-15-v6';
-void __CACHE_BUST_V6__;
+// Cache-bust token 2026-04-15-v7 — test atomic bash deploy loop
+const __CACHE_BUST_V7__ = '2026-04-15-v7';
+void __CACHE_BUST_V7__;
 
 import React from 'react';
 import ReactDOM from 'react-dom/client';
@@ -93,6 +91,9 @@ if (bootStatus.antigravityOk) {
   );
 } else {
   // ONLY show SystemOffline for missing env vars (build/deploy misconfiguration)
-  reportError(new Error('[BOOT] Missing environment variables — rendering diagnostic screen'), 'main.Missing_environment_variables__rendering');
+  reportError(
+    new Error('[BOOT] Missing environment variables — rendering diagnostic screen'),
+    'main.Missing_environment_variables__rendering'
+  );
   root.render(<SystemOffline status={bootStatus} />);
 }

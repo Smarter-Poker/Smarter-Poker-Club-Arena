@@ -269,7 +269,7 @@ const BankrollTracker: React.FC<BankrollTrackerProps> = ({ userId, initialSessio
           <p className="bankroll-subtitle">No session data to chart yet</p>
         </div>
         <div style={{ textAlign: 'center', padding: '2rem 1rem', color: 'rgba(255,255,255,0.5)' }}>
-          <span style={{ fontSize: '2rem' }}>📈</span>
+          <span style={{ fontSize: '2rem' }}>--</span>
           <p style={{ marginTop: '0.5rem' }}>
             Play some sessions and your bankroll progression will appear here.
           </p>
@@ -391,7 +391,7 @@ const BankrollTracker: React.FC<BankrollTrackerProps> = ({ userId, initialSessio
           {/* Max Drawdown — Enhancement #5 */}
           <div className="stat-card">
             <div className="stat-icon" style={{ color: '#ef4444' }}>
-              📉
+              --
             </div>
             <div className="stat-content">
               <span className="stat-label">Max Drawdown</span>

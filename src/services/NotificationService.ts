@@ -304,13 +304,19 @@ class NotificationServiceClass {
         .maybeSingle();
 
       if (cashoutError || !cashout) {
-        reportError(new Error('[NotificationService] Cashout request not found'), 'NotificationService.Cashout_request_not_found');
+        reportError(
+          new Error('[NotificationService] Cashout request not found'),
+          'NotificationService.Cashout_request_not_found'
+        );
         return;
       }
 
       // Verify the requesting user is the one making the cashout (not an arbitrary user)
       if (cashout.user_id !== requestingUserId) {
-        reportError(new Error('[NotificationService] User attempting to trigger cashout for another user'), 'NotificationService.User_attempting_to_trigger_cashout_for_a');
+        reportError(
+          new Error('[NotificationService] User attempting to trigger cashout for another user'),
+          'NotificationService.User_attempting_to_trigger_cashout_for_a'
+        );
         return;
       }
     }
@@ -318,7 +324,7 @@ class NotificationServiceClass {
     await this.create({
       userId: agentId,
       type: 'settlement',
-      title: '🏧 Cash-Out Request',
+      title: 'Cash-Out Request',
       message: `${playerName} requested to cash out ${amount.toLocaleString()} chips`,
       metadata: { clubId, cashoutId, playerName, amount },
     });

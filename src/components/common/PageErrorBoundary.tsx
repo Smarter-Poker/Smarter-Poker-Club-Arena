@@ -63,7 +63,7 @@ export class PageErrorBoundary extends React.Component<
             color: 'rgba(255,255,255,0.7)',
           }}
         >
-          <span style={{ fontSize: 40, opacity: 0.5 }}>⚠️</span>
+          <span style={{ fontSize: 40, opacity: 0.5 }}>Warning</span>
           <h3
             style={{
               margin: 0,

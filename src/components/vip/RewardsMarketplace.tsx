@@ -26,7 +26,7 @@ const REWARDS: Reward[] = [
     description: 'Entry to premium tournament series with higher payouts',
     category: 'tournament',
     pointsCost: 5000,
-    icon: '🎟️',
+    icon: 'T',
     stock: 25,
     featured: true,
   },

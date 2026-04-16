@@ -329,7 +329,7 @@ const SessionHistory: React.FC<SessionHistoryProps> = ({ userId, initialSessions
                   gap: '4px',
                 }}
               >
-                {streak.type === 'winning' ? '🔥' : '❄️'} {streak.count}
+                {streak.type === 'winning' ? 'W' : 'L'} {streak.count}
               </span>
             </div>
           )}
@@ -440,7 +440,7 @@ const SessionHistory: React.FC<SessionHistoryProps> = ({ userId, initialSessions
 
       {sessions.length === 0 && (
         <div className="session-empty">
-          <span className="empty-icon">📊</span>
+          <span className="empty-icon">--</span>
           <p>
             {allSessions.length > 0
               ? 'No sessions in this date range'

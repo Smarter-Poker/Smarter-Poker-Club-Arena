@@ -119,7 +119,7 @@ export const CHALLENGE_POOL: DailyChallenge[] = [
     type: 'showdowns',
     requirement: 3,
     chipReward: 60,
-    icon: '👀',
+    icon: '',
   },
   {
     id: 'showdown_5',
@@ -171,7 +171,7 @@ export const WEEKLY_CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_played',
     requirement: 250,
     chipReward: 1000,
-    icon: '🔥',
+    icon: '',
   },
   {
     id: 'weekly_wins_50',
@@ -180,7 +180,7 @@ export const WEEKLY_CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_won',
     requirement: 50,
     chipReward: 1500,
-    icon: '👑',
+    icon: '',
   },
   {
     id: 'weekly_tourneys_10',
@@ -189,7 +189,7 @@ export const WEEKLY_CHALLENGE_POOL: DailyChallenge[] = [
     type: 'tournaments_played',
     requirement: 10,
     chipReward: 2000,
-    icon: '🏆',
+    icon: '',
   },
   {
     id: 'weekly_showdowns_20',
@@ -198,7 +198,7 @@ export const WEEKLY_CHALLENGE_POOL: DailyChallenge[] = [
     type: 'showdowns',
     requirement: 20,
     chipReward: 800,
-    icon: '👀',
+    icon: '',
   },
 ];
 
@@ -210,7 +210,7 @@ export const MONTHLY_CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_played',
     requirement: 1000,
     chipReward: 5000,
-    icon: '🌋',
+    icon: '',
   },
   {
     id: 'monthly_wins_250',
@@ -219,7 +219,7 @@ export const MONTHLY_CHALLENGE_POOL: DailyChallenge[] = [
     type: 'hands_won',
     requirement: 250,
     chipReward: 10000,
-    icon: '💎',
+    icon: '',
   },
   {
     id: 'monthly_tourneys_50',
@@ -228,7 +228,7 @@ export const MONTHLY_CHALLENGE_POOL: DailyChallenge[] = [
     type: 'tournaments_played',
     requirement: 50,
     chipReward: 15000,
-    icon: '🚀',
+    icon: '',
   },
 ];
 
@@ -272,7 +272,8 @@ class DailyChallengeServiceClass {
       onConflict: 'user_id,challenge_id,assigned_date',
       ignoreDuplicates: true,
     });
-    if (insertErr) reportError(insertErr, 'DailyChallengeService.Failed_to_assign_daily_challenges');
+    if (insertErr)
+      reportError(insertErr, 'DailyChallengeService.Failed_to_assign_daily_challenges');
 
     // Always re-fetch from DB to get canonical rows (handles race condition correctly)
     const { data: canonical } = await supabase
@@ -329,7 +330,8 @@ class DailyChallengeServiceClass {
       onConflict: 'user_id,challenge_id,assigned_date',
       ignoreDuplicates: true,
     });
-    if (insertErr) reportError(insertErr, 'DailyChallengeService.Failed_to_assign_weekly_challenges');
+    if (insertErr)
+      reportError(insertErr, 'DailyChallengeService.Failed_to_assign_weekly_challenges');
 
     // Re-fetch canonical rows from DB
     const { data: canonical } = await supabase

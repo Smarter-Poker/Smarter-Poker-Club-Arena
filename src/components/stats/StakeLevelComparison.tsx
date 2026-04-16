@@ -252,7 +252,7 @@ export default function StakeLevelComparison({ userId }: StakeLevelComparisonPro
       <div className="slc-widget">
         <h3 className="slc-title">Stake Level Comparison</h3>
         <div className="slc-empty">
-          <div className="slc-empty-icon">📊</div>
+          <div className="slc-empty-icon">--</div>
           <div className="slc-empty-title">No Stake Data Yet</div>
           <div className="slc-empty-desc">
             Play sessions at different stakes to compare your performance across varying levels.

@@ -30,7 +30,7 @@ export function DiamondTopUpModal({ isOpen, onClose, onPurchaseComplete }: Diamo
     const result = await DiamondService.purchaseDiamonds(user.id, pkg.id);
 
     if (result.success) {
-      toast.success(`💎 ${pkg.diamonds + pkg.bonusDiamonds} diamonds added!`);
+      toast.success(`${pkg.diamonds + pkg.bonusDiamonds} diamonds added!`);
       onPurchaseComplete?.(result.newBalance || 0);
       onClose();
     } else {
@@ -46,7 +46,7 @@ export function DiamondTopUpModal({ isOpen, onClose, onPurchaseComplete }: Diamo
     <div className="diamond-modal-overlay" onClick={onClose}>
       <div className="diamond-modal" onClick={(e) => e.stopPropagation()}>
         <div className="diamond-modal__header">
-          <h2>💎 Diamond Store</h2>
+          <h2>Diamond Store</h2>
           <button className="diamond-modal__close" onClick={onClose}>
             ×
           </button>
@@ -70,9 +70,7 @@ export function DiamondTopUpModal({ isOpen, onClose, onPurchaseComplete }: Diamo
               )}
 
               <div className="diamond-package__amount">
-                <span className="diamond-package__diamonds">
-                  💎 {pkg.diamonds.toLocaleString()}
-                </span>
+                <span className="diamond-package__diamonds">{pkg.diamonds.toLocaleString()}</span>
                 {pkg.bonusDiamonds > 0 && (
                   <span className="diamond-package__bonus">
                     +{pkg.bonusDiamonds.toLocaleString()} bonus

@@ -66,12 +66,12 @@ const ACTION_CONFIG: Record<ActionType, { label: string; color: string; icon: st
   POST_BB: { label: 'BB', color: '#6E7681', icon: '' },
   FOLD: { label: 'Fold', color: '#F85149', icon: '' },
   CHECK: { label: 'Check', color: '#8B949E', icon: '' },
-  CALL: { label: 'Call', color: '#3FB950', icon: '📞' },
+  CALL: { label: 'Call', color: '#3FB950', icon: '' },
   BET: { label: 'Bet', color: '#FFB800', icon: '' },
   RAISE: { label: 'Raise', color: '#FF6B35', icon: '' },
   ALL_IN: { label: 'All-In', color: '#A855F7', icon: '' },
   SHOW: { label: 'Show', color: '#1877F2', icon: '' },
-  MUCK: { label: 'Muck', color: '#6E7681', icon: '🙈' },
+  MUCK: { label: 'Muck', color: '#6E7681', icon: '' },
   WIN: { label: 'Win', color: '#3FB950', icon: '' },
 };
 

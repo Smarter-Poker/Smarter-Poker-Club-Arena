@@ -106,7 +106,7 @@ export default function WaitlistPage() {
           // If the promoted player is the current user, toast + auto-navigate
           const data = event?.payload;
           if (data?.userId === user?.id && data?.tableId) {
-            toast.success('🎉 You have been auto-seated! Redirecting to your table...');
+            toast.success('You have been auto-seated! Redirecting to your table...');
             haptic.heavy();
             setTimeout(() => {
               navigate(`/table/${data.tableId}`);
@@ -276,7 +276,7 @@ export default function WaitlistPage() {
                 style={waitlistCardAnimationStyle(idx)}
                 className={`waitlist-card ${entry.position === 1 ? 'next-up' : ''}`}
               >
-                {entry.position === 1 && <div className="next-up-celebration">🎉 You're Next!</div>}
+                {entry.position === 1 && <div className="next-up-celebration">You're Next!</div>}
                 <div className="waitlist-info">
                   <h4 className="table-name">{entry.table_name}</h4>
                   <span className="table-details">

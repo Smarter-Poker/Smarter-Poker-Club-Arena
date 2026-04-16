@@ -80,6 +80,7 @@ import LeaderboardPanel from '../components/table/LeaderboardPanel';
 import HandNotation from '../components/table/HandNotation';
 import { soundService, haptic } from '../services/SoundService';
 import { ConfettiCanvas } from '../components/table/ConfettiCanvas';
+import { ParticleSystem } from '../components/table/ParticleSystem';
 import {
   ChipAnimationManager,
   createChipToPotEvent,
@@ -1123,6 +1124,13 @@ export default function TablePage({
     amounts: {},
   });
 
+  // Bible V8 §5.1: Winner particle burst emanating from winner's seat position
+  const [winnerParticle, setWinnerParticle] = useState<{
+    active: boolean;
+    origin: { x: number; y: number };
+    intensity: number;
+  }>({ active: false, origin: { x: 0, y: 0 }, intensity: 1 });
+
   // ─── Multi-table info reporting ─────────────────────────────────────
   // When embedded in MultiTablePage, report table name/pot/turn status
   useEffect(() => {
@@ -1625,7 +1633,7 @@ export default function TablePage({
   }, [userSettings]);
 
   // Bible V8 §11.1: Supabase-backed user table preferences (12 toggles)
-  const { settings: v8Settings, loading: v8SettingsLoading } = useUserTableSettings(
+  const { settings: v8Settings, loading: v8SettingsLoading, toggleSetting: toggleV8Setting } = useUserTableSettings(
     userId !== 'guest' ? userId : null
   );
 
@@ -1644,16 +1652,31 @@ export default function TablePage({
   // Bible V8 §9.1.3: Frame budget monitoring (dev mode only — warns on >16ms frames)
   useFrameBudgetMonitor();
 
-  // Bible V8 §11.1 + §10.3: skip_animations → override animation speed to instant (0)
+  // Bible V8 §11.1 + §10.3: skip_animations → override ALL animation durations to instant
   useEffect(() => {
+    const root = document.documentElement;
     if (v8Settings.skip_animations) {
-      document.documentElement.style.setProperty('--animation-speed', '0');
+      root.style.setProperty('--animation-speed', '0');
+      // Also override PokerBros-parity animation CSS vars (CardAnimations.css, ChipAnimations.css)
+      root.style.setProperty('--deal-duration', '0s');
+      root.style.setProperty('--flip-duration', '0s');
+      root.style.setProperty('--fold-duration', '0s');
+      root.style.setProperty('--win-glow-duration', '0s');
+      root.style.setProperty('--chip-bet-duration', '0s');
+      root.style.setProperty('--chip-win-duration', '0s');
+      root.style.setProperty('--chip-merge-duration', '0s');
+      root.style.setProperty('--chip-allin-duration', '0s');
     }
-    // Cleanup: restore normal animation speed if user toggles it off
     return () => {
-      if (v8Settings.skip_animations) {
-        document.documentElement.style.removeProperty('--animation-speed');
-      }
+      root.style.removeProperty('--animation-speed');
+      root.style.removeProperty('--deal-duration');
+      root.style.removeProperty('--flip-duration');
+      root.style.removeProperty('--fold-duration');
+      root.style.removeProperty('--win-glow-duration');
+      root.style.removeProperty('--chip-bet-duration');
+      root.style.removeProperty('--chip-win-duration');
+      root.style.removeProperty('--chip-merge-duration');
+      root.style.removeProperty('--chip-allin-duration');
     };
   }, [v8Settings.skip_animations]);
 
@@ -2032,7 +2055,7 @@ export default function TablePage({
     return () => unsubscribe();
   }, [tableId]);
 
-  // 🛡️ SECURE HOLE CARD PROVISIONING RECEIVER (ANTI-GOD-MODE) 🛡️
+  // SECURE HOLE CARD PROVISIONING RECEIVER (ANTI-GOD-MODE)
   // Subscribes directly to Postgres RLS-protected table to bypass public WebSocket leak
 
   // Callback for handling new hole cards
@@ -2643,10 +2666,10 @@ export default function TablePage({
               )
               .subscribe((status: string, err?: Error) => {
                 if (status === 'CHANNEL_ERROR') {
-                  console.debug('[TablePage] ❌ Realtime channel error:', err?.message || err);
+                  console.debug('[TablePage] Realtime channel error:', err?.message || err);
                 }
                 if (status === 'TIMED_OUT') {
-                  console.debug('[TablePage] ⏱️ Realtime channel timed out');
+                  console.debug('[TablePage] Realtime channel timed out');
                 }
               });
             bountyChannelRef.current = bountyChannel;
@@ -2836,10 +2859,10 @@ export default function TablePage({
             })
             .subscribe((status: string, err?: Error) => {
               if (status === 'CHANNEL_ERROR') {
-                console.debug('[TablePage] ❌ Realtime channel error:', err?.message || err);
+                console.debug('[TablePage] Realtime channel error:', err?.message || err);
               }
               if (status === 'TIMED_OUT') {
-                console.debug('[TablePage] ⏱️ Realtime channel timed out');
+                console.debug('[TablePage] Realtime channel timed out');
               }
             });
           breakChannelRef.current = breakChan;
@@ -3060,48 +3083,9 @@ export default function TablePage({
           // Handle player leaving
           break;
         case 'PLAYER_ACTION': {
-          // Handle player action broadcast — Bible V8 §5.2 sequential animation
-          const actionPayload = msg.payload as any;
-          const action = (actionPayload?.action?.toLowerCase() || '') as string;
-          const actionSeat = (actionPayload?.seat as number) || 0;
-          const actionAmount = (actionPayload?.amount as number) || 0;
-          const seatIdx = actionSeat - 1;
-
-          // Step 1: Show action label immediately — persists until next action or new street
-          if (seatIdx >= 0) {
-            setTableState((prev) => {
-              const newActions = [...prev.lastActions];
-              newActions[seatIdx] = action as any;
-              const newBets = [...prev.lastBetAmounts];
-              if (actionAmount > 0) newBets[seatIdx] = actionAmount;
-              return { ...prev, lastActions: newActions, lastBetAmounts: newBets };
-            });
-            // NO timeout — action label stays visible until replaced by next action
-            // or cleared on new street/hand (handled in STAGE_CHANGE/NEW_HAND events)
-          }
-
-          // Step 2: Sound + chip animation after 200ms delay (Bible §5.2 sequence)
-          setTimeout(() => {
-            if (soundService.isEnabled()) {
-              if (action === 'allin') {
-                soundService.playAllIn();
-              } else if (action === 'bet' || action === 'raise' || action === 'call') {
-                soundService.playChips();
-              } else if (action === 'check') {
-                soundService.playCheck();
-              } else if (action === 'fold') {
-                soundService.playFold();
-              }
-            }
-            // Chip animation for bet actions
-            if (
-              (action === 'bet' || action === 'raise' || action === 'call' || action === 'allin') &&
-              actionSeat > 0
-            ) {
-              triggerChipAnimationRef.current?.(seatIdx, true, actionAmount);
-            }
-          }, 200); // 200ms after action label per Bible V8 §5.2
-
+          // DISABLED: Engine WS now handles PLAYER_ACTION (line ~3805).
+          // Keeping this case empty to prevent the old Supabase Realtime path
+          // from double-firing sounds and chip animations.
           break;
         }
         case 'CHAT': {
@@ -3292,7 +3276,7 @@ export default function TablePage({
     setShowTimeBank(true);
     const msg =
       payload.diamondsCharged > 0
-        ? `Time Bank Extended! (${payload.diamondsCharged} 💎)`
+        ? `Time Bank Extended! (${payload.diamondsCharged} diamonds)`
         : 'Time Bank Extended! (VIP)';
     toast?.success?.(msg);
   });
@@ -3937,8 +3921,8 @@ export default function TablePage({
           communityCards: board,
           boardStage: stage as BoardStage,
         }));
-        // Audio cue
-        if (soundService.isEnabled()) soundService.playDeal?.();
+        // Audio cue — Bible V8 §5.3: community card reveal sound (distinct from deal)
+        if (soundService.isEnabled()) soundService.playCommunityCard();
         break;
       }
       case 'HAND_COMPLETE_EVENT':
@@ -3974,7 +3958,19 @@ export default function TablePage({
           setIsAllInMode(false);
           setAllInEquities([]);
           setWinnerInfo({ playerIds: [], handName: '', cardIndices: [], amounts: {} });
+          setWinnerParticle((prev) => ({ ...prev, active: false }));
         }, 3000);
+        break;
+      }
+
+      case 'SHOWDOWN': {
+        // Bible V8 §4.6: Showdown — play showdown sound, trigger card reveal animations
+        if (soundService.isEnabled()) soundService.playShowdown();
+        // Mark board stage so rendering picks up showdown card flips
+        setTableState((prev) => ({
+          ...prev,
+          boardStage: 'showdown',
+        }));
         break;
       }
 
@@ -3985,6 +3981,59 @@ export default function TablePage({
         //   center to each winner's seat position over 400-600ms.
         const winnerIds = ((evt.data as any).winner_ids as string[]) || [];
         const potAmount = ((evt.data as any).pot as number) || 0;
+        const winHandName = ((evt.data as any).hand_name as string) || ((evt.data as any).winning_hand as string) || '';
+        const winCardIndices = ((evt.data as any).card_indices as number[]) || ((evt.data as any).winning_card_indices as number[]) || [];
+
+        // Bible V8 §5.1: Set winner info for seat highlight + hand name display
+        if (winnerIds.length > 0) {
+          const amounts: Record<string, number> = {};
+          const sharePerWinner = potAmount / (winnerIds.length || 1);
+          for (const wid of winnerIds) amounts[wid] = sharePerWinner;
+          setWinnerInfo({
+            playerIds: winnerIds,
+            handName: winHandName,
+            cardIndices: winCardIndices,
+            amounts,
+          });
+          // Bible V8 §5.1: Confetti for hero win
+          if (winnerIds.includes(userId)) {
+            setShowConfetti(true);
+          }
+          // Bible V8 §5.1: Particle burst from first winner's seat position
+          const firstWinnerIdx = tableStateRef.current.players.findIndex(
+            (p) => p && winnerIds.includes(p.id)
+          );
+          if (firstWinnerIdx >= 0) {
+            const seatPct = seatPositions[firstWinnerIdx + 1] || { x: 50, y: 50 };
+            setWinnerParticle({
+              active: true,
+              origin: {
+                x: (seatPct.x / 100) * window.innerWidth,
+                y: (seatPct.y / 100) * window.innerHeight,
+              },
+              intensity: potAmount > 500 ? 2 : 1, // Big win = 2x particle intensity
+            });
+          }
+        }
+
+        // Bible V8 §4.19: Show/muck prompt when hero wins without showdown
+        // Skip if autoMuckWinners is enabled (user prefers silent muck)
+        if (
+          winnerIds.length > 0 &&
+          winnerIds.includes(userId) &&
+          tableStateRef.current.boardStage !== 'showdown' &&
+          !userSettingsRef.current.autoMuckWinners
+        ) {
+          const heroPlayer = tableStateRef.current.players.find((p) => p?.id === userId);
+          setHandRevealWinnerId(userId);
+          setHandRevealWinnerName(heroPlayer?.name || 'You');
+          setHandRevealCards(heroPlayer?.holeCards || []);
+          setHandRevealHandId(`${tableStateRef.current.handNumber || Date.now()}`);
+          setShowHandRevealModal(true);
+          // Auto-close after 6s if no action taken
+          setTimeout(() => setShowHandRevealModal(false), 6000);
+        }
+
         if (winnerIds.length > 0 && winnerIds.includes(userId)) {
           playWinSound(potAmount);
         }
@@ -4851,12 +4900,10 @@ export default function TablePage({
     const newStage = tableState.boardStage;
     prevBoardStageRef.current = newStage;
 
-    // Play community card sound when new board cards are dealt
+    // Community card sound is now triggered by the discrete COMMUNITY_CARDS_DEALT
+    // event (Law 1.16 — faster than waiting for snapshot). Only the showdown
+    // sound fires here as a fallback (no discrete SHOWDOWN event handler yet).
     if (soundService.isEnabled() && prevStage !== newStage) {
-      if (newStage === 'flop' || newStage === 'turn' || newStage === 'river') {
-        soundService.playCommunityCard();
-      }
-      // Play showdown sound when reaching showdown stage
       if (newStage === 'showdown') {
         soundService.playShowdown();
       }
@@ -5218,10 +5265,8 @@ export default function TablePage({
                     mainPot={tableState.pot}
                     sidePots={tableState.sidePots}
                     bigBlind={safeBB(tableState.blinds, 0)}
-                    displayMode={userSettings.showStackInBB ? 'bb' : 'chips'}
-                    onToggleDisplayMode={() =>
-                      updateSetting('showStackInBB', !userSettings.showStackInBB)
-                    }
+                    displayMode={v8Settings.show_stack_in_bb ? 'bb' : 'chips'}
+                    onToggleDisplayMode={() => toggleV8Setting('show_stack_in_bb')}
                   />
                   {/* Premium Pot — animated counter + tier glow overlay */}
                   <PremiumPot
@@ -5291,7 +5336,7 @@ export default function TablePage({
                     <div
                       className={`spinMultiplierBadge ${tableState.spinMultiplier >= 100 ? 'premium' : ''}`}
                     >
-                      <span className="spinMultiplierIcon">🎰</span>
+                      <span className="spinMultiplierIcon">x</span>
                       <span className="spinMultiplierValue">{tableState.spinMultiplier}x</span>
                     </div>
                   )}
@@ -5316,7 +5361,8 @@ export default function TablePage({
           />
 
           {/* Deal Animation — card backs flying from dealer to players on new hand */}
-          {dealAnimationKey > 0 && (
+          {/* Bible V8 §11.1: card_slide toggle gates the deal animation */}
+          {dealAnimationKey > 0 && v8Settings.card_slide && (
             <DealAnimation
               key={dealAnimationKey}
               active={true}
@@ -5439,9 +5485,10 @@ export default function TablePage({
                   showHUD={userSettings.showHUD && !!player && !player.isHero}
                   deckStyle={userSettings.fourColorDeck ? '4color' : '2color'}
                   cardBack={userSettings.cardBack}
-                  showStackInBB={userSettings.showStackInBB}
+                  showStackInBB={v8Settings.show_stack_in_bb}
                   showAvatar={v8Settings.show_avatars}
                   showBadges={v8Settings.show_badges}
+                  gesturesEnabled={v8Settings.gestures_enabled}
                   playerStyle={
                     userSettings.showHUD && player && !player.isHero
                       ? (() => {
@@ -5548,7 +5595,7 @@ export default function TablePage({
                   title="Rabbit Hunt — reveal remaining cards"
                   onClick={handleRabbitReveal}
                 >
-                  <span className="control-strip__icon">🐰</span>
+                  <span className="control-strip__icon">R</span>
                   <span className="control-strip__label">Rabbit Hunt</span>
                 </button>
               </div>
@@ -5746,7 +5793,7 @@ export default function TablePage({
               </span>
             </button>
             <button className="menu-item" onClick={() => setIsChatMuted(!isChatMuted)}>
-              <span className="menu-item-icon">💬</span>
+              <span className="menu-item-icon">C</span>
               <span className="menu-item-label">Chat</span>
               <span className={`menu-item-toggle ${isChatMuted ? '' : 'on'}`}>
                 {isChatMuted ? 'MUTED' : 'ON'}
@@ -5812,7 +5859,7 @@ export default function TablePage({
                 setIsSideMenuOpen(false);
               }}
             >
-              <span className="menu-item-icon">📊</span>
+              <span className="menu-item-icon">--</span>
               <span className="menu-item-label">Live Stats</span>
               <span className="menu-item-arrow">›</span>
             </button>
@@ -6030,6 +6077,29 @@ export default function TablePage({
         />
       )}
 
+      {/* Bible V8 §4.19: Show/Muck prompt when hero wins without showdown */}
+      {showHandRevealModal && tableId && (
+        <HandReveal
+          isOpen={showHandRevealModal}
+          isWinner={handRevealWinnerId === userId}
+          winnerId={handRevealWinnerId}
+          winnerName={handRevealWinnerName}
+          revealedCards={handRevealCards as any}
+          tableId={tableId}
+          handId={handRevealHandId}
+          autoMuckTimer={6}
+          onShow={() => {
+            // Broadcast show to all players via room service
+            if (tableId && userId) {
+              roomService.sendChat(tableId, userId, '[SHOW_CARDS]');
+            }
+            setShowHandRevealModal(false);
+          }}
+          onMuck={() => setShowHandRevealModal(false)}
+          onClose={() => setShowHandRevealModal(false)}
+        />
+      )}
+
       {/* Run It Twice Prompt — FIX 96: 2-phase flow with chooser model */}
       <RunItTwicePrompt
         isOpen={showRIT}
@@ -6125,7 +6195,18 @@ export default function TablePage({
       />
 
       {/* Win Confetti — disabled (cheesy and annoying on repeated wins) */}
-      {/* <ConfettiCanvas active={showConfetti} duration={3500} count={55} onComplete={() => setShowConfetti(false)} /> */}
+      {/* Bible V8 §5.1: Winner confetti celebration */}
+      <ConfettiCanvas active={showConfetti} duration={3500} count={55} onComplete={() => setShowConfetti(false)} />
+      {/* Bible V8 §5.1: Gold spark burst from winner's seat */}
+      <ParticleSystem
+        active={winnerParticle.active}
+        mode="sparks"
+        origin={winnerParticle.origin}
+        duration={1800}
+        count={40}
+        intensity={winnerParticle.intensity}
+        onComplete={() => setWinnerParticle((prev) => ({ ...prev, active: false }))}
+      />
 
       {/* Tip Dealer Modal */}
       <TipDealer
@@ -6466,7 +6547,7 @@ export default function TablePage({
                 ? 'fast'
                 : 'normal',
           fourColorDeck: userSettings.fourColorDeck,
-          showStackInBB: userSettings.showStackInBB,
+          showStackInBB: v8Settings.show_stack_in_bb,
           showBetSizePresets: true,
           confirmAllIn: userSettings.confirmAllIn,
           sitOutNextHand: sitOutNextHand,
@@ -6498,7 +6579,7 @@ export default function TablePage({
             );
           }
           if (settingsUpdate.showStackInBB !== undefined) {
-            updateSetting('showStackInBB', settingsUpdate.showStackInBB);
+            toggleV8Setting('show_stack_in_bb');
           }
           if (settingsUpdate.sitOutNextHand !== undefined) {
             setSitOutNextHand(settingsUpdate.sitOutNextHand);

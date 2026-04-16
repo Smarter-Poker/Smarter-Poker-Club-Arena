@@ -728,6 +728,17 @@
   transition: opacity 250ms ease, filter 250ms ease;
 }
 
+/* Bible V8 §5.3: Card peek gesture — brief lift on tap/hold */
+.seat__cards--peeking {
+  animation: cardPeekLift 0.3s cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+
+@keyframes cardPeekLift {
+  0% { transform: translateY(0); }
+  50% { transform: translateY(-8px) scale(1.03); }
+  100% { transform: translateY(-4px) scale(1.01); }
+}
+
 /*
  * Phase 2 T1-01 — PokerBros signature net-profit "+N" yellow floating text
  * above the winning seat. Pops in, floats up, fades out over 2.5s. Per

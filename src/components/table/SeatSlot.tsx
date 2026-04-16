@@ -97,6 +97,8 @@ export interface SeatSlotProps {
   showAvatar?: boolean;
   /** Bible V8 §11.1: Show/hide VIP/achievement badges */
   showBadges?: boolean;
+  /** Bible V8 §11.1: Enable/disable gesture controls (tap peek, swipe) */
+  gesturesEnabled?: boolean;
   /**
    * Bible V8 §1.16 Real-Time Law — when true, the seat's bet chips play the
    * "collect-to-pot" animation (cpCollect keyframe). Controlled by the table
@@ -252,6 +254,7 @@ export const SeatSlot = memo(
       onAvatarClick,
       showAvatar = true,
       showBadges = false,
+      gesturesEnabled = true,
       isCollectingChips = false,
       turnDeadlineMs,
       turnStartTimeMs,
@@ -281,6 +284,8 @@ export const SeatSlot = memo(
 
     // Winner pop animation — brief scale bounce when isWinner transitions to true
     const [winnerPop, setWinnerPop] = useState(false);
+    // Bible V8 §5.3: card peek gesture — tap hero cards for brief lift
+    const [isPeeking, setIsPeeking] = useState(false);
     useEffect(() => {
       if (isWinner && !winnerPop) {
         setWinnerPop(true);
@@ -575,8 +580,14 @@ export const SeatSlot = memo(
               'seat__cards seat__cards--hero' +
               (lastAction === 'fold' || player.status === 'folded'
                 ? ' seat__cards--folded'
-                : '')
+                : '') +
+              (isPeeking ? ' seat__cards--peeking' : '')
             }
+            /* Bible V8 §5.3: tap hero cards to peek (brief lift animation) */
+            onTouchStart={() => { if (gesturesEnabled) setIsPeeking(true); }}
+            onTouchEnd={() => { if (gesturesEnabled) setTimeout(() => setIsPeeking(false), 300); }}
+            onMouseDown={() => { if (gesturesEnabled) setIsPeeking(true); }}
+            onMouseUp={() => { if (gesturesEnabled) setTimeout(() => setIsPeeking(false), 300); }}
           >
             {player.holeCards.map((card, i) => (
               <HoleCard

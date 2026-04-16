@@ -468,7 +468,7 @@ function DashboardTab({ clubId }: { clubId: string }) {
             reportError(err?.message || err, 'AdminDashboardPage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
-            console.warn('[AdminDashboardPage] ⏱️ Realtime channel timed out');
+            console.warn('[AdminDashboardPage] Realtime channel timed out');
           }
         });
     };
@@ -501,7 +501,7 @@ function DashboardTab({ clubId }: { clubId: string }) {
   if (loadError || !health)
     return (
       <div className="admin-error-state">
-        <div className="admin-error-icon">⚠️</div>
+        <div className="admin-error-icon">!</div>
         <div className="admin-error-msg">{loadError || 'Failed to load health metrics'}</div>
         <button onClick={load} className="admin-btn admin-btn-primary">
           ↻ Retry
@@ -529,7 +529,7 @@ function DashboardTab({ clubId }: { clubId: string }) {
           </div>
           <div className="admin-health-status" style={{ color: hColor }}>
             {health.status}{' '}
-            {health.trend === 'improving' ? '↗️' : health.trend === 'declining' ? '↘️' : '➡️'}
+            {health.trend === 'improving' ? '^' : health.trend === 'declining' ? 'v' : '-'}
           </div>
         </div>
 
@@ -807,7 +807,7 @@ function SettlementsTab({ clubId }: { clubId: string }) {
 
       {(data.pendingCommissions || []).length === 0 ? (
         <div className="admin-empty-state">
-          <span className="admin-empty-icon">💸</span>
+          <span className="admin-empty-icon">--</span>
           <span>No pending commissions to pay.</span>
         </div>
       ) : (
@@ -1047,7 +1047,7 @@ function AuditLogTab({ clubId }: { clubId: string }) {
             className="admin-btn admin-btn-ghost admin-btn-sm"
             title="Export audit log as CSV"
           >
-            📥 Export
+            Export
           </button>
           <span className="admin-text-secondary" style={{ fontSize: '13px' }}>
             Total: {fmt(total)}
@@ -1227,13 +1227,13 @@ function AnnouncementsTab({ clubId }: { clubId: string }) {
 
   return (
     <div className="admin-tab-content">
-      <h3 className="admin-card-title">📢 Announcements</h3>
+      <h3 className="admin-card-title">Announcements</h3>
       {actionError && <div className="admin-error-banner">{actionError}</div>}
 
       {/* Create/Edit Form */}
       <div className="admin-card" style={{ marginBottom: '16px' }}>
         <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: '8px' }}>
-          {editing ? '✏️ Edit Announcement' : '➕ New Announcement'}
+          {editing ? 'Edit Announcement' : 'New Announcement'}
         </div>
         <input
           value={title}
@@ -1275,7 +1275,7 @@ function AnnouncementsTab({ clubId }: { clubId: string }) {
       {/* List */}
       {items.length === 0 ? (
         <div className="admin-empty-state">
-          <span className="admin-empty-icon">📢</span>
+          <span className="admin-empty-icon">--</span>
           <span>No announcements yet. Create one above.</span>
         </div>
       ) : (
@@ -1294,7 +1294,7 @@ function AnnouncementsTab({ clubId }: { clubId: string }) {
               >
                 <div style={{ flex: 1 }}>
                   <div style={{ fontWeight: 700, fontSize: '14px' }}>
-                    {a.pinned ? '📌 ' : ''}
+                    {a.pinned ? '[Pinned] ' : ''}
                     {a.title}
                   </div>
                   {a.content && (
@@ -1317,7 +1317,7 @@ function AnnouncementsTab({ clubId }: { clubId: string }) {
                     className="admin-icon-btn"
                     title={a.pinned ? 'Unpin' : 'Pin'}
                   >
-                    📌
+                    Pin
                   </button>
                   <button
                     onClick={() => {
@@ -1328,14 +1328,14 @@ function AnnouncementsTab({ clubId }: { clubId: string }) {
                     className="admin-icon-btn"
                     title="Edit"
                   >
-                    ✏️
+                    Edit
                   </button>
                   <button
                     onClick={() => handleDelete(a.id)}
                     className="admin-icon-btn"
                     title="Delete"
                   >
-                    🗑️
+                    Del
                   </button>
                 </div>
               </div>
@@ -1418,7 +1418,7 @@ function SettingsTab({ clubId }: { clubId: string }) {
 
   return (
     <div className="admin-tab-content">
-      <h3 className="admin-card-title">⚙️ Club Settings</h3>
+      <h3 className="admin-card-title">Club Settings</h3>
       {msg && <div className="admin-success-banner">{msg}</div>}
       {err && <div className="admin-error-banner">{err}</div>}
       <div className="admin-card">
@@ -1534,14 +1534,14 @@ function HierarchyTab({ clubId }: { clubId: string }) {
 
   return (
     <div className="admin-tab-content">
-      <h3 className="admin-card-title">🌳 Agent Hierarchy Tree</h3>
+      <h3 className="admin-card-title">Agent Hierarchy Tree</h3>
       <div className="admin-card">
         <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '16px' }}>
           {tree.length} members in hierarchy
         </div>
         {tree.length === 0 ? (
           <div className="admin-empty-state">
-            <span className="admin-empty-icon">🌳</span>
+            <span className="admin-empty-icon">--</span>
             <span>No agents in hierarchy yet.</span>
           </div>
         ) : (
@@ -1552,7 +1552,7 @@ function HierarchyTab({ clubId }: { clubId: string }) {
                 className="admin-hierarchy-node"
                 style={{ borderLeft: '3px solid #F7C52A' }}
               >
-                <span className="admin-badge admin-badge-yellow">👑 Owner</span> {getName(m)}
+                <span className="admin-badge admin-badge-yellow">Owner</span> {getName(m)}
               </div>
             ))}
             {superAgents.map((m) => (
@@ -1562,7 +1562,7 @@ function HierarchyTab({ clubId }: { clubId: string }) {
                 style={{ borderLeft: '3px solid #A855F7', marginLeft: '20px' }}
               >
                 <span className="admin-badge" style={{ background: '#A855F722', color: '#A855F7' }}>
-                  🦅 Super
+                  Super
                 </span>{' '}
                 {getName(m)}
               </div>
@@ -1574,7 +1574,7 @@ function HierarchyTab({ clubId }: { clubId: string }) {
                 style={{ borderLeft: '3px solid #4599FF', marginLeft: '40px' }}
               >
                 <span className="admin-badge" style={{ background: '#4599FF22', color: '#4599FF' }}>
-                  🤝 Agent
+                  Agent
                 </span>{' '}
                 {getName(m)}
               </div>
@@ -1637,10 +1637,10 @@ function SettlementHistoryTab({ clubId }: { clubId: string }) {
 
   return (
     <div className="admin-tab-content">
-      <h3 className="admin-card-title">📖 Settlement History</h3>
+      <h3 className="admin-card-title">Settlement History</h3>
       {periods.length === 0 ? (
         <div className="admin-empty-state">
-          <span className="admin-empty-icon">📖</span>
+          <span className="admin-empty-icon">--</span>
           <span>No settlement periods yet.</span>
         </div>
       ) : (
@@ -1742,7 +1742,7 @@ function BrandingTab({ clubId }: { clubId: string }) {
 
   return (
     <div className="admin-tab-content">
-      <h3 className="admin-card-title">🎨 Club Branding</h3>
+      <h3 className="admin-card-title">Club Branding</h3>
       {msg && <div className="admin-success-banner">{msg}</div>}
       {err && <div className="admin-error-banner">{err}</div>}
       <div className="admin-card">
@@ -1802,7 +1802,7 @@ function BrandingTab({ clubId }: { clubId: string }) {
             color: '#FA383E',
           }}
         >
-          ⚠️ Danger Zone — Transfer Ownership
+          Danger Zone -- Transfer Ownership
         </h4>
         <p
           className="admin-text-secondary"
@@ -1827,7 +1827,7 @@ function BrandingTab({ clubId }: { clubId: string }) {
               if (!target) return;
               if (
                 !confirm(
-                  `⚠️ IRREVERSIBLE: Transfer ownership to ${target.substring(0, 8)}...? You will be demoted to admin.`
+                  `IRREVERSIBLE: Transfer ownership to ${target.substring(0, 8)}...? You will be demoted to admin.`
                 )
               )
                 return;
@@ -1847,7 +1847,7 @@ function BrandingTab({ clubId }: { clubId: string }) {
               }
             }}
           >
-            🔑 Transfer
+            Transfer
           </button>
         </div>
       </div>
@@ -1887,7 +1887,7 @@ function RecommendationsTab({ clubId }: { clubId: string }) {
         });
         if (inactive.length > mems.length * 0.3) {
           recommendations.push({
-            icon: '👥',
+            icon: '!',
             severity: 'warning',
             title: 'High Inactivity',
             desc: `${inactive.length} of ${mems.length} members inactive for 7+ days. Consider a re-engagement campaign.`,
@@ -1900,7 +1900,7 @@ function RecommendationsTab({ clubId }: { clubId: string }) {
         );
         if (tbls.length > 0 && activeTbls.length === 0) {
           recommendations.push({
-            icon: '🎰',
+            icon: '!!',
             severity: 'critical',
             title: 'No Active Tables',
             desc: 'All tables are empty. Consider scheduling a game or sending notifications to your players.',
@@ -1910,7 +1910,7 @@ function RecommendationsTab({ clubId }: { clubId: string }) {
         // Check announcements
         if ((annCount as any) === 0 || !(annCount as any)?.length) {
           recommendations.push({
-            icon: '📢',
+            icon: 'i',
             severity: 'info',
             title: 'No Announcements',
             desc: 'Keep your club engaged with regular announcements about upcoming games and events.',
@@ -1923,7 +1923,7 @@ function RecommendationsTab({ clubId }: { clubId: string }) {
         ).length;
         if (mems.length > 20 && agentCount === 0) {
           recommendations.push({
-            icon: '🤝',
+            icon: '!',
             severity: 'warning',
             title: 'No Agents',
             desc: 'Your club has 20+ members but no agents. Appoint agents to help manage and grow your club.',
@@ -1932,7 +1932,7 @@ function RecommendationsTab({ clubId }: { clubId: string }) {
 
         if (recommendations.length === 0) {
           recommendations.push({
-            icon: '✅',
+            icon: 'OK',
             severity: 'success',
             title: 'Looking Good!',
             desc: 'No critical recommendations at this time. Keep up the good work!',
@@ -1964,7 +1964,7 @@ function RecommendationsTab({ clubId }: { clubId: string }) {
 
   return (
     <div className="admin-tab-content">
-      <h3 className="admin-card-title">🤖 Smart Recommendations</h3>
+      <h3 className="admin-card-title">Smart Recommendations</h3>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
         {recs.map((r, i) => (
           <div
@@ -2038,7 +2038,7 @@ function TemplatesTab({ clubId }: { clubId: string }) {
 
   return (
     <div className="admin-tab-content">
-      <h3 className="admin-card-title">📋 Table Templates</h3>
+      <h3 className="admin-card-title">Table Templates</h3>
       {actionError && (
         <div className="admin-error-banner" style={{ marginBottom: '12px' }}>
           {actionError}
@@ -2058,7 +2058,7 @@ function TemplatesTab({ clubId }: { clubId: string }) {
       )}
       {templates.length === 0 ? (
         <div className="admin-empty-state">
-          <span className="admin-empty-icon">📋</span>
+          <span className="admin-empty-icon">--</span>
           <span>No table templates yet. Create tables from the lobby to save templates.</span>
         </div>
       ) : (
@@ -2073,7 +2073,7 @@ function TemplatesTab({ clubId }: { clubId: string }) {
                   <div className="admin-text-secondary" style={{ fontSize: '12px' }}>
                     {tmpl.game_type || 'NLH'} • {tmpl.small_blind}/{tmpl.big_blind} •{' '}
                     {tmpl.max_players || 9} seats
-                    {tmpl.schedule_enabled && ' • 🕐 Scheduled'}
+                    {tmpl.schedule_enabled && ' • Scheduled'}
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: '6px' }}>
@@ -2128,7 +2128,7 @@ function TemplatesTab({ clubId }: { clubId: string }) {
                     }}
                     className="admin-btn admin-btn-danger admin-btn-sm"
                   >
-                    🗑️
+                    Del
                   </button>
                 </div>
               </div>
@@ -2215,7 +2215,7 @@ function AnalyticsTab({ clubId }: { clubId: string }) {
 
   return (
     <div className="admin-tab-content">
-      <h3 className="admin-card-title">📊 Club Analytics</h3>
+      <h3 className="admin-card-title">Club Analytics</h3>
       <div className="admin-stats-grid">
         <div className="admin-stat-card">
           <div className="admin-stat-label">Total Members</div>
@@ -2241,7 +2241,7 @@ function AnalyticsTab({ clubId }: { clubId: string }) {
         </div>
       </div>
       <h4 className="admin-card-title" style={{ marginTop: '24px' }}>
-        📅 Last 7 Days
+        Last 7 Days
       </h4>
       <div className="admin-stats-grid">
         <div className="admin-stat-card">
@@ -2457,7 +2457,7 @@ export default function AdminDashboardPage() {
             className="admin-error-state"
             style={{ background: 'rgba(250,56,62,0.1)', border: '1px solid #FA383E' }}
           >
-            <div className="admin-error-icon">🛡️</div>
+            <div className="admin-error-icon">!</div>
             <div style={{ fontWeight: 700, fontSize: '16px', color: '#FA383E' }}>{error}</div>
             <button
               onClick={() => navigate('/')}
@@ -2482,10 +2482,10 @@ export default function AdminDashboardPage() {
       <div className="admin-container">
         {/* Header */}
         <div className="admin-page-header">
-          <div className="admin-page-title">⚙️ Admin & Operations</div>
+          <div className="admin-page-title">Admin & Operations</div>
           <div className="admin-header-actions">
             <button onClick={() => navigate('/')} className="admin-btn admin-btn-ghost">
-              🏠 Lobby
+              Lobby
             </button>
           </div>
         </div>
@@ -2496,20 +2496,20 @@ export default function AdminDashboardPage() {
             className={`admin-tab ${activeTab === 'dashboard' ? 'active' : ''}`}
             onClick={() => setActiveTab('dashboard')}
           >
-            🩺 Health
+            Health
           </button>
           <button
             className={`admin-tab ${activeTab === 'hierarchy' ? 'active' : ''}`}
             onClick={() => setActiveTab('hierarchy')}
           >
-            🌳 Hierarchy
+            Hierarchy
           </button>
           {isAdmin && (
             <button
               className={`admin-tab ${activeTab === 'settlements' ? 'active' : ''}`}
               onClick={() => setActiveTab('settlements')}
             >
-              💰 Settlements
+              Settlements
             </button>
           )}
           {isAdmin && (
@@ -2517,7 +2517,7 @@ export default function AdminDashboardPage() {
               className={`admin-tab ${activeTab === 'history' ? 'active' : ''}`}
               onClick={() => setActiveTab('history')}
             >
-              📖 History
+              History
             </button>
           )}
           {isAdmin && (
@@ -2525,7 +2525,7 @@ export default function AdminDashboardPage() {
               className={`admin-tab ${activeTab === 'audit' ? 'active' : ''}`}
               onClick={() => setActiveTab('audit')}
             >
-              🛡️ Audit
+              Audit
             </button>
           )}
           {isAdmin && (
@@ -2533,7 +2533,7 @@ export default function AdminDashboardPage() {
               className={`admin-tab ${activeTab === 'branding' ? 'active' : ''}`}
               onClick={() => setActiveTab('branding')}
             >
-              🎨 Branding
+              Branding
             </button>
           )}
           {isAdmin && (
@@ -2541,7 +2541,7 @@ export default function AdminDashboardPage() {
               className={`admin-tab ${activeTab === 'recommendations' ? 'active' : ''}`}
               onClick={() => setActiveTab('recommendations')}
             >
-              🤖 Recs
+              Recs
             </button>
           )}
           {isAdmin && (
@@ -2549,7 +2549,7 @@ export default function AdminDashboardPage() {
               className={`admin-tab ${activeTab === 'announcements' ? 'active' : ''}`}
               onClick={() => setActiveTab('announcements')}
             >
-              📢 Announce
+              Announce
             </button>
           )}
           {isAdmin && (
@@ -2557,7 +2557,7 @@ export default function AdminDashboardPage() {
               className={`admin-tab ${activeTab === 'templates' ? 'active' : ''}`}
               onClick={() => setActiveTab('templates')}
             >
-              📋 Templates
+              Templates
             </button>
           )}
           {isAdmin && (
@@ -2565,7 +2565,7 @@ export default function AdminDashboardPage() {
               className={`admin-tab ${activeTab === 'analytics' ? 'active' : ''}`}
               onClick={() => setActiveTab('analytics')}
             >
-              📊 Analytics
+              Analytics
             </button>
           )}
           {isOwner && (
@@ -2573,7 +2573,7 @@ export default function AdminDashboardPage() {
               className={`admin-tab ${activeTab === 'mint' ? 'active' : ''}`}
               onClick={() => setActiveTab('mint')}
             >
-              🏦 Mint
+              Mint
             </button>
           )}
           {isOwner && (
@@ -2581,7 +2581,7 @@ export default function AdminDashboardPage() {
               className={`admin-tab ${activeTab === 'settings' ? 'active' : ''}`}
               onClick={() => setActiveTab('settings')}
             >
-              ⚙️ Settings
+              Settings
             </button>
           )}
         </div>
@@ -2596,7 +2596,7 @@ export default function AdminDashboardPage() {
             <AuditLogTab clubId={clubId} />
             <div style={{ marginTop: '24px' }}>
               <h3 style={{ color: 'var(--text-primary)', marginBottom: '12px' }}>
-                📡 Live Activity Stream
+                Live Activity Stream
               </h3>
               <ArenaLedger clubId={clubId} maxEntries={100} />
             </div>
@@ -2611,7 +2611,7 @@ export default function AdminDashboardPage() {
             <AnalyticsTab clubId={clubId} />
             <div style={{ marginTop: '24px' }}>
               <h3 style={{ color: 'var(--text-primary)', marginBottom: '12px' }}>
-                🗺️ Table Heatmap — God View
+                Table Heatmap -- God View
               </h3>
               <AdminTableHeatmap
                 clubId={clubId}

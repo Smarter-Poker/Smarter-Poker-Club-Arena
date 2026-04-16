@@ -1,5 +1,5 @@
 /**
- * 👫 FRIENDS PAGE — Friends List & Management with Real-Time Status
+ * FRIENDS PAGE — Friends List & Management with Real-Time Status
  */
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
@@ -141,7 +141,7 @@ export default function FriendsPage() {
         } else if (status === 'CHANNEL_ERROR') {
           reportError(err?.message || err, 'FriendsPage._Presence_channel_error');
         } else if (status === 'TIMED_OUT') {
-          console.warn('[FriendsPage] ⏱️ Presence channel timed out');
+          console.warn('[FriendsPage] Presence channel timed out');
         }
       });
 
@@ -473,13 +473,13 @@ export default function FriendsPage() {
           className={`fr-filter-chip ${activeTab === 'friends' ? 'active' : ''}`}
           onClick={() => setActiveTab('friends')}
         >
-          👥 Friends ({friends.length})
+          Friends ({friends.length})
         </button>
         <button
           className={`fr-filter-chip ${activeTab === 'pending' ? 'active' : ''}`}
           onClick={() => setActiveTab('pending')}
         >
-          🔔 Requests{' '}
+          Requests{' '}
           {pendingRequests.length > 0 && (
             <span className="fr-pending-badge">{pendingRequests.length}</span>
           )}
@@ -488,7 +488,7 @@ export default function FriendsPage() {
           className={`fr-filter-chip ${activeTab === 'recent' ? 'active' : ''}`}
           onClick={() => setActiveTab('recent')}
         >
-          🕒 Recent
+          Recent
         </button>
       </div>
 
@@ -534,7 +534,7 @@ export default function FriendsPage() {
                   }
                 }}
               >
-                📥 Export
+                Export
               </button>
             )}
           </div>
@@ -554,7 +554,7 @@ export default function FriendsPage() {
               </div>
             ) : filteredFriends.length === 0 ? (
               <div className="empty-state">
-                <span className="empty-icon">👫</span>
+                <span className="empty-icon">--</span>
                 <p>No friends yet</p>
                 <button className="btn btn-primary" onClick={() => navigate('/search?tab=players')}>
                   Find Friends
@@ -617,7 +617,7 @@ export default function FriendsPage() {
           {pendingRequests.length === 0 ? (
             <div className="empty-state" style={{ textAlign: 'center', padding: '2rem 1.5rem' }}>
               <span style={{ fontSize: '2.5rem', display: 'block', marginBottom: '0.75rem' }}>
-                📬
+                --
               </span>
               <p style={{ fontSize: '1.05rem', fontWeight: 600, margin: '0 0 0.5rem' }}>
                 No pending requests
@@ -736,7 +736,7 @@ function SwipeableFriendRow({
           onMessage();
         }}
       >
-        💬
+        Msg
       </div>
       <div
         className="swipe-actions-right"
@@ -746,7 +746,7 @@ function SwipeableFriendRow({
           onRemove();
         }}
       >
-        🗑️
+        Del
       </div>
       <div
         className="friend-row surface"

@@ -831,7 +831,7 @@ export default function CashierPage() {
           if (isMounted.current) setRealtimeStatus('error');
         }
         if (status === 'TIMED_OUT') {
-          console.warn('[CashierPage] ⏱️ Realtime channel timed out');
+          console.warn('[CashierPage] Realtime channel timed out');
           if (isMounted.current) setRealtimeStatus('reconnecting');
         }
       });
@@ -936,7 +936,7 @@ export default function CashierPage() {
     // Rate limit: block rapid successive actions (2s minimum)
     const now = Date.now();
     if (now - lastActionRef.current < RATE_LIMIT_MS) {
-      setMessage({ type: 'error', text: '⏱ Please wait before submitting another action' });
+      setMessage({ type: 'error', text: 'Please wait before submitting another action' });
       return;
     }
     lastActionRef.current = now;
@@ -952,7 +952,7 @@ export default function CashierPage() {
           if (isMounted.current)
             setMessage({
               type: 'error',
-              text: `🔒 Chip movements are frozen during settlement (${lockResult.reason || 'Monday 4AM payout in progress'}). Please try again after settlement completes.`,
+              text: `Chip movements are frozen during settlement (${lockResult.reason || 'Monday 4AM payout in progress'}). Please try again after settlement completes.`,
             });
           if (isMounted.current) setIsProcessing(false);
           return;
@@ -1374,16 +1374,16 @@ export default function CashierPage() {
             href={`/clubs/${clubId}/disputes`}
             className={`${styles.quickLink} ${styles.quickLinkWarning}`}
           >
-            ⚠️ Disputes
+            Disputes
           </a>
           <a href="/financial-alerts" className={`${styles.quickLink} ${styles.quickLinkDanger}`}>
-            🚨 Alerts
+            Alerts
           </a>
           <a
             href={`/clubs/${clubId}/financials`}
             className={`${styles.quickLink} ${styles.quickLinkPrimary}`}
           >
-            💰 Financials
+            Financials
           </a>
         </div>
       )}
@@ -1631,7 +1631,7 @@ export default function CashierPage() {
                   const waitSec = Math.ceil((DISTRIBUTE_RATE_LIMIT_MS - elapsed) / 1000);
                   setMessage({
                     type: 'error',
-                    text: `⏱ Please wait ${waitSec}s before distributing again`,
+                    text: `Please wait ${waitSec}s before distributing again`,
                   });
                   return;
                 }
@@ -1647,7 +1647,7 @@ export default function CashierPage() {
                       if (isMounted.current)
                         setMessage({
                           type: 'error',
-                          text: `🔒 Chip movements are frozen during settlement (${lockResult.reason || 'settlement in progress'}). Please try again after settlement completes.`,
+                          text: `Chip movements are frozen during settlement (${lockResult.reason || 'settlement in progress'}). Please try again after settlement completes.`,
                         });
                       if (isMounted.current) setIsProcessing(false);
                       return;
@@ -1725,22 +1725,22 @@ export default function CashierPage() {
                     if (isMounted.current)
                       setMessage({
                         type: 'error',
-                        text: '⏱ Too many distributions — please wait 60 seconds',
+                        text: 'Too many distributions -- please wait 60 seconds',
                       });
                   } else if (msg.includes('Insufficient promo')) {
                     if (isMounted.current)
                       setMessage({
                         type: 'error',
-                        text: '💰 Insufficient promo balance for this distribution',
+                        text: 'Insufficient promo balance for this distribution',
                       });
                   } else if (msg.includes('Player not found')) {
                     if (isMounted.current)
-                      setMessage({ type: 'error', text: '❌ Player is not a member of this club' });
+                      setMessage({ type: 'error', text: 'Player is not a member of this club' });
                   } else if (msg.includes('Agent not found')) {
                     if (isMounted.current)
                       setMessage({
                         type: 'error',
-                        text: '❌ Your agent record was not found — contact club owner',
+                        text: 'Your agent record was not found -- contact club owner',
                       });
                   } else {
                     if (isMounted.current) setMessage({ type: 'error', text: msg });
@@ -1766,7 +1766,7 @@ export default function CashierPage() {
           <h2 className={styles.cardTitle}>
             <span className={styles.cardTitleIcon}>
               {action === 'cashout' && cashoutConfirm.show
-                ? '🛡'
+                ? '*'
                 : action === 'buyin'
                   ? '▶'
                   : action === 'cashout'
@@ -1783,7 +1783,7 @@ export default function CashierPage() {
           </h2>
           {action === 'cashout' && cashoutConfirm.show ? (
             <div className={styles.escrowFlow}>
-              <div className={styles.escrowIcon}>🛡️</div>
+              <div className={styles.escrowIcon}>*</div>
               <h3 className={styles.escrowTitle}>Security Verification Required</h3>
               <p className={styles.escrowDesc}>
                 You are requesting a high-value cashout of{' '}
@@ -1806,7 +1806,7 @@ export default function CashierPage() {
                   <span className={styles.escrowCheckLabel}>Identity Verification Confirmed</span>
                 </div>
                 <div className={styles.escrowCheckItem}>
-                  <div className={`${styles.escrowCheckIcon} ${styles.escrowCheckAmber}`}>⏳</div>
+                  <div className={`${styles.escrowCheckIcon} ${styles.escrowCheckAmber}`}>...</div>
                   <span className={styles.escrowCheckLabel}>
                     Escrow Holding (Pending Agent Review)
                   </span>
@@ -1842,7 +1842,7 @@ export default function CashierPage() {
               {/* U-02 FIX: Show pending cashouts when on cashout tab */}
               {action === 'cashout' && pendingCashouts.length > 0 && (
                 <div className={styles.pendingBox}>
-                  <div className={styles.pendingTitle}>⏳ Pending Cashouts</div>
+                  <div className={styles.pendingTitle}>Pending Cashouts</div>
                   {pendingCashouts.map((pc) => (
                     <div key={pc.id} className={styles.pendingRow}>
                       <span>{pc.amount.toLocaleString()} chips</span>
@@ -1857,7 +1857,7 @@ export default function CashierPage() {
               {/* Open full CashoutRequestModal for premium step-tracker experience */}
               {action === 'cashout' && !tableId && clubId && user?.id && (
                 <button className={styles.btnSuccess} onClick={() => setShowCashoutModal(true)}>
-                  📋 Manage Cashout Requests
+                  Manage Cashout Requests
                 </button>
               )}
 
@@ -1978,7 +1978,7 @@ export default function CashierPage() {
                 )
               )}
               <button className={styles.txExportBtn} onClick={exportCSV}>
-                📥 Export CSV
+                Export CSV
               </button>
             </div>
 
@@ -2001,7 +2001,7 @@ export default function CashierPage() {
               </div>
             ) : filteredTransactions.length === 0 ? (
               <div className={styles.txEmpty}>
-                <span className={styles.txEmptyIcon}>📊</span>
+                <span className={styles.txEmptyIcon}>--</span>
                 <span className={styles.txEmptyTitle}>No transactions recorded yet</span>
                 <span className={styles.txEmptyDesc}>
                   Your buy-ins, cashouts, and chip transfers will appear here.
@@ -2099,7 +2099,7 @@ export default function CashierPage() {
         >
           <div className={styles.confirmModal} onClick={(e) => e.stopPropagation()}>
             <h3 id="send-confirm-title" className={styles.confirmTitle}>
-              ⚠️ Confirm High-Value Transfer
+              Confirm High-Value Transfer
             </h3>
             <p className={styles.confirmText}>
               You are about to send <strong>{sendConfirm.value.toLocaleString()}</strong> chips to{' '}

@@ -439,7 +439,7 @@ export default function AgentDashboardPage() {
             reportError(err?.message || err, 'AgentDashboardPage._Realtime_channel_error');
           }
           if (status === 'TIMED_OUT') {
-            console.warn('[AgentDashboardPage] ⏱️ Realtime channel timed out');
+            console.warn('[AgentDashboardPage] Realtime channel timed out');
           }
         });
     };
@@ -583,7 +583,7 @@ export default function AgentDashboardPage() {
                 className="admin-card-title"
                 style={{ display: 'flex', justifyContent: 'space-between' }}
               >
-                <span>💸 Agent-to-Agent Transfer</span>
+                <span>Agent-to-Agent Transfer</span>
                 <button
                   onClick={() => setShowTransfer(false)}
                   style={{
@@ -645,17 +645,17 @@ export default function AgentDashboardPage() {
         {/* Header */}
         <div className="admin-page-header">
           <div className="admin-page-title">
-            🕵️ Agent Dashboard
+            Agent Dashboard
             <span className="admin-badge" style={{ marginLeft: '12px' }}>
               {role.toUpperCase()}
             </span>
           </div>
           <div className="admin-header-actions">
             <button onClick={() => navigate('/')} className="admin-btn admin-btn-ghost">
-              🏠 Lobby
+              Lobby
             </button>
             <button onClick={() => setShowTransfer(true)} className="admin-btn admin-btn-ghost">
-              💸 Transfer
+              Transfer
             </button>
             <button
               onClick={() => loadDashboard(clubId)}
@@ -715,7 +715,7 @@ export default function AgentDashboardPage() {
                 }
               }}
             >
-              📥 Export
+              Export
             </button>
           </div>
         </div>
@@ -754,9 +754,9 @@ export default function AgentDashboardPage() {
             },
             { id: 'commissions' as AgentTab, label: 'Commissions' },
             { id: 'analytics' as AgentTab, label: 'Analytics' },
-            { id: 'score' as AgentTab, label: '🏆 Score' },
-            ...(isOwnerOrAdmin ? [{ id: 'promo' as AgentTab, label: '🎁 Promo' }] : []),
-            ...(isOwner ? [{ id: 'credit' as AgentTab, label: '🏦 Credit' }] : []),
+            { id: 'score' as AgentTab, label: 'Score' },
+            ...(isOwnerOrAdmin ? [{ id: 'promo' as AgentTab, label: 'Promo' }] : []),
+            ...(isOwner ? [{ id: 'credit' as AgentTab, label: 'Credit' }] : []),
           ].map((t) => (
             <button
               key={t.id}
@@ -821,7 +821,7 @@ export default function AgentDashboardPage() {
             <h3 className="admin-section-title">Recent Transactions</h3>
             {recentTx.length === 0 ? (
               <div className="admin-empty-state">
-                <span className="admin-empty-icon">📋</span>
+                <span className="admin-empty-icon">--</span>
                 <span>No recent transactions</span>
               </div>
             ) : (
@@ -914,7 +914,7 @@ export default function AgentDashboardPage() {
 
             {filteredPlayers.length === 0 ? (
               <div className="admin-empty-state">
-                <span className="admin-empty-icon">👥</span>
+                <span className="admin-empty-icon">--</span>
                 <span>
                   {playerSearch
                     ? 'No players match your search'
@@ -976,8 +976,8 @@ export default function AgentDashboardPage() {
                           color: 'var(--text-secondary)',
                         }}
                       >
-                        <span>💰 {fmtChips(p.chip_balance)}</span>
-                        <span>⏱ {timeAgo(p.profile?.last_seen)}</span>
+                        <span>{fmtChips(p.chip_balance)}</span>
+                        <span>{timeAgo(p.profile?.last_seen)}</span>
                       </div>
                     </div>
                   );
@@ -999,7 +999,7 @@ export default function AgentDashboardPage() {
 
             {pendingCashouts.length === 0 ? (
               <div className="admin-empty-state">
-                <span className="admin-empty-icon">✅</span>
+                <span className="admin-empty-icon">OK</span>
                 <span>No pending cashout requests</span>
               </div>
             ) : (
@@ -1083,7 +1083,7 @@ export default function AgentDashboardPage() {
             <h3 className="admin-section-title">Commission History</h3>
             {commissions.length === 0 ? (
               <div className="admin-empty-state">
-                <span className="admin-empty-icon">💰</span>
+                <span className="admin-empty-icon">--</span>
                 <span>No commission records yet</span>
               </div>
             ) : (
@@ -1165,7 +1165,7 @@ export default function AgentDashboardPage() {
             <h3 className="admin-section-title">Player Activity</h3>
             {players.length === 0 ? (
               <div className="admin-empty-state">
-                <span className="admin-empty-icon">📊</span>
+                <span className="admin-empty-icon">--</span>
                 <span>No player data</span>
               </div>
             ) : (
@@ -1234,7 +1234,7 @@ export default function AgentDashboardPage() {
         {tab === 'promo' && isOwnerOrAdmin && (
           <div className="admin-tab-content">
             <div className="admin-card" style={{ marginBottom: '20px', padding: '16px 20px' }}>
-              <h3 className="admin-card-title">🎁 Grant Promo to Agent</h3>
+              <h3 className="admin-card-title">Grant Promo to Agent</h3>
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                 <select
                   className="admin-input"
@@ -1353,7 +1353,7 @@ export default function AgentDashboardPage() {
         {tab === 'credit' && isOwner && (
           <div className="admin-tab-content">
             <div className="admin-card" style={{ padding: '20px' }}>
-              <h3 className="admin-card-title">🏦 Agent Credit Management</h3>
+              <h3 className="admin-card-title">Agent Credit Management</h3>
               <div
                 className="admin-text-secondary"
                 style={{ marginBottom: '16px', lineHeight: 1.5 }}

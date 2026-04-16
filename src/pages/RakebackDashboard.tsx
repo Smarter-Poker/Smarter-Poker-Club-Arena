@@ -28,11 +28,11 @@ interface RakebackStats {
 }
 
 const TIERS = [
-  { name: 'Bronze', minRake: 0, percent: 10, color: '#cd7f32', icon: '🥉' },
-  { name: 'Silver', minRake: 100, percent: 15, color: '#c0c0c0', icon: '🥈' },
-  { name: 'Gold', minRake: 500, percent: 20, color: '#ffd700', icon: '🥇' },
-  { name: 'Platinum', minRake: 2000, percent: 25, color: '#e5e4e2', icon: '💎' },
-  { name: 'Diamond', minRake: 10000, percent: 30, color: '#b9f2ff', icon: '👑' },
+  { name: 'Bronze', minRake: 0, percent: 10, color: '#cd7f32', icon: 'B' },
+  { name: 'Silver', minRake: 100, percent: 15, color: '#c0c0c0', icon: 'S' },
+  { name: 'Gold', minRake: 500, percent: 20, color: '#ffd700', icon: 'G' },
+  { name: 'Platinum', minRake: 2000, percent: 25, color: '#e5e4e2', icon: 'P' },
+  { name: 'Diamond', minRake: 10000, percent: 30, color: '#b9f2ff', icon: 'D' },
 ];
 
 export default function RakebackDashboard() {
@@ -106,7 +106,7 @@ export default function RakebackDashboard() {
           reportError(err?.message || err, 'RakebackDashboard._Realtime_channel_error');
         }
         if (status === 'TIMED_OUT') {
-          console.warn('[RakebackDashboard] ⏱️ Realtime channel timed out');
+          console.warn('[RakebackDashboard] Realtime channel timed out');
         }
       });
     return () => {
@@ -229,7 +229,7 @@ export default function RakebackDashboard() {
               ← Back
             </button>
             <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700 }}>
-              🎰 Rakeback Dashboard
+              Rakeback Dashboard
             </h1>
             <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)' }}>
               Earn cashback on every hand you play
@@ -332,19 +332,19 @@ export default function RakebackDashboard() {
               {
                 label: 'Rakeback Earned',
                 value: stats.totalRakebackEarned.toLocaleString(),
-                icon: '💰',
+                icon: '$',
                 color: '#10b981',
               },
               {
                 label: 'Pending',
                 value: stats.pendingRakeback.toLocaleString(),
-                icon: '⏳',
+                icon: '...',
                 color: '#8b5cf6',
               },
               {
                 label: 'Hands Played',
                 value: stats.handsPlayed.toLocaleString(),
-                icon: '🎯',
+                icon: '#',
                 color: '#3b82f6',
               },
             ].map((s) => (
@@ -395,7 +395,7 @@ export default function RakebackDashboard() {
             }}
           >
             <div style={{ fontSize: '0.8rem', fontWeight: 700, marginBottom: '10px' }}>
-              📊 All Tiers
+              All Tiers
             </div>
             {TIERS.map((tier) => (
               <div
@@ -455,7 +455,7 @@ export default function RakebackDashboard() {
                 alignItems: 'center',
               }}
             >
-              <span>📈 Payout History</span>
+              <span>Payout History</span>
               <span
                 style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.4)', fontWeight: 500 }}
               >

@@ -181,28 +181,30 @@ export default function VIPPage() {
         setDaysSinceReview(daysSinceJoined % 30);
       }
 
+      // BUG 024 FIX (2026-04-16): diamond_ledger columns are (id, user_id, delta, type, balance_after, created_at).
+      // Previously queried non-existent columns (amount, description, transaction_type) → always got empty or failed.
+      // Map delta → amount and type → description. balance_after is now read from DB (authoritative) so we don't
+      // reconstruct the running balance via subtraction (which drifted when rows were missed).
       const { data: ledgerData } = await supabase
         .from('diamond_ledger')
-        .select('id, amount, description, transaction_type, created_at')
+        .select('id, delta, type, balance_after, created_at')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
         .limit(10);
 
       if (getIsMounted && !getIsMounted()) return;
       if (ledgerData) {
-        let runningBalance = currentPts;
         const mapped = ledgerData.map((entry) => {
-          const bal = runningBalance;
-          runningBalance -= entry.amount;
-
+          const delta = Number(entry.delta ?? 0);
           return {
             id: entry.id,
             date: new Date(entry.created_at),
-            action: entry.amount > 0 ? 'earned' : 'spent',
-            description: entry.description || entry.transaction_type,
-            points: Math.abs(entry.amount),
-            balanceAfter: bal,
-            icon: entry.amount > 0 ? '⭐' : '💸',
+            action: delta > 0 ? 'earned' : 'spent',
+            description: entry.type || (delta > 0 ? 'Diamonds earned' : 'Diamonds spent'),
+            points: Math.abs(delta),
+            balanceAfter: Number(entry.balance_after ?? 0),
+            // Unicode triangles (allowed per CLAUDE.md §8) instead of the previous emojis
+            icon: delta > 0 ? '▲' : '▼',
           } as VIPActivity;
         });
         setRecentActivities(mapped);

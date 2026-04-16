@@ -57,14 +57,14 @@ export function QuickActionsBar({
   const actions: QuickAction[] = [
     {
       id: 'auto-rebuy',
-      icon: '🎰',
+      icon: 'R',
       label: 'Auto-Rebuy',
       isActive: isAutoRebuyEnabled,
       onClick: () => handleAction(onToggleAutoRebuy),
     },
     {
       id: 'chat',
-      icon: '💬',
+      icon: 'C',
       label: 'Chat',
       isActive: isChatVisible,
       onClick: () => handleAction(onToggleChat),
@@ -72,21 +72,21 @@ export function QuickActionsBar({
     // FIX 199: Hand strength toggle REMOVED — not allowed for live online gameplay
     {
       id: 'stats',
-      icon: '📊',
+      icon: 'S',
       label: 'Stats',
       isActive: isStatsVisible,
       onClick: () => handleAction(onToggleStats),
     },
     {
       id: 'sound',
-      icon: isSoundEnabled ? '🔊' : '🔇',
+      icon: isSoundEnabled ? 'V' : 'M',
       label: 'Sound',
       isActive: isSoundEnabled,
       onClick: () => handleAction(onToggleSound),
     },
     {
       id: 'settings',
-      icon: '⚙️',
+      icon: 'G',
       label: 'Settings',
       isActive: false,
       onClick: () => handleAction(onOpenSettings),

@@ -528,7 +528,7 @@ class TableService {
    */
   async getWaitlistCount(tableId: string): Promise<number> {
     const { count, error } = await supabase
-      .from('table_waitlists')
+      .from('table_waitlist')
       .select('*', { count: 'exact', head: true })
       .eq('table_id', tableId);
 

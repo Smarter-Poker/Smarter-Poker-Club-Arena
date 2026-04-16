@@ -59,7 +59,7 @@ export default function WaitlistPage() {
           {
             event: '*',
             schema: 'public',
-            table: 'table_waitlists',
+            table: 'table_waitlist',
           },
           (payload) => {
             loadWaitlistRef.current();

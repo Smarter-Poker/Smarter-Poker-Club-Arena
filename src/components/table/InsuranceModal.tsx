@@ -194,7 +194,7 @@ export function InsuranceModal({
                 setActiveTab('ev-cashout');
               }}
             >
-              💰 EV Cashout
+              EV Cashout
             </button>
           </div>
         )}
@@ -395,7 +395,7 @@ export function InsuranceModal({
                 className="insurance-modal__btn insurance-modal__btn--cashout"
                 onClick={handleEvCashout}
               >
-                💰 Cash Out
+                Cash Out
               </button>
             </div>
           </>

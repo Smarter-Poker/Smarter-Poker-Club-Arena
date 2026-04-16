@@ -125,7 +125,7 @@ export function SessionAnalytics({ isOpen, onClose, stats, currency = '' }: Sess
       <div className="session-analytics" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="sa-header">
-          <h2 className="sa-header__title">📊 Session Analytics</h2>
+          <h2 className="sa-header__title">Session Analytics</h2>
           <button className="sa-header__close" onClick={onClose}>
             ✕
           </button>
@@ -139,10 +139,7 @@ export function SessionAnalytics({ isOpen, onClose, stats, currency = '' }: Sess
               className={`sa-tab ${activeTab === tab ? 'sa-tab--active' : ''}`}
               onClick={() => setActiveTab(tab)}
             >
-              {tab === 'overview' && '📈'}
-              {tab === 'positions' && '🪑'}
-              {tab === 'actions' && '🎯'}
-              {tab === 'pots' && '💰'} {tab.charAt(0).toUpperCase() + tab.slice(1)}
+              {tab.charAt(0).toUpperCase() + tab.slice(1)}
             </button>
           ))}
         </div>

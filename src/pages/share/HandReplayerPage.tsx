@@ -230,7 +230,7 @@ export default function HandReplayerPage() {
 
         {/* Sound toggle */}
         <button className="sound-toggle" onClick={() => setSoundEnabled(!soundEnabled)}>
-          {soundEnabled ? '🔊' : '🔇'}
+          {soundEnabled ? 'ON' : 'OFF'}
         </button>
 
         {/* Tab navigation */}
@@ -245,7 +245,7 @@ export default function HandReplayerPage() {
             className={`tab-btn ${activeTab === 'analysis' ? 'active' : ''}`}
             onClick={() => setActiveTab('analysis')}
           >
-            📊 Analysis
+            Analysis
           </button>
         </div>
 

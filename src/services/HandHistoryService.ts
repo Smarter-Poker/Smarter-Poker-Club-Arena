@@ -140,49 +140,38 @@ class HandHistoryServiceClass {
   }
 
   /**
-   * Get hands for a player
+   * Get hands for a player.
+   *
+   * BUG 021 FIX (2026-04-15): previously queried `hand_players` table (EMPTY — 0 rows) with a
+   * nested join to `hands` (also empty). The canonical hand history store is `hand_history`
+   * (5.1M rows in prod) with JSONB columns `players`, `actions`, `winners`. Rewrote to filter
+   * by players JSONB containing the requested userId, then map JSONB → HandRecord inline.
    */
   async getPlayerHands(userId: string, limit = 50): Promise<HandRecord[]> {
     const { data, error } = await supabase
-      .from('hand_players')
+      .from('hand_history')
       .select(
-        `
-                hands (
-                    *,
-                    hand_players (
-                        seat,
-                        user_id,
-                        hole_cards,
-                        final_hand,
-                        result,
-                        is_winner
-                    ),
-                    tables (
-                        name,
-                        game_type,
-                        stakes
-                    )
-                )
-            `
+        'id, created_at, table_id, hand_number, pot_size, community_cards, players, actions, winners, game_variant, small_blind, big_blind, rake_amount'
       )
-      .eq('user_id', userId)
+      .contains('players', [{ userId }])
       .order('created_at', { ascending: false })
       .limit(limit);
 
-    if (error || !data) return [];
+    if (error || !data) {
+      if (error) reportError(error, 'HandHistoryService.getPlayerHands_hand_history_query');
+      return [];
+    }
 
-    // Collect all user_ids across all hands
-    const allUserIds = data.flatMap((d: unknown) => {
-      const row = d as any;
-      return (row.hands?.hand_players || []).map((hp: any) => hp.user_id);
-    });
+    // Collect all user ids across all hands, including winners — needed to resolve display names
+    const allUserIds: string[] = [];
+    for (const row of data as any[]) {
+      for (const p of row.players || []) if (p?.userId) allUserIds.push(p.userId);
+      for (const w of row.winners || []) if (w?.userId) allUserIds.push(w.userId);
+    }
     const profileMap = await this.fetchProfileMap(allUserIds);
 
     return data
-      .map((d: unknown) => {
-        const row = d as any;
-        return this.mapHandRecord(row.hands, profileMap);
-      })
+      .map((d: any) => this.mapHandHistoryRow(d, userId, profileMap))
       .filter((h: HandRecord | null): h is HandRecord => h !== null);
   }
 
@@ -357,6 +346,87 @@ class HandHistoryServiceClass {
   // ─────────────────────────────────────────────────────────────────────────────
   // HELPERS
   // ─────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * BUG 021 FIX — map a row from `hand_history` (the canonical prod source) to a HandRecord.
+   * hand_history stores players + actions + winners as JSONB with camelCase keys
+   * (userId, not user_id). We compute result per hand by looking up the player in winners[]
+   * and subtracting their total invested from actions[].
+   */
+  private mapHandHistoryRow(
+    row: any,
+    requestingUserId: string,
+    profileMap: Map<string, { username: string; avatar_url: string | null }>
+  ): HandRecord | null {
+    if (!row?.id) return null;
+    const jsonbPlayers: any[] = Array.isArray(row.players) ? row.players : [];
+    const jsonbActions: any[] = Array.isArray(row.actions) ? row.actions : [];
+    const jsonbWinners: any[] = Array.isArray(row.winners) ? row.winners : [];
+
+    // Compute per-player result: winnings from winners[] minus total amount bet in actions[]
+    const buildResult = (userId: string): number => {
+      const invested = jsonbActions
+        .filter((a) => a?.userId === userId && typeof a?.amount === 'number' && a.amount > 0)
+        .reduce((sum, a) => sum + Number(a.amount), 0);
+      const won = jsonbWinners
+        .filter((w) => w?.userId === userId && typeof w?.amount === 'number')
+        .reduce((sum, w) => sum + Number(w.amount), 0);
+      return Math.round((won - invested) * 100) / 100;
+    };
+
+    const buttonSeat =
+      (jsonbPlayers.find((p) => p?.isButton)?.seat as number | undefined) ?? 1;
+    const playerCount = jsonbPlayers.length || 1;
+
+    const players: HandPlayer[] = jsonbPlayers.map((p: any): HandPlayer => {
+      const uid: string = p?.userId || '';
+      const profile = profileMap.get(uid);
+      const isMe = uid === requestingUserId;
+      const isWinner = jsonbWinners.some((w) => w?.userId === uid);
+      return {
+        seat: Number(p?.seat) || 0,
+        user_id: uid,
+        username: profile?.username || p?.username || (uid ? uid.slice(0, 8) : 'Unknown'),
+        avatar_url: profile?.avatar_url || null,
+        position: this.getPositionName(Number(p?.seat) || 0, buttonSeat, playerCount),
+        // Only reveal hole cards if it's the requesting user OR cards are already exposed in the JSONB
+        hole_cards: Array.isArray(p?.cards) && (isMe || isWinner) ? p.cards : [],
+        final_hand:
+          jsonbWinners.find((w) => w?.userId === uid)?.hand?.name || undefined,
+        result: buildResult(uid),
+        is_winner: isWinner,
+      };
+    });
+
+    const actions: HandAction[] = jsonbActions.map((a: any): HandAction => ({
+      player_id: a?.userId || '',
+      action: (a?.action as HandAction['action']) || 'fold',
+      amount: typeof a?.amount === 'number' ? a.amount : undefined,
+      street: (a?.stage as HandAction['street']) || 'preflop',
+      timestamp: typeof a?.timestamp === 'number' ? a.timestamp : new Date(row.created_at).getTime(),
+    }));
+
+    const sb = Number(row.small_blind) || 0;
+    const bb = Number(row.big_blind) || 0;
+    const stakes = sb > 0 && bb > 0 ? `${sb}/${bb}` : '1/2';
+
+    return {
+      id: row.id,
+      serial_number: row.id,
+      table_id: row.table_id,
+      table_name: 'Table',
+      played_at: row.created_at,
+      hand_number: Number(row.hand_number) || 1,
+      total_hands: 1,
+      main_pot: Number(row.pot_size) || 0,
+      side_pots: [],
+      community_cards: Array.isArray(row.community_cards) ? row.community_cards : [],
+      players,
+      actions,
+      game_type: (row.game_variant || 'nlh').toUpperCase(),
+      stakes,
+    };
+  }
 
   private mapHandRecord(
     data: HandDB | undefined,

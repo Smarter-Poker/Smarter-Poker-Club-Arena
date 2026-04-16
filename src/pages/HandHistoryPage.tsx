@@ -122,10 +122,14 @@ export default function HandHistoryPage() {
           event: 'INSERT',
           schema: 'public',
           table: 'hand_history',
-          filter: `player_ids=cs.{${user.id}}`,
+          // BUG 021 FIX (2026-04-15): removed filter `player_ids=cs.{...}` — that column
+          // does not exist on hand_history. The canonical player list is the `players`
+          // JSONB array and Supabase realtime cannot filter on JSONB elements server-side.
+          // We accept all inserts and let the client-side loadHands(true) re-filter via
+          // the `.contains('players', [{userId}])` query.
         },
         () => {
-          // New hand added for this user, refresh the hand list
+          // New hand added — refresh the hand list. loadHands() will filter to this user.
           loadHandsRef.current(true);
         }
       )
@@ -332,10 +336,10 @@ export default function HandHistoryPage() {
             {f === 'all'
               ? 'All Hands'
               : f === 'won'
-                ? '✅ Won'
+                ? 'Won'
                 : f === 'lost'
-                  ? '❌ Lost'
-                  : '🔥 Big Pots'}
+                  ? 'Lost'
+                  : 'Big Pots'}
           </button>
         ))}
       </div>

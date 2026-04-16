@@ -175,12 +175,12 @@ export const TierProgressionCard: React.FC<TierProgressionCardProps> = ({
         <span className="benefits-title">Your {currentTier.name} Benefits</span>
         <div className="benefits-grid">
           <div className="benefit-card">
-            <span className="benefit-icon">💰</span>
+            <span className="benefit-icon">$</span>
             <span className="benefit-value">{currentTier.rakeback}%</span>
             <span className="benefit-label">Rakeback</span>
           </div>
           <div className="benefit-card">
-            <span className="benefit-icon">🎟️</span>
+            <span className="benefit-icon">T</span>
             <span className="benefit-value">{currentTier.tournyTickets}</span>
             <span className="benefit-label">Monthly Tickets</span>
           </div>
@@ -191,7 +191,7 @@ export const TierProgressionCard: React.FC<TierProgressionCardProps> = ({
           </div>
           {currentTier.priority && (
             <div className="benefit-card">
-              <span className="benefit-icon">⭐</span>
+              <span className="benefit-icon">*</span>
               <span className="benefit-value">Yes</span>
               <span className="benefit-label">Priority Support</span>
             </div>

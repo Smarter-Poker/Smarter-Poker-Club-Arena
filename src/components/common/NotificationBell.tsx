@@ -30,7 +30,7 @@ export default function NotificationBell() {
       }}
       title="Notifications"
     >
-      🔔
+      Bell
       {notificationCount > 0 && (
         <span
           style={{

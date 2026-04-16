@@ -20,29 +20,29 @@ description: MANDATORY end-of-task protocol — push to GitHub, deploy to Vercel
 After you are **fully finished building and testing**, you MUST:
 
 1. **Push Club Arena to GitHub:**
+
 ```bash
 cd /Users/smarter.poker/Documents/club-arena
 npx tsc --noEmit
 git add -A && git commit -m "your message" && git push origin main
 ```
 
-2. **Build and sync to World Hub:**
-```bash
-cd /Users/smarter.poker/Documents/club-arena
-bash scripts/sync-to-world-hub.sh /Users/smarter.poker/Documents/Smarter-Poker-World-Hub
-```
+2. **Build and atomically deploy to World Hub & Vercel:**
 
-3. **Push World Hub to deploy to Vercel:**
+This script handles compiling the Vite SPA, cleaning the old hashes in World Hub, safely pushing the update as an atomic commit, AND triggering Vercel – all in one command.
+
 ```bash
 cd /Users/smarter.poker/Documents/Smarter-Poker-World-Hub
-bash scripts/git-safe-push.sh --build-check "chore: update Club Arena — [describe changes]"
+bash scripts/build-club-arena.sh "chore: update Club Arena — [describe changes]"
 ```
+
+````
 
 4. **Verify deployment on production:**
 ```bash
 # Wait for Vercel to deploy, then verify
 open https://smarter.poker/hub/club-arena/
-```
+````
 
 ### Rule 3: Write SQL LAST — After Building and Testing
 
@@ -59,9 +59,8 @@ open https://smarter.poker/hub/club-arena/
 2. BUILD             — npm run build (verify it compiles)
 3. TYPECHECK         — npx tsc --noEmit (verify no TS errors)
 4. PUSH CLUB ARENA   — git add -A && git commit && git push
-5. SYNC TO WORLD HUB — bash scripts/sync-to-world-hub.sh
-6. PUSH WORLD HUB    — bash scripts/git-safe-push.sh --build-check "message"
-7. TEST ON PROD      — Verify on https://smarter.poker/hub/club-arena/
+5. ATOMIC DEPLOY    — cd /Users/smarter.poker/Documents/Smarter-Poker-World-Hub && bash scripts/build-club-arena.sh "message"
+6. TEST ON PROD      — Verify on https://smarter.poker/hub/club-arena/
 8. WRITE SQL (LAST)  — Only after everything else is confirmed working
 9. EXECUTE SQL       — npm run db:push (from World Hub)
 ```
@@ -76,7 +75,7 @@ open https://smarter.poker/hub/club-arena/
 ## DO NOT End a Session Without
 
 - [ ] All code changes committed and pushed to GitHub
-- [ ] Club Arena synced to World Hub
-- [ ] World Hub pushed (triggers Vercel deployment)
+- [ ] Club Arena code pushed to origin/main
+- [ ] Atomic build run via scripts/build-club-arena.sh in the World Hub
 - [ ] SQL migrations written and executed (if any schema changes)
 - [ ] MIGRATION-CHANGELOG.md updated (if migration work)

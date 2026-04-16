@@ -380,7 +380,7 @@ export default function PlayerStyleRadar({ userId }: PlayerStyleRadarProps) {
       <div className="psr-widget">
         <h3 className="psr-title">Player Profile</h3>
         <div className="psr-empty">
-          <div className="psr-empty-icon">🎯</div>
+          <div className="psr-empty-icon">--</div>
           <div className="psr-empty-title">No Profile Data Yet</div>
           <div className="psr-empty-desc">
             Play hands at the tables to build your player profile. Your aggression, tightness,

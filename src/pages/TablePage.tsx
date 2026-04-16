@@ -3380,8 +3380,10 @@ export default function TablePage({
     }
     if (!isConnected && prevConnectedRef.current) {
       toast?.warning?.('Connection lost — reconnecting…');
+      if (soundService.isEnabled()) soundService.playDisconnect();
     } else if (isConnected && !prevConnectedRef.current) {
       toast?.success?.('Reconnected');
+      if (soundService.isEnabled()) soundService.playReconnect();
     }
     prevConnectedRef.current = isConnected;
   }, [isConnected]);
@@ -3883,8 +3885,12 @@ export default function TablePage({
         // Bible V8 §10.1: per-seat card slide-in animation
         setIsSeatDealing(true);
         setTimeout(() => setIsSeatDealing(false), 700);
-        // Bible V8 §5.3: card dealing sound on new hand
-        if (soundService.isEnabled()) soundService.playDeal();
+        // Bible V8 §5.3: new hand indicator + card dealing sound
+        if (soundService.isEnabled()) {
+          soundService.playNewHand();
+          // Stagger the deal sound slightly after the new-hand chime
+          setTimeout(() => soundService.playDeal(), 120);
+        }
         break;
       }
       case 'BLINDS_POSTED': {
@@ -4151,6 +4157,8 @@ export default function TablePage({
           }
           if (events.length > 0) {
             setChipAnimations((prev) => [...prev, ...events]);
+            // Bible V8 §5.3: pot collect sweep sound — synced with chip animation
+            if (soundService.isEnabled()) soundService.playPotCollect();
           }
         }
         break;
@@ -4995,14 +5003,9 @@ export default function TablePage({
     const newStage = tableState.boardStage;
     prevBoardStageRef.current = newStage;
 
-    // Community card sound is now triggered by the discrete COMMUNITY_CARDS_DEALT
-    // event (Law 1.16 — faster than waiting for snapshot). Only the showdown
-    // sound fires here as a fallback (no discrete SHOWDOWN event handler yet).
-    if (soundService.isEnabled() && prevStage !== newStage) {
-      if (newStage === 'showdown') {
-        soundService.playShowdown();
-      }
-    }
+    // Community card and showdown sounds are now triggered by discrete engine
+    // events (COMMUNITY_CARDS_DEALT, SHOWDOWN) in the main event handler above.
+    // No fallback sound here — avoids double-playing on transitions.
   }, [tableState.boardStage]);
 
   // Clear pre-action if game state changes significantly (new hand, someone raises after preaction set, etc)

@@ -96,3 +96,6 @@ export {
 
 // Search Components
 export { SearchInput, SearchWithResults, FilterChips } from './Search';
+
+// Animated Number Display
+export { AnimatedNumber } from './AnimatedNumber';

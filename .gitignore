@@ -30,3 +30,17 @@ supabase/.temp
 # Generated PioSolver trees (regeneratable)
 scripts/trees/
 server/vitest.config.ts.timestamp-*.mjs
+
+# Debug/test build outputs (e.g. dist-bug021, dist-hotfix, etc.)
+# These are one-off build snapshots that agents create during debugging.
+# They contain 500+ files each and cause VS Code to show 1K+ phantom changes.
+dist-bug*/
+dist-hotfix*/
+dist-test*/
+
+# Agent brain artifacts (may contain tokens, session data)
+.gemini/
+
+# Agent memory/context files (tracked selectively, not bulk)
+# Uncomment below if you want to gitignore all .memory files:
+# .memory/

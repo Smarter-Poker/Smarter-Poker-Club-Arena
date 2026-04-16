@@ -165,11 +165,17 @@ export const WalletService = {
     // 3. Calculate diamond cost
     const diamondCost = Math.ceil((chipAmount / 100) * 38);
 
+    // BUG 025 FIX (2026-04-16): old RPC stub returned silent-success AND the call used
+    // mismatched param names (p_chips/p_diamonds) that would have 404'd against PostgREST
+    // anyway once the stub was replaced. Aligning to the unified signature
+    // (p_club_id, p_amount, p_minted_by, p_diamonds_cost, p_notes).
     const { data, error } = await retryAsync(async () => {
       const res = await supabase.rpc('mint_club_chips', {
         p_club_id: clubId,
-        p_chips: chipAmount,
-        p_diamonds: diamondCost,
+        p_amount: chipAmount,
+        p_minted_by: requestingUserId || null,
+        p_diamonds_cost: diamondCost,
+        p_notes: club.union_id ? 'Union mint' : 'Standalone club mint',
       });
       return res;
     });

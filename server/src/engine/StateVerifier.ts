@@ -20,6 +20,8 @@
 
 import type { Card, SeatPlayer, HandStage } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
+import { createRecoveryStateMachine, type RecoveryFSMState } from './StateMachine.js';
+import type { StateMachine } from './StateMachine.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -62,10 +64,35 @@ export interface ViolationEvent {
 export class StateVerifier {
   // Track expected chip totals per table
   private chipTotals: Map<string, number> = new Map();
+  /** Bible V8 §3.5: Per-table Recovery FSM tracking desync detection → resync → healthy */
+  private recoveryFSMs: Map<string, StateMachine<RecoveryFSMState>> = new Map();
+  /** Track consecutive failed resync attempts per table (circuit breaker) */
+  private resyncRetries: Map<string, number> = new Map();
+  private static readonly MAX_RESYNC_RETRIES = 3;
   private onViolation?: (event: ViolationEvent) => void;
 
   constructor(onViolation?: (event: ViolationEvent) => void) {
     this.onViolation = onViolation;
+  }
+
+  /** Get or create the Recovery FSM for a table */
+  private getRecoveryFSM(tableId: string): StateMachine<RecoveryFSMState> {
+    let fsm = this.recoveryFSMs.get(tableId);
+    if (!fsm) {
+      fsm = createRecoveryStateMachine('healthy');
+      this.recoveryFSMs.set(tableId, fsm);
+    }
+    return fsm;
+  }
+
+  /** Get the current recovery state for a table */
+  getRecoveryState(tableId: string): RecoveryFSMState {
+    return this.getRecoveryFSM(tableId).state;
+  }
+
+  /** Check if a table is in a healthy state */
+  isHealthy(tableId: string): boolean {
+    return this.getRecoveryFSM(tableId).state === 'healthy';
   }
 
   /**
@@ -114,6 +141,23 @@ export class StateVerifier {
     // 6. Pot Size Sanity
     this.verifyPotSanity(context, violations);
 
+    // Recovery FSM integration
+    const recoveryFSM = this.getRecoveryFSM(context.tableId);
+    const hasCritical = violations.some((v) => v.severity === 'critical');
+
+    if (hasCritical && recoveryFSM.state === 'healthy') {
+      // FSM: healthy → desync_detected
+      recoveryFSM.transition('desync_detected');
+      // FSM: desync_detected → resync_required (confirmed critical violation)
+      recoveryFSM.transition('resync_required');
+    } else if (violations.length === 0 && recoveryFSM.state !== 'healthy') {
+      // Violations cleared — if we were in desync_detected, resolve back to healthy
+      if (recoveryFSM.canTransition('healthy')) {
+        recoveryFSM.transition('healthy');
+        this.resyncRetries.delete(context.tableId);
+      }
+    }
+
     // Emit violations
     if (violations.length > 0) {
       const event: ViolationEvent = {
@@ -145,6 +189,62 @@ export class StateVerifier {
       violations,
       chipTotal,
     };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // RECOVERY FSM OPERATIONS (Bible V8 §3.5)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Initiate a resync for a table. Called by ServerTableEngine when
+   * the recovery FSM reaches 'resync_required'.
+   */
+  beginResync(tableId: string): boolean {
+    const fsm = this.getRecoveryFSM(tableId);
+    if (fsm.state !== 'resync_required') return false;
+    // FSM: resync_required → resyncing
+    return fsm.transition('resyncing');
+  }
+
+  /**
+   * Mark resync as complete. Called after server has sent fresh state to all clients.
+   */
+  completeResync(tableId: string): boolean {
+    const fsm = this.getRecoveryFSM(tableId);
+    if (fsm.state !== 'resyncing') return false;
+    // FSM: resyncing → resync_complete → healthy
+    fsm.transition('resync_complete');
+    fsm.transition('healthy');
+    this.resyncRetries.delete(tableId);
+    return true;
+  }
+
+  /**
+   * Mark resync as failed. Retry or escalate to manual intervention.
+   */
+  failResync(tableId: string): RecoveryFSMState {
+    const fsm = this.getRecoveryFSM(tableId);
+    if (fsm.state !== 'resyncing') return fsm.state;
+
+    const retries = (this.resyncRetries.get(tableId) ?? 0) + 1;
+    this.resyncRetries.set(tableId, retries);
+
+    // FSM: resyncing → recovery_failed
+    fsm.transition('recovery_failed');
+
+    if (retries >= StateVerifier.MAX_RESYNC_RETRIES) {
+      // FSM: recovery_failed → manual_intervention (circuit breaker)
+      fsm.transition('manual_intervention');
+      reportError(
+        `Table ${tableId} exceeded max resync retries (${retries}). Manual intervention required.`,
+        'StateVerifier.MaxResyncRetries'
+      );
+    } else {
+      // FSM: recovery_failed → resync_required (retry)
+      fsm.transition('resync_required');
+    }
+
+    return fsm.state;
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -303,9 +403,13 @@ export class StateVerifier {
 
   clearTable(tableId: string): void {
     this.chipTotals.delete(tableId);
+    this.recoveryFSMs.delete(tableId);
+    this.resyncRetries.delete(tableId);
   }
 
   dispose(): void {
     this.chipTotals.clear();
+    this.recoveryFSMs.clear();
+    this.resyncRetries.clear();
   }
 }

@@ -302,18 +302,6 @@ export const BBJ_QUALIFYING_HANDS: Record<string, BBJQualifyingHand> = {
     handRank: 'four_of_a_kind',
     minRankValue: 'KKKK',
   },
-  // Alias: ofc_pineapple maps to pineapple (same game, different variant key)
-  ofc_pineapple: {
-    label: 'Pineapple',
-    minLosingHand: 'KKKK2',
-    description: 'Four of a Kind (Kings) or better must LOSE',
-    rules: [
-      'Must use exactly 2 cards from hand',
-      'Both players must use two cards from their hole cards',
-    ],
-    handRank: 'four_of_a_kind',
-    minRankValue: 'KKKK',
-  },
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════

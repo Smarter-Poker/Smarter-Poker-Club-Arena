@@ -138,6 +138,15 @@ class TableService {
       insurance_enabled: false,
       auto_restart: true,
       call_time_enabled: false,
+      // Bible V8 4.3: Blind entry policies
+      wait_for_big_blind: true,
+      auto_post_blinds: true,
+      post_dead_blind: true,
+      // Bible V8 4.21: Showdown reveal policy
+      showdown_reveal: 'last_aggressor_first' as const,
+      auto_muck_losers: true,
+      // Bible V8: Anti-ratholing
+      rathole_cooldown_minutes: 0,
       ...settings,
     };
 

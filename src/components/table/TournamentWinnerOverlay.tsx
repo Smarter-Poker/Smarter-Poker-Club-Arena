@@ -84,7 +84,7 @@ const TournamentWinnerOverlay: React.FC<TournamentWinnerOverlayProps> = ({
         ))}
       </div>
       <div className="winnerContent winner-entrance">
-        <div className="winnerTrophy trophy-bounce">🏆</div>
+        <div className="winnerTrophy trophy-bounce">WINNER</div>
         <div className="winnerTitle winner-golden">CHAMPION!</div>
         <div className="winnerTournament">{tournamentName}</div>
         {prize > 0 && (

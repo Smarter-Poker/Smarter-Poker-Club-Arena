@@ -34,9 +34,7 @@ export type GameVariant =
   | 'plo6'
   | 'plo8'
   | 'pineapple'
-  | 'short_deck'
-  | 'ofc'
-  | 'ofc_pineapple';
+  | 'short_deck';
 /** Bible V8 §3.1: Full table state machine states */
 export type TableStatus =
   | 'empty'
@@ -132,6 +130,20 @@ export interface TableInfo {
   mixed_game_preset?: string;
   /** FIX 104: Hands per variant before rotation */
   mixed_game_hands_per_variant?: number;
+  /** Bible V8 §4.2: Wait-for-BB — new players must wait for BB to reach them */
+  wait_for_big_blind?: boolean;
+  /** Bible V8 §4.2: Auto-post blinds when returning from sit-out */
+  auto_post_blinds?: boolean;
+  /** Bible V8 §4.2: Require missed blind post when re-entering */
+  post_dead_blind?: boolean;
+  /** Bible V8 §6.17: Admin pause lock — prevents new hands from starting */
+  pause_lock?: boolean;
+  /** Bible V8 §6.17: Maintenance lock — table is in maintenance mode */
+  maintenance_lock?: boolean;
+  /** Bible V8 §6.15: Observer mode enabled — spectators can watch */
+  observer_enabled?: boolean;
+  /** Bible V8 §6.15: Show hole cards to observers during play */
+  observer_show_cards?: boolean;
 }
 
 export interface SeatedPlayer {
@@ -147,6 +159,10 @@ export interface SeatedPlayer {
   avatar_url?: string;
   /** Bible V8 §4.2: Player returning from sit-out must post dead blind */
   returning_from_sitout?: boolean;
+  /** Bible V8 §4.2: Player is waiting for BB position before playing */
+  waiting_for_big_blind?: boolean;
+  /** Bible V8 §4.2: Player must post forced (dead) blind to re-enter */
+  forced_post_required?: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

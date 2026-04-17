@@ -32,19 +32,19 @@ const TournamentAnnouncementOverlay: React.FC<TournamentAnnouncementProps> = ({
 
   const config: Record<string, { icon: string; title: string; subtitle: string; color: string }> = {
     hand_for_hand: {
-      icon: '✋',
+      icon: 'H',
       title: 'HAND FOR HAND',
       subtitle: 'All tables play one hand at a time — bubble approaching!',
       color: '#f59e0b',
     },
     bubble_burst: {
-      icon: '💰',
+      icon: '$',
       title: 'BUBBLE BURST!',
       subtitle: 'Congratulations — all remaining players are in the money!',
       color: '#10b981',
     },
     final_table: {
-      icon: '🏆',
+      icon: '*',
       title: 'FINAL TABLE',
       subtitle: `${data?.playersRemaining || 'All'} players remain — final table begins!`,
       color: '#8b5cf6',

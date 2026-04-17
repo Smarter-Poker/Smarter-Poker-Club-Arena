@@ -46,7 +46,6 @@ function getThemeGameType(
   if (v.includes('short') || v.includes('6+')) return '6+';
   if (v.includes('plo')) return 'PLO';
   if (v.includes('flo')) return 'FLO';
-  if (v.includes('ofc')) return 'OFC';
   if (v.includes('mixed') || v.includes('horse')) return 'MIXED';
   return 'ALL';
 }

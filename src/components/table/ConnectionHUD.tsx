@@ -20,12 +20,13 @@ interface ConnectionHUDProps {
   userId: string;
 }
 
+// Use Unicode bullet (U+2022) styled via CSS class color — no emoji
 const QUALITY_ICONS: Record<string, string> = {
-  excellent: '🟢',
-  good: '🟡',
-  fair: '🟠',
-  poor: '🔴',
-  disconnected: '⚫',
+  excellent: '\u2022',
+  good: '\u2022',
+  fair: '\u2022',
+  poor: '\u2022',
+  disconnected: '\u2022',
 };
 
 const QUALITY_LABELS: Record<string, string> = {
@@ -218,7 +219,7 @@ export const ConnectionHUD: React.FC<ConnectionHUDProps> = ({ tableId, userId })
             animation: 'slideInDown 0.3s ease-out',
           }}
         >
-          <span>⚡</span>
+          <span style={{ fontWeight: 700 }}>--</span>
           Reconnected — syncing latest table state...
           <button
             onClick={() => setShowStaleBanner(false)}
@@ -241,7 +242,7 @@ export const ConnectionHUD: React.FC<ConnectionHUDProps> = ({ tableId, userId })
       {showDisconnectWarning && (
         <div className="conn-dc-warning">
           <div className="conn-dc-container">
-            <span className="conn-dc-icon">📡</span>
+            <span className="conn-dc-icon" style={{ fontSize: '1.5rem', lineHeight: 1 }}>X</span>
             <span className="conn-dc-text">Connection Lost</span>
             {graceCountdown !== null && graceCountdown > 0 && (
               <div className="conn-dc-grace">

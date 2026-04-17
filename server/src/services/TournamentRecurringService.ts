@@ -335,20 +335,6 @@ const HOURLY_SCHEDULE: HourlyTournamentBlock[] = [
         blindStructure: BLIND_STRUCTURES.STANDARD,
         payoutStructure: PAYOUT_STRUCTURES.NINE,
       },
-      {
-        name: 'Noon Grinder (Pineapple)',
-        type: 'mtt',
-        gameVariant: 'ofc_pineapple',
-        buyIn: 5,
-        rake: 0.5,
-        guarantee: 100,
-        startingStack: 3000,
-        maxPlayers: 30,
-        minPlayers: 6,
-        horsesToRegister: 12,
-        blindStructure: BLIND_STRUCTURES.TURBO,
-        payoutStructure: PAYOUT_STRUCTURES.FIVE,
-      },
     ],
   },
   {
@@ -874,7 +860,6 @@ export class TournamentRecurringService {
         plo4: 'PLO4',
         plo5: 'PLO5',
         plo8: 'PLO8',
-        ofc_pineapple: 'OFC_PINEAPPLE',
         short_deck: 'SHORT_DECK',
       };
       const dbGameType = gameTypeMap[config.gameVariant] || 'NLH';
@@ -1002,7 +987,6 @@ export class TournamentRecurringService {
         plo4: 'PLO4',
         plo5: 'PLO5',
         plo8: 'PLO8',
-        ofc_pineapple: 'OFC_PINEAPPLE',
         short_deck: 'SHORT_DECK',
       };
       const dbGameType = gameTypeMap[config.gameVariant] || 'NLH';
@@ -1095,7 +1079,6 @@ export class TournamentRecurringService {
         plo4: 'PLO4',
         plo5: 'PLO5',
         plo8: 'PLO8',
-        ofc_pineapple: 'OFC_PINEAPPLE',
       };
       const dbGameType = gameTypeMap[config.gameVariant] || 'NLH';
 

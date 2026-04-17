@@ -316,9 +316,6 @@ export class HandController {
         return 4; // Omaha Hi-Lo: 4 cards
       case 'pineapple':
         return 3; // Pineapple: 3 hole cards, discard 1 later
-      case 'ofc':
-      case 'ofc_pineapple':
-        return 5;
       default:
         return 2; // nlh, short_deck
     }

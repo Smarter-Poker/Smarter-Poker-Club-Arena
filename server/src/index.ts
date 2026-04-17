@@ -3134,10 +3134,15 @@ function readBody(req: import('http').IncomingMessage): Promise<string> {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Bible V8 §9.3: Rate limiting — 1 action per 100ms per player
+// Bible V8 §9.3: Rate limiting — 1 action per 250ms per player
+// Raised from 100ms → 250ms (BUG 025): 100ms was too tight for human input —
+// legitimate double-taps (50–150ms) tripped the limiter and surfaced a 429 toast
+// mid-hand. 250ms = 4 actions/sec max, still aggressive enough to block bot
+// abuse but will not reject normal human clicks or pre-action/real-action
+// transitions.
 // ═══════════════════════════════════════════════════════════════════════════════
 const actionRateLimiter: Map<string, number> = new Map();
-const RATE_LIMIT_MS = 100; // Minimum ms between action submissions per player
+const RATE_LIMIT_MS = 250; // Minimum ms between action submissions per player
 
 function checkRateLimit(userId: string): boolean {
   const now = Date.now();

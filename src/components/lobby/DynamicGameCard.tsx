@@ -79,8 +79,6 @@ const VARIANT_DISPLAY: Record<string, { label: string; sub?: string; css: string
   plo8: { label: 'PLO', sub: '8', css: 'plo8' },
   pineapple: { label: 'PNPL', css: 'pineapple' },
   short_deck: { label: '6+', sub: 'SD', css: 'short_deck' },
-  ofc: { label: 'OFC', css: 'ofc' },
-  ofc_pineapple: { label: 'OFC', sub: 'P', css: 'ofc_pineapple' },
 };
 
 // FIX 116: Dead variants removed — 9 approved variants only
@@ -92,8 +90,6 @@ const TOURNEY_VARIANT_MAP: Record<string, string> = {
   PLO8: 'plo8',
   PINEAPPLE: 'pineapple',
   SHORT_DECK: 'short_deck',
-  OFC: 'ofc',
-  OFC_PINEAPPLE: 'ofc_pineapple',
   PLO: 'plo4', // Legacy mapping
 };
 

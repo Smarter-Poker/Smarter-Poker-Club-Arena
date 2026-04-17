@@ -44,9 +44,9 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
   // ── Core Config ──
   const [name, setName] = useState('');
   const [format, setFormat] = useState<TournamentFormat>('mtt_freezeout');
-  const [gameVariant, setGameVariant] = useState<
-    'NLH' | 'PLO4' | 'PLO5' | 'PLO8' | 'OFC_PINEAPPLE' | 'SHORT_DECK'
-  >('NLH');
+  const [gameVariant, setGameVariant] = useState<'NLH' | 'PLO4' | 'PLO5' | 'PLO8' | 'SHORT_DECK'>(
+    'NLH'
+  );
   const [buyIn, setBuyIn] = useState('10');
   const [rake, setRake] = useState('1');
   const [startingChips, setStartingChips] = useState('1500');
@@ -422,7 +422,6 @@ export default function CreateTournamentModal({ clubId, unionId, onClose, onSucc
               <option value="PLO4">Pot-Limit Omaha (4-card)</option>
               <option value="PLO5">Pot-Limit Omaha (5-card)</option>
               <option value="PLO8">PLO Hi-Lo (8 or Better)</option>
-              <option value="OFC_PINEAPPLE">Open Face Chinese (Pineapple)</option>
               <option value="SHORT_DECK">Short Deck Hold'em</option>
             </select>
           </div>

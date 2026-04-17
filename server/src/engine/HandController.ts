@@ -266,7 +266,8 @@ export class HandController {
     const blindsPostings: Array<{ seat: number; type: string; amount: number }> = [];
     if (sbPlayer) {
       const sbAmount = Math.min(smallBlind, sbPlayer.bet); // bet has been set to actual paid
-      if (sbAmount > 0) blindsPostings.push({ seat: sbSeat, type: 'small_blind', amount: sbAmount });
+      if (sbAmount > 0)
+        blindsPostings.push({ seat: sbSeat, type: 'small_blind', amount: sbAmount });
     }
     if (bbPlayer) {
       const bbAmount = Math.min(bigBlind, bbPlayer.bet);
@@ -316,9 +317,6 @@ export class HandController {
         return 4; // Omaha Hi-Lo: 4 cards
       case 'pineapple':
         return 3; // Pineapple: 3 hole cards, discard 1 later
-      case 'ofc':
-      case 'ofc_pineapple':
-        return 5;
       default:
         return 2; // nlh, short_deck
     }
@@ -836,7 +834,12 @@ export class HandController {
 
     // If still no winners (impossible edge case), skip distribution to prevent chip loss
     if (winners.length === 0 || totalWinnerAmount === 0) {
-      reportError(new Error(`[HandController] CRITICAL: No winners and no active players — pot of ${this.state.pot} cannot be distributed`), 'HandController.CRITICAL');
+      reportError(
+        new Error(
+          `[HandController] CRITICAL: No winners and no active players — pot of ${this.state.pot} cannot be distributed`
+        ),
+        'HandController.CRITICAL'
+      );
       this.emit({ type: 'WINNERS', winners: [] });
       this.handFSM.transition('settlement');
       this.emit({ type: 'HAND_COMPLETE', handNumber: this.config.handNumber, rake: 0, bbjFee: 0 });

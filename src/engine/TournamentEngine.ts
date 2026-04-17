@@ -336,8 +336,8 @@ export class TournamentEngine {
 
         console.debug(
           `[TournamentEngine:${this.tournamentId.slice(0, 8)}] Spin result: ` +
-          `${spinResult.multiplier}x display | prize=${prizePool} | ` +
-          `bonus=${actualBonus} | poolDeposit=${poolDeposited}`
+            `${spinResult.multiplier}x display | prize=${prizePool} | ` +
+            `bonus=${actualBonus} | poolDeposit=${poolDeposited}`
         );
       }
 
@@ -617,7 +617,12 @@ export class TournamentEngine {
 
     if (error || !registrations || registrations.length === 0) {
       // No registrations — mark tournament as COMPLETED and bail
-      reportError(new Error(`[TournamentEngine:${this.tournamentId.slice(0, 8)}] No registrations found — marking COMPLETED`), 'TournamentEngine.No_registrations_found__marking_COMPLETE');
+      reportError(
+        new Error(
+          `[TournamentEngine:${this.tournamentId.slice(0, 8)}] No registrations found — marking COMPLETED`
+        ),
+        'TournamentEngine.No_registrations_found__marking_COMPLETE'
+      );
       await this.supabase
         .from('tournaments')
         .update({ status: 'COMPLETED', current_players: 0 })
@@ -627,7 +632,12 @@ export class TournamentEngine {
 
     // Need at least 2 players for a tournament
     if (registrations.length < 2) {
-      reportError(new Error(`[TournamentEngine:${this.tournamentId.slice(0, 8)}] Only ${registrations.length} registration — marking COMPLETED`), 'TournamentEngine.Only_registrationslength_registration__m');
+      reportError(
+        new Error(
+          `[TournamentEngine:${this.tournamentId.slice(0, 8)}] Only ${registrations.length} registration — marking COMPLETED`
+        ),
+        'TournamentEngine.Only_registrationslength_registration__m'
+      );
       await this.supabase
         .from('tournaments')
         .update({ status: 'COMPLETED', current_players: registrations.length })
@@ -769,7 +779,10 @@ export class TournamentEngine {
 
     const activePlayers = Array.from(this.players.values()).filter((p) => p.status === 'playing');
     if (activePlayers.length === 0) {
-      reportError(new Error(`[TournamentEngine:${this.tournamentId.slice(0, 8)}] No active players to seat!`), 'TournamentEngine.No_active_players_to_seat');
+      reportError(
+        new Error(`[TournamentEngine:${this.tournamentId.slice(0, 8)}] No active players to seat!`),
+        'TournamentEngine.No_active_players_to_seat'
+      );
       return;
     }
 
@@ -781,7 +794,12 @@ export class TournamentEngine {
 
     // Distribute round-robin across tables
     if (this.tables.length === 0) {
-      reportError(new Error(`[TournamentEngine:${this.tournamentId}] No tables created — cannot seat players`), 'TournamentEngine.No_tables_created__cannot_seat_players');
+      reportError(
+        new Error(
+          `[TournamentEngine:${this.tournamentId}] No tables created — cannot seat players`
+        ),
+        'TournamentEngine.No_tables_created__cannot_seat_players'
+      );
       return;
     }
     const seatInserts: Array<Record<string, unknown>> = [];
@@ -1366,7 +1384,12 @@ export class TournamentEngine {
           .select('id');
 
         if (claimErr || !claimedRows || claimedRows.length === 0) {
-          reportError(new Error(`[TournamentEngine:${this.tournamentId.slice(0, 8)}] Alternate ${player.username} unregister race condition prevented. Skipping seating.`), 'TournamentEngine.Alternate_playerusername_unregister_race');
+          reportError(
+            new Error(
+              `[TournamentEngine:${this.tournamentId.slice(0, 8)}] Alternate ${player.username} unregister race condition prevented. Skipping seating.`
+            ),
+            'TournamentEngine.Alternate_playerusername_unregister_race'
+          );
           continue;
         }
         // 2. Safely Insert seat now that we own the state transition
@@ -1447,7 +1470,12 @@ export class TournamentEngine {
       );
 
       if (error) {
-        reportError(new Error(`[TournamentEngine:${this.tournamentId.slice(0, 8)}] Bulk chip sync failed: ${error.message}`), 'TournamentEngine.Bulk_chip_sync_failed');
+        reportError(
+          new Error(
+            `[TournamentEngine:${this.tournamentId.slice(0, 8)}] Bulk chip sync failed: ${error.message}`
+          ),
+          'TournamentEngine.Bulk_chip_sync_failed'
+        );
       }
     }
 
@@ -1484,8 +1512,7 @@ export class TournamentEngine {
       })
       .eq('tournament_id', this.tournamentId)
       .eq('user_id', userId);
-    if (elimErr)
-      reportError(elimErr, 'TournamentEngine.Failed_to_mark_player_userIdslice0_8_as_');
+    if (elimErr) reportError(elimErr, 'TournamentEngine.Failed_to_mark_player_userIdslice0_8_as_');
 
     // Remove from table_seats
     const { error: seatErr } = await this.supabase
@@ -1494,8 +1521,7 @@ export class TournamentEngine {
       .eq('table_id', tableId)
       .eq('user_id', userId)
       .is('left_at', null);
-    if (seatErr)
-      reportError(seatErr, 'TournamentEngine.Failed_to_vacate_seat_for_userIdslice0_8');
+    if (seatErr) reportError(seatErr, 'TournamentEngine.Failed_to_vacate_seat_for_userIdslice0_8');
 
     // Decrement tables.current_players and local playerCount
     const table = this.tables.find((t) => t.tableId === tableId);
@@ -1505,8 +1531,7 @@ export class TournamentEngine {
         .from('tables')
         .update({ current_players: table.playerCount })
         .eq('id', tableId);
-      if (countErr)
-        reportError(countErr, 'TournamentEngine.Failed_to_update_table_player_count');
+      if (countErr) reportError(countErr, 'TournamentEngine.Failed_to_update_table_player_count');
     }
 
     // Credit prize to player wallet (if any)
@@ -1614,7 +1639,12 @@ export class TournamentEngine {
       userId.length < 8 ||
       userId.replace(/0/g, '').replace(/-/g, '').length === 0
     ) {
-      reportError(new Error(`[TournamentEngine:${this.tournamentId.slice(0, 8)}] Skipping prize credit — invalid userId: ${userId}`), 'TournamentEngine.Skipping_prize_credit__invalid_userId');
+      reportError(
+        new Error(
+          `[TournamentEngine:${this.tournamentId.slice(0, 8)}] Skipping prize credit — invalid userId: ${userId}`
+        ),
+        'TournamentEngine.Skipping_prize_credit__invalid_userId'
+      );
       return;
     }
 
@@ -1648,8 +1678,7 @@ export class TournamentEngine {
       transaction_type: 'cash_out',
       notes: `Tournament prize: ${this.tournamentInfo.name}`,
     });
-    if (auditErr)
-      reportError(auditErr, 'TournamentEngine.chip_transactions_audit_log_failed');
+    if (auditErr) reportError(auditErr, 'TournamentEngine.chip_transactions_audit_log_failed');
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1985,7 +2014,6 @@ export class TournamentEngine {
       PLO5: 'plo5',
       PLO6: 'plo6',
       PLO8: 'plo8',
-      OFC_PINEAPPLE: 'ofc_pineapple',
       SHORT_DECK: 'short_deck',
     };
     return map[gameType?.toUpperCase()] || 'nlh';

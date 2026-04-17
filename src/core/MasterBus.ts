@@ -224,13 +224,6 @@ export type BusEventType =
   | 'PRE_ACTION_SET'
   | 'PRE_ACTION_EXECUTED'
   | 'PRE_ACTION_INVALIDATED'
-  // Phase Q1: OFC dealing events
-  | 'OFC_HAND_STARTED'
-  | 'OFC_CARDS_DEALT'
-  | 'OFC_PLACEMENT_TIMER' // @deprecated: no emitters or subscribers — reserved for future OFC implementation
-  | 'OFC_TURN_CHANGE'
-  | 'OFC_SCORING_COMPLETE'
-  | 'OFC_FANTASYLAND_ENTERED'
   // Phase Q1: Rakeback events
   | 'RAKEBACK_CALCULATED'
   | 'RAKEBACK_DISTRIBUTED'
@@ -789,13 +782,6 @@ export interface BusPayloadMap {
   PRE_ACTION_SET: { tableId: string; playerId: string; action: string };
   PRE_ACTION_EXECUTED: { tableId: string; playerId: string; action: string; amount: number };
   PRE_ACTION_INVALIDATED: { tableId: string; playerId: string; reason: string };
-  // Phase Q1: OFC dealing payloads
-  OFC_HAND_STARTED: { tableId: string; handNumber: number; players: string[] };
-  OFC_CARDS_DEALT: { tableId: string; playerId: string; cardCount: number; isFantasyland: boolean };
-  OFC_PLACEMENT_TIMER: { tableId: string; playerId: string; secondsRemaining: number };
-  OFC_TURN_CHANGE: { tableId: string; playerId: string };
-  OFC_SCORING_COMPLETE: { tableId: string; scores: Record<string, number> };
-  OFC_FANTASYLAND_ENTERED: { tableId: string; playerId: string };
   // Phase Q1: Rakeback payloads
   RAKEBACK_CALCULATED: {
     playerId: string;

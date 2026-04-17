@@ -27,16 +27,7 @@ export type HandStage = 'preflop' | 'flop' | 'pineapple_discard' | 'turn' | 'riv
 // FIX 120: Added 'discard' action for Crazy Pineapple
 export type ActionType = 'fold' | 'check' | 'call' | 'bet' | 'raise' | 'all_in' | 'discard';
 // FIX 116: Dead variants removed (flh, plo, plo_hilo, mixed) — Dan's 9 approved variants only
-export type GameVariant =
-  | 'nlh'
-  | 'plo4'
-  | 'plo5'
-  | 'plo6'
-  | 'plo8'
-  | 'pineapple'
-  | 'short_deck'
-  | 'ofc'
-  | 'ofc_pineapple';
+export type GameVariant = 'nlh' | 'plo4' | 'plo5' | 'plo6' | 'plo8' | 'pineapple' | 'short_deck';
 /** Bible V8 §3.1: Full table state machine states */
 export type TableStatus =
   | 'empty'

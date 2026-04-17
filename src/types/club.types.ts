@@ -195,9 +195,7 @@ export type GameVariant =
   | 'plo6' // Pot-Limit Omaha 6-card
   | 'plo8' // Omaha Hi-Lo (8 or better)
   | 'pineapple' // Pineapple Hold'em
-  | 'short_deck' // Short Deck (6+)
-  | 'ofc' // Open Face Chinese
-  | 'ofc_pineapple'; // OFC Pineapple
+  | 'short_deck'; // Short Deck (6+)
 
 export interface TableSettings {
   // Blinds & Stakes
@@ -225,6 +223,19 @@ export interface TableSettings {
   action_table: boolean; // Require minimum hands played
   action_table_percentage: number;
 
+  // Blind Entry Policies (Bible V8 4.3)
+  wait_for_big_blind: boolean; // New players must wait for BB before being dealt in
+  auto_post_blinds: boolean; // Auto-post blinds when returning from sit-out
+  post_dead_blind: boolean; // Require missed blind post when re-entering
+
+  // Showdown Reveal Policy (Bible V8 4.21)
+  showdown_reveal: ShowdownRevealPolicy;
+  auto_muck_losers: boolean; // Auto-muck non-winning hands
+
+  // Anti-Ratholing
+  no_rathole: boolean; // Prevent leaving and re-sitting with fewer chips
+  rathole_cooldown_minutes: number; // Cooldown before re-sitting after leaving
+
   // Security
   gps_enabled: boolean;
   ip_restriction: boolean;
@@ -233,6 +244,12 @@ export interface TableSettings {
 
 // FIX 114: UTG straddle only — Mississippi and all_positions removed per Dan's directive
 export type StraddleType = 'none' | 'utg';
+
+// Bible V8 4.21: Showdown reveal ordering
+export type ShowdownRevealPolicy =
+  | 'last_aggressor_first' // Last player who bet/raised shows first (standard)
+  | 'clockwise_from_button' // First left of dealer shows first
+  | 'auto_show_all'; // All hands revealed automatically
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 🪑 TABLE PLAYERS
@@ -256,6 +273,15 @@ export interface TablePlayer {
   hands_played: number;
   session_profit: number;
   profile: UserProfile;
+
+  // Bible V8 2.4: Extended seat fields
+  waiting_for_big_blind: boolean; // Player waiting to post BB before playing
+  sit_out_next_hand: boolean; // Will sit out after current hand
+  auto_post_blinds_enabled: boolean; // Auto-post blinds preference
+  forced_post_required: boolean; // Must post dead blind to re-enter
+  timeout_count_session: number; // Timeouts this session (triggers sit-out after 3)
+  auto_rebuy_enabled: boolean; // Auto rebuy when stack drops below threshold
+  auto_rebuy_amount: number; // Amount to auto rebuy (in BB)
 }
 
 export type PlayerStatus =
@@ -825,6 +851,379 @@ export const TRAINING_LEVELS: TrainingLevel[] = [
 
 export const MASTERY_GATE_THRESHOLD = 0.85; // 85% accuracy to unlock next level
 export const MASTERY_MIN_QUESTIONS = 20; // Minimum questions to evaluate mastery
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  BIBLE V8 CHAPTER 2 — EXTENDED OBJECT SCHEMAS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Bible V8 2.2: Variant Configuration Object
+ * Data-driven variant rules instead of code-branched logic.
+ * Each variant maps to one of these configs.
+ */
+export interface VariantConfig {
+  variant: GameVariant;
+  display_name: string;
+  hole_cards: number; // 2 for NLH, 4 for PLO4, etc.
+  mandatory_hole_card_usage: 'exactly_2' | 'any' | 'none'; // PLO = exactly_2, NLH = any
+  board_cards_total: 5; // Always 5 for community games
+  board_reveal_pattern: [number, number, number]; // [3, 1, 1] = flop/turn/river
+  discard_phase_enabled: boolean; // true for Pineapple
+  discard_after_street: 'flop' | null; // Pineapple discards after flop
+  discard_count: number; // 1 for Pineapple
+  hi_lo_enabled: boolean; // true for PLO8
+  hi_lo_qualifier: number | null; // 8 for PLO8
+  short_deck: boolean; // true for Short Deck (6+)
+  short_deck_min_rank: CardRank | null; // '6' for Short Deck
+  betting_structure: 'no_limit' | 'pot_limit' | 'fixed_limit';
+  min_players: number;
+  max_players: number;
+}
+
+/** Default variant configs for all supported variants */
+export const VARIANT_CONFIGS: Record<GameVariant, VariantConfig> = {
+  nlh: {
+    variant: 'nlh',
+    display_name: "No-Limit Hold'em",
+    hole_cards: 2,
+    mandatory_hole_card_usage: 'any',
+    board_cards_total: 5,
+    board_reveal_pattern: [3, 1, 1],
+    discard_phase_enabled: false,
+    discard_after_street: null,
+    discard_count: 0,
+    hi_lo_enabled: false,
+    hi_lo_qualifier: null,
+    short_deck: false,
+    short_deck_min_rank: null,
+    betting_structure: 'no_limit',
+    min_players: 2,
+    max_players: 9,
+  },
+  plo4: {
+    variant: 'plo4',
+    display_name: 'Pot-Limit Omaha',
+    hole_cards: 4,
+    mandatory_hole_card_usage: 'exactly_2',
+    board_cards_total: 5,
+    board_reveal_pattern: [3, 1, 1],
+    discard_phase_enabled: false,
+    discard_after_street: null,
+    discard_count: 0,
+    hi_lo_enabled: false,
+    hi_lo_qualifier: null,
+    short_deck: false,
+    short_deck_min_rank: null,
+    betting_structure: 'pot_limit',
+    min_players: 2,
+    max_players: 9,
+  },
+  plo5: {
+    variant: 'plo5',
+    display_name: 'PLO-5 Card',
+    hole_cards: 5,
+    mandatory_hole_card_usage: 'exactly_2',
+    board_cards_total: 5,
+    board_reveal_pattern: [3, 1, 1],
+    discard_phase_enabled: false,
+    discard_after_street: null,
+    discard_count: 0,
+    hi_lo_enabled: false,
+    hi_lo_qualifier: null,
+    short_deck: false,
+    short_deck_min_rank: null,
+    betting_structure: 'pot_limit',
+    min_players: 2,
+    max_players: 6,
+  },
+  plo6: {
+    variant: 'plo6',
+    display_name: 'PLO-6 Card',
+    hole_cards: 6,
+    mandatory_hole_card_usage: 'exactly_2',
+    board_cards_total: 5,
+    board_reveal_pattern: [3, 1, 1],
+    discard_phase_enabled: false,
+    discard_after_street: null,
+    discard_count: 0,
+    hi_lo_enabled: false,
+    hi_lo_qualifier: null,
+    short_deck: false,
+    short_deck_min_rank: null,
+    betting_structure: 'pot_limit',
+    min_players: 2,
+    max_players: 6,
+  },
+  plo8: {
+    variant: 'plo8',
+    display_name: 'Omaha Hi-Lo',
+    hole_cards: 4,
+    mandatory_hole_card_usage: 'exactly_2',
+    board_cards_total: 5,
+    board_reveal_pattern: [3, 1, 1],
+    discard_phase_enabled: false,
+    discard_after_street: null,
+    discard_count: 0,
+    hi_lo_enabled: true,
+    hi_lo_qualifier: 8,
+    short_deck: false,
+    short_deck_min_rank: null,
+    betting_structure: 'pot_limit',
+    min_players: 2,
+    max_players: 9,
+  },
+  pineapple: {
+    variant: 'pineapple',
+    display_name: 'Crazy Pineapple',
+    hole_cards: 3,
+    mandatory_hole_card_usage: 'any',
+    board_cards_total: 5,
+    board_reveal_pattern: [3, 1, 1],
+    discard_phase_enabled: true,
+    discard_after_street: 'flop',
+    discard_count: 1,
+    hi_lo_enabled: false,
+    hi_lo_qualifier: null,
+    short_deck: false,
+    short_deck_min_rank: null,
+    betting_structure: 'no_limit',
+    min_players: 2,
+    max_players: 9,
+  },
+  short_deck: {
+    variant: 'short_deck',
+    display_name: 'Short Deck (6+)',
+    hole_cards: 2,
+    mandatory_hole_card_usage: 'any',
+    board_cards_total: 5,
+    board_reveal_pattern: [3, 1, 1],
+    discard_phase_enabled: false,
+    discard_after_street: null,
+    discard_count: 0,
+    hi_lo_enabled: false,
+    hi_lo_qualifier: null,
+    short_deck: true,
+    short_deck_min_rank: '6',
+    betting_structure: 'no_limit',
+    min_players: 2,
+    max_players: 9,
+  },
+};
+
+/**
+ * Bible V8 2.13: Bet Input Object
+ * Tracks the state of the bet input UI for the current action.
+ */
+export interface BetInputState {
+  min_bet: number; // Minimum legal bet/raise
+  max_bet: number; // Maximum legal bet/raise (= stack for NL)
+  current_value: number; // Current slider/input value
+  presets: BetPreset[]; // Preset buttons (1/3 pot, 1/2 pot, etc.)
+  pot_size: number; // Current pot for pot-relative calculations
+  is_pot_limit: boolean; // Whether max is capped at pot
+  slider_step: number; // Step size for slider
+}
+
+export interface BetPreset {
+  label: string; // Display label ("1/2 Pot", "3x BB")
+  amount: number; // Calculated amount
+  type: 'pot_fraction' | 'bb_multiple' | 'fixed'; // How it's calculated
+}
+
+/**
+ * Bible V8 2.14: Extended Action Record
+ * Full action log entry with audit trail.
+ */
+export interface ActionRecord {
+  id: string;
+  hand_id: string;
+  user_id: string;
+  seat_number: number;
+  street: HandStatus;
+  action_type: ActionType;
+  amount: number; // 0 for fold/check
+  total_invested_after: number; // Cumulative chips in pot after this action
+  pot_after_action: number; // Total pot after this action
+  timestamp: string; // ISO 8601
+  action_time_ms: number; // How long the player took to act
+  time_bank_used: boolean; // Was time bank activated for this action
+  time_bank_seconds_used: number; // Seconds of time bank consumed
+  action_source: ActionSource; // How the action was taken
+  is_timeout: boolean; // Was this an auto-fold/auto-check from timeout
+  legal_action_set_snapshot: ActionType[]; // What actions were legal at time of action
+}
+
+export type ActionSource =
+  | 'manual' // Player clicked/tapped
+  | 'pre_action' // Pre-action queue (check/fold in advance)
+  | 'timeout' // Auto-action from timer expiry
+  | 'disconnect' // Auto-action from disconnect timeout
+  | 'auto_post'; // Auto-post blind
+
+/**
+ * Bible V8 2.15: Timer Log Entry
+ * Records timer events for audit and telemetry.
+ */
+export interface TimerLogEntry {
+  hand_id: string;
+  user_id: string;
+  seat_number: number;
+  street: HandStatus;
+  event: TimerEvent;
+  timestamp: string;
+  primary_time_remaining_ms: number;
+  time_bank_remaining_ms: number;
+  time_bank_type?: 'auto' | 'manual';
+}
+
+export type TimerEvent =
+  | 'turn_started' // Primary clock begins
+  | 'time_bank_auto_activated' // Auto time bank kicked in
+  | 'time_bank_manual_activated' // Player used manual time bank
+  | 'timer_warning' // <5s warning fired
+  | 'timeout' // Timer expired, auto-action triggered
+  | 'action_committed'; // Player acted, timer stopped
+
+/**
+ * Bible V8 2.16: Notification Log Entry
+ * Records notifications sent per hand for anti-spam auditing.
+ */
+export interface NotificationLogEntry {
+  hand_id: string;
+  user_id: string;
+  notification_type: NotificationType;
+  channel: NotificationChannel;
+  timestamp: string;
+  was_delivered: boolean;
+  suppressed_reason?: string; // 'anti_spam' | 'user_disabled' | 'not_absent'
+}
+
+export type NotificationType =
+  | 'your_turn' // It's your turn to act
+  | 'your_turn_reminder' // Reminder after 5s of inaction
+  | 'time_bank_active' // Time bank activated
+  | 'hand_won' // You won the pot
+  | 'tournament_starting' // Tournament about to start
+  | 'table_closing' // Table closing soon
+  | 'new_hand'; // New hand started (for absent players)
+
+export type NotificationChannel = 'in_app' | 'push' | 'sound' | 'haptic' | 'browser';
+
+/**
+ * Bible V8 2.17: Recovery/Error State
+ * Tracks desync detection and recovery.
+ */
+export interface RecoveryState {
+  last_confirmed_server_seq: number; // Last sequence number confirmed from server
+  last_client_seq: number; // Last sequence number processed by client
+  desync_detected: boolean; // True if client and server are out of sync
+  desync_detected_at?: string; // When desync was first detected
+  recovery_attempts: number; // Number of resync attempts
+  last_recovery_attempt?: string; // Timestamp of last recovery
+  recovery_status:
+    | 'synced'
+    | 'desync_detected'
+    | 'resync_in_progress'
+    | 'resync_complete'
+    | 'resync_failed';
+}
+
+/**
+ * Bible V8 2.18: Hand History Output Layers
+ * Four tiers of hand history for different consumers.
+ */
+export interface HandHistoryLayers {
+  /** Layer 1: Raw event stream — every event as it happened, no transformation */
+  raw_events: HandHistoryRawEvent[];
+  /** Layer 2: Normalized audit log — structured, queryable, with computed fields */
+  audit_log: ActionRecord[];
+  /** Layer 3: Player-facing summary — what the player sees in hand history UI */
+  player_summary: HandHistoryPlayerSummary;
+  /** Layer 4: Dispute review — complete evidence package for disputes */
+  dispute_review: HandHistoryDisputePackage;
+}
+
+export interface HandHistoryRawEvent {
+  seq: number; // Sequence number
+  type: string; // Event type (e.g., 'deal', 'action', 'board', 'showdown')
+  timestamp: string;
+  data: Record<string, any>; // Raw event payload
+}
+
+export interface HandHistoryPlayerSummary {
+  hand_id: string;
+  hand_number: number;
+  game_variant: GameVariant;
+  stakes: string; // "1/2"
+  community_cards: Card[];
+  my_cards: Card[];
+  my_position: string; // "BTN", "SB", "BB", "UTG", etc.
+  my_result: number; // +/- chips
+  pot_total: number;
+  winner_description: string; // "Player1 wins $500 with Full House"
+  actions_summary: string[]; // ["Preflop: Hero raises to $10", "Flop: Hero checks"]
+}
+
+export interface HandHistoryDisputePackage {
+  hand_id: string;
+  raw_events: HandHistoryRawEvent[];
+  audit_log: ActionRecord[];
+  deck_seed?: string; // For verifying shuffle integrity
+  server_state_snapshots: Record<string, any>[]; // State at each decision point
+  timer_log: TimerLogEntry[];
+  notification_log: NotificationLogEntry[];
+  connection_log: ConnectionLogEntry[];
+}
+
+export interface ConnectionLogEntry {
+  user_id: string;
+  event: 'connected' | 'disconnected' | 'reconnected' | 'heartbeat_missed';
+  timestamp: string;
+  latency_ms?: number;
+}
+
+/**
+ * Bible V8 2.6: Player Presence State (extended)
+ * Comprehensive presence tracking beyond basic connected/disconnected.
+ */
+export interface PlayerPresenceState {
+  user_id: string;
+  is_connected: boolean;
+  is_focused: boolean; // Browser tab is focused
+  app_state: 'foreground' | 'background' | 'inactive'; // App visibility
+  last_heartbeat: string;
+  last_action_at: string;
+  latency_ms: number;
+  consecutive_timeouts: number;
+  is_sitting_out: boolean;
+  sit_out_reason?: 'manual' | 'timeout' | 'disconnect' | 'admin';
+  network_quality: 'good' | 'degraded' | 'poor' | 'disconnected';
+  push_notification_available: boolean;
+  device_type: 'mobile' | 'tablet' | 'desktop' | 'unknown';
+}
+
+/**
+ * Bible V8 2.19: Security Objects
+ * Integrity verification and observer controls.
+ */
+export interface HandIntegrity {
+  hand_id: string;
+  shuffle_seed_hash: string; // SHA-256 of shuffle seed (revealed post-hand)
+  action_sequence_hash: string; // Rolling hash of all actions
+  pot_verification_hash: string; // Hash of final pot distribution
+  created_at: string;
+}
+
+export interface ObserverPermissions {
+  can_view_board: boolean;
+  can_view_pot: boolean;
+  can_view_player_stacks: boolean;
+  can_view_bet_amounts: boolean;
+  can_view_player_cards: boolean; // Always false for non-showdown
+  can_view_hand_history: boolean;
+  can_chat: boolean;
+  delay_seconds: number; // Observation delay (0 = real-time, 30 = standard delay)
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  ARENA STATS

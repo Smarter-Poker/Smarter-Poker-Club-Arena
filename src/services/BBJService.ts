@@ -65,7 +65,7 @@ export interface BBJPayout {
   created_at: string;
 }
 
-export type GameVariant = 'nlh' | 'plo4' | 'plo5' | 'plo6' | 'plo8' | 'short_deck' | 'ofc';
+export type GameVariant = 'nlh' | 'plo4' | 'plo5' | 'plo6' | 'plo8' | 'short_deck';
 
 export interface BBJTriggerResult {
   triggered: boolean;
@@ -135,7 +135,7 @@ const BBJ_MINIMUM_RANKING = 8; // FOUR_OF_A_KIND
 /**
  * Variants that DO NOT have BBJ
  */
-const BBJ_EXCLUDED_VARIANTS: GameVariant[] = ['plo6', 'ofc'];
+const BBJ_EXCLUDED_VARIANTS: GameVariant[] = ['plo6'];
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SERVICE

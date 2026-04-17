@@ -255,6 +255,35 @@ class GameServer {
     };
   }
 
+  /**
+   * Bible V8 §10.4: Aggregate Prometheus metrics from all table engines.
+   * Returns Prometheus text exposition format for /metrics endpoint.
+   */
+  getPrometheusMetrics(): string {
+    // Aggregate from all engines — each produces per-table lines
+    const allLines: string[] = [];
+    let isFirst = true;
+    for (const [, engine] of this.tableEngines) {
+      const metrics = engine.getPrometheusMetrics();
+      if (isFirst) {
+        // Include headers from first engine
+        allLines.push(metrics);
+        isFirst = false;
+      } else {
+        // Skip comment lines (# HELP, # TYPE) for subsequent engines — only data lines
+        for (const line of metrics.split('\n')) {
+          if (line && !line.startsWith('#')) {
+            allLines.push(line);
+          }
+        }
+      }
+    }
+    if (allLines.length === 0) {
+      return '# No active table engines\n';
+    }
+    return allLines.join('\n') + '\n';
+  }
+
   // ═════════════════════════════════════════════════════════════════════════════
   // SYNCHRONIZED BREAKS — All MTTs/XMTTs pause at the top of every hour
   // ═════════════════════════════════════════════════════════════════════════════
@@ -493,7 +522,7 @@ class GameServer {
       //    by TournamentManager.cancelTournament via normal refund path. This startup
       //    sweep is strictly a safety-net for server crashes and should rarely fire.
       const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
-      const oneHourAgoMtt = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
       // Find stale RUNNING tournaments with no recent hand activity
       const { data: staleTourneys } = await supabase
         .from('tournaments')
@@ -505,7 +534,7 @@ class GameServer {
           .from('hand_history')
           .select('id', { count: 'exact', head: true })
           .eq('tournament_id', t.id)
-          .gte('created_at', oneHourAgoMtt);
+          .gte('created_at', oneHourAgo);
         if ((recentHands || 0) > 0) {
           console.log(
             `[GameServer] Skipping cancel of tournament ${t.id.slice(0, 8)} — ${recentHands} hands in last hour (still active)`
@@ -3014,6 +3043,19 @@ const httpServer = createServer(async (req, res) => {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
+  // GET /metrics — Bible V8 §10.4: Prometheus text exposition format
+  // Scraped by Prometheus → Grafana dashboards for engine observability
+  // ─────────────────────────────────────────────────────────────────────────
+  if (url === '/metrics' && method === 'GET') {
+    const body = gameServer.getPrometheusMetrics();
+    res.writeHead(200, {
+      'Content-Type': 'text/plain; version=0.0.4; charset=utf-8',
+    });
+    res.end(body);
+    return;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
   // POST /action — Submit a player action (fold/call/raise/check/all-in)
   // Body: { tableId, userId, action, amount? }
   // ─────────────────────────────────────────────────────────────────────────
@@ -3510,6 +3552,60 @@ const httpServer = createServer(async (req, res) => {
       return sendJSON(res, result.success ? 200 : 400, result);
     } catch (err: any) {
       reportError(err, 'HTTP.discard_error');
+      return sendJSON(res, 500, { success: false, error: 'Invalid request body' });
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // POST /admin/pause — Bible V8 §6.17: Admin pause (current hand finishes, no new hands)
+  // Body: { tableId, reason? }
+  // ─────────────────────────────────────────────────────────────────────────
+  if (method === 'POST' && url === '/admin/pause') {
+    try {
+      const auth = await authenticateRequest(req);
+      if (!auth) return sendJSON(res, 401, { success: false, error: 'Authentication required' });
+      const body = JSON.parse(await readBody(req));
+      const engine = gameServer.getTableEngine(body.tableId);
+      if (!engine) return sendJSON(res, 404, { success: false, error: 'Table engine not found' });
+      return sendJSON(res, 200, engine.adminPause(body.reason));
+    } catch (err: any) {
+      reportError(err, 'HTTP.admin_pause_error');
+      return sendJSON(res, 500, { success: false, error: 'Invalid request body' });
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // POST /admin/resume — Bible V8 §6.17: Resume dealing after admin pause
+  // Body: { tableId }
+  // ─────────────────────────────────────────────────────────────────────────
+  if (method === 'POST' && url === '/admin/resume') {
+    try {
+      const auth = await authenticateRequest(req);
+      if (!auth) return sendJSON(res, 401, { success: false, error: 'Authentication required' });
+      const body = JSON.parse(await readBody(req));
+      const engine = gameServer.getTableEngine(body.tableId);
+      if (!engine) return sendJSON(res, 404, { success: false, error: 'Table engine not found' });
+      return sendJSON(res, 200, engine.adminResume());
+    } catch (err: any) {
+      reportError(err, 'HTTP.admin_resume_error');
+      return sendJSON(res, 500, { success: false, error: 'Invalid request body' });
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // POST /post-bb — Bible V8 §4.2: Player posts BB to enter immediately
+  // Body: { tableId }
+  // ─────────────────────────────────────────────────────────────────────────
+  if (method === 'POST' && url === '/post-bb') {
+    try {
+      const auth = await authenticateRequest(req);
+      if (!auth) return sendJSON(res, 401, { success: false, error: 'Authentication required' });
+      const body = JSON.parse(await readBody(req));
+      const engine = gameServer.getTableEngine(body.tableId);
+      if (!engine) return sendJSON(res, 404, { success: false, error: 'Table engine not found' });
+      return sendJSON(res, 200, engine.postBBToEnter(auth.userId));
+    } catch (err: any) {
+      reportError(err, 'HTTP.post_bb_error');
       return sendJSON(res, 500, { success: false, error: 'Invalid request body' });
     }
   }

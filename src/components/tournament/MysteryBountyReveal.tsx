@@ -9,6 +9,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import haptic from '../../utils/haptic';
+import { soundService } from '../../services/SoundService';
 
 const FB = { bg: '#18191A', card: '#242526', text: '#E4E6EB', dim: '#B0B3B8' };
 
@@ -192,6 +193,7 @@ export default function MysteryBountyReveal({
     }
     if (phase === 'reveal') {
       haptic('allIn');
+      soundService.playMysteryBountyReveal();
       if ((reveal?.amount || 0) > 10000) fireConfetti(isJackpot);
       const t2 = setTimeout(() => {
         setPhase('done');

@@ -4,7 +4,21 @@
  * This file is a stub to prevent import errors.
  */
 
-export const ofcDealingOrchestrator = {
-  start(): void { /* no-op */ },
-  stop(): void { /* no-op */ },
-};
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export class OFCDealingOrchestrator {
+  constructor(_onEvent?: (event: any) => void) {
+    /* no-op */
+  }
+  start(): void {
+    /* no-op */
+  }
+  stop(): void {
+    /* no-op */
+  }
+  disposeAll(): void {
+    /* no-op */
+  }
+}
+
+/** @deprecated Use OFCDealingOrchestrator class */
+export const ofcDealingOrchestrator = new OFCDealingOrchestrator();

@@ -19,7 +19,10 @@ const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || '';
 
 if (!SUPABASE_SERVICE_ROLE_KEY) {
-  reportError(new Error('[Supabase] FATAL: SUPABASE_SERVICE_ROLE_KEY is not set!'), 'Supabase.FATAL');
+  reportError(
+    new Error('[Supabase] FATAL: SUPABASE_SERVICE_ROLE_KEY is not set!'),
+    'Supabase.FATAL'
+  );
   process.exit(1);
 }
 
@@ -55,7 +58,7 @@ export async function loadTable(tableId: string) {
   const { data, error } = await supabase
     .from('tables')
     .select(
-      'id, club_id, small_blind, big_blind, game_variant, max_players, ante, game_type, tournament_id, action_time_seconds, time_bank_seconds, big_blind_ante_enabled, straddle_enabled, straddle_type, max_straddles, run_it_twice_enabled, insurance_enabled, auto_muck_enabled, show_hand_enabled, disconnect_timeout_seconds, max_consecutive_timeouts, prefer_check_over_fold, time_bank_max_uses, time_bank_enabled, ante_enabled, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, name'
+      'id, club_id, small_blind, big_blind, game_variant, max_players, ante, game_type, tournament_id, action_time_seconds, time_bank_seconds, big_blind_ante_enabled, straddle_enabled, straddle_type, max_straddles, run_it_twice_enabled, insurance_enabled, auto_muck_enabled, show_hand_enabled, disconnect_timeout_seconds, max_consecutive_timeouts, prefer_check_over_fold, time_bank_max_uses, time_bank_enabled, ante_enabled, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, name, min_buy_in, max_buy_in'
     )
     .eq('id', tableId)
     .maybeSingle();
@@ -92,9 +95,9 @@ export async function loadSeatedPlayers(tableId: string) {
       const profile = profileMap.get(seat.user_id)!;
       return {
         user_id: seat.user_id,
-        username: profile.use_real_name 
-          ? (profile.display_name || profile.username || 'Player')
-          : (profile.username || profile.display_name || 'Player'),
+        username: profile.use_real_name
+          ? profile.display_name || profile.username || 'Player'
+          : profile.username || profile.display_name || 'Player',
         stack: seat.stack,
         seat_number: seat.seat_number || 1,
         is_horse: profile.is_horse || false,
@@ -130,7 +133,12 @@ export async function syncStacks(
   );
   const failures = results.filter((r) => r.status === 'rejected');
   if (failures.length > 0) {
-    reportError(new Error(`[DB] ${failures.length}/${players.length} stack syncs failed for table ${tableId}`), 'DB.failureslengthplayerslength_st');
+    reportError(
+      new Error(
+        `[DB] ${failures.length}/${players.length} stack syncs failed for table ${tableId}`
+      ),
+      'DB.failureslengthplayerslength_st'
+    );
   }
 }
 
@@ -236,7 +244,10 @@ export async function autoRebuyHorse(
 
     return true;
   } catch (err: any) {
-    if (!err.message?.includes('Insufficient balance') && !err.message?.includes('Active seat not found')) {
+    if (
+      !err.message?.includes('Insufficient balance') &&
+      !err.message?.includes('Active seat not found')
+    ) {
       reportError(err, 'DB.Unexpected_atomic_autorebuy_fa');
     }
     return false;
@@ -287,14 +298,15 @@ export async function markSeatAsLeft(
 
       const currentBalance = wallet?.balance ?? 0;
       const newBalance = currentBalance + stack;
-      await supabase
-        .from('wallets')
-        .upsert({
+      await supabase.from('wallets').upsert(
+        {
           user_id: userId,
           wallet_type: 'PLAYER',
           balance: newBalance,
           updated_at: new Date().toISOString(),
-        }, { onConflict: 'user_id,wallet_type' });
+        },
+        { onConflict: 'user_id,wallet_type' }
+      );
 
       // Log transaction (BUG 018 FIX: balance_after now populated)
       await supabase.from('wallet_transactions').insert({
@@ -329,7 +341,6 @@ export async function markSeatAsLeft(
       .from('tables')
       .update({ current_players: count ?? 0 })
       .eq('id', tableId);
-
   } catch (err: any) {
     console.warn(`[DB] Failed to cash-out horse ${userId} at ${tableId}:`, err.message);
     // Fallback: just mark as left
@@ -514,7 +525,10 @@ export async function logRakeCollection(
         p_amount: rakeAmount,
       });
       if (uwErr) {
-        reportError(new Error(`[logRakeCollection] Union wallet credit failed: ${uwErr.message}`), 'logRakeCollection.Union_wallet_credit_failed');
+        reportError(
+          new Error(`[logRakeCollection] Union wallet credit failed: ${uwErr.message}`),
+          'logRakeCollection.Union_wallet_credit_failed'
+        );
       }
 
       // Log union transaction for audit trail (BUG 013 FIX — was union_transactions, that
@@ -537,7 +551,6 @@ export async function logRakeCollection(
           notes: `Cash game rake: hand #${handNumber} (${club.name || 'club'})`,
         });
       }
-
     } else {
       // Standalone club — rake goes to CLUB wallet (clubs.chip_pool).
       // FIX-232 / BUG 016 (2026-04-15): club_wallets table doesn't exist in the schema.
@@ -548,7 +561,10 @@ export async function logRakeCollection(
         p_amount: rakeAmount,
       });
       if (cpErr) {
-        reportError(new Error(`[logRakeCollection] Club chip_pool credit failed: ${cpErr.message}`), 'logRakeCollection.Club_chip_pool_credit_failed');
+        reportError(
+          new Error(`[logRakeCollection] Club chip_pool credit failed: ${cpErr.message}`),
+          'logRakeCollection.Club_chip_pool_credit_failed'
+        );
       }
     }
   } catch (e) {
@@ -728,16 +744,34 @@ export async function logHandHistory(params: {
   rakeAmount: number;
   bbjAmount?: number;
   communityCards: string[];
-  winners: { userId: string; amount: number; potIndex?: number; hand?: { name: string; ranking: number } }[];
+  winners: {
+    userId: string;
+    amount: number;
+    potIndex?: number;
+    hand?: { name: string; ranking: number };
+  }[];
   players: { userId: string; username: string; seat: number; stack: number; cards: string[] }[];
-  actions: { seat: number; userId?: string; action: string; amount?: number; timestamp?: number; stage: string }[];
-  showdownResults?: { userId: string; handRanking: number; handName: string; kickers: number[]; holeCards: { rank: string; suit: string }[] }[];
+  actions: {
+    seat: number;
+    userId?: string;
+    action: string;
+    amount?: number;
+    timestamp?: number;
+    stage: string;
+  }[];
+  showdownResults?: {
+    userId: string;
+    handRanking: number;
+    handName: string;
+    kickers: number[];
+    holeCards: { rank: string; suit: string }[];
+  }[];
 }): Promise<void> {
   // ── Tier 1: Raw Events ──────────────────────────────────────────────
   const rawEvents = params.actions.map((a, idx) => ({
     seq: idx,
     seat: a.seat,
-    userId: a.userId || params.players.find(p => p.seat === a.seat)?.userId || 'unknown',
+    userId: a.userId || params.players.find((p) => p.seat === a.seat)?.userId || 'unknown',
     action: a.action,
     amount: a.amount ?? 0,
     stage: a.stage,
@@ -762,12 +796,10 @@ export async function logHandHistory(params: {
   };
 
   // ── Tier 3: Player Summaries ────────────────────────────────────────
-  const playerSummaries = params.players.map(p => {
-    const winRecord = params.winners.find(w => w.userId === p.userId);
-    const showdown = params.showdownResults?.find(s => s.userId === p.userId);
-    const playerActions = params.actions.filter(a =>
-      a.seat === p.seat || a.userId === p.userId
-    );
+  const playerSummaries = params.players.map((p) => {
+    const winRecord = params.winners.find((w) => w.userId === p.userId);
+    const showdown = params.showdownResults?.find((s) => s.userId === p.userId);
+    const playerActions = params.actions.filter((a) => a.seat === p.seat || a.userId === p.userId);
     return {
       userId: p.userId,
       username: p.username,
@@ -777,8 +809,8 @@ export async function logHandHistory(params: {
       handName: showdown?.handName || null,
       handRanking: showdown?.handRanking || null,
       actionCount: playerActions.length,
-      folded: playerActions.some(a => a.action === 'fold'),
-      wentAllIn: playerActions.some(a => a.action === 'all_in'),
+      folded: playerActions.some((a) => a.action === 'fold'),
+      wentAllIn: playerActions.some((a) => a.action === 'all_in'),
     };
   });
 
@@ -833,7 +865,10 @@ export async function logHandHistory(params: {
         actions: params.actions,
       });
       if (fallbackError) {
-        console.warn(`[DB] Failed to log hand history #${params.handNumber}:`, fallbackError.message);
+        console.warn(
+          `[DB] Failed to log hand history #${params.handNumber}:`,
+          fallbackError.message
+        );
       }
     } else {
       console.warn(`[DB] Failed to log hand history #${params.handNumber}:`, error.message);
@@ -875,7 +910,10 @@ export async function ensureHorseWallet(
     });
 
     if (refillErr) {
-      reportError(new Error(`[refillHorseWallet] Credit failed for horse ${horseId}: ${refillErr.message}`), 'refillHorseWallet.Credit_failed_for_horse_horseI');
+      reportError(
+        new Error(`[refillHorseWallet] Credit failed for horse ${horseId}: ${refillErr.message}`),
+        'refillHorseWallet.Credit_failed_for_horse_horseI'
+      );
       return;
     }
 
@@ -1244,8 +1282,7 @@ export async function getActiveHandSnapshotFull(tableId: string): Promise<{
       stage: data.stage,
       updatedAt: data.updated_at,
       pendingDeadlines: (data.pending_deadlines as PendingDeadline[]) ?? [],
-      disconnectStates:
-        (data.disconnect_states as Record<string, DisconnectStateEntry>) ?? {},
+      disconnectStates: (data.disconnect_states as Record<string, DisconnectStateEntry>) ?? {},
     };
   } catch (e) {
     console.warn(`[getActiveHandSnapshotFull] Exception:`, e);

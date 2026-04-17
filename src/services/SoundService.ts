@@ -30,9 +30,27 @@
  * - playButtonClick()       Soft UI tap
  * - playTimeBankActivated() Hourglass chime
  *
+ * Premium Event Sounds:
+ * - playBombPot()              Dramatic bass swell + chip cascade
+ * - playBadBeatJackpot()       Epic ascending fanfare
+ * - playInsurancePurchase()    Tense minor resolve
+ * - playInsuranceDecline()     Quick dismissive sweep
+ * - playStraddle()             Confident chip-drop authority
+ * - playChatMessage()          Warm notification ping
+ * - playThrowableImpact()      Comedic impact thud
+ * - playSpinTick()             Metallic click (per tick)
+ * - playSpinResult()           Triumphant reveal sting
+ * - playMysteryBountyReveal()  Suspense then dramatic reveal
+ * - playTournamentElimination() Somber descending tone
+ * - playTournamentFinalTable()  Power chord fanfare
+ * - playAchievement()          Bright celebratory sparkle
+ * - playChipSplash()           Multi-chip side pot scatter
+ * - playBuyInConfirm()         Satisfying confirmation chime
+ *
  * Also includes:
  * - Volume controls (master, effects)
- * - Haptic feedback via navigator.vibrate()
+ * - Premium haptic patterns (12 context-specific vibration sequences)
+ * - Sound priority system (Bible V8 5.14)
  * - Enable/disable toggle
  */
 
@@ -50,26 +68,78 @@ export const haptic = {
       return true;
     }
   },
-  /** Light tap — button press */
-  light() {
-    if (typeof navigator !== 'undefined' && 'vibrate' in navigator && this._isEnabled()) navigator.vibrate(8);
+  /** Internal runner — validates support + preference before firing */
+  _fire(pattern: number | number[]) {
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator && this._isEnabled())
+      navigator.vibrate(pattern);
   },
-  /** Medium pulse — your turn, win */
+
+  // ─── Standard Tiers ──────────────────────────────────────────────────
+  /** Light tap — button press, card flip, fold */
+  light() {
+    this._fire(10);
+  },
+  /** Medium pulse — your turn, raise, pot collect */
   medium() {
-    if (typeof navigator !== 'undefined' && 'vibrate' in navigator && this._isEnabled()) navigator.vibrate(40);
+    this._fire([15, 30, 15]);
   },
   /** Strong pulse — all-in, timer urgent */
   strong() {
-    if (typeof navigator !== 'undefined' && 'vibrate' in navigator && this._isEnabled()) navigator.vibrate(80);
+    this._fire([25, 20, 40]);
   },
-  /** Double pulse — timer warning */
+  /** Double pulse — timer warning tick */
   double() {
-    if (typeof navigator !== 'undefined' && 'vibrate' in navigator && this._isEnabled()) navigator.vibrate([25, 40, 25]);
+    this._fire([20, 35, 20]);
   },
-  /** Triple pulse — big win */
+  /** Triple pulse — big win celebration */
   triple() {
-    if (typeof navigator !== 'undefined' && 'vibrate' in navigator && this._isEnabled())
-      navigator.vibrate([30, 30, 30, 30, 30]);
+    this._fire([25, 25, 35, 25, 45]);
+  },
+
+  // ─── Premium Context-Specific Patterns ───────────────────────────────
+  /** Bomb pot — dramatic building rumble */
+  bombPot() {
+    this._fire([15, 15, 25, 15, 40, 15, 60]);
+  },
+  /** Jackpot hit — cascading celebration burst */
+  jackpot() {
+    this._fire([20, 20, 30, 20, 40, 20, 50, 20, 70]);
+  },
+  /** Insurance — tense double-pulse */
+  insurance() {
+    this._fire([30, 50, 30]);
+  },
+  /** Straddle posted — confident assertive tap */
+  straddle() {
+    this._fire([20, 30, 35]);
+  },
+  /** Spin wheel — rapid escalating pulses */
+  spinWheel() {
+    this._fire([8, 20, 10, 18, 12, 16, 15, 14, 18, 12, 22, 10, 30]);
+  },
+  /** Mystery bounty reveal — suspense then burst */
+  mysteryReveal() {
+    this._fire([10, 60, 10, 60, 50]);
+  },
+  /** Throwable impact — quick sharp hit */
+  throwImpact() {
+    this._fire([15, 10, 25]);
+  },
+  /** Chat message received — subtle notification tap */
+  chatReceived() {
+    this._fire(6);
+  },
+  /** Tournament elimination — somber double thud */
+  elimination() {
+    this._fire([40, 80, 30]);
+  },
+  /** Achievement unlocked — celebratory cascade */
+  achievement() {
+    this._fire([15, 15, 15, 15, 30, 15, 45]);
+  },
+  /** Showdown reveal — dramatic tension pulse */
+  showdown() {
+    this._fire([12, 25, 12, 25, 35]);
   },
 };
 
@@ -879,6 +949,402 @@ class SoundService {
     gain.gain.value = volume * this.masterVolume * this.effectsVolume;
     gain.connect(this.out);
     return gain;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // PREMIUM EVENT SOUNDS
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /**
+   * Bomb Pot — dramatic bass swell + chip cascade + tension chord
+   * Fires when a bomb pot round is announced
+   */
+  playBombPot() {
+    if (!this.shouldPlay('all_in') || !this.ensureContext()) return;
+    const t = this.ctx!.currentTime;
+
+    // Deep sub-bass swell (building tension)
+    const bass = this.ctx!.createOscillator();
+    const bassGain = this.ctx!.createGain();
+    bass.type = 'sine';
+    bass.frequency.setValueAtTime(40, t);
+    bass.frequency.exponentialRampToValueAtTime(80, t + 0.5);
+    bassGain.gain.setValueAtTime(0.0, t);
+    bassGain.gain.linearRampToValueAtTime(0.35, t + 0.2);
+    bassGain.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
+    bass.connect(bassGain);
+    bassGain.connect(this.out);
+    bass.start(t);
+    bass.stop(t + 0.6);
+
+    // Impact noise burst at peak
+    this.createNoiseBurst(t + 0.2, 0.1, 0.25, 400);
+
+    // Rapid 6-chip cascade (everyone's chips in the pot)
+    for (let i = 0; i < 6; i++) {
+      setTimeout(
+        () => {
+          if (!this.ctx) return;
+          const tc = this.ctx.currentTime;
+          const osc = this.ctx.createOscillator();
+          const g = this.ctx.createGain();
+          osc.frequency.setValueAtTime(1400 + i * 350, tc);
+          osc.frequency.exponentialRampToValueAtTime(100, tc + 0.04);
+          g.gain.setValueAtTime(0.12, tc);
+          g.gain.exponentialRampToValueAtTime(0.001, tc + 0.05);
+          osc.connect(g);
+          g.connect(this.out);
+          osc.start(tc);
+          osc.stop(tc + 0.05);
+        },
+        250 + i * 25
+      );
+    }
+
+    // Minor tension chord (drama)
+    const chord = [261.63, 311.13, 392.0]; // C4, Eb4, G4 (Cm chord)
+    chord.forEach((freq, i) => {
+      this.playTone(freq, 0.5, 0.08, 'triangle', 0.4 + i * 0.02);
+    });
+
+    haptic.bombPot();
+  }
+
+  /**
+   * Bad Beat Jackpot — epic ascending fanfare with shimmer cascade
+   */
+  playBadBeatJackpot() {
+    if (!this.shouldPlay('big_win') || !this.ensureContext()) return;
+    const t = this.ctx!.currentTime;
+
+    // Fanfare: ascending major chord arpeggio
+    const fanfare = [523.25, 659.25, 783.99, 1046.5, 1318.51, 1567.98];
+    fanfare.forEach((freq, i) => {
+      this.playTone(freq, 0.8 - i * 0.05, 0.18, 'sine', i * 0.07);
+    });
+
+    // Sub-bass foundation
+    this.playTone(65.41, 1.0, 0.15, 'sine', 0.1); // C2
+
+    // Shimmer cascades (3 waves)
+    for (let wave = 0; wave < 3; wave++) {
+      setTimeout(
+        () => {
+          if (!this.ctx) return;
+          this.createNoiseBurst(this.ctx.currentTime, 0.3, 0.06, 7000 + wave * 1000);
+        },
+        400 + wave * 200
+      );
+    }
+
+    // Triumphant bass note at end
+    this.playTone(130.81, 1.0, 0.12, 'sine', 0.8);
+
+    haptic.jackpot();
+  }
+
+  /**
+   * Insurance Purchase — tense decision confirmed (descending minor resolve)
+   */
+  playInsurancePurchase() {
+    if (!this.shouldPlay('ui') || !this.ensureContext()) return;
+    const t = this.ctx!.currentTime;
+
+    // Tense two-note resolve: Bb4 -> F4 (minor feel)
+    this.playTone(466.16, 0.2, 0.15, 'sine', 0);
+    this.playTone(349.23, 0.3, 0.12, 'sine', 0.12);
+
+    // Subtle confirmation noise
+    this.createNoiseBurst(t + 0.1, 0.08, 0.06, 2000);
+
+    haptic.insurance();
+  }
+
+  /**
+   * Insurance Declined — quick dismissive sweep down
+   */
+  playInsuranceDecline() {
+    if (!this.shouldPlay('ui') || !this.ensureContext()) return;
+    if (!this.ctx) return;
+
+    const t = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(600, t);
+    osc.frequency.exponentialRampToValueAtTime(200, t + 0.12);
+    gain.gain.setValueAtTime(0.1, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+    osc.connect(gain);
+    gain.connect(this.out);
+    osc.start(t);
+    osc.stop(t + 0.15);
+
+    haptic.light();
+  }
+
+  /**
+   * Straddle Posted — confident assertive chip-drop with authority
+   */
+  playStraddle() {
+    if (!this.shouldPlay('bet') || !this.ensureContext()) return;
+    const t = this.ctx!.currentTime;
+
+    // Heavy chip drop
+    const osc = this.ctx!.createOscillator();
+    const gain = this.ctx!.createGain();
+    osc.frequency.setValueAtTime(1800, t);
+    osc.frequency.exponentialRampToValueAtTime(100, t + 0.07);
+    gain.gain.setValueAtTime(0.25, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+    osc.connect(gain);
+    gain.connect(this.out);
+    osc.start(t);
+    osc.stop(t + 0.08);
+
+    // Bass authority thud
+    this.playTone(80, 0.12, 0.18, 'sine', 0.03);
+
+    // Second confirmatory click
+    setTimeout(() => {
+      if (!this.ctx) return;
+      const tc = this.ctx.currentTime;
+      const osc2 = this.ctx.createOscillator();
+      const g2 = this.ctx.createGain();
+      osc2.frequency.setValueAtTime(2400, tc);
+      osc2.frequency.exponentialRampToValueAtTime(200, tc + 0.04);
+      g2.gain.setValueAtTime(0.15, tc);
+      g2.gain.exponentialRampToValueAtTime(0.001, tc + 0.05);
+      osc2.connect(g2);
+      g2.connect(this.out);
+      osc2.start(tc);
+      osc2.stop(tc + 0.05);
+    }, 60);
+
+    haptic.straddle();
+  }
+
+  /**
+   * Chat Message Received — gentle notification ping
+   */
+  playChatMessage() {
+    if (!this.shouldPlay('ui') || !this.ensureContext()) return;
+
+    // Warm two-note ascending ping (E5 → A5)
+    this.playTone(659.25, 0.12, 0.08, 'sine', 0);
+    this.playTone(880, 0.1, 0.06, 'sine', 0.08);
+
+    haptic.chatReceived();
+  }
+
+  /**
+   * Throwable Impact — sharp comedic impact thud
+   */
+  playThrowableImpact() {
+    if (!this.shouldPlay('ui') || !this.ensureContext()) return;
+    const t = this.ctx!.currentTime;
+
+    // Impact noise burst
+    this.createNoiseBurst(t, 0.06, 0.2, 1200);
+
+    // Comedic low thud
+    this.playTone(120, 0.08, 0.2, 'sine');
+
+    // Bounce (softer echo)
+    setTimeout(() => {
+      if (!this.ctx) return;
+      this.createNoiseBurst(this.ctx.currentTime, 0.04, 0.08, 800);
+      this.playTone(90, 0.05, 0.08, 'sine');
+    }, 80);
+
+    haptic.throwImpact();
+  }
+
+  /**
+   * Spin Wheel — escalating tick pattern that slows down
+   * Call repeatedly as wheel spins, with increasing delay between calls
+   */
+  playSpinTick() {
+    if (!this.shouldPlay('ui') || !this.ensureContext()) return;
+
+    // Quick metallic tick
+    this.playTone(2800, 0.025, 0.12, 'sine');
+    haptic.light();
+  }
+
+  /**
+   * Spin Wheel Result — triumphant reveal sting
+   */
+  playSpinResult() {
+    if (!this.shouldPlay('win') || !this.ensureContext()) return;
+    const t = this.ctx!.currentTime;
+
+    // Ascending 3-note fanfare: G5 → B5 → D6
+    this.playTone(783.99, 0.3, 0.18, 'sine', 0);
+    this.playTone(987.77, 0.3, 0.15, 'sine', 0.1);
+    this.playTone(1174.66, 0.4, 0.2, 'sine', 0.2);
+
+    // Shimmer tail
+    setTimeout(() => {
+      if (!this.ctx) return;
+      this.createNoiseBurst(this.ctx.currentTime, 0.3, 0.06, 7000);
+    }, 350);
+
+    // Bass confirmation
+    this.playTone(196.0, 0.5, 0.1, 'sine', 0.3); // G3
+
+    haptic.spinWheel();
+  }
+
+  /**
+   * Mystery Bounty Reveal — suspenseful pause then dramatic reveal
+   */
+  playMysteryBountyReveal() {
+    if (!this.shouldPlay('big_win') || !this.ensureContext()) return;
+    const t = this.ctx!.currentTime;
+
+    // Suspense: rising filtered noise
+    const noise = this.ctx!.createBufferSource();
+    const bufferSize = Math.floor(this.ctx!.sampleRate * 0.5);
+    const buffer = this.ctx!.createBuffer(1, bufferSize, this.ctx!.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+    noise.buffer = buffer;
+    const filter = this.ctx!.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(500, t);
+    filter.frequency.exponentialRampToValueAtTime(4000, t + 0.4);
+    const nGain = this.ctx!.createGain();
+    nGain.gain.setValueAtTime(0.0, t);
+    nGain.gain.linearRampToValueAtTime(0.12, t + 0.3);
+    nGain.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+    noise.connect(filter);
+    filter.connect(nGain);
+    nGain.connect(this.out);
+    noise.start(t);
+
+    // Reveal: bright major chord burst at peak
+    const chord = [1046.5, 1318.51, 1567.98]; // C6, E6, G6
+    chord.forEach((freq, i) => {
+      this.playTone(freq, 0.5, 0.15, 'sine', 0.4 + i * 0.015);
+    });
+
+    // Golden shimmer
+    setTimeout(() => {
+      if (!this.ctx) return;
+      this.createNoiseBurst(this.ctx.currentTime, 0.4, 0.06, 8000);
+    }, 500);
+
+    haptic.mysteryReveal();
+  }
+
+  /**
+   * Tournament Elimination — somber descending tone (you're out)
+   */
+  playTournamentElimination() {
+    if (!this.shouldPlay('ui') || !this.ensureContext()) return;
+    const t = this.ctx!.currentTime;
+
+    // Descending minor 3-note: E4 → C4 → A3
+    this.playTone(329.63, 0.3, 0.12, 'triangle', 0);
+    this.playTone(261.63, 0.3, 0.1, 'triangle', 0.15);
+    this.playTone(220.0, 0.5, 0.08, 'triangle', 0.3);
+
+    // Muted bass note (finality)
+    this.playTone(110.0, 0.6, 0.06, 'sine', 0.4);
+
+    haptic.elimination();
+  }
+
+  /**
+   * Tournament Final Table — epic ascending power chord
+   */
+  playTournamentFinalTable() {
+    if (!this.shouldPlay('big_win') || !this.ensureContext()) return;
+
+    // Power chord: C4 → E4 → G4 → C5 → E5 → G5
+    const notes = [261.63, 329.63, 392.0, 523.25, 659.25, 783.99];
+    notes.forEach((freq, i) => {
+      this.playTone(freq, 0.8 - i * 0.06, 0.14, 'sine', i * 0.06);
+    });
+
+    // Sub-bass foundation
+    this.playTone(65.41, 0.8, 0.1, 'sine', 0.15);
+
+    // Shimmer
+    setTimeout(() => {
+      if (!this.ctx) return;
+      this.createNoiseBurst(this.ctx.currentTime, 0.3, 0.05, 6000);
+    }, 500);
+
+    haptic.triple();
+  }
+
+  /**
+   * Achievement Unlocked — bright celebratory arpeggio with sparkle
+   */
+  playAchievement() {
+    if (!this.shouldPlay('win') || !this.ensureContext()) return;
+
+    // Ascending sparkle: G5 → B5 → D6 → G6
+    const notes = [783.99, 987.77, 1174.66, 1567.98];
+    notes.forEach((freq, i) => {
+      this.playTone(freq, 0.4, 0.12, 'sine', i * 0.06);
+    });
+
+    // Sparkle noise
+    setTimeout(() => {
+      if (!this.ctx) return;
+      this.createNoiseBurst(this.ctx.currentTime, 0.2, 0.05, 8000);
+    }, 300);
+
+    haptic.achievement();
+  }
+
+  /**
+   * Chip Splash — multiple chips hitting pot simultaneously (side pot creation)
+   */
+  playChipSplash() {
+    if (!this.shouldPlay('bet') || !this.ensureContext()) return;
+
+    // Rapid 4-chip scatter at random pitches
+    for (let i = 0; i < 4; i++) {
+      setTimeout(
+        () => {
+          if (!this.ctx) return;
+          const tc = this.ctx.currentTime;
+          const osc = this.ctx.createOscillator();
+          const g = this.ctx.createGain();
+          const freq = 1600 + Math.random() * 1200;
+          osc.frequency.setValueAtTime(freq, tc);
+          osc.frequency.exponentialRampToValueAtTime(100, tc + 0.04);
+          g.gain.setValueAtTime(0.1, tc);
+          g.gain.exponentialRampToValueAtTime(0.001, tc + 0.05);
+          osc.connect(g);
+          g.connect(this.out);
+          osc.start(tc);
+          osc.stop(tc + 0.05);
+        },
+        i * 15 + Math.random() * 10
+      );
+    }
+
+    // Settling bass
+    this.playTone(100, 0.08, 0.08, 'sine', 0.08);
+    haptic.medium();
+  }
+
+  /**
+   * Buy-In Confirmed — satisfying confirmation chime
+   */
+  playBuyInConfirm() {
+    if (!this.shouldPlay('ui') || !this.ensureContext()) return;
+
+    // Two-note confirmation: C5 → G5 (perfect fifth = satisfying)
+    this.playTone(523.25, 0.15, 0.12, 'sine', 0);
+    this.playTone(783.99, 0.2, 0.1, 'sine', 0.08);
+
+    haptic.medium();
   }
 
   // ─── Cleanup ─────────────────────────────────────────────────────────

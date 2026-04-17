@@ -12,7 +12,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { SpinPrizeConfig, SpinMultiplier } from '../../engine/SpinItEngine';
-import { haptic } from '../../services/SoundService';
+import { haptic, soundService } from '../../services/SoundService';
 import './SpinItWheel.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -66,12 +66,13 @@ export function SpinItWheel({ tiers, result, isSpinning, onSpinComplete }: SpinI
       // Anticipation delay
       setTimeout(() => {
         setRotation(target);
+        soundService.playSpinTick();
         haptic.strong();
 
         // Wait for CSS transition to finish (4s)
         setTimeout(() => {
           setShowResult(true);
-          haptic.triple();
+          soundService.playSpinResult();
           onSpinComplete?.();
         }, 4200);
       }, 300);

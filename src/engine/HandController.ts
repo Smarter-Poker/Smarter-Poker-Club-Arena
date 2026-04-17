@@ -752,12 +752,7 @@ export class HandController {
 
     // Guard: if no winners (shouldn't happen, but defensive)
     if (winners.length === 0) {
-      reportError(
-        new Error(
-          '[HandController] completeHand: no winners determined — returning pot to players proportionally'
-        ),
-        'HandController.completeHand'
-      );
+      reportError(new Error('[HandController] completeHand: no winners determined — returning pot to players proportionally'), 'HandController.completeHand');
       // Return pot to remaining active players proportionally
       const remainingPlayers = this.state.players.filter((p) => !p.is_folded && !p.is_sitting_out);
       if (remainingPlayers.length > 0) {

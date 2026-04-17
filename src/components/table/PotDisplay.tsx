@@ -178,7 +178,7 @@ function PotDisplayComponent({
   }
 
   return (
-    <div className={`pot-display${isPotUpdated ? ' pot-display--updated' : ''}`}>
+    <div className={`pot-display${isPotUpdated ? ' pot-display--updated' : ''}`} role="status" aria-live="polite" aria-label={`Pot: ${formatAmount(mainPot, currency)}${sidePots && sidePots.length > 0 ? ` plus ${sidePots.length} side pot${sidePots.length > 1 ? 's' : ''}` : ''}`}>
       {/* Chip Stacks Visualization */}
       {showChipAnimation && mainPot > 0 && (
         <div className="pot-display__chips">

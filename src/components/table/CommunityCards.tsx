@@ -257,9 +257,11 @@ function CommunityCardsComponent({
     <div
       ref={containerRef}
       className={`community-cards ${showdownMode ? 'community-cards--showdown' : ''}`}
+      role="region"
+      aria-label={`Community cards: ${cards.length > 0 ? cards.map(c => `${c.rank} of ${c.suit}`).join(', ') : 'none dealt'}${winningHandName ? ` - ${winningHandName}` : ''}`}
     >
       {/* Bible V8 §5.1: Stage label (FLOP/TURN/RIVER) — fades in briefly when cards are dealt */}
-      {stageLabel && <div className="community-cards__stage-label">{stageLabel}</div>}
+      {stageLabel && <div className="community-cards__stage-label" aria-live="polite">{stageLabel}</div>}
       <div
         className={`community-cards__container ${highlightPop ? 'community-cards__container--highlight-pop' : ''}`}
       >

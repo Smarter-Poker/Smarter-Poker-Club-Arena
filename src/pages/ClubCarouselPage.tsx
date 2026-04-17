@@ -23,6 +23,7 @@ import './ClubCarouselPage.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { useIsMounted } from '../hooks/useIsMounted';
 import haptic from '../services/HapticService';
+import { soundService } from '../services/SoundService';
 import { STORAGE_KEYS } from '../lib/storage';
 import { getClubLevel, getUnionLevel } from '../utils/clubLevels';
 import { reportError } from '../utils/errorReporter';
@@ -706,10 +707,12 @@ export default function ClubCarouselPage() {
   };
 
   const handleCreateClub = () => {
+    soundService.playButtonClick();
     navigate('/clubs/create');
   };
 
   const handleSearch = () => {
+    soundService.playButtonClick();
     navigate('/clubs'); // Go to full clubs list for search/join
   };
 
@@ -860,8 +863,22 @@ export default function ClubCarouselPage() {
               )}
             </div>
           )}
-          <button className="action-btn search" onClick={handleSearch}>
-            <span className="action-icon">SEARCH</span>
+          <button className="action-btn search" onClick={handleSearch} aria-label="Search clubs">
+            <span className="action-icon" aria-hidden="true">
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <circle cx="11" cy="11" r="7" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+            </span>
           </button>
         </div>
 
@@ -1032,8 +1049,39 @@ export default function ClubCarouselPage() {
                             <img src={union.avatarUrl} alt={union.name} loading="lazy" />
                           ) : (
                             <div className="club-card__placeholder">
-                              <span className="chip-icon" style={{ fontSize: '2rem' }}>
-                                🏛️
+                              <span
+                                className="chip-icon"
+                                aria-label="Union"
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                }}
+                              >
+                                <svg
+                                  width="56"
+                                  height="56"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="1.6"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  aria-hidden="true"
+                                >
+                                  <polygon
+                                    points="12,2 22,7 2,7"
+                                    fill="currentColor"
+                                    fillOpacity="0.15"
+                                  />
+                                  <line x1="2" y1="7" x2="22" y2="7" />
+                                  <line x1="5" y1="9" x2="5" y2="18" />
+                                  <line x1="9.5" y1="9" x2="9.5" y2="18" />
+                                  <line x1="14.5" y1="9" x2="14.5" y2="18" />
+                                  <line x1="19" y1="9" x2="19" y2="18" />
+                                  <line x1="3" y1="21" x2="21" y2="21" />
+                                  <line x1="2" y1="18" x2="22" y2="18" />
+                                </svg>
                               </span>
                             </div>
                           )}
@@ -1041,9 +1089,33 @@ export default function ClubCarouselPage() {
                         <div className="club-card__footer">
                           <div
                             className="club-avatar"
-                            style={{ background: 'linear-gradient(135deg, #9b59b6, #8e44ad)' }}
+                            style={{
+                              background: 'linear-gradient(135deg, #9b59b6, #8e44ad)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              color: '#fff',
+                            }}
+                            aria-label="Union"
                           >
-                            <span>🏛️</span>
+                            <svg
+                              width="18"
+                              height="18"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              aria-hidden="true"
+                            >
+                              <polygon points="12,3 22,8 2,8" />
+                              <line x1="5" y1="10" x2="5" y2="18" />
+                              <line x1="10" y1="10" x2="10" y2="18" />
+                              <line x1="14" y1="10" x2="14" y2="18" />
+                              <line x1="19" y1="10" x2="19" y2="18" />
+                              <line x1="3" y1="21" x2="21" y2="21" />
+                            </svg>
                           </div>
                           <div className="club-info">
                             <span className="club-name">{union.name}</span>

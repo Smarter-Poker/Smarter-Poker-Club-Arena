@@ -97,6 +97,11 @@ export interface CreditLimitRequest {
 // SERVICE
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// Module-level circuit breakers — silence RLS/permission spam for non-admin users.
+// When a read fails (expected for players who don't own these tables via RLS),
+// we report once then go quiet. Prevents Sentry/console flood from polling loops.
+let _agentInvoicesDisabled = false;
+
 export const CreditService = {
   // ─────────────────────────────────────────────────────────────────────────────
   // CREDIT LINE MANAGEMENT
@@ -356,7 +361,10 @@ export const CreditService = {
         .maybeSingle();
 
       if (error) {
-        reportError(error, 'CreditService.generateSundayInvoice', { agentId, debtOwed: debt.debtOwed });
+        reportError(error, 'CreditService.generateSundayInvoice', {
+          agentId,
+          debtOwed: debt.debtOwed,
+        });
         return null;
       }
       return this.mapInvoice(data, account.agentName);
@@ -370,6 +378,10 @@ export const CreditService = {
    * Get invoices for an agent
    */
   async getAgentInvoices(agentId: string): Promise<CreditInvoice[]> {
+    // Circuit breaker — if previous calls hit RLS/permission errors,
+    // silently return empty instead of spamming Sentry on every poll.
+    if (_agentInvoicesDisabled) return [];
+
     let data: any[] | null = null;
     try {
       const result = await supabase
@@ -382,12 +394,20 @@ export const CreditService = {
         .limit(QUERY_LIMITS.LIST);
 
       if (result.error) {
-        reportError(result.error, 'CreditService.getAgentInvoices', { agentId });
+        _agentInvoicesDisabled = true;
+        reportError(result.error, 'CreditService.getAgentInvoices', {
+          agentId,
+          note: 'Disabling subsequent calls — likely RLS/permission for non-agent user',
+        });
         return [];
       }
       data = result.data;
     } catch (e) {
-      reportError(e, 'CreditService.getAgentInvoices.tableAccess', { agentId });
+      _agentInvoicesDisabled = true;
+      reportError(e, 'CreditService.getAgentInvoices.tableAccess', {
+        agentId,
+        note: 'Disabling subsequent calls — likely RLS/permission for non-agent user',
+      });
       return [];
     }
 
@@ -408,8 +428,7 @@ export const CreditService = {
         agentName = profile?.display_name || 'Unknown';
       }
     } catch (e) {
-      reportError(e, 'CreditService.getAgentInvoices');
-      /* non-critical */
+      /* non-critical — agent name lookup is a nice-to-have */
     }
 
     return (data || []).map((inv) => this.mapInvoice(inv, agentName));

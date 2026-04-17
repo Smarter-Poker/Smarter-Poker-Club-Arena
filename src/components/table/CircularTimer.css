@@ -12,14 +12,30 @@
 }
 
 @keyframes timerPulse {
-  0%,
-  100% {
+  0% {
     opacity: 1;
     transform: translate(-50%, -50%) rotate(-90deg) scale(1);
+    filter: brightness(1) saturate(1);
+  }
+  25% {
+    opacity: 0.88;
+    transform: translate(-50%, -50%) rotate(-90deg) scale(1.02);
+    filter: brightness(1.08) saturate(1.12);
   }
   50% {
     opacity: 0.75;
     transform: translate(-50%, -50%) rotate(-90deg) scale(1.04);
+    filter: brightness(1.15) saturate(1.25);
+  }
+  75% {
+    opacity: 0.88;
+    transform: translate(-50%, -50%) rotate(-90deg) scale(1.02);
+    filter: brightness(1.06) saturate(1.08);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, -50%) rotate(-90deg) scale(1);
+    filter: brightness(1) saturate(1);
   }
 }
 

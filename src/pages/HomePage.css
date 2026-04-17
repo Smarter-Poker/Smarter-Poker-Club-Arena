@@ -65,8 +65,10 @@
 }
 
 @keyframes heroIconFloat {
-    0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(-6px); }
+    0%, 100% { transform: translateY(0); filter: drop-shadow(0 0 20px var(--royal-blue-glow)) brightness(1) saturate(1); }
+    25% { filter: drop-shadow(0 0 20px var(--royal-blue-glow)) brightness(1.04) saturate(1.06); }
+    50% { transform: translateY(-6px); filter: drop-shadow(0 0 20px var(--royal-blue-glow)) brightness(1.08) saturate(1.1); }
+    75% { filter: drop-shadow(0 0 20px var(--royal-blue-glow)) brightness(1.04) saturate(1.06); }
 }
 
 .home-subtitle {
@@ -162,10 +164,20 @@
     0%,
     100% {
         transform: translateY(0) rotate(var(--rotate, 0deg));
+        filter: brightness(1) saturate(1);
+    }
+
+    25% {
+        filter: brightness(1.04) saturate(1.06);
     }
 
     50% {
         transform: translateY(-10px) rotate(var(--rotate, 0deg));
+        filter: brightness(1.08) saturate(1.1);
+    }
+
+    75% {
+        filter: brightness(1.04) saturate(1.06);
     }
 }
 
@@ -265,8 +277,10 @@
 }
 
 @keyframes statShimmer {
-    0%, 100% { left: -100%; }
-    50% { left: 150%; }
+    0%, 100% { left: -100%; filter: brightness(1) saturate(1); }
+    40% { filter: brightness(1.15) saturate(1.2); }
+    50% { left: 150%; filter: brightness(1.25) saturate(1.25); }
+    60% { filter: brightness(1.15) saturate(1.2); }
 }
 
 .stat-card:hover {

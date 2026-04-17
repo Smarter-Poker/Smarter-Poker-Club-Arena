@@ -258,13 +258,24 @@
 }
 
 @keyframes chipIn {
-  from {
+  0% {
     transform: scale(0.8);
     opacity: 0;
+    filter: blur(2px) brightness(0.4) saturate(0.2);
   }
-  to {
+  50% {
+    transform: scale(1.05);
+    opacity: 0.95;
+    filter: blur(0) brightness(1.1) saturate(1.15);
+  }
+  75% {
+    transform: scale(0.98);
+    filter: blur(0) brightness(1.04) saturate(1.05);
+  }
+  100% {
     transform: scale(1);
     opacity: 1;
+    filter: blur(0) brightness(1) saturate(1);
   }
 }
 

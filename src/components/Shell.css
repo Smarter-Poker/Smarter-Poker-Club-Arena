@@ -258,13 +258,10 @@
 }
 
 @keyframes vipShimmer {
-  0%,
-  100% {
-    box-shadow: 0 0 12px rgba(255, 215, 0, 0.15);
-  }
-  50% {
-    box-shadow: 0 0 20px rgba(255, 215, 0, 0.25);
-  }
+  0%, 100% { box-shadow: 0 0 12px rgba(255, 215, 0, 0.15); filter: brightness(1) saturate(1); }
+  25% { filter: brightness(1.06) saturate(1.1); }
+  50% { box-shadow: 0 0 20px rgba(255, 215, 0, 0.25); filter: brightness(1.12) saturate(1.22); }
+  75% { filter: brightness(1.06) saturate(1.1); }
 }
 
 /* Notifications */
@@ -308,15 +305,10 @@
 }
 
 @keyframes notificationPulse {
-  0%,
-  100% {
-    box-shadow: 0 2px 6px rgba(239, 68, 68, 0.5);
-  }
-  50% {
-    box-shadow:
-      0 2px 6px rgba(239, 68, 68, 0.5),
-      0 0 0 4px rgba(239, 68, 68, 0.15);
-  }
+  0%, 100% { box-shadow: 0 2px 6px rgba(239, 68, 68, 0.5); filter: brightness(1) saturate(1); }
+  25% { filter: brightness(1.08) saturate(1.12); }
+  50% { box-shadow: 0 2px 6px rgba(239, 68, 68, 0.5), 0 0 0 4px rgba(239, 68, 68, 0.15); filter: brightness(1.18) saturate(1.25); }
+  75% { filter: brightness(1.08) saturate(1.12); }
 }
 
 /* Mobile Toggle */

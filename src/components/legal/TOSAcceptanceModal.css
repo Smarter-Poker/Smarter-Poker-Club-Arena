@@ -108,10 +108,20 @@
     0%,
     100% {
         opacity: 1;
+        filter: brightness(1) saturate(1);
+    }
+
+    25% {
+        filter: brightness(1.04) saturate(1.06);
     }
 
     50% {
         opacity: 0.5;
+        filter: brightness(1.08) saturate(1.12);
+    }
+
+    75% {
+        filter: brightness(1.04) saturate(1.06);
     }
 }
 

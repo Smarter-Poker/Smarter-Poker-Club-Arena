@@ -19,13 +19,24 @@
 }
 
 @keyframes slideUp {
-  from {
+  0% {
     opacity: 0;
     transform: translateY(30px);
+    filter: blur(2px) brightness(0.3) saturate(0.2);
   }
-  to {
+  55% {
+    opacity: 0.95;
+    transform: translateY(-3px);
+    filter: blur(0) brightness(1.1) saturate(1.12);
+  }
+  80% {
+    transform: translateY(0.5px);
+    filter: blur(0) brightness(1.04) saturate(1.04);
+  }
+  100% {
     opacity: 1;
     transform: translateY(0);
+    filter: blur(0) brightness(1) saturate(1);
   }
 }
 
@@ -44,9 +55,17 @@
 @keyframes gradientShift {
   0%, 100% {
     background-position: 0% 50%;
+    filter: brightness(1) saturate(1);
+  }
+  25% {
+    filter: brightness(1.1) saturate(1.15);
   }
   50% {
     background-position: 100% 50%;
+    filter: brightness(1.22) saturate(1.28);
+  }
+  75% {
+    filter: brightness(1.1) saturate(1.15);
   }
 }
 

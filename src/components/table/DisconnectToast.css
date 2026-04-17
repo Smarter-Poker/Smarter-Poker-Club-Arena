@@ -48,12 +48,8 @@
 }
 
 @keyframes disconnect-toast-slide {
-  from {
-    opacity: 0;
-    transform: translate(-50%, -8px);
-  }
-  to {
-    opacity: 1;
-    transform: translate(-50%, 12px);
-  }
+  0% { opacity: 0; transform: translate(-50%, -8px); filter: blur(2px) brightness(0.5) saturate(0.3); }
+  50% { opacity: 0.9; transform: translate(-50%, 14px); filter: blur(0) brightness(1.1) saturate(1.15); }
+  75% { transform: translate(-50%, 11px); filter: blur(0) brightness(1.04) saturate(1.05); }
+  100% { opacity: 1; transform: translate(-50%, 12px); filter: blur(0) brightness(1) saturate(1); }
 }

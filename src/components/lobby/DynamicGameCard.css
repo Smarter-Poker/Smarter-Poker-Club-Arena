@@ -142,18 +142,25 @@
 }
 
 @keyframes dgcLivePulse {
-  0%,
-  100% {
+  0%, 100% {
     box-shadow:
       0 4px 20px rgba(0, 0, 0, 0.4),
       0 0 0 rgba(49, 162, 76, 0),
       inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    filter: brightness(1) saturate(1);
+  }
+  25% {
+    filter: brightness(1.06) saturate(1.1);
   }
   50% {
     box-shadow:
       0 4px 20px rgba(0, 0, 0, 0.4),
       0 0 16px rgba(49, 162, 76, 0.2),
       inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    filter: brightness(1.12) saturate(1.2);
+  }
+  75% {
+    filter: brightness(1.06) saturate(1.1);
   }
 }
 
@@ -184,13 +191,24 @@
 }
 
 @keyframes dgcEntrance {
-  from {
+  0% {
     opacity: 0;
     transform: translateY(20px) scale(0.95);
+    filter: blur(3px) brightness(0.3) saturate(0.2);
   }
-  to {
+  55% {
+    opacity: 0.95;
+    transform: translateY(-2px) scale(1.01);
+    filter: blur(0) brightness(1.1) saturate(1.12);
+  }
+  80% {
+    transform: translateY(0.5px) scale(1);
+    filter: blur(0) brightness(1.04) saturate(1.04);
+  }
+  100% {
     opacity: 1;
     transform: translateY(0) scale(1);
+    filter: blur(0) brightness(1) saturate(1);
   }
 }
 
@@ -254,19 +272,16 @@
 }
 
 /* Pineapple — Orange accent */
-.dgc--ofc_pineapple,
 .dgc--pineapple,
 .dgc--crazy_pineapple {
   background: linear-gradient(145deg, #2e261a 0%, #242526 35%, #242526 100%);
   border-color: rgba(220, 160, 40, 0.3);
 }
-.dgc--ofc_pineapple .dgc__variant-logo,
 .dgc--pineapple .dgc__variant-logo,
 .dgc--crazy_pineapple .dgc__variant-logo {
   color: #ffaa33;
   text-shadow: 0 0 12px rgba(255, 170, 51, 0.4);
 }
-.dgc--ofc_pineapple .dgc__glow,
 .dgc--pineapple .dgc__glow,
 .dgc--crazy_pineapple .dgc__glow {
   background: radial-gradient(ellipse at 50% 10%, rgba(255, 170, 50, 0.08) 0%, transparent 60%);
@@ -493,28 +508,39 @@
 }
 
 @keyframes bbjShimmer {
-  0%,
-  70% {
+  0%, 70% {
     left: -100%;
+    filter: brightness(1) saturate(1);
+  }
+  85% {
+    filter: brightness(1.2) saturate(1.25);
   }
   100% {
     left: 200%;
+    filter: brightness(1) saturate(1);
   }
 }
 
 @keyframes bbjPulse {
-  0%,
-  100% {
+  0%, 100% {
     box-shadow:
       0 0 6px rgba(255, 68, 0, 0.5),
       0 0 12px rgba(255, 100, 50, 0.2);
     text-shadow: 0 0 4px rgba(255, 100, 50, 0.4);
+    filter: brightness(1) saturate(1);
+  }
+  25% {
+    filter: brightness(1.08) saturate(1.12);
   }
   50% {
     box-shadow:
       0 0 12px rgba(255, 68, 0, 0.8),
       0 0 20px rgba(255, 100, 50, 0.4);
     text-shadow: 0 0 8px rgba(255, 100, 50, 0.7);
+    filter: brightness(1.18) saturate(1.3);
+  }
+  75% {
+    filter: brightness(1.08) saturate(1.12);
   }
 }
 
@@ -617,14 +643,23 @@
   0% {
     opacity: 1;
     box-shadow: 0 0 0 0 rgba(49, 162, 76, 0.7);
+    filter: brightness(1) saturate(1);
+  }
+  25% {
+    filter: brightness(1.1) saturate(1.15);
   }
   50% {
     opacity: 0.8;
     box-shadow: 0 0 0 3px rgba(49, 162, 76, 0);
+    filter: brightness(1.2) saturate(1.3);
+  }
+  75% {
+    filter: brightness(1.06) saturate(1.08);
   }
   100% {
     opacity: 1;
     box-shadow: 0 0 0 0 rgba(49, 162, 76, 0);
+    filter: brightness(1) saturate(1);
   }
 }
 
@@ -833,18 +868,25 @@
 }
 
 @keyframes livePulse {
-  0%,
-  100% {
+  0%, 100% {
     box-shadow:
       0 0 6px rgba(220, 38, 38, 0.6),
       0 0 12px rgba(220, 38, 38, 0.3);
     text-shadow: 0 0 8px rgba(255, 100, 100, 0.5);
+    filter: brightness(1) saturate(1);
+  }
+  25% {
+    filter: brightness(1.08) saturate(1.15);
   }
   50% {
     box-shadow:
       0 0 12px rgba(220, 38, 38, 0.9),
       0 0 20px rgba(220, 38, 38, 0.5);
     text-shadow: 0 0 12px rgba(255, 100, 100, 0.8);
+    filter: brightness(1.2) saturate(1.3);
+  }
+  75% {
+    filter: brightness(1.08) saturate(1.15);
   }
 }
 

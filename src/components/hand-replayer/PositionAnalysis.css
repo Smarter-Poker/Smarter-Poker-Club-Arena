@@ -17,13 +17,24 @@
 }
 
 @keyframes slideInLeft {
-  from {
+  0% {
     opacity: 0;
     transform: translateX(-20px);
+    filter: blur(2px) brightness(0.3) saturate(0.2);
   }
-  to {
+  55% {
+    opacity: 0.95;
+    transform: translateX(2px);
+    filter: blur(0) brightness(1.1) saturate(1.12);
+  }
+  80% {
+    transform: translateX(-0.5px);
+    filter: blur(0) brightness(1.04) saturate(1.04);
+  }
+  100% {
     opacity: 1;
     transform: translateX(0);
+    filter: blur(0) brightness(1) saturate(1);
   }
 }
 
@@ -157,9 +168,17 @@
 @keyframes pulse {
   0%, 100% {
     opacity: 1;
+    filter: brightness(1) saturate(1);
+  }
+  25% {
+    filter: brightness(1.08) saturate(1.12);
   }
   50% {
     opacity: 0.5;
+    filter: brightness(1.15) saturate(1.25);
+  }
+  75% {
+    filter: brightness(1.08) saturate(1.12);
   }
 }
 

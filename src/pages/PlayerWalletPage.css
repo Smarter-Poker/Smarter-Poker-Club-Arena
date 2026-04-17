@@ -79,9 +79,17 @@
   0%,
   100% {
     background-position: 0% 50%;
+    filter: brightness(1) saturate(1);
+  }
+  25% {
+    filter: brightness(1.06) saturate(1.1);
   }
   50% {
     background-position: 100% 50%;
+    filter: brightness(1.12) saturate(1.2);
+  }
+  75% {
+    filter: brightness(1.06) saturate(1.1);
   }
 }
 
@@ -142,10 +150,18 @@
   100% {
     background-position: 0% 50%;
     box-shadow: 0 4px 20px rgba(0, 200, 83, 0.3);
+    filter: brightness(1) saturate(1);
+  }
+  25% {
+    filter: brightness(1.06) saturate(1.1);
   }
   50% {
     background-position: 100% 50%;
     box-shadow: 0 4px 28px rgba(0, 200, 83, 0.5);
+    filter: brightness(1.12) saturate(1.2);
+  }
+  75% {
+    filter: brightness(1.06) saturate(1.1);
   }
 }
 
@@ -316,9 +332,17 @@
   0%,
   100% {
     background-position: 0% 50%;
+    filter: brightness(1) saturate(1);
+  }
+  25% {
+    filter: brightness(1.05) saturate(1.08);
   }
   50% {
     background-position: 100% 50%;
+    filter: brightness(1.1) saturate(1.15);
+  }
+  75% {
+    filter: brightness(1.05) saturate(1.08);
   }
 }
 

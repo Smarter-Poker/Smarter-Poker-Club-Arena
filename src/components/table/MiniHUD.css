@@ -35,13 +35,24 @@
 }
 
 @keyframes hudSlideIn {
-    from {
+    0% {
         opacity: 0;
         transform: translateY(4px) scale(0.9);
+        filter: blur(2px) brightness(0.5) saturate(0.3);
     }
-    to {
+    45% {
+        opacity: 0.9;
+        transform: translateY(-1px) scale(1.02);
+        filter: blur(0) brightness(1.1) saturate(1.15);
+    }
+    70% {
+        transform: translateY(0.3px) scale(0.99);
+        filter: blur(0) brightness(1.04) saturate(1.05);
+    }
+    100% {
         opacity: 1;
         transform: translateY(0) scale(1);
+        filter: blur(0) brightness(1) saturate(1);
     }
 }
 
@@ -58,8 +69,11 @@
 }
 
 @keyframes hudHotGlow {
-    0%, 100% { box-shadow: 0 0 8px rgba(239, 68, 68, 0.1); }
-    50% { box-shadow: 0 0 14px rgba(239, 68, 68, 0.2); }
+    0% { box-shadow: 0 0 8px rgba(239, 68, 68, 0.1); filter: brightness(1) saturate(1); }
+    25% { box-shadow: 0 0 10px rgba(239, 68, 68, 0.14); filter: brightness(1.03) saturate(1.08); }
+    50% { box-shadow: 0 0 14px rgba(239, 68, 68, 0.22); filter: brightness(1.06) saturate(1.15); }
+    75% { box-shadow: 0 0 11px rgba(239, 68, 68, 0.16); filter: brightness(1.03) saturate(1.06); }
+    100% { box-shadow: 0 0 8px rgba(239, 68, 68, 0.1); filter: brightness(1) saturate(1); }
 }
 
 .mini-hud--compact {

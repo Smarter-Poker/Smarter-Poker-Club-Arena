@@ -260,12 +260,19 @@
 }
 
 @keyframes pulse-dot {
-  0%,
-  100% {
+  0%, 100% {
     opacity: 1;
+    filter: brightness(1) saturate(1);
+  }
+  25% {
+    filter: brightness(1.06) saturate(1.08);
   }
   50% {
     opacity: 0.3;
+    filter: brightness(1.1) saturate(1.15);
+  }
+  75% {
+    filter: brightness(1.06) saturate(1.08);
   }
 }
 
@@ -379,9 +386,20 @@
 @keyframes shimmer {
   0% {
     background-position: 200% 0;
+    filter: brightness(1) saturate(1);
+  }
+  40% {
+    filter: brightness(1.08) saturate(1.1);
+  }
+  50% {
+    filter: brightness(1.12) saturate(1.15);
+  }
+  60% {
+    filter: brightness(1.08) saturate(1.1);
   }
   100% {
     background-position: -200% 0;
+    filter: brightness(1) saturate(1);
   }
 }
 

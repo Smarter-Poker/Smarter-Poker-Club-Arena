@@ -332,9 +332,6 @@ export class HandController {
         return 4; // Omaha Hi/Lo
       case 'pineapple':
         return 3;
-      case 'ofc':
-      case 'ofc_pineapple':
-        return 5;
       default:
         return 2; // NLH, Short Deck
     }

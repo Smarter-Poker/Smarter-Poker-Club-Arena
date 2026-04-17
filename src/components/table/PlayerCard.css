@@ -129,19 +129,34 @@
 @keyframes cardFlipAnticipated {
     0% {
         transform: rotateY(0deg) scale(1);
+        filter: brightness(1);
     }
-
-    8% {
-        /* Anticipation: subtle scale down before flip */
-        transform: rotateY(0deg) scale(0.98);
+    6% {
+        /* Anticipation: coil back before the flip */
+        transform: rotateY(-4deg) scale(0.97);
+        filter: brightness(0.95);
     }
-
+    15% {
+        transform: rotateY(10deg) scale(0.99);
+        filter: brightness(1);
+    }
     50% {
-        transform: rotateY(90deg) scale(1.1);
+        /* Edge-on: card at 90deg catches light */
+        transform: rotateY(90deg) scale(1.08);
+        filter: brightness(1.3);
     }
-
+    65% {
+        transform: rotateY(140deg) scale(1.04);
+        filter: brightness(1.15);
+    }
+    82% {
+        /* Slight overshoot past 180 */
+        transform: rotateY(184deg) scale(1.01);
+        filter: brightness(1.05);
+    }
     100% {
-        transform: rotateY(180deg);
+        transform: rotateY(180deg) scale(1);
+        filter: brightness(1);
     }
 }
 
@@ -162,15 +177,24 @@
     0% {
         opacity: 0;
         transform: translate(-200px, -100px) scale(0.3) rotate(-180deg);
+        filter: blur(2px);
     }
-
+    35% {
+        opacity: 0.85;
+        filter: blur(0.5px);
+    }
     60% {
         opacity: 1;
+        transform: translate(calc(var(--offset-x, 0px) + 4px), 2px) scale(1.03) rotate(calc(var(--rotation, 0deg) - 2deg));
+        filter: blur(0);
     }
-
+    78% {
+        transform: translate(calc(var(--offset-x, 0px) - 1px), -1px) scale(0.995) rotate(calc(var(--rotation, 0deg) + 0.5deg));
+    }
     100% {
         opacity: 1;
-        transform: translateX(var(--offset-x, 0)) rotate(var(--rotation, 0deg));
+        transform: translateX(var(--offset-x, 0)) rotate(var(--rotation, 0deg)) scale(1);
+        filter: blur(0);
     }
 }
 
@@ -221,28 +245,44 @@
 }
 
 @keyframes winnerPulse {
-
-    0%,
-    100% {
+    0%, 100% {
         transform: scale(1);
+        filter: brightness(1) drop-shadow(0 0 0 rgba(255, 215, 0, 0));
     }
-
+    25% {
+        transform: scale(1.03);
+        filter: brightness(1.05) drop-shadow(0 0 6px rgba(255, 215, 0, 0.3));
+    }
     50% {
-        transform: scale(1.05);
+        transform: scale(1.06);
+        filter: brightness(1.1) drop-shadow(0 0 14px rgba(255, 215, 0, 0.5));
+    }
+    75% {
+        transform: scale(1.02);
+        filter: brightness(1.04) drop-shadow(0 0 4px rgba(255, 215, 0, 0.2));
     }
 }
 
 @keyframes glowPulse {
-
-    0%,
-    100% {
-        opacity: 0.4;
+    0%, 100% {
+        opacity: 0.35;
         filter: blur(4px);
+        transform: scale(1);
     }
-
+    20% {
+        opacity: 0.5;
+        filter: blur(5px);
+        transform: scale(1.01);
+    }
     50% {
-        opacity: 0.8;
-        filter: blur(8px);
+        opacity: 0.85;
+        filter: blur(10px);
+        transform: scale(1.04);
+    }
+    70% {
+        opacity: 0.6;
+        filter: blur(7px);
+        transform: scale(1.02);
     }
 }
 
@@ -275,14 +315,22 @@
 @keyframes goldenShimmer {
     0% {
         opacity: 0;
-        transform: translateX(-100%);
+        transform: translateX(-120%) skewX(-15deg);
     }
-    50% {
+    20% {
+        opacity: 0.6;
+    }
+    45% {
         opacity: 1;
+        filter: brightness(1.3);
+    }
+    70% {
+        opacity: 0.7;
     }
     100% {
         opacity: 0;
-        transform: translateX(100%);
+        transform: translateX(120%) skewX(-15deg);
+        filter: brightness(1);
     }
 }
 
@@ -317,14 +365,24 @@
 }
 
 @keyframes peekBlink {
-
-    0%,
-    100% {
-        opacity: 0.4;
+    0%, 100% {
+        opacity: 0.35;
+        transform: translateX(-50%) scale(1);
+        text-shadow: 0 0 0 transparent;
     }
-
+    30% {
+        opacity: 0.9;
+        transform: translateX(-50%) scale(1.03);
+        text-shadow: 0 0 6px rgba(24, 119, 242, 0.4);
+    }
     50% {
         opacity: 1;
+        transform: translateX(-50%) scale(1.05);
+        text-shadow: 0 0 10px rgba(24, 119, 242, 0.5);
+    }
+    70% {
+        opacity: 0.8;
+        transform: translateX(-50%) scale(1.02);
     }
 }
 
@@ -405,8 +463,25 @@
 }
 
 @keyframes playerCardShine {
-    0% { transform: translateX(-100%); }
-    100% { transform: translateX(200%); }
+    0% {
+        transform: translateX(-100%) skewX(-12deg);
+        opacity: 0;
+    }
+    15% {
+        opacity: 0.6;
+    }
+    40% {
+        opacity: 1;
+        filter: brightness(1.2);
+    }
+    65% {
+        opacity: 0.5;
+    }
+    100% {
+        transform: translateX(250%) skewX(-12deg);
+        opacity: 0;
+        filter: brightness(1);
+    }
 }
 
 /* Hero card tilt on hover */
@@ -419,4 +494,74 @@
 .player-card--hero-tilt:hover {
     transform: rotateX(-3deg) rotateY(2deg) translateY(-3px);
     box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   ENHANCED CARD SHADOWS — depth and realism
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.player-card__back,
+.player-card__face {
+    box-shadow:
+        0 2px 4px rgba(0, 0, 0, 0.3),
+        0 4px 8px rgba(0, 0, 0, 0.15),
+        0 1px 0 rgba(255, 255, 255, 0.05) inset;
+}
+
+.player-card--hero .player-card__back,
+.player-card--hero .player-card__face {
+    box-shadow:
+        0 3px 6px rgba(0, 0, 0, 0.35),
+        0 6px 16px rgba(0, 0, 0, 0.2),
+        0 12px 28px rgba(0, 0, 0, 0.1),
+        0 1px 0 rgba(255, 255, 255, 0.08) inset;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   ACCESSIBILITY — Reduced Motion
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+@media (prefers-reduced-motion: reduce) {
+    .player-card__inner {
+        transition: transform 0.01s;
+    }
+
+    .player-card--flipping .player-card__inner {
+        animation: none;
+        transform: rotateY(180deg);
+    }
+
+    .player-card--dealt {
+        animation: none;
+        opacity: 1;
+        transform: translateX(var(--offset-x, 0)) rotate(var(--rotation, 0deg));
+    }
+
+    .player-card--winner,
+    .player-card__winner-glow {
+        animation: none;
+    }
+
+    .player-card--winner {
+        transform: scale(1.03);
+    }
+
+    .player-card__winner-glow {
+        opacity: 0.6;
+        filter: blur(6px);
+    }
+
+    .player-card--winner-shine::after {
+        animation: none;
+        opacity: 0.3;
+    }
+
+    .player-card__peek-indicator {
+        animation: none;
+        opacity: 0.8;
+    }
+
+    .hole-cards--hero .player-card {
+        transition: none;
+    }
 }

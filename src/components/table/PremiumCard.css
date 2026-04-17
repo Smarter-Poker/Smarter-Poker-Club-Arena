@@ -35,14 +35,20 @@
 }
 
 @keyframes card-glow {
-
-    0%,
-    100% {
-        filter: drop-shadow(0 0 12px rgba(255, 215, 0, 0.6));
+    0% {
+        filter: drop-shadow(0 0 12px rgba(255, 215, 0, 0.6)) brightness(1) saturate(1);
     }
-
+    25% {
+        filter: drop-shadow(0 0 16px rgba(255, 215, 0, 0.72)) brightness(1.04) saturate(1.1);
+    }
     50% {
-        filter: drop-shadow(0 0 24px rgba(255, 215, 0, 0.9));
+        filter: drop-shadow(0 0 24px rgba(255, 215, 0, 0.9)) brightness(1.08) saturate(1.2);
+    }
+    75% {
+        filter: drop-shadow(0 0 18px rgba(255, 215, 0, 0.75)) brightness(1.04) saturate(1.08);
+    }
+    100% {
+        filter: drop-shadow(0 0 12px rgba(255, 215, 0, 0.6)) brightness(1) saturate(1);
     }
 }
 

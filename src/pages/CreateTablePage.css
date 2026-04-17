@@ -68,9 +68,24 @@
 }
 
 @keyframes slideIn {
-  to {
+  0% {
+    opacity: 0;
+    transform: translateX(-20px);
+    filter: blur(2px) brightness(0.4) saturate(0.2);
+  }
+  60% {
+    opacity: 0.95;
+    transform: translateX(2px);
+    filter: blur(0) brightness(1.08) saturate(1.1);
+  }
+  80% {
+    transform: translateX(-0.5px);
+    filter: blur(0) brightness(1.03) saturate(1.04);
+  }
+  100% {
     opacity: 1;
     transform: translateX(0);
+    filter: blur(0) brightness(1) saturate(1);
   }
 }
 
@@ -272,12 +287,23 @@
    ═══════════════════════════════════════════════════════════════ */
 
 @keyframes fadeInUp {
-  from {
+  0% {
     opacity: 0;
     transform: translateY(10px);
+    filter: blur(2px) brightness(0.4) saturate(0.2);
   }
-  to {
+  50% {
+    opacity: 0.92;
+    transform: translateY(-1px);
+    filter: blur(0) brightness(1.08) saturate(1.1);
+  }
+  75% {
+    transform: translateY(0.3px);
+    filter: blur(0) brightness(1.03) saturate(1.04);
+  }
+  100% {
     opacity: 1;
     transform: translateY(0);
+    filter: blur(0) brightness(1) saturate(1);
   }
 }

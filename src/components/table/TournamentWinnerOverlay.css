@@ -31,14 +31,23 @@
 }
 
 @keyframes winnerRadialPulse {
-  0%,
-  100% {
+  0%, 100% {
     transform: translate(-50%, -50%) scale(1);
     opacity: 0.5;
+    filter: brightness(1);
+  }
+  25% {
+    transform: translate(-50%, -50%) scale(1.12);
+    opacity: 0.7;
   }
   50% {
-    transform: translate(-50%, -50%) scale(1.3);
+    transform: translate(-50%, -50%) scale(1.35);
     opacity: 1;
+    filter: brightness(1.15);
+  }
+  75% {
+    transform: translate(-50%, -50%) scale(1.15);
+    opacity: 0.8;
   }
 }
 
@@ -73,10 +82,21 @@
   0% {
     opacity: 1;
     transform: translateY(0) translateX(0) scale(1);
+    filter: brightness(1.5);
+  }
+  20% {
+    opacity: 0.9;
+    filter: brightness(2);
+  }
+  50% {
+    opacity: 0.6;
+    transform: translateY(-120px) translateX(60px) scale(0.7);
+    filter: brightness(1.2);
   }
   100% {
     opacity: 0;
-    transform: translateY(-200px) translateX(100px) scale(0);
+    transform: translateY(-220px) translateX(110px) scale(0);
+    filter: brightness(0.8);
   }
 }
 
@@ -93,11 +113,20 @@
 @keyframes winnerGrandEntrance {
   0% {
     opacity: 0;
-    transform: scale(0.5) translateY(40px);
-    filter: blur(10px);
+    transform: scale(0.4) translateY(50px);
+    filter: blur(12px);
   }
-  50% {
-    transform: scale(1.05);
+  35% {
+    opacity: 0.85;
+    transform: scale(1.1) translateY(-5px);
+    filter: blur(1px);
+  }
+  55% {
+    transform: scale(0.97) translateY(2px);
+    filter: blur(0);
+  }
+  72% {
+    transform: scale(1.03) translateY(-1px);
   }
   100% {
     opacity: 1;
@@ -121,23 +150,40 @@
 
 @keyframes trophySpin {
   0% {
-    transform: scale(0) rotate(-180deg);
+    transform: scale(0) rotate(-220deg);
+    filter: brightness(0.5);
+  }
+  40% {
+    transform: scale(1.25) rotate(15deg);
+    filter: brightness(1.3);
   }
   60% {
-    transform: scale(1.2) rotate(10deg);
+    transform: scale(0.95) rotate(-5deg);
+    filter: brightness(1.1);
+  }
+  75% {
+    transform: scale(1.05) rotate(2deg);
   }
   100% {
     transform: scale(1) rotate(0deg);
+    filter: brightness(1);
   }
 }
 
 @keyframes trophyBounce {
-  0%,
-  100% {
-    transform: translateY(0);
+  0%, 100% {
+    transform: translateY(0) scale(1);
+    filter: drop-shadow(0 0 30px rgba(245, 158, 11, 0.6));
+  }
+  25% {
+    transform: translateY(-10px) scale(1.02);
   }
   50% {
-    transform: translateY(-20px);
+    transform: translateY(-22px) scale(1.05);
+    filter: drop-shadow(0 0 45px rgba(245, 158, 11, 0.8));
+  }
+  75% {
+    transform: translateY(-6px) scale(1.01);
   }
 }
 
@@ -197,13 +243,22 @@
 }
 
 @keyframes prizeCounterSlideIn {
-  from {
+  0% {
     opacity: 0;
-    transform: translateY(-20px);
+    transform: translateY(-24px) scale(0.9);
+    filter: blur(2px);
   }
-  to {
+  50% {
+    opacity: 0.9;
+    transform: translateY(3px) scale(1.04);
+    filter: blur(0);
+  }
+  70% {
+    transform: translateY(-1px) scale(0.99);
+  }
+  100% {
     opacity: 1;
-    transform: translateY(0);
+    transform: translateY(0) scale(1);
   }
 }
 
@@ -254,15 +309,52 @@
 
 @keyframes winnerBounce {
   0% {
-    transform: scale(0.3);
+    transform: scale(0.2);
     opacity: 0;
+    filter: blur(4px);
   }
-  50% {
-    transform: scale(1.1);
+  35% {
+    transform: scale(1.12);
+    opacity: 0.9;
+    filter: blur(0);
+  }
+  55% {
+    transform: scale(0.96);
+  }
+  72% {
+    transform: scale(1.04);
+  }
+  85% {
+    transform: scale(0.99);
   }
   100% {
     transform: scale(1);
     opacity: 1;
+    filter: blur(0);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   ACCESSIBILITY — Reduced Motion
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+@media (prefers-reduced-motion: reduce) {
+  .winnerOverlay::before,
+  .sparkle,
+  .trophy-bounce,
+  .winnerDismissBtn::before {
+    animation: none;
+  }
+
+  .winnerContent,
+  .winner-entrance,
+  .winnerTrophy,
+  .winnerTitle,
+  .prize-counter {
+    animation: none;
+    opacity: 1;
+    transform: none;
+    filter: none;
   }
 }
 

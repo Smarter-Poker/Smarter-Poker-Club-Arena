@@ -231,9 +231,21 @@
 @keyframes shimmer {
   0% {
     background-position: 200% 0;
+    filter: brightness(1) saturate(1);
+  }
+  40% {
+    filter: brightness(1.06) saturate(1.08);
+  }
+  50% {
+    background-position: 0% 0;
+    filter: brightness(1.1) saturate(1.12);
+  }
+  60% {
+    filter: brightness(1.06) saturate(1.08);
   }
   100% {
     background-position: -200% 0;
+    filter: brightness(1) saturate(1);
   }
 }
 

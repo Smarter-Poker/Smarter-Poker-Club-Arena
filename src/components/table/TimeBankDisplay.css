@@ -32,15 +32,11 @@
 }
 
 @keyframes time-bank-pulse {
-
-    0%,
-    100% {
-        opacity: 1;
-    }
-
-    50% {
-        opacity: 0.7;
-    }
+    0% { opacity: 1; filter: brightness(1) saturate(1); }
+    25% { opacity: 0.85; filter: brightness(1.08) saturate(1.12); }
+    50% { opacity: 0.7; filter: brightness(1.15) saturate(1.25); }
+    75% { opacity: 0.85; filter: brightness(1.06) saturate(1.08); }
+    100% { opacity: 1; filter: brightness(1) saturate(1); }
 }
 
 .time-bank__header {

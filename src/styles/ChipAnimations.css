@@ -26,14 +26,26 @@
   0% {
     opacity: 0;
     transform: scale(1) translate(var(--chip-from-x, 0), var(--chip-from-y, 0));
+    filter: brightness(0.6) blur(2px) saturate(0.4);
   }
-  50% {
+  25% {
+    opacity: 0.8;
+    transform: scale(1.08) translate(calc(var(--chip-from-x, 0) * 0.6), calc(var(--chip-from-y, 0) * 0.6));
+    filter: brightness(1.1) blur(0.5px) saturate(1.1);
+  }
+  55% {
     opacity: 1;
-    transform: scale(1.1) translate(calc(var(--chip-from-x, 0) * 0.4), calc(var(--chip-from-y, 0) * 0.4));
+    transform: scale(1.12) translate(calc(var(--chip-from-x, 0) * 0.25), calc(var(--chip-from-y, 0) * 0.25));
+    filter: brightness(1.2) blur(0) saturate(1.2);
+  }
+  75% {
+    transform: scale(0.97) translate(calc(var(--chip-from-x, 0) * 0.05), calc(var(--chip-from-y, 0) * 0.05));
+    filter: brightness(1.05) saturate(1.05);
   }
   100% {
     opacity: 1;
     transform: scale(1) translate(0, 0);
+    filter: brightness(1) blur(0) saturate(1);
   }
 }
 
@@ -55,20 +67,29 @@
   0% {
     opacity: 1;
     transform: scale(1) translate(0, 0);
-    filter: drop-shadow(0 0 0 rgba(255, 215, 0, 0));
+    filter: brightness(1.4) saturate(1.3) drop-shadow(0 0 0 rgba(255, 215, 0, 0));
   }
-  30% {
-    filter: drop-shadow(0 0 12px rgba(255, 215, 0, 0.6));
+  15% {
+    transform: scale(1.08) translate(calc(var(--chip-to-x, 0) * 0.1), calc(var(--chip-to-y, 0) * 0.1));
+    filter: brightness(1.35) saturate(1.25) drop-shadow(0 0 14px rgba(255, 215, 0, 0.65));
   }
-  70% {
+  35% {
+    filter: brightness(1.2) saturate(1.15) drop-shadow(0 0 10px rgba(255, 215, 0, 0.5));
+  }
+  55% {
     opacity: 1;
-    transform: scale(0.95) translate(calc(var(--chip-to-x, 0) * 0.8), calc(var(--chip-to-y, 0) * 0.8));
-    filter: drop-shadow(0 0 8px rgba(255, 215, 0, 0.3));
+    transform: scale(0.97) translate(calc(var(--chip-to-x, 0) * 0.6), calc(var(--chip-to-y, 0) * 0.6));
+    filter: brightness(1.1) saturate(1.08) drop-shadow(0 0 6px rgba(255, 215, 0, 0.3)) blur(0.5px);
+  }
+  80% {
+    opacity: 0.7;
+    transform: scale(0.9) translate(calc(var(--chip-to-x, 0) * 0.9), calc(var(--chip-to-y, 0) * 0.9));
+    filter: brightness(1.05) drop-shadow(0 0 3px rgba(255, 215, 0, 0.15)) blur(1px);
   }
   100% {
     opacity: 0;
-    transform: scale(0.85) translate(var(--chip-to-x, 0), var(--chip-to-y, 0));
-    filter: drop-shadow(0 0 0 rgba(255, 215, 0, 0));
+    transform: scale(0.82) translate(var(--chip-to-x, 0), var(--chip-to-y, 0));
+    filter: brightness(1) drop-shadow(0 0 0 rgba(255, 215, 0, 0)) blur(2px);
   }
 }
 
@@ -90,14 +111,26 @@
   0% {
     opacity: 0;
     transform: scale(0.7) translate(var(--merge-from-x, 80px), var(--merge-from-y, 0)) rotate(0deg);
+    filter: brightness(0.5) blur(2px) saturate(0.4);
   }
-  60% {
+  30% {
+    opacity: 0.8;
+    transform: scale(0.9) translate(calc(var(--merge-from-x, 80px) * 0.5), calc(var(--merge-from-y, 0) * 0.5)) rotate(18deg);
+    filter: brightness(1.1) blur(0.5px) saturate(1.1);
+  }
+  55% {
     opacity: 1;
-    transform: scale(1.05) translate(calc(var(--merge-from-x, 80px) * 0.2), calc(var(--merge-from-y, 0) * 0.2)) rotate(30deg);
+    transform: scale(1.08) translate(calc(var(--merge-from-x, 80px) * 0.15), calc(var(--merge-from-y, 0) * 0.15)) rotate(28deg);
+    filter: brightness(1.2) blur(0) saturate(1.2);
+  }
+  75% {
+    transform: scale(0.97) translate(calc(var(--merge-from-x, 80px) * 0.03), calc(var(--merge-from-y, 0) * 0.03)) rotate(8deg);
+    filter: brightness(1.05) saturate(1.05);
   }
   100% {
     opacity: 1;
     transform: scale(1) translate(0, 0) rotate(0deg);
+    filter: brightness(1) blur(0) saturate(1);
   }
 }
 
@@ -115,14 +148,26 @@
   0% {
     opacity: 0;
     transform: scale(1) translate(0, 0);
+    filter: brightness(1.3) saturate(1.2) blur(1px);
   }
-  50% {
+  25% {
+    opacity: 0.7;
+    transform: scale(1.03) translate(calc(var(--sidepot-x, 80px) * 0.35), calc(var(--sidepot-y, 40px) * 0.35));
+    filter: brightness(1.15) saturate(1.1) blur(0.3px);
+  }
+  55% {
     opacity: 1;
-    transform: scale(1.05) translate(calc(var(--sidepot-x, 80px) * 0.7), calc(var(--sidepot-y, 40px) * 0.7));
+    transform: scale(1.06) translate(calc(var(--sidepot-x, 80px) * 0.75), calc(var(--sidepot-y, 40px) * 0.75));
+    filter: brightness(1.08) saturate(1.05) blur(0);
+  }
+  78% {
+    transform: scale(0.92) translate(calc(var(--sidepot-x, 80px) * 0.95), calc(var(--sidepot-y, 40px) * 0.95));
+    filter: brightness(1.02) saturate(1.02);
   }
   100% {
     opacity: 1;
     transform: scale(0.9) translate(var(--sidepot-x, 80px), var(--sidepot-y, 40px));
+    filter: brightness(1) saturate(1) blur(0);
   }
 }
 
@@ -195,26 +240,56 @@
   0% {
     opacity: 0;
     transform: scale(0.6) translateY(20px);
+    filter: brightness(0.5) blur(2px) saturate(0.3);
+  }
+  20% {
+    opacity: 0.8;
+    transform: scale(1.0) translateY(2px);
+    filter: brightness(1.1) blur(0.5px) saturate(1.1);
   }
   40% {
     opacity: 1;
-    transform: scale(1.2) translateY(-8px);
+    transform: scale(1.22) translateY(-10px);
+    filter: brightness(1.35) blur(0) saturate(1.35);
   }
-  70% {
-    transform: scale(1.05) translateY(-2px);
+  58% {
+    transform: scale(0.95) translateY(2px);
+    filter: brightness(1.1) saturate(1.1);
+  }
+  72% {
+    transform: scale(1.06) translateY(-2px);
+    filter: brightness(1.05) saturate(1.05);
+  }
+  86% {
+    transform: scale(0.99) translateY(0.5px);
   }
   100% {
     opacity: 1;
     transform: scale(1) translateY(0);
+    filter: brightness(1) blur(0) saturate(1);
   }
 }
 
 @keyframes chipAllinFlash {
   0%, 100% {
     box-shadow: 0 0 0 0 rgba(255, 215, 0, 0);
+    filter: brightness(1);
+  }
+  15% {
+    box-shadow: 0 0 20px 6px rgba(255, 215, 0, 0.35);
+    filter: brightness(1.15);
   }
   30% {
-    box-shadow: 0 0 30px 10px rgba(255, 215, 0, 0.5);
+    box-shadow: 0 0 35px 12px rgba(255, 215, 0, 0.55);
+    filter: brightness(1.3);
+  }
+  50% {
+    box-shadow: 0 0 18px 5px rgba(255, 215, 0, 0.3);
+    filter: brightness(1.12);
+  }
+  70% {
+    box-shadow: 0 0 8px 2px rgba(255, 215, 0, 0.15);
+    filter: brightness(1.05);
   }
 }
 

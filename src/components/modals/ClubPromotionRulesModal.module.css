@@ -166,14 +166,19 @@
 }
 
 @keyframes bounce {
-
-    0%,
-    100% {
+    0%, 100% {
         transform: translateY(0);
+        filter: brightness(1) saturate(1);
     }
-
+    25% {
+        filter: brightness(1.06) saturate(1.1);
+    }
     50% {
         transform: translateY(4px);
+        filter: brightness(1.12) saturate(1.18);
+    }
+    75% {
+        filter: brightness(1.06) saturate(1.1);
     }
 }
 

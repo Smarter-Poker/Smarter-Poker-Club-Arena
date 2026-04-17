@@ -54,7 +54,7 @@ interface ThemeAsset {
 // CONSTANTS — Bible V8 §11.2.1 Game Types
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const GAME_TYPES = ['ALL', 'NLH', 'FLH', '6+', 'PLO', 'FLO', 'OFC', 'MIXED', 'MTT', 'SNG'] as const;
+const GAME_TYPES = ['ALL', 'NLH', 'FLH', '6+', 'PLO', 'FLO', 'MIXED', 'MTT', 'SNG'] as const;
 
 const TABS: { key: ThemeTab; label: string }[] = [
   { key: 'themes', label: 'Themes' },

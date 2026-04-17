@@ -28,12 +28,17 @@
 }
 
 @keyframes fadeIn {
-  from {
+  0% {
     opacity: 0;
+    filter: blur(3px) brightness(0.4);
   }
-
-  to {
+  50% {
+    opacity: 0.8;
+    filter: blur(0) brightness(1.06);
+  }
+  100% {
     opacity: 1;
+    filter: blur(0) brightness(1);
   }
 }
 
@@ -104,12 +109,20 @@
 }
 
 @keyframes timerRingPulse {
-  0%,
-  100% {
-    filter: drop-shadow(0 0 8px rgba(255, 184, 0, 0.3));
+  0% {
+    filter: drop-shadow(0 0 8px rgba(255, 184, 0, 0.3)) brightness(1) saturate(1);
+  }
+  25% {
+    filter: drop-shadow(0 0 14px rgba(255, 184, 0, 0.4)) brightness(1.06) saturate(1.1);
   }
   50% {
-    filter: drop-shadow(0 0 20px rgba(255, 184, 0, 0.5));
+    filter: drop-shadow(0 0 22px rgba(255, 184, 0, 0.55)) brightness(1.12) saturate(1.2);
+  }
+  75% {
+    filter: drop-shadow(0 0 14px rgba(255, 184, 0, 0.4)) brightness(1.06) saturate(1.1);
+  }
+  100% {
+    filter: drop-shadow(0 0 8px rgba(255, 184, 0, 0.3)) brightness(1) saturate(1);
   }
 }
 

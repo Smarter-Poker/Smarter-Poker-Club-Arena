@@ -1,228 +1,1054 @@
 /**
- * ═══════════════════════════════════════════════════════════════════════════════
- *  THROW ANIMATION — Styles
- * ═══════════════════════════════════════════════════════════════════════════════
+ * =================================================================================
+ *  THROW ANIMATION -- Premium Physics-Based Throwable System
+ * =================================================================================
+ *
+ *  PokerBros-level throwable animations with:
+ *  - Multi-phase parabolic arc trajectories with spin
+ *  - Per-type impact FX (splash, shatter, burst, sparkle)
+ *  - Screen shake on heavy impacts
+ *  - Motion blur during flight
+ *  - Particle scatter on landing
+ *  - Spring-physics wobble and squash/stretch
+ *  - Reduced-motion support for accessibility
+ *
+ *  Architecture:
+ *    FLIGHT  -->  PRE-IMPACT  -->  IMPACT  -->  AFTERMATH
+ *    0.7s         0.05s            0.6s          0.4s
  */
 
+/* =================================================================================
+   CUSTOM PROPERTIES -- Timing & Physics Tokens
+   ================================================================================= */
+
+:root {
+  /* -- Flight -- */
+  --throw-flight-duration: 0.65s;
+  --throw-arc-height: 90px;
+  --throw-spin-degrees: 540deg;
+
+  /* -- Spring easings -- */
+  --throw-ease-launch: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --throw-ease-arc: cubic-bezier(0.33, 0, 0.2, 1);
+  --throw-ease-impact: cubic-bezier(0.16, 1.11, 0.36, 1.2);
+  --throw-ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --throw-ease-elastic: cubic-bezier(0.68, -0.55, 0.27, 1.55);
+
+  /* -- Impact -- */
+  --impact-duration: 0.7s;
+  --impact-ring-size: 140px;
+  --impact-shake-intensity: 4px;
+
+  /* -- Particle -- */
+  --particle-count: 8;
+  --particle-spread: 60px;
+  --particle-lifetime: 0.8s;
+}
+
+/* =================================================================================
+   CONTAINER
+   ================================================================================= */
+
 .throw-animation-container {
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    z-index: 500;
-    overflow: visible;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 500;
+  overflow: visible;
 }
 
 .throw-animation {
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
 }
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   PROJECTILE — Flying Object
-   ───────────────────────────────────────────────────────────────────────────── */
+/* =================================================================================
+   PROJECTILE -- Flying Object (All Types)
+   ================================================================================= */
 
 .throw-animation__projectile {
-    position: absolute;
-    font-size: 2.5rem;
-    filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.4));
-    z-index: 510;
+  position: absolute;
+  font-size: 2.5rem;
+  z-index: 510;
+  will-change: transform, opacity, filter;
 }
 
+/* In-flight icon: squash-stretch + spin wobble */
 .throw-animation__icon {
-    display: block;
-    animation: wobble 0.15s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) infinite;
+  display: block;
+  animation: throwIconSpin var(--throw-flight-duration) var(--throw-ease-arc) forwards;
+  transform-origin: center center;
+  filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.5))
+          drop-shadow(0 0 8px rgba(255, 215, 0, 0.15));
 }
 
-@keyframes wobble {
-
-    0%,
-    100% {
-        transform: rotate(-5deg);
-    }
-
-    50% {
-        transform: rotate(5deg);
-    }
+@keyframes throwIconSpin {
+  0% {
+    transform: rotate(0deg) scale(1, 1);
+    filter: brightness(1) drop-shadow(0 4px 8px rgba(0,0,0,0.4));
+  }
+  15% {
+    transform: rotate(45deg) scale(1.15, 0.85);
+    filter: brightness(1.3) drop-shadow(0 6px 12px rgba(0,0,0,0.3));
+  }
+  35% {
+    transform: rotate(180deg) scale(0.9, 1.1);
+    filter: brightness(0.9) drop-shadow(0 2px 6px rgba(0,0,0,0.5));
+  }
+  55% {
+    transform: rotate(320deg) scale(1.1, 0.9);
+    filter: brightness(1.25) drop-shadow(0 5px 10px rgba(0,0,0,0.35));
+  }
+  75% {
+    transform: rotate(480deg) scale(0.95, 1.05);
+    filter: brightness(0.95) drop-shadow(0 3px 8px rgba(0,0,0,0.45));
+  }
+  100% {
+    transform: rotate(var(--throw-spin-degrees, 540deg)) scale(1, 1);
+    filter: brightness(1.1) drop-shadow(0 4px 8px rgba(0,0,0,0.4));
+  }
 }
 
-/* Arc throw animation (for throwables) */
+/* ---------------------------------------------------------------------------------
+   ARC THROW -- Parabolic Trajectory with Gravity
+   --------------------------------------------------------------------------------- */
+
 .throw-animation__projectile--arc {
-    left: var(--from-x);
-    top: var(--from-y);
-    animation: throwArc 0.6s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) forwards;
-    filter: drop-shadow(0 0 12px rgba(255, 215, 0, 0.3)) drop-shadow(0 4px 8px rgba(0, 0, 0, 0.4));
+  left: var(--from-x);
+  top: var(--from-y);
+  animation:
+    throwArcX var(--throw-flight-duration) var(--throw-ease-arc) forwards,
+    throwArcY var(--throw-flight-duration) var(--throw-ease-launch) forwards,
+    throwArcScale var(--throw-flight-duration) var(--throw-ease-arc) forwards;
+  filter:
+    drop-shadow(0 0 16px rgba(255, 215, 0, 0.25))
+    drop-shadow(0 6px 12px rgba(0, 0, 0, 0.5));
 }
 
-@keyframes throwArc {
-    0% {
-        transform: translate(-50%, -50%) scale(0.5);
-        opacity: 0;
-    }
-
-    15% {
-        opacity: 1;
-        transform: translate(-50%, -50%) scale(1);
-    }
-
-    50% {
-        /* Peak of arc - goes up */
-        transform: translate(calc((var(--to-x) - var(--from-x)) * 0.5 - 50%),
-                calc((var(--to-y) - var(--from-y)) * 0.5 - 80px - 50%)) scale(1.2) rotate(180deg);
-    }
-
-    100% {
-        transform: translate(calc(var(--to-x) - var(--from-x) - 50%),
-                calc(var(--to-y) - var(--from-y) - 50%)) scale(1) rotate(360deg);
-        opacity: 1;
-    }
+/* Horizontal motion: linear interpolation from→to */
+@keyframes throwArcX {
+  0% {
+    translate: -50% 0;
+    opacity: 0;
+  }
+  8% {
+    opacity: 1;
+  }
+  100% {
+    translate: calc(var(--to-x) - var(--from-x) - 50%) 0;
+    opacity: 1;
+  }
 }
 
-/* Float animation (for reactions) */
+/* Vertical motion: parabolic arc (up then down with gravity) */
+@keyframes throwArcY {
+  0% {
+    transform: translateY(-50%);
+  }
+  10% {
+    transform: translateY(calc(-50% - 20px));
+  }
+  30% {
+    transform: translateY(calc(-50% - var(--throw-arc-height)));
+  }
+  50% {
+    transform: translateY(calc(-50% - var(--throw-arc-height) * 0.85));
+  }
+  75% {
+    transform: translateY(calc(var(--to-y) - var(--from-y) - 50% - 20px));
+  }
+  100% {
+    transform: translateY(calc(var(--to-y) - var(--from-y) - 50%));
+  }
+}
+
+/* Scale: launch big, shrink at peak (far away), grow on approach + depth blur */
+@keyframes throwArcScale {
+  0% {
+    scale: 0.3;
+    filter: blur(2px) brightness(1.5);
+  }
+  12% {
+    scale: 1.25;
+    filter: blur(0px) brightness(1.2);
+  }
+  35% {
+    scale: 0.85;
+    filter: blur(0.5px) brightness(0.9);
+  }
+  55% {
+    scale: 0.95;
+    filter: blur(0.3px) brightness(1);
+  }
+  70% {
+    scale: 1.1;
+    filter: blur(0px) brightness(1.05);
+  }
+  90% {
+    scale: 1.2;
+    filter: blur(0px) brightness(1.15);
+  }
+  100% {
+    scale: 1;
+    filter: blur(0px) brightness(1);
+  }
+}
+
+/* ---------------------------------------------------------------------------------
+   FLOAT ANIMATION -- Reactions (lighter, floaty path)
+   --------------------------------------------------------------------------------- */
+
 .throw-animation__projectile--float {
-    left: var(--from-x);
-    top: var(--from-y);
-    animation: throwFloat 0.6s ease-out forwards;
+  left: var(--from-x);
+  top: var(--from-y);
+  animation: throwFloat 0.55s var(--throw-ease-arc) forwards;
+  filter:
+    drop-shadow(0 2px 6px rgba(0, 0, 0, 0.3))
+    drop-shadow(0 0 10px rgba(255, 255, 255, 0.1));
+}
+
+.throw-animation__projectile--float .throw-animation__icon {
+  animation: floatIconPulse 0.55s var(--throw-ease-bounce) forwards;
 }
 
 @keyframes throwFloat {
-    0% {
-        transform: translate(-50%, -50%) scale(0.3);
-        opacity: 0;
-    }
-
-    30% {
-        transform: translate(-50%, -100%) scale(1.2);
-        opacity: 1;
-    }
-
-    60% {
-        transform: translate(calc((var(--to-x) - var(--from-x)) * 0.7 - 50%),
-                calc((var(--to-y) - var(--from-y)) * 0.7 - 30px - 50%)) scale(1);
-    }
-
-    100% {
-        transform: translate(calc(var(--to-x) - var(--from-x) - 50%),
-                calc(var(--to-y) - var(--from-y) - 50%)) scale(0.9);
-        opacity: 1;
-    }
+  0% {
+    transform: translate(-50%, -50%) scale(0.2);
+    opacity: 0;
+  }
+  15% {
+    transform: translate(-50%, calc(-50% - 30px)) scale(1.3);
+    opacity: 1;
+  }
+  35% {
+    transform: translate(
+      calc((var(--to-x) - var(--from-x)) * 0.4 - 50%),
+      calc((var(--to-y) - var(--from-y)) * 0.3 - 50% - 50px)
+    ) scale(1.05);
+  }
+  65% {
+    transform: translate(
+      calc((var(--to-x) - var(--from-x)) * 0.75 - 50%),
+      calc((var(--to-y) - var(--from-y)) * 0.75 - 50% - 15px)
+    ) scale(0.95);
+  }
+  100% {
+    transform: translate(
+      calc(var(--to-x) - var(--from-x) - 50%),
+      calc(var(--to-y) - var(--from-y) - 50%)
+    ) scale(1);
+    opacity: 1;
+  }
 }
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   IMPACT — Landing Effect
-   ───────────────────────────────────────────────────────────────────────────── */
+@keyframes floatIconPulse {
+  0% { transform: scale(0.5) rotate(0deg); filter: brightness(1.6) drop-shadow(0 0 8px rgba(255,255,255,0.4)); }
+  25% { transform: scale(1.2) rotate(-10deg); filter: brightness(1.3) drop-shadow(0 0 12px rgba(255,215,0,0.3)); }
+  50% { transform: scale(0.9) rotate(5deg); filter: brightness(0.95) drop-shadow(0 2px 6px rgba(0,0,0,0.3)); }
+  75% { transform: scale(1.05) rotate(-3deg); filter: brightness(1.1) drop-shadow(0 1px 4px rgba(0,0,0,0.25)); }
+  100% { transform: scale(1) rotate(0deg); filter: brightness(1) drop-shadow(0 2px 4px rgba(0,0,0,0.3)); }
+}
+
+/* ---------------------------------------------------------------------------------
+   MOTION TRAIL -- Streak behind fast-moving objects
+   --------------------------------------------------------------------------------- */
+
+.throw-animation__projectile--arc::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 60px;
+  height: 8px;
+  transform: translate(-100%, -50%) rotate(var(--trail-angle, -30deg));
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 215, 0, 0.15) 40%,
+    rgba(255, 215, 0, 0.35) 70%,
+    rgba(255, 255, 255, 0.4) 100%
+  );
+  border-radius: 4px;
+  filter: blur(2px);
+  opacity: 0;
+  animation: trailFade var(--throw-flight-duration) ease-out forwards;
+  pointer-events: none;
+}
+
+@keyframes trailFade {
+  0% { opacity: 0; transform: translate(-100%, -50%) rotate(var(--trail-angle, -30deg)) scaleX(0.3); filter: blur(3px) brightness(2); }
+  15% { opacity: 0.9; transform: translate(-100%, -50%) rotate(var(--trail-angle, -30deg)) scaleX(1.2); filter: blur(1px) brightness(1.5); }
+  50% { opacity: 0.7; transform: translate(-100%, -50%) rotate(var(--trail-angle, -30deg)) scaleX(1); filter: blur(2px) brightness(1.2); }
+  70% { opacity: 0.5; transform: translate(-100%, -50%) rotate(var(--trail-angle, -30deg)) scaleX(0.8); filter: blur(2px) brightness(1); }
+  100% { opacity: 0; transform: translate(-100%, -50%) rotate(var(--trail-angle, -30deg)) scaleX(0.4); filter: blur(4px) brightness(0.7); }
+}
+
+/* =================================================================================
+   IMPACT -- Landing Effect System
+   ================================================================================= */
 
 .throw-animation__impact {
-    position: absolute;
-    transform: translate(-50%, -50%);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 520;
-    animation: impactPop 0.8s ease-out forwards;
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 520;
+  animation: impactEntrance 0.08s ease-out;
 }
 
-@keyframes impactPop {
-    0% {
-        transform: translate(-50%, -50%) scale(1);
-        opacity: 1;
-    }
-
-    20% {
-        transform: translate(-50%, -50%) scale(1.5);
-    }
-
-    100% {
-        transform: translate(-50%, -50%) scale(0);
-        opacity: 0;
-    }
+@keyframes impactEntrance {
+  0% { scale: 0.3; filter: blur(4px) brightness(2); }
+  30% { scale: 1.15; filter: blur(0) brightness(1.4); }
+  55% { scale: 0.95; filter: blur(0) brightness(1.1); }
+  75% { scale: 1.03; filter: blur(0) brightness(1); }
+  100% { scale: 1; filter: blur(0) brightness(1); }
 }
 
+/* -- Impact Icon: slam-in with overshoot bounce -- */
 .throw-animation__impact-icon {
-    font-size: 3rem;
-    animation: impactBounce 0.3s ease-out;
+  font-size: 3.5rem;
+  animation: impactSlamBounce 0.7s var(--throw-ease-impact) forwards;
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.5));
 }
 
-@keyframes impactBounce {
-    0% {
-        transform: scale(1.5);
-    }
-
-    50% {
-        transform: scale(0.8);
-    }
-
-    100% {
-        transform: scale(1);
-    }
+@keyframes impactSlamBounce {
+  0% {
+    transform: scale(2) rotate(-15deg);
+    opacity: 1;
+    filter: brightness(2);
+  }
+  8% {
+    transform: scale(0.7) rotate(5deg);
+    filter: brightness(1.5);
+  }
+  20% {
+    transform: scale(1.3) rotate(-3deg);
+    filter: brightness(1.2);
+  }
+  35% {
+    transform: scale(0.9) rotate(1deg);
+    filter: brightness(1);
+  }
+  50% {
+    transform: scale(1.05) rotate(0deg);
+  }
+  70% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.6) rotate(0deg);
+    opacity: 0;
+  }
 }
 
+/* -- Burst Ring: expanding shockwave -- */
 .throw-animation__burst {
-    position: absolute;
-    width: 100px;
-    height: 100px;
-    border-radius: 50%;
-    background: radial-gradient(circle,
-            rgba(255, 215, 0, 0.4) 0%,
-            rgba(255, 215, 0, 0.1) 40%,
-            transparent 70%);
-    animation: burstExpand 0.6s ease-out forwards;
+  position: absolute;
+  width: var(--impact-ring-size);
+  height: var(--impact-ring-size);
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(255, 215, 0, 0.5) 0%,
+    rgba(255, 215, 0, 0.2) 25%,
+    rgba(255, 180, 0, 0.1) 50%,
+    transparent 70%
+  );
+  animation: burstShockwave 0.65s var(--throw-ease-arc) forwards;
+  pointer-events: none;
 }
 
-@keyframes burstExpand {
-    0% {
-        transform: scale(0.2);
-        opacity: 1;
-    }
-
-    100% {
-        transform: scale(2);
-        opacity: 0;
-    }
+@keyframes burstShockwave {
+  0% {
+    transform: scale(0.1);
+    opacity: 1;
+    filter: brightness(2);
+  }
+  25% {
+    transform: scale(1);
+    opacity: 0.8;
+    filter: brightness(1.5);
+  }
+  50% {
+    transform: scale(1.8);
+    opacity: 0.4;
+    filter: brightness(1);
+  }
+  100% {
+    transform: scale(2.5);
+    opacity: 0;
+    filter: brightness(0.8);
+  }
 }
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   SPECIAL EFFECTS — Premium Throwables
-   ───────────────────────────────────────────────────────────────────────────── */
+/* -- Secondary Ring: delayed echo -- */
+.throw-animation__burst::after {
+  content: '';
+  position: absolute;
+  inset: 15%;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 215, 0, 0.4);
+  animation: burstRingEcho 0.5s 0.1s var(--throw-ease-arc) forwards;
+  opacity: 0;
+}
 
-/* Fireworks burst */
+@keyframes burstRingEcho {
+  0% {
+    transform: scale(0.5);
+    opacity: 0;
+    filter: brightness(2) blur(0px);
+  }
+  20% {
+    opacity: 0.7;
+    filter: brightness(1.5) blur(0px);
+  }
+  50% {
+    opacity: 0.4;
+    filter: brightness(1.2) blur(0.5px);
+  }
+  100% {
+    transform: scale(3);
+    opacity: 0;
+    filter: brightness(0.8) blur(1px);
+  }
+}
+
+/* -- Screen Shake on Impact (applied to table container via JS) -- */
+.throw-animation--shake {
+  animation: screenShake 0.4s ease-out;
+}
+
+@keyframes screenShake {
+  0% { transform: translate(0, 0) rotate(0deg); filter: brightness(1); }
+  8% { transform: translate(var(--impact-shake-intensity), calc(var(--impact-shake-intensity) * -0.5)) rotate(0.4deg); filter: brightness(1.15); }
+  18% { transform: translate(calc(var(--impact-shake-intensity) * -0.8), var(--impact-shake-intensity)) rotate(-0.35deg); filter: brightness(1.05); }
+  28% { transform: translate(calc(var(--impact-shake-intensity) * 0.6), calc(var(--impact-shake-intensity) * -0.7)) rotate(0.25deg); }
+  38% { transform: translate(calc(var(--impact-shake-intensity) * -0.4), calc(var(--impact-shake-intensity) * 0.5)) rotate(-0.15deg); }
+  48% { transform: translate(calc(var(--impact-shake-intensity) * 0.3), calc(var(--impact-shake-intensity) * -0.3)) rotate(0.1deg); }
+  60% { transform: translate(calc(var(--impact-shake-intensity) * -0.15), calc(var(--impact-shake-intensity) * 0.1)) rotate(-0.05deg); }
+  75% { transform: translate(calc(var(--impact-shake-intensity) * 0.05), calc(var(--impact-shake-intensity) * -0.05)) rotate(0.02deg); }
+  100% { transform: translate(0, 0) rotate(0deg); filter: brightness(1); }
+}
+
+/* =================================================================================
+   PARTICLE SYSTEM -- Scatter on Impact
+   ================================================================================= */
+
+.throw-animation__particles {
+  position: absolute;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.throw-animation__particle {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--particle-color, #ffd700);
+  box-shadow: 0 0 6px var(--particle-color, rgba(255, 215, 0, 0.6));
+  animation: particleScatter var(--particle-lifetime) var(--throw-ease-bounce) forwards;
+}
+
+/* 8 directional particle animations */
+.throw-animation__particle:nth-child(1) { --p-angle: 0deg; --p-dist: 50px; animation-delay: 0ms; }
+.throw-animation__particle:nth-child(2) { --p-angle: 45deg; --p-dist: 60px; animation-delay: 15ms; }
+.throw-animation__particle:nth-child(3) { --p-angle: 90deg; --p-dist: 45px; animation-delay: 30ms; }
+.throw-animation__particle:nth-child(4) { --p-angle: 135deg; --p-dist: 55px; animation-delay: 10ms; }
+.throw-animation__particle:nth-child(5) { --p-angle: 180deg; --p-dist: 50px; animation-delay: 25ms; }
+.throw-animation__particle:nth-child(6) { --p-angle: 225deg; --p-dist: 65px; animation-delay: 5ms; }
+.throw-animation__particle:nth-child(7) { --p-angle: 270deg; --p-dist: 40px; animation-delay: 20ms; }
+.throw-animation__particle:nth-child(8) { --p-angle: 315deg; --p-dist: 55px; animation-delay: 35ms; }
+
+@keyframes particleScatter {
+  0% {
+    transform: translate(0, 0) scale(1);
+    opacity: 1;
+    filter: brightness(2) blur(0px);
+  }
+  20% {
+    transform:
+      translate(
+        calc(cos(var(--p-angle)) * var(--p-dist) * 0.4),
+        calc(sin(var(--p-angle)) * var(--p-dist) * 0.4)
+      )
+      scale(1.4);
+    opacity: 0.95;
+    filter: brightness(1.5) blur(0px);
+  }
+  50% {
+    transform:
+      translate(
+        calc(cos(var(--p-angle)) * var(--p-dist) * 0.75),
+        calc(sin(var(--p-angle)) * var(--p-dist) * 0.75 + 10px)
+      )
+      scale(0.9);
+    opacity: 0.6;
+    filter: brightness(1.1) blur(0.5px);
+  }
+  100% {
+    transform:
+      translate(
+        calc(cos(var(--p-angle)) * var(--p-dist)),
+        calc(sin(var(--p-angle)) * var(--p-dist) + 30px)
+      )
+      scale(0);
+    opacity: 0;
+    filter: brightness(0.6) blur(2px);
+  }
+}
+
+/* Fallback for browsers without cos()/sin() -- radial burst */
+@supports not (transform: translate(calc(cos(0deg) * 1px), 0)) {
+  .throw-animation__particle:nth-child(1) { animation-name: pFallback1; }
+  .throw-animation__particle:nth-child(2) { animation-name: pFallback2; }
+  .throw-animation__particle:nth-child(3) { animation-name: pFallback3; }
+  .throw-animation__particle:nth-child(4) { animation-name: pFallback4; }
+  .throw-animation__particle:nth-child(5) { animation-name: pFallback5; }
+  .throw-animation__particle:nth-child(6) { animation-name: pFallback6; }
+  .throw-animation__particle:nth-child(7) { animation-name: pFallback7; }
+  .throw-animation__particle:nth-child(8) { animation-name: pFallback8; }
+
+  @keyframes pFallback1 { 0% { transform: translate(0,0) scale(1); opacity:1; } 100% { transform: translate(50px, 0) scale(0); opacity:0; } }
+  @keyframes pFallback2 { 0% { transform: translate(0,0) scale(1); opacity:1; } 100% { transform: translate(42px, -42px) scale(0); opacity:0; } }
+  @keyframes pFallback3 { 0% { transform: translate(0,0) scale(1); opacity:1; } 100% { transform: translate(0, -45px) scale(0); opacity:0; } }
+  @keyframes pFallback4 { 0% { transform: translate(0,0) scale(1); opacity:1; } 100% { transform: translate(-39px, -39px) scale(0); opacity:0; } }
+  @keyframes pFallback5 { 0% { transform: translate(0,0) scale(1); opacity:1; } 100% { transform: translate(-50px, 0) scale(0); opacity:0; } }
+  @keyframes pFallback6 { 0% { transform: translate(0,0) scale(1); opacity:1; } 100% { transform: translate(-46px, 46px) scale(0); opacity:0; } }
+  @keyframes pFallback7 { 0% { transform: translate(0,0) scale(1); opacity:1; } 100% { transform: translate(0, 40px) scale(0); opacity:0; } }
+  @keyframes pFallback8 { 0% { transform: translate(0,0) scale(1); opacity:1; } 100% { transform: translate(39px, 39px) scale(0); opacity:0; } }
+}
+
+/* =================================================================================
+   TYPE-SPECIFIC IMPACT EFFECTS
+   ================================================================================= */
+
+/* ---- TOMATO: Red splatter ---- */
+.throw-animation__impact[data-type="tomato"] .throw-animation__burst {
+  background: radial-gradient(
+    circle,
+    rgba(255, 50, 50, 0.7) 0%,
+    rgba(255, 80, 50, 0.4) 30%,
+    rgba(200, 30, 30, 0.2) 55%,
+    transparent 75%
+  );
+}
+.throw-animation__impact[data-type="tomato"] .throw-animation__particle {
+  --particle-color: #ff4444;
+  width: 8px;
+  height: 6px;
+  border-radius: 40%;
+}
+.throw-animation__impact[data-type="tomato"] .throw-animation__impact-icon {
+  animation: tomatoSplat 0.6s var(--throw-ease-impact) forwards;
+}
+@keyframes tomatoSplat {
+  0% { transform: scale(1.8); filter: brightness(1.8) saturate(1.8); opacity: 1; }
+  8% { transform: scale(0.5) scaleY(0.55); filter: brightness(1.4) saturate(1.5); }
+  18% { transform: scale(1.5) scaleY(0.65) rotate(-3deg); filter: brightness(1.2) saturate(1.3); }
+  35% { transform: scale(1.15) scaleY(0.85) rotate(1deg); filter: brightness(1) saturate(1.1); }
+  55% { transform: scale(1) rotate(0deg); opacity: 0.9; }
+  100% { transform: scale(0.3) scaleY(0.35); opacity: 0; filter: saturate(0.4) brightness(0.7) blur(1px); }
+}
+
+/* ---- EGG: Crack + drip ---- */
+.throw-animation__impact[data-type="egg"] .throw-animation__burst {
+  background: radial-gradient(
+    circle,
+    rgba(255, 253, 231, 0.8) 0%,
+    rgba(255, 248, 200, 0.4) 35%,
+    rgba(255, 240, 170, 0.15) 60%,
+    transparent 80%
+  );
+}
+.throw-animation__impact[data-type="egg"] .throw-animation__particle {
+  --particle-color: #fffde7;
+  width: 5px;
+  height: 8px;
+  border-radius: 50% 50% 50% 50% / 30% 30% 70% 70%;
+}
+.throw-animation__impact[data-type="egg"] .throw-animation__impact-icon {
+  animation: eggCrack 0.7s var(--throw-ease-impact) forwards;
+}
+@keyframes eggCrack {
+  0% { transform: scale(1.5) rotate(-10deg); filter: brightness(1.8) saturate(1.3); opacity: 1; }
+  12% { transform: scale(0.7) rotate(6deg) scaleY(0.8); filter: brightness(1.2) saturate(1.1); }
+  25% { transform: scale(1.25) rotate(-3deg) scaleY(1.1); filter: brightness(1) hue-rotate(5deg); }
+  42% { transform: scale(1) rotate(1deg); opacity: 1; filter: hue-rotate(0deg); }
+  65% { transform: scale(0.85) translateY(6px); opacity: 0.7; }
+  100% { transform: scale(0.4) translateY(18px); opacity: 0; filter: brightness(0.7) blur(1px); }
+}
+
+/* ---- SNOWBALL: Frost burst ---- */
+.throw-animation__impact[data-type="snowball"] .throw-animation__burst {
+  background: radial-gradient(
+    circle,
+    rgba(225, 245, 254, 0.8) 0%,
+    rgba(179, 229, 252, 0.5) 30%,
+    rgba(129, 212, 250, 0.2) 55%,
+    transparent 75%
+  );
+}
+.throw-animation__impact[data-type="snowball"] .throw-animation__particle {
+  --particle-color: #e1f5fe;
+  width: 5px;
+  height: 5px;
+  box-shadow: 0 0 8px rgba(200, 230, 255, 0.8);
+}
+.throw-animation__impact[data-type="snowball"] .throw-animation__impact-icon {
+  animation: snowPoof 0.6s var(--throw-ease-impact) forwards;
+}
+@keyframes snowPoof {
+  0% { transform: scale(1.6); filter: brightness(2.5) blur(0px) hue-rotate(0deg) saturate(0.5); opacity: 1; }
+  15% { transform: scale(0.65) scaleY(0.8); filter: brightness(1.5) blur(1px) hue-rotate(10deg) saturate(0.7); }
+  30% { transform: scale(1.25) scaleY(1.05); filter: brightness(1.2) blur(0px) hue-rotate(-5deg); }
+  55% { transform: scale(0.9); filter: brightness(1.4) blur(1px) hue-rotate(5deg); opacity: 0.7; }
+  100% { transform: scale(0.35); filter: brightness(1.8) blur(4px) hue-rotate(15deg) saturate(0.3); opacity: 0; }
+}
+
+/* ---- WATER BALLOON: Splash wave ---- */
+.throw-animation__impact[data-type="water-balloon"] .throw-animation__burst {
+  background: radial-gradient(
+    circle,
+    rgba(79, 195, 247, 0.7) 0%,
+    rgba(41, 182, 246, 0.4) 30%,
+    rgba(2, 136, 209, 0.15) 55%,
+    transparent 75%
+  );
+  animation: waterSplashRing 0.8s var(--throw-ease-arc) forwards;
+}
+@keyframes waterSplashRing {
+  0% { transform: scale(0.1) scaleY(0.5); opacity: 1; filter: brightness(2.5) saturate(1.5); }
+  15% { transform: scale(0.7) scaleY(1.3); opacity: 0.95; filter: brightness(1.6) saturate(1.3); }
+  30% { transform: scale(1.2) scaleY(0.9); opacity: 0.75; filter: brightness(1.2); }
+  50% { transform: scale(1.8) scaleY(0.75); opacity: 0.45; filter: brightness(1) blur(0.5px); }
+  100% { transform: scale(3) scaleY(0.55); opacity: 0; filter: brightness(0.8) blur(1px); }
+}
+.throw-animation__impact[data-type="water-balloon"] .throw-animation__particle {
+  --particle-color: #4fc3f7;
+  width: 4px;
+  height: 7px;
+  border-radius: 50% 50% 50% 50% / 30% 30% 70% 70%;
+}
+
+/* ---- PIE: Cream splatter ---- */
+.throw-animation__impact[data-type="pie"] .throw-animation__burst {
+  background: radial-gradient(
+    circle,
+    rgba(255, 253, 231, 0.9) 0%,
+    rgba(255, 245, 200, 0.5) 30%,
+    rgba(141, 110, 99, 0.2) 60%,
+    transparent 80%
+  );
+}
+.throw-animation__impact[data-type="pie"] .throw-animation__particle {
+  --particle-color: #fffde7;
+  width: 10px;
+  height: 6px;
+  border-radius: 40%;
+}
+.throw-animation__impact[data-type="pie"] .throw-animation__impact-icon {
+  animation: pieSplat 0.65s var(--throw-ease-impact) forwards;
+}
+@keyframes pieSplat {
+  0% { transform: scale(1.8) rotate(-20deg); filter: brightness(1.8) saturate(1.4); opacity: 1; }
+  8% { transform: scale(0.55) scaleY(0.45) rotate(12deg); filter: brightness(1.3); }
+  20% { transform: scale(1.55) scaleY(0.6) rotate(-6deg); filter: brightness(1.15) saturate(1.2); }
+  38% { transform: scale(1.15) scaleY(0.8) rotate(2deg); filter: brightness(1); }
+  55% { transform: scale(1) scaleY(0.9) rotate(0deg); opacity: 0.85; }
+  100% { transform: scale(0.25) scaleY(0.25) translateY(12px); opacity: 0; filter: brightness(0.7) blur(1px); }
+}
+
+/* ---- FIREWORKS: Multi-color explosion ---- */
 .throw-animation__impact[data-type="fireworks"] .throw-animation__burst {
-    background: radial-gradient(circle,
-            rgba(255, 100, 100, 0.5) 0%,
-            rgba(255, 200, 100, 0.4) 30%,
-            rgba(100, 200, 255, 0.3) 60%,
-            transparent 80%);
-    animation: fireworksBurst 1s ease-out forwards;
+  background: radial-gradient(
+    circle,
+    rgba(255, 100, 100, 0.6) 0%,
+    rgba(255, 215, 0, 0.5) 20%,
+    rgba(100, 200, 255, 0.4) 40%,
+    rgba(150, 100, 255, 0.3) 60%,
+    transparent 80%
+  );
+  animation: fireworksMultiBurst 1.2s var(--throw-ease-arc) forwards;
+}
+@keyframes fireworksMultiBurst {
+  0% { transform: scale(0.05); opacity: 0; filter: brightness(4) saturate(2) hue-rotate(0deg); }
+  6% { opacity: 1; filter: brightness(3) saturate(1.8); }
+  20% { transform: scale(1); filter: brightness(2.5) saturate(1.5) hue-rotate(15deg); }
+  35% { transform: scale(1.6); opacity: 0.85; filter: brightness(2) hue-rotate(-10deg); }
+  50% { transform: scale(2.1); opacity: 0.6; filter: brightness(1.5) saturate(1.3) hue-rotate(20deg); }
+  70% { transform: scale(2.8); opacity: 0.3; filter: brightness(1.2) hue-rotate(-5deg); }
+  100% { transform: scale(3.5); opacity: 0; filter: brightness(0.8) saturate(0.5) hue-rotate(0deg); }
+}
+.throw-animation__impact[data-type="fireworks"] .throw-animation__particle {
+  width: 4px;
+  height: 12px;
+  border-radius: 2px;
+  box-shadow: 0 0 10px var(--particle-color, #ffd700);
+}
+.throw-animation__impact[data-type="fireworks"] .throw-animation__particle:nth-child(odd) {
+  --particle-color: #ff4444;
+}
+.throw-animation__impact[data-type="fireworks"] .throw-animation__particle:nth-child(even) {
+  --particle-color: #4fc3f7;
+}
+.throw-animation__impact[data-type="fireworks"] .throw-animation__particle:nth-child(3n) {
+  --particle-color: #ffd700;
 }
 
-@keyframes fireworksBurst {
-    0% {
-        transform: scale(0.1);
-        opacity: 0;
-    }
-
-    10% {
-        opacity: 1;
-    }
-
-    100% {
-        transform: scale(3);
-        opacity: 0;
-    }
-}
-
-/* Lightning flash */
+/* ---- LIGHTNING: Electric flash ---- */
 .throw-animation__impact[data-type="lightning"] .throw-animation__burst {
-    background: radial-gradient(circle,
-            rgba(150, 200, 255, 0.8) 0%,
-            rgba(100, 150, 255, 0.4) 40%,
-            transparent 70%);
+  background: radial-gradient(
+    circle,
+    rgba(255, 255, 255, 0.9) 0%,
+    rgba(150, 200, 255, 0.7) 20%,
+    rgba(100, 150, 255, 0.3) 50%,
+    transparent 70%
+  );
+  animation: lightningFlash 0.5s ease-out forwards;
+}
+@keyframes lightningFlash {
+  0% { transform: scale(0.3); opacity: 0; filter: brightness(5) saturate(0.3); }
+  4% { opacity: 1; filter: brightness(6) saturate(0.5); }
+  12% { transform: scale(2.2); filter: brightness(3.5) saturate(0.8); opacity: 0.95; }
+  20% { transform: scale(0.6); filter: brightness(0.8) saturate(0.4); opacity: 0.15; }
+  30% { transform: scale(1.8); filter: brightness(4) saturate(0.7); opacity: 0.8; }
+  42% { transform: scale(0.9); filter: brightness(0.7); opacity: 0.1; }
+  55% { transform: scale(1.3); filter: brightness(2.5) saturate(0.6); opacity: 0.5; }
+  70% { transform: scale(1.6); filter: brightness(1); opacity: 0.15; }
+  100% { transform: scale(2.5); filter: brightness(0.4) blur(1px); opacity: 0; }
+}
+.throw-animation__impact[data-type="lightning"] .throw-animation__particle {
+  --particle-color: #96c8ff;
+  width: 2px;
+  height: 16px;
+  border-radius: 1px;
+  box-shadow: 0 0 12px rgba(150, 200, 255, 0.9);
 }
 
-/* Diamond rain sparkle */
+/* ---- DIAMOND RAIN: Prismatic sparkle ---- */
 .throw-animation__impact[data-type="diamond-rain"] .throw-animation__burst {
-    background: radial-gradient(circle,
-            rgba(150, 200, 255, 0.6) 0%,
-            rgba(212, 168, 75, 0.4) 40%,
-            transparent 70%);
+  background: radial-gradient(
+    circle,
+    rgba(200, 230, 255, 0.7) 0%,
+    rgba(212, 168, 75, 0.4) 30%,
+    rgba(150, 200, 255, 0.2) 55%,
+    transparent 75%
+  );
+  animation: diamondShimmer 1s ease-out forwards;
+}
+@keyframes diamondShimmer {
+  0% { transform: scale(0.1) rotate(0deg); opacity: 0; filter: brightness(3) hue-rotate(0deg); }
+  8% { opacity: 1; filter: brightness(2.5) hue-rotate(20deg); }
+  25% { transform: scale(1.3) rotate(70deg); opacity: 0.9; filter: brightness(2) hue-rotate(-15deg); }
+  45% { transform: scale(1.8) rotate(140deg); opacity: 0.65; filter: brightness(1.5) hue-rotate(30deg); }
+  65% { transform: scale(2.2) rotate(210deg); opacity: 0.35; filter: brightness(1.2) hue-rotate(-20deg); }
+  100% { transform: scale(3) rotate(270deg); opacity: 0; filter: brightness(0.7) hue-rotate(0deg) blur(1px); }
+}
+.throw-animation__impact[data-type="diamond-rain"] .throw-animation__particle {
+  --particle-color: #96c8ff;
+  width: 6px;
+  height: 6px;
+  transform: rotate(45deg);
+  border-radius: 1px;
+  box-shadow: 0 0 10px rgba(150, 200, 255, 0.8), 0 0 20px rgba(212, 168, 75, 0.4);
+}
+.throw-animation__impact[data-type="diamond-rain"] .throw-animation__particle:nth-child(odd) {
+  --particle-color: #d4a84b;
+}
+
+/* ---- CHAMPAGNE: Golden bubbles ---- */
+.throw-animation__impact[data-type="champagne"] .throw-animation__burst {
+  background: radial-gradient(
+    circle,
+    rgba(255, 215, 0, 0.6) 0%,
+    rgba(255, 200, 50, 0.3) 35%,
+    rgba(255, 180, 0, 0.1) 60%,
+    transparent 80%
+  );
+}
+.throw-animation__impact[data-type="champagne"] .throw-animation__particle {
+  --particle-color: #ffe082;
+  border-radius: 50%;
+  width: 5px;
+  height: 5px;
+  box-shadow: 0 0 6px rgba(255, 224, 130, 0.7);
+}
+
+/* ---- TROPHY: Golden gleam ---- */
+.throw-animation__impact[data-type="trophy"] .throw-animation__burst {
+  background: radial-gradient(
+    circle,
+    rgba(255, 215, 0, 0.8) 0%,
+    rgba(255, 200, 0, 0.5) 25%,
+    rgba(255, 180, 0, 0.2) 50%,
+    transparent 75%
+  );
+  animation: trophyGleam 0.9s ease-out forwards;
+}
+@keyframes trophyGleam {
+  0% { transform: scale(0.1); opacity: 1; filter: brightness(4) saturate(1.5) hue-rotate(5deg); }
+  15% { transform: scale(1.3); opacity: 0.95; filter: brightness(2.5) saturate(1.3) hue-rotate(-5deg); }
+  30% { transform: scale(1.7); opacity: 0.8; filter: brightness(2) hue-rotate(10deg); }
+  50% { transform: scale(2); opacity: 0.55; filter: brightness(1.5) hue-rotate(-3deg); }
+  75% { transform: scale(2.3); opacity: 0.25; filter: brightness(1.2); }
+  100% { transform: scale(2.5); opacity: 0; filter: brightness(0.8) blur(0.5px); }
+}
+.throw-animation__impact[data-type="trophy"] .throw-animation__particle {
+  --particle-color: #ffd700;
+  width: 4px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+/* ---- DRAGON: Fire explosion ---- */
+.throw-animation__impact[data-type="dragon"] .throw-animation__burst {
+  background: radial-gradient(
+    circle,
+    rgba(255, 87, 34, 0.7) 0%,
+    rgba(255, 152, 0, 0.5) 25%,
+    rgba(255, 87, 34, 0.3) 50%,
+    rgba(244, 67, 54, 0.1) 70%,
+    transparent 85%
+  );
+  animation: dragonFire 1s ease-out forwards;
+}
+@keyframes dragonFire {
+  0% { transform: scale(0.1); opacity: 0; filter: brightness(5) hue-rotate(0deg) saturate(2); }
+  8% { opacity: 1; filter: brightness(4) saturate(1.8); }
+  20% { transform: scale(1.5); filter: brightness(3) hue-rotate(20deg) saturate(1.5); }
+  35% { transform: scale(2.2); opacity: 0.8; filter: brightness(2) hue-rotate(-15deg) saturate(1.6); }
+  50% { transform: scale(2.5); opacity: 0.55; filter: brightness(1.8) hue-rotate(10deg) saturate(1.3); }
+  70% { transform: scale(2.8); opacity: 0.3; filter: brightness(1.3) hue-rotate(-8deg); }
+  100% { transform: scale(3.2); opacity: 0; filter: brightness(0.6) hue-rotate(0deg) saturate(0.5) blur(1px); }
+}
+.throw-animation__impact[data-type="dragon"] .throw-animation__particle {
+  --particle-color: #ff5722;
+  width: 6px;
+  height: 10px;
+  border-radius: 50% 50% 20% 20%;
+}
+.throw-animation__impact[data-type="dragon"] .throw-animation__particle:nth-child(odd) {
+  --particle-color: #ff9800;
+}
+
+/* ---- TSUNAMI: Wave crash ---- */
+.throw-animation__impact[data-type="tsunami"] .throw-animation__burst {
+  background: radial-gradient(
+    ellipse 120% 80%,
+    rgba(30, 136, 229, 0.6) 0%,
+    rgba(100, 181, 246, 0.3) 40%,
+    transparent 70%
+  );
+  animation: tsunamiCrash 0.9s ease-out forwards;
+}
+@keyframes tsunamiCrash {
+  0% { transform: scale(0.2) scaleX(0.5); opacity: 1; filter: brightness(2.5) saturate(1.5); }
+  15% { transform: scale(1) scaleX(1.5); opacity: 0.9; filter: brightness(1.8) saturate(1.3) blur(0.5px); }
+  30% { transform: scale(1.6) scaleX(2); opacity: 0.7; filter: brightness(1.3) blur(0px); }
+  50% { transform: scale(2) scaleX(2.3) scaleY(0.85); opacity: 0.4; filter: brightness(1) blur(0.5px); }
+  75% { transform: scale(2.3) scaleX(2.5) scaleY(0.7); opacity: 0.15; filter: blur(1px); }
+  100% { transform: scale(2.5) scaleX(2.5) scaleY(0.55); opacity: 0; filter: brightness(0.7) blur(2px); }
+}
+.throw-animation__impact[data-type="tsunami"] .throw-animation__particle {
+  --particle-color: #4fc3f7;
+  width: 4px;
+  height: 7px;
+  border-radius: 50% 50% 50% 50% / 30% 30% 70% 70%;
+}
+
+/* ---- CROWN: Regal radiance ---- */
+.throw-animation__impact[data-type="crown"] .throw-animation__burst {
+  background: radial-gradient(
+    circle,
+    rgba(255, 215, 0, 0.7) 0%,
+    rgba(255, 193, 7, 0.4) 30%,
+    rgba(255, 160, 0, 0.15) 55%,
+    transparent 75%
+  );
+}
+.throw-animation__impact[data-type="crown"] .throw-animation__particle {
+  --particle-color: #ffd700;
+  width: 5px;
+  height: 5px;
+  transform: rotate(45deg);
+  border-radius: 1px;
+  box-shadow: 0 0 8px rgba(255, 215, 0, 0.6);
+}
+
+/* ---- BEER: Foam splash ---- */
+.throw-animation__impact[data-type="beer"] .throw-animation__burst {
+  background: radial-gradient(
+    circle,
+    rgba(255, 183, 77, 0.6) 0%,
+    rgba(255, 224, 130, 0.4) 30%,
+    rgba(255, 248, 225, 0.2) 55%,
+    transparent 75%
+  );
+}
+.throw-animation__impact[data-type="beer"] .throw-animation__particle {
+  --particle-color: #ffe082;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  box-shadow: 0 0 4px rgba(255, 224, 130, 0.5);
+}
+
+/* ---- CONFETTI: Multi-color rectangles ---- */
+.throw-animation__impact[data-type="confetti"] .throw-animation__burst {
+  background: radial-gradient(
+    circle,
+    rgba(255, 215, 0, 0.5) 0%,
+    rgba(255, 100, 100, 0.3) 25%,
+    rgba(100, 200, 100, 0.2) 50%,
+    transparent 70%
+  );
+}
+.throw-animation__impact[data-type="confetti"] .throw-animation__particle {
+  width: 8px;
+  height: 4px;
+  border-radius: 1px;
+}
+.throw-animation__impact[data-type="confetti"] .throw-animation__particle:nth-child(1) { --particle-color: #ff4444; }
+.throw-animation__impact[data-type="confetti"] .throw-animation__particle:nth-child(2) { --particle-color: #4caf50; }
+.throw-animation__impact[data-type="confetti"] .throw-animation__particle:nth-child(3) { --particle-color: #ffd700; }
+.throw-animation__impact[data-type="confetti"] .throw-animation__particle:nth-child(4) { --particle-color: #2196f3; }
+.throw-animation__impact[data-type="confetti"] .throw-animation__particle:nth-child(5) { --particle-color: #9c27b0; }
+.throw-animation__impact[data-type="confetti"] .throw-animation__particle:nth-child(6) { --particle-color: #ff9800; }
+.throw-animation__impact[data-type="confetti"] .throw-animation__particle:nth-child(7) { --particle-color: #e91e63; }
+.throw-animation__impact[data-type="confetti"] .throw-animation__particle:nth-child(8) { --particle-color: #00bcd4; }
+
+/* =================================================================================
+   LINGER -- Post-Impact Persistent Effect (optional, for premium throwables)
+   ================================================================================= */
+
+.throw-animation__linger {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 505;
+  animation: lingerFade 2s 0.5s ease-out forwards;
+  opacity: 0.6;
+}
+
+@keyframes lingerFade {
+  0% { opacity: 0.6; filter: brightness(1.2); transform: translate(-50%, -50%) scale(1); }
+  25% { opacity: 0.45; filter: brightness(1); transform: translate(-50%, -50%) scale(1.05); }
+  50% { opacity: 0.25; filter: brightness(0.85) blur(0.5px); transform: translate(-50%, -50%) scale(1.08); }
+  75% { opacity: 0.1; filter: brightness(0.7) blur(1px); transform: translate(-50%, -50%) scale(1.1); }
+  100% { opacity: 0; filter: brightness(0.4) blur(2px); transform: translate(-50%, -50%) scale(1.15); }
+}
+
+/* Linger: Tomato drip stain */
+.throw-animation__linger[data-type="tomato"] {
+  width: 30px;
+  height: 20px;
+  background: radial-gradient(ellipse, rgba(255, 50, 50, 0.35) 0%, transparent 70%);
+  border-radius: 50%;
+}
+
+/* Linger: Egg yolk puddle */
+.throw-animation__linger[data-type="egg"] {
+  width: 25px;
+  height: 15px;
+  background: radial-gradient(ellipse, rgba(255, 235, 59, 0.3) 0%, transparent 70%);
+  border-radius: 50%;
+}
+
+/* Linger: Frost patch */
+.throw-animation__linger[data-type="snowball"] {
+  width: 35px;
+  height: 35px;
+  background: radial-gradient(circle, rgba(200, 230, 255, 0.25) 0%, transparent 65%);
+  border-radius: 50%;
+}
+
+/* =================================================================================
+   FALLBACK ICON
+   ================================================================================= */
+
+.throw-animation__fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 50%;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 1.5rem;
+  border: 2px solid rgba(255, 255, 255, 0.15);
+}
+
+/* =================================================================================
+   RESPONSIVE
+   ================================================================================= */
+
+@media (max-width: 640px) {
+  .throw-animation__projectile {
+    font-size: 2rem;
+  }
+  .throw-animation__impact-icon {
+    font-size: 2.5rem;
+  }
+  :root {
+    --throw-arc-height: 60px;
+    --impact-ring-size: 100px;
+    --impact-shake-intensity: 3px;
+  }
+}
+
+@media (max-width: 480px) {
+  .throw-animation__projectile {
+    font-size: 1.75rem;
+  }
+  .throw-animation__impact-icon {
+    font-size: 2.25rem;
+  }
+  :root {
+    --throw-arc-height: 45px;
+    --impact-ring-size: 80px;
+    --impact-shake-intensity: 2px;
+  }
+}
+
+/* =================================================================================
+   REDUCED MOTION -- Accessibility
+   ================================================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+  .throw-animation__projectile--arc,
+  .throw-animation__projectile--float,
+  .throw-animation__icon,
+  .throw-animation__projectile--float .throw-animation__icon,
+  .throw-animation__impact-icon,
+  .throw-animation__burst,
+  .throw-animation__burst::after,
+  .throw-animation__particle,
+  .throw-animation__linger,
+  .throw-animation--shake {
+    animation: none !important;
+  }
+
+  .throw-animation__projectile--arc,
+  .throw-animation__projectile--float {
+    left: var(--to-x);
+    top: var(--to-y);
+    transform: translate(-50%, -50%);
+    opacity: 1;
+  }
+
+  .throw-animation__impact-icon {
+    transform: scale(1);
+    opacity: 1;
+  }
+
+  .throw-animation__burst {
+    transform: scale(1.5);
+    opacity: 0.3;
+  }
 }

@@ -59,12 +59,21 @@
 @keyframes holoShimmer {
   0% {
     transform: translateX(-30%);
+    filter: brightness(1) saturate(1);
+  }
+  25% {
+    filter: brightness(1.08) saturate(1.12);
   }
   50% {
     transform: translateX(30%);
+    filter: brightness(1.18) saturate(1.25);
+  }
+  75% {
+    filter: brightness(1.08) saturate(1.12);
   }
   100% {
     transform: translateX(-30%);
+    filter: brightness(1) saturate(1);
   }
 }
 
@@ -188,9 +197,17 @@
   0%,
   100% {
     opacity: 0.4;
+    filter: brightness(1) saturate(1);
+  }
+  25% {
+    filter: brightness(1.1) saturate(1.15);
   }
   50% {
     opacity: 1;
+    filter: brightness(1.2) saturate(1.3);
+  }
+  75% {
+    filter: brightness(1.1) saturate(1.15);
   }
 }
 

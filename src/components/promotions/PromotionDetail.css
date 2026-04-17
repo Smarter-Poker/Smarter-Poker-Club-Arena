@@ -15,11 +15,17 @@
 }
 
 @keyframes pd-fade-in {
-  from {
+  0% {
     opacity: 0;
+    filter: blur(2px) brightness(0.3) saturate(0.2);
   }
-  to {
+  60% {
+    opacity: 0.95;
+    filter: blur(0) brightness(1.06) saturate(1.08);
+  }
+  100% {
     opacity: 1;
+    filter: blur(0) brightness(1) saturate(1);
   }
 }
 
@@ -38,13 +44,24 @@
 }
 
 @keyframes pd-slide-up {
-  from {
+  0% {
     transform: translateY(20px) scale(0.96);
     opacity: 0;
+    filter: blur(3px) brightness(0.3) saturate(0.2);
   }
-  to {
+  55% {
+    transform: translateY(-2px) scale(1.01);
+    opacity: 0.95;
+    filter: blur(0) brightness(1.1) saturate(1.12);
+  }
+  80% {
+    transform: translateY(0.5px) scale(1);
+    filter: blur(0) brightness(1.04) saturate(1.04);
+  }
+  100% {
     transform: translateY(0) scale(1);
     opacity: 1;
+    filter: blur(0) brightness(1) saturate(1);
   }
 }
 

@@ -80,14 +80,24 @@
 }
 
 @keyframes dealCard {
-    from {
+    0% {
         opacity: 0;
         transform: translateY(-20px) rotateY(90deg);
+        filter: blur(2px) brightness(0.3) saturate(0.2);
     }
-
-    to {
+    55% {
+        opacity: 0.95;
+        transform: translateY(2px) rotateY(-5deg);
+        filter: blur(0) brightness(1.12) saturate(1.15);
+    }
+    80% {
+        transform: translateY(-0.5px) rotateY(1deg);
+        filter: blur(0) brightness(1.04) saturate(1.04);
+    }
+    100% {
         opacity: 1;
         transform: translateY(0) rotateY(0);
+        filter: blur(0) brightness(1) saturate(1);
     }
 }
 
@@ -136,11 +146,17 @@
     0% {
         transform: scale(0.9);
         opacity: 0;
+        filter: blur(1px) brightness(0.4) saturate(0.2);
     }
-
+    60% {
+        transform: scale(1.02);
+        opacity: 0.95;
+        filter: blur(0) brightness(1.1) saturate(1.12);
+    }
     100% {
         transform: scale(1);
         opacity: 1;
+        filter: blur(0) brightness(1) saturate(1);
     }
 }
 
@@ -261,14 +277,19 @@
     0% {
         transform: scale(0.8);
         opacity: 0;
+        filter: blur(3px) brightness(0.3) saturate(0.2);
     }
-
     50% {
         transform: scale(1.05);
+        filter: blur(0) brightness(1.2) saturate(1.25);
     }
-
+    80% {
+        transform: scale(0.98);
+        filter: blur(0) brightness(1.06) saturate(1.06);
+    }
     100% {
         transform: scale(1);
         opacity: 1;
+        filter: blur(0) brightness(1) saturate(1);
     }
 }

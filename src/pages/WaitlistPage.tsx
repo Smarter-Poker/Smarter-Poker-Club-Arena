@@ -223,10 +223,6 @@ export default function WaitlistPage() {
         return 'Pineapple';
       case 'short_deck':
         return 'Short Deck 6+';
-      case 'ofc':
-        return 'Open Face Chinese';
-      case 'ofc_pineapple':
-        return 'OFC Pineapple';
       default:
         return type.toUpperCase();
     }

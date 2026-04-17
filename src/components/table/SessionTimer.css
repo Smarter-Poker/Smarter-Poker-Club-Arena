@@ -81,14 +81,24 @@
 }
 
 @keyframes slideIn {
-  from {
+  0% {
     opacity: 0;
     transform: translateY(-10px);
+    filter: blur(3px) brightness(0.4) saturate(0.2);
   }
-
-  to {
+  50% {
+    opacity: 0.95;
+    transform: translateY(1px);
+    filter: blur(0) brightness(1.1) saturate(1.15);
+  }
+  75% {
+    transform: translateY(-0.3px);
+    filter: blur(0) brightness(1.04) saturate(1.05);
+  }
+  100% {
     opacity: 1;
     transform: translateY(0);
+    filter: blur(0) brightness(1) saturate(1);
   }
 }
 

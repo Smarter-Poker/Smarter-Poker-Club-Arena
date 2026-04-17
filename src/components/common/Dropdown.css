@@ -26,8 +26,10 @@
 }
 
 @keyframes dropdownPop {
-    from { opacity: 0; transform: scale(0.95) translateY(-4px); }
-    to { opacity: 1; transform: scale(1) translateY(0); }
+    0% { opacity: 0; transform: scale(0.95) translateY(-4px); filter: blur(2px) brightness(0.4) saturate(0.2); }
+    55% { opacity: 0.95; transform: scale(1.02) translateY(1px); filter: blur(0) brightness(1.08) saturate(1.1); }
+    80% { transform: scale(1) translateY(0); filter: blur(0) brightness(1.03) saturate(1.04); }
+    100% { opacity: 1; transform: scale(1) translateY(0); filter: blur(0) brightness(1) saturate(1); }
 }
 
 /* Position adjustments */

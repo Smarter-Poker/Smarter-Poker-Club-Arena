@@ -41,11 +41,6 @@ const FAQ_ITEMS: FAQItem[] = [
       'Settlements happen weekly on Monday. Your net profit/loss is calculated, and rakeback is applied based on your agent hierarchy.',
   },
   {
-    question: 'What is Fantasyland in OFC?',
-    answer:
-      'In Open Face Chinese Pineapple, getting QQ+ in your front row qualifies you for Fantasyland, where you get all 14 cards dealt at once.',
-  },
-  {
     question: 'How do I become an agent?',
     answer:
       'Contact your club owner to be promoted to an agent role. Agents can recruit players and earn commissions on their rake.',

@@ -274,10 +274,25 @@
     0% {
         opacity: 0;
         transform: translateY(30px);
+        filter: blur(6px) brightness(0.3) saturate(0.15);
+    }
+    40% {
+        opacity: 0.85;
+        transform: translateY(-4px);
+        filter: blur(0) brightness(1.12) saturate(1.18);
+    }
+    65% {
+        transform: translateY(1.5px);
+        filter: blur(0) brightness(1.05) saturate(1.06);
+    }
+    85% {
+        transform: translateY(-0.5px);
+        filter: blur(0) brightness(1.02) saturate(1.02);
     }
     100% {
         opacity: 1;
         transform: translateY(0);
+        filter: blur(0) brightness(1) saturate(1);
     }
 }
 
@@ -378,13 +393,24 @@
 
 /* ═══════ PREMIUM ANIMATIONS ═══════ */
 @keyframes fadeInUp {
-    from {
+    0% {
         opacity: 0;
         transform: translateY(8px);
+        filter: blur(3px) brightness(0.4) saturate(0.2);
     }
-    to {
+    50% {
+        opacity: 0.95;
+        transform: translateY(-1px);
+        filter: blur(0) brightness(1.08) saturate(1.1);
+    }
+    75% {
+        transform: translateY(0.3px);
+        filter: blur(0) brightness(1.03) saturate(1.04);
+    }
+    100% {
         opacity: 1;
         transform: translateY(0);
+        filter: blur(0) brightness(1) saturate(1);
     }
 }
 

@@ -58,13 +58,22 @@
 }
 
 @keyframes equityFill {
-    from {
+    0% {
         width: 0% !important;
         opacity: 0.7;
+        filter: brightness(0.6) saturate(0.4);
     }
-    to {
+    50% {
+        opacity: 0.9;
+        filter: brightness(1.15) saturate(1.25);
+    }
+    75% {
+        filter: brightness(1.06) saturate(1.1);
+    }
+    100% {
         width: var(--fill-width);
         opacity: 1;
+        filter: brightness(1) saturate(1);
     }
 }
 
@@ -93,8 +102,10 @@
 }
 
 @keyframes equityFadeIn {
-    from { opacity: 0; transform: translateY(4px); }
-    to { opacity: 1; transform: translateY(0); }
+    0% { opacity: 0; transform: translateY(4px); filter: blur(2px) brightness(0.5) saturate(0.3); }
+    50% { opacity: 0.85; transform: translateY(-1px); filter: blur(0) brightness(1.1) saturate(1.15); }
+    75% { transform: translateY(0.3px); filter: blur(0) brightness(1.04) saturate(1.05); }
+    100% { opacity: 1; transform: translateY(0); filter: blur(0) brightness(1) saturate(1); }
 }
 
 .equity-bar {

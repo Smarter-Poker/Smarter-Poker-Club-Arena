@@ -22,14 +22,20 @@
 }
 
 @keyframes miniPulse {
-
     0%,
     100% {
         box-shadow: 0 0 10px rgba(239, 68, 68, 0.3);
+        filter: brightness(1) saturate(1);
     }
-
+    25% {
+        filter: brightness(1.08) saturate(1.12);
+    }
     50% {
         box-shadow: 0 0 20px rgba(239, 68, 68, 0.5);
+        filter: brightness(1.15) saturate(1.25);
+    }
+    75% {
+        filter: brightness(1.08) saturate(1.12);
     }
 }
 
@@ -72,14 +78,20 @@
 }
 
 @keyframes activePulse {
-
     0%,
     100% {
         transform: scale(1);
+        filter: brightness(1) saturate(1);
     }
-
+    25% {
+        filter: brightness(1.08) saturate(1.12);
+    }
     50% {
         transform: scale(1.15);
+        filter: brightness(1.15) saturate(1.25);
+    }
+    75% {
+        filter: brightness(1.08) saturate(1.12);
     }
 }
 
@@ -146,13 +158,19 @@
 }
 
 @keyframes badgePulse {
-
     0%,
     100% {
         transform: scale(1);
+        filter: brightness(1) saturate(1);
     }
-
+    25% {
+        filter: brightness(1.1) saturate(1.15);
+    }
     50% {
         transform: scale(1.2);
+        filter: brightness(1.2) saturate(1.25);
+    }
+    75% {
+        filter: brightness(1.1) saturate(1.15);
     }
 }

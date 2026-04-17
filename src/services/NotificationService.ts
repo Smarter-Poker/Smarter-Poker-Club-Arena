@@ -26,7 +26,12 @@ export interface Notification {
     | 'achievement'
     | 'bonus'
     | 'settlement'
-    | 'system';
+    | 'system'
+    | 'your_turn' // Bible V8 5.18: your turn to act
+    | 'your_turn_reminder' // Bible V8 5.19: reminder after 5s inaction
+    | 'time_bank_active' // Bible V8 5.20: time bank activated
+    | 'tournament_starting' // PokerBros: tournament about to start
+    | 'hand_won'; // Bible V8 5.21: you won the pot
   title: string;
   message: string;
   metadata?: Record<string, unknown>;
@@ -362,6 +367,17 @@ class NotificationServiceClass {
         return '/bonus';
       case 'settlement':
         return metadata.clubId ? `/club/${metadata.clubId}/financials` : '/wallet';
+      case 'your_turn':
+      case 'your_turn_reminder':
+      case 'time_bank_active':
+      case 'hand_won':
+        return metadata.tableId ? `/table/${metadata.tableId}` : '/';
+      case 'tournament_starting':
+        return metadata.tournamentId
+          ? `/tournament/${metadata.tournamentId}`
+          : metadata.clubId
+            ? `/club/${metadata.clubId}/tournaments`
+            : '/tournaments';
       case 'system':
       default:
         return undefined;
@@ -413,6 +429,77 @@ class NotificationServiceClass {
   getDndRemaining(): number {
     if (!this.isDndActive() || !this.dndUntil) return 0;
     return Math.ceil((this.dndUntil - Date.now()) / 60_000);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // BIBLE V8 5.18-5.21: ANTI-SPAM GATE FOR GAME NOTIFICATIONS
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // Per-turn notification limits:
+  //   - "your_turn": max 1 initial + 1 reminder per turn
+  //   - "time_bank_active": max 1 per turn
+  //   - Other game notifications: max 1 per type per 30s window
+  //
+  // Prevents notification spam during rapid multi-way action.
+
+  private turnNotificationLog: Map<string, { count: number; lastSent: number }> = new Map();
+
+  /**
+   * Check if a game notification should be sent (anti-spam gate).
+   * Returns true if the notification is allowed, false if suppressed.
+   * Bible V8 5.18-5.21: one initial + one reminder max per turn.
+   */
+  shouldSendGameNotification(
+    userId: string,
+    type: 'your_turn' | 'your_turn_reminder' | 'time_bank_active' | 'hand_won' | 'new_hand',
+    handId?: string
+  ): boolean {
+    // DND overrides everything
+    if (this.isDndActive()) return false;
+
+    const key = `${userId}:${type}:${handId || 'global'}`;
+    const now = Date.now();
+    const entry = this.turnNotificationLog.get(key);
+
+    // Per-type limits per Bible V8 5.18-5.21
+    const maxPerTurn: Record<string, number> = {
+      your_turn: 1, // One initial notification
+      your_turn_reminder: 1, // One reminder after 5s
+      time_bank_active: 1, // One time-bank notification
+      hand_won: 1, // One win notification
+      new_hand: 1, // One new-hand notification for absent players
+    };
+
+    const limit = maxPerTurn[type] ?? 1;
+
+    if (entry) {
+      // Within same turn/hand: check count
+      if (entry.count >= limit) return false;
+      // Minimum 5s between same-type notifications (anti-spam floor)
+      if (now - entry.lastSent < 5000) return false;
+      entry.count++;
+      entry.lastSent = now;
+    } else {
+      this.turnNotificationLog.set(key, { count: 1, lastSent: now });
+    }
+
+    // Clean old entries (older than 5 minutes) to prevent memory leak
+    if (this.turnNotificationLog.size > 200) {
+      const cutoff = now - 5 * 60_000;
+      for (const [k, v] of this.turnNotificationLog) {
+        if (v.lastSent < cutoff) this.turnNotificationLog.delete(k);
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * Reset turn notification tracking (call when a new hand starts).
+   * This clears all per-turn limits so the next hand gets fresh notifications.
+   */
+  resetTurnNotifications(): void {
+    this.turnNotificationLog.clear();
   }
 
   // ═══════════════════════════════════════════════════════════════════════════

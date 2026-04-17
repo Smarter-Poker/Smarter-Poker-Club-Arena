@@ -85,14 +85,21 @@
 @keyframes shimmer {
     0% {
         opacity: 0.5;
+        filter: brightness(1) saturate(1);
     }
-
+    25% {
+        filter: brightness(1.08) saturate(1.1);
+    }
     50% {
         opacity: 1;
+        filter: brightness(1.15) saturate(1.2);
     }
-
+    75% {
+        filter: brightness(1.08) saturate(1.1);
+    }
     100% {
         opacity: 0.5;
+        filter: brightness(1) saturate(1);
     }
 }
 

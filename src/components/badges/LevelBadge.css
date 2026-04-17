@@ -103,23 +103,15 @@
 }
 
 @keyframes badge-pulse {
-  0%,
-  100% {
-    box-shadow: 0 0 4px rgba(255, 255, 255, 0.1);
-  }
-  50% {
-    box-shadow: 0 0 16px rgba(255, 255, 255, 0.25);
-  }
+  0%, 100% { box-shadow: 0 0 4px rgba(255, 255, 255, 0.1); filter: brightness(1) saturate(1); }
+  25% { filter: brightness(1.06) saturate(1.1); }
+  50% { box-shadow: 0 0 16px rgba(255, 255, 255, 0.25); filter: brightness(1.15) saturate(1.22); }
+  75% { filter: brightness(1.06) saturate(1.1); }
 }
 
 @keyframes badge-shimmer {
-  0% {
-    border-color: rgba(0, 206, 209, 0.3);
-  }
-  50% {
-    border-color: rgba(185, 242, 255, 0.6);
-  }
-  100% {
-    border-color: rgba(0, 206, 209, 0.3);
-  }
+  0%, 100% { border-color: rgba(0, 206, 209, 0.3); filter: brightness(1) saturate(1); }
+  25% { filter: brightness(1.06) saturate(1.1); }
+  50% { border-color: rgba(185, 242, 255, 0.6); filter: brightness(1.12) saturate(1.2); }
+  75% { filter: brightness(1.06) saturate(1.1); }
 }

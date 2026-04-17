@@ -63,7 +63,7 @@ function variantMatchesFilter(variant: string | undefined, filter: GameFilter): 
     case 'Omaha':
       return v.startsWith('plo');
     case 'Mixed':
-      return v === 'ofc' || v === 'ofc_pineapple' || v === 'pineapple';
+      return v === 'pineapple' || v === 'crazy_pineapple' || v === 'mixed';
     default:
       return true;
   }
@@ -82,8 +82,6 @@ function getVariantLabel(variant: string | undefined): string {
     plo6: 'PLO6',
     plo_hilo: 'PLO Hi-Lo',
     plo8: 'PLO8',
-    ofc: 'OFC',
-    ofc_pineapple: 'OFC-P',
     mixed: 'MIXED',
     double_board: '2Board',
     pineapple: 'Pine',

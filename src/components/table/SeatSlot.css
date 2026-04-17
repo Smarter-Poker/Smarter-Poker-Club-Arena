@@ -55,14 +55,23 @@
 }
 
 @keyframes emptyPulse {
-  0%,
-  100% {
+  0%, 100% {
     border-color: rgba(34, 197, 94, 0);
     transform: scale(1);
+    box-shadow: 0 0 0 rgba(34, 197, 94, 0);
+  }
+  25% {
+    border-color: rgba(34, 197, 94, 0.08);
+    transform: scale(1.015);
   }
   50% {
-    border-color: rgba(34, 197, 94, 0.2);
+    border-color: rgba(34, 197, 94, 0.22);
     transform: scale(1.04);
+    box-shadow: 0 0 16px rgba(34, 197, 94, 0.08);
+  }
+  75% {
+    border-color: rgba(34, 197, 94, 0.1);
+    transform: scale(1.02);
   }
 }
 
@@ -221,8 +230,10 @@
   animation: seat-disconnect-pulse 1.5s ease-in-out infinite;
 }
 @keyframes seat-disconnect-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 rgba(239, 68, 68, 0); }
+  25% { opacity: 0.7; }
+  50% { opacity: 0.35; box-shadow: 0 0 8px rgba(239, 68, 68, 0.5); }
+  75% { opacity: 0.65; }
 }
 .seat__disconnect-overlay {
   position: absolute;
@@ -254,8 +265,10 @@
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
 }
 @keyframes disconnectPulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+  0%, 100% { opacity: 1; transform: scale(1); }
+  30% { opacity: 0.6; transform: scale(0.98); }
+  50% { opacity: 0.4; transform: scale(0.97); }
+  70% { opacity: 0.7; transform: scale(0.99); }
 }
 .seat--disconnected .seat__avatar-img {
   filter: grayscale(0.7) brightness(0.6);
@@ -304,11 +317,23 @@
 @keyframes dealerButtonAppear {
   0% {
     opacity: 0;
-    transform: scale(0.3) rotate(-90deg);
+    transform: scale(0.2) rotate(-120deg);
+    filter: blur(2px);
   }
-  60% {
+  35% {
+    opacity: 0.9;
+    transform: scale(1.2) rotate(12deg);
+    filter: blur(0);
+  }
+  55% {
     opacity: 1;
-    transform: scale(1.15) rotate(10deg);
+    transform: scale(0.95) rotate(-4deg);
+  }
+  72% {
+    transform: scale(1.05) rotate(2deg);
+  }
+  85% {
+    transform: scale(0.99) rotate(-0.5deg);
   }
   100% {
     opacity: 1;
@@ -383,12 +408,23 @@
 }
 
 @keyframes stackCriticalPulse {
-  0%,
-  100% {
+  0%, 100% {
     opacity: 1;
+    text-shadow: 0 0 0 transparent;
+    transform: scale(1);
+  }
+  25% {
+    opacity: 0.8;
+    transform: scale(0.99);
   }
   50% {
-    opacity: 0.7;
+    opacity: 0.6;
+    text-shadow: 0 0 8px rgba(239, 68, 68, 0.5);
+    transform: scale(1.01);
+  }
+  75% {
+    opacity: 0.85;
+    transform: scale(0.995);
   }
 }
 
@@ -406,24 +442,44 @@
 @keyframes stackBounceUp {
   0% {
     transform: scale(1);
+    filter: brightness(1);
   }
-  40% {
-    transform: scale(1.15);
+  25% {
+    transform: scale(1.18);
+    filter: brightness(1.2);
+  }
+  45% {
+    transform: scale(0.97);
+    filter: brightness(1.05);
+  }
+  65% {
+    transform: scale(1.04);
   }
   100% {
     transform: scale(1);
+    filter: brightness(1);
   }
 }
 
 @keyframes stackBounceDown {
   0% {
     transform: scale(1);
+    filter: brightness(1);
   }
-  40% {
-    transform: scale(0.92);
+  20% {
+    transform: scale(0.88);
+    filter: brightness(0.85);
+  }
+  45% {
+    transform: scale(1.03);
+    filter: brightness(1.05);
+  }
+  65% {
+    transform: scale(0.98);
   }
   100% {
     transform: scale(1);
+    filter: brightness(1);
   }
 }
 
@@ -454,16 +510,26 @@
 
 @keyframes stackDeltaFloat {
   0% {
-    opacity: 1;
-    transform: translateX(-50%) translateY(0);
+    opacity: 0;
+    transform: translateX(-50%) translateY(4px) scale(0.8);
+    filter: blur(1px);
   }
-  70% {
+  10% {
     opacity: 1;
-    transform: translateX(-50%) translateY(-16px);
+    transform: translateX(-50%) translateY(0) scale(1.1);
+    filter: blur(0);
+  }
+  25% {
+    transform: translateX(-50%) translateY(-4px) scale(1);
+  }
+  65% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(-18px) scale(0.95);
   }
   100% {
     opacity: 0;
-    transform: translateX(-50%) translateY(-24px);
+    transform: translateX(-50%) translateY(-28px) scale(0.85);
+    filter: blur(1px);
   }
 }
 
@@ -689,18 +755,34 @@
 }
 
 @keyframes activeAvatarPulse {
-  0%,
-  100% {
+  0%, 100% {
     box-shadow:
       0 0 20px rgba(255, 215, 0, 0.5),
       0 0 40px rgba(255, 215, 0, 0.2),
       0 4px 16px rgba(0, 0, 0, 0.5);
+    transform: scale(1.04);
+  }
+  30% {
+    box-shadow:
+      0 0 26px rgba(255, 215, 0, 0.6),
+      0 0 50px rgba(255, 215, 0, 0.22),
+      0 5px 18px rgba(0, 0, 0, 0.5);
+    transform: scale(1.055);
   }
   50% {
     box-shadow:
-      0 0 28px rgba(255, 215, 0, 0.65),
-      0 0 56px rgba(255, 215, 0, 0.25),
+      0 0 32px rgba(255, 215, 0, 0.7),
+      0 0 60px rgba(255, 215, 0, 0.3),
+      0 0 80px rgba(255, 215, 0, 0.1),
       0 6px 20px rgba(0, 0, 0, 0.5);
+    transform: scale(1.06);
+  }
+  70% {
+    box-shadow:
+      0 0 24px rgba(255, 215, 0, 0.55),
+      0 0 45px rgba(255, 215, 0, 0.18),
+      0 5px 16px rgba(0, 0, 0, 0.5);
+    transform: scale(1.045);
   }
 }
 
@@ -734,9 +816,22 @@
 }
 
 @keyframes cardPeekLift {
-  0% { transform: translateY(0); }
-  50% { transform: translateY(-8px) scale(1.03); }
-  100% { transform: translateY(-4px) scale(1.01); }
+  0% {
+    transform: translateY(0) scale(1);
+    filter: brightness(1);
+  }
+  35% {
+    transform: translateY(-10px) scale(1.04);
+    filter: brightness(1.08);
+  }
+  60% {
+    transform: translateY(-6px) scale(1.02);
+    filter: brightness(1.04);
+  }
+  100% {
+    transform: translateY(-4px) scale(1.01);
+    filter: brightness(1.02);
+  }
 }
 
 /*
@@ -987,20 +1082,42 @@
 }
 
 @keyframes winnerCardPulse {
-  0%,
-  100% {
+  0%, 100% {
     box-shadow:
       0 0 0 2px rgba(255, 215, 0, 0.7),
       0 0 16px rgba(255, 215, 0, 0.5),
       0 0 32px rgba(255, 215, 0, 0.25),
       0 4px 12px rgba(0, 0, 0, 0.4);
+    transform: scale(1);
+    filter: brightness(1);
+  }
+  25% {
+    box-shadow:
+      0 0 0 2.5px rgba(255, 215, 0, 0.8),
+      0 0 20px rgba(255, 215, 0, 0.6),
+      0 0 38px rgba(255, 215, 0, 0.3),
+      0 5px 14px rgba(0, 0, 0, 0.4);
+    transform: scale(1.015);
+    filter: brightness(1.05);
   }
   50% {
     box-shadow:
-      0 0 0 3px rgba(255, 215, 0, 0.9),
-      0 0 24px rgba(255, 215, 0, 0.7),
-      0 0 48px rgba(255, 215, 0, 0.35),
+      0 0 0 3px rgba(255, 215, 0, 0.95),
+      0 0 28px rgba(255, 215, 0, 0.75),
+      0 0 52px rgba(255, 215, 0, 0.4),
+      0 0 72px rgba(255, 215, 0, 0.12),
       0 6px 16px rgba(0, 0, 0, 0.4);
+    transform: scale(1.03);
+    filter: brightness(1.1);
+  }
+  75% {
+    box-shadow:
+      0 0 0 2.5px rgba(255, 215, 0, 0.75),
+      0 0 18px rgba(255, 215, 0, 0.55),
+      0 0 35px rgba(255, 215, 0, 0.28),
+      0 5px 14px rgba(0, 0, 0, 0.4);
+    transform: scale(1.01);
+    filter: brightness(1.03);
   }
 }
 
@@ -1035,11 +1152,19 @@
 @keyframes actionPopIn {
   0% {
     opacity: 0;
-    transform: translateX(-50%) scale(0.5) translateY(8px);
+    transform: translateX(-50%) scale(0.3) translateY(12px);
+    filter: blur(2px);
+  }
+  40% {
+    opacity: 1;
+    transform: translateX(-50%) scale(1.15) translateY(-4px);
+    filter: blur(0);
   }
   60% {
-    opacity: 1;
-    transform: translateX(-50%) scale(1.1) translateY(-2px);
+    transform: translateX(-50%) scale(0.96) translateY(1px);
+  }
+  78% {
+    transform: translateX(-50%) scale(1.03) translateY(-0.5px);
   }
   100% {
     opacity: 1;
@@ -1079,12 +1204,25 @@
 }
 
 @keyframes allInPulse {
-  0%,
-  100% {
+  0%, 100% {
     box-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
+    transform: translateX(-50%) scale(1);
+    filter: brightness(1);
+  }
+  25% {
+    box-shadow: 0 0 12px rgba(239, 68, 68, 0.55);
+    transform: translateX(-50%) scale(1.02);
+    filter: brightness(1.05);
   }
   50% {
-    box-shadow: 0 0 16px rgba(239, 68, 68, 0.7);
+    box-shadow: 0 0 20px rgba(239, 68, 68, 0.75), 0 0 40px rgba(239, 68, 68, 0.2);
+    transform: translateX(-50%) scale(1.04);
+    filter: brightness(1.1);
+  }
+  75% {
+    box-shadow: 0 0 10px rgba(239, 68, 68, 0.5);
+    transform: translateX(-50%) scale(1.01);
+    filter: brightness(1.03);
   }
 }
 
@@ -1115,11 +1253,21 @@
 @keyframes opponentCardDeal {
   0% {
     opacity: 0;
-    transform: rotate(var(--card-rotation, 0deg)) scale(0.3) translateY(-20px);
+    transform: rotate(var(--card-rotation, 0deg)) scale(0.2) translateY(-30px);
+    filter: blur(2px);
+  }
+  50% {
+    opacity: 0.9;
+    transform: rotate(var(--card-rotation, 0deg)) scale(1.06) translateY(2px);
+    filter: blur(0);
+  }
+  70% {
+    transform: rotate(var(--card-rotation, 0deg)) scale(0.98) translateY(-1px);
   }
   100% {
     opacity: 1;
     transform: rotate(var(--card-rotation, 0deg)) scale(1) translateY(0);
+    filter: blur(0);
   }
 }
 
@@ -1162,22 +1310,40 @@
 }
 
 @keyframes winnerAvatarGlow {
-  0%,
-  100% {
+  0%, 100% {
     box-shadow:
       0 0 24px rgba(255, 215, 0, 0.6),
       0 0 48px rgba(255, 215, 0, 0.25),
       0 0 80px rgba(255, 215, 0, 0.1),
       0 4px 16px rgba(0, 0, 0, 0.5);
     border-color: #ffd700;
+    transform: scale(1.08);
+  }
+  25% {
+    box-shadow:
+      0 0 30px rgba(255, 215, 0, 0.7),
+      0 0 58px rgba(255, 215, 0, 0.3),
+      0 0 88px rgba(255, 215, 0, 0.12),
+      0 5px 18px rgba(0, 0, 0, 0.5);
+    transform: scale(1.09);
   }
   50% {
     box-shadow:
-      0 0 36px rgba(255, 215, 0, 0.8),
-      0 0 72px rgba(255, 215, 0, 0.35),
-      0 0 100px rgba(255, 215, 0, 0.15),
+      0 0 40px rgba(255, 215, 0, 0.85),
+      0 0 76px rgba(255, 215, 0, 0.4),
+      0 0 110px rgba(255, 215, 0, 0.18),
+      0 0 140px rgba(255, 215, 0, 0.06),
       0 6px 20px rgba(0, 0, 0, 0.5);
     border-color: #fff5cc;
+    transform: scale(1.1);
+  }
+  75% {
+    box-shadow:
+      0 0 28px rgba(255, 215, 0, 0.65),
+      0 0 52px rgba(255, 215, 0, 0.28),
+      0 0 84px rgba(255, 215, 0, 0.1),
+      0 5px 16px rgba(0, 0, 0, 0.5);
+    transform: scale(1.085);
   }
 }
 
@@ -1228,14 +1394,23 @@
 }
 
 @keyframes winnerStackPulse {
-  0%,
-  100% {
+  0%, 100% {
     text-shadow: 0 0 8px rgba(255, 215, 0, 0.5);
+    transform: scale(1);
+  }
+  20% {
+    text-shadow: 0 0 12px rgba(255, 215, 0, 0.6);
+    transform: scale(1.02);
   }
   50% {
     text-shadow:
-      0 0 16px rgba(255, 215, 0, 0.7),
-      0 0 32px rgba(255, 215, 0, 0.3);
+      0 0 18px rgba(255, 215, 0, 0.75),
+      0 0 36px rgba(255, 215, 0, 0.35);
+    transform: scale(1.04);
+  }
+  75% {
+    text-shadow: 0 0 10px rgba(255, 215, 0, 0.55);
+    transform: scale(1.01);
   }
 }
 
@@ -1275,22 +1450,41 @@
 }
 
 @keyframes handNameSheen {
-  0%,
-  100% {
+  0%, 100% {
     left: -100%;
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.6;
+  }
+  40% {
+    opacity: 1;
   }
   50% {
     left: 150%;
+    opacity: 0.8;
+  }
+  60% {
+    opacity: 0;
   }
 }
 
 @keyframes handNameAppear {
   0% {
     opacity: 0;
-    transform: translateY(6px) scale(0.8);
+    transform: translateY(8px) scale(0.7);
+    filter: blur(2px);
   }
-  70% {
-    transform: translateY(-2px) scale(1.05);
+  45% {
+    opacity: 1;
+    transform: translateY(-3px) scale(1.08);
+    filter: blur(0);
+  }
+  65% {
+    transform: translateY(1px) scale(0.98);
+  }
+  82% {
+    transform: translateY(-0.5px) scale(1.02);
   }
   100% {
     opacity: 1;
@@ -1382,16 +1576,28 @@
 }
 
 @keyframes allinBadgePulse {
-  0%,
-  100% {
+  0%, 100% {
     box-shadow:
       0 2px 8px rgba(239, 68, 68, 0.5),
       0 0 20px rgba(239, 68, 68, 0.2);
+    transform: translateX(-50%) scale(1);
+    filter: brightness(1);
+  }
+  20% {
+    transform: translateX(-50%) scale(1.02);
+    filter: brightness(1.05);
   }
   50% {
     box-shadow:
-      0 2px 12px rgba(239, 68, 68, 0.7),
-      0 0 32px rgba(239, 68, 68, 0.35);
+      0 2px 14px rgba(239, 68, 68, 0.75),
+      0 0 36px rgba(239, 68, 68, 0.4),
+      0 0 56px rgba(239, 68, 68, 0.1);
+    transform: translateX(-50%) scale(1.04);
+    filter: brightness(1.12);
+  }
+  70% {
+    transform: translateX(-50%) scale(1.01);
+    filter: brightness(1.03);
   }
 }
 
@@ -1420,12 +1626,23 @@
 }
 
 @keyframes bountyGlow {
-  0%,
-  100% {
+  0%, 100% {
     box-shadow: 0 2px 6px rgba(239, 68, 68, 0.5);
+    filter: brightness(1);
+    transform: scale(1);
+  }
+  25% {
+    filter: brightness(1.05);
+    transform: scale(1.01);
   }
   50% {
-    box-shadow: 0 2px 10px rgba(239, 68, 68, 0.8);
+    box-shadow: 0 2px 12px rgba(239, 68, 68, 0.8), 0 0 24px rgba(249, 115, 22, 0.25);
+    filter: brightness(1.12);
+    transform: scale(1.03);
+  }
+  75% {
+    filter: brightness(1.03);
+    transform: scale(1.005);
   }
 }
 
@@ -1459,21 +1676,42 @@
 @keyframes styleBadgeFadeIn {
   0% {
     opacity: 0;
-    transform: translateY(3px);
+    transform: translateY(5px) scale(0.9);
+    filter: blur(1px);
+  }
+  50% {
+    opacity: 0.9;
+    transform: translateY(-1px) scale(1.03);
+    filter: blur(0);
+  }
+  75% {
+    transform: translateY(0.5px) scale(0.99);
   }
   100% {
     opacity: 1;
-    transform: translateY(0);
+    transform: translateY(0) scale(1);
   }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   CARD DEALING ANIMATION — Cards fly in from dealer position
+   CARD DEALING ANIMATION -- Per-Seat Card Arrival
+   ═══════════════════════════════════════════════════════════════════════════════
+   When a new hand starts, each seat's hole cards animate in from the dealer
+   direction. This is the "landing" counterpart to DealAnimation's "flight".
+
+   6-phase spring animation:
+     0%  — Off-screen toward dealer, tiny, bright
+     15% — Entering view, growing rapidly
+     40% — Arriving at seat, slight overshoot in scale
+     60% — Micro-bounce back (spring settle)
+     80% — Almost at rest
+     100%— At rest, normal size + rotation
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .seat__cards--dealing .seat__card {
-  animation: cardDealIn calc(0.25s * var(--animation-speed, 1)) ease-out forwards;
+  animation: cardDealIn calc(0.35s * var(--animation-speed, 1)) cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
   opacity: 0;
+  will-change: transform, opacity;
 }
 
 .seat__cards--dealing .seat__card:nth-child(1) {
@@ -1487,38 +1725,103 @@
 @keyframes cardDealIn {
   0% {
     opacity: 0;
-    transform: translate(var(--deal-from-x, 0px), var(--deal-from-y, -60px)) scale(0.5) rotate(0deg);
+    transform: translate(var(--deal-from-x, 0px), var(--deal-from-y, -60px)) scale(0.35) rotate(-10deg);
+    filter: brightness(1.5);
   }
-  70% {
+  15% {
+    opacity: 0.8;
+    transform: translate(
+      calc(var(--deal-from-x, 0px) * 0.4),
+      calc(var(--deal-from-y, -60px) * 0.3)
+    ) scale(0.7) rotate(-5deg);
+    filter: brightness(1.2);
+  }
+  40% {
     opacity: 1;
-    transform: translate(0, 0) scale(1.05) rotate(var(--card-rotation, 0deg));
+    transform: translate(0, -2px) scale(1.08) rotate(calc(var(--card-rotation, 0deg) + 2deg));
+    filter: brightness(1.05);
+  }
+  60% {
+    transform: translate(0, 1px) scale(0.97) rotate(calc(var(--card-rotation, 0deg) - 1deg));
+    filter: brightness(1);
+  }
+  80% {
+    transform: translate(0, 0) scale(1.01) rotate(var(--card-rotation, 0deg));
   }
   100% {
     opacity: 1;
     transform: translate(0, 0) scale(1) rotate(var(--card-rotation, 0deg));
+    filter: brightness(1);
   }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   FOLD ANIMATION — Cards fly to muck/center and fade out
+   FOLD ANIMATION -- World-Class Card Muck
+   ═══════════════════════════════════════════════════════════════════════════════
+   Cards fly toward the muck (center of table) with:
+   - Initial lift (cards picked up off the felt)
+   - Rotation spin (realistic flick toward muck)
+   - Scale-down as cards recede into distance
+   - Brightness dim (cards going face-down into the muck pile)
+   - Blur on exit (depth-of-field effect)
+   - Second card slightly delayed for that satisfying 1-2 toss feel
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .seat__cards--folding .seat__card {
-  animation: cardFoldOut calc(0.3s * var(--animation-speed, 1)) ease-in forwards;
+  animation: cardFoldOut calc(0.38s * var(--animation-speed, 1)) cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  will-change: transform, opacity, filter;
 }
 
 .seat__cards--folding .seat__card:nth-child(2) {
-  animation-delay: 40ms;
+  animation-delay: 55ms;
+  /* Second card rotates the opposite direction for visual variety */
+  --fold-spin: -20deg;
 }
 
 @keyframes cardFoldOut {
   0% {
     opacity: 1;
-    transform: translate(0, 0) rotate(var(--card-rotation, 0deg));
+    transform: translate(0, 0) rotate(var(--card-rotation, 0deg)) scale(1);
+    filter: brightness(1) blur(0);
   }
+  /* Lift phase — cards picked up off felt */
+  15% {
+    opacity: 1;
+    transform: translate(0, -4px) rotate(var(--card-rotation, 0deg)) scale(1.04);
+    filter: brightness(1.1) blur(0);
+  }
+  /* Launch phase — flicking toward muck */
+  40% {
+    opacity: 0.9;
+    transform:
+      translate(
+        calc(var(--fold-to-x, 0px) * 0.5),
+        calc(var(--fold-to-y, -40px) * 0.4 - 6px)
+      )
+      rotate(calc(var(--fold-spin, 18deg) * 0.6))
+      scale(0.88);
+    filter: brightness(0.95) blur(0);
+  }
+  /* Arrival — reaching muck area, fading */
+  75% {
+    opacity: 0.5;
+    transform:
+      translate(
+        calc(var(--fold-to-x, 0px) * 0.9),
+        calc(var(--fold-to-y, -40px) * 0.85)
+      )
+      rotate(var(--fold-spin, 18deg))
+      scale(0.65);
+    filter: brightness(0.7) blur(0.5px);
+  }
+  /* Gone — into the muck */
   100% {
     opacity: 0;
-    transform: translate(var(--fold-to-x, 0px), var(--fold-to-y, -40px)) scale(0.6) rotate(15deg);
+    transform:
+      translate(var(--fold-to-x, 0px), var(--fold-to-y, -40px))
+      rotate(var(--fold-spin, 18deg))
+      scale(0.5);
+    filter: brightness(0.5) blur(2px);
   }
 }
 
@@ -1537,16 +1840,36 @@
 
 @keyframes cardShowdownFlip {
   0% {
-    transform: rotateY(180deg) scale(0.9);
-    opacity: 0.5;
+    transform: rotateY(180deg) scale(0.88);
+    opacity: 0.4;
+    filter: brightness(0.8);
+  }
+  30% {
+    transform: rotateY(120deg) scale(0.95);
+    opacity: 0.65;
+    filter: brightness(1);
   }
   50% {
-    transform: rotateY(90deg) scale(1.05);
+    /* Edge-on catches light */
+    transform: rotateY(90deg) scale(1.06);
     opacity: 0.8;
+    filter: brightness(1.3);
+  }
+  70% {
+    transform: rotateY(30deg) scale(1.03);
+    opacity: 0.95;
+    filter: brightness(1.1);
+  }
+  85% {
+    /* Slight overshoot */
+    transform: rotateY(-4deg) scale(1.01);
+    opacity: 1;
+    filter: brightness(1.05);
   }
   100% {
     transform: rotateY(0deg) scale(1);
     opacity: 1;
+    filter: brightness(1);
   }
 }
 
@@ -1589,13 +1912,23 @@
 }
 
 @keyframes equityFadeIn {
-  from {
+  0% {
     opacity: 0;
-    transform: scale(0.8);
+    transform: scale(0.6);
+    filter: blur(2px);
   }
-  to {
+  50% {
+    opacity: 0.9;
+    transform: scale(1.08);
+    filter: blur(0);
+  }
+  70% {
+    transform: scale(0.97);
+  }
+  100% {
     opacity: 1;
     transform: scale(1);
+    filter: blur(0);
   }
 }
 
@@ -1832,15 +2165,26 @@
 @keyframes seatWinnerPop {
   0% {
     transform: scale(1);
+    filter: brightness(1);
   }
-  30% {
-    transform: scale(1.15);
+  18% {
+    transform: scale(1.18);
+    filter: brightness(1.2);
   }
-  60% {
-    transform: scale(0.95);
+  38% {
+    transform: scale(0.94);
+    filter: brightness(1.05);
+  }
+  55% {
+    transform: scale(1.06);
+    filter: brightness(1.1);
+  }
+  72% {
+    transform: scale(0.98);
   }
   100% {
     transform: scale(1);
+    filter: brightness(1);
   }
 }
 
@@ -1850,24 +2194,29 @@
 }
 
 @keyframes seatAllinShake {
-  0%,
-  100% {
-    transform: translateX(0);
+  0%, 100% {
+    transform: translateX(0) rotate(0);
   }
-  15% {
-    transform: translateX(-3px);
+  10% {
+    transform: translateX(-4px) rotate(-0.5deg);
+  }
+  20% {
+    transform: translateX(4px) rotate(0.5deg);
   }
   30% {
-    transform: translateX(3px);
+    transform: translateX(-3px) rotate(-0.3deg);
   }
-  45% {
-    transform: translateX(-2px);
+  40% {
+    transform: translateX(3px) rotate(0.3deg);
   }
-  60% {
-    transform: translateX(2px);
+  50% {
+    transform: translateX(-2px) rotate(-0.2deg);
   }
-  75% {
-    transform: translateX(-1px);
+  65% {
+    transform: translateX(1.5px) rotate(0.1deg);
+  }
+  80% {
+    transform: translateX(-0.5px);
   }
 }
 
@@ -1879,12 +2228,23 @@
 @keyframes seatStackGlow {
   0% {
     filter: brightness(1);
+    transform: scale(1);
   }
-  30% {
-    filter: brightness(1.3) drop-shadow(0 0 8px rgba(255, 215, 0, 0.5));
+  15% {
+    filter: brightness(1.35) drop-shadow(0 0 10px rgba(255, 215, 0, 0.6));
+    transform: scale(1.03);
+  }
+  35% {
+    filter: brightness(1.2) drop-shadow(0 0 6px rgba(255, 215, 0, 0.4));
+    transform: scale(0.99);
+  }
+  55% {
+    filter: brightness(1.1) drop-shadow(0 0 3px rgba(255, 215, 0, 0.2));
+    transform: scale(1.01);
   }
   100% {
     filter: brightness(1);
+    transform: scale(1);
   }
 }
 
@@ -1900,4 +2260,69 @@
 .seat--winner-glow .seat__avatar {
   border-color: rgba(255, 215, 0, 0.7);
   box-shadow: 0 0 16px rgba(255, 215, 0, 0.4);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   ACCESSIBILITY — Reduced Motion
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+@media (prefers-reduced-motion: reduce) {
+  .seat--empty::before,
+  .seat__status-dot--disconnected,
+  .seat__disconnect-label,
+  .seat__stack--critical,
+  .seat--active .seat__avatar,
+  .seat--winner .seat__avatar,
+  .seat--winner .seat__stack,
+  .seat__card--winner,
+  .seat__allin-badge,
+  .seat__bounty,
+  .seat__hand-name::before {
+    animation: none;
+  }
+
+  .seat__position-chip,
+  .seat__action,
+  .seat__cards--dealing .seat__card,
+  .seat__cards--folding .seat__card,
+  .seat__cards--showdown .seat__card,
+  .seat__equity,
+  .seat__style-badge,
+  .seat__hand-name,
+  .seat__stack-delta,
+  .seat__net-win,
+  .seat--winner-pop,
+  .seat--allin-shake,
+  .seat--stack-glow,
+  .seat__cards--hero .seat__card,
+  .seat__cards--peeking {
+    animation: none;
+  }
+
+  .seat__cards--dealing .seat__card {
+    opacity: 1;
+    transform: rotate(var(--card-rotation, 0deg));
+  }
+
+  .seat__cards--folding .seat__card {
+    opacity: 0;
+  }
+
+  .seat__cards--showdown .seat__card {
+    opacity: 1;
+    transform: rotateY(0deg);
+  }
+
+  .seat__equity {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  .seat--winner .seat__avatar {
+    transform: scale(1.06);
+  }
+
+  .seat--active .seat__avatar {
+    transform: scale(1.03);
+  }
 }

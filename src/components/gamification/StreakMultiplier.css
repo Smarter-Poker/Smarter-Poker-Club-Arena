@@ -68,15 +68,19 @@
   0%,
   100% {
     transform: translateY(0) scale(1);
+    filter: brightness(1) saturate(1);
   }
   25% {
     transform: translateY(-2px) scale(1.05) rotate(-3deg);
+    filter: brightness(1.15) saturate(1.25);
   }
   50% {
     transform: translateY(-1px) scale(1.02);
+    filter: brightness(1.22) saturate(1.35);
   }
   75% {
     transform: translateY(-3px) scale(1.06) rotate(3deg);
+    filter: brightness(1.15) saturate(1.25);
   }
 }
 

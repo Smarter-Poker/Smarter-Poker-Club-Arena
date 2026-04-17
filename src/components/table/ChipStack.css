@@ -22,12 +22,26 @@
 @keyframes chipBounce {
     0% {
         transform: scale(1) translateY(0);
+        filter: brightness(1) saturate(1);
     }
-    50% {
-        transform: scale(1.08) translateY(-4px);
+    25% {
+        transform: scale(1.06) translateY(-3px);
+        filter: brightness(1.15) saturate(1.15);
+    }
+    45% {
+        transform: scale(1.1) translateY(-5px);
+        filter: brightness(1.2) saturate(1.2);
+    }
+    65% {
+        transform: scale(0.97) translateY(1px);
+        filter: brightness(1.05) saturate(1.05);
+    }
+    80% {
+        transform: scale(1.02) translateY(-0.5px);
     }
     100% {
         transform: scale(1) translateY(0);
+        filter: brightness(1) saturate(1);
     }
 }
 
@@ -54,9 +68,28 @@
 }
 
 @keyframes chip-drop {
-    to {
+    0% {
+        opacity: 0;
+        transform: translateY(-20px);
+        filter: brightness(1.4) blur(1.5px) saturate(0.5);
+    }
+    40% {
+        opacity: 0.8;
+        filter: brightness(1.15) blur(0) saturate(1.1);
+    }
+    65% {
+        opacity: 1;
+        transform: translateY(2px);
+        filter: brightness(1.08) saturate(1.15);
+    }
+    82% {
+        transform: translateY(-1px);
+        filter: brightness(1.03) saturate(1.05);
+    }
+    100% {
         opacity: 1;
         transform: translateY(0);
+        filter: brightness(1) blur(0) saturate(1);
     }
 }
 
@@ -190,11 +223,27 @@
     0% {
         transform: translateY(0) scale(1);
         opacity: 1;
+        filter: brightness(1) blur(0);
     }
-
+    25% {
+        transform: translateY(-12px) scale(0.95);
+        opacity: 1;
+        filter: brightness(1.15) blur(0.3px);
+    }
+    55% {
+        transform: translateY(-30px) scale(0.88);
+        opacity: 0.75;
+        filter: brightness(1.25) blur(0.8px);
+    }
+    80% {
+        transform: translateY(-44px) scale(0.82);
+        opacity: 0.35;
+        filter: brightness(1.35) blur(1.5px);
+    }
     100% {
-        transform: translateY(-50px) scale(0.8);
+        transform: translateY(-52px) scale(0.75);
         opacity: 0;
+        filter: brightness(1.5) blur(2.5px);
     }
 }
 
@@ -221,8 +270,10 @@
 }
 
 @keyframes chipStackBounce {
-    0% { transform: scale(1) translateY(0); }
-    30% { transform: scale(1.05) translateY(-3px); }
-    60% { transform: scale(0.98) translateY(1px); }
-    100% { transform: scale(1) translateY(0); }
+    0% { transform: scale(1) translateY(0); filter: brightness(1) saturate(1); }
+    20% { transform: scale(1.06) translateY(-3px); filter: brightness(1.15) saturate(1.15); }
+    40% { transform: scale(1.04) translateY(-2px); filter: brightness(1.1) saturate(1.1); }
+    60% { transform: scale(0.97) translateY(1px); filter: brightness(1.04) saturate(1.04); }
+    80% { transform: scale(1.01) translateY(-0.5px); filter: brightness(1.01); }
+    100% { transform: scale(1) translateY(0); filter: brightness(1) saturate(1); }
 }

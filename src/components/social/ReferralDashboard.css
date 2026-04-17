@@ -150,11 +150,8 @@
 }
 
 @keyframes refdPulse {
-  0%,
-  100% {
-    opacity: 0.4;
-  }
-  50% {
-    opacity: 0.8;
-  }
+  0%, 100% { opacity: 0.4; filter: brightness(1) saturate(1); }
+  25% { filter: brightness(1.06) saturate(1.1); }
+  50% { opacity: 0.8; filter: brightness(1.12) saturate(1.2); }
+  75% { filter: brightness(1.06) saturate(1.1); }
 }

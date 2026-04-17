@@ -110,12 +110,8 @@
 }
 
 @keyframes slide-up-fade {
-  from {
-    opacity: 0;
-    transform: translateY(10px) scale(0.95);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
+  0% { opacity: 0; transform: translateY(10px) scale(0.95); filter: blur(2px) brightness(0.5) saturate(0.3); }
+  50% { opacity: 0.9; transform: translateY(-1px) scale(1.01); filter: blur(0) brightness(1.08) saturate(1.12); }
+  75% { transform: translateY(0.3px) scale(1.0); filter: blur(0) brightness(1.03) saturate(1.04); }
+  100% { opacity: 1; transform: translateY(0) scale(1); filter: blur(0) brightness(1) saturate(1); }
 }

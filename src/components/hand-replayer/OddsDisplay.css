@@ -17,13 +17,24 @@
 }
 
 @keyframes slideInUp {
-  from {
+  0% {
     opacity: 0;
     transform: translateY(20px);
+    filter: blur(2px) brightness(0.3) saturate(0.2);
   }
-  to {
+  55% {
+    opacity: 0.95;
+    transform: translateY(-2px);
+    filter: blur(0) brightness(1.1) saturate(1.12);
+  }
+  80% {
+    transform: translateY(0.5px);
+    filter: blur(0) brightness(1.04) saturate(1.04);
+  }
+  100% {
     opacity: 1;
     transform: translateY(0);
+    filter: blur(0) brightness(1) saturate(1);
   }
 }
 
@@ -102,9 +113,20 @@
 @keyframes shimmer {
   0% {
     transform: translateX(-100%);
+    filter: brightness(1) saturate(1);
+  }
+  40% {
+    filter: brightness(1.2) saturate(1.25);
+  }
+  50% {
+    filter: brightness(1.3) saturate(1.3);
+  }
+  60% {
+    filter: brightness(1.2) saturate(1.25);
   }
   100% {
     transform: translateX(100%);
+    filter: brightness(1) saturate(1);
   }
 }
 

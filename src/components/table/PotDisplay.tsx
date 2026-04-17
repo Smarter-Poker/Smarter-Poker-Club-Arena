@@ -57,30 +57,65 @@ function formatBB(amount: number, bigBlind: number): string {
   return `${bbs.toFixed(1)} BB`;
 }
 
-// Standard poker chip denomination colors
+// Real poker chip denomination colors — matches casino standard
+// Descending order so breakdown algorithm picks highest denominations first
 const CHIP_COLORS = [
-  { threshold: 5000, color: '#a855f7', label: '5K' }, // Purple
-  { threshold: 1000, color: '#f97316', label: '1K' }, // Orange
-  { threshold: 500, color: '#7c3aed', label: '500' }, // Violet
-  { threshold: 100, color: '#1a1a2e', label: '100' }, // Black
-  { threshold: 25, color: '#22c55e', label: '25' }, // Green
-  { threshold: 5, color: '#ef4444', label: '5' }, // Red
-  { threshold: 1, color: '#e0e0e0', label: '1' }, // White
+  { threshold: 100000, color: '#f97316', label: '100K' }, // Orange
+  { threshold: 25000,  color: '#14b8a6', label: '25K' },  // Teal
+  { threshold: 5000,   color: '#ec4899', label: '5K' },   // Pink
+  { threshold: 1000,   color: '#eab308', label: '1K' },   // Yellow
+  { threshold: 500,    color: '#a855f7', label: '500' },   // Purple
+  { threshold: 100,    color: '#1a1a2e', label: '100' },   // Black
+  { threshold: 25,     color: '#22c55e', label: '25' },    // Green
+  { threshold: 5,      color: '#ef4444', label: '5' },     // Red
+  { threshold: 1,      color: '#e0e0e0', label: '1' },     // White
 ];
 
+/**
+ * Calculate chip breakdown for a pot amount.
+ *
+ * Rules:
+ *  1. Break amount into exact denominations (largest first)
+ *  2. Max 10 chips TOTAL displayed — when over, remove smallest denomination
+ *     chips first until total <= 10
+ *  3. Visual accuracy: 487 = 4 black + 3 green + 2 red + 2 white = 11 → trim 1 white = 10
+ */
+const MAX_TOTAL_CHIPS = 10;
+
 function getChipBreakdown(amount: number): { color: string; count: number; label: string }[] {
+  if (amount <= 0) return [];
+
+  // Step 1: exact breakdown into denominations
   const chips: { color: string; count: number; label: string }[] = [];
-  let remaining = amount;
+  let remaining = Math.round(amount);
 
   for (const chip of CHIP_COLORS) {
     if (remaining >= chip.threshold) {
-      const count = Math.min(Math.floor(remaining / chip.threshold), 8); // Max 8 chips per denom
+      const count = Math.floor(remaining / chip.threshold);
       chips.push({ color: chip.color, count, label: chip.label });
       remaining -= count * chip.threshold;
     }
   }
 
-  return chips.slice(0, 3); // Max 3 denomination stacks visible
+  // Step 2: count total chips
+  let totalChips = chips.reduce((sum, c) => sum + c.count, 0);
+
+  // Step 3: trim from smallest denominations (end of array) until at limit
+  while (totalChips > MAX_TOTAL_CHIPS && chips.length > 0) {
+    const smallest = chips[chips.length - 1];
+    const excess = totalChips - MAX_TOTAL_CHIPS;
+    if (smallest.count <= excess) {
+      // Remove entire denomination
+      totalChips -= smallest.count;
+      chips.pop();
+    } else {
+      // Trim partial
+      smallest.count -= excess;
+      totalChips = MAX_TOTAL_CHIPS;
+    }
+  }
+
+  return chips;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -94,16 +129,27 @@ interface ChipStackProps {
 }
 
 function ChipStack({ color, count, offsetX }: ChipStackProps) {
+  // Show up to 8 physical chips per stack — the visual ceiling for readability
+  const visibleCount = Math.min(count, 8);
+  // Stack height per chip — tighter stacking for that satisfying pile look
+  const chipGap = 2;
   return (
-    <div className="pot-display__chip-stack" style={{ transform: `translateX(${offsetX}px)` }}>
-      {Array.from({ length: Math.min(count, 5) }).map((_, i) => (
+    <div
+      className="pot-display__chip-stack"
+      style={{
+        transform: `translateX(${offsetX}px)`,
+        height: `${18 + visibleCount * chipGap + 10}px`,
+      }}
+    >
+      {Array.from({ length: visibleCount }).map((_, i) => (
         <div
           key={i}
           className="pot-display__chip"
           style={
             {
               '--chip-color': color,
-              transform: `translateY(${-i * 2}px)`,
+              '--chip-offset': `${-i * chipGap}px`,
+              '--chip-spin': `${(Math.random() - 0.5) * 8}`,
               zIndex: count - i,
               animationDelay: `${i * 50}ms`,
             } as React.CSSProperties
@@ -178,7 +224,7 @@ function PotDisplayComponent({
   }
 
   return (
-    <div className={`pot-display${isPotUpdated ? ' pot-display--updated' : ''}`}>
+    <div className={`pot-display${isPotUpdated ? ' pot-display--updated' : ''}`} role="status" aria-live="polite" aria-label={`Pot: ${formatAmount(mainPot, currency)}${sidePots && sidePots.length > 0 ? ` plus ${sidePots.length} side pot${sidePots.length > 1 ? 's' : ''}` : ''}`}>
       {/* Chip Stacks Visualization */}
       {showChipAnimation && mainPot > 0 && (
         <div className="pot-display__chips">

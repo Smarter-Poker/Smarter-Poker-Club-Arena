@@ -520,13 +520,23 @@
 }
 
 @keyframes pulse-gold {
-  0%,
-  100% {
+  0% {
     box-shadow: 0 0 8px rgba(255, 215, 0, 0.4);
+    filter: brightness(1) saturate(1);
   }
-
+  25% {
+    filter: brightness(1.06) saturate(1.1);
+  }
   50% {
     box-shadow: 0 0 16px rgba(255, 215, 0, 0.8);
+    filter: brightness(1.15) saturate(1.25);
+  }
+  75% {
+    filter: brightness(1.04) saturate(1.08);
+  }
+  100% {
+    box-shadow: 0 0 8px rgba(255, 215, 0, 0.4);
+    filter: brightness(1) saturate(1);
   }
 }
 
@@ -613,13 +623,24 @@
 }
 
 @keyframes slideUp {
-  from {
+  0% {
     transform: translateY(20px);
     opacity: 0;
+    filter: blur(4px) brightness(0.3) saturate(0.2);
   }
-  to {
+  45% {
+    transform: translateY(-2px);
+    opacity: 0.9;
+    filter: blur(0) brightness(1.1) saturate(1.12);
+  }
+  70% {
+    transform: translateY(0.5px);
+    filter: blur(0) brightness(1.04) saturate(1.05);
+  }
+  100% {
     transform: translateY(0);
     opacity: 1;
+    filter: blur(0) brightness(1) saturate(1);
   }
 }
 
@@ -658,13 +679,24 @@
 }
 /* ═══════ PREMIUM ANIMATIONS ═══════ */
 @keyframes fadeInUp {
-  from {
+  0% {
     opacity: 0;
     transform: translateY(8px);
+    filter: blur(3px) brightness(0.4) saturate(0.2);
   }
-  to {
+  50% {
+    opacity: 0.95;
+    transform: translateY(-1px);
+    filter: blur(0) brightness(1.08) saturate(1.1);
+  }
+  75% {
+    transform: translateY(0.3px);
+    filter: blur(0) brightness(1.03) saturate(1.04);
+  }
+  100% {
     opacity: 1;
     transform: translateY(0);
+    filter: blur(0) brightness(1) saturate(1);
   }
 }
 .hidden {

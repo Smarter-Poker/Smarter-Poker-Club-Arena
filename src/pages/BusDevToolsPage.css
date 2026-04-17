@@ -158,8 +158,9 @@
 .bdt-log-entry:hover { background: rgba(0,212,255,0.05); }
 
 @keyframes fadeInLog {
-    from { opacity: 0; transform: translateX(-8px); }
-    to { opacity: 1; transform: translateX(0); }
+    0% { opacity: 0; transform: translateX(-8px); filter: blur(1px) brightness(0.5) saturate(0.3); }
+    60% { opacity: 0.95; transform: translateX(1px); filter: blur(0) brightness(1.06) saturate(1.08); }
+    100% { opacity: 1; transform: translateX(0); filter: blur(0) brightness(1) saturate(1); }
 }
 
 .bdt-log-time { color: #6b7280; min-width: 85px; flex-shrink: 0; }

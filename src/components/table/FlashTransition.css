@@ -25,21 +25,16 @@
 }
 
 @keyframes wipeIn {
-  from {
-    transform: translateX(-100%);
-  }
-  to {
-    transform: translateX(0);
-  }
+  0% { transform: translateX(-100%); filter: brightness(1.5); }
+  65% { transform: translateX(2%); filter: brightness(1.15); }
+  82% { transform: translateX(-0.5%); }
+  100% { transform: translateX(0); filter: brightness(1); }
 }
 
 @keyframes wipeOut {
-  from {
-    transform: translateX(0);
-  }
-  to {
-    transform: translateX(100%);
-  }
+  0% { transform: translateX(0); }
+  25% { transform: translateX(-2%); filter: brightness(1.1); }
+  100% { transform: translateX(100%); filter: brightness(1.3); }
 }
 
 /* ─── FADE STYLE ─── */
@@ -56,21 +51,15 @@
 }
 
 @keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
+  0% { opacity: 0; filter: brightness(0.5) saturate(0.3); }
+  40% { opacity: 0.6; filter: brightness(1.06) saturate(1.08); }
+  100% { opacity: 1; filter: brightness(1) saturate(1); }
 }
 
 @keyframes fadeOut {
-  from {
-    opacity: 1;
-  }
-  to {
-    opacity: 0;
-  }
+  0% { opacity: 1; filter: brightness(1) saturate(1); }
+  50% { opacity: 0.4; filter: brightness(1.08) saturate(1.1); }
+  100% { opacity: 0; filter: brightness(0.5) saturate(0.3); }
 }
 
 /* ─── BLUR STYLE ─── */
@@ -88,29 +77,16 @@
 }
 
 @keyframes blurIn {
-  from {
-    backdrop-filter: blur(0px);
-    opacity: 0;
-    transform: scale(1);
-  }
-  to {
-    backdrop-filter: blur(12px);
-    opacity: 1;
-    transform: scale(1.02);
-  }
+  0% { backdrop-filter: blur(0px); opacity: 0; transform: scale(1); }
+  40% { backdrop-filter: blur(6px); opacity: 0.6; transform: scale(1.008); }
+  70% { backdrop-filter: blur(10px); opacity: 0.85; }
+  100% { backdrop-filter: blur(12px); opacity: 1; transform: scale(1.02); }
 }
 
 @keyframes blurOut {
-  from {
-    backdrop-filter: blur(12px);
-    opacity: 1;
-    transform: scale(1.02);
-  }
-  to {
-    backdrop-filter: blur(0px);
-    opacity: 0;
-    transform: scale(1);
-  }
+  0% { backdrop-filter: blur(12px); opacity: 1; transform: scale(1.02); }
+  35% { backdrop-filter: blur(8px); opacity: 0.7; transform: scale(1.01); }
+  100% { backdrop-filter: blur(0px); opacity: 0; transform: scale(1); }
 }
 
 /* ─── Reduced Motion ─── */

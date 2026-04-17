@@ -94,8 +94,10 @@
 }
 
 @keyframes badgeVipShimmer {
-    0%, 100% { background-position: 0% 50%; }
-    50% { background-position: 100% 50%; }
+    0%, 100% { background-position: 0% 50%; filter: brightness(1) saturate(1); }
+    25% { filter: brightness(1.08) saturate(1.12); }
+    50% { background-position: 100% 50%; filter: brightness(1.18) saturate(1.25); }
+    75% { filter: brightness(1.08) saturate(1.12); }
 }
 
 /* VIP Level Variants */
@@ -146,14 +148,19 @@
 }
 
 @keyframes badge-pulse {
-
-    0%,
-    100% {
+    0%, 100% {
         opacity: 1;
+        filter: brightness(1) saturate(1);
     }
-
+    25% {
+        filter: brightness(1.06) saturate(1.1);
+    }
     50% {
         opacity: 0.7;
+        filter: brightness(1.12) saturate(1.2);
+    }
+    75% {
+        filter: brightness(1.06) saturate(1.1);
     }
 }
 
@@ -162,16 +169,21 @@
 }
 
 @keyframes dot-pulse {
-
-    0%,
-    100% {
+    0%, 100% {
         transform: scale(1);
         opacity: 1;
+        filter: brightness(1) saturate(1);
     }
-
+    25% {
+        filter: brightness(1.1) saturate(1.15);
+    }
     50% {
         transform: scale(1.3);
         opacity: 0.7;
+        filter: brightness(1.2) saturate(1.3);
+    }
+    75% {
+        filter: brightness(1.1) saturate(1.15);
     }
 }
 

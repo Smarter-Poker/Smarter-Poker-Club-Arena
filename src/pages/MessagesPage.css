@@ -124,21 +124,36 @@
    ═══════════════════════════════════════════════════════════════ */
 
 @keyframes fadeInUp {
-    from {
+    0% {
         opacity: 0;
         transform: translateY(6px);
+        filter: blur(2px) brightness(0.5) saturate(0.3);
     }
-    to {
+    55% {
+        opacity: 0.95;
+        transform: translateY(-0.5px);
+        filter: blur(0) brightness(1.06) saturate(1.08);
+    }
+    100% {
         opacity: 1;
         transform: translateY(0);
+        filter: blur(0) brightness(1) saturate(1);
     }
 }
 
 @keyframes pulse {
     0%, 100% {
         opacity: 1;
+        filter: brightness(1) saturate(1);
+    }
+    25% {
+        filter: brightness(1.06) saturate(1.1);
     }
     50% {
         opacity: 0.5;
+        filter: brightness(1.12) saturate(1.2);
+    }
+    75% {
+        filter: brightness(1.06) saturate(1.1);
     }
 }

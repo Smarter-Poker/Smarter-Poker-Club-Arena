@@ -24,10 +24,21 @@
     0% {
         opacity: 0;
         transform: translateY(-20px);
+        filter: blur(3px) brightness(0.4) saturate(0.2);
+    }
+    45% {
+        opacity: 0.9;
+        transform: translateY(2px);
+        filter: blur(0) brightness(1.1) saturate(1.15);
+    }
+    70% {
+        transform: translateY(-0.5px);
+        filter: blur(0) brightness(1.04) saturate(1.05);
     }
     100% {
         opacity: 1;
         transform: translateY(0);
+        filter: blur(0) brightness(1) saturate(1);
     }
 }
 
@@ -252,6 +263,11 @@
     }
 }
 /* ═══════ PREMIUM ANIMATIONS ═══════ */
-@keyframes fadeInUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes fadeInUp {
+  0% { opacity: 0; transform: translateY(8px); filter: blur(2px) brightness(0.4) saturate(0.2); }
+  50% { opacity: 0.92; transform: translateY(-1px); filter: blur(0) brightness(1.08) saturate(1.1); }
+  75% { transform: translateY(0.3px); filter: blur(0) brightness(1.03) saturate(1.04); }
+  100% { opacity: 1; transform: translateY(0); filter: blur(0) brightness(1) saturate(1); }
+}
 .hidden { opacity: 0; transform: translateY(8px); }
 .fadeInUp { animation: fadeInUp 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }

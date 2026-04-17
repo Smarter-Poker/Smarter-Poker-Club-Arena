@@ -611,11 +611,17 @@
 }
 
 @keyframes metalOverlayIn {
-  from {
+  0% {
     opacity: 0;
+    filter: brightness(0.5) saturate(0.3);
   }
-  to {
+  60% {
+    opacity: 0.95;
+    filter: brightness(1.06) saturate(1.08);
+  }
+  100% {
     opacity: 1;
+    filter: brightness(1) saturate(1);
   }
 }
 
@@ -636,13 +642,24 @@
 }
 
 @keyframes metalModalIn {
-  from {
+  0% {
     opacity: 0;
     transform: translateY(20px) scale(0.97);
+    filter: blur(2px) brightness(0.3) saturate(0.2);
   }
-  to {
+  55% {
+    opacity: 0.95;
+    transform: translateY(-2px) scale(1.02);
+    filter: blur(0) brightness(1.1) saturate(1.12);
+  }
+  80% {
+    transform: translateY(0.5px) scale(0.995);
+    filter: blur(0) brightness(1.04) saturate(1.04);
+  }
+  100% {
     opacity: 1;
     transform: translateY(0) scale(1);
+    filter: blur(0) brightness(1) saturate(1);
   }
 }
 
@@ -849,13 +866,20 @@
 
 /* ═══════ PREMIUM ANIMATIONS ═══════ */
 @keyframes fadeInUp {
-  from {
+  0% {
     opacity: 0;
     transform: translateY(8px);
+    filter: blur(1px) brightness(0.5) saturate(0.3);
   }
-  to {
+  60% {
+    opacity: 0.95;
+    transform: translateY(-1px);
+    filter: blur(0) brightness(1.06) saturate(1.08);
+  }
+  100% {
     opacity: 1;
     transform: translateY(0);
+    filter: blur(0) brightness(1) saturate(1);
   }
 }
 
@@ -892,9 +916,20 @@
 @keyframes tournSkelShimmer {
   0% {
     transform: translateX(-100%);
+    filter: brightness(1) saturate(1);
+  }
+  40% {
+    filter: brightness(1.15) saturate(1.2);
+  }
+  50% {
+    filter: brightness(1.25) saturate(1.25);
+  }
+  60% {
+    filter: brightness(1.15) saturate(1.2);
   }
   100% {
     transform: translateX(100%);
+    filter: brightness(1) saturate(1);
   }
 }
 
@@ -1004,10 +1039,18 @@
   100% {
     opacity: 1;
     box-shadow: 0 0 8px rgba(255, 107, 107, 0.2);
+    filter: brightness(1) saturate(1);
+  }
+  25% {
+    filter: brightness(1.06) saturate(1.1);
   }
   50% {
     opacity: 0.7;
     box-shadow: 0 0 16px rgba(255, 107, 107, 0.4);
+    filter: brightness(1.12) saturate(1.2);
+  }
+  75% {
+    filter: brightness(1.06) saturate(1.1);
   }
 }
 
@@ -1026,13 +1069,20 @@
 }
 
 @keyframes resultsSlideIn {
-  from {
+  0% {
     opacity: 0;
     transform: translateY(12px);
+    filter: blur(1px) brightness(0.5) saturate(0.3);
   }
-  to {
+  60% {
+    opacity: 0.95;
+    transform: translateY(-1px);
+    filter: blur(0) brightness(1.08) saturate(1.1);
+  }
+  100% {
     opacity: 1;
     transform: translateY(0);
+    filter: blur(0) brightness(1) saturate(1);
   }
 }
 

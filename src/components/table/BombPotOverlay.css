@@ -16,11 +16,16 @@
 }
 
 @keyframes bpo-fade-in {
-  from {
+  0% {
     opacity: 0;
+    backdrop-filter: blur(0);
   }
-  to {
+  40% {
+    opacity: 0.7;
+  }
+  100% {
     opacity: 1;
+    backdrop-filter: blur(4px);
   }
 }
 
@@ -41,13 +46,26 @@
 }
 
 @keyframes bpo-scale-in {
-  from {
-    transform: scale(0.5);
+  0% {
+    transform: scale(0.3);
     opacity: 0;
+    filter: blur(4px);
   }
-  to {
+  45% {
+    transform: scale(1.1);
+    opacity: 0.95;
+    filter: blur(0);
+  }
+  65% {
+    transform: scale(0.96);
+  }
+  80% {
+    transform: scale(1.03);
+  }
+  100% {
     transform: scale(1);
     opacity: 1;
+    filter: blur(0);
   }
 }
 
@@ -57,15 +75,26 @@
 }
 
 @keyframes bpo-shake {
-  0%,
-  100% {
-    transform: translateX(0) rotate(0);
+  0%, 100% {
+    transform: translateX(0) rotate(0) scale(1);
   }
-  25% {
-    transform: translateX(-8px) rotate(-5deg);
+  12% {
+    transform: translateX(-10px) rotate(-8deg) scale(1.05);
   }
-  75% {
-    transform: translateX(8px) rotate(5deg);
+  28% {
+    transform: translateX(8px) rotate(6deg) scale(1.03);
+  }
+  44% {
+    transform: translateX(-6px) rotate(-4deg) scale(1.02);
+  }
+  60% {
+    transform: translateX(4px) rotate(3deg);
+  }
+  76% {
+    transform: translateX(-2px) rotate(-1deg);
+  }
+  88% {
+    transform: translateX(1px) rotate(0.5deg);
   }
 }
 
@@ -126,9 +155,37 @@
   0% {
     transform: translateY(0) scale(1);
     opacity: 0.8;
+    filter: brightness(1.5);
+  }
+  25% {
+    opacity: 0.9;
+    filter: brightness(2);
+  }
+  60% {
+    opacity: 0.5;
+    transform: translateY(-130px) scale(0.6);
+    filter: brightness(1.2);
   }
   100% {
-    transform: translateY(-200px) scale(0);
+    transform: translateY(-220px) scale(0);
     opacity: 0;
+    filter: brightness(0.8);
   }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   ACCESSIBILITY — Reduced Motion
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+@media (prefers-reduced-motion: reduce) {
+  .bomb-pot-overlay,
+  .bpo-container,
+  .bpo-icon,
+  .bpo-particle {
+    animation: none;
+  }
+
+  .bomb-pot-overlay { opacity: 1; }
+  .bpo-container { opacity: 1; transform: scale(1); }
+  .bpo-particle { display: none; }
 }

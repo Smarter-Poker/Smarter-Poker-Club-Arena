@@ -350,7 +350,6 @@ function TournamentLobbyCardInner({ tournament, onRegister }: TournamentLobbyCar
                   PLO6: 'PLO6',
                   PLO8: 'PLO8',
                   PLO_HILO: 'PLO Hi-Lo',
-                  OFC_PINEAPPLE: 'OFC Pineapple',
                   SHORT_DECK: 'Short Deck',
                   PINEAPPLE: 'Pineapple',
                   MIXED: 'Mixed',

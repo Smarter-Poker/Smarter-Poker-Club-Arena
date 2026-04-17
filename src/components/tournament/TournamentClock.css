@@ -203,9 +203,17 @@
   0%,
   100% {
     opacity: 1;
+    filter: brightness(1) saturate(1);
+  }
+  25% {
+    filter: brightness(1.1) saturate(1.15);
   }
   50% {
     opacity: 0.6;
+    filter: brightness(1.22) saturate(1.3);
+  }
+  75% {
+    filter: brightness(1.1) saturate(1.15);
   }
 }
 
@@ -258,9 +266,17 @@
   0%,
   100% {
     transform: translateY(0);
+    filter: brightness(1) saturate(1);
+  }
+  25% {
+    filter: brightness(1.08) saturate(1.12);
   }
   50% {
     transform: translateY(-4px);
+    filter: brightness(1.18) saturate(1.25);
+  }
+  75% {
+    filter: brightness(1.08) saturate(1.12);
   }
 }
 

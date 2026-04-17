@@ -184,10 +184,7 @@
 }
 
 @keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
+  0% { opacity: 0; filter: blur(2px) brightness(0.5); }
+  60% { opacity: 0.95; filter: blur(0) brightness(1.04); }
+  100% { opacity: 1; filter: blur(0) brightness(1); }
 }

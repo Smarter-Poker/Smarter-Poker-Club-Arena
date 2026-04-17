@@ -235,10 +235,15 @@
 @keyframes actionHighlight {
     0% {
         background: rgba(24, 119, 242, 0.3);
+        filter: brightness(1.15) saturate(1.2);
     }
-
+    30% {
+        background: rgba(24, 119, 242, 0.25);
+        filter: brightness(1.08) saturate(1.12);
+    }
     100% {
         background: rgba(24, 119, 242, 0.1);
+        filter: brightness(1) saturate(1);
     }
 }
 

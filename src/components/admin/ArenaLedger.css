@@ -44,13 +44,10 @@
 }
 
 @keyframes ledgerPulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.4;
-  }
+  0%, 100% { opacity: 1; filter: brightness(1) saturate(1); }
+  25% { filter: brightness(1.06) saturate(1.08); }
+  50% { opacity: 0.4; filter: brightness(1.1) saturate(1.12); }
+  75% { filter: brightness(1.06) saturate(1.08); }
 }
 
 .arena-ledger__controls {

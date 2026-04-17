@@ -130,11 +130,17 @@
 }
 
 @keyframes fadeIn {
-  from {
+  0% {
     opacity: 0;
+    filter: blur(3px) brightness(0.4);
   }
-  to {
+  50% {
+    opacity: 0.8;
+    filter: blur(0) brightness(1.06);
+  }
+  100% {
     opacity: 1;
+    filter: blur(0) brightness(1);
   }
 }
 
@@ -144,13 +150,28 @@
 }
 
 @keyframes plHeroSlideIn {
-  from {
+  0% {
     opacity: 0;
     transform: translateY(-20px);
+    filter: blur(4px) brightness(0.3) saturate(0.2);
   }
-  to {
+  40% {
+    opacity: 0.85;
+    transform: translateY(3px);
+    filter: blur(0) brightness(1.15) saturate(1.25);
+  }
+  65% {
+    transform: translateY(-1px);
+    filter: blur(0) brightness(1.06) saturate(1.08);
+  }
+  85% {
+    transform: translateY(0.5px);
+    filter: blur(0) brightness(1.02) saturate(1.02);
+  }
+  100% {
     opacity: 1;
     transform: translateY(0);
+    filter: blur(0) brightness(1) saturate(1);
   }
 }
 
@@ -160,13 +181,24 @@
 }
 
 @keyframes statSlideIn {
-  from {
+  0% {
     opacity: 0;
     transform: scale(0.8) translateY(10px);
+    filter: blur(2px) brightness(0.5) saturate(0.3);
   }
-  to {
+  45% {
+    opacity: 0.85;
+    transform: scale(1.05) translateY(-2px);
+    filter: blur(0) brightness(1.12) saturate(1.2);
+  }
+  70% {
+    transform: scale(0.98) translateY(0.5px);
+    filter: blur(0) brightness(1.04) saturate(1.06);
+  }
+  100% {
     opacity: 1;
     transform: scale(1) translateY(0);
+    filter: blur(0) brightness(1) saturate(1);
   }
 }
 

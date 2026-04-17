@@ -46,10 +46,20 @@
 @keyframes shimmer {
   0% {
     background-position: 200% 0;
+    filter: brightness(1) saturate(1);
   }
-
+  40% {
+    filter: brightness(1.15) saturate(1.2);
+  }
+  50% {
+    filter: brightness(1.2) saturate(1.22);
+  }
+  60% {
+    filter: brightness(1.15) saturate(1.2);
+  }
   100% {
     background-position: -200% 0;
+    filter: brightness(1) saturate(1);
   }
 }
 

@@ -218,8 +218,10 @@
 }
 
 @keyframes activeAvatarPulse {
-    0%, 100% { box-shadow: 0 0 0 3px #4169E1, 0 0 24px rgba(65, 105, 225, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.06); }
-    50% { box-shadow: 0 0 0 3px #4169E1, 0 0 32px rgba(65, 105, 225, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.06); }
+    0%, 100% { box-shadow: 0 0 0 3px #4169E1, 0 0 24px rgba(65, 105, 225, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.06); filter: brightness(1) saturate(1); }
+    25% { filter: brightness(1.06) saturate(1.1); }
+    50% { box-shadow: 0 0 0 3px #4169E1, 0 0 32px rgba(65, 105, 225, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.06); filter: brightness(1.12) saturate(1.2); }
+    75% { filter: brightness(1.06) saturate(1.1); }
 }
 
 .player-avatar.winner .avatar {
@@ -228,8 +230,10 @@
 }
 
 @keyframes winnerAvatarGlow {
-    0%, 100% { box-shadow: 0 0 0 3px #FFD700, 0 0 28px rgba(255, 215, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.06); }
-    50% { box-shadow: 0 0 0 3px #FFD700, 0 0 36px rgba(255, 215, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.06); }
+    0%, 100% { box-shadow: 0 0 0 3px #FFD700, 0 0 28px rgba(255, 215, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.06); filter: brightness(1) saturate(1); }
+    25% { filter: brightness(1.08) saturate(1.15); }
+    50% { box-shadow: 0 0 0 3px #FFD700, 0 0 36px rgba(255, 215, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.06); filter: brightness(1.18) saturate(1.25); }
+    75% { filter: brightness(1.08) saturate(1.15); }
 }
 
 .player-stack {

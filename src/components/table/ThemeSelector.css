@@ -84,8 +84,10 @@
 }
 
 @keyframes themeCheckPop {
-    from { transform: scale(0); opacity: 0; }
-    to { transform: scale(1); opacity: 1; }
+    0% { transform: scale(0); opacity: 0; filter: blur(4px) brightness(0.3) saturate(0.2); }
+    45% { transform: scale(1.15); opacity: 0.95; filter: blur(0) brightness(1.15) saturate(1.2); }
+    70% { transform: scale(0.97); filter: blur(0) brightness(1.04) saturate(1.05); }
+    100% { transform: scale(1); opacity: 1; filter: blur(0) brightness(1) saturate(1); }
 }
 
 .theme-selector__name {

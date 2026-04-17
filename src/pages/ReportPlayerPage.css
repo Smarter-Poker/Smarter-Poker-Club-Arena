@@ -331,12 +331,23 @@
    ═══════════════════════════════════════════════════════════════ */
 
 @keyframes fadeInUp {
-    from {
+    0% {
         opacity: 0;
         transform: translateY(8px);
+        filter: blur(2px) brightness(0.5) saturate(0.3);
     }
-    to {
+    55% {
+        opacity: 0.95;
+        transform: translateY(-0.8px);
+        filter: blur(0) brightness(1.06) saturate(1.08);
+    }
+    80% {
+        transform: translateY(0.2px);
+        filter: blur(0) brightness(1.02) saturate(1.03);
+    }
+    100% {
         opacity: 1;
         transform: translateY(0);
+        filter: blur(0) brightness(1) saturate(1);
     }
 }

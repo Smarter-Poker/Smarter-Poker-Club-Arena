@@ -397,10 +397,10 @@ export const SeatSlot = memo(
     // ─── EMPTY SEAT ────────────────────────────────────────────────────────
     if (!player) {
       if (isTournament) {
-        return <div className={containerClasses} />;
+        return <div className={containerClasses} aria-label={`Seat ${seatNumber}: empty`} />;
       }
       return (
-        <div className={containerClasses} onClick={onSit}>
+        <div className={containerClasses} onClick={onSit} role="button" tabIndex={0} aria-label={`Seat ${seatNumber}: open - click to sit`}>
           <span className="seat__empty-label">+ SIT</span>
         </div>
       );
@@ -440,10 +440,16 @@ export const SeatSlot = memo(
     }
 
     return (
-      <div className={containerClasses} onClick={onAction}>
+      <div
+        className={containerClasses}
+        onClick={onAction}
+        role="region"
+        aria-label={`Seat ${seatNumber}: ${player.name}${isActive ? ' (acting now)' : ''}${player.status === 'folded' ? ' (folded)' : ''}${player.status === 'all_in' ? ' (all in)' : ''}, stack ${player.stack}`}
+        aria-live={isActive ? 'polite' : 'off'}
+      >
         {/* Last Action Badge — floats ABOVE the seat (premium style) */}
         {lastAction && (
-          <div className={`seat__action seat__action--${lastAction}`}>
+          <div className={`seat__action seat__action--${lastAction}`} role="status" aria-label={`${player.name}: ${getActionLabel(lastAction, lastBetAmount)}`}>
             {getActionLabel(lastAction, lastBetAmount)}
           </div>
         )}

@@ -23,12 +23,21 @@
 }
 
 @keyframes slideDown {
-    from {
+    0% {
         transform: translateY(-100%);
+        filter: blur(2px) brightness(0.4) saturate(0.2);
     }
-
-    to {
+    55% {
+        transform: translateY(1%);
+        filter: blur(0) brightness(1.08) saturate(1.1);
+    }
+    80% {
+        transform: translateY(-0.5%);
+        filter: blur(0) brightness(1.03) saturate(1.03);
+    }
+    100% {
         transform: translateY(0);
+        filter: blur(0) brightness(1) saturate(1);
     }
 }
 
@@ -62,19 +71,22 @@
 }
 
 @keyframes pulse {
-    0% {
-        transform: scale(0.95);
-        opacity: 0.7;
-    }
-
-    50% {
-        transform: scale(1.2);
-        opacity: 1;
-    }
-
+    0%,
     100% {
         transform: scale(0.95);
         opacity: 0.7;
+        filter: brightness(1) saturate(1);
+    }
+    25% {
+        filter: brightness(1.08) saturate(1.12);
+    }
+    50% {
+        transform: scale(1.2);
+        opacity: 1;
+        filter: brightness(1.15) saturate(1.25);
+    }
+    75% {
+        filter: brightness(1.08) saturate(1.12);
     }
 }
 

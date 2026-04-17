@@ -291,14 +291,19 @@
 @keyframes bubblePop {
     0% {
         transform: translateX(-50%) scale(0);
+        filter: blur(4px) brightness(0.3) saturate(0.2);
     }
-
-    50% {
+    40% {
         transform: translateX(-50%) scale(1.2);
+        filter: blur(0) brightness(1.15) saturate(1.2);
     }
-
+    70% {
+        transform: translateX(-50%) scale(0.97);
+        filter: blur(0) brightness(1.04) saturate(1.05);
+    }
     100% {
         transform: translateX(-50%) scale(1);
+        filter: blur(0) brightness(1) saturate(1);
     }
 }
 
@@ -406,13 +411,24 @@
    ═══════════════════════════════════════════════════════════════ */
 
 @keyframes fadeInUp {
-    from {
+    0% {
         opacity: 0;
         transform: translateY(10px);
+        filter: blur(3px) brightness(0.4) saturate(0.2);
     }
-    to {
+    50% {
+        opacity: 0.95;
+        transform: translateY(-1px);
+        filter: blur(0) brightness(1.08) saturate(1.12);
+    }
+    75% {
+        transform: translateY(0.3px);
+        filter: blur(0) brightness(1.03) saturate(1.04);
+    }
+    100% {
         opacity: 1;
         transform: translateY(0);
+        filter: blur(0) brightness(1) saturate(1);
     }
 }
 
@@ -485,13 +501,24 @@
 }
 
 @keyframes slideInRight {
-    from {
+    0% {
         opacity: 0;
         transform: translateX(20px);
+        filter: blur(3px) brightness(0.4) saturate(0.2);
     }
-    to {
+    50% {
+        opacity: 0.95;
+        transform: translateX(-1px);
+        filter: blur(0) brightness(1.08) saturate(1.12);
+    }
+    75% {
+        transform: translateX(0.3px);
+        filter: blur(0) brightness(1.03) saturate(1.04);
+    }
+    100% {
         opacity: 1;
         transform: translateX(0);
+        filter: blur(0) brightness(1) saturate(1);
     }
 }
 
@@ -501,13 +528,24 @@
 }
 
 @keyframes slideUp {
-    from {
+    0% {
         opacity: 0;
         transform: translateY(30px);
+        filter: blur(4px) brightness(0.3) saturate(0.2);
     }
-    to {
+    45% {
+        opacity: 0.9;
+        transform: translateY(-2px);
+        filter: blur(0) brightness(1.1) saturate(1.15);
+    }
+    70% {
+        transform: translateY(0.5px);
+        filter: blur(0) brightness(1.04) saturate(1.05);
+    }
+    100% {
         opacity: 1;
         transform: translateY(0);
+        filter: blur(0) brightness(1) saturate(1);
     }
 }
 

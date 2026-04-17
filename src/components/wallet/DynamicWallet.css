@@ -39,12 +39,11 @@
 }
 
 @keyframes dwShimmer {
-  0% {
-    background-position: 200% 0;
-  }
-  100% {
-    background-position: -200% 0;
-  }
+  0% { background-position: 200% 0; filter: brightness(1) saturate(1); }
+  40% { filter: brightness(1.08) saturate(1.1); }
+  50% { filter: brightness(1.15) saturate(1.2); }
+  60% { filter: brightness(1.08) saturate(1.1); }
+  100% { background-position: -200% 0; filter: brightness(1) saturate(1); }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -91,13 +90,9 @@
 }
 
 @keyframes dwBbjShimmer {
-  0%,
-  60% {
-    left: -100%;
-  }
-  100% {
-    left: 200%;
-  }
+  0%, 60% { left: -100%; filter: brightness(1) saturate(1); }
+  80% { filter: brightness(1.2) saturate(1.25); }
+  100% { left: 200%; filter: brightness(1) saturate(1); }
 }
 
 .dw__bbj-label {

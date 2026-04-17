@@ -41,14 +41,22 @@
   0% {
     transform: translate(-50%, -50%) rotate(-20deg) scale(3);
     opacity: 0;
+    filter: blur(3px) brightness(0.3) saturate(0.2);
   }
-  60% {
+  50% {
     transform: translate(-50%, -50%) rotate(-20deg) scale(0.9);
+    opacity: 0.06;
+    filter: blur(0) brightness(1.2) saturate(1.25);
+  }
+  75% {
+    transform: translate(-50%, -50%) rotate(-20deg) scale(1.02);
     opacity: 0.08;
+    filter: blur(0) brightness(1.08) saturate(1.1);
   }
   100% {
     transform: translate(-50%, -50%) rotate(-20deg) scale(1);
     opacity: 1;
+    filter: blur(0) brightness(1) saturate(1);
   }
 }
 
@@ -152,13 +160,20 @@
 }
 
 @keyframes detailsFade {
-  from {
+  0% {
     opacity: 0;
     transform: translateY(-8px);
+    filter: blur(1px) brightness(0.5) saturate(0.3);
   }
-  to {
+  60% {
+    opacity: 0.95;
+    transform: translateY(0.5px);
+    filter: blur(0) brightness(1.06) saturate(1.08);
+  }
+  100% {
     opacity: 1;
     transform: translateY(0);
+    filter: blur(0) brightness(1) saturate(1);
   }
 }
 

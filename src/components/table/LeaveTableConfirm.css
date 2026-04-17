@@ -18,12 +18,9 @@
 }
 
 @keyframes leaveConfirmFadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
+  0% { opacity: 0; filter: blur(3px) brightness(0.4); }
+  50% { opacity: 0.8; filter: blur(0) brightness(1.06); }
+  100% { opacity: 1; filter: blur(0) brightness(1); }
 }
 
 .leave-confirm__dialog {
@@ -42,14 +39,10 @@
 }
 
 @keyframes leaveConfirmSlideUp {
-  from {
-    opacity: 0;
-    transform: scale(0.9) translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1) translateY(0);
-  }
+  0% { opacity: 0; transform: scale(0.9) translateY(20px); filter: blur(4px) brightness(0.3) saturate(0.2); }
+  45% { opacity: 0.9; transform: scale(1.02) translateY(-2px); filter: blur(0) brightness(1.12) saturate(1.15); }
+  70% { transform: scale(0.99) translateY(0.5px); filter: blur(0) brightness(1.04) saturate(1.05); }
+  100% { opacity: 1; transform: scale(1) translateY(0); filter: blur(0) brightness(1) saturate(1); }
 }
 
 .leave-confirm__icon {

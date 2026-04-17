@@ -24,12 +24,24 @@
 }
 
 @keyframes slideIn {
-    from {
+    0% {
         transform: translateX(100%);
+        filter: blur(3px) brightness(0.3) saturate(0.2);
     }
 
-    to {
+    55% {
+        transform: translateX(-1%);
+        filter: blur(0) brightness(1.08) saturate(1.1);
+    }
+
+    80% {
+        transform: translateX(0.3%);
+        filter: blur(0) brightness(1.03) saturate(1.03);
+    }
+
+    100% {
         transform: translateX(0);
+        filter: blur(0) brightness(1) saturate(1);
     }
 }
 

@@ -122,9 +122,17 @@
 @keyframes bubbleAlert {
     0%, 100% {
         transform: scale(1);
+        filter: brightness(1) saturate(1);
+    }
+    25% {
+        filter: brightness(1.08) saturate(1.12);
     }
     50% {
         transform: scale(1.05);
+        filter: brightness(1.18) saturate(1.25);
+    }
+    75% {
+        filter: brightness(1.08) saturate(1.12);
     }
 }
 

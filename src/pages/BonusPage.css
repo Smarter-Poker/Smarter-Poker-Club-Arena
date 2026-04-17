@@ -351,13 +351,19 @@
   0% {
     transform: translateY(0) rotate(0deg) scale(1);
     opacity: 1;
+    filter: brightness(1.25) saturate(1.4);
+  }
+  20% {
+    filter: brightness(1.15) saturate(1.25);
   }
   50% {
     opacity: 0.9;
+    filter: brightness(1.05) saturate(1.1);
   }
   100% {
     transform: translateY(100vh) rotate(720deg) scale(0.3);
     opacity: 0;
+    filter: brightness(0.6) saturate(0.5);
   }
 }
 
@@ -400,9 +406,21 @@
 @keyframes bonusSkelShimmer {
   0% {
     transform: translateX(-100%);
+    filter: brightness(1) saturate(1);
+  }
+  40% {
+    filter: brightness(1.08) saturate(1.1);
+  }
+  50% {
+    transform: translateX(0%);
+    filter: brightness(1.15) saturate(1.2);
+  }
+  60% {
+    filter: brightness(1.08) saturate(1.1);
   }
   100% {
     transform: translateX(100%);
+    filter: brightness(1) saturate(1);
   }
 }
 
@@ -422,8 +440,16 @@
   0%,
   100% {
     box-shadow: 0 0 15px rgba(0, 212, 255, 0.4);
+    filter: brightness(1) saturate(1);
+  }
+  25% {
+    filter: brightness(1.06) saturate(1.1);
   }
   50% {
     box-shadow: 0 0 25px rgba(0, 212, 255, 0.7);
+    filter: brightness(1.12) saturate(1.22);
+  }
+  75% {
+    filter: brightness(1.05) saturate(1.08);
   }
 }

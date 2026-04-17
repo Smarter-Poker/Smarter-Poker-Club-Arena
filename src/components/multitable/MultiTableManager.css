@@ -84,14 +84,20 @@
 }
 
 @keyframes turnPulse {
-
     0%,
     100% {
         box-shadow: 0 0 0 0 rgba(46, 204, 113, 0.4);
+        filter: brightness(1) saturate(1);
     }
-
+    25% {
+        filter: brightness(1.08) saturate(1.12);
+    }
     50% {
         box-shadow: 0 0 0 8px rgba(46, 204, 113, 0);
+        filter: brightness(1.15) saturate(1.25);
+    }
+    75% {
+        filter: brightness(1.08) saturate(1.12);
     }
 }
 

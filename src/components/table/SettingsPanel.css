@@ -21,12 +21,17 @@
 }
 
 @keyframes fadeIn {
-  from {
+  0% {
     opacity: 0;
+    filter: blur(3px) brightness(0.4);
   }
-
-  to {
+  50% {
+    opacity: 0.8;
+    filter: blur(0) brightness(1.06);
+  }
+  100% {
     opacity: 1;
+    filter: blur(0) brightness(1);
   }
 }
 
@@ -51,14 +56,24 @@
 }
 
 @keyframes slideIn {
-  from {
+  0% {
     transform: translateX(100%);
     opacity: 0.8;
+    filter: blur(3px) brightness(0.5) saturate(0.3);
   }
-
-  to {
+  45% {
+    transform: translateX(-1%);
+    opacity: 1;
+    filter: blur(0) brightness(1.08) saturate(1.12);
+  }
+  70% {
+    transform: translateX(0.3%);
+    filter: blur(0) brightness(1.03) saturate(1.04);
+  }
+  100% {
     transform: translateX(0);
     opacity: 1;
+    filter: blur(0) brightness(1) saturate(1);
   }
 }
 

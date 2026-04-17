@@ -364,6 +364,93 @@ export class EngineTelemetry {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // Bible V8 §10.4: PROMETHEUS METRICS EXPORT
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * GET /metrics — Prometheus text exposition format.
+   * Exposes all engine metrics for Grafana dashboards.
+   * Standard Prometheus text format: https://prometheus.io/docs/instrumenting/exposition_formats/
+   */
+  getPrometheusMetrics(): string {
+    const snapshot = this.getSnapshot();
+    const perf = this.getPerformanceSummary();
+    const lines: string[] = [];
+
+    // Global metrics
+    lines.push('# HELP poker_active_tables Number of active tables');
+    lines.push('# TYPE poker_active_tables gauge');
+    lines.push(`poker_active_tables ${snapshot.global.activeTables}`);
+
+    lines.push('# HELP poker_active_players Number of active players');
+    lines.push('# TYPE poker_active_players gauge');
+    lines.push(`poker_active_players ${snapshot.global.activePlayers}`);
+
+    lines.push('# HELP poker_hands_dealt_total Total hands dealt');
+    lines.push('# TYPE poker_hands_dealt_total counter');
+    lines.push(`poker_hands_dealt_total ${snapshot.global.totalHandsDealt}`);
+
+    lines.push('# HELP poker_avg_hands_per_hour Average hands per hour');
+    lines.push('# TYPE poker_avg_hands_per_hour gauge');
+    lines.push(`poker_avg_hands_per_hour ${snapshot.global.avgHandsPerHour}`);
+
+    lines.push('# HELP poker_avg_hand_duration_ms Average hand duration in ms');
+    lines.push('# TYPE poker_avg_hand_duration_ms gauge');
+    lines.push(`poker_avg_hand_duration_ms ${snapshot.global.avgHandDurationMs}`);
+
+    lines.push('# HELP poker_cache_hit_ratio Cache hit ratio percentage');
+    lines.push('# TYPE poker_cache_hit_ratio gauge');
+    lines.push(`poker_cache_hit_ratio ${snapshot.global.cacheHitRatio}`);
+
+    lines.push('# HELP poker_uptime_seconds Engine uptime in seconds');
+    lines.push('# TYPE poker_uptime_seconds gauge');
+    lines.push(`poker_uptime_seconds ${Math.round(snapshot.global.uptime / 1000)}`);
+
+    // Performance metrics (Bible V8 §9.1)
+    lines.push('# HELP poker_action_processing_ms Average action processing time');
+    lines.push('# TYPE poker_action_processing_ms gauge');
+    lines.push(`poker_action_processing_ms ${perf.avgProcessingMs}`);
+
+    lines.push('# HELP poker_action_processing_p95_ms P95 action processing time');
+    lines.push('# TYPE poker_action_processing_p95_ms gauge');
+    lines.push(`poker_action_processing_p95_ms ${perf.p95ProcessingMs}`);
+
+    lines.push('# HELP poker_broadcast_latency_ms Average broadcast latency');
+    lines.push('# TYPE poker_broadcast_latency_ms gauge');
+    lines.push(`poker_broadcast_latency_ms ${perf.avgBroadcastMs}`);
+
+    lines.push('# HELP poker_broadcast_latency_p95_ms P95 broadcast latency');
+    lines.push('# TYPE poker_broadcast_latency_p95_ms gauge');
+    lines.push(`poker_broadcast_latency_p95_ms ${perf.p95BroadcastMs}`);
+
+    lines.push('# HELP poker_threshold_violations_total SLA threshold violations');
+    lines.push('# TYPE poker_threshold_violations_total counter');
+    lines.push(`poker_threshold_violations_total{type="action_processing"} ${perf.processingViolations}`);
+    lines.push(`poker_threshold_violations_total{type="broadcast_latency"} ${perf.broadcastViolations}`);
+
+    // Per-table metrics
+    lines.push('# HELP poker_table_hands_dealt Hands dealt per table');
+    lines.push('# TYPE poker_table_hands_dealt counter');
+    for (const t of snapshot.tables) {
+      lines.push(`poker_table_hands_dealt{table_id="${t.tableId}"} ${t.handsDealt}`);
+    }
+
+    lines.push('# HELP poker_table_hands_per_hour Hands per hour per table');
+    lines.push('# TYPE poker_table_hands_per_hour gauge');
+    for (const t of snapshot.tables) {
+      lines.push(`poker_table_hands_per_hour{table_id="${t.tableId}"} ${t.handsPerHour}`);
+    }
+
+    lines.push('# HELP poker_table_timer_utilization Timer expiry rate per table');
+    lines.push('# TYPE poker_table_timer_utilization gauge');
+    for (const t of snapshot.tables) {
+      lines.push(`poker_table_timer_utilization{table_id="${t.tableId}"} ${t.timerUtilization}`);
+    }
+
+    return lines.join('\n') + '\n';
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // CLEANUP
   // ═══════════════════════════════════════════════════════════════════════════
 

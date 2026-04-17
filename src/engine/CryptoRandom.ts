@@ -7,7 +7,7 @@
  * (browser) or crypto.randomInt (Node.js). Falls back to Math.random() only
  * when no crypto API is available.
  *
- * Used by: Deck.shuffle(), MonteCarloEquity, OFCPineappleEngine, SpinItEngine,
+ * Used by: Deck.shuffle(), MonteCarloEquity, SpinItEngine,
  *          TableBreakEngine, TournamentEngine
  */
 

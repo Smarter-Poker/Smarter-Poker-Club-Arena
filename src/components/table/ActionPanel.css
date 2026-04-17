@@ -30,11 +30,21 @@
 @keyframes actionPanelSlideUp {
   0% {
     opacity: 0;
-    transform: translateY(20px);
+    transform: translateY(24px) scale(0.98);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-3px) scale(1.005);
+  }
+  65% {
+    transform: translateY(1px) scale(0.999);
+  }
+  80% {
+    transform: translateY(-0.5px) scale(1);
   }
   100% {
     opacity: 1;
-    transform: translateY(0);
+    transform: translateY(0) scale(1);
   }
 }
 
@@ -238,13 +248,36 @@
       0 6px 20px rgba(139, 92, 246, 0.35),
       inset 0 1px 0 rgba(255, 255, 255, 0.2),
       inset 0 -2px 0 rgba(0, 0, 0, 0.2);
+    filter: brightness(1);
+    transform: scale(1);
+  }
+  25% {
+    box-shadow:
+      0 4px 0 #5b21b6,
+      0 8px 30px rgba(139, 92, 246, 0.5),
+      0 0 40px rgba(139, 92, 246, 0.15),
+      inset 0 1px 0 rgba(255, 255, 255, 0.25);
+    filter: brightness(1.05);
+    transform: scale(1.008);
   }
   50% {
     box-shadow:
+      0 5px 0 #5b21b6,
+      0 10px 40px rgba(139, 92, 246, 0.65),
+      0 0 60px rgba(139, 92, 246, 0.25),
+      0 0 80px rgba(168, 85, 247, 0.1),
+      inset 0 1px 0 rgba(255, 255, 255, 0.3);
+    filter: brightness(1.1);
+    transform: scale(1.015);
+  }
+  75% {
+    box-shadow:
       0 4px 0 #5b21b6,
-      0 10px 40px rgba(139, 92, 246, 0.6),
-      0 0 60px rgba(139, 92, 246, 0.2),
-      inset 0 1px 0 rgba(255, 255, 255, 0.2);
+      0 8px 30px rgba(139, 92, 246, 0.45),
+      0 0 35px rgba(139, 92, 246, 0.12),
+      inset 0 1px 0 rgba(255, 255, 255, 0.22);
+    filter: brightness(1.04);
+    transform: scale(1.005);
   }
 }
 
@@ -946,4 +979,58 @@
   font-size: 0.5625rem;
   color: rgba(255, 255, 255, 0.25);
   font-weight: 500;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   STAGGERED BUTTON ENTRANCE — each button cascades in with slight delay
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.action-row .action-btn:nth-child(1) {
+  animation: actionBtnEntrance 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275) 0.02s both;
+}
+.action-row .action-btn:nth-child(2) {
+  animation: actionBtnEntrance 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275) 0.06s both;
+}
+.action-row .action-btn:nth-child(3) {
+  animation: actionBtnEntrance 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275) 0.10s both;
+}
+
+@keyframes actionBtnEntrance {
+  0% {
+    opacity: 0;
+    transform: translateY(12px) scale(0.92);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(-2px) scale(1.02);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   REDUCED MOTION — respect user preference
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+@media (prefers-reduced-motion: reduce) {
+  .action-panel {
+    animation: none;
+  }
+  .action-row .action-btn {
+    animation: none;
+  }
+  .action-btn--allin {
+    animation: none;
+  }
+  .raise-confirm::before {
+    animation: none;
+  }
+  .action-panel--attention {
+    animation: none;
+  }
+  .action-btn {
+    transition-duration: 0.01ms;
+  }
 }

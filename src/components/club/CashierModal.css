@@ -30,14 +30,24 @@
 }
 
 @keyframes scaleIn {
-    from {
+    0% {
         transform: scale(0.95);
         opacity: 0;
+        filter: blur(2px) brightness(0.4) saturate(0.2);
     }
-
-    to {
+    55% {
+        transform: scale(1.01);
+        opacity: 0.95;
+        filter: blur(0) brightness(1.08) saturate(1.1);
+    }
+    80% {
+        transform: scale(0.998);
+        filter: blur(0) brightness(1.03) saturate(1.03);
+    }
+    100% {
         transform: scale(1);
         opacity: 1;
+        filter: blur(0) brightness(1) saturate(1);
     }
 }
 

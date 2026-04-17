@@ -83,14 +83,28 @@
 }
 
 @keyframes timeBankActivePulse {
-    0%, 100% {
+    0% {
         box-shadow: 0 0 4px rgba(255, 184, 0, 0.1);
         border-color: rgba(255, 184, 0, 0.3);
+        filter: brightness(1) saturate(1);
     }
-
+    25% {
+        box-shadow: 0 0 8px rgba(255, 184, 0, 0.18);
+        filter: brightness(1.04) saturate(1.08);
+    }
     50% {
         box-shadow: 0 0 16px rgba(255, 184, 0, 0.3), 0 0 32px rgba(255, 184, 0, 0.1);
         border-color: rgba(255, 184, 0, 0.6);
+        filter: brightness(1.08) saturate(1.18);
+    }
+    75% {
+        box-shadow: 0 0 10px rgba(255, 184, 0, 0.2);
+        filter: brightness(1.03) saturate(1.06);
+    }
+    100% {
+        box-shadow: 0 0 4px rgba(255, 184, 0, 0.1);
+        border-color: rgba(255, 184, 0, 0.3);
+        filter: brightness(1) saturate(1);
     }
 }
 

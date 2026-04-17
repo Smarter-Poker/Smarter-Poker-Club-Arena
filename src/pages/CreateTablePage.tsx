@@ -9,7 +9,6 @@
  * - OMAHA (Pot Limit Omaha)
  * - FLO (Fixed Limit Omaha)
  * - MIXED GAME (Hold'em/Omaha)
- * - OFC (Open Face Chinese Poker)
  */
 
 import { useState, useEffect } from 'react';
@@ -89,22 +88,6 @@ const GAME_TYPES: GameType[] = [
     name: '6+',
     subtitle: "SHORT DECK HOLD'EM",
     gradient: 'linear-gradient(135deg, #0866FF 0%, #0557d6 50%, #0449b0 100%)',
-    icon: '♦',
-    unlockLevel: 1,
-  },
-  {
-    id: 'ofc',
-    name: 'OFC',
-    subtitle: 'OPEN FACE CHINESE',
-    gradient: 'linear-gradient(135deg, #5a9cf6 0%, #4285f4 50%, #3674d9 100%)',
-    icon: '♣',
-    unlockLevel: 1,
-  },
-  {
-    id: 'ofc_pineapple',
-    name: 'OFCP',
-    subtitle: 'OFC PINEAPPLE',
-    gradient: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 50%, #6d28d9 100%)',
     icon: '♦',
     unlockLevel: 1,
   },

@@ -80,13 +80,20 @@
 }
 
 @keyframes adminFadeIn {
-  from {
+  0% {
     opacity: 0;
     transform: translateY(4px);
+    filter: blur(2px) brightness(0.5) saturate(0.3);
   }
-  to {
+  55% {
+    opacity: 0.95;
+    transform: translateY(-0.5px);
+    filter: blur(0) brightness(1.06) saturate(1.08);
+  }
+  100% {
     opacity: 1;
     transform: translateY(0);
+    filter: blur(0) brightness(1) saturate(1);
   }
 }
 
@@ -384,9 +391,21 @@
 @keyframes adminShimmer {
   0% {
     background-position: -200% 0;
+    filter: brightness(1) saturate(1);
+  }
+  40% {
+    filter: brightness(1.06) saturate(1.08);
+  }
+  50% {
+    background-position: 0% 0;
+    filter: brightness(1.1) saturate(1.12);
+  }
+  60% {
+    filter: brightness(1.06) saturate(1.08);
   }
   100% {
     background-position: 200% 0;
+    filter: brightness(1) saturate(1);
   }
 }
 

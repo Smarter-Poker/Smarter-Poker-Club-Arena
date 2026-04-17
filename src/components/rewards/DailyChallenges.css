@@ -125,14 +125,10 @@
 }
 
 @keyframes claimPulse {
-  0%,
-  100% {
-    box-shadow: 0 0 10px rgba(74, 222, 128, 0.3);
-  }
-
-  50% {
-    box-shadow: 0 0 20px rgba(74, 222, 128, 0.6);
-  }
+  0%, 100% { box-shadow: 0 0 10px rgba(74, 222, 128, 0.3); filter: brightness(1) saturate(1); }
+  25% { filter: brightness(1.08) saturate(1.12); }
+  50% { box-shadow: 0 0 20px rgba(74, 222, 128, 0.6); filter: brightness(1.18) saturate(1.28); }
+  75% { filter: brightness(1.08) saturate(1.12); }
 }
 
 .claim-btn:hover {

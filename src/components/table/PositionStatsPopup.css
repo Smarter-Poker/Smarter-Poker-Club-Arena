@@ -23,13 +23,24 @@
 }
 
 @keyframes psp-slide-in {
-  from {
+  0% {
     opacity: 0;
     transform: translateY(-8px) scale(0.96);
+    filter: blur(3px) brightness(0.4) saturate(0.2);
   }
-  to {
+  50% {
+    opacity: 0.95;
+    transform: translateY(1px) scale(1.01);
+    filter: blur(0) brightness(1.08) saturate(1.12);
+  }
+  75% {
+    transform: translateY(-0.3px) scale(1.002);
+    filter: blur(0) brightness(1.03) saturate(1.04);
+  }
+  100% {
     opacity: 1;
     transform: translateY(0) scale(1);
+    filter: blur(0) brightness(1) saturate(1);
   }
 }
 
@@ -161,9 +172,14 @@
 @keyframes psp-shimmer {
   0% {
     background-position: 200% 0;
+    filter: brightness(0.95) saturate(0.9);
+  }
+  50% {
+    filter: brightness(1.08) saturate(1.1);
   }
   100% {
     background-position: -200% 0;
+    filter: brightness(0.95) saturate(0.9);
   }
 }
 
@@ -189,13 +205,24 @@
   }
 
   @keyframes psp-slide-in {
-    from {
+    0% {
       opacity: 0;
       transform: translate(-50%, -50%) scale(0.96);
+      filter: blur(3px) brightness(0.4) saturate(0.2);
     }
-    to {
+    50% {
+      opacity: 0.95;
+      transform: translate(-50%, -50%) scale(1.01);
+      filter: blur(0) brightness(1.08) saturate(1.12);
+    }
+    75% {
+      transform: translate(-50%, -50%) scale(1.002);
+      filter: blur(0) brightness(1.03) saturate(1.04);
+    }
+    100% {
       opacity: 1;
       transform: translate(-50%, -50%) scale(1);
+      filter: blur(0) brightness(1) saturate(1);
     }
   }
 

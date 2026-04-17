@@ -11,14 +11,20 @@
 }
 
 @keyframes alertIn {
-    from {
+    0% {
         opacity: 0;
         transform: translateY(-8px);
+        filter: blur(1px) brightness(0.5) saturate(0.3);
     }
-
-    to {
+    60% {
+        opacity: 0.95;
+        transform: translateY(1px);
+        filter: blur(0) brightness(1.06) saturate(1.08);
+    }
+    100% {
         opacity: 1;
         transform: translateY(0);
+        filter: blur(0) brightness(1) saturate(1);
     }
 }
 

@@ -35,13 +35,24 @@
 }
 
 @keyframes podiumSlideUp {
-  from {
+  0% {
     transform: translateY(30px);
     opacity: 0;
+    filter: blur(2px) brightness(0.3) saturate(0.2);
   }
-  to {
+  55% {
+    transform: translateY(-3px);
+    opacity: 0.95;
+    filter: blur(0) brightness(1.12) saturate(1.15);
+  }
+  80% {
+    transform: translateY(0.5px);
+    filter: blur(0) brightness(1.04) saturate(1.04);
+  }
+  100% {
     transform: translateY(0);
     opacity: 1;
+    filter: blur(0) brightness(1) saturate(1);
   }
 }
 
@@ -163,11 +174,21 @@
 }
 
 @keyframes pillarGrow {
-  from {
+  0% {
     transform: scaleY(0);
+    filter: brightness(0.5) saturate(0.3);
   }
-  to {
+  55% {
+    transform: scaleY(1.02);
+    filter: brightness(1.12) saturate(1.15);
+  }
+  80% {
+    transform: scaleY(0.998);
+    filter: brightness(1.04) saturate(1.04);
+  }
+  100% {
     transform: scaleY(1);
+    filter: brightness(1) saturate(1);
   }
 }
 
@@ -190,9 +211,17 @@
   0%,
   100% {
     background-position: 200% 0;
+    filter: brightness(1) saturate(1);
+  }
+  25% {
+    filter: brightness(1.1) saturate(1.15);
   }
   50% {
     background-position: -100% 0;
+    filter: brightness(1.22) saturate(1.28);
+  }
+  75% {
+    filter: brightness(1.1) saturate(1.15);
   }
 }
 

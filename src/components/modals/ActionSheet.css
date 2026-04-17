@@ -16,12 +16,21 @@
 }
 
 @keyframes sheetIn {
-    from {
+    0% {
         transform: translateY(100%);
+        filter: blur(3px) brightness(0.4) saturate(0.2);
     }
-
-    to {
+    55% {
+        transform: translateY(-2%);
+        filter: blur(0) brightness(1.08) saturate(1.1);
+    }
+    80% {
+        transform: translateY(0.5%);
+        filter: blur(0) brightness(1.03) saturate(1.04);
+    }
+    100% {
         transform: translateY(0);
+        filter: blur(0) brightness(1) saturate(1);
     }
 }
 

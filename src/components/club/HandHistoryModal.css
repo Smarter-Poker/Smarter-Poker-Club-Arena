@@ -33,14 +33,20 @@
 }
 
 @keyframes fadeIn {
-    from {
+    0% {
         opacity: 0;
         transform: scale(0.98);
+        filter: blur(2px) brightness(0.4) saturate(0.2);
     }
-
-    to {
+    55% {
+        opacity: 0.95;
+        transform: scale(1.005);
+        filter: blur(0) brightness(1.06) saturate(1.08);
+    }
+    100% {
         opacity: 1;
         transform: scale(1);
+        filter: blur(0) brightness(1) saturate(1);
     }
 }
 

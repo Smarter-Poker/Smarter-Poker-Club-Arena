@@ -93,6 +93,8 @@
 }
 
 @keyframes badgePulse {
-    0%, 100% { box-shadow: 0 0 8px rgba(239, 68, 68, 0.4); }
-    50% { box-shadow: 0 0 14px rgba(239, 68, 68, 0.6); }
+    0%, 100% { box-shadow: 0 0 8px rgba(239, 68, 68, 0.4); filter: brightness(1) saturate(1); }
+    25% { filter: brightness(1.08) saturate(1.12); }
+    50% { box-shadow: 0 0 14px rgba(239, 68, 68, 0.6); filter: brightness(1.15) saturate(1.25); }
+    75% { filter: brightness(1.08) saturate(1.12); }
 }

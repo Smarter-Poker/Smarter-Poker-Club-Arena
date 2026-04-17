@@ -174,14 +174,20 @@
 }
 
 @keyframes timeBankPulse {
-
-    0%,
-    100% {
+    0%, 100% {
         opacity: 1;
+        box-shadow: 0 0 12px rgba(24, 119, 242, 0.2);
+        transform: scale(1);
     }
-
-    50% {
-        opacity: 0.6;
+    30% {
+        opacity: 0.85;
+        box-shadow: 0 0 18px rgba(24, 119, 242, 0.35);
+        transform: scale(1.02);
+    }
+    60% {
+        opacity: 0.65;
+        box-shadow: 0 0 8px rgba(24, 119, 242, 0.15);
+        transform: scale(0.99);
     }
 }
 
@@ -218,44 +224,77 @@
 }
 
 @keyframes fillPulse {
-
-    0%,
-    100% {
+    0%, 100% {
         opacity: 1;
-        box-shadow: 0 0 8px var(--progress-color);
+        box-shadow: 0 0 8px var(--progress-color), 0 0 2px var(--progress-color);
+        filter: brightness(1);
+        transform: scaleY(1);
     }
-
+    20% {
+        opacity: 0.92;
+        box-shadow: 0 0 14px var(--progress-color), 0 0 4px var(--progress-color);
+        filter: brightness(1.08);
+        transform: scaleY(1.15);
+    }
     50% {
         opacity: 0.7;
-        box-shadow: 0 0 20px var(--progress-color);
+        box-shadow: 0 0 22px var(--progress-color), 0 0 8px var(--progress-color), 0 0 40px color-mix(in srgb, var(--progress-color) 30%, transparent);
+        filter: brightness(1.15);
+        transform: scaleY(1.3);
+    }
+    75% {
+        opacity: 0.85;
+        box-shadow: 0 0 12px var(--progress-color), 0 0 3px var(--progress-color);
+        filter: brightness(1.04);
+        transform: scaleY(1.08);
     }
 }
 
 @keyframes circlePulse {
-
-    0%,
-    100% {
+    0%, 100% {
         stroke-width: 4;
-        filter: drop-shadow(0 0 4px var(--progress-color));
+        filter: drop-shadow(0 0 4px var(--progress-color)) drop-shadow(0 0 1px var(--progress-color));
+        opacity: 1;
     }
-
-    50% {
+    15% {
+        stroke-width: 4.5;
+        filter: drop-shadow(0 0 6px var(--progress-color)) drop-shadow(0 0 2px var(--progress-color));
+        opacity: 0.95;
+    }
+    45% {
         stroke-width: 6;
-        filter: drop-shadow(0 0 12px var(--progress-color));
+        filter: drop-shadow(0 0 14px var(--progress-color)) drop-shadow(0 0 6px var(--progress-color)) drop-shadow(0 0 28px color-mix(in srgb, var(--progress-color) 25%, transparent));
+        opacity: 0.8;
+    }
+    70% {
+        stroke-width: 4.8;
+        filter: drop-shadow(0 0 8px var(--progress-color)) drop-shadow(0 0 2px var(--progress-color));
+        opacity: 0.9;
     }
 }
 
 @keyframes textPulse {
-
-    0%,
-    100% {
+    0%, 100% {
         opacity: 1;
         transform: translate(-50%, -50%) scale(1);
+        text-shadow: 0 0 4px rgba(255, 255, 255, 0.2);
+        filter: brightness(1);
     }
-
+    20% {
+        opacity: 0.92;
+        transform: translate(-50%, -50%) scale(1.04);
+        filter: brightness(1.1);
+    }
     50% {
-        opacity: 0.8;
-        transform: translate(-50%, -50%) scale(1.1);
+        opacity: 0.75;
+        transform: translate(-50%, -50%) scale(1.12);
+        text-shadow: 0 0 12px rgba(255, 255, 255, 0.5), 0 0 24px var(--progress-color, rgba(255, 255, 255, 0.15));
+        filter: brightness(1.2);
+    }
+    75% {
+        opacity: 0.88;
+        transform: translate(-50%, -50%) scale(1.02);
+        filter: brightness(1.05);
     }
 }
 
@@ -305,23 +344,103 @@
 .timer-bar--yellow .timer-bar__fill { background: linear-gradient(90deg, #eab308, #ca8a04); }
 .timer-bar--red .timer-bar__fill { background: linear-gradient(90deg, #ef4444, #dc2626); }
 
-/* Rapid pulse at <10% */
+/* Rapid pulse at <10% — dramatic urgency */
 .timer-bar--critical {
     animation: timerCriticalPulse 0.4s ease-in-out infinite;
 }
 
 @keyframes timerCriticalPulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.6; }
+    0%, 100% {
+        opacity: 1;
+        filter: brightness(1) saturate(1);
+        transform: scale(1);
+        box-shadow: 0 0 6px rgba(248, 81, 73, 0.3);
+    }
+    15% {
+        opacity: 0.88;
+        filter: brightness(1.25) saturate(1.4);
+        transform: scale(1.02);
+    }
+    40% {
+        opacity: 0.55;
+        filter: brightness(0.85) saturate(1.8);
+        transform: scale(0.985);
+        box-shadow: 0 0 18px rgba(248, 81, 73, 0.6), 0 0 40px rgba(248, 81, 73, 0.2);
+    }
+    65% {
+        opacity: 0.92;
+        filter: brightness(1.15) saturate(1.2);
+        transform: scale(1.01);
+    }
+    85% {
+        opacity: 0.7;
+        filter: brightness(0.95) saturate(1.5);
+        transform: scale(0.995);
+        box-shadow: 0 0 12px rgba(248, 81, 73, 0.45);
+    }
 }
 
-/* Time bank flash */
+/* Time bank flash — impact burst when time bank activates */
 .timer-bar--timebank-flash {
-    animation: timebankFlash 0.5s ease-out;
+    animation: timebankFlash 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
 @keyframes timebankFlash {
-    0% { filter: brightness(1); }
-    30% { filter: brightness(2); }
-    100% { filter: brightness(1); }
+    0% {
+        filter: brightness(1);
+        transform: scale(1);
+        box-shadow: 0 0 0 rgba(24, 119, 242, 0);
+    }
+    12% {
+        filter: brightness(2.2) saturate(1.5);
+        transform: scale(1.06);
+        box-shadow: 0 0 30px rgba(24, 119, 242, 0.7), 0 0 60px rgba(24, 119, 242, 0.3);
+    }
+    30% {
+        filter: brightness(1.8) saturate(1.3);
+        transform: scale(0.98);
+        box-shadow: 0 0 20px rgba(24, 119, 242, 0.5), 0 0 40px rgba(24, 119, 242, 0.15);
+    }
+    55% {
+        filter: brightness(1.3);
+        transform: scale(1.015);
+        box-shadow: 0 0 10px rgba(24, 119, 242, 0.25);
+    }
+    100% {
+        filter: brightness(1);
+        transform: scale(1);
+        box-shadow: 0 0 0 rgba(24, 119, 242, 0);
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   ACCESSIBILITY — Reduced Motion
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+@media (prefers-reduced-motion: reduce) {
+    .timer-bar__fill {
+        transition: width 0.3s linear;
+    }
+
+    .timer-bar__circle-progress {
+        transition: stroke-dashoffset 0.3s linear;
+    }
+
+    .timer-bar--pulsing .timer-bar__fill,
+    .timer-bar--pulsing .timer-bar__circle-progress,
+    .timer-bar--pulsing .timer-bar__time,
+    .timer-bar--critical,
+    .timer-bar--timebank-flash,
+    .timer-bar__time-bank--active {
+        animation: none;
+    }
+
+    .timer-bar--critical {
+        opacity: 0.85;
+    }
+
+    .timer-bar__time-bank--active {
+        opacity: 1;
+        box-shadow: 0 0 12px rgba(24, 119, 242, 0.3);
+    }
 }

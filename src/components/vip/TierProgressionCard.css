@@ -15,13 +15,24 @@
 }
 
 @keyframes slideUp {
-  from {
+  0% {
     opacity: 0;
     transform: translateY(24px);
+    filter: blur(3px) brightness(0.3) saturate(0.2);
   }
-  to {
+  55% {
+    opacity: 0.95;
+    transform: translateY(-2px);
+    filter: blur(0) brightness(1.1) saturate(1.12);
+  }
+  80% {
+    transform: translateY(0.5px);
+    filter: blur(0) brightness(1.04) saturate(1.04);
+  }
+  100% {
     opacity: 1;
     transform: translateY(0);
+    filter: blur(0) brightness(1) saturate(1);
   }
 }
 
@@ -75,10 +86,18 @@
   0%, 100% {
     transform: scale(1);
     opacity: 1;
+    filter: brightness(1) saturate(1);
+  }
+  25% {
+    filter: brightness(1.08) saturate(1.12);
   }
   50% {
     transform: scale(1.05);
     opacity: 0.9;
+    filter: brightness(1.18) saturate(1.25);
+  }
+  75% {
+    filter: brightness(1.08) saturate(1.12);
   }
 }
 
@@ -304,9 +323,17 @@
 @keyframes bounce {
   0%, 100% {
     transform: translateY(0);
+    filter: brightness(1) saturate(1);
+  }
+  25% {
+    filter: brightness(1.08) saturate(1.12);
   }
   50% {
     transform: translateY(-4px);
+    filter: brightness(1.18) saturate(1.25);
+  }
+  75% {
+    filter: brightness(1.08) saturate(1.12);
   }
 }
 

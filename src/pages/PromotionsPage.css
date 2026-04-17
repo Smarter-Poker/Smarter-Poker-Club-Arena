@@ -356,9 +356,21 @@
 @keyframes promoSkelShimmer {
   0% {
     transform: translateX(-100%);
+    filter: brightness(1) saturate(1);
+  }
+  40% {
+    filter: brightness(1.08) saturate(1.1);
+  }
+  50% {
+    transform: translateX(0%);
+    filter: brightness(1.15) saturate(1.2);
+  }
+  60% {
+    filter: brightness(1.08) saturate(1.1);
   }
   100% {
     transform: translateX(100%);
+    filter: brightness(1) saturate(1);
   }
 }
 
@@ -411,9 +423,17 @@
   0%,
   100% {
     opacity: 1;
+    filter: brightness(1) saturate(1);
+  }
+  25% {
+    filter: brightness(1.08) saturate(1.12);
   }
   50% {
     opacity: 0.6;
+    filter: brightness(1.15) saturate(1.25);
+  }
+  75% {
+    filter: brightness(1.06) saturate(1.1);
   }
 }
 
@@ -444,10 +464,19 @@
 
 @keyframes bannerBorderShimmer {
   0% {
-    filter: hue-rotate(0deg);
+    filter: hue-rotate(0deg) brightness(1) saturate(1);
+  }
+  25% {
+    filter: hue-rotate(90deg) brightness(1.08) saturate(1.15);
+  }
+  50% {
+    filter: hue-rotate(180deg) brightness(1.12) saturate(1.2);
+  }
+  75% {
+    filter: hue-rotate(270deg) brightness(1.06) saturate(1.1);
   }
   100% {
-    filter: hue-rotate(360deg);
+    filter: hue-rotate(360deg) brightness(1) saturate(1);
   }
 }
 

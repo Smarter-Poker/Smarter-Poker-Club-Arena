@@ -52,8 +52,16 @@
   0%,
   100% {
     box-shadow: 0 0 0 0 var(--sb-border);
+    filter: brightness(1) saturate(1);
+  }
+  25% {
+    filter: brightness(1.06) saturate(1.1);
   }
   50% {
     box-shadow: 0 0 12px 2px var(--sb-border);
+    filter: brightness(1.12) saturate(1.2);
+  }
+  75% {
+    filter: brightness(1.06) saturate(1.1);
   }
 }

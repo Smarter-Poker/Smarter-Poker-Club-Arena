@@ -28,13 +28,24 @@
 }
 
 @keyframes slideIn {
-    from {
+    0% {
         opacity: 0;
         transform: translateY(-20px) scale(0.95);
+        filter: blur(3px) brightness(0.3) saturate(0.2);
     }
-    to {
+    55% {
+        opacity: 0.95;
+        transform: translateY(2px) scale(1.01);
+        filter: blur(0) brightness(1.1) saturate(1.12);
+    }
+    80% {
+        transform: translateY(-0.5px) scale(1);
+        filter: blur(0) brightness(1.04) saturate(1.04);
+    }
+    100% {
         opacity: 1;
         transform: translateY(0) scale(1);
+        filter: blur(0) brightness(1) saturate(1);
     }
 }
 
@@ -145,13 +156,20 @@
 }
 
 @keyframes suggestFade {
-    from {
+    0% {
         opacity: 0;
         transform: translateY(-4px);
+        filter: blur(1px) brightness(0.5) saturate(0.3);
     }
-    to {
+    60% {
+        opacity: 0.95;
+        transform: translateY(0.5px);
+        filter: blur(0) brightness(1.06) saturate(1.08);
+    }
+    100% {
         opacity: 1;
         transform: translateY(0);
+        filter: blur(0) brightness(1) saturate(1);
     }
 }
 
@@ -382,8 +400,10 @@
 }
 
 @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
+    0% { opacity: 0; transform: translateY(10px); filter: blur(2px) brightness(0.4) saturate(0.2); }
+    50% { opacity: 0.92; transform: translateY(-1px); filter: blur(0) brightness(1.08) saturate(1.1); }
+    75% { transform: translateY(0.3px); filter: blur(0) brightness(1.03) saturate(1.04); }
+    100% { opacity: 1; transform: translateY(0); filter: blur(0) brightness(1) saturate(1); }
 }
 
 .playerHeader {

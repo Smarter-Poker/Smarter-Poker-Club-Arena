@@ -141,11 +141,15 @@
 }
 
 @keyframes progressFill {
-    from {
+    0% {
         width: 0;
+        filter: brightness(1) saturate(1);
     }
-
-    to {
+    50% {
+        filter: brightness(1.1) saturate(1.15);
+    }
+    100% {
         width: 100%;
+        filter: brightness(1) saturate(1);
     }
 }

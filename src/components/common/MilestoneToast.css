@@ -90,30 +90,53 @@
   0% {
     opacity: 0;
     transform: translateX(100%) scale(0.8);
+    filter: blur(3px) brightness(0.3) saturate(0.2);
+  }
+  55% {
+    opacity: 0.95;
+    transform: translateX(-2%) scale(1.02);
+    filter: blur(0) brightness(1.12) saturate(1.15);
+  }
+  80% {
+    transform: translateX(0.5%) scale(0.998);
+    filter: blur(0) brightness(1.04) saturate(1.04);
   }
   100% {
     opacity: 1;
     transform: translateX(0) scale(1);
+    filter: blur(0) brightness(1) saturate(1);
   }
 }
 
 @keyframes milestoneIconPop {
   0% {
     transform: scale(0);
+    filter: blur(2px) brightness(0.3) saturate(0.2);
   }
   60% {
     transform: scale(1.3);
+    filter: blur(0) brightness(1.2) saturate(1.25);
+  }
+  80% {
+    transform: scale(0.95);
+    filter: blur(0) brightness(1.06) saturate(1.06);
   }
   100% {
     transform: scale(1);
+    filter: blur(0) brightness(1) saturate(1);
   }
 }
 
 @keyframes milestoneProgress {
   0% {
     width: 100%;
+    filter: brightness(1) saturate(1);
+  }
+  50% {
+    filter: brightness(1.15) saturate(1.2);
   }
   100% {
     width: 0%;
+    filter: brightness(0.8) saturate(0.6);
   }
 }

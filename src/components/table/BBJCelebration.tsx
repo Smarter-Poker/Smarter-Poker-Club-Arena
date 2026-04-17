@@ -55,13 +55,13 @@ interface Particle {
 // CONSTANTS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const CELEBRATION_DURATION = 10000; // 10 seconds total
-const FADE_START = 8000; // Start fading at 8s
-const PARTICLE_COUNT = 300;
-const FIREWORK_ROUNDS = 5;
+const CELEBRATION_DURATION = 12000; // 12 seconds total
+const FADE_START = 10000; // Start fading at 10s
+const PARTICLE_COUNT = 500;
+const FIREWORK_ROUNDS = 8;
 
-const GOLD_COLORS = ['#FFD700', '#FFA500', '#FFEC8B', '#DAA520', '#F5DEB3', '#FFE4B5'];
-const DIAMOND_COLORS = ['#B9F2FF', '#E0FFFF', '#87CEEB', '#ADD8E6', '#F0F8FF', '#FFFFFF'];
+const GOLD_COLORS = ['#FFD700', '#FFA500', '#FFEC8B', '#DAA520', '#F5DEB3', '#FFE4B5', '#FFB347', '#FFCC00'];
+const DIAMOND_COLORS = ['#B9F2FF', '#E0FFFF', '#87CEEB', '#ADD8E6', '#F0F8FF', '#FFFFFF', '#C0E8FF', '#98D8FF'];
 const CONFETTI_COLORS = [
   '#FF6B6B',
   '#4ECDC4',
@@ -71,6 +71,10 @@ const CONFETTI_COLORS = [
   '#DDA0DD',
   '#98D8C8',
   '#F7DC6F',
+  '#FF9FF3',
+  '#54A0FF',
+  '#5F27CD',
+  '#01A3A4',
 ];
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -193,35 +197,53 @@ export function BBJCelebration({
     resize();
     window.addEventListener('resize', resize);
 
-    // Initial explosion
+    // Initial massive explosion — multi-burst for dramatic impact
     const cx = canvas.width / 2;
     const cy = canvas.height / 2;
     spawnExplosion(cx, cy, PARTICLE_COUNT, 'chip');
-    spawnExplosion(cx, cy, 100, 'spark');
+    spawnExplosion(cx, cy, 150, 'spark');
 
-    // Delayed firework rounds
-    const fireworkTimers: ReturnType<typeof setTimeout>[] = [];
+    // Secondary burst after 200ms for staggered impact feel
+    const secondaryBurst = setTimeout(() => {
+      spawnExplosion(cx, cy, 200, 'chip');
+      spawnExplosion(cx, cy, 80, 'spark');
+    }, 200);
+
+    // Tertiary radial burst at 600ms
+    const tertiaryBurst = setTimeout(() => {
+      const radius = Math.min(canvas.width, canvas.height) * 0.3;
+      for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 4) {
+        const bx = cx + Math.cos(angle) * radius;
+        const by = cy + Math.sin(angle) * radius;
+        spawnExplosion(bx, by, 30, 'spark');
+      }
+    }, 600);
+
+    // Delayed firework rounds — more frequent and varied
+    const fireworkTimers: ReturnType<typeof setTimeout>[] = [secondaryBurst, tertiaryBurst];
     for (let r = 0; r < FIREWORK_ROUNDS; r++) {
       fireworkTimers.push(
         setTimeout(
           () => {
-            const fx = 100 + Math.random() * (canvas.width - 200);
-            const fy = 100 + Math.random() * (canvas.height * 0.5);
-            spawnExplosion(fx, fy, 60, 'firework');
+            const fx = 80 + Math.random() * (canvas.width - 160);
+            const fy = 80 + Math.random() * (canvas.height * 0.5);
+            spawnExplosion(fx, fy, 80, 'firework');
+            // Small secondary burst at firework location
+            setTimeout(() => spawnExplosion(fx, fy, 30, 'spark'), 150);
           },
-          1000 + r * 1200
+          800 + r * 900
         )
       );
     }
 
-    // Continuous confetti rain
+    // Continuous confetti rain — heavier
     const confettiInterval = setInterval(() => {
       const elapsed = Date.now() - startTimeRef.current;
       if (elapsed > FADE_START) return;
-      for (let i = 0; i < 5; i++) {
+      for (let i = 0; i < 8; i++) {
         spawnExplosion(Math.random() * canvas.width, -20, 1, 'confetti');
       }
-    }, 100);
+    }, 80);
 
     // Render loop
     const render = () => {
@@ -249,32 +271,69 @@ export function BBJCelebration({
         ctx.rotate(p.rotation);
 
         if (p.type === 'chip') {
-          // Gold chip with dollar sign
+          // Premium gold chip with 3D-style rendering
+          // Outer glow
+          ctx.shadowColor = p.color;
+          ctx.shadowBlur = 8;
+          // Main chip body
           ctx.beginPath();
           ctx.arc(0, 0, p.size, 0, Math.PI * 2);
-          ctx.fillStyle = p.color;
+          const chipGrad = ctx.createRadialGradient(
+            -p.size * 0.2, -p.size * 0.2, 0,
+            0, 0, p.size
+          );
+          chipGrad.addColorStop(0, '#FFFACD');
+          chipGrad.addColorStop(0.4, p.color);
+          chipGrad.addColorStop(1, '#B8860B');
+          ctx.fillStyle = chipGrad;
           ctx.fill();
-          ctx.strokeStyle = '#B8860B';
+          ctx.strokeStyle = '#8B6914';
           ctx.lineWidth = 1.5;
           ctx.stroke();
+          ctx.shadowBlur = 0;
+          // Inner dashed ring
+          ctx.beginPath();
+          ctx.arc(0, 0, p.size * 0.65, 0, Math.PI * 2);
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+          ctx.lineWidth = 0.5;
+          ctx.setLineDash([2, 2]);
+          ctx.stroke();
+          ctx.setLineDash([]);
           // Dollar sign
-          ctx.fillStyle = '#8B6914';
-          ctx.font = `bold ${p.size}px sans-serif`;
+          ctx.fillStyle = '#654321';
+          ctx.font = `bold ${p.size * 0.9}px sans-serif`;
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.fillText('$', 0, 0);
+          ctx.fillText('$', 0, 1);
         } else if (p.type === 'spark') {
-          // Glowing spark
+          // Premium glowing spark with halo
           ctx.shadowColor = p.color;
-          ctx.shadowBlur = 12;
+          ctx.shadowBlur = 16;
+          // Outer halo
+          ctx.beginPath();
+          ctx.arc(0, 0, p.size * 2, 0, Math.PI * 2);
+          ctx.fillStyle = p.color.replace(')', ', 0.15)').replace('rgb(', 'rgba(').replace('#', '');
+          const haloGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, p.size * 2);
+          haloGrad.addColorStop(0, p.color + '40');
+          haloGrad.addColorStop(1, p.color + '00');
+          ctx.fillStyle = haloGrad;
+          ctx.fill();
+          // Core spark
           ctx.beginPath();
           ctx.arc(0, 0, p.size, 0, Math.PI * 2);
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fill();
+          ctx.beginPath();
+          ctx.arc(0, 0, p.size * 0.6, 0, Math.PI * 2);
           ctx.fillStyle = p.color;
           ctx.fill();
         } else if (p.type === 'confetti') {
-          // Rectangular confetti
+          // Premium confetti with shine highlight
           ctx.fillStyle = p.color;
           ctx.fillRect(-p.size / 2, -p.size / 4, p.size, p.size / 2);
+          // Highlight stripe
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+          ctx.fillRect(-p.size / 2, -p.size / 4, p.size * 0.3, p.size / 2);
         } else if (p.type === 'firework') {
           // Firework trail with glow
           ctx.shadowColor = p.color;
@@ -388,6 +447,11 @@ export function BBJCelebration({
         {/* Chips added to balance message */}
         <div className={`bbj-chips-message ${phase === 'breakdown' ? 'bbj-chips-visible' : ''}`}>
           Chips added directly to your table balance!
+        </div>
+
+        {/* Tap to dismiss */}
+        <div className={`bbj-dismiss ${phase === 'breakdown' || phase === 'fadeout' ? 'bbj-dismiss-visible' : ''}`}>
+          Tap anywhere to dismiss
         </div>
       </div>
     </div>

@@ -38,14 +38,25 @@
 }
 
 @keyframes popIn {
-    from {
+    0% {
         opacity: 0;
         transform: translateX(-50%) scale(0.85) translateY(10px);
+        filter: blur(3px) brightness(0.4) saturate(0.3);
     }
-
-    to {
+    45% {
+        opacity: 0.9;
+        transform: translateX(-50%) scale(1.04) translateY(-2px);
+        filter: blur(0) brightness(1.12) saturate(1.2);
+    }
+    70% {
+        opacity: 1;
+        transform: translateX(-50%) scale(0.99) translateY(0.5px);
+        filter: blur(0) brightness(1.04) saturate(1.06);
+    }
+    100% {
         opacity: 1;
         transform: translateX(-50%) scale(1) translateY(0);
+        filter: blur(0) brightness(1) saturate(1);
     }
 }
 
@@ -109,13 +120,25 @@
 }
 
 @keyframes emoteStaggerIn {
-    from {
+    0% {
         opacity: 0;
         transform: scale(0.6) translateY(10px);
+        filter: blur(2px) brightness(0.5) saturate(0.3);
     }
-    to {
+    45% {
+        opacity: 0.85;
+        transform: scale(1.08) translateY(-2px);
+        filter: blur(0) brightness(1.15) saturate(1.25);
+    }
+    70% {
+        opacity: 1;
+        transform: scale(0.97) translateY(0.5px);
+        filter: blur(0) brightness(1.05) saturate(1.08);
+    }
+    100% {
         opacity: 1;
         transform: scale(1) translateY(0);
+        filter: blur(0) brightness(1) saturate(1);
     }
 }
 
@@ -142,12 +165,23 @@
 @keyframes emoteClickPop {
     0% {
         transform: scale(1);
+        filter: brightness(1) saturate(1);
     }
-    50% {
-        transform: scale(1.4);
+    30% {
+        transform: scale(1.45);
+        filter: brightness(1.2) saturate(1.4);
+    }
+    55% {
+        transform: scale(0.92);
+        filter: brightness(1.08) saturate(1.15);
+    }
+    75% {
+        transform: scale(1.05);
+        filter: brightness(1.03) saturate(1.05);
     }
     100% {
         transform: scale(1);
+        filter: brightness(1) saturate(1);
     }
 }
 

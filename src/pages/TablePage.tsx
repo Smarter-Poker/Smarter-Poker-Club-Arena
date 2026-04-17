@@ -3935,7 +3935,7 @@ export default function TablePage({
           // Bible V8 §5.4: medium haptic when it's hero's turn
           const heroSeat = tableStateRef.current.heroSeat;
           if (newSeat === heroSeat) {
-            haptic.medium();
+            import('../services/HapticService').then(({ haptic }) => haptic.medium());
             // Bible V8 §5.3: turn alert sound for hero
             if (soundService.isEnabled()) soundService.playTurnAlert();
           }
@@ -4094,7 +4094,7 @@ export default function TablePage({
             (p) => p && winnerIds.includes(p.id)
           );
           if (firstWinnerIdx >= 0) {
-            const seatPct = seatPositions[firstWinnerIdx] || { x: 50, y: 50 };
+            const seatPct = seatPositions[firstWinnerIdx + 1] || { x: 50, y: 50 };
             setWinnerParticle({
               active: true,
               origin: {
@@ -4127,7 +4127,7 @@ export default function TablePage({
         if (winnerIds.length > 0 && winnerIds.includes(userId)) {
           playWinSound(potAmount);
           // Bible V8 §5.4: heavy celebration haptic on hero win
-          haptic.strong(); // Bible V8 §5.4: heavy celebration haptic on hero win
+          import('../services/HapticService').then(({ haptic }) => haptic.heavy());
         }
         if (winnerIds.length > 0 && potAmount > 0) {
           // Pot center in screen px (mirrors the constant 50,45 used by
@@ -4144,7 +4144,7 @@ export default function TablePage({
             // SeatPlayer.id is the userId — players[] index = seatNumber - 1.
             const seatIdx = tableStateRef.current.players.findIndex((p) => p?.id === wid);
             if (seatIdx < 0) continue;
-            const seatPct = seatPositions[seatIdx] || { x: 50, y: 50 };
+            const seatPct = seatPositions[seatIdx + 1] || { x: 50, y: 50 };
             const winnerPos = {
               x: (seatPct.x / 100) * window.innerWidth,
               y: (seatPct.y / 100) * window.innerHeight,

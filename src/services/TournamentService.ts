@@ -360,7 +360,7 @@ export const PAYOUT_STRUCTURES = {
 //
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const SPIN_RAKE_PERCENT = 0.1; // 10% fee on buy-in
+export const SPIN_RAKE_PERCENT = 0.10; // 10% fee on buy-in
 
 // Pool contribution per spin: 1 buy-in saved from the 3 collected.
 // EVERY spin deposits 1× buy_in to pool, then bonus draws happen.
@@ -393,33 +393,33 @@ export const SPIN_BONUS_TIERS = {
     // ~5.71% of spins: medium bonus (5× payout, 1× deposited, 3× drawn)
     { displayMultiplier: 5, probability: 5.7143, bonusBuyIns: 3 },
     // ~2.38% of spins: large bonus (10× payout, 1× deposited, 8× drawn)
-    { displayMultiplier: 10, probability: 2.381, bonusBuyIns: 8 },
+    { displayMultiplier: 10, probability: 2.3810, bonusBuyIns: 8 },
     // ~0.95% of spins: big bonus (25× payout, 1× deposited, 23× drawn)
     { displayMultiplier: 25, probability: 0.9524, bonusBuyIns: 23 },
     // ~0.38% of spins: jackpot (50× payout, 1× deposited, 48× drawn)
-    { displayMultiplier: 50, probability: 0.381, bonusBuyIns: 48, isPremium: true },
+    { displayMultiplier: 50, probability: 0.3810, bonusBuyIns: 48, isPremium: true },
     // ~0.10% of spins: mega jackpot (100× payout, 1× deposited, 98× drawn)
     { displayMultiplier: 100, probability: 0.0952, bonusBuyIns: 98, isPremium: true },
   ],
   hyper: [
-    { displayMultiplier: 2, probability: 79.562, bonusBuyIns: 0 },
+    { displayMultiplier: 2, probability: 79.5620, bonusBuyIns: 0 },
     { displayMultiplier: 3, probability: 11.6788, bonusBuyIns: 1 },
     { displayMultiplier: 5, probability: 5.1095, bonusBuyIns: 3 },
     { displayMultiplier: 10, probability: 2.1898, bonusBuyIns: 8 },
     { displayMultiplier: 25, probability: 0.8759, bonusBuyIns: 23 },
-    { displayMultiplier: 50, probability: 0.438, bonusBuyIns: 48, isPremium: true },
-    { displayMultiplier: 100, probability: 0.146, bonusBuyIns: 98, isPremium: true },
+    { displayMultiplier: 50, probability: 0.4380, bonusBuyIns: 48, isPremium: true },
+    { displayMultiplier: 100, probability: 0.1460, bonusBuyIns: 98, isPremium: true },
   ],
 };
 
 // Legacy export — kept for backwards compat but now routes through pool system
 export const SPIN_MULTIPLIERS: Record<string, SpinMultiplier[]> = {
-  standard: SPIN_BONUS_TIERS.standard.map((t) => ({
+  standard: SPIN_BONUS_TIERS.standard.map(t => ({
     multiplier: t.displayMultiplier,
     probability: t.probability,
     isPremium: t.isPremium || false,
   })),
-  hyper: SPIN_BONUS_TIERS.hyper.map((t) => ({
+  hyper: SPIN_BONUS_TIERS.hyper.map(t => ({
     multiplier: t.displayMultiplier,
     probability: t.probability,
     isPremium: t.isPremium || false,
@@ -1076,12 +1076,7 @@ class TournamentService {
           while (takenSeats.has(seatNumber) && seatNumber <= openTable.max_players) seatNumber++;
           // Guard: no valid seat found (all seats taken despite current_players check)
           if (seatNumber > openTable.max_players) {
-            reportError(
-              new Error(
-                `[TournamentService] Late reg: no valid seat at table ${openTable.id} (race condition)`
-              ),
-              'TournamentService.Late_reg'
-            );
+            reportError(new Error(`[TournamentService] Late reg: no valid seat at table ${openTable.id} (race condition)`), 'TournamentService.Late_reg');
             throw new Error('Late registration failed: table is full. Please try again.');
           }
 
@@ -1093,10 +1088,7 @@ class TournamentService {
           });
 
           if (seatErr) {
-            reportError(
-              new Error(`[TournamentService] Late reg seat insert failed: ${seatErr.message}`),
-              'TournamentService.Late_reg_seat_insert_failed'
-            );
+            reportError(new Error(`[TournamentService] Late reg seat insert failed: ${seatErr.message}`), 'TournamentService.Late_reg_seat_insert_failed');
             console.debug(
               `[TournamentService] Player ${userId.slice(0, 8)} added to alternate list due to seat insert failure.`
             );
@@ -1115,10 +1107,7 @@ class TournamentService {
               .eq('user_id', userId);
 
             if (tpErr) {
-              reportError(
-                new Error(`[TournamentService] Late reg player update failed: ${tpErr.message}`),
-                'TournamentService.Late_reg_player_update_failed'
-              );
+              reportError(new Error(`[TournamentService] Late reg player update failed: ${tpErr.message}`), 'TournamentService.Late_reg_player_update_failed');
               // Attempt to clean up the seat we just inserted
               await supabase
                 .from('table_seats')
@@ -1139,18 +1128,10 @@ class TournamentService {
               .eq('id', openTable.id);
 
             if (tableErr)
-              reportError(
-                new Error(`[TournamentService] Late reg table count failed: ${tableErr.message}`),
-                'TournamentService.Late_reg_table_count_failed'
-              );
+              reportError(new Error(`[TournamentService] Late reg table count failed: ${tableErr.message}`), 'TournamentService.Late_reg_table_count_failed');
           }
         } else {
-          reportError(
-            new Error(
-              `[TournamentService] Late reg: no open table found for ${tournamentId.slice(0, 8)} — adding to alternate list`
-            ),
-            'TournamentService.Late_reg'
-          );
+          reportError(new Error(`[TournamentService] Late reg: no open table found for ${tournamentId.slice(0, 8)} — adding to alternate list`), 'TournamentService.Late_reg');
           // No table available — DO NOT refund. Player enters the alternate waitlist.
           // They remain 'registered' in tournament_players and TournamentEngine will seat them.
         }
@@ -1468,7 +1449,8 @@ class TournamentService {
         seat_number: tableAssign.nextSeat,
         user_id: player.user_id,
       });
-      if (seatErr) reportError(seatErr, 'TournamentService.Failed_to_seat_player_playeruser_id');
+      if (seatErr)
+        reportError(seatErr, 'TournamentService.Failed_to_seat_player_playeruser_id');
       tableAssign.nextSeat++;
     }
 
@@ -1525,12 +1507,7 @@ class TournamentService {
 
     // Guard: if position should pay but payout structure is empty/corrupted, log and award 0
     if (payoutArr.length === 0 && position === 1) {
-      reportError(
-        new Error(
-          `[TournamentService] CRITICAL: No payout structure for tournament ${tournamentId} — winner gets full pool fallback`
-        ),
-        'TournamentService.CRITICAL'
-      );
+      reportError(new Error(`[TournamentService] CRITICAL: No payout structure for tournament ${tournamentId} — winner gets full pool fallback`), 'TournamentService.CRITICAL');
     }
 
     const payoutEntry = payoutArr.find((p: any) => p.place === position);
@@ -2490,11 +2467,7 @@ class TournamentService {
    * The caller (TournamentEngine) is responsible for checking pool balance
    * and capping the actual bonus payout.
    */
-  spinMultiplier(config: SpinMultiplier[]): {
-    multiplier: number;
-    isPremium: boolean;
-    bonusBuyIns: number;
-  } {
+  spinMultiplier(config: SpinMultiplier[]): { multiplier: number; isPremium: boolean; bonusBuyIns: number } {
     const random = Math.random() * 100;
     let cumulative = 0;
 
@@ -2637,7 +2610,8 @@ class TournamentService {
         bounty_amount: collectorPortion,
         added_to_collector_bounty: addedToHead,
       });
-      if (bountyInsErr) reportError(bountyInsErr, 'TournamentService.Failed_to_record_PKO_bounty');
+      if (bountyInsErr)
+        reportError(bountyInsErr, 'TournamentService.Failed_to_record_PKO_bounty');
 
       // Credit bounty to collector's wallet
       if (collectorPortion > 0) {
@@ -2698,10 +2672,7 @@ class TournamentService {
         );
 
         if (bountyWalletError) {
-          reportError(
-            bountyWalletError,
-            'TournamentService.Failed_to_credit_mystery_bounty_to_walle'
-          );
+          reportError(bountyWalletError, 'TournamentService.Failed_to_credit_mystery_bounty_to_walle');
         } else {
           // Log bounty transaction
           await WalletService.logTransaction(
@@ -2738,7 +2709,8 @@ class TournamentService {
         collector_player_id: collectorPlayerId,
         bounty_amount: bountyAmount,
       });
-      if (fixedInsErr) reportError(fixedInsErr, 'TournamentService.Failed_to_record_fixed_bounty');
+      if (fixedInsErr)
+        reportError(fixedInsErr, 'TournamentService.Failed_to_record_fixed_bounty');
 
       // Credit bounty to collector's wallet
       if (bountyAmount > 0) {

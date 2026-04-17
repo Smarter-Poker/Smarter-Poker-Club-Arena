@@ -116,9 +116,7 @@ export function useUserThemeSettings(
     };
 
     load();
-    return () => {
-      mounted = false;
-    };
+    return () => { mounted = false; };
   }, [userId, gameVariant, isTournament, tournamentType]);
 
   return { theme, loading };

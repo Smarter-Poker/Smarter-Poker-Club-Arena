@@ -213,7 +213,9 @@ export default function BlacklistManagerPage() {
         entry.expires_at = new Date(newExpiry).toISOString();
       }
 
-      const { error: insertErr } = await supabase.from('blacklists').insert(entry);
+      const { error: insertErr } = await supabase
+        .from('blacklists')
+        .insert(entry);
 
       if (insertErr) throw insertErr;
 
@@ -235,7 +237,10 @@ export default function BlacklistManagerPage() {
     setRemoving(entryId);
     setError(null);
     try {
-      const { error: delErr } = await supabase.from('blacklists').delete().eq('id', entryId);
+      const { error: delErr } = await supabase
+        .from('blacklists')
+        .delete()
+        .eq('id', entryId);
 
       if (delErr) throw delErr;
       setEntries((prev) => prev.filter((e) => e.id !== entryId));

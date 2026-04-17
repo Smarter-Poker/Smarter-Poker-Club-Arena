@@ -5,10 +5,6 @@
  */
 
 export const ofcDealingOrchestrator = {
-  start(): void {
-    /* no-op */
-  },
-  stop(): void {
-    /* no-op */
-  },
+  start(): void { /* no-op */ },
+  stop(): void { /* no-op */ },
 };

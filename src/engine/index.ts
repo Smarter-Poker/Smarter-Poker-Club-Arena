@@ -47,22 +47,7 @@ export {
 // Horse Logic
 export { HorseLogic, type TablePosition } from './HorseLogic';
 
-// OFC Pineapple Engine
-export {
-  OFCPineappleEngine,
-  FRONT_ROYALTIES,
-  MIDDLE_ROYALTIES,
-  BACK_ROYALTIES,
-  type OFCCard,
-  type OFCHand,
-  type OFCPlayer,
-  type OFCGameState,
-  type OFCRow,
-  type OFCHandRank,
-} from './OFCPineappleEngine';
-
-// OFC Dealing Orchestrator
-export { ofcDealingOrchestrator } from './OFCDealingOrchestrator';
+// OFC removed — Open Face Chinese was removed from Club Arena
 
 // Disconnect Engine
 export {

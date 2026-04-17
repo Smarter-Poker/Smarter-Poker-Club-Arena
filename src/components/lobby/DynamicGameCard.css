@@ -254,19 +254,16 @@
 }
 
 /* Pineapple — Orange accent */
-.dgc--ofc_pineapple,
 .dgc--pineapple,
 .dgc--crazy_pineapple {
   background: linear-gradient(145deg, #2e261a 0%, #242526 35%, #242526 100%);
   border-color: rgba(220, 160, 40, 0.3);
 }
-.dgc--ofc_pineapple .dgc__variant-logo,
 .dgc--pineapple .dgc__variant-logo,
 .dgc--crazy_pineapple .dgc__variant-logo {
   color: #ffaa33;
   text-shadow: 0 0 12px rgba(255, 170, 51, 0.4);
 }
-.dgc--ofc_pineapple .dgc__glow,
 .dgc--pineapple .dgc__glow,
 .dgc--crazy_pineapple .dgc__glow {
   background: radial-gradient(ellipse at 50% 10%, rgba(255, 170, 50, 0.08) 0%, transparent 60%);

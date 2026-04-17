@@ -146,16 +146,6 @@ describe('BBJService', () => {
       expect(result.reason).toContain('PLO6');
     });
 
-    it('should NOT trigger for OFC variant', () => {
-      const result = BBJService.checkBBJTrigger(
-        makeHand(8, 'Four of a Kind') as any,
-        makeHand(9, 'Straight Flush') as any,
-        'ofc' as GameVariant
-      );
-      expect(result.triggered).toBe(false);
-      expect(result.reason).toContain('OFC');
-    });
-
     it('should NOT trigger when losing hand is below Quad 2s (ranking < 8)', () => {
       const result = BBJService.checkBBJTrigger(
         makeHand(7, 'Full House') as any,

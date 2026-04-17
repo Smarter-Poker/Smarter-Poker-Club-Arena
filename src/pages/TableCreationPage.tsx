@@ -18,16 +18,7 @@ const sectionAnimationStyle = (index: number) => ({
 });
 
 // FIX 116: 9 approved variants only
-type GameType =
-  | 'nlh'
-  | 'plo4'
-  | 'plo5'
-  | 'plo6'
-  | 'plo8'
-  | 'pineapple'
-  | 'short_deck'
-  | 'ofc'
-  | 'ofc_pineapple';
+type GameType = 'nlh' | 'plo4' | 'plo5' | 'plo6' | 'plo8' | 'pineapple' | 'short_deck';
 
 interface TableSettings {
   name: string;
@@ -162,8 +153,6 @@ export default function TableCreationPage() {
     { value: 'plo8', label: 'PLO Hi-Lo', icon: '♠' },
     { value: 'pineapple', label: 'Pineapple', icon: '♥' },
     { value: 'short_deck', label: 'Short Deck 6+', icon: '♦' },
-    { value: 'ofc', label: 'Open Face Chinese', icon: '♣' },
-    { value: 'ofc_pineapple', label: 'OFC Pineapple', icon: '♣' },
   ];
 
   const stakesPresets = [

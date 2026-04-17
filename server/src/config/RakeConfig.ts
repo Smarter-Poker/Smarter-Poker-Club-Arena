@@ -112,9 +112,9 @@ export const RAKE_SCHEDULE: RakeScheduleEntry[] = [
 // The engine finds the highest tier where playerCount >= players, then applies: cap × multiplier.
 export function getPlayerCountCaps(fullCap: number): { players: number; cap: number }[] {
   return [
-    { players: 2, cap: Math.round(fullCap * 0.5 * 100) / 100 },  // Heads-up: 50% of cap
-    { players: 3, cap: Math.round(fullCap * 0.67 * 100) / 100 },  // 3-handed: 67% of cap
-    { players: 4, cap: fullCap },                                    // 4+ players: full cap
+    { players: 2, cap: Math.round(fullCap * 0.5 * 100) / 100 }, // Heads-up: 50% of cap
+    { players: 3, cap: Math.round(fullCap * 0.67 * 100) / 100 }, // 3-handed: 67% of cap
+    { players: 4, cap: fullCap }, // 4+ players: full cap
   ];
 }
 
@@ -292,18 +292,6 @@ export const BBJ_QUALIFYING_HANDS: Record<string, BBJQualifyingHand> = {
     eligible: false,
   },
   pineapple: {
-    label: 'Pineapple',
-    minLosingHand: 'KKKK2',
-    description: 'Four of a Kind (Kings) or better must LOSE',
-    rules: [
-      'Must use exactly 2 cards from hand',
-      'Both players must use two cards from their hole cards',
-    ],
-    handRank: 'four_of_a_kind',
-    minRankValue: 'KKKK',
-  },
-  // Alias: ofc_pineapple maps to pineapple (same game, different variant key)
-  ofc_pineapple: {
     label: 'Pineapple',
     minLosingHand: 'KKKK2',
     description: 'Four of a Kind (Kings) or better must LOSE',

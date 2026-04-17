@@ -22,7 +22,6 @@ const VARIANTS: { value: GameVariant; label: string }[] = [
   { value: 'plo6', label: 'PLO 6-Card' },
   { value: 'plo8', label: 'PLO Hi/Lo (8-or-Better)' },
   { value: 'short_deck', label: 'Short Deck (6+)' },
-  { value: 'ofc', label: 'Open Face Chinese' },
 ];
 
 const STAKE_PRESETS = [

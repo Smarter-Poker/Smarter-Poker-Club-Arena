@@ -52,19 +52,23 @@ export const haptic = {
   },
   /** Light tap — button press */
   light() {
-    if (typeof navigator !== 'undefined' && 'vibrate' in navigator && this._isEnabled()) navigator.vibrate(8);
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator && this._isEnabled())
+      navigator.vibrate(8);
   },
   /** Medium pulse — your turn, win */
   medium() {
-    if (typeof navigator !== 'undefined' && 'vibrate' in navigator && this._isEnabled()) navigator.vibrate(40);
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator && this._isEnabled())
+      navigator.vibrate(40);
   },
   /** Strong pulse — all-in, timer urgent */
   strong() {
-    if (typeof navigator !== 'undefined' && 'vibrate' in navigator && this._isEnabled()) navigator.vibrate(80);
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator && this._isEnabled())
+      navigator.vibrate(80);
   },
   /** Double pulse — timer warning */
   double() {
-    if (typeof navigator !== 'undefined' && 'vibrate' in navigator && this._isEnabled()) navigator.vibrate([25, 40, 25]);
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator && this._isEnabled())
+      navigator.vibrate([25, 40, 25]);
   },
   /** Triple pulse — big win */
   triple() {
@@ -77,6 +81,50 @@ export const haptic = {
 // SOUND SERVICE
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// SOUND PRIORITY SYSTEM — Bible V8 5.14
+// ═══════════════════════════════════════════════════════════════════════════════
+// When multiple sounds fire within the same frame (e.g., all-in + fold),
+// only the highest-priority sound plays. Prevents audio cacophony.
+//
+// Priority stack (highest first):
+//   all_in > big_win > win > showdown > raise > bet > call > check > fold > deal > community_card > ui
+
+export type SoundPriority =
+  | 'all_in'
+  | 'big_win'
+  | 'win'
+  | 'showdown'
+  | 'raise'
+  | 'bet'
+  | 'call'
+  | 'check'
+  | 'fold'
+  | 'deal'
+  | 'community_card'
+  | 'timer_warning'
+  | 'time_bank'
+  | 'turn_alert'
+  | 'ui';
+
+const SOUND_PRIORITY_RANK: Record<SoundPriority, number> = {
+  all_in: 100,
+  big_win: 95,
+  win: 90,
+  showdown: 85,
+  raise: 70,
+  bet: 60,
+  call: 50,
+  check: 40,
+  fold: 30,
+  deal: 20,
+  community_card: 15,
+  timer_warning: 80, // Timer warnings are high-priority (affects gameplay)
+  time_bank: 75,
+  turn_alert: 72,
+  ui: 10,
+};
+
 class SoundService {
   private ctx: AudioContext | null = null;
   private enabled: boolean = true;
@@ -84,6 +132,10 @@ class SoundService {
   private effectsVolume: number = 0.5;
   private masterGain: GainNode | null = null;
   private timerWarningInterval: number | null = null;
+
+  // Sound priority system: tracks the highest-priority sound played this frame
+  private currentFramePriority: number = -1;
+  private priorityResetTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
     try {
@@ -142,6 +194,30 @@ class SoundService {
   }
   getEffectsVolume(): number {
     return this.effectsVolume;
+  }
+
+  // ─── Sound Priority Gate (Bible V8 5.14) ─────────────────────────────
+  //
+  // Within a ~50ms window, only the highest-priority sound plays.
+  // Prevents audio clutter when multiple events fire simultaneously
+  // (e.g., fold + raise + all-in in quick succession during multi-way pots).
+
+  private shouldPlay(priority: SoundPriority): boolean {
+    if (!this.enabled) return false;
+    const rank = SOUND_PRIORITY_RANK[priority] ?? 0;
+    if (rank <= this.currentFramePriority) return false;
+    this.currentFramePriority = rank;
+    // Reset priority window after 50ms
+    if (this.priorityResetTimer) clearTimeout(this.priorityResetTimer);
+    this.priorityResetTimer = setTimeout(() => {
+      this.currentFramePriority = -1;
+    }, 50);
+    return true;
+  }
+
+  /** Get the priority rank for a sound type (for external callers) */
+  getSoundPriority(priority: SoundPriority): number {
+    return SOUND_PRIORITY_RANK[priority] ?? 0;
   }
 
   // ─── Internal Helpers ────────────────────────────────────────────────
@@ -206,7 +282,7 @@ class SoundService {
    * Card deal/slide — soft paper shuffle sound
    */
   playDeal() {
-    if (!this.enabled || !this.ensureContext()) return;
+    if (!this.shouldPlay('deal') || !this.ensureContext()) return;
     const t = this.ctx!.currentTime;
 
     // Filtered noise burst simulating paper slide
@@ -231,7 +307,7 @@ class SoundService {
    * Check — double table tap (wood-like thud)
    */
   playCheck() {
-    if (!this.enabled || !this.ensureContext()) return;
+    if (!this.shouldPlay('check') || !this.ensureContext()) return;
     const t = this.ctx!.currentTime;
 
     // First tap
@@ -253,7 +329,7 @@ class SoundService {
    * Chips — bet/call chip clink (two-click stack)
    */
   playChips() {
-    if (!this.enabled || !this.ensureContext()) return;
+    if (!this.shouldPlay('bet') || !this.ensureContext()) return;
     const t = this.ctx!.currentTime;
 
     // First ceramic click
@@ -294,7 +370,7 @@ class SoundService {
    * @param bigBlind optional BB for scaling reference
    */
   playRaise(betAmount?: number, bigBlind?: number) {
-    if (!this.enabled || !this.ensureContext()) return;
+    if (!this.shouldPlay('raise') || !this.ensureContext()) return;
 
     // Scale volume based on bet size relative to BB (Bible V8 §5.3: louder for larger amounts)
     let volumeScale = 1.0;
@@ -335,7 +411,7 @@ class SoundService {
    * Fold — card swoosh to muck
    */
   playFold() {
-    if (!this.enabled || !this.ensureContext()) return;
+    if (!this.shouldPlay('fold') || !this.ensureContext()) return;
     const t = this.ctx!.currentTime;
 
     // Swoosh: filtered sawtooth sweep down
@@ -367,7 +443,7 @@ class SoundService {
    * All-In — dramatic bass thud + chip cascade + tension build
    */
   playAllIn() {
-    if (!this.enabled || !this.ensureContext()) return;
+    if (!this.shouldPlay('all_in') || !this.ensureContext()) return;
     const t = this.ctx!.currentTime;
 
     // Deep bass impact
@@ -427,7 +503,7 @@ class SoundService {
    * Win — C major arpeggio (satisfying victory sound)
    */
   playWin() {
-    if (!this.enabled || !this.ensureContext()) return;
+    if (!this.shouldPlay('win') || !this.ensureContext()) return;
     const t = this.ctx!.currentTime;
     const notes = [523.25, 659.25, 783.99, 1046.5]; // C5, E5, G5, C6
 
@@ -456,7 +532,7 @@ class SoundService {
    * Big Win — Extended celebration with shimmer and double arpeggio
    */
   playBigWin() {
-    if (!this.enabled || !this.ensureContext()) return;
+    if (!this.shouldPlay('big_win') || !this.ensureContext()) return;
     const t = this.ctx!.currentTime;
 
     // First arpeggio (C major)
@@ -487,7 +563,7 @@ class SoundService {
    * Turn Alert — bell ding (your turn notification)
    */
   playTurnAlert() {
-    if (!this.enabled || !this.ensureContext()) return;
+    if (!this.shouldPlay('turn_alert') || !this.ensureContext()) return;
     const t = this.ctx!.currentTime;
 
     // Primary bell tone
@@ -525,7 +601,7 @@ class SoundService {
    * Timer Warning — tick-tock pulse (call repeatedly for <5s countdown)
    */
   playTimerWarning() {
-    if (!this.enabled || !this.ensureContext()) return;
+    if (!this.shouldPlay('timer_warning') || !this.ensureContext()) return;
     const t = this.ctx!.currentTime;
 
     // Sharp tick
@@ -571,7 +647,7 @@ class SoundService {
    * Community Card — card snap/flip for board reveal
    */
   playCommunityCard() {
-    if (!this.enabled || !this.ensureContext()) return;
+    if (!this.shouldPlay('community_card') || !this.ensureContext()) return;
     const t = this.ctx!.currentTime;
 
     // Quick snap (higher energy than deal)
@@ -596,7 +672,7 @@ class SoundService {
    * Showdown — dramatic rising reveal (string swell effect)
    */
   playShowdown() {
-    if (!this.enabled || !this.ensureContext()) return;
+    if (!this.shouldPlay('showdown') || !this.ensureContext()) return;
     const t = this.ctx!.currentTime;
 
     // Rising 4-note sequence: C4→E4→G4→C5 (80ms each)
@@ -629,7 +705,7 @@ class SoundService {
    * Button Click — soft UI tap
    */
   playButtonClick() {
-    if (!this.enabled || !this.ensureContext()) return;
+    if (!this.shouldPlay('ui') || !this.ensureContext()) return;
     const t = this.ctx!.currentTime;
 
     const osc = this.ctx!.createOscillator();
@@ -654,7 +730,7 @@ class SoundService {
    * Time Bank Activated — hourglass two-tone chime
    */
   playTimeBankActivated() {
-    if (!this.enabled || !this.ensureContext()) return;
+    if (!this.shouldPlay('time_bank') || !this.ensureContext()) return;
 
     // G5 then C6 (pleasant two-note chime)
     this.playTone(783.99, 0.3, 0.18, 'sine', 0);
@@ -673,7 +749,7 @@ class SoundService {
    * Pot Collect — chips sweep to winner (satisfying collection sound)
    */
   playPotCollect() {
-    if (!this.enabled || !this.ensureContext()) return;
+    if (!this.shouldPlay('win') || !this.ensureContext()) return;
 
     // Rapid ascending chip clicks (collecting chips)
     for (let i = 0; i < 6; i++) {
@@ -705,7 +781,7 @@ class SoundService {
    * Seat Taken — short chime when a new player sits down
    */
   playSeatTaken() {
-    if (!this.enabled || !this.ensureContext()) return;
+    if (!this.shouldPlay('ui') || !this.ensureContext()) return;
     const now = this.ctx!.currentTime;
     const gain = this.createGain(0.12);
 
@@ -724,7 +800,7 @@ class SoundService {
    * New Hand — subtle "new hand starting" indicator
    */
   playNewHand() {
-    if (!this.enabled || !this.ensureContext()) return;
+    if (!this.shouldPlay('deal') || !this.ensureContext()) return;
     const now = this.ctx!.currentTime;
     const gain = this.createGain(0.08);
 
@@ -750,7 +826,7 @@ class SoundService {
    * Descending tone sequence to indicate connection lost
    */
   playDisconnect() {
-    if (!this.enabled || !this.ensureContext()) return;
+    if (!this.shouldPlay('ui') || !this.ensureContext()) return;
     const now = this.ctx!.currentTime;
     const gain = this.createGain(0.1);
 
@@ -777,7 +853,7 @@ class SoundService {
    * Reconnect — connection restored sound
    */
   playReconnect() {
-    if (!this.enabled || !this.ensureContext()) return;
+    if (!this.shouldPlay('ui') || !this.ensureContext()) return;
     const now = this.ctx!.currentTime;
     const gain = this.createGain(0.15);
 

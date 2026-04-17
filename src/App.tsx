@@ -111,6 +111,7 @@ const RakebackDashboard = lazy(() => import('./pages/RakebackDashboard'));
 const CreditAdminPanel = lazy(() => import('./pages/CreditAdminPanel'));
 const SettlementHistoryPage = lazy(() => import('./pages/SettlementHistoryPage'));
 const FlashPoolPage = lazy(() => import('./pages/FlashPoolPage'));
+const BlacklistManagerPage = lazy(() => import('./pages/BlacklistManagerPage'));
 const SessionHistoryPage = lazy(() => import('./pages/SessionHistoryPage'));
 
 // Q4: New Backported Pages (Hub → Club Arena)
@@ -1151,6 +1152,16 @@ export default function App() {
                     <AuthGuard>
                       <PageErrorBoundary pageName="Waitlist">
                         <WaitlistPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/blacklist"
+                  element={
+                    <AuthGuard>
+                      <PageErrorBoundary pageName="Blacklist Manager">
+                        <BlacklistManagerPage />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }

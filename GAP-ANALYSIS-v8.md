@@ -66,15 +66,15 @@ The remaining **~17% gap** is concentrated in:
 | 2.18 HAND HISTORY LAYERS | ⚠️ PARTIAL | `HandPersistenceService` stores one layer. Bible requires 4: raw events, normalized audit, player-facing, dispute-review |
 | 2.19 SECURITY OBJECTS | ⚠️ PARTIAL | `CryptoRandom` for shuffle integrity, `ServerActionValidator` for replay protection. No explicit `integrity_hash`, `observer_permission_control` objects |
 
-### CHAPTER 3 — STATE MACHINES (Score: 85%)
+### CHAPTER 3 — STATE MACHINES (Score: 95%)
 
 | Machine | Status | Notes |
 |---------|--------|-------|
 | 3.1 TABLE STATE MACHINE | ✅ COMPLIANT | `createTableStateMachine()` in `StateMachine.ts` — 13 transitions, 7 states (empty→waiting→seating→running→paused→closing→closed). Wired into `ServerTableEngine` at all lifecycle points: start, stop, dealing loop, pause/resume, hand-for-hand |
 | 3.2 TURN STATE MACHINE | ✅ COMPLIANT | `createTurnStateMachine()` in `StateMachine.ts` — 11 transitions, 7 states (waiting→timer_running→time_bank_active→expired→action_received→processing→complete). Wired into `ServerTableEngine.handleTurnChange()` and `_handlePlayerActionInner()` |
 | 3.3 PRESENCE/DISCONNECT STATE MACHINE | ✅ COMPLIANT | `createDisconnectStateMachine()` in `StateMachine.ts` — 7 transitions, 5 states (connected↔heartbeat_missed↔disconnected↔reconnecting↔reconnected). Full `PlayerPresenceState` type with 15 fields |
-| 3.4 PRE-ACTION STATE MACHINE | ⚠️ IMPLICIT | `PreActionEngine` has set/clear/execute/invalidate but not formal FSM states. Logic is correct. |
-| 3.5 ERROR/RECOVERY STATE | ⚠️ PARTIAL | `StateVerifier` detects issues, `ServerActionValidator` rejects invalid. No formal `DESYNC_DETECTED` → `RESYNC_REQUIRED` → `RESYNC_COMPLETE` FSM yet |
+| 3.4 PRE-ACTION STATE MACHINE | ✅ COMPLIANT | `createPreActionStateMachine()` in `StateMachine.ts` — 8 transitions, 6 states (idle→queued→validating→executing→executed/invalidated→idle). Wired into `PreActionEngine` set/clear/execute/invalidate at every lifecycle point |
+| 3.5 ERROR/RECOVERY STATE MACHINE | ✅ COMPLIANT | `createRecoveryStateMachine()` in `StateMachine.ts` — 9 transitions, 7 states (healthy→desync_detected→resync_required→resyncing→resync_complete/recovery_failed→manual_intervention). Wired into `StateVerifier.verify()` with circuit breaker (max 3 retries) |
 | 3.6 HAND STATE MACHINE | ✅ COMPLIANT | `createHandStateMachine()` in `StateMachine.ts` — 15 transitions including bomb pot, pineapple discard, early termination, all-in runout. Wired into `HandController.transitionStage()` |
 
 ### CHAPTER 4 — OPERATIONAL PROCEDURES (Score: 80%)
@@ -261,7 +261,7 @@ This chapter is process guidance for the agent, not codebase requirements.
 19. **Prometheus + Grafana Dashboards** -- OPEN. Extend `EngineTelemetry` to export Prometheus metrics.
 20. **WCAG 2.2 AA Compliance** -- OPEN. Accessibility audit and screen-reader support.
 21. **Internationalization** -- OPEN. Externalize all strings for 12+ languages.
-22. **Presence State Machine** -- DONE (types, 2026-04-16). Full `PlayerPresenceState` interface with 15 fields. Server-side FSM implementation: OPEN.
+22. **Presence State Machine** -- DONE (2026-04-17). Full `PlayerPresenceState` interface with 15 fields + `createDisconnectStateMachine()` FSM.
 23. **Rabbit Cam** -- OPEN. PokerBros parity feature (see undealt cards after hand ends). Type exists in `PlayerInventory`.
 24. **In-game CAPTCHA** -- OPEN. PokerBros anti-bot verification prompts. Type exists in `SecurityEventType`.
 
@@ -305,7 +305,7 @@ These areas EXCEED Bible requirements:
 |---------|-------|--------|
 | 1 -- Master Laws | 90% | Strong (was 85%) -- Law 1.6 (FSMs) and Law 1.9 (settlement) now compliant |
 | 2 -- Object Schemas | 85% | Expanded (was 60%) -- full type coverage added |
-| 3 -- State Machines | 85% | Strong (was 55%) -- Table, Hand, Turn, Disconnect FSMs all formalized and wired |
+| 3 -- State Machines | 95% | Strong (was 55%) -- All 6 FSMs formalized and wired: Table, Hand, Turn, Disconnect, PreAction, Recovery |
 | 4 -- Procedures | 85% | Strong (was 80%) -- blind entry + showdown policies added |
 | 5 -- UI/Popup/Animation/Sound | 80% | Strong (was 55%) -- sound priority, haptics, animation sequencer, notification doctrine |
 | 6 -- Timer/Disconnect/Variants | 85% | Strong (was 80%) -- time bank cap verified compliant |
@@ -313,7 +313,7 @@ These areas EXCEED Bible requirements:
 | 8 -- Extensibility/NFR | 65% | Improved (was 60%) -- variant config system |
 | 10 -- World-Class Excellence | 40% | Slight improvement (was 35%) |
 | 11 -- Table Settings/Themes | 75% | (New chapter) -- existing ThemeSettingsModal + user_table_settings |
-| **OVERALL** | **~83%** | **All P0 items DONE. Remaining: test suite (P1), polish (P2/P3)** |
+| **OVERALL** | **~84%** | **All P0 items DONE. All 6 FSMs formalized. Remaining: test suite (P1), polish (P3)** |
 
 ---
 

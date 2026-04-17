@@ -327,9 +327,9 @@
 }
 
 @keyframes overlayFadeIn {
-    0% { opacity: 0; filter: blur(2px) brightness(0.5); }
-    60% { opacity: 0.95; filter: blur(0) brightness(1.04); }
-    100% { opacity: 1; filter: blur(0) brightness(1); }
+    0% { opacity: 0; filter: blur(2px) brightness(0.5) saturate(0.3); }
+    60% { opacity: 0.95; filter: blur(0) brightness(1.06) saturate(1.08); }
+    100% { opacity: 1; filter: blur(0) brightness(1) saturate(1); }
 }
 
 .player-modal {

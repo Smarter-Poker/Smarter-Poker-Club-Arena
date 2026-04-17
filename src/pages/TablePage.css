@@ -64,17 +64,27 @@
 @keyframes heroTurnPulse {
   0%, 100% {
     box-shadow: inset 0 0 0 0 transparent;
-    filter: brightness(1);
+    filter: brightness(1) saturate(1);
   }
-  25% {
-    box-shadow: inset 0 0 40px rgba(255, 215, 0, 0.02);
+  15% {
+    box-shadow: inset 0 0 25px rgba(255, 215, 0, 0.015);
+    filter: brightness(1.005) saturate(1.02);
+  }
+  35% {
+    box-shadow: inset 0 0 60px rgba(255, 215, 0, 0.035);
+    filter: brightness(1.008) saturate(1.04);
   }
   50% {
     box-shadow: inset 0 0 90px rgba(255, 215, 0, 0.05), inset 0 0 200px rgba(255, 215, 0, 0.015);
-    filter: brightness(1.01);
+    filter: brightness(1.012) saturate(1.05);
   }
-  75% {
-    box-shadow: inset 0 0 50px rgba(255, 215, 0, 0.03);
+  65% {
+    box-shadow: inset 0 0 65px rgba(255, 215, 0, 0.04);
+    filter: brightness(1.008) saturate(1.03);
+  }
+  82% {
+    box-shadow: inset 0 0 30px rgba(255, 215, 0, 0.02);
+    filter: brightness(1.003) saturate(1.01);
   }
 }
 
@@ -321,21 +331,33 @@
 @keyframes jackpotPulse {
   0%, 100% {
     box-shadow: 0 0 20px rgba(220, 20, 60, 0.4);
-    filter: brightness(1);
+    filter: brightness(1) saturate(1);
     transform: scale(1);
   }
-  25% {
-    box-shadow: 0 0 24px rgba(220, 20, 60, 0.5);
-    transform: scale(1.005);
+  15% {
+    box-shadow: 0 0 22px rgba(220, 20, 60, 0.46);
+    filter: brightness(1.03) saturate(1.08);
+    transform: scale(1.003);
+  }
+  32% {
+    box-shadow: 0 0 28px rgba(220, 20, 60, 0.56);
+    filter: brightness(1.06) saturate(1.18);
+    transform: scale(1.007);
   }
   50% {
     box-shadow: 0 0 34px rgba(220, 20, 60, 0.65), 0 0 60px rgba(220, 20, 60, 0.15);
-    filter: brightness(1.08);
+    filter: brightness(1.1) saturate(1.28);
     transform: scale(1.01);
   }
-  75% {
-    box-shadow: 0 0 22px rgba(220, 20, 60, 0.45);
-    transform: scale(1.003);
+  68% {
+    box-shadow: 0 0 24px rgba(220, 20, 60, 0.5);
+    filter: brightness(1.05) saturate(1.12);
+    transform: scale(1.005);
+  }
+  84% {
+    box-shadow: 0 0 21px rgba(220, 20, 60, 0.42);
+    filter: brightness(1.02) saturate(1.04);
+    transform: scale(1.001);
   }
 }
 
@@ -1396,35 +1418,65 @@
 }
 
 @keyframes spinBadgeGlow {
-  0% {
+  0%, 100% {
     box-shadow: 0 4px 15px rgba(245, 158, 11, 0.3);
     transform: scale(1);
+    filter: brightness(1) saturate(1);
+  }
+  15% {
+    box-shadow: 0 4px 18px rgba(245, 158, 11, 0.38);
+    filter: brightness(1.03) saturate(1.08);
+  }
+  35% {
+    box-shadow: 0 4px 24px rgba(245, 158, 11, 0.5), 0 0 28px rgba(245, 158, 11, 0.1);
+    filter: brightness(1.06) saturate(1.16);
+    transform: scale(1.005);
   }
   50% {
     box-shadow: 0 4px 28px rgba(245, 158, 11, 0.6), 0 0 40px rgba(245, 158, 11, 0.15);
     transform: scale(1.01);
+    filter: brightness(1.08) saturate(1.22);
   }
-  100% {
-    box-shadow: 0 4px 15px rgba(245, 158, 11, 0.3);
-    transform: scale(1);
+  65% {
+    box-shadow: 0 4px 22px rgba(245, 158, 11, 0.45);
+    filter: brightness(1.05) saturate(1.12);
+    transform: scale(1.005);
+  }
+  82% {
+    box-shadow: 0 4px 17px rgba(245, 158, 11, 0.34);
+    filter: brightness(1.02) saturate(1.04);
   }
 }
 
 @keyframes premiumSpinGlow {
-  0% {
+  0%, 100% {
     box-shadow: 0 4px 15px rgba(236, 72, 153, 0.4);
-    filter: brightness(1);
+    filter: brightness(1) saturate(1);
     transform: scale(1);
+  }
+  15% {
+    box-shadow: 0 4px 20px rgba(236, 72, 153, 0.5);
+    filter: brightness(1.03) saturate(1.1);
+    transform: scale(1.005);
+  }
+  35% {
+    box-shadow: 0 4px 28px rgba(236, 72, 153, 0.65), 0 0 35px rgba(139, 92, 246, 0.12);
+    filter: brightness(1.06) saturate(1.2);
+    transform: scale(1.01);
   }
   50% {
     box-shadow: 0 4px 35px rgba(236, 72, 153, 0.75), 0 0 50px rgba(139, 92, 246, 0.2);
-    filter: brightness(1.08);
+    filter: brightness(1.1) saturate(1.3);
     transform: scale(1.015);
   }
-  100% {
-    box-shadow: 0 4px 15px rgba(236, 72, 153, 0.4);
-    filter: brightness(1);
-    transform: scale(1);
+  65% {
+    box-shadow: 0 4px 26px rgba(236, 72, 153, 0.58);
+    filter: brightness(1.05) saturate(1.15);
+    transform: scale(1.008);
+  }
+  82% {
+    box-shadow: 0 4px 18px rgba(236, 72, 153, 0.44);
+    filter: brightness(1.02) saturate(1.05);
   }
 }
 
@@ -1516,20 +1568,28 @@
 
 @keyframes allInPotGlow {
   0%, 100% {
-    filter: brightness(1);
+    filter: brightness(1) saturate(1);
     transform: scale(1);
   }
-  20% {
-    filter: brightness(1.1) drop-shadow(0 0 4px rgba(139, 92, 246, 0.2));
-    transform: scale(1.005);
+  12% {
+    filter: brightness(1.06) saturate(1.1) drop-shadow(0 0 3px rgba(139, 92, 246, 0.15));
+    transform: scale(1.003);
+  }
+  28% {
+    filter: brightness(1.18) saturate(1.22) drop-shadow(0 0 8px rgba(139, 92, 246, 0.35));
+    transform: scale(1.008);
   }
   50% {
-    filter: brightness(1.35) drop-shadow(0 0 12px rgba(139, 92, 246, 0.5)) drop-shadow(0 0 24px rgba(139, 92, 246, 0.15));
+    filter: brightness(1.35) saturate(1.35) drop-shadow(0 0 12px rgba(139, 92, 246, 0.5)) drop-shadow(0 0 24px rgba(139, 92, 246, 0.15));
     transform: scale(1.015);
   }
-  75% {
-    filter: brightness(1.12) drop-shadow(0 0 5px rgba(139, 92, 246, 0.25));
-    transform: scale(1.003);
+  68% {
+    filter: brightness(1.15) saturate(1.15) drop-shadow(0 0 6px rgba(139, 92, 246, 0.3));
+    transform: scale(1.006);
+  }
+  84% {
+    filter: brightness(1.05) saturate(1.05) drop-shadow(0 0 2px rgba(139, 92, 246, 0.1));
+    transform: scale(1.001);
   }
 }
 

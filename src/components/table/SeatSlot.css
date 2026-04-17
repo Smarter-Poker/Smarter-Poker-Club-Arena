@@ -59,19 +59,35 @@
     border-color: rgba(34, 197, 94, 0);
     transform: scale(1);
     box-shadow: 0 0 0 rgba(34, 197, 94, 0);
+    filter: brightness(1) saturate(1);
   }
-  25% {
-    border-color: rgba(34, 197, 94, 0.08);
-    transform: scale(1.015);
+  15% {
+    border-color: rgba(34, 197, 94, 0.05);
+    transform: scale(1.008);
+    filter: brightness(1.02) saturate(1.05);
+  }
+  35% {
+    border-color: rgba(34, 197, 94, 0.14);
+    transform: scale(1.028);
+    box-shadow: 0 0 8px rgba(34, 197, 94, 0.04);
+    filter: brightness(1.06) saturate(1.12);
   }
   50% {
     border-color: rgba(34, 197, 94, 0.22);
     transform: scale(1.04);
     box-shadow: 0 0 16px rgba(34, 197, 94, 0.08);
+    filter: brightness(1.08) saturate(1.18);
   }
-  75% {
-    border-color: rgba(34, 197, 94, 0.1);
-    transform: scale(1.02);
+  65% {
+    border-color: rgba(34, 197, 94, 0.15);
+    transform: scale(1.03);
+    box-shadow: 0 0 10px rgba(34, 197, 94, 0.05);
+    filter: brightness(1.05) saturate(1.1);
+  }
+  82% {
+    border-color: rgba(34, 197, 94, 0.06);
+    transform: scale(1.012);
+    filter: brightness(1.02) saturate(1.04);
   }
 }
 
@@ -230,10 +246,13 @@
   animation: seat-disconnect-pulse 1.5s ease-in-out infinite;
 }
 @keyframes seat-disconnect-pulse {
-  0%, 100% { opacity: 1; box-shadow: 0 0 0 rgba(239, 68, 68, 0); }
-  25% { opacity: 0.7; }
-  50% { opacity: 0.35; box-shadow: 0 0 8px rgba(239, 68, 68, 0.5); }
-  75% { opacity: 0.65; }
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 rgba(239, 68, 68, 0); filter: brightness(1) saturate(1); }
+  15% { filter: brightness(0.9) saturate(1.1); }
+  25% { opacity: 0.7; filter: brightness(0.8) saturate(1.3); }
+  40% { filter: brightness(0.65) saturate(1.5); }
+  50% { opacity: 0.35; box-shadow: 0 0 12px rgba(239, 68, 68, 0.6); filter: brightness(0.6) saturate(1.6); }
+  65% { filter: brightness(0.75) saturate(1.3); }
+  75% { opacity: 0.65; filter: brightness(0.88) saturate(1.15); }
 }
 .seat__disconnect-overlay {
   position: absolute;
@@ -265,10 +284,36 @@
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
 }
 @keyframes disconnectPulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  30% { opacity: 0.6; transform: scale(0.98); }
-  50% { opacity: 0.4; transform: scale(0.97); }
-  70% { opacity: 0.7; transform: scale(0.99); }
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: brightness(0.7) saturate(0.3);
+  }
+  15% {
+    opacity: 0.7;
+    transform: scale(0.99);
+    filter: brightness(0.55) saturate(0.15);
+  }
+  30% {
+    opacity: 0.6;
+    transform: scale(0.98);
+    filter: brightness(0.45) saturate(0.1);
+  }
+  50% {
+    opacity: 0.4;
+    transform: scale(0.97);
+    filter: brightness(0.35) saturate(0.05);
+  }
+  65% {
+    opacity: 0.55;
+    transform: scale(0.985);
+    filter: brightness(0.5) saturate(0.12);
+  }
+  80% {
+    opacity: 0.8;
+    transform: scale(0.995);
+    filter: brightness(0.6) saturate(0.22);
+  }
 }
 .seat--disconnected .seat__avatar-img {
   filter: grayscale(0.7) brightness(0.6);
@@ -318,26 +363,37 @@
   0% {
     opacity: 0;
     transform: scale(0.2) rotate(-120deg);
-    filter: blur(2px);
+    filter: blur(3px) brightness(0.3) saturate(0.2);
+  }
+  25% {
+    opacity: 0.8;
+    filter: blur(0.5px) brightness(1.1) saturate(1.1);
   }
   35% {
     opacity: 0.9;
     transform: scale(1.2) rotate(12deg);
-    filter: blur(0);
+    filter: blur(0) brightness(1.25) saturate(1.3);
+  }
+  48% {
+    filter: blur(0) brightness(1.1) saturate(1.12);
   }
   55% {
     opacity: 1;
     transform: scale(0.95) rotate(-4deg);
+    filter: blur(0) brightness(1.04) saturate(1.05);
   }
   72% {
     transform: scale(1.05) rotate(2deg);
+    filter: blur(0) brightness(1.06) saturate(1.06);
   }
   85% {
     transform: scale(0.99) rotate(-0.5deg);
+    filter: blur(0) brightness(1.02) saturate(1.02);
   }
   100% {
     opacity: 1;
     transform: scale(1) rotate(0deg);
+    filter: blur(0) brightness(1) saturate(1);
   }
 }
 
@@ -412,19 +468,32 @@
     opacity: 1;
     text-shadow: 0 0 0 transparent;
     transform: scale(1);
+    filter: brightness(1) saturate(1);
+  }
+  15% {
+    filter: brightness(0.9) saturate(1.2);
   }
   25% {
     opacity: 0.8;
     transform: scale(0.99);
+    filter: brightness(0.8) saturate(1.4);
+  }
+  40% {
+    filter: brightness(0.7) saturate(1.6);
   }
   50% {
     opacity: 0.6;
-    text-shadow: 0 0 8px rgba(239, 68, 68, 0.5);
+    text-shadow: 0 0 10px rgba(239, 68, 68, 0.6);
     transform: scale(1.01);
+    filter: brightness(0.65) saturate(1.7);
+  }
+  65% {
+    filter: brightness(0.8) saturate(1.3);
   }
   75% {
     opacity: 0.85;
     transform: scale(0.995);
+    filter: brightness(0.92) saturate(1.12);
   }
 }
 
@@ -442,44 +511,66 @@
 @keyframes stackBounceUp {
   0% {
     transform: scale(1);
-    filter: brightness(1);
+    filter: brightness(1) saturate(1);
+  }
+  15% {
+    transform: scale(1.12);
+    filter: brightness(1.15) saturate(1.2);
   }
   25% {
     transform: scale(1.18);
-    filter: brightness(1.2);
+    filter: brightness(1.25) saturate(1.35);
   }
-  45% {
+  40% {
     transform: scale(0.97);
-    filter: brightness(1.05);
+    filter: brightness(1.08) saturate(1.15);
   }
-  65% {
-    transform: scale(1.04);
+  55% {
+    transform: scale(1.06);
+    filter: brightness(1.1) saturate(1.18);
+  }
+  72% {
+    transform: scale(0.99);
+    filter: brightness(1.03) saturate(1.06);
   }
   100% {
     transform: scale(1);
-    filter: brightness(1);
+    filter: brightness(1) saturate(1);
   }
 }
 
 @keyframes stackBounceDown {
   0% {
     transform: scale(1);
-    filter: brightness(1);
+    filter: brightness(1) saturate(1);
+  }
+  12% {
+    transform: scale(0.92);
+    filter: brightness(0.75) saturate(0.6);
   }
   20% {
     transform: scale(0.88);
-    filter: brightness(0.85);
+    filter: brightness(0.7) saturate(0.45);
   }
-  45% {
+  35% {
+    transform: scale(0.95);
+    filter: brightness(0.88) saturate(0.7);
+  }
+  50% {
     transform: scale(1.03);
-    filter: brightness(1.05);
+    filter: brightness(1.05) saturate(1.08);
   }
   65% {
     transform: scale(0.98);
+    filter: brightness(1.02) saturate(1.03);
+  }
+  82% {
+    transform: scale(1.01);
+    filter: brightness(1) saturate(1);
   }
   100% {
     transform: scale(1);
-    filter: brightness(1);
+    filter: brightness(1) saturate(1);
   }
 }
 
@@ -512,24 +603,35 @@
   0% {
     opacity: 0;
     transform: translateX(-50%) translateY(4px) scale(0.8);
-    filter: blur(1px);
+    filter: blur(2px) brightness(0.5) saturate(0.3);
   }
   10% {
     opacity: 1;
-    transform: translateX(-50%) translateY(0) scale(1.1);
-    filter: blur(0);
+    transform: translateX(-50%) translateY(0) scale(1.12);
+    filter: blur(0) brightness(1.3) saturate(1.4);
+  }
+  20% {
+    filter: blur(0) brightness(1.15) saturate(1.2);
   }
   25% {
     transform: translateX(-50%) translateY(-4px) scale(1);
+    filter: blur(0) brightness(1.08) saturate(1.1);
+  }
+  45% {
+    filter: blur(0) brightness(1.04) saturate(1.05);
   }
   65% {
     opacity: 1;
     transform: translateX(-50%) translateY(-18px) scale(0.95);
+    filter: blur(0) brightness(1) saturate(1);
+  }
+  85% {
+    filter: blur(0.5px) brightness(0.85) saturate(0.7);
   }
   100% {
     opacity: 0;
     transform: translateX(-50%) translateY(-28px) scale(0.85);
-    filter: blur(1px);
+    filter: blur(1.5px) brightness(0.6) saturate(0.4);
   }
 }
 
@@ -761,13 +863,23 @@
       0 0 40px rgba(255, 215, 0, 0.2),
       0 4px 16px rgba(0, 0, 0, 0.5);
     transform: scale(1.04);
+    filter: brightness(1) saturate(1);
   }
-  30% {
+  15% {
     box-shadow:
-      0 0 26px rgba(255, 215, 0, 0.6),
-      0 0 50px rgba(255, 215, 0, 0.22),
-      0 5px 18px rgba(0, 0, 0, 0.5);
-    transform: scale(1.055);
+      0 0 23px rgba(255, 215, 0, 0.55),
+      0 0 44px rgba(255, 215, 0, 0.21),
+      0 4px 17px rgba(0, 0, 0, 0.5);
+    transform: scale(1.048);
+    filter: brightness(1.04) saturate(1.1);
+  }
+  35% {
+    box-shadow:
+      0 0 28px rgba(255, 215, 0, 0.64),
+      0 0 54px rgba(255, 215, 0, 0.26),
+      0 5px 19px rgba(0, 0, 0, 0.5);
+    transform: scale(1.058);
+    filter: brightness(1.08) saturate(1.22);
   }
   50% {
     box-shadow:
@@ -776,13 +888,23 @@
       0 0 80px rgba(255, 215, 0, 0.1),
       0 6px 20px rgba(0, 0, 0, 0.5);
     transform: scale(1.06);
+    filter: brightness(1.1) saturate(1.3);
   }
-  70% {
+  65% {
     box-shadow:
-      0 0 24px rgba(255, 215, 0, 0.55),
-      0 0 45px rgba(255, 215, 0, 0.18),
-      0 5px 16px rgba(0, 0, 0, 0.5);
-    transform: scale(1.045);
+      0 0 26px rgba(255, 215, 0, 0.58),
+      0 0 48px rgba(255, 215, 0, 0.2),
+      0 5px 17px rgba(0, 0, 0, 0.5);
+    transform: scale(1.05);
+    filter: brightness(1.06) saturate(1.15);
+  }
+  82% {
+    box-shadow:
+      0 0 22px rgba(255, 215, 0, 0.52),
+      0 0 42px rgba(255, 215, 0, 0.19),
+      0 4px 16px rgba(0, 0, 0, 0.5);
+    transform: scale(1.042);
+    filter: brightness(1.02) saturate(1.06);
   }
 }
 
@@ -818,19 +940,27 @@
 @keyframes cardPeekLift {
   0% {
     transform: translateY(0) scale(1);
-    filter: brightness(1);
+    filter: brightness(1) saturate(1);
+  }
+  20% {
+    transform: translateY(-6px) scale(1.02);
+    filter: brightness(1.05) saturate(1.1);
   }
   35% {
     transform: translateY(-10px) scale(1.04);
-    filter: brightness(1.08);
+    filter: brightness(1.12) saturate(1.2);
   }
-  60% {
-    transform: translateY(-6px) scale(1.02);
-    filter: brightness(1.04);
+  50% {
+    transform: translateY(-8px) scale(1.035);
+    filter: brightness(1.08) saturate(1.15);
+  }
+  70% {
+    transform: translateY(-5px) scale(1.02);
+    filter: brightness(1.04) saturate(1.08);
   }
   100% {
     transform: translateY(-4px) scale(1.01);
-    filter: brightness(1.02);
+    filter: brightness(1.02) saturate(1.04);
   }
 }
 
@@ -867,21 +997,36 @@
   0% {
     opacity: 0;
     transform: translate(-50%, 8px) scale(0.8);
+    filter: brightness(0.5) saturate(0.3) blur(2px);
   }
-  15% {
+  10% {
+    opacity: 0.8;
+    transform: translate(-50%, 0) scale(1.05);
+    filter: brightness(1.3) saturate(1.4) blur(0);
+  }
+  18% {
     opacity: 1;
-    transform: translate(-50%, -4px) scale(1.1);
+    transform: translate(-50%, -4px) scale(1.12);
+    filter: brightness(1.4) saturate(1.5);
   }
   30% {
     transform: translate(-50%, -6px) scale(1);
+    filter: brightness(1.15) saturate(1.25);
+  }
+  50% {
+    opacity: 1;
+    transform: translate(-50%, -16px) scale(1);
+    filter: brightness(1.08) saturate(1.15);
   }
   80% {
     opacity: 1;
     transform: translate(-50%, -28px) scale(1);
+    filter: brightness(1.03) saturate(1.05);
   }
   100% {
     opacity: 0;
     transform: translate(-50%, -44px) scale(0.95);
+    filter: brightness(0.7) saturate(0.5) blur(1px);
   }
 }
 
@@ -1056,17 +1201,28 @@
   0% {
     opacity: 0;
     transform: translateY(30px) rotateY(90deg) scale(0.7);
+    filter: blur(3px) brightness(0.3) saturate(0.2);
+  }
+  25% {
+    opacity: 0.6;
+    filter: blur(1px) brightness(1.1) saturate(1.1);
   }
   40% {
     opacity: 0.8;
     transform: translateY(-5px) rotateY(-10deg) scale(1.05);
+    filter: blur(0) brightness(1.2) saturate(1.25);
+  }
+  55% {
+    filter: blur(0) brightness(1.08) saturate(1.1);
   }
   70% {
     transform: translateY(2px) rotateY(3deg) scale(1.01);
+    filter: blur(0) brightness(1.03) saturate(1.04);
   }
   100% {
     opacity: 1;
     transform: translateY(0) rotateY(0deg) scale(1);
+    filter: blur(0) brightness(1) saturate(1);
   }
 }
 
@@ -1089,16 +1245,25 @@
       0 0 32px rgba(255, 215, 0, 0.25),
       0 4px 12px rgba(0, 0, 0, 0.4);
     transform: scale(1);
-    filter: brightness(1);
+    filter: brightness(1) saturate(1);
   }
-  25% {
+  15% {
     box-shadow:
-      0 0 0 2.5px rgba(255, 215, 0, 0.8),
-      0 0 20px rgba(255, 215, 0, 0.6),
-      0 0 38px rgba(255, 215, 0, 0.3),
-      0 5px 14px rgba(0, 0, 0, 0.4);
-    transform: scale(1.015);
-    filter: brightness(1.05);
+      0 0 0 2.3px rgba(255, 215, 0, 0.75),
+      0 0 18px rgba(255, 215, 0, 0.55),
+      0 0 34px rgba(255, 215, 0, 0.28),
+      0 4px 13px rgba(0, 0, 0, 0.4);
+    transform: scale(1.01);
+    filter: brightness(1.04) saturate(1.12);
+  }
+  30% {
+    box-shadow:
+      0 0 0 2.8px rgba(255, 215, 0, 0.88),
+      0 0 24px rgba(255, 215, 0, 0.68),
+      0 0 44px rgba(255, 215, 0, 0.35),
+      0 5px 15px rgba(0, 0, 0, 0.4);
+    transform: scale(1.025);
+    filter: brightness(1.08) saturate(1.25);
   }
   50% {
     box-shadow:
@@ -1108,16 +1273,25 @@
       0 0 72px rgba(255, 215, 0, 0.12),
       0 6px 16px rgba(0, 0, 0, 0.4);
     transform: scale(1.03);
-    filter: brightness(1.1);
+    filter: brightness(1.12) saturate(1.35);
   }
-  75% {
+  65% {
     box-shadow:
-      0 0 0 2.5px rgba(255, 215, 0, 0.75),
-      0 0 18px rgba(255, 215, 0, 0.55),
-      0 0 35px rgba(255, 215, 0, 0.28),
+      0 0 0 2.6px rgba(255, 215, 0, 0.82),
+      0 0 22px rgba(255, 215, 0, 0.6),
+      0 0 40px rgba(255, 215, 0, 0.3),
       0 5px 14px rgba(0, 0, 0, 0.4);
-    transform: scale(1.01);
-    filter: brightness(1.03);
+    transform: scale(1.018);
+    filter: brightness(1.06) saturate(1.2);
+  }
+  80% {
+    box-shadow:
+      0 0 0 2.3px rgba(255, 215, 0, 0.72),
+      0 0 17px rgba(255, 215, 0, 0.52),
+      0 0 33px rgba(255, 215, 0, 0.26),
+      0 5px 13px rgba(0, 0, 0, 0.4);
+    transform: scale(1.006);
+    filter: brightness(1.02) saturate(1.08);
   }
 }
 
@@ -1153,22 +1327,32 @@
   0% {
     opacity: 0;
     transform: translateX(-50%) scale(0.3) translateY(12px);
-    filter: blur(2px);
+    filter: blur(3px) brightness(0.3) saturate(0.2);
+  }
+  30% {
+    opacity: 0.9;
+    filter: blur(0.3px) brightness(1.15) saturate(1.2);
   }
   40% {
     opacity: 1;
     transform: translateX(-50%) scale(1.15) translateY(-4px);
-    filter: blur(0);
+    filter: blur(0) brightness(1.2) saturate(1.25);
+  }
+  52% {
+    filter: blur(0) brightness(1.06) saturate(1.08);
   }
   60% {
     transform: translateX(-50%) scale(0.96) translateY(1px);
+    filter: blur(0) brightness(1.02) saturate(1.03);
   }
   78% {
     transform: translateX(-50%) scale(1.03) translateY(-0.5px);
+    filter: blur(0) brightness(1.04) saturate(1.04);
   }
   100% {
     opacity: 1;
     transform: translateX(-50%) scale(1) translateY(0);
+    filter: blur(0) brightness(1) saturate(1);
   }
 }
 
@@ -1207,22 +1391,32 @@
   0%, 100% {
     box-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
     transform: translateX(-50%) scale(1);
-    filter: brightness(1);
+    filter: brightness(1) saturate(1);
   }
-  25% {
-    box-shadow: 0 0 12px rgba(239, 68, 68, 0.55);
-    transform: translateX(-50%) scale(1.02);
-    filter: brightness(1.05);
+  12% {
+    box-shadow: 0 0 10px rgba(239, 68, 68, 0.48);
+    transform: translateX(-50%) scale(1.01);
+    filter: brightness(1.03) saturate(1.1);
+  }
+  30% {
+    box-shadow: 0 0 16px rgba(239, 68, 68, 0.65);
+    transform: translateX(-50%) scale(1.03);
+    filter: brightness(1.08) saturate(1.25);
   }
   50% {
     box-shadow: 0 0 20px rgba(239, 68, 68, 0.75), 0 0 40px rgba(239, 68, 68, 0.2);
     transform: translateX(-50%) scale(1.04);
-    filter: brightness(1.1);
+    filter: brightness(1.12) saturate(1.35);
   }
-  75% {
-    box-shadow: 0 0 10px rgba(239, 68, 68, 0.5);
-    transform: translateX(-50%) scale(1.01);
-    filter: brightness(1.03);
+  65% {
+    box-shadow: 0 0 14px rgba(239, 68, 68, 0.58);
+    transform: translateX(-50%) scale(1.02);
+    filter: brightness(1.06) saturate(1.18);
+  }
+  82% {
+    box-shadow: 0 0 9px rgba(239, 68, 68, 0.44);
+    transform: translateX(-50%) scale(1.005);
+    filter: brightness(1.02) saturate(1.06);
   }
 }
 
@@ -1254,20 +1448,28 @@
   0% {
     opacity: 0;
     transform: rotate(var(--card-rotation, 0deg)) scale(0.2) translateY(-30px);
-    filter: blur(2px);
+    filter: blur(3px) brightness(0.3) saturate(0.2);
+  }
+  30% {
+    opacity: 0.7;
+    filter: blur(0.5px) brightness(1.05) saturate(1.05);
   }
   50% {
     opacity: 0.9;
     transform: rotate(var(--card-rotation, 0deg)) scale(1.06) translateY(2px);
-    filter: blur(0);
+    filter: blur(0) brightness(1.15) saturate(1.15);
+  }
+  65% {
+    filter: blur(0) brightness(1.05) saturate(1.06);
   }
   70% {
     transform: rotate(var(--card-rotation, 0deg)) scale(0.98) translateY(-1px);
+    filter: blur(0) brightness(1.02) saturate(1.02);
   }
   100% {
     opacity: 1;
     transform: rotate(var(--card-rotation, 0deg)) scale(1) translateY(0);
-    filter: blur(0);
+    filter: blur(0) brightness(1) saturate(1);
   }
 }
 
@@ -1318,6 +1520,10 @@
       0 4px 16px rgba(0, 0, 0, 0.5);
     border-color: #ffd700;
     transform: scale(1.08);
+    filter: brightness(1) saturate(1);
+  }
+  15% {
+    filter: brightness(1.06) saturate(1.12);
   }
   25% {
     box-shadow:
@@ -1326,6 +1532,10 @@
       0 0 88px rgba(255, 215, 0, 0.12),
       0 5px 18px rgba(0, 0, 0, 0.5);
     transform: scale(1.09);
+    filter: brightness(1.1) saturate(1.25);
+  }
+  38% {
+    filter: brightness(1.15) saturate(1.35);
   }
   50% {
     box-shadow:
@@ -1336,6 +1546,10 @@
       0 6px 20px rgba(0, 0, 0, 0.5);
     border-color: #fff5cc;
     transform: scale(1.1);
+    filter: brightness(1.2) saturate(1.4);
+  }
+  65% {
+    filter: brightness(1.1) saturate(1.2);
   }
   75% {
     box-shadow:
@@ -1344,6 +1558,7 @@
       0 0 84px rgba(255, 215, 0, 0.1),
       0 5px 16px rgba(0, 0, 0, 0.5);
     transform: scale(1.085);
+    filter: brightness(1.05) saturate(1.1);
   }
 }
 
@@ -1397,20 +1612,33 @@
   0%, 100% {
     text-shadow: 0 0 8px rgba(255, 215, 0, 0.5);
     transform: scale(1);
+    filter: brightness(1) saturate(1);
+  }
+  12% {
+    filter: brightness(1.05) saturate(1.1);
   }
   20% {
-    text-shadow: 0 0 12px rgba(255, 215, 0, 0.6);
+    text-shadow: 0 0 12px rgba(255, 215, 0, 0.65);
     transform: scale(1.02);
+    filter: brightness(1.1) saturate(1.2);
+  }
+  35% {
+    filter: brightness(1.18) saturate(1.35);
   }
   50% {
     text-shadow:
-      0 0 18px rgba(255, 215, 0, 0.75),
-      0 0 36px rgba(255, 215, 0, 0.35);
+      0 0 20px rgba(255, 215, 0, 0.8),
+      0 0 40px rgba(255, 215, 0, 0.4);
     transform: scale(1.04);
+    filter: brightness(1.22) saturate(1.4);
+  }
+  65% {
+    filter: brightness(1.1) saturate(1.15);
   }
   75% {
     text-shadow: 0 0 10px rgba(255, 215, 0, 0.55);
     transform: scale(1.01);
+    filter: brightness(1.04) saturate(1.06);
   }
 }
 
@@ -1453,19 +1681,32 @@
   0%, 100% {
     left: -100%;
     opacity: 0;
+    filter: brightness(1) saturate(1);
   }
-  20% {
-    opacity: 0.6;
+  15% {
+    opacity: 0.5;
+    filter: brightness(1.1) saturate(1.1);
   }
-  40% {
+  25% {
+    opacity: 0.8;
+    filter: brightness(1.2) saturate(1.25);
+  }
+  35% {
     opacity: 1;
+    filter: brightness(1.35) saturate(1.4);
+  }
+  45% {
+    opacity: 0.9;
+    filter: brightness(1.2) saturate(1.2);
   }
   50% {
     left: 150%;
-    opacity: 0.8;
+    opacity: 0.7;
+    filter: brightness(1.08) saturate(1.08);
   }
   60% {
     opacity: 0;
+    filter: brightness(1) saturate(1);
   }
 }
 
@@ -1473,22 +1714,32 @@
   0% {
     opacity: 0;
     transform: translateY(8px) scale(0.7);
-    filter: blur(2px);
+    filter: blur(3px) brightness(0.3) saturate(0.2);
+  }
+  30% {
+    opacity: 0.8;
+    filter: blur(0.3px) brightness(1.1) saturate(1.15);
   }
   45% {
     opacity: 1;
     transform: translateY(-3px) scale(1.08);
-    filter: blur(0);
+    filter: blur(0) brightness(1.2) saturate(1.3);
+  }
+  58% {
+    filter: blur(0) brightness(1.06) saturate(1.08);
   }
   65% {
     transform: translateY(1px) scale(0.98);
+    filter: blur(0) brightness(1.03) saturate(1.04);
   }
   82% {
     transform: translateY(-0.5px) scale(1.02);
+    filter: blur(0) brightness(1.02) saturate(1.02);
   }
   100% {
     opacity: 1;
     transform: translateY(0) scale(1);
+    filter: blur(0) brightness(1) saturate(1);
   }
 }
 
@@ -1581,11 +1832,21 @@
       0 2px 8px rgba(239, 68, 68, 0.5),
       0 0 20px rgba(239, 68, 68, 0.2);
     transform: translateX(-50%) scale(1);
-    filter: brightness(1);
+    filter: brightness(1) saturate(1);
   }
-  20% {
-    transform: translateX(-50%) scale(1.02);
-    filter: brightness(1.05);
+  12% {
+    box-shadow:
+      0 2px 10px rgba(239, 68, 68, 0.58),
+      0 0 24px rgba(239, 68, 68, 0.28);
+    transform: translateX(-50%) scale(1.012);
+    filter: brightness(1.04) saturate(1.1);
+  }
+  28% {
+    box-shadow:
+      0 2px 12px rgba(239, 68, 68, 0.68),
+      0 0 30px rgba(239, 68, 68, 0.34);
+    transform: translateX(-50%) scale(1.03);
+    filter: brightness(1.08) saturate(1.22);
   }
   50% {
     box-shadow:
@@ -1593,11 +1854,18 @@
       0 0 36px rgba(239, 68, 68, 0.4),
       0 0 56px rgba(239, 68, 68, 0.1);
     transform: translateX(-50%) scale(1.04);
-    filter: brightness(1.12);
+    filter: brightness(1.14) saturate(1.35);
   }
-  70% {
-    transform: translateX(-50%) scale(1.01);
-    filter: brightness(1.03);
+  65% {
+    box-shadow:
+      0 2px 11px rgba(239, 68, 68, 0.6),
+      0 0 26px rgba(239, 68, 68, 0.3);
+    transform: translateX(-50%) scale(1.02);
+    filter: brightness(1.06) saturate(1.15);
+  }
+  82% {
+    transform: translateX(-50%) scale(1.005);
+    filter: brightness(1.02) saturate(1.05);
   }
 }
 
@@ -1628,21 +1896,32 @@
 @keyframes bountyGlow {
   0%, 100% {
     box-shadow: 0 2px 6px rgba(239, 68, 68, 0.5);
-    filter: brightness(1);
+    filter: brightness(1) saturate(1);
     transform: scale(1);
   }
-  25% {
-    filter: brightness(1.05);
-    transform: scale(1.01);
+  15% {
+    box-shadow: 0 2px 8px rgba(239, 68, 68, 0.6);
+    filter: brightness(1.04) saturate(1.1);
+    transform: scale(1.008);
+  }
+  32% {
+    box-shadow: 0 2px 10px rgba(239, 68, 68, 0.72), 0 0 16px rgba(249, 115, 22, 0.15);
+    filter: brightness(1.08) saturate(1.22);
+    transform: scale(1.02);
   }
   50% {
     box-shadow: 0 2px 12px rgba(239, 68, 68, 0.8), 0 0 24px rgba(249, 115, 22, 0.25);
-    filter: brightness(1.12);
+    filter: brightness(1.15) saturate(1.35);
     transform: scale(1.03);
   }
-  75% {
-    filter: brightness(1.03);
-    transform: scale(1.005);
+  68% {
+    box-shadow: 0 2px 9px rgba(239, 68, 68, 0.65);
+    filter: brightness(1.06) saturate(1.15);
+    transform: scale(1.015);
+  }
+  84% {
+    filter: brightness(1.02) saturate(1.05);
+    transform: scale(1.003);
   }
 }
 
@@ -1677,19 +1956,27 @@
   0% {
     opacity: 0;
     transform: translateY(5px) scale(0.9);
-    filter: blur(1px);
+    filter: blur(2px) brightness(0.4) saturate(0.3);
+  }
+  35% {
+    filter: blur(0.2px) brightness(1.1) saturate(1.1);
   }
   50% {
     opacity: 0.9;
     transform: translateY(-1px) scale(1.03);
-    filter: blur(0);
+    filter: blur(0) brightness(1.15) saturate(1.2);
+  }
+  68% {
+    filter: blur(0) brightness(1.04) saturate(1.05);
   }
   75% {
     transform: translateY(0.5px) scale(0.99);
+    filter: blur(0) brightness(1.02) saturate(1.02);
   }
   100% {
     opacity: 1;
     transform: translateY(0) scale(1);
+    filter: blur(0) brightness(1) saturate(1);
   }
 }
 
@@ -1726,7 +2013,7 @@
   0% {
     opacity: 0;
     transform: translate(var(--deal-from-x, 0px), var(--deal-from-y, -60px)) scale(0.35) rotate(-10deg);
-    filter: brightness(1.5);
+    filter: brightness(1.5) saturate(0.3);
   }
   15% {
     opacity: 0.8;
@@ -1734,24 +2021,33 @@
       calc(var(--deal-from-x, 0px) * 0.4),
       calc(var(--deal-from-y, -60px) * 0.3)
     ) scale(0.7) rotate(-5deg);
-    filter: brightness(1.2);
+    filter: brightness(1.25) saturate(0.8);
   }
-  40% {
+  30% {
+    opacity: 0.95;
+    transform: translate(
+      calc(var(--deal-from-x, 0px) * 0.12),
+      calc(var(--deal-from-y, -60px) * 0.1)
+    ) scale(0.95) rotate(calc(var(--card-rotation, 0deg) + 4deg));
+    filter: brightness(1.12) saturate(1.15);
+  }
+  45% {
     opacity: 1;
     transform: translate(0, -2px) scale(1.08) rotate(calc(var(--card-rotation, 0deg) + 2deg));
-    filter: brightness(1.05);
+    filter: brightness(1.06) saturate(1.22);
   }
   60% {
     transform: translate(0, 1px) scale(0.97) rotate(calc(var(--card-rotation, 0deg) - 1deg));
-    filter: brightness(1);
+    filter: brightness(1.02) saturate(1.1);
   }
-  80% {
+  78% {
     transform: translate(0, 0) scale(1.01) rotate(var(--card-rotation, 0deg));
+    filter: brightness(1.01) saturate(1.04);
   }
   100% {
     opacity: 1;
     transform: translate(0, 0) scale(1) rotate(var(--card-rotation, 0deg));
-    filter: brightness(1);
+    filter: brightness(1) saturate(1);
   }
 }
 
@@ -1782,13 +2078,13 @@
   0% {
     opacity: 1;
     transform: translate(0, 0) rotate(var(--card-rotation, 0deg)) scale(1);
-    filter: brightness(1) blur(0);
+    filter: brightness(1) saturate(1) blur(0);
   }
   /* Lift phase — cards picked up off felt */
   15% {
     opacity: 1;
     transform: translate(0, -4px) rotate(var(--card-rotation, 0deg)) scale(1.04);
-    filter: brightness(1.1) blur(0);
+    filter: brightness(1.12) saturate(1.1) blur(0);
   }
   /* Launch phase — flicking toward muck */
   40% {
@@ -1800,7 +2096,7 @@
       )
       rotate(calc(var(--fold-spin, 18deg) * 0.6))
       scale(0.88);
-    filter: brightness(0.95) blur(0);
+    filter: brightness(0.9) saturate(0.65) blur(0);
   }
   /* Arrival — reaching muck area, fading */
   75% {
@@ -1812,7 +2108,7 @@
       )
       rotate(var(--fold-spin, 18deg))
       scale(0.65);
-    filter: brightness(0.7) blur(0.5px);
+    filter: brightness(0.65) saturate(0.35) blur(0.5px);
   }
   /* Gone — into the muck */
   100% {
@@ -1821,7 +2117,7 @@
       translate(var(--fold-to-x, 0px), var(--fold-to-y, -40px))
       rotate(var(--fold-spin, 18deg))
       scale(0.5);
-    filter: brightness(0.5) blur(2px);
+    filter: brightness(0.4) saturate(0.15) blur(2px);
   }
 }
 
@@ -1842,34 +2138,44 @@
   0% {
     transform: rotateY(180deg) scale(0.88);
     opacity: 0.4;
-    filter: brightness(0.8);
+    filter: brightness(0.7) saturate(0.3);
   }
-  30% {
-    transform: rotateY(120deg) scale(0.95);
-    opacity: 0.65;
-    filter: brightness(1);
+  20% {
+    transform: rotateY(140deg) scale(0.92);
+    opacity: 0.55;
+    filter: brightness(0.9) saturate(0.6);
+  }
+  38% {
+    transform: rotateY(100deg) scale(0.98);
+    opacity: 0.72;
+    filter: brightness(1.1) saturate(0.9);
   }
   50% {
-    /* Edge-on catches light */
+    /* Edge-on catches light — maximum bloom */
     transform: rotateY(90deg) scale(1.06);
     opacity: 0.8;
-    filter: brightness(1.3);
+    filter: brightness(1.35) saturate(1.35);
   }
-  70% {
-    transform: rotateY(30deg) scale(1.03);
-    opacity: 0.95;
-    filter: brightness(1.1);
+  62% {
+    transform: rotateY(55deg) scale(1.04);
+    opacity: 0.9;
+    filter: brightness(1.18) saturate(1.2);
   }
-  85% {
+  75% {
+    transform: rotateY(20deg) scale(1.02);
+    opacity: 0.97;
+    filter: brightness(1.08) saturate(1.1);
+  }
+  88% {
     /* Slight overshoot */
     transform: rotateY(-4deg) scale(1.01);
     opacity: 1;
-    filter: brightness(1.05);
+    filter: brightness(1.04) saturate(1.05);
   }
   100% {
     transform: rotateY(0deg) scale(1);
     opacity: 1;
-    filter: brightness(1);
+    filter: brightness(1) saturate(1);
   }
 }
 
@@ -1915,20 +2221,28 @@
   0% {
     opacity: 0;
     transform: scale(0.6);
-    filter: blur(2px);
+    filter: blur(3px) brightness(0.3) saturate(0.2);
+  }
+  30% {
+    opacity: 0.7;
+    filter: blur(0.5px) brightness(1.05) saturate(1.05);
   }
   50% {
     opacity: 0.9;
     transform: scale(1.08);
-    filter: blur(0);
+    filter: blur(0) brightness(1.18) saturate(1.2);
+  }
+  65% {
+    filter: blur(0) brightness(1.06) saturate(1.08);
   }
   70% {
     transform: scale(0.97);
+    filter: blur(0) brightness(1.02) saturate(1.03);
   }
   100% {
     opacity: 1;
     transform: scale(1);
-    filter: blur(0);
+    filter: blur(0) brightness(1) saturate(1);
   }
 }
 
@@ -2165,26 +2479,39 @@
 @keyframes seatWinnerPop {
   0% {
     transform: scale(1);
-    filter: brightness(1);
+    filter: brightness(1) saturate(1);
+  }
+  10% {
+    transform: scale(1.1);
+    filter: brightness(1.15) saturate(1.2);
   }
   18% {
     transform: scale(1.18);
-    filter: brightness(1.2);
+    filter: brightness(1.25) saturate(1.4);
   }
-  38% {
+  30% {
+    transform: scale(1.02);
+    filter: brightness(1.12) saturate(1.25);
+  }
+  42% {
     transform: scale(0.94);
-    filter: brightness(1.05);
+    filter: brightness(1.06) saturate(1.12);
   }
   55% {
     transform: scale(1.06);
-    filter: brightness(1.1);
+    filter: brightness(1.1) saturate(1.18);
   }
-  72% {
+  68% {
     transform: scale(0.98);
+    filter: brightness(1.03) saturate(1.06);
+  }
+  82% {
+    transform: scale(1.01);
+    filter: brightness(1.01) saturate(1.02);
   }
   100% {
     transform: scale(1);
-    filter: brightness(1);
+    filter: brightness(1) saturate(1);
   }
 }
 
@@ -2196,27 +2523,35 @@
 @keyframes seatAllinShake {
   0%, 100% {
     transform: translateX(0) rotate(0);
+    filter: brightness(1) saturate(1);
   }
   10% {
     transform: translateX(-4px) rotate(-0.5deg);
+    filter: brightness(1.25) saturate(1.3);
   }
   20% {
     transform: translateX(4px) rotate(0.5deg);
+    filter: brightness(1.15) saturate(1.2);
   }
   30% {
     transform: translateX(-3px) rotate(-0.3deg);
+    filter: brightness(1.1) saturate(1.15);
   }
   40% {
     transform: translateX(3px) rotate(0.3deg);
+    filter: brightness(1.06) saturate(1.1);
   }
   50% {
     transform: translateX(-2px) rotate(-0.2deg);
+    filter: brightness(1.03) saturate(1.06);
   }
   65% {
     transform: translateX(1.5px) rotate(0.1deg);
+    filter: brightness(1.01) saturate(1.03);
   }
   80% {
     transform: translateX(-0.5px);
+    filter: brightness(1) saturate(1);
   }
 }
 
@@ -2227,23 +2562,31 @@
 
 @keyframes seatStackGlow {
   0% {
-    filter: brightness(1);
+    filter: brightness(1) saturate(1);
     transform: scale(1);
   }
-  15% {
-    filter: brightness(1.35) drop-shadow(0 0 10px rgba(255, 215, 0, 0.6));
-    transform: scale(1.03);
+  10% {
+    filter: brightness(1.25) saturate(1.25) drop-shadow(0 0 8px rgba(255, 215, 0, 0.45));
+    transform: scale(1.02);
   }
-  35% {
-    filter: brightness(1.2) drop-shadow(0 0 6px rgba(255, 215, 0, 0.4));
+  18% {
+    filter: brightness(1.4) saturate(1.45) drop-shadow(0 0 12px rgba(255, 215, 0, 0.7));
+    transform: scale(1.035);
+  }
+  32% {
+    filter: brightness(1.22) saturate(1.3) drop-shadow(0 0 7px rgba(255, 215, 0, 0.45));
     transform: scale(0.99);
   }
-  55% {
-    filter: brightness(1.1) drop-shadow(0 0 3px rgba(255, 215, 0, 0.2));
+  48% {
+    filter: brightness(1.12) saturate(1.18) drop-shadow(0 0 4px rgba(255, 215, 0, 0.25));
     transform: scale(1.01);
   }
+  68% {
+    filter: brightness(1.05) saturate(1.08) drop-shadow(0 0 2px rgba(255, 215, 0, 0.12));
+    transform: scale(1.003);
+  }
   100% {
-    filter: brightness(1);
+    filter: brightness(1) saturate(1);
     transform: scale(1);
   }
 }

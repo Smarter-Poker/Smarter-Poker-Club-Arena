@@ -17,6 +17,8 @@
 
 import type { ActionType } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
+import { createPreActionStateMachine, type PreActionFSMState } from './StateMachine.js';
+import type { StateMachine } from './StateMachine.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -64,10 +66,23 @@ export interface PreActionEvent {
 
 export class PreActionEngine {
   private queuedActions: Map<string, PreActionEntry> = new Map(); // key: tableId:playerId
+  /** Bible V8 §3.4: Per-player Pre-Action FSM tracking */
+  private playerFSMs: Map<string, StateMachine<PreActionFSMState>> = new Map();
   private onEvent?: (event: PreActionEvent) => void;
 
   constructor(onEvent?: (event: PreActionEvent) => void) {
     this.onEvent = onEvent;
+  }
+
+  /** Get or create the FSM for a specific player at a table */
+  private getFSM(tableId: string, playerId: string): StateMachine<PreActionFSMState> {
+    const key = `${tableId}:${playerId}`;
+    let fsm = this.playerFSMs.get(key);
+    if (!fsm) {
+      fsm = createPreActionStateMachine('idle');
+      this.playerFSMs.set(key, fsm);
+    }
+    return fsm;
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -84,6 +99,10 @@ export class PreActionEngine {
     maxCallAmount?: number
   ): void {
     const key = `${tableId}:${playerId}`;
+    const fsm = this.getFSM(tableId, playerId);
+
+    // FSM: idle → queued
+    fsm.transition('queued');
 
     this.queuedActions.set(key, {
       playerId,
@@ -106,6 +125,13 @@ export class PreActionEngine {
    */
   clearPreAction(tableId: string, playerId: string): void {
     const key = `${tableId}:${playerId}`;
+    const fsm = this.getFSM(tableId, playerId);
+
+    // FSM: queued → idle (player manually clears or new hand)
+    if (fsm.canTransition('idle')) {
+      fsm.transition('idle');
+    }
+
     this.queuedActions.delete(key);
   }
 
@@ -148,6 +174,11 @@ export class PreActionEngine {
     const entry = this.queuedActions.get(key);
     if (!entry) return { executed: false };
 
+    const fsm = this.getFSM(tableId, playerId);
+
+    // FSM: queued → validating
+    fsm.transition('validating');
+
     // Always clear the pre-action after processing
     this.queuedActions.delete(key);
 
@@ -172,6 +203,9 @@ export class PreActionEngine {
           action = 'check';
         } else {
           // Bet came in — invalidate the pre-action
+          // FSM: validating → invalidated → idle
+          fsm.transition('invalidated');
+          fsm.transition('idle');
           this.emitEvent({
             type: 'PRE_ACTION_INVALIDATED',
             tableId,
@@ -192,6 +226,9 @@ export class PreActionEngine {
         } else if (amountToCall <= playerStack) {
           // Check if the call amount exceeds what the player agreed to
           if (entry.maxCallAmount !== undefined && amountToCall > entry.maxCallAmount) {
+            // FSM: validating → invalidated → idle
+            fsm.transition('invalidated');
+            fsm.transition('idle');
             this.emitEvent({
               type: 'PRE_ACTION_INVALIDATED',
               tableId,
@@ -223,10 +260,16 @@ export class PreActionEngine {
         break;
 
       default:
+        // FSM: validating → invalidated → idle (unknown action type)
+        fsm.transition('invalidated');
+        fsm.transition('idle');
         return { executed: false };
     }
 
     if (action) {
+      // FSM: validating → executing → executed → idle
+      fsm.transition('executing');
+      fsm.transition('executed');
       this.emitEvent({
         type: 'PRE_ACTION_EXECUTED',
         tableId,
@@ -234,9 +277,13 @@ export class PreActionEngine {
         action,
         amount,
       });
+      fsm.transition('idle');
       return { executed: true, action, amount };
     }
 
+    // FSM: validating → invalidated → idle
+    fsm.transition('invalidated');
+    fsm.transition('idle');
     return { executed: false };
   }
 
@@ -254,6 +301,12 @@ export class PreActionEngine {
       if (entry.playerId === bettingPlayerId) continue;
 
       if (entry.action === 'auto_check') {
+        // FSM: queued → idle (invalidated by bet)
+        const fsm = this.getFSM(tableId, entry.playerId);
+        if (fsm.canTransition('idle')) {
+          fsm.transition('idle');
+        }
+
         this.queuedActions.delete(key);
         this.emitEvent({
           type: 'PRE_ACTION_INVALIDATED',
@@ -274,6 +327,12 @@ export class PreActionEngine {
         this.queuedActions.delete(key);
       }
     }
+    // Reset all player FSMs for this table back to idle
+    for (const [key, fsm] of this.playerFSMs) {
+      if (key.startsWith(`${tableId}:`)) {
+        fsm.forceState('idle');
+      }
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -282,10 +341,17 @@ export class PreActionEngine {
 
   dispose(tableId: string): void {
     this.clearTable(tableId);
+    // Clean up FSMs for this table
+    for (const key of this.playerFSMs.keys()) {
+      if (key.startsWith(`${tableId}:`)) {
+        this.playerFSMs.delete(key);
+      }
+    }
   }
 
   disposeAll(): void {
     this.queuedActions.clear();
+    this.playerFSMs.clear();
   }
 
   // ═══════════════════════════════════════════════════════════════════════════

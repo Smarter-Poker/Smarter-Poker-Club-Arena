@@ -1468,12 +1468,24 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   CARD DEALING ANIMATION — Cards fly in from dealer position
+   CARD DEALING ANIMATION -- Per-Seat Card Arrival
+   ═══════════════════════════════════════════════════════════════════════════════
+   When a new hand starts, each seat's hole cards animate in from the dealer
+   direction. This is the "landing" counterpart to DealAnimation's "flight".
+
+   6-phase spring animation:
+     0%  — Off-screen toward dealer, tiny, bright
+     15% — Entering view, growing rapidly
+     40% — Arriving at seat, slight overshoot in scale
+     60% — Micro-bounce back (spring settle)
+     80% — Almost at rest
+     100%— At rest, normal size + rotation
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .seat__cards--dealing .seat__card {
-  animation: cardDealIn calc(0.25s * var(--animation-speed, 1)) ease-out forwards;
+  animation: cardDealIn calc(0.35s * var(--animation-speed, 1)) cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
   opacity: 0;
+  will-change: transform, opacity;
 }
 
 .seat__cards--dealing .seat__card:nth-child(1) {
@@ -1487,38 +1499,103 @@
 @keyframes cardDealIn {
   0% {
     opacity: 0;
-    transform: translate(var(--deal-from-x, 0px), var(--deal-from-y, -60px)) scale(0.5) rotate(0deg);
+    transform: translate(var(--deal-from-x, 0px), var(--deal-from-y, -60px)) scale(0.35) rotate(-10deg);
+    filter: brightness(1.5);
   }
-  70% {
+  15% {
+    opacity: 0.8;
+    transform: translate(
+      calc(var(--deal-from-x, 0px) * 0.4),
+      calc(var(--deal-from-y, -60px) * 0.3)
+    ) scale(0.7) rotate(-5deg);
+    filter: brightness(1.2);
+  }
+  40% {
     opacity: 1;
-    transform: translate(0, 0) scale(1.05) rotate(var(--card-rotation, 0deg));
+    transform: translate(0, -2px) scale(1.08) rotate(calc(var(--card-rotation, 0deg) + 2deg));
+    filter: brightness(1.05);
+  }
+  60% {
+    transform: translate(0, 1px) scale(0.97) rotate(calc(var(--card-rotation, 0deg) - 1deg));
+    filter: brightness(1);
+  }
+  80% {
+    transform: translate(0, 0) scale(1.01) rotate(var(--card-rotation, 0deg));
   }
   100% {
     opacity: 1;
     transform: translate(0, 0) scale(1) rotate(var(--card-rotation, 0deg));
+    filter: brightness(1);
   }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   FOLD ANIMATION — Cards fly to muck/center and fade out
+   FOLD ANIMATION -- World-Class Card Muck
+   ═══════════════════════════════════════════════════════════════════════════════
+   Cards fly toward the muck (center of table) with:
+   - Initial lift (cards picked up off the felt)
+   - Rotation spin (realistic flick toward muck)
+   - Scale-down as cards recede into distance
+   - Brightness dim (cards going face-down into the muck pile)
+   - Blur on exit (depth-of-field effect)
+   - Second card slightly delayed for that satisfying 1-2 toss feel
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .seat__cards--folding .seat__card {
-  animation: cardFoldOut calc(0.3s * var(--animation-speed, 1)) ease-in forwards;
+  animation: cardFoldOut calc(0.38s * var(--animation-speed, 1)) cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  will-change: transform, opacity, filter;
 }
 
 .seat__cards--folding .seat__card:nth-child(2) {
-  animation-delay: 40ms;
+  animation-delay: 55ms;
+  /* Second card rotates the opposite direction for visual variety */
+  --fold-spin: -20deg;
 }
 
 @keyframes cardFoldOut {
   0% {
     opacity: 1;
-    transform: translate(0, 0) rotate(var(--card-rotation, 0deg));
+    transform: translate(0, 0) rotate(var(--card-rotation, 0deg)) scale(1);
+    filter: brightness(1) blur(0);
   }
+  /* Lift phase — cards picked up off felt */
+  15% {
+    opacity: 1;
+    transform: translate(0, -4px) rotate(var(--card-rotation, 0deg)) scale(1.04);
+    filter: brightness(1.1) blur(0);
+  }
+  /* Launch phase — flicking toward muck */
+  40% {
+    opacity: 0.9;
+    transform:
+      translate(
+        calc(var(--fold-to-x, 0px) * 0.5),
+        calc(var(--fold-to-y, -40px) * 0.4 - 6px)
+      )
+      rotate(calc(var(--fold-spin, 18deg) * 0.6))
+      scale(0.88);
+    filter: brightness(0.95) blur(0);
+  }
+  /* Arrival — reaching muck area, fading */
+  75% {
+    opacity: 0.5;
+    transform:
+      translate(
+        calc(var(--fold-to-x, 0px) * 0.9),
+        calc(var(--fold-to-y, -40px) * 0.85)
+      )
+      rotate(var(--fold-spin, 18deg))
+      scale(0.65);
+    filter: brightness(0.7) blur(0.5px);
+  }
+  /* Gone — into the muck */
   100% {
     opacity: 0;
-    transform: translate(var(--fold-to-x, 0px), var(--fold-to-y, -40px)) scale(0.6) rotate(15deg);
+    transform:
+      translate(var(--fold-to-x, 0px), var(--fold-to-y, -40px))
+      rotate(var(--fold-spin, 18deg))
+      scale(0.5);
+    filter: brightness(0.5) blur(2px);
   }
 }
 

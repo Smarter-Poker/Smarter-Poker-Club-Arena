@@ -25,9 +25,7 @@ type GameType =
   | 'plo6'
   | 'plo8'
   | 'pineapple'
-  | 'short_deck'
-  | 'ofc'
-  | 'ofc_pineapple';
+  | 'short_deck';
 
 interface TableSettings {
   name: string;
@@ -162,8 +160,6 @@ export default function TableCreationPage() {
     { value: 'plo8', label: 'PLO Hi-Lo', icon: '♠' },
     { value: 'pineapple', label: 'Pineapple', icon: '♥' },
     { value: 'short_deck', label: 'Short Deck 6+', icon: '♦' },
-    { value: 'ofc', label: 'Open Face Chinese', icon: '♣' },
-    { value: 'ofc_pineapple', label: 'OFC Pineapple', icon: '♣' },
   ];
 
   const stakesPresets = [

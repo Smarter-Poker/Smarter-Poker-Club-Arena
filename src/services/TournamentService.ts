@@ -111,7 +111,7 @@ export interface TournamentConfig {
   spinType?: 'standard' | 'hyper';
 
   // Game Variant (poker game type)
-  gameVariant?: 'NLH' | 'PLO4' | 'PLO5' | 'PLO8' | 'OFC_PINEAPPLE' | 'SHORT_DECK';
+  gameVariant?: 'NLH' | 'PLO4' | 'PLO5' | 'PLO8' | 'SHORT_DECK';
 
   // Satellite Target
   satelliteTarget?: {

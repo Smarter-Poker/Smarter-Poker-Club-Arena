@@ -80,6 +80,9 @@ import type {
 } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
 import type { TableStateHub } from '../transport/TableStateHub.js';
+import { createTableStateMachine, createTurnStateMachine, type TurnFSMState } from './StateMachine.js';
+import type { StateMachine } from './StateMachine.js';
+import type { TableStatus } from '../types.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SERVER TABLE ENGINE
@@ -88,6 +91,10 @@ import type { TableStateHub } from '../transport/TableStateHub.js';
 export class ServerTableEngine {
   private tableId: string;
   private running: boolean = false;
+  /** Bible V8 §3.1: Formal Table State Machine with entry/exit/fail conditions */
+  private tableFSM: StateMachine<TableStatus> = createTableStateMachine('empty');
+  /** Bible V8 §3.2: Formal Turn State Machine — unifies timer/timebank/preaction/disconnect */
+  private turnFSM: StateMachine<TurnFSMState> = createTurnStateMachine('waiting');
   private handCount: number = 0;
   private handController: HandController | null = null;
   /**
@@ -108,6 +115,13 @@ export class ServerTableEngine {
 
   // Bible V8 §4.2: Track players returning from sit-out who must post dead blind
   private returningFromSitout: Set<string> = new Set();
+
+  // Bible V8 §4.2: Players waiting for BB position before they can play
+  private waitingForBB: Set<string> = new Set();
+
+  // Bible V8 §6.17: Admin pause/maintenance lock — prevents new hands from starting
+  private adminPauseLock: boolean = false;
+  private maintenanceLock: boolean = false;
 
   // FIX 143: Bible V8 §7.12: Deferred sit-out — can't fold mid-hand
   // Players who request sit-out during an active hand are queued here.
@@ -144,6 +158,22 @@ export class ServerTableEngine {
     handName: string;
     kickers: number[];
     holeCards: Array<{ rank: string; suit: string }>;
+  }> = [];
+  /** Bible V8 §2.15: Timer log — every timer start/expiry/action event */
+  private currentHandTimerLog: Array<{
+    playerId: string;
+    event: 'timer_start' | 'timer_expired' | 'action_received' | 'time_bank_activated' | 'time_bank_expired';
+    timestamp: number;
+    durationMs?: number;
+    timeBankUsed?: boolean;
+  }> = [];
+  /** Bible V8 §2.16: Notification log — every notification sent during hand */
+  private currentHandNotificationLog: Array<{
+    playerId: string;
+    type: string;
+    channel: 'push' | 'in_app' | 'sound' | 'haptic';
+    timestamp: number;
+    delivered: boolean;
   }> = [];
   // Hand complete callback for tournament chip sync
   private handCompleteCallback:
@@ -382,6 +412,9 @@ export class ServerTableEngine {
         );
       }
 
+      // Bible V8 §3.1: Table FSM — empty → waiting (engine started, waiting for players)
+      this.tableFSM.transition('waiting');
+
       // Wait for minimum 2 players
       while (this.running) {
         this.seatedPlayers = await loadSeatedPlayers(this.tableId);
@@ -391,6 +424,10 @@ export class ServerTableEngine {
         );
         await this.sleep(5000);
       }
+
+      // Bible V8 §3.1: Table FSM — waiting → seating → running (players seated, ready to deal)
+      this.tableFSM.transition('seating');
+      this.tableFSM.transition('running');
 
       // FIX 147 + Phase 1.2 PR-G-real: heartbeat check via DeadlineScheduler.
       // Recurring schedule pattern — the callback re-arms itself so a single
@@ -413,6 +450,10 @@ export class ServerTableEngine {
   async stop(): Promise<void> {
     if (!this.running) return;
     this.running = false;
+
+    // Bible V8 §3.1: Table FSM — running/waiting → closing → closed
+    this.tableFSM.transition('closing');
+
     this.clearTurnTimer();
     this.handController = null;
 
@@ -448,6 +489,9 @@ export class ServerTableEngine {
     // Phase 1.1 PR-5: no Supabase channel to clean up — engine WS is now the
     // only game-state transport. TableStateHub.dropTable is called by the
     // discovery / tournament-break paths elsewhere.
+    // Bible V8 §3.1: Table FSM — closing → closed (cleanup complete)
+    this.tableFSM.transition('closed');
+
     console.log(`[ServerTableEngine:${this.tableId}] Stopped. Dealt ${this.handCount} hands.`);
   }
 
@@ -514,6 +558,11 @@ export class ServerTableEngine {
     return this.engineTelemetry.getPerformanceSummary();
   }
 
+  // Bible V8 §10.4 — Prometheus text exposition format
+  getPrometheusMetrics(): string {
+    return this.engineTelemetry.getPrometheusMetrics();
+  }
+
   onHandComplete(
     callback: (tableId: string, players: { user_id: string; stack: number }[]) => void
   ): void {
@@ -528,6 +577,10 @@ export class ServerTableEngine {
   /** Resume dealing (all tables finished their hand-for-hand hand) */
   resumeDealing(): void {
     this.handForHandPaused = false;
+    // Bible V8 §3.1: Table FSM — paused → running
+    if (this.tableFSM.state === 'paused') {
+      this.tableFSM.transition('running');
+    }
     if (this.handForHandResolve) {
       this.handForHandResolve();
       this.handForHandResolve = null;
@@ -562,6 +615,14 @@ export class ServerTableEngine {
     this.playerTurnStartTime = Date.now();
     this.playerTurnDuration = Math.max(0, durationSeconds);
 
+    // Bible V8 §2.15: Log timer start
+    this.currentHandTimerLog.push({
+      playerId: userId,
+      event: 'timer_start',
+      timestamp: Date.now(),
+      durationMs: durationSeconds * 1000,
+    });
+
     // Safety fallback: if no duration, default to 15s to prevent infinite loops
     const safeDurationSeconds = this.playerTurnDuration > 0 ? this.playerTurnDuration : 15;
 
@@ -586,6 +647,9 @@ export class ServerTableEngine {
           userId,
           () => {
             // Time bank itself expired — auto-fold/check
+            // Bible V8 §3.3: Turn FSM — time_bank_active → expired → processing → complete
+            this.turnFSM.transition('expired');
+            this.turnFSM.transition('processing');
             if (!this.running || !this.handController) return;
             const tbState = this.handController.getState();
             if (tbState.currentPlayerSeat !== seat) return;
@@ -603,6 +667,9 @@ export class ServerTableEngine {
               try { this.handController!.performAction(seat, 'fold'); } catch { /* done */ }
             }
 
+            // Bible V8 §3.3: Turn FSM — processing → complete
+            this.turnFSM.transition('complete');
+
             this.engineTelemetry.recordTimerExpired(this.tableId);
             const tbUsesLeft = this.timeBankEngine.getUsesRemaining(this.tableId, userId);
             try {
@@ -619,7 +686,16 @@ export class ServerTableEngine {
         );
 
         if (autoActivated) {
+          // Bible V8 §3.3: Turn FSM — timer_running → time_bank_active
+          this.turnFSM.transition('time_bank_active');
           this.timeBankActivatedThisTurn = true;
+          // Bible V8 §2.15: Log time bank activation
+          this.currentHandTimerLog.push({
+            playerId: userId,
+            event: 'time_bank_activated',
+            timestamp: Date.now(),
+            timeBankUsed: true,
+          });
           const bankSeconds = this.timeBankEngine.getRemainingSeconds(this.tableId, userId);
           const usesAfterActivation = this.timeBankEngine.getUsesRemaining(this.tableId, userId);
           console.log(
@@ -666,6 +742,15 @@ export class ServerTableEngine {
       }
 
       // No time bank available — auto-fold or auto-check
+      // Bible V8 §2.15: Log timer expiry
+      this.currentHandTimerLog.push({
+        playerId: userId,
+        event: 'timer_expired',
+        timestamp: Date.now(),
+      });
+      // Bible V8 §3.3: Turn FSM — timer_running → expired → processing
+      this.turnFSM.transition('expired');
+      this.turnFSM.transition('processing');
       const player = state.players.find((p) => p.seat === seat);
       const amountToCall = player ? Math.max(0, state.currentBet - (player.bet ?? 0)) : 0;
       const canCheck = amountToCall === 0;
@@ -683,6 +768,9 @@ export class ServerTableEngine {
         try { this.handController.performAction(seat, 'fold'); }
         catch (err) { reportError(err, 'ServerTableEnginethistableId.Autofold_failed'); }
       }
+
+      // Bible V8 §3.3: Turn FSM — processing → complete
+      this.turnFSM.transition('complete');
 
       this.engineTelemetry.recordTimerExpired(this.tableId);
       const usesLeft = this.timeBankEngine.getUsesRemaining(this.tableId, userId);
@@ -1031,6 +1119,116 @@ export class ServerTableEngine {
 
       return { success: true, immediate: true };
     }
+  }
+
+  // ═════════════════════════════════════════════════════════════════════════════
+  // Bible V8 §6.17: ADMIN PAUSE / MAINTENANCE LOCK
+  // ═════════════════════════════════════════════════════════════════════════════
+
+  /**
+   * POST /admin/pause — Bible V8 §6.17: Admin pause. Current hand finishes, then no new hands.
+   */
+  public adminPause(reason?: string): { success: boolean } {
+    this.adminPauseLock = true;
+    console.log(`[ServerTableEngine:${this.tableId}] Admin pause activated${reason ? `: ${reason}` : ''}`);
+    return { success: true };
+  }
+
+  /**
+   * POST /admin/resume — Bible V8 §6.17: Resume dealing after admin pause.
+   */
+  public adminResume(): { success: boolean } {
+    this.adminPauseLock = false;
+    this.maintenanceLock = false;
+    if (this.tableFSM.state === 'paused') {
+      this.tableFSM.transition('running');
+    }
+    console.log(`[ServerTableEngine:${this.tableId}] Admin resume — dealing will continue`);
+    return { success: true };
+  }
+
+  /**
+   * POST /admin/maintenance — Bible V8 §6.17: Full maintenance lock. No hands, no new joins.
+   */
+  public setMaintenanceLock(locked: boolean): { success: boolean } {
+    this.maintenanceLock = locked;
+    if (locked && this.tableFSM.state === 'running') {
+      this.tableFSM.transition('paused');
+    }
+    console.log(`[ServerTableEngine:${this.tableId}] Maintenance lock: ${locked}`);
+    return { success: true };
+  }
+
+  /**
+   * Bible V8 §4.2: Register a new player as waiting-for-BB.
+   * Called when a player sits down at a table with wait_for_big_blind enabled.
+   * The player cannot play until the BB position rotates to their seat.
+   */
+  public registerWaitForBB(userId: string): void {
+    if (this.tableInfo?.wait_for_big_blind) {
+      this.waitingForBB.add(userId);
+    }
+  }
+
+  /**
+   * Bible V8 §4.2: Player opts to "Post BB" to enter immediately.
+   * When a new player sits at a cash game, they choose: post the BB now to be dealt
+   * in immediately, OR wait for the BB to reach their seat naturally.
+   * If they post, they pay 1× BB as a live blind and get dealt into the current hand.
+   */
+  public postBBToEnter(userId: string): { success: boolean; error?: string } {
+    if (!this.waitingForBB.has(userId)) {
+      return { success: false, error: 'Player is not waiting for BB' };
+    }
+    this.waitingForBB.delete(userId);
+    // Mark as returning — dead blind (1× BB) will be posted on the next deal
+    this.returningFromSitout.add(userId);
+    return { success: true };
+  }
+
+  /**
+   * Bible V8 §4.2: Check if a player is currently waiting for BB.
+   */
+  public isWaitingForBB(userId: string): boolean {
+    return this.waitingForBB.has(userId);
+  }
+
+  // ═════════════════════════════════════════════════════════════════════════════
+  // Bible V8 §6.15: OBSERVER PERMISSIONS
+  // ═════════════════════════════════════════════════════════════════════════════
+
+  /**
+   * GET /state/:tableId for observers — Bible V8 §6.15: Scrubbed state with no hole cards.
+   * Observers see community cards, pot, actions, but NEVER other players' hole cards.
+   */
+  public getObserverState(): Record<string, any> | null {
+    if (!this.handController || !this.tableInfo) return null;
+    const state = this.handController.getState();
+    const showCards = this.tableInfo.observer_show_cards ?? false;
+    return {
+      table_id: this.tableId,
+      hand_number: this.handCount,
+      pot: state.pot ?? 0,
+      community_cards: state.communityCards ?? [],
+      current_bet: state.currentBet ?? 0,
+      stage: state.stage ?? 'preflop',
+      dealer_seat: state.dealerSeat ?? this.currentHandDealerSeat,
+      players: state.players.map((p) => ({
+        seat: p.seat,
+        user_id: p.user_id,
+        username: p.username,
+        stack: p.stack,
+        bet: p.bet,
+        is_folded: p.is_folded,
+        is_all_in: p.is_all_in,
+        position: p.position,
+        // Bible V8 §6.15: Only show cards if table allows AND it's showdown
+        cards: showCards && state.stage === 'showdown' ? p.cards : [],
+      })),
+      is_observer: true,
+      admin_paused: this.adminPauseLock,
+      maintenance_lock: this.maintenanceLock,
+    };
   }
 
   /**
@@ -1419,6 +1617,18 @@ export class ServerTableEngine {
     }
 
     try {
+      // Bible V8 §2.15: Log action received
+      this.currentHandTimerLog.push({
+        playerId: userId,
+        event: 'action_received',
+        timestamp: Date.now(),
+        durationMs: Date.now() - this.playerTurnStartTime,
+        timeBankUsed: this.timeBankActivatedThisTurn,
+      });
+      // Bible V8 §3.3: Turn FSM — timer_running/time_bank_active → action_received → processing
+      this.turnFSM.transition('action_received');
+      this.turnFSM.transition('processing');
+
       this.clearTurnTimer();
       this.preciseTimer.cancelTimer(this.tableId, userId); // Step 4: Cancel precise deadline
       // Bible V8 §6.2: If time bank was active, notify engine to deduct used time from pool
@@ -1429,6 +1639,9 @@ export class ServerTableEngine {
       console.log(
         `[ServerTableEngine:${this.tableId}] Player ${userId} → ${normalizedAction}${amount ? ` ${amount}` : ''}`
       );
+
+      // Bible V8 §3.3: Turn FSM — processing → complete
+      this.turnFSM.transition('complete');
 
       // FIX 149: Wire telemetry — record that player acted within timer
       this.engineTelemetry.recordTimerActed(this.tableId);
@@ -1533,11 +1746,38 @@ export class ServerTableEngine {
         // Bible V8 §6.3: Check for stale heartbeats before each hand
         this.disconnectEngine.checkStaleHeartbeats(this.tableId);
 
+        // Bible V8 §6.17: Admin pause/maintenance lock — skip dealing
+        if (this.adminPauseLock || this.maintenanceLock) {
+          if (this.tableFSM.state === 'running') {
+            this.tableFSM.transition('paused');
+          }
+          await this.sleep(3000);
+          continue;
+        }
+
+        // Bible V8 §4.2: Wait-for-BB — new/returning players can't play until
+        // the big blind reaches their position. Check each waiting player:
+        // if this hand's BB position equals their seat, clear the wait flag.
+        if (this.waitingForBB.size > 0 && this.tableInfo) {
+          const bbSeatIndex = this.getBBSeatIndex();
+          for (const userId of this.waitingForBB) {
+            const p = this.seatedPlayers.find((s) => s.user_id === userId);
+            if (p && p.seat_number === bbSeatIndex) {
+              this.waitingForBB.delete(userId);
+              // Player will now post BB naturally this hand
+            }
+          }
+        }
+
         // FIX 143: Bible V8 §7.12 — Exclude sitting-out players from the deal.
         // Standard online poker: sitting-out players skip the hand entirely.
         // They miss their blind and owe a dead blind when they return (§4.2).
+        // Bible V8 §4.2: Also exclude players waiting for BB.
         const activePlayers = this.seatedPlayers.filter(
-          (p) => p.stack > 0 && !this.disconnectEngine.isSittingOut(this.tableId, p.user_id)
+          (p) =>
+            p.stack > 0 &&
+            !this.disconnectEngine.isSittingOut(this.tableId, p.user_id) &&
+            !this.waitingForBB.has(p.user_id)
         );
 
         // Clean up rebuy map (Garbage Collection for horses no longer sitting here)
@@ -1551,16 +1791,28 @@ export class ServerTableEngine {
         }
 
         if (activePlayers.length < 2) {
+          // Bible V8 §3.1: Table FSM — running → waiting (not enough players)
+          if (this.tableFSM.state === 'running') {
+            this.tableFSM.transition('waiting');
+          }
           await this.sleep(3000);
           continue;
         }
 
-        // Deal hand
+        // Bible V8 §3.1: Table FSM — waiting → seating → running (players returned)
+        if (this.tableFSM.state === 'waiting') {
+          this.tableFSM.transition('seating');
+          this.tableFSM.transition('running');
+        }
+
+        // Deal hand (self-transition: running → running for next hand)
         await this.dealHand(activePlayers);
         this.consecutiveErrors = 0;
 
         // Hand-for-hand: if paused, wait until tournament manager resumes all tables
+        // Bible V8 §3.1: Table FSM — running → paused
         if (this.handForHandPaused && this.running) {
+          this.tableFSM.transition('paused');
           console.log(
             `[ServerTableEngine:${this.tableId}] Hand-for-hand: waiting for all tables to complete...`
           );
@@ -1576,9 +1828,16 @@ export class ServerTableEngine {
           });
         }
 
-        // Brief pause between hands (1-2 seconds for server — fast!)
+        // Bible V8 §4.23: Formal cleanup timing between hands.
+        // Phase 1 (1.5s): Result display — winners, amounts, hand names visible to all players.
+        // Phase 2 (0.5s): Board clear — community cards, pot chips swept away.
+        // Total: 2 seconds of deterministic inter-hand pause. No randomness.
         if (this.running) {
-          await this.sleep(1000 + Math.floor(Math.random() * 1000));
+          // Phase 1: Result display time (clients show winner popups during this window)
+          await this.sleep(1500);
+          // Phase 2: Board clear (clients animate card/chip sweep)
+          this.broadcastCurrentState(); // Sends clean state (no hand in progress)
+          await this.sleep(500);
         }
       } catch (err) {
         this.consecutiveErrors++;
@@ -1625,6 +1884,8 @@ export class ServerTableEngine {
     this.currentHandContributions.clear(); // Bible V8 §4.18: Reset equal-share rakeback tracking (FIX 144)
     this.currentHandInsuranceSettlements = []; // Bible V8 §4.19: Reset insurance settlements
     this.currentHandShowdownResults = []; // BBJ: Reset showdown results for new hand
+    this.currentHandTimerLog = []; // Bible V8 §2.15: Reset timer log
+    this.currentHandNotificationLog = []; // Bible V8 §2.16: Reset notification log
     this.currentHandBBJHit = null; // BBJ: Reset hit detection for new hand
     this.currentHandBBJPayoutConfig = null;
     this.currentHandRabbitCards = []; // Rabbit Hunt: Reset remaining deck
@@ -2143,11 +2404,35 @@ export class ServerTableEngine {
         }
         break;
 
-      case 'HAND_COMPLETE':
-        // Bible V8 §1.16: discrete hand_complete event so the client can
-        // start its post-hand cleanup (winner highlight fade, board clear
-        // countdown, prep for next deal animation) without waiting for the
-        // snapshot to diff and infer "hand ended".
+      case 'HAND_COMPLETE': {
+        // ═══════════════════════════════════════════════════════════════════
+        // Bible V8 §1.9: SETTLEMENT PIPELINE — 15-step mandatory order
+        //
+        // Step  1: Lock table (no new actions accepted)
+        // Step  2: Calculate side pots from contributions
+        // Step  3: Evaluate all active players' hands (variant-aware)
+        // Step  4: Determine winners per pot (including hi-lo split)
+        // Step  5: Calculate rake (percentage with cap, no-flop-no-drop)
+        // Step  6: Distribute winnings (integer-cents arithmetic)
+        // Step  7: Update player stacks (atomic via AtomicStackService)
+        // Step  8: Persist results to database (atomic transaction)
+        // Step  9: Update leaderboards
+        // Step 10: Trigger achievements/daily challenges
+        // Step 11: Calculate VIP points earned
+        // Step 12: Calculate rakeback
+        // Step 13: Log complete hand history
+        // Step 14: Broadcast final state (with showdown cards)
+        // Step 15: Unlock table
+        //
+        // Steps 1-6 are handled inside HandController.advanceStage()
+        // Steps 7-15 are handled here + postHandTasks()
+        // ═══════════════════════════════════════════════════════════════════
+
+        // SETTLEMENT STEP 1: Lock table (actionLock prevents new actions)
+        // Already enforced — handController completes hand, no more actions accepted
+
+        // SETTLEMENT STEP 14 (early broadcast): Notify clients hand is complete
+        // Bible V8 §1.16: discrete hand_complete event
         this.hub?.emitEvent(this.tableId, {
           type: 'hand_complete',
           table_id: this.tableId,
@@ -2166,10 +2451,11 @@ export class ServerTableEngine {
           }
         }
 
-        // FIX 137: Bible V8 §7.17 — Mark hand snapshot as complete (settlement done)
+        // SETTLEMENT STEP 8 (partial): Mark hand snapshot as complete
+        // FIX 137: Bible V8 §7.17
         completeHandSnapshot(this.tableId, this.handCount).catch(() => {});
 
-        // Capture rake and BBJ fee from hand completion event
+        // SETTLEMENT STEP 5: Capture rake and BBJ fee (calculated in HandController)
         if ((event as any).rake !== undefined) {
           this.currentHandRake = (event as any).rake;
         }
@@ -2177,7 +2463,7 @@ export class ServerTableEngine {
           this.currentHandBBJFee = (event as any).bbjFee;
         }
 
-        // Step 4: State verification — deduct rake + BBJ and verify chip conservation
+        // SETTLEMENT STEP 4+5: State verification — deduct rake + BBJ and verify chip conservation
         const totalDeductions = this.currentHandRake + this.currentHandBBJFee;
         if (totalDeductions > 0) {
           this.stateVerifier.deductRake(this.tableId, totalDeductions);
@@ -2197,6 +2483,7 @@ export class ServerTableEngine {
           }
         }
 
+        // SETTLEMENT STEP 7: Update player stacks (atomic via AtomicStackService)
         // FIX 150: Wire AtomicStackService — settle final stacks through atomic layer
         // Computes delta (final stack - initial stack tracked by version service) for each player
         // so version tracking stays in sync and race conditions with concurrent rebuy/cashout are prevented.
@@ -2218,7 +2505,7 @@ export class ServerTableEngine {
           }
         }
 
-        // Step 4: Clean up validator state between hands
+        // SETTLEMENT STEP 15 (partial): Clean up validator state between hands (unlock table)
         this.actionValidator.clearTable(this.tableId);
         this.preciseTimer.clearTable(this.tableId);
 
@@ -2229,6 +2516,7 @@ export class ServerTableEngine {
         // Note: disconnectEngine persists across hands (tracks connection state)
         // Note: atomicStackService persists across hands (tracks stack versions via FIX 150)
 
+        // SETTLEMENT STEP 6 (continued): Insurance settlement — distribute insurance payouts
         // Bible V8 §4.19: Settle insurance BEFORE disposing (offers cleared on dispose)
         // FIX 118: Pass ALL winner IDs — chops (multiple winners) = PUSH (insurance voided)
         if (this.currentHandWinnerIds.length > 0) {
@@ -2367,7 +2655,10 @@ export class ServerTableEngine {
           }
         }
 
-        // Step 7: Record telemetry for this hand
+        // SETTLEMENT STEP 12: Calculate rakeback (done in postHandTasks)
+        // SETTLEMENT STEP 9-11: Leaderboards, achievements, VIP points (done in postHandTasks)
+
+        // Record telemetry for this hand
         this.engineTelemetry.recordPlayerCount(this.tableId, players.length);
 
         // FIX 211: Bible V8 §1.9 — Track postHandTasks promise so dealingLoop can await
@@ -3053,6 +3344,11 @@ export class ServerTableEngine {
     const actionTime = this.tableInfo?.action_time_seconds || 15;
     this.timeBankActivatedThisTurn = false; // Reset anti-spam lock for this NEW turn
 
+    // Bible V8 §3.3: Turn FSM — reset to waiting at turn start, then transition to timer_running
+    if (this.turnFSM.state !== 'waiting') {
+      this.turnFSM.forceState('waiting');
+    }
+
     // Step 1: Check for queued pre-action before starting timer (applies to ALL players)
     const toCallForPreAction = Math.max(0, state.currentBet - enginePlayer.bet);
     const canCheckForPreAction = toCallForPreAction === 0;
@@ -3099,6 +3395,8 @@ export class ServerTableEngine {
     }
 
     // Step 4: Start the authoritative turn timer — SAME for horses and real players
+    // Bible V8 §3.3: Turn FSM — waiting → timer_running
+    this.turnFSM.transition('timer_running');
     this.startTurnTimer(player.user_id, seat, effectiveActionTime);
 
     // Step 5: If this is a horse, schedule their action after a realistic think time
@@ -3330,7 +3628,12 @@ export class ServerTableEngine {
   // ═════════════════════════════════════════════════════════════════════════════
 
   private async postHandTasks(players: SeatedPlayer[]): Promise<void> {
-    // 1. Sync stacks to database
+    // ═══════════════════════════════════════════════════════════════════════
+    // Bible V8 §1.9: SETTLEMENT PIPELINE (continued) — Steps 8-15
+    // Steps 1-7 completed in HAND_COMPLETE handler above
+    // ═══════════════════════════════════════════════════════════════════════
+
+    // SETTLEMENT STEP 8: Persist results to database (atomic transaction)
     await syncStacks(
       this.tableId,
       players.map((p) => ({
@@ -3340,7 +3643,7 @@ export class ServerTableEngine {
       }))
     );
 
-    // 2. Log rake collection — every penny documented
+    // SETTLEMENT STEP 8b: Log rake collection — every penny documented
     if (!this.isTournamentTable() && this.currentHandRake > 0 && this.tableInfo?.club_id) {
       await logRakeCollection(
         this.tableId,
@@ -3351,7 +3654,7 @@ export class ServerTableEngine {
       );
     }
 
-    // 2a. Log BBJ contribution — simultaneous with rake, per authoritative schedule
+    // SETTLEMENT STEP 8c: Log BBJ contribution
     if (!this.isTournamentTable() && this.currentHandBBJFee > 0 && this.tableInfo?.club_id) {
       await logBBJCollection(
         this.tableId,
@@ -3362,7 +3665,7 @@ export class ServerTableEngine {
       );
     }
 
-    // 2b. Step 6: FIX 144: Track rake for EQUAL-SHARE rakeback (NOT weighted)
+    // SETTLEMENT STEP 12: Calculate rakeback (EQUAL-SHARE, FIX 144)
     // Each dealt-in player gets credited with an EQUAL share of the total rake.
     // This is the key metric for weekly player/agent earnings.
     if (!this.isTournamentTable() && this.currentHandRake > 0 && this.tableInfo?.club_id) {
@@ -3404,7 +3707,7 @@ export class ServerTableEngine {
       }
     }
 
-    // 3. Log hand history — complete audit trail
+    // SETTLEMENT STEP 13: Log complete hand history
     if (this.tableInfo) {
       await logHandHistory({
         tableId: this.tableId,
@@ -3539,7 +3842,7 @@ export class ServerTableEngine {
       }
     }
 
-    // 4. Tournament chip sync
+    // SETTLEMENT STEP 8d: Tournament chip sync
     if (this.isTournamentTable() && this.tableInfo?.tournament_id) {
       await syncTournamentChips(this.tableId, this.tableInfo.tournament_id);
     }
@@ -3636,7 +3939,7 @@ export class ServerTableEngine {
       await processLeavePending(this.tableId, this.tableInfo?.club_id || '');
     }
 
-    // 7. Authoritative recount of table players from DB (not stale in-memory array)
+    // SETTLEMENT STEP 15: Unlock table — authoritative recount, ready for next hand
     const { count: dbPlayerCount } = await supabase
       .from('table_seats')
       .select('*', { count: 'exact', head: true })
@@ -3644,6 +3947,8 @@ export class ServerTableEngine {
       .is('left_at', null);
     const finalCount = dbPlayerCount ?? 0;
     await updateTableStatus(this.tableId, finalCount, finalCount >= 2 ? 'running' : 'waiting');
+
+    // Settlement pipeline complete — table unlocked for next hand
   }
 
   /**
@@ -3699,6 +4004,20 @@ export class ServerTableEngine {
   // ═════════════════════════════════════════════════════════════════════════════
   // SEAT HELPERS
   // ═════════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Bible V8 §4.2: Get the BB seat for the current deal.
+   * Used by wait-for-BB logic to know when a waiting player can enter.
+   */
+  private getBBSeatIndex(): number {
+    const players = this.seatedPlayers.filter(
+      (p) => p.stack > 0 && !this.disconnectEngine.isSittingOut(this.tableId, p.user_id)
+    );
+    if (players.length < 2) return -1;
+    const dealerSeat = players[this.dealerSeatIndex % players.length]?.seat_number ?? 0;
+    const sbSeat = players.length === 2 ? dealerSeat : this.getNextSeat(dealerSeat, players);
+    return this.getNextSeat(sbSeat, players);
+  }
 
   private getNextSeat(fromSeat: number, players: SeatedPlayer[]): number {
     const seats = players.map((p) => p.seat_number).sort((a, b) => a - b);

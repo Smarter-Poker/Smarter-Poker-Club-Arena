@@ -274,20 +274,6 @@ export const BBJ_QUALIFYING_HANDS: Record<string, BBJQualifyingHand> = {
     rules: [],
     eligible: false,
   },
-  ofc: {
-    label: 'Open Face Chinese',
-    minLosingHand: null,
-    description: 'BBJ not available for OFC',
-    rules: [],
-    eligible: false,
-  },
-  ofc_pineapple: {
-    label: 'OFC Pineapple',
-    minLosingHand: null,
-    description: 'BBJ not available for OFC Pineapple',
-    rules: [],
-    eligible: false,
-  },
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════

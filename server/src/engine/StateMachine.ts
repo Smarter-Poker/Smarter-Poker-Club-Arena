@@ -221,9 +221,26 @@ export function createHandStateMachine(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// §3.3 TURN STATE MACHINE (already implemented in PreciseActionTimer + TimeBankEngine)
-// §3.4 DISCONNECT STATE MACHINE (already implemented in DisconnectEngine)
-// These are documented here for completeness but are implemented inline.
+// §3.3 TURN STATE MACHINE
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// States: waiting → timer_running → time_bank_active → expired/action_received
+//         → processing → complete → waiting
+//
+// Unifies PreciseActionTimer + TimeBankEngine + PreActionEngine + DisconnectEngine
+// into a single state transition graph.
+//
+// Transitions:
+//   waiting → timer_running:         turn starts, primary shot clock begins
+//   timer_running → action_received: player submits a valid action
+//   timer_running → time_bank_active: primary timer expires, time bank kicks in
+//   timer_running → expired:          primary timer expires, no time bank available
+//   time_bank_active → action_received: player acts during time bank
+//   time_bank_active → expired:       time bank fully consumed
+//   action_received → processing:     server validates and applies the action
+//   expired → processing:             auto-fold/auto-check triggered
+//   processing → complete:            action fully applied, state updated
+//   complete → waiting:               turn advances to next player
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export type TurnFSMState =
@@ -235,9 +252,150 @@ export type TurnFSMState =
   | 'processing'
   | 'complete';
 
+const TURN_TRANSITIONS: StateTransition<TurnFSMState>[] = [
+  { from: 'waiting', to: 'timer_running' },
+  { from: 'timer_running', to: 'action_received' },
+  { from: 'timer_running', to: 'time_bank_active' },
+  { from: 'timer_running', to: 'expired' },
+  { from: 'time_bank_active', to: 'action_received' },
+  { from: 'time_bank_active', to: 'expired' },
+  { from: 'action_received', to: 'processing' },
+  { from: 'expired', to: 'processing' },
+  { from: 'processing', to: 'complete' },
+  { from: 'complete', to: 'waiting' },
+  // Recovery: force back to waiting from any terminal state
+  { from: 'complete', to: 'timer_running' }, // next turn starts immediately
+];
+
+export function createTurnStateMachine(
+  initialState: TurnFSMState = 'waiting'
+): StateMachine<TurnFSMState> {
+  return new StateMachine('TurnFSM', initialState, TURN_TRANSITIONS);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// §3.4 DISCONNECT STATE MACHINE
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// States: connected → heartbeat_missed → disconnected → reconnecting → reconnected
+//
+// Transitions:
+//   connected → heartbeat_missed:      missed heartbeat threshold
+//   heartbeat_missed → disconnected:   consecutive misses exceed threshold
+//   heartbeat_missed → connected:      heartbeat resumed in time
+//   disconnected → reconnecting:       reconnect attempt detected
+//   reconnecting → reconnected:        reconnect successful, state recovered
+//   reconnecting → disconnected:       reconnect failed/timed out
+//   reconnected → connected:           full state sync complete
+// ═══════════════════════════════════════════════════════════════════════════════
+
 export type DisconnectFSMState =
   | 'connected'
   | 'heartbeat_missed'
   | 'disconnected'
   | 'reconnecting'
   | 'reconnected';
+
+const DISCONNECT_TRANSITIONS: StateTransition<DisconnectFSMState>[] = [
+  { from: 'connected', to: 'heartbeat_missed' },
+  { from: 'heartbeat_missed', to: 'disconnected' },
+  { from: 'heartbeat_missed', to: 'connected' },
+  { from: 'disconnected', to: 'reconnecting' },
+  { from: 'reconnecting', to: 'reconnected' },
+  { from: 'reconnecting', to: 'disconnected' },
+  { from: 'reconnected', to: 'connected' },
+];
+
+export function createDisconnectStateMachine(
+  initialState: DisconnectFSMState = 'connected'
+): StateMachine<DisconnectFSMState> {
+  return new StateMachine('DisconnectFSM', initialState, DISCONNECT_TRANSITIONS);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// §3.4 PRE-ACTION STATE MACHINE
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// States: idle → queued → validating → executing → executed/invalidated → idle
+//
+// Formalizes the PreActionEngine lifecycle:
+//   idle → queued:           player sets a pre-action (auto-fold, auto-check, etc.)
+//   queued → validating:     player's turn arrives, pre-action checked for legality
+//   validating → executing:  pre-action is still valid, being applied
+//   validating → invalidated: game state changed (bet placed), pre-action no longer valid
+//   executing → executed:    pre-action successfully applied as real action
+//   executed → idle:         reset for next turn
+//   invalidated → idle:      reset for next turn
+//   queued → idle:           player manually clears pre-action, or new hand starts
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export type PreActionFSMState =
+  | 'idle'
+  | 'queued'
+  | 'validating'
+  | 'executing'
+  | 'executed'
+  | 'invalidated';
+
+const PRE_ACTION_TRANSITIONS: StateTransition<PreActionFSMState>[] = [
+  { from: 'idle', to: 'queued' },
+  { from: 'queued', to: 'validating' },
+  { from: 'queued', to: 'idle' },         // cleared by player or new hand
+  { from: 'validating', to: 'executing' },
+  { from: 'validating', to: 'invalidated' },
+  { from: 'executing', to: 'executed' },
+  { from: 'executed', to: 'idle' },
+  { from: 'invalidated', to: 'idle' },
+];
+
+export function createPreActionStateMachine(
+  initialState: PreActionFSMState = 'idle'
+): StateMachine<PreActionFSMState> {
+  return new StateMachine('PreActionFSM', initialState, PRE_ACTION_TRANSITIONS);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// §3.5 ERROR/RECOVERY STATE MACHINE
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// States: healthy → desync_detected → resync_required → resyncing
+//         → resync_complete → healthy
+//         OR → recovery_failed → manual_intervention
+//
+// Formalizes error detection and recovery:
+//   healthy → desync_detected:       StateVerifier detects chip/card/pot mismatch
+//   desync_detected → resync_required: server confirms desync is real (not transient)
+//   resync_required → resyncing:     server initiates state resync to client
+//   resyncing → resync_complete:     client acknowledges new state
+//   resync_complete → healthy:       normal operation resumes
+//   resyncing → recovery_failed:     resync attempt failed (timeout, reject)
+//   recovery_failed → resync_required: retry resync
+//   recovery_failed → manual_intervention: max retries exceeded
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export type RecoveryFSMState =
+  | 'healthy'
+  | 'desync_detected'
+  | 'resync_required'
+  | 'resyncing'
+  | 'resync_complete'
+  | 'recovery_failed'
+  | 'manual_intervention';
+
+const RECOVERY_TRANSITIONS: StateTransition<RecoveryFSMState>[] = [
+  { from: 'healthy', to: 'desync_detected' },
+  { from: 'desync_detected', to: 'resync_required' },
+  { from: 'desync_detected', to: 'healthy' },    // transient — resolved itself
+  { from: 'resync_required', to: 'resyncing' },
+  { from: 'resyncing', to: 'resync_complete' },
+  { from: 'resyncing', to: 'recovery_failed' },
+  { from: 'resync_complete', to: 'healthy' },
+  { from: 'recovery_failed', to: 'resync_required' }, // retry
+  { from: 'recovery_failed', to: 'manual_intervention' }, // give up
+];
+
+export function createRecoveryStateMachine(
+  initialState: RecoveryFSMState = 'healthy'
+): StateMachine<RecoveryFSMState> {
+  return new StateMachine('RecoveryFSM', initialState, RECOVERY_TRANSITIONS);
+}

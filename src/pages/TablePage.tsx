@@ -292,8 +292,6 @@ const GAME_VARIANT_LABELS: Record<string, string> = {
   plo8: 'PLO HI-LO (8+)',
   SHORT_DECK: 'SHORT DECK 6+',
   short_deck: 'SHORT DECK 6+',
-  OFC_PINEAPPLE: 'OFC PINEAPPLE',
-  ofc_pineapple: 'OFC PINEAPPLE',
   FLH: "FIXED LIMIT HOLD'EM",
   flh: "FIXED LIMIT HOLD'EM",
   FLO: 'FIXED LIMIT OMAHA',
@@ -313,7 +311,7 @@ function getGameVariantLabel(gameType: string): string {
 interface TableState {
   tableId: string;
   tableName: string;
-  gameType: 'NLH' | 'PLO4' | 'PLO5' | 'PLO6' | 'PLO8' | 'SHORT_DECK' | 'OFC_PINEAPPLE' | string;
+  gameType: 'NLH' | 'PLO4' | 'PLO5' | 'PLO6' | 'PLO8' | 'SHORT_DECK' | string;
   blinds: string;
   maxPlayers: 6 | 9;
   pot: number;

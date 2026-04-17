@@ -64,18 +64,44 @@ export function SpinItWheel({ tiers, result, isSpinning, onSpinComplete }: SpinI
       const target = getTargetRotation(result);
 
       // Anticipation delay
-      setTimeout(() => {
+      const anticipationTimer = setTimeout(() => {
         setRotation(target);
-        soundService.playSpinTick();
         haptic.strong();
 
+        // Decelerating tick pattern over 4s — fast at start, slow at end
+        // Cubic easing mirrors the CSS transform easing for audio/visual sync
+        const tickTimers: ReturnType<typeof setTimeout>[] = [];
+        const SPIN_DURATION = 4000;
+        const TICK_COUNT = 32; // 32 ticks spread across 4s
+        for (let i = 0; i < TICK_COUNT; i++) {
+          const progress = i / TICK_COUNT;
+          // Ease-out cubic so ticks start fast and slow to a halt
+          const eased = 1 - Math.pow(1 - progress, 3);
+          const delay = eased * SPIN_DURATION;
+          tickTimers.push(
+            setTimeout(() => {
+              soundService.playSpinTick();
+            }, delay)
+          );
+        }
+
         // Wait for CSS transition to finish (4s)
-        setTimeout(() => {
+        const resultTimer = setTimeout(() => {
           setShowResult(true);
           soundService.playSpinResult();
           onSpinComplete?.();
         }, 4200);
+
+        // Store timers for potential cleanup — wheelRef will unmount cleanup anyway
+        return () => {
+          tickTimers.forEach(clearTimeout);
+          clearTimeout(resultTimer);
+        };
       }, 300);
+
+      return () => {
+        clearTimeout(anticipationTimer);
+      };
     }
   }, [isSpinning, result, getTargetRotation, onSpinComplete]);
 

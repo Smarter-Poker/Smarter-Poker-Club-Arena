@@ -232,7 +232,7 @@ class PushNotificationServiceClass {
    */
   async notifyTableAvailable(userId: string, tableName: string, tableId: string): Promise<boolean> {
     return this.sendToUser(userId, {
-      title: '🪑 Seat Available!',
+      title: 'Seat Available!',
       message: `A seat opened up at ${tableName}`,
       category: 'table_available',
       url: `/table/${tableId}`,
@@ -250,7 +250,7 @@ class PushNotificationServiceClass {
     minutesUntilStart: number
   ): Promise<boolean> {
     return this.sendToUsers(userIds, {
-      title: ' Tournament Starting Soon!',
+      title: 'Tournament Starting Soon!',
       message: `${tournamentName} starts in ${minutesUntilStart} minutes`,
       category: 'tournament_start',
       url: `/tournament/${tournamentId}`,
@@ -269,11 +269,11 @@ class PushNotificationServiceClass {
   ): Promise<boolean> {
     const message =
       position === 1
-        ? ` You won ${tournamentName}! Prize: ${prize.toLocaleString()} chips`
+        ? `You won ${tournamentName}! Prize: ${prize.toLocaleString()} chips`
         : `You finished ${position}${this.ordinal(position)} in ${tournamentName}${prize > 0 ? ` — ${prize.toLocaleString()} chips` : ''}`;
 
     return this.sendToUser(userId, {
-      title: position === 1 ? ' Tournament Victory!' : ' Tournament Complete',
+      title: position === 1 ? 'Tournament Victory!' : 'Tournament Complete',
       message,
       category: 'tournament_result',
     });
@@ -284,7 +284,7 @@ class PushNotificationServiceClass {
    */
   async notifyAchievement(userId: string, achievementName: string): Promise<boolean> {
     return this.sendToUser(userId, {
-      title: ' Achievement Unlocked!',
+      title: 'Achievement Unlocked!',
       message: `${achievementName}`,
       category: 'achievement',
       url: '/achievements',
@@ -296,7 +296,7 @@ class PushNotificationServiceClass {
    */
   async notifyFriendRequest(userId: string, fromUsername: string): Promise<boolean> {
     return this.sendToUser(userId, {
-      title: ' Friend Request',
+      title: 'Friend Request',
       message: `${fromUsername} wants to be your friend`,
       category: 'friend_request',
       url: '/friends',
@@ -312,7 +312,7 @@ class PushNotificationServiceClass {
     announcement: string
   ): Promise<boolean> {
     return this.sendToUsers(userIds, {
-      title: ` ${clubName}`,
+      title: `${clubName}`,
       message: announcement.substring(0, 100) + (announcement.length > 100 ? '...' : ''),
       category: 'club_announcement',
     });
@@ -323,7 +323,7 @@ class PushNotificationServiceClass {
    */
   async notifySettlement(userId: string, amount: number, periodLabel: string): Promise<boolean> {
     return this.sendToUser(userId, {
-      title: ' Payout Received!',
+      title: 'Payout Received!',
       message: `${amount.toLocaleString()} chips credited for ${periodLabel}`,
       category: 'settlement',
       url: '/wallet',

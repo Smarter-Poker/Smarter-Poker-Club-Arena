@@ -9,6 +9,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import haptic from '../../utils/haptic';
+import { soundService } from '../../services/SoundService';
 
 const FB = { bg: '#18191A', card: '#242526', text: '#E4E6EB', dim: '#B0B3B8' };
 
@@ -51,32 +52,44 @@ function ensureKeyframes() {
   const s = document.createElement('style');
   s.id = 'mystery-bounty-keyframes';
   s.textContent = `
-    @keyframes mystRevealBgIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes mystRevealBgIn {
+      0% { opacity: 0; filter: blur(4px) brightness(0.3) saturate(0.2); }
+      60% { opacity: 0.95; filter: blur(0) brightness(1.08) saturate(1.1); }
+      100% { opacity: 1; filter: blur(0) brightness(1) saturate(1); }
+    }
     @keyframes mystEnvelopeShake {
-      0%, 100% { transform: rotate(0deg) scale(1); }
-      15% { transform: rotate(-5deg) scale(1.03); }
-      30% { transform: rotate(5deg) scale(1.03); }
-      45% { transform: rotate(-3deg) scale(1.01); }
-      60% { transform: rotate(3deg) scale(1.01); }
-      75% { transform: rotate(-1deg); }
+      0%, 100% { transform: rotate(0deg) scale(1); filter: brightness(1) saturate(1); }
+      15% { transform: rotate(-5deg) scale(1.03); filter: brightness(1.12) saturate(1.2); }
+      30% { transform: rotate(5deg) scale(1.03); filter: brightness(1.18) saturate(1.28); }
+      45% { transform: rotate(-3deg) scale(1.01); filter: brightness(1.12) saturate(1.2); }
+      60% { transform: rotate(3deg) scale(1.01); filter: brightness(1.08) saturate(1.12); }
+      75% { transform: rotate(-1deg); filter: brightness(1.04) saturate(1.06); }
     }
     @keyframes mystEnvelopeFlip {
-      0% { transform: rotateY(0deg) scale(1); }
-      50% { transform: rotateY(90deg) scale(1.1); }
-      100% { transform: rotateY(360deg) scale(1); }
+      0% { transform: rotateY(0deg) scale(1); filter: brightness(1) saturate(1); }
+      25% { transform: rotateY(45deg) scale(1.05); filter: brightness(1.15) saturate(1.25); }
+      50% { transform: rotateY(90deg) scale(1.1); filter: brightness(1.3) saturate(1.4); }
+      75% { transform: rotateY(270deg) scale(1.05); filter: brightness(1.15) saturate(1.25); }
+      100% { transform: rotateY(360deg) scale(1); filter: brightness(1) saturate(1); }
     }
     @keyframes mystRevealPop {
-      0% { transform: scale(0.3); opacity: 0; }
-      60% { transform: scale(1.1); opacity: 1; }
-      100% { transform: scale(1); opacity: 1; }
+      0% { transform: scale(0.3); opacity: 0; filter: blur(4px) brightness(0.3) saturate(0.2); }
+      50% { transform: scale(1.15); opacity: 1; filter: blur(0) brightness(1.25) saturate(1.35); }
+      75% { transform: scale(0.97); opacity: 1; filter: blur(0) brightness(1.08) saturate(1.1); }
+      100% { transform: scale(1); opacity: 1; filter: blur(0) brightness(1) saturate(1); }
     }
     @keyframes mystGoldShimmer {
-      0% { background-position: -200% center; }
-      100% { background-position: 200% center; }
+      0% { background-position: -200% center; filter: brightness(1) saturate(1); }
+      40% { filter: brightness(1.12) saturate(1.18); }
+      50% { filter: brightness(1.25) saturate(1.3); }
+      60% { filter: brightness(1.12) saturate(1.18); }
+      100% { background-position: 200% center; filter: brightness(1) saturate(1); }
     }
     @keyframes mystJackpotPulse {
-      0%, 100% { box-shadow: 0 0 30px rgba(255,215,0,0.4); }
-      50% { box-shadow: 0 0 60px rgba(255,215,0,0.8), 0 0 100px rgba(255,215,0,0.3); }
+      0%, 100% { box-shadow: 0 0 30px rgba(255,215,0,0.4); filter: brightness(1) saturate(1); }
+      25% { filter: brightness(1.1) saturate(1.18); }
+      50% { box-shadow: 0 0 60px rgba(255,215,0,0.8), 0 0 100px rgba(255,215,0,0.3); filter: brightness(1.25) saturate(1.35); }
+      75% { filter: brightness(1.1) saturate(1.18); }
     }
   `;
   document.head.appendChild(s);
@@ -180,6 +193,7 @@ export default function MysteryBountyReveal({
     }
     if (phase === 'reveal') {
       haptic('allIn');
+      soundService.playMysteryBountyReveal();
       if ((reveal?.amount || 0) > 10000) fireConfetti(isJackpot);
       const t2 = setTimeout(() => {
         setPhase('done');

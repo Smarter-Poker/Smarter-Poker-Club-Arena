@@ -10,7 +10,7 @@
  */
 
 import React from 'react';
-import { haptic } from '../../services/SoundService';
+import { haptic, soundService } from '../../services/SoundService';
 import './StraddleToggle.css';
 
 export interface StraddleToggleProps {
@@ -37,7 +37,7 @@ export function StraddleToggle({
   // FIX 189: Use haptic service instead of raw navigator.vibrate
   const handleToggle = (e: React.ChangeEvent<HTMLInputElement>) => {
     const enabled = e.target.checked;
-    haptic.light();
+    soundService.playStraddle();
     // Server-authoritative: parent handles the server API call via onToggle
     onToggle(enabled);
   };

@@ -9,7 +9,7 @@
  */
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { haptic } from '../../services/SoundService';
+import { haptic, soundService } from '../../services/SoundService';
 import { masterBus } from '../../core/MasterBus';
 import { CardImage } from './CardImage';
 import type { Card as CardImageCard } from './CardImage';
@@ -110,14 +110,14 @@ export function InsuranceModal({
   );
   const evRakeAmount = useMemo(() => evRaw - evCashoutAmount, [evRaw, evCashoutAmount]);
 
-  // FIX 187: Insurance accept is a financial decision — use medium haptic (matches EV cashout)
+  // FIX 187: Insurance accept is a financial decision — dedicated sound + haptic
   const handleAccept = useCallback(() => {
-    haptic.medium();
+    soundService.playInsurancePurchase();
     onAccept(coverageAmount);
   }, [coverageAmount, onAccept]);
 
   const handleDecline = useCallback(() => {
-    haptic.light();
+    soundService.playInsuranceDecline();
     onDecline();
   }, [onDecline]);
 
@@ -194,7 +194,7 @@ export function InsuranceModal({
                 setActiveTab('ev-cashout');
               }}
             >
-              EV Cashout
+              💰 EV Cashout
             </button>
           </div>
         )}
@@ -395,7 +395,7 @@ export function InsuranceModal({
                 className="insurance-modal__btn insurance-modal__btn--cashout"
                 onClick={handleEvCashout}
               >
-                Cash Out
+                💰 Cash Out
               </button>
             </div>
           </>

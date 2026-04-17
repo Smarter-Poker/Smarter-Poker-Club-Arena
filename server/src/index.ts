@@ -31,7 +31,12 @@ import { RakebackSettlerService } from './services/RakebackSettlerService.js';
 import { ChipRaceEngine } from './engine/ChipRaceEngine.js';
 // FIX 154: Import TableBalancer for proper tournament table rebalancing
 import { TableBalancer, type BalancerTable, type MoveInstruction } from './engine/TableBalancer.js';
-import { reportError, initSentry, flushSentry, setServerContext } from './services/errorReporter.js';
+import {
+  reportError,
+  initSentry,
+  flushSentry,
+  setServerContext,
+} from './services/errorReporter.js';
 // Phase 1.1 PR-2: native WebSocket transport for authoritative state
 import { tableStateHub } from './transport/TableStateHub.js';
 import { EngineWebSocketServer } from './transport/EngineWebSocketServer.js';
@@ -85,7 +90,7 @@ class GameServer {
     console.log('═══════════════════════════════════════════════════════════════');
     console.log(' SMARTER POKER GAME SERVER — Starting...');
     if (testTableId) {
-      console.log(` 🧪 E2E TEST MODE — single test table ${testTableId.slice(0,8)} only`);
+      console.log(` 🧪 E2E TEST MODE — single test table ${testTableId.slice(0, 8)} only`);
     } else if (maintenanceMode) {
       console.log(' ⚠️  MAINTENANCE MODE — No tables, tournaments, or horses will be created');
     } else {
@@ -117,8 +122,12 @@ class GameServer {
 
       // Step 6: Start discovery loops (finds tables with players, starts engines)
       // These are infinite while-loops — fire-and-forget with error handling
-      this.discoverCashTables().catch((err) => reportError(err, 'GameServer.Cash_table_discovery_fatal_err'));
-      this.discoverTournaments().catch((err) => reportError(err, 'GameServer.Tournament_discovery_fatal_err'));
+      this.discoverCashTables().catch((err) =>
+        reportError(err, 'GameServer.Cash_table_discovery_fatal_err')
+      );
+      this.discoverTournaments().catch((err) =>
+        reportError(err, 'GameServer.Tournament_discovery_fatal_err')
+      );
 
       // Step 7: Start synchronized break timer (top of every hour, 5 min duration)
       this.scheduleSynchronizedBreaks();
@@ -130,12 +139,14 @@ class GameServer {
       // no discovery sweeps, no break timer. Just one table for hand testing.
       try {
         await this.startTableEngineForTesting(testTableId);
-        console.log(`[GameServer] E2E test table ${testTableId.slice(0,8)} engine started.`);
+        console.log(`[GameServer] E2E test table ${testTableId.slice(0, 8)} engine started.`);
       } catch (err) {
         reportError(err, 'GameServer.E2E_test_table_start_failed');
       }
     } else {
-      console.log('[GameServer] Running in MAINTENANCE MODE — only /health and /action endpoints active.');
+      console.log(
+        '[GameServer] Running in MAINTENANCE MODE — only /health and /action endpoints active.'
+      );
     }
   }
 
@@ -211,12 +222,16 @@ class GameServer {
         tableMetrics.push(...snapshot.tables);
       }
     }
-    const avgHandDurationMs = tableMetrics.length > 0
-      ? Math.round(tableMetrics.reduce((s, t) => s + t.avgHandDurationMs, 0) / tableMetrics.length)
-      : 0;
-    const avgHandsPerHour = tableMetrics.length > 0
-      ? Math.round(tableMetrics.reduce((s, t) => s + t.handsPerHour, 0) / tableMetrics.length)
-      : 0;
+    const avgHandDurationMs =
+      tableMetrics.length > 0
+        ? Math.round(
+            tableMetrics.reduce((s, t) => s + t.avgHandDurationMs, 0) / tableMetrics.length
+          )
+        : 0;
+    const avgHandsPerHour =
+      tableMetrics.length > 0
+        ? Math.round(tableMetrics.reduce((s, t) => s + t.handsPerHour, 0) / tableMetrics.length)
+        : 0;
     // Bible V8 §9.1: Aggregate action performance metrics
     let totalActionProcessingMs = 0;
     let actionCount = 0;
@@ -247,7 +262,8 @@ class GameServer {
       },
       // Bible V8 §9.1 Performance Instrumentation
       performance: {
-        avgActionProcessingMs: actionCount > 0 ? Math.round(totalActionProcessingMs / actionCount) : 0,
+        avgActionProcessingMs:
+          actionCount > 0 ? Math.round(totalActionProcessingMs / actionCount) : 0,
         totalActionsRecorded: actionCount,
         processingThresholdViolations: processingViolations,
         broadcastThresholdViolations: broadcastViolations,
@@ -362,7 +378,9 @@ class GameServer {
   private async cleanupStaleData(protectedTableId: string = ''): Promise<void> {
     console.log('[GameServer] Cleaning up stale data from previous runs...');
     if (protectedTableId) {
-      console.log(`[GameServer] E2E test mode — table ${protectedTableId.slice(0,8)} is PROTECTED from cleanup.`);
+      console.log(
+        `[GameServer] E2E test mode — table ${protectedTableId.slice(0, 8)} is PROTECTED from cleanup.`
+      );
     }
     try {
       // 1. Batch-reset ALL stuck horses to available (fast single query)
@@ -402,21 +420,25 @@ class GameServer {
         const entries = Array.from(userTotals.entries()).filter(([_, total]) => total > 0);
         for (let i = 0; i < entries.length; i += 10) {
           const batch = entries.slice(i, i + 10);
-          await Promise.all(batch.map(async ([userId, totalStack]) => {
-            try {
-              const { error: walletErr } = await supabase.rpc('credit_player_wallet', {
-                p_user_id: userId,
-                p_amount: totalStack,
-              });
-              if (walletErr) {
-                console.warn(`[GameServer] Cashout wallet credit failed for ${userId}: ${walletErr.message}`);
-              }
+          await Promise.all(
+            batch.map(async ([userId, totalStack]) => {
+              try {
+                const { error: walletErr } = await supabase.rpc('credit_player_wallet', {
+                  p_user_id: userId,
+                  p_amount: totalStack,
+                });
+                if (walletErr) {
+                  console.warn(
+                    `[GameServer] Cashout wallet credit failed for ${userId}: ${walletErr.message}`
+                  );
+                }
 
-              cashedOut++;
-            } catch (err: any) {
-              console.warn(`[GameServer] Cashout failed for ${userId}: ${err.message}`);
-            }
-          }));
+                cashedOut++;
+              } catch (err: any) {
+                console.warn(`[GameServer] Cashout failed for ${userId}: ${err.message}`);
+              }
+            })
+          );
         }
 
         if (cashedOut > 0) {
@@ -450,7 +472,9 @@ class GameServer {
           .is('tournament_id', null)
           .neq('id', protectedTableId)
           .in('status', ['waiting', 'running']);
-        console.log(`[GameServer] E2E mode: closed all cash tables except ${protectedTableId.slice(0,8)}`);
+        console.log(
+          `[GameServer] E2E mode: closed all cash tables except ${protectedTableId.slice(0, 8)}`
+        );
       } else if (disableHorsesOnCleanup) {
         // When horse fleet is disabled, CLOSE all old running/waiting tables
         // (they were horse-populated and shouldn't be resurrected).
@@ -522,7 +546,7 @@ class GameServer {
       //    by TournamentManager.cancelTournament via normal refund path. This startup
       //    sweep is strictly a safety-net for server crashes and should rarely fire.
       const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
-      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+      const recentActivityCutoff = new Date(Date.now() - 60 * 60 * 1000).toISOString();
       // Find stale RUNNING tournaments with no recent hand activity
       const { data: staleTourneys } = await supabase
         .from('tournaments')
@@ -534,7 +558,7 @@ class GameServer {
           .from('hand_history')
           .select('id', { count: 'exact', head: true })
           .eq('tournament_id', t.id)
-          .gte('created_at', oneHourAgo);
+          .gte('created_at', recentActivityCutoff);
         if ((recentHands || 0) > 0) {
           console.log(
             `[GameServer] Skipping cancel of tournament ${t.id.slice(0, 8)} — ${recentHands} hands in last hour (still active)`
@@ -680,7 +704,12 @@ class GameServer {
                   p_amount: refundAmount,
                 });
                 if (creditErr) {
-                  reportError(new Error(`[GameServer] Refund FAILED for ${p.user_id.slice(0, 8)} in ${tournament.name}: ${creditErr.message}`), 'GameServer.Refund_FAILED_for_puser_idslic');
+                  reportError(
+                    new Error(
+                      `[GameServer] Refund FAILED for ${p.user_id.slice(0, 8)} in ${tournament.name}: ${creditErr.message}`
+                    ),
+                    'GameServer.Refund_FAILED_for_puser_idslic'
+                  );
                   continue; // Skip log for this player but keep refunding others
                 }
                 const { error: logErr } = await supabase.rpc('log_wallet_transaction', {
@@ -695,7 +724,12 @@ class GameServer {
                   p_related_entity_id: tournament.id,
                 });
                 if (logErr)
-                  reportError(new Error(`[GameServer] Refund log FAILED for ${p.user_id.slice(0, 8)}: ${logErr.message}`), 'GameServer.Refund_log_FAILED_for_puser_id');
+                  reportError(
+                    new Error(
+                      `[GameServer] Refund log FAILED for ${p.user_id.slice(0, 8)}: ${logErr.message}`
+                    ),
+                    'GameServer.Refund_log_FAILED_for_puser_id'
+                  );
               } catch (refundErr) {
                 reportError(refundErr, 'GameServer.Refund_exception_for_puser_ids');
               }
@@ -843,7 +877,9 @@ class TournamentManager {
   });
   // FIX 154: TableBalancer for proper gap-1 rebalancing across tournament tables
   private tableBalancer: TableBalancer = new TableBalancer((event) => {
-    console.log(`[Tournament:${this.tournamentId.slice(0, 8)}] TableBalance: ${event.type} — ${(event as any).moveCount || 0} moves`);
+    console.log(
+      `[Tournament:${this.tournamentId.slice(0, 8)}] TableBalance: ${event.type} — ${(event as any).moveCount || 0} moves`
+    );
   });
   // Reusable broadcast channel (prevents memory leak from creating per-event)
   private broadcastChannel: any = null;
@@ -1053,7 +1089,12 @@ class TournamentManager {
               p_amount: refundAmt,
             });
             if (creditErr) {
-              reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] Refund FAILED for ${p.user_id.slice(0, 8)}: ${creditErr.message}`), 'TournamentthistournamentIdslic.Refund_FAILED_for_puser_idslic');
+              reportError(
+                new Error(
+                  `[Tournament:${this.tournamentId.slice(0, 8)}] Refund FAILED for ${p.user_id.slice(0, 8)}: ${creditErr.message}`
+                ),
+                'TournamentthistournamentIdslic.Refund_FAILED_for_puser_idslic'
+              );
               continue;
             }
             const { error: logErr } = await supabase.rpc('log_wallet_transaction', {
@@ -1068,7 +1109,12 @@ class TournamentManager {
               p_related_entity_id: this.tournamentId,
             });
             if (logErr)
-              reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] Refund log FAILED for ${p.user_id.slice(0, 8)}: ${logErr.message}`), 'TournamentthistournamentIdslic.Refund_log_FAILED_for_puser_id');
+              reportError(
+                new Error(
+                  `[Tournament:${this.tournamentId.slice(0, 8)}] Refund log FAILED for ${p.user_id.slice(0, 8)}: ${logErr.message}`
+                ),
+                'TournamentthistournamentIdslic.Refund_log_FAILED_for_puser_id'
+              );
           } catch (refundErr) {
             reportError(refundErr, 'TournamentthistournamentIdslic.Refund_exception_for_puser_ids');
           }
@@ -1375,7 +1421,12 @@ class TournamentManager {
         joined_at: new Date().toISOString(),
       });
       if (seatErr) {
-        reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] Failed to seat ${players[i].user_id.slice(0, 8)}: ${seatErr.message}`), 'TournamentthistournamentIdslic.Failed_to_seat_playersiuser_id');
+        reportError(
+          new Error(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Failed to seat ${players[i].user_id.slice(0, 8)}: ${seatErr.message}`
+          ),
+          'TournamentthistournamentIdslic.Failed_to_seat_playersiuser_id'
+        );
       }
     }
 
@@ -1447,7 +1498,12 @@ class TournamentManager {
             })
             .eq('id', tableId);
           if (blindErr)
-            reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] Blind update failed for table ${tableId.slice(0, 8)}: ${blindErr.message}`), 'TournamentthistournamentIdslic.Blind_update_failed_for_table_');
+            reportError(
+              new Error(
+                `[Tournament:${this.tournamentId.slice(0, 8)}] Blind update failed for table ${tableId.slice(0, 8)}: ${blindErr.message}`
+              ),
+              'TournamentthistournamentIdslic.Blind_update_failed_for_table_'
+            );
         }
 
         const { error: levelErr } = await supabase
@@ -1455,7 +1511,12 @@ class TournamentManager {
           .update({ current_level: this.currentLevel })
           .eq('id', this.tournamentId);
         if (levelErr)
-          reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] Level persist failed: ${levelErr.message}`), 'TournamentthistournamentIdslic.Level_persist_failed');
+          reportError(
+            new Error(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Level persist failed: ${levelErr.message}`
+            ),
+            'TournamentthistournamentIdslic.Level_persist_failed'
+          );
 
         // FIX 151: Chip race when denomination changes on level-up
         // If the new small blind is a larger denomination than the previous level's,
@@ -1484,7 +1545,7 @@ class TournamentManager {
                 level.smallBlind
               );
               console.log(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] Chip race: removed ${prevSmallBlind} denomination, ${result.totalNewChipsDistributed} chips redistributed to ${result.players.filter(p => p.chipsAwarded > 0).length} players`
+                `[Tournament:${this.tournamentId.slice(0, 8)}] Chip race: removed ${prevSmallBlind} denomination, ${result.totalNewChipsDistributed} chips redistributed to ${result.players.filter((p) => p.chipsAwarded > 0).length} players`
               );
               // Update table_seats with new stacks after chip race
               for (const [userId, newStack] of playerStacks) {
@@ -1497,7 +1558,7 @@ class TournamentManager {
               await this.broadcast('chip_race', {
                 removedDenomination: prevSmallBlind,
                 newSmallestDenomination: level.smallBlind,
-                playersAffected: result.players.filter(p => p.chipsAwarded > 0).length,
+                playersAffected: result.players.filter((p) => p.chipsAwarded > 0).length,
               });
             }
           } catch (crErr) {
@@ -1898,7 +1959,12 @@ class TournamentManager {
           creditSuccess = true;
           break;
         }
-        reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] Prize credit attempt ${attempt}/3 failed for ${userId.slice(0, 8)}: ${creditErr.message}`), 'TournamentthistournamentIdslic.Prize_credit_attempt_attempt3_');
+        reportError(
+          new Error(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Prize credit attempt ${attempt}/3 failed for ${userId.slice(0, 8)}: ${creditErr.message}`
+          ),
+          'TournamentthistournamentIdslic.Prize_credit_attempt_attempt3_'
+        );
         if (attempt < 3) await new Promise((r) => setTimeout(r, attempt * 1000));
       }
       if (creditSuccess) {
@@ -1914,9 +1980,19 @@ class TournamentManager {
           p_related_entity_id: this.tournamentId,
         });
         if (prizeLogErr)
-          reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] Prize log FAILED for ${userId.slice(0, 8)}: ${prizeLogErr.message}`), 'TournamentthistournamentIdslic.Prize_log_FAILED_for_userIdsli');
+          reportError(
+            new Error(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Prize log FAILED for ${userId.slice(0, 8)}: ${prizeLogErr.message}`
+            ),
+            'TournamentthistournamentIdslic.Prize_log_FAILED_for_userIdsli'
+          );
       } else {
-        reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: Prize credit FAILED after 3 retries for ${userId.slice(0, 8)} — ${prize} chips lost`), 'TournamentthistournamentIdslic.CRITICAL');
+        reportError(
+          new Error(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: Prize credit FAILED after 3 retries for ${userId.slice(0, 8)} — ${prize} chips lost`
+          ),
+          'TournamentthistournamentIdslic.CRITICAL'
+        );
       }
     }
 
@@ -2176,12 +2252,22 @@ class TournamentManager {
         creditSuccess = true;
         break;
       }
-      reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] Bounty credit attempt ${attempt}/3 failed for ${knockerUserId.slice(0, 8)}: ${creditErr.message}`), 'TournamentthistournamentIdslic.Bounty_credit_attempt_attempt3');
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Bounty credit attempt ${attempt}/3 failed for ${knockerUserId.slice(0, 8)}: ${creditErr.message}`
+        ),
+        'TournamentthistournamentIdslic.Bounty_credit_attempt_attempt3'
+      );
       if (attempt < 3) await new Promise((r) => setTimeout(r, attempt * 1000));
     }
 
     if (!creditSuccess) {
-      reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: Bounty credit FAILED after 3 retries for ${knockerUserId.slice(0, 8)} — ${amount} chips lost`), 'TournamentthistournamentIdslic.CRITICAL');
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: Bounty credit FAILED after 3 retries for ${knockerUserId.slice(0, 8)} — ${amount} chips lost`
+        ),
+        'TournamentthistournamentIdslic.CRITICAL'
+      );
       return;
     }
 
@@ -2197,7 +2283,12 @@ class TournamentManager {
       p_related_entity_id: this.tournamentId,
     });
     if (bountyLogErr)
-      reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] Bounty log FAILED for ${knockerUserId.slice(0, 8)}: ${bountyLogErr.message}`), 'TournamentthistournamentIdslic.Bounty_log_FAILED_for_knockerU');
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] Bounty log FAILED for ${knockerUserId.slice(0, 8)}: ${bountyLogErr.message}`
+        ),
+        'TournamentthistournamentIdslic.Bounty_log_FAILED_for_knockerU'
+      );
   }
 
   /**
@@ -2265,7 +2356,12 @@ class TournamentManager {
             p_related_entity_id: this.tournamentId,
           });
         } else {
-          reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] Prize recalc credit FAILED for ${player.user_id.slice(0, 8)}: ${creditErr.message}`), 'TournamentthistournamentIdslic.Prize_recalc_credit_FAILED_for');
+          reportError(
+            new Error(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Prize recalc credit FAILED for ${player.user_id.slice(0, 8)}: ${creditErr.message}`
+            ),
+            'TournamentthistournamentIdslic.Prize_recalc_credit_FAILED_for'
+          );
         }
       }
     }
@@ -2305,7 +2401,12 @@ class TournamentManager {
       .maybeSingle(); // FIX 168: Bible safety rule — use maybeSingle over single
 
     if (!tournament || tourneyLoadErr) {
-      reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: Could not load tournament for finish: ${tourneyLoadErr?.message} — marking COMPLETED without payouts`), 'TournamentthistournamentIdslic.CRITICAL');
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: Could not load tournament for finish: ${tourneyLoadErr?.message} — marking COMPLETED without payouts`
+        ),
+        'TournamentthistournamentIdslic.CRITICAL'
+      );
       await supabase
         .from('tournaments')
         .update({ status: 'COMPLETED', ended_at: new Date().toISOString() })
@@ -2356,7 +2457,12 @@ class TournamentManager {
           creditSuccess = true;
           break;
         }
-        reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] Winner prize credit attempt ${attempt}/3 failed: ${creditErr.message}`), 'TournamentthistournamentIdslic.Winner_prize_credit_attempt_at');
+        reportError(
+          new Error(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Winner prize credit attempt ${attempt}/3 failed: ${creditErr.message}`
+          ),
+          'TournamentthistournamentIdslic.Winner_prize_credit_attempt_at'
+        );
         if (attempt < 3) await new Promise((r) => setTimeout(r, attempt * 1000));
       }
 
@@ -2373,9 +2479,19 @@ class TournamentManager {
           p_related_entity_id: this.tournamentId,
         });
         if (prizeLogErr)
-          reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] Prize log FAILED for ${winnerId.slice(0, 8)}: ${prizeLogErr.message}`), 'TournamentthistournamentIdslic.Prize_log_FAILED_for_winnerIds');
+          reportError(
+            new Error(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Prize log FAILED for ${winnerId.slice(0, 8)}: ${prizeLogErr.message}`
+            ),
+            'TournamentthistournamentIdslic.Prize_log_FAILED_for_winnerIds'
+          );
       } else {
-        reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: Winner prize credit FAILED after 3 retries for ${winnerId.slice(0, 8)} — ${winnerPrize} chips lost`), 'TournamentthistournamentIdslic.CRITICAL');
+        reportError(
+          new Error(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: Winner prize credit FAILED after 3 retries for ${winnerId.slice(0, 8)} — ${winnerPrize} chips lost`
+          ),
+          'TournamentthistournamentIdslic.CRITICAL'
+        );
       }
     }
 
@@ -2414,12 +2530,22 @@ class TournamentManager {
           if (uw) {
             const { error: uwErr } = await supabase
               .from('union_wallets')
-              .update({ chip_balance: (uw.chip_balance || 0) + totalRake, updated_at: new Date().toISOString() })
+              .update({
+                chip_balance: (uw.chip_balance || 0) + totalRake,
+                updated_at: new Date().toISOString(),
+              })
               .eq('union_id', club.union_id);
             if (uwErr) {
-              reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] Union wallet rake credit failed: ${uwErr.message}`), 'Tournament.Union_wallet_rake_credit_failed');
+              reportError(
+                new Error(
+                  `[Tournament:${this.tournamentId.slice(0, 8)}] Union wallet rake credit failed: ${uwErr.message}`
+                ),
+                'Tournament.Union_wallet_rake_credit_failed'
+              );
             } else {
-              console.log(`[Tournament:${this.tournamentId.slice(0, 8)}] Rake settled: ${totalRake} to union wallet ${club.union_id.slice(0, 8)}`);
+              console.log(
+                `[Tournament:${this.tournamentId.slice(0, 8)}] Rake settled: ${totalRake} to union wallet ${club.union_id.slice(0, 8)}`
+              );
             }
           } else {
             // Create union wallet if it doesn't exist
@@ -2427,7 +2553,12 @@ class TournamentManager {
               .from('union_wallets')
               .insert({ union_id: club.union_id, chip_balance: totalRake });
             if (insertErr) {
-              reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] Union wallet creation failed: ${insertErr.message}`), 'Tournament.Union_wallet_creation_failed');
+              reportError(
+                new Error(
+                  `[Tournament:${this.tournamentId.slice(0, 8)}] Union wallet creation failed: ${insertErr.message}`
+                ),
+                'Tournament.Union_wallet_creation_failed'
+              );
             }
           }
 
@@ -2450,7 +2581,6 @@ class TournamentManager {
               notes: `${rakeDescription} — ${club.name || 'club'}`,
             });
           }
-
         } else {
           // Standalone club — rake goes to CLUB wallet (not owner's personal wallet)
           // BUG 016 FIX (2026-04-15): club_wallets doesn't exist; remove dead probe
@@ -2461,9 +2591,16 @@ class TournamentManager {
             p_amount: totalRake,
           });
           if (cpErr) {
-            reportError(new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] Club chip_pool credit failed: ${cpErr.message}`), 'Tournament.Club_chip_pool_credit_failed');
+            reportError(
+              new Error(
+                `[Tournament:${this.tournamentId.slice(0, 8)}] Club chip_pool credit failed: ${cpErr.message}`
+              ),
+              'Tournament.Club_chip_pool_credit_failed'
+            );
           } else {
-            console.log(`[Tournament:${this.tournamentId.slice(0, 8)}] Rake settled: ${totalRake} to club chip_pool ${tournament.club_id.slice(0, 8)}`);
+            console.log(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Rake settled: ${totalRake} to club chip_pool ${tournament.club_id.slice(0, 8)}`
+            );
           }
         }
       }
@@ -2749,7 +2886,9 @@ class TournamentManager {
     );
 
     const blindStructure = this.tournamentCache?.blind_structure || [];
-    const currentLevelData = blindStructure[Math.min(this.currentLevel, blindStructure.length - 1)] || { smallBlind: 10, bigBlind: 20, ante: 0 };
+    const currentLevelData = blindStructure[
+      Math.min(this.currentLevel, blindStructure.length - 1)
+    ] || { smallBlind: 10, bigBlind: 20, ante: 0 };
 
     const newTableIds: string[] = [];
     for (let i = 0; i < tablesToCreate; i++) {
@@ -2786,7 +2925,11 @@ class TournamentManager {
       engine.setHub(tableStateHub); // Phase 1.1 PR-2
       this.tableEngines.set(newTable.id, engine);
       this.gameServer.registerTableEngine(newTable.id, engine);
-      engine.start().catch((err) => reportError(err, 'TournamentthistournamentIdslic.Expansion_table_engine_error'));
+      engine
+        .start()
+        .catch((err) =>
+          reportError(err, 'TournamentthistournamentIdslic.Expansion_table_engine_error')
+        );
       newTableIds.push(newTable.id);
 
       console.log(
@@ -3277,7 +3420,11 @@ const httpServer = createServer(async (req, res) => {
       if (!engine) {
         // Engine not running — do direct DB cleanup
         console.warn(`[HTTP /leave] No engine for table ${tableId} — direct DB cleanup`);
-        return sendJSON(res, 200, { success: true, immediate: true, note: 'No engine running, client handles DB cleanup' });
+        return sendJSON(res, 200, {
+          success: true,
+          immediate: true,
+          note: 'No engine running, client handles DB cleanup',
+        });
       }
 
       const result = engine.leaveTable(userId);

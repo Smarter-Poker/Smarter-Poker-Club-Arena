@@ -9,7 +9,7 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
-import { haptic } from '../../services/SoundService';
+import { haptic, soundService } from '../../services/SoundService';
 
 interface AddOnModalProps {
   isVisible: boolean;
@@ -75,7 +75,7 @@ export default function AddOnModal({
   }, [isVisible, initialTime]);
 
   const handleAccept = async () => {
-    haptic.medium();
+    soundService.playBuyInConfirm();
     if (processing || decided) return;
     setProcessing(true);
     try {

@@ -80,7 +80,11 @@ import type {
 } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
 import type { TableStateHub } from '../transport/TableStateHub.js';
-import { createTableStateMachine, createTurnStateMachine, type TurnFSMState } from './StateMachine.js';
+import {
+  createTableStateMachine,
+  createTurnStateMachine,
+  type TurnFSMState,
+} from './StateMachine.js';
 import type { StateMachine } from './StateMachine.js';
 import type { TableStatus } from '../types.js';
 
@@ -128,6 +132,11 @@ export class ServerTableEngine {
   // The sit-out is applied AFTER the current hand completes in postHandTasks().
   private pendingSitOut: Set<string> = new Set();
 
+  // Pending add-on chips: queued during active hand, processed in postHandTasks.
+  // If a player wins a pot and their stack + add-on exceeds max buy-in,
+  // the add-on is reduced or canceled. Map<userId, requestedAmount>.
+  private pendingAddOns: Map<string, number> = new Map();
+
   // Per-hand tracking
   private currentHandWentToFlop: boolean = false;
   private currentHandPotSize: number = 0;
@@ -145,7 +154,12 @@ export class ServerTableEngine {
     timestamp: number;
     stage: string;
   }[] = [];
-  private currentHandWinners: { userId: string; amount: number; potIndex?: number; hand?: { name: string; ranking: number } }[] = [];
+  private currentHandWinners: {
+    userId: string;
+    amount: number;
+    potIndex?: number;
+    hand?: { name: string; ranking: number };
+  }[] = [];
   private currentHandContributions: Map<string, number> = new Map(); // userId → totalInvested
   private currentHandInsuranceSettlements: InsuranceSettlement[] = [];
   private currentHandBBJHit: BBJDetectionResult | null = null;
@@ -162,7 +176,12 @@ export class ServerTableEngine {
   /** Bible V8 §2.15: Timer log — every timer start/expiry/action event */
   private currentHandTimerLog: Array<{
     playerId: string;
-    event: 'timer_start' | 'timer_expired' | 'action_received' | 'time_bank_activated' | 'time_bank_expired';
+    event:
+      | 'timer_start'
+      | 'timer_expired'
+      | 'action_received'
+      | 'time_bank_activated'
+      | 'time_bank_expired';
     timestamp: number;
     durationMs?: number;
     timeBankUsed?: boolean;
@@ -247,7 +266,12 @@ export class ServerTableEngine {
       );
     });
     this.stateVerifier = new StateVerifier((event) => {
-      reportError(new Error(`[ServerTableEngine:${tableId}] STATE INTEGRITY VIOLATION: ${event.violationCount} issue(s) in hand #${event.handNumber}`), 'ServerTableEnginetableId.STATE_INTEGRITY_VIOLATION');
+      reportError(
+        new Error(
+          `[ServerTableEngine:${tableId}] STATE INTEGRITY VIOLATION: ${event.violationCount} issue(s) in hand #${event.handNumber}`
+        ),
+        'ServerTableEnginetableId.STATE_INTEGRITY_VIOLATION'
+      );
     });
 
     // Step 5: Initialize supporting modules
@@ -549,7 +573,11 @@ export class ServerTableEngine {
   recordActionPerformance(userId: string, action: string, processingMs: number): void {
     // broadcastMs tracked separately when available; pass null for now
     this.engineTelemetry.recordActionProcessingTime(
-      this.tableId, userId, action, processingMs, null
+      this.tableId,
+      userId,
+      action,
+      processingMs,
+      null
     );
   }
 
@@ -659,12 +687,27 @@ export class ServerTableEngine {
             const tbCanCheck = tbToCall === 0;
 
             if (tbCanCheck) {
-              console.warn(`[ServerTableEngine:${this.tableId}] Player ${userId} time bank expired. Auto-checking.`);
-              try { this.handController!.performAction(seat, 'check'); }
-              catch { try { this.handController!.performAction(seat, 'fold'); } catch { /* done */ } }
+              console.warn(
+                `[ServerTableEngine:${this.tableId}] Player ${userId} time bank expired. Auto-checking.`
+              );
+              try {
+                this.handController!.performAction(seat, 'check');
+              } catch {
+                try {
+                  this.handController!.performAction(seat, 'fold');
+                } catch {
+                  /* done */
+                }
+              }
             } else {
-              console.warn(`[ServerTableEngine:${this.tableId}] Player ${userId} time bank expired. Auto-folding.`);
-              try { this.handController!.performAction(seat, 'fold'); } catch { /* done */ }
+              console.warn(
+                `[ServerTableEngine:${this.tableId}] Player ${userId} time bank expired. Auto-folding.`
+              );
+              try {
+                this.handController!.performAction(seat, 'fold');
+              } catch {
+                /* done */
+              }
             }
 
             // Bible V8 §3.3: Turn FSM — processing → complete
@@ -681,7 +724,9 @@ export class ServerTableEngine {
                 timed_out_action: tbCanCheck ? 'check' : 'fold',
                 show_buy_more: tbUsesLeft <= 0,
               });
-            } catch { /* broadcast failure is non-fatal */ }
+            } catch {
+              /* broadcast failure is non-fatal */
+            }
           }
         );
 
@@ -720,7 +765,9 @@ export class ServerTableEngine {
                 },
               })
               .catch(() => {});
-          } catch { /* broadcast failure is non-fatal */ }
+          } catch {
+            /* broadcast failure is non-fatal */
+          }
 
           // FIX 125 + 2026-04-14 spam fix: warn ONLY at the last 1 remaining
           // and at 0 (the very last one was just used). Was firing at <=5
@@ -734,7 +781,9 @@ export class ServerTableEngine {
                 player_id: userId,
                 uses_remaining: usesAfterActivation,
               });
-            } catch { /* broadcast failure is non-fatal */ }
+            } catch {
+              /* broadcast failure is non-fatal */
+            }
           }
 
           return; // Time bank activated — don't auto-fold/check yet
@@ -756,17 +805,28 @@ export class ServerTableEngine {
       const canCheck = amountToCall === 0;
 
       if (canCheck) {
-        console.warn(`[ServerTableEngine:${this.tableId}] Player ${userId} timed out. Auto-checking (no bet to call).`);
-        try { this.handController.performAction(seat, 'check'); }
-        catch (err) {
+        console.warn(
+          `[ServerTableEngine:${this.tableId}] Player ${userId} timed out. Auto-checking (no bet to call).`
+        );
+        try {
+          this.handController.performAction(seat, 'check');
+        } catch (err) {
           reportError(err, 'ServerTableEnginethistableId.Autocheck_failed');
-          try { this.handController.performAction(seat, 'fold'); }
-          catch (foldErr) { reportError(foldErr, 'ServerTableEnginethistableId.Autofold_fallback_also_failed'); }
+          try {
+            this.handController.performAction(seat, 'fold');
+          } catch (foldErr) {
+            reportError(foldErr, 'ServerTableEnginethistableId.Autofold_fallback_also_failed');
+          }
         }
       } else {
-        console.warn(`[ServerTableEngine:${this.tableId}] Player ${userId} timed out. Auto-folding (${amountToCall} to call).`);
-        try { this.handController.performAction(seat, 'fold'); }
-        catch (err) { reportError(err, 'ServerTableEnginethistableId.Autofold_failed'); }
+        console.warn(
+          `[ServerTableEngine:${this.tableId}] Player ${userId} timed out. Auto-folding (${amountToCall} to call).`
+        );
+        try {
+          this.handController.performAction(seat, 'fold');
+        } catch (err) {
+          reportError(err, 'ServerTableEnginethistableId.Autofold_failed');
+        }
       }
 
       // Bible V8 §3.3: Turn FSM — processing → complete
@@ -783,7 +843,9 @@ export class ServerTableEngine {
           timed_out_action: canCheck ? 'check' : 'fold',
           show_buy_more: usesLeft <= 0,
         });
-      } catch { /* broadcast failure is non-fatal */ }
+      } catch {
+        /* broadcast failure is non-fatal */
+      }
     });
   }
 
@@ -975,23 +1037,48 @@ export class ServerTableEngine {
   }
 
   /**
-   * POST /addchips — Player bought chips (added to their stack directly).
-   * Fixes race condition where postHandTasks overwrote table_seats db buy-ins.
+   * POST /addchips — Player bought chips (added to their stack).
+   *
+   * If a hand is in progress, chips are QUEUED and applied after the hand
+   * completes in postHandTasks(). This prevents a scenario where a player
+   * wins a large pot mid-hand and the add-on pushes them over the table's
+   * max buy-in. The queued add-on is reduced or canceled as needed.
+   *
+   * If no hand is in progress, chips are applied immediately (no cap concern
+   * because no pot can change the player's stack before next hand).
    */
-  public addChips(userId: string, amount: number): { success: boolean; error?: string } {
+  public addChips(
+    userId: string,
+    amount: number
+  ): { success: boolean; error?: string; queued?: boolean } {
     const player = this.seatedPlayers.find((p) => p.user_id === userId);
     if (!player) return { success: false, error: 'Player not seated' };
 
-    // Update Engine Memory
-    player.stack += amount;
+    // If a hand is active, queue the add-on for post-hand processing
     if (this.handController) {
-      const hcState = this.handController.getState();
-      const hcPlayer = hcState.players.find((p) => p.user_id === userId);
-      if (hcPlayer) hcPlayer.stack += amount;
+      const existing = this.pendingAddOns.get(userId) || 0;
+      this.pendingAddOns.set(userId, existing + amount);
+      console.log(
+        `[ServerTableEngine:${this.tableId}] Add-on queued for ${userId}: +${amount} (total pending: ${existing + amount}) — hand in progress`
+      );
+      // Broadcast so client shows "pending add-on" indicator
+      this.broadcastCurrentState();
+      return { success: true, queued: true };
     }
 
-    // Update Database directly as well (for safety against server crash before hand completes).
-    // The engine's single threaded nature makes it safe to read/write here without an RPC.
+    // No hand in progress — apply immediately (standard behavior)
+    this._applyAddOnImmediate(userId, player, amount);
+    return { success: true };
+  }
+
+  /**
+   * Apply add-on chips immediately (no hand in progress).
+   * Also persists to database and broadcasts.
+   */
+  private _applyAddOnImmediate(userId: string, player: SeatedPlayer, amount: number): void {
+    player.stack += amount;
+
+    // Persist to database for crash safety
     const { supabase } = require('../services/supabase.js');
     supabase
       .from('table_seats')
@@ -1014,9 +1101,114 @@ export class ServerTableEngine {
         }
       });
 
-    // Broadcast update so the player sees the chip increase immediately
     this.broadcastCurrentState();
-    return { success: true };
+  }
+
+  /**
+   * Process pending add-ons after hand completion.
+   * Caps each add-on so player's stack does not exceed max buy-in.
+   * If the player's stack already >= max buy-in (e.g., they won a big pot),
+   * the add-on is fully canceled and the chips are returned to their wallet.
+   */
+  private async processPendingAddOns(players: SeatedPlayer[]): Promise<void> {
+    if (this.pendingAddOns.size === 0) return;
+
+    // Determine max buy-in: use table's DB value, or fallback to big_blind * 200
+    const maxBuyIn = this.tableInfo?.max_buy_in
+      ? Number(this.tableInfo.max_buy_in)
+      : (this.tableInfo?.big_blind || 2) * 200;
+
+    const { supabase } = require('../services/supabase.js');
+
+    for (const [userId, requestedAmount] of this.pendingAddOns.entries()) {
+      const player = players.find((p) => p.user_id === userId);
+      if (!player) {
+        console.warn(
+          `[ServerTableEngine:${this.tableId}] Pending add-on for ${userId} — player no longer seated, refunding`
+        );
+        // Refund to wallet
+        await this._refundAddOnToWallet(userId, requestedAmount);
+        continue;
+      }
+
+      const currentStack = player.stack;
+      const headroom = Math.max(0, maxBuyIn - currentStack);
+
+      if (headroom <= 0) {
+        // Player already at or above max — full cancel, refund to wallet
+        console.log(
+          `[ServerTableEngine:${this.tableId}] Add-on CANCELED for ${userId}: stack ${currentStack} already >= max ${maxBuyIn}. Refunding ${requestedAmount} to wallet.`
+        );
+        await this._refundAddOnToWallet(userId, requestedAmount);
+        continue;
+      }
+
+      const actualAddOn = Math.min(requestedAmount, headroom);
+      const refundAmount = requestedAmount - actualAddOn;
+
+      // Apply the capped amount
+      player.stack += actualAddOn;
+
+      // Persist to database
+      await supabase
+        .from('table_seats')
+        .update({ stack: player.stack })
+        .eq('table_id', this.tableId)
+        .eq('user_id', userId)
+        .is('left_at', null);
+
+      if (refundAmount > 0) {
+        console.log(
+          `[ServerTableEngine:${this.tableId}] Add-on REDUCED for ${userId}: requested ${requestedAmount}, applied ${actualAddOn}, refunding ${refundAmount} (stack ${currentStack} + ${actualAddOn} = ${player.stack}, max ${maxBuyIn})`
+        );
+        await this._refundAddOnToWallet(userId, refundAmount);
+      } else {
+        console.log(
+          `[ServerTableEngine:${this.tableId}] Add-on applied for ${userId}: +${actualAddOn} (stack now ${player.stack})`
+        );
+      }
+    }
+
+    this.pendingAddOns.clear();
+    this.broadcastCurrentState();
+  }
+
+  /**
+   * Refund unused add-on chips back to the player's club wallet.
+   * Called when add-on is reduced or fully canceled after hand completion.
+   */
+  private async _refundAddOnToWallet(userId: string, amount: number): Promise<void> {
+    if (amount <= 0) return;
+    try {
+      const { supabase } = require('../services/supabase.js');
+      const clubId = this.tableInfo?.club_id;
+      if (!clubId) {
+        console.error(`[ServerTableEngine:${this.tableId}] Cannot refund add-on — no club_id`);
+        return;
+      }
+
+      // Credit back to club_members balance
+      const { data: member } = await supabase
+        .from('club_members')
+        .select('balance')
+        .eq('club_id', clubId)
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (member) {
+        await supabase
+          .from('club_members')
+          .update({ balance: (member.balance || 0) + amount })
+          .eq('club_id', clubId)
+          .eq('user_id', userId);
+
+        console.log(
+          `[ServerTableEngine:${this.tableId}] Refunded ${amount} chips to ${userId}'s wallet (club ${clubId})`
+        );
+      }
+    } catch (err) {
+      console.error(`[ServerTableEngine:${this.tableId}] Add-on refund failed for ${userId}:`, err);
+    }
   }
 
   /**
@@ -1058,9 +1250,7 @@ export class ServerTableEngine {
    * POST /leave — Player leaves the table. If mid-hand, auto-fold then mark leave_pending.
    * If between hands, mark seat as left immediately.
    */
-  public leaveTable(
-    userId: string
-  ): { success: boolean; error?: string; immediate: boolean } {
+  public leaveTable(userId: string): { success: boolean; error?: string; immediate: boolean } {
     const player = this.seatedPlayers.find((p) => p.user_id === userId);
     if (!player) {
       return { success: false, error: 'Player not found at this table', immediate: false };
@@ -1074,9 +1264,7 @@ export class ServerTableEngine {
       if (enginePlayer && !enginePlayer.is_folded && !enginePlayer.is_all_in) {
         try {
           this.handController.performAction(enginePlayer.seat, 'fold');
-          console.log(
-            `[ServerTableEngine:${this.tableId}] Player ${userId} auto-folded on leave`
-          );
+          console.log(`[ServerTableEngine:${this.tableId}] Player ${userId} auto-folded on leave`);
         } catch (err) {
           // Player might not be the current actor — that's fine, they'll be skipped
           console.warn(
@@ -1093,7 +1281,8 @@ export class ServerTableEngine {
         .eq('user_id', userId)
         .is('left_at', null)
         .then(({ error }) => {
-          if (error) console.warn(`[ServerTableEngine] leave_pending update failed:`, error.message);
+          if (error)
+            console.warn(`[ServerTableEngine] leave_pending update failed:`, error.message);
         });
 
       // Also mark in disconnect engine so they don't get dealt next hand
@@ -1109,10 +1298,7 @@ export class ServerTableEngine {
           );
         })
         .catch((err) => {
-          console.warn(
-            `[ServerTableEngine:${this.tableId}] atomicCashout on leave failed:`,
-            err
-          );
+          console.warn(`[ServerTableEngine:${this.tableId}] atomicCashout on leave failed:`, err);
           // Fallback: mark seat as left directly
           markSeatAsLeft(this.tableId, userId, player.seat_number);
         });
@@ -1130,7 +1316,9 @@ export class ServerTableEngine {
    */
   public adminPause(reason?: string): { success: boolean } {
     this.adminPauseLock = true;
-    console.log(`[ServerTableEngine:${this.tableId}] Admin pause activated${reason ? `: ${reason}` : ''}`);
+    console.log(
+      `[ServerTableEngine:${this.tableId}] Admin pause activated${reason ? `: ${reason}` : ''}`
+    );
     return { success: true };
   }
 
@@ -1844,7 +2032,10 @@ export class ServerTableEngine {
         const backoffMs = Math.min(3000 * Math.pow(2, this.consecutiveErrors - 1), 30000);
         reportError(err, 'ServerTableEnginethistableId.Error_attempt_thisconsecutiveE');
         if (this.consecutiveErrors >= 10) {
-          reportError(new Error(`[ServerTableEngine:${this.tableId}] Too many errors — stopping`), 'ServerTableEnginethistableId.Too_many_errors__stopping');
+          reportError(
+            new Error(`[ServerTableEngine:${this.tableId}] Too many errors — stopping`),
+            'ServerTableEnginethistableId.Too_many_errors__stopping'
+          );
           this.running = false;
         } else {
           await this.sleep(backoffMs);
@@ -2057,7 +2248,9 @@ export class ServerTableEngine {
       // The old 60s timeout was killing hands prematurely mid-action.
       const HAND_SAFETY_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
       const handTimeout = setTimeout(() => {
-        console.warn(`[ServerTableEngine:${this.tableId}] Hand ${handNumber} timed out after 10 minutes`);
+        console.warn(
+          `[ServerTableEngine:${this.tableId}] Hand ${handNumber} timed out after 10 minutes`
+        );
         this.handController = null;
         resolve();
       }, HAND_SAFETY_TIMEOUT_MS);
@@ -2133,7 +2326,9 @@ export class ServerTableEngine {
         // Bible V8 §1.16: discrete blinds_posted event so the client animates
         // SB/BB chips flying from each blind seat into the pot, instead of
         // letting the chips just appear in the pot via snapshot.
-        const postings = (event as any).postings as Array<{ seat: number; type: string; amount: number }> | undefined;
+        const postings = (event as any).postings as
+          | Array<{ seat: number; type: string; amount: number }>
+          | undefined;
         if (postings && postings.length > 0) {
           this.hub?.emitEvent(this.tableId, {
             type: 'blinds_posted',
@@ -2479,7 +2674,10 @@ export class ServerTableEngine {
             stage: finalState.stage,
           });
           if (!verifyResult.valid) {
-            reportError(verifyResult.violations.map((v) => v.message).join('; '), 'ServerTableEnginethistableId.Hand_thishandCount_FAILED_inte');
+            reportError(
+              verifyResult.violations.map((v) => v.message).join('; '),
+              'ServerTableEnginethistableId.Hand_thishandCount_FAILED_inte'
+            );
           }
         }
 
@@ -2500,7 +2698,10 @@ export class ServerTableEngine {
           if (settlements.length > 0) {
             const settleResult = this.atomicStackService.atomicSettle(this.tableId, settlements);
             if (!settleResult.success) {
-              reportError(settleResult.errors.join('; '), 'ServerTableEnginethistableId.AtomicSettle_failed');
+              reportError(
+                settleResult.errors.join('; '),
+                'ServerTableEnginethistableId.AtomicSettle_failed'
+              );
             }
           }
         }
@@ -2650,7 +2851,9 @@ export class ServerTableEngine {
             : 0;
           const newVariant = this.mixedGameEngine.onHandComplete(this.tableId, activePlayers);
           if (newVariant && this.tableInfo) {
-            console.log(`[ServerTableEngine:${this.tableId}] Mixed game rotation: ${this.tableInfo.game_variant} → ${newVariant}`);
+            console.log(
+              `[ServerTableEngine:${this.tableId}] Mixed game rotation: ${this.tableInfo.game_variant} → ${newVariant}`
+            );
             this.tableInfo.game_variant = newVariant;
           }
         }
@@ -2663,7 +2866,9 @@ export class ServerTableEngine {
 
         // FIX 211: Bible V8 §1.9 — Track postHandTasks promise so dealingLoop can await
         // it before starting the next hand, preventing stale DB stacks from race conditions.
-        this.postHandTasksPromise = this.postHandTasks(players).catch((err) => reportError(err, 'ServerTableEnginethistableId.Posthand_error'));
+        this.postHandTasksPromise = this.postHandTasks(players).catch((err) =>
+          reportError(err, 'ServerTableEnginethistableId.Posthand_error')
+        );
         this.currentHandWinnerIds = [];
 
         // Rabbit Hunt: Broadcast captured remaining deck as a separate event
@@ -2677,6 +2882,7 @@ export class ServerTableEngine {
           });
         }
         break;
+      }
     }
   }
 
@@ -2916,7 +3122,12 @@ export class ServerTableEngine {
     const cardsNeeded = 5 - existingBoard.length;
 
     if (remainingDeck.length < cardsNeeded * runs) {
-      reportError(new Error(`[ServerTableEngine:${this.tableId}] RIT: Not enough cards for ${runs} runouts (need ${cardsNeeded * runs}, have ${remainingDeck.length})`), 'ServerTableEnginethistableId.RIT');
+      reportError(
+        new Error(
+          `[ServerTableEngine:${this.tableId}] RIT: Not enough cards for ${runs} runouts (need ${cardsNeeded * runs}, have ${remainingDeck.length})`
+        ),
+        'ServerTableEnginethistableId.RIT'
+      );
       this.handController.continueRunout();
       return;
     }
@@ -3416,7 +3627,14 @@ export class ServerTableEngine {
     player: SeatedPlayer,
     seat: number,
     enginePlayer: any,
-    state: { currentBet: number; minRaise: number; pot: number; communityCards: any[]; players: any[]; stage: string }
+    state: {
+      currentBet: number;
+      minRaise: number;
+      pot: number;
+      communityCards: any[];
+      players: any[];
+      stage: string;
+    }
   ): void {
     const toCall = Math.max(0, state.currentBet - enginePlayer.bet);
 
@@ -3449,9 +3667,10 @@ export class ServerTableEngine {
 
     // Realistic think time: 2-8 seconds (simulates human decision-making)
     // Simple decisions (check, fold) = 2-3s; complex (raise, all-in) = 4-8s
-    const baseThinkMs = decision.action === 'check' || decision.action === 'fold'
-      ? 2000 + Math.random() * 1500   // 2.0 - 3.5s for simple actions
-      : 3000 + Math.random() * 5000;  // 3.0 - 8.0s for complex actions
+    const baseThinkMs =
+      decision.action === 'check' || decision.action === 'fold'
+        ? 2000 + Math.random() * 1500 // 2.0 - 3.5s for simple actions
+        : 3000 + Math.random() * 5000; // 3.0 - 8.0s for complex actions
     const thinkTimeMs = Math.round(baseThinkMs);
 
     const handControllerRef = this.handController;
@@ -3605,7 +3824,8 @@ export class ServerTableEngine {
             is_horse: p.is_horse ?? false, // Bible V8 §2.3
             // Bible V8 §5.1 + §2.7: Hand name at showdown for winner label display
             hand_name: showCards
-              ? (this.currentHandShowdownResults.find((r) => r.userId === p.user_id)?.handName ?? '')
+              ? (this.currentHandShowdownResults.find((r) => r.userId === p.user_id)?.handName ??
+                '')
               : '',
           };
         });
@@ -3618,7 +3838,9 @@ export class ServerTableEngine {
     if (this.hub) {
       this.hub.publish(this.tableId, payload);
     } else {
-      console.warn(`[ServerTableEngine:${this.tableId}] No hub attached — state not delivered to clients`);
+      console.warn(
+        `[ServerTableEngine:${this.tableId}] No hub attached — state not delivered to clients`
+      );
     }
     return Promise.resolve();
   }
@@ -3847,6 +4069,14 @@ export class ServerTableEngine {
       await syncTournamentChips(this.tableId, this.tableInfo.tournament_id);
     }
 
+    // SETTLEMENT STEP 8e: Process pending add-ons (queued during the hand).
+    // Must run AFTER pot distribution + BBJ payouts so we know each player's
+    // final stack. Add-ons are capped so stack + add-on <= max buy-in.
+    // Any excess is refunded to the player's club wallet.
+    if (!this.isTournamentTable()) {
+      await this.processPendingAddOns(players);
+    }
+
     // 5. Auto-rebuy busted horses (cash games only)
     if (!this.isTournamentTable()) {
       const bustHorses = players.filter((p) => p.is_horse && p.stack === 0);
@@ -3889,7 +4119,9 @@ export class ServerTableEngine {
     // 5.5 Auto-Cashout successful horses (Hit-and-Run Bankroll Management)
     // Always wait until right before they are the Big Blind to leave.
     if (!this.isTournamentTable() && players.length >= 2) {
-      const maxBuyIn = (this.tableInfo?.big_blind || 2) * 200;
+      const maxBuyIn = this.tableInfo?.max_buy_in
+        ? Number(this.tableInfo.max_buy_in)
+        : (this.tableInfo?.big_blind || 2) * 200;
 
       // Calculate who will be the next Big Blind
       // If 2 players: BB is the non-dealer. dealerSeatIndex currently points to the NEXT dealer.
@@ -3927,9 +4159,7 @@ export class ServerTableEngine {
     if (this.pendingSitOut.size > 0) {
       for (const userId of this.pendingSitOut) {
         this.disconnectEngine.sitOut(this.tableId, userId, 'voluntary');
-        console.log(
-          `[ServerTableEngine:${this.tableId}] Deferred sit-out applied: ${userId}`
-        );
+        console.log(`[ServerTableEngine:${this.tableId}] Deferred sit-out applied: ${userId}`);
       }
       this.pendingSitOut.clear();
     }
@@ -4130,10 +4360,7 @@ export class ServerTableEngine {
     // nothing to write — saves an unnecessary round-trip for idle tables.
     const pendingDeadlines = deadlineScheduler.persistPending(this.tableId);
     const disconnectStates = this.disconnectEngine.getFsmStatesForTable(this.tableId);
-    if (
-      pendingDeadlines.length > 0 ||
-      Object.keys(disconnectStates).length > 0
-    ) {
+    if (pendingDeadlines.length > 0 || Object.keys(disconnectStates).length > 0) {
       await saveHandSnapshotExtras({
         tableId: this.tableId,
         handNumber: this.handCount,

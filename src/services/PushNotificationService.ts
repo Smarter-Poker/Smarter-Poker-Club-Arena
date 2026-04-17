@@ -105,7 +105,10 @@ class PushNotificationServiceClass {
       }
     } catch (error: unknown) {
       // OneSignal SDK v16 intermittent issue — non-blocking, suppress to warn
-      console.debug('[PushService] External user ID set skipped (OneSignal SDK):', (error as Error)?.message || error);
+      console.debug(
+        '[PushService] External user ID set skipped (OneSignal SDK):',
+        (error as Error)?.message || error
+      );
     }
   }
 
@@ -324,6 +327,96 @@ class PushNotificationServiceClass {
       message: `${amount.toLocaleString()} chips credited for ${periodLabel}`,
       category: 'settlement',
       url: '/wallet',
+    });
+  }
+
+  /**
+   * Notify user it's their turn to act (when app is backgrounded)
+   */
+  async notifyYourTurn(userId: string, tableName: string, tableId: string): Promise<boolean> {
+    return this.sendToUser(userId, {
+      title: 'Your Turn!',
+      message: `It's your turn to act at ${tableName}`,
+      category: 'table_available',
+      url: `/table/${tableId}`,
+      data: { tableId, action: 'your_turn' },
+    });
+  }
+
+  /**
+   * Notify user that a club game is starting / has open seats
+   */
+  async notifyClubGameStarting(
+    userIds: string[],
+    clubName: string,
+    tableName: string,
+    tableId: string
+  ): Promise<boolean> {
+    return this.sendToUsers(userIds, {
+      title: `${clubName} — Game Starting`,
+      message: `${tableName} has open seats. Join now!`,
+      category: 'table_available',
+      url: `/table/${tableId}`,
+      data: { tableId, clubName },
+    });
+  }
+
+  /**
+   * Notify user of a new direct message
+   */
+  async notifyNewMessage(
+    userId: string,
+    fromUsername: string,
+    messagePreview: string
+  ): Promise<boolean> {
+    return this.sendToUser(userId, {
+      title: `Message from ${fromUsername}`,
+      message: messagePreview.substring(0, 80) + (messagePreview.length > 80 ? '...' : ''),
+      category: 'general',
+      url: '/messages',
+    });
+  }
+
+  /**
+   * Notify user of a daily login reward ready to claim
+   */
+  async notifyDailyReward(userId: string, streak: number): Promise<boolean> {
+    return this.sendToUser(userId, {
+      title: 'Daily Reward Ready!',
+      message: `Day ${streak} streak — claim your bonus now`,
+      category: 'general',
+      url: '/bonus',
+    });
+  }
+
+  /**
+   * Notify user of a notable hand (bad beat, huge pot, etc.)
+   */
+  async notifyNotableHand(userId: string, description: string, tableId: string): Promise<boolean> {
+    return this.sendToUser(userId, {
+      title: 'Notable Hand!',
+      message: description,
+      category: 'general',
+      url: `/table/${tableId}`,
+      data: { tableId },
+    });
+  }
+
+  /**
+   * Notify user of waitlist position ready (push, not just in-app)
+   */
+  async notifyWaitlistReady(
+    userId: string,
+    tableName: string,
+    tableId: string,
+    position: number
+  ): Promise<boolean> {
+    return this.sendToUser(userId, {
+      title: 'Seat Available!',
+      message: `You're #${position} — a seat opened at ${tableName}`,
+      category: 'table_available',
+      url: `/table/${tableId}`,
+      data: { tableId, waitlistPosition: position },
     });
   }
 

@@ -27,9 +27,8 @@ export const BombPotOverlay: React.FC<BombPotOverlayProps> = ({ tableId }) => {
       setBBMultiplier(payload.bbMultiplier || 0);
       setVisible(true);
 
-      // Enhancement #3: Dramatic sound + haptic on bomb pot trigger
-      soundService.playAllIn();
-      haptic.strong();
+      // Dedicated bomb pot sound + haptic (dramatic rumble, not generic allIn)
+      soundService.playBombPot();
 
       // Clear any existing hide timer
       if (hideTimerRef.current) clearTimeout(hideTimerRef.current);

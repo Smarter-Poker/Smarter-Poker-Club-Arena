@@ -21,7 +21,7 @@ GROUP BY table_id;
 Engine `/health` endpoint confirms:
 
 ```json
-{"activeTables":1, "totalHandsDealt":2015, "telemetry":{"tablesWithMetrics":1}}
+{ "activeTables": 1, "totalHandsDealt": 2015, "telemetry": { "tablesWithMetrics": 1 } }
 ```
 
 Every other cash table (PLO audit tables + any existing ones with seated horses) is dead. No engine attached. No hands dealing.
@@ -52,10 +52,12 @@ Neither workaround helped. The engine's in-memory state (tableEngines Map) is ou
 ## Fix
 
 Single action: **restart the Hetzner container**. Either:
+
 - `./server/deploy-hetzner.sh` (preferred — also picks up BUGs 008/009/012/013/016/017/018/019/020 queued code)
 - OR `docker restart club-arena-engine` (faster if no deploy is needed, but leaves queued bug fixes un-activated)
 
 After restart, engine will:
+
 1. Run stale-data cleanup (reset all cash tables to status='waiting' + current_players=0) — this was failing silently
 2. HorseFleetManager creates/reactivates configured tables and seats horses
 3. discoverCashTables loop picks up all tables with 2+ seats and spawns engines
@@ -74,6 +76,7 @@ And `hand_history.table_id` should show ≥ 2 distinct table_ids dealing hands w
 ## Impact
 
 Single table dealing all traffic means:
+
 - 80 hands/hour platform-wide (vs capacity for hundreds per hour)
 - 3 clubs + 1 union share one table — all agent / league / tournament activity funneled through it
 - New tables (variants, higher stakes, private) cannot be exercised
@@ -92,6 +95,7 @@ Single table dealing all traffic means:
 9. **BUG 022** — Engine fleet recovery (THIS BUG). Restart alone fixes it; no new code.
 
 Run:
+
 ```bash
 cd ~/Documents/Smarter-Poker-Club-Arena
 bash server/deploy-hetzner.sh
@@ -104,3 +108,30 @@ bash server/deploy-hetzner.sh
 ## Lesson
 
 **Telemetry's `activeTables` metric is the single most important operational signal.** If it's not `>= 2` when the DB has multiple tables with seated players, the fleet is silently down. A trivial monitor check (`activeTables >= COUNT(tables WHERE status='running' AND has seats)`) would catch this in under 5 minutes of degradation. Without it, the platform burned 25 hours at 1/Nth capacity before anyone noticed.
+
+---
+
+## CONFIRMED ROOT CAUSE (2026-04-17 session)
+
+Hypothesis #1 / #2 above were wrong. The actual cause: **`cleanupStaleData()` at boot unconditionally resets `status='waiting'` and `current_players=0` for every cash table AND clears `table_seats` rows whose `table_id` is not on the protected-list.** The protected-list is populated from the `TEST_TABLE_ID` env var plus any live-tournament tables. With `TEST_TABLE_ID` unset, the new Wave 3a test tables (including `59938155-11ba-440f-9017-66019a2d697e`) had their seated horses wiped on every engine boot, leaving only the single legacy `50c4559d-...` table (which was kept alive because it happened to meet other retention criteria) as the lone active engine.
+
+The fix that worked:
+
+```bash
+# On the Hetzner VPS, /srv/club-arena-server/.env
+TEST_TABLE_ID=59938155-11ba-440f-9017-66019a2d697e
+MAINTENANCE_MODE=true
+
+# Then:
+docker compose build engine && docker compose up -d engine
+```
+
+After this: `activeTables` went to 1 on the intended test table (MAINTENANCE_MODE=true suppresses the horse-fleet churn so the live E2E run is deterministic), 8+ hands dealt at 78 hands/hr, 0 broadcast violations, $30.19 rake across $773.72 in pots.
+
+## Follow-up action item
+
+**Make `cleanupStaleData()` idempotent and safe for tables with existing seats.** It should never clear `table_seats` rows — only reset `tables.status`/`current_players` if the engine map doesn't have a running engine for that table. The TEST_TABLE_ID protected-list is a band-aid; the real fix is to never wipe player seats on boot. Filed as BUG 026 (pending).
+
+## Deploy path note
+
+The older `./server/deploy-hetzner.sh` script uses `/opt/club-arena` and `docker run`. The current/preferred path is `/srv/club-arena-server` with `docker compose build engine && docker compose up -d engine`. Both paths are in play on the VPS — agents should check which docker-compose.yml the `club-arena-engine` container is running against before editing env files.

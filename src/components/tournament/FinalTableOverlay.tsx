@@ -19,6 +19,7 @@ import {
   playerStyleClassifier,
   type PlayerStyleResult,
 } from '../../services/PlayerStyleClassifier';
+import { soundService } from '../../services/SoundService';
 import './FinalTableOverlay.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -82,6 +83,9 @@ export const FinalTableOverlay: React.FC<FinalTableOverlayProps> = ({
     setPlayers(sorted);
     setPhase('enter');
     setIsVisible(true);
+
+    // Cinematic power-chord fanfare for final table reveal
+    soundService.playTournamentFinalTable();
 
     // Clear any previous timers
     timerRefs.current.forEach(clearTimeout);

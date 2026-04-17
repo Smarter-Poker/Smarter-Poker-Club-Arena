@@ -173,6 +173,13 @@ export type SoundPriority =
   | 'turn_alert'
   | 'ui';
 
+/**
+ * User-facing sound categories — mapped to the sub-toggles in SoundSettings.
+ * These gate WHICH sounds play. The master `enabled` flag controls whether
+ * any sound plays at all.
+ */
+export type SoundCategory = 'action' | 'chat' | 'turn_alert' | 'win' | 'event';
+
 const SOUND_PRIORITY_RANK: Record<SoundPriority, number> = {
   all_in: 100,
   big_win: 95,
@@ -202,6 +209,15 @@ class SoundService {
   // Sound priority system: tracks the highest-priority sound played this frame
   private currentFramePriority: number = -1;
   private priorityResetTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // Category-level gates (driven by SoundSettings sub-toggles)
+  private categoryEnabled: Record<SoundCategory, boolean> = {
+    action: true,
+    chat: true,
+    turn_alert: true,
+    win: true,
+    event: true,
+  };
 
   constructor() {
     try {
@@ -241,6 +257,21 @@ class SoundService {
     return this.enabled;
   }
 
+  /** Enable/disable a specific sound category (e.g. 'action', 'chat', 'win'). */
+  setCategoryEnabled(category: SoundCategory, enabled: boolean) {
+    this.categoryEnabled[category] = enabled;
+  }
+
+  /** Bulk-update category gates from the SoundSettings config. */
+  setCategoryStates(states: Partial<Record<SoundCategory, boolean>>) {
+    for (const key in states) {
+      const k = key as SoundCategory;
+      if (states[k] !== undefined) {
+        this.categoryEnabled[k] = states[k]!;
+      }
+    }
+  }
+
   setMasterVolume(vol: number) {
     this.masterVolume = Math.max(0, Math.min(1, vol));
     if (this.masterGain) {
@@ -268,8 +299,10 @@ class SoundService {
   // Prevents audio clutter when multiple events fire simultaneously
   // (e.g., fold + raise + all-in in quick succession during multi-way pots).
 
-  private shouldPlay(priority: SoundPriority): boolean {
+  private shouldPlay(priority: SoundPriority, category?: SoundCategory): boolean {
     if (!this.enabled) return false;
+    // Category gate — user can silence a whole category via SoundSettings
+    if (category && !this.categoryEnabled[category]) return false;
     const rank = SOUND_PRIORITY_RANK[priority] ?? 0;
     if (rank <= this.currentFramePriority) return false;
     this.currentFramePriority = rank;
@@ -348,7 +381,7 @@ class SoundService {
    * Card deal/slide — soft paper shuffle sound
    */
   playDeal() {
-    if (!this.shouldPlay('deal') || !this.ensureContext()) return;
+    if (!this.shouldPlay('deal', 'action') || !this.ensureContext()) return;
     const t = this.ctx!.currentTime;
 
     // Filtered noise burst simulating paper slide
@@ -373,7 +406,7 @@ class SoundService {
    * Check — double table tap (wood-like thud)
    */
   playCheck() {
-    if (!this.shouldPlay('check') || !this.ensureContext()) return;
+    if (!this.shouldPlay('check', 'action') || !this.ensureContext()) return;
     const t = this.ctx!.currentTime;
 
     // First tap
@@ -395,7 +428,7 @@ class SoundService {
    * Chips — bet/call chip clink (two-click stack)
    */
   playChips() {
-    if (!this.shouldPlay('bet') || !this.ensureContext()) return;
+    if (!this.shouldPlay('bet', 'action') || !this.ensureContext()) return;
     const t = this.ctx!.currentTime;
 
     // First ceramic click
@@ -436,7 +469,7 @@ class SoundService {
    * @param bigBlind optional BB for scaling reference
    */
   playRaise(betAmount?: number, bigBlind?: number) {
-    if (!this.shouldPlay('raise') || !this.ensureContext()) return;
+    if (!this.shouldPlay('raise', 'action') || !this.ensureContext()) return;
 
     // Scale volume based on bet size relative to BB (Bible V8 §5.3: louder for larger amounts)
     let volumeScale = 1.0;
@@ -477,7 +510,7 @@ class SoundService {
    * Fold — card swoosh to muck
    */
   playFold() {
-    if (!this.shouldPlay('fold') || !this.ensureContext()) return;
+    if (!this.shouldPlay('fold', 'action') || !this.ensureContext()) return;
     const t = this.ctx!.currentTime;
 
     // Swoosh: filtered sawtooth sweep down
@@ -509,7 +542,7 @@ class SoundService {
    * All-In — dramatic bass thud + chip cascade + tension build
    */
   playAllIn() {
-    if (!this.shouldPlay('all_in') || !this.ensureContext()) return;
+    if (!this.shouldPlay('all_in', 'action') || !this.ensureContext()) return;
     const t = this.ctx!.currentTime;
 
     // Deep bass impact
@@ -569,7 +602,7 @@ class SoundService {
    * Win — C major arpeggio (satisfying victory sound)
    */
   playWin() {
-    if (!this.shouldPlay('win') || !this.ensureContext()) return;
+    if (!this.shouldPlay('win', 'win') || !this.ensureContext()) return;
     const t = this.ctx!.currentTime;
     const notes = [523.25, 659.25, 783.99, 1046.5]; // C5, E5, G5, C6
 
@@ -598,7 +631,7 @@ class SoundService {
    * Big Win — Extended celebration with shimmer and double arpeggio
    */
   playBigWin() {
-    if (!this.shouldPlay('big_win') || !this.ensureContext()) return;
+    if (!this.shouldPlay('big_win', 'win') || !this.ensureContext()) return;
     const t = this.ctx!.currentTime;
 
     // First arpeggio (C major)
@@ -629,7 +662,7 @@ class SoundService {
    * Turn Alert — bell ding (your turn notification)
    */
   playTurnAlert() {
-    if (!this.shouldPlay('turn_alert') || !this.ensureContext()) return;
+    if (!this.shouldPlay('turn_alert', 'turn_alert') || !this.ensureContext()) return;
     const t = this.ctx!.currentTime;
 
     // Primary bell tone
@@ -667,7 +700,7 @@ class SoundService {
    * Timer Warning — tick-tock pulse (call repeatedly for <5s countdown)
    */
   playTimerWarning() {
-    if (!this.shouldPlay('timer_warning') || !this.ensureContext()) return;
+    if (!this.shouldPlay('timer_warning', 'turn_alert') || !this.ensureContext()) return;
     const t = this.ctx!.currentTime;
 
     // Sharp tick
@@ -713,7 +746,7 @@ class SoundService {
    * Community Card — card snap/flip for board reveal
    */
   playCommunityCard() {
-    if (!this.shouldPlay('community_card') || !this.ensureContext()) return;
+    if (!this.shouldPlay('community_card', 'action') || !this.ensureContext()) return;
     const t = this.ctx!.currentTime;
 
     // Quick snap (higher energy than deal)
@@ -738,7 +771,7 @@ class SoundService {
    * Showdown — dramatic rising reveal (string swell effect)
    */
   playShowdown() {
-    if (!this.shouldPlay('showdown') || !this.ensureContext()) return;
+    if (!this.shouldPlay('showdown', 'win') || !this.ensureContext()) return;
     const t = this.ctx!.currentTime;
 
     // Rising 4-note sequence: C4→E4→G4→C5 (80ms each)
@@ -796,7 +829,7 @@ class SoundService {
    * Time Bank Activated — hourglass two-tone chime
    */
   playTimeBankActivated() {
-    if (!this.shouldPlay('time_bank') || !this.ensureContext()) return;
+    if (!this.shouldPlay('time_bank', 'turn_alert') || !this.ensureContext()) return;
 
     // G5 then C6 (pleasant two-note chime)
     this.playTone(783.99, 0.3, 0.18, 'sine', 0);
@@ -815,7 +848,7 @@ class SoundService {
    * Pot Collect — chips sweep to winner (satisfying collection sound)
    */
   playPotCollect() {
-    if (!this.shouldPlay('win') || !this.ensureContext()) return;
+    if (!this.shouldPlay('win', 'win') || !this.ensureContext()) return;
 
     // Rapid ascending chip clicks (collecting chips)
     for (let i = 0; i < 6; i++) {
@@ -866,7 +899,7 @@ class SoundService {
    * New Hand — subtle "new hand starting" indicator
    */
   playNewHand() {
-    if (!this.shouldPlay('deal') || !this.ensureContext()) return;
+    if (!this.shouldPlay('deal', 'action') || !this.ensureContext()) return;
     const now = this.ctx!.currentTime;
     const gain = this.createGain(0.08);
 
@@ -960,7 +993,7 @@ class SoundService {
    * Fires when a bomb pot round is announced
    */
   playBombPot() {
-    if (!this.shouldPlay('all_in') || !this.ensureContext()) return;
+    if (!this.shouldPlay('all_in', 'event') || !this.ensureContext()) return;
     const t = this.ctx!.currentTime;
 
     // Deep sub-bass swell (building tension)
@@ -1014,7 +1047,7 @@ class SoundService {
    * Bad Beat Jackpot — epic ascending fanfare with shimmer cascade
    */
   playBadBeatJackpot() {
-    if (!this.shouldPlay('big_win') || !this.ensureContext()) return;
+    if (!this.shouldPlay('big_win', 'event') || !this.ensureContext()) return;
     const t = this.ctx!.currentTime;
 
     // Fanfare: ascending major chord arpeggio
@@ -1047,7 +1080,7 @@ class SoundService {
    * Insurance Purchase — tense decision confirmed (descending minor resolve)
    */
   playInsurancePurchase() {
-    if (!this.shouldPlay('ui') || !this.ensureContext()) return;
+    if (!this.shouldPlay('ui', 'event') || !this.ensureContext()) return;
     const t = this.ctx!.currentTime;
 
     // Tense two-note resolve: Bb4 -> F4 (minor feel)
@@ -1064,7 +1097,7 @@ class SoundService {
    * Insurance Declined — quick dismissive sweep down
    */
   playInsuranceDecline() {
-    if (!this.shouldPlay('ui') || !this.ensureContext()) return;
+    if (!this.shouldPlay('ui', 'event') || !this.ensureContext()) return;
     if (!this.ctx) return;
 
     const t = this.ctx.currentTime;
@@ -1087,7 +1120,7 @@ class SoundService {
    * Straddle Posted — confident assertive chip-drop with authority
    */
   playStraddle() {
-    if (!this.shouldPlay('bet') || !this.ensureContext()) return;
+    if (!this.shouldPlay('bet', 'event') || !this.ensureContext()) return;
     const t = this.ctx!.currentTime;
 
     // Heavy chip drop
@@ -1128,7 +1161,7 @@ class SoundService {
    * Chat Message Received — gentle notification ping
    */
   playChatMessage() {
-    if (!this.shouldPlay('ui') || !this.ensureContext()) return;
+    if (!this.shouldPlay('ui', 'chat') || !this.ensureContext()) return;
 
     // Warm two-note ascending ping (E5 → A5)
     this.playTone(659.25, 0.12, 0.08, 'sine', 0);
@@ -1141,7 +1174,7 @@ class SoundService {
    * Throwable Impact — sharp comedic impact thud
    */
   playThrowableImpact() {
-    if (!this.shouldPlay('ui') || !this.ensureContext()) return;
+    if (!this.shouldPlay('ui', 'event') || !this.ensureContext()) return;
     const t = this.ctx!.currentTime;
 
     // Impact noise burst
@@ -1165,7 +1198,7 @@ class SoundService {
    * Call repeatedly as wheel spins, with increasing delay between calls
    */
   playSpinTick() {
-    if (!this.shouldPlay('ui') || !this.ensureContext()) return;
+    if (!this.shouldPlay('ui', 'event') || !this.ensureContext()) return;
 
     // Quick metallic tick
     this.playTone(2800, 0.025, 0.12, 'sine');
@@ -1176,7 +1209,7 @@ class SoundService {
    * Spin Wheel Result — triumphant reveal sting
    */
   playSpinResult() {
-    if (!this.shouldPlay('win') || !this.ensureContext()) return;
+    if (!this.shouldPlay('win', 'win') || !this.ensureContext()) return;
     const t = this.ctx!.currentTime;
 
     // Ascending 3-note fanfare: G5 → B5 → D6
@@ -1200,7 +1233,7 @@ class SoundService {
    * Mystery Bounty Reveal — suspenseful pause then dramatic reveal
    */
   playMysteryBountyReveal() {
-    if (!this.shouldPlay('big_win') || !this.ensureContext()) return;
+    if (!this.shouldPlay('big_win', 'event') || !this.ensureContext()) return;
     const t = this.ctx!.currentTime;
 
     // Suspense: rising filtered noise
@@ -1242,7 +1275,7 @@ class SoundService {
    * Tournament Elimination — somber descending tone (you're out)
    */
   playTournamentElimination() {
-    if (!this.shouldPlay('ui') || !this.ensureContext()) return;
+    if (!this.shouldPlay('ui', 'event') || !this.ensureContext()) return;
     const t = this.ctx!.currentTime;
 
     // Descending minor 3-note: E4 → C4 → A3
@@ -1260,7 +1293,7 @@ class SoundService {
    * Tournament Final Table — epic ascending power chord
    */
   playTournamentFinalTable() {
-    if (!this.shouldPlay('big_win') || !this.ensureContext()) return;
+    if (!this.shouldPlay('big_win', 'event') || !this.ensureContext()) return;
 
     // Power chord: C4 → E4 → G4 → C5 → E5 → G5
     const notes = [261.63, 329.63, 392.0, 523.25, 659.25, 783.99];
@@ -1284,7 +1317,7 @@ class SoundService {
    * Achievement Unlocked — bright celebratory arpeggio with sparkle
    */
   playAchievement() {
-    if (!this.shouldPlay('win') || !this.ensureContext()) return;
+    if (!this.shouldPlay('win', 'event') || !this.ensureContext()) return;
 
     // Ascending sparkle: G5 → B5 → D6 → G6
     const notes = [783.99, 987.77, 1174.66, 1567.98];
@@ -1305,7 +1338,7 @@ class SoundService {
    * Chip Splash — multiple chips hitting pot simultaneously (side pot creation)
    */
   playChipSplash() {
-    if (!this.shouldPlay('bet') || !this.ensureContext()) return;
+    if (!this.shouldPlay('bet', 'event') || !this.ensureContext()) return;
 
     // Rapid 4-chip scatter at random pitches
     for (let i = 0; i < 4; i++) {
@@ -1338,7 +1371,7 @@ class SoundService {
    * Buy-In Confirmed — satisfying confirmation chime
    */
   playBuyInConfirm() {
-    if (!this.shouldPlay('ui') || !this.ensureContext()) return;
+    if (!this.shouldPlay('ui', 'event') || !this.ensureContext()) return;
 
     // Two-note confirmation: C5 → G5 (perfect fifth = satisfying)
     this.playTone(523.25, 0.15, 0.12, 'sine', 0);

@@ -12,6 +12,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { triggerHaptic } from '../services/HapticService';
 import { masterBus } from '../core/MasterBus';
+import { soundService } from '../services/SoundService';
 import type { ChatMessage } from '../components/table/TableChat';
 import { reportError } from '../utils/errorReporter';
 
@@ -79,13 +80,17 @@ export function useTableChat(
   const pendingTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
   const lastSendTimestampRef = useRef(0);
   const isChatCollapsedRef = useRef(isChatCollapsed);
+  const isChatMutedRef = useRef(isChatMuted);
 
-  // Keep ref in sync with state for use in subscription callbacks
+  // Keep refs in sync with state for use in subscription callbacks
   useEffect(() => {
     isChatCollapsedRef.current = isChatCollapsed;
     // When user opens chat, clear unread
     if (!isChatCollapsed) setUnreadCount(0);
   }, [isChatCollapsed]);
+  useEffect(() => {
+    isChatMutedRef.current = isChatMuted;
+  }, [isChatMuted]);
 
   const clearUnread = useCallback(() => setUnreadCount(0), []);
 
@@ -176,6 +181,17 @@ export function useTableChat(
             // Track unread if chat is collapsed
             if (isChatCollapsedRef.current && m.user_id !== userId) {
               setUnreadCount((c) => c + 1);
+            }
+            // Warm notification ping for incoming messages from other players
+            // (skip our own echoes, system/dealer injections, and reaction/throw encodings)
+            const isRealPlayerMsg =
+              m.user_id !== userId &&
+              m.message_type !== 'system' &&
+              m.message_type !== 'dealer' &&
+              !REACTION_MSG_REGEX.test(m.message || '') &&
+              !THROW_MSG_REGEX.test(m.message || '');
+            if (isRealPlayerMsg && !isChatMutedRef.current) {
+              soundService.playChatMessage();
             }
             return [...filtered.slice(-49), newMsg];
           });

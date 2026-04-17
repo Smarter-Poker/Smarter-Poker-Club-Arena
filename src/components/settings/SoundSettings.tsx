@@ -58,7 +58,15 @@ export const SoundSettings: React.FC<SoundSettingsProps> = ({ onChange }) => {
     soundService.setEnabled(config.enableSounds);
     soundService.setMasterVolume(config.masterVolume / 100);
     soundService.setEffectsVolume(config.effectsVolume / 100);
-    // Sync vibration preference
+    // Wire sub-toggles to category gates so each toggle actually silences its sounds
+    soundService.setCategoryStates({
+      action: config.enableActionSounds,
+      chat: config.enableChatSounds,
+      turn_alert: config.enableTurnAlert,
+      win: config.enableWinSound,
+      event: config.enableEventSounds,
+    });
+    // Sync vibration preference (independent of sounds)
     try {
       localStorage.setItem('vibrationsEnabled', String(config.enableVibrations));
     } catch {
@@ -203,7 +211,6 @@ export const SoundSettings: React.FC<SoundSettingsProps> = ({ onChange }) => {
             type="checkbox"
             checked={config.enableVibrations}
             onChange={(e) => updateConfig('enableVibrations', e.target.checked)}
-            disabled={!config.enableSounds}
           />
           <span className="toggle-slider small"></span>
         </label>

@@ -11,6 +11,7 @@
 
 import React, { useMemo, memo, useState, useEffect, useRef } from 'react';
 import { AnimatedNumber } from '../common/AnimatedNumber';
+import { soundService } from '../../services/SoundService';
 import './PotDisplay.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -61,14 +62,14 @@ function formatBB(amount: number, bigBlind: number): string {
 // Descending order so breakdown algorithm picks highest denominations first
 const CHIP_COLORS = [
   { threshold: 100000, color: '#f97316', label: '100K' }, // Orange
-  { threshold: 25000,  color: '#14b8a6', label: '25K' },  // Teal
-  { threshold: 5000,   color: '#ec4899', label: '5K' },   // Pink
-  { threshold: 1000,   color: '#eab308', label: '1K' },   // Yellow
-  { threshold: 500,    color: '#a855f7', label: '500' },   // Purple
-  { threshold: 100,    color: '#1a1a2e', label: '100' },   // Black
-  { threshold: 25,     color: '#22c55e', label: '25' },    // Green
-  { threshold: 5,      color: '#ef4444', label: '5' },     // Red
-  { threshold: 1,      color: '#e0e0e0', label: '1' },     // White
+  { threshold: 25000, color: '#14b8a6', label: '25K' }, // Teal
+  { threshold: 5000, color: '#ec4899', label: '5K' }, // Pink
+  { threshold: 1000, color: '#eab308', label: '1K' }, // Yellow
+  { threshold: 500, color: '#a855f7', label: '500' }, // Purple
+  { threshold: 100, color: '#1a1a2e', label: '100' }, // Black
+  { threshold: 25, color: '#22c55e', label: '25' }, // Green
+  { threshold: 5, color: '#ef4444', label: '5' }, // Red
+  { threshold: 1, color: '#e0e0e0', label: '1' }, // White
 ];
 
 /**
@@ -211,6 +212,15 @@ function PotDisplayComponent({
     prevPotRef.current = mainPot;
   }, [mainPot]);
 
+  // Multi-chip splash whenever a NEW side pot appears (all-in split moment)
+  const prevSidePotCountRef = useRef(sidePots.length);
+  useEffect(() => {
+    if (sidePots.length > prevSidePotCountRef.current) {
+      soundService.playChipSplash();
+    }
+    prevSidePotCountRef.current = sidePots.length;
+  }, [sidePots.length]);
+
   // Calculate chip visualization
   const chipBreakdown = useMemo(() => getChipBreakdown(mainPot), [mainPot]);
 
@@ -224,7 +234,12 @@ function PotDisplayComponent({
   }
 
   return (
-    <div className={`pot-display${isPotUpdated ? ' pot-display--updated' : ''}`} role="status" aria-live="polite" aria-label={`Pot: ${formatAmount(mainPot, currency)}${sidePots && sidePots.length > 0 ? ` plus ${sidePots.length} side pot${sidePots.length > 1 ? 's' : ''}` : ''}`}>
+    <div
+      className={`pot-display${isPotUpdated ? ' pot-display--updated' : ''}`}
+      role="status"
+      aria-live="polite"
+      aria-label={`Pot: ${formatAmount(mainPot, currency)}${sidePots && sidePots.length > 0 ? ` plus ${sidePots.length} side pot${sidePots.length > 1 ? 's' : ''}` : ''}`}
+    >
       {/* Chip Stacks Visualization */}
       {showChipAnimation && mainPot > 0 && (
         <div className="pot-display__chips">

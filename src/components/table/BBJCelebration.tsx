@@ -18,6 +18,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { soundService } from '../../services/SoundService';
 import './BBJCelebration.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -111,8 +112,15 @@ export function BBJCelebration({
     setOpacity(1);
     startTimeRef.current = Date.now();
 
+    // Epic ascending BBJ fanfare on the explosion
+    soundService.playBadBeatJackpot();
+
     // Phase transitions
-    const t1 = setTimeout(() => setPhase('reveal'), 1500);
+    const t1 = setTimeout(() => {
+      setPhase('reveal');
+      // Second-stage reveal sting — stacks on the ongoing fanfare
+      soundService.playSpinResult();
+    }, 1500);
     const t2 = setTimeout(() => setPhase('breakdown'), 3500);
     const t3 = setTimeout(() => setPhase('fadeout'), FADE_START);
     const t4 = setTimeout(() => {
@@ -139,7 +147,7 @@ export function BBJCelebration({
       clearTimeout(t4);
       clearInterval(counterInterval);
     };
-  }, [visible, totalPayout]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [visible, totalPayout]);  
   // ↑ onComplete accessed via onCompleteRef to prevent timer reset on parent re-render
 
   // ── Spawn particles ──
@@ -316,7 +324,10 @@ export function BBJCelebration({
     <div
       className="bbj-celebration-overlay"
       style={{ opacity, transition: 'opacity 0.5s ease', cursor: 'pointer' }}
-      onClick={() => { setOpacity(0); setTimeout(() => onCompleteRef.current?.(), 300); }}
+      onClick={() => {
+        setOpacity(0);
+        setTimeout(() => onCompleteRef.current?.(), 300);
+      }}
     >
       {/* Canvas layer for particles */}
       <canvas ref={canvasRef} className="bbj-canvas" />

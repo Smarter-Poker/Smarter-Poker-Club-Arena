@@ -5,6 +5,7 @@
  */
 
 import React, { useEffect, useState } from 'react';
+import { soundService } from '../../services/SoundService';
 import './EliminationOverlay.css';
 
 export interface EliminatedPlayer {
@@ -37,6 +38,13 @@ export const EliminationOverlay: React.FC<EliminationOverlayProps> = ({
     if (elimination) {
       setTimeout(() => setMounted(true), 50);
       setPhase('entering');
+
+      // Somber descending elimination tone (or bright money-finish fanfare)
+      if (elimination.prize > 0) {
+        soundService.playSpinResult();
+      } else {
+        soundService.playTournamentElimination();
+      }
 
       const showTimer = setTimeout(() => setPhase('showing'), 100);
       const exitTimer = setTimeout(() => setPhase('exiting'), 3500);

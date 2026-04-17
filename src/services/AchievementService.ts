@@ -303,6 +303,8 @@ class AchievementServiceClass {
   /** FIX-216: Circuit breaker — disable DB writes after persistent failures (missing table) */
   private _dbWriteDisabled = false;
   private _dbWriteFailures = 0;
+  /** Read-side breaker — silence RLS/permission read errors after first report */
+  private _dbReadDisabled = false;
 
   // ─────────────────────────────────────────────────────────────────────────────
   // Get Achievements
@@ -325,6 +327,9 @@ class AchievementServiceClass {
   // ─────────────────────────────────────────────────────────────────────────────
 
   async getUserAchievements(userId: string): Promise<UserAchievement[]> {
+    // Silent breaker — avoids Sentry flood from polling when table/RLS blocks reads
+    if (this._dbReadDisabled) return [];
+
     const { data, error } = await supabase
       .from('training_user_achievements')
       .select('id, achievement_id, user_id, progress, unlocked_at')
@@ -332,7 +337,11 @@ class AchievementServiceClass {
       .limit(QUERY_LIMITS.MODERATE);
 
     if (error) {
-      reportError(error, 'AchievementService.getUserAchievements', { userId });
+      this._dbReadDisabled = true;
+      reportError(error, 'AchievementService.getUserAchievements', {
+        userId,
+        note: 'Disabling subsequent reads — likely missing table or RLS',
+      });
       return [];
     }
 
@@ -400,10 +409,21 @@ class AchievementServiceClass {
         })
         .eq('id', existing.id);
       if (progErr) {
-        reportError(progErr, 'AchievementService.incrementProgress.update', {
-          userId,
-          achievementId,
-        });
+        this._dbWriteFailures++;
+        if (this._dbWriteFailures >= 3) {
+          this._dbWriteDisabled = true;
+          console.debug(
+            '[AchievementService] DB writes disabled — training_user_achievements table unavailable'
+          );
+        }
+        // Report only first 3 failures — avoids Sentry flood from repeated RLS errors
+        if (this._dbWriteFailures <= 3) {
+          reportError(progErr, 'AchievementService.incrementProgress.update', {
+            userId,
+            achievementId,
+            failureCount: this._dbWriteFailures,
+          });
+        }
         return { unlocked: false };
       }
     } else {
@@ -422,10 +442,14 @@ class AchievementServiceClass {
             '[AchievementService] DB writes disabled — training_user_achievements table unavailable'
           );
         }
-        reportError(insErr, 'AchievementService.incrementProgress.insert', {
-          userId,
-          achievementId,
-        });
+        // Report only first 3 failures — avoids Sentry flood from repeated RLS errors
+        if (this._dbWriteFailures <= 3) {
+          reportError(insErr, 'AchievementService.incrementProgress.insert', {
+            userId,
+            achievementId,
+            failureCount: this._dbWriteFailures,
+          });
+        }
         return { unlocked: false };
       }
     }

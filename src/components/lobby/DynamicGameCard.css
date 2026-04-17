@@ -36,48 +36,125 @@
 }
 
 .dgc:hover {
-    transform: translateY(-6px) scale(1.02);
-    box-shadow:
-        0 16px 40px rgba(0, 0, 0, 0.7),
-        0 0 20px rgba(30, 100, 200, 0.15),
-        inset 0 1px 0 rgba(255, 255, 255, 0.08);
-    border-color: #5e5f60;
+  transform: translateY(-6px) scale(1.02);
+  box-shadow:
+    0 16px 40px rgba(0, 0, 0, 0.7),
+    0 0 20px rgba(30, 100, 200, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  border-color: #5e5f60;
 }
 
 /* Variant-specific hover border glow */
-.dgc--nlh:hover { border-color: rgba(255, 85, 85, 0.5); box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7), 0 0 18px rgba(255, 50, 50, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.08); }
-.dgc--plo4:hover { border-color: rgba(77, 166, 255, 0.5); box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7), 0 0 18px rgba(35, 116, 225, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.08); }
-.dgc--plo5:hover { border-color: rgba(68, 221, 204, 0.5); box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7), 0 0 18px rgba(40, 200, 180, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.08); }
-.dgc--plo6:hover { border-color: rgba(0, 180, 220, 0.5); box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7), 0 0 18px rgba(0, 180, 220, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.08); }
-.dgc--plo8:hover, .dgc--plo_hilo:hover { border-color: rgba(187, 102, 255, 0.5); box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7), 0 0 18px rgba(150, 60, 255, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.08); }
-.dgc--ofc_pineapple:hover, .dgc--pineapple:hover, .dgc--crazy_pineapple:hover { border-color: rgba(255, 170, 51, 0.5); box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7), 0 0 18px rgba(220, 160, 40, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.08); }
-.dgc--short_deck:hover { border-color: rgba(0, 200, 83, 0.5); box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7), 0 0 18px rgba(0, 200, 83, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.08); }
-.dgc--mixed:hover { border-color: rgba(200, 180, 255, 0.5); box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7), 0 0 18px rgba(180, 150, 255, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.08); }
-.dgc--sng:hover { border-color: rgba(0, 212, 255, 0.5); box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7), 0 0 18px rgba(0, 212, 255, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.08); }
-.dgc--spin:hover { border-color: rgba(255, 215, 0, 0.5); box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7), 0 0 18px rgba(255, 215, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.08); }
-.dgc--mtt:hover { border-color: rgba(100, 200, 255, 0.5); box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7), 0 0 18px rgba(100, 200, 255, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.08); }
+.dgc--nlh:hover {
+  border-color: rgba(255, 85, 85, 0.5);
+  box-shadow:
+    0 16px 40px rgba(0, 0, 0, 0.7),
+    0 0 18px rgba(255, 50, 50, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+.dgc--plo4:hover {
+  border-color: rgba(77, 166, 255, 0.5);
+  box-shadow:
+    0 16px 40px rgba(0, 0, 0, 0.7),
+    0 0 18px rgba(35, 116, 225, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+.dgc--plo5:hover {
+  border-color: rgba(68, 221, 204, 0.5);
+  box-shadow:
+    0 16px 40px rgba(0, 0, 0, 0.7),
+    0 0 18px rgba(40, 200, 180, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+.dgc--plo6:hover {
+  border-color: rgba(0, 180, 220, 0.5);
+  box-shadow:
+    0 16px 40px rgba(0, 0, 0, 0.7),
+    0 0 18px rgba(0, 180, 220, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+.dgc--plo8:hover,
+.dgc--plo_hilo:hover {
+  border-color: rgba(187, 102, 255, 0.5);
+  box-shadow:
+    0 16px 40px rgba(0, 0, 0, 0.7),
+    0 0 18px rgba(150, 60, 255, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+.dgc--pineapple:hover,
+.dgc--crazy_pineapple:hover {
+  border-color: rgba(255, 170, 51, 0.5);
+  box-shadow:
+    0 16px 40px rgba(0, 0, 0, 0.7),
+    0 0 18px rgba(220, 160, 40, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+.dgc--short_deck:hover {
+  border-color: rgba(0, 200, 83, 0.5);
+  box-shadow:
+    0 16px 40px rgba(0, 0, 0, 0.7),
+    0 0 18px rgba(0, 200, 83, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+.dgc--mixed:hover {
+  border-color: rgba(200, 180, 255, 0.5);
+  box-shadow:
+    0 16px 40px rgba(0, 0, 0, 0.7),
+    0 0 18px rgba(180, 150, 255, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+.dgc--sng:hover {
+  border-color: rgba(0, 212, 255, 0.5);
+  box-shadow:
+    0 16px 40px rgba(0, 0, 0, 0.7),
+    0 0 18px rgba(0, 212, 255, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+.dgc--spin:hover {
+  border-color: rgba(255, 215, 0, 0.5);
+  box-shadow:
+    0 16px 40px rgba(0, 0, 0, 0.7),
+    0 0 18px rgba(255, 215, 0, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+.dgc--mtt:hover {
+  border-color: rgba(100, 200, 255, 0.5);
+  box-shadow:
+    0 16px 40px rgba(0, 0, 0, 0.7),
+    0 0 18px rgba(100, 200, 255, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
 
 /* Live table — pulsing green border for tables with active players */
 .dgc--live {
-    border-color: rgba(49, 162, 76, 0.4);
-    animation: dgcEntrance 0.4s ease-out both, dgcLivePulse 3s ease-in-out infinite;
+  border-color: rgba(49, 162, 76, 0.4);
+  animation:
+    dgcEntrance 0.4s ease-out both,
+    dgcLivePulse 3s ease-in-out infinite;
 }
 
 .dgc--live:hover {
-    border-color: rgba(49, 162, 76, 0.6);
-    box-shadow:
-        0 16px 40px rgba(0, 0, 0, 0.7),
-        0 0 20px rgba(49, 162, 76, 0.2),
-        inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  border-color: rgba(49, 162, 76, 0.6);
+  box-shadow:
+    0 16px 40px rgba(0, 0, 0, 0.7),
+    0 0 20px rgba(49, 162, 76, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 @keyframes dgcLivePulse {
-    0%, 100% {
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4), 0 0 0 rgba(49, 162, 76, 0), inset 0 1px 0 rgba(255, 255, 255, 0.06);
-    }
-    50% {
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4), 0 0 16px rgba(49, 162, 76, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.06);
-    }
+  0%,
+  100% {
+    box-shadow:
+      0 4px 20px rgba(0, 0, 0, 0.4),
+      0 0 0 rgba(49, 162, 76, 0),
+      inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  }
+  50% {
+    box-shadow:
+      0 4px 20px rgba(0, 0, 0, 0.4),
+      0 0 16px rgba(49, 162, 76, 0.2),
+      inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  }
 }
 
 /* Staggered entrance for grid children */

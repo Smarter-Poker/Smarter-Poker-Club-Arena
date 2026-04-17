@@ -181,6 +181,97 @@ export interface Table {
   current_hand_id?: string;
   created_at: string;
   created_by: string;
+
+  // Bible V8 2.1: Extended Table Object fields
+  variant_config?: VariantConfig; // Embedded variant rules
+  timing_config?: TableTimingConfig; // All timing parameters
+  presence_config?: TablePresenceConfig; // Connection/heartbeat thresholds
+  notification_config?: TableNotificationConfig; // Per-table notification rules
+  sound_config?: TableSoundConfig; // Sound preferences
+  animation_config?: TableAnimationConfig; // Animation speed/style
+  security_config?: TableSecurityConfig; // Anti-cheat settings
+  hand_sequence_number?: number; // Monotonic hand counter for this table
+  seat_order_clockwise?: number[]; // Seat numbers in clockwise dealing order
+  current_highest_wager?: number; // Current street's highest bet/raise
+  current_minimum_raise_increment?: number; // Min raise increment for current street
+  deck_state?: 'shuffled' | 'dealing' | 'dealt' | 'exhausted'; // Current deck lifecycle
+  board_state?: 'empty' | 'flop' | 'turn' | 'river'; // Community card stage
+  pot_state?: 'collecting' | 'distributing' | 'settled'; // Pot lifecycle
+  pause_lock?: boolean; // Admin pause active
+  maintenance_lock?: boolean; // System maintenance lock
+  recovery_state?: 'healthy' | 'desync_detected' | 'resyncing' | 'recovery_failed';
+}
+
+/** Bible V8 2.1: Timing configuration sub-object */
+export interface TableTimingConfig {
+  time_to_act_seconds: number; // Primary shot clock (default 15-30)
+  time_bank_seconds: number; // Time bank per activation
+  time_bank_max_activations_per_hand: number; // Max 2 per Bible V8 6.4
+  time_bank_max_activations_per_session: number; // VIP pool
+  disconnect_grace_period_ms: number; // Before marking disconnected
+  heartbeat_interval_ms: number; // Client heartbeat frequency
+  heartbeat_timeout_ms: number; // Server-side heartbeat miss threshold
+  inter_hand_delay_ms: number; // Phase 1 result display (1500ms)
+  board_clear_delay_ms: number; // Phase 2 board clear (500ms)
+  deal_card_interval_ms: number; // Delay between dealing each card
+}
+
+/** Bible V8 2.1: Presence/connection configuration */
+export interface TablePresenceConfig {
+  heartbeat_interval_ms: number;
+  heartbeat_timeout_ms: number;
+  disconnect_grace_period_ms: number;
+  max_consecutive_timeouts: number; // Triggers sit-out (default 3)
+  reconnect_window_ms: number; // Time allowed to reconnect
+  away_detection_idle_ms: number; // Idle time before marking "away"
+}
+
+/** Bible V8 2.1: Notification configuration */
+export interface TableNotificationConfig {
+  your_turn_enabled: boolean;
+  your_turn_reminder_enabled: boolean;
+  reminder_delay_ms: number; // Delay before sending reminder
+  max_notifications_per_turn: number; // Anti-spam (default 2)
+  tournament_alerts_enabled: boolean;
+  sound_enabled: boolean;
+  haptics_enabled: boolean;
+  push_enabled: boolean;
+  dnd_mode: boolean;
+}
+
+/** Bible V8 2.1: Sound configuration */
+export interface TableSoundConfig {
+  master_volume: number; // 0.0-1.0
+  effects_enabled: boolean;
+  deal_sound: boolean;
+  action_sounds: boolean;
+  timer_warning_sound: boolean;
+  win_celebration_sound: boolean;
+  chat_notification_sound: boolean;
+}
+
+/** Bible V8 2.1: Animation configuration */
+export interface TableAnimationConfig {
+  animation_speed: 'slow' | 'normal' | 'fast'; // Multiplier for all animations
+  chip_animations: boolean;
+  card_animations: boolean;
+  confetti_on_win: boolean;
+  screen_shake: boolean;
+  particle_effects: boolean;
+  reduced_motion: boolean; // Respects prefers-reduced-motion
+}
+
+/** Bible V8 2.1: Security configuration */
+export interface TableSecurityConfig {
+  gps_verification: boolean;
+  ip_restriction: boolean;
+  device_fingerprint: boolean;
+  max_tables_per_player: number; // Multi-tabling limit
+  allow_observers: boolean;
+  observer_delay_seconds: number;
+  observer_show_cards_at_showdown: boolean;
+  anti_collusion_enabled: boolean;
+  hand_integrity_hashing: boolean;
 }
 
 export type TableStatus = 'waiting' | 'running' | 'paused' | 'closed';
@@ -282,6 +373,52 @@ export interface TablePlayer {
   timeout_count_session: number; // Timeouts this session (triggers sit-out after 3)
   auto_rebuy_enabled: boolean; // Auto rebuy when stack drops below threshold
   auto_rebuy_amount: number; // Amount to auto rebuy (in BB)
+
+  // Bible V8 2.4: Visual/action state fields
+  force_sit_out_pending: boolean; // Will be force-sat-out after current hand
+  current_visual_state: SeatVisualState; // CSS class driver
+  current_highlight_state: SeatHighlightState; // Glow/border style
+  action_pending_here: boolean; // True when it's this seat's turn
+  rebuy_prompt_active: boolean; // Rebuy dialog is showing for this player
+
+  // Bible V8 2.8: Per-hand player state
+  manual_time_banks_used_this_hand: number;
+  auto_time_bank_used_this_hand: boolean;
+  total_time_banks_used_this_hand: number;
+  eligible_pot_ids: string[]; // Which pots this player can win
+  hand_evaluation_result?: HandEvaluationResult; // Computed at showdown
+  revealed_at_showdown: boolean; // Cards shown at showdown
+  mucked_at_showdown: boolean; // Cards mucked at showdown
+}
+
+/** Bible V8 2.4: Visual state enum for seat CSS */
+export type SeatVisualState =
+  | 'default' // Normal seated
+  | 'in_hand' // Dealt cards, in current hand
+  | 'active' // Currently acting (bright highlight)
+  | 'folded' // Folded (dimmed)
+  | 'all_in' // All-in (red glow)
+  | 'winner' // Won the hand (gold glow)
+  | 'sitting_out' // Sitting out (greyed)
+  | 'disconnected'; // Disconnected badge
+
+/** Bible V8 2.4: Highlight state for seat borders/glows */
+export type SeatHighlightState =
+  | 'none'
+  | 'active_turn' // Neon yellow glow — your turn
+  | 'winner_glow' // Gold pulsing glow
+  | 'all_in_glow' // Red border glow
+  | 'fold_dim' // Opacity reduction
+  | 'disconnected_badge'; // Gray with disconnect icon
+
+/** Bible V8 2.8/2.20: Hand evaluation result */
+export interface HandEvaluationResult {
+  rank: number; // Numeric hand rank (1 = high card ... 10 = royal flush)
+  rank_name: string; // "Full House", "Straight", etc.
+  best_five: Card[]; // Best 5-card hand
+  kickers: Card[]; // Kicker cards for tiebreaking
+  is_winner: boolean;
+  pot_share: number; // Amount won from pot
 }
 
 export type PlayerStatus =
@@ -325,6 +462,102 @@ export interface Hand {
   winners?: HandWinner[];
   started_at: string;
   ended_at?: string;
+
+  // Bible V8 2.7: Extended Hand Object fields
+  timer_log?: TimerLogEntry[]; // All timer events this hand
+  notification_log?: NotificationLogEntry[]; // All notifications sent
+  showdown_result?: ShowdownResult; // Full showdown evaluation
+  settlement_result?: SettlementResult; // Pot distribution details
+  dealer_seat?: number; // Button position for this hand
+  small_blind_seat?: number;
+  big_blind_seat?: number;
+  button_progression?: number; // Which button position in rotation
+}
+
+/** Bible V8 2.7: Showdown evaluation result */
+export interface ShowdownResult {
+  eligible_players: Array<{
+    user_id: string;
+    seat: number;
+    hand: Card[];
+    best_five: Card[];
+    rank: number;
+    rank_name: string;
+    revealed: boolean;
+    mucked: boolean;
+  }>;
+  winning_hands: Array<{
+    user_id: string;
+    rank_name: string;
+    best_five: Card[];
+  }>;
+  board: Card[];
+}
+
+/** Bible V8 2.7: Settlement/pot distribution result */
+export interface SettlementResult {
+  distributions: Array<{
+    user_id: string;
+    pot_id: string; // 'main' or side pot ID
+    amount: number;
+    net_profit: number; // amount - total_invested
+  }>;
+  rake: number;
+  rake_cap_applied: boolean;
+  bbj_contribution: number;
+  total_distributed: number;
+  chip_conservation_verified: boolean; // StateVerifier confirmation
+}
+
+/** Bible V8 2.5: Player Preference Object */
+export interface PlayerPreference {
+  user_id: string;
+
+  // Display
+  theme: 'dark' | 'light' | 'auto';
+  table_felt_color: string; // Hex color
+  card_back_style: string; // 'classic' | 'modern' | etc.
+  deck_style: '4color' | '2color';
+  avatar_frame: string;
+  show_hand_strength: boolean;
+  show_pot_odds: boolean;
+  show_vpip: boolean;
+  four_color_deck: boolean;
+
+  // Sound & Haptics
+  sound_enabled: boolean;
+  sound_volume: number; // 0.0-1.0
+  haptics_enabled: boolean;
+  notification_sound_enabled: boolean;
+  deal_sound_enabled: boolean;
+  action_sound_enabled: boolean;
+
+  // Notifications
+  push_notifications_enabled: boolean;
+  your_turn_notifications: boolean;
+  tournament_notifications: boolean;
+  dnd_mode: boolean;
+  dnd_schedule?: { start_hour: number; end_hour: number };
+
+  // Gameplay
+  auto_muck_losing_hands: boolean;
+  confirm_all_in: boolean;
+  auto_post_blinds: boolean;
+  show_bet_size_presets: boolean;
+  default_buy_in_bb: number; // Preferred buy-in as BB multiple
+  auto_rebuy: boolean;
+  auto_rebuy_threshold_bb: number;
+  auto_rebuy_amount_bb: number;
+  preferred_seat?: number; // 1-9
+
+  // Accessibility
+  reduced_motion: boolean;
+  high_contrast: boolean;
+  screen_reader_mode: boolean;
+  font_size_multiplier: number; // 1.0 = normal, 1.5 = large
+
+  // i18n
+  locale: string; // 'en', 'es', etc.
 }
 
 export type HandStatus = 'preflop' | 'flop' | 'turn' | 'river' | 'showdown' | 'complete';

@@ -10,6 +10,7 @@
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { haptic } from '../../services/HapticService';
+import { soundService } from '../../services/SoundService';
 import './ThrowableReaction.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -100,6 +101,7 @@ export const ThrowablePicker: React.FC<ThrowablePickerProps> = ({
               className="throwable-item"
               onClick={() => {
                 haptic.heavy();
+                soundService.playThrowableImpact();
                 onSelect(emoji);
                 onClose();
               }}

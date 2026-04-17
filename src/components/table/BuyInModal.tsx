@@ -11,7 +11,7 @@
  */
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { haptic } from '../../services/SoundService';
+import { haptic, soundService } from '../../services/SoundService';
 import './BuyInModal.css';
 import { reportError } from '../../utils/errorReporter';
 
@@ -66,13 +66,13 @@ export function BuyInModal({
   cashoutRestriction,
 }: BuyInModalProps) {
   // State
-  const [buyInAmount, setBuyInAmount] = useState(defaultBuyIn || Math.min(minBuyIn * 2, maxBuyIn));
+  // Default to MAX buy-in (capped by account balance) — Dan's directive
+  const effectiveDefault = defaultBuyIn || Math.min(maxBuyIn, accountBalance);
+  const [buyInAmount, setBuyInAmount] = useState(effectiveDefault);
   const [autoRebuy, setAutoRebuy] = useState(false);
   // FIX 191: rebuyThreshold was always 0 — default to 50% (half the buy-in)
   const [rebuyThreshold, setRebuyThreshold] = useState(50);
-  const [displayAmount, setDisplayAmount] = useState(
-    defaultBuyIn || Math.min(minBuyIn * 2, maxBuyIn)
-  );
+  const [displayAmount, setDisplayAmount] = useState(effectiveDefault);
   const [isConfirmPulsing, setIsConfirmPulsing] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const animationFrameRef = useRef<number>(0);
@@ -150,7 +150,7 @@ export function BuyInModal({
   // Handle confirm
   const handleConfirm = useCallback(async () => {
     if (!hasEnoughBalance || isProcessing) return;
-    haptic.medium();
+    soundService.playBuyInConfirm();
     setIsProcessing(true);
     try {
       await onConfirm(clampedBuyIn, autoRebuy);

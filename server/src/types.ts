@@ -27,14 +27,7 @@ export type HandStage = 'preflop' | 'flop' | 'pineapple_discard' | 'turn' | 'riv
 // FIX 120: Added 'discard' action for Crazy Pineapple
 export type ActionType = 'fold' | 'check' | 'call' | 'bet' | 'raise' | 'all_in' | 'discard';
 // FIX 116: Dead variants removed (flh, plo, plo_hilo, mixed) — Dan's 9 approved variants only
-export type GameVariant =
-  | 'nlh'
-  | 'plo4'
-  | 'plo5'
-  | 'plo6'
-  | 'plo8'
-  | 'pineapple'
-  | 'short_deck';
+export type GameVariant = 'nlh' | 'plo4' | 'plo5' | 'plo6' | 'plo8' | 'pineapple' | 'short_deck';
 /** Bible V8 §3.1: Full table state machine states */
 export type TableStatus =
   | 'empty'
@@ -144,6 +137,9 @@ export interface TableInfo {
   observer_enabled?: boolean;
   /** Bible V8 §6.15: Show hole cards to observers during play */
   observer_show_cards?: boolean;
+  /** Buy-in limits from database — used for add-on cap enforcement */
+  min_buy_in?: number;
+  max_buy_in?: number;
 }
 
 export interface SeatedPlayer {

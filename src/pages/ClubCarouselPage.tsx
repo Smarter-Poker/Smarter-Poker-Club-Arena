@@ -162,37 +162,11 @@ export default function ClubCarouselPage() {
     };
   }, []);
 
-  // Realtime: refresh when club, union, or union_clubs data changes
-  useEffect(() => {
-    const channelKey = 'club-carousel-live';
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'club_members' }, () => {
-        if (isMounted.current) loadUserData();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'clubs' }, () => {
-        if (isMounted.current) loadUserData();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'unions' }, () => {
-        if (isMounted.current) loadUserData();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'union_clubs' }, () => {
-        if (isMounted.current) loadUserData();
-      })
-      .subscribe((status: string, err?: Error) => {
-        // #9: Track WS connection health
-        setWsConnected(status === 'SUBSCRIBED');
-        if (status === 'CHANNEL_ERROR') {
-          reportError(err?.message || err, 'ClubCarouselPage._Realtime_channel_error');
-        }
-        if (status === 'TIMED_OUT') {
-          console.warn('[ClubCarouselPage] ⏱️ Realtime channel timed out');
-        }
-      });
-    return () => {
-      masterBus.removeRegisteredChannel(channelKey);
-    };
-  }, []);
+  // NOTE (2026-04-19): Realtime `postgres_changes` listeners on club_members, clubs,
+  // unions, union_clubs REMOVED. These were unfiltered global listeners that fired on
+  // EVERY mutation across ALL clubs/unions. The MasterBus event listeners below
+  // (CLUB_JOINED, CLUB_LEFT, CLUB_UPDATED, UNION_UPDATED, CLUB_SETTINGS_UPDATED)
+  // already handle all cross-page refresh needs.
 
   // ── Bus Listeners: cross-page event reactivity (debounced) ──
   useEffect(() => {

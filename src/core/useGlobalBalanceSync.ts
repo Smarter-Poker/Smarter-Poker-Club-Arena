@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+
 import { masterBus } from './MasterBus';
 import { useUserStore } from '../stores/useUserStore';
 import { WalletService } from '../services/WalletService';
@@ -42,28 +42,9 @@ export function useGlobalBalanceSync() {
     );
 
     // Sub to remote Supabase DB changes for cross-tab or server-initiated updates
-    const channel = supabase
-      .channel(`wallet_sync_${user.id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'wallets',
-          filter: `user_id=eq.${user.id}`,
-        },
-        () => {
-          fetchTrueBalance();
-        }
-      )
-      .subscribe((status: string, err?: Error) => {
-        if (status === 'CHANNEL_ERROR') {
-          console.debug(`[GlobalBalanceSync] ❌ Wallet sync channel error:`, err?.message || err);
-        }
-        if (status === 'TIMED_OUT') {
-          console.debug(`[GlobalBalanceSync] ⏱️ Wallet sync channel timed out`);
-        }
-      });
+    // NOTE (2026-04-19): Direct wallets postgres_changes channel REMOVED — duplicate of
+    // PostgresSyncHooks which already subscribes to wallets with user_id filter and emits
+    // BALANCE_UPDATED on MasterBus. The subscribeDebounced listener above handles this.
 
     // Initial fetch on mount to guarantee parity
     fetchTrueBalance();
@@ -80,7 +61,6 @@ export function useGlobalBalanceSync() {
     return () => {
       unsubscribeLocal();
       unsubscribeReconnect();
-      supabase.removeChannel(channel);
     };
   }, [user?.id]);
 }

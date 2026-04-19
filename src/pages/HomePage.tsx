@@ -526,7 +526,8 @@ function HomePageInner() {
       if (cached) {
         const parsed = JSON.parse(cached);
         const age = parsed.cachedAt ? Date.now() - parsed.cachedAt : Infinity;
-        if (parsed.totalMembers !== null && parsed.totalMembers > 0 && age < SWR_TTL_MS) setSharkClubStats(parsed);
+        if (parsed.totalMembers !== null && parsed.totalMembers > 0 && age < SWR_TTL_MS)
+          setSharkClubStats(parsed);
       }
     } catch {
       /* */
@@ -687,15 +688,10 @@ function HomePageInner() {
     const sharkChannelKey = 'clubs-live-stats';
     const channel = masterBus.getOrCreateChannel(sharkChannelKey);
 
-    // Debounce club_members changes — fires on ALL clubs, so collapse rapid events
-    let sharkDebounce: ReturnType<typeof setTimeout> | null = null;
-    const debouncedSharkRefresh = () => {
-      if (sharkDebounce) clearTimeout(sharkDebounce);
-      sharkDebounce = setTimeout(() => {
-        if (isMounted) fetchSharkClubStats();
-      }, 2000);
-    };
-
+    // NOTE (2026-04-19): Unfiltered `club_members` and `table_seats` global listeners REMOVED.
+    // `table_seats` is the engine's highest-write table (updates on every hand for every horse),
+    // and listening globally generated massive message volume. Shark Club stats now refresh via
+    // MasterBus CLUB_JOINED/CLUB_LEFT events (already subscribed above) + the filtered clubs listener.
     channel
       .on(
         'postgres_changes',
@@ -708,28 +704,6 @@ function HomePageInner() {
         () => {
           if (isMounted) fetchSharkClubStats();
         }
-      )
-      // Listen to club_members changes (debounced — no filter available for
-      // specific club_id, so this fires on all clubs)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'club_members',
-        },
-        debouncedSharkRefresh
-      )
-      // Listen to table_seats changes — active player count must update
-      // when players sit down or leave tables
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'table_seats',
-        },
-        debouncedSharkRefresh
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
@@ -758,51 +732,16 @@ function HomePageInner() {
 
     return () => {
       isMounted = false;
-      if (sharkDebounce) clearTimeout(sharkDebounce);
       unsubJoined();
       unsubLeft();
       masterBus.removeRegisteredChannel(sharkChannelKey);
     };
   }, []);
 
-  // Enhancement #6: Real-time stats refresh for ALL club cards (debounced)
-  useEffect(() => {
-    let isMounted = true;
-    const allClubsKey = 'clubs-all-live-stats';
-    const allClubsChannel = masterBus.getOrCreateChannel(allClubsKey);
-    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-    const debouncedFetch = () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        if (isMounted) fetchUserData(true, () => isMounted);
-      }, 500);
-    };
-    allClubsChannel
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'club_members' },
-        debouncedFetch
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'table_seats' },
-        debouncedFetch
-      )
-      .subscribe((status: string, err?: Error) => {
-        if (status === 'CHANNEL_ERROR') {
-          reportError(err?.message || err, 'HomePage._Realtime_channel_error');
-        }
-        if (status === 'TIMED_OUT') {
-          console.warn('[HomePage] ⏱️ Realtime channel timed out');
-        }
-      });
-
-    return () => {
-      isMounted = false;
-      if (debounceTimer) clearTimeout(debounceTimer);
-      masterBus.removeRegisteredChannel(allClubsKey);
-    };
-  }, [fetchUserData]);
+  // Enhancement #6: Real-time stats refresh for ALL club cards
+  // NOTE (2026-04-19): Unfiltered `club_members` + `table_seats` global listeners REMOVED.
+  // These generated massive message volume. Club card stats now refresh via MasterBus events
+  // (CLUB_JOINED, CLUB_LEFT, CLUB_UPDATED) already subscribed above.
 
   // ═══════════════════════════════════════════════════════════════════════════════
   // Enhancement #2: Context Menu handlers

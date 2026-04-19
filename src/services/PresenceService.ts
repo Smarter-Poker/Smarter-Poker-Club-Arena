@@ -302,7 +302,7 @@ class PresenceServiceClass {
           this.stopHeartbeat(channelName);
         }
       }
-    }, 30000);
+    }, 60_000); // 60s heartbeat — halves message volume vs 30s, presence accuracy sufficient
 
     this.channelHeartbeats.set(channelName, interval);
   }

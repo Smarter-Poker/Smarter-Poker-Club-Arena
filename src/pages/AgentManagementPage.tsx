@@ -258,19 +258,11 @@ export default function AgentManagementPage() {
             loadAgentsData();
           }
         )
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'wallet_transactions',
-            filter: `club_id=eq.${resolvedId}`,
-          },
-          (payload) => {
-            // Commission tracking - reload on any transaction change for this club
-            loadAgentsData();
-          }
-        )
+        // wallet_transactions subscription removed (Phase 2 cost cut): the
+        // canonical balance / commission state is derived via joins against
+        // wallets + commission_records (both still in supabase_realtime).
+        // Bus 'BALANCE_UPDATED' / 'WALLET_REFRESHED' listeners below backstop
+        // admin-side commission edits.
         .subscribe((status: string, err?: Error) => {
           if (status === 'CHANNEL_ERROR') {
             reportError(err?.message || err, 'AgentManagementPage._Realtime_channel_error');

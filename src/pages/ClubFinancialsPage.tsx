@@ -117,60 +117,14 @@ export default function ClubFinancialsPage() {
     };
   }, [transactions]);
 
-  // ── Realtime subscription: live financial data updates ──
-  useEffect(() => {
-    if (!clubId) return;
-    let isMounted = true;
-
-    const channelKey = `club-financials-${clubId}`;
-
-    const setupRealtime = async () => {
-      const resolvedId = await resolveClubUUID(clubId);
-      if (!isMounted) return;
-
-      const channel = masterBus.getOrCreateChannel(channelKey);
-      channel
-        .on(
-          'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'wallet_transactions',
-            filter: `club_id=eq.${resolvedId}`,
-          },
-          () => {
-            loadFinancialsRef.current();
-          }
-        )
-        .on(
-          'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'rake_history',
-            filter: `club_id=eq.${resolvedId}`,
-          },
-          () => {
-            loadFinancialsRef.current();
-          }
-        )
-        .subscribe((status: string, err?: Error) => {
-          if (status === 'CHANNEL_ERROR') {
-            reportError(err?.message || err, 'ClubFinancialsPage._Realtime_channel_error');
-          }
-          if (status === 'TIMED_OUT') {
-            console.warn('[ClubFinancialsPage] ⏱️ Realtime channel timed out');
-          }
-        });
-    };
-
-    setupRealtime().catch((e) => console.warn('[ClubFinancialsPage] Realtime setup failed:', e));
-
-    return () => {
-      isMounted = false;
-      masterBus.removeRegisteredChannel(channelKey);
-    };
-  }, [clubId]);
+  // ── Realtime subscription removed (Phase 2 cost cut) ──
+  // wallet_transactions and rake_history are being dropped from
+  // supabase_realtime to save egress. This is a financials dashboard — the
+  // bus listeners below (BALANCE_UPDATED, WALLET_REFRESHED, COMMISSION_PAID,
+  // SETTLEMENT_COMPLETED, CHIPS_ADDED/WITHDRAWN/DISTRIBUTED) and the
+  // period-scoped loadFinancials already cover every refresh path. Accepted
+  // trade-off: per-transaction ticker refresh is no longer real-time on this
+  // specific page, but totals still update on each domain-level bus event.
 
   // ── Bus Listeners: cross-page financial event reactivity ──
   // Keep ref in sync with latest loadFinancials (captures current clubId + period)
